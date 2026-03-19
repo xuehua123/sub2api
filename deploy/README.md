@@ -124,6 +124,82 @@ When using Docker Compose with `AUTO_SETUP=true`:
    docker-compose logs sub2api | grep "admin password"
    ```
 
+### GitHub Actions / GHCR Auto Deploy
+
+If you want the same "push code -> build image -> server pulls and restarts" workflow as `teamcliproxyapi`, this repository now includes:
+
+- `.github/workflows/docker-publish.yml`
+- `docker-compose.ghcr.yml`
+
+Pushes to `main` or `my-main` will:
+
+1. Build the app image from the repository root `Dockerfile`
+2. Push the image to `ghcr.io/<your-github-username>/sub2api:<commit-sha>`
+3. SSH into your server
+4. Run `docker compose --env-file deploy/.env -f docker-compose.ghcr.yml pull sub2api`
+5. Run `docker compose --env-file deploy/.env -f docker-compose.ghcr.yml up -d`
+
+Required GitHub Secrets:
+
+- `SERVER_IP`: deployment server IP or hostname
+- `DEPLOY_USER`: SSH user
+- `SSH_PRIVATE_KEY`: private key used for deployment
+- `SSH_PASSPHRASE`: optional passphrase for the SSH key
+- `DEPLOY_PATH`: optional deployment directory, default `/opt/sub2api`
+- `GHCR_USERNAME`: GitHub username used to pull GHCR images on the server
+- `GHCR_TOKEN`: GitHub token with at least `read:packages`
+
+First-time server setup:
+
+```bash
+# 1. Clone your fork
+git clone https://github.com/<your-github-username>/sub2api.git /opt/sub2api
+cd /opt/sub2api
+git checkout my-main
+
+# 2. Prepare runtime config
+cp deploy/.env.example deploy/.env
+nano deploy/.env
+
+# 3. Create runtime directories
+mkdir -p deploy/data deploy/postgres_data deploy/redis_data
+
+# 4. (Optional) test locally before enabling GitHub Actions auto deploy
+docker compose --env-file deploy/.env -f docker-compose.ghcr.yml up -d
+```
+
+Recommended `deploy/.env` values for reverse-proxy based production deployments:
+
+```bash
+BIND_HOST=127.0.0.1
+SERVER_PORT=18080
+SERVER_FRONTEND_URL=https://sub2api.example.com
+POSTGRES_PASSWORD=change_me
+JWT_SECRET=change_me
+TOTP_ENCRYPTION_KEY=change_me
+```
+
+### Proxy Integration
+
+The Docker Compose files now expose `host.docker.internal` inside the `sub2api` container, matching the proxy access pattern used by `teamcliproxyapi`.
+
+Typical options:
+
+```bash
+# If you run a local SOCKS5 relay on the same Docker host
+UPDATE_PROXY_URL=socks5://host.docker.internal:3131
+
+# If the upstream proxy server exposes HTTP/HTTPS directly
+UPDATE_PROXY_URL=http://user:pass@proxy.example.com:3128
+```
+
+Notes:
+
+- `UPDATE_PROXY_URL` is used for GitHub release checks and pricing-data fetching.
+- Account traffic proxies are configured in the Sub2API admin panel under the proxy management page.
+- `teamcliproxyapi`-style `host.docker.internal:3131` usually means "the Docker host provides a local relay", not necessarily the remote proxy server's real public port.
+- If you use a dedicated proxy server directly, replace `proxy.example.com:3128` with the real host, port, username, and password.
+
 ### Database Migration Notes (PostgreSQL)
 
 - Migrations are applied in lexicographic order (e.g. `001_...sql`, `002_...sql`).

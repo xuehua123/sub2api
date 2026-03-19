@@ -1,0 +1,413 @@
+name: CI/CD Auto Deploy
+
+on:
+  push:
+    branches:
+      - my-main
+  workflow_dispatch:
+
+concurrency:
+  group: sub2api-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Build and publish image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      ghcr_owner: ${{ steps.owner.outputs.value }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Normalize GHCR owner
+        id: owner
+        run: echo "value=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ steps.owner.outputs.value }}/sub2api
+          tags: |
+            type=raw,value=${{ github.sha }}
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=sub2api
+          cache-to: type=gha,mode=max,scope=sub2api
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp || github.run_id }}
+
+  deploy:
+    name: Pull image and deploy
+    runs-on: ubuntu-latest
+    needs: publish
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Deploy on server over SSH
+        id: remote-deploy
+        continue-on-error: true
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH != '' && secrets.DEPLOY_PATH || '/opt/sub2api' }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          GHCR_OWNER: ${{ needs.publish.outputs.ghcr_owner }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          timeout: 600s
+          command_timeout: 600s
+          envs: DEPLOY_PATH,DEPLOY_BRANCH,GHCR_OWNER,GHCR_USERNAME,GHCR_TOKEN,IMAGE_TAG
+          script: |
+            set -e
+
+            APP_DIR="${DEPLOY_PATH:-/opt/sub2api}"
+            TARGET_BRANCH="${DEPLOY_BRANCH:-main}"
+
+            retry_command() {
+              max_attempts="$1"
+              shift
+              attempt=1
+              delay=5
+              while true; do
+                if "$@"; then
+                  return 0
+                fi
+                if [ "$attempt" -ge "$max_attempts" ]; then
+                  return 1
+                fi
+                echo "Command failed, retrying in ${delay}s (${attempt}/${max_attempts}): $*"
+                sleep "$delay"
+                attempt=$((attempt + 1))
+                delay=$((delay * 2))
+              done
+            }
+
+            docker_compose() {
+              docker compose --env-file deploy/.env -f docker-compose.ghcr.yml "$@"
+            }
+
+            ensure_branch_checked_out() {
+              if git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+                git checkout "$TARGET_BRANCH"
+              else
+                git checkout -b "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+              fi
+            }
+
+            backup_conflicting_untracked_files() {
+              tracked_tmp="$(mktemp)"
+              untracked_tmp="$(mktemp)"
+              moved_count=0
+              backup_dir=""
+
+              git ls-tree -r --name-only "origin/$TARGET_BRANCH" > "$tracked_tmp"
+              git ls-files --others --exclude-standard > "$untracked_tmp"
+
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                if grep -Fxq "$path" "$tracked_tmp"; then
+                  if [ -z "$backup_dir" ]; then
+                    backup_dir="$APP_DIR/.deploy-untracked-backups/$(date +%Y%m%d-%H%M%S)"
+                    mkdir -p "$backup_dir"
+                  fi
+                  mkdir -p "$backup_dir/$(dirname "$path")"
+                  mv "$path" "$backup_dir/$path"
+                  echo "Backed up conflicting untracked file: $path -> $backup_dir/$path"
+                  moved_count=$((moved_count + 1))
+                fi
+              done < "$untracked_tmp"
+
+              rm -f "$tracked_tmp" "$untracked_tmp"
+
+              if [ "$moved_count" -gt 0 ]; then
+                echo "Backed up $moved_count conflicting untracked file(s)"
+              fi
+            }
+
+            backup_conflicting_tracked_files() {
+              incoming_tmp="$(mktemp)"
+              modified_tmp="$(mktemp)"
+              moved_count=0
+              backup_dir=""
+
+              git diff --name-only HEAD.."origin/$TARGET_BRANCH" > "$incoming_tmp"
+              git diff --name-only > "$modified_tmp"
+
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                if grep -Fxq "$path" "$incoming_tmp"; then
+                  if [ -z "$backup_dir" ]; then
+                    backup_dir="$APP_DIR/.deploy-tracked-backups/$(date +%Y%m%d-%H%M%S)"
+                    mkdir -p "$backup_dir"
+                  fi
+                  mkdir -p "$backup_dir/$(dirname "$path")"
+                  cp -p "$path" "$backup_dir/$path"
+                  git checkout -- "$path"
+                  echo "Backed up and restored conflicting tracked file: $path -> $backup_dir/$path"
+                  moved_count=$((moved_count + 1))
+                fi
+              done < "$modified_tmp"
+
+              rm -f "$incoming_tmp" "$modified_tmp"
+
+              if [ "$moved_count" -gt 0 ]; then
+                echo "Backed up and restored $moved_count conflicting tracked file(s)"
+              fi
+            }
+
+            print_docker_diagnostics() {
+              echo "==== docker info ===="
+              docker info || true
+              echo "==== docker compose ps ===="
+              docker_compose ps || true
+              echo "==== ghcr probe ===="
+              curl -I --max-time 20 --retry 2 --retry-delay 2 https://ghcr.io/v2/ || true
+            }
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Deploy path does not exist or is not a Git repo: $APP_DIR"
+              exit 1
+            fi
+
+            cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR" || true
+            git fetch origin "$TARGET_BRANCH"
+            ensure_branch_checked_out
+            backup_conflicting_tracked_files
+            backup_conflicting_untracked_files
+            git pull --ff-only origin "$TARGET_BRANCH"
+
+            if [ ! -f deploy/.env ]; then
+              echo "Missing deploy/.env. Copy deploy/.env.example to deploy/.env and fill in secrets first."
+              exit 1
+            fi
+
+            mkdir -p deploy/data deploy/postgres_data deploy/redis_data
+
+            if [ -n "$GHCR_TOKEN" ]; then
+              echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:-$GHCR_OWNER}" --password-stdin
+            fi
+
+            export GHCR_OWNER
+            export IMAGE_TAG
+
+            if ! retry_command 4 docker_compose pull sub2api; then
+              print_docker_diagnostics
+              docker_compose logs --tail=100 sub2api || true
+              exit 1
+            fi
+
+            if ! docker_compose up -d; then
+              print_docker_diagnostics
+              docker_compose logs --tail=200 sub2api postgres redis || true
+              exit 1
+            fi
+
+            sleep 10
+            docker_compose ps
+            docker image prune -f
+
+      - name: Log in to GHCR for fallback
+        if: steps.remote-deploy.outcome == 'failure'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare fallback image archive
+        if: steps.remote-deploy.outcome == 'failure'
+        env:
+          GHCR_OWNER: ${{ needs.publish.outputs.ghcr_owner }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          IMAGE_DIR="deploy-image-fallback"
+          mkdir -p "$IMAGE_DIR"
+          IMAGE_REF="ghcr.io/$GHCR_OWNER/sub2api:$IMAGE_TAG"
+
+          docker pull "$IMAGE_REF"
+          docker save -o "$IMAGE_DIR/sub2api.tar" "$IMAGE_REF"
+
+      - name: Upload fallback image archive
+        if: steps.remote-deploy.outcome == 'failure'
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          timeout: 1800s
+          command_timeout: 1800s
+          source: "deploy-image-fallback/sub2api.tar"
+          target: "${{ (secrets.DEPLOY_PATH != '' && secrets.DEPLOY_PATH) || '/opt/sub2api' }}/.deploy-image-fallback"
+          overwrite: true
+
+      - name: Deploy with fallback image archive
+        if: steps.remote-deploy.outcome == 'failure'
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH != '' && secrets.DEPLOY_PATH || '/opt/sub2api' }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
+          GHCR_OWNER: ${{ needs.publish.outputs.ghcr_owner }}
+          IMAGE_TAG: ${{ github.sha }}
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          passphrase: ${{ secrets.SSH_PASSPHRASE }}
+          timeout: 1800s
+          command_timeout: 1800s
+          envs: DEPLOY_PATH,DEPLOY_BRANCH,GHCR_OWNER,IMAGE_TAG
+          script: |
+            set -e
+
+            APP_DIR="${DEPLOY_PATH:-/opt/sub2api}"
+            TARGET_BRANCH="${DEPLOY_BRANCH:-main}"
+            FALLBACK_DIR="$APP_DIR/.deploy-image-fallback"
+
+            docker_compose() {
+              docker compose --env-file deploy/.env -f docker-compose.ghcr.yml "$@"
+            }
+
+            ensure_branch_checked_out() {
+              if git show-ref --verify --quiet "refs/heads/$TARGET_BRANCH"; then
+                git checkout "$TARGET_BRANCH"
+              else
+                git checkout -b "$TARGET_BRANCH" "origin/$TARGET_BRANCH"
+              fi
+            }
+
+            backup_conflicting_untracked_files() {
+              tracked_tmp="$(mktemp)"
+              untracked_tmp="$(mktemp)"
+              moved_count=0
+              backup_dir=""
+
+              git ls-tree -r --name-only "origin/$TARGET_BRANCH" > "$tracked_tmp"
+              git ls-files --others --exclude-standard > "$untracked_tmp"
+
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                if grep -Fxq "$path" "$tracked_tmp"; then
+                  if [ -z "$backup_dir" ]; then
+                    backup_dir="$APP_DIR/.deploy-untracked-backups/$(date +%Y%m%d-%H%M%S)"
+                    mkdir -p "$backup_dir"
+                  fi
+                  mkdir -p "$backup_dir/$(dirname "$path")"
+                  mv "$path" "$backup_dir/$path"
+                  echo "Backed up conflicting untracked file: $path -> $backup_dir/$path"
+                  moved_count=$((moved_count + 1))
+                fi
+              done < "$untracked_tmp"
+
+              rm -f "$tracked_tmp" "$untracked_tmp"
+
+              if [ "$moved_count" -gt 0 ]; then
+                echo "Backed up $moved_count conflicting untracked file(s)"
+              fi
+            }
+
+            backup_conflicting_tracked_files() {
+              incoming_tmp="$(mktemp)"
+              modified_tmp="$(mktemp)"
+              moved_count=0
+              backup_dir=""
+
+              git diff --name-only HEAD.."origin/$TARGET_BRANCH" > "$incoming_tmp"
+              git diff --name-only > "$modified_tmp"
+
+              while IFS= read -r path; do
+                [ -n "$path" ] || continue
+                if grep -Fxq "$path" "$incoming_tmp"; then
+                  if [ -z "$backup_dir" ]; then
+                    backup_dir="$APP_DIR/.deploy-tracked-backups/$(date +%Y%m%d-%H%M%S)"
+                    mkdir -p "$backup_dir"
+                  fi
+                  mkdir -p "$backup_dir/$(dirname "$path")"
+                  cp -p "$path" "$backup_dir/$path"
+                  git checkout -- "$path"
+                  echo "Backed up and restored conflicting tracked file: $path -> $backup_dir/$path"
+                  moved_count=$((moved_count + 1))
+                fi
+              done < "$modified_tmp"
+
+              rm -f "$incoming_tmp" "$modified_tmp"
+
+              if [ "$moved_count" -gt 0 ]; then
+                echo "Backed up and restored $moved_count conflicting tracked file(s)"
+              fi
+            }
+
+            if [ ! -d "$APP_DIR/.git" ]; then
+              echo "Deploy path does not exist or is not a Git repo: $APP_DIR"
+              exit 1
+            fi
+
+            cd "$APP_DIR"
+            git config --global --add safe.directory "$APP_DIR" || true
+            git fetch origin "$TARGET_BRANCH"
+            ensure_branch_checked_out
+            backup_conflicting_tracked_files
+            backup_conflicting_untracked_files
+            git pull --ff-only origin "$TARGET_BRANCH"
+
+            if [ ! -f deploy/.env ]; then
+              echo "Missing deploy/.env. Copy deploy/.env.example to deploy/.env and fill in secrets first."
+              exit 1
+            fi
+
+            mkdir -p deploy/data deploy/postgres_data deploy/redis_data
+
+            archive="$FALLBACK_DIR/sub2api.tar"
+            if [ ! -f "$archive" ]; then
+              archive="$FALLBACK_DIR/deploy-image-fallback/sub2api.tar"
+            fi
+            if [ ! -f "$archive" ]; then
+              echo "Fallback image archive not found: $FALLBACK_DIR/sub2api.tar"
+              exit 1
+            fi
+
+            export GHCR_OWNER
+            export IMAGE_TAG
+
+            docker load -i "$archive"
+            docker_compose up -d
+            sleep 10
+            docker_compose ps
+            rm -f "$FALLBACK_DIR"/sub2api.tar
+            rm -f "$FALLBACK_DIR"/deploy-image-fallback/sub2api.tar
+            docker image prune -f

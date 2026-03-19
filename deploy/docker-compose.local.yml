@@ -33,6 +33,9 @@ services:
         hard: 100000
     ports:
       - "${BIND_HOST:-0.0.0.0}:${SERVER_PORT:-8080}:8080"
+    extra_hosts:
+      # Allows the container to reach a proxy running on the Docker host via host.docker.internal
+      - "host.docker.internal:host-gateway"
     volumes:
       # Local directory mapping for easy migration
       - ./data:/app/data
@@ -51,6 +54,7 @@ services:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=8080
       - SERVER_MODE=${SERVER_MODE:-release}
+      - SERVER_FRONTEND_URL=${SERVER_FRONTEND_URL:-}
       - RUN_MODE=${RUN_MODE:-standard}
 
       # =======================================================================
