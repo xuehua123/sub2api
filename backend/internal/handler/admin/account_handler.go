@@ -124,7 +124,7 @@ type UpdateAccountRequest struct {
 	Priority                *int           `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
 	LoadFactor              *int           `json:"load_factor"`
-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
+	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive disabled error"`
 	GroupIDs                *[]int64       `json:"group_ids"`
 	ExpiresAt               *int64         `json:"expires_at"`
 	AutoPauseOnExpired      *bool          `json:"auto_pause_on_expired"`
@@ -140,7 +140,7 @@ type BulkUpdateAccountsRequest struct {
 	Priority                *int           `json:"priority"`
 	RateMultiplier          *float64       `json:"rate_multiplier"`
 	LoadFactor              *int           `json:"load_factor"`
-	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive error"`
+	Status                  string         `json:"status" binding:"omitempty,oneof=active inactive disabled error"`
 	Schedulable             *bool          `json:"schedulable"`
 	GroupIDs                *[]int64       `json:"group_ids"`
 	Credentials             map[string]any `json:"credentials"`
@@ -582,7 +582,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Priority:              req.Priority,    // 指针类型，nil 表示未提供
 		RateMultiplier:        req.RateMultiplier,
 		LoadFactor:            req.LoadFactor,
-		Status:                req.Status,
+		Status:                normalizeAccountStatus(req.Status),
 		GroupIDs:              req.GroupIDs,
 		ExpiresAt:             req.ExpiresAt,
 		AutoPauseOnExpired:    req.AutoPauseOnExpired,
@@ -1328,7 +1328,7 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		Priority:              req.Priority,
 		RateMultiplier:        req.RateMultiplier,
 		LoadFactor:            req.LoadFactor,
-		Status:                req.Status,
+		Status:                normalizeAccountStatus(req.Status),
 		Schedulable:           req.Schedulable,
 		GroupIDs:              req.GroupIDs,
 		Credentials:           req.Credentials,
@@ -2030,4 +2030,20 @@ func sanitizeExtraBaseRPM(extra map[string]any) {
 		v = 10000
 	}
 	extra["base_rpm"] = v
+}
+
+func normalizeAccountStatus(status string) string {
+	normalized := strings.TrimSpace(strings.ToLower(status))
+	switch normalized {
+	case "":
+		return ""
+	case service.StatusActive:
+		return service.StatusActive
+	case "inactive", service.StatusDisabled:
+		return service.StatusDisabled
+	case service.StatusError:
+		return service.StatusError
+	default:
+		return normalized
+	}
 }
