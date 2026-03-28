@@ -27,8 +27,8 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
         with:
-          host: ${{ secrets.SH_PROD_HOST || secrets.SERVER_IP || '101.35.240.224' }}
-          username: ${{ secrets.SH_PROD_USER || secrets.DEPLOY_USER || 'root' }}
+          host: 101.35.240.224
+          username: root
           key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
           password: ${{ secrets.SH_PROD_PASSWORD }}
           port: ${{ secrets.SH_PROD_PORT || '22' }}
