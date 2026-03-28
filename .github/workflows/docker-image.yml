@@ -75,23 +75,23 @@ jobs:
     steps:
       - name: Deploy to Shanghai
         uses: appleboy/ssh-action@v1.2.0
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-          GHCR_USERNAME: ${{ github.actor }}
         with:
           host: 101.35.240.224
           username: root
           key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
           password: ${{ secrets.SH_PROD_PASSWORD }}
           port: ${{ secrets.SH_PROD_PORT || '22' }}
-          envs: GHCR_TOKEN,GHCR_USERNAME
           script_stop: true
           command_timeout: 10m
           script: |
             set -e
             cd /opt/platform
 
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+            export COMPOSE_PROJECT_NAME=platform
+            export DOCKER_CONFIG=/tmp/docker-public
+            mkdir -p "$DOCKER_CONFIG"
+            rm -f "$DOCKER_CONFIG/config.json"
+
             docker compose pull sub2api
             docker compose up -d sub2api
             docker image prune -f
