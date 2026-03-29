@@ -6,6 +6,7 @@ import "strings"
 // OpenAI-compatible forwarding. Group-level default mapping only applies when
 // the account itself did not match any explicit model_mapping rule.
 func resolveOpenAIForwardModel(account *Account, requestedModel, defaultMappedModel string) string {
+	requestedModel = NormalizeOpenAICompatRequestedModel(requestedModel)
 	if account == nil {
 		if defaultMappedModel != "" {
 			return defaultMappedModel
