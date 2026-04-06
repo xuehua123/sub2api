@@ -26,6 +26,7 @@ func TestInit_DualOutput(t *testing.T) {
 	os.Stdout = stdoutW
 	os.Stderr = stderrW
 	t.Cleanup(func() {
+		_ = Close()
 		os.Stdout = origStdout
 		os.Stderr = origStderr
 		_ = stdoutR.Close()
@@ -97,6 +98,7 @@ func TestInit_FileOutputFailureDowngrade(t *testing.T) {
 	os.Stdout = stdoutW
 	os.Stderr = stderrW
 	t.Cleanup(func() {
+		_ = Close()
 		os.Stdout = origStdout
 		os.Stderr = origStderr
 		_ = stdoutW.Close()
