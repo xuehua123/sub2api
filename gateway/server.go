@@ -44,13 +44,51 @@ var autoSubmitTemplate = template.Must(template.New("autosubmit").Parse(`<!docty
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LobeHub SSO</title>
 </head>
-<body>
-  <form id="lobehub-sso-form" method="post" action="/api/auth/sign-in/oauth2">
-    <input type="hidden" name="providerId" value="{{ .ProviderID }}">
-    <input type="hidden" name="callbackURL" value="{{ .CallbackURL }}">
-  </form>
+<body data-provider-id="{{ .ProviderID }}" data-callback-url="{{ .CallbackURL }}">
+  <p>Redirecting to LobeHub sign-in...</p>
+  <noscript>Please enable JavaScript to continue to LobeHub.</noscript>
   <script>
-    document.getElementById('lobehub-sso-form').submit()
+    const escapeHTML = (value) => String(value).replace(/[&<>]/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;'
+    }[char] || char))
+
+    ;(async () => {
+      const body = document.body
+      const payload = {
+        additionalData: {},
+        callbackURL: body.dataset.callbackUrl,
+        providerId: body.dataset.providerId
+      }
+
+      try {
+        const response = await fetch('/api/auth/sign-in/oauth2', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        })
+        const responseText = await response.text()
+        if (!response.ok) {
+          throw new Error(responseText || 'LobeHub sign-in failed')
+        }
+
+        const result = JSON.parse(responseText)
+        if (!result || typeof result.url !== 'string' || result.url === '') {
+          throw new Error('LobeHub sign-in did not return a redirect URL')
+        }
+
+        window.location.replace(result.url)
+      } catch (error) {
+        document.body.innerHTML = '<pre style="white-space:pre-wrap;font-family:monospace">' +
+          escapeHTML(error && error.message ? error.message : error) +
+          '</pre>'
+      }
+    })()
   </script>
 </body>
 </html>

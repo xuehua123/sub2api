@@ -53,11 +53,17 @@ func TestServerReturnsAutoSubmitWhenLobeHubSessionIsMissing(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
-	if !strings.Contains(string(body), "/api/auth/sign-in/oauth2") {
-		t.Fatalf("expected auto-submit form, body=%s", string(body))
+	if !strings.Contains(string(body), "fetch('/api/auth/sign-in/oauth2'") {
+		t.Fatalf("expected auto-submit fetch, body=%s", string(body))
+	}
+	if !strings.Contains(string(body), "'Content-Type': 'application/json'") {
+		t.Fatalf("expected JSON content type, body=%s", string(body))
+	}
+	if !strings.Contains(string(body), "additionalData") {
+		t.Fatalf("expected additionalData payload, body=%s", string(body))
 	}
 	if !strings.Contains(string(body), "generic-oidc") {
-		t.Fatalf("expected providerId in form, body=%s", string(body))
+		t.Fatalf("expected providerId in payload, body=%s", string(body))
 	}
 	if !strings.Contains(string(body), "__lobehub_bootstrap") {
 		t.Fatalf("expected bootstrap callback URL, body=%s", string(body))
