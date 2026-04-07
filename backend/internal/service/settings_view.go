@@ -31,28 +31,28 @@ type SystemSettings struct {
 	LinuxDoConnectClientSecretConfigured bool
 	LinuxDoConnectRedirectURL            string
 
-	SiteName                    string
-	SiteLogo                    string
-	SiteSubtitle                string
-	APIBaseURL                  string
-	ContactInfo                 string
-	DocURL                      string
-	HomeContent                 string
-	HideCcsImportButton         bool
-	LobeHubEnabled              bool
-	LobeHubChatURL              string
-	LobeHubOIDCIssuer           string
-	LobeHubOIDCClientID         string
-	LobeHubOIDCClientSecret     string
+	SiteName                          string
+	SiteLogo                          string
+	SiteSubtitle                      string
+	APIBaseURL                        string
+	ContactInfo                       string
+	DocURL                            string
+	HomeContent                       string
+	HideCcsImportButton               bool
+	LobeHubEnabled                    bool
+	LobeHubChatURL                    string
+	LobeHubOIDCIssuer                 string
+	LobeHubOIDCClientID               string
+	LobeHubOIDCClientSecret           string
 	LobeHubOIDCClientSecretConfigured bool
-	LobeHubDefaultProvider      string
-	LobeHubDefaultModel         string
-	LobeHubRuntimeConfigVersion string
-	HideLobeHubImportButton     bool
-	PurchaseSubscriptionEnabled bool
-	PurchaseSubscriptionURL     string
-	CustomMenuItems             string // JSON array of custom menu items
-	CustomEndpoints             string // JSON array of custom endpoints
+	LobeHubDefaultProvider            string
+	LobeHubDefaultModel               string
+	LobeHubRuntimeConfigVersion       string
+	HideLobeHubImportButton           bool
+	PurchaseSubscriptionEnabled       bool
+	PurchaseSubscriptionURL           string
+	CustomMenuItems                   string // JSON array of custom menu items
+	CustomEndpoints                   string // JSON array of custom endpoints
 
 	DefaultConcurrency   int
 	DefaultBalance       float64

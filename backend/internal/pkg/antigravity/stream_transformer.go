@@ -55,23 +55,6 @@ func (p *StreamingProcessor) SetUsageMapHook(fn UsageMapHook) {
 	p.usageMapHook = fn
 }
 
-func usageToMap(u ClaudeUsage) map[string]any {
-	m := map[string]any{
-		"input_tokens":  u.InputTokens,
-		"output_tokens": u.OutputTokens,
-	}
-	if u.CacheCreationInputTokens > 0 {
-		m["cache_creation_input_tokens"] = u.CacheCreationInputTokens
-	}
-	if u.CacheReadInputTokens > 0 {
-		m["cache_read_input_tokens"] = u.CacheReadInputTokens
-	}
-	if u.ImageOutputTokens > 0 {
-		m["image_output_tokens"] = u.ImageOutputTokens
-	}
-	return m
-}
-
 // ProcessLine 处理 SSE 行，返回 Claude SSE 事件
 func (p *StreamingProcessor) ProcessLine(line string) []byte {
 	line = strings.TrimSpace(line)
