@@ -37,6 +37,8 @@ const (
 	FieldUsername = "username"
 	// FieldNotes holds the string denoting the notes field in the database.
 	FieldNotes = "notes"
+	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
+	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// FieldTotpSecretEncrypted holds the string denoting the totp_secret_encrypted field in the database.
 	FieldTotpSecretEncrypted = "totp_secret_encrypted"
 	// FieldTotpEnabled holds the string denoting the totp_enabled field in the database.
@@ -149,6 +151,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldUsername,
 	FieldNotes,
+	FieldDefaultChatAPIKeyID,
 	FieldTotpSecretEncrypted,
 	FieldTotpEnabled,
 	FieldTotpEnabledAt,
@@ -271,6 +274,11 @@ func ByUsername(opts ...sql.OrderTermOption) OrderOption {
 // ByNotes orders the results by the notes field.
 func ByNotes(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldNotes, opts...).ToFunc()
+}
+
+// ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
+func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
 }
 
 // ByTotpSecretEncrypted orders the results by the totp_secret_encrypted field.

@@ -3,8 +3,13 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -157,6 +162,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
 		SettingKeyHideCcsImportButton,
+		SettingKeyLobeHubEnabled,
+		SettingKeyLobeHubChatURL,
+		SettingKeyLobeHubOIDCIssuer,
+		SettingKeyLobeHubDefaultProvider,
+		SettingKeyLobeHubDefaultModel,
+		SettingKeyLobeHubRuntimeConfigVersion,
+		SettingKeyHideLobeHubImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
 		SettingKeyCustomMenuItems,
@@ -202,6 +214,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
+		LobeHubEnabled:                   settings[SettingKeyLobeHubEnabled] == "true",
+		LobeHubChatURL:                   strings.TrimSpace(settings[SettingKeyLobeHubChatURL]),
+		LobeHubOIDCIssuer:                strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer]),
+		LobeHubDefaultProvider:           s.getStringOrDefault(settings, SettingKeyLobeHubDefaultProvider, "openai"),
+		LobeHubDefaultModel:              strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel]),
+		LobeHubRuntimeConfigVersion:      strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion]),
+		HideLobeHubImportButton:          settings[SettingKeyHideLobeHubImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
@@ -249,6 +268,13 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		DocURL                           string          `json:"doc_url,omitempty"`
 		HomeContent                      string          `json:"home_content,omitempty"`
 		HideCcsImportButton              bool            `json:"hide_ccs_import_button"`
+		LobeHubEnabled                   bool            `json:"lobehub_enabled"`
+		LobeHubChatURL                   string          `json:"lobehub_chat_url,omitempty"`
+		LobeHubOIDCIssuer                string          `json:"lobehub_oidc_issuer,omitempty"`
+		LobeHubDefaultProvider           string          `json:"lobehub_default_provider,omitempty"`
+		LobeHubDefaultModel              string          `json:"lobehub_default_model,omitempty"`
+		LobeHubRuntimeConfigVersion      string          `json:"lobehub_runtime_config_version,omitempty"`
+		HideLobeHubImportButton          bool            `json:"hide_lobehub_import_button"`
 		PurchaseSubscriptionEnabled      bool            `json:"purchase_subscription_enabled"`
 		PurchaseSubscriptionURL          string          `json:"purchase_subscription_url,omitempty"`
 		CustomMenuItems                  json.RawMessage `json:"custom_menu_items"`
@@ -274,6 +300,13 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		DocURL:                           settings.DocURL,
 		HomeContent:                      settings.HomeContent,
 		HideCcsImportButton:              settings.HideCcsImportButton,
+		LobeHubEnabled:                   settings.LobeHubEnabled,
+		LobeHubChatURL:                   settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,
+		LobeHubDefaultProvider:           settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:              settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:      settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:          settings.HideLobeHubImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
 		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
@@ -468,6 +501,17 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyDocURL] = settings.DocURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
+	updates[SettingKeyLobeHubEnabled] = strconv.FormatBool(settings.LobeHubEnabled)
+	updates[SettingKeyLobeHubChatURL] = strings.TrimSpace(settings.LobeHubChatURL)
+	updates[SettingKeyLobeHubOIDCIssuer] = strings.TrimSpace(settings.LobeHubOIDCIssuer)
+	updates[SettingKeyLobeHubOIDCClientID] = strings.TrimSpace(settings.LobeHubOIDCClientID)
+	if settings.LobeHubOIDCClientSecret != "" {
+		updates[SettingKeyLobeHubOIDCClientSecret] = settings.LobeHubOIDCClientSecret
+	}
+	updates[SettingKeyLobeHubDefaultProvider] = strings.TrimSpace(settings.LobeHubDefaultProvider)
+	updates[SettingKeyLobeHubDefaultModel] = strings.TrimSpace(settings.LobeHubDefaultModel)
+	updates[SettingKeyLobeHubRuntimeConfigVersion] = strings.TrimSpace(settings.LobeHubRuntimeConfigVersion)
+	updates[SettingKeyHideLobeHubImportButton] = strconv.FormatBool(settings.HideLobeHubImportButton)
 	updates[SettingKeyPurchaseSubscriptionEnabled] = strconv.FormatBool(settings.PurchaseSubscriptionEnabled)
 	updates[SettingKeyPurchaseSubscriptionURL] = strings.TrimSpace(settings.PurchaseSubscriptionURL)
 	updates[SettingKeyCustomMenuItems] = settings.CustomMenuItems
@@ -880,6 +924,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
+		LobeHubEnabled:                   settings[SettingKeyLobeHubEnabled] == "true",
+		LobeHubChatURL:                   strings.TrimSpace(settings[SettingKeyLobeHubChatURL]),
+		LobeHubOIDCIssuer:                strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer]),
+		LobeHubDefaultProvider:           s.getStringOrDefault(settings, SettingKeyLobeHubDefaultProvider, "openai"),
+		LobeHubDefaultModel:              strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel]),
+		LobeHubRuntimeConfigVersion:      strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion]),
+		HideLobeHubImportButton:          settings[SettingKeyHideLobeHubImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
@@ -943,6 +994,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.LinuxDoConnectClientSecret = strings.TrimSpace(linuxDoBase.ClientSecret)
 	}
 	result.LinuxDoConnectClientSecretConfigured = result.LinuxDoConnectClientSecret != ""
+	result.LobeHubOIDCClientSecret = strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientSecret])
+	result.LobeHubOIDCClientSecretConfigured = result.LobeHubOIDCClientSecret != ""
 
 	// Model fallback settings
 	result.EnableModelFallback = settings[SettingKeyEnableModelFallback] == "true"
@@ -1052,6 +1105,77 @@ func (s *SettingService) GetTurnstileSecretKey(ctx context.Context) string {
 		return ""
 	}
 	return value
+}
+
+func (s *SettingService) GetSigningKey(ctx context.Context) (*rsa.PrivateKey, string, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyLobeHubOIDCPrivateKeyPEM)
+	if err != nil {
+		if !errors.Is(err, ErrSettingNotFound) {
+			return nil, "", fmt.Errorf("get lobehub oidc private key: %w", err)
+		}
+		value = ""
+	}
+
+	value = strings.TrimSpace(value)
+	if value == "" {
+		value, err = s.generateAndPersistLobeHubOIDCPrivateKey(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	privateKey, err := parseLobeHubOIDCPrivateKeyPEM(value)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse lobehub oidc private key: %w", err)
+	}
+	return privateKey, lobeHubOIDCKeyID(&privateKey.PublicKey), nil
+}
+
+func (s *SettingService) generateAndPersistLobeHubOIDCPrivateKey(ctx context.Context) (string, error) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", fmt.Errorf("generate lobehub oidc private key: %w", err)
+	}
+
+	encoded := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	})
+	if encoded == nil {
+		return "", errors.New("encode lobehub oidc private key")
+	}
+	value := string(encoded)
+	if err := s.settingRepo.Set(ctx, SettingKeyLobeHubOIDCPrivateKeyPEM, value); err != nil {
+		return "", fmt.Errorf("persist lobehub oidc private key: %w", err)
+	}
+	return value, nil
+}
+
+func parseLobeHubOIDCPrivateKeyPEM(raw string) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode([]byte(strings.TrimSpace(raw)))
+	if block == nil {
+		return nil, errors.New("pem decode failed")
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
+		return key, nil
+	}
+	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := parsed.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("private key is not RSA")
+	}
+	return key, nil
+}
+
+func lobeHubOIDCKeyID(publicKey *rsa.PublicKey) string {
+	if publicKey == nil {
+		return ""
+	}
+	sum := sha256.Sum256(append(publicKey.N.Bytes(), bigEndianBytes(publicKey.E)...))
+	return base64.RawURLEncoding.EncodeToString(sum[:12])
 }
 
 // IsIdentityPatchEnabled 检查是否启用身份补丁（Claude -> Gemini systemInstruction 注入）

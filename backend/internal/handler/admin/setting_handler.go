@@ -104,6 +104,15 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		DocURL:                               settings.DocURL,
 		HomeContent:                          settings.HomeContent,
 		HideCcsImportButton:                  settings.HideCcsImportButton,
+		LobeHubEnabled:                       settings.LobeHubEnabled,
+		LobeHubChatURL:                       settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                    settings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                  settings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:    settings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:               settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                  settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:          settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:              settings.HideLobeHubImportButton,
 		PurchaseSubscriptionEnabled:          settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              settings.PurchaseSubscriptionURL,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(settings.CustomMenuItems),
@@ -172,6 +181,15 @@ type UpdateSettingsRequest struct {
 	DocURL                      string                `json:"doc_url"`
 	HomeContent                 string                `json:"home_content"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
+	LobeHubEnabled              bool                  `json:"lobehub_enabled"`
+	LobeHubChatURL              string                `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer           string                `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID         string                `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecret     string                `json:"lobehub_oidc_client_secret"`
+	LobeHubDefaultProvider      string                `json:"lobehub_default_provider"`
+	LobeHubDefaultModel         string                `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion string                `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton     bool                  `json:"hide_lobehub_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
 	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
@@ -320,6 +338,51 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			req.LinuxDoConnectClientSecret = previousSettings.LinuxDoConnectClientSecret
 		}
+	}
+
+	req.LobeHubChatURL = strings.TrimSpace(req.LobeHubChatURL)
+	req.LobeHubOIDCIssuer = strings.TrimSpace(req.LobeHubOIDCIssuer)
+	req.LobeHubOIDCClientID = strings.TrimSpace(req.LobeHubOIDCClientID)
+	req.LobeHubOIDCClientSecret = strings.TrimSpace(req.LobeHubOIDCClientSecret)
+	req.LobeHubDefaultProvider = strings.TrimSpace(req.LobeHubDefaultProvider)
+	req.LobeHubDefaultModel = strings.TrimSpace(req.LobeHubDefaultModel)
+	req.LobeHubRuntimeConfigVersion = strings.TrimSpace(req.LobeHubRuntimeConfigVersion)
+	if req.LobeHubDefaultProvider == "" {
+		req.LobeHubDefaultProvider = "openai"
+	}
+	if req.LobeHubEnabled {
+		if req.LobeHubChatURL == "" {
+			response.BadRequest(c, "LobeHub Chat URL is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(req.LobeHubChatURL); err != nil {
+			response.BadRequest(c, "LobeHub Chat URL must be an absolute http(s) URL")
+			return
+		}
+		if req.LobeHubOIDCIssuer == "" {
+			response.BadRequest(c, "LobeHub OIDC Issuer is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(req.LobeHubOIDCIssuer); err != nil {
+			response.BadRequest(c, "LobeHub OIDC Issuer must be an absolute http(s) URL")
+			return
+		}
+		if req.LobeHubOIDCClientID == "" {
+			response.BadRequest(c, "LobeHub OIDC Client ID is required when enabled")
+			return
+		}
+		if req.LobeHubOIDCClientSecret == "" {
+			if previousSettings.LobeHubOIDCClientSecret == "" {
+				response.BadRequest(c, "LobeHub OIDC Client Secret is required when enabled")
+				return
+			}
+			req.LobeHubOIDCClientSecret = previousSettings.LobeHubOIDCClientSecret
+		}
+	} else if req.LobeHubOIDCClientSecret == "" {
+		req.LobeHubOIDCClientSecret = previousSettings.LobeHubOIDCClientSecret
+	}
+	if req.LobeHubRuntimeConfigVersion == "" {
+		req.LobeHubRuntimeConfigVersion = previousSettings.LobeHubRuntimeConfigVersion
 	}
 
 	// “购买订阅”页面配置验证
@@ -560,6 +623,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DocURL:                           req.DocURL,
 		HomeContent:                      req.HomeContent,
 		HideCcsImportButton:              req.HideCcsImportButton,
+		LobeHubEnabled:                   req.LobeHubEnabled,
+		LobeHubChatURL:                   req.LobeHubChatURL,
+		LobeHubOIDCIssuer:                req.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:              req.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecret:          req.LobeHubOIDCClientSecret,
+		LobeHubDefaultProvider:           req.LobeHubDefaultProvider,
+		LobeHubDefaultModel:              req.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:      req.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:          req.HideLobeHubImportButton,
 		PurchaseSubscriptionEnabled:      purchaseEnabled,
 		PurchaseSubscriptionURL:          purchaseURL,
 		CustomMenuItems:                  customMenuJSON,
@@ -669,6 +741,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		DocURL:                               updatedSettings.DocURL,
 		HomeContent:                          updatedSettings.HomeContent,
 		HideCcsImportButton:                  updatedSettings.HideCcsImportButton,
+		LobeHubEnabled:                       updatedSettings.LobeHubEnabled,
+		LobeHubChatURL:                       updatedSettings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                    updatedSettings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                  updatedSettings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:    updatedSettings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:               updatedSettings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                  updatedSettings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:          updatedSettings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:              updatedSettings.HideLobeHubImportButton,
 		PurchaseSubscriptionEnabled:          updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              updatedSettings.PurchaseSubscriptionURL,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
@@ -801,6 +882,33 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.HideCcsImportButton != after.HideCcsImportButton {
 		changed = append(changed, "hide_ccs_import_button")
+	}
+	if before.LobeHubEnabled != after.LobeHubEnabled {
+		changed = append(changed, "lobehub_enabled")
+	}
+	if before.LobeHubChatURL != after.LobeHubChatURL {
+		changed = append(changed, "lobehub_chat_url")
+	}
+	if before.LobeHubOIDCIssuer != after.LobeHubOIDCIssuer {
+		changed = append(changed, "lobehub_oidc_issuer")
+	}
+	if before.LobeHubOIDCClientID != after.LobeHubOIDCClientID {
+		changed = append(changed, "lobehub_oidc_client_id")
+	}
+	if req.LobeHubOIDCClientSecret != "" {
+		changed = append(changed, "lobehub_oidc_client_secret")
+	}
+	if before.LobeHubDefaultProvider != after.LobeHubDefaultProvider {
+		changed = append(changed, "lobehub_default_provider")
+	}
+	if before.LobeHubDefaultModel != after.LobeHubDefaultModel {
+		changed = append(changed, "lobehub_default_model")
+	}
+	if before.LobeHubRuntimeConfigVersion != after.LobeHubRuntimeConfigVersion {
+		changed = append(changed, "lobehub_runtime_config_version")
+	}
+	if before.HideLobeHubImportButton != after.HideLobeHubImportButton {
+		changed = append(changed, "hide_lobehub_import_button")
 	}
 	if before.DefaultConcurrency != after.DefaultConcurrency {
 		changed = append(changed, "default_concurrency")

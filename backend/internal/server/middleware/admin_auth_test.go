@@ -173,6 +173,10 @@ func (s *stubUserRepo) UpdateConcurrency(ctx context.Context, id int64, amount i
 	panic("unexpected UpdateConcurrency call")
 }
 
+func (s *stubUserRepo) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	panic("unexpected UpdateDefaultChatAPIKeyID call")
+}
+
 func (s *stubUserRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail call")
 }

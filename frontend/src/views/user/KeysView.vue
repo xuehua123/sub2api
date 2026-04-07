@@ -320,6 +320,10 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <LobeHubLaunchButton
+                :api-key-id="row.id"
+                :public-settings="publicSettings"
+              />
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -1038,6 +1042,7 @@
 
 <script setup lang="ts">
 	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { useRouter, useRoute } from 'vue-router'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1045,6 +1050,8 @@
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
+const router = useRouter()
+const route = useRoute()
 import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -1058,6 +1065,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
+	import LobeHubLaunchButton from '@/components/keys/LobeHubLaunchButton.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
@@ -1070,6 +1078,22 @@ const formatDateTimeLocal = (isoDate: string): string => {
   const date = new Date(isoDate)
   const pad = (n: number) => n.toString().padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
+
+const readSingleQueryValue = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0].trim() : ''
+  }
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+const getContinuationRedirect = (): string => {
+  const redirect = readSingleQueryValue(route.query.redirect)
+  return redirect.startsWith('/') ? redirect : ''
+}
+
+const shouldAutoOpenCreateModal = (): boolean => {
+  return readSingleQueryValue(route.query.openCreate) === '1'
 }
 
 interface GroupOption {
@@ -1545,6 +1569,14 @@ const handleSubmit = async () => {
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
         onboardingStore.nextStep(500)
       }
+
+      const continuationRedirect = getContinuationRedirect()
+      if (continuationRedirect) {
+        closeModals()
+        await loadApiKeys()
+        await router.push(continuationRedirect)
+        return
+      }
     }
     closeModals()
     loadApiKeys()
@@ -1778,6 +1810,9 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
+  if (shouldAutoOpenCreateModal()) {
+    showCreateModal.value = true
+  }
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()

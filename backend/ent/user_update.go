@@ -188,6 +188,33 @@ func (_u *UserUpdate) SetNillableNotes(v *string) *UserUpdate {
 	return _u
 }
 
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (_u *UserUpdate) SetDefaultChatAPIKeyID(v int64) *UserUpdate {
+	_u.mutation.ResetDefaultChatAPIKeyID()
+	_u.mutation.SetDefaultChatAPIKeyID(v)
+	return _u
+}
+
+// SetNillableDefaultChatAPIKeyID sets the "default_chat_api_key_id" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableDefaultChatAPIKeyID(v *int64) *UserUpdate {
+	if v != nil {
+		_u.SetDefaultChatAPIKeyID(*v)
+	}
+	return _u
+}
+
+// AddDefaultChatAPIKeyID adds value to the "default_chat_api_key_id" field.
+func (_u *UserUpdate) AddDefaultChatAPIKeyID(v int64) *UserUpdate {
+	_u.mutation.AddDefaultChatAPIKeyID(v)
+	return _u
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (_u *UserUpdate) ClearDefaultChatAPIKeyID() *UserUpdate {
+	_u.mutation.ClearDefaultChatAPIKeyID()
+	return _u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_u *UserUpdate) SetTotpSecretEncrypted(v string) *UserUpdate {
 	_u.mutation.SetTotpSecretEncrypted(v)
@@ -693,6 +720,15 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DefaultChatAPIKeyID(); ok {
+		_spec.SetField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDefaultChatAPIKeyID(); ok {
+		_spec.AddField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.DefaultChatAPIKeyIDCleared() {
+		_spec.ClearField(user.FieldDefaultChatAPIKeyID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)
@@ -1298,6 +1334,33 @@ func (_u *UserUpdateOne) SetNillableNotes(v *string) *UserUpdateOne {
 	return _u
 }
 
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (_u *UserUpdateOne) SetDefaultChatAPIKeyID(v int64) *UserUpdateOne {
+	_u.mutation.ResetDefaultChatAPIKeyID()
+	_u.mutation.SetDefaultChatAPIKeyID(v)
+	return _u
+}
+
+// SetNillableDefaultChatAPIKeyID sets the "default_chat_api_key_id" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableDefaultChatAPIKeyID(v *int64) *UserUpdateOne {
+	if v != nil {
+		_u.SetDefaultChatAPIKeyID(*v)
+	}
+	return _u
+}
+
+// AddDefaultChatAPIKeyID adds value to the "default_chat_api_key_id" field.
+func (_u *UserUpdateOne) AddDefaultChatAPIKeyID(v int64) *UserUpdateOne {
+	_u.mutation.AddDefaultChatAPIKeyID(v)
+	return _u
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (_u *UserUpdateOne) ClearDefaultChatAPIKeyID() *UserUpdateOne {
+	_u.mutation.ClearDefaultChatAPIKeyID()
+	return _u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_u *UserUpdateOne) SetTotpSecretEncrypted(v string) *UserUpdateOne {
 	_u.mutation.SetTotpSecretEncrypted(v)
@@ -1833,6 +1896,15 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.Notes(); ok {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.DefaultChatAPIKeyID(); ok {
+		_spec.SetField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedDefaultChatAPIKeyID(); ok {
+		_spec.AddField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
+	}
+	if _u.mutation.DefaultChatAPIKeyIDCleared() {
+		_spec.ClearField(user.FieldDefaultChatAPIKeyID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)

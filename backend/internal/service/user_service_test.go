@@ -17,8 +17,10 @@ import (
 // --- mock: UserRepository ---
 
 type mockUserRepo struct {
-	updateBalanceErr error
-	updateBalanceFn  func(ctx context.Context, id int64, amount float64) error
+	updateBalanceErr           error
+	updateBalanceFn            func(ctx context.Context, id int64, amount float64) error
+	updateDefaultChatAPIKeyErr error
+	updateDefaultChatAPIKeyFn  func(ctx context.Context, userID int64, apiKeyID *int64) error
 }
 
 func (m *mockUserRepo) Create(context.Context, *User) error               { return nil }
@@ -48,6 +50,12 @@ func (m *mockUserRepo) RemoveGroupFromAllowedGroups(context.Context, int64) (int
 func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) error { return nil }
 func (m *mockUserRepo) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error {
 	return nil
+}
+func (m *mockUserRepo) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	if m.updateDefaultChatAPIKeyFn != nil {
+		return m.updateDefaultChatAPIKeyFn(ctx, userID, apiKeyID)
+	}
+	return m.updateDefaultChatAPIKeyErr
 }
 func (m *mockUserRepo) UpdateTotpSecret(context.Context, int64, *string) error { return nil }
 func (m *mockUserRepo) EnableTotp(context.Context, int64) error                { return nil }
@@ -199,4 +207,30 @@ func TestNewUserService_FieldsAssignment(t *testing.T) {
 	require.Equal(t, repo, svc.userRepo)
 	require.Equal(t, auth, svc.authCacheInvalidator)
 	require.Equal(t, cache, svc.billingCache)
+}
+
+func TestUpdateDefaultChatAPIKeyID(t *testing.T) {
+	repo := &mockUserRepo{}
+	svc := NewUserService(repo, nil, nil)
+
+	var (
+		capturedUserID int64
+		capturedAPIKey *int64
+	)
+	repo.updateDefaultChatAPIKeyFn = func(_ context.Context, userID int64, apiKeyID *int64) error {
+		capturedUserID = userID
+		capturedAPIKey = apiKeyID
+		return nil
+	}
+
+	selectedAPIKeyID := int64(123)
+	err := svc.UpdateDefaultChatAPIKeyID(context.Background(), 42, &selectedAPIKeyID)
+	require.NoError(t, err)
+	require.Equal(t, int64(42), capturedUserID)
+	require.NotNil(t, capturedAPIKey)
+	require.Equal(t, int64(123), *capturedAPIKey)
+
+	err = svc.UpdateDefaultChatAPIKeyID(context.Background(), 42, nil)
+	require.NoError(t, err)
+	require.Nil(t, capturedAPIKey)
 }

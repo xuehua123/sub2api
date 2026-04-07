@@ -32,6 +32,7 @@ export interface User {
   balance: number // User balance for API usage
   concurrency: number // Allowed concurrent requests
   status: 'active' | 'disabled' // Account status
+  default_chat_api_key_id?: number | null
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
   subscriptions?: UserSubscription[] // User's active subscriptions
   created_at: string
@@ -104,6 +105,13 @@ export interface PublicSettings {
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean
+  lobehub_enabled: boolean
+  lobehub_chat_url: string
+  lobehub_oidc_issuer: string
+  lobehub_default_provider: string
+  lobehub_default_model: string
+  lobehub_runtime_config_version: string
+  hide_lobehub_import_button: boolean
   purchase_subscription_enabled: boolean
   purchase_subscription_url: string
   custom_menu_items: CustomMenuItem[]

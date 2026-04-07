@@ -83,3 +83,28 @@ func TestProvideSettingService_IncludesBuildVersionInInjectedSettings(t *testing
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 	require.Equal(t, "0.1.108", decoded["version"])
 }
+
+func TestSettingService_GetPublicSettings_ExposesLobeHubSettings(t *testing.T) {
+	repo := &settingPublicRepoStub{
+		values: map[string]string{
+			SettingKeyLobeHubEnabled:              "true",
+			SettingKeyLobeHubChatURL:              "https://chat.example.com",
+			SettingKeyLobeHubOIDCIssuer:           "https://api.example.com",
+			SettingKeyLobeHubDefaultProvider:      "openai",
+			SettingKeyLobeHubDefaultModel:         "gpt-4.1",
+			SettingKeyLobeHubRuntimeConfigVersion: "2026-04-07",
+			SettingKeyHideLobeHubImportButton:     "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetPublicSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.LobeHubEnabled)
+	require.Equal(t, "https://chat.example.com", settings.LobeHubChatURL)
+	require.Equal(t, "https://api.example.com", settings.LobeHubOIDCIssuer)
+	require.Equal(t, "openai", settings.LobeHubDefaultProvider)
+	require.Equal(t, "gpt-4.1", settings.LobeHubDefaultModel)
+	require.Equal(t, "2026-04-07", settings.LobeHubRuntimeConfigVersion)
+	require.True(t, settings.HideLobeHubImportButton)
+}

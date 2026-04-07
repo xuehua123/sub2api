@@ -168,6 +168,20 @@ func (_c *UserCreate) SetNillableNotes(v *string) *UserCreate {
 	return _c
 }
 
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (_c *UserCreate) SetDefaultChatAPIKeyID(v int64) *UserCreate {
+	_c.mutation.SetDefaultChatAPIKeyID(v)
+	return _c
+}
+
+// SetNillableDefaultChatAPIKeyID sets the "default_chat_api_key_id" field if the given value is not nil.
+func (_c *UserCreate) SetNillableDefaultChatAPIKeyID(v *int64) *UserCreate {
+	if v != nil {
+		_c.SetDefaultChatAPIKeyID(*v)
+	}
+	return _c
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (_c *UserCreate) SetTotpSecretEncrypted(v string) *UserCreate {
 	_c.mutation.SetTotpSecretEncrypted(v)
@@ -558,6 +572,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 		_spec.SetField(user.FieldNotes, field.TypeString, value)
 		_node.Notes = value
 	}
+	if value, ok := _c.mutation.DefaultChatAPIKeyID(); ok {
+		_spec.SetField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
+		_node.DefaultChatAPIKeyID = &value
+	}
 	if value, ok := _c.mutation.TotpSecretEncrypted(); ok {
 		_spec.SetField(user.FieldTotpSecretEncrypted, field.TypeString, value)
 		_node.TotpSecretEncrypted = &value
@@ -908,6 +926,30 @@ func (u *UserUpsert) UpdateNotes() *UserUpsert {
 	return u
 }
 
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (u *UserUpsert) SetDefaultChatAPIKeyID(v int64) *UserUpsert {
+	u.Set(user.FieldDefaultChatAPIKeyID, v)
+	return u
+}
+
+// UpdateDefaultChatAPIKeyID sets the "default_chat_api_key_id" field to the value that was provided on create.
+func (u *UserUpsert) UpdateDefaultChatAPIKeyID() *UserUpsert {
+	u.SetExcluded(user.FieldDefaultChatAPIKeyID)
+	return u
+}
+
+// AddDefaultChatAPIKeyID adds v to the "default_chat_api_key_id" field.
+func (u *UserUpsert) AddDefaultChatAPIKeyID(v int64) *UserUpsert {
+	u.Add(user.FieldDefaultChatAPIKeyID, v)
+	return u
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (u *UserUpsert) ClearDefaultChatAPIKeyID() *UserUpsert {
+	u.SetNull(user.FieldDefaultChatAPIKeyID)
+	return u
+}
+
 // SetTotpSecretEncrypted sets the "totp_secret_encrypted" field.
 func (u *UserUpsert) SetTotpSecretEncrypted(v string) *UserUpsert {
 	u.Set(user.FieldTotpSecretEncrypted, v)
@@ -1159,6 +1201,34 @@ func (u *UserUpsertOne) SetNotes(v string) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateNotes() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (u *UserUpsertOne) SetDefaultChatAPIKeyID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetDefaultChatAPIKeyID(v)
+	})
+}
+
+// AddDefaultChatAPIKeyID adds v to the "default_chat_api_key_id" field.
+func (u *UserUpsertOne) AddDefaultChatAPIKeyID(v int64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddDefaultChatAPIKeyID(v)
+	})
+}
+
+// UpdateDefaultChatAPIKeyID sets the "default_chat_api_key_id" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateDefaultChatAPIKeyID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateDefaultChatAPIKeyID()
+	})
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (u *UserUpsertOne) ClearDefaultChatAPIKeyID() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearDefaultChatAPIKeyID()
 	})
 }
 
@@ -1587,6 +1657,34 @@ func (u *UserUpsertBulk) SetNotes(v string) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateNotes() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateNotes()
+	})
+}
+
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (u *UserUpsertBulk) SetDefaultChatAPIKeyID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetDefaultChatAPIKeyID(v)
+	})
+}
+
+// AddDefaultChatAPIKeyID adds v to the "default_chat_api_key_id" field.
+func (u *UserUpsertBulk) AddDefaultChatAPIKeyID(v int64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddDefaultChatAPIKeyID(v)
+	})
+}
+
+// UpdateDefaultChatAPIKeyID sets the "default_chat_api_key_id" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateDefaultChatAPIKeyID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateDefaultChatAPIKeyID()
+	})
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (u *UserUpsertBulk) ClearDefaultChatAPIKeyID() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearDefaultChatAPIKeyID()
 	})
 }
 

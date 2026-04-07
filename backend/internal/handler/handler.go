@@ -38,6 +38,7 @@ type Handlers struct {
 	Auth          *AuthHandler
 	User          *UserHandler
 	APIKey        *APIKeyHandler
+	LobeHub       *LobeHubHandler
 	Usage         *UsageHandler
 	Redeem        *RedeemHandler
 	Subscription  *SubscriptionHandler

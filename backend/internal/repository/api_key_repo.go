@@ -613,6 +613,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		Balance:             u.Balance,
 		Concurrency:         u.Concurrency,
 		Status:              u.Status,
+		DefaultChatAPIKeyID: u.DefaultChatAPIKeyID,
 		TotpSecretEncrypted: u.TotpSecretEncrypted,
 		TotpEnabled:         u.TotpEnabled,
 		TotpEnabledAt:       u.TotpEnabledAt,

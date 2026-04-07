@@ -1512,6 +1512,167 @@
           </div>
         </div>
 
+        <!-- LobeHub Settings -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.lobehub.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.lobehub.description') }}
+            </p>
+          </div>
+          <div class="space-y-6 p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.lobehub.enabled')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.lobehub_enabled" />
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.chatUrl') }}
+                </label>
+                <input
+                  v-model="form.lobehub_chat_url"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.chatUrlPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.chatUrlHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.oidcIssuer') }}
+                </label>
+                <input
+                  v-model="form.lobehub_oidc_issuer"
+                  type="url"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.oidcIssuerPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.oidcIssuerHint') }}
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.clientId') }}
+                </label>
+                <input
+                  v-model="form.lobehub_oidc_client_id"
+                  type="text"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.clientIdPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.clientIdHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.clientSecret') }}
+                </label>
+                <input
+                  v-model="form.lobehub_oidc_client_secret"
+                  type="password"
+                  class="input"
+                  autocomplete="new-password"
+                  autocapitalize="off"
+                  spellcheck="false"
+                  :placeholder="
+                    form.lobehub_oidc_client_secret_configured
+                      ? t('admin.settings.lobehub.clientSecretConfiguredPlaceholder')
+                      : t('admin.settings.lobehub.clientSecretPlaceholder')
+                  "
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    form.lobehub_oidc_client_secret_configured
+                      ? t('admin.settings.lobehub.clientSecretConfiguredHint')
+                      : t('admin.settings.lobehub.clientSecretHint')
+                  }}
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.defaultProvider') }}
+                </label>
+                <input
+                  v-model="form.lobehub_default_provider"
+                  type="text"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.defaultProviderPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.defaultProviderHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.defaultModel') }}
+                </label>
+                <input
+                  v-model="form.lobehub_default_model"
+                  type="text"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.defaultModelPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.defaultModelHint') }}
+                </p>
+              </div>
+
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t('admin.settings.lobehub.runtimeConfigVersion') }}
+                </label>
+                <input
+                  v-model="form.lobehub_runtime_config_version"
+                  type="text"
+                  class="input font-mono text-sm"
+                  :placeholder="t('admin.settings.lobehub.runtimeConfigVersionPlaceholder')"
+                />
+                <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.runtimeConfigVersionHint') }}
+                </p>
+              </div>
+            </div>
+
+            <div
+              class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.lobehub.hideImportButton')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.lobehub.hideImportButtonHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.hide_lobehub_import_button" />
+            </div>
+          </div>
+        </div>
+
         <!-- Purchase Subscription Page -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -2075,6 +2236,7 @@ type SettingsForm = SystemSettings & {
   smtp_password: string
   turnstile_secret_key: string
   linuxdo_connect_client_secret: string
+  lobehub_oidc_client_secret: string
 }
 
 const form = reactive<SettingsForm>({
@@ -2098,6 +2260,16 @@ const form = reactive<SettingsForm>({
   home_content: '',
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
+  lobehub_enabled: false,
+  lobehub_chat_url: '',
+  lobehub_oidc_issuer: '',
+  lobehub_oidc_client_id: '',
+  lobehub_oidc_client_secret: '',
+  lobehub_oidc_client_secret_configured: false,
+  lobehub_default_provider: 'openai',
+  lobehub_default_model: '',
+  lobehub_runtime_config_version: '',
+  hide_lobehub_import_button: false,
   purchase_subscription_enabled: false,
   purchase_subscription_url: '',
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
@@ -2306,6 +2478,7 @@ async function loadSettings() {
     smtpPasswordManuallyEdited.value = false
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
+    form.lobehub_oidc_client_secret = ''
   } catch (error: any) {
     loadFailed.value = true
     appStore.showError(
@@ -2421,6 +2594,15 @@ async function saveSettings() {
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
+      lobehub_enabled: form.lobehub_enabled,
+      lobehub_chat_url: form.lobehub_chat_url,
+      lobehub_oidc_issuer: form.lobehub_oidc_issuer,
+      lobehub_oidc_client_id: form.lobehub_oidc_client_id,
+      lobehub_oidc_client_secret: form.lobehub_oidc_client_secret || undefined,
+      lobehub_default_provider: form.lobehub_default_provider,
+      lobehub_default_model: form.lobehub_default_model,
+      lobehub_runtime_config_version: form.lobehub_runtime_config_version,
+      hide_lobehub_import_button: form.hide_lobehub_import_button,
       purchase_subscription_enabled: form.purchase_subscription_enabled,
       purchase_subscription_url: form.purchase_subscription_url,
       custom_menu_items: form.custom_menu_items,
@@ -2463,6 +2645,7 @@ async function saveSettings() {
     smtpPasswordManuallyEdited.value = false
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
+    form.lobehub_oidc_client_secret = ''
     // Refresh cached settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
     await adminSettingsStore.fetch(true)

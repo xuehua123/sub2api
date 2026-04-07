@@ -39,6 +39,16 @@ type SystemSettings struct {
 	DocURL                      string
 	HomeContent                 string
 	HideCcsImportButton         bool
+	LobeHubEnabled              bool
+	LobeHubChatURL              string
+	LobeHubOIDCIssuer           string
+	LobeHubOIDCClientID         string
+	LobeHubOIDCClientSecret     string
+	LobeHubOIDCClientSecretConfigured bool
+	LobeHubDefaultProvider      string
+	LobeHubDefaultModel         string
+	LobeHubRuntimeConfigVersion string
+	HideLobeHubImportButton     bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
 	CustomMenuItems             string // JSON array of custom menu items
@@ -103,6 +113,13 @@ type PublicSettings struct {
 	DocURL                           string
 	HomeContent                      string
 	HideCcsImportButton              bool
+	LobeHubEnabled                   bool
+	LobeHubChatURL                   string
+	LobeHubOIDCIssuer                string
+	LobeHubDefaultProvider           string
+	LobeHubDefaultModel              string
+	LobeHubRuntimeConfigVersion      string
+	HideLobeHubImportButton          bool
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string

@@ -106,18 +106,28 @@ const (
 	SettingKeyLinuxDoConnectRedirectURL  = "linuxdo_connect_redirect_url"
 
 	// OEM设置
-	SettingKeySiteName                    = "site_name"                     // 网站名称
-	SettingKeySiteLogo                    = "site_logo"                     // 网站Logo (base64)
-	SettingKeySiteSubtitle                = "site_subtitle"                 // 网站副标题
-	SettingKeyAPIBaseURL                  = "api_base_url"                  // API端点地址（用于客户端配置和导入）
-	SettingKeyContactInfo                 = "contact_info"                  // 客服联系方式
-	SettingKeyDocURL                      = "doc_url"                       // 文档链接
-	SettingKeyHomeContent                 = "home_content"                  // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
-	SettingKeyHideCcsImportButton         = "hide_ccs_import_button"        // 是否隐藏 API Keys 页面的导入 CCS 按钮
-	SettingKeyPurchaseSubscriptionEnabled = "purchase_subscription_enabled" // 是否展示"购买订阅"页面入口
-	SettingKeyPurchaseSubscriptionURL     = "purchase_subscription_url"     // "购买订阅"页面 URL（作为 iframe src）
-	SettingKeyCustomMenuItems             = "custom_menu_items"             // 自定义菜单项（JSON 数组）
-	SettingKeyCustomEndpoints             = "custom_endpoints"              // 自定义端点列表（JSON 数组）
+	SettingKeySiteName                    = "site_name"                      // 网站名称
+	SettingKeySiteLogo                    = "site_logo"                      // 网站Logo (base64)
+	SettingKeySiteSubtitle                = "site_subtitle"                  // 网站副标题
+	SettingKeyAPIBaseURL                  = "api_base_url"                   // API端点地址（用于客户端配置和导入）
+	SettingKeyContactInfo                 = "contact_info"                   // 客服联系方式
+	SettingKeyDocURL                      = "doc_url"                        // 文档链接
+	SettingKeyHomeContent                 = "home_content"                   // 首页内容（支持 Markdown/HTML，或 URL 作为 iframe src）
+	SettingKeyHideCcsImportButton         = "hide_ccs_import_button"         // 是否隐藏 API Keys 页面的导入 CCS 按钮
+	SettingKeyPurchaseSubscriptionEnabled = "purchase_subscription_enabled"  // 是否展示"购买订阅"页面入口
+	SettingKeyPurchaseSubscriptionURL     = "purchase_subscription_url"      // "购买订阅"页面 URL（作为 iframe src）
+	SettingKeyCustomMenuItems             = "custom_menu_items"              // 自定义菜单项（JSON 数组）
+	SettingKeyCustomEndpoints             = "custom_endpoints"               // 自定义端点列表（JSON 数组）
+	SettingKeyLobeHubEnabled              = "lobehub_enabled"                // 是否启用 LobeHub 集成
+	SettingKeyLobeHubChatURL              = "lobehub_chat_url"               // LobeHub 对外访问地址
+	SettingKeyLobeHubOIDCIssuer           = "lobehub_oidc_issuer"            // LobeHub Generic OIDC issuer
+	SettingKeyLobeHubOIDCClientID         = "lobehub_oidc_client_id"         // LobeHub OIDC client id
+	SettingKeyLobeHubOIDCClientSecret     = "lobehub_oidc_client_secret"     // LobeHub OIDC client secret
+	SettingKeyLobeHubDefaultProvider      = "lobehub_default_provider"       // LobeHub 首选 provider
+	SettingKeyLobeHubDefaultModel         = "lobehub_default_model"          // LobeHub 首选模型
+	SettingKeyLobeHubRuntimeConfigVersion = "lobehub_runtime_config_version" // LobeHub 运行时配置版本
+	SettingKeyHideLobeHubImportButton     = "hide_lobehub_import_button"     // 是否隐藏 LobeHub 导入按钮
+	SettingKeyLobeHubOIDCPrivateKeyPEM    = "lobehub_oidc_private_key_pem"   // LobeHub OIDC RS256 私钥（内部使用）
 
 	// 默认配置
 	SettingKeyDefaultConcurrency   = "default_concurrency"   // 新用户默认并发量

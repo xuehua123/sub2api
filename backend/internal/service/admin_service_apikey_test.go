@@ -68,6 +68,9 @@ func (s *userRepoStubForGroupUpdate) RemoveGroupFromAllowedGroups(context.Contex
 func (s *userRepoStubForGroupUpdate) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error {
 	panic("unexpected")
 }
+func (s *userRepoStubForGroupUpdate) UpdateDefaultChatAPIKeyID(context.Context, int64, *int64) error {
+	panic("unexpected")
+}
 func (s *userRepoStubForGroupUpdate) UpdateTotpSecret(context.Context, int64, *string) error {
 	panic("unexpected")
 }

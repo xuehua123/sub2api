@@ -202,3 +202,30 @@ func TestParseDefaultSubscriptions_NormalizesValues(t *testing.T) {
 		{GroupID: 12, ValidityDays: MaxValidityDays},
 	}, got)
 }
+
+func TestSettingService_UpdateSettings_PersistsLobeHubSettings(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		LobeHubEnabled:              true,
+		LobeHubChatURL:              "https://chat.example.com",
+		LobeHubOIDCIssuer:           "https://api.example.com",
+		LobeHubOIDCClientID:         "lobehub-client",
+		LobeHubOIDCClientSecret:     "lobehub-secret",
+		LobeHubDefaultProvider:      "openai",
+		LobeHubDefaultModel:         "gpt-4.1",
+		LobeHubRuntimeConfigVersion: "2026-04-07",
+		HideLobeHubImportButton:     true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "true", repo.updates[SettingKeyLobeHubEnabled])
+	require.Equal(t, "https://chat.example.com", repo.updates[SettingKeyLobeHubChatURL])
+	require.Equal(t, "https://api.example.com", repo.updates[SettingKeyLobeHubOIDCIssuer])
+	require.Equal(t, "lobehub-client", repo.updates[SettingKeyLobeHubOIDCClientID])
+	require.Equal(t, "lobehub-secret", repo.updates[SettingKeyLobeHubOIDCClientSecret])
+	require.Equal(t, "openai", repo.updates[SettingKeyLobeHubDefaultProvider])
+	require.Equal(t, "gpt-4.1", repo.updates[SettingKeyLobeHubDefaultModel])
+	require.Equal(t, "2026-04-07", repo.updates[SettingKeyLobeHubRuntimeConfigVersion])
+	require.Equal(t, "true", repo.updates[SettingKeyHideLobeHubImportButton])
+}

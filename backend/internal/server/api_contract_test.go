@@ -527,9 +527,18 @@ func TestAPIContracts(t *testing.T) {
 						"fallback_model_openai": "gpt-4o",
 						"enable_identity_patch": true,
 						"identity_patch_prompt": "",
-						"invitation_code_enabled": false,
-						"home_content": "",
+					"invitation_code_enabled": false,
+					"home_content": "",
 					"hide_ccs_import_button": false,
+					"lobehub_enabled": false,
+					"lobehub_chat_url": "",
+					"lobehub_oidc_issuer": "",
+					"lobehub_oidc_client_id": "",
+					"lobehub_oidc_client_secret_configured": false,
+					"lobehub_default_provider": "openai",
+					"lobehub_default_model": "",
+					"lobehub_runtime_config_version": "",
+					"hide_lobehub_import_button": false,
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
 					"min_claude_code_version": "",
@@ -797,6 +806,15 @@ func (r *stubUserRepo) DeductBalance(ctx context.Context, id int64, amount float
 
 func (r *stubUserRepo) UpdateConcurrency(ctx context.Context, id int64, amount int) error {
 	return errors.New("not implemented")
+}
+
+func (r *stubUserRepo) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	user, ok := r.users[userID]
+	if !ok {
+		return service.ErrUserNotFound
+	}
+	user.DefaultChatAPIKeyID = apiKeyID
+	return nil
 }
 
 func (r *stubUserRepo) ExistsByEmail(ctx context.Context, email string) (bool, error) {

@@ -110,6 +110,11 @@ func Notes(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldNotes, v))
 }
 
+// DefaultChatAPIKeyID applies equality check predicate on the "default_chat_api_key_id" field. It's identical to DefaultChatAPIKeyIDEQ.
+func DefaultChatAPIKeyID(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
+}
+
 // TotpSecretEncrypted applies equality check predicate on the "totp_secret_encrypted" field. It's identical to TotpSecretEncryptedEQ.
 func TotpSecretEncrypted(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldTotpSecretEncrypted, v))
@@ -723,6 +728,56 @@ func NotesEqualFold(v string) predicate.User {
 // NotesContainsFold applies the ContainsFold predicate on the "notes" field.
 func NotesContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldNotes, v))
+}
+
+// DefaultChatAPIKeyIDEQ applies the EQ predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDNEQ applies the NEQ predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDIn applies the In predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldDefaultChatAPIKeyID, vs...))
+}
+
+// DefaultChatAPIKeyIDNotIn applies the NotIn predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNotIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldDefaultChatAPIKeyID, vs...))
+}
+
+// DefaultChatAPIKeyIDGT applies the GT predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDGT(v int64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDGTE applies the GTE predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDGTE(v int64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDLT applies the LT predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDLT(v int64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDLTE applies the LTE predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDLTE(v int64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDIsNil applies the IsNil predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldDefaultChatAPIKeyID))
+}
+
+// DefaultChatAPIKeyIDNotNil applies the NotNil predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldDefaultChatAPIKeyID))
 }
 
 // TotpSecretEncryptedEQ applies the EQ predicate on the "totp_secret_encrypted" field.

@@ -39,6 +39,8 @@ type User struct {
 	Username string `json:"username,omitempty"`
 	// Notes holds the value of the "notes" field.
 	Notes string `json:"notes,omitempty"`
+	// DefaultChatAPIKeyID holds the value of the "default_chat_api_key_id" field.
+	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
 	// TotpSecretEncrypted holds the value of the "totp_secret_encrypted" field.
 	TotpSecretEncrypted *string `json:"totp_secret_encrypted,omitempty"`
 	// TotpEnabled holds the value of the "totp_enabled" field.
@@ -177,7 +179,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency:
+		case user.FieldID, user.FieldConcurrency, user.FieldDefaultChatAPIKeyID:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted:
 			values[i] = new(sql.NullString)
@@ -270,6 +272,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field notes", values[i])
 			} else if value.Valid {
 				_m.Notes = value.String
+			}
+		case user.FieldDefaultChatAPIKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field default_chat_api_key_id", values[i])
+			} else if value.Valid {
+				_m.DefaultChatAPIKeyID = new(int64)
+				*_m.DefaultChatAPIKeyID = value.Int64
 			}
 		case user.FieldTotpSecretEncrypted:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -411,6 +420,11 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("notes=")
 	builder.WriteString(_m.Notes)
+	builder.WriteString(", ")
+	if v := _m.DefaultChatAPIKeyID; v != nil {
+		builder.WriteString("default_chat_api_key_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.TotpSecretEncrypted; v != nil {
 		builder.WriteString("totp_secret_encrypted=")

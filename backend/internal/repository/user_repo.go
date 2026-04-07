@@ -53,7 +53,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		txClient = r.client
 	}
 
-	created, err := txClient.User.Create().
+	createdBuilder := txClient.User.Create().
 		SetEmail(userIn.Email).
 		SetUsername(userIn.Username).
 		SetNotes(userIn.Notes).
@@ -61,13 +61,16 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetRole(userIn.Role).
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
-		SetStatus(userIn.Status).
-		Save(ctx)
+		SetStatus(userIn.Status)
+	if userIn.DefaultChatAPIKeyID != nil {
+		createdBuilder = createdBuilder.SetDefaultChatAPIKeyID(*userIn.DefaultChatAPIKeyID)
+	}
+	createdUser, err := createdBuilder.Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
 	}
 
-	if err := r.syncUserAllowedGroupsWithClient(ctx, txClient, created.ID, userIn.AllowedGroups); err != nil {
+	if err := r.syncUserAllowedGroupsWithClient(ctx, txClient, createdUser.ID, userIn.AllowedGroups); err != nil {
 		return err
 	}
 
@@ -77,7 +80,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		}
 	}
 
-	applyUserEntityToService(userIn, created)
+	applyUserEntityToService(userIn, createdUser)
 	return nil
 }
 
@@ -135,7 +138,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		txClient = r.client
 	}
 
-	updated, err := txClient.User.UpdateOneID(userIn.ID).
+	updatedBuilder := txClient.User.UpdateOneID(userIn.ID).
 		SetEmail(userIn.Email).
 		SetUsername(userIn.Username).
 		SetNotes(userIn.Notes).
@@ -143,8 +146,13 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetRole(userIn.Role).
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
-		SetStatus(userIn.Status).
-		Save(ctx)
+		SetStatus(userIn.Status)
+	if userIn.DefaultChatAPIKeyID != nil {
+		updatedBuilder = updatedBuilder.SetDefaultChatAPIKeyID(*userIn.DefaultChatAPIKeyID)
+	} else {
+		updatedBuilder = updatedBuilder.ClearDefaultChatAPIKeyID()
+	}
+	updated, err := updatedBuilder.Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrUserNotFound, service.ErrEmailExists)
 	}
@@ -375,6 +383,20 @@ func (r *userRepository) UpdateConcurrency(ctx context.Context, id int64, amount
 
 func (r *userRepository) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	return r.client.User.Query().Where(dbuser.EmailEQ(email)).Exist(ctx)
+}
+
+func (r *userRepository) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.User.UpdateOneID(userID)
+	if apiKeyID != nil {
+		update = update.SetDefaultChatAPIKeyID(*apiKeyID)
+	} else {
+		update = update.ClearDefaultChatAPIKeyID()
+	}
+	if _, err := update.Save(ctx); err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return nil
 }
 
 func (r *userRepository) AddGroupToAllowedGroups(ctx context.Context, userID int64, groupID int64) error {

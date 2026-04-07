@@ -44,6 +44,7 @@ Sub2API is an AI API gateway platform designed to distribute and manage API quot
 - **Rate Limiting** - Configurable request and token rate limits
 - **Admin Dashboard** - Web interface for monitoring and management
 - **External System Integration** - Embed external systems (e.g. payment, ticketing) via iframe to extend the admin dashboard
+- **Official LobeHub SSO Bridge** - Launch official LobeHub from Sub2API and support chat-domain direct-open through a standalone gateway
 
 ## ❤️ Sponsors
 
@@ -335,6 +336,31 @@ docker compose -f docker-compose.local.yml logs -f
 docker compose -f docker-compose.local.yml down
 rm -rf data/ postgres_data/ redis_data/
 ```
+
+#### Optional: Official LobeHub Chat Gateway
+
+This branch also includes a standalone `gateway/` service for the `chat.example.com` entry layer described by the LobeHub integration plan.
+
+It is intended to sit in front of an unmodified official LobeHub deployment and handle:
+
+- zero-click direct-open SSO
+- `refresh-target` redirects back to Sub2API
+- persistent-settings `ConfigProbe` based on official LobeHub user state
+- bootstrap ticket exchange / consume flow
+- normal reverse proxying to official LobeHub
+
+Files:
+
+- `gateway/README.md`
+- `gateway/.env.example`
+- `gateway/Dockerfile`
+- `deploy/docker-compose.lobehub-gateway.yml`
+
+Current implementation details:
+
+- the gateway reads the authenticated official LobeHub `user.getUserState` response to observe current persisted settings
+- it asks Sub2API to compare those observed settings with the desired `target token` configuration before deciding whether to proxy or re-import
+- if probe data is missing, invalid, or mismatched, the gateway biases toward automatic re-import
 
 ---
 

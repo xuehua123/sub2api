@@ -61,6 +61,9 @@ func (User) Fields() []ent.Field {
 		field.String("notes").
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
 			Default(""),
+		field.Int64("default_chat_api_key_id").
+			Optional().
+			Nillable(),
 
 		// TOTP 双因素认证字段
 		field.String("totp_secret_encrypted").

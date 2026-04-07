@@ -37,6 +37,34 @@ func ProvideEmailQueueService(emailService *EmailService) *EmailQueueService {
 	return NewEmailQueueService(emailService, 3)
 }
 
+func ProvideLobeHubOIDCService(
+	settingsReader LobeHubSettingsReader,
+	userReader LobeHubUserReader,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubOIDCService {
+	return NewLobeHubOIDCService(settingsReader, userReader, stateStore, signingKeyProvider, time.Now)
+}
+
+func ProvideLobeHubLaunchService(
+	settingsReader LobeHubSettingsReader,
+	apiKeyReader LobeHubAPIKeyReader,
+	stateStore LobeHubLaunchStateStore,
+	webSessionCreator LobeHubOIDCWebSessionCreator,
+) *LobeHubLaunchService {
+	return NewLobeHubLaunchService(settingsReader, apiKeyReader, stateStore, webSessionCreator, time.Now)
+}
+
+func ProvideLobeHubSSOService(
+	settingsReader LobeHubSettingsReader,
+	userStore LobeHubUserPreferenceStore,
+	apiKeyReader LobeHubAPIKeyReader,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubSSOService {
+	return NewLobeHubSSOService(settingsReader, userStore, apiKeyReader, stateStore, signingKeyProvider, time.Now)
+}
+
 // ProvideTokenRefreshService creates and starts TokenRefreshService
 func ProvideTokenRefreshService(
 	accountRepo AccountRepository,
@@ -423,6 +451,15 @@ var ProviderSet = wire.NewSet(
 	NewAccountUsageService,
 	NewAccountTestService,
 	ProvideSettingService,
+	ProvideLobeHubOIDCService,
+	wire.Bind(new(LobeHubUserReader), new(*UserService)),
+	wire.Bind(new(LobeHubUserPreferenceStore), new(*UserService)),
+	wire.Bind(new(LobeHubOIDCSigningKeyProvider), new(*SettingService)),
+	wire.Bind(new(LobeHubOIDCWebSessionCreator), new(*LobeHubOIDCService)),
+	ProvideLobeHubLaunchService,
+	ProvideLobeHubSSOService,
+	wire.Bind(new(LobeHubSettingsReader), new(*SettingService)),
+	wire.Bind(new(LobeHubAPIKeyReader), new(*APIKeyService)),
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,

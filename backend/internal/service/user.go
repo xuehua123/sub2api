@@ -16,6 +16,7 @@ type User struct {
 	Balance       float64
 	Concurrency   int
 	Status        string
+	DefaultChatAPIKeyID *int64
 	AllowedGroups []int64
 	TokenVersion  int64 // Incremented on password change to invalidate existing tokens
 	CreatedAt     time.Time
