@@ -927,6 +927,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		LobeHubEnabled:                   settings[SettingKeyLobeHubEnabled] == "true",
 		LobeHubChatURL:                   strings.TrimSpace(settings[SettingKeyLobeHubChatURL]),
 		LobeHubOIDCIssuer:                strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer]),
+		LobeHubOIDCClientID:              strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientID]),
 		LobeHubDefaultProvider:           s.getStringOrDefault(settings, SettingKeyLobeHubDefaultProvider, "openai"),
 		LobeHubDefaultModel:              strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel]),
 		LobeHubRuntimeConfigVersion:      strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion]),
