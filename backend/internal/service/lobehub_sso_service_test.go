@@ -333,14 +333,22 @@ func TestLobeHubSSOService_ExchangeBootstrapAndConsume(t *testing.T) {
 
 	redirectResult, err := svc.ConsumeBootstrap(context.Background(), "bootstrap-2")
 	require.NoError(t, err)
+	require.Equal(t, "openai", redirectResult.ProviderID)
+	require.False(t, redirectResult.FetchOnClient)
+	require.Equal(t, map[string]string{
+		"apiKey":  "sk-user-1",
+		"baseURL": "https://api.example.com/v1",
+	}, redirectResult.KeyVaults)
 	redirectURL, err := url.Parse(redirectResult.RedirectURL)
 	require.NoError(t, err)
 	require.Equal(t, "https", redirectURL.Scheme)
 	require.Equal(t, "chat.example.com", redirectURL.Host)
 	require.Equal(t, "/workspace", redirectURL.Path)
 	settingsJSON := redirectURL.Query().Get("settings")
-	require.Contains(t, settingsJSON, `"apiKey":"sk-user-1"`)
-	require.Contains(t, settingsJSON, `"baseURL":"https://api.example.com/v1"`)
+	require.NotContains(t, settingsJSON, `"apiKey":"sk-user-1"`)
+	require.NotContains(t, settingsJSON, `"baseURL":"https://api.example.com/v1"`)
+	require.Contains(t, settingsJSON, `"provider":"openai"`)
+	require.Contains(t, settingsJSON, `"model":"gpt-4.1"`)
 	require.Contains(t, settingsJSON, `"enabledModels":["gpt-4.1"]`)
 }
 
@@ -394,12 +402,6 @@ func TestLobeHubSSOService_CompareCurrentConfigMatchesImportedSettings(t *testin
 			"openai": {
 				APIKey:  "sk-user-1",
 				BaseURL: "https://api.example.com/v1",
-			},
-		},
-		LanguageModel: map[string]LobeHubObservedLanguageModel{
-			"openai": {
-				Enabled:       true,
-				EnabledModels: []string{"gpt-4.1"},
 			},
 		},
 	})
@@ -463,12 +465,6 @@ func TestLobeHubSSOService_CompareCurrentConfigReturnsMismatchWhenObservedSettin
 			"openai": {
 				APIKey:  "sk-someone-else",
 				BaseURL: "https://api.example.com/v1",
-			},
-		},
-		LanguageModel: map[string]LobeHubObservedLanguageModel{
-			"openai": {
-				Enabled:       true,
-				EnabledModels: []string{"gpt-4.1"},
 			},
 		},
 	})

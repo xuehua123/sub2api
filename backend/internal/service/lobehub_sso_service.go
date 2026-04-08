@@ -47,7 +47,10 @@ type LobeHubBootstrapExchangeResult struct {
 }
 
 type LobeHubBootstrapConsumeResult struct {
-	RedirectURL string `json:"redirect_url"`
+	RedirectURL   string            `json:"redirect_url"`
+	ProviderID    string            `json:"provider_id"`
+	FetchOnClient bool              `json:"fetch_on_client"`
+	KeyVaults     map[string]string `json:"key_vaults"`
 }
 
 type LobeHubObservedSettings struct {
@@ -176,11 +179,20 @@ func (s *LobeHubSSOService) ConsumeBootstrap(ctx context.Context, ticketID strin
 		return nil, ErrLobeHubAPIKeyNotOwned
 	}
 
-	redirectURL, err := buildLobeHubRedirectURL(ticket.ReturnURL, buildLobeHubSettingsPayload(cfg, apiKey))
+	providerID := normalizeLobeHubProvider(settingsProvider(cfg))
+	redirectURL, err := buildLobeHubRedirectURL(ticket.ReturnURL, buildLobeHubSettingsPayload(cfg))
 	if err != nil {
 		return nil, err
 	}
-	return &LobeHubBootstrapConsumeResult{RedirectURL: redirectURL}, nil
+	return &LobeHubBootstrapConsumeResult{
+		RedirectURL:   redirectURL,
+		ProviderID:    providerID,
+		FetchOnClient: false,
+		KeyVaults: map[string]string{
+			"apiKey":  strings.TrimSpace(apiKey.Key),
+			"baseURL": normalizeLobeHubBaseURL(cfg.APIBaseURL),
+		},
+	}, nil
 }
 
 func (s *LobeHubSSOService) CompareCurrentConfig(ctx context.Context, targetToken string, observed *LobeHubObservedSettings) (*LobeHubConfigProbeResult, error) {
@@ -416,8 +428,7 @@ func buildLobeHubDesiredConfigFingerprint(userID, apiKeyID int64, settings *Syst
 		strconv.FormatInt(userID, 10),
 		strconv.FormatInt(apiKeyID, 10),
 		baseURL,
-		strings.TrimSpace(settings.LobeHubDefaultProvider),
-		strings.TrimSpace(settings.LobeHubDefaultModel),
+		normalizeLobeHubProvider(settingsProvider(settings)),
 		lobeHubSettingsSchemaVersion,
 		strings.TrimSpace(settings.LobeHubRuntimeConfigVersion),
 	}, "|")
@@ -425,30 +436,26 @@ func buildLobeHubDesiredConfigFingerprint(userID, apiKeyID int64, settings *Syst
 	return hex.EncodeToString(sum[:])
 }
 
-func buildLobeHubSettingsPayload(settings *SystemSettings, apiKey *APIKey) map[string]any {
-	provider := strings.TrimSpace(settings.LobeHubDefaultProvider)
-	if provider == "" {
-		provider = "openai"
-	}
-	modelConfig := map[string]any{
-		"enabled":             true,
-		"fetchOnClient":       true,
-		"autoFetchModelLists": true,
-	}
-	if model := strings.TrimSpace(settings.LobeHubDefaultModel); model != "" {
-		modelConfig["enabledModels"] = []string{model}
-	}
-	return map[string]any{
-		"keyVaults": map[string]any{
-			provider: map[string]any{
-				"apiKey":  apiKey.Key,
-				"baseURL": normalizeLobeHubBaseURL(settings.APIBaseURL),
+func buildLobeHubSettingsPayload(settings *SystemSettings) map[string]any {
+	provider := normalizeLobeHubProvider(settingsProvider(settings))
+	model := strings.TrimSpace(settings.LobeHubDefaultModel)
+
+	payload := map[string]any{}
+	if model != "" {
+		payload["defaultAgent"] = map[string]any{
+			"config": map[string]any{
+				"model":    model,
+				"provider": provider,
 			},
-		},
-		"languageModel": map[string]any{
-			provider: modelConfig,
-		},
+		}
+		payload["languageModel"] = map[string]any{
+			provider: map[string]any{
+				"enabled":       true,
+				"enabledModels": []string{model},
+			},
+		}
 	}
+	return payload
 }
 
 func buildLobeHubRedirectURL(returnURL string, settingsPayload map[string]any) (string, error) {
@@ -521,10 +528,7 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 		return false
 	}
 
-	provider := strings.TrimSpace(settings.LobeHubDefaultProvider)
-	if provider == "" {
-		provider = "openai"
-	}
+	provider := normalizeLobeHubProvider(settingsProvider(settings))
 
 	vault, ok := observed.KeyVaults[provider]
 	if !ok {
@@ -536,20 +540,20 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	if normalizeLobeHubBaseURL(vault.BaseURL) != normalizeLobeHubBaseURL(settings.APIBaseURL) {
 		return false
 	}
+	return true
+}
 
-	modelConfig, ok := observed.LanguageModel[provider]
-	if !ok || !modelConfig.Enabled {
-		return false
+func settingsProvider(settings *SystemSettings) string {
+	if settings == nil {
+		return "openai"
 	}
+	return strings.TrimSpace(settings.LobeHubDefaultProvider)
+}
 
-	model := strings.TrimSpace(settings.LobeHubDefaultModel)
-	if model == "" {
-		return true
+func normalizeLobeHubProvider(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return "openai"
 	}
-	for _, enabledModel := range modelConfig.EnabledModels {
-		if strings.TrimSpace(enabledModel) == model {
-			return true
-		}
-	}
-	return false
+	return provider
 }

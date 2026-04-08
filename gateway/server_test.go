@@ -159,19 +159,13 @@ func TestServerProxiesWhenSessionAndSyncStateAlreadyMatch(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/trpc/lambda/user.getUserState":
+		case "/trpc/lambda/aiProvider.getAiProviderRuntimeState":
 			writeTRPCResponse(t, w, map[string]any{
-				"settings": map[string]any{
-					"keyVaults": map[string]any{
-						"openai": map[string]any{
+				"runtimeConfig": map[string]any{
+					"openai": map[string]any{
+						"keyVaults": map[string]any{
 							"apiKey":  "sk-user-1",
 							"baseURL": "https://api.example.com/v1",
-						},
-					},
-					"languageModel": map[string]any{
-						"openai": map[string]any{
-							"enabled":       true,
-							"enabledModels": []string{"gpt-4.1"},
 						},
 					},
 				},
@@ -262,19 +256,13 @@ func TestServerProxiesWhenConfigProbeMatches(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/trpc/lambda/user.getUserState":
+		case "/trpc/lambda/aiProvider.getAiProviderRuntimeState":
 			writeTRPCResponse(t, w, map[string]any{
-				"settings": map[string]any{
-					"keyVaults": map[string]any{
-						"openai": map[string]any{
+				"runtimeConfig": map[string]any{
+					"openai": map[string]any{
+						"keyVaults": map[string]any{
 							"apiKey":  "sk-user-1",
 							"baseURL": "https://api.example.com/v1",
-						},
-					},
-					"languageModel": map[string]any{
-						"openai": map[string]any{
-							"enabled":       true,
-							"enabledModels": []string{"gpt-4.1"},
 						},
 					},
 				},
@@ -358,19 +346,13 @@ func TestServerBootstrapsWhenConfigProbeReportsMismatch(t *testing.T) {
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/trpc/lambda/user.getUserState":
+		case "/trpc/lambda/aiProvider.getAiProviderRuntimeState":
 			writeTRPCResponse(t, w, map[string]any{
-				"settings": map[string]any{
-					"keyVaults": map[string]any{
-						"openai": map[string]any{
+				"runtimeConfig": map[string]any{
+					"openai": map[string]any{
+						"keyVaults": map[string]any{
 							"apiKey":  "sk-user-1",
 							"baseURL": "https://api.example.com/v1",
-						},
-					},
-					"languageModel": map[string]any{
-						"openai": map[string]any{
-							"enabled":       true,
-							"enabledModels": []string{"gpt-4.1"},
 						},
 					},
 				},
@@ -506,8 +488,21 @@ func TestServerExchangesBootstrapWhenSyncCookieIsOutdated(t *testing.T) {
 func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	t.Helper()
 
+	var applyCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.NotFound(w, r)
+		switch r.URL.Path {
+		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
+			applyCalls.Add(1)
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST, got %s", r.Method)
+			}
+			body, _ := io.ReadAll(r.Body)
+			requireEqualJSON(t, `{"json":{"id":"openai","value":{"fetchOnClient":false,"keyVaults":{"apiKey":"sk-user-1","baseURL":"https://api.example.com/v1"}}}}`, string(body))
+			writeTRPCResponse(t, w, map[string]any{"ok": true})
+			return
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer upstream.Close()
 
@@ -515,7 +510,13 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/v1/lobehub/bootstrap/consume":
 			writeAPIResponse(t, w, map[string]any{
-				"redirect_url": "https://chat.example.com/workspace?settings=%7B%7D",
+				"redirect_url":    "https://chat.example.com/workspace?settings=%7B%7D",
+				"provider_id":     "openai",
+				"fetch_on_client": false,
+				"key_vaults": map[string]any{
+					"apiKey":  "sk-user-1",
+					"baseURL": "https://api.example.com/v1",
+				},
 			})
 		case "/api/v1/settings/public":
 			writeAPIResponse(t, w, map[string]any{
@@ -555,6 +556,9 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	if resp.Header.Get("Location") != "https://chat.example.com/workspace?settings=%7B%7D" {
 		t.Fatalf("unexpected redirect: %s", resp.Header.Get("Location"))
 	}
+	if applyCalls.Load() != 1 {
+		t.Fatalf("expected provider config to be applied exactly once, got %d", applyCalls.Load())
+	}
 	foundSync := false
 	for _, cookie := range resp.Cookies() {
 		if cookie.Name == SyncCookieName {
@@ -584,9 +588,9 @@ func TestFetchObservedSettingsUsesConfiguredUserStatePath(t *testing.T) {
 			return
 		}
 		writeTRPCResponse(t, w, map[string]any{
-			"settings": map[string]any{
-				"keyVaults": map[string]any{
-					"openai": map[string]any{
+			"runtimeConfig": map[string]any{
+				"openai": map[string]any{
+					"keyVaults": map[string]any{
 						"apiKey":  "sk-user-1",
 						"baseURL": "https://api.example.com/v1",
 					},
@@ -735,6 +739,34 @@ func TestRequestOrigin(t *testing.T) {
 	if got != want {
 		t.Fatalf("requestOrigin() = %s, want %s", got, want)
 	}
+}
+
+func requireEqualJSON(t *testing.T, expected string, actual string) {
+	t.Helper()
+
+	var expectedValue any
+	if err := json.Unmarshal([]byte(expected), &expectedValue); err != nil {
+		t.Fatalf("failed to unmarshal expected json: %v", err)
+	}
+	var actualValue any
+	if err := json.Unmarshal([]byte(actual), &actualValue); err != nil {
+		t.Fatalf("failed to unmarshal actual json: %v", err)
+	}
+	if !jsonEqual(expectedValue, actualValue) {
+		t.Fatalf("expected json %s, got %s", expected, actual)
+	}
+}
+
+func jsonEqual(expected any, actual any) bool {
+	expectedBytes, err := json.Marshal(expected)
+	if err != nil {
+		return false
+	}
+	actualBytes, err := json.Marshal(actual)
+	if err != nil {
+		return false
+	}
+	return string(expectedBytes) == string(actualBytes)
 }
 
 func TestBuildRefreshTargetURL(t *testing.T) {

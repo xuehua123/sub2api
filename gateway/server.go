@@ -27,7 +27,7 @@ const (
 	defaultProviderID       = "generic-oidc"
 	defaultBootstrapPath    = "/__lobehub_bootstrap"
 	defaultSettingsCacheTTL = 30 * time.Second
-	defaultUserStatePath    = "/trpc/lambda/user.getUserState"
+	defaultUserStatePath    = "/trpc/lambda/aiProvider.getAiProviderRuntimeState"
 	syncCookieMaxAge        = 7 * 24 * 60 * 60
 )
 
@@ -104,7 +104,10 @@ type bootstrapExchangeResponse struct {
 }
 
 type bootstrapConsumeResponse struct {
-	RedirectURL string `json:"redirect_url"`
+	RedirectURL   string            `json:"redirect_url"`
+	ProviderID    string            `json:"provider_id"`
+	FetchOnClient bool              `json:"fetch_on_client"`
+	KeyVaults     map[string]string `json:"key_vaults"`
 }
 
 type configProbeCompareRequest struct {
@@ -301,6 +304,14 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	result, err := s.consumeBootstrap(r.Context(), ticketID)
 	if err != nil {
 		http.Error(w, "failed to consume bootstrap ticket: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if err := s.applyProviderConfig(r.Context(), r, result); err != nil {
+		if errors.Is(err, errLobeHubSessionMissing) {
+			s.startSignIn(w, r)
+			return
+		}
+		http.Error(w, "failed to apply lobehub provider config: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
@@ -535,7 +546,7 @@ func (s *Server) fetchObservedSettings(ctx context.Context, r *http.Request) (*c
 	endpoint := *s.upstreamURL
 	endpoint.Path = s.userStatePath
 	endpoint.RawPath = ""
-	endpoint.RawQuery = ""
+	endpoint.RawQuery = buildObservedSettingsQuery(s.userStatePath)
 	endpoint.Fragment = ""
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
@@ -566,6 +577,57 @@ func (s *Server) fetchObservedSettings(ctx context.Context, r *http.Request) (*c
 		return nil, err
 	}
 	return parseObservedSettings(body)
+}
+
+func (s *Server) applyProviderConfig(ctx context.Context, r *http.Request, config *bootstrapConsumeResponse) error {
+	if config == nil || strings.TrimSpace(config.ProviderID) == "" || len(config.KeyVaults) == 0 {
+		return nil
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"json": map[string]any{
+			"id": strings.TrimSpace(config.ProviderID),
+			"value": map[string]any{
+				"fetchOnClient": config.FetchOnClient,
+				"keyVaults":     config.KeyVaults,
+			},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	endpoint := *s.upstreamURL
+	endpoint.Path = "/trpc/lambda/aiProvider.updateAiProviderConfig"
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
+		req.Header.Set("Cookie", cookieHeader)
+	}
+
+	resp, err := s.probeClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if isSignInRedirect(resp) || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return errLobeHubSessionMissing
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return &statusError{StatusCode: resp.StatusCode, Message: string(body)}
+	}
+
+	return nil
 }
 
 func (s *Server) consumeBootstrap(ctx context.Context, ticketID string) (*bootstrapConsumeResponse, error) {
@@ -832,14 +894,32 @@ func parseObservedSettings(body []byte) (*configProbeCompareRequest, error) {
 		return nil, err
 	}
 
-	settings, ok := findSettingsObject(payload)
-	if !ok {
-		return nil, fmt.Errorf("settings missing in user state response")
-	}
-
 	observed := &configProbeCompareRequest{
 		KeyVaults:     map[string]configProbeKeyVault{},
 		LanguageModel: map[string]configProbeLanguageModel{},
+	}
+
+	if runtimeConfig, ok := findRuntimeConfigObject(payload); ok {
+		for provider, rawConfig := range runtimeConfig {
+			providerConfig, ok := asStringMap(rawConfig)
+			if !ok {
+				continue
+			}
+			vault, ok := asStringMap(providerConfig["keyVaults"])
+			if !ok {
+				continue
+			}
+			observed.KeyVaults[provider] = configProbeKeyVault{
+				APIKey:  stringValue(vault["apiKey"]),
+				BaseURL: stringValue(vault["baseURL"]),
+			}
+		}
+		return observed, nil
+	}
+
+	settings, ok := findSettingsObject(payload)
+	if !ok {
+		return nil, fmt.Errorf("runtime config missing in ai provider response")
 	}
 
 	if keyVaults, ok := asStringMap(settings["keyVaults"]); ok {
@@ -892,6 +972,32 @@ func findSettingsObject(value any) (map[string]any, bool) {
 	return nil, false
 }
 
+func findRuntimeConfigObject(value any) (map[string]any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if runtimeConfig, ok := asStringMap(typed["runtimeConfig"]); ok {
+			return runtimeConfig, true
+		}
+		if jsonData, ok := asStringMap(typed["json"]); ok {
+			if runtimeConfig, ok := asStringMap(jsonData["runtimeConfig"]); ok {
+				return runtimeConfig, true
+			}
+		}
+		for _, key := range []string{"result", "data"} {
+			if nested, ok := findRuntimeConfigObject(typed[key]); ok {
+				return nested, true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if nested, ok := findRuntimeConfigObject(item); ok {
+				return nested, true
+			}
+		}
+	}
+	return nil, false
+}
+
 func asStringMap(value any) (map[string]any, bool) {
 	result, ok := value.(map[string]any)
 	return result, ok
@@ -928,4 +1034,13 @@ func stringSliceValue(value any) []string {
 		result = append(result, str)
 	}
 	return result
+}
+
+func buildObservedSettingsQuery(path string) string {
+	if strings.TrimSpace(path) != defaultUserStatePath {
+		return ""
+	}
+	values := url.Values{}
+	values.Set("input", `{"json":{"isLogin":true}}`)
+	return values.Encode()
 }
