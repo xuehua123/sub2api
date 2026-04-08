@@ -40,12 +40,20 @@ const visible = computed(() => {
 const handleClick = async () => {
   if (loading.value) return
 
+  const popup = window.open('about:blank', '_blank', 'noopener')
   loading.value = true
   try {
     const result = await createLobeHubLaunchTicket(props.apiKeyId)
     const target = new URL(result.bridge_url, window.location.origin).toString()
-    window.location.assign(target)
+    if (popup && popup.location) {
+      popup.location.replace(target)
+    } else {
+      window.location.assign(target)
+    }
   } catch (error) {
+    if (popup && !popup.closed) {
+      popup.close()
+    }
     console.error('Failed to open LobeHub:', error)
     appStore.showError(t('keys.failedToOpenLobeHub'))
   } finally {

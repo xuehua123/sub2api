@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"net/url"
 	"strings"
 	"time"
@@ -38,7 +37,7 @@ type LobeHubLaunchStateStore interface {
 }
 
 type LobeHubOIDCWebSessionCreator interface {
-	CreateWebSession(ctx context.Context, userID, apiKeyID int64) (string, error)
+	PrepareTargetRefresh(ctx context.Context, userID int64, req *LobeHubSSORefreshRequest) (*LobeHubSSOContinuationResult, error)
 }
 
 type LobeHubLaunchTicket struct {
@@ -53,10 +52,10 @@ type LobeHubLaunchTicketResult struct {
 }
 
 type LobeHubBridgePayload struct {
-	FormActionURL string
-	ProviderID    string
-	CallbackURL   string
-	WebSessionID  string
+	ContinueURL       string
+	TargetToken       string
+	BootstrapTicketID string
+	CookieDomain      string
 }
 
 type LobeHubLaunchService struct {
@@ -137,11 +136,6 @@ func (s *LobeHubLaunchService) BuildBridgePayload(ctx context.Context, ticketID 
 		return nil, ErrLobeHubChatURLNotConfigured
 	}
 
-	apiBaseURL := normalizeLobeHubBaseURL(settings.APIBaseURL)
-	if apiBaseURL == "" {
-		return nil, ErrLobeHubAPIBaseURLNotConfigured
-	}
-
 	apiKey, err := s.apiKeyReader.GetByID(ctx, ticket.APIKeyID)
 	if err != nil {
 		return nil, err
@@ -150,56 +144,35 @@ func (s *LobeHubLaunchService) BuildBridgePayload(ctx context.Context, ticketID 
 		return nil, err
 	}
 
-	settingsJSON, err := json.Marshal(map[string]any{
-		"keyVaults": map[string]any{
-			settings.LobeHubDefaultProvider: map[string]any{
-				"apiKey":  apiKey.Key,
-				"baseURL": apiBaseURL,
-			},
-		},
-		"languageModel": map[string]any{
-			settings.LobeHubDefaultProvider: map[string]any{
-				"enabled":             true,
-				"fetchOnClient":       true,
-				"autoFetchModelLists": true,
-				"enabledModels":       []string{strings.TrimSpace(settings.LobeHubDefaultModel)},
-			},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	callbackBase, err := resolveURL(chatURL, "/")
-	if err != nil {
-		return nil, err
-	}
-	callbackParsed, err := url.Parse(callbackBase)
-	if err != nil {
-		return nil, err
-	}
-	query := callbackParsed.Query()
-	query.Set("settings", string(settingsJSON))
-	callbackParsed.RawQuery = query.Encode()
-
-	formActionURL, err := resolveURL(chatURL, "/api/auth/sign-in/oauth2")
-	if err != nil {
-		return nil, err
-	}
-
-	webSessionID := ""
 	if s.webSessionCreator != nil {
-		webSessionID, err = s.webSessionCreator.CreateWebSession(ctx, ticket.UserID, ticket.APIKeyID)
+		continueURL, err := resolveURL(chatURL, "/")
 		if err != nil {
 			return nil, err
 		}
+
+		result, err := s.webSessionCreator.PrepareTargetRefresh(ctx, ticket.UserID, &LobeHubSSORefreshRequest{
+			ReturnURL: continueURL,
+			APIKeyID:  &ticket.APIKeyID,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		return &LobeHubBridgePayload{
+			ContinueURL:       result.ContinueURL,
+			TargetToken:       result.TargetToken,
+			BootstrapTicketID: result.BootstrapTicketID,
+			CookieDomain:      result.CookieDomain,
+		}, nil
+	}
+
+	continueURL, err := resolveURL(chatURL, "/")
+	if err != nil {
+		return nil, err
 	}
 
 	return &LobeHubBridgePayload{
-		FormActionURL: formActionURL,
-		ProviderID:    lobeHubProviderID,
-		CallbackURL:   callbackParsed.String(),
-		WebSessionID:  webSessionID,
+		ContinueURL: continueURL,
 	}, nil
 }
 

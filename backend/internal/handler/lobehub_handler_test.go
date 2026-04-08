@@ -186,10 +186,10 @@ func TestLobeHubHandler_Bridge(t *testing.T) {
 
 	stub := &lobehubLaunchServiceStub{
 		buildResult: &service.LobeHubBridgePayload{
-			FormActionURL: "https://chat.example.com/api/auth/sign-in/oauth2",
-			ProviderID:    "generic-oidc",
-			CallbackURL:   "https://chat.example.com/?settings=%7B%7D",
-			WebSessionID:  "session-1",
+			ContinueURL:       "https://chat.example.com/",
+			TargetToken:       "target-1",
+			BootstrapTicketID: "bootstrap-1",
+			CookieDomain:      ".example.com",
 		},
 	}
 	h := NewLobeHubHandler(stub, &lobehubOIDCServiceStub{}, &lobehubSSOServiceStub{})
@@ -197,19 +197,20 @@ func TestLobeHubHandler_Bridge(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/lobehub/bridge?ticket=ticket-1", nil)
+	c.Request.Host = "api.example.com"
+	c.Request.Header.Set("X-Forwarded-Proto", "https")
 
 	h.Bridge(c)
 
-	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, http.StatusFound, rec.Code)
 	require.Equal(t, "ticket-1", stub.buildTicketID)
-	require.Contains(t, rec.Header().Get("Content-Type"), "text/html")
 	require.Equal(t, "no-referrer", rec.Header().Get("Referrer-Policy"))
 	require.Equal(t, "no-store", rec.Header().Get("Cache-Control"))
-	require.Contains(t, rec.Header().Get("Set-Cookie"), "lobehub_oidc_session=session-1")
-	require.Contains(t, rec.Body.String(), `action="https://chat.example.com/api/auth/sign-in/oauth2"`)
-	require.Contains(t, rec.Body.String(), `name="providerId" value="generic-oidc"`)
-	require.Contains(t, rec.Body.String(), `name="callbackURL" value="https://chat.example.com/?settings=%7B%7D"`)
-	require.Contains(t, rec.Body.String(), "document.getElementById('lobehub-signin-form').submit()")
+	require.Equal(t, "https://chat.example.com/", rec.Header().Get("Location"))
+	allCookies := strings.Join(rec.Header().Values("Set-Cookie"), "\n")
+	require.Contains(t, allCookies, "sub2api_lobehub_target=target-1")
+	require.Contains(t, allCookies, "sub2api_lobehub_bootstrap=bootstrap-1")
+	require.Contains(t, allCookies, "Domain=example.com")
 }
 
 func TestLobeHubHandler_Bridge_RequiresTicket(t *testing.T) {

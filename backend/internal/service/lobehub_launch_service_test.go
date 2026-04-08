@@ -4,8 +4,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
-	"net/url"
 	"testing"
 	"time"
 
@@ -67,6 +65,21 @@ func (s *lobehubWebSessionWriterStub) CreateWebSession(_ context.Context, userID
 	s.userID = userID
 	s.apiKeyID = apiKeyID
 	return s.sessionID, nil
+}
+
+type lobehubLaunchContinuationStub struct {
+	result    *LobeHubSSOContinuationResult
+	err       error
+	userID    int64
+	request   *LobeHubSSORefreshRequest
+	callCount int
+}
+
+func (s *lobehubLaunchContinuationStub) PrepareTargetRefresh(_ context.Context, userID int64, req *LobeHubSSORefreshRequest) (*LobeHubSSOContinuationResult, error) {
+	s.userID = userID
+	s.request = req
+	s.callCount++
+	return s.result, s.err
 }
 
 func TestLobeHubLaunchService_CreateLaunchTicket(t *testing.T) {
@@ -153,7 +166,14 @@ func TestLobeHubLaunchService_BuildBridgePayload(t *testing.T) {
 			},
 		},
 	}
-	webSessionWriter := &lobehubWebSessionWriterStub{sessionID: "session-1"}
+	continuation := &lobehubLaunchContinuationStub{
+		result: &LobeHubSSOContinuationResult{
+			ContinueURL:       "https://chat.example.com/",
+			TargetToken:       "target-1",
+			BootstrapTicketID: "bootstrap-1",
+			CookieDomain:      ".example.com",
+		},
+	}
 	svc := NewLobeHubLaunchService(
 		&lobehubSettingsReaderStub{settings: &SystemSettings{
 			LobeHubEnabled:         true,
@@ -164,34 +184,21 @@ func TestLobeHubLaunchService_BuildBridgePayload(t *testing.T) {
 		}},
 		&lobehubAPIKeyRepoStub{key: &APIKey{ID: 9, UserID: 42, Key: "sk-user-1", Status: StatusActive}},
 		store,
-		webSessionWriter,
+		continuation,
 		time.Now,
 	)
 
 	payload, err := svc.BuildBridgePayload(context.Background(), "ticket-1")
 	require.NoError(t, err)
-	require.Equal(t, "https://chat.example.com/api/auth/sign-in/oauth2", payload.FormActionURL)
-	require.Equal(t, "generic-oidc", payload.ProviderID)
-	require.Equal(t, "session-1", payload.WebSessionID)
-	require.Equal(t, int64(42), webSessionWriter.userID)
-	require.Equal(t, int64(9), webSessionWriter.apiKeyID)
-
-	callbackURL, err := url.Parse(payload.CallbackURL)
-	require.NoError(t, err)
-	require.Equal(t, "https://chat.example.com/", callbackURL.Scheme+"://"+callbackURL.Host+callbackURL.Path)
-
-	var settings map[string]any
-	require.NoError(t, json.Unmarshal([]byte(callbackURL.Query().Get("settings")), &settings))
-
-	keyVaults := settings["keyVaults"].(map[string]any)
-	openAIKeyVault := keyVaults["openai"].(map[string]any)
-	require.Equal(t, "sk-user-1", openAIKeyVault["apiKey"])
-	require.Equal(t, "https://api.example.com/v1", openAIKeyVault["baseURL"])
-
-	languageModel := settings["languageModel"].(map[string]any)
-	openAIModel := languageModel["openai"].(map[string]any)
-	require.Equal(t, true, openAIModel["enabled"])
-	require.Equal(t, []any{"gpt-4.1"}, openAIModel["enabledModels"])
+	require.Equal(t, "https://chat.example.com/", payload.ContinueURL)
+	require.Equal(t, "target-1", payload.TargetToken)
+	require.Equal(t, "bootstrap-1", payload.BootstrapTicketID)
+	require.Equal(t, ".example.com", payload.CookieDomain)
+	require.Equal(t, 1, continuation.callCount)
+	require.Equal(t, int64(42), continuation.userID)
+	require.Equal(t, "https://chat.example.com/", continuation.request.ReturnURL)
+	require.NotNil(t, continuation.request.APIKeyID)
+	require.Equal(t, int64(9), *continuation.request.APIKeyID)
 }
 
 func TestLobeHubLaunchService_BuildBridgePayloadRejectsUnusableKey(t *testing.T) {

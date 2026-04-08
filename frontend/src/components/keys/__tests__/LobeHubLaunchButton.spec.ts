@@ -7,6 +7,11 @@ const { createLaunchTicket, showError, assign } = vi.hoisted(() => ({
   assign: vi.fn()
 }))
 
+const { open, replace } = vi.hoisted(() => ({
+  open: vi.fn(),
+  replace: vi.fn()
+}))
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string) => key
@@ -32,6 +37,7 @@ const publicSettings = {
 
 describe('LobeHubLaunchButton', () => {
   const originalLocation = window.location
+  const originalOpen = window.open
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -44,12 +50,22 @@ describe('LobeHubLaunchButton', () => {
       },
       writable: true
     })
+    Object.defineProperty(window, 'open', {
+      configurable: true,
+      value: open,
+      writable: true
+    })
   })
 
   afterEach(() => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: originalLocation,
+      writable: true
+    })
+    Object.defineProperty(window, 'open', {
+      configurable: true,
+      value: originalOpen,
       writable: true
     })
   })
@@ -78,10 +94,15 @@ describe('LobeHubLaunchButton', () => {
     expect(hiddenWrapper.find('button').exists()).toBe(false)
   })
 
-  it('creates a launch ticket and redirects to the bridge page', async () => {
+  it('creates a launch ticket and opens the bridge page in a new tab', async () => {
     createLaunchTicket.mockResolvedValue({
       ticket_id: 'ticket-1',
       bridge_url: '/api/v1/lobehub/bridge?ticket=ticket-1'
+    })
+    open.mockReturnValue({
+      location: {
+        replace
+      }
     })
 
     const wrapper = mount(LobeHubLaunchButton, {
@@ -98,6 +119,31 @@ describe('LobeHubLaunchButton', () => {
     await flushPromises()
 
     expect(createLaunchTicket).toHaveBeenCalledWith(9)
+    expect(open).toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledWith('https://sub2api.example.com/api/v1/lobehub/bridge?ticket=ticket-1')
+    expect(assign).not.toHaveBeenCalled()
+  })
+
+  it('falls back to same-tab navigation when the new tab is blocked', async () => {
+    createLaunchTicket.mockResolvedValue({
+      ticket_id: 'ticket-1',
+      bridge_url: '/api/v1/lobehub/bridge?ticket=ticket-1'
+    })
+    open.mockReturnValue(null)
+
+    const wrapper = mount(LobeHubLaunchButton, {
+      props: {
+        apiKeyId: 9,
+        publicSettings
+      },
+      global: {
+        stubs: { Icon: true }
+      }
+    })
+
+    await wrapper.get('button').trigger('click')
+    await flushPromises()
+
     expect(assign).toHaveBeenCalledWith('https://sub2api.example.com/api/v1/lobehub/bridge?ticket=ticket-1')
   })
 

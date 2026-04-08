@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"html/template"
 	"net/http"
 	"net/url"
 	"strings"
@@ -48,12 +47,6 @@ type createLobeHubLaunchTicketRequest struct {
 	APIKeyID int64 `json:"api_key_id" binding:"required"`
 }
 
-type bridgeTemplateData struct {
-	FormActionURL string
-	ProviderID    string
-	CallbackURL   string
-}
-
 type createLobeHubOIDCWebSessionRequest struct {
 	ResumeToken string `json:"resume_token"`
 	ReturnURL   string `json:"return_url"`
@@ -74,25 +67,6 @@ const (
 	lobeHubBootstrapCookieName        = "sub2api_lobehub_bootstrap"
 	lobeHubBootstrapCookieMaxAgeSec   = int(service.LobeHubBootstrapTicketTTL / time.Second)
 )
-
-var lobeHubBridgeTemplate = template.Must(template.New("lobehub-bridge").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LobeHub Sign In</title>
-</head>
-<body>
-  <form id="lobehub-signin-form" method="post" action="{{ .FormActionURL }}">
-    <input type="hidden" name="providerId" value="{{ .ProviderID }}">
-    <input type="hidden" name="callbackURL" value="{{ .CallbackURL }}">
-  </form>
-  <script>
-    document.getElementById('lobehub-signin-form').submit()
-  </script>
-</body>
-</html>
-`))
 
 func NewLobeHubHandler(launchService lobeHubLaunchService, oidcService lobeHubOIDCService, ssoService lobeHubSSOService) *LobeHubHandler {
 	return &LobeHubHandler{launchService: launchService, oidcService: oidcService, ssoService: ssoService}
@@ -137,29 +111,13 @@ func (h *LobeHubHandler) Bridge(c *gin.Context) {
 		return
 	}
 
-	if payload.WebSessionID != "" {
-		http.SetCookie(c.Writer, &http.Cookie{
-			Name:     lobeHubOIDCSessionCookieName,
-			Value:    payload.WebSessionID,
-			Path:     lobeHubOIDCSessionCookiePath,
-			MaxAge:   lobeHubOIDCSessionCookieMaxAgeSec,
-			HttpOnly: true,
-			Secure:   isRequestHTTPS(c),
-			SameSite: http.SameSiteLaxMode,
-		})
-	}
-
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Status(http.StatusOK)
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	_ = lobeHubBridgeTemplate.Execute(c.Writer, bridgeTemplateData{
-		FormActionURL: payload.FormActionURL,
-		ProviderID:    payload.ProviderID,
-		CallbackURL:   payload.CallbackURL,
-	})
+	setLobeHubSharedCookie(c, lobeHubTargetCookieName, payload.TargetToken, payload.CookieDomain, lobeHubTargetCookieMaxAgeSec, true)
+	setLobeHubSharedCookie(c, lobeHubBootstrapCookieName, payload.BootstrapTicketID, payload.CookieDomain, lobeHubBootstrapCookieMaxAgeSec, true)
+	c.Redirect(http.StatusFound, payload.ContinueURL)
 }
 
 func (h *LobeHubHandler) Discovery(c *gin.Context) {
