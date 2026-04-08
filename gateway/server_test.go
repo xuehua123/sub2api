@@ -13,11 +13,42 @@ import (
 	"time"
 )
 
-func TestServerReturnsAutoSubmitWhenLobeHubSessionIsMissing(t *testing.T) {
+func TestServerStartsSignInWhenLobeHubSessionIsMissing(t *testing.T) {
 	t.Helper()
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/signin", http.StatusFound)
+		switch r.URL.Path {
+		case "/", "/workspace":
+			http.Redirect(w, r, "/signin", http.StatusFound)
+		case "/api/auth/sign-in/oauth2":
+			if r.Method != http.MethodPost {
+				t.Fatalf("expected POST, got %s", r.Method)
+			}
+			if got := r.Header.Get("Origin"); got != "https://chat.example.com" {
+				t.Fatalf("expected origin https://chat.example.com, got %s", got)
+			}
+			if got := r.Header.Get("Referer"); got != "https://chat.example.com/workspace" {
+				t.Fatalf("expected referer https://chat.example.com/workspace, got %s", got)
+			}
+			body, _ := io.ReadAll(r.Body)
+			var payload signInOAuth2Request
+			if err := json.Unmarshal(body, &payload); err != nil {
+				t.Fatalf("unmarshal request body: %v", err)
+			}
+			if payload.ProviderID != "generic-oidc" {
+				t.Fatalf("expected provider id generic-oidc, got %s", payload.ProviderID)
+			}
+			if payload.CallbackURL != "https://chat.example.com/__lobehub_bootstrap?mode=login&return_url=https%3A%2F%2Fchat.example.com%2Fworkspace" {
+				t.Fatalf("unexpected callback URL body: %s", payload.CallbackURL)
+			}
+			w.Header().Add("Set-Cookie", "__Secure-better-auth.state=state-123; Path=/; HttpOnly; Secure; SameSite=Lax")
+			writeJSONResponse(t, w, map[string]any{
+				"url":      "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-123",
+				"redirect": true,
+			})
+		default:
+			http.NotFound(w, r)
+		}
 	}))
 	defer upstream.Close()
 
@@ -48,25 +79,24 @@ func TestServerReturnsAutoSubmitWhenLobeHubSessionIsMissing(t *testing.T) {
 	server.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-123" {
+		t.Fatalf("unexpected redirect location: %s", resp.Header.Get("Location"))
+	}
 
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	foundStateCookie := false
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "__Secure-better-auth.state" {
+			foundStateCookie = true
+			if cookie.Value != "state-123" {
+				t.Fatalf("expected state cookie value state-123, got %s", cookie.Value)
+			}
+		}
 	}
-	if !strings.Contains(string(body), "fetch('/api/auth/sign-in/oauth2'") {
-		t.Fatalf("expected auto-submit fetch, body=%s", string(body))
-	}
-	if !strings.Contains(string(body), "'Content-Type': 'application/json'") {
-		t.Fatalf("expected JSON content type, body=%s", string(body))
-	}
-	if !strings.Contains(string(body), "additionalData") {
-		t.Fatalf("expected additionalData payload, body=%s", string(body))
-	}
-	if !strings.Contains(string(body), "generic-oidc") {
-		t.Fatalf("expected providerId in payload, body=%s", string(body))
-	}
-	if !strings.Contains(string(body), "__lobehub_bootstrap") {
-		t.Fatalf("expected bootstrap callback URL, body=%s", string(body))
+	if !foundStateCookie {
+		t.Fatalf("expected state cookie to be forwarded")
 	}
 }
 
@@ -621,6 +651,13 @@ func writeTRPCResponse(t *testing.T, w http.ResponseWriter, data any) {
 	})
 }
 
+func writeJSONResponse(t *testing.T, w http.ResponseWriter, data any) {
+	t.Helper()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(data)
+}
+
 func hasCookie(r *http.Request, name string, want string) bool {
 	cookie, err := r.Cookie(name)
 	if err != nil {
@@ -685,6 +722,18 @@ func TestHealthzReturnsOK(t *testing.T) {
 	}
 	if strings.TrimSpace(string(body)) != "ok" {
 		t.Fatalf("expected ok body, got %s", string(body))
+	}
+}
+
+func TestRequestOrigin(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/workspace?foo=bar", nil)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	got := requestOrigin(req)
+	want := "https://chat.example.com"
+	if got != want {
+		t.Fatalf("requestOrigin() = %s, want %s", got, want)
 	}
 }
 

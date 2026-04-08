@@ -37,10 +37,25 @@ const visible = computed(() => {
   return !!props.publicSettings?.lobehub_enabled && !props.publicSettings?.hide_lobehub_import_button
 })
 
+function openLaunchPopup(): Window | null {
+  const popup = window.open('', '_blank')
+  if (!popup) {
+    return null
+  }
+
+  try {
+    popup.opener = null
+  } catch {
+    // Ignore browsers that prevent touching opener on a newly opened tab.
+  }
+
+  return popup
+}
+
 const handleClick = async () => {
   if (loading.value) return
 
-  const popup = window.open('about:blank', '_blank', 'noopener')
+  const popup = openLaunchPopup()
   loading.value = true
   try {
     const result = await createLobeHubLaunchTicket(props.apiKeyId)

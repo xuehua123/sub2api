@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"io"
 	"net"
 	"net/http"
@@ -36,63 +35,6 @@ var (
 	errRefreshTargetRequired = errors.New("refresh target required")
 	errLobeHubSessionMissing = errors.New("lobehub session missing")
 )
-
-var autoSubmitTemplate = template.Must(template.New("autosubmit").Parse(`<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LobeHub SSO</title>
-</head>
-<body data-provider-id="{{ .ProviderID }}" data-callback-url="{{ .CallbackURL }}">
-  <p>Redirecting to LobeHub sign-in...</p>
-  <noscript>Please enable JavaScript to continue to LobeHub.</noscript>
-  <script>
-    const escapeHTML = (value) => String(value).replace(/[&<>]/g, (char) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;'
-    }[char] || char))
-
-    ;(async () => {
-      const body = document.body
-      const payload = {
-        additionalData: {},
-        callbackURL: body.dataset.callbackUrl,
-        providerId: body.dataset.providerId
-      }
-
-      try {
-        const response = await fetch('/api/auth/sign-in/oauth2', {
-          method: 'POST',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          },
-          credentials: 'same-origin',
-          body: JSON.stringify(payload)
-        })
-        const responseText = await response.text()
-        if (!response.ok) {
-          throw new Error(responseText || 'LobeHub sign-in failed')
-        }
-
-        const result = JSON.parse(responseText)
-        if (!result || typeof result.url !== 'string' || result.url === '') {
-          throw new Error('LobeHub sign-in did not return a redirect URL')
-        }
-
-        window.location.replace(result.url)
-      } catch (error) {
-        document.body.innerHTML = '<pre style="white-space:pre-wrap;font-family:monospace">' +
-          escapeHTML(error && error.message ? error.message : error) +
-          '</pre>'
-      }
-    })()
-  </script>
-</body>
-</html>
-`))
 
 type Config struct {
 	ListenAddr             string
@@ -146,6 +88,17 @@ type bootstrapExchangeRequest struct {
 	ReturnURL string `json:"return_url"`
 }
 
+type signInOAuth2Request struct {
+	AdditionalData map[string]any `json:"additionalData"`
+	CallbackURL    string         `json:"callbackURL"`
+	ProviderID     string         `json:"providerId"`
+}
+
+type signInOAuth2Response struct {
+	URL      string `json:"url"`
+	Redirect bool   `json:"redirect"`
+}
+
 type bootstrapExchangeResponse struct {
 	BootstrapTicketID string `json:"bootstrap_ticket_id"`
 }
@@ -184,11 +137,6 @@ type targetTokenClaims struct {
 type syncState struct {
 	DesiredConfigFingerprint string
 	RuntimeConfigVersion     string
-}
-
-type autoSubmitPageData struct {
-	ProviderID  string
-	CallbackURL string
 }
 
 func NewServer(cfg Config) (*Server, error) {
@@ -279,7 +227,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !authenticated {
-		s.renderAutoSubmit(w, r)
+		s.startSignIn(w, r)
 		return
 	}
 
@@ -319,7 +267,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, errLobeHubSessionMissing) {
-		s.renderAutoSubmit(w, r)
+		s.startSignIn(w, r)
 		return
 	}
 
@@ -385,22 +333,71 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, result.RedirectURL, http.StatusFound)
 }
 
-func (s *Server) renderAutoSubmit(w http.ResponseWriter, r *http.Request) {
+func (s *Server) startSignIn(w http.ResponseWriter, r *http.Request) {
 	callbackURL := s.buildGatewayURL(r, s.bootstrapPath, url.Values{
 		"mode":       []string{"login"},
 		"return_url": []string{currentRequestURL(r)},
 	})
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := autoSubmitTemplate.Execute(w, autoSubmitPageData{
-		ProviderID:  s.providerID,
-		CallbackURL: callbackURL,
-	}); err != nil {
-		http.Error(w, "failed to render auto-submit page", http.StatusInternalServerError)
+	body, err := json.Marshal(signInOAuth2Request{
+		AdditionalData: map[string]any{},
+		CallbackURL:    callbackURL,
+		ProviderID:     s.providerID,
+	})
+	if err != nil {
+		http.Error(w, "failed to build sign-in payload: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	endpoint := *s.upstreamURL
+	endpoint.Path = "/api/auth/sign-in/oauth2"
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodPost, endpoint.String(), bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, "failed to create sign-in request: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", requestOrigin(r))
+	req.Header.Set("Referer", currentRequestURL(r))
+	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
+		req.Header.Set("Cookie", cookieHeader)
+	}
+
+	resp, err := s.probeClient.Do(req)
+	if err != nil {
+		http.Error(w, "failed to start sign-in: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "failed to read sign-in response: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		http.Error(w, "failed to start sign-in: "+string(responseBody), http.StatusBadGateway)
+		return
+	}
+
+	var result signInOAuth2Response
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		http.Error(w, "failed to parse sign-in response: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if strings.TrimSpace(result.URL) == "" {
+		http.Error(w, "sign-in response did not include redirect url", http.StatusBadGateway)
+		return
+	}
+
+	for _, cookieValue := range resp.Header.Values("Set-Cookie") {
+		w.Header().Add("Set-Cookie", cookieValue)
+	}
+	http.Redirect(w, r, strings.TrimSpace(result.URL), http.StatusFound)
 }
 
 func (s *Server) redirectRefreshTarget(w http.ResponseWriter, r *http.Request) {
@@ -736,6 +733,13 @@ func currentRequestURL(r *http.Request) string {
 		RawQuery: r.URL.RawQuery,
 	}
 	return requestURL.String()
+}
+
+func requestOrigin(r *http.Request) string {
+	return (&url.URL{
+		Scheme: requestScheme(r),
+		Host:   effectiveHost(r),
+	}).String()
 }
 
 func buildRefreshTargetURL(frontendBaseURL string, returnURL string) (string, error) {

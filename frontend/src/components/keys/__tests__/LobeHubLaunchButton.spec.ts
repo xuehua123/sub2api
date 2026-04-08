@@ -95,15 +95,17 @@ describe('LobeHubLaunchButton', () => {
   })
 
   it('creates a launch ticket and opens the bridge page in a new tab', async () => {
+    const popup = {
+      opener: window,
+      location: {
+        replace
+      }
+    }
     createLaunchTicket.mockResolvedValue({
       ticket_id: 'ticket-1',
       bridge_url: '/api/v1/lobehub/bridge?ticket=ticket-1'
     })
-    open.mockReturnValue({
-      location: {
-        replace
-      }
-    })
+    open.mockReturnValue(popup)
 
     const wrapper = mount(LobeHubLaunchButton, {
       props: {
@@ -119,7 +121,8 @@ describe('LobeHubLaunchButton', () => {
     await flushPromises()
 
     expect(createLaunchTicket).toHaveBeenCalledWith(9)
-    expect(open).toHaveBeenCalled()
+    expect(open).toHaveBeenCalledWith('', '_blank')
+    expect(popup.opener).toBeNull()
     expect(replace).toHaveBeenCalledWith('https://sub2api.example.com/api/v1/lobehub/bridge?ticket=ticket-1')
     expect(assign).not.toHaveBeenCalled()
   })
