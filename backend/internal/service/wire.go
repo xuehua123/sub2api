@@ -455,7 +455,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(LobeHubUserReader), new(*UserService)),
 	wire.Bind(new(LobeHubUserPreferenceStore), new(*UserService)),
 	wire.Bind(new(LobeHubOIDCSigningKeyProvider), new(*SettingService)),
-	wire.Bind(new(LobeHubOIDCWebSessionCreator), new(*LobeHubOIDCService)),
+	wire.Bind(new(LobeHubOIDCWebSessionCreator), new(*LobeHubSSOService)),
 	ProvideLobeHubLaunchService,
 	ProvideLobeHubSSOService,
 	wire.Bind(new(LobeHubSettingsReader), new(*SettingService)),
