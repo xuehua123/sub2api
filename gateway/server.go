@@ -292,6 +292,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
+	if isLoginBootstrapRequest(r) {
+		http.Redirect(w, r, sanitizeBootstrapReturnURL(r), http.StatusFound)
+		return
+	}
+
 	ticketID := strings.TrimSpace(r.URL.Query().Get("ticket"))
 	if ticketID == "" {
 		ticketID = readCookieValue(r, BootstrapCookieName)
@@ -795,6 +800,56 @@ func currentRequestURL(r *http.Request) string {
 		RawQuery: r.URL.RawQuery,
 	}
 	return requestURL.String()
+}
+
+func isLoginBootstrapRequest(r *http.Request) bool {
+	return strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("mode")), "login")
+}
+
+func sanitizeBootstrapReturnURL(r *http.Request) string {
+	raw := strings.TrimSpace(r.URL.Query().Get("return_url"))
+	fallback := samesiteFallbackURL(r)
+	if raw == "" {
+		return fallback
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return fallback
+	}
+	if !parsed.IsAbs() {
+		if !strings.HasPrefix(parsed.Path, "/") {
+			return fallback
+		}
+		return (&url.URL{
+			Scheme:   requestScheme(r),
+			Host:     effectiveHost(r),
+			Path:     parsed.Path,
+			RawPath:  parsed.RawPath,
+			RawQuery: parsed.RawQuery,
+			Fragment: parsed.Fragment,
+		}).String()
+	}
+	if !sameOriginURL(parsed, requestScheme(r), effectiveHost(r)) {
+		return fallback
+	}
+	return parsed.String()
+}
+
+func sameOriginURL(target *url.URL, scheme string, host string) bool {
+	if target == nil {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(target.Scheme), strings.TrimSpace(scheme)) &&
+		strings.EqualFold(strings.TrimSpace(target.Host), strings.TrimSpace(host))
+}
+
+func samesiteFallbackURL(r *http.Request) string {
+	return (&url.URL{
+		Scheme: requestScheme(r),
+		Host:   effectiveHost(r),
+		Path:   "/",
+	}).String()
 }
 
 func requestOrigin(r *http.Request) string {

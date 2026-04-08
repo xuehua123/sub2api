@@ -577,6 +577,35 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	}
 }
 
+func TestBootstrapLoginModeRedirectsBackToOriginalURLWithoutTicket(t *testing.T) {
+	t.Helper()
+
+	server := mustNewTestServer(t, Config{
+		UpstreamURL:        "https://chat.example.com",
+		Sub2APIAPIBaseURL:  "https://api.example.com/api/v1",
+		Sub2APIFrontendURL: "https://app.example.com",
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"http://chat.example.com/__lobehub_bootstrap?mode=login&return_url=https%3A%2F%2Fchat.example.com%2Fworkspace%3Ffoo%3Dbar",
+		nil,
+	)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "https://chat.example.com/workspace?foo=bar" {
+		t.Fatalf("unexpected redirect: %s", resp.Header.Get("Location"))
+	}
+}
+
 func TestFetchObservedSettingsUsesConfiguredUserStatePath(t *testing.T) {
 	t.Helper()
 
