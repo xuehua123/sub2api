@@ -32,9 +32,8 @@ export interface User {
   balance: number // User balance for API usage
   concurrency: number // Allowed concurrent requests
   status: 'active' | 'disabled' // Account status
-  default_chat_api_key_id?: number | null
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
-  referral_enabled: boolean // Per-user referral override
+  referral_enabled: boolean // Whether referral is enabled for this user
   subscriptions?: UserSubscription[] // User's active subscriptions
   created_at: string
   updated_at: string
@@ -43,7 +42,6 @@ export interface User {
 export interface AdminUser extends User {
   // 管理员备注（普通用户接口不返回）
   notes: string
-  // 用户级别邀请功能开关
   referral_enabled: boolean
   // 用户专属分组倍率配置 (group_id -> rate_multiplier)
   group_rates?: Record<number, number>
@@ -64,7 +62,6 @@ export interface RegisterRequest {
   turnstile_token?: string
   promo_code?: string
   invitation_code?: string
-  referral_code?: string
 }
 
 export interface SendVerifyCodeRequest {
@@ -99,12 +96,6 @@ export interface PublicSettings {
   promo_code_enabled: boolean
   password_reset_enabled: boolean
   invitation_code_enabled: boolean
-  referral_enabled: boolean
-  referral_allow_manual_input: boolean
-  referral_bind_before_first_paid_only: boolean
-  referral_withdraw_enabled: boolean
-  referral_settlement_currency: string
-  referral_withdraw_methods_enabled: string[]
   turnstile_enabled: boolean
   turnstile_site_key: string
   site_name: string
@@ -115,313 +106,23 @@ export interface PublicSettings {
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean
-  lobehub_enabled: boolean
-  lobehub_chat_url: string
-  lobehub_oidc_issuer: string
-  lobehub_default_provider: string
-  lobehub_default_model: string
-  lobehub_runtime_config_version: string
-  hide_lobehub_import_button: boolean
-  purchase_subscription_enabled: boolean
-  purchase_subscription_url: string
+  payment_enabled: boolean
+  table_default_page_size: number
+  table_page_size_options: number[]
   custom_menu_items: CustomMenuItem[]
   custom_endpoints: CustomEndpoint[]
   linuxdo_oauth_enabled: boolean
+  oidc_oauth_enabled: boolean
+  oidc_oauth_provider_name: string
   backend_mode_enabled: boolean
   version: string
-}
-
-export interface ReferralCodeInfo {
-  id: number
-  user_id: number
-  code: string
-  status: string
-  is_default: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface ReferralRelationInfo {
-  id: number
-  user_id: number
-  referrer_user_id: number
-  bind_source: string
-  bind_code?: string | null
-  locked_at?: string | null
-  notes?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface ReferralCenterOverview {
+  // Referral settings
   referral_enabled: boolean
-  allow_manual_input: boolean
-  bind_before_first_paid_only: boolean
+  referral_allow_manual_input: boolean
+  referral_bind_before_first_paid_only: boolean
   referral_withdraw_enabled: boolean
-  settlement_currency: string
-  default_code?: ReferralCodeInfo | null
-  relation?: ReferralRelationInfo | null
-  can_bind: boolean
-  has_paid_recharge: boolean
-  withdraw_methods_enabled?: string[]
-  direct_invitees: number
-  second_level_invitees: number
-  pending_commission: number
-  available_commission: number
-  frozen_commission: number
-  withdrawn_commission: number
-  total_commission: number
-}
-
-export interface ReferralInvitee {
-  user_id: number
-  email: string
-  username: string
-  bound_at: string
-  referral_code?: string | null
-  source?: string | null
-  second_level_num: number
-  total_recharge: number
-  latest_paid_at?: string | null
-  total_commission: number
-  order_count: number
-}
-
-export interface UserInviteeReward {
-  id: number
-  recharge_order_id: number
-  external_order_id?: string
-  order_paid_amount: number
-  rate_snapshot: number
-  reward_amount: number
-  currency: string
-  status: string
-  created_at: string
-}
-
-export interface CommissionLedgerEntry {
-  id: number
-  user_id: number
-  reward_id?: number | null
-  recharge_order_id?: number | null
-  withdrawal_id?: number | null
-  withdrawal_item_id?: number | null
-  entry_type: string
-  bucket: string
-  amount: number
-  currency: string
-  idempotency_key?: string | null
-  operator_user_id?: number | null
-  remark?: string | null
-  metadata_json?: string | null
-  created_at: string
-  source_user_email?: string
-  source_user_username?: string
-  external_order_id?: string
-  order_paid_amount?: number
-  reward_rate_snapshot?: number
-  reward_level?: number
-}
-
-export interface CommissionWithdrawal {
-  id: number
-  user_id: number
-  withdrawal_no: string
-  amount: number
-  fee_amount: number
-  net_amount: number
-  currency: string
-  status: string
-  payout_method: string
-  payout_account_snapshot_json?: string | null
-  reviewed_by?: number | null
-  reviewed_at?: string | null
-  paid_by?: number | null
-  paid_at?: string | null
-  reject_reason?: string | null
-  remark?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface CommissionWithdrawalItem {
-  id: number
-  withdrawal_id: number
-  user_id: number
-  reward_id: number
-  recharge_order_id: number
-  allocated_amount: number
-  fee_allocated_amount: number
-  net_allocated_amount: number
-  currency: string
-  status: string
-  freeze_ledger_id?: number | null
-  return_ledger_id?: number | null
-  paid_ledger_id?: number | null
-  reverse_ledger_id?: number | null
-  created_at: string
-  updated_at: string
-  source_user_email?: string
-  external_order_id?: string
-  order_paid_amount?: number
-  reward_rate_snapshot?: number
-  order_paid_at?: string | null
-}
-
-export interface CommissionPayoutAccount {
-  id: number
-  user_id: number
-  method: string
-  account_name: string
-  account_no_masked?: string | null
-  account_no_encrypted?: string | null
-  bank_name?: string | null
-  qr_image_url?: string | null
-  is_default: boolean
-  status: string
-  created_at: string
-  updated_at: string
-}
-
-export interface CreateReferralWithdrawalRequest {
-  amount: number
-  payout_method: string
-  payout_account_id?: number
-  remark?: string
-}
-
-export interface UpsertReferralPayoutAccountRequest {
-  method: string
-  account_name: string
-  account_no?: string
-  bank_name?: string
-  qr_image_url?: string
-  is_default?: boolean
-  status?: string
-}
-
-export interface ReferralWithdrawalResult {
-  withdrawal: CommissionWithdrawal
-  items: CommissionWithdrawalItem[]
-}
-
-export interface AdminReferralRelation {
-  user_id: number
-  user_email: string
-  username: string
-  referrer_user_id?: number | null
-  referrer_email?: string | null
-  referrer_username?: string | null
-  bind_source: string
-  bind_code?: string | null
-  locked_at?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface AdminReferralAccountOption {
-  user_id: number
-  email: string
-  username: string
-  referral_code: string
-}
-
-export interface AdminReferralRankingItem {
-  user_id: number
-  email: string
-  username: string
-  referral_code: string
-  direct_invitees: number
-  second_level_invitees: number
-  total_commission: number
-  available_commission: number
-  withdrawn_commission: number
-}
-
-export interface AdminReferralOverview {
-  total_accounts: number
-  total_bound_users: number
-  pending_commission: number
-  available_commission: number
-  frozen_commission: number
-  withdrawn_commission: number
-  pending_withdrawal_count: number
-  pending_withdrawal_amount: number
-  recent_trend: AdminReferralTrendPoint[]
-  ranking: AdminReferralRankingItem[]
-}
-
-export interface AdminReferralTrendPoint {
-  date: string
-  reward_amount: number
-  withdrawal_amount: number
-}
-
-export interface AdminReferralTreeNode {
-  user_id: number
-  email: string
-  username: string
-  referral_code: string
-  level: number
-  direct_invitees: number
-  second_level_invitees: number
-  total_commission: number
-  available_commission: number
-  children: AdminReferralTreeNode[]
-}
-
-export interface ReferralRelationHistoryEntry {
-  id: number
-  user_id: number
-  old_referrer_user_id?: number | null
-  new_referrer_user_id?: number | null
-  old_bind_code?: string | null
-  new_bind_code?: string | null
-  change_source: string
-  changed_by?: number | null
-  reason?: string | null
-  metadata_json?: string | null
-  created_at: string
-}
-
-export interface AdminCommissionReward {
-  id: number
-  user_id: number
-  source_user_id: number
-  recharge_order_id: number
-  level: number
-  rate_snapshot: number
-  base_amount_snapshot: number
-  reward_amount: number
-  currency: string
-  reward_mode_snapshot: string
-  status: string
-  available_at?: string | null
-  frozen_at?: string | null
-  paid_at?: string | null
-  reversed_at?: string | null
-  rule_snapshot_json?: string | null
-  relation_snapshot_json?: string | null
-  notes?: string | null
-  created_at: string
-  updated_at: string
-  user_email: string
-  username: string
-  source_user_email: string
-  source_username: string
-  external_order_id?: string | null
-}
-
-export interface AdminCommissionLedger extends CommissionLedgerEntry {
-  user_email: string
-  username: string
-  withdrawal_no?: string | null
-}
-
-export interface AdminCommissionWithdrawal extends CommissionWithdrawal {
-  user_email: string
-  username: string
-  item_count: number
+  referral_settlement_currency: string
+  referral_withdraw_methods_enabled: string[]
 }
 
 export interface AuthResponse {
@@ -677,6 +378,13 @@ export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity'
 
 export type SubscriptionType = 'standard' | 'subscription'
 
+export interface OpenAIMessagesDispatchModelConfig {
+  opus_mapped_model?: string
+  sonnet_mapped_model?: string
+  haiku_mapped_model?: string
+  exact_model_mappings?: Record<string, string>
+}
+
 export interface Group {
   id: number
   name: string
@@ -699,6 +407,8 @@ export interface Group {
   fallback_group_id_on_invalid_request: number | null
   // OpenAI Messages 调度开关（用户侧需要此字段判断是否展示 Claude Code 教程）
   allow_messages_dispatch?: boolean
+  default_mapped_model?: string
+  messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   require_oauth_only: boolean
   require_privacy_set: boolean
   created_at: string
@@ -725,6 +435,7 @@ export interface AdminGroup extends Group {
 
   // OpenAI Messages 调度配置（仅 openai 平台使用）
   default_mapped_model?: string
+  messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
 
   // 分组排序
   sort_order: number
@@ -1661,6 +1372,8 @@ export interface UsageQueryParams {
   billing_type?: number | null
   start_date?: string
   end_date?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 }
 
 // ==================== Account Usage Statistics ====================
@@ -1928,10 +1641,324 @@ export interface UpdateScheduledTestPlanRequest {
   auto_recover?: boolean
 }
 
+// ==================== Referral System Types ====================
+
+export interface ReferralCodeInfo {
+  code: string
+  user_id: number
+  created_at: string
+}
+
+export interface ReferralRelationInfo {
+  referrer_user_id: number
+  referrer_email: string
+  bound_at: string
+}
+
+export interface ReferralCenterOverview {
+  referral_code: string
+  default_code: { code: string } | null
+  total_invitees: number
+  direct_invitees: number
+  total_commission: number
+  total_commission_earned: number
+  available_commission: number
+  pending_commission: number
+  frozen_commission: number
+  available_balance: number
+  withdrawn_commission: number
+  withdrawn_amount: number
+  settlement_currency: string
+  withdraw_methods_enabled: string[]
+  referral_withdraw_enabled: boolean
+}
+
+export interface CommissionLedgerEntry {
+  id: number
+  user_id: number
+  order_id: number
+  invitee_user_id: number
+  invitee_email: string
+  source_user_email: string
+  source_user_username: string
+  external_order_id: string
+  entry_type: string
+  bucket: string
+  level: number
+  order_amount: number
+  order_paid_amount: number
+  commission_rate: number
+  reward_rate_snapshot: number
+  commission_amount: number
+  amount: number
+  settlement_currency: string
+  status: string
+  created_at: string
+  settled_at: string | null
+}
+
+export interface CommissionPayoutAccount {
+  id: number
+  user_id: number
+  method: string
+  account_name: string
+  account_number: string
+  account_no_masked: string
+  bank_name: string
+  qr_image_url: string
+  extra: Record<string, unknown>
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CommissionWithdrawal {
+  id: number
+  withdrawal_no: string
+  user_id: number
+  amount: number
+  net_amount: number
+  settlement_currency: string
+  method: string
+  payout_account_snapshot: Record<string, unknown>
+  status: string
+  admin_note: string
+  requested_at: string
+  created_at: string
+  processed_at: string | null
+}
+
+export interface CommissionWithdrawalItem {
+  id: number
+  user_id: number
+  user_email: string
+  source_user_email: string
+  amount: number
+  settlement_currency: string
+  method: string
+  payout_account_snapshot: Record<string, unknown>
+  status: string
+  admin_note: string
+  requested_at: string
+  processed_at: string | null
+  order_id: number
+  external_order_id: string
+  recharge_order_id: string
+  order_paid_amount: number
+  order_paid_at: string | null
+  reward_rate_snapshot: number
+  allocated_amount: number
+  fee_allocated_amount: number
+  net_allocated_amount: number
+}
+
+export interface ReferralInvitee {
+  user_id: number
+  email: string
+  username: string
+  bound_at: string
+  total_paid: number
+  total_recharge: number
+  total_commission: number
+  order_count: number
+  latest_paid_at: string | null
+}
+
+export interface UserInviteeReward {
+  id: number
+  invitee_email: string
+  external_order_id: string
+  order_amount: number
+  order_paid_amount: number
+  commission_amount: number
+  reward_amount: number
+  rate_snapshot: number
+  level: number
+  status: string
+  created_at: string
+}
+
 export interface ValidateReferralCodeResponse {
   valid: boolean
-  error_code?: string
-  referrer_user_id?: number
-  referrer_username?: string
-  referrer_email_masked?: string
+  referrer_email?: string
+  message?: string
 }
+
+export interface CreateReferralWithdrawalRequest {
+  amount: number
+  method?: string
+  payout_method: string
+  payout_account_id: number
+  remark?: string
+}
+
+export interface UpsertReferralPayoutAccountRequest {
+  method: string
+  account_name: string
+  account_no?: string
+  account_number?: string
+  bank_name?: string
+  qr_image_url?: string
+  extra?: Record<string, unknown>
+  is_default?: boolean
+}
+
+export interface ReferralWithdrawalResult {
+  id: number
+  amount: string
+  status: string
+  message: string
+}
+
+// Admin referral types
+
+export interface AdminReferralAccountOption {
+  id: number
+  user_id: number
+  email: string
+  username: string
+  referral_code: string
+}
+
+export interface AdminReferralRankingItem {
+  user_id: number
+  email: string
+  username: string
+  referral_code: string
+  total_commission: number
+  available_commission: number
+  withdrawn_commission: number
+  invitee_count: number
+  direct_invitees: number
+  second_level_invitees: number
+}
+
+export interface AdminReferralTrendPoint {
+  date: string
+  new_relations: number
+  new_commission: number
+  reward_amount: number
+  new_withdrawals: number
+  withdrawal_amount: number
+}
+
+export interface AdminReferralOverview {
+  total_referral_users: number
+  total_relations: number
+  total_bound_users: number
+  total_commission: number
+  available_commission: number
+  pending_commission: number
+  frozen_commission: number
+  withdrawn_commission: number
+  total_withdrawn: number
+  pending_withdrawals: number
+  pending_withdrawal_count: number
+  settlement_currency: string
+  ranking: AdminReferralRankingItem[]
+  recent_trend: AdminReferralTrendPoint[]
+  recent_withdrawals: AdminCommissionWithdrawal[]
+}
+
+export interface AdminReferralTreeNode {
+  user_id: number
+  email: string
+  username: string
+  referral_code: string
+  level: number
+  children: AdminReferralTreeNode[]
+  total_commission: number
+  available_commission: number
+  invitee_count: number
+  direct_invitees: number
+  second_level_invitees: number
+}
+
+export interface AdminCommissionLedger {
+  id: number
+  user_id: number
+  user_email: string
+  reward_id: number
+  type: string
+  amount: number
+  balance_before: number
+  balance_after: number
+  remark: string
+  created_at: string
+}
+
+export interface AdminCommissionReward {
+  id: number
+  referrer_user_id: number
+  referrer_email: string
+  invitee_user_id: number
+  invitee_email: string
+  source_user_email: string
+  order_id: number
+  external_order_id: string
+  level: number
+  order_amount: number
+  base_amount_snapshot: number
+  commission_rate: number
+  rate_snapshot: number
+  commission_amount: number
+  reward_amount: number
+  settlement_currency: string
+  status: string
+  created_at: string
+  settled_at: string | null
+}
+
+export interface AdminCommissionWithdrawal {
+  id: number
+  withdrawal_no: string
+  user_id: number
+  user_email: string
+  username: string
+  amount: number
+  fee_amount: number
+  net_amount: number
+  settlement_currency: string
+  method: string
+  payout_method: string
+  payout_account_snapshot: Record<string, unknown>
+  payout_account_snapshot_json: string
+  status: string
+  admin_note: string
+  reject_reason: string
+  requested_at: string
+  created_at: string
+  reviewed_at: string | null
+  paid_at: string | null
+  processed_at: string | null
+}
+
+export interface AdminReferralRelation {
+  user_id: number
+  user_email: string
+  referrer_user_id: number
+  referrer_email: string
+  referral_code: string
+  bound_at: string
+}
+
+export interface ReferralRelationHistoryEntry {
+  id: number
+  user_id: number
+  user_email: string
+  old_referrer_user_id: number | null
+  old_referrer_email: string
+  new_referrer_user_id: number
+  new_referrer_email: string
+  old_bind_code: string
+  new_bind_code: string
+  change_source: string
+  reason: string
+  notes: string
+  operator_user_id: number
+  operator_email: string
+  created_at: string
+}
+
+// Payment types
+export type { SubscriptionPlan, PaymentOrder, CheckoutInfoResponse } from './payment'

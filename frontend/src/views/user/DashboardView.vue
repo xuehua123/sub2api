@@ -1,18 +1,6 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <div
-        v-if="appStore.cachedPublicSettings?.referral_enabled || authStore.user?.referral_enabled"
-        class="rounded-2xl border border-primary-200 bg-primary-50 px-5 py-4 text-sm text-primary-800 dark:border-primary-800/40 dark:bg-primary-900/10 dark:text-primary-200"
-      >
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div class="font-semibold">{{ t('referral.dashboardBannerTitle', '邀请返佣已开启') }}</div>
-            <div>{{ t('referral.dashboardBannerDesc', '查看推广码、返佣流水和提现记录。') }}</div>
-          </div>
-          <router-link to="/referral" class="btn btn-primary">{{ t('nav.referral', '邀请中心') }}</router-link>
-        </div>
-      </div>
       <div v-if="loading" class="flex items-center justify-center py-12"><LoadingSpinner /></div>
       <template v-else-if="stats">
         <UserDashboardStats :stats="stats" :balance="user?.balance || 0" :is-simple="authStore.isSimpleMode" />
@@ -27,14 +15,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'; import { useI18n } from 'vue-i18n'; import { useAuthStore } from '@/stores/auth'; import { useAppStore } from '@/stores'; import { usageAPI, type UserDashboardStats as UserStatsType } from '@/api/usage'
+import { ref, computed, onMounted } from 'vue'; import { useAuthStore } from '@/stores/auth'; import { usageAPI, type UserDashboardStats as UserStatsType } from '@/api/usage'
 import AppLayout from '@/components/layout/AppLayout.vue'; import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import UserDashboardStats from '@/components/user/dashboard/UserDashboardStats.vue'; import UserDashboardCharts from '@/components/user/dashboard/UserDashboardCharts.vue'
 import UserDashboardRecentUsage from '@/components/user/dashboard/UserDashboardRecentUsage.vue'; import UserDashboardQuickActions from '@/components/user/dashboard/UserDashboardQuickActions.vue'
 import type { UsageLog, TrendDataPoint, ModelStat } from '@/types'
 
-const { t } = useI18n()
-const authStore = useAuthStore(); const appStore = useAppStore(); const user = computed(() => authStore.user)
+const authStore = useAuthStore(); const user = computed(() => authStore.user)
 const stats = ref<UserStatsType | null>(null); const loading = ref(false); const loadingUsage = ref(false); const loadingCharts = ref(false)
 const trendData = ref<TrendDataPoint[]>([]); const modelStats = ref<ModelStat[]>([]); const recentUsage = ref<UsageLog[]>([])
 

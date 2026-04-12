@@ -145,7 +145,8 @@ function openWorkspaceFromAccount(option: AdminReferralAccountOption) {
     second_level_invitees: 0,
     total_commission: 0,
     available_commission: 0,
-    withdrawn_commission: 0
+    withdrawn_commission: 0,
+    invitee_count: 0
   }
   workbenchDrawerRef.value?.open(option.user_id, rankingItem, 'relation')
 }
@@ -160,7 +161,8 @@ function openWorkspaceFromWithdrawal(item: AdminCommissionWithdrawal) {
     second_level_invitees: 0,
     total_commission: 0,
     available_commission: 0,
-    withdrawn_commission: 0
+    withdrawn_commission: 0,
+    invitee_count: 0
   }
   workbenchDrawerRef.value?.open(item.user_id, rankingItem, 'withdrawals')
 }
@@ -175,7 +177,8 @@ function openWorkspaceFromTreeNode(item: AdminReferralTreeNode) {
     second_level_invitees: item.second_level_invitees,
     total_commission: item.total_commission,
     available_commission: item.available_commission,
-    withdrawn_commission: 0
+    withdrawn_commission: 0,
+    invitee_count: item.invitee_count
   }
   workbenchDrawerRef.value?.open(item.user_id, rankingItem, 'relation')
 }

@@ -13,8 +13,7 @@ import type {
   SendVerifyCodeResponse,
   PublicSettings,
   TotpLoginResponse,
-  TotpLogin2FARequest,
-  ValidateReferralCodeResponse
+  TotpLogin2FARequest
 } from '@/types'
 
 /**
@@ -285,11 +284,6 @@ export async function validateInvitationCode(code: string): Promise<ValidateInvi
   return data
 }
 
-export async function validateReferralCode(code: string): Promise<ValidateReferralCodeResponse> {
-  const { data } = await apiClient.post<ValidateReferralCodeResponse>('/auth/validate-referral-code', { code })
-  return data
-}
-
 /**
  * Forgot password request
  */
@@ -363,6 +357,28 @@ export async function completeLinuxDoOAuthRegistration(
   return data
 }
 
+/**
+ * Complete OIDC OAuth registration by supplying an invitation code
+ * @param pendingOAuthToken - Short-lived JWT from the OAuth callback
+ * @param invitationCode - Invitation code entered by the user
+ * @returns Token pair on success
+ */
+export async function completeOIDCOAuthRegistration(
+  pendingOAuthToken: string,
+  invitationCode: string
+): Promise<{ access_token: string; refresh_token: string; expires_in: number; token_type: string }> {
+  const { data } = await apiClient.post<{
+    access_token: string
+    refresh_token: string
+    expires_in: number
+    token_type: string
+  }>('/auth/oauth/oidc/complete-registration', {
+    pending_oauth_token: pendingOAuthToken,
+    invitation_code: invitationCode
+  })
+  return data
+}
+
 export const authAPI = {
   login,
   login2FA,
@@ -381,13 +397,13 @@ export const authAPI = {
   getPublicSettings,
   sendVerifyCode,
   validatePromoCode,
-  validateReferralCode,
   validateInvitationCode,
   forgotPassword,
   resetPassword,
   refreshToken,
   revokeAllSessions,
-  completeLinuxDoOAuthRegistration
+  completeLinuxDoOAuthRegistration,
+  completeOIDCOAuthRegistration
 }
 
 export default authAPI

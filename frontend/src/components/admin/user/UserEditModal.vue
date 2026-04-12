@@ -38,14 +38,13 @@
         <input v-model.number="form.concurrency" type="number" class="input" />
       </div>
       <div class="flex items-center justify-between">
-        <div>
-          <label class="input-label mb-0">{{ t('admin.users.referralEnabled', '邀请功能') }}</label>
-          <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.users.referralEnabledHint', '单独为该用户开启邀请返佣功能') }}</p>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" v-model="form.referralEnabled" class="sr-only peer" />
-          <div class="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-primary-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all dark:bg-dark-600"></div>
-        </label>
+        <label class="input-label mb-0">{{ t('referral.enabled') }}</label>
+        <button type="button" @click="form.referralEnabled = !form.referralEnabled"
+          :class="form.referralEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'"
+          class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out">
+          <span :class="form.referralEnabled ? 'translate-x-5' : 'translate-x-0'"
+            class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5 ml-0.5" />
+        </button>
       </div>
       <UserAttributeForm v-model="form.customAttributes" :user-id="user?.id" />
     </form>
@@ -80,7 +79,7 @@ const form = reactive({ email: '', password: '', username: '', notes: '', concur
 
 watch(() => props.user, (u) => {
   if (u) {
-    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', concurrency: u.concurrency, referralEnabled: u.referral_enabled || false, customAttributes: {} })
+    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', concurrency: u.concurrency, referralEnabled: u.referral_enabled ?? false, customAttributes: {} })
     passwordCopied.value = false
   }
 }, { immediate: true })
