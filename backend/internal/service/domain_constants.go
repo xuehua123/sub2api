@@ -1,6 +1,9 @@
 package service
 
-import "github.com/Wei-Shaw/sub2api/internal/domain"
+import (
+	"github.com/Wei-Shaw/sub2api/internal/consts"
+	"github.com/Wei-Shaw/sub2api/internal/domain"
+)
 
 // Status constants
 const (
@@ -249,7 +252,56 @@ const (
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 false）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
+
+	// =========================
+	// LobeHub Integration
+	// =========================
+	SettingKeyLobeHubEnabled              = "lobehub_enabled"
+	SettingKeyLobeHubChatURL              = "lobehub_chat_url"
+	SettingKeyLobeHubOIDCIssuer           = "lobehub_oidc_issuer"
+	SettingKeyLobeHubOIDCClientID         = "lobehub_oidc_client_id"
+	SettingKeyLobeHubOIDCClientSecret     = "lobehub_oidc_client_secret"
+	SettingKeyLobeHubDefaultProvider      = "lobehub_default_provider"
+	SettingKeyLobeHubDefaultModel         = "lobehub_default_model"
+	SettingKeyLobeHubRuntimeConfigVersion = "lobehub_runtime_config_version"
+	SettingKeyHideLobeHubImportButton     = "hide_lobehub_import_button"
+
+	// =========================
+	// Referral System
+	// =========================
+	SettingKeyReferralEnabled                      = "referral_enabled"
+	SettingKeyReferralLevel1Enabled                = "referral_level1_enabled"
+	SettingKeyReferralLevel1Rate                   = "referral_level1_rate"
+	SettingKeyReferralRewardMode                   = "referral_reward_mode"
+	SettingKeyReferralSettlementDelayDays          = "referral_settlement_delay_days"
+	SettingKeyReferralBindBeforeFirstPaidOnly      = "referral_bind_before_first_paid_only"
+	SettingKeyReferralAllowManualInput             = "referral_allow_manual_input"
+	SettingKeyReferralWithdrawEnabled              = "referral_withdraw_enabled"
+	SettingKeyReferralWithdrawMinAmount            = "referral_withdraw_min_amount"
+	SettingKeyReferralWithdrawMaxAmount            = "referral_withdraw_max_amount"
+	SettingKeyReferralWithdrawDailyLimit           = "referral_withdraw_daily_limit"
+	SettingKeyReferralWithdrawFeeRate              = "referral_withdraw_fee_rate"
+	SettingKeyReferralWithdrawFixedFee             = "referral_withdraw_fixed_fee"
+	SettingKeyReferralWithdrawManualReviewRequired = "referral_withdraw_manual_review_required"
+	SettingKeyReferralRefundReverseEnabled         = "referral_refund_reverse_enabled"
+	SettingKeyReferralNegativeCarryEnabled         = "referral_negative_carry_enabled"
+	SettingKeyReferralSettlementCurrency           = "referral_settlement_currency"
+	SettingKeyReferralWithdrawMethodsEnabled       = "referral_withdraw_methods_enabled"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).
 const AdminAPIKeyPrefix = "admin-"
+
+// Referral reward mode constants (re-exported from consts package)
+const (
+	ReferralRewardModeFirstPaidOrder = consts.ReferralRewardModeFirstPaidOrder
+	ReferralRewardModeEveryPaidOrder = consts.ReferralRewardModeEveryPaidOrder
+	ReferralSettlementCurrencyCNY    = consts.ReferralSettlementCurrencyCNY
+)
+
+// Referral withdrawal method constants (re-exported from consts package)
+const (
+	ReferralWithdrawMethodAlipay = consts.ReferralWithdrawMethodAlipay
+	ReferralWithdrawMethodWechat = consts.ReferralWithdrawMethodWechat
+	ReferralWithdrawMethodBank   = consts.ReferralWithdrawMethodBank
+)

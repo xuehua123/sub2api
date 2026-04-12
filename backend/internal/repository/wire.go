@@ -90,6 +90,20 @@ var ProviderSet = wire.NewSet(
 	NewTLSFingerprintProfileRepository,
 	NewChannelRepository,
 
+	// Referral repositories
+	NewReferralRepository,
+	NewCommissionRepository,
+	NewRechargeOrderRepository,
+	ProvideReferralCenterRelationRepository,
+	ProvideReferralAdminRelationRepository,
+	ProvideReferralCenterCommissionRepository,
+	ProvideReferralAdminCommissionRepository,
+
+	// LobeHub state stores
+	NewLobeHubLaunchStateStore,
+	NewLobeHubOIDCStateStore,
+	NewLobeHubOIDCSigningKeyProvider,
+
 	// Cache implementations
 	NewGatewayCache,
 	NewBillingCache,
@@ -188,4 +202,24 @@ func ProvideSQLDB(client *ent.Client) (*sql.DB, error) {
 // 提供：*redis.Client
 func ProvideRedis(cfg *config.Config) *redis.Client {
 	return InitRedis(cfg)
+}
+
+// ProvideReferralCenterRelationRepository wraps the referral repo for the center service.
+func ProvideReferralCenterRelationRepository(client *ent.Client) service.ReferralCenterRelationRepository {
+	return &referralRepository{client: client}
+}
+
+// ProvideReferralAdminRelationRepository wraps the referral repo for the admin service.
+func ProvideReferralAdminRelationRepository(client *ent.Client) service.ReferralAdminRelationRepository {
+	return &referralRepository{client: client}
+}
+
+// ProvideReferralCenterCommissionRepository wraps the commission repo for the center service.
+func ProvideReferralCenterCommissionRepository(client *ent.Client) service.ReferralCenterCommissionRepository {
+	return &commissionRepository{client: client}
+}
+
+// ProvideReferralAdminCommissionRepository wraps the commission repo for the admin service.
+func ProvideReferralAdminCommissionRepository(client *ent.Client) service.ReferralAdminCommissionRepository {
+	return &commissionRepository{client: client}
 }

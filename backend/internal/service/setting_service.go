@@ -171,6 +171,21 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		SettingPaymentEnabled,
+		// LobeHub public settings
+		SettingKeyLobeHubEnabled,
+		SettingKeyLobeHubChatURL,
+		SettingKeyLobeHubOIDCIssuer,
+		SettingKeyLobeHubDefaultProvider,
+		SettingKeyLobeHubDefaultModel,
+		SettingKeyLobeHubRuntimeConfigVersion,
+		SettingKeyHideLobeHubImportButton,
+		// Referral public settings
+		SettingKeyReferralEnabled,
+		SettingKeyReferralAllowManualInput,
+		SettingKeyReferralBindBeforeFirstPaidOnly,
+		SettingKeyReferralWithdrawEnabled,
+		SettingKeyReferralSettlementCurrency,
+		SettingKeyReferralWithdrawMethodsEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -238,6 +253,21 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		OIDCOAuthEnabled:                 oidcEnabled,
 		OIDCOAuthProviderName:            oidcProviderName,
 		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
+		// LobeHub public fields
+		LobeHubEnabled:              settings[SettingKeyLobeHubEnabled] == "true",
+		LobeHubChatURL:              strings.TrimSpace(settings[SettingKeyLobeHubChatURL]),
+		LobeHubOIDCIssuer:           strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer]),
+		LobeHubDefaultProvider:      strings.TrimSpace(settings[SettingKeyLobeHubDefaultProvider]),
+		LobeHubDefaultModel:         strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel]),
+		LobeHubRuntimeConfigVersion: strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion]),
+		HideLobeHubImportButton:     settings[SettingKeyHideLobeHubImportButton] == "true",
+		// Referral public fields
+		ReferralEnabled:                 settings[SettingKeyReferralEnabled] == "true",
+		ReferralAllowManualInput:        settings[SettingKeyReferralAllowManualInput] == "true",
+		ReferralBindBeforeFirstPaidOnly: settings[SettingKeyReferralBindBeforeFirstPaidOnly] == "true",
+		ReferralWithdrawEnabled:         settings[SettingKeyReferralWithdrawEnabled] == "true",
+		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
+		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
 	}, nil
 }
 
@@ -291,6 +321,21 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
 		PaymentEnabled                   bool            `json:"payment_enabled"`
 		Version                          string          `json:"version,omitempty"`
+		// LobeHub
+		LobeHubEnabled              bool   `json:"lobehub_enabled"`
+		LobeHubChatURL              string `json:"lobehub_chat_url,omitempty"`
+		LobeHubOIDCIssuer           string `json:"lobehub_oidc_issuer,omitempty"`
+		LobeHubDefaultProvider      string `json:"lobehub_default_provider,omitempty"`
+		LobeHubDefaultModel         string `json:"lobehub_default_model,omitempty"`
+		LobeHubRuntimeConfigVersion string `json:"lobehub_runtime_config_version,omitempty"`
+		HideLobeHubImportButton     bool   `json:"hide_lobehub_import_button"`
+		// Referral
+		ReferralEnabled                 bool     `json:"referral_enabled"`
+		ReferralAllowManualInput        bool     `json:"referral_allow_manual_input"`
+		ReferralBindBeforeFirstPaidOnly bool     `json:"referral_bind_before_first_paid_only"`
+		ReferralWithdrawEnabled         bool     `json:"referral_withdraw_enabled"`
+		ReferralSettlementCurrency      string   `json:"referral_settlement_currency"`
+		ReferralWithdrawMethodsEnabled  []string `json:"referral_withdraw_methods_enabled"`
 	}{
 		RegistrationEnabled:              settings.RegistrationEnabled,
 		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
@@ -321,6 +366,19 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
 		PaymentEnabled:                   settings.PaymentEnabled,
 		Version:                          s.version,
+		LobeHubEnabled:                   settings.LobeHubEnabled,
+		LobeHubChatURL:                   settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,
+		LobeHubDefaultProvider:           settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:              settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:      settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:          settings.HideLobeHubImportButton,
+		ReferralEnabled:                  settings.ReferralEnabled,
+		ReferralAllowManualInput:         settings.ReferralAllowManualInput,
+		ReferralBindBeforeFirstPaidOnly:  settings.ReferralBindBeforeFirstPaidOnly,
+		ReferralWithdrawEnabled:          settings.ReferralWithdrawEnabled,
+		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
+		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
 	}, nil
 }
 
@@ -594,6 +652,46 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
+
+	// LobeHub integration
+	updates[SettingKeyLobeHubEnabled] = strconv.FormatBool(settings.LobeHubEnabled)
+	updates[SettingKeyLobeHubChatURL] = settings.LobeHubChatURL
+	updates[SettingKeyLobeHubOIDCIssuer] = settings.LobeHubOIDCIssuer
+	updates[SettingKeyLobeHubOIDCClientID] = settings.LobeHubOIDCClientID
+	if settings.LobeHubOIDCClientSecret != "" {
+		updates[SettingKeyLobeHubOIDCClientSecret] = settings.LobeHubOIDCClientSecret
+	}
+	updates[SettingKeyLobeHubDefaultProvider] = settings.LobeHubDefaultProvider
+	updates[SettingKeyLobeHubDefaultModel] = settings.LobeHubDefaultModel
+	updates[SettingKeyLobeHubRuntimeConfigVersion] = settings.LobeHubRuntimeConfigVersion
+	updates[SettingKeyHideLobeHubImportButton] = strconv.FormatBool(settings.HideLobeHubImportButton)
+
+	// Referral system
+	updates[SettingKeyReferralEnabled] = strconv.FormatBool(settings.ReferralEnabled)
+	updates[SettingKeyReferralLevel1Enabled] = strconv.FormatBool(settings.ReferralLevel1Enabled)
+	updates[SettingKeyReferralLevel1Rate] = strconv.FormatFloat(settings.ReferralLevel1Rate, 'f', 8, 64)
+	updates[SettingKeyReferralRewardMode] = settings.ReferralRewardMode
+	updates[SettingKeyReferralSettlementDelayDays] = strconv.Itoa(settings.ReferralSettlementDelayDays)
+	updates[SettingKeyReferralBindBeforeFirstPaidOnly] = strconv.FormatBool(settings.ReferralBindBeforeFirstPaidOnly)
+	updates[SettingKeyReferralAllowManualInput] = strconv.FormatBool(settings.ReferralAllowManualInput)
+	updates[SettingKeyReferralWithdrawEnabled] = strconv.FormatBool(settings.ReferralWithdrawEnabled)
+	updates[SettingKeyReferralWithdrawMinAmount] = strconv.FormatFloat(settings.ReferralWithdrawMinAmount, 'f', 8, 64)
+	updates[SettingKeyReferralWithdrawMaxAmount] = strconv.FormatFloat(settings.ReferralWithdrawMaxAmount, 'f', 8, 64)
+	updates[SettingKeyReferralWithdrawDailyLimit] = strconv.Itoa(settings.ReferralWithdrawDailyLimit)
+	updates[SettingKeyReferralWithdrawFeeRate] = strconv.FormatFloat(settings.ReferralWithdrawFeeRate, 'f', 8, 64)
+	updates[SettingKeyReferralWithdrawFixedFee] = strconv.FormatFloat(settings.ReferralWithdrawFixedFee, 'f', 8, 64)
+	updates[SettingKeyReferralWithdrawManualReviewRequired] = strconv.FormatBool(settings.ReferralWithdrawManualReviewRequired)
+	updates[SettingKeyReferralRefundReverseEnabled] = strconv.FormatBool(settings.ReferralRefundReverseEnabled)
+	updates[SettingKeyReferralNegativeCarryEnabled] = strconv.FormatBool(settings.ReferralNegativeCarryEnabled)
+	updates[SettingKeyReferralSettlementCurrency] = settings.ReferralSettlementCurrency
+	if len(settings.ReferralWithdrawMethodsEnabled) > 0 {
+		methodsJSON, jsonErr := json.Marshal(settings.ReferralWithdrawMethodsEnabled)
+		if jsonErr == nil {
+			updates[SettingKeyReferralWithdrawMethodsEnabled] = string(methodsJSON)
+		}
+	} else {
+		updates[SettingKeyReferralWithdrawMethodsEnabled] = "[]"
+	}
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -1217,6 +1315,102 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
 
+	// LobeHub integration settings
+	result.LobeHubEnabled = settings[SettingKeyLobeHubEnabled] == "true"
+	result.LobeHubChatURL = strings.TrimSpace(settings[SettingKeyLobeHubChatURL])
+	result.LobeHubOIDCIssuer = strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer])
+	result.LobeHubOIDCClientID = strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientID])
+	result.LobeHubOIDCClientSecret = strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientSecret])
+	result.LobeHubOIDCClientSecretConfigured = result.LobeHubOIDCClientSecret != ""
+	result.LobeHubDefaultProvider = strings.TrimSpace(settings[SettingKeyLobeHubDefaultProvider])
+	result.LobeHubDefaultModel = strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel])
+	result.LobeHubRuntimeConfigVersion = strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion])
+	result.HideLobeHubImportButton = settings[SettingKeyHideLobeHubImportButton] == "true"
+
+	// Referral system settings
+	result.ReferralEnabled = settings[SettingKeyReferralEnabled] == "true"
+	if v, ok := settings[SettingKeyReferralLevel1Enabled]; ok {
+		result.ReferralLevel1Enabled = v == "true"
+	} else {
+		result.ReferralLevel1Enabled = true // default enabled
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralLevel1Rate], 64); err == nil {
+		result.ReferralLevel1Rate = v
+	}
+	result.ReferralRewardMode = settings[SettingKeyReferralRewardMode]
+	if result.ReferralRewardMode == "" {
+		result.ReferralRewardMode = ReferralRewardModeFirstPaidOrder
+	}
+	if v, err := strconv.Atoi(settings[SettingKeyReferralSettlementDelayDays]); err == nil {
+		result.ReferralSettlementDelayDays = v
+	} else {
+		result.ReferralSettlementDelayDays = 7
+	}
+	if v, ok := settings[SettingKeyReferralBindBeforeFirstPaidOnly]; ok {
+		result.ReferralBindBeforeFirstPaidOnly = v == "true"
+	} else {
+		result.ReferralBindBeforeFirstPaidOnly = true
+	}
+	if v, ok := settings[SettingKeyReferralAllowManualInput]; ok {
+		result.ReferralAllowManualInput = v == "true"
+	} else {
+		result.ReferralAllowManualInput = true
+	}
+	result.ReferralWithdrawEnabled = settings[SettingKeyReferralWithdrawEnabled] == "true"
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawMinAmount], 64); err == nil {
+		result.ReferralWithdrawMinAmount = v
+	} else {
+		result.ReferralWithdrawMinAmount = 100
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawMaxAmount], 64); err == nil {
+		result.ReferralWithdrawMaxAmount = v
+	} else {
+		result.ReferralWithdrawMaxAmount = 5000
+	}
+	if v, err := strconv.Atoi(settings[SettingKeyReferralWithdrawDailyLimit]); err == nil {
+		result.ReferralWithdrawDailyLimit = v
+	} else {
+		result.ReferralWithdrawDailyLimit = 1
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawFeeRate], 64); err == nil {
+		result.ReferralWithdrawFeeRate = v
+	}
+	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawFixedFee], 64); err == nil {
+		result.ReferralWithdrawFixedFee = v
+	}
+	if v, ok := settings[SettingKeyReferralWithdrawManualReviewRequired]; ok {
+		result.ReferralWithdrawManualReviewRequired = v == "true"
+	} else {
+		result.ReferralWithdrawManualReviewRequired = true
+	}
+	if v, ok := settings[SettingKeyReferralRefundReverseEnabled]; ok {
+		result.ReferralRefundReverseEnabled = v == "true"
+	} else {
+		result.ReferralRefundReverseEnabled = true
+	}
+	if v, ok := settings[SettingKeyReferralNegativeCarryEnabled]; ok {
+		result.ReferralNegativeCarryEnabled = v == "true"
+	} else {
+		result.ReferralNegativeCarryEnabled = true
+	}
+	result.ReferralSettlementCurrency = settings[SettingKeyReferralSettlementCurrency]
+	if result.ReferralSettlementCurrency == "" {
+		result.ReferralSettlementCurrency = ReferralSettlementCurrencyCNY
+	}
+	if raw := settings[SettingKeyReferralWithdrawMethodsEnabled]; raw != "" {
+		var methods []string
+		if err := json.Unmarshal([]byte(raw), &methods); err == nil {
+			result.ReferralWithdrawMethodsEnabled = methods
+		}
+	}
+	if len(result.ReferralWithdrawMethodsEnabled) == 0 {
+		result.ReferralWithdrawMethodsEnabled = []string{
+			ReferralWithdrawMethodAlipay,
+			ReferralWithdrawMethodWechat,
+			ReferralWithdrawMethodBank,
+		}
+	}
+
 	return result
 }
 
@@ -1304,6 +1498,26 @@ func (s *SettingService) getStringOrDefault(settings map[string]string, key, def
 		return value
 	}
 	return defaultValue
+}
+
+func (s *SettingService) getReferralCurrencyPublic(settings map[string]string) string {
+	v := settings[SettingKeyReferralSettlementCurrency]
+	if v == "" {
+		return ReferralSettlementCurrencyCNY
+	}
+	return v
+}
+
+func (s *SettingService) getReferralWithdrawMethodsPublic(settings map[string]string) []string {
+	raw := settings[SettingKeyReferralWithdrawMethodsEnabled]
+	if raw == "" {
+		return nil
+	}
+	var methods []string
+	if err := json.Unmarshal([]byte(raw), &methods); err == nil {
+		return methods
+	}
+	return nil
 }
 
 // IsTurnstileEnabled 检查是否启用 Turnstile 验证

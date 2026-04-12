@@ -24,6 +24,16 @@ type Tx struct {
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
 	AnnouncementRead *AnnouncementReadClient
+	// CommissionLedger is the client for interacting with the CommissionLedger builders.
+	CommissionLedger *CommissionLedgerClient
+	// CommissionPayoutAccount is the client for interacting with the CommissionPayoutAccount builders.
+	CommissionPayoutAccount *CommissionPayoutAccountClient
+	// CommissionReward is the client for interacting with the CommissionReward builders.
+	CommissionReward *CommissionRewardClient
+	// CommissionWithdrawal is the client for interacting with the CommissionWithdrawal builders.
+	CommissionWithdrawal *CommissionWithdrawalClient
+	// CommissionWithdrawalItem is the client for interacting with the CommissionWithdrawalItem builders.
+	CommissionWithdrawalItem *CommissionWithdrawalItemClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -42,8 +52,16 @@ type Tx struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// RechargeOrder is the client for interacting with the RechargeOrder builders.
+	RechargeOrder *RechargeOrderClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
+	// ReferralCode is the client for interacting with the ReferralCode builders.
+	ReferralCode *ReferralCodeClient
+	// ReferralRelation is the client for interacting with the ReferralRelation builders.
+	ReferralRelation *ReferralRelationClient
+	// ReferralRelationHistory is the client for interacting with the ReferralRelationHistory builders.
+	ReferralRelationHistory *ReferralRelationHistoryClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -202,6 +220,11 @@ func (tx *Tx) init() {
 	tx.AccountGroup = NewAccountGroupClient(tx.config)
 	tx.Announcement = NewAnnouncementClient(tx.config)
 	tx.AnnouncementRead = NewAnnouncementReadClient(tx.config)
+	tx.CommissionLedger = NewCommissionLedgerClient(tx.config)
+	tx.CommissionPayoutAccount = NewCommissionPayoutAccountClient(tx.config)
+	tx.CommissionReward = NewCommissionRewardClient(tx.config)
+	tx.CommissionWithdrawal = NewCommissionWithdrawalClient(tx.config)
+	tx.CommissionWithdrawalItem = NewCommissionWithdrawalItemClient(tx.config)
 	tx.ErrorPassthroughRule = NewErrorPassthroughRuleClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)
@@ -211,7 +234,11 @@ func (tx *Tx) init() {
 	tx.PromoCode = NewPromoCodeClient(tx.config)
 	tx.PromoCodeUsage = NewPromoCodeUsageClient(tx.config)
 	tx.Proxy = NewProxyClient(tx.config)
+	tx.RechargeOrder = NewRechargeOrderClient(tx.config)
 	tx.RedeemCode = NewRedeemCodeClient(tx.config)
+	tx.ReferralCode = NewReferralCodeClient(tx.config)
+	tx.ReferralRelation = NewReferralRelationClient(tx.config)
+	tx.ReferralRelationHistory = NewReferralRelationHistoryClient(tx.config)
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)

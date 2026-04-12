@@ -124,7 +124,8 @@ type UpdateUserInput struct {
 	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
-	GroupRates map[int64]*float64
+	GroupRates      map[int64]*float64
+	ReferralEnabled *bool
 }
 
 type CreateGroupInput struct {
@@ -626,6 +627,10 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if input.AllowedGroups != nil {
 		user.AllowedGroups = *input.AllowedGroups
+	}
+
+	if input.ReferralEnabled != nil {
+		user.ReferralEnabled = *input.ReferralEnabled
 	}
 
 	if err := s.userRepo.Update(ctx, user); err != nil {

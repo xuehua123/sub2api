@@ -84,12 +84,25 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/auth/oidc/callback',
-    name: 'OIDCOAuthCallback',
-    component: () => import('@/views/auth/OidcCallbackView.vue'),
+    path: '/auth/lobehub-sso',
+    name: 'LobeHubSSO',
+    component: () => import('@/views/auth/LobeHubSSOView.vue'),
     meta: {
-      requiresAuth: false,
-      title: 'OIDC OAuth Callback'
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'LobeHub SSO',
+      titleKey: 'auth.lobehub.title'
+    }
+  },
+  {
+    path: '/auth/lobehub-select-key',
+    name: 'LobeHubSelectKey',
+    component: () => import('@/views/auth/LobeHubSelectKeyView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Select Chat Key',
+      titleKey: 'auth.lobehub.selectKeyTitle'
     }
   },
   {
@@ -201,73 +214,24 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/purchase',
     name: 'PurchaseSubscription',
-    component: () => import('@/views/user/PaymentView.vue'),
+    component: () => import('@/views/user/PurchaseSubscriptionView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
       title: 'Purchase Subscription',
-      titleKey: 'nav.buySubscription',
-      descriptionKey: 'purchase.description',
-      requiresPayment: true
+      titleKey: 'purchase.title',
+      descriptionKey: 'purchase.description'
     }
   },
   {
-    path: '/orders',
-    name: 'OrderList',
-    component: () => import('@/views/user/UserOrdersView.vue'),
+    path: '/referral',
+    name: 'Referral',
+    component: () => import('@/views/user/ReferralView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      title: 'My Orders',
-      titleKey: 'nav.myOrders',
-      requiresPayment: true
-    }
-  },
-  {
-    path: '/payment/qrcode',
-    name: 'PaymentQRCode',
-    component: () => import('@/views/user/PaymentQRCodeView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Payment',
-      titleKey: 'payment.qr.scanToPay',
-      requiresPayment: true
-    }
-  },
-  {
-    path: '/payment/result',
-    name: 'PaymentResult',
-    component: () => import('@/views/user/PaymentResultView.vue'),
-    meta: {
-      requiresAuth: false,
-      requiresAdmin: false,
-      title: 'Payment Result',
-      titleKey: 'payment.result.success',
-      requiresPayment: false
-    }
-  },
-  {
-    path: '/payment/stripe',
-    name: 'StripePayment',
-    component: () => import('@/views/user/StripePaymentView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Stripe Payment',
-      titleKey: 'payment.stripePay',
-      requiresPayment: true
-    }
-  },
-  {
-    path: '/payment/stripe-popup',
-    name: 'StripePopup',
-    component: () => import('@/views/user/StripePopupView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Payment',
-      requiresPayment: true
+      title: 'Referral Center',
+      titleKey: 'referral.title'
     }
   },
   {
@@ -360,6 +324,28 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/referral',
+    name: 'AdminReferral',
+    component: () => import('@/views/admin/ReferralView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Referral Management',
+      titleKey: 'admin.referral.title'
+    }
+  },
+  {
+    path: '/admin/referral/withdrawals',
+    name: 'AdminReferralWithdrawals',
+    component: () => import('@/views/admin/ReferralWithdrawalsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Referral Withdrawal Review',
+      titleKey: 'admin.referral.withdrawalReviewTitle'
+    }
+  },
+  {
     path: '/admin/accounts',
     name: 'AdminAccounts',
     component: () => import('@/views/admin/AccountsView.vue'),
@@ -444,45 +430,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
 
-
-  // ==================== Payment Admin Routes ====================
-  {
-    path: '/admin/orders/dashboard',
-    name: 'AdminPaymentDashboard',
-    component: () => import('@/views/admin/orders/AdminPaymentDashboardView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Payment Dashboard',
-      titleKey: 'nav.paymentDashboard',
-      requiresPayment: true
-    }
-  },
-  {
-    path: '/admin/orders',
-    name: 'AdminOrders',
-    component: () => import('@/views/admin/orders/AdminOrdersView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Order Management',
-      titleKey: 'nav.orderManagement',
-      requiresPayment: true
-    }
-  },
-  {
-    path: '/admin/orders/plans',
-    name: 'AdminPaymentPlans',
-    component: () => import('@/views/admin/orders/AdminPaymentPlansView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Subscription Plans',
-      titleKey: 'nav.paymentPlans',
-      requiresPayment: true
-    }
-  },
-
   // ==================== 404 Not Found ====================
   {
     path: '/:pathMatch(.*)*',
@@ -524,6 +471,14 @@ const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup']
 router.beforeEach((to, _from, next) => {
   // 开始导航加载状态
   navigationLoading.startNavigation()
+
+  // 拦截邀请码标记并保存（含时间戳，7天后过期）
+  if (to.query.via) {
+    const viaCode = to.query.via as string
+    if (viaCode && viaCode.trim().length > 0) {
+      localStorage.setItem('referral_via', JSON.stringify({ code: viaCode.trim().toUpperCase(), ts: Date.now() }))
+    }
+  }
 
   const authStore = useAuthStore()
 
@@ -597,16 +552,6 @@ router.beforeEach((to, _from, next) => {
     // User is authenticated but not admin, redirect to user dashboard
     next('/dashboard')
     return
-  }
-
-
-  // Check payment requirement (internal payment system only)
-  if (to.meta.requiresPayment) {
-    const paymentEnabled = appStore.cachedPublicSettings?.payment_enabled
-    if (!paymentEnabled) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
-      return
-    }
   }
 
   // 简易模式下限制访问某些页面

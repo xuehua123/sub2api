@@ -119,6 +119,34 @@ https://pay.example.com/pay?user_id=123&token=<jwt>&theme=light&lang=zh&ui_mode=
 - 重试保持相同 `code`，并使用新的 `Idempotency-Key`
 
 ### 6) `doc_url` 配置建议
+- 当你启用了推广返佣时，建议把支付成功回调切换到 `POST /api/v1/admin/recharge-orders/credit`。
+- 这个正式入口会原子完成“写正式充值订单 + 增加消费余额 + 触发一级/二级返佣”。
+- 其中 `paid_amount` 是返佣基数，`credited_balance_amount` 是实际写入 `users.balance` 的消费余额。
+- 首版只接受 `currency = CNY`。
+- 原有 `POST /api/v1/admin/redeem-codes/create-and-redeem` 仍可用于纯余额充值或兼容旧流程，但不应再作为返佣对账真相源。
+
+充值订单接口示例：
+```bash
+curl -X POST "${BASE}/api/v1/admin/recharge-orders/credit" \
+  -H "x-api-key: ${KEY}" \
+  -H "Idempotency-Key: recharge-cm1234567890-success" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_order_id":"cm1234567890",
+    "provider":"sub2apipay",
+    "channel":"alipay",
+    "currency":"CNY",
+    "user_id":123,
+    "gross_amount":100.00,
+    "discount_amount":0,
+    "paid_amount":100.00,
+    "gift_balance_amount":0,
+    "credited_balance_amount":100.00,
+    "metadata_json":"{\"trade_no\":\"202604090001\"}",
+    "notes":"sub2apipay callback"
+  }'
+```
+
 - 查看链接：`https://github.com/Wei-Shaw/sub2api/blob/main/ADMIN_PAYMENT_INTEGRATION_API.md`
 - 下载链接：`https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/ADMIN_PAYMENT_INTEGRATION_API.md`
 
@@ -239,5 +267,33 @@ https://pay.example.com/pay?user_id=123&token=<jwt>&theme=light&lang=zh&ui_mode=
 - Keep the same `code` for retry, and use a new `Idempotency-Key`
 
 ### 6) Recommended `doc_url`
+- If referral commission is enabled, prefer `POST /api/v1/admin/recharge-orders/credit` for payment-success callbacks.
+- This formal entry atomically writes the recharge order, credits consumable balance, and triggers level-1 / level-2 commission rewards.
+- `paid_amount` is the commission base, while `credited_balance_amount` is what gets added to `users.balance`.
+- The first release only accepts `currency = CNY`.
+- The legacy `POST /api/v1/admin/redeem-codes/create-and-redeem` endpoint still works for pure balance top-ups or backward compatibility, but it should no longer be treated as the referral settlement source of truth.
+
+Recharge order example:
+```bash
+curl -X POST "${BASE}/api/v1/admin/recharge-orders/credit" \
+  -H "x-api-key: ${KEY}" \
+  -H "Idempotency-Key: recharge-cm1234567890-success" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_order_id":"cm1234567890",
+    "provider":"sub2apipay",
+    "channel":"alipay",
+    "currency":"CNY",
+    "user_id":123,
+    "gross_amount":100.00,
+    "discount_amount":0,
+    "paid_amount":100.00,
+    "gift_balance_amount":0,
+    "credited_balance_amount":100.00,
+    "metadata_json":"{\"trade_no\":\"202604090001\"}",
+    "notes":"sub2apipay callback"
+  }'
+```
+
 - View URL: `https://github.com/Wei-Shaw/sub2api/blob/main/ADMIN_PAYMENT_INTEGRATION_API.md`
 - Download URL: `https://raw.githubusercontent.com/Wei-Shaw/sub2api/main/ADMIN_PAYMENT_INTEGRATION_API.md`

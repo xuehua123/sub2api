@@ -90,5 +90,20 @@ func RegisterUserRoutes(
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
 		}
+
+		// 推荐系统
+		referral := authenticated.Group("/user/referral")
+		{
+			referral.GET("/overview", h.Referral.GetOverview)
+			referral.GET("/ledger", h.Referral.GetLedger)
+			referral.GET("/invitees", h.Referral.GetInvitees)
+			referral.GET("/invitees/:source_user_id/rewards", h.Referral.GetInviteeRewards)
+			referral.GET("/withdrawals", h.Referral.GetWithdrawals)
+			referral.POST("/withdrawals", h.Referral.CreateWithdrawal)
+			referral.GET("/payout-accounts", h.Referral.GetPayoutAccounts)
+			referral.POST("/payout-accounts", h.Referral.CreatePayoutAccount)
+			referral.PUT("/payout-accounts/:id", h.Referral.UpdatePayoutAccount)
+			referral.POST("/convert-to-credit", h.Referral.ConvertToCredit)
+		}
 	}
 }

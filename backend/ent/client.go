@@ -20,6 +20,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
+	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
+	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawal"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawalitem"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -29,7 +34,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/rechargeorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -60,6 +69,16 @@ type Client struct {
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
 	AnnouncementRead *AnnouncementReadClient
+	// CommissionLedger is the client for interacting with the CommissionLedger builders.
+	CommissionLedger *CommissionLedgerClient
+	// CommissionPayoutAccount is the client for interacting with the CommissionPayoutAccount builders.
+	CommissionPayoutAccount *CommissionPayoutAccountClient
+	// CommissionReward is the client for interacting with the CommissionReward builders.
+	CommissionReward *CommissionRewardClient
+	// CommissionWithdrawal is the client for interacting with the CommissionWithdrawal builders.
+	CommissionWithdrawal *CommissionWithdrawalClient
+	// CommissionWithdrawalItem is the client for interacting with the CommissionWithdrawalItem builders.
+	CommissionWithdrawalItem *CommissionWithdrawalItemClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -78,8 +97,16 @@ type Client struct {
 	PromoCodeUsage *PromoCodeUsageClient
 	// Proxy is the client for interacting with the Proxy builders.
 	Proxy *ProxyClient
+	// RechargeOrder is the client for interacting with the RechargeOrder builders.
+	RechargeOrder *RechargeOrderClient
 	// RedeemCode is the client for interacting with the RedeemCode builders.
 	RedeemCode *RedeemCodeClient
+	// ReferralCode is the client for interacting with the ReferralCode builders.
+	ReferralCode *ReferralCodeClient
+	// ReferralRelation is the client for interacting with the ReferralRelation builders.
+	ReferralRelation *ReferralRelationClient
+	// ReferralRelationHistory is the client for interacting with the ReferralRelationHistory builders.
+	ReferralRelationHistory *ReferralRelationHistoryClient
 	// SecuritySecret is the client for interacting with the SecuritySecret builders.
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
@@ -118,6 +145,11 @@ func (c *Client) init() {
 	c.AccountGroup = NewAccountGroupClient(c.config)
 	c.Announcement = NewAnnouncementClient(c.config)
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
+	c.CommissionLedger = NewCommissionLedgerClient(c.config)
+	c.CommissionPayoutAccount = NewCommissionPayoutAccountClient(c.config)
+	c.CommissionReward = NewCommissionRewardClient(c.config)
+	c.CommissionWithdrawal = NewCommissionWithdrawalClient(c.config)
+	c.CommissionWithdrawalItem = NewCommissionWithdrawalItemClient(c.config)
 	c.ErrorPassthroughRule = NewErrorPassthroughRuleClient(c.config)
 	c.Group = NewGroupClient(c.config)
 	c.IdempotencyRecord = NewIdempotencyRecordClient(c.config)
@@ -127,7 +159,11 @@ func (c *Client) init() {
 	c.PromoCode = NewPromoCodeClient(c.config)
 	c.PromoCodeUsage = NewPromoCodeUsageClient(c.config)
 	c.Proxy = NewProxyClient(c.config)
+	c.RechargeOrder = NewRechargeOrderClient(c.config)
 	c.RedeemCode = NewRedeemCodeClient(c.config)
+	c.ReferralCode = NewReferralCodeClient(c.config)
+	c.ReferralRelation = NewReferralRelationClient(c.config)
+	c.ReferralRelationHistory = NewReferralRelationHistoryClient(c.config)
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
@@ -229,34 +265,43 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                     ctx,
-		config:                  cfg,
-		APIKey:                  NewAPIKeyClient(cfg),
-		Account:                 NewAccountClient(cfg),
-		AccountGroup:            NewAccountGroupClient(cfg),
-		Announcement:            NewAnnouncementClient(cfg),
-		AnnouncementRead:        NewAnnouncementReadClient(cfg),
-		ErrorPassthroughRule:    NewErrorPassthroughRuleClient(cfg),
-		Group:                   NewGroupClient(cfg),
-		IdempotencyRecord:       NewIdempotencyRecordClient(cfg),
-		PaymentAuditLog:         NewPaymentAuditLogClient(cfg),
-		PaymentOrder:            NewPaymentOrderClient(cfg),
-		PaymentProviderInstance: NewPaymentProviderInstanceClient(cfg),
-		PromoCode:               NewPromoCodeClient(cfg),
-		PromoCodeUsage:          NewPromoCodeUsageClient(cfg),
-		Proxy:                   NewProxyClient(cfg),
-		RedeemCode:              NewRedeemCodeClient(cfg),
-		SecuritySecret:          NewSecuritySecretClient(cfg),
-		Setting:                 NewSettingClient(cfg),
-		SubscriptionPlan:        NewSubscriptionPlanClient(cfg),
-		TLSFingerprintProfile:   NewTLSFingerprintProfileClient(cfg),
-		UsageCleanupTask:        NewUsageCleanupTaskClient(cfg),
-		UsageLog:                NewUsageLogClient(cfg),
-		User:                    NewUserClient(cfg),
-		UserAllowedGroup:        NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition: NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:      NewUserAttributeValueClient(cfg),
-		UserSubscription:        NewUserSubscriptionClient(cfg),
+		ctx:                      ctx,
+		config:                   cfg,
+		APIKey:                   NewAPIKeyClient(cfg),
+		Account:                  NewAccountClient(cfg),
+		AccountGroup:             NewAccountGroupClient(cfg),
+		Announcement:             NewAnnouncementClient(cfg),
+		AnnouncementRead:         NewAnnouncementReadClient(cfg),
+		CommissionLedger:         NewCommissionLedgerClient(cfg),
+		CommissionPayoutAccount:  NewCommissionPayoutAccountClient(cfg),
+		CommissionReward:         NewCommissionRewardClient(cfg),
+		CommissionWithdrawal:     NewCommissionWithdrawalClient(cfg),
+		CommissionWithdrawalItem: NewCommissionWithdrawalItemClient(cfg),
+		ErrorPassthroughRule:     NewErrorPassthroughRuleClient(cfg),
+		Group:                    NewGroupClient(cfg),
+		IdempotencyRecord:        NewIdempotencyRecordClient(cfg),
+		PaymentAuditLog:          NewPaymentAuditLogClient(cfg),
+		PaymentOrder:             NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:  NewPaymentProviderInstanceClient(cfg),
+		PromoCode:                NewPromoCodeClient(cfg),
+		PromoCodeUsage:           NewPromoCodeUsageClient(cfg),
+		Proxy:                    NewProxyClient(cfg),
+		RechargeOrder:            NewRechargeOrderClient(cfg),
+		RedeemCode:               NewRedeemCodeClient(cfg),
+		ReferralCode:             NewReferralCodeClient(cfg),
+		ReferralRelation:         NewReferralRelationClient(cfg),
+		ReferralRelationHistory:  NewReferralRelationHistoryClient(cfg),
+		SecuritySecret:           NewSecuritySecretClient(cfg),
+		Setting:                  NewSettingClient(cfg),
+		SubscriptionPlan:         NewSubscriptionPlanClient(cfg),
+		TLSFingerprintProfile:    NewTLSFingerprintProfileClient(cfg),
+		UsageCleanupTask:         NewUsageCleanupTaskClient(cfg),
+		UsageLog:                 NewUsageLogClient(cfg),
+		User:                     NewUserClient(cfg),
+		UserAllowedGroup:         NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:  NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:       NewUserAttributeValueClient(cfg),
+		UserSubscription:         NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -274,34 +319,43 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                     ctx,
-		config:                  cfg,
-		APIKey:                  NewAPIKeyClient(cfg),
-		Account:                 NewAccountClient(cfg),
-		AccountGroup:            NewAccountGroupClient(cfg),
-		Announcement:            NewAnnouncementClient(cfg),
-		AnnouncementRead:        NewAnnouncementReadClient(cfg),
-		ErrorPassthroughRule:    NewErrorPassthroughRuleClient(cfg),
-		Group:                   NewGroupClient(cfg),
-		IdempotencyRecord:       NewIdempotencyRecordClient(cfg),
-		PaymentAuditLog:         NewPaymentAuditLogClient(cfg),
-		PaymentOrder:            NewPaymentOrderClient(cfg),
-		PaymentProviderInstance: NewPaymentProviderInstanceClient(cfg),
-		PromoCode:               NewPromoCodeClient(cfg),
-		PromoCodeUsage:          NewPromoCodeUsageClient(cfg),
-		Proxy:                   NewProxyClient(cfg),
-		RedeemCode:              NewRedeemCodeClient(cfg),
-		SecuritySecret:          NewSecuritySecretClient(cfg),
-		Setting:                 NewSettingClient(cfg),
-		SubscriptionPlan:        NewSubscriptionPlanClient(cfg),
-		TLSFingerprintProfile:   NewTLSFingerprintProfileClient(cfg),
-		UsageCleanupTask:        NewUsageCleanupTaskClient(cfg),
-		UsageLog:                NewUsageLogClient(cfg),
-		User:                    NewUserClient(cfg),
-		UserAllowedGroup:        NewUserAllowedGroupClient(cfg),
-		UserAttributeDefinition: NewUserAttributeDefinitionClient(cfg),
-		UserAttributeValue:      NewUserAttributeValueClient(cfg),
-		UserSubscription:        NewUserSubscriptionClient(cfg),
+		ctx:                      ctx,
+		config:                   cfg,
+		APIKey:                   NewAPIKeyClient(cfg),
+		Account:                  NewAccountClient(cfg),
+		AccountGroup:             NewAccountGroupClient(cfg),
+		Announcement:             NewAnnouncementClient(cfg),
+		AnnouncementRead:         NewAnnouncementReadClient(cfg),
+		CommissionLedger:         NewCommissionLedgerClient(cfg),
+		CommissionPayoutAccount:  NewCommissionPayoutAccountClient(cfg),
+		CommissionReward:         NewCommissionRewardClient(cfg),
+		CommissionWithdrawal:     NewCommissionWithdrawalClient(cfg),
+		CommissionWithdrawalItem: NewCommissionWithdrawalItemClient(cfg),
+		ErrorPassthroughRule:     NewErrorPassthroughRuleClient(cfg),
+		Group:                    NewGroupClient(cfg),
+		IdempotencyRecord:        NewIdempotencyRecordClient(cfg),
+		PaymentAuditLog:          NewPaymentAuditLogClient(cfg),
+		PaymentOrder:             NewPaymentOrderClient(cfg),
+		PaymentProviderInstance:  NewPaymentProviderInstanceClient(cfg),
+		PromoCode:                NewPromoCodeClient(cfg),
+		PromoCodeUsage:           NewPromoCodeUsageClient(cfg),
+		Proxy:                    NewProxyClient(cfg),
+		RechargeOrder:            NewRechargeOrderClient(cfg),
+		RedeemCode:               NewRedeemCodeClient(cfg),
+		ReferralCode:             NewReferralCodeClient(cfg),
+		ReferralRelation:         NewReferralRelationClient(cfg),
+		ReferralRelationHistory:  NewReferralRelationHistoryClient(cfg),
+		SecuritySecret:           NewSecuritySecretClient(cfg),
+		Setting:                  NewSettingClient(cfg),
+		SubscriptionPlan:         NewSubscriptionPlanClient(cfg),
+		TLSFingerprintProfile:    NewTLSFingerprintProfileClient(cfg),
+		UsageCleanupTask:         NewUsageCleanupTaskClient(cfg),
+		UsageLog:                 NewUsageLogClient(cfg),
+		User:                     NewUserClient(cfg),
+		UserAllowedGroup:         NewUserAllowedGroupClient(cfg),
+		UserAttributeDefinition:  NewUserAttributeDefinitionClient(cfg),
+		UserAttributeValue:       NewUserAttributeValueClient(cfg),
+		UserSubscription:         NewUserSubscriptionClient(cfg),
 	}, nil
 }
 
@@ -332,9 +386,12 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.CommissionLedger, c.CommissionPayoutAccount, c.CommissionReward,
+		c.CommissionWithdrawal, c.CommissionWithdrawalItem, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PromoCode, c.PromoCodeUsage, c.Proxy,
+		c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
+		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
@@ -348,9 +405,12 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.ErrorPassthroughRule, c.Group, c.IdempotencyRecord, c.PaymentAuditLog,
-		c.PaymentOrder, c.PaymentProviderInstance, c.PromoCode, c.PromoCodeUsage,
-		c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
+		c.CommissionLedger, c.CommissionPayoutAccount, c.CommissionReward,
+		c.CommissionWithdrawal, c.CommissionWithdrawalItem, c.ErrorPassthroughRule,
+		c.Group, c.IdempotencyRecord, c.PaymentAuditLog, c.PaymentOrder,
+		c.PaymentProviderInstance, c.PromoCode, c.PromoCodeUsage, c.Proxy,
+		c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
+		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
 		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
@@ -372,6 +432,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Announcement.mutate(ctx, m)
 	case *AnnouncementReadMutation:
 		return c.AnnouncementRead.mutate(ctx, m)
+	case *CommissionLedgerMutation:
+		return c.CommissionLedger.mutate(ctx, m)
+	case *CommissionPayoutAccountMutation:
+		return c.CommissionPayoutAccount.mutate(ctx, m)
+	case *CommissionRewardMutation:
+		return c.CommissionReward.mutate(ctx, m)
+	case *CommissionWithdrawalMutation:
+		return c.CommissionWithdrawal.mutate(ctx, m)
+	case *CommissionWithdrawalItemMutation:
+		return c.CommissionWithdrawalItem.mutate(ctx, m)
 	case *ErrorPassthroughRuleMutation:
 		return c.ErrorPassthroughRule.mutate(ctx, m)
 	case *GroupMutation:
@@ -390,8 +460,16 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.PromoCodeUsage.mutate(ctx, m)
 	case *ProxyMutation:
 		return c.Proxy.mutate(ctx, m)
+	case *RechargeOrderMutation:
+		return c.RechargeOrder.mutate(ctx, m)
 	case *RedeemCodeMutation:
 		return c.RedeemCode.mutate(ctx, m)
+	case *ReferralCodeMutation:
+		return c.ReferralCode.mutate(ctx, m)
+	case *ReferralRelationMutation:
+		return c.ReferralRelation.mutate(ctx, m)
+	case *ReferralRelationHistoryMutation:
+		return c.ReferralRelationHistory.mutate(ctx, m)
 	case *SecuritySecretMutation:
 		return c.SecuritySecret.mutate(ctx, m)
 	case *SettingMutation:
@@ -1228,6 +1306,975 @@ func (c *AnnouncementReadClient) mutate(ctx context.Context, m *AnnouncementRead
 		return (&AnnouncementReadDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AnnouncementRead mutation op: %q", m.Op())
+	}
+}
+
+// CommissionLedgerClient is a client for the CommissionLedger schema.
+type CommissionLedgerClient struct {
+	config
+}
+
+// NewCommissionLedgerClient returns a client for the CommissionLedger from the given config.
+func NewCommissionLedgerClient(c config) *CommissionLedgerClient {
+	return &CommissionLedgerClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `commissionledger.Hooks(f(g(h())))`.
+func (c *CommissionLedgerClient) Use(hooks ...Hook) {
+	c.hooks.CommissionLedger = append(c.hooks.CommissionLedger, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `commissionledger.Intercept(f(g(h())))`.
+func (c *CommissionLedgerClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CommissionLedger = append(c.inters.CommissionLedger, interceptors...)
+}
+
+// Create returns a builder for creating a CommissionLedger entity.
+func (c *CommissionLedgerClient) Create() *CommissionLedgerCreate {
+	mutation := newCommissionLedgerMutation(c.config, OpCreate)
+	return &CommissionLedgerCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CommissionLedger entities.
+func (c *CommissionLedgerClient) CreateBulk(builders ...*CommissionLedgerCreate) *CommissionLedgerCreateBulk {
+	return &CommissionLedgerCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CommissionLedgerClient) MapCreateBulk(slice any, setFunc func(*CommissionLedgerCreate, int)) *CommissionLedgerCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CommissionLedgerCreateBulk{err: fmt.Errorf("calling to CommissionLedgerClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CommissionLedgerCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CommissionLedgerCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CommissionLedger.
+func (c *CommissionLedgerClient) Update() *CommissionLedgerUpdate {
+	mutation := newCommissionLedgerMutation(c.config, OpUpdate)
+	return &CommissionLedgerUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CommissionLedgerClient) UpdateOne(_m *CommissionLedger) *CommissionLedgerUpdateOne {
+	mutation := newCommissionLedgerMutation(c.config, OpUpdateOne, withCommissionLedger(_m))
+	return &CommissionLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CommissionLedgerClient) UpdateOneID(id int64) *CommissionLedgerUpdateOne {
+	mutation := newCommissionLedgerMutation(c.config, OpUpdateOne, withCommissionLedgerID(id))
+	return &CommissionLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CommissionLedger.
+func (c *CommissionLedgerClient) Delete() *CommissionLedgerDelete {
+	mutation := newCommissionLedgerMutation(c.config, OpDelete)
+	return &CommissionLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CommissionLedgerClient) DeleteOne(_m *CommissionLedger) *CommissionLedgerDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CommissionLedgerClient) DeleteOneID(id int64) *CommissionLedgerDeleteOne {
+	builder := c.Delete().Where(commissionledger.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CommissionLedgerDeleteOne{builder}
+}
+
+// Query returns a query builder for CommissionLedger.
+func (c *CommissionLedgerClient) Query() *CommissionLedgerQuery {
+	return &CommissionLedgerQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCommissionLedger},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CommissionLedger entity by its id.
+func (c *CommissionLedgerClient) Get(ctx context.Context, id int64) (*CommissionLedger, error) {
+	return c.Query().Where(commissionledger.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CommissionLedgerClient) GetX(ctx context.Context, id int64) *CommissionLedger {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a CommissionLedger.
+func (c *CommissionLedgerClient) QueryUser(_m *CommissionLedger) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionledger.Table, commissionledger.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionledger.UserTable, commissionledger.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReward queries the reward edge of a CommissionLedger.
+func (c *CommissionLedgerClient) QueryReward(_m *CommissionLedger) *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionledger.Table, commissionledger.FieldID, id),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionledger.RewardTable, commissionledger.RewardColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRechargeOrder queries the recharge_order edge of a CommissionLedger.
+func (c *CommissionLedgerClient) QueryRechargeOrder(_m *CommissionLedger) *RechargeOrderQuery {
+	query := (&RechargeOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionledger.Table, commissionledger.FieldID, id),
+			sqlgraph.To(rechargeorder.Table, rechargeorder.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionledger.RechargeOrderTable, commissionledger.RechargeOrderColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryWithdrawal queries the withdrawal edge of a CommissionLedger.
+func (c *CommissionLedgerClient) QueryWithdrawal(_m *CommissionLedger) *CommissionWithdrawalQuery {
+	query := (&CommissionWithdrawalClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionledger.Table, commissionledger.FieldID, id),
+			sqlgraph.To(commissionwithdrawal.Table, commissionwithdrawal.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionledger.WithdrawalTable, commissionledger.WithdrawalColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryWithdrawalItem queries the withdrawal_item edge of a CommissionLedger.
+func (c *CommissionLedgerClient) QueryWithdrawalItem(_m *CommissionLedger) *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionledger.Table, commissionledger.FieldID, id),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionledger.WithdrawalItemTable, commissionledger.WithdrawalItemColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CommissionLedgerClient) Hooks() []Hook {
+	return c.hooks.CommissionLedger
+}
+
+// Interceptors returns the client interceptors.
+func (c *CommissionLedgerClient) Interceptors() []Interceptor {
+	return c.inters.CommissionLedger
+}
+
+func (c *CommissionLedgerClient) mutate(ctx context.Context, m *CommissionLedgerMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CommissionLedgerCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CommissionLedgerUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CommissionLedgerUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CommissionLedgerDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CommissionLedger mutation op: %q", m.Op())
+	}
+}
+
+// CommissionPayoutAccountClient is a client for the CommissionPayoutAccount schema.
+type CommissionPayoutAccountClient struct {
+	config
+}
+
+// NewCommissionPayoutAccountClient returns a client for the CommissionPayoutAccount from the given config.
+func NewCommissionPayoutAccountClient(c config) *CommissionPayoutAccountClient {
+	return &CommissionPayoutAccountClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `commissionpayoutaccount.Hooks(f(g(h())))`.
+func (c *CommissionPayoutAccountClient) Use(hooks ...Hook) {
+	c.hooks.CommissionPayoutAccount = append(c.hooks.CommissionPayoutAccount, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `commissionpayoutaccount.Intercept(f(g(h())))`.
+func (c *CommissionPayoutAccountClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CommissionPayoutAccount = append(c.inters.CommissionPayoutAccount, interceptors...)
+}
+
+// Create returns a builder for creating a CommissionPayoutAccount entity.
+func (c *CommissionPayoutAccountClient) Create() *CommissionPayoutAccountCreate {
+	mutation := newCommissionPayoutAccountMutation(c.config, OpCreate)
+	return &CommissionPayoutAccountCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CommissionPayoutAccount entities.
+func (c *CommissionPayoutAccountClient) CreateBulk(builders ...*CommissionPayoutAccountCreate) *CommissionPayoutAccountCreateBulk {
+	return &CommissionPayoutAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CommissionPayoutAccountClient) MapCreateBulk(slice any, setFunc func(*CommissionPayoutAccountCreate, int)) *CommissionPayoutAccountCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CommissionPayoutAccountCreateBulk{err: fmt.Errorf("calling to CommissionPayoutAccountClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CommissionPayoutAccountCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CommissionPayoutAccountCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CommissionPayoutAccount.
+func (c *CommissionPayoutAccountClient) Update() *CommissionPayoutAccountUpdate {
+	mutation := newCommissionPayoutAccountMutation(c.config, OpUpdate)
+	return &CommissionPayoutAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CommissionPayoutAccountClient) UpdateOne(_m *CommissionPayoutAccount) *CommissionPayoutAccountUpdateOne {
+	mutation := newCommissionPayoutAccountMutation(c.config, OpUpdateOne, withCommissionPayoutAccount(_m))
+	return &CommissionPayoutAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CommissionPayoutAccountClient) UpdateOneID(id int64) *CommissionPayoutAccountUpdateOne {
+	mutation := newCommissionPayoutAccountMutation(c.config, OpUpdateOne, withCommissionPayoutAccountID(id))
+	return &CommissionPayoutAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CommissionPayoutAccount.
+func (c *CommissionPayoutAccountClient) Delete() *CommissionPayoutAccountDelete {
+	mutation := newCommissionPayoutAccountMutation(c.config, OpDelete)
+	return &CommissionPayoutAccountDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CommissionPayoutAccountClient) DeleteOne(_m *CommissionPayoutAccount) *CommissionPayoutAccountDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CommissionPayoutAccountClient) DeleteOneID(id int64) *CommissionPayoutAccountDeleteOne {
+	builder := c.Delete().Where(commissionpayoutaccount.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CommissionPayoutAccountDeleteOne{builder}
+}
+
+// Query returns a query builder for CommissionPayoutAccount.
+func (c *CommissionPayoutAccountClient) Query() *CommissionPayoutAccountQuery {
+	return &CommissionPayoutAccountQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCommissionPayoutAccount},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CommissionPayoutAccount entity by its id.
+func (c *CommissionPayoutAccountClient) Get(ctx context.Context, id int64) (*CommissionPayoutAccount, error) {
+	return c.Query().Where(commissionpayoutaccount.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CommissionPayoutAccountClient) GetX(ctx context.Context, id int64) *CommissionPayoutAccount {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a CommissionPayoutAccount.
+func (c *CommissionPayoutAccountClient) QueryUser(_m *CommissionPayoutAccount) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionpayoutaccount.Table, commissionpayoutaccount.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionpayoutaccount.UserTable, commissionpayoutaccount.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CommissionPayoutAccountClient) Hooks() []Hook {
+	return c.hooks.CommissionPayoutAccount
+}
+
+// Interceptors returns the client interceptors.
+func (c *CommissionPayoutAccountClient) Interceptors() []Interceptor {
+	return c.inters.CommissionPayoutAccount
+}
+
+func (c *CommissionPayoutAccountClient) mutate(ctx context.Context, m *CommissionPayoutAccountMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CommissionPayoutAccountCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CommissionPayoutAccountUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CommissionPayoutAccountUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CommissionPayoutAccountDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CommissionPayoutAccount mutation op: %q", m.Op())
+	}
+}
+
+// CommissionRewardClient is a client for the CommissionReward schema.
+type CommissionRewardClient struct {
+	config
+}
+
+// NewCommissionRewardClient returns a client for the CommissionReward from the given config.
+func NewCommissionRewardClient(c config) *CommissionRewardClient {
+	return &CommissionRewardClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `commissionreward.Hooks(f(g(h())))`.
+func (c *CommissionRewardClient) Use(hooks ...Hook) {
+	c.hooks.CommissionReward = append(c.hooks.CommissionReward, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `commissionreward.Intercept(f(g(h())))`.
+func (c *CommissionRewardClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CommissionReward = append(c.inters.CommissionReward, interceptors...)
+}
+
+// Create returns a builder for creating a CommissionReward entity.
+func (c *CommissionRewardClient) Create() *CommissionRewardCreate {
+	mutation := newCommissionRewardMutation(c.config, OpCreate)
+	return &CommissionRewardCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CommissionReward entities.
+func (c *CommissionRewardClient) CreateBulk(builders ...*CommissionRewardCreate) *CommissionRewardCreateBulk {
+	return &CommissionRewardCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CommissionRewardClient) MapCreateBulk(slice any, setFunc func(*CommissionRewardCreate, int)) *CommissionRewardCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CommissionRewardCreateBulk{err: fmt.Errorf("calling to CommissionRewardClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CommissionRewardCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CommissionRewardCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CommissionReward.
+func (c *CommissionRewardClient) Update() *CommissionRewardUpdate {
+	mutation := newCommissionRewardMutation(c.config, OpUpdate)
+	return &CommissionRewardUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CommissionRewardClient) UpdateOne(_m *CommissionReward) *CommissionRewardUpdateOne {
+	mutation := newCommissionRewardMutation(c.config, OpUpdateOne, withCommissionReward(_m))
+	return &CommissionRewardUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CommissionRewardClient) UpdateOneID(id int64) *CommissionRewardUpdateOne {
+	mutation := newCommissionRewardMutation(c.config, OpUpdateOne, withCommissionRewardID(id))
+	return &CommissionRewardUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CommissionReward.
+func (c *CommissionRewardClient) Delete() *CommissionRewardDelete {
+	mutation := newCommissionRewardMutation(c.config, OpDelete)
+	return &CommissionRewardDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CommissionRewardClient) DeleteOne(_m *CommissionReward) *CommissionRewardDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CommissionRewardClient) DeleteOneID(id int64) *CommissionRewardDeleteOne {
+	builder := c.Delete().Where(commissionreward.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CommissionRewardDeleteOne{builder}
+}
+
+// Query returns a query builder for CommissionReward.
+func (c *CommissionRewardClient) Query() *CommissionRewardQuery {
+	return &CommissionRewardQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCommissionReward},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CommissionReward entity by its id.
+func (c *CommissionRewardClient) Get(ctx context.Context, id int64) (*CommissionReward, error) {
+	return c.Query().Where(commissionreward.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CommissionRewardClient) GetX(ctx context.Context, id int64) *CommissionReward {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a CommissionReward.
+func (c *CommissionRewardClient) QueryUser(_m *CommissionReward) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionreward.Table, commissionreward.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionreward.UserTable, commissionreward.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySourceUser queries the source_user edge of a CommissionReward.
+func (c *CommissionRewardClient) QuerySourceUser(_m *CommissionReward) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionreward.Table, commissionreward.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionreward.SourceUserTable, commissionreward.SourceUserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRechargeOrder queries the recharge_order edge of a CommissionReward.
+func (c *CommissionRewardClient) QueryRechargeOrder(_m *CommissionReward) *RechargeOrderQuery {
+	query := (&RechargeOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionreward.Table, commissionreward.FieldID, id),
+			sqlgraph.To(rechargeorder.Table, rechargeorder.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionreward.RechargeOrderTable, commissionreward.RechargeOrderColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers queries the commission_ledgers edge of a CommissionReward.
+func (c *CommissionRewardClient) QueryCommissionLedgers(_m *CommissionReward) *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionreward.Table, commissionreward.FieldID, id),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commissionreward.CommissionLedgersTable, commissionreward.CommissionLedgersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryWithdrawalItems queries the withdrawal_items edge of a CommissionReward.
+func (c *CommissionRewardClient) QueryWithdrawalItems(_m *CommissionReward) *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionreward.Table, commissionreward.FieldID, id),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commissionreward.WithdrawalItemsTable, commissionreward.WithdrawalItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CommissionRewardClient) Hooks() []Hook {
+	return c.hooks.CommissionReward
+}
+
+// Interceptors returns the client interceptors.
+func (c *CommissionRewardClient) Interceptors() []Interceptor {
+	return c.inters.CommissionReward
+}
+
+func (c *CommissionRewardClient) mutate(ctx context.Context, m *CommissionRewardMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CommissionRewardCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CommissionRewardUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CommissionRewardUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CommissionRewardDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CommissionReward mutation op: %q", m.Op())
+	}
+}
+
+// CommissionWithdrawalClient is a client for the CommissionWithdrawal schema.
+type CommissionWithdrawalClient struct {
+	config
+}
+
+// NewCommissionWithdrawalClient returns a client for the CommissionWithdrawal from the given config.
+func NewCommissionWithdrawalClient(c config) *CommissionWithdrawalClient {
+	return &CommissionWithdrawalClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `commissionwithdrawal.Hooks(f(g(h())))`.
+func (c *CommissionWithdrawalClient) Use(hooks ...Hook) {
+	c.hooks.CommissionWithdrawal = append(c.hooks.CommissionWithdrawal, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `commissionwithdrawal.Intercept(f(g(h())))`.
+func (c *CommissionWithdrawalClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CommissionWithdrawal = append(c.inters.CommissionWithdrawal, interceptors...)
+}
+
+// Create returns a builder for creating a CommissionWithdrawal entity.
+func (c *CommissionWithdrawalClient) Create() *CommissionWithdrawalCreate {
+	mutation := newCommissionWithdrawalMutation(c.config, OpCreate)
+	return &CommissionWithdrawalCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CommissionWithdrawal entities.
+func (c *CommissionWithdrawalClient) CreateBulk(builders ...*CommissionWithdrawalCreate) *CommissionWithdrawalCreateBulk {
+	return &CommissionWithdrawalCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CommissionWithdrawalClient) MapCreateBulk(slice any, setFunc func(*CommissionWithdrawalCreate, int)) *CommissionWithdrawalCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CommissionWithdrawalCreateBulk{err: fmt.Errorf("calling to CommissionWithdrawalClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CommissionWithdrawalCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CommissionWithdrawalCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) Update() *CommissionWithdrawalUpdate {
+	mutation := newCommissionWithdrawalMutation(c.config, OpUpdate)
+	return &CommissionWithdrawalUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CommissionWithdrawalClient) UpdateOne(_m *CommissionWithdrawal) *CommissionWithdrawalUpdateOne {
+	mutation := newCommissionWithdrawalMutation(c.config, OpUpdateOne, withCommissionWithdrawal(_m))
+	return &CommissionWithdrawalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CommissionWithdrawalClient) UpdateOneID(id int64) *CommissionWithdrawalUpdateOne {
+	mutation := newCommissionWithdrawalMutation(c.config, OpUpdateOne, withCommissionWithdrawalID(id))
+	return &CommissionWithdrawalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) Delete() *CommissionWithdrawalDelete {
+	mutation := newCommissionWithdrawalMutation(c.config, OpDelete)
+	return &CommissionWithdrawalDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CommissionWithdrawalClient) DeleteOne(_m *CommissionWithdrawal) *CommissionWithdrawalDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CommissionWithdrawalClient) DeleteOneID(id int64) *CommissionWithdrawalDeleteOne {
+	builder := c.Delete().Where(commissionwithdrawal.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CommissionWithdrawalDeleteOne{builder}
+}
+
+// Query returns a query builder for CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) Query() *CommissionWithdrawalQuery {
+	return &CommissionWithdrawalQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCommissionWithdrawal},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CommissionWithdrawal entity by its id.
+func (c *CommissionWithdrawalClient) Get(ctx context.Context, id int64) (*CommissionWithdrawal, error) {
+	return c.Query().Where(commissionwithdrawal.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CommissionWithdrawalClient) GetX(ctx context.Context, id int64) *CommissionWithdrawal {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) QueryUser(_m *CommissionWithdrawal) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawal.Table, commissionwithdrawal.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionwithdrawal.UserTable, commissionwithdrawal.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryItems queries the items edge of a CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) QueryItems(_m *CommissionWithdrawal) *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawal.Table, commissionwithdrawal.FieldID, id),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commissionwithdrawal.ItemsTable, commissionwithdrawal.ItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers queries the commission_ledgers edge of a CommissionWithdrawal.
+func (c *CommissionWithdrawalClient) QueryCommissionLedgers(_m *CommissionWithdrawal) *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawal.Table, commissionwithdrawal.FieldID, id),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commissionwithdrawal.CommissionLedgersTable, commissionwithdrawal.CommissionLedgersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CommissionWithdrawalClient) Hooks() []Hook {
+	return c.hooks.CommissionWithdrawal
+}
+
+// Interceptors returns the client interceptors.
+func (c *CommissionWithdrawalClient) Interceptors() []Interceptor {
+	return c.inters.CommissionWithdrawal
+}
+
+func (c *CommissionWithdrawalClient) mutate(ctx context.Context, m *CommissionWithdrawalMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CommissionWithdrawalCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CommissionWithdrawalUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CommissionWithdrawalUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CommissionWithdrawalDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CommissionWithdrawal mutation op: %q", m.Op())
+	}
+}
+
+// CommissionWithdrawalItemClient is a client for the CommissionWithdrawalItem schema.
+type CommissionWithdrawalItemClient struct {
+	config
+}
+
+// NewCommissionWithdrawalItemClient returns a client for the CommissionWithdrawalItem from the given config.
+func NewCommissionWithdrawalItemClient(c config) *CommissionWithdrawalItemClient {
+	return &CommissionWithdrawalItemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `commissionwithdrawalitem.Hooks(f(g(h())))`.
+func (c *CommissionWithdrawalItemClient) Use(hooks ...Hook) {
+	c.hooks.CommissionWithdrawalItem = append(c.hooks.CommissionWithdrawalItem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `commissionwithdrawalitem.Intercept(f(g(h())))`.
+func (c *CommissionWithdrawalItemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.CommissionWithdrawalItem = append(c.inters.CommissionWithdrawalItem, interceptors...)
+}
+
+// Create returns a builder for creating a CommissionWithdrawalItem entity.
+func (c *CommissionWithdrawalItemClient) Create() *CommissionWithdrawalItemCreate {
+	mutation := newCommissionWithdrawalItemMutation(c.config, OpCreate)
+	return &CommissionWithdrawalItemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of CommissionWithdrawalItem entities.
+func (c *CommissionWithdrawalItemClient) CreateBulk(builders ...*CommissionWithdrawalItemCreate) *CommissionWithdrawalItemCreateBulk {
+	return &CommissionWithdrawalItemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *CommissionWithdrawalItemClient) MapCreateBulk(slice any, setFunc func(*CommissionWithdrawalItemCreate, int)) *CommissionWithdrawalItemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &CommissionWithdrawalItemCreateBulk{err: fmt.Errorf("calling to CommissionWithdrawalItemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*CommissionWithdrawalItemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &CommissionWithdrawalItemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) Update() *CommissionWithdrawalItemUpdate {
+	mutation := newCommissionWithdrawalItemMutation(c.config, OpUpdate)
+	return &CommissionWithdrawalItemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *CommissionWithdrawalItemClient) UpdateOne(_m *CommissionWithdrawalItem) *CommissionWithdrawalItemUpdateOne {
+	mutation := newCommissionWithdrawalItemMutation(c.config, OpUpdateOne, withCommissionWithdrawalItem(_m))
+	return &CommissionWithdrawalItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *CommissionWithdrawalItemClient) UpdateOneID(id int64) *CommissionWithdrawalItemUpdateOne {
+	mutation := newCommissionWithdrawalItemMutation(c.config, OpUpdateOne, withCommissionWithdrawalItemID(id))
+	return &CommissionWithdrawalItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) Delete() *CommissionWithdrawalItemDelete {
+	mutation := newCommissionWithdrawalItemMutation(c.config, OpDelete)
+	return &CommissionWithdrawalItemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *CommissionWithdrawalItemClient) DeleteOne(_m *CommissionWithdrawalItem) *CommissionWithdrawalItemDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *CommissionWithdrawalItemClient) DeleteOneID(id int64) *CommissionWithdrawalItemDeleteOne {
+	builder := c.Delete().Where(commissionwithdrawalitem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &CommissionWithdrawalItemDeleteOne{builder}
+}
+
+// Query returns a query builder for CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) Query() *CommissionWithdrawalItemQuery {
+	return &CommissionWithdrawalItemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeCommissionWithdrawalItem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a CommissionWithdrawalItem entity by its id.
+func (c *CommissionWithdrawalItemClient) Get(ctx context.Context, id int64) (*CommissionWithdrawalItem, error) {
+	return c.Query().Where(commissionwithdrawalitem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *CommissionWithdrawalItemClient) GetX(ctx context.Context, id int64) *CommissionWithdrawalItem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryWithdrawal queries the withdrawal edge of a CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) QueryWithdrawal(_m *CommissionWithdrawalItem) *CommissionWithdrawalQuery {
+	query := (&CommissionWithdrawalClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID, id),
+			sqlgraph.To(commissionwithdrawal.Table, commissionwithdrawal.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionwithdrawalitem.WithdrawalTable, commissionwithdrawalitem.WithdrawalColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryUser queries the user edge of a CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) QueryUser(_m *CommissionWithdrawalItem) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionwithdrawalitem.UserTable, commissionwithdrawalitem.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReward queries the reward edge of a CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) QueryReward(_m *CommissionWithdrawalItem) *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID, id),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionwithdrawalitem.RewardTable, commissionwithdrawalitem.RewardColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRechargeOrder queries the recharge_order edge of a CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) QueryRechargeOrder(_m *CommissionWithdrawalItem) *RechargeOrderQuery {
+	query := (&RechargeOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID, id),
+			sqlgraph.To(rechargeorder.Table, rechargeorder.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, commissionwithdrawalitem.RechargeOrderTable, commissionwithdrawalitem.RechargeOrderColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers queries the commission_ledgers edge of a CommissionWithdrawalItem.
+func (c *CommissionWithdrawalItemClient) QueryCommissionLedgers(_m *CommissionWithdrawalItem) *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID, id),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, commissionwithdrawalitem.CommissionLedgersTable, commissionwithdrawalitem.CommissionLedgersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *CommissionWithdrawalItemClient) Hooks() []Hook {
+	return c.hooks.CommissionWithdrawalItem
+}
+
+// Interceptors returns the client interceptors.
+func (c *CommissionWithdrawalItemClient) Interceptors() []Interceptor {
+	return c.inters.CommissionWithdrawalItem
+}
+
+func (c *CommissionWithdrawalItemClient) mutate(ctx context.Context, m *CommissionWithdrawalItemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&CommissionWithdrawalItemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&CommissionWithdrawalItemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&CommissionWithdrawalItemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&CommissionWithdrawalItemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown CommissionWithdrawalItem mutation op: %q", m.Op())
 	}
 }
 
@@ -2640,6 +3687,203 @@ func (c *ProxyClient) mutate(ctx context.Context, m *ProxyMutation) (Value, erro
 	}
 }
 
+// RechargeOrderClient is a client for the RechargeOrder schema.
+type RechargeOrderClient struct {
+	config
+}
+
+// NewRechargeOrderClient returns a client for the RechargeOrder from the given config.
+func NewRechargeOrderClient(c config) *RechargeOrderClient {
+	return &RechargeOrderClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `rechargeorder.Hooks(f(g(h())))`.
+func (c *RechargeOrderClient) Use(hooks ...Hook) {
+	c.hooks.RechargeOrder = append(c.hooks.RechargeOrder, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `rechargeorder.Intercept(f(g(h())))`.
+func (c *RechargeOrderClient) Intercept(interceptors ...Interceptor) {
+	c.inters.RechargeOrder = append(c.inters.RechargeOrder, interceptors...)
+}
+
+// Create returns a builder for creating a RechargeOrder entity.
+func (c *RechargeOrderClient) Create() *RechargeOrderCreate {
+	mutation := newRechargeOrderMutation(c.config, OpCreate)
+	return &RechargeOrderCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of RechargeOrder entities.
+func (c *RechargeOrderClient) CreateBulk(builders ...*RechargeOrderCreate) *RechargeOrderCreateBulk {
+	return &RechargeOrderCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *RechargeOrderClient) MapCreateBulk(slice any, setFunc func(*RechargeOrderCreate, int)) *RechargeOrderCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &RechargeOrderCreateBulk{err: fmt.Errorf("calling to RechargeOrderClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*RechargeOrderCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &RechargeOrderCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for RechargeOrder.
+func (c *RechargeOrderClient) Update() *RechargeOrderUpdate {
+	mutation := newRechargeOrderMutation(c.config, OpUpdate)
+	return &RechargeOrderUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *RechargeOrderClient) UpdateOne(_m *RechargeOrder) *RechargeOrderUpdateOne {
+	mutation := newRechargeOrderMutation(c.config, OpUpdateOne, withRechargeOrder(_m))
+	return &RechargeOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *RechargeOrderClient) UpdateOneID(id int64) *RechargeOrderUpdateOne {
+	mutation := newRechargeOrderMutation(c.config, OpUpdateOne, withRechargeOrderID(id))
+	return &RechargeOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for RechargeOrder.
+func (c *RechargeOrderClient) Delete() *RechargeOrderDelete {
+	mutation := newRechargeOrderMutation(c.config, OpDelete)
+	return &RechargeOrderDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *RechargeOrderClient) DeleteOne(_m *RechargeOrder) *RechargeOrderDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *RechargeOrderClient) DeleteOneID(id int64) *RechargeOrderDeleteOne {
+	builder := c.Delete().Where(rechargeorder.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &RechargeOrderDeleteOne{builder}
+}
+
+// Query returns a query builder for RechargeOrder.
+func (c *RechargeOrderClient) Query() *RechargeOrderQuery {
+	return &RechargeOrderQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeRechargeOrder},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a RechargeOrder entity by its id.
+func (c *RechargeOrderClient) Get(ctx context.Context, id int64) (*RechargeOrder, error) {
+	return c.Query().Where(rechargeorder.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *RechargeOrderClient) GetX(ctx context.Context, id int64) *RechargeOrder {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a RechargeOrder.
+func (c *RechargeOrderClient) QueryUser(_m *RechargeOrder) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rechargeorder.Table, rechargeorder.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, rechargeorder.UserTable, rechargeorder.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionRewards queries the commission_rewards edge of a RechargeOrder.
+func (c *RechargeOrderClient) QueryCommissionRewards(_m *RechargeOrder) *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rechargeorder.Table, rechargeorder.FieldID, id),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rechargeorder.CommissionRewardsTable, rechargeorder.CommissionRewardsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers queries the commission_ledgers edge of a RechargeOrder.
+func (c *RechargeOrderClient) QueryCommissionLedgers(_m *RechargeOrder) *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rechargeorder.Table, rechargeorder.FieldID, id),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rechargeorder.CommissionLedgersTable, rechargeorder.CommissionLedgersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionWithdrawalItems queries the commission_withdrawal_items edge of a RechargeOrder.
+func (c *RechargeOrderClient) QueryCommissionWithdrawalItems(_m *RechargeOrder) *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(rechargeorder.Table, rechargeorder.FieldID, id),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, rechargeorder.CommissionWithdrawalItemsTable, rechargeorder.CommissionWithdrawalItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *RechargeOrderClient) Hooks() []Hook {
+	return c.hooks.RechargeOrder
+}
+
+// Interceptors returns the client interceptors.
+func (c *RechargeOrderClient) Interceptors() []Interceptor {
+	return c.inters.RechargeOrder
+}
+
+func (c *RechargeOrderClient) mutate(ctx context.Context, m *RechargeOrderMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&RechargeOrderCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&RechargeOrderUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&RechargeOrderUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&RechargeOrderDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown RechargeOrder mutation op: %q", m.Op())
+	}
+}
+
 // RedeemCodeClient is a client for the RedeemCode schema.
 type RedeemCodeClient struct {
 	config
@@ -2802,6 +4046,469 @@ func (c *RedeemCodeClient) mutate(ctx context.Context, m *RedeemCodeMutation) (V
 		return (&RedeemCodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown RedeemCode mutation op: %q", m.Op())
+	}
+}
+
+// ReferralCodeClient is a client for the ReferralCode schema.
+type ReferralCodeClient struct {
+	config
+}
+
+// NewReferralCodeClient returns a client for the ReferralCode from the given config.
+func NewReferralCodeClient(c config) *ReferralCodeClient {
+	return &ReferralCodeClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `referralcode.Hooks(f(g(h())))`.
+func (c *ReferralCodeClient) Use(hooks ...Hook) {
+	c.hooks.ReferralCode = append(c.hooks.ReferralCode, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `referralcode.Intercept(f(g(h())))`.
+func (c *ReferralCodeClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ReferralCode = append(c.inters.ReferralCode, interceptors...)
+}
+
+// Create returns a builder for creating a ReferralCode entity.
+func (c *ReferralCodeClient) Create() *ReferralCodeCreate {
+	mutation := newReferralCodeMutation(c.config, OpCreate)
+	return &ReferralCodeCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ReferralCode entities.
+func (c *ReferralCodeClient) CreateBulk(builders ...*ReferralCodeCreate) *ReferralCodeCreateBulk {
+	return &ReferralCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ReferralCodeClient) MapCreateBulk(slice any, setFunc func(*ReferralCodeCreate, int)) *ReferralCodeCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ReferralCodeCreateBulk{err: fmt.Errorf("calling to ReferralCodeClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ReferralCodeCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ReferralCodeCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ReferralCode.
+func (c *ReferralCodeClient) Update() *ReferralCodeUpdate {
+	mutation := newReferralCodeMutation(c.config, OpUpdate)
+	return &ReferralCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ReferralCodeClient) UpdateOne(_m *ReferralCode) *ReferralCodeUpdateOne {
+	mutation := newReferralCodeMutation(c.config, OpUpdateOne, withReferralCode(_m))
+	return &ReferralCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ReferralCodeClient) UpdateOneID(id int64) *ReferralCodeUpdateOne {
+	mutation := newReferralCodeMutation(c.config, OpUpdateOne, withReferralCodeID(id))
+	return &ReferralCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ReferralCode.
+func (c *ReferralCodeClient) Delete() *ReferralCodeDelete {
+	mutation := newReferralCodeMutation(c.config, OpDelete)
+	return &ReferralCodeDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ReferralCodeClient) DeleteOne(_m *ReferralCode) *ReferralCodeDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ReferralCodeClient) DeleteOneID(id int64) *ReferralCodeDeleteOne {
+	builder := c.Delete().Where(referralcode.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ReferralCodeDeleteOne{builder}
+}
+
+// Query returns a query builder for ReferralCode.
+func (c *ReferralCodeClient) Query() *ReferralCodeQuery {
+	return &ReferralCodeQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeReferralCode},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ReferralCode entity by its id.
+func (c *ReferralCodeClient) Get(ctx context.Context, id int64) (*ReferralCode, error) {
+	return c.Query().Where(referralcode.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ReferralCodeClient) GetX(ctx context.Context, id int64) *ReferralCode {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a ReferralCode.
+func (c *ReferralCodeClient) QueryUser(_m *ReferralCode) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(referralcode.Table, referralcode.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, referralcode.UserTable, referralcode.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ReferralCodeClient) Hooks() []Hook {
+	return c.hooks.ReferralCode
+}
+
+// Interceptors returns the client interceptors.
+func (c *ReferralCodeClient) Interceptors() []Interceptor {
+	return c.inters.ReferralCode
+}
+
+func (c *ReferralCodeClient) mutate(ctx context.Context, m *ReferralCodeMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ReferralCodeCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ReferralCodeUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ReferralCodeUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ReferralCodeDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ReferralCode mutation op: %q", m.Op())
+	}
+}
+
+// ReferralRelationClient is a client for the ReferralRelation schema.
+type ReferralRelationClient struct {
+	config
+}
+
+// NewReferralRelationClient returns a client for the ReferralRelation from the given config.
+func NewReferralRelationClient(c config) *ReferralRelationClient {
+	return &ReferralRelationClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `referralrelation.Hooks(f(g(h())))`.
+func (c *ReferralRelationClient) Use(hooks ...Hook) {
+	c.hooks.ReferralRelation = append(c.hooks.ReferralRelation, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `referralrelation.Intercept(f(g(h())))`.
+func (c *ReferralRelationClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ReferralRelation = append(c.inters.ReferralRelation, interceptors...)
+}
+
+// Create returns a builder for creating a ReferralRelation entity.
+func (c *ReferralRelationClient) Create() *ReferralRelationCreate {
+	mutation := newReferralRelationMutation(c.config, OpCreate)
+	return &ReferralRelationCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ReferralRelation entities.
+func (c *ReferralRelationClient) CreateBulk(builders ...*ReferralRelationCreate) *ReferralRelationCreateBulk {
+	return &ReferralRelationCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ReferralRelationClient) MapCreateBulk(slice any, setFunc func(*ReferralRelationCreate, int)) *ReferralRelationCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ReferralRelationCreateBulk{err: fmt.Errorf("calling to ReferralRelationClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ReferralRelationCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ReferralRelationCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ReferralRelation.
+func (c *ReferralRelationClient) Update() *ReferralRelationUpdate {
+	mutation := newReferralRelationMutation(c.config, OpUpdate)
+	return &ReferralRelationUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ReferralRelationClient) UpdateOne(_m *ReferralRelation) *ReferralRelationUpdateOne {
+	mutation := newReferralRelationMutation(c.config, OpUpdateOne, withReferralRelation(_m))
+	return &ReferralRelationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ReferralRelationClient) UpdateOneID(id int64) *ReferralRelationUpdateOne {
+	mutation := newReferralRelationMutation(c.config, OpUpdateOne, withReferralRelationID(id))
+	return &ReferralRelationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ReferralRelation.
+func (c *ReferralRelationClient) Delete() *ReferralRelationDelete {
+	mutation := newReferralRelationMutation(c.config, OpDelete)
+	return &ReferralRelationDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ReferralRelationClient) DeleteOne(_m *ReferralRelation) *ReferralRelationDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ReferralRelationClient) DeleteOneID(id int64) *ReferralRelationDeleteOne {
+	builder := c.Delete().Where(referralrelation.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ReferralRelationDeleteOne{builder}
+}
+
+// Query returns a query builder for ReferralRelation.
+func (c *ReferralRelationClient) Query() *ReferralRelationQuery {
+	return &ReferralRelationQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeReferralRelation},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ReferralRelation entity by its id.
+func (c *ReferralRelationClient) Get(ctx context.Context, id int64) (*ReferralRelation, error) {
+	return c.Query().Where(referralrelation.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ReferralRelationClient) GetX(ctx context.Context, id int64) *ReferralRelation {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a ReferralRelation.
+func (c *ReferralRelationClient) QueryUser(_m *ReferralRelation) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(referralrelation.Table, referralrelation.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, referralrelation.UserTable, referralrelation.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReferrer queries the referrer edge of a ReferralRelation.
+func (c *ReferralRelationClient) QueryReferrer(_m *ReferralRelation) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(referralrelation.Table, referralrelation.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, referralrelation.ReferrerTable, referralrelation.ReferrerColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ReferralRelationClient) Hooks() []Hook {
+	return c.hooks.ReferralRelation
+}
+
+// Interceptors returns the client interceptors.
+func (c *ReferralRelationClient) Interceptors() []Interceptor {
+	return c.inters.ReferralRelation
+}
+
+func (c *ReferralRelationClient) mutate(ctx context.Context, m *ReferralRelationMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ReferralRelationCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ReferralRelationUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ReferralRelationUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ReferralRelationDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ReferralRelation mutation op: %q", m.Op())
+	}
+}
+
+// ReferralRelationHistoryClient is a client for the ReferralRelationHistory schema.
+type ReferralRelationHistoryClient struct {
+	config
+}
+
+// NewReferralRelationHistoryClient returns a client for the ReferralRelationHistory from the given config.
+func NewReferralRelationHistoryClient(c config) *ReferralRelationHistoryClient {
+	return &ReferralRelationHistoryClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `referralrelationhistory.Hooks(f(g(h())))`.
+func (c *ReferralRelationHistoryClient) Use(hooks ...Hook) {
+	c.hooks.ReferralRelationHistory = append(c.hooks.ReferralRelationHistory, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `referralrelationhistory.Intercept(f(g(h())))`.
+func (c *ReferralRelationHistoryClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ReferralRelationHistory = append(c.inters.ReferralRelationHistory, interceptors...)
+}
+
+// Create returns a builder for creating a ReferralRelationHistory entity.
+func (c *ReferralRelationHistoryClient) Create() *ReferralRelationHistoryCreate {
+	mutation := newReferralRelationHistoryMutation(c.config, OpCreate)
+	return &ReferralRelationHistoryCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ReferralRelationHistory entities.
+func (c *ReferralRelationHistoryClient) CreateBulk(builders ...*ReferralRelationHistoryCreate) *ReferralRelationHistoryCreateBulk {
+	return &ReferralRelationHistoryCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ReferralRelationHistoryClient) MapCreateBulk(slice any, setFunc func(*ReferralRelationHistoryCreate, int)) *ReferralRelationHistoryCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ReferralRelationHistoryCreateBulk{err: fmt.Errorf("calling to ReferralRelationHistoryClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ReferralRelationHistoryCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ReferralRelationHistoryCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ReferralRelationHistory.
+func (c *ReferralRelationHistoryClient) Update() *ReferralRelationHistoryUpdate {
+	mutation := newReferralRelationHistoryMutation(c.config, OpUpdate)
+	return &ReferralRelationHistoryUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ReferralRelationHistoryClient) UpdateOne(_m *ReferralRelationHistory) *ReferralRelationHistoryUpdateOne {
+	mutation := newReferralRelationHistoryMutation(c.config, OpUpdateOne, withReferralRelationHistory(_m))
+	return &ReferralRelationHistoryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ReferralRelationHistoryClient) UpdateOneID(id int64) *ReferralRelationHistoryUpdateOne {
+	mutation := newReferralRelationHistoryMutation(c.config, OpUpdateOne, withReferralRelationHistoryID(id))
+	return &ReferralRelationHistoryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ReferralRelationHistory.
+func (c *ReferralRelationHistoryClient) Delete() *ReferralRelationHistoryDelete {
+	mutation := newReferralRelationHistoryMutation(c.config, OpDelete)
+	return &ReferralRelationHistoryDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ReferralRelationHistoryClient) DeleteOne(_m *ReferralRelationHistory) *ReferralRelationHistoryDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ReferralRelationHistoryClient) DeleteOneID(id int64) *ReferralRelationHistoryDeleteOne {
+	builder := c.Delete().Where(referralrelationhistory.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ReferralRelationHistoryDeleteOne{builder}
+}
+
+// Query returns a query builder for ReferralRelationHistory.
+func (c *ReferralRelationHistoryClient) Query() *ReferralRelationHistoryQuery {
+	return &ReferralRelationHistoryQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeReferralRelationHistory},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ReferralRelationHistory entity by its id.
+func (c *ReferralRelationHistoryClient) Get(ctx context.Context, id int64) (*ReferralRelationHistory, error) {
+	return c.Query().Where(referralrelationhistory.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ReferralRelationHistoryClient) GetX(ctx context.Context, id int64) *ReferralRelationHistory {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a ReferralRelationHistory.
+func (c *ReferralRelationHistoryClient) QueryUser(_m *ReferralRelationHistory) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(referralrelationhistory.Table, referralrelationhistory.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, referralrelationhistory.UserTable, referralrelationhistory.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *ReferralRelationHistoryClient) Hooks() []Hook {
+	return c.hooks.ReferralRelationHistory
+}
+
+// Interceptors returns the client interceptors.
+func (c *ReferralRelationHistoryClient) Interceptors() []Interceptor {
+	return c.inters.ReferralRelationHistory
+}
+
+func (c *ReferralRelationHistoryClient) mutate(ctx context.Context, m *ReferralRelationHistoryMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ReferralRelationHistoryCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ReferralRelationHistoryUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ReferralRelationHistoryUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ReferralRelationHistoryDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ReferralRelationHistory mutation op: %q", m.Op())
 	}
 }
 
@@ -3951,6 +5658,182 @@ func (c *UserClient) QueryPaymentOrders(_m *User) *PaymentOrderQuery {
 	return query
 }
 
+// QueryReferralCodes queries the referral_codes edge of a User.
+func (c *UserClient) QueryReferralCodes(_m *User) *ReferralCodeQuery {
+	query := (&ReferralCodeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(referralcode.Table, referralcode.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralCodesTable, user.ReferralCodesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReferralRelation queries the referral_relation edge of a User.
+func (c *UserClient) QueryReferralRelation(_m *User) *ReferralRelationQuery {
+	query := (&ReferralRelationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(referralrelation.Table, referralrelation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.ReferralRelationTable, user.ReferralRelationColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReferralReferrals queries the referral_referrals edge of a User.
+func (c *UserClient) QueryReferralReferrals(_m *User) *ReferralRelationQuery {
+	query := (&ReferralRelationClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(referralrelation.Table, referralrelation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralReferralsTable, user.ReferralReferralsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryReferralRelationHistories queries the referral_relation_histories edge of a User.
+func (c *UserClient) QueryReferralRelationHistories(_m *User) *ReferralRelationHistoryQuery {
+	query := (&ReferralRelationHistoryClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(referralrelationhistory.Table, referralrelationhistory.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralRelationHistoriesTable, user.ReferralRelationHistoriesColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRechargeOrders queries the recharge_orders edge of a User.
+func (c *UserClient) QueryRechargeOrders(_m *User) *RechargeOrderQuery {
+	query := (&RechargeOrderClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(rechargeorder.Table, rechargeorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.RechargeOrdersTable, user.RechargeOrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionRewards queries the commission_rewards edge of a User.
+func (c *UserClient) QueryCommissionRewards(_m *User) *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionRewardsTable, user.CommissionRewardsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QuerySourceCommissionRewards queries the source_commission_rewards edge of a User.
+func (c *UserClient) QuerySourceCommissionRewards(_m *User) *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.SourceCommissionRewardsTable, user.SourceCommissionRewardsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers queries the commission_ledgers edge of a User.
+func (c *UserClient) QueryCommissionLedgers(_m *User) *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionLedgersTable, user.CommissionLedgersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionWithdrawals queries the commission_withdrawals edge of a User.
+func (c *UserClient) QueryCommissionWithdrawals(_m *User) *CommissionWithdrawalQuery {
+	query := (&CommissionWithdrawalClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionwithdrawal.Table, commissionwithdrawal.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionWithdrawalsTable, user.CommissionWithdrawalsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionWithdrawalItems queries the commission_withdrawal_items edge of a User.
+func (c *UserClient) QueryCommissionWithdrawalItems(_m *User) *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionWithdrawalItemsTable, user.CommissionWithdrawalItemsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryCommissionPayoutAccounts queries the commission_payout_accounts edge of a User.
+func (c *UserClient) QueryCommissionPayoutAccounts(_m *User) *CommissionPayoutAccountQuery {
+	query := (&CommissionPayoutAccountClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(commissionpayoutaccount.Table, commissionpayoutaccount.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionPayoutAccountsTable, user.CommissionPayoutAccountsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups queries the user_allowed_groups edge of a User.
 func (c *UserClient) QueryUserAllowedGroups(_m *User) *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: c.config}).Query()
@@ -4628,20 +6511,26 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead,
-		ErrorPassthroughRule, Group, IdempotencyRecord, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
-		SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserSubscription []ent.Hook
+		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, CommissionLedger,
+		CommissionPayoutAccount, CommissionReward, CommissionWithdrawal,
+		CommissionWithdrawalItem, ErrorPassthroughRule, Group, IdempotencyRecord,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PromoCode,
+		PromoCodeUsage, Proxy, RechargeOrder, RedeemCode, ReferralCode,
+		ReferralRelation, ReferralRelationHistory, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead,
-		ErrorPassthroughRule, Group, IdempotencyRecord, PaymentAuditLog, PaymentOrder,
-		PaymentProviderInstance, PromoCode, PromoCodeUsage, Proxy, RedeemCode,
-		SecuritySecret, Setting, SubscriptionPlan, TLSFingerprintProfile,
-		UsageCleanupTask, UsageLog, User, UserAllowedGroup, UserAttributeDefinition,
-		UserAttributeValue, UserSubscription []ent.Interceptor
+		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, CommissionLedger,
+		CommissionPayoutAccount, CommissionReward, CommissionWithdrawal,
+		CommissionWithdrawalItem, ErrorPassthroughRule, Group, IdempotencyRecord,
+		PaymentAuditLog, PaymentOrder, PaymentProviderInstance, PromoCode,
+		PromoCodeUsage, Proxy, RechargeOrder, RedeemCode, ReferralCode,
+		ReferralRelation, ReferralRelationHistory, SecuritySecret, Setting,
+		SubscriptionPlan, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserSubscription []ent.Interceptor
 	}
 )
 

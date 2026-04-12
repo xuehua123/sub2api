@@ -9,6 +9,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -45,6 +46,8 @@ type User struct {
 	TotpEnabled bool `json:"totp_enabled,omitempty"`
 	// TotpEnabledAt holds the value of the "totp_enabled_at" field.
 	TotpEnabledAt *time.Time `json:"totp_enabled_at,omitempty"`
+	// ReferralEnabled holds the value of the "referral_enabled" field.
+	ReferralEnabled bool `json:"referral_enabled,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -73,11 +76,33 @@ type UserEdges struct {
 	PromoCodeUsages []*PromoCodeUsage `json:"promo_code_usages,omitempty"`
 	// PaymentOrders holds the value of the payment_orders edge.
 	PaymentOrders []*PaymentOrder `json:"payment_orders,omitempty"`
+	// ReferralCodes holds the value of the referral_codes edge.
+	ReferralCodes []*ReferralCode `json:"referral_codes,omitempty"`
+	// ReferralRelation holds the value of the referral_relation edge.
+	ReferralRelation *ReferralRelation `json:"referral_relation,omitempty"`
+	// ReferralReferrals holds the value of the referral_referrals edge.
+	ReferralReferrals []*ReferralRelation `json:"referral_referrals,omitempty"`
+	// ReferralRelationHistories holds the value of the referral_relation_histories edge.
+	ReferralRelationHistories []*ReferralRelationHistory `json:"referral_relation_histories,omitempty"`
+	// RechargeOrders holds the value of the recharge_orders edge.
+	RechargeOrders []*RechargeOrder `json:"recharge_orders,omitempty"`
+	// CommissionRewards holds the value of the commission_rewards edge.
+	CommissionRewards []*CommissionReward `json:"commission_rewards,omitempty"`
+	// SourceCommissionRewards holds the value of the source_commission_rewards edge.
+	SourceCommissionRewards []*CommissionReward `json:"source_commission_rewards,omitempty"`
+	// CommissionLedgers holds the value of the commission_ledgers edge.
+	CommissionLedgers []*CommissionLedger `json:"commission_ledgers,omitempty"`
+	// CommissionWithdrawals holds the value of the commission_withdrawals edge.
+	CommissionWithdrawals []*CommissionWithdrawal `json:"commission_withdrawals,omitempty"`
+	// CommissionWithdrawalItems holds the value of the commission_withdrawal_items edge.
+	CommissionWithdrawalItems []*CommissionWithdrawalItem `json:"commission_withdrawal_items,omitempty"`
+	// CommissionPayoutAccounts holds the value of the commission_payout_accounts edge.
+	CommissionPayoutAccounts []*CommissionPayoutAccount `json:"commission_payout_accounts,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [11]bool
+	loadedTypes [22]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -170,10 +195,111 @@ func (e UserEdges) PaymentOrdersOrErr() ([]*PaymentOrder, error) {
 	return nil, &NotLoadedError{edge: "payment_orders"}
 }
 
+// ReferralCodesOrErr returns the ReferralCodes value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ReferralCodesOrErr() ([]*ReferralCode, error) {
+	if e.loadedTypes[10] {
+		return e.ReferralCodes, nil
+	}
+	return nil, &NotLoadedError{edge: "referral_codes"}
+}
+
+// ReferralRelationOrErr returns the ReferralRelation value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e UserEdges) ReferralRelationOrErr() (*ReferralRelation, error) {
+	if e.ReferralRelation != nil {
+		return e.ReferralRelation, nil
+	} else if e.loadedTypes[11] {
+		return nil, &NotFoundError{label: referralrelation.Label}
+	}
+	return nil, &NotLoadedError{edge: "referral_relation"}
+}
+
+// ReferralReferralsOrErr returns the ReferralReferrals value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ReferralReferralsOrErr() ([]*ReferralRelation, error) {
+	if e.loadedTypes[12] {
+		return e.ReferralReferrals, nil
+	}
+	return nil, &NotLoadedError{edge: "referral_referrals"}
+}
+
+// ReferralRelationHistoriesOrErr returns the ReferralRelationHistories value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) ReferralRelationHistoriesOrErr() ([]*ReferralRelationHistory, error) {
+	if e.loadedTypes[13] {
+		return e.ReferralRelationHistories, nil
+	}
+	return nil, &NotLoadedError{edge: "referral_relation_histories"}
+}
+
+// RechargeOrdersOrErr returns the RechargeOrders value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) RechargeOrdersOrErr() ([]*RechargeOrder, error) {
+	if e.loadedTypes[14] {
+		return e.RechargeOrders, nil
+	}
+	return nil, &NotLoadedError{edge: "recharge_orders"}
+}
+
+// CommissionRewardsOrErr returns the CommissionRewards value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommissionRewardsOrErr() ([]*CommissionReward, error) {
+	if e.loadedTypes[15] {
+		return e.CommissionRewards, nil
+	}
+	return nil, &NotLoadedError{edge: "commission_rewards"}
+}
+
+// SourceCommissionRewardsOrErr returns the SourceCommissionRewards value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) SourceCommissionRewardsOrErr() ([]*CommissionReward, error) {
+	if e.loadedTypes[16] {
+		return e.SourceCommissionRewards, nil
+	}
+	return nil, &NotLoadedError{edge: "source_commission_rewards"}
+}
+
+// CommissionLedgersOrErr returns the CommissionLedgers value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommissionLedgersOrErr() ([]*CommissionLedger, error) {
+	if e.loadedTypes[17] {
+		return e.CommissionLedgers, nil
+	}
+	return nil, &NotLoadedError{edge: "commission_ledgers"}
+}
+
+// CommissionWithdrawalsOrErr returns the CommissionWithdrawals value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommissionWithdrawalsOrErr() ([]*CommissionWithdrawal, error) {
+	if e.loadedTypes[18] {
+		return e.CommissionWithdrawals, nil
+	}
+	return nil, &NotLoadedError{edge: "commission_withdrawals"}
+}
+
+// CommissionWithdrawalItemsOrErr returns the CommissionWithdrawalItems value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommissionWithdrawalItemsOrErr() ([]*CommissionWithdrawalItem, error) {
+	if e.loadedTypes[19] {
+		return e.CommissionWithdrawalItems, nil
+	}
+	return nil, &NotLoadedError{edge: "commission_withdrawal_items"}
+}
+
+// CommissionPayoutAccountsOrErr returns the CommissionPayoutAccounts value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) CommissionPayoutAccountsOrErr() ([]*CommissionPayoutAccount, error) {
+	if e.loadedTypes[20] {
+		return e.CommissionPayoutAccounts, nil
+	}
+	return nil, &NotLoadedError{edge: "commission_payout_accounts"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[21] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -184,7 +310,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldTotpEnabled:
+		case user.FieldTotpEnabled, user.FieldReferralEnabled:
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance:
 			values[i] = new(sql.NullFloat64)
@@ -302,6 +428,12 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				_m.TotpEnabledAt = new(time.Time)
 				*_m.TotpEnabledAt = value.Time
 			}
+		case user.FieldReferralEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field referral_enabled", values[i])
+			} else if value.Valid {
+				_m.ReferralEnabled = value.Bool
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -363,6 +495,61 @@ func (_m *User) QueryPromoCodeUsages() *PromoCodeUsageQuery {
 // QueryPaymentOrders queries the "payment_orders" edge of the User entity.
 func (_m *User) QueryPaymentOrders() *PaymentOrderQuery {
 	return NewUserClient(_m.config).QueryPaymentOrders(_m)
+}
+
+// QueryReferralCodes queries the "referral_codes" edge of the User entity.
+func (_m *User) QueryReferralCodes() *ReferralCodeQuery {
+	return NewUserClient(_m.config).QueryReferralCodes(_m)
+}
+
+// QueryReferralRelation queries the "referral_relation" edge of the User entity.
+func (_m *User) QueryReferralRelation() *ReferralRelationQuery {
+	return NewUserClient(_m.config).QueryReferralRelation(_m)
+}
+
+// QueryReferralReferrals queries the "referral_referrals" edge of the User entity.
+func (_m *User) QueryReferralReferrals() *ReferralRelationQuery {
+	return NewUserClient(_m.config).QueryReferralReferrals(_m)
+}
+
+// QueryReferralRelationHistories queries the "referral_relation_histories" edge of the User entity.
+func (_m *User) QueryReferralRelationHistories() *ReferralRelationHistoryQuery {
+	return NewUserClient(_m.config).QueryReferralRelationHistories(_m)
+}
+
+// QueryRechargeOrders queries the "recharge_orders" edge of the User entity.
+func (_m *User) QueryRechargeOrders() *RechargeOrderQuery {
+	return NewUserClient(_m.config).QueryRechargeOrders(_m)
+}
+
+// QueryCommissionRewards queries the "commission_rewards" edge of the User entity.
+func (_m *User) QueryCommissionRewards() *CommissionRewardQuery {
+	return NewUserClient(_m.config).QueryCommissionRewards(_m)
+}
+
+// QuerySourceCommissionRewards queries the "source_commission_rewards" edge of the User entity.
+func (_m *User) QuerySourceCommissionRewards() *CommissionRewardQuery {
+	return NewUserClient(_m.config).QuerySourceCommissionRewards(_m)
+}
+
+// QueryCommissionLedgers queries the "commission_ledgers" edge of the User entity.
+func (_m *User) QueryCommissionLedgers() *CommissionLedgerQuery {
+	return NewUserClient(_m.config).QueryCommissionLedgers(_m)
+}
+
+// QueryCommissionWithdrawals queries the "commission_withdrawals" edge of the User entity.
+func (_m *User) QueryCommissionWithdrawals() *CommissionWithdrawalQuery {
+	return NewUserClient(_m.config).QueryCommissionWithdrawals(_m)
+}
+
+// QueryCommissionWithdrawalItems queries the "commission_withdrawal_items" edge of the User entity.
+func (_m *User) QueryCommissionWithdrawalItems() *CommissionWithdrawalItemQuery {
+	return NewUserClient(_m.config).QueryCommissionWithdrawalItems(_m)
+}
+
+// QueryCommissionPayoutAccounts queries the "commission_payout_accounts" edge of the User entity.
+func (_m *User) QueryCommissionPayoutAccounts() *CommissionPayoutAccountQuery {
+	return NewUserClient(_m.config).QueryCommissionPayoutAccounts(_m)
 }
 
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.
@@ -440,6 +627,9 @@ func (_m *User) String() string {
 		builder.WriteString("totp_enabled_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("referral_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ReferralEnabled))
 	builder.WriteByte(')')
 	return builder.String()
 }

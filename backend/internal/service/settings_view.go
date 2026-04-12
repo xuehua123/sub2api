@@ -106,6 +106,38 @@ type SystemSettings struct {
 	EnableFingerprintUnification bool // 是否统一 OAuth 账号的指纹头（默认 true）
 	EnableMetadataPassthrough    bool // 是否透传客户端原始 metadata（默认 false）
 	EnableCCHSigning             bool // 是否对 billing header cch 进行签名（默认 false）
+
+	// LobeHub integration
+	LobeHubEnabled                    bool
+	LobeHubChatURL                    string
+	LobeHubOIDCIssuer                 string
+	LobeHubOIDCClientID               string
+	LobeHubOIDCClientSecret           string
+	LobeHubOIDCClientSecretConfigured bool
+	LobeHubDefaultProvider            string
+	LobeHubDefaultModel               string
+	LobeHubRuntimeConfigVersion       string
+	HideLobeHubImportButton           bool
+
+	// Referral system
+	ReferralEnabled                      bool
+	ReferralLevel1Enabled                bool
+	ReferralLevel1Rate                   float64
+	ReferralRewardMode                   string
+	ReferralSettlementDelayDays          int
+	ReferralBindBeforeFirstPaidOnly      bool
+	ReferralAllowManualInput             bool
+	ReferralWithdrawEnabled              bool
+	ReferralWithdrawMinAmount            float64
+	ReferralWithdrawMaxAmount            float64
+	ReferralWithdrawDailyLimit           int
+	ReferralWithdrawFeeRate              float64
+	ReferralWithdrawFixedFee             float64
+	ReferralWithdrawManualReviewRequired bool
+	ReferralRefundReverseEnabled         bool
+	ReferralNegativeCarryEnabled         bool
+	ReferralSettlementCurrency           string
+	ReferralWithdrawMethodsEnabled       []string
 }
 
 type DefaultSubscriptionSetting struct {
@@ -145,6 +177,23 @@ type PublicSettings struct {
 	OIDCOAuthProviderName string
 	PaymentEnabled        bool
 	Version               string
+
+	// Referral (public)
+	ReferralEnabled                 bool
+	ReferralAllowManualInput        bool
+	ReferralBindBeforeFirstPaidOnly bool
+	ReferralWithdrawEnabled         bool
+	ReferralSettlementCurrency      string
+	ReferralWithdrawMethodsEnabled  []string
+
+	// LobeHub (public)
+	LobeHubEnabled              bool
+	LobeHubChatURL              string
+	LobeHubOIDCIssuer           string
+	LobeHubDefaultProvider      string
+	LobeHubDefaultModel         string
+	LobeHubRuntimeConfigVersion string
+	HideLobeHubImportButton     bool
 }
 
 // StreamTimeoutSettings 流超时处理配置（仅控制超时后的处理方式，超时判定由网关配置控制）

@@ -23,6 +23,24 @@ export interface SystemSettings {
   password_reset_enabled: boolean
   frontend_url: string
   invitation_code_enabled: boolean
+  referral_enabled: boolean
+  referral_level1_enabled: boolean
+  referral_level1_rate: number
+  referral_reward_mode: 'first_paid_order' | 'every_paid_order'
+  referral_settlement_delay_days: number
+  referral_bind_before_first_paid_only: boolean
+  referral_allow_manual_input: boolean
+  referral_withdraw_enabled: boolean
+  referral_withdraw_min_amount: number
+  referral_withdraw_max_amount: number
+  referral_withdraw_daily_limit: number
+  referral_withdraw_fee_rate: number
+  referral_withdraw_fixed_fee: number
+  referral_withdraw_manual_review_required: boolean
+  referral_refund_reverse_enabled: boolean
+  referral_negative_carry_enabled: boolean
+  referral_settlement_currency: string
+  referral_withdraw_methods_enabled: string[]
   totp_enabled: boolean // TOTP 双因素认证
   totp_encryption_key_configured: boolean // TOTP 加密密钥是否已配置
   // Default settings
@@ -38,8 +56,17 @@ export interface SystemSettings {
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean
-  table_default_page_size: number
-  table_page_size_options: number[]
+  lobehub_enabled: boolean
+  lobehub_chat_url: string
+  lobehub_oidc_issuer: string
+  lobehub_oidc_client_id: string
+  lobehub_oidc_client_secret_configured: boolean
+  lobehub_default_provider: string
+  lobehub_default_model: string
+  lobehub_runtime_config_version: string
+  hide_lobehub_import_button: boolean
+  purchase_subscription_enabled: boolean
+  purchase_subscription_url: string
   backend_mode_enabled: boolean
   custom_menu_items: CustomMenuItem[]
   custom_endpoints: CustomEndpoint[]
@@ -61,30 +88,6 @@ export interface SystemSettings {
   linuxdo_connect_client_id: string
   linuxdo_connect_client_secret_configured: boolean
   linuxdo_connect_redirect_url: string
-
-  // Generic OIDC OAuth settings
-  oidc_connect_enabled: boolean
-  oidc_connect_provider_name: string
-  oidc_connect_client_id: string
-  oidc_connect_client_secret_configured: boolean
-  oidc_connect_issuer_url: string
-  oidc_connect_discovery_url: string
-  oidc_connect_authorize_url: string
-  oidc_connect_token_url: string
-  oidc_connect_userinfo_url: string
-  oidc_connect_jwks_url: string
-  oidc_connect_scopes: string
-  oidc_connect_redirect_url: string
-  oidc_connect_frontend_redirect_url: string
-  oidc_connect_token_auth_method: string
-  oidc_connect_use_pkce: boolean
-  oidc_connect_validate_id_token: boolean
-  oidc_connect_allowed_signing_algs: string
-  oidc_connect_clock_skew_seconds: number
-  oidc_connect_require_email_verified: boolean
-  oidc_connect_userinfo_email_path: string
-  oidc_connect_userinfo_id_path: string
-  oidc_connect_userinfo_username_path: string
 
   // Model fallback configuration
   enable_model_fallback: boolean
@@ -113,27 +116,6 @@ export interface SystemSettings {
   // Gateway forwarding behavior
   enable_fingerprint_unification: boolean
   enable_metadata_passthrough: boolean
-  enable_cch_signing: boolean
-
-  // Payment configuration
-  payment_enabled: boolean
-  payment_min_amount: number
-  payment_max_amount: number
-  payment_daily_limit: number
-  payment_order_timeout_minutes: number
-  payment_max_pending_orders: number
-  payment_enabled_types: string[]
-  payment_balance_disabled: boolean
-  payment_load_balance_strategy: string
-  payment_product_name_prefix: string
-  payment_product_name_suffix: string
-  payment_help_image_url: string
-  payment_help_text: string
-  payment_cancel_rate_limit_enabled: boolean
-  payment_cancel_rate_limit_max: number
-  payment_cancel_rate_limit_window: number
-  payment_cancel_rate_limit_unit: string
-  payment_cancel_rate_limit_window_mode: string
 }
 
 export interface UpdateSettingsRequest {
@@ -144,6 +126,24 @@ export interface UpdateSettingsRequest {
   password_reset_enabled?: boolean
   frontend_url?: string
   invitation_code_enabled?: boolean
+  referral_enabled?: boolean
+  referral_level1_enabled?: boolean
+  referral_level1_rate?: number
+  referral_reward_mode?: 'first_paid_order' | 'every_paid_order'
+  referral_settlement_delay_days?: number
+  referral_bind_before_first_paid_only?: boolean
+  referral_allow_manual_input?: boolean
+  referral_withdraw_enabled?: boolean
+  referral_withdraw_min_amount?: number
+  referral_withdraw_max_amount?: number
+  referral_withdraw_daily_limit?: number
+  referral_withdraw_fee_rate?: number
+  referral_withdraw_fixed_fee?: number
+  referral_withdraw_manual_review_required?: boolean
+  referral_refund_reverse_enabled?: boolean
+  referral_negative_carry_enabled?: boolean
+  referral_settlement_currency?: string
+  referral_withdraw_methods_enabled?: string[]
   totp_enabled?: boolean // TOTP 双因素认证
   default_balance?: number
   default_concurrency?: number
@@ -156,8 +156,17 @@ export interface UpdateSettingsRequest {
   doc_url?: string
   home_content?: string
   hide_ccs_import_button?: boolean
-  table_default_page_size?: number
-  table_page_size_options?: number[]
+  lobehub_enabled?: boolean
+  lobehub_chat_url?: string
+  lobehub_oidc_issuer?: string
+  lobehub_oidc_client_id?: string
+  lobehub_oidc_client_secret?: string
+  lobehub_default_provider?: string
+  lobehub_default_model?: string
+  lobehub_runtime_config_version?: string
+  hide_lobehub_import_button?: boolean
+  purchase_subscription_enabled?: boolean
+  purchase_subscription_url?: string
   backend_mode_enabled?: boolean
   custom_menu_items?: CustomMenuItem[]
   custom_endpoints?: CustomEndpoint[]
@@ -175,28 +184,6 @@ export interface UpdateSettingsRequest {
   linuxdo_connect_client_id?: string
   linuxdo_connect_client_secret?: string
   linuxdo_connect_redirect_url?: string
-  oidc_connect_enabled?: boolean
-  oidc_connect_provider_name?: string
-  oidc_connect_client_id?: string
-  oidc_connect_client_secret?: string
-  oidc_connect_issuer_url?: string
-  oidc_connect_discovery_url?: string
-  oidc_connect_authorize_url?: string
-  oidc_connect_token_url?: string
-  oidc_connect_userinfo_url?: string
-  oidc_connect_jwks_url?: string
-  oidc_connect_scopes?: string
-  oidc_connect_redirect_url?: string
-  oidc_connect_frontend_redirect_url?: string
-  oidc_connect_token_auth_method?: string
-  oidc_connect_use_pkce?: boolean
-  oidc_connect_validate_id_token?: boolean
-  oidc_connect_allowed_signing_algs?: string
-  oidc_connect_clock_skew_seconds?: number
-  oidc_connect_require_email_verified?: boolean
-  oidc_connect_userinfo_email_path?: string
-  oidc_connect_userinfo_id_path?: string
-  oidc_connect_userinfo_username_path?: string
   enable_model_fallback?: boolean
   fallback_model_anthropic?: string
   fallback_model_openai?: string
@@ -213,26 +200,6 @@ export interface UpdateSettingsRequest {
   allow_ungrouped_key_scheduling?: boolean
   enable_fingerprint_unification?: boolean
   enable_metadata_passthrough?: boolean
-  enable_cch_signing?: boolean
-  // Payment configuration
-  payment_enabled?: boolean
-  payment_min_amount?: number
-  payment_max_amount?: number
-  payment_daily_limit?: number
-  payment_order_timeout_minutes?: number
-  payment_max_pending_orders?: number
-  payment_enabled_types?: string[]
-  payment_balance_disabled?: boolean
-  payment_load_balance_strategy?: string
-  payment_product_name_prefix?: string
-  payment_product_name_suffix?: string
-  payment_help_image_url?: string
-  payment_help_text?: string
-  payment_cancel_rate_limit_enabled?: boolean
-  payment_cancel_rate_limit_max?: number
-  payment_cancel_rate_limit_window?: number
-  payment_cancel_rate_limit_unit?: string
-  payment_cancel_rate_limit_window_mode?: string
 }
 
 /**
@@ -446,9 +413,6 @@ export interface BetaPolicyRule {
   action: 'pass' | 'filter' | 'block'
   scope: 'all' | 'oauth' | 'apikey' | 'bedrock'
   error_message?: string
-  model_whitelist?: string[]
-  fallback_action?: 'pass' | 'filter' | 'block'
-  fallback_error_message?: string
 }
 
 /**

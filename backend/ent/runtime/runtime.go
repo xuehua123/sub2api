@@ -10,6 +10,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
+	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
+	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawal"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawalitem"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -19,7 +24,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/rechargeorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/schema"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
@@ -309,6 +318,222 @@ func init() {
 	announcementreadDescCreatedAt := announcementreadFields[3].Descriptor()
 	// announcementread.DefaultCreatedAt holds the default value on creation for the created_at field.
 	announcementread.DefaultCreatedAt = announcementreadDescCreatedAt.Default.(func() time.Time)
+	commissionledgerFields := schema.CommissionLedger{}.Fields()
+	_ = commissionledgerFields
+	// commissionledgerDescEntryType is the schema descriptor for entry_type field.
+	commissionledgerDescEntryType := commissionledgerFields[5].Descriptor()
+	// commissionledger.EntryTypeValidator is a validator for the "entry_type" field. It is called by the builders before save.
+	commissionledger.EntryTypeValidator = commissionledgerDescEntryType.Validators[0].(func(string) error)
+	// commissionledgerDescBucket is the schema descriptor for bucket field.
+	commissionledgerDescBucket := commissionledgerFields[6].Descriptor()
+	// commissionledger.BucketValidator is a validator for the "bucket" field. It is called by the builders before save.
+	commissionledger.BucketValidator = commissionledgerDescBucket.Validators[0].(func(string) error)
+	// commissionledgerDescAmount is the schema descriptor for amount field.
+	commissionledgerDescAmount := commissionledgerFields[7].Descriptor()
+	// commissionledger.DefaultAmount holds the default value on creation for the amount field.
+	commissionledger.DefaultAmount = commissionledgerDescAmount.Default.(float64)
+	// commissionledgerDescCurrency is the schema descriptor for currency field.
+	commissionledgerDescCurrency := commissionledgerFields[8].Descriptor()
+	// commissionledger.DefaultCurrency holds the default value on creation for the currency field.
+	commissionledger.DefaultCurrency = commissionledgerDescCurrency.Default.(string)
+	// commissionledger.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	commissionledger.CurrencyValidator = commissionledgerDescCurrency.Validators[0].(func(string) error)
+	// commissionledgerDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	commissionledgerDescIdempotencyKey := commissionledgerFields[9].Descriptor()
+	// commissionledger.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	commissionledger.IdempotencyKeyValidator = commissionledgerDescIdempotencyKey.Validators[0].(func(string) error)
+	// commissionledgerDescCreatedAt is the schema descriptor for created_at field.
+	commissionledgerDescCreatedAt := commissionledgerFields[13].Descriptor()
+	// commissionledger.DefaultCreatedAt holds the default value on creation for the created_at field.
+	commissionledger.DefaultCreatedAt = commissionledgerDescCreatedAt.Default.(func() time.Time)
+	commissionpayoutaccountMixin := schema.CommissionPayoutAccount{}.Mixin()
+	commissionpayoutaccountMixinFields0 := commissionpayoutaccountMixin[0].Fields()
+	_ = commissionpayoutaccountMixinFields0
+	commissionpayoutaccountFields := schema.CommissionPayoutAccount{}.Fields()
+	_ = commissionpayoutaccountFields
+	// commissionpayoutaccountDescCreatedAt is the schema descriptor for created_at field.
+	commissionpayoutaccountDescCreatedAt := commissionpayoutaccountMixinFields0[0].Descriptor()
+	// commissionpayoutaccount.DefaultCreatedAt holds the default value on creation for the created_at field.
+	commissionpayoutaccount.DefaultCreatedAt = commissionpayoutaccountDescCreatedAt.Default.(func() time.Time)
+	// commissionpayoutaccountDescUpdatedAt is the schema descriptor for updated_at field.
+	commissionpayoutaccountDescUpdatedAt := commissionpayoutaccountMixinFields0[1].Descriptor()
+	// commissionpayoutaccount.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	commissionpayoutaccount.DefaultUpdatedAt = commissionpayoutaccountDescUpdatedAt.Default.(func() time.Time)
+	// commissionpayoutaccount.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	commissionpayoutaccount.UpdateDefaultUpdatedAt = commissionpayoutaccountDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// commissionpayoutaccountDescMethod is the schema descriptor for method field.
+	commissionpayoutaccountDescMethod := commissionpayoutaccountFields[1].Descriptor()
+	// commissionpayoutaccount.MethodValidator is a validator for the "method" field. It is called by the builders before save.
+	commissionpayoutaccount.MethodValidator = commissionpayoutaccountDescMethod.Validators[0].(func(string) error)
+	// commissionpayoutaccountDescAccountName is the schema descriptor for account_name field.
+	commissionpayoutaccountDescAccountName := commissionpayoutaccountFields[2].Descriptor()
+	// commissionpayoutaccount.AccountNameValidator is a validator for the "account_name" field. It is called by the builders before save.
+	commissionpayoutaccount.AccountNameValidator = commissionpayoutaccountDescAccountName.Validators[0].(func(string) error)
+	// commissionpayoutaccountDescAccountNoMasked is the schema descriptor for account_no_masked field.
+	commissionpayoutaccountDescAccountNoMasked := commissionpayoutaccountFields[3].Descriptor()
+	// commissionpayoutaccount.AccountNoMaskedValidator is a validator for the "account_no_masked" field. It is called by the builders before save.
+	commissionpayoutaccount.AccountNoMaskedValidator = commissionpayoutaccountDescAccountNoMasked.Validators[0].(func(string) error)
+	// commissionpayoutaccountDescBankName is the schema descriptor for bank_name field.
+	commissionpayoutaccountDescBankName := commissionpayoutaccountFields[5].Descriptor()
+	// commissionpayoutaccount.BankNameValidator is a validator for the "bank_name" field. It is called by the builders before save.
+	commissionpayoutaccount.BankNameValidator = commissionpayoutaccountDescBankName.Validators[0].(func(string) error)
+	// commissionpayoutaccountDescQrImageURL is the schema descriptor for qr_image_url field.
+	commissionpayoutaccountDescQrImageURL := commissionpayoutaccountFields[6].Descriptor()
+	// commissionpayoutaccount.QrImageURLValidator is a validator for the "qr_image_url" field. It is called by the builders before save.
+	commissionpayoutaccount.QrImageURLValidator = commissionpayoutaccountDescQrImageURL.Validators[0].(func(string) error)
+	// commissionpayoutaccountDescIsDefault is the schema descriptor for is_default field.
+	commissionpayoutaccountDescIsDefault := commissionpayoutaccountFields[7].Descriptor()
+	// commissionpayoutaccount.DefaultIsDefault holds the default value on creation for the is_default field.
+	commissionpayoutaccount.DefaultIsDefault = commissionpayoutaccountDescIsDefault.Default.(bool)
+	// commissionpayoutaccountDescStatus is the schema descriptor for status field.
+	commissionpayoutaccountDescStatus := commissionpayoutaccountFields[8].Descriptor()
+	// commissionpayoutaccount.DefaultStatus holds the default value on creation for the status field.
+	commissionpayoutaccount.DefaultStatus = commissionpayoutaccountDescStatus.Default.(string)
+	// commissionpayoutaccount.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	commissionpayoutaccount.StatusValidator = commissionpayoutaccountDescStatus.Validators[0].(func(string) error)
+	commissionrewardMixin := schema.CommissionReward{}.Mixin()
+	commissionrewardMixinFields0 := commissionrewardMixin[0].Fields()
+	_ = commissionrewardMixinFields0
+	commissionrewardFields := schema.CommissionReward{}.Fields()
+	_ = commissionrewardFields
+	// commissionrewardDescCreatedAt is the schema descriptor for created_at field.
+	commissionrewardDescCreatedAt := commissionrewardMixinFields0[0].Descriptor()
+	// commissionreward.DefaultCreatedAt holds the default value on creation for the created_at field.
+	commissionreward.DefaultCreatedAt = commissionrewardDescCreatedAt.Default.(func() time.Time)
+	// commissionrewardDescUpdatedAt is the schema descriptor for updated_at field.
+	commissionrewardDescUpdatedAt := commissionrewardMixinFields0[1].Descriptor()
+	// commissionreward.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	commissionreward.DefaultUpdatedAt = commissionrewardDescUpdatedAt.Default.(func() time.Time)
+	// commissionreward.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	commissionreward.UpdateDefaultUpdatedAt = commissionrewardDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// commissionrewardDescRateSnapshot is the schema descriptor for rate_snapshot field.
+	commissionrewardDescRateSnapshot := commissionrewardFields[4].Descriptor()
+	// commissionreward.DefaultRateSnapshot holds the default value on creation for the rate_snapshot field.
+	commissionreward.DefaultRateSnapshot = commissionrewardDescRateSnapshot.Default.(float64)
+	// commissionrewardDescBaseAmountSnapshot is the schema descriptor for base_amount_snapshot field.
+	commissionrewardDescBaseAmountSnapshot := commissionrewardFields[5].Descriptor()
+	// commissionreward.DefaultBaseAmountSnapshot holds the default value on creation for the base_amount_snapshot field.
+	commissionreward.DefaultBaseAmountSnapshot = commissionrewardDescBaseAmountSnapshot.Default.(float64)
+	// commissionrewardDescRewardAmount is the schema descriptor for reward_amount field.
+	commissionrewardDescRewardAmount := commissionrewardFields[6].Descriptor()
+	// commissionreward.DefaultRewardAmount holds the default value on creation for the reward_amount field.
+	commissionreward.DefaultRewardAmount = commissionrewardDescRewardAmount.Default.(float64)
+	// commissionrewardDescCurrency is the schema descriptor for currency field.
+	commissionrewardDescCurrency := commissionrewardFields[7].Descriptor()
+	// commissionreward.DefaultCurrency holds the default value on creation for the currency field.
+	commissionreward.DefaultCurrency = commissionrewardDescCurrency.Default.(string)
+	// commissionreward.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	commissionreward.CurrencyValidator = commissionrewardDescCurrency.Validators[0].(func(string) error)
+	// commissionrewardDescRewardModeSnapshot is the schema descriptor for reward_mode_snapshot field.
+	commissionrewardDescRewardModeSnapshot := commissionrewardFields[8].Descriptor()
+	// commissionreward.RewardModeSnapshotValidator is a validator for the "reward_mode_snapshot" field. It is called by the builders before save.
+	commissionreward.RewardModeSnapshotValidator = commissionrewardDescRewardModeSnapshot.Validators[0].(func(string) error)
+	// commissionrewardDescStatus is the schema descriptor for status field.
+	commissionrewardDescStatus := commissionrewardFields[9].Descriptor()
+	// commissionreward.DefaultStatus holds the default value on creation for the status field.
+	commissionreward.DefaultStatus = commissionrewardDescStatus.Default.(string)
+	// commissionreward.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	commissionreward.StatusValidator = commissionrewardDescStatus.Validators[0].(func(string) error)
+	commissionwithdrawalMixin := schema.CommissionWithdrawal{}.Mixin()
+	commissionwithdrawalMixinFields0 := commissionwithdrawalMixin[0].Fields()
+	_ = commissionwithdrawalMixinFields0
+	commissionwithdrawalFields := schema.CommissionWithdrawal{}.Fields()
+	_ = commissionwithdrawalFields
+	// commissionwithdrawalDescCreatedAt is the schema descriptor for created_at field.
+	commissionwithdrawalDescCreatedAt := commissionwithdrawalMixinFields0[0].Descriptor()
+	// commissionwithdrawal.DefaultCreatedAt holds the default value on creation for the created_at field.
+	commissionwithdrawal.DefaultCreatedAt = commissionwithdrawalDescCreatedAt.Default.(func() time.Time)
+	// commissionwithdrawalDescUpdatedAt is the schema descriptor for updated_at field.
+	commissionwithdrawalDescUpdatedAt := commissionwithdrawalMixinFields0[1].Descriptor()
+	// commissionwithdrawal.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	commissionwithdrawal.DefaultUpdatedAt = commissionwithdrawalDescUpdatedAt.Default.(func() time.Time)
+	// commissionwithdrawal.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	commissionwithdrawal.UpdateDefaultUpdatedAt = commissionwithdrawalDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// commissionwithdrawalDescWithdrawalNo is the schema descriptor for withdrawal_no field.
+	commissionwithdrawalDescWithdrawalNo := commissionwithdrawalFields[1].Descriptor()
+	// commissionwithdrawal.WithdrawalNoValidator is a validator for the "withdrawal_no" field. It is called by the builders before save.
+	commissionwithdrawal.WithdrawalNoValidator = func() func(string) error {
+		validators := commissionwithdrawalDescWithdrawalNo.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(withdrawal_no string) error {
+			for _, fn := range fns {
+				if err := fn(withdrawal_no); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// commissionwithdrawalDescAmount is the schema descriptor for amount field.
+	commissionwithdrawalDescAmount := commissionwithdrawalFields[2].Descriptor()
+	// commissionwithdrawal.DefaultAmount holds the default value on creation for the amount field.
+	commissionwithdrawal.DefaultAmount = commissionwithdrawalDescAmount.Default.(float64)
+	// commissionwithdrawalDescFeeAmount is the schema descriptor for fee_amount field.
+	commissionwithdrawalDescFeeAmount := commissionwithdrawalFields[3].Descriptor()
+	// commissionwithdrawal.DefaultFeeAmount holds the default value on creation for the fee_amount field.
+	commissionwithdrawal.DefaultFeeAmount = commissionwithdrawalDescFeeAmount.Default.(float64)
+	// commissionwithdrawalDescNetAmount is the schema descriptor for net_amount field.
+	commissionwithdrawalDescNetAmount := commissionwithdrawalFields[4].Descriptor()
+	// commissionwithdrawal.DefaultNetAmount holds the default value on creation for the net_amount field.
+	commissionwithdrawal.DefaultNetAmount = commissionwithdrawalDescNetAmount.Default.(float64)
+	// commissionwithdrawalDescCurrency is the schema descriptor for currency field.
+	commissionwithdrawalDescCurrency := commissionwithdrawalFields[5].Descriptor()
+	// commissionwithdrawal.DefaultCurrency holds the default value on creation for the currency field.
+	commissionwithdrawal.DefaultCurrency = commissionwithdrawalDescCurrency.Default.(string)
+	// commissionwithdrawal.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	commissionwithdrawal.CurrencyValidator = commissionwithdrawalDescCurrency.Validators[0].(func(string) error)
+	// commissionwithdrawalDescStatus is the schema descriptor for status field.
+	commissionwithdrawalDescStatus := commissionwithdrawalFields[6].Descriptor()
+	// commissionwithdrawal.DefaultStatus holds the default value on creation for the status field.
+	commissionwithdrawal.DefaultStatus = commissionwithdrawalDescStatus.Default.(string)
+	// commissionwithdrawal.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	commissionwithdrawal.StatusValidator = commissionwithdrawalDescStatus.Validators[0].(func(string) error)
+	// commissionwithdrawalDescPayoutMethod is the schema descriptor for payout_method field.
+	commissionwithdrawalDescPayoutMethod := commissionwithdrawalFields[7].Descriptor()
+	// commissionwithdrawal.PayoutMethodValidator is a validator for the "payout_method" field. It is called by the builders before save.
+	commissionwithdrawal.PayoutMethodValidator = commissionwithdrawalDescPayoutMethod.Validators[0].(func(string) error)
+	commissionwithdrawalitemMixin := schema.CommissionWithdrawalItem{}.Mixin()
+	commissionwithdrawalitemMixinFields0 := commissionwithdrawalitemMixin[0].Fields()
+	_ = commissionwithdrawalitemMixinFields0
+	commissionwithdrawalitemFields := schema.CommissionWithdrawalItem{}.Fields()
+	_ = commissionwithdrawalitemFields
+	// commissionwithdrawalitemDescCreatedAt is the schema descriptor for created_at field.
+	commissionwithdrawalitemDescCreatedAt := commissionwithdrawalitemMixinFields0[0].Descriptor()
+	// commissionwithdrawalitem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	commissionwithdrawalitem.DefaultCreatedAt = commissionwithdrawalitemDescCreatedAt.Default.(func() time.Time)
+	// commissionwithdrawalitemDescUpdatedAt is the schema descriptor for updated_at field.
+	commissionwithdrawalitemDescUpdatedAt := commissionwithdrawalitemMixinFields0[1].Descriptor()
+	// commissionwithdrawalitem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	commissionwithdrawalitem.DefaultUpdatedAt = commissionwithdrawalitemDescUpdatedAt.Default.(func() time.Time)
+	// commissionwithdrawalitem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	commissionwithdrawalitem.UpdateDefaultUpdatedAt = commissionwithdrawalitemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// commissionwithdrawalitemDescAllocatedAmount is the schema descriptor for allocated_amount field.
+	commissionwithdrawalitemDescAllocatedAmount := commissionwithdrawalitemFields[4].Descriptor()
+	// commissionwithdrawalitem.DefaultAllocatedAmount holds the default value on creation for the allocated_amount field.
+	commissionwithdrawalitem.DefaultAllocatedAmount = commissionwithdrawalitemDescAllocatedAmount.Default.(float64)
+	// commissionwithdrawalitemDescFeeAllocatedAmount is the schema descriptor for fee_allocated_amount field.
+	commissionwithdrawalitemDescFeeAllocatedAmount := commissionwithdrawalitemFields[5].Descriptor()
+	// commissionwithdrawalitem.DefaultFeeAllocatedAmount holds the default value on creation for the fee_allocated_amount field.
+	commissionwithdrawalitem.DefaultFeeAllocatedAmount = commissionwithdrawalitemDescFeeAllocatedAmount.Default.(float64)
+	// commissionwithdrawalitemDescNetAllocatedAmount is the schema descriptor for net_allocated_amount field.
+	commissionwithdrawalitemDescNetAllocatedAmount := commissionwithdrawalitemFields[6].Descriptor()
+	// commissionwithdrawalitem.DefaultNetAllocatedAmount holds the default value on creation for the net_allocated_amount field.
+	commissionwithdrawalitem.DefaultNetAllocatedAmount = commissionwithdrawalitemDescNetAllocatedAmount.Default.(float64)
+	// commissionwithdrawalitemDescCurrency is the schema descriptor for currency field.
+	commissionwithdrawalitemDescCurrency := commissionwithdrawalitemFields[7].Descriptor()
+	// commissionwithdrawalitem.DefaultCurrency holds the default value on creation for the currency field.
+	commissionwithdrawalitem.DefaultCurrency = commissionwithdrawalitemDescCurrency.Default.(string)
+	// commissionwithdrawalitem.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	commissionwithdrawalitem.CurrencyValidator = commissionwithdrawalitemDescCurrency.Validators[0].(func(string) error)
+	// commissionwithdrawalitemDescStatus is the schema descriptor for status field.
+	commissionwithdrawalitemDescStatus := commissionwithdrawalitemFields[8].Descriptor()
+	// commissionwithdrawalitem.DefaultStatus holds the default value on creation for the status field.
+	commissionwithdrawalitem.DefaultStatus = commissionwithdrawalitemDescStatus.Default.(string)
+	// commissionwithdrawalitem.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	commissionwithdrawalitem.StatusValidator = commissionwithdrawalitemDescStatus.Validators[0].(func(string) error)
 	errorpassthroughruleMixin := schema.ErrorPassthroughRule{}.Mixin()
 	errorpassthroughruleMixinFields0 := errorpassthroughruleMixin[0].Fields()
 	_ = errorpassthroughruleMixinFields0
@@ -819,6 +1044,91 @@ func init() {
 	proxy.DefaultStatus = proxyDescStatus.Default.(string)
 	// proxy.StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	proxy.StatusValidator = proxyDescStatus.Validators[0].(func(string) error)
+	rechargeorderMixin := schema.RechargeOrder{}.Mixin()
+	rechargeorderMixinFields0 := rechargeorderMixin[0].Fields()
+	_ = rechargeorderMixinFields0
+	rechargeorderFields := schema.RechargeOrder{}.Fields()
+	_ = rechargeorderFields
+	// rechargeorderDescCreatedAt is the schema descriptor for created_at field.
+	rechargeorderDescCreatedAt := rechargeorderMixinFields0[0].Descriptor()
+	// rechargeorder.DefaultCreatedAt holds the default value on creation for the created_at field.
+	rechargeorder.DefaultCreatedAt = rechargeorderDescCreatedAt.Default.(func() time.Time)
+	// rechargeorderDescUpdatedAt is the schema descriptor for updated_at field.
+	rechargeorderDescUpdatedAt := rechargeorderMixinFields0[1].Descriptor()
+	// rechargeorder.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	rechargeorder.DefaultUpdatedAt = rechargeorderDescUpdatedAt.Default.(func() time.Time)
+	// rechargeorder.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	rechargeorder.UpdateDefaultUpdatedAt = rechargeorderDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// rechargeorderDescExternalOrderID is the schema descriptor for external_order_id field.
+	rechargeorderDescExternalOrderID := rechargeorderFields[1].Descriptor()
+	// rechargeorder.ExternalOrderIDValidator is a validator for the "external_order_id" field. It is called by the builders before save.
+	rechargeorder.ExternalOrderIDValidator = func() func(string) error {
+		validators := rechargeorderDescExternalOrderID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(external_order_id string) error {
+			for _, fn := range fns {
+				if err := fn(external_order_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// rechargeorderDescProvider is the schema descriptor for provider field.
+	rechargeorderDescProvider := rechargeorderFields[2].Descriptor()
+	// rechargeorder.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	rechargeorder.ProviderValidator = rechargeorderDescProvider.Validators[0].(func(string) error)
+	// rechargeorderDescChannel is the schema descriptor for channel field.
+	rechargeorderDescChannel := rechargeorderFields[3].Descriptor()
+	// rechargeorder.ChannelValidator is a validator for the "channel" field. It is called by the builders before save.
+	rechargeorder.ChannelValidator = rechargeorderDescChannel.Validators[0].(func(string) error)
+	// rechargeorderDescCurrency is the schema descriptor for currency field.
+	rechargeorderDescCurrency := rechargeorderFields[4].Descriptor()
+	// rechargeorder.DefaultCurrency holds the default value on creation for the currency field.
+	rechargeorder.DefaultCurrency = rechargeorderDescCurrency.Default.(string)
+	// rechargeorder.CurrencyValidator is a validator for the "currency" field. It is called by the builders before save.
+	rechargeorder.CurrencyValidator = rechargeorderDescCurrency.Validators[0].(func(string) error)
+	// rechargeorderDescGrossAmount is the schema descriptor for gross_amount field.
+	rechargeorderDescGrossAmount := rechargeorderFields[5].Descriptor()
+	// rechargeorder.DefaultGrossAmount holds the default value on creation for the gross_amount field.
+	rechargeorder.DefaultGrossAmount = rechargeorderDescGrossAmount.Default.(float64)
+	// rechargeorderDescDiscountAmount is the schema descriptor for discount_amount field.
+	rechargeorderDescDiscountAmount := rechargeorderFields[6].Descriptor()
+	// rechargeorder.DefaultDiscountAmount holds the default value on creation for the discount_amount field.
+	rechargeorder.DefaultDiscountAmount = rechargeorderDescDiscountAmount.Default.(float64)
+	// rechargeorderDescPaidAmount is the schema descriptor for paid_amount field.
+	rechargeorderDescPaidAmount := rechargeorderFields[7].Descriptor()
+	// rechargeorder.DefaultPaidAmount holds the default value on creation for the paid_amount field.
+	rechargeorder.DefaultPaidAmount = rechargeorderDescPaidAmount.Default.(float64)
+	// rechargeorderDescGiftBalanceAmount is the schema descriptor for gift_balance_amount field.
+	rechargeorderDescGiftBalanceAmount := rechargeorderFields[8].Descriptor()
+	// rechargeorder.DefaultGiftBalanceAmount holds the default value on creation for the gift_balance_amount field.
+	rechargeorder.DefaultGiftBalanceAmount = rechargeorderDescGiftBalanceAmount.Default.(float64)
+	// rechargeorderDescCreditedBalanceAmount is the schema descriptor for credited_balance_amount field.
+	rechargeorderDescCreditedBalanceAmount := rechargeorderFields[9].Descriptor()
+	// rechargeorder.DefaultCreditedBalanceAmount holds the default value on creation for the credited_balance_amount field.
+	rechargeorder.DefaultCreditedBalanceAmount = rechargeorderDescCreditedBalanceAmount.Default.(float64)
+	// rechargeorderDescRefundedAmount is the schema descriptor for refunded_amount field.
+	rechargeorderDescRefundedAmount := rechargeorderFields[10].Descriptor()
+	// rechargeorder.DefaultRefundedAmount holds the default value on creation for the refunded_amount field.
+	rechargeorder.DefaultRefundedAmount = rechargeorderDescRefundedAmount.Default.(float64)
+	// rechargeorderDescChargebackAmount is the schema descriptor for chargeback_amount field.
+	rechargeorderDescChargebackAmount := rechargeorderFields[11].Descriptor()
+	// rechargeorder.DefaultChargebackAmount holds the default value on creation for the chargeback_amount field.
+	rechargeorder.DefaultChargebackAmount = rechargeorderDescChargebackAmount.Default.(float64)
+	// rechargeorderDescStatus is the schema descriptor for status field.
+	rechargeorderDescStatus := rechargeorderFields[12].Descriptor()
+	// rechargeorder.DefaultStatus holds the default value on creation for the status field.
+	rechargeorder.DefaultStatus = rechargeorderDescStatus.Default.(string)
+	// rechargeorder.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	rechargeorder.StatusValidator = rechargeorderDescStatus.Validators[0].(func(string) error)
+	// rechargeorderDescIdempotencyKey is the schema descriptor for idempotency_key field.
+	rechargeorderDescIdempotencyKey := rechargeorderFields[17].Descriptor()
+	// rechargeorder.IdempotencyKeyValidator is a validator for the "idempotency_key" field. It is called by the builders before save.
+	rechargeorder.IdempotencyKeyValidator = rechargeorderDescIdempotencyKey.Validators[0].(func(string) error)
 	redeemcodeFields := schema.RedeemCode{}.Fields()
 	_ = redeemcodeFields
 	// redeemcodeDescCode is the schema descriptor for code field.
@@ -863,6 +1173,90 @@ func init() {
 	redeemcodeDescValidityDays := redeemcodeFields[9].Descriptor()
 	// redeemcode.DefaultValidityDays holds the default value on creation for the validity_days field.
 	redeemcode.DefaultValidityDays = redeemcodeDescValidityDays.Default.(int)
+	referralcodeMixin := schema.ReferralCode{}.Mixin()
+	referralcodeMixinFields0 := referralcodeMixin[0].Fields()
+	_ = referralcodeMixinFields0
+	referralcodeFields := schema.ReferralCode{}.Fields()
+	_ = referralcodeFields
+	// referralcodeDescCreatedAt is the schema descriptor for created_at field.
+	referralcodeDescCreatedAt := referralcodeMixinFields0[0].Descriptor()
+	// referralcode.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referralcode.DefaultCreatedAt = referralcodeDescCreatedAt.Default.(func() time.Time)
+	// referralcodeDescUpdatedAt is the schema descriptor for updated_at field.
+	referralcodeDescUpdatedAt := referralcodeMixinFields0[1].Descriptor()
+	// referralcode.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	referralcode.DefaultUpdatedAt = referralcodeDescUpdatedAt.Default.(func() time.Time)
+	// referralcode.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	referralcode.UpdateDefaultUpdatedAt = referralcodeDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// referralcodeDescCode is the schema descriptor for code field.
+	referralcodeDescCode := referralcodeFields[1].Descriptor()
+	// referralcode.CodeValidator is a validator for the "code" field. It is called by the builders before save.
+	referralcode.CodeValidator = func() func(string) error {
+		validators := referralcodeDescCode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(code string) error {
+			for _, fn := range fns {
+				if err := fn(code); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// referralcodeDescStatus is the schema descriptor for status field.
+	referralcodeDescStatus := referralcodeFields[2].Descriptor()
+	// referralcode.DefaultStatus holds the default value on creation for the status field.
+	referralcode.DefaultStatus = referralcodeDescStatus.Default.(string)
+	// referralcode.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	referralcode.StatusValidator = referralcodeDescStatus.Validators[0].(func(string) error)
+	// referralcodeDescIsDefault is the schema descriptor for is_default field.
+	referralcodeDescIsDefault := referralcodeFields[3].Descriptor()
+	// referralcode.DefaultIsDefault holds the default value on creation for the is_default field.
+	referralcode.DefaultIsDefault = referralcodeDescIsDefault.Default.(bool)
+	referralrelationMixin := schema.ReferralRelation{}.Mixin()
+	referralrelationMixinFields0 := referralrelationMixin[0].Fields()
+	_ = referralrelationMixinFields0
+	referralrelationFields := schema.ReferralRelation{}.Fields()
+	_ = referralrelationFields
+	// referralrelationDescCreatedAt is the schema descriptor for created_at field.
+	referralrelationDescCreatedAt := referralrelationMixinFields0[0].Descriptor()
+	// referralrelation.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referralrelation.DefaultCreatedAt = referralrelationDescCreatedAt.Default.(func() time.Time)
+	// referralrelationDescUpdatedAt is the schema descriptor for updated_at field.
+	referralrelationDescUpdatedAt := referralrelationMixinFields0[1].Descriptor()
+	// referralrelation.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	referralrelation.DefaultUpdatedAt = referralrelationDescUpdatedAt.Default.(func() time.Time)
+	// referralrelation.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	referralrelation.UpdateDefaultUpdatedAt = referralrelationDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// referralrelationDescBindSource is the schema descriptor for bind_source field.
+	referralrelationDescBindSource := referralrelationFields[2].Descriptor()
+	// referralrelation.BindSourceValidator is a validator for the "bind_source" field. It is called by the builders before save.
+	referralrelation.BindSourceValidator = referralrelationDescBindSource.Validators[0].(func(string) error)
+	// referralrelationDescBindCode is the schema descriptor for bind_code field.
+	referralrelationDescBindCode := referralrelationFields[3].Descriptor()
+	// referralrelation.BindCodeValidator is a validator for the "bind_code" field. It is called by the builders before save.
+	referralrelation.BindCodeValidator = referralrelationDescBindCode.Validators[0].(func(string) error)
+	referralrelationhistoryFields := schema.ReferralRelationHistory{}.Fields()
+	_ = referralrelationhistoryFields
+	// referralrelationhistoryDescOldBindCode is the schema descriptor for old_bind_code field.
+	referralrelationhistoryDescOldBindCode := referralrelationhistoryFields[3].Descriptor()
+	// referralrelationhistory.OldBindCodeValidator is a validator for the "old_bind_code" field. It is called by the builders before save.
+	referralrelationhistory.OldBindCodeValidator = referralrelationhistoryDescOldBindCode.Validators[0].(func(string) error)
+	// referralrelationhistoryDescNewBindCode is the schema descriptor for new_bind_code field.
+	referralrelationhistoryDescNewBindCode := referralrelationhistoryFields[4].Descriptor()
+	// referralrelationhistory.NewBindCodeValidator is a validator for the "new_bind_code" field. It is called by the builders before save.
+	referralrelationhistory.NewBindCodeValidator = referralrelationhistoryDescNewBindCode.Validators[0].(func(string) error)
+	// referralrelationhistoryDescChangeSource is the schema descriptor for change_source field.
+	referralrelationhistoryDescChangeSource := referralrelationhistoryFields[5].Descriptor()
+	// referralrelationhistory.ChangeSourceValidator is a validator for the "change_source" field. It is called by the builders before save.
+	referralrelationhistory.ChangeSourceValidator = referralrelationhistoryDescChangeSource.Validators[0].(func(string) error)
+	// referralrelationhistoryDescCreatedAt is the schema descriptor for created_at field.
+	referralrelationhistoryDescCreatedAt := referralrelationhistoryFields[9].Descriptor()
+	// referralrelationhistory.DefaultCreatedAt holds the default value on creation for the created_at field.
+	referralrelationhistory.DefaultCreatedAt = referralrelationhistoryDescCreatedAt.Default.(func() time.Time)
 	securitysecretMixin := schema.SecuritySecret{}.Mixin()
 	securitysecretMixinFields0 := securitysecretMixin[0].Fields()
 	_ = securitysecretMixinFields0
@@ -1293,6 +1687,10 @@ func init() {
 	userDescTotpEnabled := userFields[9].Descriptor()
 	// user.DefaultTotpEnabled holds the default value on creation for the totp_enabled field.
 	user.DefaultTotpEnabled = userDescTotpEnabled.Default.(bool)
+	// userDescReferralEnabled is the schema descriptor for referral_enabled field.
+	userDescReferralEnabled := userFields[11].Descriptor()
+	// user.DefaultReferralEnabled holds the default value on creation for the referral_enabled field.
+	user.DefaultReferralEnabled = userDescReferralEnabled.Default.(bool)
 	userallowedgroupFields := schema.UserAllowedGroup{}.Fields()
 	_ = userallowedgroupFields
 	// userallowedgroupDescCreatedAt is the schema descriptor for created_at field.

@@ -465,9 +465,52 @@ var ProviderSet = wire.NewSet(
 	ProvidePaymentConfigService,
 	NewPaymentService,
 	ProvidePaymentOrderExpiryService,
+
+	// Referral services
+	NewReferralService,
+	NewReferralCenterService,
+	NewReferralWithdrawalService,
+	NewReferralAdminService,
+	NewReferralRewardService,
+	NewReferralSettlementService,
+	NewReferralRefundService,
+
+	// LobeHub services
+	ProvideLobeHubLaunchService,
+	ProvideLobeHubOIDCService,
+	ProvideLobeHubSSOService,
 )
 
-// ProvidePaymentConfigService wraps NewPaymentConfigService to accept the named
+// ProvideLobeHubLaunchService creates LobeHubLaunchService with DI-compatible types.
+func ProvideLobeHubLaunchService(
+	settingService *SettingService,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubLaunchStateStore,
+	ssoService *LobeHubSSOService,
+) *LobeHubLaunchService {
+	return NewLobeHubLaunchService(settingService, apiKeyService, stateStore, ssoService, nil)
+}
+
+// ProvideLobeHubOIDCService creates LobeHubOIDCService with DI-compatible types.
+func ProvideLobeHubOIDCService(
+	settingService *SettingService,
+	userRepo UserRepository,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubOIDCService {
+	return NewLobeHubOIDCService(settingService, userRepo, stateStore, signingKeyProvider, nil)
+}
+
+// ProvideLobeHubSSOService creates LobeHubSSOService with DI-compatible types.
+func ProvideLobeHubSSOService(
+	settingService *SettingService,
+	userRepo UserRepository,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubSSOService {
+	return NewLobeHubSSOService(settingService, userRepo, apiKeyService, stateStore, signingKeyProvider, nil)
+}
 // payment.EncryptionKey type instead of raw []byte, avoiding Wire ambiguity.
 func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) *PaymentConfigService {
 	return NewPaymentConfigService(entClient, settingRepo, []byte(key))

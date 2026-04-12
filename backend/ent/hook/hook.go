@@ -69,6 +69,66 @@ func (f AnnouncementReadFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AnnouncementReadMutation", m)
 }
 
+// The CommissionLedgerFunc type is an adapter to allow the use of ordinary
+// function as CommissionLedger mutator.
+type CommissionLedgerFunc func(context.Context, *ent.CommissionLedgerMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CommissionLedgerFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CommissionLedgerMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommissionLedgerMutation", m)
+}
+
+// The CommissionPayoutAccountFunc type is an adapter to allow the use of ordinary
+// function as CommissionPayoutAccount mutator.
+type CommissionPayoutAccountFunc func(context.Context, *ent.CommissionPayoutAccountMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CommissionPayoutAccountFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CommissionPayoutAccountMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommissionPayoutAccountMutation", m)
+}
+
+// The CommissionRewardFunc type is an adapter to allow the use of ordinary
+// function as CommissionReward mutator.
+type CommissionRewardFunc func(context.Context, *ent.CommissionRewardMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CommissionRewardFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CommissionRewardMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommissionRewardMutation", m)
+}
+
+// The CommissionWithdrawalFunc type is an adapter to allow the use of ordinary
+// function as CommissionWithdrawal mutator.
+type CommissionWithdrawalFunc func(context.Context, *ent.CommissionWithdrawalMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CommissionWithdrawalFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CommissionWithdrawalMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommissionWithdrawalMutation", m)
+}
+
+// The CommissionWithdrawalItemFunc type is an adapter to allow the use of ordinary
+// function as CommissionWithdrawalItem mutator.
+type CommissionWithdrawalItemFunc func(context.Context, *ent.CommissionWithdrawalItemMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f CommissionWithdrawalItemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.CommissionWithdrawalItemMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.CommissionWithdrawalItemMutation", m)
+}
+
 // The ErrorPassthroughRuleFunc type is an adapter to allow the use of ordinary
 // function as ErrorPassthroughRule mutator.
 type ErrorPassthroughRuleFunc func(context.Context, *ent.ErrorPassthroughRuleMutation) (ent.Value, error)
@@ -177,6 +237,18 @@ func (f ProxyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ProxyMutation", m)
 }
 
+// The RechargeOrderFunc type is an adapter to allow the use of ordinary
+// function as RechargeOrder mutator.
+type RechargeOrderFunc func(context.Context, *ent.RechargeOrderMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f RechargeOrderFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.RechargeOrderMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RechargeOrderMutation", m)
+}
+
 // The RedeemCodeFunc type is an adapter to allow the use of ordinary
 // function as RedeemCode mutator.
 type RedeemCodeFunc func(context.Context, *ent.RedeemCodeMutation) (ent.Value, error)
@@ -187,6 +259,42 @@ func (f RedeemCodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, 
 		return f(ctx, mv)
 	}
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.RedeemCodeMutation", m)
+}
+
+// The ReferralCodeFunc type is an adapter to allow the use of ordinary
+// function as ReferralCode mutator.
+type ReferralCodeFunc func(context.Context, *ent.ReferralCodeMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReferralCodeFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReferralCodeMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReferralCodeMutation", m)
+}
+
+// The ReferralRelationFunc type is an adapter to allow the use of ordinary
+// function as ReferralRelation mutator.
+type ReferralRelationFunc func(context.Context, *ent.ReferralRelationMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReferralRelationFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReferralRelationMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReferralRelationMutation", m)
+}
+
+// The ReferralRelationHistoryFunc type is an adapter to allow the use of ordinary
+// function as ReferralRelationHistory mutator.
+type ReferralRelationHistoryFunc func(context.Context, *ent.ReferralRelationHistoryMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ReferralRelationHistoryFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ReferralRelationHistoryMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ReferralRelationHistoryMutation", m)
 }
 
 // The SecuritySecretFunc type is an adapter to allow the use of ordinary

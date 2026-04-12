@@ -71,6 +71,7 @@ type AuthService struct {
 	emailQueueService  *EmailQueueService
 	promoService       *PromoService
 	defaultSubAssigner DefaultSubscriptionAssigner
+	referralService    *ReferralService
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -90,6 +91,7 @@ func NewAuthService(
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
+	referralService *ReferralService,
 ) *AuthService {
 	return &AuthService{
 		entClient:          entClient,
@@ -103,16 +105,17 @@ func NewAuthService(
 		emailQueueService:  emailQueueService,
 		promoService:       promoService,
 		defaultSubAssigner: defaultSubAssigner,
+		referralService:    referralService,
 	}
 }
 
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
-	return s.RegisterWithVerification(ctx, email, password, "", "", "")
+	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
 }
 
-// RegisterWithVerification 用户注册（支持邮件验证、优惠码和邀请码），返回token和用户
-func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode string) (string, *User, error) {
+// RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和推荐码），返回token和用户
+func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, referralCode string) (string, *User, error) {
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
@@ -226,6 +229,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			}
 		}
 	}
+
+	// 绑定推荐码（如果提供）
+	s.bindReferralCodeForNewUser(ctx, user.ID, referralCode)
 
 	// 生成token
 	token, err := s.GenerateToken(user)
@@ -531,7 +537,7 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 // LoginOrRegisterOAuthWithTokenPair 用于第三方 OAuth/SSO 登录，返回完整的 TokenPair。
 // 与 LoginOrRegisterOAuth 功能相同，但返回 TokenPair 而非单个 token。
 // invitationCode 仅在邀请码注册模式下新用户注册时使用；已有账号登录时忽略。
-func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode string) (*TokenPair, *User, error) {
+func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode, referralCode string) (*TokenPair, *User, error) {
 	// 检查 refreshTokenCache 是否可用
 	if s.refreshTokenCache == nil {
 		return nil, nil, errors.New("refresh token cache not configured")
@@ -631,6 +637,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					}
 					user = newUser
 					s.assignDefaultSubscriptions(ctx, user.ID)
+					s.bindReferralCodeForNewUser(ctx, user.ID, referralCode)
 				}
 			} else {
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -647,6 +654,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				} else {
 					user = newUser
 					s.assignDefaultSubscriptions(ctx, user.ID)
+					s.bindReferralCodeForNewUser(ctx, user.ID, referralCode)
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
 							return nil, nil, ErrInvitationCodeInvalid
@@ -685,20 +693,22 @@ const pendingOAuthTokenTTL = 10 * time.Minute
 const pendingOAuthPurpose = "pending_oauth_registration"
 
 type pendingOAuthClaims struct {
-	Email    string `json:"email"`
-	Username string `json:"username"`
-	Purpose  string `json:"purpose"`
+	Email        string `json:"email"`
+	Username     string `json:"username"`
+	Purpose      string `json:"purpose"`
+	ReferralCode string `json:"referral_code,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // CreatePendingOAuthToken generates a short-lived JWT that carries the OAuth identity
 // while waiting for the user to supply an invitation code.
-func (s *AuthService) CreatePendingOAuthToken(email, username string) (string, error) {
+func (s *AuthService) CreatePendingOAuthToken(email, username, referralCode string) (string, error) {
 	now := time.Now()
 	claims := &pendingOAuthClaims{
-		Email:    email,
-		Username: username,
-		Purpose:  pendingOAuthPurpose,
+		Email:        email,
+		Username:     username,
+		Purpose:      pendingOAuthPurpose,
+		ReferralCode: referralCode,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(pendingOAuthTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -711,9 +721,9 @@ func (s *AuthService) CreatePendingOAuthToken(email, username string) (string, e
 
 // VerifyPendingOAuthToken validates a pending OAuth token and returns the embedded identity.
 // Returns ErrInvalidToken when the token is invalid or expired.
-func (s *AuthService) VerifyPendingOAuthToken(tokenStr string) (email, username string, err error) {
+func (s *AuthService) VerifyPendingOAuthToken(tokenStr string) (email, username, referralCode string, err error) {
 	if len(tokenStr) > maxTokenLength {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
 	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Name}))
 	token, parseErr := parser.ParseWithClaims(tokenStr, &pendingOAuthClaims{}, func(t *jwt.Token) (any, error) {
@@ -723,16 +733,16 @@ func (s *AuthService) VerifyPendingOAuthToken(tokenStr string) (email, username 
 		return []byte(s.cfg.JWT.Secret), nil
 	})
 	if parseErr != nil {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
 	claims, ok := token.Claims.(*pendingOAuthClaims)
 	if !ok || !token.Valid {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
 	if claims.Purpose != pendingOAuthPurpose {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
-	return claims.Email, claims.Username, nil
+	return claims.Email, claims.Username, claims.ReferralCode, nil
 }
 
 func (s *AuthService) assignDefaultSubscriptions(ctx context.Context, userID int64) {
@@ -749,6 +759,17 @@ func (s *AuthService) assignDefaultSubscriptions(ctx context.Context, userID int
 		}); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to assign default subscription: user_id=%d group_id=%d err=%v", userID, item.GroupID, err)
 		}
+	}
+}
+
+// bindReferralCodeForNewUser attempts to bind a referral code for a newly registered user.
+// Failures are logged but do not block registration.
+func (s *AuthService) bindReferralCodeForNewUser(ctx context.Context, userID int64, referralCode string) {
+	if referralCode == "" || s.referralService == nil {
+		return
+	}
+	if err := s.referralService.BindReferralCodeForNewUser(ctx, userID, referralCode, "registration"); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to bind referral code for user %d: %v", userID, err)
 	}
 }
 

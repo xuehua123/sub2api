@@ -13,10 +13,19 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
+	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
+	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawal"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawalitem"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/rechargeorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -211,6 +220,20 @@ func (_c *UserCreate) SetNillableTotpEnabledAt(v *time.Time) *UserCreate {
 	return _c
 }
 
+// SetReferralEnabled sets the "referral_enabled" field.
+func (_c *UserCreate) SetReferralEnabled(v bool) *UserCreate {
+	_c.mutation.SetReferralEnabled(v)
+	return _c
+}
+
+// SetNillableReferralEnabled sets the "referral_enabled" field if the given value is not nil.
+func (_c *UserCreate) SetNillableReferralEnabled(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetReferralEnabled(*v)
+	}
+	return _c
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_c *UserCreate) AddAPIKeyIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAPIKeyIDs(ids...)
@@ -361,6 +384,175 @@ func (_c *UserCreate) AddPaymentOrders(v ...*PaymentOrder) *UserCreate {
 	return _c.AddPaymentOrderIDs(ids...)
 }
 
+// AddReferralCodeIDs adds the "referral_codes" edge to the ReferralCode entity by IDs.
+func (_c *UserCreate) AddReferralCodeIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddReferralCodeIDs(ids...)
+	return _c
+}
+
+// AddReferralCodes adds the "referral_codes" edges to the ReferralCode entity.
+func (_c *UserCreate) AddReferralCodes(v ...*ReferralCode) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddReferralCodeIDs(ids...)
+}
+
+// SetReferralRelationID sets the "referral_relation" edge to the ReferralRelation entity by ID.
+func (_c *UserCreate) SetReferralRelationID(id int64) *UserCreate {
+	_c.mutation.SetReferralRelationID(id)
+	return _c
+}
+
+// SetNillableReferralRelationID sets the "referral_relation" edge to the ReferralRelation entity by ID if the given value is not nil.
+func (_c *UserCreate) SetNillableReferralRelationID(id *int64) *UserCreate {
+	if id != nil {
+		_c = _c.SetReferralRelationID(*id)
+	}
+	return _c
+}
+
+// SetReferralRelation sets the "referral_relation" edge to the ReferralRelation entity.
+func (_c *UserCreate) SetReferralRelation(v *ReferralRelation) *UserCreate {
+	return _c.SetReferralRelationID(v.ID)
+}
+
+// AddReferralReferralIDs adds the "referral_referrals" edge to the ReferralRelation entity by IDs.
+func (_c *UserCreate) AddReferralReferralIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddReferralReferralIDs(ids...)
+	return _c
+}
+
+// AddReferralReferrals adds the "referral_referrals" edges to the ReferralRelation entity.
+func (_c *UserCreate) AddReferralReferrals(v ...*ReferralRelation) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddReferralReferralIDs(ids...)
+}
+
+// AddReferralRelationHistoryIDs adds the "referral_relation_histories" edge to the ReferralRelationHistory entity by IDs.
+func (_c *UserCreate) AddReferralRelationHistoryIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddReferralRelationHistoryIDs(ids...)
+	return _c
+}
+
+// AddReferralRelationHistories adds the "referral_relation_histories" edges to the ReferralRelationHistory entity.
+func (_c *UserCreate) AddReferralRelationHistories(v ...*ReferralRelationHistory) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddReferralRelationHistoryIDs(ids...)
+}
+
+// AddRechargeOrderIDs adds the "recharge_orders" edge to the RechargeOrder entity by IDs.
+func (_c *UserCreate) AddRechargeOrderIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddRechargeOrderIDs(ids...)
+	return _c
+}
+
+// AddRechargeOrders adds the "recharge_orders" edges to the RechargeOrder entity.
+func (_c *UserCreate) AddRechargeOrders(v ...*RechargeOrder) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddRechargeOrderIDs(ids...)
+}
+
+// AddCommissionRewardIDs adds the "commission_rewards" edge to the CommissionReward entity by IDs.
+func (_c *UserCreate) AddCommissionRewardIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCommissionRewardIDs(ids...)
+	return _c
+}
+
+// AddCommissionRewards adds the "commission_rewards" edges to the CommissionReward entity.
+func (_c *UserCreate) AddCommissionRewards(v ...*CommissionReward) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCommissionRewardIDs(ids...)
+}
+
+// AddSourceCommissionRewardIDs adds the "source_commission_rewards" edge to the CommissionReward entity by IDs.
+func (_c *UserCreate) AddSourceCommissionRewardIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddSourceCommissionRewardIDs(ids...)
+	return _c
+}
+
+// AddSourceCommissionRewards adds the "source_commission_rewards" edges to the CommissionReward entity.
+func (_c *UserCreate) AddSourceCommissionRewards(v ...*CommissionReward) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSourceCommissionRewardIDs(ids...)
+}
+
+// AddCommissionLedgerIDs adds the "commission_ledgers" edge to the CommissionLedger entity by IDs.
+func (_c *UserCreate) AddCommissionLedgerIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCommissionLedgerIDs(ids...)
+	return _c
+}
+
+// AddCommissionLedgers adds the "commission_ledgers" edges to the CommissionLedger entity.
+func (_c *UserCreate) AddCommissionLedgers(v ...*CommissionLedger) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCommissionLedgerIDs(ids...)
+}
+
+// AddCommissionWithdrawalIDs adds the "commission_withdrawals" edge to the CommissionWithdrawal entity by IDs.
+func (_c *UserCreate) AddCommissionWithdrawalIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCommissionWithdrawalIDs(ids...)
+	return _c
+}
+
+// AddCommissionWithdrawals adds the "commission_withdrawals" edges to the CommissionWithdrawal entity.
+func (_c *UserCreate) AddCommissionWithdrawals(v ...*CommissionWithdrawal) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCommissionWithdrawalIDs(ids...)
+}
+
+// AddCommissionWithdrawalItemIDs adds the "commission_withdrawal_items" edge to the CommissionWithdrawalItem entity by IDs.
+func (_c *UserCreate) AddCommissionWithdrawalItemIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCommissionWithdrawalItemIDs(ids...)
+	return _c
+}
+
+// AddCommissionWithdrawalItems adds the "commission_withdrawal_items" edges to the CommissionWithdrawalItem entity.
+func (_c *UserCreate) AddCommissionWithdrawalItems(v ...*CommissionWithdrawalItem) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCommissionWithdrawalItemIDs(ids...)
+}
+
+// AddCommissionPayoutAccountIDs adds the "commission_payout_accounts" edge to the CommissionPayoutAccount entity by IDs.
+func (_c *UserCreate) AddCommissionPayoutAccountIDs(ids ...int64) *UserCreate {
+	_c.mutation.AddCommissionPayoutAccountIDs(ids...)
+	return _c
+}
+
+// AddCommissionPayoutAccounts adds the "commission_payout_accounts" edges to the CommissionPayoutAccount entity.
+func (_c *UserCreate) AddCommissionPayoutAccounts(v ...*CommissionPayoutAccount) *UserCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddCommissionPayoutAccountIDs(ids...)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_c *UserCreate) Mutation() *UserMutation {
 	return _c.mutation
@@ -440,6 +632,10 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultTotpEnabled
 		_c.mutation.SetTotpEnabled(v)
 	}
+	if _, ok := _c.mutation.ReferralEnabled(); !ok {
+		v := user.DefaultReferralEnabled
+		_c.mutation.SetReferralEnabled(v)
+	}
 	return nil
 }
 
@@ -502,6 +698,9 @@ func (_c *UserCreate) check() error {
 	}
 	if _, ok := _c.mutation.TotpEnabled(); !ok {
 		return &ValidationError{Name: "totp_enabled", err: errors.New(`ent: missing required field "User.totp_enabled"`)}
+	}
+	if _, ok := _c.mutation.ReferralEnabled(); !ok {
+		return &ValidationError{Name: "referral_enabled", err: errors.New(`ent: missing required field "User.referral_enabled"`)}
 	}
 	return nil
 }
@@ -585,6 +784,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.TotpEnabledAt(); ok {
 		_spec.SetField(user.FieldTotpEnabledAt, field.TypeTime, value)
 		_node.TotpEnabledAt = &value
+	}
+	if value, ok := _c.mutation.ReferralEnabled(); ok {
+		_spec.SetField(user.FieldReferralEnabled, field.TypeBool, value)
+		_node.ReferralEnabled = value
 	}
 	if nodes := _c.mutation.APIKeysIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -743,6 +946,182 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ReferralCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralCodesTable,
+			Columns: []string{user.ReferralCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ReferralRelationIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ReferralRelationTable,
+			Columns: []string{user.ReferralRelationColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralrelation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ReferralReferralsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralReferralsTable,
+			Columns: []string{user.ReferralReferralsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralrelation.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ReferralRelationHistoriesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.ReferralRelationHistoriesTable,
+			Columns: []string{user.ReferralRelationHistoriesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(referralrelationhistory.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.RechargeOrdersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.RechargeOrdersTable,
+			Columns: []string{user.RechargeOrdersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(rechargeorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CommissionRewardsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommissionRewardsTable,
+			Columns: []string{user.CommissionRewardsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionreward.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SourceCommissionRewardsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.SourceCommissionRewardsTable,
+			Columns: []string{user.SourceCommissionRewardsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionreward.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CommissionLedgersIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommissionLedgersTable,
+			Columns: []string{user.CommissionLedgersColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionledger.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CommissionWithdrawalsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommissionWithdrawalsTable,
+			Columns: []string{user.CommissionWithdrawalsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionwithdrawal.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CommissionWithdrawalItemsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommissionWithdrawalItemsTable,
+			Columns: []string{user.CommissionWithdrawalItemsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionwithdrawalitem.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.CommissionPayoutAccountsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   user.CommissionPayoutAccountsTable,
+			Columns: []string{user.CommissionPayoutAccountsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(commissionpayoutaccount.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -985,6 +1364,18 @@ func (u *UserUpsert) UpdateTotpEnabledAt() *UserUpsert {
 // ClearTotpEnabledAt clears the value of the "totp_enabled_at" field.
 func (u *UserUpsert) ClearTotpEnabledAt() *UserUpsert {
 	u.SetNull(user.FieldTotpEnabledAt)
+	return u
+}
+
+// SetReferralEnabled sets the "referral_enabled" field.
+func (u *UserUpsert) SetReferralEnabled(v bool) *UserUpsert {
+	u.Set(user.FieldReferralEnabled, v)
+	return u
+}
+
+// UpdateReferralEnabled sets the "referral_enabled" field to the value that was provided on create.
+func (u *UserUpsert) UpdateReferralEnabled() *UserUpsert {
+	u.SetExcluded(user.FieldReferralEnabled)
 	return u
 }
 
@@ -1247,6 +1638,20 @@ func (u *UserUpsertOne) UpdateTotpEnabledAt() *UserUpsertOne {
 func (u *UserUpsertOne) ClearTotpEnabledAt() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearTotpEnabledAt()
+	})
+}
+
+// SetReferralEnabled sets the "referral_enabled" field.
+func (u *UserUpsertOne) SetReferralEnabled(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetReferralEnabled(v)
+	})
+}
+
+// UpdateReferralEnabled sets the "referral_enabled" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateReferralEnabled() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateReferralEnabled()
 	})
 }
 
@@ -1675,6 +2080,20 @@ func (u *UserUpsertBulk) UpdateTotpEnabledAt() *UserUpsertBulk {
 func (u *UserUpsertBulk) ClearTotpEnabledAt() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearTotpEnabledAt()
+	})
+}
+
+// SetReferralEnabled sets the "referral_enabled" field.
+func (u *UserUpsertBulk) SetReferralEnabled(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetReferralEnabled(v)
+	})
+}
+
+// UpdateReferralEnabled sets the "referral_enabled" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateReferralEnabled() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateReferralEnabled()
 	})
 }
 

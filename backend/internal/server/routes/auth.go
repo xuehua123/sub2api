@@ -62,6 +62,10 @@ func RegisterAuthRoutes(
 		auth.POST("/reset-password", rateLimiter.LimitWithOptions("reset-password", 10, time.Minute, middleware.RateLimitOptions{
 			FailureMode: middleware.RateLimitFailClose,
 		}), h.Auth.ResetPassword)
+		// 推荐码验证接口添加速率限制：每分钟最多 10 次（Redis 故障时 fail-close）
+		auth.POST("/validate-referral-code", rateLimiter.LimitWithOptions("validate-referral", 10, time.Minute, middleware.RateLimitOptions{
+			FailureMode: middleware.RateLimitFailClose,
+		}), h.Referral.ValidateCode)
 		auth.GET("/oauth/linuxdo/start", h.Auth.LinuxDoOAuthStart)
 		auth.GET("/oauth/linuxdo/callback", h.Auth.LinuxDoOAuthCallback)
 		auth.POST("/oauth/linuxdo/complete-registration",

@@ -17,6 +17,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
+	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
+	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawal"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawalitem"
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
@@ -26,7 +31,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/rechargeorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -98,32 +107,41 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			apikey.Table:                  apikey.ValidColumn,
-			account.Table:                 account.ValidColumn,
-			accountgroup.Table:            accountgroup.ValidColumn,
-			announcement.Table:            announcement.ValidColumn,
-			announcementread.Table:        announcementread.ValidColumn,
-			errorpassthroughrule.Table:    errorpassthroughrule.ValidColumn,
-			group.Table:                   group.ValidColumn,
-			idempotencyrecord.Table:       idempotencyrecord.ValidColumn,
-			paymentauditlog.Table:         paymentauditlog.ValidColumn,
-			paymentorder.Table:            paymentorder.ValidColumn,
-			paymentproviderinstance.Table: paymentproviderinstance.ValidColumn,
-			promocode.Table:               promocode.ValidColumn,
-			promocodeusage.Table:          promocodeusage.ValidColumn,
-			proxy.Table:                   proxy.ValidColumn,
-			redeemcode.Table:              redeemcode.ValidColumn,
-			securitysecret.Table:          securitysecret.ValidColumn,
-			setting.Table:                 setting.ValidColumn,
-			subscriptionplan.Table:        subscriptionplan.ValidColumn,
-			tlsfingerprintprofile.Table:   tlsfingerprintprofile.ValidColumn,
-			usagecleanuptask.Table:        usagecleanuptask.ValidColumn,
-			usagelog.Table:                usagelog.ValidColumn,
-			user.Table:                    user.ValidColumn,
-			userallowedgroup.Table:        userallowedgroup.ValidColumn,
-			userattributedefinition.Table: userattributedefinition.ValidColumn,
-			userattributevalue.Table:      userattributevalue.ValidColumn,
-			usersubscription.Table:        usersubscription.ValidColumn,
+			apikey.Table:                   apikey.ValidColumn,
+			account.Table:                  account.ValidColumn,
+			accountgroup.Table:             accountgroup.ValidColumn,
+			announcement.Table:             announcement.ValidColumn,
+			announcementread.Table:         announcementread.ValidColumn,
+			commissionledger.Table:         commissionledger.ValidColumn,
+			commissionpayoutaccount.Table:  commissionpayoutaccount.ValidColumn,
+			commissionreward.Table:         commissionreward.ValidColumn,
+			commissionwithdrawal.Table:     commissionwithdrawal.ValidColumn,
+			commissionwithdrawalitem.Table: commissionwithdrawalitem.ValidColumn,
+			errorpassthroughrule.Table:     errorpassthroughrule.ValidColumn,
+			group.Table:                    group.ValidColumn,
+			idempotencyrecord.Table:        idempotencyrecord.ValidColumn,
+			paymentauditlog.Table:          paymentauditlog.ValidColumn,
+			paymentorder.Table:             paymentorder.ValidColumn,
+			paymentproviderinstance.Table:  paymentproviderinstance.ValidColumn,
+			promocode.Table:                promocode.ValidColumn,
+			promocodeusage.Table:           promocodeusage.ValidColumn,
+			proxy.Table:                    proxy.ValidColumn,
+			rechargeorder.Table:            rechargeorder.ValidColumn,
+			redeemcode.Table:               redeemcode.ValidColumn,
+			referralcode.Table:             referralcode.ValidColumn,
+			referralrelation.Table:         referralrelation.ValidColumn,
+			referralrelationhistory.Table:  referralrelationhistory.ValidColumn,
+			securitysecret.Table:           securitysecret.ValidColumn,
+			setting.Table:                  setting.ValidColumn,
+			subscriptionplan.Table:         subscriptionplan.ValidColumn,
+			tlsfingerprintprofile.Table:    tlsfingerprintprofile.ValidColumn,
+			usagecleanuptask.Table:         usagecleanuptask.ValidColumn,
+			usagelog.Table:                 usagelog.ValidColumn,
+			user.Table:                     user.ValidColumn,
+			userallowedgroup.Table:         userallowedgroup.ValidColumn,
+			userattributedefinition.Table:  userattributedefinition.ValidColumn,
+			userattributevalue.Table:       userattributevalue.ValidColumn,
+			usersubscription.Table:         usersubscription.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

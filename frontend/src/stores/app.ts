@@ -284,9 +284,6 @@ export const useAppStore = defineStore('app', () => {
    * Apply settings to store state (internal helper to avoid code duplication)
    */
   function applySettings(config: PublicSettings): void {
-    if (typeof window !== 'undefined') {
-      window.__APP_CONFIG__ = { ...config }
-    }
     cachedPublicSettings.value = config
     siteName.value = config.site_name || 'Sub2API'
     siteLogo.value = config.site_logo || ''
@@ -320,6 +317,12 @@ export const useAppStore = defineStore('app', () => {
         promo_code_enabled: true,
         password_reset_enabled: false,
         invitation_code_enabled: false,
+        referral_enabled: false,
+        referral_allow_manual_input: true,
+        referral_bind_before_first_paid_only: true,
+        referral_withdraw_enabled: false,
+        referral_settlement_currency: 'CNY',
+        referral_withdraw_methods_enabled: ['alipay', 'wechat', 'bank'],
         turnstile_enabled: false,
         turnstile_site_key: '',
         site_name: siteName.value,
@@ -330,14 +333,18 @@ export const useAppStore = defineStore('app', () => {
         doc_url: docUrl.value,
         home_content: '',
         hide_ccs_import_button: false,
-        payment_enabled: false,
-        table_default_page_size: 20,
-        table_page_size_options: [10, 20, 50, 100],
+        lobehub_enabled: false,
+        lobehub_chat_url: '',
+        lobehub_oidc_issuer: '',
+        lobehub_default_provider: 'openai',
+        lobehub_default_model: '',
+        lobehub_runtime_config_version: '',
+        hide_lobehub_import_button: false,
+        purchase_subscription_enabled: false,
+        purchase_subscription_url: '',
         custom_menu_items: [],
         custom_endpoints: [],
         linuxdo_oauth_enabled: false,
-        oidc_oauth_enabled: false,
-        oidc_oauth_provider_name: 'OIDC',
         backend_mode_enabled: false,
         version: siteVersion.value
       }

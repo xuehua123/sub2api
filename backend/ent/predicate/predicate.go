@@ -21,6 +21,21 @@ type Announcement func(*sql.Selector)
 // AnnouncementRead is the predicate function for announcementread builders.
 type AnnouncementRead func(*sql.Selector)
 
+// CommissionLedger is the predicate function for commissionledger builders.
+type CommissionLedger func(*sql.Selector)
+
+// CommissionPayoutAccount is the predicate function for commissionpayoutaccount builders.
+type CommissionPayoutAccount func(*sql.Selector)
+
+// CommissionReward is the predicate function for commissionreward builders.
+type CommissionReward func(*sql.Selector)
+
+// CommissionWithdrawal is the predicate function for commissionwithdrawal builders.
+type CommissionWithdrawal func(*sql.Selector)
+
+// CommissionWithdrawalItem is the predicate function for commissionwithdrawalitem builders.
+type CommissionWithdrawalItem func(*sql.Selector)
+
 // ErrorPassthroughRule is the predicate function for errorpassthroughrule builders.
 type ErrorPassthroughRule func(*sql.Selector)
 
@@ -48,8 +63,20 @@ type PromoCodeUsage func(*sql.Selector)
 // Proxy is the predicate function for proxy builders.
 type Proxy func(*sql.Selector)
 
+// RechargeOrder is the predicate function for rechargeorder builders.
+type RechargeOrder func(*sql.Selector)
+
 // RedeemCode is the predicate function for redeemcode builders.
 type RedeemCode func(*sql.Selector)
+
+// ReferralCode is the predicate function for referralcode builders.
+type ReferralCode func(*sql.Selector)
+
+// ReferralRelation is the predicate function for referralrelation builders.
+type ReferralRelation func(*sql.Selector)
+
+// ReferralRelationHistory is the predicate function for referralrelationhistory builders.
+type ReferralRelationHistory func(*sql.Selector)
 
 // SecuritySecret is the predicate function for securitysecret builders.
 type SecuritySecret func(*sql.Selector)

@@ -30,6 +30,12 @@ type User struct {
 	TotpEnabled         bool       // 是否启用 TOTP
 	TotpEnabledAt       *time.Time // TOTP 启用时间
 
+	// Referral
+	ReferralEnabled bool
+
+	// LobeHub
+	DefaultChatAPIKeyID *int64
+
 	APIKeys       []APIKey
 	Subscriptions []UserSubscription
 }

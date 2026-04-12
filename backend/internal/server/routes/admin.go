@@ -88,6 +88,9 @@ func RegisterAdminRoutes(
 
 		// 渠道管理
 		registerChannelRoutes(admin, h)
+
+		// 推荐系统管理
+		registerReferralAdminRoutes(admin, h)
 	}
 }
 
@@ -556,5 +559,39 @@ func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		channels.POST("", h.Admin.Channel.Create)
 		channels.PUT("/:id", h.Admin.Channel.Update)
 		channels.DELETE("/:id", h.Admin.Channel.Delete)
+	}
+}
+
+func registerReferralAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	referral := admin.Group("/referral")
+	{
+		referral.GET("/search-accounts", h.Admin.Referral.SearchAccounts)
+		referral.GET("/overview", h.Admin.Referral.GetOverview)
+		referral.GET("/tree", h.Admin.Referral.GetTree)
+
+		relations := referral.Group("/relations")
+		{
+			relations.GET("", h.Admin.Referral.ListRelations)
+			relations.PUT("/:user_id", h.Admin.Referral.UpdateRelation)
+		}
+
+		referral.GET("/relation-histories", h.Admin.Referral.ListRelationHistories)
+
+		rewards := referral.Group("/rewards")
+		{
+			rewards.GET("", h.Admin.Referral.ListCommissionRewards)
+			rewards.POST("/adjustment", h.Admin.Referral.CreateCommissionAdjustment)
+		}
+
+		referral.GET("/ledgers", h.Admin.Referral.ListCommissionLedgers)
+
+		withdrawals := referral.Group("/withdrawals")
+		{
+			withdrawals.GET("", h.Admin.Referral.ListWithdrawals)
+			withdrawals.GET("/:id/items", h.Admin.Referral.GetWithdrawalItems)
+			withdrawals.POST("/:id/approve", h.Admin.Referral.ApproveWithdrawal)
+			withdrawals.POST("/:id/reject", h.Admin.Referral.RejectWithdrawal)
+			withdrawals.POST("/:id/paid", h.Admin.Referral.MarkWithdrawalPaid)
+		}
 	}
 }

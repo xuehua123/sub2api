@@ -1,0 +1,603 @@
+//go:build unit
+
+package service
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/require"
+)
+
+type withdrawalCommissionRepoStub struct {
+	rewards          []CommissionReward
+	ledgers          []CommissionLedger
+	withdrawals      []CommissionWithdrawal
+	withdrawalItems  []CommissionWithdrawalItem
+	payoutAccounts   []CommissionPayoutAccount
+	nextWithdrawalID int64
+	nextItemID       int64
+	nextAccountID    int64
+}
+
+func newWithdrawalCommissionRepoStub() *withdrawalCommissionRepoStub {
+	return &withdrawalCommissionRepoStub{
+		nextWithdrawalID: 1,
+		nextItemID:       1,
+		nextAccountID:    1,
+	}
+}
+
+func (s *withdrawalCommissionRepoStub) CreateReward(ctx context.Context, reward *CommissionReward) error {
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) GetRewardByID(ctx context.Context, rewardID int64) (*CommissionReward, error) {
+	for i := range s.rewards {
+		if s.rewards[i].ID == rewardID {
+			cloned := s.rewards[i]
+			return &cloned, nil
+		}
+	}
+	return nil, ErrCommissionWithdrawalNotFound
+}
+
+func (s *withdrawalCommissionRepoStub) ListRewardsByRechargeOrder(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error) {
+	return nil, nil
+}
+
+func (s *withdrawalCommissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]CommissionReward, error) {
+	var result []CommissionReward
+	for _, reward := range s.rewards {
+		if reward.Status == CommissionRewardStatusPending && reward.AvailableAt != nil && !reward.AvailableAt.After(readyAt) {
+			result = append(result, reward)
+		}
+	}
+	return result, nil
+}
+
+func (s *withdrawalCommissionRepoStub) ListRewardsByUser(ctx context.Context, userID int64, statuses []string) ([]CommissionReward, error) {
+	allowed := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		allowed[status] = struct{}{}
+	}
+	var result []CommissionReward
+	for _, reward := range s.rewards {
+		if reward.UserID != userID {
+			continue
+		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[reward.Status]; !ok {
+				continue
+			}
+		}
+		result = append(result, reward)
+	}
+	return result, nil
+}
+
+func (s *withdrawalCommissionRepoStub) SumRewardBucketAmount(ctx context.Context, rewardID int64, bucket string) (float64, error) {
+	total := 0.0
+	for _, ledger := range s.ledgers {
+		if ledger.RewardID != nil && *ledger.RewardID == rewardID && ledger.Bucket == bucket {
+			total += ledger.Amount
+		}
+	}
+	return total, nil
+}
+
+func (s *withdrawalCommissionRepoStub) SumRewardBucketAmountForUpdate(ctx context.Context, rewardID int64, bucket string, forUpdate bool) (float64, error) {
+	return s.SumRewardBucketAmount(ctx, rewardID, bucket)
+}
+
+func (s *withdrawalCommissionRepoStub) CreateWithdrawal(ctx context.Context, withdrawal *CommissionWithdrawal) error {
+	withdrawal.ID = s.nextWithdrawalID
+	s.nextWithdrawalID++
+	if withdrawal.CreatedAt.IsZero() {
+		withdrawal.CreatedAt = time.Now()
+	}
+	withdrawal.UpdatedAt = withdrawal.CreatedAt
+	s.withdrawals = append(s.withdrawals, *withdrawal)
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) GetWithdrawalByID(ctx context.Context, id int64) (*CommissionWithdrawal, error) {
+	for _, withdrawal := range s.withdrawals {
+		if withdrawal.ID == id {
+			cloned := withdrawal
+			return &cloned, nil
+		}
+	}
+	return nil, ErrCommissionWithdrawalNotFound
+}
+
+func (s *withdrawalCommissionRepoStub) UpdateWithdrawal(ctx context.Context, withdrawal *CommissionWithdrawal) error {
+	for i := range s.withdrawals {
+		if s.withdrawals[i].ID == withdrawal.ID {
+			s.withdrawals[i] = *withdrawal
+			return nil
+		}
+	}
+	return ErrCommissionWithdrawalNotFound
+}
+
+func (s *withdrawalCommissionRepoStub) CreateWithdrawalItems(ctx context.Context, items []CommissionWithdrawalItem) error {
+	for i := range items {
+		items[i].ID = s.nextItemID
+		s.nextItemID++
+		if items[i].CreatedAt.IsZero() {
+			items[i].CreatedAt = time.Now()
+		}
+		items[i].UpdatedAt = items[i].CreatedAt
+		s.withdrawalItems = append(s.withdrawalItems, items[i])
+	}
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) ListWithdrawalItemsByWithdrawal(ctx context.Context, withdrawalID int64) ([]CommissionWithdrawalItem, error) {
+	var result []CommissionWithdrawalItem
+	for _, item := range s.withdrawalItems {
+		if item.WithdrawalID == withdrawalID {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
+func (s *withdrawalCommissionRepoStub) UpdateWithdrawalItem(ctx context.Context, item *CommissionWithdrawalItem) error {
+	for i := range s.withdrawalItems {
+		if s.withdrawalItems[i].ID == item.ID {
+			s.withdrawalItems[i] = *item
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) CreateLedgerEntries(ctx context.Context, entries []CommissionLedger) error {
+	for i := range entries {
+		entries[i].ID = int64(len(s.ledgers) + 1)
+		entries[i].CreatedAt = time.Now()
+		s.ledgers = append(s.ledgers, entries[i])
+	}
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) UpdateReward(ctx context.Context, reward *CommissionReward) error {
+	for i := range s.rewards {
+		if s.rewards[i].ID == reward.ID {
+			s.rewards[i] = *reward
+			return nil
+		}
+	}
+	return nil
+}
+
+func (s *withdrawalCommissionRepoStub) ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]CommissionPayoutAccount, error) {
+	var result []CommissionPayoutAccount
+	for _, account := range s.payoutAccounts {
+		if account.UserID == userID {
+			result = append(result, account)
+		}
+	}
+	return result, nil
+}
+
+func (s *withdrawalCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
+	count := 0
+	for _, withdrawal := range s.withdrawals {
+		if withdrawal.UserID == userID && !withdrawal.CreatedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *withdrawalCommissionRepoStub) UpsertPayoutAccount(ctx context.Context, account *CommissionPayoutAccount) error {
+	if account.ID == 0 {
+		account.ID = s.nextAccountID
+		s.nextAccountID++
+		if account.CreatedAt.IsZero() {
+			account.CreatedAt = time.Now()
+		}
+		account.UpdatedAt = account.CreatedAt
+		s.payoutAccounts = append(s.payoutAccounts, *account)
+		return nil
+	}
+	for i := range s.payoutAccounts {
+		if s.payoutAccounts[i].ID == account.ID {
+			account.CreatedAt = s.payoutAccounts[i].CreatedAt
+			account.UpdatedAt = time.Now()
+			s.payoutAccounts[i] = *account
+			return nil
+		}
+	}
+	return nil
+}
+
+func newReferralWithdrawalServiceForTest(repo *withdrawalCommissionRepoStub, settings map[string]string, rechargeRepo RechargeOrderRepository) *ReferralWithdrawalService {
+	cfg := &config.Config{}
+	if rechargeRepo == nil {
+		rechargeRepo = newRechargeOrderRepoStub()
+	}
+	settingService := NewSettingService(&settingRepoStub{values: settings}, cfg)
+	settlementService := NewReferralSettlementService(repo, rechargeRepo, nil)
+	return NewReferralWithdrawalService(
+		repo,
+		nil,
+		nil,
+		settingService,
+		settlementService,
+		nil,
+	)
+}
+
+func TestReferralWithdrawalService_CreateWithdrawal_FreezesAvailableRewards(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 15, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+		{ID: 2, UserID: 200, RechargeOrderID: 12, RewardAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 15, Currency: ReferralSettlementCurrencyCNY},
+		{ID: 2, UserID: 200, RewardID: int64ValuePtr(2), RechargeOrderID: int64ValuePtr(12), Bucket: CommissionLedgerBucketAvailable, Amount: 10, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), AccountNoEncrypted: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawFeeRate:              "0.10",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay","bank"]`,
+	}, nil)
+
+	result, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          20,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, CommissionWithdrawalStatusPendingReview, result.Withdrawal.Status)
+	require.Equal(t, 20.0, result.Withdrawal.Amount)
+	require.Equal(t, 2.0, result.Withdrawal.FeeAmount)
+	require.Equal(t, 18.0, result.Withdrawal.NetAmount)
+	require.Len(t, result.Items, 2)
+	require.Equal(t, 15.0, result.Items[0].AllocatedAmount)
+	require.Equal(t, 5.0, result.Items[1].AllocatedAmount)
+	require.Len(t, repo.ledgers, 6)
+	require.NotNil(t, result.Items[0].FreezeLedgerID)
+	require.NotNil(t, result.Items[1].FreezeLedgerID)
+	require.NotNil(t, result.Withdrawal.PayoutAccountSnapshotJSON)
+	require.Contains(t, *result.Withdrawal.PayoutAccountSnapshotJSON, `"account_no_encrypted":"alipay@example.com"`)
+	require.Equal(t, CommissionRewardStatusFrozen, repo.rewards[0].Status)
+	require.Equal(t, CommissionRewardStatusPartiallyFrozen, repo.rewards[1].Status)
+}
+
+func TestReferralWithdrawalService_RejectWithdrawal_ReturnsFrozenAmount(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 15, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+		{ID: 2, UserID: 200, RechargeOrderID: 12, RewardAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 15, Currency: ReferralSettlementCurrencyCNY},
+		{ID: 2, UserID: 200, RewardID: int64ValuePtr(2), RechargeOrderID: int64ValuePtr(12), Bucket: CommissionLedgerBucketAvailable, Amount: 10, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, nil)
+
+	created, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          20,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.NoError(t, err)
+
+	rejected, err := svc.RejectWithdrawal(context.Background(), &ReviewReferralWithdrawalInput{
+		WithdrawalID: created.Withdrawal.ID,
+		ReviewerID:   9,
+		Reason:       "risk review failed",
+	})
+	require.NoError(t, err)
+	require.Equal(t, CommissionWithdrawalStatusRejected, rejected.Withdrawal.Status)
+	require.Len(t, rejected.Items, 2)
+	require.Equal(t, CommissionWithdrawalItemStatusReturned, rejected.Items[0].Status)
+	require.Equal(t, CommissionWithdrawalItemStatusReturned, rejected.Items[1].Status)
+	require.NotNil(t, rejected.Items[0].ReturnLedgerID)
+	require.NotNil(t, rejected.Items[1].ReturnLedgerID)
+	require.Len(t, repo.ledgers, 10)
+	require.Equal(t, CommissionRewardStatusAvailable, repo.rewards[0].Status)
+	require.Equal(t, CommissionRewardStatusAvailable, repo.rewards[1].Status)
+}
+
+func TestReferralWithdrawalService_MarkWithdrawalPaid_RequiresApproval(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, nil)
+
+	created, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          10,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.MarkWithdrawalPaid(context.Background(), &MarkReferralWithdrawalPaidInput{
+		WithdrawalID: created.Withdrawal.ID,
+		PaidBy:       9,
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawalConflict)
+}
+
+func TestReferralWithdrawalService_ApproveAndMarkPaid_SettlesFrozenAmount(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 15, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+		{ID: 2, UserID: 200, RechargeOrderID: 12, RewardAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 15, Currency: ReferralSettlementCurrencyCNY},
+		{ID: 2, UserID: 200, RewardID: int64ValuePtr(2), RechargeOrderID: int64ValuePtr(12), Bucket: CommissionLedgerBucketAvailable, Amount: 10, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, nil)
+
+	created, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          20,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.NoError(t, err)
+
+	approved, err := svc.ApproveWithdrawal(context.Background(), created.Withdrawal.ID, 9, "looks good")
+	require.NoError(t, err)
+	require.Equal(t, CommissionWithdrawalStatusApproved, approved.Status)
+
+	paid, err := svc.MarkWithdrawalPaid(context.Background(), &MarkReferralWithdrawalPaidInput{
+		WithdrawalID: created.Withdrawal.ID,
+		PaidBy:       9,
+		Remark:       "paid via manual transfer",
+	})
+	require.NoError(t, err)
+	require.Equal(t, CommissionWithdrawalStatusPaid, paid.Withdrawal.Status)
+	require.Len(t, paid.Items, 2)
+	require.Equal(t, CommissionWithdrawalItemStatusPaid, paid.Items[0].Status)
+	require.Equal(t, CommissionWithdrawalItemStatusPaid, paid.Items[1].Status)
+	require.NotNil(t, paid.Items[0].PaidLedgerID)
+	require.NotNil(t, paid.Items[1].PaidLedgerID)
+	require.Len(t, repo.ledgers, 10)
+	require.Equal(t, CommissionRewardStatusPaid, repo.rewards[0].Status)
+	require.Equal(t, CommissionRewardStatusPartiallyPaid, repo.rewards[1].Status)
+}
+
+func TestReferralWithdrawalService_CreateWithdrawal_EnforcesDailyLimit(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.withdrawals = []CommissionWithdrawal{
+		{ID: 1, UserID: 200, WithdrawalNo: "WD-OLD", Amount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalStatusPendingReview, CreatedAt: time.Now()},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawDailyLimit:           "1",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, nil)
+
+	_, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          10,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawDailyLimitExceeded)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsDisabledMethod(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodBank,
+		AccountName: "Alice",
+		AccountNo:   "6222021234567890",
+		IsDefault:   true,
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawMethodInvalid)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsWeeklyModification(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	now := time.Now()
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{
+			ID:              1,
+			UserID:          200,
+			Method:          CommissionPayoutMethodAlipay,
+			AccountName:     "Alice",
+			AccountNoMasked: stringValuePtr("alice@example.com"),
+			IsDefault:       true,
+			Status:          StatusActive,
+			CreatedAt:       now.Add(-24 * time.Hour),
+			UpdatedAt:       now.Add(-24 * time.Hour),
+		},
+	}
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 1, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice Updated",
+		AccountNo:   "alice-new@example.com",
+		IsDefault:   true,
+	})
+	require.ErrorIs(t, err, ErrCommissionPayoutAccountUpdateTooFrequent)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_PreservesAccountWhenNoNewNumberProvided(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{
+			ID:                 1,
+			UserID:             200,
+			Method:             CommissionPayoutMethodAlipay,
+			AccountName:        "Alice",
+			AccountNoMasked:    stringValuePtr("alice@example.com"),
+			AccountNoEncrypted: stringValuePtr("alice@example.com"),
+			IsDefault:          true,
+			Status:             StatusActive,
+			CreatedAt:          time.Now().Add(-10 * 24 * time.Hour),
+			UpdatedAt:          time.Now().Add(-8 * 24 * time.Hour),
+		},
+	}
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	account, err := svc.UpsertPayoutAccount(context.Background(), 200, 1, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice Updated",
+		AccountNo:   "",
+		IsDefault:   true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "Alice Updated", account.AccountName)
+	require.NotNil(t, account.AccountNoMasked)
+	require.Equal(t, "alice@example.com", *account.AccountNoMasked)
+	require.NotNil(t, repo.payoutAccounts[0].AccountNoEncrypted)
+	require.Equal(t, "alice@example.com", *repo.payoutAccounts[0].AccountNoEncrypted)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_StoresPlaintextAccountNumber(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["bank"]`,
+	}, nil)
+
+	account, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodBank,
+		AccountName: "Alice",
+		AccountNo:   "6222021234567890",
+		BankName:    "ICBC",
+		IsDefault:   true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.NotNil(t, repo.payoutAccounts[0].AccountNoEncrypted)
+	require.Equal(t, "6222021234567890", *repo.payoutAccounts[0].AccountNoEncrypted)
+}
+
+func TestReferralWithdrawalService_CreateWithdrawal_SettlesDuePendingRewardsBeforeAllocation(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	readyAt := time.Now().Add(-time.Hour)
+	repo.rewards = []CommissionReward{
+		{
+			ID:              1,
+			UserID:          200,
+			RechargeOrderID: 11,
+			RewardAmount:    20,
+			Currency:        ReferralSettlementCurrencyCNY,
+			Status:          CommissionRewardStatusPending,
+			AvailableAt:     &readyAt,
+		},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketPending, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeRepo.orders["provider::order-11"] = &RechargeOrder{
+		ID:              11,
+		UserID:          200,
+		Provider:        "provider",
+		ExternalOrderID: "order-11",
+		PaidAmount:      20,
+		Currency:        ReferralSettlementCurrencyCNY,
+		Status:          RechargeOrderStatusCredited,
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, rechargeRepo)
+
+	result, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          10,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, result.Items, 1)
+	require.Equal(t, CommissionRewardStatusPartiallyFrozen, repo.rewards[0].Status)
+	require.Len(t, repo.ledgers, 5)
+	require.Equal(t, CommissionLedgerEntryRewardPendingToAvailable, repo.ledgers[1].EntryType)
+	require.Equal(t, CommissionLedgerBucketAvailable, repo.ledgers[2].Bucket)
+}

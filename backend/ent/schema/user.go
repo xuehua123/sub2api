@@ -72,6 +72,8 @@ func (User) Fields() []ent.Field {
 		field.Time("totp_enabled_at").
 			Optional().
 			Nillable(),
+		field.Bool("referral_enabled").
+			Default(false),
 	}
 }
 
@@ -88,6 +90,18 @@ func (User) Edges() []ent.Edge {
 		edge.To("attribute_values", UserAttributeValue.Type),
 		edge.To("promo_code_usages", PromoCodeUsage.Type),
 		edge.To("payment_orders", PaymentOrder.Type),
+		edge.To("referral_codes", ReferralCode.Type),
+		edge.To("referral_relation", ReferralRelation.Type).
+			Unique(),
+		edge.To("referral_referrals", ReferralRelation.Type),
+		edge.To("referral_relation_histories", ReferralRelationHistory.Type),
+		edge.To("recharge_orders", RechargeOrder.Type),
+		edge.To("commission_rewards", CommissionReward.Type),
+		edge.To("source_commission_rewards", CommissionReward.Type),
+		edge.To("commission_ledgers", CommissionLedger.Type),
+		edge.To("commission_withdrawals", CommissionWithdrawal.Type),
+		edge.To("commission_withdrawal_items", CommissionWithdrawalItem.Type),
+		edge.To("commission_payout_accounts", CommissionPayoutAccount.Type),
 	}
 }
 

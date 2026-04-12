@@ -15,11 +15,20 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
+	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
+	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawal"
+	"github.com/Wei-Shaw/sub2api/ent/commissionwithdrawalitem"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
+	"github.com/Wei-Shaw/sub2api/ent/rechargeorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
@@ -30,22 +39,33 @@ import (
 // UserQuery is the builder for querying User entities.
 type UserQuery struct {
 	config
-	ctx                       *QueryContext
-	order                     []user.OrderOption
-	inters                    []Interceptor
-	predicates                []predicate.User
-	withAPIKeys               *APIKeyQuery
-	withRedeemCodes           *RedeemCodeQuery
-	withSubscriptions         *UserSubscriptionQuery
-	withAssignedSubscriptions *UserSubscriptionQuery
-	withAnnouncementReads     *AnnouncementReadQuery
-	withAllowedGroups         *GroupQuery
-	withUsageLogs             *UsageLogQuery
-	withAttributeValues       *UserAttributeValueQuery
-	withPromoCodeUsages       *PromoCodeUsageQuery
-	withPaymentOrders         *PaymentOrderQuery
-	withUserAllowedGroups     *UserAllowedGroupQuery
-	modifiers                 []func(*sql.Selector)
+	ctx                           *QueryContext
+	order                         []user.OrderOption
+	inters                        []Interceptor
+	predicates                    []predicate.User
+	withAPIKeys                   *APIKeyQuery
+	withRedeemCodes               *RedeemCodeQuery
+	withSubscriptions             *UserSubscriptionQuery
+	withAssignedSubscriptions     *UserSubscriptionQuery
+	withAnnouncementReads         *AnnouncementReadQuery
+	withAllowedGroups             *GroupQuery
+	withUsageLogs                 *UsageLogQuery
+	withAttributeValues           *UserAttributeValueQuery
+	withPromoCodeUsages           *PromoCodeUsageQuery
+	withPaymentOrders             *PaymentOrderQuery
+	withReferralCodes             *ReferralCodeQuery
+	withReferralRelation          *ReferralRelationQuery
+	withReferralReferrals         *ReferralRelationQuery
+	withReferralRelationHistories *ReferralRelationHistoryQuery
+	withRechargeOrders            *RechargeOrderQuery
+	withCommissionRewards         *CommissionRewardQuery
+	withSourceCommissionRewards   *CommissionRewardQuery
+	withCommissionLedgers         *CommissionLedgerQuery
+	withCommissionWithdrawals     *CommissionWithdrawalQuery
+	withCommissionWithdrawalItems *CommissionWithdrawalItemQuery
+	withCommissionPayoutAccounts  *CommissionPayoutAccountQuery
+	withUserAllowedGroups         *UserAllowedGroupQuery
+	modifiers                     []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -302,6 +322,248 @@ func (_q *UserQuery) QueryPaymentOrders() *PaymentOrderQuery {
 	return query
 }
 
+// QueryReferralCodes chains the current query on the "referral_codes" edge.
+func (_q *UserQuery) QueryReferralCodes() *ReferralCodeQuery {
+	query := (&ReferralCodeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(referralcode.Table, referralcode.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralCodesTable, user.ReferralCodesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReferralRelation chains the current query on the "referral_relation" edge.
+func (_q *UserQuery) QueryReferralRelation() *ReferralRelationQuery {
+	query := (&ReferralRelationClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(referralrelation.Table, referralrelation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.ReferralRelationTable, user.ReferralRelationColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReferralReferrals chains the current query on the "referral_referrals" edge.
+func (_q *UserQuery) QueryReferralReferrals() *ReferralRelationQuery {
+	query := (&ReferralRelationClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(referralrelation.Table, referralrelation.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralReferralsTable, user.ReferralReferralsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryReferralRelationHistories chains the current query on the "referral_relation_histories" edge.
+func (_q *UserQuery) QueryReferralRelationHistories() *ReferralRelationHistoryQuery {
+	query := (&ReferralRelationHistoryClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(referralrelationhistory.Table, referralrelationhistory.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.ReferralRelationHistoriesTable, user.ReferralRelationHistoriesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryRechargeOrders chains the current query on the "recharge_orders" edge.
+func (_q *UserQuery) QueryRechargeOrders() *RechargeOrderQuery {
+	query := (&RechargeOrderClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(rechargeorder.Table, rechargeorder.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.RechargeOrdersTable, user.RechargeOrdersColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommissionRewards chains the current query on the "commission_rewards" edge.
+func (_q *UserQuery) QueryCommissionRewards() *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionRewardsTable, user.CommissionRewardsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySourceCommissionRewards chains the current query on the "source_commission_rewards" edge.
+func (_q *UserQuery) QuerySourceCommissionRewards() *CommissionRewardQuery {
+	query := (&CommissionRewardClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionreward.Table, commissionreward.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.SourceCommissionRewardsTable, user.SourceCommissionRewardsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommissionLedgers chains the current query on the "commission_ledgers" edge.
+func (_q *UserQuery) QueryCommissionLedgers() *CommissionLedgerQuery {
+	query := (&CommissionLedgerClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionledger.Table, commissionledger.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionLedgersTable, user.CommissionLedgersColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommissionWithdrawals chains the current query on the "commission_withdrawals" edge.
+func (_q *UserQuery) QueryCommissionWithdrawals() *CommissionWithdrawalQuery {
+	query := (&CommissionWithdrawalClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionwithdrawal.Table, commissionwithdrawal.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionWithdrawalsTable, user.CommissionWithdrawalsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommissionWithdrawalItems chains the current query on the "commission_withdrawal_items" edge.
+func (_q *UserQuery) QueryCommissionWithdrawalItems() *CommissionWithdrawalItemQuery {
+	query := (&CommissionWithdrawalItemClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionwithdrawalitem.Table, commissionwithdrawalitem.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionWithdrawalItemsTable, user.CommissionWithdrawalItemsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryCommissionPayoutAccounts chains the current query on the "commission_payout_accounts" edge.
+func (_q *UserQuery) QueryCommissionPayoutAccounts() *CommissionPayoutAccountQuery {
+	query := (&CommissionPayoutAccountClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, selector),
+			sqlgraph.To(commissionpayoutaccount.Table, commissionpayoutaccount.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, user.CommissionPayoutAccountsTable, user.CommissionPayoutAccountsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups chains the current query on the "user_allowed_groups" edge.
 func (_q *UserQuery) QueryUserAllowedGroups() *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: _q.config}).Query()
@@ -511,22 +773,33 @@ func (_q *UserQuery) Clone() *UserQuery {
 		return nil
 	}
 	return &UserQuery{
-		config:                    _q.config,
-		ctx:                       _q.ctx.Clone(),
-		order:                     append([]user.OrderOption{}, _q.order...),
-		inters:                    append([]Interceptor{}, _q.inters...),
-		predicates:                append([]predicate.User{}, _q.predicates...),
-		withAPIKeys:               _q.withAPIKeys.Clone(),
-		withRedeemCodes:           _q.withRedeemCodes.Clone(),
-		withSubscriptions:         _q.withSubscriptions.Clone(),
-		withAssignedSubscriptions: _q.withAssignedSubscriptions.Clone(),
-		withAnnouncementReads:     _q.withAnnouncementReads.Clone(),
-		withAllowedGroups:         _q.withAllowedGroups.Clone(),
-		withUsageLogs:             _q.withUsageLogs.Clone(),
-		withAttributeValues:       _q.withAttributeValues.Clone(),
-		withPromoCodeUsages:       _q.withPromoCodeUsages.Clone(),
-		withPaymentOrders:         _q.withPaymentOrders.Clone(),
-		withUserAllowedGroups:     _q.withUserAllowedGroups.Clone(),
+		config:                        _q.config,
+		ctx:                           _q.ctx.Clone(),
+		order:                         append([]user.OrderOption{}, _q.order...),
+		inters:                        append([]Interceptor{}, _q.inters...),
+		predicates:                    append([]predicate.User{}, _q.predicates...),
+		withAPIKeys:                   _q.withAPIKeys.Clone(),
+		withRedeemCodes:               _q.withRedeemCodes.Clone(),
+		withSubscriptions:             _q.withSubscriptions.Clone(),
+		withAssignedSubscriptions:     _q.withAssignedSubscriptions.Clone(),
+		withAnnouncementReads:         _q.withAnnouncementReads.Clone(),
+		withAllowedGroups:             _q.withAllowedGroups.Clone(),
+		withUsageLogs:                 _q.withUsageLogs.Clone(),
+		withAttributeValues:           _q.withAttributeValues.Clone(),
+		withPromoCodeUsages:           _q.withPromoCodeUsages.Clone(),
+		withPaymentOrders:             _q.withPaymentOrders.Clone(),
+		withReferralCodes:             _q.withReferralCodes.Clone(),
+		withReferralRelation:          _q.withReferralRelation.Clone(),
+		withReferralReferrals:         _q.withReferralReferrals.Clone(),
+		withReferralRelationHistories: _q.withReferralRelationHistories.Clone(),
+		withRechargeOrders:            _q.withRechargeOrders.Clone(),
+		withCommissionRewards:         _q.withCommissionRewards.Clone(),
+		withSourceCommissionRewards:   _q.withSourceCommissionRewards.Clone(),
+		withCommissionLedgers:         _q.withCommissionLedgers.Clone(),
+		withCommissionWithdrawals:     _q.withCommissionWithdrawals.Clone(),
+		withCommissionWithdrawalItems: _q.withCommissionWithdrawalItems.Clone(),
+		withCommissionPayoutAccounts:  _q.withCommissionPayoutAccounts.Clone(),
+		withUserAllowedGroups:         _q.withUserAllowedGroups.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -643,6 +916,127 @@ func (_q *UserQuery) WithPaymentOrders(opts ...func(*PaymentOrderQuery)) *UserQu
 	return _q
 }
 
+// WithReferralCodes tells the query-builder to eager-load the nodes that are connected to
+// the "referral_codes" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithReferralCodes(opts ...func(*ReferralCodeQuery)) *UserQuery {
+	query := (&ReferralCodeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withReferralCodes = query
+	return _q
+}
+
+// WithReferralRelation tells the query-builder to eager-load the nodes that are connected to
+// the "referral_relation" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithReferralRelation(opts ...func(*ReferralRelationQuery)) *UserQuery {
+	query := (&ReferralRelationClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withReferralRelation = query
+	return _q
+}
+
+// WithReferralReferrals tells the query-builder to eager-load the nodes that are connected to
+// the "referral_referrals" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithReferralReferrals(opts ...func(*ReferralRelationQuery)) *UserQuery {
+	query := (&ReferralRelationClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withReferralReferrals = query
+	return _q
+}
+
+// WithReferralRelationHistories tells the query-builder to eager-load the nodes that are connected to
+// the "referral_relation_histories" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithReferralRelationHistories(opts ...func(*ReferralRelationHistoryQuery)) *UserQuery {
+	query := (&ReferralRelationHistoryClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withReferralRelationHistories = query
+	return _q
+}
+
+// WithRechargeOrders tells the query-builder to eager-load the nodes that are connected to
+// the "recharge_orders" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithRechargeOrders(opts ...func(*RechargeOrderQuery)) *UserQuery {
+	query := (&RechargeOrderClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withRechargeOrders = query
+	return _q
+}
+
+// WithCommissionRewards tells the query-builder to eager-load the nodes that are connected to
+// the "commission_rewards" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCommissionRewards(opts ...func(*CommissionRewardQuery)) *UserQuery {
+	query := (&CommissionRewardClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCommissionRewards = query
+	return _q
+}
+
+// WithSourceCommissionRewards tells the query-builder to eager-load the nodes that are connected to
+// the "source_commission_rewards" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithSourceCommissionRewards(opts ...func(*CommissionRewardQuery)) *UserQuery {
+	query := (&CommissionRewardClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withSourceCommissionRewards = query
+	return _q
+}
+
+// WithCommissionLedgers tells the query-builder to eager-load the nodes that are connected to
+// the "commission_ledgers" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCommissionLedgers(opts ...func(*CommissionLedgerQuery)) *UserQuery {
+	query := (&CommissionLedgerClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCommissionLedgers = query
+	return _q
+}
+
+// WithCommissionWithdrawals tells the query-builder to eager-load the nodes that are connected to
+// the "commission_withdrawals" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCommissionWithdrawals(opts ...func(*CommissionWithdrawalQuery)) *UserQuery {
+	query := (&CommissionWithdrawalClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCommissionWithdrawals = query
+	return _q
+}
+
+// WithCommissionWithdrawalItems tells the query-builder to eager-load the nodes that are connected to
+// the "commission_withdrawal_items" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCommissionWithdrawalItems(opts ...func(*CommissionWithdrawalItemQuery)) *UserQuery {
+	query := (&CommissionWithdrawalItemClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCommissionWithdrawalItems = query
+	return _q
+}
+
+// WithCommissionPayoutAccounts tells the query-builder to eager-load the nodes that are connected to
+// the "commission_payout_accounts" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserQuery) WithCommissionPayoutAccounts(opts ...func(*CommissionPayoutAccountQuery)) *UserQuery {
+	query := (&CommissionPayoutAccountClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withCommissionPayoutAccounts = query
+	return _q
+}
+
 // WithUserAllowedGroups tells the query-builder to eager-load the nodes that are connected to
 // the "user_allowed_groups" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *UserQuery) WithUserAllowedGroups(opts ...func(*UserAllowedGroupQuery)) *UserQuery {
@@ -732,7 +1126,7 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 	var (
 		nodes       = []*User{}
 		_spec       = _q.querySpec()
-		loadedTypes = [11]bool{
+		loadedTypes = [22]bool{
 			_q.withAPIKeys != nil,
 			_q.withRedeemCodes != nil,
 			_q.withSubscriptions != nil,
@@ -743,6 +1137,17 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 			_q.withAttributeValues != nil,
 			_q.withPromoCodeUsages != nil,
 			_q.withPaymentOrders != nil,
+			_q.withReferralCodes != nil,
+			_q.withReferralRelation != nil,
+			_q.withReferralReferrals != nil,
+			_q.withReferralRelationHistories != nil,
+			_q.withRechargeOrders != nil,
+			_q.withCommissionRewards != nil,
+			_q.withSourceCommissionRewards != nil,
+			_q.withCommissionLedgers != nil,
+			_q.withCommissionWithdrawals != nil,
+			_q.withCommissionWithdrawalItems != nil,
+			_q.withCommissionPayoutAccounts != nil,
 			_q.withUserAllowedGroups != nil,
 		}
 	)
@@ -836,6 +1241,92 @@ func (_q *UserQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*User, e
 		if err := _q.loadPaymentOrders(ctx, query, nodes,
 			func(n *User) { n.Edges.PaymentOrders = []*PaymentOrder{} },
 			func(n *User, e *PaymentOrder) { n.Edges.PaymentOrders = append(n.Edges.PaymentOrders, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withReferralCodes; query != nil {
+		if err := _q.loadReferralCodes(ctx, query, nodes,
+			func(n *User) { n.Edges.ReferralCodes = []*ReferralCode{} },
+			func(n *User, e *ReferralCode) { n.Edges.ReferralCodes = append(n.Edges.ReferralCodes, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withReferralRelation; query != nil {
+		if err := _q.loadReferralRelation(ctx, query, nodes, nil,
+			func(n *User, e *ReferralRelation) { n.Edges.ReferralRelation = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withReferralReferrals; query != nil {
+		if err := _q.loadReferralReferrals(ctx, query, nodes,
+			func(n *User) { n.Edges.ReferralReferrals = []*ReferralRelation{} },
+			func(n *User, e *ReferralRelation) { n.Edges.ReferralReferrals = append(n.Edges.ReferralReferrals, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withReferralRelationHistories; query != nil {
+		if err := _q.loadReferralRelationHistories(ctx, query, nodes,
+			func(n *User) { n.Edges.ReferralRelationHistories = []*ReferralRelationHistory{} },
+			func(n *User, e *ReferralRelationHistory) {
+				n.Edges.ReferralRelationHistories = append(n.Edges.ReferralRelationHistories, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withRechargeOrders; query != nil {
+		if err := _q.loadRechargeOrders(ctx, query, nodes,
+			func(n *User) { n.Edges.RechargeOrders = []*RechargeOrder{} },
+			func(n *User, e *RechargeOrder) { n.Edges.RechargeOrders = append(n.Edges.RechargeOrders, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCommissionRewards; query != nil {
+		if err := _q.loadCommissionRewards(ctx, query, nodes,
+			func(n *User) { n.Edges.CommissionRewards = []*CommissionReward{} },
+			func(n *User, e *CommissionReward) { n.Edges.CommissionRewards = append(n.Edges.CommissionRewards, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withSourceCommissionRewards; query != nil {
+		if err := _q.loadSourceCommissionRewards(ctx, query, nodes,
+			func(n *User) { n.Edges.SourceCommissionRewards = []*CommissionReward{} },
+			func(n *User, e *CommissionReward) {
+				n.Edges.SourceCommissionRewards = append(n.Edges.SourceCommissionRewards, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCommissionLedgers; query != nil {
+		if err := _q.loadCommissionLedgers(ctx, query, nodes,
+			func(n *User) { n.Edges.CommissionLedgers = []*CommissionLedger{} },
+			func(n *User, e *CommissionLedger) { n.Edges.CommissionLedgers = append(n.Edges.CommissionLedgers, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCommissionWithdrawals; query != nil {
+		if err := _q.loadCommissionWithdrawals(ctx, query, nodes,
+			func(n *User) { n.Edges.CommissionWithdrawals = []*CommissionWithdrawal{} },
+			func(n *User, e *CommissionWithdrawal) {
+				n.Edges.CommissionWithdrawals = append(n.Edges.CommissionWithdrawals, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCommissionWithdrawalItems; query != nil {
+		if err := _q.loadCommissionWithdrawalItems(ctx, query, nodes,
+			func(n *User) { n.Edges.CommissionWithdrawalItems = []*CommissionWithdrawalItem{} },
+			func(n *User, e *CommissionWithdrawalItem) {
+				n.Edges.CommissionWithdrawalItems = append(n.Edges.CommissionWithdrawalItems, e)
+			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withCommissionPayoutAccounts; query != nil {
+		if err := _q.loadCommissionPayoutAccounts(ctx, query, nodes,
+			func(n *User) { n.Edges.CommissionPayoutAccounts = []*CommissionPayoutAccount{} },
+			func(n *User, e *CommissionPayoutAccount) {
+				n.Edges.CommissionPayoutAccounts = append(n.Edges.CommissionPayoutAccounts, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -1171,6 +1662,333 @@ func (_q *UserQuery) loadPaymentOrders(ctx context.Context, query *PaymentOrderQ
 	}
 	query.Where(predicate.PaymentOrder(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(user.PaymentOrdersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadReferralCodes(ctx context.Context, query *ReferralCodeQuery, nodes []*User, init func(*User), assign func(*User, *ReferralCode)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(referralcode.FieldUserID)
+	}
+	query.Where(predicate.ReferralCode(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ReferralCodesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadReferralRelation(ctx context.Context, query *ReferralRelationQuery, nodes []*User, init func(*User), assign func(*User, *ReferralRelation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(referralrelation.FieldUserID)
+	}
+	query.Where(predicate.ReferralRelation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ReferralRelationColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadReferralReferrals(ctx context.Context, query *ReferralRelationQuery, nodes []*User, init func(*User), assign func(*User, *ReferralRelation)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(referralrelation.FieldReferrerUserID)
+	}
+	query.Where(predicate.ReferralRelation(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ReferralReferralsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.ReferrerUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "referrer_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadReferralRelationHistories(ctx context.Context, query *ReferralRelationHistoryQuery, nodes []*User, init func(*User), assign func(*User, *ReferralRelationHistory)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(referralrelationhistory.FieldUserID)
+	}
+	query.Where(predicate.ReferralRelationHistory(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.ReferralRelationHistoriesColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadRechargeOrders(ctx context.Context, query *RechargeOrderQuery, nodes []*User, init func(*User), assign func(*User, *RechargeOrder)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(rechargeorder.FieldUserID)
+	}
+	query.Where(predicate.RechargeOrder(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.RechargeOrdersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCommissionRewards(ctx context.Context, query *CommissionRewardQuery, nodes []*User, init func(*User), assign func(*User, *CommissionReward)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionreward.FieldUserID)
+	}
+	query.Where(predicate.CommissionReward(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommissionRewardsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadSourceCommissionRewards(ctx context.Context, query *CommissionRewardQuery, nodes []*User, init func(*User), assign func(*User, *CommissionReward)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionreward.FieldSourceUserID)
+	}
+	query.Where(predicate.CommissionReward(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.SourceCommissionRewardsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SourceUserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "source_user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCommissionLedgers(ctx context.Context, query *CommissionLedgerQuery, nodes []*User, init func(*User), assign func(*User, *CommissionLedger)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionledger.FieldUserID)
+	}
+	query.Where(predicate.CommissionLedger(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommissionLedgersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCommissionWithdrawals(ctx context.Context, query *CommissionWithdrawalQuery, nodes []*User, init func(*User), assign func(*User, *CommissionWithdrawal)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionwithdrawal.FieldUserID)
+	}
+	query.Where(predicate.CommissionWithdrawal(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommissionWithdrawalsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCommissionWithdrawalItems(ctx context.Context, query *CommissionWithdrawalItemQuery, nodes []*User, init func(*User), assign func(*User, *CommissionWithdrawalItem)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionwithdrawalitem.FieldUserID)
+	}
+	query.Where(predicate.CommissionWithdrawalItem(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommissionWithdrawalItemsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.UserID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "user_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *UserQuery) loadCommissionPayoutAccounts(ctx context.Context, query *CommissionPayoutAccountQuery, nodes []*User, init func(*User), assign func(*User, *CommissionPayoutAccount)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*User)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(commissionpayoutaccount.FieldUserID)
+	}
+	query.Where(predicate.CommissionPayoutAccount(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(user.CommissionPayoutAccountsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {
