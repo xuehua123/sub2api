@@ -145,6 +145,17 @@ type SystemSettings struct {
 	PaymentCancelRateLimitWindow  int    `json:"payment_cancel_rate_limit_window"`
 	PaymentCancelRateLimitUnit    string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    string `json:"payment_cancel_rate_limit_window_mode"`
+
+	// LobeHub integration
+	LobeHubEnabled                    bool   `json:"lobehub_enabled"`
+	LobeHubChatURL                    string `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                 string `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID               string `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecretConfigured bool   `json:"lobehub_oidc_client_secret_configured"`
+	LobeHubDefaultProvider            string `json:"lobehub_default_provider"`
+	LobeHubDefaultModel               string `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion       string `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton           bool   `json:"hide_lobehub_import_button"`
 }
 
 type DefaultSubscriptionSetting struct {

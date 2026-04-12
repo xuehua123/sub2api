@@ -146,6 +146,17 @@ export interface SystemSettings {
   referral_settlement_currency: string
   referral_withdraw_methods_enabled: string[]
   referral_min_withdraw_amount: number
+
+  // LobeHub integration
+  lobehub_enabled: boolean
+  lobehub_chat_url: string
+  lobehub_oidc_issuer: string
+  lobehub_oidc_client_id: string
+  lobehub_oidc_client_secret_configured: boolean
+  lobehub_default_provider: string
+  lobehub_default_model: string
+  lobehub_runtime_config_version: string
+  hide_lobehub_import_button: boolean
 }
 
 export interface UpdateSettingsRequest {
@@ -256,6 +267,17 @@ export interface UpdateSettingsRequest {
   referral_settlement_currency?: string
   referral_withdraw_methods_enabled?: string[]
   referral_min_withdraw_amount?: number
+
+  // LobeHub integration
+  lobehub_enabled?: boolean
+  lobehub_chat_url?: string
+  lobehub_oidc_issuer?: string
+  lobehub_oidc_client_id?: string
+  lobehub_oidc_client_secret?: string
+  lobehub_default_provider?: string
+  lobehub_default_model?: string
+  lobehub_runtime_config_version?: string
+  hide_lobehub_import_button?: boolean
 }
 
 /**

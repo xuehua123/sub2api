@@ -193,6 +193,15 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:         paymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:           paymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:           paymentCfg.CancelRateLimitMode,
+		LobeHubEnabled:                       settings.LobeHubEnabled,
+		LobeHubChatURL:                       settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                    settings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                  settings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:    settings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:               settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                  settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:          settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:              settings.HideLobeHubImportButton,
 	})
 }
 
@@ -325,6 +334,17 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitWindow  *int    `json:"payment_cancel_rate_limit_window"`
 	PaymentCancelRateLimitUnit    *string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
+
+	// LobeHub integration
+	LobeHubEnabled              *bool   `json:"lobehub_enabled"`
+	LobeHubChatURL              *string `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer           *string `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID         *string `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecret     *string `json:"lobehub_oidc_client_secret"`
+	LobeHubDefaultProvider      *string `json:"lobehub_default_provider"`
+	LobeHubDefaultModel         *string `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion *string `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton     *bool   `json:"hide_lobehub_import_button"`
 }
 
 // UpdateSettings 更新系统设置
@@ -881,6 +901,60 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		LobeHubEnabled: func() bool {
+			if req.LobeHubEnabled != nil {
+				return *req.LobeHubEnabled
+			}
+			return previousSettings.LobeHubEnabled
+		}(),
+		LobeHubChatURL: func() string {
+			if req.LobeHubChatURL != nil {
+				return *req.LobeHubChatURL
+			}
+			return previousSettings.LobeHubChatURL
+		}(),
+		LobeHubOIDCIssuer: func() string {
+			if req.LobeHubOIDCIssuer != nil {
+				return *req.LobeHubOIDCIssuer
+			}
+			return previousSettings.LobeHubOIDCIssuer
+		}(),
+		LobeHubOIDCClientID: func() string {
+			if req.LobeHubOIDCClientID != nil {
+				return *req.LobeHubOIDCClientID
+			}
+			return previousSettings.LobeHubOIDCClientID
+		}(),
+		LobeHubOIDCClientSecret: func() string {
+			if req.LobeHubOIDCClientSecret != nil {
+				return *req.LobeHubOIDCClientSecret
+			}
+			return previousSettings.LobeHubOIDCClientSecret
+		}(),
+		LobeHubDefaultProvider: func() string {
+			if req.LobeHubDefaultProvider != nil {
+				return *req.LobeHubDefaultProvider
+			}
+			return previousSettings.LobeHubDefaultProvider
+		}(),
+		LobeHubDefaultModel: func() string {
+			if req.LobeHubDefaultModel != nil {
+				return *req.LobeHubDefaultModel
+			}
+			return previousSettings.LobeHubDefaultModel
+		}(),
+		LobeHubRuntimeConfigVersion: func() string {
+			if req.LobeHubRuntimeConfigVersion != nil {
+				return *req.LobeHubRuntimeConfigVersion
+			}
+			return previousSettings.LobeHubRuntimeConfigVersion
+		}(),
+		HideLobeHubImportButton: func() bool {
+			if req.HideLobeHubImportButton != nil {
+				return *req.HideLobeHubImportButton
+			}
+			return previousSettings.HideLobeHubImportButton
+		}(),
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -1045,6 +1119,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:         updatedPaymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:           updatedPaymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:           updatedPaymentCfg.CancelRateLimitMode,
+		LobeHubEnabled:                       updatedSettings.LobeHubEnabled,
+		LobeHubChatURL:                       updatedSettings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                    updatedSettings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                  updatedSettings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:    updatedSettings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:               updatedSettings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                  updatedSettings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:          updatedSettings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:              updatedSettings.HideLobeHubImportButton,
 	})
 }
 

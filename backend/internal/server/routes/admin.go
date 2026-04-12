@@ -91,6 +91,12 @@ func RegisterAdminRoutes(
 
 		// 推荐系统管理
 		registerReferralAdminRoutes(admin, h)
+
+		// 充值订单（触发返佣）
+		if h.Admin.RechargeOrder != nil {
+			orders := admin.Group("/recharge-orders")
+			orders.POST("/credit", h.Admin.RechargeOrder.Credit)
+		}
 	}
 }
 

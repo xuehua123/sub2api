@@ -17,6 +17,16 @@ import type {
 } from '@/types'
 
 /**
+ * Validate referral code response
+ */
+export interface ValidateReferralCodeResponse {
+  valid: boolean
+  error_code?: string
+  referrer_username?: string
+  referrer_email_masked?: string
+}
+
+/**
  * Login response type - can be either full auth or 2FA required
  */
 export type LoginResponse = AuthResponse | TotpLoginResponse
@@ -379,6 +389,16 @@ export async function completeOIDCOAuthRegistration(
   return data
 }
 
+/**
+ * Validate referral code (public endpoint, no auth required)
+ * @param code - Referral code to validate
+ * @returns Validation result with referrer info if valid
+ */
+export async function validateReferralCode(code: string): Promise<ValidateReferralCodeResponse> {
+  const { data } = await apiClient.post<ValidateReferralCodeResponse>('/auth/validate-referral-code', { code })
+  return data
+}
+
 export const authAPI = {
   login,
   login2FA,
@@ -398,6 +418,7 @@ export const authAPI = {
   sendVerifyCode,
   validatePromoCode,
   validateInvitationCode,
+  validateReferralCode,
   forgotPassword,
   resetPassword,
   refreshToken,

@@ -188,17 +188,8 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 	if !settings.ReferralWithdrawEnabled {
 		return nil, ErrReferralDisabled
 	}
-	if !settings.ReferralEnabled {
-		if s.userRepo == nil {
-			return nil, ErrReferralDisabled
-		}
-		user, userErr := s.userRepo.GetByID(ctx, input.UserID)
-		if userErr != nil {
-			return nil, userErr
-		}
-		if !user.ReferralEnabled {
-			return nil, ErrReferralDisabled
-		}
+	if err := s.checkReferralEnabledForUser(ctx, settings, input.UserID); err != nil {
+		return nil, err
 	}
 
 	method := strings.TrimSpace(input.PayoutMethod)
@@ -710,6 +701,26 @@ func sanitizePayoutAccount(account *CommissionPayoutAccount) *CommissionPayoutAc
 	return &cloned
 }
 
+// checkReferralEnabledForUser returns nil when the referral system is considered
+// enabled for the given user.  When the global ReferralEnabled flag is true the
+// check passes immediately.  Otherwise it falls back to the per-user override.
+func (s *ReferralWithdrawalService) checkReferralEnabledForUser(ctx context.Context, settings *SystemSettings, userID int64) error {
+	if settings.ReferralEnabled {
+		return nil
+	}
+	if s.userRepo == nil {
+		return ErrReferralDisabled
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !user.ReferralEnabled {
+		return ErrReferralDisabled
+	}
+	return nil
+}
+
 func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Context, userID int64, amount float64) error {
 	if userID <= 0 || amount <= 0 {
 		return ErrCommissionWithdrawAmountInvalid
@@ -722,17 +733,8 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 	if !settings.ReferralWithdrawEnabled {
 		return ErrReferralDisabled
 	}
-	if !settings.ReferralEnabled {
-		if s.userRepo == nil {
-			return ErrReferralDisabled
-		}
-		user, userErr := s.userRepo.GetByID(ctx, userID)
-		if userErr != nil {
-			return userErr
-		}
-		if !user.ReferralEnabled {
-			return ErrReferralDisabled
-		}
+	if err := s.checkReferralEnabledForUser(ctx, settings, userID); err != nil {
+		return err
 	}
 	if amount < settings.ReferralWithdrawMinAmount {
 		return ErrCommissionWithdrawAmountInvalid

@@ -217,6 +217,63 @@
           </transition>
         </div>
 
+        <!-- Referral Code Input (Optional) -->
+        <div v-if="referralEnabled">
+          <label for="referral_code" class="input-label">
+            {{ t('auth.referralCodeLabel') }}
+            <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">({{ t('common.optional') }})</span>
+          </label>
+          <div class="relative">
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+              <Icon name="users" size="md" :class="referralValidation.valid ? 'text-green-500' : 'text-gray-400 dark:text-dark-500'" />
+            </div>
+            <input
+              id="referral_code"
+              v-model="formData.referral_code"
+              type="text"
+              :disabled="isLoading"
+              class="input pl-11 pr-10"
+              :class="{
+                'border-green-500 focus:border-green-500 focus:ring-green-500': referralValidation.valid,
+                'border-red-500 focus:border-red-500 focus:ring-red-500': referralValidation.invalid
+              }"
+              :placeholder="t('auth.referralCodePlaceholder')"
+              @input="handleReferralCodeInput"
+            />
+            <!-- Validation indicator -->
+            <div v-if="referralValidating" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
+              <svg class="h-4 w-4 animate-spin text-gray-400" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </div>
+            <div v-else-if="referralValidation.valid" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
+              <Icon name="checkCircle" size="md" class="text-green-500" />
+            </div>
+            <div v-else-if="referralValidation.invalid" class="absolute inset-y-0 right-0 flex items-center pr-3.5">
+              <Icon name="exclamationCircle" size="md" class="text-red-500" />
+            </div>
+          </div>
+          <!-- Referral code validation result -->
+          <transition name="fade">
+            <div v-if="referralValidation.valid" class="mt-2 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 dark:bg-green-900/20">
+              <Icon name="checkCircle" size="sm" class="text-green-600 dark:text-green-400" />
+              <span class="text-sm text-green-700 dark:text-green-400">
+                {{ t('auth.referralCodeValid') }}
+                <template v-if="referralValidation.referrerUsername">
+                  &mdash; {{ referralValidation.referrerUsername }}
+                </template>
+                <template v-if="referralValidation.referrerEmailMasked">
+                  ({{ referralValidation.referrerEmailMasked }})
+                </template>
+              </span>
+            </div>
+            <p v-else-if="referralValidation.invalid" class="input-error-text">
+              {{ referralValidation.message }}
+            </p>
+          </transition>
+        </div>
+
         <!-- Turnstile Widget -->
         <div v-if="turnstileEnabled && turnstileSiteKey">
           <TurnstileWidget
@@ -311,7 +368,7 @@ import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { getPublicSettings, validatePromoCode, validateInvitationCode } from '@/api/auth'
+import { getPublicSettings, validatePromoCode, validateInvitationCode, validateReferralCode } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import {
   isRegistrationEmailSuffixAllowed,
@@ -370,11 +427,24 @@ const invitationValidation = reactive({
 })
 let invitationValidateTimeout: ReturnType<typeof setTimeout> | null = null
 
+// Referral code validation
+const referralEnabled = ref<boolean>(false)
+const referralValidating = ref<boolean>(false)
+const referralValidation = reactive({
+  valid: false,
+  invalid: false,
+  message: '',
+  referrerUsername: '',
+  referrerEmailMasked: ''
+})
+let referralValidateTimeout: ReturnType<typeof setTimeout> | null = null
+
 const formData = reactive({
   email: '',
   password: '',
   promo_code: '',
-  invitation_code: ''
+  invitation_code: '',
+  referral_code: ''
 })
 
 const errors = reactive({
@@ -402,6 +472,7 @@ onMounted(async () => {
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )
+    referralEnabled.value = settings.referral_enabled || false
 
     // Read promo code from URL parameter only if promo code is enabled
     if (promoCodeEnabled.value) {
@@ -410,6 +481,16 @@ onMounted(async () => {
         formData.promo_code = promoParam
         // Validate the promo code from URL
         await validatePromoCodeDebounced(promoParam)
+      }
+    }
+
+    // Read referral code from URL parameter (?ref=CODE)
+    if (referralEnabled.value) {
+      const refParam = route.query.ref as string
+      if (refParam) {
+        formData.referral_code = refParam
+        // Validate the referral code from URL
+        await validateReferralCodeDebounced(refParam)
       }
     }
   } catch (error) {
@@ -425,6 +506,9 @@ onUnmounted(() => {
   }
   if (invitationValidateTimeout) {
     clearTimeout(invitationValidateTimeout)
+  }
+  if (referralValidateTimeout) {
+    clearTimeout(referralValidateTimeout)
   }
 })
 
@@ -562,6 +646,76 @@ function getInvitationErrorMessage(errorCode?: string): string {
       return t('auth.invitationCodeInvalid')
     default:
       return t('auth.invitationCodeInvalid')
+  }
+}
+
+// ==================== Referral Code Validation ====================
+
+function handleReferralCodeInput(): void {
+  const code = formData.referral_code.trim()
+
+  // Clear previous validation
+  referralValidation.valid = false
+  referralValidation.invalid = false
+  referralValidation.message = ''
+  referralValidation.referrerUsername = ''
+  referralValidation.referrerEmailMasked = ''
+
+  if (!code) {
+    referralValidating.value = false
+    return
+  }
+
+  // Debounce validation
+  if (referralValidateTimeout) {
+    clearTimeout(referralValidateTimeout)
+  }
+
+  referralValidateTimeout = setTimeout(() => {
+    validateReferralCodeDebounced(code)
+  }, 500)
+}
+
+async function validateReferralCodeDebounced(code: string): Promise<void> {
+  if (!code.trim()) return
+
+  referralValidating.value = true
+
+  try {
+    const result = await validateReferralCode(code)
+
+    if (result.valid) {
+      referralValidation.valid = true
+      referralValidation.invalid = false
+      referralValidation.referrerUsername = result.referrer_username || ''
+      referralValidation.referrerEmailMasked = result.referrer_email_masked || ''
+      referralValidation.message = ''
+    } else {
+      referralValidation.valid = false
+      referralValidation.invalid = true
+      referralValidation.referrerUsername = ''
+      referralValidation.referrerEmailMasked = ''
+      referralValidation.message = getReferralErrorMessage(result.error_code)
+    }
+  } catch {
+    referralValidation.valid = false
+    referralValidation.invalid = true
+    referralValidation.message = t('auth.referralCodeInvalid')
+  } finally {
+    referralValidating.value = false
+  }
+}
+
+function getReferralErrorMessage(errorCode?: string): string {
+  switch (errorCode) {
+    case 'REFERRAL_CODE_NOT_FOUND':
+      return t('auth.referralCodeInvalid')
+    case 'REFERRAL_CODE_INVALID':
+      return t('auth.referralCodeInvalid')
+    case 'REFERRAL_DISABLED':
+      return t('auth.referralCodeInvalid')
+    default:
+      return t('auth.referralCodeInvalid')
   }
 }
 
@@ -713,7 +867,8 @@ async function handleRegister(): Promise<void> {
           password: formData.password,
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
-          invitation_code: formData.invitation_code || undefined
+          invitation_code: formData.invitation_code || undefined,
+          referral_code: formData.referral_code || undefined
         })
       )
 
@@ -728,7 +883,8 @@ async function handleRegister(): Promise<void> {
       password: formData.password,
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined,
       promo_code: formData.promo_code || undefined,
-      invitation_code: formData.invitation_code || undefined
+      invitation_code: formData.invitation_code || undefined,
+      referral_code: formData.referral_code || undefined
     })
 
     // Show success toast

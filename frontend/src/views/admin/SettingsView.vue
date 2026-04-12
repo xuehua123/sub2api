@@ -2323,6 +2323,85 @@
         </div>
         </div>
 
+        <!-- Tab: LobeHub -->
+        <div v-show="activeTab === 'lobehub'" class="space-y-6">
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('admin.settings.lobehub.title') }}</h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.description') }}</p>
+          </div>
+          <div class="space-y-4 p-6">
+            <!-- Enable LobeHub -->
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="input-label mb-0">{{ t('admin.settings.lobehub.enableLobeHub') }}</label>
+                <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.enableLobeHubDesc') }}</p>
+              </div>
+              <Toggle v-model="form.lobehub_enabled" />
+            </div>
+
+            <template v-if="form.lobehub_enabled">
+              <!-- Chat URL -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.chatUrl') }}</label>
+                <input v-model="form.lobehub_chat_url" type="text" class="input" placeholder="https://lobechat.example.com" />
+              </div>
+
+              <!-- OIDC Issuer -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.oidcIssuer') }}</label>
+                <input v-model="form.lobehub_oidc_issuer" type="text" class="input" placeholder="https://your-site.com/api/v1/lobehub/oidc" />
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.oidcIssuerHint') }}</p>
+              </div>
+
+              <!-- OIDC Client ID -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.oidcClientId') }}</label>
+                <input v-model="form.lobehub_oidc_client_id" type="text" class="input" placeholder="lobechat" />
+              </div>
+
+              <!-- OIDC Client Secret -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.oidcClientSecret') }}</label>
+                <input
+                  v-model="form.lobehub_oidc_client_secret"
+                  type="password"
+                  class="input"
+                  :placeholder="form.lobehub_oidc_client_secret_configured ? t('admin.settings.lobehub.oidcClientSecretConfigured') : t('admin.settings.lobehub.oidcClientSecretPlaceholder')"
+                />
+              </div>
+
+              <!-- Default Provider -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.defaultProvider') }}</label>
+                <input v-model="form.lobehub_default_provider" type="text" class="input" placeholder="anthropic" />
+              </div>
+
+              <!-- Default Model -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.defaultModel') }}</label>
+                <input v-model="form.lobehub_default_model" type="text" class="input" placeholder="claude-sonnet-4-20250514" />
+              </div>
+
+              <!-- Runtime Config Version -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.lobehub.runtimeConfigVersion') }}</label>
+                <input v-model="form.lobehub_runtime_config_version" type="text" class="input" placeholder="1" />
+              </div>
+
+              <!-- Hide Import Button -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.lobehub.hideImportButton') }}</label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.hideImportButtonDesc') }}</p>
+                </div>
+                <Toggle v-model="form.hide_lobehub_import_button" />
+              </div>
+            </template>
+          </div>
+        </div>
+        </div>
+
         <div v-show="activeTab === 'email'" class="space-y-6">
         <!-- Email disabled hint - show when email_verify_enabled is off -->
         <div v-if="!form.email_verify_enabled" class="card">
@@ -2631,7 +2710,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const adminSettingsStore = useAdminSettingsStore()
 
-type SettingsTab = 'general' | 'security' | 'users' | 'gateway' | 'payment' | 'referral' | 'email' | 'backup'
+type SettingsTab = 'general' | 'security' | 'users' | 'gateway' | 'payment' | 'referral' | 'lobehub' | 'email' | 'backup'
 const activeTab = ref<SettingsTab>('general')
 const settingsTabs = [
   { key: 'general'  as SettingsTab, icon: 'home'   as const },
@@ -2640,6 +2719,7 @@ const settingsTabs = [
   { key: 'gateway'  as SettingsTab, icon: 'server' as const },
   { key: 'payment'  as SettingsTab, icon: 'creditCard' as const },
   { key: 'referral' as SettingsTab, icon: 'users'      as const },
+  { key: 'lobehub'  as SettingsTab, icon: 'globe'      as const },
   { key: 'email'    as SettingsTab, icon: 'mail'   as const },
   { key: 'backup'   as SettingsTab, icon: 'database' as const },
 ]
@@ -2728,6 +2808,7 @@ type SettingsForm = SystemSettings & {
   turnstile_secret_key: string
   linuxdo_connect_client_secret: string
   oidc_connect_client_secret: string
+  lobehub_oidc_client_secret: string
 }
 
 const form = reactive<SettingsForm>({
@@ -2824,7 +2905,18 @@ const form = reactive<SettingsForm>({
   // Gateway forwarding behavior
   enable_fingerprint_unification: true,
   enable_metadata_passthrough: false,
-  enable_cch_signing: false
+  enable_cch_signing: false,
+  // LobeHub integration
+  lobehub_enabled: false,
+  lobehub_chat_url: '',
+  lobehub_oidc_issuer: '',
+  lobehub_oidc_client_id: '',
+  lobehub_oidc_client_secret: '',
+  lobehub_oidc_client_secret_configured: false,
+  lobehub_default_provider: '',
+  lobehub_default_model: '',
+  lobehub_runtime_config_version: '',
+  hide_lobehub_import_button: false
 })
 
 const defaultSubscriptionGroupOptions = computed<DefaultSubscriptionGroupOption[]>(() =>
@@ -3041,6 +3133,7 @@ async function loadSettings() {
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
     form.oidc_connect_client_secret = ''
+    form.lobehub_oidc_client_secret = ''
   } catch (error: unknown) {
     loadFailed.value = true
     appStore.showError(extractApiErrorMessage(error, t('admin.settings.failedToLoad')))
@@ -3253,6 +3346,16 @@ async function saveSettings() {
       referral_settlement_currency: form.referral_settlement_currency,
       referral_withdraw_methods_enabled: form.referral_withdraw_methods_enabled,
       referral_min_withdraw_amount: Number(form.referral_min_withdraw_amount) || 0,
+      // LobeHub integration
+      lobehub_enabled: form.lobehub_enabled,
+      lobehub_chat_url: form.lobehub_chat_url,
+      lobehub_oidc_issuer: form.lobehub_oidc_issuer,
+      lobehub_oidc_client_id: form.lobehub_oidc_client_id,
+      lobehub_oidc_client_secret: form.lobehub_oidc_client_secret || undefined,
+      lobehub_default_provider: form.lobehub_default_provider,
+      lobehub_default_model: form.lobehub_default_model,
+      lobehub_runtime_config_version: form.lobehub_runtime_config_version,
+      hide_lobehub_import_button: form.hide_lobehub_import_button,
     }
 
     const updated = await adminAPI.settings.updateSettings(payload)
@@ -3273,6 +3376,7 @@ async function saveSettings() {
     form.turnstile_secret_key = ''
     form.linuxdo_connect_client_secret = ''
     form.oidc_connect_client_secret = ''
+    form.lobehub_oidc_client_secret = ''
     // Refresh cached settings so sidebar/header update immediately
     await appStore.fetchPublicSettings(true)
     await adminSettingsStore.fetch(true)
