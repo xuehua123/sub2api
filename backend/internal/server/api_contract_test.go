@@ -56,6 +56,8 @@ func TestAPIContracts(t *testing.T) {
 					"concurrency": 5,
 					"status": "active",
 					"allowed_groups": null,
+					"referral_enabled": false,
+					"default_chat_api_key_id": null,
 					"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z",
 					"run_mode": "standard"

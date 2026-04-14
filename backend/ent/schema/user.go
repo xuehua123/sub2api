@@ -74,6 +74,9 @@ func (User) Fields() []ent.Field {
 			Nillable(),
 		field.Bool("referral_enabled").
 			Default(false),
+		field.Int64("default_chat_api_key_id").
+			Optional().
+			Nillable(),
 	}
 }
 

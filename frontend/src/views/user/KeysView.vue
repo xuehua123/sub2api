@@ -41,7 +41,7 @@
         >
           <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
         </button>
-        <button @click="showCreateModal = true" class="btn btn-primary" data-tour="keys-create-btn">
+        <button @click="handleCreateAction" class="btn btn-primary" data-tour="keys-create-btn">
           <Icon name="plus" size="md" class="mr-2" />
           {{ t('keys.createKey') }}
         </button>
@@ -328,6 +328,16 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <!-- Open in LobeHub Button -->
+              <button
+                v-if="canOpenRowInLobeHub(row)"
+                @click="openInLobeHub(row)"
+                :disabled="openingLobeHubKeyId === row.id"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-purple-50 hover:text-purple-600 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-purple-900/20 dark:hover:text-purple-400"
+              >
+                <Icon name="globe" size="sm" :class="openingLobeHubKeyId === row.id ? 'animate-spin' : ''" />
+                <span class="text-xs">{{ openingLobeHubKeyId === row.id ? t('keys.openingLobeHub') : t('keys.openInLobeHub') }}</span>
+              </button>
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -366,7 +376,7 @@
               :title="t('keys.noKeysYet')"
               :description="t('keys.createFirstKey')"
               :action-text="t('keys.createKey')"
-              @action="showCreateModal = true"
+              @action="handleCreateAction"
             />
           </template>
         </DataTable>
@@ -1046,6 +1056,7 @@
 
 <script setup lang="ts">
 	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { useRoute, useRouter } from 'vue-router'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -1053,7 +1064,9 @@
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 
 const { t } = useI18n()
-import { keysAPI, authAPI, usageAPI, userGroupsAPI } from '@/api'
+const route = useRoute()
+const router = useRouter()
+import { keysAPI, authAPI, usageAPI, userGroupsAPI, lobehubAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import DataTable from '@/components/common/DataTable.vue'
@@ -1147,6 +1160,7 @@ const publicSettings = ref<PublicSettings | null>(null)
 const dropdownRef = ref<HTMLElement | null>(null)
 const dropdownPosition = ref<{ top?: number; bottom?: number; left: number } | null>(null)
 const groupButtonRefs = ref<Map<number, HTMLElement>>(new Map())
+const openingLobeHubKeyId = ref<number | null>(null)
 let abortController: AbortController | null = null
 
 // Get the currently selected key for group change
@@ -1220,6 +1234,12 @@ const statusFilterOptions = computed(() => [
   { value: 'quota_exhausted', label: t('keys.status.quota_exhausted') },
   { value: 'expired', label: t('keys.status.expired') }
 ])
+
+const canOpenInLobeHub = computed(() => Boolean(
+  publicSettings.value?.lobehub_enabled && !publicSettings.value?.hide_lobehub_import_button
+))
+
+const canOpenRowInLobeHub = (row: ApiKey) => canOpenInLobeHub.value && row.status === 'active'
 
 const onFilterChange = () => {
   pagination.value.page = 1
@@ -1367,6 +1387,66 @@ const openUseKeyModal = (key: ApiKey) => {
 const closeUseKeyModal = () => {
   showUseKeyModal.value = false
   selectedKey.value = null
+}
+
+function safeRouteQueryString(value: unknown): string {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0].trim() : ''
+  }
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function getRedirectQueryPath(): string {
+  const redirect = safeRouteQueryString(route.query.redirect)
+  if (!redirect.startsWith('/') || redirect.startsWith('//') || redirect.includes('://') || redirect.includes('\n') || redirect.includes('\r')) {
+    return ''
+  }
+  return redirect
+}
+
+function shouldOpenCreateFromQuery(): boolean {
+  return safeRouteQueryString(route.query.openCreate) === '1'
+}
+
+async function closeCreateQuery() {
+  if (!shouldOpenCreateFromQuery()) return
+  const query = { ...route.query }
+  delete query.openCreate
+  await router.replace({ path: route.path, query })
+}
+
+const handleCreateAction = () => {
+  showCreateModal.value = true
+}
+
+const openInLobeHub = async (row: ApiKey) => {
+  if (openingLobeHubKeyId.value !== null) return
+
+  const popup = window.open('', '_blank')
+  if (popup) {
+    try {
+      popup.opener = null
+    } catch {
+      // ignore
+    }
+  }
+
+  openingLobeHubKeyId.value = row.id
+  try {
+    const response = await lobehubAPI.createLaunchTicket(row.id)
+    const bridgeURL = new URL(response.bridge_url, window.location.origin).toString()
+    if (popup?.location) {
+      popup.location.replace(bridgeURL)
+    } else {
+      window.location.assign(bridgeURL)
+    }
+  } catch (error) {
+    if (popup && !popup.closed) popup.close()
+    console.error('Failed to open LobeHub:', error)
+    appStore.showError(t('keys.failedToOpenLobeHub'))
+  } finally {
+    openingLobeHubKeyId.value = null
+  }
 }
 
 const handlePageChange = (page: number) => {
@@ -1572,8 +1652,16 @@ const handleSubmit = async () => {
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
         onboardingStore.nextStep(500)
       }
+      const redirectPath = getRedirectQueryPath()
+      if (redirectPath) {
+        closeModals()
+        await loadApiKeys()
+        await router.push(redirectPath)
+        return
+      }
     }
     closeModals()
+    await closeCreateQuery()
     loadApiKeys()
   } catch (error: any) {
     const errorMsg = error.response?.data?.detail || t('keys.failedToSave')
@@ -1805,6 +1893,9 @@ function formatResetTime(resetAt: string | null): string {
 }
 
 onMounted(() => {
+  if (shouldOpenCreateFromQuery()) {
+    showCreateModal.value = true
+  }
   loadApiKeys()
   loadGroups()
   loadUserGroupRates()

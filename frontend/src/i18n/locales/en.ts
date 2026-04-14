@@ -442,6 +442,18 @@ export default {
     referralCodeValid: 'Referral code is valid',
     referralCodeInvalid: 'Invalid referral code',
     oauthOrContinue: 'or continue with email',
+    lobehub: {
+      title: 'LobeHub SSO',
+      selectKeyTitle: 'Select Chat Key',
+      selectKeyDescription: 'Choose the API key LobeHub should use for chat requests.',
+      continuing: 'Continuing to LobeHub...',
+      invalidRequest: 'Invalid LobeHub request. Please return to LobeHub and try again.',
+      continueFailed: 'Failed to continue to LobeHub. Please try again.',
+      noKeys: 'No active API keys are available. Create one before continuing.',
+      keysLoadFailed: 'Failed to load API keys.',
+      keyRequired: 'Please select an API key.',
+      continueWithKey: 'Continue with selected key'
+    },
     linuxdo: {
       signIn: 'Continue with Linux.do',
       orContinue: 'or continue with email',
@@ -585,6 +597,9 @@ export default {
     copyToClipboard: 'Copy to clipboard',
     copied: 'Copied!',
     importToCcSwitch: 'Import to CCS',
+    openInLobeHub: 'Open in LobeHub',
+    openingLobeHub: 'Opening...',
+    failedToOpenLobeHub: 'Failed to open LobeHub',
     enable: 'Enable',
     disable: 'Disable',
     nameLabel: 'Name',
@@ -5750,6 +5765,8 @@ export default {
   referral: {
     title: 'Referral Center',
     enabled: 'Referral Enabled',
+    disabledTitle: 'Referral is unavailable',
+    disabledDescription: 'Referral access is not enabled for this account.',
     myReferralCode: 'My Referral Code',
     copyCode: 'Copy Code',
     codeCopied: 'Referral code copied',

@@ -93,6 +93,28 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/auth/lobehub-sso',
+    name: 'LobeHubSSO',
+    component: () => import('@/views/auth/LobeHubSSOView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'LobeHub SSO',
+      titleKey: 'auth.lobehub.title'
+    }
+  },
+  {
+    path: '/auth/lobehub-select-key',
+    name: 'LobeHubSelectKey',
+    component: () => import('@/views/auth/LobeHubSelectKeyView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Select Chat Key',
+      titleKey: 'auth.lobehub.selectKeyTitle'
+    }
+  },
+  {
     path: '/forgot-password',
     name: 'ForgotPassword',
     component: () => import('@/views/auth/ForgotPasswordView.vue'),

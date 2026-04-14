@@ -131,18 +131,30 @@ func (s *ReferralCenterService) GetOverview(ctx context.Context, userID int64) (
 }
 
 func (s *ReferralCenterService) ListLedger(ctx context.Context, userID int64, params pagination.PaginationParams) ([]CommissionLedger, *pagination.PaginationResult, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, nil, err
+	}
 	return s.commissionRepo.ListLedgerEntriesByUser(ctx, userID, params)
 }
 
 func (s *ReferralCenterService) ListInvitees(ctx context.Context, userID int64, params pagination.PaginationParams) ([]ReferralInvitee, *pagination.PaginationResult, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, nil, err
+	}
 	return s.relationRepo.ListInvitees(ctx, userID, params)
 }
 
 func (s *ReferralCenterService) ListWithdrawals(ctx context.Context, userID int64, params pagination.PaginationParams) ([]CommissionWithdrawal, *pagination.PaginationResult, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, nil, err
+	}
 	return s.commissionRepo.ListWithdrawalsByUser(ctx, userID, params)
 }
 
 func (s *ReferralCenterService) ListPayoutAccounts(ctx context.Context, userID int64) ([]CommissionPayoutAccount, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, err
+	}
 	accounts, err := s.commissionRepo.ListPayoutAccountsByUser(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -157,5 +169,19 @@ func (s *ReferralCenterService) ListPayoutAccounts(ctx context.Context, userID i
 }
 
 func (s *ReferralCenterService) ListInviteeRewards(ctx context.Context, userID int64, sourceUserID int64) ([]UserInviteeReward, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, err
+	}
 	return s.commissionRepo.ListRewardsByUserAndSource(ctx, userID, sourceUserID)
+}
+
+func (s *ReferralCenterService) checkReferralEnabled(ctx context.Context, userID int64) error {
+	enabled, err := s.baseService.isReferralEnabledForUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return ErrReferralDisabled
+	}
+	return nil
 }

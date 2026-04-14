@@ -136,9 +136,12 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		return nil, err
 	}
 
-	defaultCode, err := s.EnsureDefaultCode(ctx, userID)
-	if err != nil {
-		return nil, err
+	var defaultCode *ReferralCode
+	if userReferralEnabled {
+		defaultCode, err = s.EnsureDefaultCode(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	relation, err := s.repo.GetRelationByUserID(ctx, userID)

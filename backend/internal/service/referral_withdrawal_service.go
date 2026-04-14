@@ -84,6 +84,9 @@ func (s *ReferralWithdrawalService) UpsertPayoutAccount(ctx context.Context, use
 	if err != nil {
 		return nil, err
 	}
+	if err := s.checkReferralEnabledForUser(ctx, settings, userID); err != nil {
+		return nil, err
+	}
 	method := strings.TrimSpace(input.Method)
 	if !containsString(settings.ReferralWithdrawMethodsEnabled, method) {
 		return nil, ErrCommissionWithdrawMethodInvalid

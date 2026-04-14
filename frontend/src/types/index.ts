@@ -34,6 +34,7 @@ export interface User {
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
   referral_enabled: boolean // Whether referral is enabled for this user
+  default_chat_api_key_id?: number | null // Default key used for LobeHub chat launch
   subscriptions?: UserSubscription[] // User's active subscriptions
   created_at: string
   updated_at: string
@@ -1666,7 +1667,21 @@ export interface ReferralRelationInfo {
   bound_at: string
 }
 
+export interface ReferralRelation {
+  id?: number
+  referrer_user_id: number
+  referrer_email?: string
+  referrer_username?: string
+  bound_at: string
+}
+
 export interface ReferralCenterOverview {
+  referral_enabled: boolean
+  allow_manual_input: boolean
+  bind_before_first_paid_only: boolean
+  can_bind: boolean
+  has_paid_recharge: boolean
+  relation: ReferralRelation | null
   referral_code: string
   default_code: { code: string } | null
   total_invitees: number

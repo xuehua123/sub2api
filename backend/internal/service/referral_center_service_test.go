@@ -5,7 +5,6 @@ package service
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -113,43 +112,33 @@ func TestReferralCenterService_GetOverview_AggregatesSummary(t *testing.T) {
 	require.Equal(t, 69.0, overview.TotalCommission)
 }
 
-func TestReferralCenterService_ListEndpoints_ReturnRepositoryResults(t *testing.T) {
+func TestReferralCenterService_ListEndpoints_RejectWhenReferralDisabledForUser(t *testing.T) {
 	repo := newReferralCenterRepoStub()
-	repo.ledgerEntries = []CommissionLedger{
-		{ID: 1, UserID: 7, EntryType: CommissionLedgerEntryRewardPendingCredit, Bucket: CommissionLedgerBucketPending, Amount: 12, Currency: ReferralSettlementCurrencyCNY, CreatedAt: time.Now()},
+	cfg := &config.Config{
+		Default: config.DefaultConfig{
+			UserBalance:     0,
+			UserConcurrency: 1,
+		},
 	}
-	repo.withdrawals = []CommissionWithdrawal{
-		{ID: 1, UserID: 7, WithdrawalNo: "WD001", Amount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalStatusPaid, PayoutMethod: CommissionPayoutMethodAlipay, CreatedAt: time.Now(), UpdatedAt: time.Now()},
-	}
-	repo.invitees = []ReferralInvitee{
-		{UserID: 10, Email: "invitee@example.com", Username: "invitee", BoundAt: time.Now()},
-	}
-	repo.payoutAccounts = []CommissionPayoutAccount{
-		{ID: 1, UserID: 7, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", IsDefault: true, Status: StatusActive},
-	}
-
-	svc := newReferralCenterServiceForTest(repo, map[string]string{
-		SettingKeyReferralEnabled: "true",
-	})
+	settingService := NewSettingService(&settingRepoStub{values: map[string]string{
+		SettingKeyReferralEnabled: "false",
+	}}, cfg)
+	baseReferralService := NewReferralService(repo.referralRepoStub, &userRepoStub{user: &User{ID: 7, ReferralEnabled: false}}, nil, settingService)
+	svc := NewReferralCenterService(baseReferralService, repo, repo, nil)
 	params := pagination.PaginationParams{Page: 1, PageSize: 20}
 
-	ledgers, ledgerPage, err := svc.ListLedger(context.Background(), 7, params)
-	require.NoError(t, err)
-	require.Len(t, ledgers, 1)
-	require.Equal(t, int64(1), ledgerPage.Total)
+	_, _, err := svc.ListLedger(context.Background(), 7, params)
+	require.ErrorIs(t, err, ErrReferralDisabled)
 
-	withdrawals, withdrawalPage, err := svc.ListWithdrawals(context.Background(), 7, params)
-	require.NoError(t, err)
-	require.Len(t, withdrawals, 1)
-	require.Equal(t, int64(1), withdrawalPage.Total)
+	_, _, err = svc.ListWithdrawals(context.Background(), 7, params)
+	require.ErrorIs(t, err, ErrReferralDisabled)
 
-	invitees, inviteePage, err := svc.ListInvitees(context.Background(), 7, params)
-	require.NoError(t, err)
-	require.Len(t, invitees, 1)
-	require.Equal(t, int64(1), inviteePage.Total)
+	_, _, err = svc.ListInvitees(context.Background(), 7, params)
+	require.ErrorIs(t, err, ErrReferralDisabled)
 
-	accounts, err := svc.ListPayoutAccounts(context.Background(), 7)
-	require.NoError(t, err)
-	require.Len(t, accounts, 1)
-	require.Nil(t, accounts[0].AccountNoEncrypted)
+	_, err = svc.ListPayoutAccounts(context.Background(), 7)
+	require.ErrorIs(t, err, ErrReferralDisabled)
+
+	_, err = svc.ListInviteeRewards(context.Background(), 7, 10)
+	require.ErrorIs(t, err, ErrReferralDisabled)
 }

@@ -20,6 +20,17 @@
         <span class="ml-2">{{ t('common.loading', '加载中') }}</span>
       </div>
 
+      <template v-else-if="overview && !overview.referral_enabled">
+        <section class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+            {{ t('referral.disabledTitle', '邀请功能未开启') }}
+          </h2>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            {{ t('referral.disabledDescription', '当前账号未开启邀请功能。') }}
+          </p>
+        </section>
+      </template>
+
       <template v-else-if="overview">
         <!-- Dashboard Stats -->
         <div class="rounded-3xl border border-gray-200 bg-gradient-to-br from-primary-50 to-white p-5 shadow-sm dark:from-primary-900/10 dark:to-dark-900">
@@ -592,11 +603,16 @@ const inviteLink = computed(() => {
 
 async function loadPayoutAccountsAndOverview() {
   try {
-    const [overviewData, payoutAccountsData] = await Promise.all([
-      referralAPI.getOverview(),
-      referralAPI.getPayoutAccounts()
-    ])
+    const overviewData = await referralAPI.getOverview()
     overview.value = overviewData
+
+    if (!overviewData.referral_enabled) {
+      payoutAccounts.value = []
+      withdrawForm.payout_account_id = 0
+      return
+    }
+
+    const payoutAccountsData = await referralAPI.getPayoutAccounts()
     payoutAccounts.value = payoutAccountsData
 
     if (payoutAccounts.value.length > 0 && (!withdrawForm.payout_account_id || !payoutAccounts.value.find(a => a.id === withdrawForm.payout_account_id))) {
@@ -611,6 +627,15 @@ async function loadAll() {
   loading.value = true
   try {
     await loadPayoutAccountsAndOverview()
+
+    if (!overview.value?.referral_enabled) {
+      invitees.value = { items: [], total: 0, page: 1, page_size: 10, pages: 1 }
+      ledger.value = { items: [], total: 0, page: 1, page_size: 15, pages: 1 }
+      withdrawals.value = { items: [], total: 0, page: 1, page_size: 20, pages: 1 }
+      expandedInviteeId.value = null
+      inviteeRewards.value = []
+      return
+    }
 
     const [inviteesData, ledgerData, withdrawalsData] = await Promise.all([
       referralAPI.getInvitees(1, 10),

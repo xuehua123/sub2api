@@ -441,6 +441,18 @@ export default {
     referralCodeValid: '推荐码有效',
     referralCodeInvalid: '推荐码无效',
     oauthOrContinue: '或使用邮箱密码继续',
+    lobehub: {
+      title: 'LobeHub 单点登录',
+      selectKeyTitle: '选择聊天密钥',
+      selectKeyDescription: '请选择 LobeHub 用于聊天请求的 API 密钥。',
+      continuing: '正在跳转到 LobeHub...',
+      invalidRequest: '无效的 LobeHub 请求，请返回 LobeHub 后重试。',
+      continueFailed: '跳转到 LobeHub 失败，请重试。',
+      noKeys: '暂无可用的有效 API 密钥，请先创建一个密钥。',
+      keysLoadFailed: '加载 API 密钥失败。',
+      keyRequired: '请选择 API 密钥。',
+      continueWithKey: '使用所选密钥继续'
+    },
     linuxdo: {
       signIn: '使用 Linux.do 登录',
       orContinue: '或使用邮箱密码继续',
@@ -584,6 +596,9 @@ export default {
     copyToClipboard: '复制到剪贴板',
     copied: '已复制！',
     importToCcSwitch: '导入到 CCS',
+    openInLobeHub: '在 LobeHub 打开',
+    openingLobeHub: '打开中...',
+    failedToOpenLobeHub: '打开 LobeHub 失败',
     enable: '启用',
     disable: '禁用',
     nameLabel: '名称',
@@ -5938,6 +5953,8 @@ export default {
   referral: {
     title: '推荐中心',
     enabled: '推荐返佣',
+    disabledTitle: '邀请功能未开启',
+    disabledDescription: '当前账号未开启邀请功能。',
     myReferralCode: '我的推荐码',
     copyCode: '复制推荐码',
     codeCopied: '推荐码已复制',

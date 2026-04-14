@@ -250,27 +250,18 @@ func TestReferralService_BindReferralCode_RejectsAfterPaidRechargeWhenConfigured
 	require.ErrorIs(t, err, ErrReferralBindAfterPaymentNotAllowed)
 }
 
-func TestReferralService_PreviewReferralCode_ReturnsMaskedReferrer(t *testing.T) {
+
+func TestReferralService_GetOverview_DoesNotCreateDefaultCodeWhenReferralDisabledForUser(t *testing.T) {
 	repo := newReferralRepoStub()
-	repo.codesByCode["REF123"] = &ReferralCode{
-		ID:        1,
-		UserID:    99,
-		Code:      "REF123",
-		Status:    ReferralCodeStatusActive,
-		IsDefault: true,
-	}
-	userRepo := &userRepoStub{
-		user: &User{ID: 99, Email: "parent@example.com", Username: "parent"},
-	}
+	userRepo := &userRepoStub{user: &User{ID: 7, Email: "invitee@example.com", Username: "invitee", ReferralEnabled: false}}
 	svc := newReferralServiceForTest(userRepo, repo, map[string]string{
-		SettingKeyReferralEnabled: "true",
+		SettingKeyReferralEnabled:          "false",
+		SettingKeyReferralAllowManualInput: "true",
 	})
 
-	preview, err := svc.PreviewReferralCode(context.Background(), "REF123")
+	overview, err := svc.GetOverview(context.Background(), 7)
 	require.NoError(t, err)
-	require.NotNil(t, preview)
-	require.Equal(t, int64(99), preview.ReferrerUserID)
-	require.Equal(t, "parent", preview.ReferrerUsername)
-	require.NotEmpty(t, preview.ReferrerEmailMasked)
-	require.NotEqual(t, "parent@example.com", preview.ReferrerEmailMasked)
+	require.Nil(t, overview.DefaultCode)
+	_, exists := repo.codesByUser[7]
+	require.False(t, exists)
 }

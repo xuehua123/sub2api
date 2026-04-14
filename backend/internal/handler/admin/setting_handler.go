@@ -826,6 +826,79 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// LobeHub 配置验证：支持部分更新，未提交的字段保留现有值。
+	lobeHubEnabled := previousSettings.LobeHubEnabled
+	if req.LobeHubEnabled != nil {
+		lobeHubEnabled = *req.LobeHubEnabled
+	}
+	lobeHubChatURL := previousSettings.LobeHubChatURL
+	if req.LobeHubChatURL != nil {
+		lobeHubChatURL = strings.TrimSpace(*req.LobeHubChatURL)
+	}
+	lobeHubOIDCIssuer := previousSettings.LobeHubOIDCIssuer
+	if req.LobeHubOIDCIssuer != nil {
+		lobeHubOIDCIssuer = strings.TrimSpace(*req.LobeHubOIDCIssuer)
+	}
+	lobeHubOIDCClientID := previousSettings.LobeHubOIDCClientID
+	if req.LobeHubOIDCClientID != nil {
+		lobeHubOIDCClientID = strings.TrimSpace(*req.LobeHubOIDCClientID)
+	}
+	lobeHubOIDCClientSecret := previousSettings.LobeHubOIDCClientSecret
+	if req.LobeHubOIDCClientSecret != nil {
+		lobeHubOIDCClientSecret = strings.TrimSpace(*req.LobeHubOIDCClientSecret)
+		if lobeHubOIDCClientSecret == "" {
+			lobeHubOIDCClientSecret = previousSettings.LobeHubOIDCClientSecret
+		}
+	}
+	lobeHubDefaultProvider := previousSettings.LobeHubDefaultProvider
+	if req.LobeHubDefaultProvider != nil {
+		lobeHubDefaultProvider = strings.TrimSpace(*req.LobeHubDefaultProvider)
+	}
+	if lobeHubDefaultProvider == "" {
+		lobeHubDefaultProvider = "openai"
+	}
+	lobeHubDefaultModel := previousSettings.LobeHubDefaultModel
+	if req.LobeHubDefaultModel != nil {
+		lobeHubDefaultModel = strings.TrimSpace(*req.LobeHubDefaultModel)
+	}
+	lobeHubRuntimeConfigVersion := previousSettings.LobeHubRuntimeConfigVersion
+	if req.LobeHubRuntimeConfigVersion != nil {
+		lobeHubRuntimeConfigVersion = strings.TrimSpace(*req.LobeHubRuntimeConfigVersion)
+	}
+	if lobeHubRuntimeConfigVersion == "" {
+		lobeHubRuntimeConfigVersion = "1"
+	}
+	hideLobeHubImportButton := previousSettings.HideLobeHubImportButton
+	if req.HideLobeHubImportButton != nil {
+		hideLobeHubImportButton = *req.HideLobeHubImportButton
+	}
+	if lobeHubEnabled {
+		if lobeHubChatURL == "" {
+			response.BadRequest(c, "LobeHub Chat URL is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(lobeHubChatURL); err != nil {
+			response.BadRequest(c, "LobeHub Chat URL must be an absolute http(s) URL")
+			return
+		}
+		if lobeHubOIDCIssuer == "" {
+			response.BadRequest(c, "LobeHub OIDC Issuer is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(lobeHubOIDCIssuer); err != nil {
+			response.BadRequest(c, "LobeHub OIDC Issuer must be an absolute http(s) URL")
+			return
+		}
+		if lobeHubOIDCClientID == "" {
+			response.BadRequest(c, "LobeHub OIDC Client ID is required when enabled")
+			return
+		}
+		if lobeHubOIDCClientSecret == "" {
+			response.BadRequest(c, "LobeHub OIDC Client Secret is required when enabled")
+			return
+		}
+	}
+
 	settings := &service.SystemSettings{
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
@@ -1055,60 +1128,15 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ReferralWithdrawMethodsEnabled
 		}(),
-		LobeHubEnabled: func() bool {
-			if req.LobeHubEnabled != nil {
-				return *req.LobeHubEnabled
-			}
-			return previousSettings.LobeHubEnabled
-		}(),
-		LobeHubChatURL: func() string {
-			if req.LobeHubChatURL != nil {
-				return *req.LobeHubChatURL
-			}
-			return previousSettings.LobeHubChatURL
-		}(),
-		LobeHubOIDCIssuer: func() string {
-			if req.LobeHubOIDCIssuer != nil {
-				return *req.LobeHubOIDCIssuer
-			}
-			return previousSettings.LobeHubOIDCIssuer
-		}(),
-		LobeHubOIDCClientID: func() string {
-			if req.LobeHubOIDCClientID != nil {
-				return *req.LobeHubOIDCClientID
-			}
-			return previousSettings.LobeHubOIDCClientID
-		}(),
-		LobeHubOIDCClientSecret: func() string {
-			if req.LobeHubOIDCClientSecret != nil {
-				return *req.LobeHubOIDCClientSecret
-			}
-			return previousSettings.LobeHubOIDCClientSecret
-		}(),
-		LobeHubDefaultProvider: func() string {
-			if req.LobeHubDefaultProvider != nil {
-				return *req.LobeHubDefaultProvider
-			}
-			return previousSettings.LobeHubDefaultProvider
-		}(),
-		LobeHubDefaultModel: func() string {
-			if req.LobeHubDefaultModel != nil {
-				return *req.LobeHubDefaultModel
-			}
-			return previousSettings.LobeHubDefaultModel
-		}(),
-		LobeHubRuntimeConfigVersion: func() string {
-			if req.LobeHubRuntimeConfigVersion != nil {
-				return *req.LobeHubRuntimeConfigVersion
-			}
-			return previousSettings.LobeHubRuntimeConfigVersion
-		}(),
-		HideLobeHubImportButton: func() bool {
-			if req.HideLobeHubImportButton != nil {
-				return *req.HideLobeHubImportButton
-			}
-			return previousSettings.HideLobeHubImportButton
-		}(),
+		LobeHubEnabled:              lobeHubEnabled,
+		LobeHubChatURL:              lobeHubChatURL,
+		LobeHubOIDCIssuer:           lobeHubOIDCIssuer,
+		LobeHubOIDCClientID:         lobeHubOIDCClientID,
+		LobeHubOIDCClientSecret:     lobeHubOIDCClientSecret,
+		LobeHubDefaultProvider:      lobeHubDefaultProvider,
+		LobeHubDefaultModel:         lobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion: lobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:     hideLobeHubImportButton,
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {

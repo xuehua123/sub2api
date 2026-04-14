@@ -13,17 +13,18 @@ func UserFromServiceShallow(u *service.User) *User {
 		return nil
 	}
 	return &User{
-		ID:              u.ID,
-		Email:           u.Email,
-		Username:        u.Username,
-		Role:            u.Role,
-		Balance:         u.Balance,
-		Concurrency:     u.Concurrency,
-		Status:          u.Status,
-		AllowedGroups:   u.AllowedGroups,
-		ReferralEnabled: u.ReferralEnabled,
-		CreatedAt:       u.CreatedAt,
-		UpdatedAt:       u.UpdatedAt,
+		ID:                  u.ID,
+		Email:               u.Email,
+		Username:            u.Username,
+		Role:                u.Role,
+		Balance:             u.Balance,
+		Concurrency:         u.Concurrency,
+		Status:              u.Status,
+		AllowedGroups:       u.AllowedGroups,
+		ReferralEnabled:     u.ReferralEnabled,
+		DefaultChatAPIKeyID: u.DefaultChatAPIKeyID,
+		CreatedAt:           u.CreatedAt,
+		UpdatedAt:           u.UpdatedAt,
 	}
 }
 

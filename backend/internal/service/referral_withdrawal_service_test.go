@@ -219,6 +219,7 @@ func (s *withdrawalCommissionRepoStub) UpsertPayoutAccount(ctx context.Context, 
 }
 
 type withdrawalUserRepoStub struct {
+	user           *User
 	balanceUpdates map[int64]float64
 }
 
@@ -227,6 +228,9 @@ func (s *withdrawalUserRepoStub) Create(ctx context.Context, user *User) error {
 }
 
 func (s *withdrawalUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
+	if s.user != nil {
+		return s.user, nil
+	}
 	return &User{ID: id, ReferralEnabled: true}, nil
 }
 
@@ -546,6 +550,23 @@ func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsDisabledMethod(t *
 		IsDefault:   true,
 	})
 	require.ErrorIs(t, err, ErrCommissionWithdrawMethodInvalid)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsWhenReferralDisabledForUser(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "false",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+	svc.userRepo = &withdrawalUserRepoStub{user: &User{ID: 200, ReferralEnabled: false}}
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		AccountNo:   "alice@example.com",
+		IsDefault:   true,
+	})
+	require.ErrorIs(t, err, ErrReferralDisabled)
 }
 
 func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsWeeklyModification(t *testing.T) {

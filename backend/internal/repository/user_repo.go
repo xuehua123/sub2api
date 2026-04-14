@@ -65,6 +65,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetReferralEnabled(userIn.ReferralEnabled).
+		SetNillableDefaultChatAPIKeyID(userIn.DefaultChatAPIKeyID).
 		Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
@@ -138,7 +139,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		txClient = r.client
 	}
 
-	updated, err := txClient.User.UpdateOneID(userIn.ID).
+	update := txClient.User.UpdateOneID(userIn.ID).
 		SetEmail(userIn.Email).
 		SetUsername(userIn.Username).
 		SetNotes(userIn.Notes).
@@ -147,8 +148,13 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
-		SetReferralEnabled(userIn.ReferralEnabled).
-		Save(ctx)
+		SetReferralEnabled(userIn.ReferralEnabled)
+	if userIn.DefaultChatAPIKeyID == nil {
+		update = update.ClearDefaultChatAPIKeyID()
+	} else {
+		update = update.SetDefaultChatAPIKeyID(*userIn.DefaultChatAPIKeyID)
+	}
+	updated, err := update.Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrUserNotFound, service.ErrEmailExists)
 	}
@@ -596,6 +602,16 @@ func (r *userRepository) DisableTotp(ctx context.Context, userID int64) error {
 
 // UpdateDefaultChatAPIKeyID 更新用户的默认 LobeHub Chat API Key ID
 func (r *userRepository) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
-	// Stub: field not yet in ent schema, no-op
+	client := clientFromContext(ctx, r.client)
+	update := client.User.UpdateOneID(userID)
+	if apiKeyID == nil || *apiKeyID <= 0 {
+		update = update.ClearDefaultChatAPIKeyID()
+	} else {
+		update = update.SetDefaultChatAPIKeyID(*apiKeyID)
+	}
+	_, err := update.Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
 	return nil
 }

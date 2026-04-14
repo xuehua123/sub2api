@@ -653,6 +653,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		TotpEnabled:         u.TotpEnabled,
 		TotpEnabledAt:       u.TotpEnabledAt,
 		ReferralEnabled:     u.ReferralEnabled,
+		DefaultChatAPIKeyID: u.DefaultChatAPIKeyID,
 		CreatedAt:           u.CreatedAt,
 		UpdatedAt:           u.UpdatedAt,
 	}

@@ -45,6 +45,8 @@ const (
 	FieldTotpEnabledAt = "totp_enabled_at"
 	// FieldReferralEnabled holds the string denoting the referral_enabled field in the database.
 	FieldReferralEnabled = "referral_enabled"
+	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
+	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
 	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
@@ -263,6 +265,7 @@ var Columns = []string{
 	FieldTotpEnabled,
 	FieldTotpEnabledAt,
 	FieldReferralEnabled,
+	FieldDefaultChatAPIKeyID,
 }
 
 var (
@@ -404,6 +407,11 @@ func ByTotpEnabledAt(opts ...sql.OrderTermOption) OrderOption {
 // ByReferralEnabled orders the results by the referral_enabled field.
 func ByReferralEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReferralEnabled, opts...).ToFunc()
+}
+
+// ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
+func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
 }
 
 // ByAPIKeysCount orders the results by api_keys count.

@@ -48,6 +48,8 @@ type User struct {
 	TotpEnabledAt *time.Time `json:"totp_enabled_at,omitempty"`
 	// ReferralEnabled holds the value of the "referral_enabled" field.
 	ReferralEnabled bool `json:"referral_enabled,omitempty"`
+	// DefaultChatAPIKeyID holds the value of the "default_chat_api_key_id" field.
+	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -314,7 +316,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance:
 			values[i] = new(sql.NullFloat64)
-		case user.FieldID, user.FieldConcurrency:
+		case user.FieldID, user.FieldConcurrency, user.FieldDefaultChatAPIKeyID:
 			values[i] = new(sql.NullInt64)
 		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted:
 			values[i] = new(sql.NullString)
@@ -433,6 +435,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field referral_enabled", values[i])
 			} else if value.Valid {
 				_m.ReferralEnabled = value.Bool
+			}
+		case user.FieldDefaultChatAPIKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field default_chat_api_key_id", values[i])
+			} else if value.Valid {
+				_m.DefaultChatAPIKeyID = new(int64)
+				*_m.DefaultChatAPIKeyID = value.Int64
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -630,6 +639,11 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("referral_enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ReferralEnabled))
+	builder.WriteString(", ")
+	if v := _m.DefaultChatAPIKeyID; v != nil {
+		builder.WriteString("default_chat_api_key_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

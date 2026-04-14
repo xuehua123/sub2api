@@ -218,4 +218,46 @@ describe('user ReferralView', () => {
     expect(wrapper.text()).toContain('将佣金转储为平台余额')
     expect(wrapper.find('form[data-test="withdrawal-form"]').exists()).toBe(false)
   })
+
+  it('renders disabled state instead of referral center when referral is disabled', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: false,
+      allow_manual_input: false,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: false,
+      referral_credit_conversion_enabled: false,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: false,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: [],
+      direct_invitees: 0,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 0,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 0
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('邀请功能未开启')
+    expect(wrapper.text()).not.toContain('REF-007')
+    expect(wrapper.find('form[data-test="withdrawal-form"]').exists()).toBe(false)
+    expect(getInvitees).not.toHaveBeenCalled()
+    expect(getLedger).not.toHaveBeenCalled()
+    expect(getWithdrawals).not.toHaveBeenCalled()
+    expect(getPayoutAccounts).not.toHaveBeenCalled()
+  })
 })
+
