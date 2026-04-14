@@ -197,6 +197,30 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 	}
 
 	status := payment.ProviderStatusFailed
+	if notification.RefundStatus != "" || notification.RefundAmount != "" || notification.DBackStatus != "" || notification.DBackAmount != "" {
+		refundedAmount, parseErr := strconv.ParseFloat(notification.RefundFee, 64)
+		if parseErr != nil || refundedAmount <= 0 {
+			refundedAmount, parseErr = strconv.ParseFloat(notification.RefundAmount, 64)
+		}
+		if parseErr != nil {
+			return nil, fmt.Errorf("alipay parse refund amount %q/%q: %w", notification.RefundFee, notification.RefundAmount, parseErr)
+		}
+		status = payment.NotificationStatusRefunded
+		if notification.DBackStatus != "" || notification.DBackAmount != "" {
+			status = payment.NotificationStatusChargeback
+			if dbackAmount, dbackErr := strconv.ParseFloat(notification.DBackAmount, 64); dbackErr == nil && dbackAmount > 0 {
+				refundedAmount = dbackAmount
+			}
+		}
+		return &payment.PaymentNotification{
+			TradeNo:        notification.TradeNo,
+			OrderID:        notification.OutTradeNo,
+			Amount:         refundedAmount,
+			AmountSemantic: payment.NotificationAmountDelta,
+			Status:         status,
+			RawData:        rawBody,
+		}, nil
+	}
 	if notification.TradeStatus == alipay.TradeStatusSuccess || notification.TradeStatus == alipay.TradeStatusFinished {
 		status = payment.ProviderStatusSuccess
 	}

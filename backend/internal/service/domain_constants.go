@@ -277,6 +277,7 @@ const (
 	SettingKeyReferralBindBeforeFirstPaidOnly      = "referral_bind_before_first_paid_only"
 	SettingKeyReferralAllowManualInput             = "referral_allow_manual_input"
 	SettingKeyReferralWithdrawEnabled              = "referral_withdraw_enabled"
+	SettingKeyReferralCreditConversionEnabled      = "referral_credit_conversion_enabled"
 	SettingKeyReferralWithdrawMinAmount            = "referral_withdraw_min_amount"
 	SettingKeyReferralWithdrawMaxAmount            = "referral_withdraw_max_amount"
 	SettingKeyReferralWithdrawDailyLimit           = "referral_withdraw_daily_limit"

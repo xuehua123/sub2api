@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -217,6 +218,90 @@ func (s *withdrawalCommissionRepoStub) UpsertPayoutAccount(ctx context.Context, 
 	return nil
 }
 
+type withdrawalUserRepoStub struct {
+	balanceUpdates map[int64]float64
+}
+
+func (s *withdrawalUserRepoStub) Create(ctx context.Context, user *User) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
+	return &User{ID: id, ReferralEnabled: true}, nil
+}
+
+func (s *withdrawalUserRepoStub) GetByEmail(ctx context.Context, email string) (*User, error) {
+	return nil, ErrUserNotFound
+}
+
+func (s *withdrawalUserRepoStub) GetFirstAdmin(ctx context.Context) (*User, error) {
+	return nil, ErrUserNotFound
+}
+
+func (s *withdrawalUserRepoStub) Update(ctx context.Context, user *User) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) Delete(ctx context.Context, id int64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) List(ctx context.Context, params pagination.PaginationParams) ([]User, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{}, nil
+}
+
+func (s *withdrawalUserRepoStub) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters UserListFilters) ([]User, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{}, nil
+}
+
+func (s *withdrawalUserRepoStub) UpdateBalance(ctx context.Context, id int64, amount float64) error {
+	if s.balanceUpdates == nil {
+		s.balanceUpdates = map[int64]float64{}
+	}
+	s.balanceUpdates[id] += amount
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) DeductBalance(ctx context.Context, id int64, amount float64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, concurrency int) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
+	return false, nil
+}
+
+func (s *withdrawalUserRepoStub) RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error) {
+	return 0, nil
+}
+
+func (s *withdrawalUserRepoStub) AddGroupToAllowedGroups(ctx context.Context, userID int64, groupID int64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) RemoveGroupFromUserAllowedGroups(ctx context.Context, userID int64, groupID int64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) EnableTotp(ctx context.Context, userID int64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) DisableTotp(ctx context.Context, userID int64) error {
+	return nil
+}
+
+func (s *withdrawalUserRepoStub) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	return nil
+}
+
 func newReferralWithdrawalServiceForTest(repo *withdrawalCommissionRepoStub, settings map[string]string, rechargeRepo RechargeOrderRepository) *ReferralWithdrawalService {
 	cfg := &config.Config{}
 	if rechargeRepo == nil {
@@ -226,7 +311,7 @@ func newReferralWithdrawalServiceForTest(repo *withdrawalCommissionRepoStub, set
 	settlementService := NewReferralSettlementService(repo, rechargeRepo, nil)
 	return NewReferralWithdrawalService(
 		repo,
-		nil,
+		&withdrawalUserRepoStub{},
 		nil,
 		settingService,
 		settlementService,
@@ -600,4 +685,28 @@ func TestReferralWithdrawalService_CreateWithdrawal_SettlesDuePendingRewardsBefo
 	require.Len(t, repo.ledgers, 5)
 	require.Equal(t, CommissionLedgerEntryRewardPendingToAvailable, repo.ledgers[1].EntryType)
 	require.Equal(t, CommissionLedgerBucketAvailable, repo.ledgers[2].Bucket)
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_DoesNotRequireWithdrawEnabled(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralWithdrawEnabled:         "false",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.NoError(t, err)
+	require.Len(t, repo.withdrawals, 1)
+	require.Equal(t, "credit_conversion", repo.withdrawals[0].PayoutMethod)
+	require.Equal(t, 10.0, userRepo.balanceUpdates[200])
 }

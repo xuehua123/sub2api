@@ -120,7 +120,7 @@ https://pay.example.com/pay?user_id=123&token=<jwt>&theme=light&lang=zh&ui_mode=
 
 ### 6) `doc_url` 配置建议
 - 当你启用了推广返佣时，建议把支付成功回调切换到 `POST /api/v1/admin/recharge-orders/credit`。
-- 这个正式入口会原子完成“写正式充值订单 + 增加消费余额 + 触发一级/二级返佣”。
+- 这个正式入口会原子完成“写正式充值订单 + 增加消费余额 + 触发一级返佣”。
 - 其中 `paid_amount` 是返佣基数，`credited_balance_amount` 是实际写入 `users.balance` 的消费余额。
 - 首版只接受 `currency = CNY`。
 - 原有 `POST /api/v1/admin/redeem-codes/create-and-redeem` 仍可用于纯余额充值或兼容旧流程，但不应再作为返佣对账真相源。

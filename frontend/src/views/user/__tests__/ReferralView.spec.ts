@@ -83,6 +83,7 @@ describe('user ReferralView', () => {
       allow_manual_input: true,
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: true,
+      referral_credit_conversion_enabled: true,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -151,7 +152,7 @@ describe('user ReferralView', () => {
     // Check that commission amounts are displayed
     expect(wrapper.text()).toContain('12.00') // pending
     expect(wrapper.text()).toContain('34.00') // available
-    expect(wrapper.text()).toContain('5.00')  // frozen
+    expect(wrapper.text()).toContain('17.00') // processing = pending + frozen
   })
 
   it('renders withdrawal form when accounts exist', async () => {
@@ -183,12 +184,13 @@ describe('user ReferralView', () => {
     expect(wrapper.text()).toContain('Alice')
   })
 
-  it('hides convert and withdrawal entrypoints when withdrawals are disabled', async () => {
+  it('allows credit conversion when withdrawals are disabled but conversion is enabled', async () => {
     getOverview.mockResolvedValueOnce({
       referral_enabled: true,
       allow_manual_input: true,
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: false,
+      referral_credit_conversion_enabled: true,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -213,7 +215,7 @@ describe('user ReferralView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('将佣金转储为平台余额')
+    expect(wrapper.text()).toContain('将佣金转储为平台余额')
     expect(wrapper.find('form[data-test="withdrawal-form"]').exists()).toBe(false)
   })
 })

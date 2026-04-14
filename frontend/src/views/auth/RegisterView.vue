@@ -218,7 +218,7 @@
         </div>
 
         <!-- Referral Code Input (Optional) -->
-        <div v-if="referralEnabled">
+        <div v-if="referralInputVisible">
           <label for="referral_code" class="input-label">
             {{ t('auth.referralCodeLabel') }}
             <span class="ml-1 text-xs font-normal text-gray-400 dark:text-dark-500">({{ t('common.optional') }})</span>
@@ -359,7 +359,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { computed, ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
@@ -428,7 +428,10 @@ const invitationValidation = reactive({
 let invitationValidateTimeout: ReturnType<typeof setTimeout> | null = null
 
 // Referral code validation
-const referralEnabled = ref<boolean>(false)
+const referralManualInputAllowed = ref<boolean>(false)
+const referralInputVisible = computed(
+  () => referralManualInputAllowed.value
+)
 const referralValidating = ref<boolean>(false)
 const referralValidation = reactive({
   valid: false,
@@ -472,7 +475,7 @@ onMounted(async () => {
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )
-    referralEnabled.value = settings.referral_enabled || false
+    referralManualInputAllowed.value = settings.referral_allow_manual_input || false
 
     // Read promo code from URL parameter only if promo code is enabled
     if (promoCodeEnabled.value) {
@@ -485,13 +488,11 @@ onMounted(async () => {
     }
 
     // Read referral code from URL parameter (?ref=CODE)
-    if (referralEnabled.value) {
-      const refParam = route.query.ref as string
-      if (refParam) {
-        formData.referral_code = refParam
-        // Validate the referral code from URL
-        await validateReferralCodeDebounced(refParam)
-      }
+    const refParam = route.query.ref as string
+    if (refParam) {
+      formData.referral_code = refParam
+      // Validate the referral code from URL
+      await validateReferralCodeDebounced(refParam)
     }
   } catch (error) {
     console.error('Failed to load public settings:', error)
@@ -868,7 +869,7 @@ async function handleRegister(): Promise<void> {
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined,
-          referral_code: formData.referral_code || undefined
+          referral_code: formData.referral_code.trim() || undefined
         })
       )
 
@@ -884,7 +885,7 @@ async function handleRegister(): Promise<void> {
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined,
       promo_code: formData.promo_code || undefined,
       invitation_code: formData.invitation_code || undefined,
-      referral_code: formData.referral_code || undefined
+      referral_code: formData.referral_code.trim() || undefined
     })
 
     // Show success toast

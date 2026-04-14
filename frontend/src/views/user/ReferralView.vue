@@ -65,7 +65,7 @@
             </button>
           </div>
           <!-- Convert to Credit Action -->
-          <div v-if="withdrawEnabled" class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-800">
+          <div v-if="creditConversionEnabled" class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-800">
             <button
               class="btn btn-primary btn-sm flex items-center gap-1 bg-gradient-to-r from-primary-500 to-indigo-500 hover:from-primary-600 hover:to-indigo-600 border-none px-4"
               @click="showConvertModal = true"
@@ -183,10 +183,16 @@
         </div>
 
         <section
-          v-else
+          v-if="!withdrawEnabled && !creditConversionEnabled"
           class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500 shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400"
         >
-          {{ t('referral.withdrawDisabledMessage', '推广佣金提现当前未开启，因此暂不展示转余额和提现入口。') }}
+          {{ t('referral.monetizationDisabledMessage', '推广佣金转余额和提现当前均未开启。') }}
+        </section>
+        <section
+          v-else-if="!withdrawEnabled"
+          class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500 shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400"
+        >
+          {{ t('referral.withdrawDisabledMessage', '推广佣金提现当前未开启。') }}
         </section>
 
         <section id="withdrawal-records-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
@@ -577,6 +583,7 @@ const withdrawForm = reactive({
 const withdrawMethods = computed(() => overview.value?.withdraw_methods_enabled?.length ? overview.value.withdraw_methods_enabled : ['alipay', 'wechat', 'bank'])
 const maxWithdrawable = computed(() => Number(overview.value?.available_commission || 0))
 const withdrawEnabled = computed(() => Boolean(overview.value?.referral_withdraw_enabled))
+const creditConversionEnabled = computed(() => Boolean(overview.value?.referral_credit_conversion_enabled))
 
 const inviteLink = computed(() => {
   if (!overview.value?.default_code?.code) return ''

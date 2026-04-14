@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -19,9 +20,22 @@ import (
 // --- Payment Notification & Fulfillment ---
 
 func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payment.PaymentNotification, pk string) error {
-	if n.Status != payment.NotificationStatusSuccess {
+	if n == nil {
 		return nil
 	}
+	switch n.Status {
+	case payment.NotificationStatusSuccess:
+		return s.handlePaymentSuccessNotification(ctx, n, pk)
+	case payment.NotificationStatusRefunded:
+		return s.handleExternalRefundNotification(ctx, n, pk)
+	case payment.NotificationStatusChargeback:
+		return s.handleChargebackNotification(ctx, n, pk)
+	default:
+		return nil
+	}
+}
+
+func (s *PaymentService) handlePaymentSuccessNotification(ctx context.Context, n *payment.PaymentNotification, pk string) error {
 	// Look up order by out_trade_no (the external order ID we sent to the provider)
 	order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx)
 	if err != nil {
@@ -33,6 +47,276 @@ func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payme
 		return fmt.Errorf("order not found for out_trade_no: %s", n.OrderID)
 	}
 	return s.confirmPayment(ctx, order.ID, n.TradeNo, n.Amount, pk)
+}
+
+func (s *PaymentService) handleExternalRefundNotification(ctx context.Context, n *payment.PaymentNotification, pk string) error {
+	return s.handleExternalRefundOrChargeback(ctx, n, pk, false)
+}
+
+func (s *PaymentService) handleChargebackNotification(ctx context.Context, n *payment.PaymentNotification, pk string) error {
+	return s.handleExternalRefundOrChargeback(ctx, n, pk, true)
+}
+
+func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n *payment.PaymentNotification, pk string, chargeback bool) error {
+	o, err := s.findOrderForRefundNotification(ctx, n)
+	if err != nil {
+		return err
+	}
+	if o == nil || o.OrderType != payment.OrderTypeBalance {
+		return nil
+	}
+
+	reversalAmount := normalizeExternalReversalAmount(o, n.Amount)
+	apply := func(txCtx context.Context) error {
+		currentOrder, err := s.getPaymentOrderByID(txCtx, o.ID)
+		if err != nil {
+			return err
+		}
+		if currentOrder.OrderType != payment.OrderTypeBalance {
+			return nil
+		}
+
+		if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
+			return err
+		}
+
+		creditedDelta, refundAmountTotal := computeExternalCreditedRefund(currentOrder, reversalAmount, n.AmountSemantic)
+		if creditedDelta > 0 {
+			if err := s.userRepo.DeductBalance(txCtx, currentOrder.UserID, creditedDelta); err != nil {
+				return err
+			}
+		}
+
+		status := OrderStatusRefunded
+		if refundAmountTotal < roundMoney(currentOrder.Amount) {
+			status = OrderStatusPartiallyRefunded
+		}
+		now := time.Now()
+		if _, err := s.paymentOrderClient(txCtx).PaymentOrder.UpdateOneID(currentOrder.ID).
+			SetStatus(status).
+			SetRefundAmount(refundAmountTotal).
+			SetRefundAt(now).
+			Save(txCtx); err != nil {
+			return err
+		}
+
+		action := "EXTERNAL_REFUND_SYNCED"
+		if chargeback {
+			action = "EXTERNAL_CHARGEBACK_SYNCED"
+		}
+		s.writeAuditLog(txCtx, currentOrder.ID, action, pk, map[string]any{
+			"gatewayAmount":     reversalAmount,
+			"amountSemantic":    n.AmountSemantic,
+			"creditedDelta":     creditedDelta,
+			"refundAmountTotal": refundAmountTotal,
+			"tradeNo":           n.TradeNo,
+			"status":            n.Status,
+		})
+		return nil
+	}
+
+	if s.entClient == nil || dbent.TxFromContext(ctx) != nil {
+		return apply(ctx)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := apply(dbent.NewTxContext(ctx, tx)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *PaymentService) findOrderForRefundNotification(ctx context.Context, n *payment.PaymentNotification) (*dbent.PaymentOrder, error) {
+	if n == nil {
+		return nil, nil
+	}
+	if orderID := strings.TrimSpace(n.OrderID); orderID != "" {
+		o, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(orderID)).Only(ctx)
+		if err == nil {
+			return o, nil
+		}
+		trimmed := strings.TrimPrefix(orderID, orderIDPrefix)
+		if oid, parseErr := strconv.ParseInt(trimmed, 10, 64); parseErr == nil {
+			return s.entClient.PaymentOrder.Get(ctx, oid)
+		}
+	}
+	if tradeNo := strings.TrimSpace(n.TradeNo); tradeNo != "" {
+		o, err := s.entClient.PaymentOrder.Query().Where(paymentorder.PaymentTradeNoEQ(tradeNo)).Only(ctx)
+		if err == nil {
+			return o, nil
+		}
+		return nil, fmt.Errorf("refund notification order lookup failed for trade_no %q: %w", tradeNo, err)
+	}
+	return nil, fmt.Errorf("refund notification missing order identifier")
+}
+
+func (s *PaymentService) syncExternalReferralReversal(ctx context.Context, o *dbent.PaymentOrder, amount float64, amountSemantic string, chargeback bool) error {
+	if s.referralRefundSvc == nil || o == nil || o.OrderType != payment.OrderTypeBalance {
+		return nil
+	}
+
+	providerKey := payment.GetBasePaymentType(o.PaymentType)
+	if providerKey == "" {
+		providerKey = o.PaymentType
+	}
+
+	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(providerKey), strings.TrimSpace(o.OutTradeNo))
+	if err != nil {
+		if errors.Is(err, ErrRechargeOrderNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	reversalAmount := roundMoney(amount)
+	if reversalAmount <= 0 {
+		return nil
+	}
+
+	refundedAmount := roundMoney(rechargeOrder.RefundedAmount)
+	chargebackAmount := roundMoney(rechargeOrder.ChargebackAmount)
+	paidAmount := roundMoney(rechargeOrder.PaidAmount)
+	if chargeback {
+		chargebackAmount = reconcileExternalReversalAmount(chargebackAmount, reversalAmount, paidAmount-refundedAmount, amountSemantic)
+	} else {
+		refundedAmount = reconcileExternalReversalAmount(refundedAmount, reversalAmount, paidAmount-chargebackAmount, amountSemantic)
+	}
+	_, _, err = s.referralRefundSvc.ApplyRefund(ctx, &RechargeRefundInput{
+		RechargeOrderID:  rechargeOrder.ID,
+		RefundedAmount:   refundedAmount,
+		ChargebackAmount: chargebackAmount,
+	})
+	return err
+}
+
+func (s *PaymentService) getPaymentOrderByID(ctx context.Context, orderID int64) (*dbent.PaymentOrder, error) {
+	return s.paymentOrderClient(ctx).PaymentOrder.Get(ctx, orderID)
+}
+
+func (s *PaymentService) paymentOrderClient(ctx context.Context) *dbent.Client {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return tx.Client()
+	}
+	return s.entClient
+}
+
+func normalizeExternalReversalAmount(o *dbent.PaymentOrder, amount float64) float64 {
+	if o == nil {
+		return 0
+	}
+	if amount <= 0 || math.IsNaN(amount) || math.IsInf(amount, 0) {
+		amount = o.PayAmount
+	}
+	if amount <= 0 {
+		amount = o.Amount
+	}
+	return roundMoney(amount)
+}
+
+func computeExternalCreditedRefund(o *dbent.PaymentOrder, gatewayAmount float64, amountSemantic string) (float64, float64) {
+	if o == nil {
+		return 0, 0
+	}
+	creditedTotal := roundMoney(o.Amount)
+	if creditedTotal <= 0 {
+		return 0, 0
+	}
+	paidTotal := roundMoney(o.PayAmount)
+	if paidTotal <= 0 {
+		paidTotal = creditedTotal
+	}
+	existingRefundAmount := roundMoney(o.RefundAmount)
+	if existingRefundAmount < 0 {
+		existingRefundAmount = 0
+	}
+	if existingRefundAmount > creditedTotal {
+		existingRefundAmount = creditedTotal
+	}
+	if gatewayAmount <= 0 {
+		return 0, existingRefundAmount
+	}
+
+	targetGatewayTotal := gatewayAmount
+	if amountSemantic != payment.NotificationAmountTotal {
+		targetGatewayTotal = roundMoney(existingRefundAmount)
+		if paidTotal > 0 && math.Abs(paidTotal-creditedTotal) > amountToleranceCNY {
+			targetGatewayTotal = roundMoney(existingRefundAmount * paidTotal / creditedTotal)
+		}
+		targetGatewayTotal = roundMoney(targetGatewayTotal + gatewayAmount)
+	}
+	if paidTotal > 0 && targetGatewayTotal > paidTotal {
+		targetGatewayTotal = paidTotal
+	}
+
+	targetCreditedTotal := targetGatewayTotal
+	if paidTotal > 0 && math.Abs(paidTotal-creditedTotal) > amountToleranceCNY {
+		targetCreditedTotal = targetGatewayTotal * creditedTotal / paidTotal
+	}
+	targetCreditedTotal = roundMoney(targetCreditedTotal)
+	if targetCreditedTotal < 0 {
+		targetCreditedTotal = 0
+	}
+	if targetCreditedTotal > creditedTotal {
+		targetCreditedTotal = creditedTotal
+	}
+	if targetCreditedTotal <= existingRefundAmount {
+		return 0, existingRefundAmount
+	}
+	creditedDelta := roundMoney(targetCreditedTotal - existingRefundAmount)
+	return creditedDelta, targetCreditedTotal
+}
+
+func reconcileExternalReversalAmount(existingAmount float64, notificationAmount float64, maxTotalAmount float64, amountSemantic string) float64 {
+	existingAmount = roundMoney(existingAmount)
+	notificationAmount = roundMoney(notificationAmount)
+	maxTotalAmount = roundMoney(maxTotalAmount)
+	if existingAmount < 0 {
+		existingAmount = 0
+	}
+	if maxTotalAmount < 0 {
+		maxTotalAmount = 0
+	}
+	if notificationAmount <= 0 {
+		if existingAmount > maxTotalAmount {
+			return maxTotalAmount
+		}
+		return existingAmount
+	}
+
+	if amountSemantic == payment.NotificationAmountTotal {
+		if notificationAmount > maxTotalAmount {
+			notificationAmount = maxTotalAmount
+		}
+		return notificationAmount
+	}
+	return accumulateExternalReversalAmount(existingAmount, notificationAmount, maxTotalAmount)
+}
+
+func accumulateExternalReversalAmount(existingAmount float64, deltaAmount float64, maxTotalAmount float64) float64 {
+	existingAmount = roundMoney(existingAmount)
+	deltaAmount = roundMoney(deltaAmount)
+	maxTotalAmount = roundMoney(maxTotalAmount)
+	if existingAmount < 0 {
+		existingAmount = 0
+	}
+	if maxTotalAmount < 0 {
+		maxTotalAmount = 0
+	}
+	if existingAmount >= maxTotalAmount || deltaAmount <= 0 {
+		if existingAmount > maxTotalAmount {
+			return maxTotalAmount
+		}
+		return existingAmount
+	}
+	remainingAmount := roundMoney(maxTotalAmount - existingAmount)
+	if deltaAmount > remainingAmount {
+		deltaAmount = remainingAmount
+	}
+	return roundMoney(existingAmount + deltaAmount)
 }
 
 func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo string, paid float64, pk string) error {
@@ -211,6 +495,12 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
+	if o != nil && o.OrderType == payment.OrderTypeBalance {
+		if err := s.syncReferralReward(ctx, o); err != nil {
+			return fmt.Errorf("sync referral reward: %w", err)
+		}
+	}
+
 	now := time.Now()
 	_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
 	if err != nil {
@@ -218,6 +508,49 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	}
 	s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{"rechargeCode": o.RechargeCode, "amount": o.Amount})
 	return nil
+}
+
+func (s *PaymentService) syncReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s.referralRewardSvc == nil || o == nil || o.OrderType != payment.OrderTypeBalance {
+		return nil
+	}
+
+	providerKey := payment.GetBasePaymentType(o.PaymentType)
+	if providerKey == "" {
+		providerKey = o.PaymentType
+	}
+
+	paidAmount := roundMoney(o.PayAmount)
+	if paidAmount <= 0 {
+		paidAmount = roundMoney(o.Amount)
+	}
+	creditedBalanceAmount := roundMoney(o.Amount)
+	giftBalanceAmount := 0.0
+	grossAmount := creditedBalanceAmount
+	discountAmount := 0.0
+	if creditedBalanceAmount > paidAmount {
+		giftBalanceAmount = roundMoney(creditedBalanceAmount - paidAmount)
+		discountAmount = giftBalanceAmount
+	} else if paidAmount > creditedBalanceAmount {
+		grossAmount = paidAmount
+	}
+
+	_, err := s.referralRewardSvc.CreditRechargeOrder(ctx, &RechargeCreditInput{
+		UserID:                o.UserID,
+		ExternalOrderID:       o.OutTradeNo,
+		Provider:              providerKey,
+		Channel:               o.PaymentType,
+		Currency:              ReferralSettlementCurrencyCNY,
+		GrossAmount:           grossAmount,
+		DiscountAmount:        discountAmount,
+		PaidAmount:            paidAmount,
+		GiftBalanceAmount:     giftBalanceAmount,
+		CreditedBalanceAmount: creditedBalanceAmount,
+		SkipBalanceCredit:     true,
+		PaidAt:                o.PaidAt,
+		Notes:                 fmt.Sprintf("payment order %d", o.ID),
+	})
+	return err
 }
 
 func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid int64) error {

@@ -184,6 +184,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyReferralAllowManualInput,
 		SettingKeyReferralBindBeforeFirstPaidOnly,
 		SettingKeyReferralWithdrawEnabled,
+		SettingKeyReferralCreditConversionEnabled,
 		SettingKeyReferralSettlementCurrency,
 		SettingKeyReferralWithdrawMethodsEnabled,
 	}
@@ -266,6 +267,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ReferralAllowManualInput:        settings[SettingKeyReferralAllowManualInput] == "true",
 		ReferralBindBeforeFirstPaidOnly: settings[SettingKeyReferralBindBeforeFirstPaidOnly] == "true",
 		ReferralWithdrawEnabled:         settings[SettingKeyReferralWithdrawEnabled] == "true",
+		ReferralCreditConversionEnabled: referralCreditConversionEnabledPublic(settings),
 		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
 		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
 	}, nil
@@ -334,6 +336,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralAllowManualInput        bool     `json:"referral_allow_manual_input"`
 		ReferralBindBeforeFirstPaidOnly bool     `json:"referral_bind_before_first_paid_only"`
 		ReferralWithdrawEnabled         bool     `json:"referral_withdraw_enabled"`
+		ReferralCreditConversionEnabled bool     `json:"referral_credit_conversion_enabled"`
 		ReferralSettlementCurrency      string   `json:"referral_settlement_currency"`
 		ReferralWithdrawMethodsEnabled  []string `json:"referral_withdraw_methods_enabled"`
 	}{
@@ -377,6 +380,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralAllowManualInput:         settings.ReferralAllowManualInput,
 		ReferralBindBeforeFirstPaidOnly:  settings.ReferralBindBeforeFirstPaidOnly,
 		ReferralWithdrawEnabled:          settings.ReferralWithdrawEnabled,
+		ReferralCreditConversionEnabled:  settings.ReferralCreditConversionEnabled,
 		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
 	}, nil
@@ -675,6 +679,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyReferralBindBeforeFirstPaidOnly] = strconv.FormatBool(settings.ReferralBindBeforeFirstPaidOnly)
 	updates[SettingKeyReferralAllowManualInput] = strconv.FormatBool(settings.ReferralAllowManualInput)
 	updates[SettingKeyReferralWithdrawEnabled] = strconv.FormatBool(settings.ReferralWithdrawEnabled)
+	updates[SettingKeyReferralCreditConversionEnabled] = strconv.FormatBool(settings.ReferralCreditConversionEnabled)
 	updates[SettingKeyReferralWithdrawMinAmount] = strconv.FormatFloat(settings.ReferralWithdrawMinAmount, 'f', 8, 64)
 	updates[SettingKeyReferralWithdrawMaxAmount] = strconv.FormatFloat(settings.ReferralWithdrawMaxAmount, 'f', 8, 64)
 	updates[SettingKeyReferralWithdrawDailyLimit] = strconv.Itoa(settings.ReferralWithdrawDailyLimit)
@@ -1011,6 +1016,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyDefaultSubscriptions:             "[]",
 		SettingKeySMTPPort:                         "587",
 		SettingKeySMTPUseTLS:                       "false",
+		SettingKeyReferralCreditConversionEnabled:  "false",
 		// Model fallback defaults
 		SettingKeyEnableModelFallback:      "false",
 		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
@@ -1357,6 +1363,11 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		result.ReferralAllowManualInput = true
 	}
 	result.ReferralWithdrawEnabled = settings[SettingKeyReferralWithdrawEnabled] == "true"
+	if v, ok := settings[SettingKeyReferralCreditConversionEnabled]; ok {
+		result.ReferralCreditConversionEnabled = v == "true"
+	} else {
+		result.ReferralCreditConversionEnabled = result.ReferralWithdrawEnabled
+	}
 	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawMinAmount], 64); err == nil {
 		result.ReferralWithdrawMinAmount = v
 	} else {
@@ -1498,6 +1509,13 @@ func (s *SettingService) getStringOrDefault(settings map[string]string, key, def
 		return value
 	}
 	return defaultValue
+}
+
+func referralCreditConversionEnabledPublic(settings map[string]string) bool {
+	if v, ok := settings[SettingKeyReferralCreditConversionEnabled]; ok {
+		return v == "true"
+	}
+	return settings[SettingKeyReferralWithdrawEnabled] == "true"
 }
 
 func (s *SettingService) getReferralCurrencyPublic(settings map[string]string) string {

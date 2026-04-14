@@ -36,10 +36,6 @@
               <span class="text-gray-500">{{ t('admin.referral.directDownline') }}</span>
               <span class="font-bold text-gray-900 dark:text-white">{{ account.direct_invitees }} <span class="font-normal text-xs text-gray-400">{{ t('admin.referral.peopleSuffix') }}</span></span>
             </div>
-            <div class="flex justify-between items-center text-sm">
-              <span class="text-gray-500">{{ t('admin.referral.viralNetwork') }}</span>
-              <span class="font-bold text-gray-900 dark:text-white">{{ account.second_level_invitees }} <span class="font-normal text-xs text-gray-400">{{ t('admin.referral.peopleSuffix') }}</span></span>
-            </div>
             <div class="flex justify-between items-center text-sm pt-2 border-t border-gray-100 dark:border-dark-700">
               <span class="text-gray-500">{{ t('admin.referral.totalCommissionOutput') }}</span>
               <span class="font-bold text-green-600">￥{{ formatMoney(account.total_commission) }}</span>

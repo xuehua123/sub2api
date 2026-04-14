@@ -155,20 +155,44 @@ type TopUserStat struct {
 // --- Service ---
 
 type PaymentService struct {
-	providerMu      sync.Mutex
-	providersLoaded bool
-	entClient       *dbent.Client
-	registry        *payment.Registry
-	loadBalancer    payment.LoadBalancer
-	redeemService   *RedeemService
-	subscriptionSvc *SubscriptionService
-	configService   *PaymentConfigService
-	userRepo        UserRepository
-	groupRepo       GroupRepository
+	providerMu         sync.Mutex
+	providersLoaded    bool
+	entClient          *dbent.Client
+	registry           *payment.Registry
+	loadBalancer       payment.LoadBalancer
+	redeemService      *RedeemService
+	subscriptionSvc    *SubscriptionService
+	configService      *PaymentConfigService
+	userRepo           UserRepository
+	groupRepo          GroupRepository
+	referralRewardSvc  *ReferralRewardService
+	referralRefundSvc  *ReferralRefundService
 }
 
-func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository) *PaymentService {
-	return &PaymentService{entClient: entClient, registry: registry, loadBalancer: loadBalancer, redeemService: redeemService, subscriptionSvc: subscriptionSvc, configService: configService, userRepo: userRepo, groupRepo: groupRepo}
+func NewPaymentService(
+	entClient *dbent.Client,
+	registry *payment.Registry,
+	loadBalancer payment.LoadBalancer,
+	redeemService *RedeemService,
+	subscriptionSvc *SubscriptionService,
+	configService *PaymentConfigService,
+	userRepo UserRepository,
+	groupRepo GroupRepository,
+	referralRewardSvc *ReferralRewardService,
+	referralRefundSvc *ReferralRefundService,
+) *PaymentService {
+	return &PaymentService{
+		entClient:         entClient,
+		registry:          registry,
+		loadBalancer:      loadBalancer,
+		redeemService:     redeemService,
+		subscriptionSvc:   subscriptionSvc,
+		configService:     configService,
+		userRepo:          userRepo,
+		groupRepo:         groupRepo,
+		referralRewardSvc: referralRewardSvc,
+		referralRefundSvc: referralRefundSvc,
+	}
 }
 
 // --- Provider Registry ---

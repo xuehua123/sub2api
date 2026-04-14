@@ -222,6 +222,7 @@ type RechargeCreditInput struct {
 	PaidAmount            float64
 	GiftBalanceAmount     float64
 	CreditedBalanceAmount float64
+	SkipBalanceCredit     bool
 	IdempotencyKey        string
 	MetadataJSON          string
 	Notes                 string
@@ -368,7 +369,7 @@ func (s *ReferralRewardService) CreditRechargeOrder(ctx context.Context, input *
 		if err := s.rechargeOrders.Create(txCtx, order); err != nil {
 			return nil, err
 		}
-		if order.CreditedBalanceAmount != 0 {
+		if order.CreditedBalanceAmount != 0 && !input.SkipBalanceCredit {
 			if err := s.userRepo.UpdateBalance(txCtx, input.UserID, order.CreditedBalanceAmount); err != nil {
 				return nil, err
 			}

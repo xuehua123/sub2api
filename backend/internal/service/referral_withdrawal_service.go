@@ -637,6 +637,7 @@ func (s *ReferralWithdrawalService) loadSettings(ctx context.Context) (*SystemSe
 		return &SystemSettings{
 			ReferralEnabled:                      false,
 			ReferralWithdrawEnabled:              false,
+			ReferralCreditConversionEnabled:      false,
 			ReferralWithdrawMinAmount:            100,
 			ReferralWithdrawMaxAmount:            5000,
 			ReferralWithdrawFeeRate:              0,
@@ -730,7 +731,7 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 	if err != nil {
 		return err
 	}
-	if !settings.ReferralWithdrawEnabled {
+	if !settings.ReferralCreditConversionEnabled {
 		return ErrReferralDisabled
 	}
 	if err := s.checkReferralEnabledForUser(ctx, settings, userID); err != nil {

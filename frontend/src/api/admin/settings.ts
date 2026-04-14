@@ -137,15 +137,24 @@ export interface SystemSettings {
 
   // Referral configuration
   referral_enabled: boolean
-  referral_commission_level1_rate: number
-  referral_commission_level2_rate: number
+  referral_level1_enabled: boolean
+  referral_level1_rate: number
   referral_reward_mode: string
+  referral_settlement_delay_days: number
   referral_allow_manual_input: boolean
   referral_bind_before_first_paid_only: boolean
   referral_withdraw_enabled: boolean
+  referral_credit_conversion_enabled: boolean
+  referral_withdraw_min_amount: number
+  referral_withdraw_max_amount: number
+  referral_withdraw_daily_limit: number
+  referral_withdraw_fee_rate: number
+  referral_withdraw_fixed_fee: number
+  referral_withdraw_manual_review_required: boolean
+  referral_refund_reverse_enabled: boolean
+  referral_negative_carry_enabled: boolean
   referral_settlement_currency: string
   referral_withdraw_methods_enabled: string[]
-  referral_min_withdraw_amount: number
 
   // LobeHub integration
   lobehub_enabled: boolean
@@ -258,15 +267,24 @@ export interface UpdateSettingsRequest {
   payment_cancel_rate_limit_window_mode?: string
   // Referral configuration
   referral_enabled?: boolean
-  referral_commission_level1_rate?: number
-  referral_commission_level2_rate?: number
+  referral_level1_enabled?: boolean
+  referral_level1_rate?: number
   referral_reward_mode?: string
+  referral_settlement_delay_days?: number
   referral_allow_manual_input?: boolean
   referral_bind_before_first_paid_only?: boolean
   referral_withdraw_enabled?: boolean
+  referral_credit_conversion_enabled?: boolean
+  referral_withdraw_min_amount?: number
+  referral_withdraw_max_amount?: number
+  referral_withdraw_daily_limit?: number
+  referral_withdraw_fee_rate?: number
+  referral_withdraw_fixed_fee?: number
+  referral_withdraw_manual_review_required?: boolean
+  referral_refund_reverse_enabled?: boolean
+  referral_negative_carry_enabled?: boolean
   referral_settlement_currency?: string
   referral_withdraw_methods_enabled?: string[]
-  referral_min_withdraw_amount?: number
 
   // LobeHub integration
   lobehub_enabled?: boolean

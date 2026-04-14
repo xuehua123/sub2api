@@ -19,7 +19,7 @@ export async function searchAccounts(
   limit: number = 10
 ): Promise<AdminReferralAccountOption[]> {
   const { data } = await apiClient.get<AdminReferralAccountOption[]>(
-    '/admin/referral/accounts/search',
+    '/admin/referral/search-accounts',
     { params: { q, limit } }
   )
   return data
@@ -76,7 +76,7 @@ export async function listCommissionRewards(
   filters: Record<string, string | number | undefined> = {}
 ): Promise<BasePaginationResponse<AdminCommissionReward>> {
   const { data } = await apiClient.get<BasePaginationResponse<AdminCommissionReward>>(
-    '/admin/referral/commission-rewards',
+    '/admin/referral/rewards',
     { params: { page, page_size: pageSize, ...filters } }
   )
   return data
@@ -88,7 +88,7 @@ export async function listCommissionLedgers(
   filters: Record<string, string | number | undefined> = {}
 ): Promise<BasePaginationResponse<AdminCommissionLedger>> {
   const { data } = await apiClient.get<BasePaginationResponse<AdminCommissionLedger>>(
-    '/admin/referral/commission-ledgers',
+    '/admin/referral/ledgers',
     { params: { page, page_size: pageSize, ...filters } }
   )
   return data
@@ -100,7 +100,7 @@ export async function createCommissionAdjustment(payload: {
   remark?: string
 }): Promise<CommissionLedgerEntry> {
   const { data } = await apiClient.post<CommissionLedgerEntry>(
-    '/admin/referral/commission-adjustments',
+    '/admin/referral/rewards/adjustment',
     payload
   )
   return data
@@ -136,7 +136,7 @@ export async function rejectWithdrawal(id: number, reason: string) {
 }
 
 export async function markWithdrawalPaid(id: number, remark?: string) {
-  const { data } = await apiClient.post(`/admin/referral/withdrawals/${id}/mark-paid`, { remark })
+  const { data } = await apiClient.post(`/admin/referral/withdrawals/${id}/paid`, { remark })
   return data
 }
 

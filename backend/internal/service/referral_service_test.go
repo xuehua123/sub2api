@@ -122,7 +122,7 @@ func TestReferralService_GetOverview_CreatesDefaultCodeWhenMissing(t *testing.T)
 	repo := newReferralRepoStub()
 	userRepo := &userRepoStub{}
 	svc := newReferralServiceForTest(userRepo, repo, map[string]string{
-		SettingKeyReferralEnabled:         "true",
+		SettingKeyReferralEnabled:          "true",
 		SettingKeyReferralAllowManualInput: "true",
 	})
 
@@ -131,6 +131,21 @@ func TestReferralService_GetOverview_CreatesDefaultCodeWhenMissing(t *testing.T)
 	require.NotNil(t, overview.DefaultCode)
 	require.Equal(t, int64(7), overview.DefaultCode.UserID)
 	require.NotEmpty(t, overview.DefaultCode.Code)
+}
+
+func TestReferralService_GetOverview_AllowsBindingWhenManualInputEnabledEvenIfUserCannotInvite(t *testing.T) {
+	repo := newReferralRepoStub()
+	userRepo := &userRepoStub{user: &User{ID: 7, Email: "invitee@example.com", Username: "invitee"}}
+	svc := newReferralServiceForTest(userRepo, repo, map[string]string{
+		SettingKeyReferralEnabled:          "false",
+		SettingKeyReferralAllowManualInput: "true",
+	})
+
+	overview, err := svc.GetOverview(context.Background(), 7)
+	require.NoError(t, err)
+	require.False(t, overview.ReferralEnabled)
+	require.True(t, overview.AllowManualInput)
+	require.True(t, overview.CanBind)
 }
 
 func TestReferralService_BindReferralCode_CreatesRelationAndHistory(t *testing.T) {

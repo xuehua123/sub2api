@@ -146,6 +146,27 @@ type SystemSettings struct {
 	PaymentCancelRateLimitUnit    string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    string `json:"payment_cancel_rate_limit_window_mode"`
 
+	// Referral configuration
+	ReferralEnabled                      bool     `json:"referral_enabled"`
+	ReferralLevel1Enabled                bool     `json:"referral_level1_enabled"`
+	ReferralLevel1Rate                   float64  `json:"referral_level1_rate"`
+	ReferralRewardMode                   string   `json:"referral_reward_mode"`
+	ReferralSettlementDelayDays          int      `json:"referral_settlement_delay_days"`
+	ReferralBindBeforeFirstPaidOnly      bool     `json:"referral_bind_before_first_paid_only"`
+	ReferralAllowManualInput             bool     `json:"referral_allow_manual_input"`
+	ReferralWithdrawEnabled              bool     `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled      bool     `json:"referral_credit_conversion_enabled"`
+	ReferralWithdrawMinAmount            float64  `json:"referral_withdraw_min_amount"`
+	ReferralWithdrawMaxAmount            float64  `json:"referral_withdraw_max_amount"`
+	ReferralWithdrawDailyLimit           int      `json:"referral_withdraw_daily_limit"`
+	ReferralWithdrawFeeRate              float64  `json:"referral_withdraw_fee_rate"`
+	ReferralWithdrawFixedFee             float64  `json:"referral_withdraw_fixed_fee"`
+	ReferralWithdrawManualReviewRequired bool     `json:"referral_withdraw_manual_review_required"`
+	ReferralRefundReverseEnabled         bool     `json:"referral_refund_reverse_enabled"`
+	ReferralNegativeCarryEnabled         bool     `json:"referral_negative_carry_enabled"`
+	ReferralSettlementCurrency           string   `json:"referral_settlement_currency"`
+	ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
+
 	// LobeHub integration
 	LobeHubEnabled                    bool   `json:"lobehub_enabled"`
 	LobeHubChatURL                    string `json:"lobehub_chat_url"`
@@ -193,6 +214,20 @@ type PublicSettings struct {
 	SoraClientEnabled                bool             `json:"sora_client_enabled"`
 	BackendModeEnabled               bool             `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool             `json:"payment_enabled"`
+	ReferralEnabled                  bool             `json:"referral_enabled"`
+	ReferralAllowManualInput         bool             `json:"referral_allow_manual_input"`
+	ReferralBindBeforeFirstPaidOnly  bool             `json:"referral_bind_before_first_paid_only"`
+	ReferralWithdrawEnabled          bool             `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled  bool             `json:"referral_credit_conversion_enabled"`
+	ReferralSettlementCurrency       string           `json:"referral_settlement_currency"`
+	ReferralWithdrawMethodsEnabled   []string         `json:"referral_withdraw_methods_enabled"`
+	LobeHubEnabled                   bool             `json:"lobehub_enabled"`
+	LobeHubChatURL                   string           `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                string           `json:"lobehub_oidc_issuer"`
+	LobeHubDefaultProvider           string           `json:"lobehub_default_provider"`
+	LobeHubDefaultModel              string           `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion      string           `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton          bool             `json:"hide_lobehub_import_button"`
 	Version                          string           `json:"version"`
 }
 

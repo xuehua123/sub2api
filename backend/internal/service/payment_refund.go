@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -208,17 +209,105 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 }
 
 func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
-	fs := OrderStatusRefunded
-	if p.RefundAmount < p.Order.Amount {
-		fs = OrderStatusPartiallyRefunded
+	result := &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}
+	finalStatus := refundSuccessStatus(p)
+
+	persistWithWarning := func(syncErr error) (*RefundResult, error) {
+		if err := s.persistRefundSuccess(ctx, p, finalStatus); err != nil {
+			return nil, fmt.Errorf("sync referral refund: %w; mark refund: %v", syncErr, err)
+		}
+		warning := "refund completed but referral sync failed: " + psErrMsg(syncErr)
+		s.writeAuditLog(ctx, p.OrderID, "REFUND_REFERRAL_SYNC_FAILED", "admin", map[string]any{"detail": psErrMsg(syncErr)})
+		result.Warning = warning
+		return result, nil
 	}
-	now := time.Now()
-	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(p.RefundAmount).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
+
+	apply := func(txCtx context.Context) error {
+		if err := s.syncReferralRefund(txCtx, p); err != nil {
+			return err
+		}
+		return s.persistRefundSuccess(txCtx, p, finalStatus)
+	}
+
+	if s.entClient == nil || dbent.TxFromContext(ctx) != nil {
+		if err := apply(ctx); err != nil {
+			return persistWithWarning(err)
+		}
+		return result, nil
+	}
+
+	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("mark refund: %w", err)
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := apply(dbent.NewTxContext(ctx, tx)); err != nil {
+		return persistWithWarning(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func refundSuccessStatus(p *RefundPlan) string {
+	if p != nil && p.Order != nil && p.RefundAmount < p.Order.Amount {
+		return OrderStatusPartiallyRefunded
+	}
+	return OrderStatusRefunded
+}
+
+func (s *PaymentService) persistRefundSuccess(ctx context.Context, p *RefundPlan, status string) error {
+	now := time.Now()
+	_, err := s.paymentOrderClient(ctx).PaymentOrder.UpdateOneID(p.OrderID).
+		SetStatus(status).
+		SetRefundAmount(p.RefundAmount).
+		SetRefundReason(p.Reason).
+		SetRefundAt(now).
+		SetForceRefund(p.Force).
+		ClearFailedAt().
+		ClearFailedReason().
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("mark refund: %w", err)
 	}
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
-	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
+	return nil
+}
+
+func (s *PaymentService) syncReferralRefund(ctx context.Context, p *RefundPlan) error {
+	if s.referralRefundSvc == nil || p == nil || p.Order == nil || p.Order.OrderType != payment.OrderTypeBalance {
+		return nil
+	}
+
+	providerKey := payment.GetBasePaymentType(p.Order.PaymentType)
+	if providerKey == "" {
+		providerKey = p.Order.PaymentType
+	}
+
+	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(providerKey), strings.TrimSpace(p.Order.OutTradeNo))
+	if err != nil {
+		if errors.Is(err, ErrRechargeOrderNotFound) {
+			return nil
+		}
+		return err
+	}
+
+	refundedAmount := roundMoney(rechargeOrder.RefundedAmount + p.GatewayAmount)
+	if refundedAmount <= 0 {
+		return nil
+	}
+	paidAmount := roundMoney(rechargeOrder.PaidAmount)
+	if paidAmount > 0 && refundedAmount > paidAmount {
+		refundedAmount = paidAmount
+	}
+
+	_, _, err = s.referralRefundSvc.ApplyRefund(ctx, &RechargeRefundInput{
+		RechargeOrderID:  rechargeOrder.ID,
+		RefundedAmount:   refundedAmount,
+		ChargebackAmount: roundMoney(rechargeOrder.ChargebackAmount),
+	})
+	return err
 }
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {

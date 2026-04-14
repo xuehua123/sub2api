@@ -573,7 +573,7 @@ func registerReferralAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	{
 		referral.GET("/search-accounts", h.Admin.Referral.SearchAccounts)
 		referral.GET("/overview", h.Admin.Referral.GetOverview)
-		referral.GET("/tree", h.Admin.Referral.GetTree)
+		referral.GET("/tree/:user_id", h.Admin.Referral.GetTree)
 
 		relations := referral.Group("/relations")
 		{

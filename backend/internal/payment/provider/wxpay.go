@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -41,6 +42,7 @@ const (
 // WeChat Pay notification event types.
 const (
 	wxpayEventTransactionSuccess = "TRANSACTION.SUCCESS"
+	wxpayEventRefundSuccess      = "REFUND.SUCCESS"
 )
 
 // WeChat Pay error codes.
@@ -257,26 +259,53 @@ func (w *Wxpay) VerifyNotification(ctx context.Context, rawBody string, headers 
 	for k, v := range headers {
 		r.Header.Set(k, v)
 	}
-	var tx payments.Transaction
-	nr, err := w.notifyHandler.ParseNotifyRequest(ctx, r, &tx)
-	if err != nil {
-		return nil, fmt.Errorf("wxpay verify notification: %w", err)
-	}
-	if nr.EventType != wxpayEventTransactionSuccess {
+
+	switch eventType := extractWxpayEventType(rawBody); eventType {
+	case wxpayEventTransactionSuccess:
+		var tx payments.Transaction
+		nr, err := w.notifyHandler.ParseNotifyRequest(ctx, r, &tx)
+		if err != nil {
+			return nil, fmt.Errorf("wxpay verify notification: %w", err)
+		}
+		if nr.EventType != wxpayEventTransactionSuccess {
+			return nil, nil
+		}
+		var amt float64
+		if tx.Amount != nil && tx.Amount.Total != nil {
+			amt = payment.FenToYuan(*tx.Amount.Total)
+		}
+		st := payment.ProviderStatusFailed
+		if wxSV(tx.TradeState) == wxpayTradeStateSuccess {
+			st = payment.ProviderStatusSuccess
+		}
+		return &payment.PaymentNotification{
+			TradeNo: wxSV(tx.TransactionId), OrderID: wxSV(tx.OutTradeNo),
+			Amount: amt, Status: st, RawData: rawBody,
+		}, nil
+	case wxpayEventRefundSuccess:
+		var refund refunddomestic.Refund
+		nr, err := w.notifyHandler.ParseNotifyRequest(ctx, r, &refund)
+		if err != nil {
+			return nil, fmt.Errorf("wxpay verify refund notification: %w", err)
+		}
+		if nr.EventType != wxpayEventRefundSuccess {
+			return nil, nil
+		}
+		var amt float64
+		if refund.Amount != nil && refund.Amount.Refund != nil {
+			amt = payment.FenToYuan(*refund.Amount.Refund)
+		}
+		return &payment.PaymentNotification{
+			TradeNo:        wxSV(refund.TransactionId),
+			OrderID:        wxSV(refund.OutTradeNo),
+			Amount:         amt,
+			AmountSemantic: payment.NotificationAmountDelta,
+			Status:         payment.NotificationStatusRefunded,
+			RawData:        rawBody,
+		}, nil
+	default:
 		return nil, nil
 	}
-	var amt float64
-	if tx.Amount != nil && tx.Amount.Total != nil {
-		amt = payment.FenToYuan(*tx.Amount.Total)
-	}
-	st := payment.ProviderStatusFailed
-	if wxSV(tx.TradeState) == wxpayTradeStateSuccess {
-		st = payment.ProviderStatusSuccess
-	}
-	return &payment.PaymentNotification{
-		TradeNo: wxSV(tx.TransactionId), OrderID: wxSV(tx.OutTradeNo),
-		Amount: amt, Status: st, RawData: rawBody,
-	}, nil
 }
 
 func (w *Wxpay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
@@ -312,6 +341,16 @@ func (w *Wxpay) Refund(ctx context.Context, req payment.RefundRequest) (*payment
 		st = payment.ProviderStatusSuccess
 	}
 	return &payment.RefundResponse{RefundID: rid, Status: st}, nil
+}
+
+func extractWxpayEventType(rawBody string) string {
+	var payload struct {
+		EventType string `json:"event_type"`
+	}
+	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+		return ""
+	}
+	return payload.EventType
 }
 
 func (w *Wxpay) queryOrderTotalFen(ctx context.Context, c *core.Client, orderID string) (int64, error) {

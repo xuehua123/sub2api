@@ -14,9 +14,11 @@ import (
 
 // Stripe constants.
 const (
-	stripeCurrency            = "cny"
-	stripeEventPaymentSuccess = "payment_intent.succeeded"
-	stripeEventPaymentFailed  = "payment_intent.payment_failed"
+	stripeCurrency                 = "cny"
+	stripeEventPaymentSuccess      = "payment_intent.succeeded"
+	stripeEventPaymentFailed       = "payment_intent.payment_failed"
+	stripeEventChargeRefunded      = "charge.refunded"
+	stripeEventChargeDisputeCreate = "charge.dispute.created"
 )
 
 // Stripe implements the payment.CancelableProvider interface for Stripe payments.
@@ -164,6 +166,10 @@ func (s *Stripe) VerifyNotification(_ context.Context, rawBody string, headers m
 		return parseStripePaymentIntent(&event, payment.ProviderStatusSuccess, rawBody)
 	case stripeEventPaymentFailed:
 		return parseStripePaymentIntent(&event, payment.ProviderStatusFailed, rawBody)
+	case stripeEventChargeRefunded:
+		return parseStripeChargeRefunded(&event, rawBody)
+	case stripeEventChargeDisputeCreate:
+		return parseStripeChargeDispute(&event, rawBody)
 	}
 
 	return nil, nil
@@ -183,6 +189,69 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 	}, nil
 }
 
+func parseStripeChargeRefunded(event *stripe.Event, rawBody string) (*payment.PaymentNotification, error) {
+	var charge stripe.Charge
+	if err := json.Unmarshal(event.Data.Raw, &charge); err != nil {
+		return nil, fmt.Errorf("stripe parse refunded charge: %w", err)
+	}
+	if charge.PaymentIntent == nil {
+		return nil, nil
+	}
+
+	tradeNo := strings.TrimSpace(charge.PaymentIntent.ID)
+	if tradeNo == "" {
+		return nil, nil
+	}
+
+	orderID := strings.TrimSpace(charge.Metadata["orderId"])
+	if orderID == "" {
+		orderID = strings.TrimSpace(charge.PaymentIntent.Metadata["orderId"])
+	}
+
+	return &payment.PaymentNotification{
+		TradeNo:        tradeNo,
+		OrderID:        orderID,
+		Amount:         payment.FenToYuan(charge.AmountRefunded),
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        rawBody,
+	}, nil
+}
+
+func parseStripeChargeDispute(event *stripe.Event, rawBody string) (*payment.PaymentNotification, error) {
+	var dispute stripe.Dispute
+	if err := json.Unmarshal(event.Data.Raw, &dispute); err != nil {
+		return nil, fmt.Errorf("stripe parse dispute: %w", err)
+	}
+	if dispute.PaymentIntent == nil || dispute.Charge == nil {
+		return nil, nil
+	}
+
+	tradeNo := strings.TrimSpace(dispute.PaymentIntent.ID)
+	if tradeNo == "" && dispute.Charge.PaymentIntent != nil {
+		tradeNo = strings.TrimSpace(dispute.Charge.PaymentIntent.ID)
+	}
+	if tradeNo == "" {
+		return nil, nil
+	}
+
+	orderID := strings.TrimSpace(dispute.Charge.Metadata["orderId"])
+	if orderID == "" && dispute.Charge.PaymentIntent != nil {
+		orderID = strings.TrimSpace(dispute.Charge.PaymentIntent.Metadata["orderId"])
+	}
+	if orderID == "" {
+		orderID = strings.TrimSpace(dispute.PaymentIntent.Metadata["orderId"])
+	}
+
+	return &payment.PaymentNotification{
+		TradeNo:        tradeNo,
+		OrderID:        orderID,
+		Amount:         payment.FenToYuan(dispute.Amount),
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusChargeback,
+		RawData:        rawBody,
+	}, nil
+}
 // Refund creates a Stripe refund.
 func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	s.ensureInit()

@@ -22,14 +22,14 @@ const (
 )
 
 var (
-	ErrReferralDisabled                  = infraerrors.Forbidden("REFERRAL_DISABLED", "referral program is disabled")
-	ErrReferralManualInputDisabled       = infraerrors.Forbidden("REFERRAL_MANUAL_INPUT_DISABLED", "manual referral binding is disabled")
-	ErrReferralCodeNotFound              = infraerrors.NotFound("REFERRAL_CODE_NOT_FOUND", "referral code not found")
-	ErrReferralCodeDisabled              = infraerrors.BadRequest("REFERRAL_CODE_DISABLED", "referral code is disabled")
-	ErrReferralRelationNotFound          = infraerrors.NotFound("REFERRAL_RELATION_NOT_FOUND", "referral relation not found")
-	ErrReferralAlreadyBound              = infraerrors.Conflict("REFERRAL_ALREADY_BOUND", "user is already bound to a referrer")
-	ErrReferralSelfBind                  = infraerrors.BadRequest("REFERRAL_SELF_BIND", "cannot bind your own referral code")
-	ErrReferralCycleDetected             = infraerrors.BadRequest("REFERRAL_CYCLE_DETECTED", "referral cycle detected")
+	ErrReferralDisabled                   = infraerrors.Forbidden("REFERRAL_DISABLED", "referral program is disabled")
+	ErrReferralManualInputDisabled        = infraerrors.Forbidden("REFERRAL_MANUAL_INPUT_DISABLED", "manual referral binding is disabled")
+	ErrReferralCodeNotFound               = infraerrors.NotFound("REFERRAL_CODE_NOT_FOUND", "referral code not found")
+	ErrReferralCodeDisabled               = infraerrors.BadRequest("REFERRAL_CODE_DISABLED", "referral code is disabled")
+	ErrReferralRelationNotFound           = infraerrors.NotFound("REFERRAL_RELATION_NOT_FOUND", "referral relation not found")
+	ErrReferralAlreadyBound               = infraerrors.Conflict("REFERRAL_ALREADY_BOUND", "user is already bound to a referrer")
+	ErrReferralSelfBind                   = infraerrors.BadRequest("REFERRAL_SELF_BIND", "cannot bind your own referral code")
+	ErrReferralCycleDetected              = infraerrors.BadRequest("REFERRAL_CYCLE_DETECTED", "referral cycle detected")
 	ErrReferralBindAfterPaymentNotAllowed = infraerrors.BadRequest("REFERRAL_BIND_AFTER_PAYMENT_NOT_ALLOWED", "referral code must be bound before the first paid recharge")
 )
 
@@ -56,35 +56,36 @@ type ReferralRelation struct {
 }
 
 type ReferralRelationHistory struct {
-	ID                int64      `json:"id"`
-	UserID            int64      `json:"user_id"`
-	OldReferrerUserID *int64     `json:"old_referrer_user_id,omitempty"`
-	NewReferrerUserID *int64     `json:"new_referrer_user_id,omitempty"`
-	OldBindCode       *string    `json:"old_bind_code,omitempty"`
-	NewBindCode       *string    `json:"new_bind_code,omitempty"`
-	ChangeSource      string     `json:"change_source"`
-	ChangedBy         *int64     `json:"changed_by,omitempty"`
-	Reason            *string    `json:"reason,omitempty"`
-	MetadataJSON      *string    `json:"metadata_json,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
+	ID                int64     `json:"id"`
+	UserID            int64     `json:"user_id"`
+	OldReferrerUserID *int64    `json:"old_referrer_user_id,omitempty"`
+	NewReferrerUserID *int64    `json:"new_referrer_user_id,omitempty"`
+	OldBindCode       *string   `json:"old_bind_code,omitempty"`
+	NewBindCode       *string   `json:"new_bind_code,omitempty"`
+	ChangeSource      string    `json:"change_source"`
+	ChangedBy         *int64    `json:"changed_by,omitempty"`
+	Reason            *string   `json:"reason,omitempty"`
+	MetadataJSON      *string   `json:"metadata_json,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 type ReferralOverview struct {
-	ReferralEnabled             bool              `json:"referral_enabled"`
-	AllowManualInput            bool              `json:"allow_manual_input"`
-	BindBeforeFirstPaidOnly     bool              `json:"bind_before_first_paid_only"`
-	ReferralWithdrawEnabled     bool              `json:"referral_withdraw_enabled"`
-	SettlementCurrency          string            `json:"settlement_currency"`
-	DefaultCode                 *ReferralCode     `json:"default_code,omitempty"`
-	Relation                    *ReferralRelation `json:"relation,omitempty"`
-	CanBind                     bool              `json:"can_bind"`
-	HasPaidRecharge             bool              `json:"has_paid_recharge"`
-	ReferralWithdrawMethods     []string          `json:"withdraw_methods_enabled,omitempty"`
+	ReferralEnabled                 bool              `json:"referral_enabled"`
+	AllowManualInput                bool              `json:"allow_manual_input"`
+	BindBeforeFirstPaidOnly         bool              `json:"bind_before_first_paid_only"`
+	ReferralWithdrawEnabled         bool              `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled bool              `json:"referral_credit_conversion_enabled"`
+	SettlementCurrency              string            `json:"settlement_currency"`
+	DefaultCode                     *ReferralCode     `json:"default_code,omitempty"`
+	Relation                        *ReferralRelation `json:"relation,omitempty"`
+	CanBind                         bool              `json:"can_bind"`
+	HasPaidRecharge                 bool              `json:"has_paid_recharge"`
+	ReferralWithdrawMethods         []string          `json:"withdraw_methods_enabled,omitempty"`
 }
 
 type ReferralCodePreview struct {
-	ReferrerUserID  int64  `json:"referrer_user_id"`
-	ReferrerUsername string `json:"referrer_username"`
+	ReferrerUserID      int64  `json:"referrer_user_id"`
+	ReferrerUsername    string `json:"referrer_username"`
 	ReferrerEmailMasked string `json:"referrer_email_masked"`
 }
 
@@ -153,22 +154,23 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		return nil, err
 	}
 
-	canBind := userReferralEnabled && settings.ReferralAllowManualInput && relation == nil
+	canBind := settings.ReferralAllowManualInput && relation == nil
 	if settings.ReferralBindBeforeFirstPaidOnly && hasPaidRecharge {
 		canBind = false
 	}
 
 	return &ReferralOverview{
-		ReferralEnabled:         userReferralEnabled,
-		AllowManualInput:        settings.ReferralAllowManualInput,
-		BindBeforeFirstPaidOnly: settings.ReferralBindBeforeFirstPaidOnly,
-		ReferralWithdrawEnabled: settings.ReferralWithdrawEnabled,
-		SettlementCurrency:      settings.ReferralSettlementCurrency,
-		DefaultCode:             defaultCode,
-		Relation:                relation,
-		CanBind:                 canBind,
-		HasPaidRecharge:         hasPaidRecharge,
-		ReferralWithdrawMethods: settings.ReferralWithdrawMethodsEnabled,
+		ReferralEnabled:                 userReferralEnabled,
+		AllowManualInput:                settings.ReferralAllowManualInput,
+		BindBeforeFirstPaidOnly:         settings.ReferralBindBeforeFirstPaidOnly,
+		ReferralWithdrawEnabled:         settings.ReferralWithdrawEnabled,
+		ReferralCreditConversionEnabled: settings.ReferralCreditConversionEnabled,
+		SettlementCurrency:              settings.ReferralSettlementCurrency,
+		DefaultCode:                     defaultCode,
+		Relation:                        relation,
+		CanBind:                         canBind,
+		HasPaidRecharge:                 hasPaidRecharge,
+		ReferralWithdrawMethods:         settings.ReferralWithdrawMethodsEnabled,
 	}, nil
 }
 
@@ -344,8 +346,8 @@ func (s *ReferralService) PreviewReferralCode(ctx context.Context, code string) 
 		return nil, err
 	}
 	return &ReferralCodePreview{
-		ReferrerUserID: referralCode.UserID,
-		ReferrerUsername: user.Username,
+		ReferrerUserID:      referralCode.UserID,
+		ReferrerUsername:    user.Username,
 		ReferrerEmailMasked: MaskEmail(user.Email),
 	}, nil
 }
@@ -353,10 +355,10 @@ func (s *ReferralService) PreviewReferralCode(ctx context.Context, code string) 
 func (s *ReferralService) getPublicSettings(ctx context.Context) (*PublicSettings, error) {
 	if s.settingService == nil {
 		return &PublicSettings{
-			ReferralEnabled:             false,
-			ReferralAllowManualInput:    false,
+			ReferralEnabled:                 false,
+			ReferralAllowManualInput:        false,
 			ReferralBindBeforeFirstPaidOnly: true,
-			ReferralSettlementCurrency:  ReferralSettlementCurrencyCNY,
+			ReferralSettlementCurrency:      ReferralSettlementCurrencyCNY,
 		}, nil
 	}
 	return s.settingService.GetPublicSettings(ctx)

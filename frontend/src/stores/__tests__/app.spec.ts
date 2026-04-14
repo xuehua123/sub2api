@@ -321,7 +321,21 @@ describe('useAppStore', () => {
         custom_endpoints: [],
         linuxdo_oauth_enabled: false,
         backend_mode_enabled: false,
-        version: '1.0.0'
+        version: '1.0.0',
+        referral_enabled: false,
+        referral_allow_manual_input: false,
+        referral_bind_before_first_paid_only: false,
+        referral_withdraw_enabled: false,
+        referral_credit_conversion_enabled: false,
+        referral_settlement_currency: 'CNY',
+        referral_withdraw_methods_enabled: [],
+        lobehub_enabled: false,
+        lobehub_chat_url: '',
+        lobehub_oidc_issuer: '',
+        lobehub_default_provider: '',
+        lobehub_default_model: '',
+        lobehub_runtime_config_version: '',
+        hide_lobehub_import_button: false
       })
 
       const store = useAppStore()

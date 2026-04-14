@@ -2250,34 +2250,34 @@
             </div>
 
             <template v-if="form.referral_enabled">
-              <!-- Level 1 Commission Rate -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.referral.level1Enabled') }}</label>
+                </div>
+                <Toggle v-model="form.referral_level1_enabled" />
+              </div>
+
               <div>
                 <label class="input-label">{{ t('admin.settings.referral.level1Rate') }}</label>
                 <div class="flex items-center gap-2">
-                  <input v-model.number="form.referral_commission_level1_rate" type="number" step="0.01" min="0" max="1" class="input w-32" />
+                  <input v-model.number="form.referral_level1_rate" type="number" step="0.01" min="0" max="1" class="input w-32" />
                   <span class="text-sm text-gray-500">{{ t('admin.settings.referral.rateHint') }}</span>
                 </div>
               </div>
 
-              <!-- Level 2 Commission Rate -->
-              <div>
-                <label class="input-label">{{ t('admin.settings.referral.level2Rate') }}</label>
-                <div class="flex items-center gap-2">
-                  <input v-model.number="form.referral_commission_level2_rate" type="number" step="0.01" min="0" max="1" class="input w-32" />
-                  <span class="text-sm text-gray-500">{{ t('admin.settings.referral.rateHint') }}</span>
-                </div>
-              </div>
-
-              <!-- Reward Mode -->
               <div>
                 <label class="input-label">{{ t('admin.settings.referral.rewardMode') }}</label>
                 <select v-model="form.referral_reward_mode" class="input">
-                  <option value="commission">{{ t('admin.settings.referral.rewardModeCommission') }}</option>
-                  <option value="balance">{{ t('admin.settings.referral.rewardModeBalance') }}</option>
+                  <option value="first_paid_order">{{ t('admin.settings.referral.rewardModeFirstPaidOrder') }}</option>
+                  <option value="every_paid_order">{{ t('admin.settings.referral.rewardModeEveryPaidOrder') }}</option>
                 </select>
               </div>
 
-              <!-- Settlement Currency -->
+              <div>
+                <label class="input-label">{{ t('admin.settings.referral.settlementDelayDays') }}</label>
+                <input v-model.number="form.referral_settlement_delay_days" type="number" min="0" class="input w-32" />
+              </div>
+
               <div>
                 <label class="input-label">{{ t('admin.settings.referral.settlementCurrency') }}</label>
                 <select v-model="form.referral_settlement_currency" class="input w-32">
@@ -2286,7 +2286,6 @@
                 </select>
               </div>
 
-              <!-- Allow Manual Input -->
               <div class="flex items-center justify-between">
                 <div>
                   <label class="input-label mb-0">{{ t('admin.settings.referral.allowManualInput') }}</label>
@@ -2295,7 +2294,6 @@
                 <Toggle v-model="form.referral_allow_manual_input" />
               </div>
 
-              <!-- Bind Before First Paid Only -->
               <div class="flex items-center justify-between">
                 <div>
                   <label class="input-label mb-0">{{ t('admin.settings.referral.bindBeforeFirstPaidOnly') }}</label>
@@ -2304,7 +2302,6 @@
                 <Toggle v-model="form.referral_bind_before_first_paid_only" />
               </div>
 
-              <!-- Withdraw Enabled -->
               <div class="flex items-center justify-between">
                 <div>
                   <label class="input-label mb-0">{{ t('admin.settings.referral.withdrawEnabled') }}</label>
@@ -2313,10 +2310,74 @@
                 <Toggle v-model="form.referral_withdraw_enabled" />
               </div>
 
-              <!-- Min Withdraw Amount -->
-              <div v-if="form.referral_withdraw_enabled">
-                <label class="input-label">{{ t('admin.settings.referral.minWithdrawAmount') }}</label>
-                <input v-model.number="form.referral_min_withdraw_amount" type="number" min="0" class="input w-32" />
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.referral.creditConversionEnabled', '转余额功能') }}</label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.referral.creditConversionEnabledDesc', '允许用户将可用返佣直接转入平台余额。') }}</p>
+                </div>
+                <Toggle v-model="form.referral_credit_conversion_enabled" />
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <div>
+                  <label class="input-label">{{ t('admin.settings.referral.withdrawMinAmount') }}</label>
+                  <input v-model.number="form.referral_withdraw_min_amount" type="number" min="0" class="input w-32" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.settings.referral.withdrawMaxAmount') }}</label>
+                  <input v-model.number="form.referral_withdraw_max_amount" type="number" min="0" class="input w-32" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.settings.referral.withdrawDailyLimit') }}</label>
+                  <input v-model.number="form.referral_withdraw_daily_limit" type="number" min="0" class="input w-32" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.settings.referral.withdrawFeeRate') }}</label>
+                  <input v-model.number="form.referral_withdraw_fee_rate" type="number" step="0.0001" min="0" class="input w-32" />
+                </div>
+                <div>
+                  <label class="input-label">{{ t('admin.settings.referral.withdrawFixedFee') }}</label>
+                  <input v-model.number="form.referral_withdraw_fixed_fee" type="number" step="0.01" min="0" class="input w-32" />
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.referral.withdrawManualReviewRequired') }}</label>
+                </div>
+                <Toggle v-model="form.referral_withdraw_manual_review_required" />
+              </div>
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.referral.refundReverseEnabled') }}</label>
+                </div>
+                <Toggle v-model="form.referral_refund_reverse_enabled" />
+              </div>
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <label class="input-label mb-0">{{ t('admin.settings.referral.negativeCarryEnabled') }}</label>
+                </div>
+                <Toggle v-model="form.referral_negative_carry_enabled" />
+              </div>
+
+              <div>
+                <label class="input-label">{{ t('admin.settings.referral.withdrawMethods') }}</label>
+                <div class="mt-2 flex flex-wrap gap-4">
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input v-model="form.referral_withdraw_methods_enabled" type="checkbox" value="alipay" />
+                    <span>{{ t('admin.settings.referral.withdrawMethod.alipay') }}</span>
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input v-model="form.referral_withdraw_methods_enabled" type="checkbox" value="wechat" />
+                    <span>{{ t('admin.settings.referral.withdrawMethod.wechat') }}</span>
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                    <input v-model="form.referral_withdraw_methods_enabled" type="checkbox" value="bank" />
+                    <span>{{ t('admin.settings.referral.withdrawMethod.bank') }}</span>
+                  </label>
+                </div>
               </div>
             </template>
           </div>
@@ -2344,30 +2405,30 @@
               <!-- Chat URL -->
               <div>
                 <label class="input-label">{{ t('admin.settings.lobehub.chatUrl') }}</label>
-                <input v-model="form.lobehub_chat_url" type="text" class="input" placeholder="https://lobechat.example.com" />
+                <input v-model="form.lobehub_chat_url" type="text" class="input" :placeholder="t('admin.settings.lobehub.chatUrlPlaceholder')" />
               </div>
 
               <!-- OIDC Issuer -->
               <div>
                 <label class="input-label">{{ t('admin.settings.lobehub.oidcIssuer') }}</label>
-                <input v-model="form.lobehub_oidc_issuer" type="text" class="input" placeholder="https://your-site.com/api/v1/lobehub/oidc" />
+                <input v-model="form.lobehub_oidc_issuer" type="text" class="input" :placeholder="t('admin.settings.lobehub.oidcIssuerPlaceholder')" />
                 <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.oidcIssuerHint') }}</p>
               </div>
 
               <!-- OIDC Client ID -->
               <div>
-                <label class="input-label">{{ t('admin.settings.lobehub.oidcClientId') }}</label>
-                <input v-model="form.lobehub_oidc_client_id" type="text" class="input" placeholder="lobechat" />
+                <label class="input-label">{{ t('admin.settings.lobehub.clientId') }}</label>
+                <input v-model="form.lobehub_oidc_client_id" type="text" class="input" :placeholder="t('admin.settings.lobehub.clientIdPlaceholder')" />
               </div>
 
               <!-- OIDC Client Secret -->
               <div>
-                <label class="input-label">{{ t('admin.settings.lobehub.oidcClientSecret') }}</label>
+                <label class="input-label">{{ t('admin.settings.lobehub.clientSecret') }}</label>
                 <input
                   v-model="form.lobehub_oidc_client_secret"
                   type="password"
                   class="input"
-                  :placeholder="form.lobehub_oidc_client_secret_configured ? t('admin.settings.lobehub.oidcClientSecretConfigured') : t('admin.settings.lobehub.oidcClientSecretPlaceholder')"
+                  :placeholder="form.lobehub_oidc_client_secret_configured ? t('admin.settings.lobehub.clientSecretConfiguredPlaceholder') : t('admin.settings.lobehub.clientSecretPlaceholder')"
                 />
               </div>
 
@@ -2380,20 +2441,20 @@
               <!-- Default Model -->
               <div>
                 <label class="input-label">{{ t('admin.settings.lobehub.defaultModel') }}</label>
-                <input v-model="form.lobehub_default_model" type="text" class="input" placeholder="claude-sonnet-4-20250514" />
+                <input v-model="form.lobehub_default_model" type="text" class="input" :placeholder="t('admin.settings.lobehub.defaultModelPlaceholder')" />
               </div>
 
               <!-- Runtime Config Version -->
               <div>
                 <label class="input-label">{{ t('admin.settings.lobehub.runtimeConfigVersion') }}</label>
-                <input v-model="form.lobehub_runtime_config_version" type="text" class="input" placeholder="1" />
+                <input v-model="form.lobehub_runtime_config_version" type="text" class="input" :placeholder="t('admin.settings.lobehub.runtimeConfigVersionPlaceholder')" />
               </div>
 
               <!-- Hide Import Button -->
               <div class="flex items-center justify-between">
                 <div>
                   <label class="input-label mb-0">{{ t('admin.settings.lobehub.hideImportButton') }}</label>
-                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.hideImportButtonDesc') }}</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.settings.lobehub.hideImportButtonHint') }}</p>
                 </div>
                 <Toggle v-model="form.hide_lobehub_import_button" />
               </div>
@@ -2834,7 +2895,25 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   payment_enabled: false,  payment_min_amount: 1,  payment_max_amount: 10000,  payment_daily_limit: 50000,  payment_max_pending_orders: 3,  payment_order_timeout_minutes: 30,  payment_balance_disabled: false,  payment_enabled_types: [],  payment_help_image_url: '',  payment_help_text: '',  payment_product_name_prefix: '',  payment_product_name_suffix: '',  payment_load_balance_strategy: 'round-robin',  payment_cancel_rate_limit_enabled: false,  payment_cancel_rate_limit_max: 10,  payment_cancel_rate_limit_window: 1,  payment_cancel_rate_limit_unit: 'day',  payment_cancel_rate_limit_window_mode: 'rolling',
   // Referral
-  referral_enabled: false,  referral_commission_level1_rate: 0,  referral_commission_level2_rate: 0,  referral_reward_mode: 'commission',  referral_allow_manual_input: false,  referral_bind_before_first_paid_only: false,  referral_withdraw_enabled: false,  referral_settlement_currency: 'CNY',  referral_withdraw_methods_enabled: [] as string[],  referral_min_withdraw_amount: 10,
+  referral_enabled: false,
+  referral_level1_enabled: false,
+  referral_level1_rate: 0,
+  referral_reward_mode: 'first_paid_order',
+  referral_settlement_delay_days: 0,
+  referral_allow_manual_input: false,
+  referral_bind_before_first_paid_only: false,
+  referral_withdraw_enabled: false,
+  referral_credit_conversion_enabled: false,
+  referral_withdraw_min_amount: 10,
+  referral_withdraw_max_amount: 0,
+  referral_withdraw_daily_limit: 0,
+  referral_withdraw_fee_rate: 0,
+  referral_withdraw_fixed_fee: 0,
+  referral_withdraw_manual_review_required: false,
+  referral_refund_reverse_enabled: false,
+  referral_negative_carry_enabled: false,
+  referral_settlement_currency: 'CNY',
+  referral_withdraw_methods_enabled: [] as string[],
   table_default_page_size: tablePageSizeDefault,
   table_page_size_options: [10, 20, 50, 100],
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
@@ -3337,15 +3416,24 @@ async function saveSettings() {
       payment_cancel_rate_limit_window_mode: form.payment_cancel_rate_limit_window_mode,
       // Referral configuration
       referral_enabled: form.referral_enabled,
-      referral_commission_level1_rate: Number(form.referral_commission_level1_rate) || 0,
-      referral_commission_level2_rate: Number(form.referral_commission_level2_rate) || 0,
+      referral_level1_enabled: form.referral_level1_enabled,
+      referral_level1_rate: Number(form.referral_level1_rate) || 0,
       referral_reward_mode: form.referral_reward_mode,
+      referral_settlement_delay_days: Number(form.referral_settlement_delay_days) || 0,
       referral_allow_manual_input: form.referral_allow_manual_input,
       referral_bind_before_first_paid_only: form.referral_bind_before_first_paid_only,
       referral_withdraw_enabled: form.referral_withdraw_enabled,
+      referral_credit_conversion_enabled: form.referral_credit_conversion_enabled,
+      referral_withdraw_min_amount: Number(form.referral_withdraw_min_amount) || 0,
+      referral_withdraw_max_amount: Number(form.referral_withdraw_max_amount) || 0,
+      referral_withdraw_daily_limit: Number(form.referral_withdraw_daily_limit) || 0,
+      referral_withdraw_fee_rate: Number(form.referral_withdraw_fee_rate) || 0,
+      referral_withdraw_fixed_fee: Number(form.referral_withdraw_fixed_fee) || 0,
+      referral_withdraw_manual_review_required: form.referral_withdraw_manual_review_required,
+      referral_refund_reverse_enabled: form.referral_refund_reverse_enabled,
+      referral_negative_carry_enabled: form.referral_negative_carry_enabled,
       referral_settlement_currency: form.referral_settlement_currency,
       referral_withdraw_methods_enabled: form.referral_withdraw_methods_enabled,
-      referral_min_withdraw_amount: Number(form.referral_min_withdraw_amount) || 0,
       // LobeHub integration
       lobehub_enabled: form.lobehub_enabled,
       lobehub_chat_url: form.lobehub_chat_url,

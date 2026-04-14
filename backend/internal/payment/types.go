@@ -55,8 +55,16 @@ const (
 
 // Payment notification status values.
 const (
-	NotificationStatusSuccess = "success"
-	NotificationStatusPaid    = "paid"
+	NotificationStatusSuccess    = "success"
+	NotificationStatusPaid       = "paid"
+	NotificationStatusRefunded   = "refunded"
+	NotificationStatusChargeback = "chargeback"
+)
+
+// Payment notification amount semantics.
+const (
+	NotificationAmountDelta = "delta"
+	NotificationAmountTotal = "total"
 )
 
 // Provider-level status constants returned by provider implementations
@@ -124,11 +132,12 @@ type QueryOrderResponse struct {
 
 // PaymentNotification is the parsed result of a webhook/notify callback.
 type PaymentNotification struct {
-	TradeNo string
-	OrderID string
-	Amount  float64
-	Status  string // "success" or "failed"
-	RawData string // Raw notification body for audit
+	TradeNo        string
+	OrderID        string
+	Amount         float64
+	AmountSemantic string // "delta" or "total"
+	Status         string // "success" or "failed"
+	RawData        string // Raw notification body for audit
 }
 
 // RefundRequest contains the parameters for requesting a refund.

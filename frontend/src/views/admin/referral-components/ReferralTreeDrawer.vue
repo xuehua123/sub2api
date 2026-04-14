@@ -30,8 +30,8 @@
               </div>
               <div class="flex gap-4 text-sm">
                 <div class="text-center">
-                  <div class="text-gray-500">{{ t('admin.referral.directSlashViral') }}</div>
-                  <div class="font-bold text-gray-900 dark:text-white">{{ treeRoot.direct_invitees }} / {{ treeRoot.second_level_invitees }} <span class="font-normal text-xs text-gray-400">{{ t('admin.referral.peopleSuffix') }}</span></div>
+                  <div class="text-gray-500">{{ t('admin.referral.directInvitees', '直接邀请') }}</div>
+                  <div class="font-bold text-gray-900 dark:text-white">{{ treeRoot.direct_invitees }} <span class="font-normal text-xs text-gray-400">{{ t('admin.referral.peopleSuffix') }}</span></div>
                 </div>
                 <div class="text-center">
                   <div class="text-gray-500">{{ t('admin.referral.totalCommission') }}</div>
@@ -68,8 +68,7 @@
                       <span>{{ t('admin.referral.codeLabel') }}: <span class="font-mono">{{ child.referral_code }}</span></span>
                     </div>
                     <div class="mt-3 flex gap-4 text-sm">
-                      <div>{{ t('admin.referral.directShort') }}: <span class="font-bold text-gray-900 dark:text-white">{{ child.direct_invitees }}</span></div>
-                      <div>{{ t('admin.referral.viralShort') }}: <span class="font-bold text-gray-900 dark:text-white">{{ child.second_level_invitees }}</span></div>
+                      <div>{{ t('admin.referral.directInvitees', '直接邀请') }}: <span class="font-bold text-gray-900 dark:text-white">{{ child.direct_invitees }}</span></div>
                       <div>{{ t('admin.referral.totalContribution') }}: <span class="font-bold text-green-600">￥{{ formatMoney(child.total_commission) }}</span></div>
                     </div>
                   </div>
@@ -82,20 +81,6 @@
                   >
                     {{ t('admin.referral.manageThisPerson') }}
                   </button>
-                </div>
-              </div>
-
-              <!-- 二级裂变精简名单 -->
-              <div v-if="child.children && child.children.length > 0" class="mt-4 border-t border-gray-200 pt-3 dark:border-dark-700">
-                <div class="text-xs font-medium text-gray-500 mb-2">{{ t('admin.referral.theirInvitesViral') }}:</div>
-                <div class="flex flex-wrap gap-2">
-                  <span 
-                    v-for="grand in child.children" 
-                    :key="grand.user_id"
-                    class="inline-flex items-center rounded bg-white px-2 py-1 text-xs text-gray-600 border border-gray-200 dark:bg-dark-900 dark:border-dark-600 dark:text-gray-400"
-                  >
-                    {{ grand.email }}
-                  </span>
                 </div>
               </div>
             </div>

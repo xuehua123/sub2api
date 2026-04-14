@@ -153,10 +153,8 @@
                   <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Code: {{ item.referral_code || t('admin.referral.notSet') }}</div>
                 </td>
                 <td class="px-5 py-4 text-center">
-                  <div class="flex items-center justify-center gap-3 text-xs">
-                    <span class="text-gray-600 dark:text-gray-400">{{ t('admin.referral.directShort') }} <strong class="text-gray-900 dark:text-gray-200">{{ item.direct_invitees }}</strong></span>
-                    <span class="w-px h-3 bg-gray-300 dark:bg-dark-600"></span>
-                    <span class="text-gray-600 dark:text-gray-400">{{ t('admin.referral.viralShort') }} <strong class="text-gray-900 dark:text-gray-200">{{ item.second_level_invitees }}</strong></span>
+                  <div class="flex items-center justify-center text-xs">
+                    <span class="text-gray-600 dark:text-gray-400">{{ t('admin.referral.directInvitees', '直接邀请') }} <strong class="text-gray-900 dark:text-gray-200">{{ item.direct_invitees }}</strong></span>
                   </div>
                 </td>
                 <td class="px-5 py-4 text-right">

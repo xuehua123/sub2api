@@ -193,6 +193,25 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:         paymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:           paymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:           paymentCfg.CancelRateLimitMode,
+		ReferralEnabled:                      settings.ReferralEnabled,
+		ReferralLevel1Enabled:                settings.ReferralLevel1Enabled,
+		ReferralLevel1Rate:                   settings.ReferralLevel1Rate,
+		ReferralRewardMode:                   settings.ReferralRewardMode,
+		ReferralSettlementDelayDays:          settings.ReferralSettlementDelayDays,
+		ReferralBindBeforeFirstPaidOnly:      settings.ReferralBindBeforeFirstPaidOnly,
+		ReferralAllowManualInput:             settings.ReferralAllowManualInput,
+		ReferralWithdrawEnabled:              settings.ReferralWithdrawEnabled,
+		ReferralCreditConversionEnabled:      settings.ReferralCreditConversionEnabled,
+		ReferralWithdrawMinAmount:            settings.ReferralWithdrawMinAmount,
+		ReferralWithdrawMaxAmount:            settings.ReferralWithdrawMaxAmount,
+		ReferralWithdrawDailyLimit:           settings.ReferralWithdrawDailyLimit,
+		ReferralWithdrawFeeRate:              settings.ReferralWithdrawFeeRate,
+		ReferralWithdrawFixedFee:             settings.ReferralWithdrawFixedFee,
+		ReferralWithdrawManualReviewRequired: settings.ReferralWithdrawManualReviewRequired,
+		ReferralRefundReverseEnabled:         settings.ReferralRefundReverseEnabled,
+		ReferralNegativeCarryEnabled:         settings.ReferralNegativeCarryEnabled,
+		ReferralSettlementCurrency:           settings.ReferralSettlementCurrency,
+		ReferralWithdrawMethodsEnabled:       settings.ReferralWithdrawMethodsEnabled,
 		LobeHubEnabled:                       settings.LobeHubEnabled,
 		LobeHubChatURL:                       settings.LobeHubChatURL,
 		LobeHubOIDCIssuer:                    settings.LobeHubOIDCIssuer,
@@ -334,6 +353,27 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitWindow  *int    `json:"payment_cancel_rate_limit_window"`
 	PaymentCancelRateLimitUnit    *string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
+
+	// Referral configuration
+	ReferralEnabled                      *bool    `json:"referral_enabled"`
+	ReferralLevel1Enabled                *bool    `json:"referral_level1_enabled"`
+	ReferralLevel1Rate                   *float64 `json:"referral_level1_rate"`
+	ReferralRewardMode                   *string  `json:"referral_reward_mode"`
+	ReferralSettlementDelayDays          *int     `json:"referral_settlement_delay_days"`
+	ReferralBindBeforeFirstPaidOnly      *bool    `json:"referral_bind_before_first_paid_only"`
+	ReferralAllowManualInput             *bool    `json:"referral_allow_manual_input"`
+	ReferralWithdrawEnabled              *bool    `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled      *bool    `json:"referral_credit_conversion_enabled"`
+	ReferralWithdrawMinAmount            *float64 `json:"referral_withdraw_min_amount"`
+	ReferralWithdrawMaxAmount            *float64 `json:"referral_withdraw_max_amount"`
+	ReferralWithdrawDailyLimit           *int     `json:"referral_withdraw_daily_limit"`
+	ReferralWithdrawFeeRate              *float64 `json:"referral_withdraw_fee_rate"`
+	ReferralWithdrawFixedFee             *float64 `json:"referral_withdraw_fixed_fee"`
+	ReferralWithdrawManualReviewRequired *bool    `json:"referral_withdraw_manual_review_required"`
+	ReferralRefundReverseEnabled         *bool    `json:"referral_refund_reverse_enabled"`
+	ReferralNegativeCarryEnabled         *bool    `json:"referral_negative_carry_enabled"`
+	ReferralSettlementCurrency           *string  `json:"referral_settlement_currency"`
+	ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
 
 	// LobeHub integration
 	LobeHubEnabled              *bool   `json:"lobehub_enabled"`
@@ -901,6 +941,120 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		ReferralEnabled: func() bool {
+			if req.ReferralEnabled != nil {
+				return *req.ReferralEnabled
+			}
+			return previousSettings.ReferralEnabled
+		}(),
+		ReferralLevel1Enabled: func() bool {
+			if req.ReferralLevel1Enabled != nil {
+				return *req.ReferralLevel1Enabled
+			}
+			return previousSettings.ReferralLevel1Enabled
+		}(),
+		ReferralLevel1Rate: func() float64 {
+			if req.ReferralLevel1Rate != nil {
+				return *req.ReferralLevel1Rate
+			}
+			return previousSettings.ReferralLevel1Rate
+		}(),
+		ReferralRewardMode: func() string {
+			if req.ReferralRewardMode != nil {
+				return *req.ReferralRewardMode
+			}
+			return previousSettings.ReferralRewardMode
+		}(),
+		ReferralSettlementDelayDays: func() int {
+			if req.ReferralSettlementDelayDays != nil {
+				return *req.ReferralSettlementDelayDays
+			}
+			return previousSettings.ReferralSettlementDelayDays
+		}(),
+		ReferralBindBeforeFirstPaidOnly: func() bool {
+			if req.ReferralBindBeforeFirstPaidOnly != nil {
+				return *req.ReferralBindBeforeFirstPaidOnly
+			}
+			return previousSettings.ReferralBindBeforeFirstPaidOnly
+		}(),
+		ReferralAllowManualInput: func() bool {
+			if req.ReferralAllowManualInput != nil {
+				return *req.ReferralAllowManualInput
+			}
+			return previousSettings.ReferralAllowManualInput
+		}(),
+		ReferralWithdrawEnabled: func() bool {
+			if req.ReferralWithdrawEnabled != nil {
+				return *req.ReferralWithdrawEnabled
+			}
+			return previousSettings.ReferralWithdrawEnabled
+		}(),
+		ReferralCreditConversionEnabled: func() bool {
+			if req.ReferralCreditConversionEnabled != nil {
+				return *req.ReferralCreditConversionEnabled
+			}
+			return previousSettings.ReferralCreditConversionEnabled
+		}(),
+		ReferralWithdrawMinAmount: func() float64 {
+			if req.ReferralWithdrawMinAmount != nil {
+				return *req.ReferralWithdrawMinAmount
+			}
+			return previousSettings.ReferralWithdrawMinAmount
+		}(),
+		ReferralWithdrawMaxAmount: func() float64 {
+			if req.ReferralWithdrawMaxAmount != nil {
+				return *req.ReferralWithdrawMaxAmount
+			}
+			return previousSettings.ReferralWithdrawMaxAmount
+		}(),
+		ReferralWithdrawDailyLimit: func() int {
+			if req.ReferralWithdrawDailyLimit != nil {
+				return *req.ReferralWithdrawDailyLimit
+			}
+			return previousSettings.ReferralWithdrawDailyLimit
+		}(),
+		ReferralWithdrawFeeRate: func() float64 {
+			if req.ReferralWithdrawFeeRate != nil {
+				return *req.ReferralWithdrawFeeRate
+			}
+			return previousSettings.ReferralWithdrawFeeRate
+		}(),
+		ReferralWithdrawFixedFee: func() float64 {
+			if req.ReferralWithdrawFixedFee != nil {
+				return *req.ReferralWithdrawFixedFee
+			}
+			return previousSettings.ReferralWithdrawFixedFee
+		}(),
+		ReferralWithdrawManualReviewRequired: func() bool {
+			if req.ReferralWithdrawManualReviewRequired != nil {
+				return *req.ReferralWithdrawManualReviewRequired
+			}
+			return previousSettings.ReferralWithdrawManualReviewRequired
+		}(),
+		ReferralRefundReverseEnabled: func() bool {
+			if req.ReferralRefundReverseEnabled != nil {
+				return *req.ReferralRefundReverseEnabled
+			}
+			return previousSettings.ReferralRefundReverseEnabled
+		}(),
+		ReferralNegativeCarryEnabled: func() bool {
+			if req.ReferralNegativeCarryEnabled != nil {
+				return *req.ReferralNegativeCarryEnabled
+			}
+			return previousSettings.ReferralNegativeCarryEnabled
+		}(),
+		ReferralSettlementCurrency: func() string {
+			if req.ReferralSettlementCurrency != nil {
+				return *req.ReferralSettlementCurrency
+			}
+			return previousSettings.ReferralSettlementCurrency
+		}(),
+		ReferralWithdrawMethodsEnabled: func() []string {
+			if req.ReferralWithdrawMethodsEnabled != nil {
+				return req.ReferralWithdrawMethodsEnabled
+			}
+			return previousSettings.ReferralWithdrawMethodsEnabled
+		}(),
 		LobeHubEnabled: func() bool {
 			if req.LobeHubEnabled != nil {
 				return *req.LobeHubEnabled
@@ -1119,6 +1273,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentCancelRateLimitWindow:         updatedPaymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:           updatedPaymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:           updatedPaymentCfg.CancelRateLimitMode,
+		ReferralEnabled:                      updatedSettings.ReferralEnabled,
+		ReferralLevel1Enabled:                updatedSettings.ReferralLevel1Enabled,
+		ReferralLevel1Rate:                   updatedSettings.ReferralLevel1Rate,
+		ReferralRewardMode:                   updatedSettings.ReferralRewardMode,
+		ReferralSettlementDelayDays:          updatedSettings.ReferralSettlementDelayDays,
+		ReferralBindBeforeFirstPaidOnly:      updatedSettings.ReferralBindBeforeFirstPaidOnly,
+		ReferralAllowManualInput:             updatedSettings.ReferralAllowManualInput,
+		ReferralWithdrawEnabled:              updatedSettings.ReferralWithdrawEnabled,
+		ReferralCreditConversionEnabled:      updatedSettings.ReferralCreditConversionEnabled,
+		ReferralWithdrawMinAmount:            updatedSettings.ReferralWithdrawMinAmount,
+		ReferralWithdrawMaxAmount:            updatedSettings.ReferralWithdrawMaxAmount,
+		ReferralWithdrawDailyLimit:           updatedSettings.ReferralWithdrawDailyLimit,
+		ReferralWithdrawFeeRate:              updatedSettings.ReferralWithdrawFeeRate,
+		ReferralWithdrawFixedFee:             updatedSettings.ReferralWithdrawFixedFee,
+		ReferralWithdrawManualReviewRequired: updatedSettings.ReferralWithdrawManualReviewRequired,
+		ReferralRefundReverseEnabled:         updatedSettings.ReferralRefundReverseEnabled,
+		ReferralNegativeCarryEnabled:         updatedSettings.ReferralNegativeCarryEnabled,
+		ReferralSettlementCurrency:           updatedSettings.ReferralSettlementCurrency,
+		ReferralWithdrawMethodsEnabled:       updatedSettings.ReferralWithdrawMethodsEnabled,
 		LobeHubEnabled:                       updatedSettings.LobeHubEnabled,
 		LobeHubChatURL:                       updatedSettings.LobeHubChatURL,
 		LobeHubOIDCIssuer:                    updatedSettings.LobeHubOIDCIssuer,
@@ -1369,6 +1542,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.BackendModeEnabled != after.BackendModeEnabled {
 		changed = append(changed, "backend_mode_enabled")
+	}
+	if before.ReferralWithdrawEnabled != after.ReferralWithdrawEnabled {
+		changed = append(changed, "referral_withdraw_enabled")
+	}
+	if before.ReferralCreditConversionEnabled != after.ReferralCreditConversionEnabled {
+		changed = append(changed, "referral_credit_conversion_enabled")
 	}
 	if before.PurchaseSubscriptionEnabled != after.PurchaseSubscriptionEnabled {
 		changed = append(changed, "purchase_subscription_enabled")

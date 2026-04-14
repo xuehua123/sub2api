@@ -122,8 +122,17 @@ export interface PublicSettings {
   referral_allow_manual_input: boolean
   referral_bind_before_first_paid_only: boolean
   referral_withdraw_enabled: boolean
+  referral_credit_conversion_enabled: boolean
   referral_settlement_currency: string
   referral_withdraw_methods_enabled: string[]
+  // LobeHub public settings
+  lobehub_enabled: boolean
+  lobehub_chat_url: string
+  lobehub_oidc_issuer: string
+  lobehub_default_provider: string
+  lobehub_default_model: string
+  lobehub_runtime_config_version: string
+  hide_lobehub_import_button: boolean
 }
 
 export interface AuthResponse {
@@ -1287,6 +1296,7 @@ export interface UpdateUserRequest {
   balance?: number
   concurrency?: number
   status?: 'active' | 'disabled'
+  referral_enabled?: boolean
   allowed_groups?: number[] | null
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
@@ -1672,6 +1682,7 @@ export interface ReferralCenterOverview {
   settlement_currency: string
   withdraw_methods_enabled: string[]
   referral_withdraw_enabled: boolean
+  referral_credit_conversion_enabled: boolean
 }
 
 export interface CommissionLedgerEntry {

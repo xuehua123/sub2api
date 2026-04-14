@@ -709,19 +709,15 @@ const adminNavItems = computed((): NavItem[] => {
         ]
       : []),
     { path: '/admin/usage', label: t('nav.usage'), icon: ChartIcon },
-    ...(adminSettingsStore.referralEnabled
-      ? [
-          {
-            path: '/admin/referral',
-            label: t('nav.referral'),
-            icon: ReferralIcon,
-            children: [
-              { path: '/admin/referral', label: t('nav.referralOverview'), icon: ChartIcon },
-              { path: '/admin/referral-withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon },
-            ],
-          },
-        ]
-      : [])
+    {
+      path: '/admin/referral',
+      label: t('nav.referral'),
+      icon: ReferralIcon,
+      children: [
+        { path: '/admin/referral', label: t('nav.referralOverview'), icon: ChartIcon },
+        { path: '/admin/referral-withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon },
+      ],
+    }
   ]
 
   // 简单模式下，在系统设置前插入 API密钥

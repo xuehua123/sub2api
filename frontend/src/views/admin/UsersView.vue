@@ -239,7 +239,7 @@
           :columns="columns"
           :data="users"
           :loading="loading"
-          :actions-count="7"
+          :actions-count="8"
           :server-side-sort="true"
           default-sort-key="created_at"
           default-sort-order="desc"
@@ -455,6 +455,17 @@
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
 
+          <template #cell-referral_status="{ row }">
+            <span
+              :class="[
+                'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                getReferralStatusBadgeClass(row)
+              ]"
+            >
+              {{ getReferralStatusLabel(row) }}
+            </span>
+          </template>
+
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
               <!-- Edit Button -->
@@ -480,6 +491,25 @@
                 <Icon v-if="row.status === 'active'" name="ban" size="sm" />
                 <Icon v-else name="checkCircle" size="sm" />
                 <span class="text-xs">{{ row.status === 'active' ? t('admin.users.disable') : t('admin.users.enable') }}</span>
+              </button>
+
+              <button
+                v-if="row.role !== 'admin' && !adminSettingsStore.referralEnabled"
+                @click="handleToggleReferral(row)"
+                :disabled="isReferralToggleLoading(row.id)"
+                :class="[
+                  'flex min-w-[68px] flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                  row.referral_enabled
+                    ? 'hover:bg-amber-50 hover:text-amber-600 dark:hover:bg-amber-900/20 dark:hover:text-amber-400'
+                    : 'hover:bg-violet-50 hover:text-violet-600 dark:hover:bg-violet-900/20 dark:hover:text-violet-400'
+                ]"
+              >
+                <Icon
+                  :name="isReferralToggleLoading(row.id) ? 'refresh' : (row.referral_enabled ? 'xCircle' : 'gift')"
+                  size="sm"
+                  :class="{ 'animate-spin': isReferralToggleLoading(row.id) }"
+                />
+                <span class="text-xs">{{ row.referral_enabled ? t('admin.users.disableReferral') : t('admin.users.enableReferral') }}</span>
               </button>
 
               <!-- More Actions Menu Trigger -->
@@ -610,6 +640,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
+import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { formatDateTime } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
@@ -638,6 +669,7 @@ import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryM
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
 
 const appStore = useAppStore()
+const adminSettingsStore = useAdminSettingsStore()
 
 // Generate dynamic attribute columns from enabled definitions
 const attributeColumns = computed<Column[]>(() =>
@@ -700,6 +732,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'usage', label: t('admin.users.columns.usage'), sortable: false },
   { key: 'concurrency', label: t('admin.users.columns.concurrency'), sortable: true },
   { key: 'status', label: t('admin.users.columns.status'), sortable: true },
+  { key: 'referral_status', label: t('admin.users.columns.referralStatus'), sortable: false },
   { key: 'created_at', label: t('admin.users.columns.created'), sortable: true },
   { key: 'actions', label: t('admin.users.columns.actions'), sortable: false }
 ])
@@ -782,6 +815,7 @@ const columns = computed<Column[]>(() =>
 )
 
 const users = ref<AdminUser[]>([])
+const referralTogglingUserIds = reactive(new Set<number>())
 const loading = ref(false)
 const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
@@ -1293,6 +1327,64 @@ const handleToggleStatus = async (user: AdminUser) => {
   }
 }
 
+const getReferralStatusLabel = (user: AdminUser) => {
+  if (adminSettingsStore.referralEnabled) {
+    return t('admin.users.referralGlobalEnabled')
+  }
+  return user.referral_enabled
+    ? t('admin.users.referralUserEnabled')
+    : t('admin.users.referralDisabled')
+}
+
+const getReferralStatusBadgeClass = (user: AdminUser) => {
+  if (adminSettingsStore.referralEnabled) {
+    return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  }
+  return user.referral_enabled
+    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300'
+    : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+}
+
+const isReferralToggleLoading = (userId: number) => referralTogglingUserIds.has(userId)
+
+const handleToggleReferral = async (user: AdminUser) => {
+  if (referralTogglingUserIds.has(user.id)) return
+
+  const nextValue = !user.referral_enabled
+  const targetUser = users.value.find((item) => item.id === user.id)
+  const previousValue = targetUser?.referral_enabled ?? user.referral_enabled
+
+  if (targetUser) {
+    targetUser.referral_enabled = nextValue
+  }
+  referralTogglingUserIds.add(user.id)
+
+  try {
+    await adminAPI.users.update(user.id, { referral_enabled: nextValue })
+
+    if (targetUser) {
+      try {
+        const refreshedUser = await adminAPI.users.getById(user.id)
+        Object.assign(targetUser, refreshedUser)
+      } catch (refreshError) {
+        console.error('Error refreshing toggled user:', refreshError)
+      }
+    }
+
+    appStore.showSuccess(
+      nextValue ? t('admin.users.referralEnabledSuccess') : t('admin.users.referralDisabledSuccess')
+    )
+  } catch (error: any) {
+    if (targetUser) {
+      targetUser.referral_enabled = previousValue
+    }
+    appStore.showError(error.response?.data?.detail || t('admin.users.failedToToggleReferral'))
+    console.error('Error toggling referral status:', error)
+  } finally {
+    referralTogglingUserIds.delete(user.id)
+  }
+}
+
 const handleViewApiKeys = (user: AdminUser) => {
   viewingUser.value = user
   showApiKeysModal.value = true
@@ -1392,7 +1484,10 @@ const handleScroll = () => {
 }
 
 onMounted(async () => {
-  await loadAttributeDefinitions()
+  await Promise.all([
+    loadAttributeDefinitions(),
+    adminSettingsStore.fetch()
+  ])
   loadSavedFilters()
   loadSavedColumns()
   loadUsers()

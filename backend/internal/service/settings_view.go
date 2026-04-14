@@ -128,6 +128,7 @@ type SystemSettings struct {
 	ReferralBindBeforeFirstPaidOnly      bool
 	ReferralAllowManualInput             bool
 	ReferralWithdrawEnabled              bool
+	ReferralCreditConversionEnabled      bool
 	ReferralWithdrawMinAmount            float64
 	ReferralWithdrawMaxAmount            float64
 	ReferralWithdrawDailyLimit           int
@@ -183,6 +184,7 @@ type PublicSettings struct {
 	ReferralAllowManualInput        bool
 	ReferralBindBeforeFirstPaidOnly bool
 	ReferralWithdrawEnabled         bool
+	ReferralCreditConversionEnabled bool
 	ReferralSettlementCurrency      string
 	ReferralWithdrawMethodsEnabled  []string
 
