@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -925,11 +927,14 @@ func sharedCookieDomain(host string) string {
 	if hostname == "" || strings.EqualFold(hostname, "localhost") || net.ParseIP(hostname) != nil {
 		return ""
 	}
-	parts := strings.Split(hostname, ".")
-	if len(parts) < 2 {
+	registrableDomain, err := publicsuffix.EffectiveTLDPlusOne(hostname)
+	if err != nil || registrableDomain == "" {
 		return ""
 	}
-	return "." + strings.Join(parts[len(parts)-2:], ".")
+	if strings.EqualFold(hostname, registrableDomain) {
+		return ""
+	}
+	return "." + registrableDomain
 }
 
 func requestIsHTTPS(r *http.Request) bool {

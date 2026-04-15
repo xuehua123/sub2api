@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -125,9 +126,56 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		if err == nil {
 			return values.Get("out_trade_no")
 		}
+	case payment.TypeAlipay:
+		values, err := url.ParseQuery(rawBody)
+		if err == nil {
+			return values.Get("out_trade_no")
+		}
+	case payment.TypeStripe:
+		return extractStripeOutTradeNo(rawBody)
 	}
-	// For other providers (Stripe, Alipay direct, WxPay direct), the registry
-	// typically has only one instance, so no instance lookup is needed.
+	return ""
+}
+
+func extractStripeOutTradeNo(rawBody string) string {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(rawBody), &payload); err != nil {
+		return ""
+	}
+
+	if data, ok := payload["data"].(map[string]any); ok {
+		if object, ok := data["object"].(map[string]any); ok {
+			if orderID := extractStripeOrderIDFromObject(object); orderID != "" {
+				return orderID
+			}
+		}
+	}
+	return ""
+}
+
+func extractStripeOrderIDFromObject(object map[string]any) string {
+	if object == nil {
+		return ""
+	}
+
+	if metadata, ok := object["metadata"].(map[string]any); ok {
+		if orderID, ok := metadata["orderId"].(string); ok {
+			return strings.TrimSpace(orderID)
+		}
+	}
+
+	if paymentIntent, ok := object["payment_intent"].(map[string]any); ok {
+		if orderID := extractStripeOrderIDFromObject(paymentIntent); orderID != "" {
+			return orderID
+		}
+	}
+
+	if charge, ok := object["charge"].(map[string]any); ok {
+		if orderID := extractStripeOrderIDFromObject(charge); orderID != "" {
+			return orderID
+		}
+	}
+
 	return ""
 }
 

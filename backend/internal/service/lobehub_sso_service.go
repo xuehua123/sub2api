@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/net/publicsuffix"
 )
 
 const lobeHubSettingsSchemaVersion = "settings-url-share-v1"
@@ -489,7 +490,7 @@ func sanitizeLobeHubReturnURL(chatURL string, raw string) (string, error) {
 	if err != nil || (returnParsed.Scheme != "http" && returnParsed.Scheme != "https") {
 		return "", ErrLobeHubInvalidReturnURL
 	}
-	if !strings.EqualFold(returnParsed.Hostname(), chatParsed.Hostname()) {
+	if !strings.EqualFold(returnParsed.Scheme, chatParsed.Scheme) || !strings.EqualFold(returnParsed.Host, chatParsed.Host) {
 		return "", ErrLobeHubInvalidReturnURL
 	}
 	return returnParsed.String(), nil
@@ -504,11 +505,14 @@ func resolveSharedCookieDomain(chatURL string) string {
 	if host == "" || strings.EqualFold(host, "localhost") || net.ParseIP(host) != nil {
 		return ""
 	}
-	parts := strings.Split(host, ".")
-	if len(parts) < 2 {
+	registrableDomain, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil || registrableDomain == "" {
 		return ""
 	}
-	return "." + strings.Join(parts[len(parts)-2:], ".")
+	if strings.EqualFold(host, registrableDomain) {
+		return ""
+	}
+	return "." + registrableDomain
 }
 
 func lobeHubTargetSigningKey(privateKey *rsa.PrivateKey) []byte {

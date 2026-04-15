@@ -60,9 +60,6 @@ func (m *mockUserRepo) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int
 func (m *mockUserRepo) UpdateTotpSecret(context.Context, int64, *string) error { return nil }
 func (m *mockUserRepo) EnableTotp(context.Context, int64) error                { return nil }
 func (m *mockUserRepo) DisableTotp(context.Context, int64) error               { return nil }
-func (m *mockUserRepo) UpdateDefaultChatAPIKeyID(context.Context, int64, *int64) error {
-	return nil
-}
 
 // --- mock: APIKeyAuthCacheInvalidator ---
 

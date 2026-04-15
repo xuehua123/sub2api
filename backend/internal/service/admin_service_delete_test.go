@@ -116,9 +116,6 @@ func (s *userRepoStub) EnableTotp(ctx context.Context, userID int64) error {
 func (s *userRepoStub) DisableTotp(ctx context.Context, userID int64) error {
 	panic("unexpected DisableTotp call")
 }
-func (s *userRepoStub) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
-	panic("unexpected UpdateDefaultChatAPIKeyID call")
-}
 
 type groupRepoStub struct {
 	affectedUserIDs []int64

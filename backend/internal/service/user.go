@@ -34,9 +34,6 @@ type User struct {
 	// Referral
 	ReferralEnabled bool
 
-	// LobeHub
-	DefaultChatAPIKeyID *int64
-
 	APIKeys       []APIKey
 	Subscriptions []UserSubscription
 }

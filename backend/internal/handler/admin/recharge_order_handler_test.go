@@ -226,6 +226,16 @@ func (s *rechargeOrderHandlerCommissionRepoStub) SumRewardBucketAmount(ctx conte
 	return 0, nil
 }
 
+func (s *rechargeOrderHandlerCommissionRepoStub) GetRewardByID(ctx context.Context, rewardID int64) (*service.CommissionReward, error) {
+	for _, reward := range s.rewards {
+		if reward.ID == rewardID {
+			cloned := reward
+			return &cloned, nil
+		}
+	}
+	return nil, service.ErrCommissionWithdrawalNotFound
+}
+
 func (s *rechargeOrderHandlerCommissionRepoStub) SumRewardBucketAmountForUpdate(ctx context.Context, rewardID int64, bucket string, forUpdate bool) (float64, error) {
 	return s.SumRewardBucketAmount(ctx, rewardID, bucket)
 }

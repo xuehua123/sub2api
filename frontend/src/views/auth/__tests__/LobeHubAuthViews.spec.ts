@@ -56,11 +56,10 @@ vi.mock('vue-router', () => ({
   })
 }))
 
-vi.mock('@/api/lobehub', () => ({
-  createLobeHubOIDCWebSession: createOIDCWebSession
-}))
-
 vi.mock('@/api', () => ({
+  lobehubAPI: {
+    createOIDCWebSession
+  },
   keysAPI: {
     list: listKeys
   }
@@ -78,6 +77,12 @@ import LobeHubSelectKeyView from '../LobeHubSelectKeyView.vue'
 
 const authLayoutStub = {
   template: '<div><slot /><slot name="footer" /></div>'
+}
+
+const routerLinkStub = {
+  name: 'RouterLink',
+  props: ['to'],
+  template: '<a data-testid="router-link-stub"><slot /></a>'
 }
 
 describe('LobeHub auth views', () => {
@@ -121,7 +126,8 @@ describe('LobeHub auth views', () => {
       global: {
         stubs: {
           AuthLayout: authLayoutStub,
-          Icon: true
+          Icon: true,
+          RouterLink: routerLinkStub
         }
       }
     })
@@ -151,7 +157,8 @@ describe('LobeHub auth views', () => {
       global: {
         stubs: {
           AuthLayout: authLayoutStub,
-          Icon: true
+          Icon: true,
+          RouterLink: routerLinkStub
         }
       }
     })
@@ -245,7 +252,8 @@ describe('LobeHub auth views', () => {
       global: {
         stubs: {
           AuthLayout: authLayoutStub,
-          Icon: true
+          Icon: true,
+          RouterLink: routerLinkStub
         }
       }
     })
@@ -254,8 +262,8 @@ describe('LobeHub auth views', () => {
     expect(wrapper.text()).toContain('Main Key')
     expect(wrapper.text()).not.toContain('Disabled Key')
 
-    await wrapper.get('[data-testid="lobehub-key-option-7"]').trigger('click')
-    await wrapper.get('[data-testid="lobehub-select-key-submit"]').trigger('click')
+    await wrapper.get('input[value="7"]').setValue()
+    await wrapper.get('button').trigger('click')
     await flushPromises()
 
     expect(createOIDCWebSession).toHaveBeenCalledWith({
@@ -287,20 +295,20 @@ describe('LobeHub auth views', () => {
       global: {
         stubs: {
           AuthLayout: authLayoutStub,
-          Icon: true
+          Icon: true,
+          RouterLink: routerLinkStub
         }
       }
     })
     await flushPromises()
 
-    await wrapper.get('button').trigger('click')
-
-    expect(routerPush).toHaveBeenCalledWith({
+    expect(wrapper.getComponent({ name: 'RouterLink' }).props('to')).toEqual({
       path: '/keys',
       query: {
         openCreate: '1',
         redirect: '/auth/lobehub-select-key?resume=resume-4&return_url=https://chat.example.com/chat'
       }
     })
+    expect(routerPush).not.toHaveBeenCalled()
   })
 })

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -151,7 +152,16 @@ func (s *PaymentService) checkPaid(ctx context.Context, o *dbent.PaymentOrder) s
 		return ""
 	}
 	if resp.Status == payment.ProviderStatusPaid {
-		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{TradeNo: o.PaymentTradeNo, OrderID: o.OutTradeNo, Amount: resp.Amount, Status: payment.ProviderStatusSuccess}, prov.ProviderKey()); err != nil {
+		notificationTradeNo := strings.TrimSpace(resp.TradeNo)
+		if notificationTradeNo == "" {
+			notificationTradeNo = strings.TrimSpace(tradeNo)
+		}
+		if err := s.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+			TradeNo: notificationTradeNo,
+			OrderID: o.OutTradeNo,
+			Amount:  resp.Amount,
+			Status:  payment.NotificationStatusSuccess,
+		}, prov.ProviderKey()); err != nil {
 			slog.Error("fulfillment failed during checkPaid", "orderID", o.ID, "error", err)
 			// Still return already_paid — order was paid, fulfillment can be retried
 		}

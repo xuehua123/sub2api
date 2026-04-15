@@ -91,7 +91,10 @@ func (r *commissionRepository) ListRewardsByRechargeOrder(ctx context.Context, r
 func (r *commissionRepository) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]service.CommissionReward, error) {
 	models, err := clientFromContext(ctx, r.client).CommissionReward.Query().
 		Where(
-			commissionreward.StatusEQ(service.CommissionRewardStatusPending),
+			commissionreward.StatusIn(
+				service.CommissionRewardStatusPending,
+				service.CommissionRewardStatusPartiallyReversed,
+			),
 			commissionreward.AvailableAtLTE(readyAt),
 		).
 		ForUpdate().

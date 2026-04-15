@@ -52,15 +52,15 @@ type ReferralCenterCommissionRepository interface {
 
 // UserInviteeReward is a user-facing view of a commission reward with enriched order info.
 type UserInviteeReward struct {
-	ID                 int64      `json:"id"`
-	RechargeOrderID    int64      `json:"recharge_order_id"`
-	ExternalOrderID    string     `json:"external_order_id,omitempty"`
-	OrderPaidAmount    float64    `json:"order_paid_amount"`
-	RateSnapshot       float64    `json:"rate_snapshot"`
-	RewardAmount       float64    `json:"reward_amount"`
-	Currency           string     `json:"currency"`
-	Status             string     `json:"status"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ID              int64     `json:"id"`
+	RechargeOrderID int64     `json:"recharge_order_id"`
+	ExternalOrderID string    `json:"external_order_id,omitempty"`
+	OrderPaidAmount float64   `json:"order_paid_amount"`
+	RateSnapshot    float64   `json:"rate_snapshot"`
+	RewardAmount    float64   `json:"reward_amount"`
+	Currency        string    `json:"currency"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type ReferralCenterService struct {

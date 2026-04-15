@@ -42,7 +42,7 @@ type ValidateReferralCodeRequest struct {
 type ValidateReferralCodeResponse struct {
 	Valid               bool   `json:"valid"`
 	ErrorCode           string `json:"error_code,omitempty"`
-	ReferrerUsername     string `json:"referrer_username,omitempty"`
+	ReferrerUsername    string `json:"referrer_username,omitempty"`
 	ReferrerEmailMasked string `json:"referrer_email_masked,omitempty"`
 }
 

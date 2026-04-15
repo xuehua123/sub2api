@@ -62,17 +62,17 @@ const (
 )
 
 var (
-	ErrRechargeOrderNotFound                = infraerrors.NotFound("RECHARGE_ORDER_NOT_FOUND", "recharge order not found")
-	ErrRechargeOrderConflict                = infraerrors.Conflict("RECHARGE_ORDER_CONFLICT", "recharge order already exists for a different user")
-	ErrRechargeOrderCurrencyInvalid         = infraerrors.BadRequest("RECHARGE_ORDER_CURRENCY_INVALID", "recharge order only supports CNY settlement")
-	ErrRechargeOrderAmountInvalid           = infraerrors.BadRequest("RECHARGE_ORDER_AMOUNT_INVALID", "paid amount must be greater than zero")
-	ErrCommissionWithdrawalNotFound         = infraerrors.NotFound("COMMISSION_WITHDRAWAL_NOT_FOUND", "commission withdrawal not found")
-	ErrCommissionWithdrawAmountInvalid      = infraerrors.BadRequest("COMMISSION_WITHDRAW_AMOUNT_INVALID", "withdraw amount is invalid")
-	ErrCommissionWithdrawInsufficient       = infraerrors.BadRequest("COMMISSION_WITHDRAW_INSUFFICIENT", "insufficient available commission")
-	ErrCommissionWithdrawMethodInvalid      = infraerrors.BadRequest("COMMISSION_WITHDRAW_METHOD_INVALID", "withdraw method is invalid")
-	ErrCommissionWithdrawDailyLimitExceeded = infraerrors.BadRequest("COMMISSION_WITHDRAW_DAILY_LIMIT_EXCEEDED", "daily withdrawal limit exceeded")
-	ErrCommissionWithdrawalConflict         = infraerrors.Conflict("COMMISSION_WITHDRAWAL_CONFLICT", "withdrawal is not in a reviewable state")
-	ErrCommissionPayoutAccountNotFound      = infraerrors.NotFound("COMMISSION_PAYOUT_ACCOUNT_NOT_FOUND", "commission payout account not found")
+	ErrRechargeOrderNotFound                    = infraerrors.NotFound("RECHARGE_ORDER_NOT_FOUND", "recharge order not found")
+	ErrRechargeOrderConflict                    = infraerrors.Conflict("RECHARGE_ORDER_CONFLICT", "recharge order already exists for a different user")
+	ErrRechargeOrderCurrencyInvalid             = infraerrors.BadRequest("RECHARGE_ORDER_CURRENCY_INVALID", "recharge order only supports CNY settlement")
+	ErrRechargeOrderAmountInvalid               = infraerrors.BadRequest("RECHARGE_ORDER_AMOUNT_INVALID", "paid amount must be greater than zero")
+	ErrCommissionWithdrawalNotFound             = infraerrors.NotFound("COMMISSION_WITHDRAWAL_NOT_FOUND", "commission withdrawal not found")
+	ErrCommissionWithdrawAmountInvalid          = infraerrors.BadRequest("COMMISSION_WITHDRAW_AMOUNT_INVALID", "withdraw amount is invalid")
+	ErrCommissionWithdrawInsufficient           = infraerrors.BadRequest("COMMISSION_WITHDRAW_INSUFFICIENT", "insufficient available commission")
+	ErrCommissionWithdrawMethodInvalid          = infraerrors.BadRequest("COMMISSION_WITHDRAW_METHOD_INVALID", "withdraw method is invalid")
+	ErrCommissionWithdrawDailyLimitExceeded     = infraerrors.BadRequest("COMMISSION_WITHDRAW_DAILY_LIMIT_EXCEEDED", "daily withdrawal limit exceeded")
+	ErrCommissionWithdrawalConflict             = infraerrors.Conflict("COMMISSION_WITHDRAWAL_CONFLICT", "withdrawal is not in a reviewable state")
+	ErrCommissionPayoutAccountNotFound          = infraerrors.NotFound("COMMISSION_PAYOUT_ACCOUNT_NOT_FOUND", "commission payout account not found")
 	ErrCommissionPayoutAccountUpdateTooFrequent = infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_UPDATE_TOO_FREQUENT", "payout account can only be modified once every 7 days")
 )
 
@@ -189,10 +189,10 @@ type CommissionWithdrawalItem struct {
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 	// Display fields (populated by enriched queries)
-	SourceUserEmail    string    `json:"source_user_email,omitempty"`
-	ExternalOrderID    string    `json:"external_order_id,omitempty"`
-	OrderPaidAmount    float64   `json:"order_paid_amount,omitempty"`
-	RewardRateSnapshot float64   `json:"reward_rate_snapshot,omitempty"`
+	SourceUserEmail    string     `json:"source_user_email,omitempty"`
+	ExternalOrderID    string     `json:"external_order_id,omitempty"`
+	OrderPaidAmount    float64    `json:"order_paid_amount,omitempty"`
+	RewardRateSnapshot float64    `json:"reward_rate_snapshot,omitempty"`
 	OrderPaidAt        *time.Time `json:"order_paid_at,omitempty"`
 }
 

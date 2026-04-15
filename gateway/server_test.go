@@ -816,3 +816,33 @@ func TestBuildRefreshTargetURL(t *testing.T) {
 		t.Fatalf("expected %s, got %s", expected.String(), got)
 	}
 }
+
+func TestSharedCookieDomain_UsesRegistrableDomainOnlyForSubdomains(t *testing.T) {
+	if got := sharedCookieDomain("chat.example.com"); got != ".example.com" {
+		t.Fatalf("sharedCookieDomain(chat.example.com) = %s", got)
+	}
+	if got := sharedCookieDomain("chat.example.co.uk"); got != ".example.co.uk" {
+		t.Fatalf("sharedCookieDomain(chat.example.co.uk) = %s", got)
+	}
+	if got := sharedCookieDomain("example.com"); got != "" {
+		t.Fatalf("sharedCookieDomain(example.com) = %s, want empty", got)
+	}
+	if got := sharedCookieDomain("127.0.0.1:3210"); got != "" {
+		t.Fatalf("sharedCookieDomain(127.0.0.1:3210) = %s, want empty", got)
+	}
+}
+
+func TestSanitizeBootstrapReturnURL_FallsBackForCrossOriginRedirect(t *testing.T) {
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"http://chat.example.com/__lobehub_bootstrap?mode=login&return_url=http%3A%2F%2Fchat.example.com%2Fworkspace",
+		nil,
+	)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+
+	got := sanitizeBootstrapReturnURL(req)
+	if got != "https://chat.example.com/" {
+		t.Fatalf("sanitizeBootstrapReturnURL() = %s", got)
+	}
+}

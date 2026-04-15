@@ -287,9 +287,9 @@ func (r *referralRepository) ListInvitees(ctx context.Context, userID int64, par
 	if len(userIDs) > 0 {
 		paidStatuses := []string{"paid", "credited", "refund_pending", "partially_refunded", "refunded", "chargeback"}
 		var rechargeAgg []struct {
-			UserID    int64    `json:"user_id"`
-			Sum       *float64 `json:"sum"`
-			Count     int      `json:"count"`
+			UserID    int64      `json:"user_id"`
+			Sum       *float64   `json:"sum"`
+			Count     int        `json:"count"`
 			MaxPaidAt *time.Time `json:"max"`
 		}
 		err := client.RechargeOrder.Query().

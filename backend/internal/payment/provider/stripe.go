@@ -252,6 +252,7 @@ func parseStripeChargeDispute(event *stripe.Event, rawBody string) (*payment.Pay
 		RawData:        rawBody,
 	}, nil
 }
+
 // Refund creates a Stripe refund.
 func (s *Stripe) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
 	s.ensureInit()

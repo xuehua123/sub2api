@@ -132,6 +132,18 @@ func TestLobeHubSSOService_PrepareOIDCContinuationUsesDefaultKey(t *testing.T) {
 	require.Equal(t, int64(9), stateStore.createdWebSession.APIKeyID)
 }
 
+func TestSanitizeLobeHubReturnURL_RejectsCrossOriginURL(t *testing.T) {
+	_, err := sanitizeLobeHubReturnURL("https://chat.example.com", "http://chat.example.com/workspace")
+	require.ErrorIs(t, err, ErrLobeHubInvalidReturnURL)
+}
+
+func TestResolveSharedCookieDomain_UsesRegistrableDomainOnlyForSubdomains(t *testing.T) {
+	require.Equal(t, ".example.com", resolveSharedCookieDomain("https://chat.example.com"))
+	require.Equal(t, ".example.co.uk", resolveSharedCookieDomain("https://chat.example.co.uk"))
+	require.Empty(t, resolveSharedCookieDomain("https://example.com"))
+	require.Empty(t, resolveSharedCookieDomain("http://127.0.0.1:3210"))
+}
+
 func TestLobeHubSSOService_PrepareOIDCContinuationRequiresDefaultKeySelection(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)

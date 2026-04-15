@@ -72,6 +72,15 @@ func (s *ReferralSettlementService) SettlePendingRewards(ctx context.Context, re
 
 func (s *ReferralSettlementService) applySettlement(ctx context.Context, reward *CommissionReward) error {
 	now := time.Now()
+	pendingAmount, err := s.commissionRepo.SumRewardBucketAmountForUpdate(ctx, reward.ID, CommissionLedgerBucketPending, true)
+	if err != nil {
+		return err
+	}
+	pendingAmount = roundMoney(pendingAmount)
+	if pendingAmount <= 0 {
+		return nil
+	}
+
 	ledgers := []CommissionLedger{
 		{
 			UserID:          reward.UserID,
@@ -79,7 +88,7 @@ func (s *ReferralSettlementService) applySettlement(ctx context.Context, reward 
 			RechargeOrderID: int64ValuePtr(reward.RechargeOrderID),
 			EntryType:       CommissionLedgerEntryRewardPendingToAvailable,
 			Bucket:          CommissionLedgerBucketPending,
-			Amount:          -reward.RewardAmount,
+			Amount:          -pendingAmount,
 			Currency:        reward.Currency,
 		},
 		{
@@ -88,7 +97,7 @@ func (s *ReferralSettlementService) applySettlement(ctx context.Context, reward 
 			RechargeOrderID: int64ValuePtr(reward.RechargeOrderID),
 			EntryType:       CommissionLedgerEntryRewardPendingToAvailable,
 			Bucket:          CommissionLedgerBucketAvailable,
-			Amount:          reward.RewardAmount,
+			Amount:          pendingAmount,
 			Currency:        reward.Currency,
 		},
 	}

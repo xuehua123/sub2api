@@ -7,9 +7,10 @@ const { createLaunchTicket, showError, assign } = vi.hoisted(() => ({
   assign: vi.fn()
 }))
 
-const { open, replace } = vi.hoisted(() => ({
+const { open, replace, close } = vi.hoisted(() => ({
   open: vi.fn(),
-  replace: vi.fn()
+  replace: vi.fn(),
+  close: vi.fn()
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -19,7 +20,7 @@ vi.mock('vue-i18n', () => ({
 }))
 
 vi.mock('@/api/lobehub', () => ({
-  createLobeHubLaunchTicket: createLaunchTicket
+  createLaunchTicket
 }))
 
 vi.mock('@/stores/app', () => ({
@@ -97,6 +98,8 @@ describe('LobeHubLaunchButton', () => {
   it('creates a launch ticket and opens the bridge page in a new tab', async () => {
     const popup = {
       opener: window,
+      closed: false,
+      close,
       location: {
         replace
       }
@@ -151,7 +154,17 @@ describe('LobeHubLaunchButton', () => {
   })
 
   it('surfaces an error toast when launch fails', async () => {
+    const popup = {
+      opener: window,
+      closed: false,
+      close,
+      location: {
+        replace
+      }
+    }
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     createLaunchTicket.mockRejectedValue(new Error('boom'))
+    open.mockReturnValue(popup)
 
     const wrapper = mount(LobeHubLaunchButton, {
       props: {
@@ -166,6 +179,8 @@ describe('LobeHubLaunchButton', () => {
     await wrapper.get('button').trigger('click')
     await flushPromises()
 
+    expect(close).toHaveBeenCalled()
+    expect(consoleError).toHaveBeenCalled()
     expect(showError).toHaveBeenCalledWith('keys.failedToOpenLobeHub')
     expect(assign).not.toHaveBeenCalled()
   })

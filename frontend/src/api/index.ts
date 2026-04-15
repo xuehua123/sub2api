@@ -12,10 +12,8 @@ export { authAPI, isTotp2FARequired, type LoginResponse } from './auth'
 // User APIs
 export { keysAPI } from './keys'
 export {
-  createLobeHubLaunchTicket,
-  createLobeHubOIDCWebSession,
-  exchangeLobeHubBootstrap,
-  consumeLobeHubBootstrap
+  createLaunchTicket,
+  createOIDCWebSession
 } from './lobehub'
 export { usageAPI } from './usage'
 export { userAPI } from './user'

@@ -16,7 +16,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
-import { createLobeHubLaunchTicket } from '@/api/lobehub'
+import { createLaunchTicket } from '@/api/lobehub'
 import { useAppStore } from '@/stores/app'
 
 interface LobeHubVisibilitySettings {
@@ -58,7 +58,7 @@ const handleClick = async () => {
   const popup = openLaunchPopup()
   loading.value = true
   try {
-    const result = await createLobeHubLaunchTicket(props.apiKeyId)
+    const result = await createLaunchTicket(props.apiKeyId)
     const target = new URL(result.bridge_url, window.location.origin).toString()
     if (popup && popup.location) {
       popup.location.replace(target)

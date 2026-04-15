@@ -62,7 +62,7 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 	if err != nil {
 		return err
 	}
-	if o == nil || o.OrderType != payment.OrderTypeBalance {
+	if o == nil {
 		return nil
 	}
 
@@ -72,19 +72,26 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 		if err != nil {
 			return err
 		}
-		if currentOrder.OrderType != payment.OrderTypeBalance {
-			return nil
-		}
+		refundAmountTotal := computeExternalRefundAmountTotal(currentOrder, reversalAmount, n.AmountSemantic)
+		creditedDelta := 0.0
 
-		if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
-			return err
-		}
-
-		creditedDelta, refundAmountTotal := computeExternalCreditedRefund(currentOrder, reversalAmount, n.AmountSemantic)
-		if creditedDelta > 0 {
-			if err := s.userRepo.DeductBalance(txCtx, currentOrder.UserID, creditedDelta); err != nil {
+		switch currentOrder.OrderType {
+		case payment.OrderTypeBalance:
+			if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
 				return err
 			}
+			creditedDelta, refundAmountTotal = computeExternalCreditedRefund(currentOrder, reversalAmount, n.AmountSemantic)
+			if creditedDelta > 0 {
+				if err := s.userRepo.DeductBalance(txCtx, currentOrder.UserID, creditedDelta); err != nil {
+					return err
+				}
+			}
+		case payment.OrderTypeSubscription:
+			if err := s.syncExternalSubscriptionReversal(txCtx, currentOrder); err != nil {
+				return err
+			}
+		default:
+			return nil
 		}
 
 		status := OrderStatusRefunded
@@ -268,6 +275,45 @@ func computeExternalCreditedRefund(o *dbent.PaymentOrder, gatewayAmount float64,
 	}
 	creditedDelta := roundMoney(targetCreditedTotal - existingRefundAmount)
 	return creditedDelta, targetCreditedTotal
+}
+
+func computeExternalRefundAmountTotal(o *dbent.PaymentOrder, gatewayAmount float64, amountSemantic string) float64 {
+	_, refundAmountTotal := computeExternalCreditedRefund(o, gatewayAmount, amountSemantic)
+	return refundAmountTotal
+}
+
+func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s.subscriptionSvc == nil || o == nil || o.OrderType != payment.OrderTypeSubscription {
+		return nil
+	}
+	if o.SubscriptionGroupID == nil || o.SubscriptionDays == nil || *o.SubscriptionDays <= 0 {
+		return nil
+	}
+	if roundMoney(o.RefundAmount) > 0 || psIsRefundStatus(o.Status) {
+		return nil
+	}
+
+	sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return nil
+		}
+		return err
+	}
+	if sub == nil {
+		return nil
+	}
+
+	if _, err := s.subscriptionSvc.ExtendSubscription(ctx, sub.ID, -*o.SubscriptionDays); err != nil {
+		if errors.Is(err, ErrAdjustWouldExpire) {
+			return s.subscriptionSvc.RevokeSubscription(ctx, sub.ID)
+		}
+		if errors.Is(err, ErrSubscriptionNotFound) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func reconcileExternalReversalAmount(existingAmount float64, notificationAmount float64, maxTotalAmount float64, amountSemantic string) float64 {

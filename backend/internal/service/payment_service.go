@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -155,18 +157,18 @@ type TopUserStat struct {
 // --- Service ---
 
 type PaymentService struct {
-	providerMu         sync.Mutex
-	providersLoaded    bool
-	entClient          *dbent.Client
-	registry           *payment.Registry
-	loadBalancer       payment.LoadBalancer
-	redeemService      *RedeemService
-	subscriptionSvc    *SubscriptionService
-	configService      *PaymentConfigService
-	userRepo           UserRepository
-	groupRepo          GroupRepository
-	referralRewardSvc  *ReferralRewardService
-	referralRefundSvc  *ReferralRefundService
+	providerMu        sync.Mutex
+	providersLoaded   bool
+	entClient         *dbent.Client
+	registry          *payment.Registry
+	loadBalancer      payment.LoadBalancer
+	redeemService     *RedeemService
+	subscriptionSvc   *SubscriptionService
+	configService     *PaymentConfigService
+	userRepo          UserRepository
+	groupRepo         GroupRepository
+	referralRewardSvc *ReferralRewardService
+	referralRefundSvc *ReferralRefundService
 }
 
 func NewPaymentService(
@@ -217,6 +219,9 @@ func (s *PaymentService) RefreshProviders(ctx context.Context) {
 }
 
 func (s *PaymentService) loadProviders(ctx context.Context) {
+	if s.entClient == nil || s.registry == nil || s.loadBalancer == nil {
+		return
+	}
 	instances, err := s.entClient.PaymentProviderInstance.Query().
 		Where(paymentproviderinstance.EnabledEQ(true)).
 		All(ctx)
@@ -255,11 +260,36 @@ func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, ou
 			if pErr == nil {
 				return p, nil
 			}
-			slog.Warn("[Webhook] order provider creation failed, falling back to registry", "outTradeNo", outTradeNo, "error", pErr)
+			slog.Warn("[Webhook] order provider creation failed", "outTradeNo", outTradeNo, "error", pErr)
 		}
 	}
-	s.EnsureProviders(ctx)
-	return s.registry.GetProviderByKey(providerKey)
+	instances, err := s.entClient.PaymentProviderInstance.Query().
+		Where(
+			paymentproviderinstance.ProviderKeyEQ(strings.TrimSpace(providerKey)),
+			paymentproviderinstance.EnabledEQ(true),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(instances) {
+	case 0:
+		s.EnsureProviders(ctx)
+		return s.registry.GetProviderByKey(providerKey)
+	case 1:
+		if s.loadBalancer != nil {
+			cfg, cfgErr := s.loadBalancer.GetInstanceConfig(ctx, int64(instances[0].ID))
+			if cfgErr == nil {
+				return provider.CreateProvider(providerKey, strconv.FormatInt(int64(instances[0].ID), 10), cfg)
+			}
+			slog.Warn("[Webhook] unique provider instance config load failed, falling back to registry", "provider", providerKey, "instanceID", instances[0].ID, "error", cfgErr)
+		}
+		s.EnsureProviders(ctx)
+		return s.registry.GetProviderByKey(providerKey)
+	default:
+		return nil, fmt.Errorf("ambiguous webhook provider instance for %s: missing order hint", providerKey)
+	}
 }
 
 // --- Helpers ---

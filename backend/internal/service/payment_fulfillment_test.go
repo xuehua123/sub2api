@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -303,6 +304,121 @@ func createPaymentOrderForRefundTest(t *testing.T, ctx context.Context, client *
 	return order
 }
 
+type paymentQueryProviderStub struct {
+	providerKey    string
+	supportedTypes []payment.PaymentType
+	queryTradeNos  []string
+	queryResponse  *payment.QueryOrderResponse
+}
+
+func (s *paymentQueryProviderStub) Name() string { return "query-stub" }
+
+func (s *paymentQueryProviderStub) ProviderKey() string { return s.providerKey }
+
+func (s *paymentQueryProviderStub) SupportedTypes() []payment.PaymentType {
+	return append([]payment.PaymentType(nil), s.supportedTypes...)
+}
+
+func (s *paymentQueryProviderStub) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	return nil, errors.New("unexpected CreatePayment")
+}
+
+func (s *paymentQueryProviderStub) QueryOrder(_ context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	s.queryTradeNos = append(s.queryTradeNos, tradeNo)
+	if s.queryResponse == nil {
+		return nil, errors.New("missing query response")
+	}
+	resp := *s.queryResponse
+	return &resp, nil
+}
+
+func (s *paymentQueryProviderStub) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
+	return nil, errors.New("unexpected VerifyNotification")
+}
+
+func (s *paymentQueryProviderStub) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	return nil, errors.New("unexpected Refund")
+}
+
+type paymentGroupRepoStub struct {
+	group *Group
+}
+
+func (s *paymentGroupRepoStub) Create(context.Context, *Group) error { panic("unexpected Create") }
+func (s *paymentGroupRepoStub) GetByID(context.Context, int64) (*Group, error) {
+	return s.group, nil
+}
+func (s *paymentGroupRepoStub) GetByIDLite(context.Context, int64) (*Group, error) {
+	panic("unexpected GetByIDLite")
+}
+func (s *paymentGroupRepoStub) Update(context.Context, *Group) error { panic("unexpected Update") }
+func (s *paymentGroupRepoStub) Delete(context.Context, int64) error  { panic("unexpected Delete") }
+func (s *paymentGroupRepoStub) DeleteCascade(context.Context, int64) ([]int64, error) {
+	panic("unexpected DeleteCascade")
+}
+func (s *paymentGroupRepoStub) List(context.Context, pagination.PaginationParams) ([]Group, *pagination.PaginationResult, error) {
+	panic("unexpected List")
+}
+func (s *paymentGroupRepoStub) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string, *bool) ([]Group, *pagination.PaginationResult, error) {
+	panic("unexpected ListWithFilters")
+}
+func (s *paymentGroupRepoStub) ListActive(context.Context) ([]Group, error) {
+	panic("unexpected ListActive")
+}
+func (s *paymentGroupRepoStub) ListActiveByPlatform(context.Context, string) ([]Group, error) {
+	panic("unexpected ListActiveByPlatform")
+}
+func (s *paymentGroupRepoStub) ExistsByName(context.Context, string) (bool, error) {
+	panic("unexpected ExistsByName")
+}
+func (s *paymentGroupRepoStub) GetAccountCount(context.Context, int64) (int64, int64, error) {
+	panic("unexpected GetAccountCount")
+}
+func (s *paymentGroupRepoStub) DeleteAccountGroupsByGroupID(context.Context, int64) (int64, error) {
+	panic("unexpected DeleteAccountGroupsByGroupID")
+}
+func (s *paymentGroupRepoStub) GetAccountIDsByGroupIDs(context.Context, []int64) ([]int64, error) {
+	panic("unexpected GetAccountIDsByGroupIDs")
+}
+func (s *paymentGroupRepoStub) BindAccountsToGroup(context.Context, int64, []int64) error {
+	panic("unexpected BindAccountsToGroup")
+}
+func (s *paymentGroupRepoStub) UpdateSortOrders(context.Context, []GroupSortOrderUpdate) error {
+	panic("unexpected UpdateSortOrders")
+}
+
+func (s *subscriptionUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Context, userID, groupID int64) (*UserSubscription, error) {
+	return s.GetByUserIDAndGroupID(context.Background(), userID, groupID)
+}
+
+func (s *subscriptionUserSubRepoStub) ExtendExpiry(_ context.Context, subscriptionID int64, newExpiresAt time.Time) error {
+	sub := s.byID[subscriptionID]
+	if sub == nil {
+		return ErrSubscriptionNotFound
+	}
+	sub.ExpiresAt = newExpiresAt
+	return nil
+}
+
+func (s *subscriptionUserSubRepoStub) UpdateStatus(_ context.Context, subscriptionID int64, status string) error {
+	sub := s.byID[subscriptionID]
+	if sub == nil {
+		return ErrSubscriptionNotFound
+	}
+	sub.Status = status
+	return nil
+}
+
+func (s *subscriptionUserSubRepoStub) Delete(_ context.Context, subscriptionID int64) error {
+	sub := s.byID[subscriptionID]
+	if sub == nil {
+		return ErrSubscriptionNotFound
+	}
+	delete(s.byID, subscriptionID)
+	delete(s.byUserGroup, s.key(sub.UserID, sub.GroupID))
+	return nil
+}
+
 func requireAuditActionsForOrder(t *testing.T, ctx context.Context, client *dbent.Client, orderID int64, expectedActions ...string) []*dbent.PaymentAuditLog {
 	t.Helper()
 
@@ -316,6 +432,165 @@ func requireAuditActionsForOrder(t *testing.T, ctx context.Context, client *dben
 		require.Equal(t, action, logs[i].Action)
 	}
 	return logs
+}
+
+func TestCheckPaid_UsesProviderTradeNoWhenFallbackQuerySucceeds(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupRepo := &paymentGroupRepoStub{
+		group: &Group{ID: 88, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription},
+	}
+	subRepo := newSubscriptionUserSubRepoStub()
+	subscriptionSvc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(99).
+		SetPayAmount(99).
+		SetRechargeCode("sub-check-paid").
+		SetOutTradeNo("sub_check_paid_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPending).
+		SetSubscriptionGroupID(88).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	registry := payment.NewRegistry()
+	providerStub := &paymentQueryProviderStub{
+		providerKey:    payment.TypeStripe,
+		supportedTypes: []payment.PaymentType{payment.TypeStripe},
+		queryResponse: &payment.QueryOrderResponse{
+			TradeNo: "pi_real_trade_no",
+			Status:  payment.ProviderStatusPaid,
+			Amount:  99,
+		},
+	}
+	registry.Register(providerStub)
+
+	service := &PaymentService{
+		entClient:       client,
+		registry:        registry,
+		subscriptionSvc: subscriptionSvc,
+		groupRepo:       groupRepo,
+	}
+
+	result := service.checkPaid(ctx, order)
+	require.Equal(t, checkPaidResultAlreadyPaid, result)
+	require.Equal(t, []string{"sub_check_paid_order"}, providerStub.queryTradeNos)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+	require.Equal(t, "pi_real_trade_no", updatedOrder.PaymentTradeNo)
+}
+
+func TestHandlePaymentNotification_RefundedSubscriptionOrderRevokesAccess(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupID := int64(66)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-refund").
+		SetOutTradeNo("subscription_refund_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_refund").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:        501,
+		UserID:    user.ID,
+		GroupID:   groupID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  time.Now().Add(-24 * time.Hour),
+		ExpiresAt: time.Now().Add(29 * 24 * time.Hour),
+	})
+	subscriptionSvc := NewSubscriptionService(
+		&paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	service := &PaymentService{
+		entClient:       client,
+		subscriptionSvc: subscriptionSvc,
+	}
+
+	err = service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         90,
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, updatedOrder.Status)
+	require.Equal(t, 90.0, updatedOrder.RefundAmount)
+
+	_, err = subRepo.GetByID(ctx, 501)
+	require.ErrorIs(t, err, ErrSubscriptionNotFound)
+
+	logs := requireAuditActionsForOrder(t, ctx, client, order.ID, "EXTERNAL_REFUND_SYNCED")
+	require.Contains(t, logs[0].Detail, `"tradeNo":"trade_subscription_refund"`)
+}
+
+func TestGetWebhookProvider_RejectsAmbiguousProviderInstancesWithoutOrderHint(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+
+	_, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-a").
+		SetConfig("{}").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-b").
+		SetConfig("{}").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	service := &PaymentService{
+		entClient: client,
+		registry:  payment.NewRegistry(),
+	}
+
+	_, err = service.GetWebhookProvider(ctx, payment.TypeStripe, "")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "ambiguous")
 }
 
 func TestHandlePaymentNotification_RefundedTotalSyncsOrderBalanceAndReferralState(t *testing.T) {

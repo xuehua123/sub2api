@@ -515,6 +515,7 @@ func ProvideLobeHubSSOService(
 ) *LobeHubSSOService {
 	return NewLobeHubSSOService(settingService, userRepo, apiKeyService, stateStore, signingKeyProvider, nil)
 }
+
 // payment.EncryptionKey type instead of raw []byte, avoiding Wire ambiguity.
 func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) *PaymentConfigService {
 	return NewPaymentConfigService(entClient, settingRepo, []byte(key))

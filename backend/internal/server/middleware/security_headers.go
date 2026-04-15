@@ -91,6 +91,9 @@ func isAPIRoutePath(c *gin.Context) bool {
 		return false
 	}
 	path := c.Request.URL.Path
+	if strings.HasPrefix(path, "/api/") {
+		path = strings.TrimPrefix(path, "/api")
+	}
 	return strings.HasPrefix(path, "/v1/") ||
 		strings.HasPrefix(path, "/v1beta/") ||
 		strings.HasPrefix(path, "/antigravity/") ||

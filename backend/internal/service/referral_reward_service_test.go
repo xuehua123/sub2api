@@ -118,7 +118,10 @@ func (s *commissionRepoStub) ListRewardsByRechargeOrder(ctx context.Context, rec
 func (s *commissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]CommissionReward, error) {
 	var result []CommissionReward
 	for _, reward := range s.rewards {
-		if reward.Status == CommissionRewardStatusPending && reward.AvailableAt != nil && !reward.AvailableAt.After(readyAt) {
+		if reward.AvailableAt == nil || reward.AvailableAt.After(readyAt) {
+			continue
+		}
+		if reward.Status == CommissionRewardStatusPending || reward.Status == CommissionRewardStatusPartiallyReversed {
 			result = append(result, reward)
 		}
 	}

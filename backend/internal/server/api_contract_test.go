@@ -57,7 +57,6 @@ func TestAPIContracts(t *testing.T) {
 					"status": "active",
 					"allowed_groups": null,
 					"referral_enabled": false,
-					"default_chat_api_key_id": null,
 					"created_at": "2025-01-02T03:04:05Z",
 					"updated_at": "2025-01-02T03:04:05Z",
 					"run_mode": "standard"
@@ -575,11 +574,39 @@ func TestAPIContracts(t *testing.T) {
 						"fallback_model_openai": "gpt-4o",
 						"enable_identity_patch": true,
 						"identity_patch_prompt": "",
-						"invitation_code_enabled": false,
-						"home_content": "",
+					"invitation_code_enabled": false,
+					"home_content": "",
 					"hide_ccs_import_button": false,
+					"hide_lobehub_import_button": false,
+					"lobehub_enabled": false,
+					"lobehub_chat_url": "",
+					"lobehub_oidc_issuer": "",
+					"lobehub_oidc_client_id": "",
+					"lobehub_oidc_client_secret_configured": false,
+					"lobehub_default_provider": "",
+					"lobehub_default_model": "",
+					"lobehub_runtime_config_version": "",
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"referral_enabled": false,
+					"referral_level1_enabled": true,
+					"referral_level1_rate": 0,
+					"referral_reward_mode": "first_paid_order",
+					"referral_settlement_delay_days": 7,
+					"referral_bind_before_first_paid_only": true,
+					"referral_allow_manual_input": true,
+					"referral_withdraw_enabled": false,
+					"referral_credit_conversion_enabled": false,
+					"referral_withdraw_min_amount": 100,
+					"referral_withdraw_max_amount": 5000,
+					"referral_withdraw_daily_limit": 1,
+					"referral_withdraw_fee_rate": 0,
+					"referral_withdraw_fixed_fee": 0,
+					"referral_withdraw_manual_review_required": true,
+					"referral_refund_reverse_enabled": true,
+					"referral_negative_carry_enabled": true,
+					"referral_settlement_currency": "CNY",
+					"referral_withdraw_methods_enabled": ["alipay", "wechat", "bank"],
 					"table_default_page_size": 20,
 						"table_page_size_options": [10, 20, 50, 100],
 					"min_claude_code_version": "",
@@ -881,6 +908,10 @@ func (r *stubUserRepo) RemoveGroupFromUserAllowedGroups(ctx context.Context, use
 }
 
 func (r *stubUserRepo) AddGroupToAllowedGroups(ctx context.Context, userID int64, groupID int64) error {
+	return errors.New("not implemented")
+}
+
+func (r *stubUserRepo) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
 	return errors.New("not implemented")
 }
 
