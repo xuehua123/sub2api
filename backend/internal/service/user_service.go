@@ -49,6 +49,7 @@ type UserRepository interface {
 	AddGroupToAllowedGroups(ctx context.Context, userID int64, groupID int64) error
 	// RemoveGroupFromUserAllowedGroups 移除单个用户的指定分组权限
 	RemoveGroupFromUserAllowedGroups(ctx context.Context, userID int64, groupID int64) error
+	UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error
 
 	// TOTP 双因素认证
 	UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error
@@ -238,6 +239,13 @@ func (s *UserService) UpdateStatus(ctx context.Context, userID int64, status str
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}
 
+	return nil
+}
+
+func (s *UserService) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	if err := s.userRepo.UpdateDefaultChatAPIKeyID(ctx, userID, apiKeyID); err != nil {
+		return fmt.Errorf("update default chat api key: %w", err)
+	}
 	return nil
 }
 

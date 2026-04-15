@@ -15,6 +15,7 @@ This directory contains files for deploying Sub2API on Linux servers.
 |------|-------------|
 | `docker-compose.yml` | Docker Compose configuration (named volumes) |
 | `docker-compose.local.yml` | Docker Compose configuration (local directories, easy migration) |
+| `docker-compose.lobehub-gateway.yml` | Optional chat-domain gateway overlay for official LobeHub direct-open SSO |
 | `docker-deploy.sh` | **One-click Docker deployment script (recommended)** |
 | `.env.example` | Docker environment variables template |
 | `DOCKER.md` | Docker Hub documentation |
@@ -222,6 +223,37 @@ docker compose down -v
 | `GEMINI_QUOTA_POLICY` | No | *(empty)* | JSON overrides for Gemini local quota simulation (Code Assist only). |
 
 See `.env.example` for all available options.
+
+### Optional: Official LobeHub Chat Gateway Overlay
+
+If you want `chat.example.com` to auto-start official LobeHub SSO through Sub2API, this repo now includes a standalone gateway service in `gateway/`.
+
+The compose overlay file is:
+
+```bash
+deploy/docker-compose.lobehub-gateway.yml
+```
+
+Use it together with your main deployment:
+
+```bash
+docker compose \
+  -f docker-compose.local.yml \
+  -f docker-compose.lobehub-gateway.yml \
+  up -d
+```
+
+Required env values:
+
+- `LOBEHUB_SUB2API_API_BASE_URL`
+- `LOBEHUB_SUB2API_FRONTEND_URL`
+- `LOBEHUB_UPSTREAM_URL`
+
+Notes:
+
+- The gateway is designed to sit in front of an unmodified official LobeHub deployment.
+- LobeHub itself still needs official env-based Generic OIDC configuration and `AUTH_DISABLE_EMAIL_PASSWORD=1`.
+- The current gateway version performs a real `ConfigProbe`: it reads official LobeHub `user.getUserState`, extracts persisted `keyVaults` + `languageModel`, and asks Sub2API whether that state already matches the desired target configuration.
 
 > **Note:** The `docker-deploy.sh` script automatically generates `JWT_SECRET`, `TOTP_ENCRYPTION_KEY`, and `POSTGRES_PASSWORD` for you.
 

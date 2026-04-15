@@ -151,6 +151,23 @@ func TestSecurityHeaders(t *testing.T) {
 		assert.Empty(t, GetNonceFromContext(c))
 	})
 
+	t.Run("api_prefixed_route_skips_csp_nonce_generation", func(t *testing.T) {
+		cfg := config.CSPConfig{
+			Enabled: true,
+			Policy:  "default-src 'self'; script-src 'self' __CSP_NONCE__",
+		}
+		middleware := SecurityHeaders(cfg, nil)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/lobehub/bridge?ticket=test", nil)
+
+		middleware(c)
+
+		assert.Empty(t, w.Header().Get("Content-Security-Policy"))
+		assert.Empty(t, GetNonceFromContext(c))
+	})
+
 	t.Run("csp_enabled_with_nonce_placeholder", func(t *testing.T) {
 		cfg := config.CSPConfig{
 			Enabled: true,

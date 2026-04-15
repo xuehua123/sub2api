@@ -166,6 +166,46 @@ describe('API Client', () => {
         writable: true,
       })
     })
+
+    it('401 跳转登录时保留 lobehub 续接地址', async () => {
+      localStorage.setItem('auth_token', 'expired-token')
+
+      const originalLocation = window.location
+      Object.defineProperty(window, 'location', {
+        value: {
+          ...originalLocation,
+          pathname: '/auth/lobehub-sso',
+          search: '?resume=resume-1&return_url=https%3A%2F%2Fchat.example.com%2Fworkspace',
+          hash: '#step=1',
+          href: '/auth/lobehub-sso?resume=resume-1&return_url=https%3A%2F%2Fchat.example.com%2Fworkspace#step=1'
+        },
+        writable: true,
+      })
+
+      const adapter = vi.fn().mockRejectedValue({
+        response: {
+          status: 401,
+          data: { code: 'UNAUTHORIZED', message: 'Unauthorized' },
+        },
+        config: {
+          url: '/lobehub/oidc-web-session',
+          headers: { Authorization: 'Bearer expired-token' },
+        },
+        code: 'ERR_BAD_REQUEST',
+      })
+      apiClient.defaults.adapter = adapter
+
+      await expect(apiClient.post('/lobehub/oidc-web-session', {})).rejects.toBeDefined()
+
+      expect(window.location.href).toBe(
+        '/login?redirect=%2Fauth%2Flobehub-sso%3Fresume%3Dresume-1%26return_url%3Dhttps%253A%252F%252Fchat.example.com%252Fworkspace%23step%3D1'
+      )
+
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+      })
+    })
   })
 
   // --- 网络错误 ---
