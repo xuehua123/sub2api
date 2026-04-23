@@ -440,7 +440,7 @@ func buildLobeHubDesiredConfigFingerprint(userID, apiKeyID int64, settings *Syst
 func buildLobeHubSettingsPayload(settings *SystemSettings) map[string]any {
 	provider := normalizeLobeHubProvider(settingsProvider(settings))
 	model := strings.TrimSpace(settings.LobeHubDefaultModel)
-	enabledModels := resolveLobeHubEnabledModels(settings)
+	enabledModels := resolveLobeHubLanguageModels(settings)
 
 	payload := map[string]any{}
 	if model != "" {
@@ -536,7 +536,7 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	}
 
 	provider := normalizeLobeHubProvider(settingsProvider(settings))
-	enabledModels := resolveLobeHubEnabledModels(settings)
+	enabledModels := resolveLobeHubLanguageModels(settings)
 
 	vault, ok := observed.KeyVaults[provider]
 	if !ok {
@@ -586,6 +586,27 @@ func resolveLobeHubEnabledModels(settings *SystemSettings) []string {
 	}
 
 	return models
+}
+
+func resolveLobeHubLanguageModels(settings *SystemSettings) []string {
+	models := resolveLobeHubEnabledModels(settings)
+	if len(models) == 0 {
+		return models
+	}
+
+	languageModels := make([]string, 0, len(models))
+	for _, model := range models {
+		if isLobeHubImageModel(model) {
+			continue
+		}
+		languageModels = append(languageModels, model)
+	}
+	return languageModels
+}
+
+func isLobeHubImageModel(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(normalized, "gpt-image-")
 }
 
 func stringSliceContainsFold(items []string, target string) bool {

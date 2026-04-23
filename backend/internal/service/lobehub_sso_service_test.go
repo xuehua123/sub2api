@@ -426,7 +426,8 @@ func TestLobeHubSSOService_ExchangeBootstrapAndConsumeIncludesConfiguredEnabledM
 	require.NoError(t, err)
 	settingsJSON := redirectURL.Query().Get("settings")
 	require.Contains(t, settingsJSON, `"model":"gpt-5.4-mini"`)
-	require.Contains(t, settingsJSON, `"enabledModels":["gpt-5.4-mini","gpt-image-2"]`)
+	require.Contains(t, settingsJSON, `"enabledModels":["gpt-5.4-mini"]`)
+	require.NotContains(t, settingsJSON, "gpt-image-2")
 }
 
 func TestLobeHubSSOService_CompareCurrentConfigMatchesImportedSettings(t *testing.T) {
