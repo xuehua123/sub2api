@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,15 +18,24 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type paymentConfigReader interface {
+	GetPaymentConfig(ctx context.Context) (*service.PaymentConfig, error)
+	ListPlansForSale(ctx context.Context) ([]*dbent.SubscriptionPlan, error)
+	GetGroupPlatformMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]string
+	GetGroupInfoMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo
+	GetAvailableMethodLimits(ctx context.Context) (*service.MethodLimitsResponse, error)
+	GetUserRefundEligibleInstanceIDs(ctx context.Context) ([]string, error)
+}
+
 // PaymentHandler handles user-facing payment requests.
 type PaymentHandler struct {
 	channelService *service.ChannelService
 	paymentService *service.PaymentService
-	configService  *service.PaymentConfigService
+	configService  paymentConfigReader
 }
 
 // NewPaymentHandler creates a new PaymentHandler.
-func NewPaymentHandler(paymentService *service.PaymentService, configService *service.PaymentConfigService, channelService *service.ChannelService) *PaymentHandler {
+func NewPaymentHandler(paymentService *service.PaymentService, configService paymentConfigReader, channelService *service.ChannelService) *PaymentHandler {
 	return &PaymentHandler{
 		channelService: channelService,
 		paymentService: paymentService,
@@ -113,7 +123,11 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 	}
 
 	// Fetch plans with group info
-	plans, _ := h.configService.ListPlansForSale(ctx)
+	plans, err := h.configService.ListPlansForSale(ctx)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {

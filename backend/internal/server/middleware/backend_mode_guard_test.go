@@ -205,6 +205,12 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			wantStatus: http.StatusForbidden,
 		},
 		{
+			name:       "enabled_allows_linuxdo_oauth_bind_start",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/linuxdo/bind/start",
+			wantStatus: http.StatusOK,
+		},
+		{
 			name:       "enabled_allows_linuxdo_oauth_callback",
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/linuxdo/callback",
@@ -215,6 +221,12 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/wechat/start",
 			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "enabled_allows_wechat_oauth_bind_start",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/wechat/bind/start",
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_wechat_oauth_callback",
@@ -239,6 +251,12 @@ func TestBackendModeAuthGuard(t *testing.T) {
 			enabled:    "true",
 			path:       "/api/v1/auth/oauth/oidc/start",
 			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "enabled_allows_oidc_oauth_bind_start",
+			enabled:    "true",
+			path:       "/api/v1/auth/oauth/oidc/bind/start",
+			wantStatus: http.StatusOK,
 		},
 		{
 			name:       "enabled_allows_oidc_oauth_callback",
