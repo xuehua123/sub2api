@@ -17,6 +17,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/authidentity"
+	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
 	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
 	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
 	"github.com/Wei-Shaw/sub2api/ent/commissionreward"
@@ -25,9 +27,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
+	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/promocode"
 	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
@@ -112,6 +116,8 @@ func checkColumn(t, c string) error {
 			accountgroup.Table:             accountgroup.ValidColumn,
 			announcement.Table:             announcement.ValidColumn,
 			announcementread.Table:         announcementread.ValidColumn,
+			authidentity.Table:             authidentity.ValidColumn,
+			authidentitychannel.Table:      authidentitychannel.ValidColumn,
 			commissionledger.Table:         commissionledger.ValidColumn,
 			commissionpayoutaccount.Table:  commissionpayoutaccount.ValidColumn,
 			commissionreward.Table:         commissionreward.ValidColumn,
@@ -120,9 +126,11 @@ func checkColumn(t, c string) error {
 			errorpassthroughrule.Table:     errorpassthroughrule.ValidColumn,
 			group.Table:                    group.ValidColumn,
 			idempotencyrecord.Table:        idempotencyrecord.ValidColumn,
+			identityadoptiondecision.Table: identityadoptiondecision.ValidColumn,
 			paymentauditlog.Table:          paymentauditlog.ValidColumn,
 			paymentorder.Table:             paymentorder.ValidColumn,
 			paymentproviderinstance.Table:  paymentproviderinstance.ValidColumn,
+			pendingauthsession.Table:       pendingauthsession.ValidColumn,
 			promocode.Table:                promocode.ValidColumn,
 			promocodeusage.Table:           promocodeusage.ValidColumn,
 			proxy.Table:                    proxy.ValidColumn,

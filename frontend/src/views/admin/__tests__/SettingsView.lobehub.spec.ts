@@ -15,6 +15,7 @@ const {
   updateRectifierSettings,
   getBetaPolicySettings,
   updateBetaPolicySettings,
+  getWebSearchEmulationConfig,
   getAllGroups,
   showError,
   showSuccess,
@@ -33,6 +34,7 @@ const {
   updateRectifierSettings: vi.fn(),
   getBetaPolicySettings: vi.fn(),
   updateBetaPolicySettings: vi.fn(),
+  getWebSearchEmulationConfig: vi.fn(),
   getAllGroups: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -119,7 +121,8 @@ vi.mock('@/api', () => ({
       getRectifierSettings,
       updateRectifierSettings,
       getBetaPolicySettings,
-      updateBetaPolicySettings
+      updateBetaPolicySettings,
+      getWebSearchEmulationConfig
     },
     groups: {
       getAll: getAllGroups
@@ -152,7 +155,8 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => messages[key] ?? key
+      t: (key: string) => messages[key] ?? key,
+      locale: { value: 'en' }
     })
   }
 })
@@ -211,6 +215,7 @@ describe('admin SettingsView LobeHub section', () => {
       apikey_signature_patterns: []
     })
     getBetaPolicySettings.mockResolvedValue({ rules: [] })
+    getWebSearchEmulationConfig.mockResolvedValue({ enabled: false, providers: [] })
     updateSettings.mockImplementation(async (payload: any) => payload)
   })
 

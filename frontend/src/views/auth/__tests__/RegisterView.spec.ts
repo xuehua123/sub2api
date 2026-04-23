@@ -9,6 +9,7 @@ const {
   showError,
   register,
   getPublicSettings,
+  isWeChatWebOAuthEnabled,
   validatePromoCode,
   validateInvitationCode,
   validateReferralCode,
@@ -19,6 +20,7 @@ const {
   showError: vi.fn(),
   register: vi.fn(),
   getPublicSettings: vi.fn(),
+  isWeChatWebOAuthEnabled: vi.fn(),
   validatePromoCode: vi.fn(),
   validateInvitationCode: vi.fn(),
   validateReferralCode: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock('@/stores', () => ({
 
 vi.mock('@/api/auth', () => ({
   getPublicSettings,
+  isWeChatWebOAuthEnabled,
   validatePromoCode,
   validateInvitationCode,
   validateReferralCode
@@ -112,6 +115,7 @@ describe('RegisterView referral input visibility', () => {
     getPublicSettings.mockResolvedValue({
       ...baseSettings
     })
+    isWeChatWebOAuthEnabled.mockReturnValue(false)
     validatePromoCode.mockResolvedValue({ valid: true })
     validateInvitationCode.mockResolvedValue({ valid: true })
     validateReferralCode.mockResolvedValue({ valid: true })
@@ -204,4 +208,3 @@ describe('RegisterView referral input visibility', () => {
     expect(validateReferralCode).toHaveBeenCalledWith('REF123')
   })
 })
-

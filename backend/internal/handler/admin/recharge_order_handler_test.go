@@ -85,6 +85,15 @@ func (s *rechargeOrderHandlerUserRepoStub) Update(ctx context.Context, user *ser
 func (s *rechargeOrderHandlerUserRepoStub) Delete(ctx context.Context, id int64) error {
 	panic("unexpected Delete")
 }
+func (s *rechargeOrderHandlerUserRepoStub) GetUserAvatar(context.Context, int64) (*service.UserAvatar, error) {
+	panic("unexpected GetUserAvatar")
+}
+func (s *rechargeOrderHandlerUserRepoStub) UpsertUserAvatar(context.Context, int64, service.UpsertUserAvatarInput) (*service.UserAvatar, error) {
+	panic("unexpected UpsertUserAvatar")
+}
+func (s *rechargeOrderHandlerUserRepoStub) DeleteUserAvatar(context.Context, int64) error {
+	panic("unexpected DeleteUserAvatar")
+}
 func (s *rechargeOrderHandlerUserRepoStub) List(ctx context.Context, params pagination.PaginationParams) ([]service.User, *pagination.PaginationResult, error) {
 	panic("unexpected List")
 }
@@ -113,8 +122,23 @@ func (s *rechargeOrderHandlerUserRepoStub) AddGroupToAllowedGroups(ctx context.C
 func (s *rechargeOrderHandlerUserRepoStub) RemoveGroupFromUserAllowedGroups(ctx context.Context, userID int64, groupID int64) error {
 	panic("unexpected RemoveGroupFromUserAllowedGroups")
 }
+func (s *rechargeOrderHandlerUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
+	panic("unexpected GetLatestUsedAtByUserIDs")
+}
+func (s *rechargeOrderHandlerUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) {
+	panic("unexpected GetLatestUsedAtByUserID")
+}
+func (s *rechargeOrderHandlerUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
+	panic("unexpected UpdateUserLastActiveAt")
+}
 func (s *rechargeOrderHandlerUserRepoStub) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
 	panic("unexpected UpdateDefaultChatAPIKeyID")
+}
+func (s *rechargeOrderHandlerUserRepoStub) ListUserAuthIdentities(context.Context, int64) ([]service.UserAuthIdentityRecord, error) {
+	panic("unexpected ListUserAuthIdentities")
+}
+func (s *rechargeOrderHandlerUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error {
+	panic("unexpected UnbindUserAuthProvider")
 }
 func (s *rechargeOrderHandlerUserRepoStub) UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error {
 	panic("unexpected UpdateTotpSecret")

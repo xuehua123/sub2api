@@ -1,17 +1,19 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
@@ -47,6 +49,8 @@ const (
 	orderIDPrefix = "sub2_"
 )
 
+const paymentResumeSigningKeyEnv = "PAYMENT_RESUME_SIGNING_KEY"
+
 // --- Types ---
 
 // generateOutTradeNo creates a unique external order ID for payment providers.
@@ -67,29 +71,39 @@ func generateRandomString(n int) string {
 }
 
 type CreateOrderRequest struct {
-	UserID      int64
-	Amount      float64
-	PaymentType string
-	ClientIP    string
-	IsMobile    bool
-	SrcHost     string
-	SrcURL      string
-	OrderType   string
-	PlanID      int64
+	UserID          int64
+	Amount          float64
+	PaymentType     string
+	OpenID          string
+	ClientIP        string
+	IsMobile        bool
+	IsWeChatBrowser bool
+	SrcHost         string
+	SrcURL          string
+	ReturnURL       string
+	PaymentSource   string
+	OrderType       string
+	PlanID          int64
 }
 
 type CreateOrderResponse struct {
-	OrderID      int64     `json:"order_id"`
-	Amount       float64   `json:"amount"`
-	PayAmount    float64   `json:"pay_amount"`
-	FeeRate      float64   `json:"fee_rate"`
-	Status       string    `json:"status"`
-	PaymentType  string    `json:"payment_type"`
-	PayURL       string    `json:"pay_url,omitempty"`
-	QRCode       string    `json:"qr_code,omitempty"`
-	ClientSecret string    `json:"client_secret,omitempty"`
-	ExpiresAt    time.Time `json:"expires_at"`
-	PaymentMode  string    `json:"payment_mode,omitempty"`
+	OrderID      int64                           `json:"order_id"`
+	Amount       float64                         `json:"amount"`
+	PayAmount    float64                         `json:"pay_amount"`
+	FeeRate      float64                         `json:"fee_rate"`
+	Status       string                          `json:"status"`
+	ResultType   payment.CreatePaymentResultType `json:"result_type,omitempty"`
+	PaymentType  string                          `json:"payment_type"`
+	OutTradeNo   string                          `json:"out_trade_no,omitempty"`
+	PayURL       string                          `json:"pay_url,omitempty"`
+	QRCode       string                          `json:"qr_code,omitempty"`
+	ClientSecret string                          `json:"client_secret,omitempty"`
+	OAuth        *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
+	JSAPI        *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
+	JSAPIPayload *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
+	ExpiresAt    time.Time                       `json:"expires_at"`
+	PaymentMode  string                          `json:"payment_mode,omitempty"`
+	ResumeToken  string                          `json:"resume_token,omitempty"`
 }
 
 type OrderListParams struct {
@@ -169,6 +183,7 @@ type PaymentService struct {
 	configService     *PaymentConfigService
 	userRepo          UserRepository
 	groupRepo         GroupRepository
+	resumeService     *PaymentResumeService
 	referralRewardSvc *ReferralRewardService
 	referralRefundSvc *ReferralRefundService
 }
@@ -185,18 +200,20 @@ func NewPaymentService(
 	referralRewardSvc *ReferralRewardService,
 	referralRefundSvc *ReferralRefundService,
 ) *PaymentService {
-	return &PaymentService{
+	svc := &PaymentService{
 		entClient:         entClient,
 		registry:          registry,
-		loadBalancer:      loadBalancer,
+		loadBalancer:      newVisibleMethodLoadBalancer(loadBalancer, configService),
 		redeemService:     redeemService,
 		subscriptionSvc:   subscriptionSvc,
 		configService:     configService,
 		userRepo:          userRepo,
 		groupRepo:         groupRepo,
+		resumeService:     psNewPaymentResumeService(configService),
 		referralRewardSvc: referralRewardSvc,
 		referralRefundSvc: referralRefundSvc,
 	}
+	return svc
 }
 
 // --- Provider Registry ---
@@ -250,56 +267,6 @@ func (s *PaymentService) loadProviders(ctx context.Context) {
 	}
 }
 
-// GetWebhookProvider returns the provider instance that should verify a webhook.
-// It prefers an explicit instance hint from the webhook URL, otherwise it falls
-// back to the order hint extracted from the payload when available.
-func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, outTradeNo, instanceHint string) (payment.Provider, error) {
-	if strings.TrimSpace(instanceHint) != "" {
-		p, err := s.getWebhookProviderByInstanceHint(ctx, providerKey, instanceHint)
-		if err == nil {
-			return p, nil
-		}
-		slog.Warn("[Webhook] instance hint provider resolution failed", "provider", providerKey, "instanceHint", instanceHint, "error", err)
-	}
-	if outTradeNo != "" {
-		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(outTradeNo)).Only(ctx)
-		if err == nil {
-			p, pErr := s.getOrderProvider(ctx, order)
-			if pErr == nil {
-				return p, nil
-			}
-			slog.Warn("[Webhook] order provider creation failed", "outTradeNo", outTradeNo, "error", pErr)
-		}
-	}
-	instances, err := s.entClient.PaymentProviderInstance.Query().
-		Where(
-			paymentproviderinstance.ProviderKeyEQ(strings.TrimSpace(providerKey)),
-			paymentproviderinstance.EnabledEQ(true),
-		).
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	switch len(instances) {
-	case 0:
-		s.EnsureProviders(ctx)
-		return s.registry.GetProviderByKey(providerKey)
-	case 1:
-		if s.loadBalancer != nil {
-			cfg, cfgErr := s.loadBalancer.GetInstanceConfig(ctx, int64(instances[0].ID))
-			if cfgErr == nil {
-				return provider.CreateProvider(providerKey, strconv.FormatInt(int64(instances[0].ID), 10), cfg)
-			}
-			slog.Warn("[Webhook] unique provider instance config load failed, falling back to registry", "provider", providerKey, "instanceID", instances[0].ID, "error", cfgErr)
-		}
-		s.EnsureProviders(ctx)
-		return s.registry.GetProviderByKey(providerKey)
-	default:
-		return nil, fmt.Errorf("ambiguous webhook provider instance for %s: missing order hint", providerKey)
-	}
-}
-
 func (s *PaymentService) getWebhookProviderByInstanceHint(ctx context.Context, providerKey, instanceHint string) (payment.Provider, error) {
 	instanceID, err := strconv.ParseInt(strings.TrimSpace(instanceHint), 10, 64)
 	if err != nil || instanceID <= 0 {
@@ -349,6 +316,60 @@ func psNilIfEmpty(s string) *string {
 	return &s
 }
 
+func (s *PaymentService) paymentResume() *PaymentResumeService {
+	if s.resumeService != nil {
+		return s.resumeService
+	}
+	return psNewPaymentResumeService(s.configService)
+}
+
+func NewLegacyAwarePaymentResumeService(legacyKey []byte) *PaymentResumeService {
+	return newLegacyAwarePaymentResumeService(legacyKey)
+}
+
+func psNewPaymentResumeService(configService *PaymentConfigService) *PaymentResumeService {
+	return newLegacyAwarePaymentResumeService(psResumeLegacyVerificationKey(configService))
+}
+
+func newLegacyAwarePaymentResumeService(legacyKey []byte) *PaymentResumeService {
+	signingKey, verifyFallbacks := resolvePaymentResumeSigningKeys(legacyKey)
+	return NewPaymentResumeService(signingKey, verifyFallbacks...)
+}
+
+func psResumeLegacyVerificationKey(configService *PaymentConfigService) []byte {
+	if configService == nil {
+		return nil
+	}
+	return configService.encryptionKey
+}
+
+func resolvePaymentResumeSigningKeys(legacyKey []byte) ([]byte, [][]byte) {
+	signingKey := parsePaymentResumeSigningKey(os.Getenv(paymentResumeSigningKeyEnv))
+	if len(signingKey) == 0 {
+		if len(legacyKey) == 0 {
+			return nil, nil
+		}
+		return legacyKey, nil
+	}
+	if len(legacyKey) == 0 || bytes.Equal(legacyKey, signingKey) {
+		return signingKey, nil
+	}
+	return signingKey, [][]byte{legacyKey}
+}
+
+func parsePaymentResumeSigningKey(raw string) []byte {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if len(raw) >= 64 && len(raw)%2 == 0 {
+		if decoded, err := hex.DecodeString(raw); err == nil && len(decoded) > 0 {
+			return decoded
+		}
+	}
+	return []byte(raw)
+}
+
 func psSliceContains(sl []string, s string) bool {
 	for _, v := range sl {
 		if v == s {
@@ -374,8 +395,6 @@ func psComputeValidityDays(days int, unit string) int {
 		return days
 	}
 }
-
-func (s *PaymentService) getFeeRate(_ string) float64 { return 0 }
 
 func psStartOfDayUTC(t time.Time) time.Time {
 	y, m, d := t.UTC().Date()

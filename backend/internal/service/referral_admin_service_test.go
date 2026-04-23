@@ -33,6 +33,13 @@ func (s *adminSearchUserRepoStub) GetByEmail(context.Context, string) (*User, er
 func (s *adminSearchUserRepoStub) GetFirstAdmin(context.Context) (*User, error) { panic("unexpected") }
 func (s *adminSearchUserRepoStub) Update(context.Context, *User) error          { panic("unexpected") }
 func (s *adminSearchUserRepoStub) Delete(context.Context, int64) error          { panic("unexpected") }
+func (s *adminSearchUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) UpsertUserAvatar(context.Context, int64, UpsertUserAvatarInput) (*UserAvatar, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) DeleteUserAvatar(context.Context, int64) error { panic("unexpected") }
 func (s *adminSearchUserRepoStub) List(context.Context, pagination.PaginationParams) ([]User, *pagination.PaginationResult, error) {
 	panic("unexpected")
 }
@@ -69,7 +76,22 @@ func (s *adminSearchUserRepoStub) AddGroupToAllowedGroups(context.Context, int64
 func (s *adminSearchUserRepoStub) RemoveGroupFromUserAllowedGroups(context.Context, int64, int64) error {
 	panic("unexpected")
 }
+func (s *adminSearchUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
+	panic("unexpected")
+}
 func (s *adminSearchUserRepoStub) UpdateDefaultChatAPIKeyID(context.Context, int64, *int64) error {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error {
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) UpdateTotpSecret(context.Context, int64, *string) error {

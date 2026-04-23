@@ -1,7 +1,10 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -81,12 +84,23 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	outTradeNo := extractOutTradeNo(rawBody, providerKey)
 	instanceHint := extractWebhookInstanceHint(c.Request)
 
-	provider, err := h.paymentService.GetWebhookProvider(c.Request.Context(), providerKey, outTradeNo, instanceHint)
-	if err != nil {
-		// Return a retryable 5xx so providers do not permanently drop unresolved events.
-		slog.Warn("[Payment Webhook] provider resolution failed", "provider", providerKey, "outTradeNo", outTradeNo, "instanceHint", instanceHint, "error", err)
-		c.String(http.StatusServiceUnavailable, "provider resolution failed")
-		return
+	var providers []payment.Provider
+	if instanceHint != "" {
+		provider, err := h.paymentService.GetWebhookProvider(c.Request.Context(), providerKey, outTradeNo, instanceHint)
+		if err == nil {
+			providers = []payment.Provider{provider}
+		} else {
+			slog.Warn("[Payment Webhook] hinted provider resolution failed", "provider", providerKey, "outTradeNo", outTradeNo, "instanceHint", instanceHint, "error", err)
+		}
+	}
+	if len(providers) == 0 {
+		var err error
+		providers, err = h.paymentService.GetWebhookProviders(c.Request.Context(), providerKey, outTradeNo)
+		if err != nil {
+			slog.Warn("[Payment Webhook] provider not found", "provider", providerKey, "outTradeNo", outTradeNo, "instanceHint", instanceHint, "error", err)
+			writeProviderResolutionError(c, providerKey, err)
+			return
+		}
 	}
 
 	headers := make(map[string]string)
@@ -94,7 +108,7 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 		headers[strings.ToLower(k)] = c.GetHeader(k)
 	}
 
-	notification, err := provider.VerifyNotification(c.Request.Context(), rawBody, headers)
+	resolvedProviderKey, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, rawBody, headers)
 	if err != nil {
 		truncatedBody := rawBody
 		if len(truncatedBody) > webhookLogTruncateLen {
@@ -108,29 +122,24 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 
 	// nil notification means irrelevant event (e.g. Stripe non-payment event); return success.
 	if notification == nil {
-		writeSuccessResponse(c, providerKey)
+		writeSuccessResponse(c, resolvedProviderKey)
 		return
 	}
 
-	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, providerKey); err != nil {
-		slog.Error("[Payment Webhook] handle notification failed", "provider", providerKey, "error", err)
+	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, resolvedProviderKey); err != nil {
+		slog.Error("[Payment Webhook] handle notification failed", "provider", resolvedProviderKey, "error", err)
 		c.String(http.StatusInternalServerError, "handle failed")
 		return
 	}
 
-	writeSuccessResponse(c, providerKey)
+	writeSuccessResponse(c, resolvedProviderKey)
 }
 
 // extractOutTradeNo parses the webhook body to find the out_trade_no.
 // This allows looking up the correct provider instance before verification.
 func extractOutTradeNo(rawBody, providerKey string) string {
 	switch providerKey {
-	case payment.TypeEasyPay:
-		values, err := url.ParseQuery(rawBody)
-		if err == nil {
-			return values.Get("out_trade_no")
-		}
-	case payment.TypeAlipay:
+	case payment.TypeEasyPay, payment.TypeAlipay:
 		values, err := url.ParseQuery(rawBody)
 		if err == nil {
 			return values.Get("out_trade_no")
@@ -192,6 +201,37 @@ func extractStripeOrderIDFromObject(object map[string]any) string {
 	}
 
 	return ""
+}
+
+func verifyNotificationWithProviders(ctx context.Context, providers []payment.Provider, rawBody string, headers map[string]string) (string, *payment.PaymentNotification, error) {
+	var lastErr error
+	for _, provider := range providers {
+		if provider == nil {
+			continue
+		}
+		notification, err := provider.VerifyNotification(ctx, rawBody, headers)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return provider.ProviderKey(), notification, nil
+	}
+	if lastErr != nil {
+		return "", nil, lastErr
+	}
+	return "", nil, fmt.Errorf("no webhook provider could verify notification")
+}
+
+func writeProviderResolutionError(c *gin.Context, providerKey string, err error) {
+	if providerKey == payment.TypeWxpay {
+		c.String(http.StatusBadRequest, "verify failed")
+		return
+	}
+	if errors.Is(err, payment.ErrProviderNotFound) {
+		writeSuccessResponse(c, providerKey)
+		return
+	}
+	c.String(http.StatusServiceUnavailable, "provider unavailable")
 }
 
 // wxpaySuccessResponse is the JSON response expected by WeChat Pay webhook.

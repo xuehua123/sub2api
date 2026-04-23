@@ -277,6 +277,18 @@ func (s *withdrawalUserRepoStub) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *withdrawalUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
+	panic("unexpected")
+}
+
+func (s *withdrawalUserRepoStub) UpsertUserAvatar(context.Context, int64, UpsertUserAvatarInput) (*UserAvatar, error) {
+	panic("unexpected")
+}
+
+func (s *withdrawalUserRepoStub) DeleteUserAvatar(context.Context, int64) error {
+	panic("unexpected")
+}
+
 func (s *withdrawalUserRepoStub) List(ctx context.Context, params pagination.PaginationParams) ([]User, *pagination.PaginationResult, error) {
 	return nil, &pagination.PaginationResult{}, nil
 }
@@ -317,6 +329,18 @@ func (s *withdrawalUserRepoStub) RemoveGroupFromUserAllowedGroups(ctx context.Co
 	return nil
 }
 
+func (s *withdrawalUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
+	return map[int64]*time.Time{}, nil
+}
+
+func (s *withdrawalUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) {
+	return nil, nil
+}
+
+func (s *withdrawalUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
+	return nil
+}
+
 func (s *withdrawalUserRepoStub) UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error {
 	return nil
 }
@@ -331,6 +355,14 @@ func (s *withdrawalUserRepoStub) DisableTotp(ctx context.Context, userID int64) 
 
 func (s *withdrawalUserRepoStub) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
 	return nil
+}
+
+func (s *withdrawalUserRepoStub) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
+	panic("unexpected")
+}
+
+func (s *withdrawalUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error {
+	panic("unexpected")
 }
 
 func newReferralWithdrawalServiceForTest(repo *withdrawalCommissionRepoStub, settings map[string]string, rechargeRepo RechargeOrderRepository) *ReferralWithdrawalService {

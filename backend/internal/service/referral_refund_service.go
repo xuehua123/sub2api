@@ -246,17 +246,6 @@ func refundFallbackBucketForSingleState(status string) string {
 	}
 }
 
-func refundBucketForReward(status string) string {
-	switch status {
-	case CommissionRewardStatusPending:
-		return CommissionLedgerBucketPending
-	case CommissionRewardStatusFrozen, CommissionRewardStatusPartiallyFrozen:
-		return CommissionLedgerBucketFrozen
-	default:
-		return CommissionLedgerBucketAvailable
-	}
-}
-
 func (s *ReferralRefundService) loadSettings(ctx context.Context) (*SystemSettings, error) {
 	if s.settingService == nil {
 		return &SystemSettings{

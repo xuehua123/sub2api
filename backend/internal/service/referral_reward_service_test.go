@@ -245,6 +245,15 @@ func (s *rewardUserRepoStub) Update(ctx context.Context, user *User) error {
 	panic("unexpected Update")
 }
 func (s *rewardUserRepoStub) Delete(ctx context.Context, id int64) error { panic("unexpected Delete") }
+func (s *rewardUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
+	panic("unexpected GetUserAvatar")
+}
+func (s *rewardUserRepoStub) UpsertUserAvatar(context.Context, int64, UpsertUserAvatarInput) (*UserAvatar, error) {
+	panic("unexpected UpsertUserAvatar")
+}
+func (s *rewardUserRepoStub) DeleteUserAvatar(context.Context, int64) error {
+	panic("unexpected DeleteUserAvatar")
+}
 func (s *rewardUserRepoStub) List(ctx context.Context, params pagination.PaginationParams) ([]User, *pagination.PaginationResult, error) {
 	panic("unexpected List")
 }
@@ -276,8 +285,23 @@ func (s *rewardUserRepoStub) AddGroupToAllowedGroups(ctx context.Context, userID
 func (s *rewardUserRepoStub) RemoveGroupFromUserAllowedGroups(ctx context.Context, userID int64, groupID int64) error {
 	panic("unexpected RemoveGroupFromUserAllowedGroups")
 }
+func (s *rewardUserRepoStub) GetLatestUsedAtByUserIDs(context.Context, []int64) (map[int64]*time.Time, error) {
+	panic("unexpected GetLatestUsedAtByUserIDs")
+}
+func (s *rewardUserRepoStub) GetLatestUsedAtByUserID(context.Context, int64) (*time.Time, error) {
+	panic("unexpected GetLatestUsedAtByUserID")
+}
+func (s *rewardUserRepoStub) UpdateUserLastActiveAt(context.Context, int64, time.Time) error {
+	panic("unexpected UpdateUserLastActiveAt")
+}
 func (s *rewardUserRepoStub) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
 	panic("unexpected UpdateDefaultChatAPIKeyID")
+}
+func (s *rewardUserRepoStub) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
+	panic("unexpected ListUserAuthIdentities")
+}
+func (s *rewardUserRepoStub) UnbindUserAuthProvider(context.Context, int64, string) error {
+	panic("unexpected UnbindUserAuthProvider")
 }
 func (s *rewardUserRepoStub) UpdateTotpSecret(ctx context.Context, userID int64, encryptedSecret *string) error {
 	panic("unexpected UpdateTotpSecret")

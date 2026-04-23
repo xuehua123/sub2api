@@ -50,6 +50,22 @@ type User struct {
 	ReferralEnabled bool `json:"referral_enabled,omitempty"`
 	// DefaultChatAPIKeyID holds the value of the "default_chat_api_key_id" field.
 	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
+	// SignupSource holds the value of the "signup_source" field.
+	SignupSource string `json:"signup_source,omitempty"`
+	// LastLoginAt holds the value of the "last_login_at" field.
+	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	// LastActiveAt holds the value of the "last_active_at" field.
+	LastActiveAt *time.Time `json:"last_active_at,omitempty"`
+	// BalanceNotifyEnabled holds the value of the "balance_notify_enabled" field.
+	BalanceNotifyEnabled bool `json:"balance_notify_enabled,omitempty"`
+	// BalanceNotifyThresholdType holds the value of the "balance_notify_threshold_type" field.
+	BalanceNotifyThresholdType string `json:"balance_notify_threshold_type,omitempty"`
+	// BalanceNotifyThreshold holds the value of the "balance_notify_threshold" field.
+	BalanceNotifyThreshold *float64 `json:"balance_notify_threshold,omitempty"`
+	// BalanceNotifyExtraEmails holds the value of the "balance_notify_extra_emails" field.
+	BalanceNotifyExtraEmails string `json:"balance_notify_extra_emails,omitempty"`
+	// TotalRecharged holds the value of the "total_recharged" field.
+	TotalRecharged float64 `json:"total_recharged,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -100,11 +116,15 @@ type UserEdges struct {
 	CommissionWithdrawalItems []*CommissionWithdrawalItem `json:"commission_withdrawal_items,omitempty"`
 	// CommissionPayoutAccounts holds the value of the commission_payout_accounts edge.
 	CommissionPayoutAccounts []*CommissionPayoutAccount `json:"commission_payout_accounts,omitempty"`
+	// AuthIdentities holds the value of the auth_identities edge.
+	AuthIdentities []*AuthIdentity `json:"auth_identities,omitempty"`
+	// PendingAuthSessions holds the value of the pending_auth_sessions edge.
+	PendingAuthSessions []*PendingAuthSession `json:"pending_auth_sessions,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [22]bool
+	loadedTypes [24]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -298,10 +318,28 @@ func (e UserEdges) CommissionPayoutAccountsOrErr() ([]*CommissionPayoutAccount, 
 	return nil, &NotLoadedError{edge: "commission_payout_accounts"}
 }
 
+// AuthIdentitiesOrErr returns the AuthIdentities value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) AuthIdentitiesOrErr() ([]*AuthIdentity, error) {
+	if e.loadedTypes[21] {
+		return e.AuthIdentities, nil
+	}
+	return nil, &NotLoadedError{edge: "auth_identities"}
+}
+
+// PendingAuthSessionsOrErr returns the PendingAuthSessions value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserEdges) PendingAuthSessionsOrErr() ([]*PendingAuthSession, error) {
+	if e.loadedTypes[22] {
+		return e.PendingAuthSessions, nil
+	}
+	return nil, &NotLoadedError{edge: "pending_auth_sessions"}
+}
+
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[21] {
+	if e.loadedTypes[23] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -312,15 +350,15 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldTotpEnabled, user.FieldReferralEnabled:
+		case user.FieldTotpEnabled, user.FieldReferralEnabled, user.FieldBalanceNotifyEnabled:
 			values[i] = new(sql.NullBool)
-		case user.FieldBalance:
+		case user.FieldBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldConcurrency, user.FieldDefaultChatAPIKeyID:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
 			values[i] = new(sql.NullString)
-		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt:
+		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -443,6 +481,57 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				_m.DefaultChatAPIKeyID = new(int64)
 				*_m.DefaultChatAPIKeyID = value.Int64
 			}
+		case user.FieldSignupSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field signup_source", values[i])
+			} else if value.Valid {
+				_m.SignupSource = value.String
+			}
+		case user.FieldLastLoginAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_login_at", values[i])
+			} else if value.Valid {
+				_m.LastLoginAt = new(time.Time)
+				*_m.LastLoginAt = value.Time
+			}
+		case user.FieldLastActiveAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_active_at", values[i])
+			} else if value.Valid {
+				_m.LastActiveAt = new(time.Time)
+				*_m.LastActiveAt = value.Time
+			}
+		case user.FieldBalanceNotifyEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_notify_enabled", values[i])
+			} else if value.Valid {
+				_m.BalanceNotifyEnabled = value.Bool
+			}
+		case user.FieldBalanceNotifyThresholdType:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_notify_threshold_type", values[i])
+			} else if value.Valid {
+				_m.BalanceNotifyThresholdType = value.String
+			}
+		case user.FieldBalanceNotifyThreshold:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_notify_threshold", values[i])
+			} else if value.Valid {
+				_m.BalanceNotifyThreshold = new(float64)
+				*_m.BalanceNotifyThreshold = value.Float64
+			}
+		case user.FieldBalanceNotifyExtraEmails:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_notify_extra_emails", values[i])
+			} else if value.Valid {
+				_m.BalanceNotifyExtraEmails = value.String
+			}
+		case user.FieldTotalRecharged:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field total_recharged", values[i])
+			} else if value.Valid {
+				_m.TotalRecharged = value.Float64
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -561,6 +650,16 @@ func (_m *User) QueryCommissionPayoutAccounts() *CommissionPayoutAccountQuery {
 	return NewUserClient(_m.config).QueryCommissionPayoutAccounts(_m)
 }
 
+// QueryAuthIdentities queries the "auth_identities" edge of the User entity.
+func (_m *User) QueryAuthIdentities() *AuthIdentityQuery {
+	return NewUserClient(_m.config).QueryAuthIdentities(_m)
+}
+
+// QueryPendingAuthSessions queries the "pending_auth_sessions" edge of the User entity.
+func (_m *User) QueryPendingAuthSessions() *PendingAuthSessionQuery {
+	return NewUserClient(_m.config).QueryPendingAuthSessions(_m)
+}
+
 // QueryUserAllowedGroups queries the "user_allowed_groups" edge of the User entity.
 func (_m *User) QueryUserAllowedGroups() *UserAllowedGroupQuery {
 	return NewUserClient(_m.config).QueryUserAllowedGroups(_m)
@@ -644,6 +743,36 @@ func (_m *User) String() string {
 		builder.WriteString("default_chat_api_key_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("signup_source=")
+	builder.WriteString(_m.SignupSource)
+	builder.WriteString(", ")
+	if v := _m.LastLoginAt; v != nil {
+		builder.WriteString("last_login_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LastActiveAt; v != nil {
+		builder.WriteString("last_active_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("balance_notify_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BalanceNotifyEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("balance_notify_threshold_type=")
+	builder.WriteString(_m.BalanceNotifyThresholdType)
+	builder.WriteString(", ")
+	if v := _m.BalanceNotifyThreshold; v != nil {
+		builder.WriteString("balance_notify_threshold=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("balance_notify_extra_emails=")
+	builder.WriteString(_m.BalanceNotifyExtraEmails)
+	builder.WriteString(", ")
+	builder.WriteString("total_recharged=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TotalRecharged))
 	builder.WriteByte(')')
 	return builder.String()
 }
