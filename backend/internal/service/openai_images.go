@@ -536,6 +536,10 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 	if err != nil {
 		return nil, err
 	}
+	forwardBody, forwardContentType, err = stripUnsupportedOpenAIImagesNativeOptions(forwardBody, forwardContentType, upstreamModel)
+	if err != nil {
+		return nil, err
+	}
 	if !parsed.Multipart {
 		setOpsUpstreamRequestBody(c, forwardBody)
 	}
@@ -707,6 +711,27 @@ func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]
 	return rewritten, contentType, nil
 }
 
+func stripUnsupportedOpenAIImagesNativeOptions(body []byte, contentType string, model string) ([]byte, string, error) {
+	if strings.ToLower(strings.TrimSpace(model)) != "gpt-image-2" {
+		return body, contentType, nil
+	}
+
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
+		return stripOpenAIImagesMultipartFields(body, contentType, map[string]struct{}{
+			"input_fidelity": {},
+		})
+	}
+	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.GetBytes(body, "input_fidelity").Exists() {
+		return body, contentType, nil
+	}
+	stripped, err := sjson.DeleteBytes(body, "input_fidelity")
+	if err != nil {
+		return nil, "", fmt.Errorf("strip unsupported image option input_fidelity: %w", err)
+	}
+	return stripped, contentType, nil
+}
+
 func (s *OpenAIGatewayService) normalizeOpenAIImagesAPIKeyBody(
 	ctx context.Context,
 	c *gin.Context,
@@ -853,6 +878,63 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 		if err := writer.WriteField("model", model); err != nil {
 			return nil, "", fmt.Errorf("append multipart model field: %w", err)
 		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, "", fmt.Errorf("finalize multipart body: %w", err)
+	}
+	return buffer.Bytes(), writer.FormDataContentType(), nil
+}
+
+func stripOpenAIImagesMultipartFields(body []byte, contentType string, fields map[string]struct{}) ([]byte, string, error) {
+	if len(fields) == 0 {
+		return body, contentType, nil
+	}
+	_, params, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse multipart content-type: %w", err)
+	}
+	boundary := strings.TrimSpace(params["boundary"])
+	if boundary == "" {
+		return nil, "", fmt.Errorf("multipart boundary is required")
+	}
+
+	reader := multipart.NewReader(bytes.NewReader(body), boundary)
+	var buffer bytes.Buffer
+	writer := multipart.NewWriter(&buffer)
+	changed := false
+
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("read multipart body: %w", err)
+		}
+
+		formName := strings.TrimSpace(part.FormName())
+		if part.FileName() == "" {
+			if _, shouldStrip := fields[formName]; shouldStrip {
+				changed = true
+				_ = part.Close()
+				continue
+			}
+		}
+
+		target, err := writer.CreatePart(cloneMultipartHeader(part.Header))
+		if err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("create multipart part: %w", err)
+		}
+		if _, err := io.Copy(target, part); err != nil {
+			_ = part.Close()
+			return nil, "", fmt.Errorf("copy multipart part: %w", err)
+		}
+		_ = part.Close()
+	}
+
+	if !changed {
+		return body, contentType, nil
 	}
 	if err := writer.Close(); err != nil {
 		return nil, "", fmt.Errorf("finalize multipart body: %w", err)

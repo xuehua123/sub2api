@@ -635,6 +635,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyEditsRewritesTrustedImageURLsTo
 	body := []byte(fmt.Sprintf(`{
 		"model":"gpt-image-2",
 		"prompt":"replace background",
+		"input_fidelity":"high",
 		"images":[{"image_url":"%s/source.png"}]
 	}`, imageServer.URL))
 
@@ -682,6 +683,7 @@ func TestOpenAIGatewayServiceForwardImages_APIKeyEditsRewritesTrustedImageURLsTo
 	require.NotNil(t, result)
 	require.Equal(t, 1, result.ImageCount)
 	require.True(t, strings.HasPrefix(gjson.GetBytes(upstream.lastBody, "images.0.image_url").String(), "data:image/png;base64,"))
+	require.False(t, gjson.GetBytes(upstream.lastBody, "input_fidelity").Exists())
 	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "model").String())
 	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
