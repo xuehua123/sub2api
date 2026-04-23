@@ -757,7 +757,16 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 		return nil, err
 	}
 
-	responsesBody, err := buildOpenAIImagesResponsesRequest(parsed, requestModel)
+	headers := http.Header{}
+	if c != nil && c.Request != nil {
+		headers = cloneHTTPHeader(c.Request.Header)
+	}
+	normalizedParsed, err := normalizeOpenAIImagesParsedTrustedURLs(ctx, headers, parsed)
+	if err != nil {
+		return nil, err
+	}
+
+	responsesBody, err := buildOpenAIImagesResponsesRequest(normalizedParsed, requestModel)
 	if err != nil {
 		return nil, err
 	}

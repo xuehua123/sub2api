@@ -759,6 +759,41 @@ func (s *OpenAIGatewayService) normalizeOpenAIImagesAPIKeyBody(
 	return rewritten, parsedContentType(parsed), nil
 }
 
+func normalizeOpenAIImagesParsedTrustedURLs(
+	ctx context.Context,
+	headers http.Header,
+	parsed *OpenAIImagesRequest,
+) (*OpenAIImagesRequest, error) {
+	if parsed == nil || parsed.Multipart || !parsed.IsEdits() {
+		return parsed, nil
+	}
+
+	normalized := *parsed
+	normalized.InputImageURLs = append([]string(nil), parsed.InputImageURLs...)
+
+	for index, imageURL := range normalized.InputImageURLs {
+		dataURL, replaced, err := normalizeTrustedOpenAIImageURLToDataURL(ctx, headers, imageURL)
+		if err != nil {
+			return nil, fmt.Errorf("resolve images[%d].image_url: %w", index, err)
+		}
+		if replaced {
+			normalized.InputImageURLs[index] = dataURL
+		}
+	}
+
+	if strings.TrimSpace(normalized.MaskImageURL) != "" {
+		dataURL, replaced, err := normalizeTrustedOpenAIImageURLToDataURL(ctx, headers, normalized.MaskImageURL)
+		if err != nil {
+			return nil, fmt.Errorf("resolve mask.image_url: %w", err)
+		}
+		if replaced {
+			normalized.MaskImageURL = dataURL
+		}
+	}
+
+	return &normalized, nil
+}
+
 func parsedContentType(parsed *OpenAIImagesRequest) string {
 	if parsed == nil {
 		return ""
