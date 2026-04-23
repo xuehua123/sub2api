@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -207,7 +208,20 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	}
 	subject := s.buildPaymentSubject(plan, payAmountStr, cfg)
 	outTradeNo := order.OutTradeNo
-	pr, err := prov.CreatePayment(ctx, payment.CreatePaymentRequest{OrderID: outTradeNo, Amount: payAmountStr, PaymentType: req.PaymentType, Subject: subject, ClientIP: req.ClientIP, IsMobile: req.IsMobile, InstanceSubMethods: sel.SupportedTypes})
+	notifyURL := strings.TrimSpace(sel.Config["notifyUrl"])
+	if providerKey == payment.TypeWxpay {
+		notifyURL = buildNotifyURLWithInstanceHint(notifyURL, sel.InstanceID)
+	}
+	pr, err := prov.CreatePayment(ctx, payment.CreatePaymentRequest{
+		OrderID:            outTradeNo,
+		Amount:             payAmountStr,
+		PaymentType:        req.PaymentType,
+		Subject:            subject,
+		NotifyURL:          notifyURL,
+		ClientIP:           req.ClientIP,
+		IsMobile:           req.IsMobile,
+		InstanceSubMethods: sel.SupportedTypes,
+	})
 	if err != nil {
 		slog.Error("[PaymentService] CreatePayment failed", "provider", providerKey, "instance", sel.InstanceID, "error", err)
 		return nil, infraerrors.ServiceUnavailable("PAYMENT_GATEWAY_ERROR", fmt.Sprintf("payment gateway error: %s", err.Error()))
@@ -233,6 +247,22 @@ func (s *PaymentService) buildPaymentSubject(plan *dbent.SubscriptionPlan, payAm
 		return strings.TrimSpace(pf + " " + payAmountStr + " " + sf)
 	}
 	return "Sub2API " + payAmountStr + " CNY"
+}
+
+func buildNotifyURLWithInstanceHint(rawNotifyURL, instanceID string) string {
+	rawNotifyURL = strings.TrimSpace(rawNotifyURL)
+	instanceID = strings.TrimSpace(instanceID)
+	if rawNotifyURL == "" || instanceID == "" {
+		return rawNotifyURL
+	}
+	parsed, err := url.Parse(rawNotifyURL)
+	if err != nil {
+		return rawNotifyURL
+	}
+	query := parsed.Query()
+	query.Set("instance_id", instanceID)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
 
 // --- Order Queries ---

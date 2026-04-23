@@ -206,7 +206,7 @@ func (h *ReferralHandler) GetInviteeRewards(c *gin.Context) {
 		response.Unauthorized(c, "User not authenticated")
 		return
 	}
-	sourceUserID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	sourceUserID, err := strconv.ParseInt(c.Param("source_user_id"), 10, 64)
 	if err != nil {
 		response.BadRequest(c, "Invalid user ID")
 		return

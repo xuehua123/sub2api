@@ -491,6 +491,13 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	var applyCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/auth/get-session":
+			writeJSONResponse(t, w, map[string]any{
+				"user": map[string]any{
+					"id": "101",
+				},
+			})
+			return
 		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
 			applyCalls.Add(1)
 			if r.Method != http.MethodPost {
@@ -530,6 +537,7 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	defer backend.Close()
 
 	targetToken := newUnsignedJWT(t, map[string]any{
+		"user_id":                    101,
 		"desired_config_fingerprint": "fp-3",
 		"runtime_config_version":     "runtime-v1",
 		"exp":                        time.Now().Add(10 * time.Minute).Unix(),
@@ -574,6 +582,81 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	}
 	if !foundSync {
 		t.Fatalf("expected sync cookie to be set")
+	}
+}
+
+func TestBootstrapStartsSignInWhenSessionUserDoesNotMatchTargetToken(t *testing.T) {
+	t.Helper()
+
+	var consumeCalls atomic.Int32
+	var applyCalls atomic.Int32
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/get-session":
+			writeJSONResponse(t, w, map[string]any{
+				"user": map[string]any{
+					"id": "202",
+				},
+			})
+		case "/api/auth/sign-in/oauth2":
+			writeJSONResponse(t, w, map[string]any{
+				"url":      "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456",
+				"redirect": true,
+			})
+		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
+			applyCalls.Add(1)
+			http.Error(w, "should not apply config", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/lobehub/bootstrap/consume":
+			consumeCalls.Add(1)
+			http.Error(w, "should not consume ticket before session match", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	targetToken := newUnsignedJWT(t, map[string]any{
+		"user_id":                    101,
+		"desired_config_fingerprint": "fp-3",
+		"runtime_config_version":     "runtime-v1",
+		"exp":                        time.Now().Add(10 * time.Minute).Unix(),
+	})
+
+	server := mustNewTestServer(t, Config{
+		UpstreamURL:        upstream.URL,
+		Sub2APIAPIBaseURL:  backend.URL + "/api/v1",
+		Sub2APIFrontendURL: "https://app.example.com",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/__lobehub_bootstrap?ticket=ticket-123", nil)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.AddCookie(&http.Cookie{Name: TargetCookieName, Value: targetToken})
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456" {
+		t.Fatalf("unexpected redirect: %s", resp.Header.Get("Location"))
+	}
+	if consumeCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap ticket to remain unused, got %d consume calls", consumeCalls.Load())
+	}
+	if applyCalls.Load() != 0 {
+		t.Fatalf("expected provider config not to be applied, got %d apply calls", applyCalls.Load())
 	}
 }
 
@@ -829,6 +912,48 @@ func TestSharedCookieDomain_UsesRegistrableDomainOnlyForSubdomains(t *testing.T)
 	}
 	if got := sharedCookieDomain("127.0.0.1:3210"); got != "" {
 		t.Fatalf("sharedCookieDomain(127.0.0.1:3210) = %s, want empty", got)
+	}
+}
+
+func TestParseObservedSettings_PreservesLanguageModelWhenRuntimeConfigPresent(t *testing.T) {
+	payload := []byte(`{
+		"runtimeConfig": {
+			"openai": {
+				"keyVaults": {
+					"apiKey": "sk-user-1",
+					"baseURL": "https://api.example.com/v1"
+				}
+			}
+		},
+		"settings": {
+			"languageModel": {
+				"openai": {
+					"enabled": true,
+					"enabledModels": ["gpt-4.1"]
+				}
+			}
+		}
+	}`)
+
+	observed, err := parseObservedSettings(payload)
+	if err != nil {
+		t.Fatalf("parseObservedSettings returned error: %v", err)
+	}
+	if observed == nil {
+		t.Fatal("parseObservedSettings returned nil observed settings")
+	}
+	if vault := observed.KeyVaults["openai"]; vault.APIKey != "sk-user-1" || vault.BaseURL != "https://api.example.com/v1" {
+		t.Fatalf("unexpected key vault parsed: %+v", vault)
+	}
+	model, ok := observed.LanguageModel["openai"]
+	if !ok {
+		t.Fatal("expected language model config for openai")
+	}
+	if !model.Enabled {
+		t.Fatal("expected openai language model to be enabled")
+	}
+	if len(model.EnabledModels) != 1 || model.EnabledModels[0] != "gpt-4.1" {
+		t.Fatalf("unexpected enabled models: %+v", model.EnabledModels)
 	}
 }
 

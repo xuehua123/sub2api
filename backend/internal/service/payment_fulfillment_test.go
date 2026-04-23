@@ -387,6 +387,43 @@ func (s *paymentGroupRepoStub) UpdateSortOrders(context.Context, []GroupSortOrde
 	panic("unexpected UpdateSortOrders")
 }
 
+type paymentLoadBalancerStub struct {
+	configs           map[int64]map[string]string
+	requestedConfig   []int64
+	selectInstance    *payment.InstanceSelection
+	selectInstanceErr error
+}
+
+func (s *paymentLoadBalancerStub) GetInstanceConfig(ctx context.Context, instanceID int64) (map[string]string, error) {
+	s.requestedConfig = append(s.requestedConfig, instanceID)
+	if cfg, ok := s.configs[instanceID]; ok {
+		cloned := make(map[string]string, len(cfg))
+		for k, v := range cfg {
+			cloned[k] = v
+		}
+		return cloned, nil
+	}
+	return nil, fmt.Errorf("missing config for instance %d", instanceID)
+}
+
+func (s *paymentLoadBalancerStub) SelectInstance(ctx context.Context, providerKey string, paymentType payment.PaymentType, strategy payment.Strategy, orderAmount float64) (*payment.InstanceSelection, error) {
+	if s.selectInstanceErr != nil {
+		return nil, s.selectInstanceErr
+	}
+	if s.selectInstance == nil {
+		return nil, fmt.Errorf("unexpected SelectInstance call")
+	}
+	result := *s.selectInstance
+	if result.Config != nil {
+		cloned := make(map[string]string, len(result.Config))
+		for k, v := range result.Config {
+			cloned[k] = v
+		}
+		result.Config = cloned
+	}
+	return &result, nil
+}
+
 func (s *subscriptionUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Context, userID, groupID int64) (*UserSubscription, error) {
 	return s.GetByUserIDAndGroupID(context.Background(), userID, groupID)
 }
@@ -564,6 +601,79 @@ func TestHandlePaymentNotification_RefundedSubscriptionOrderRevokesAccess(t *tes
 	require.Contains(t, logs[0].Detail, `"tradeNo":"trade_subscription_refund"`)
 }
 
+func TestHandlePaymentNotification_PartialSubscriptionRefundDeductsProportionalDays(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupID := int64(67)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-partial-refund").
+		SetOutTradeNo("subscription_partial_refund_notification_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_partial_notification").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	subRepo := newSubscriptionUserSubRepoStub()
+	originalExpiry := time.Now().Add(29 * 24 * time.Hour)
+	subRepo.seed(&UserSubscription{
+		ID:        502,
+		UserID:    user.ID,
+		GroupID:   groupID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  time.Now().Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+	})
+	subscriptionSvc := NewSubscriptionService(
+		&paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	service := &PaymentService{
+		entClient:       client,
+		subscriptionSvc: subscriptionSvc,
+	}
+
+	err = service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         45,
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, updatedOrder.Status)
+	require.Equal(t, 45.0, updatedOrder.RefundAmount)
+	require.NotNil(t, updatedOrder.RefundAt)
+
+	updatedSub, err := subRepo.GetByID(ctx, 502)
+	require.NoError(t, err)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), updatedSub.ExpiresAt, time.Second)
+
+	logs := requireAuditActionsForOrder(t, ctx, client, order.ID, "EXTERNAL_REFUND_SYNCED")
+	require.Contains(t, logs[0].Detail, `"refundAmountTotal":45`)
+}
+
 func TestGetWebhookProvider_RejectsAmbiguousProviderInstancesWithoutOrderHint(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentServiceEntClient(t)
@@ -588,9 +698,51 @@ func TestGetWebhookProvider_RejectsAmbiguousProviderInstancesWithoutOrderHint(t 
 		registry:  payment.NewRegistry(),
 	}
 
-	_, err = service.GetWebhookProvider(ctx, payment.TypeStripe, "")
+	_, err = service.GetWebhookProvider(ctx, payment.TypeStripe, "", "")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ambiguous")
+}
+
+func TestGetWebhookProvider_UsesInstanceHintBeforeVerification(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+
+	first, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-a").
+		SetConfig("{}").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	second, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-b").
+		SetConfig("{}").
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	loadBalancer := &paymentLoadBalancerStub{
+		configs: map[int64]map[string]string{
+			first.ID:  {"secretKey": "sk_test_first"},
+			second.ID: {"secretKey": "sk_test_second"},
+		},
+	}
+	service := &PaymentService{
+		entClient:    client,
+		registry:     payment.NewRegistry(),
+		loadBalancer: loadBalancer,
+	}
+
+	provider, err := service.GetWebhookProvider(ctx, payment.TypeStripe, "", strconv.FormatInt(second.ID, 10))
+	require.NoError(t, err)
+	require.NotNil(t, provider)
+	require.Equal(t, []int64{second.ID}, loadBalancer.requestedConfig)
+}
+
+func TestBuildNotifyURLWithInstanceHint_AppendsQueryParameter(t *testing.T) {
+	got := buildNotifyURLWithInstanceHint("https://api.example.com/api/v1/payment/webhook/wxpay?foo=bar", "42")
+	require.Equal(t, "https://api.example.com/api/v1/payment/webhook/wxpay?foo=bar&instance_id=42", got)
 }
 
 func TestHandlePaymentNotification_RefundedTotalSyncsOrderBalanceAndReferralState(t *testing.T) {

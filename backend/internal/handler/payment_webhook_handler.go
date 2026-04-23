@@ -26,6 +26,8 @@ const maxWebhookBodySize = 1 << 20
 // webhookLogTruncateLen is the maximum length of raw body logged on verify failure.
 const webhookLogTruncateLen = 200
 
+const webhookInstanceHintParam = "instance_id"
+
 // NewPaymentWebhookHandler creates a new PaymentWebhookHandler.
 func NewPaymentWebhookHandler(paymentService *service.PaymentService, registry *payment.Registry) *PaymentWebhookHandler {
 	return &PaymentWebhookHandler{
@@ -77,11 +79,13 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	// Extract out_trade_no to look up the order's specific provider instance.
 	// This is needed when multiple instances of the same provider exist (e.g. multiple EasyPay accounts).
 	outTradeNo := extractOutTradeNo(rawBody, providerKey)
+	instanceHint := extractWebhookInstanceHint(c.Request)
 
-	provider, err := h.paymentService.GetWebhookProvider(c.Request.Context(), providerKey, outTradeNo)
+	provider, err := h.paymentService.GetWebhookProvider(c.Request.Context(), providerKey, outTradeNo, instanceHint)
 	if err != nil {
-		slog.Warn("[Payment Webhook] provider not found", "provider", providerKey, "outTradeNo", outTradeNo, "error", err)
-		writeSuccessResponse(c, providerKey)
+		// Return a retryable 5xx so providers do not permanently drop unresolved events.
+		slog.Warn("[Payment Webhook] provider resolution failed", "provider", providerKey, "outTradeNo", outTradeNo, "instanceHint", instanceHint, "error", err)
+		c.String(http.StatusServiceUnavailable, "provider resolution failed")
 		return
 	}
 
@@ -135,6 +139,17 @@ func extractOutTradeNo(rawBody, providerKey string) string {
 		return extractStripeOutTradeNo(rawBody)
 	}
 	return ""
+}
+
+func extractWebhookInstanceHint(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return ""
+	}
+	query := r.URL.Query()
+	if hint := strings.TrimSpace(query.Get(webhookInstanceHintParam)); hint != "" {
+		return hint
+	}
+	return strings.TrimSpace(query.Get("provider_instance_id"))
 }
 
 func extractStripeOutTradeNo(rawBody string) string {

@@ -102,17 +102,19 @@ type OrderListParams struct {
 }
 
 type RefundPlan struct {
-	OrderID         int64
-	Order           *dbent.PaymentOrder
-	RefundAmount    float64
-	GatewayAmount   float64
-	Reason          string
-	Force           bool
-	DeductBalance   bool
-	DeductionType   string
-	BalanceToDeduct float64
-	SubDaysToDeduct int
-	SubscriptionID  int64
+	OrderID              int64
+	Order                *dbent.PaymentOrder
+	RefundAmount         float64
+	GatewayAmount        float64
+	Reason               string
+	Force                bool
+	DeductBalance        bool
+	DeductionType        string
+	BalanceToDeduct      float64
+	SubDaysToDeduct      int
+	SubscriptionID       int64
+	SubscriptionSnapshot *UserSubscription
+	SubRevoked           bool
 }
 
 type RefundResult struct {
@@ -249,10 +251,16 @@ func (s *PaymentService) loadProviders(ctx context.Context) {
 }
 
 // GetWebhookProvider returns the provider instance that should verify a webhook.
-// It extracts out_trade_no from the raw body, looks up the order to find the
-// original provider instance, and creates a provider with that instance's credentials.
-// Falls back to the registry provider when the order cannot be found.
-func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, outTradeNo string) (payment.Provider, error) {
+// It prefers an explicit instance hint from the webhook URL, otherwise it falls
+// back to the order hint extracted from the payload when available.
+func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, outTradeNo, instanceHint string) (payment.Provider, error) {
+	if strings.TrimSpace(instanceHint) != "" {
+		p, err := s.getWebhookProviderByInstanceHint(ctx, providerKey, instanceHint)
+		if err == nil {
+			return p, nil
+		}
+		slog.Warn("[Webhook] instance hint provider resolution failed", "provider", providerKey, "instanceHint", instanceHint, "error", err)
+	}
 	if outTradeNo != "" {
 		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(outTradeNo)).Only(ctx)
 		if err == nil {
@@ -290,6 +298,31 @@ func (s *PaymentService) GetWebhookProvider(ctx context.Context, providerKey, ou
 	default:
 		return nil, fmt.Errorf("ambiguous webhook provider instance for %s: missing order hint", providerKey)
 	}
+}
+
+func (s *PaymentService) getWebhookProviderByInstanceHint(ctx context.Context, providerKey, instanceHint string) (payment.Provider, error) {
+	instanceID, err := strconv.ParseInt(strings.TrimSpace(instanceHint), 10, 64)
+	if err != nil || instanceID <= 0 {
+		return nil, fmt.Errorf("invalid provider instance hint: %q", instanceHint)
+	}
+	instance, err := s.entClient.PaymentProviderInstance.Query().
+		Where(
+			paymentproviderinstance.IDEQ(instanceID),
+			paymentproviderinstance.ProviderKeyEQ(strings.TrimSpace(providerKey)),
+			paymentproviderinstance.EnabledEQ(true),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load hinted provider instance: %w", err)
+	}
+	if s.loadBalancer == nil {
+		return nil, fmt.Errorf("load balancer unavailable for hinted provider instance")
+	}
+	cfg, err := s.loadBalancer.GetInstanceConfig(ctx, int64(instance.ID))
+	if err != nil {
+		return nil, fmt.Errorf("load hinted provider config: %w", err)
+	}
+	return provider.CreateProvider(providerKey, strconv.FormatInt(int64(instance.ID), 10), cfg)
 }
 
 // --- Helpers ---

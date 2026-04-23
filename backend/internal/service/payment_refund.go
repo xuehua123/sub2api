@@ -104,12 +104,16 @@ func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, 
 	if o.OrderType == payment.OrderTypeSubscription {
 		p.DeductionType = payment.DeductionTypeSubscription
 		if o.SubscriptionGroupID != nil && o.SubscriptionDays != nil {
-			p.SubDaysToDeduct = *o.SubscriptionDays
-			sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
-			if err == nil && sub != nil {
-				p.SubscriptionID = sub.ID
-			} else if !force {
-				return &RefundResult{Success: false, Warning: "cannot find active subscription for deduction, use force", RequireForce: true}
+			p.SubDaysToDeduct = subscriptionDaysRefundDelta(o, p.RefundAmount)
+			if p.SubDaysToDeduct > 0 {
+				sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
+				if err == nil && sub != nil {
+					p.SubscriptionID = sub.ID
+					snapshot := *sub
+					p.SubscriptionSnapshot = &snapshot
+				} else if !force {
+					return &RefundResult{Success: false, Warning: "cannot find active subscription for deduction, use force", RequireForce: true}
+				}
 			}
 		}
 		return nil
@@ -151,12 +155,20 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
 			_, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, -p.SubDaysToDeduct)
 			if err != nil {
-				// If deducting would expire the subscription, revoke it entirely
+				if !errors.Is(err, ErrAdjustWouldExpire) {
+					s.restoreStatus(ctx, p)
+					return nil, fmt.Errorf("deduct subscription: %w", err)
+				}
+
+				// If deducting would expire the subscription, revoke it entirely.
+				// Keep the snapshot in the plan so a later gateway failure can
+				// restore the user's access instead of leaving the row deleted.
 				slog.Info("subscription deduction would expire, revoking", "orderID", p.OrderID, "subID", p.SubscriptionID, "days", p.SubDaysToDeduct)
 				if revokeErr := s.subscriptionSvc.RevokeSubscription(ctx, p.SubscriptionID); revokeErr != nil {
 					s.restoreStatus(ctx, p)
 					return nil, fmt.Errorf("revoke subscription: %w", revokeErr)
 				}
+				p.SubRevoked = true
 			}
 		} else {
 			slog.Warn("skipping subscription deduction on retry (previous rollback failed)", "orderID", p.OrderID)
@@ -319,6 +331,14 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 		}
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
+		if p.SubRevoked {
+			if err := s.restoreRevokedSubscription(ctx, p); err != nil {
+				slog.Error("[CRITICAL] subscription restore failed", "orderID", p.OrderID, "subID", p.SubscriptionID, "error", err)
+				s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "subDaysDeducted": p.SubDaysToDeduct})
+				return false
+			}
+			return true
+		}
 		if _, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, p.SubDaysToDeduct); err != nil {
 			slog.Error("[CRITICAL] subscription rollback failed", "orderID", p.OrderID, "subID", p.SubscriptionID, "days", p.SubDaysToDeduct, "error", err)
 			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "subDaysDeducted": p.SubDaysToDeduct})
@@ -326,6 +346,35 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 		}
 	}
 	return true
+}
+
+func (s *PaymentService) restoreRevokedSubscription(ctx context.Context, p *RefundPlan) error {
+	if s == nil || s.subscriptionSvc == nil || s.subscriptionSvc.userSubRepo == nil || p == nil || p.SubscriptionSnapshot == nil {
+		return fmt.Errorf("missing subscription snapshot")
+	}
+
+	snapshot := *p.SubscriptionSnapshot
+	if err := s.subscriptionSvc.userSubRepo.Create(ctx, &snapshot); err != nil {
+		existing, getErr := s.subscriptionSvc.userSubRepo.GetByUserIDAndGroupID(ctx, snapshot.UserID, snapshot.GroupID)
+		if getErr != nil {
+			return err
+		}
+		snapshot.ID = existing.ID
+		if updateErr := s.subscriptionSvc.userSubRepo.Update(ctx, &snapshot); updateErr != nil {
+			return updateErr
+		}
+	}
+
+	s.subscriptionSvc.InvalidateSubCache(snapshot.UserID, snapshot.GroupID)
+	if s.subscriptionSvc.billingCacheService != nil {
+		userID, groupID := snapshot.UserID, snapshot.GroupID
+		go func() {
+			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.subscriptionSvc.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+		}()
+	}
+	return nil
 }
 
 func (s *PaymentService) restoreStatus(ctx context.Context, p *RefundPlan) {

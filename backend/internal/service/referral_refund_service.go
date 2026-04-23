@@ -114,31 +114,17 @@ func (s *ReferralRefundService) ApplyRefund(ctx context.Context, input *Recharge
 				continue
 			}
 
-			isPaidReward := reward.Status == CommissionRewardStatusPaid || reward.Status == CommissionRewardStatusPartiallyPaid
-			var entryType, bucket string
-			if isPaidReward {
-				if !negativeCarryEnabled {
-					continue
-				}
-				entryType = CommissionLedgerEntryNegativeCarry
-				bucket = CommissionLedgerBucketAvailable
-			} else {
-				entryType = CommissionLedgerEntryRefundReverse
-				bucket = refundBucketForReward(reward.Status)
-			}
-
-			if err := s.commissionRepo.CreateLedgerEntries(txCtx, []CommissionLedger{{
-				UserID:          reward.UserID,
-				RewardID:        int64ValuePtr(reward.ID),
-				RechargeOrderID: int64ValuePtr(reward.RechargeOrderID),
-				EntryType:       entryType,
-				Bucket:          bucket,
-				Amount:          -reverseAmount,
-				Currency:        reward.Currency,
-			}}); err != nil {
+			ledgers, appliedAmount, err := s.buildRefundReversalLedgers(txCtx, reward, reverseAmount, negativeCarryEnabled)
+			if err != nil {
 				return nil, err
 			}
-			if input.RefundedAmount+input.ChargebackAmount >= order.PaidAmount {
+			if appliedAmount <= 0 || len(ledgers) == 0 {
+				continue
+			}
+			if err := s.commissionRepo.CreateLedgerEntries(txCtx, ledgers); err != nil {
+				return nil, err
+			}
+			if input.RefundedAmount+input.ChargebackAmount >= order.PaidAmount && reverseAmount-appliedAmount <= amountToleranceCNY {
 				reward.Status = CommissionRewardStatusReversed
 			} else {
 				reward.Status = CommissionRewardStatusPartiallyReversed
@@ -169,6 +155,95 @@ func (s *ReferralRefundService) ApplyRefund(ctx context.Context, input *Recharge
 		return nil, nil, err
 	}
 	return order, rewards, nil
+}
+
+func (s *ReferralRefundService) buildRefundReversalLedgers(ctx context.Context, reward *CommissionReward, reverseAmount float64, negativeCarryEnabled bool) ([]CommissionLedger, float64, error) {
+	if reward == nil || reverseAmount <= 0 {
+		return nil, 0, nil
+	}
+
+	remaining := roundMoney(reverseAmount)
+	ledgers := make([]CommissionLedger, 0, 4)
+	appendLedger := func(entryType, bucket string, amount float64) {
+		amount = roundMoney(amount)
+		if amount <= 0 {
+			return
+		}
+		ledgers = append(ledgers, CommissionLedger{
+			UserID:          reward.UserID,
+			RewardID:        int64ValuePtr(reward.ID),
+			RechargeOrderID: int64ValuePtr(reward.RechargeOrderID),
+			EntryType:       entryType,
+			Bucket:          bucket,
+			Amount:          -amount,
+			Currency:        reward.Currency,
+		})
+		remaining = roundMoney(remaining - amount)
+	}
+
+	for _, bucket := range []string{CommissionLedgerBucketAvailable, CommissionLedgerBucketFrozen, CommissionLedgerBucketPending} {
+		if remaining <= amountToleranceCNY {
+			break
+		}
+		balance, err := s.commissionRepo.SumRewardBucketAmountForUpdate(ctx, reward.ID, bucket, true)
+		if err != nil {
+			return nil, 0, err
+		}
+		balance = roundMoney(balance)
+		if balance <= 0 {
+			continue
+		}
+		amount := balance
+		if amount > remaining {
+			amount = remaining
+		}
+		appendLedger(CommissionLedgerEntryRefundReverse, bucket, amount)
+	}
+
+	if remaining > amountToleranceCNY && len(ledgers) == 0 {
+		if fallbackBucket := refundFallbackBucketForSingleState(reward.Status); fallbackBucket != "" {
+			appendLedger(CommissionLedgerEntryRefundReverse, fallbackBucket, remaining)
+		}
+	}
+
+	if remaining > amountToleranceCNY && negativeCarryEnabled && rewardAllowsNegativeCarry(reward.Status) {
+		settled, err := s.commissionRepo.SumRewardBucketAmountForUpdate(ctx, reward.ID, CommissionLedgerBucketSettled, true)
+		if err != nil {
+			return nil, 0, err
+		}
+		settled = roundMoney(settled)
+		if settled <= 0 {
+			// Legacy or test fixtures may only carry the settled state in the
+			// reward status. Preserve prior behavior for paid rewards while mixed
+			// non-settled balances are handled by the actual bucket totals above.
+			settled = remaining
+		}
+		amount := settled
+		if amount > remaining {
+			amount = remaining
+		}
+		appendLedger(CommissionLedgerEntryNegativeCarry, CommissionLedgerBucketAvailable, amount)
+	}
+
+	appliedAmount := roundMoney(reverseAmount - remaining)
+	return ledgers, appliedAmount, nil
+}
+
+func rewardAllowsNegativeCarry(status string) bool {
+	return status == CommissionRewardStatusPaid || status == CommissionRewardStatusPartiallyPaid
+}
+
+func refundFallbackBucketForSingleState(status string) string {
+	switch status {
+	case CommissionRewardStatusPending:
+		return CommissionLedgerBucketPending
+	case CommissionRewardStatusFrozen:
+		return CommissionLedgerBucketFrozen
+	case CommissionRewardStatusAvailable:
+		return CommissionLedgerBucketAvailable
+	default:
+		return ""
+	}
 }
 
 func refundBucketForReward(status string) string {

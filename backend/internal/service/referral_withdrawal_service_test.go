@@ -21,6 +21,11 @@ type withdrawalCommissionRepoStub struct {
 	nextWithdrawalID int64
 	nextItemID       int64
 	nextAccountID    int64
+
+	afterUnlockedWithdrawalRead func(id int64)
+	beforeLockedWithdrawalRead  func(id int64)
+	countWithdrawalsResults     []int
+	countWithdrawalsCalls       int
 }
 
 func newWithdrawalCommissionRepoStub() *withdrawalCommissionRepoStub {
@@ -108,6 +113,22 @@ func (s *withdrawalCommissionRepoStub) GetWithdrawalByID(ctx context.Context, id
 	for _, withdrawal := range s.withdrawals {
 		if withdrawal.ID == id {
 			cloned := withdrawal
+			if s.afterUnlockedWithdrawalRead != nil {
+				s.afterUnlockedWithdrawalRead(id)
+			}
+			return &cloned, nil
+		}
+	}
+	return nil, ErrCommissionWithdrawalNotFound
+}
+
+func (s *withdrawalCommissionRepoStub) GetWithdrawalByIDForUpdate(ctx context.Context, id int64) (*CommissionWithdrawal, error) {
+	if s.beforeLockedWithdrawalRead != nil {
+		s.beforeLockedWithdrawalRead(id)
+	}
+	for _, withdrawal := range s.withdrawals {
+		if withdrawal.ID == id {
+			cloned := withdrawal
 			return &cloned, nil
 		}
 	}
@@ -187,6 +208,12 @@ func (s *withdrawalCommissionRepoStub) ListPayoutAccountsByUser(ctx context.Cont
 }
 
 func (s *withdrawalCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
+	if s.countWithdrawalsCalls < len(s.countWithdrawalsResults) {
+		result := s.countWithdrawalsResults[s.countWithdrawalsCalls]
+		s.countWithdrawalsCalls++
+		return result, nil
+	}
+	s.countWithdrawalsCalls++
 	count := 0
 	for _, withdrawal := range s.withdrawals {
 		if withdrawal.UserID == userID && !withdrawal.CreatedAt.Before(since) {
@@ -503,6 +530,123 @@ func TestReferralWithdrawalService_ApproveAndMarkPaid_SettlesFrozenAmount(t *tes
 	require.Equal(t, CommissionRewardStatusPartiallyPaid, repo.rewards[1].Status)
 }
 
+func TestReferralWithdrawalService_ApproveWithdrawal_DetectsStatusChangeBeforeCommit(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.withdrawals = []CommissionWithdrawal{
+		{ID: 1, UserID: 200, WithdrawalNo: "WD-APPROVE", Amount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalStatusPendingReview},
+	}
+	repo.afterUnlockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusRejected
+			}
+		}
+	}
+	repo.beforeLockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusRejected
+			}
+		}
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled: "true",
+	}, nil)
+
+	_, err := svc.ApproveWithdrawal(context.Background(), 1, 9, "looks good")
+	require.ErrorIs(t, err, ErrCommissionWithdrawalConflict)
+	require.Equal(t, CommissionWithdrawalStatusRejected, repo.withdrawals[0].Status)
+}
+
+func TestReferralWithdrawalService_RejectWithdrawal_DetectsStatusChangeBeforeMutation(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.withdrawals = []CommissionWithdrawal{
+		{ID: 1, UserID: 200, WithdrawalNo: "WD-REJECT", Amount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalStatusPendingReview},
+	}
+	repo.withdrawalItems = []CommissionWithdrawalItem{
+		{ID: 1, WithdrawalID: 1, UserID: 200, RewardID: 11, RechargeOrderID: 21, AllocatedAmount: 10, NetAllocatedAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalItemStatusFrozen},
+	}
+	repo.rewards = []CommissionReward{
+		{ID: 11, UserID: 200, RechargeOrderID: 21, RewardAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusFrozen},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(11), RechargeOrderID: int64ValuePtr(21), Bucket: CommissionLedgerBucketFrozen, Amount: 10, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.afterUnlockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusPaid
+			}
+		}
+	}
+	repo.beforeLockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusPaid
+			}
+		}
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled: "true",
+	}, nil)
+
+	_, err := svc.RejectWithdrawal(context.Background(), &ReviewReferralWithdrawalInput{
+		WithdrawalID: 1,
+		ReviewerID:   9,
+		Reason:       "risk review failed",
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawalConflict)
+	require.Equal(t, CommissionWithdrawalStatusPaid, repo.withdrawals[0].Status)
+	require.Len(t, repo.ledgers, 1)
+	require.Equal(t, CommissionWithdrawalItemStatusFrozen, repo.withdrawalItems[0].Status)
+}
+
+func TestReferralWithdrawalService_MarkWithdrawalPaid_DetectsStatusChangeBeforeMutation(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.withdrawals = []CommissionWithdrawal{
+		{ID: 1, UserID: 200, WithdrawalNo: "WD-PAID", Amount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalStatusApproved},
+	}
+	repo.withdrawalItems = []CommissionWithdrawalItem{
+		{ID: 1, WithdrawalID: 1, UserID: 200, RewardID: 11, RechargeOrderID: 21, AllocatedAmount: 10, NetAllocatedAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionWithdrawalItemStatusFrozen},
+	}
+	repo.rewards = []CommissionReward{
+		{ID: 11, UserID: 200, RechargeOrderID: 21, RewardAmount: 10, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusFrozen},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(11), RechargeOrderID: int64ValuePtr(21), Bucket: CommissionLedgerBucketFrozen, Amount: 10, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.afterUnlockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusRejected
+			}
+		}
+	}
+	repo.beforeLockedWithdrawalRead = func(id int64) {
+		for i := range repo.withdrawals {
+			if repo.withdrawals[i].ID == id {
+				repo.withdrawals[i].Status = CommissionWithdrawalStatusRejected
+			}
+		}
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled: "true",
+	}, nil)
+
+	_, err := svc.MarkWithdrawalPaid(context.Background(), &MarkReferralWithdrawalPaidInput{
+		WithdrawalID: 1,
+		PaidBy:       9,
+		Remark:       "paid via manual transfer",
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawalConflict)
+	require.Equal(t, CommissionWithdrawalStatusRejected, repo.withdrawals[0].Status)
+	require.Len(t, repo.ledgers, 1)
+	require.Equal(t, CommissionWithdrawalItemStatusFrozen, repo.withdrawalItems[0].Status)
+}
+
 func TestReferralWithdrawalService_CreateWithdrawal_EnforcesDailyLimit(t *testing.T) {
 	repo := newWithdrawalCommissionRepoStub()
 	repo.rewards = []CommissionReward{
@@ -534,6 +678,39 @@ func TestReferralWithdrawalService_CreateWithdrawal_EnforcesDailyLimit(t *testin
 		PayoutAccountID: 1,
 	})
 	require.ErrorIs(t, err, ErrCommissionWithdrawDailyLimitExceeded)
+}
+
+func TestReferralWithdrawalService_CreateWithdrawal_RechecksDailyLimitInsideTransaction(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.payoutAccounts = []CommissionPayoutAccount{
+		{ID: 1, UserID: 200, Method: CommissionPayoutMethodAlipay, AccountName: "Alice", AccountNoMasked: stringValuePtr("alipay@example.com"), IsDefault: true, Status: StatusActive},
+	}
+	repo.countWithdrawalsResults = []int{0, 1}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                      "true",
+		SettingKeyReferralWithdrawEnabled:              "true",
+		SettingKeyReferralWithdrawMinAmount:            "10",
+		SettingKeyReferralWithdrawDailyLimit:           "1",
+		SettingKeyReferralWithdrawManualReviewRequired: "true",
+		SettingKeyReferralWithdrawMethodsEnabled:       `["alipay"]`,
+	}, nil)
+
+	_, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:          200,
+		Amount:          10,
+		PayoutMethod:    CommissionPayoutMethodAlipay,
+		PayoutAccountID: 1,
+	})
+	require.ErrorIs(t, err, ErrCommissionWithdrawDailyLimitExceeded)
+	require.Len(t, repo.withdrawals, 0)
+	require.Equal(t, 2, repo.countWithdrawalsCalls)
 }
 
 func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsDisabledMethod(t *testing.T) {
@@ -730,4 +907,30 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_DoesNotRequireWithd
 	require.Len(t, repo.withdrawals, 1)
 	require.Equal(t, "credit_conversion", repo.withdrawals[0].PayoutMethod)
 	require.Equal(t, 10.0, userRepo.balanceUpdates[200])
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_RechecksDailyLimitInsideTransaction(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+	repo.countWithdrawalsResults = []int{0, 1}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralWithdrawEnabled:         "false",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+		SettingKeyReferralWithdrawDailyLimit:      "1",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.ErrorIs(t, err, ErrCommissionWithdrawDailyLimitExceeded)
+	require.Len(t, repo.withdrawals, 0)
+	require.Empty(t, userRepo.balanceUpdates)
+	require.Equal(t, 2, repo.countWithdrawalsCalls)
 }

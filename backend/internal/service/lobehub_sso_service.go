@@ -533,6 +533,7 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	}
 
 	provider := normalizeLobeHubProvider(settingsProvider(settings))
+	model := strings.TrimSpace(settings.LobeHubDefaultModel)
 
 	vault, ok := observed.KeyVaults[provider]
 	if !ok {
@@ -544,7 +545,26 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	if normalizeLobeHubBaseURL(vault.BaseURL) != normalizeLobeHubBaseURL(settings.APIBaseURL) {
 		return false
 	}
+	if model != "" && len(observed.LanguageModel) > 0 {
+		languageModel, ok := observed.LanguageModel[provider]
+		if !ok || !languageModel.Enabled || !stringSliceContainsFold(languageModel.EnabledModels, model) {
+			return false
+		}
+	}
 	return true
+}
+
+func stringSliceContainsFold(items []string, target string) bool {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return false
+	}
+	for _, item := range items {
+		if strings.EqualFold(strings.TrimSpace(item), target) {
+			return true
+		}
+	}
+	return false
 }
 
 func settingsProvider(settings *SystemSettings) string {

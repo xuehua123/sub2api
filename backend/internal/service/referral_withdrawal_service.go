@@ -57,6 +57,10 @@ type ReferralWithdrawalService struct {
 	encryptor      SecretEncryptor
 }
 
+type withdrawalForUpdateReader interface {
+	GetWithdrawalByIDForUpdate(ctx context.Context, id int64) (*CommissionWithdrawal, error)
+}
+
 func NewReferralWithdrawalService(
 	commissionRepo CommissionRepository,
 	userRepo UserRepository,
@@ -205,16 +209,8 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 	if settings.ReferralWithdrawMaxAmount > 0 && input.Amount > settings.ReferralWithdrawMaxAmount {
 		return nil, ErrCommissionWithdrawAmountInvalid
 	}
-	if settings.ReferralWithdrawDailyLimit > 0 {
-		now := time.Now()
-		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		count, err := s.commissionRepo.CountWithdrawalsByUserSince(ctx, input.UserID, startOfDay)
-		if err != nil {
-			return nil, err
-		}
-		if count >= settings.ReferralWithdrawDailyLimit {
-			return nil, ErrCommissionWithdrawDailyLimitExceeded
-		}
+	if err := s.checkDailyWithdrawalLimit(ctx, input.UserID, settings.ReferralWithdrawDailyLimit); err != nil {
+		return nil, err
 	}
 
 	payoutAccount, err := s.findPayoutAccount(ctx, input.UserID, input.PayoutAccountID, method)
@@ -254,6 +250,9 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 		}
 		if totalAvailable < input.Amount {
 			return ErrCommissionWithdrawInsufficient
+		}
+		if err := s.checkDailyWithdrawalLimit(txCtx, input.UserID, settings.ReferralWithdrawDailyLimit); err != nil {
+			return err
 		}
 
 		now := time.Now()
@@ -360,43 +359,51 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 }
 
 func (s *ReferralWithdrawalService) ApproveWithdrawal(ctx context.Context, withdrawalID, reviewerID int64, remark string) (*CommissionWithdrawal, error) {
-	withdrawal, err := s.commissionRepo.GetWithdrawalByID(ctx, withdrawalID)
-	if err != nil {
+	var result *CommissionWithdrawal
+	apply := func(txCtx context.Context) error {
+		withdrawal, err := s.getWithdrawalByIDForUpdate(txCtx, withdrawalID)
+		if err != nil {
+			return err
+		}
+		if withdrawal.Status != CommissionWithdrawalStatusPendingReview {
+			return ErrCommissionWithdrawalConflict
+		}
+		now := time.Now()
+		withdrawal.Status = CommissionWithdrawalStatusApproved
+		withdrawal.ReviewedBy = int64ValuePtr(reviewerID)
+		withdrawal.ReviewedAt = timeValuePtr(now)
+		withdrawal.Remark = optionalTrimmedString(remark)
+		if err := s.commissionRepo.UpdateWithdrawal(txCtx, withdrawal); err != nil {
+			return err
+		}
+		result = withdrawal
+		return nil
+	}
+	if err := s.withOptionalTx(ctx, apply); err != nil {
 		return nil, err
 	}
-	if withdrawal.Status != CommissionWithdrawalStatusPendingReview {
-		return nil, ErrCommissionWithdrawalConflict
-	}
-	now := time.Now()
-	withdrawal.Status = CommissionWithdrawalStatusApproved
-	withdrawal.ReviewedBy = int64ValuePtr(reviewerID)
-	withdrawal.ReviewedAt = timeValuePtr(now)
-	withdrawal.Remark = optionalTrimmedString(remark)
-	if err := s.commissionRepo.UpdateWithdrawal(ctx, withdrawal); err != nil {
-		return nil, err
-	}
-	return withdrawal, nil
+	return result, nil
 }
 
 func (s *ReferralWithdrawalService) RejectWithdrawal(ctx context.Context, input *ReviewReferralWithdrawalInput) (*ReferralWithdrawalResult, error) {
 	if input == nil || input.WithdrawalID <= 0 {
 		return nil, ErrCommissionWithdrawalConflict
 	}
-	withdrawal, err := s.commissionRepo.GetWithdrawalByID(ctx, input.WithdrawalID)
-	if err != nil {
-		return nil, err
-	}
-	if withdrawal.Status != CommissionWithdrawalStatusPendingReview && withdrawal.Status != CommissionWithdrawalStatusApproved {
-		return nil, ErrCommissionWithdrawalConflict
-	}
-
-	items, err := s.commissionRepo.ListWithdrawalItemsByWithdrawal(ctx, input.WithdrawalID)
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now()
 	result := &ReferralWithdrawalResult{}
 	apply := func(txCtx context.Context) error {
+		withdrawal, err := s.getWithdrawalByIDForUpdate(txCtx, input.WithdrawalID)
+		if err != nil {
+			return err
+		}
+		if withdrawal.Status != CommissionWithdrawalStatusPendingReview && withdrawal.Status != CommissionWithdrawalStatusApproved {
+			return ErrCommissionWithdrawalConflict
+		}
+
+		items, err := s.commissionRepo.ListWithdrawalItemsByWithdrawal(txCtx, input.WithdrawalID)
+		if err != nil {
+			return err
+		}
 		for i := range items {
 			item := &items[i]
 			ledgers := []CommissionLedger{
@@ -457,21 +464,21 @@ func (s *ReferralWithdrawalService) MarkWithdrawalPaid(ctx context.Context, inpu
 	if input == nil || input.WithdrawalID <= 0 {
 		return nil, ErrCommissionWithdrawalConflict
 	}
-	withdrawal, err := s.commissionRepo.GetWithdrawalByID(ctx, input.WithdrawalID)
-	if err != nil {
-		return nil, err
-	}
-	if withdrawal.Status != CommissionWithdrawalStatusApproved {
-		return nil, ErrCommissionWithdrawalConflict
-	}
-
-	items, err := s.commissionRepo.ListWithdrawalItemsByWithdrawal(ctx, input.WithdrawalID)
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now()
 	result := &ReferralWithdrawalResult{}
 	apply := func(txCtx context.Context) error {
+		withdrawal, err := s.getWithdrawalByIDForUpdate(txCtx, input.WithdrawalID)
+		if err != nil {
+			return err
+		}
+		if withdrawal.Status != CommissionWithdrawalStatusApproved {
+			return ErrCommissionWithdrawalConflict
+		}
+
+		items, err := s.commissionRepo.ListWithdrawalItemsByWithdrawal(txCtx, input.WithdrawalID)
+		if err != nil {
+			return err
+		}
 		for i := range items {
 			item := &items[i]
 			ledgers := []CommissionLedger{
@@ -668,6 +675,31 @@ func (s *ReferralWithdrawalService) withOptionalTx(ctx context.Context, apply fu
 	return tx.Commit()
 }
 
+func (s *ReferralWithdrawalService) getWithdrawalByIDForUpdate(ctx context.Context, withdrawalID int64) (*CommissionWithdrawal, error) {
+	if locker, ok := s.commissionRepo.(withdrawalForUpdateReader); ok {
+		return locker.GetWithdrawalByIDForUpdate(ctx, withdrawalID)
+	}
+	return s.commissionRepo.GetWithdrawalByID(ctx, withdrawalID)
+}
+
+func (s *ReferralWithdrawalService) checkDailyWithdrawalLimit(ctx context.Context, userID int64, dailyLimit int) error {
+	if dailyLimit <= 0 {
+		return nil
+	}
+	count, err := s.commissionRepo.CountWithdrawalsByUserSince(ctx, userID, startOfLocalDay(time.Now()))
+	if err != nil {
+		return err
+	}
+	if count >= dailyLimit {
+		return ErrCommissionWithdrawDailyLimitExceeded
+	}
+	return nil
+}
+
+func startOfLocalDay(now time.Time) time.Time {
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+}
+
 func maskAccountNo(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if len(trimmed) <= 4 {
@@ -747,16 +779,8 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 		return ErrCommissionWithdrawAmountInvalid
 	}
 
-	if settings.ReferralWithdrawDailyLimit > 0 {
-		now := time.Now()
-		startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-		count, err := s.commissionRepo.CountWithdrawalsByUserSince(ctx, userID, startOfDay)
-		if err != nil {
-			return err
-		}
-		if count >= settings.ReferralWithdrawDailyLimit {
-			return ErrCommissionWithdrawDailyLimitExceeded
-		}
+	if err := s.checkDailyWithdrawalLimit(ctx, userID, settings.ReferralWithdrawDailyLimit); err != nil {
+		return err
 	}
 
 	apply := func(txCtx context.Context) error {
@@ -776,6 +800,9 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 		}
 		if totalAvailable < amount {
 			return ErrCommissionWithdrawInsufficient
+		}
+		if err := s.checkDailyWithdrawalLimit(txCtx, userID, settings.ReferralWithdrawDailyLimit); err != nil {
+			return err
 		}
 
 		now := time.Now()

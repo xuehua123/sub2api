@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
@@ -24,4 +25,18 @@ func TestExtractOutTradeNo_ParsesStripeNestedPaymentIntentMetadata(t *testing.T)
 	raw := `{"type":"charge.refunded","data":{"object":{"payment_intent":{"metadata":{"orderId":"sub2_nested"}}}}}`
 	got := extractOutTradeNo(raw, payment.TypeStripe)
 	require.Equal(t, "sub2_nested", got)
+}
+
+func TestExtractWebhookInstanceHint_PrefersExplicitQueryParam(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/v1/payment/webhook/wxpay?instance_id=42&provider_instance_id=84", nil)
+
+	got := extractWebhookInstanceHint(req)
+	require.Equal(t, "42", got)
+}
+
+func TestExtractWebhookInstanceHint_FallsBackToProviderInstanceID(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/v1/payment/webhook/wxpay?provider_instance_id=84", nil)
+
+	got := extractWebhookInstanceHint(req)
+	require.Equal(t, "84", got)
 }

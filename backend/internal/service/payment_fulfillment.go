@@ -87,7 +87,7 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 				}
 			}
 		case payment.OrderTypeSubscription:
-			if err := s.syncExternalSubscriptionReversal(txCtx, currentOrder); err != nil {
+			if err := s.syncExternalSubscriptionReversal(txCtx, currentOrder, refundAmountTotal); err != nil {
 				return err
 			}
 		default:
@@ -116,6 +116,7 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 			"amountSemantic":    n.AmountSemantic,
 			"creditedDelta":     creditedDelta,
 			"refundAmountTotal": refundAmountTotal,
+			"subscriptionDays":  subscriptionDaysRefundDelta(currentOrder, refundAmountTotal),
 			"tradeNo":           n.TradeNo,
 			"status":            n.Status,
 		})
@@ -282,14 +283,58 @@ func computeExternalRefundAmountTotal(o *dbent.PaymentOrder, gatewayAmount float
 	return refundAmountTotal
 }
 
-func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o *dbent.PaymentOrder) error {
+func subscriptionRefundBaseAmount(o *dbent.PaymentOrder) float64 {
+	if o == nil {
+		return 0
+	}
+	baseAmount := roundMoney(o.Amount)
+	if baseAmount > 0 {
+		return baseAmount
+	}
+	return roundMoney(o.PayAmount)
+}
+
+func proportionalSubscriptionDays(totalDays int, baseAmount float64, refundAmount float64) int {
+	if totalDays <= 0 || baseAmount <= 0 || refundAmount <= 0 {
+		return 0
+	}
+	baseAmount = roundMoney(baseAmount)
+	refundAmount = roundMoney(refundAmount)
+	if refundAmount > baseAmount {
+		refundAmount = baseAmount
+	}
+	days := int(math.Round(float64(totalDays) * refundAmount / baseAmount))
+	if days < 0 {
+		return 0
+	}
+	if days > totalDays {
+		return totalDays
+	}
+	return days
+}
+
+func subscriptionDaysRefundDelta(o *dbent.PaymentOrder, refundAmountTotal float64) int {
+	if o == nil || o.SubscriptionDays == nil || *o.SubscriptionDays <= 0 {
+		return 0
+	}
+	baseAmount := subscriptionRefundBaseAmount(o)
+	targetDays := proportionalSubscriptionDays(*o.SubscriptionDays, baseAmount, refundAmountTotal)
+	existingDays := proportionalSubscriptionDays(*o.SubscriptionDays, baseAmount, roundMoney(o.RefundAmount))
+	if targetDays <= existingDays {
+		return 0
+	}
+	return targetDays - existingDays
+}
+
+func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o *dbent.PaymentOrder, refundAmountTotal float64) error {
 	if s.subscriptionSvc == nil || o == nil || o.OrderType != payment.OrderTypeSubscription {
 		return nil
 	}
 	if o.SubscriptionGroupID == nil || o.SubscriptionDays == nil || *o.SubscriptionDays <= 0 {
 		return nil
 	}
-	if roundMoney(o.RefundAmount) > 0 || psIsRefundStatus(o.Status) {
+	deltaDays := subscriptionDaysRefundDelta(o, refundAmountTotal)
+	if deltaDays <= 0 {
 		return nil
 	}
 
@@ -304,7 +349,7 @@ func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o
 		return nil
 	}
 
-	if _, err := s.subscriptionSvc.ExtendSubscription(ctx, sub.ID, -*o.SubscriptionDays); err != nil {
+	if _, err := s.subscriptionSvc.ExtendSubscription(ctx, sub.ID, -deltaDays); err != nil {
 		if errors.Is(err, ErrAdjustWouldExpire) {
 			return s.subscriptionSvc.RevokeSubscription(ctx, sub.ID)
 		}

@@ -308,6 +308,17 @@ func (r *commissionRepository) GetWithdrawalByID(ctx context.Context, id int64) 
 	return commissionWithdrawalEntityToService(model), nil
 }
 
+func (r *commissionRepository) GetWithdrawalByIDForUpdate(ctx context.Context, id int64) (*service.CommissionWithdrawal, error) {
+	model, err := clientFromContext(ctx, r.client).CommissionWithdrawal.Query().
+		Where(commissionwithdrawal.IDEQ(id)).
+		ForUpdate().
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrCommissionWithdrawalNotFound, nil)
+	}
+	return commissionWithdrawalEntityToService(model), nil
+}
+
 func (r *commissionRepository) UpdateWithdrawal(ctx context.Context, withdrawal *service.CommissionWithdrawal) error {
 	client := clientFromContext(ctx, r.client)
 	builder := client.CommissionWithdrawal.UpdateOneID(withdrawal.ID).

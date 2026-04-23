@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -134,6 +135,7 @@ type configProbeCompareResponse struct {
 }
 
 type targetTokenClaims struct {
+	UserID                   int64  `json:"user_id"`
 	DesiredConfigFingerprint string `json:"desired_config_fingerprint"`
 	RuntimeConfigVersion     string `json:"runtime_config_version"`
 	ExpiresAt                int64  `json:"exp"`
@@ -308,6 +310,27 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	targetToken := readCookieValue(r, TargetCookieName)
+	targetClaims, ok := parseTargetTokenClaims(targetToken)
+	if !ok || targetClaims.IsExpired(time.Now()) || targetClaims.UserID <= 0 {
+		s.redirectRefreshTarget(w, r)
+		return
+	}
+
+	sessionUserID, err := s.fetchSessionUserID(r.Context(), r)
+	if err != nil {
+		if errors.Is(err, errLobeHubSessionMissing) {
+			s.startSignIn(w, r)
+			return
+		}
+		http.Error(w, "failed to read lobehub session: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	if sessionUserID != targetClaims.UserID {
+		s.startSignIn(w, r)
+		return
+	}
+
 	result, err := s.consumeBootstrap(r.Context(), ticketID)
 	if err != nil {
 		http.Error(w, "failed to consume bootstrap ticket: "+err.Error(), http.StatusBadGateway)
@@ -322,19 +345,16 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetToken := readCookieValue(r, TargetCookieName)
-	if claims, ok := parseTargetTokenClaims(targetToken); ok {
-		setCookie(w, &http.Cookie{
-			Name:     SyncCookieName,
-			Value:    hashSyncState(claims.SyncState()),
-			Path:     "/",
-			Domain:   sharedCookieDomain(r.Host),
-			MaxAge:   syncCookieMaxAge,
-			HttpOnly: true,
-			Secure:   requestIsHTTPS(r),
-			SameSite: http.SameSiteLaxMode,
-		})
-	}
+	setCookie(w, &http.Cookie{
+		Name:     SyncCookieName,
+		Value:    hashSyncState(targetClaims.SyncState()),
+		Path:     "/",
+		Domain:   sharedCookieDomain(r.Host),
+		MaxAge:   syncCookieMaxAge,
+		HttpOnly: true,
+		Secure:   requestIsHTTPS(r),
+		SameSite: http.SameSiteLaxMode,
+	})
 
 	setCookie(w, &http.Cookie{
 		Name:     BootstrapCookieName,
@@ -455,6 +475,70 @@ func (s *Server) probeSession(ctx context.Context, r *http.Request) (bool, error
 		return false, nil
 	}
 	return true, nil
+}
+
+func (s *Server) fetchSessionUserID(ctx context.Context, r *http.Request) (int64, error) {
+	var lastErr error
+	for _, path := range []string{"/api/auth/get-session", "/api/auth/session"} {
+		userID, err := s.fetchSessionUserIDFromPath(ctx, r, path)
+		if err == nil {
+			return userID, nil
+		}
+		if errors.Is(err, errLobeHubSessionMissing) {
+			return 0, err
+		}
+		var statusErr *statusError
+		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
+			lastErr = err
+			continue
+		}
+		return 0, err
+	}
+	if lastErr != nil {
+		return 0, lastErr
+	}
+	return 0, errLobeHubSessionMissing
+}
+
+func (s *Server) fetchSessionUserIDFromPath(ctx context.Context, r *http.Request, path string) (int64, error) {
+	endpoint := *s.upstreamURL
+	endpoint.Path = path
+	endpoint.RawPath = ""
+	endpoint.RawQuery = ""
+	endpoint.Fragment = ""
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Accept", "application/json")
+	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
+		req.Header.Set("Cookie", cookieHeader)
+	}
+
+	resp, err := s.probeClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if isSignInRedirect(resp) || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return 0, errLobeHubSessionMissing
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, &statusError{StatusCode: resp.StatusCode, Message: string(body)}
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	userID, ok := parseSessionUserID(body)
+	if !ok {
+		return 0, errLobeHubSessionMissing
+	}
+	return userID, nil
 }
 
 func (s *Server) getPublicSettings(ctx context.Context) (*publicSettings, error) {
@@ -958,8 +1042,10 @@ func parseObservedSettings(body []byte) (*configProbeCompareRequest, error) {
 		KeyVaults:     map[string]configProbeKeyVault{},
 		LanguageModel: map[string]configProbeLanguageModel{},
 	}
+	foundRuntimeConfig := false
 
 	if runtimeConfig, ok := findRuntimeConfigObject(payload); ok {
+		foundRuntimeConfig = true
 		for provider, rawConfig := range runtimeConfig {
 			providerConfig, ok := asStringMap(rawConfig)
 			if !ok {
@@ -974,11 +1060,13 @@ func parseObservedSettings(body []byte) (*configProbeCompareRequest, error) {
 				BaseURL: stringValue(vault["baseURL"]),
 			}
 		}
-		return observed, nil
 	}
 
 	settings, ok := findSettingsObject(payload)
 	if !ok {
+		if foundRuntimeConfig {
+			return observed, nil
+		}
 		return nil, fmt.Errorf("runtime config missing in ai provider response")
 	}
 
@@ -1058,9 +1146,71 @@ func findRuntimeConfigObject(value any) (map[string]any, bool) {
 	return nil, false
 }
 
+func parseSessionUserID(body []byte) (int64, bool) {
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return 0, false
+	}
+	return findSessionUserID(payload)
+}
+
+func findSessionUserID(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		if user, ok := asStringMap(typed["user"]); ok {
+			for _, key := range []string{"id", "user_id", "userId", "sub"} {
+				if userID, ok := int64Value(user[key]); ok {
+					return userID, true
+				}
+			}
+		}
+		for _, key := range []string{"user_id", "userId", "sub"} {
+			if userID, ok := int64Value(typed[key]); ok {
+				return userID, true
+			}
+		}
+		for _, key := range []string{"session", "data", "result"} {
+			if userID, ok := findSessionUserID(typed[key]); ok {
+				return userID, true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if userID, ok := findSessionUserID(item); ok {
+				return userID, true
+			}
+		}
+	}
+	return 0, false
+}
+
 func asStringMap(value any) (map[string]any, bool) {
 	result, ok := value.(map[string]any)
 	return result, ok
+}
+
+func int64Value(value any) (int64, bool) {
+	switch typed := value.(type) {
+	case float64:
+		if typed <= 0 {
+			return 0, false
+		}
+		return int64(typed), true
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil || parsed <= 0 {
+			return 0, false
+		}
+		return parsed, true
+	case string:
+		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, 64)
+		if err != nil || parsed <= 0 {
+			return 0, false
+		}
+		return parsed, true
+	default:
+		return 0, false
+	}
 }
 
 func stringValue(value any) string {
