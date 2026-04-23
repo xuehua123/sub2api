@@ -150,6 +150,7 @@ type SystemSettings struct {
 	LobeHubOIDCClientSecretConfigured bool
 	LobeHubDefaultProvider            string
 	LobeHubDefaultModel               string
+	LobeHubEnabledModels              []string
 	LobeHubRuntimeConfigVersion       string
 	HideLobeHubImportButton           bool
 

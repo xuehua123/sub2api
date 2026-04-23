@@ -1178,6 +1178,14 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyLobeHubDefaultProvider] = settings.LobeHubDefaultProvider
 	updates[SettingKeyLobeHubDefaultModel] = settings.LobeHubDefaultModel
+	if len(settings.LobeHubEnabledModels) > 0 {
+		modelsJSON, jsonErr := json.Marshal(settings.LobeHubEnabledModels)
+		if jsonErr == nil {
+			updates[SettingKeyLobeHubEnabledModels] = string(modelsJSON)
+		}
+	} else {
+		updates[SettingKeyLobeHubEnabledModels] = "[]"
+	}
 	updates[SettingKeyLobeHubRuntimeConfigVersion] = settings.LobeHubRuntimeConfigVersion
 	updates[SettingKeyHideLobeHubImportButton] = strconv.FormatBool(settings.HideLobeHubImportButton)
 
@@ -2079,6 +2087,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.LobeHubOIDCClientSecretConfigured = result.LobeHubOIDCClientSecret != ""
 	result.LobeHubDefaultProvider = strings.TrimSpace(settings[SettingKeyLobeHubDefaultProvider])
 	result.LobeHubDefaultModel = strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel])
+	result.LobeHubEnabledModels = parseNormalizedStringSliceSetting(settings[SettingKeyLobeHubEnabledModels])
 	result.LobeHubRuntimeConfigVersion = strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion])
 	result.HideLobeHubImportButton = settings[SettingKeyHideLobeHubImportButton] == "true"
 
@@ -2333,6 +2342,33 @@ func parseTablePreferences(defaultPageSizeRaw, optionsRaw string) (int, []int) {
 	}
 
 	return normalizeTablePreferences(defaultPageSize, options)
+}
+
+func parseNormalizedStringSliceSetting(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func normalizeTablePreferences(defaultPageSize int, options []int) (int, []int) {

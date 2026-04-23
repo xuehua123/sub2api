@@ -308,6 +308,7 @@ const (
 	SettingKeyLobeHubOIDCClientSecret     = "lobehub_oidc_client_secret"
 	SettingKeyLobeHubDefaultProvider      = "lobehub_default_provider"
 	SettingKeyLobeHubDefaultModel         = "lobehub_default_model"
+	SettingKeyLobeHubEnabledModels        = "lobehub_enabled_models"
 	SettingKeyLobeHubRuntimeConfigVersion = "lobehub_runtime_config_version"
 	SettingKeyHideLobeHubImportButton     = "hide_lobehub_import_button"
 

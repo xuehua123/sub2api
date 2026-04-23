@@ -104,3 +104,16 @@ func TestSettingService_GetAllSettings_UsesReferralDefaultsWhenUnset(t *testing.
 		settings.ReferralWithdrawMethodsEnabled,
 	)
 }
+
+func TestSettingService_GetAllSettings_ParsesLobeHubEnabledModels(t *testing.T) {
+	repo := &settingGetAllRepoStub{
+		values: map[string]string{
+			SettingKeyLobeHubEnabledModels: `["gpt-5.4-mini","gpt-image-2"]`,
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"gpt-5.4-mini", "gpt-image-2"}, settings.LobeHubEnabledModels)
+}

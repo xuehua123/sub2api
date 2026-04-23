@@ -200,15 +200,16 @@ type SystemSettings struct {
 	ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
 
 	// LobeHub integration
-	LobeHubEnabled                    bool   `json:"lobehub_enabled"`
-	LobeHubChatURL                    string `json:"lobehub_chat_url"`
-	LobeHubOIDCIssuer                 string `json:"lobehub_oidc_issuer"`
-	LobeHubOIDCClientID               string `json:"lobehub_oidc_client_id"`
-	LobeHubOIDCClientSecretConfigured bool   `json:"lobehub_oidc_client_secret_configured"`
-	LobeHubDefaultProvider            string `json:"lobehub_default_provider"`
-	LobeHubDefaultModel               string `json:"lobehub_default_model"`
-	LobeHubRuntimeConfigVersion       string `json:"lobehub_runtime_config_version"`
-	HideLobeHubImportButton           bool   `json:"hide_lobehub_import_button"`
+	LobeHubEnabled                    bool     `json:"lobehub_enabled"`
+	LobeHubChatURL                    string   `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                 string   `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID               string   `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecretConfigured bool     `json:"lobehub_oidc_client_secret_configured"`
+	LobeHubDefaultProvider            string   `json:"lobehub_default_provider"`
+	LobeHubDefaultModel               string   `json:"lobehub_default_model"`
+	LobeHubEnabledModels              []string `json:"lobehub_enabled_models"`
+	LobeHubRuntimeConfigVersion       string   `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton           bool     `json:"hide_lobehub_import_button"`
 
 	// Balance low notification
 	BalanceLowNotifyEnabled     bool               `json:"balance_low_notify_enabled"`

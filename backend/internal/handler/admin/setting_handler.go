@@ -327,15 +327,16 @@ type UpdateSettingsRequest struct {
 	ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
 
 	// LobeHub integration
-	LobeHubEnabled              *bool   `json:"lobehub_enabled"`
-	LobeHubChatURL              *string `json:"lobehub_chat_url"`
-	LobeHubOIDCIssuer           *string `json:"lobehub_oidc_issuer"`
-	LobeHubOIDCClientID         *string `json:"lobehub_oidc_client_id"`
-	LobeHubOIDCClientSecret     *string `json:"lobehub_oidc_client_secret"`
-	LobeHubDefaultProvider      *string `json:"lobehub_default_provider"`
-	LobeHubDefaultModel         *string `json:"lobehub_default_model"`
-	LobeHubRuntimeConfigVersion *string `json:"lobehub_runtime_config_version"`
-	HideLobeHubImportButton     *bool   `json:"hide_lobehub_import_button"`
+	LobeHubEnabled              *bool     `json:"lobehub_enabled"`
+	LobeHubChatURL              *string   `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer           *string   `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID         *string   `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecret     *string   `json:"lobehub_oidc_client_secret"`
+	LobeHubDefaultProvider      *string   `json:"lobehub_default_provider"`
+	LobeHubDefaultModel         *string   `json:"lobehub_default_model"`
+	LobeHubEnabledModels        *[]string `json:"lobehub_enabled_models"`
+	LobeHubRuntimeConfigVersion *string   `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton     *bool     `json:"hide_lobehub_import_button"`
 }
 
 // UpdateSettings 更新系统设置
@@ -974,6 +975,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if req.LobeHubDefaultModel != nil {
 		lobeHubDefaultModel = strings.TrimSpace(*req.LobeHubDefaultModel)
 	}
+	lobeHubEnabledModels := normalizeStringSlice(previousSettings.LobeHubEnabledModels)
+	if req.LobeHubEnabledModels != nil {
+		lobeHubEnabledModels = normalizeStringSlice(*req.LobeHubEnabledModels)
+	}
 	lobeHubRuntimeConfigVersion := previousSettings.LobeHubRuntimeConfigVersion
 	if req.LobeHubRuntimeConfigVersion != nil {
 		lobeHubRuntimeConfigVersion = strings.TrimSpace(*req.LobeHubRuntimeConfigVersion)
@@ -1265,6 +1270,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LobeHubOIDCClientSecret:     lobeHubOIDCClientSecret,
 		LobeHubDefaultProvider:      lobeHubDefaultProvider,
 		LobeHubDefaultModel:         lobeHubDefaultModel,
+		LobeHubEnabledModels:        lobeHubEnabledModels,
 		LobeHubRuntimeConfigVersion: lobeHubRuntimeConfigVersion,
 		HideLobeHubImportButton:     hideLobeHubImportButton,
 		PaymentVisibleMethodAlipaySource: func() string {
@@ -2074,9 +2080,31 @@ func buildSystemSettingsPayload(
 		LobeHubOIDCClientSecretConfigured:      settings.LobeHubOIDCClientSecretConfigured,
 		LobeHubDefaultProvider:                 settings.LobeHubDefaultProvider,
 		LobeHubDefaultModel:                    settings.LobeHubDefaultModel,
+		LobeHubEnabledModels:                   settings.LobeHubEnabledModels,
 		LobeHubRuntimeConfigVersion:            settings.LobeHubRuntimeConfigVersion,
 		HideLobeHubImportButton:                settings.HideLobeHubImportButton,
 	}
+}
+
+func normalizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func systemSettingsResponseData(settings dto.SystemSettings, authSourceDefaults *service.AuthSourceDefaultSettings) map[string]any {

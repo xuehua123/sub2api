@@ -440,6 +440,7 @@ func buildLobeHubDesiredConfigFingerprint(userID, apiKeyID int64, settings *Syst
 func buildLobeHubSettingsPayload(settings *SystemSettings) map[string]any {
 	provider := normalizeLobeHubProvider(settingsProvider(settings))
 	model := strings.TrimSpace(settings.LobeHubDefaultModel)
+	enabledModels := resolveLobeHubEnabledModels(settings)
 
 	payload := map[string]any{}
 	if model != "" {
@@ -449,10 +450,12 @@ func buildLobeHubSettingsPayload(settings *SystemSettings) map[string]any {
 				"provider": provider,
 			},
 		}
+	}
+	if len(enabledModels) > 0 {
 		payload["languageModel"] = map[string]any{
 			provider: map[string]any{
 				"enabled":       true,
-				"enabledModels": []string{model},
+				"enabledModels": enabledModels,
 			},
 		}
 	}
@@ -533,7 +536,7 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	}
 
 	provider := normalizeLobeHubProvider(settingsProvider(settings))
-	model := strings.TrimSpace(settings.LobeHubDefaultModel)
+	enabledModels := resolveLobeHubEnabledModels(settings)
 
 	vault, ok := observed.KeyVaults[provider]
 	if !ok {
@@ -545,13 +548,44 @@ func lobeHubObservedSettingsMatch(settings *SystemSettings, apiKey *APIKey, obse
 	if normalizeLobeHubBaseURL(vault.BaseURL) != normalizeLobeHubBaseURL(settings.APIBaseURL) {
 		return false
 	}
-	if model != "" && len(observed.LanguageModel) > 0 {
+	if len(enabledModels) > 0 {
 		languageModel, ok := observed.LanguageModel[provider]
-		if !ok || !languageModel.Enabled || !stringSliceContainsFold(languageModel.EnabledModels, model) {
+		if !ok || !languageModel.Enabled {
 			return false
+		}
+		for _, model := range enabledModels {
+			if !stringSliceContainsFold(languageModel.EnabledModels, model) {
+				return false
+			}
 		}
 	}
 	return true
+}
+
+func resolveLobeHubEnabledModels(settings *SystemSettings) []string {
+	seen := make(map[string]struct{})
+	models := make([]string, 0)
+
+	appendModel := func(value string) {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return
+		}
+		if _, ok := seen[trimmed]; ok {
+			return
+		}
+		seen[trimmed] = struct{}{}
+		models = append(models, trimmed)
+	}
+
+	if settings != nil {
+		for _, model := range settings.LobeHubEnabledModels {
+			appendModel(model)
+		}
+		appendModel(settings.LobeHubDefaultModel)
+	}
+
+	return models
 }
 
 func stringSliceContainsFold(items []string, target string) bool {

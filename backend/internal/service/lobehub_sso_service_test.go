@@ -364,6 +364,71 @@ func TestLobeHubSSOService_ExchangeBootstrapAndConsume(t *testing.T) {
 	require.Contains(t, settingsJSON, `"enabledModels":["gpt-4.1"]`)
 }
 
+func TestLobeHubSSOService_ExchangeBootstrapAndConsumeIncludesConfiguredEnabledModels(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+
+	now := time.Unix(1_712_400_000, 0).UTC()
+	defaultKeyID := int64(9)
+	stateStore := &lobehubOIDCStateStoreStub{
+		createBootstrapID: "bootstrap-3",
+		bootstrapTickets:  map[string]*LobeHubBootstrapTicket{},
+	}
+	svc := NewLobeHubSSOService(
+		&lobehubSettingsReaderStub{settings: &SystemSettings{
+			LobeHubEnabled:              true,
+			LobeHubChatURL:              "https://chat.example.com",
+			LobeHubOIDCIssuer:           "https://sub2api.example.com/api/v1/lobehub/oidc",
+			LobeHubOIDCClientID:         "lobehub-client",
+			LobeHubOIDCClientSecret:     "lobehub-secret",
+			LobeHubDefaultProvider:      "openai",
+			LobeHubDefaultModel:         "gpt-5.4-mini",
+			LobeHubEnabledModels:        []string{"gpt-5.4-mini", "gpt-image-2", "gpt-5.4-mini"},
+			LobeHubRuntimeConfigVersion: "runtime-v1",
+			APIBaseURL:                  "https://api.example.com",
+		}},
+		&lobehubUserPreferenceStoreStub{
+			user: &User{
+				ID:                  42,
+				Email:               "user@example.com",
+				Username:            "alice",
+				Status:              StatusActive,
+				DefaultChatAPIKeyID: &defaultKeyID,
+			},
+		},
+		&lobehubAPIKeyReaderStub{keys: map[int64]*APIKey{
+			9: {
+				ID:     9,
+				UserID: 42,
+				Key:    "sk-user-1",
+				Status: StatusActive,
+			},
+		}},
+		stateStore,
+		&lobehubOIDCSigningKeyProviderStub{privateKey: privateKey, keyID: "kid-1"},
+		func() time.Time { return now },
+	)
+
+	prepare, err := svc.PrepareTargetRefresh(context.Background(), 42, &LobeHubSSORefreshRequest{
+		ReturnURL: "https://chat.example.com/workspace",
+	})
+	require.NoError(t, err)
+
+	stateStore.bootstrapTickets["bootstrap-3"] = stateStore.createdBootstrap
+
+	_, err = svc.ExchangeBootstrap(context.Background(), prepare.TargetToken, "https://chat.example.com/workspace")
+	require.NoError(t, err)
+
+	redirectResult, err := svc.ConsumeBootstrap(context.Background(), "bootstrap-3")
+	require.NoError(t, err)
+
+	redirectURL, err := url.Parse(redirectResult.RedirectURL)
+	require.NoError(t, err)
+	settingsJSON := redirectURL.Query().Get("settings")
+	require.Contains(t, settingsJSON, `"model":"gpt-5.4-mini"`)
+	require.Contains(t, settingsJSON, `"enabledModels":["gpt-5.4-mini","gpt-image-2"]`)
+}
+
 func TestLobeHubSSOService_CompareCurrentConfigMatchesImportedSettings(t *testing.T) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
 	require.NoError(t, err)
@@ -414,6 +479,12 @@ func TestLobeHubSSOService_CompareCurrentConfigMatchesImportedSettings(t *testin
 			"openai": {
 				APIKey:  "sk-user-1",
 				BaseURL: "https://api.example.com/v1",
+			},
+		},
+		LanguageModel: map[string]LobeHubObservedLanguageModel{
+			"openai": {
+				Enabled:       true,
+				EnabledModels: []string{"gpt-4.1"},
 			},
 		},
 	})
@@ -541,6 +612,64 @@ func TestLobeHubSSOService_CompareCurrentConfigReturnsMismatchWhenObservedModelD
 			"openai": {
 				Enabled:       true,
 				EnabledModels: []string{"gpt-4o-mini"},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.Matched)
+}
+
+func TestLobeHubSSOService_CompareCurrentConfigReturnsMismatchWhenConfiguredEnabledModelsAreMissing(t *testing.T) {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 1024)
+	require.NoError(t, err)
+
+	now := time.Unix(1_712_400_000, 0).UTC()
+	defaultKeyID := int64(9)
+	svc := NewLobeHubSSOService(
+		&lobehubSettingsReaderStub{settings: &SystemSettings{
+			LobeHubEnabled:              true,
+			LobeHubChatURL:              "https://chat.example.com",
+			LobeHubOIDCIssuer:           "https://sub2api.example.com/api/v1/lobehub/oidc",
+			LobeHubOIDCClientID:         "lobehub-client",
+			LobeHubOIDCClientSecret:     "lobehub-secret",
+			LobeHubDefaultProvider:      "openai",
+			LobeHubDefaultModel:         "gpt-5.4-mini",
+			LobeHubEnabledModels:        []string{"gpt-5.4-mini", "gpt-image-2"},
+			LobeHubRuntimeConfigVersion: "runtime-v1",
+			APIBaseURL:                  "https://api.example.com",
+		}},
+		&lobehubUserPreferenceStoreStub{
+			user: &User{
+				ID:                  42,
+				Email:               "user@example.com",
+				Username:            "alice",
+				Status:              StatusActive,
+				DefaultChatAPIKeyID: &defaultKeyID,
+			},
+		},
+		&lobehubAPIKeyReaderStub{keys: map[int64]*APIKey{
+			9: {
+				ID:     9,
+				UserID: 42,
+				Key:    "sk-user-1",
+				Status: StatusActive,
+			},
+		}},
+		&lobehubOIDCStateStoreStub{},
+		&lobehubOIDCSigningKeyProviderStub{privateKey: privateKey, keyID: "kid-1"},
+		func() time.Time { return now },
+	)
+
+	prepare, err := svc.PrepareTargetRefresh(context.Background(), 42, &LobeHubSSORefreshRequest{
+		ReturnURL: "https://chat.example.com/workspace",
+	})
+	require.NoError(t, err)
+
+	result, err := svc.CompareCurrentConfig(context.Background(), prepare.TargetToken, &LobeHubObservedSettings{
+		KeyVaults: map[string]LobeHubObservedKeyVault{
+			"openai": {
+				APIKey:  "sk-user-1",
+				BaseURL: "https://api.example.com/v1",
 			},
 		},
 	})
