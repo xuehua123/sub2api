@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -209,6 +211,18 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSONEditURLs(t *testing.T)
 	require.Equal(t, 2, *parsed.PartialImages)
 	require.True(t, parsed.HasMask)
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
+}
+
+func TestBuildOpenAIImageDownloadCandidates_RelativeLobeHubFileAddsS3Fallback(t *testing.T) {
+	headers := make(http.Header)
+	headers.Set("Referer", "https://chat.example.com/image?topic=abc")
+
+	candidates := buildOpenAIImageDownloadCandidates(headers, "files/493601/source.jpg")
+
+	require.Equal(t, []string{
+		"https://chat.example.com/files/493601/source.jpg",
+		"https://s3-chat.example.com/lobe/files/493601/source.jpg",
+	}, candidates)
 }
 
 func TestCollectOpenAIImagePointers_RecognizesDirectAssets(t *testing.T) {
@@ -605,6 +619,71 @@ func TestOpenAIGatewayServiceForwardImages_OAuthEditsStreamingTransformsEvents(t
 	require.Equal(t, "transparent", gjson.Get(completed.Data, "background").String())
 	require.JSONEq(t, `{"images":1}`, gjson.Get(completed.Data, "usage").Raw)
 	require.False(t, gjson.Get(completed.Data, "revised_prompt").Exists())
+}
+
+func TestOpenAIGatewayServiceForwardImages_APIKeyEditsRewritesTrustedImageURLsToDataURLs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/source.png", r.URL.Path)
+		w.Header().Set("Content-Type", "image/png")
+		_, err := w.Write([]byte("png-image-content"))
+		require.NoError(t, err)
+	}))
+	defer imageServer.Close()
+
+	body := []byte(fmt.Sprintf(`{
+		"model":"gpt-image-2",
+		"prompt":"replace background",
+		"images":[{"image_url":"%s/source.png"}]
+	}`, imageServer.URL))
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Referer", imageServer.URL+"/image?topic=abc")
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Security: config.SecurityConfig{
+				URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+			},
+		},
+	}
+	parsed, err := svc.ParseOpenAIImagesRequest(c, body)
+	require.NoError(t, err)
+
+	upstream := &httpUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"X-Request-Id": []string{"req_img_apikey_edit_123"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"created":1710000006,"data":[{"b64_json":"aGVsbG8="}]}`)),
+		},
+	}
+	svc.httpUpstream = upstream
+
+	account := &Account{
+		ID:       6,
+		Name:     "openai-apikey",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"api_key": "sk-test-key",
+		},
+	}
+
+	result, err := svc.ForwardImages(context.Background(), c, account, body, parsed, "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.ImageCount)
+	require.True(t, strings.HasPrefix(gjson.GetBytes(upstream.lastBody, "images.0.image_url").String(), "data:image/png;base64,"))
+	require.Equal(t, "gpt-image-2", gjson.GetBytes(upstream.lastBody, "model").String())
+	require.Equal(t, "aGVsbG8=", gjson.Get(rec.Body.String(), "data.0.b64_json").String())
 }
 
 func TestBuildOpenAIImagesResponsesRequest_DowngradesMultipleImagesToSingle(t *testing.T) {

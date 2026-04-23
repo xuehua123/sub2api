@@ -14,6 +14,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -527,7 +528,11 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesAPIKey(
 		parsed.Endpoint,
 		account.Type,
 	)
-	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(body, parsed.ContentType, upstreamModel)
+	normalizedBody, normalizedContentType, err := s.normalizeOpenAIImagesAPIKeyBody(ctx, c, body, parsed)
+	if err != nil {
+		return nil, err
+	}
+	forwardBody, forwardContentType, err := rewriteOpenAIImagesModel(normalizedBody, normalizedContentType, upstreamModel)
 	if err != nil {
 		return nil, err
 	}
@@ -700,6 +705,65 @@ func rewriteOpenAIImagesModel(body []byte, contentType string, model string) ([]
 		return nil, "", fmt.Errorf("rewrite image request model: %w", err)
 	}
 	return rewritten, contentType, nil
+}
+
+func (s *OpenAIGatewayService) normalizeOpenAIImagesAPIKeyBody(
+	ctx context.Context,
+	c *gin.Context,
+	body []byte,
+	parsed *OpenAIImagesRequest,
+) ([]byte, string, error) {
+	if parsed == nil || parsed.Multipart || !parsed.IsEdits() || len(body) == 0 || !gjson.ValidBytes(body) {
+		return body, parsedContentType(parsed), nil
+	}
+
+	headers := http.Header{}
+	if c != nil && c.Request != nil {
+		headers = cloneHTTPHeader(c.Request.Header)
+	}
+
+	rewritten := body
+	changed := false
+	for index, imageURL := range parsed.InputImageURLs {
+		dataURL, replaced, err := normalizeTrustedOpenAIImageURLToDataURL(ctx, headers, imageURL)
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve images[%d].image_url: %w", index, err)
+		}
+		if !replaced {
+			continue
+		}
+		rewritten, err = sjson.SetBytes(rewritten, fmt.Sprintf("images.%d.image_url", index), dataURL)
+		if err != nil {
+			return nil, "", fmt.Errorf("rewrite images[%d].image_url: %w", index, err)
+		}
+		changed = true
+	}
+
+	if strings.TrimSpace(parsed.MaskImageURL) != "" {
+		dataURL, replaced, err := normalizeTrustedOpenAIImageURLToDataURL(ctx, headers, parsed.MaskImageURL)
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve mask.image_url: %w", err)
+		}
+		if replaced {
+			rewritten, err = sjson.SetBytes(rewritten, "mask.image_url", dataURL)
+			if err != nil {
+				return nil, "", fmt.Errorf("rewrite mask.image_url: %w", err)
+			}
+			changed = true
+		}
+	}
+
+	if !changed {
+		return body, parsedContentType(parsed), nil
+	}
+	return rewritten, parsedContentType(parsed), nil
+}
+
+func parsedContentType(parsed *OpenAIImagesRequest) string {
+	if parsed == nil {
+		return ""
+	}
+	return parsed.ContentType
 }
 
 func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model string) ([]byte, string, error) {
@@ -1343,4 +1407,234 @@ func dedupeStrings(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func normalizeTrustedOpenAIImageURLToDataURL(ctx context.Context, headers http.Header, rawURL string) (string, bool, error) {
+	trimmed := strings.TrimSpace(rawURL)
+	if trimmed == "" || strings.HasPrefix(strings.ToLower(trimmed), "data:image/") {
+		return trimmed, false, nil
+	}
+
+	candidates := buildOpenAIImageDownloadCandidates(headers, trimmed)
+	if len(candidates) == 0 {
+		return trimmed, false, nil
+	}
+
+	var lastErr error
+	for _, candidate := range candidates {
+		dataURL, err := downloadOpenAIImageAsDataURL(ctx, candidate)
+		if err == nil {
+			return dataURL, true, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("trusted image URL candidates exhausted")
+	}
+	return "", false, lastErr
+}
+
+func buildOpenAIImageDownloadCandidates(headers http.Header, rawURL string) []string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" || strings.HasPrefix(strings.ToLower(rawURL), "data:image/") {
+		return nil
+	}
+
+	chatOrigins := collectOpenAIImageTrustedOrigins(headers)
+	s3Origins := deriveOpenAIImageS3Origins(chatOrigins)
+	candidates := make([]string, 0, 4)
+
+	if parsed, err := url.Parse(rawURL); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		if openAIImageURLMatchesAnyOrigin(parsed, chatOrigins) || openAIImageURLMatchesAnyOrigin(parsed, s3Origins) {
+			candidates = append(candidates, parsed.String())
+		}
+		if s3Candidate := buildOpenAIImageS3Candidate(parsed, chatOrigins); s3Candidate != "" {
+			candidates = append(candidates, s3Candidate)
+		}
+		return dedupeStrings(candidates)
+	}
+
+	path := strings.TrimLeft(strings.TrimSpace(rawURL), "/")
+	if !strings.HasPrefix(path, "files/") {
+		return nil
+	}
+	for _, origin := range chatOrigins {
+		candidates = append(candidates, joinOpenAIImageOriginAndPath(origin, path))
+	}
+	for _, origin := range s3Origins {
+		candidates = append(candidates, joinOpenAIImageOriginAndPath(origin, "lobe/"+path))
+	}
+	return dedupeStrings(candidates)
+}
+
+func collectOpenAIImageTrustedOrigins(headers http.Header) []string {
+	if headers == nil {
+		headers = http.Header{}
+	}
+	origins := make([]string, 0, 4)
+	for _, key := range []string{"Origin", "Referer"} {
+		if origin := normalizeOpenAIImageOrigin(headers.Get(key)); origin != "" {
+			origins = append(origins, origin)
+		}
+	}
+	for _, key := range []string{"X-Forwarded-Host", "Host"} {
+		host := normalizeOpenAIImageHost(headers.Get(key))
+		if host == "" {
+			continue
+		}
+		if strings.HasPrefix(host, "chat.") {
+			origins = append(origins, "https://"+host)
+		}
+		if strings.HasPrefix(host, "api.") {
+			origins = append(origins, "https://chat."+strings.TrimPrefix(host, "api."))
+		}
+	}
+	return dedupeStrings(origins)
+}
+
+func normalizeOpenAIImageOrigin(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return ""
+	}
+	scheme := strings.ToLower(strings.TrimSpace(parsed.Scheme))
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	return scheme + "://" + normalizeOpenAIImageHost(parsed.Host)
+}
+
+func normalizeOpenAIImageHost(raw string) string {
+	host := strings.TrimSpace(raw)
+	if host == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(host); err == nil && parsed.Host != "" {
+		host = parsed.Host
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if strings.Contains(host, "@") {
+		if parsed, err := url.Parse("http://" + host); err == nil {
+			host = parsed.Host
+		}
+	}
+	return host
+}
+
+func deriveOpenAIImageS3Origins(chatOrigins []string) []string {
+	if len(chatOrigins) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(chatOrigins))
+	for _, origin := range chatOrigins {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		if strings.HasPrefix(parsed.Host, "chat.") {
+			out = append(out, parsed.Scheme+"://s3-"+parsed.Host)
+		}
+	}
+	return dedupeStrings(out)
+}
+
+func openAIImageURLMatchesAnyOrigin(parsed *url.URL, origins []string) bool {
+	if parsed == nil || parsed.Host == "" || len(origins) == 0 {
+		return false
+	}
+	host := normalizeOpenAIImageHost(parsed.Host)
+	for _, origin := range origins {
+		base, err := url.Parse(origin)
+		if err != nil || base.Host == "" {
+			continue
+		}
+		if host == normalizeOpenAIImageHost(base.Host) {
+			return true
+		}
+	}
+	return false
+}
+
+func buildOpenAIImageS3Candidate(parsed *url.URL, chatOrigins []string) string {
+	if parsed == nil || parsed.Host == "" {
+		return ""
+	}
+	path := strings.TrimLeft(strings.TrimSpace(parsed.Path), "/")
+	if !strings.HasPrefix(path, "files/") {
+		return ""
+	}
+	host := normalizeOpenAIImageHost(parsed.Host)
+	for _, origin := range chatOrigins {
+		base, err := url.Parse(origin)
+		if err != nil || base.Host == "" {
+			continue
+		}
+		if host != normalizeOpenAIImageHost(base.Host) || !strings.HasPrefix(base.Host, "chat.") {
+			continue
+		}
+		return joinOpenAIImageOriginAndPath(base.Scheme+"://s3-"+base.Host, "lobe/"+path)
+	}
+	return ""
+}
+
+func joinOpenAIImageOriginAndPath(origin string, path string) string {
+	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+	path = strings.TrimLeft(strings.TrimSpace(path), "/")
+	if origin == "" || path == "" {
+		return ""
+	}
+	return origin + "/" + path
+}
+
+func downloadOpenAIImageAsDataURL(ctx context.Context, downloadURL string) (string, error) {
+	resp, err := req.C().
+		SetTimeout(20*time.Second).
+		R().
+		SetContext(ctx).
+		SetHeader("Accept", "image/*,*/*;q=0.8").
+		DisableAutoReadResponse().
+		Get(downloadURL)
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		if resp != nil && resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+	}()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", newOpenAIImageStatusError(resp, "download image bytes failed")
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, openAIImageMaxDownloadBytes))
+	if err != nil {
+		return "", fmt.Errorf("read image bytes: %w", err)
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("downloaded image is empty")
+	}
+
+	contentType := normalizeOpenAIImageContentType(resp.Header.Get("Content-Type"), body)
+	if contentType == "" {
+		return "", fmt.Errorf("downloaded content is not an image")
+	}
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(body), nil
+}
+
+func normalizeOpenAIImageContentType(contentType string, body []byte) string {
+	if mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType)); err == nil {
+		mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+		if strings.HasPrefix(mediaType, "image/") {
+			return mediaType
+		}
+	}
+	detected := strings.ToLower(strings.TrimSpace(http.DetectContentType(body)))
+	if strings.HasPrefix(detected, "image/") {
+		return detected
+	}
+	return ""
 }
