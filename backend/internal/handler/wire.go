@@ -80,6 +80,10 @@ func ProvideSettingHandler(settingService *service.SettingService, buildInfo Bui
 	return NewSettingHandler(settingService, buildInfo.Version)
 }
 
+func ProvidePaymentConfigReader(configService *service.PaymentConfigService) paymentConfigReader {
+	return configService
+}
+
 // ProvideHandlers creates the Handlers struct
 func ProvideHandlers(
 	authHandler *AuthHandler,
@@ -136,6 +140,7 @@ var ProviderSet = wire.NewSet(
 	NewTotpHandler,
 	ProvideSettingHandler,
 	NewPaymentHandler,
+	ProvidePaymentConfigReader,
 	NewPaymentWebhookHandler,
 	NewReferralHandler,
 	ProvideLobeHubHandler,

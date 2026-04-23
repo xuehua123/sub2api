@@ -100,6 +100,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
 		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
 		SetTotalRecharged(userIn.TotalRecharged).
+		SetRpmLimit(userIn.RPMLimit).
 		Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
@@ -227,7 +228,8 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetBalanceNotifyThresholdType(userIn.BalanceNotifyThresholdType).
 		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
 		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
-		SetTotalRecharged(userIn.TotalRecharged)
+		SetTotalRecharged(userIn.TotalRecharged).
+		SetRpmLimit(userIn.RPMLimit)
 	if userIn.DefaultChatAPIKeyID == nil {
 		updateOp = updateOp.ClearDefaultChatAPIKeyID()
 	} else {

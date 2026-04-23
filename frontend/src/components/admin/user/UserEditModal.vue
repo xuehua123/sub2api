@@ -46,6 +46,18 @@
             class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out mt-0.5 ml-0.5" />
         </button>
       </div>
+      <div>
+        <label class="input-label">{{ t('admin.users.form.rpmLimit') }}</label>
+        <input
+          v-model.number="form.rpm_limit"
+          type="number"
+          min="0"
+          step="1"
+          class="input"
+          :placeholder="t('admin.users.form.rpmLimitPlaceholder')"
+        />
+        <p class="input-hint">{{ t('admin.users.form.rpmLimitHint') }}</p>
+      </div>
       <UserAttributeForm v-model="form.customAttributes" :user-id="user?.id" />
     </form>
     <template #footer>
@@ -75,11 +87,11 @@ const emit = defineEmits(['close', 'success'])
 const { t } = useI18n(); const appStore = useAppStore(); const { copyToClipboard } = useClipboard()
 
 const submitting = ref(false); const passwordCopied = ref(false)
-const form = reactive({ email: '', password: '', username: '', notes: '', concurrency: 1, referralEnabled: false, customAttributes: {} as UserAttributeValuesMap })
+const form = reactive({ email: '', password: '', username: '', notes: '', concurrency: 1, rpm_limit: 0, referralEnabled: false, customAttributes: {} as UserAttributeValuesMap })
 
 watch(() => props.user, (u) => {
   if (u) {
-    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', concurrency: u.concurrency, referralEnabled: u.referral_enabled ?? false, customAttributes: {} })
+    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, referralEnabled: u.referral_enabled ?? false, customAttributes: {} })
     passwordCopied.value = false
   }
 }, { immediate: true })
@@ -106,7 +118,7 @@ const handleUpdateUser = async () => {
   }
   submitting.value = true
   try {
-    const data: any = { email: form.email, username: form.username, notes: form.notes, concurrency: form.concurrency, referral_enabled: form.referralEnabled }
+    const data: any = { email: form.email, username: form.username, notes: form.notes, concurrency: form.concurrency, rpm_limit: form.rpm_limit, referral_enabled: form.referralEnabled }
     if (form.password.trim()) data.password = form.password.trim()
     await adminAPI.users.update(props.user.id, data)
     if (Object.keys(form.customAttributes).length > 0) await adminAPI.userAttributes.updateUserAttributeValues(props.user.id, form.customAttributes)
