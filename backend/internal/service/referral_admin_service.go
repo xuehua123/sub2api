@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -199,7 +200,7 @@ func (s *ReferralAdminService) UpdateRelation(ctx context.Context, input *AdminU
 	}
 
 	existing, err := s.relationRepo.GetRelationByUserID(ctx, input.UserID)
-	if err != nil && err != ErrReferralRelationNotFound {
+	if err != nil && !errors.Is(err, ErrReferralRelationNotFound) {
 		return nil, err
 	}
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-3">
+  <div class="relative space-y-3">
     <label class="block text-sm font-medium text-gray-700 dark:text-gray-300">
       {{ label }}
     </label>
@@ -31,27 +31,28 @@
       </button>
     </div>
 
-    <div v-if="loading" class="text-xs text-gray-500 dark:text-gray-400">
-      {{ t('common.loading', '加载中') }}
-    </div>
-
     <div
-      v-else-if="options.length > 0"
-      class="space-y-2 rounded-xl border border-gray-200 p-2 dark:border-dark-700"
+      v-if="loading || options.length > 0"
+      class="absolute left-0 right-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-2 shadow-xl dark:border-dark-700 dark:bg-dark-900"
     >
-      <button
-        v-for="option in options"
-        :key="option.user_id"
-        type="button"
-        data-test="account-option"
-        class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-dark-800"
-        @click="selectOption(option)"
-      >
-        <span>{{ option.email }}</span>
-        <span class="text-xs text-gray-500 dark:text-gray-400">
-          {{ showReferralCode ? option.referral_code : option.username || '-' }}
-        </span>
-      </button>
+      <div v-if="loading" class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+        {{ t('common.loading', '加载中') }}
+      </div>
+      <template v-else>
+        <button
+          v-for="option in options"
+          :key="option.user_id"
+          type="button"
+          data-test="account-option"
+          class="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-dark-800"
+          @click="selectOption(option)"
+        >
+          <span>{{ option.email }}</span>
+          <span class="text-xs text-gray-500 dark:text-gray-400">
+            {{ showReferralCode ? option.referral_code : option.username || '-' }}
+          </span>
+        </button>
+      </template>
     </div>
   </div>
 </template>

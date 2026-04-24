@@ -307,6 +307,49 @@ func newReferralAdminServiceForTest(refRepo *adminReferralRepoStub, commissionRe
 	return NewReferralAdminService(baseReferralService, refRepo, commissionRepo, nil, nil)
 }
 
+type adminReferralWrappedNotFoundRepoStub struct {
+	*adminReferralRepoStub
+}
+
+func (s *adminReferralWrappedNotFoundRepoStub) GetRelationByUserID(ctx context.Context, userID int64) (*ReferralRelation, error) {
+	relation, err := s.adminReferralRepoStub.GetRelationByUserID(ctx, userID)
+	if err == ErrReferralRelationNotFound {
+		return nil, ErrReferralRelationNotFound.WithCause(err)
+	}
+	return relation, err
+}
+
+func TestReferralAdminService_UpdateRelation_CreatesRelationWhenUserHasNoExistingRelation(t *testing.T) {
+	baseRepo := newAdminReferralRepoStub()
+	refRepo := &adminReferralWrappedNotFoundRepoStub{adminReferralRepoStub: baseRepo}
+	refRepo.codesByCode["NEWCODE"] = &ReferralCode{
+		ID:        1,
+		UserID:    88,
+		Code:      "NEWCODE",
+		Status:    ReferralCodeStatusActive,
+		IsDefault: true,
+	}
+	commissionRepo := newAdminCommissionRepoStub()
+	userRepo := &userRepoStub{}
+	baseReferralService := NewReferralService(refRepo, userRepo, nil, NewSettingService(&settingRepoStub{values: map[string]string{
+		SettingKeyReferralEnabled:          "true",
+		SettingKeyReferralAllowManualInput: "true",
+	}}, &config.Config{}))
+	svc := NewReferralAdminService(baseReferralService, refRepo, commissionRepo, nil, nil)
+
+	relation, err := svc.UpdateRelation(context.Background(), &AdminUpdateReferralRelationInput{
+		UserID:    7,
+		Code:      "NEWCODE",
+		ChangedBy: 9,
+		Reason:    "manual correction",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(88), relation.ReferrerUserID)
+	require.Equal(t, ReferralBindSourceAdminOverride, relation.BindSource)
+	require.Len(t, refRepo.relationHistory, 1)
+	require.Nil(t, refRepo.relationHistory[0].OldReferrerUserID)
+}
+
 func TestReferralAdminService_UpdateRelation_RebindsAndWritesHistory(t *testing.T) {
 	refRepo := newAdminReferralRepoStub()
 	refRepo.codesByCode["NEWCODE"] = &ReferralCode{
