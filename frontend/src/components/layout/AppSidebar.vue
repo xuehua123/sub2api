@@ -186,6 +186,7 @@ import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
+import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 
 interface NavItem {
   path: string
@@ -194,6 +195,18 @@ interface NavItem {
   iconSvg?: string
   hideInSimpleMode?: boolean
   children?: NavItem[]
+  featureFlag?: () => boolean
+}
+
+function applyFeatureFlags(items: NavItem[]): NavItem[] {
+  const out: NavItem[] = []
+  for (const item of items) {
+    if (item.featureFlag && item.featureFlag() === false) {
+      continue
+    }
+    out.push(item.children ? { ...item, children: applyFeatureFlags(item.children) } : item)
+  }
+  return out
 }
 
 const { t } = useI18n()
@@ -217,6 +230,14 @@ const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => appStore.siteLogo)
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+
+const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
+const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
+
+function finalizeNav(items: NavItem[]): NavItem[] {
+  const visible = applyFeatureFlags(items)
+  return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
+}
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -585,6 +606,14 @@ const userNavItems = computed((): NavItem[] => {
     { path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon },
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
+    {
+      path: '/available-channels',
+      label: t('nav.availableChannels'),
+      icon: ChannelIcon,
+      hideInSimpleMode: true,
+      featureFlag: flagAvailableChannels,
+    },
+    { path: '/monitor', label: t('nav.channelStatus'), icon: ChartIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     ...(appStore.cachedPublicSettings?.payment_enabled
       ? [
@@ -618,7 +647,7 @@ const userNavItems = computed((): NavItem[] => {
       iconSvg: item.icon_svg,
     })),
   ]
-  return authStore.isSimpleMode ? items.filter(item => !item.hideInSimpleMode) : items
+  return finalizeNav(items)
 })
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard)
@@ -626,6 +655,14 @@ const personalNavItems = computed((): NavItem[] => {
   const items: NavItem[] = [
     { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
     { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
+    {
+      path: '/available-channels',
+      label: t('nav.availableChannels'),
+      icon: ChannelIcon,
+      hideInSimpleMode: true,
+      featureFlag: flagAvailableChannels,
+    },
+    { path: '/monitor', label: t('nav.channelStatus'), icon: ChartIcon, featureFlag: flagChannelMonitor },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     ...(appStore.cachedPublicSettings?.payment_enabled
       ? [
@@ -659,7 +696,7 @@ const personalNavItems = computed((): NavItem[] => {
       iconSvg: item.icon_svg,
     })),
   ]
-  return authStore.isSimpleMode ? items.filter(item => !item.hideInSimpleMode) : items
+  return finalizeNav(items)
 })
 
 // Custom menu items filtered by visibility
@@ -685,7 +722,21 @@ const adminNavItems = computed((): NavItem[] => {
       : []),
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon, hideInSimpleMode: true },
-    { path: '/admin/channels', label: t('nav.channels', '渠道管理'), icon: ChannelIcon, hideInSimpleMode: true },
+    {
+      path: '/admin/channels',
+      label: t('nav.channels', '渠道管理'),
+      icon: ChannelIcon,
+      hideInSimpleMode: true,
+      children: [
+        { path: '/admin/channels/pricing', label: t('nav.channelPricing'), icon: ChannelIcon },
+        {
+          path: '/admin/channels/monitor',
+          label: t('nav.channelMonitor'),
+          icon: ChartIcon,
+          featureFlag: flagChannelMonitor,
+        },
+      ],
+    },
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
@@ -721,7 +772,7 @@ const adminNavItems = computed((): NavItem[] => {
 
   // 简单模式下，在系统设置前插入 API密钥
   if (authStore.isSimpleMode) {
-    const filtered = baseItems.filter(item => !item.hideInSimpleMode)
+    const filtered = applyFeatureFlags(baseItems).filter(item => !item.hideInSimpleMode)
     filtered.push({ path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon })
     filtered.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
     // Add admin custom menu items after settings
@@ -731,12 +782,13 @@ const adminNavItems = computed((): NavItem[] => {
     return filtered
   }
 
-  baseItems.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
+  const visible = applyFeatureFlags(baseItems)
+  visible.push({ path: '/admin/settings', label: t('nav.settings'), icon: CogIcon })
   // Add admin custom menu items after settings
   for (const cm of customMenuItemsForAdmin.value) {
-    baseItems.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
+    visible.push({ path: `/custom/${cm.id}`, label: cm.label, icon: null, iconSvg: cm.icon_svg })
   }
-  return baseItems
+  return visible
 })
 
 function toggleSidebar() {
