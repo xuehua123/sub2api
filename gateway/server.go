@@ -271,6 +271,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.redirectRefreshTarget(w, r)
 		return
 	}
+	if readCookieValue(r, SyncCookieName) == hashSyncState(targetClaims.SyncState()) {
+		s.proxy.ServeHTTP(w, r)
+		return
+	}
 
 	matched, err := s.probeCurrentConfig(r.Context(), r, targetToken)
 	if err == nil && matched {
@@ -847,7 +851,38 @@ func shouldProxyDirectly(r *http.Request) bool {
 	if strings.HasPrefix(path, "/favicon") || strings.HasPrefix(path, "/sitemap") {
 		return true
 	}
-	return path == "/robots.txt"
+	return path == "/robots.txt" || hasStaticAssetExtension(path)
+}
+
+func hasStaticAssetExtension(path string) bool {
+	path = strings.ToLower(strings.TrimSpace(path))
+	for _, suffix := range []string{
+		".webmanifest",
+		".manifest",
+		".json",
+		".js",
+		".css",
+		".map",
+		".png",
+		".jpg",
+		".jpeg",
+		".webp",
+		".gif",
+		".svg",
+		".ico",
+		".txt",
+		".xml",
+		".woff",
+		".woff2",
+		".ttf",
+		".otf",
+		".wasm",
+	} {
+		if strings.HasSuffix(path, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func isWebSocketRequest(r *http.Request) bool {

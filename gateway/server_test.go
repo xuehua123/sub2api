@@ -254,11 +254,65 @@ func TestServerProxiesWhenSessionAndSyncStateAlreadyMatch(t *testing.T) {
 	if string(body) != "upstream-page" {
 		t.Fatalf("expected proxied upstream body, got %s", string(body))
 	}
-	if compareCalls.Load() != 1 {
-		t.Fatalf("expected one config probe compare call, got %d", compareCalls.Load())
+	if compareCalls.Load() != 0 {
+		t.Fatalf("expected matching sync cookie to skip config probe, got %d compare calls", compareCalls.Load())
 	}
 	if bootstrapExchangeCalls.Load() != 0 {
 		t.Fatalf("expected no bootstrap exchange call, got %d", bootstrapExchangeCalls.Load())
+	}
+}
+
+func TestServerProxiesStaticAssetsWithoutBootstrap(t *testing.T) {
+	t.Helper()
+
+	var signInCalls atomic.Int32
+	var refreshCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/manifest.webmanifest":
+			w.Header().Set("Content-Type", "application/manifest+json")
+			_, _ = w.Write([]byte(`{"name":"LobeHub"}`))
+		case "/api/auth/sign-in/oauth2":
+			signInCalls.Add(1)
+			http.Error(w, "should not start sign-in for static assets", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refreshCalls.Add(1)
+		http.Error(w, "should not call sub2api for static assets", http.StatusInternalServerError)
+	}))
+	defer backend.Close()
+
+	server := mustNewTestServer(t, Config{
+		UpstreamURL:        upstream.URL,
+		Sub2APIAPIBaseURL:  backend.URL + "/api/v1",
+		Sub2APIFrontendURL: "https://app.example.com",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/manifest.webmanifest", nil)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if string(body) != `{"name":"LobeHub"}` {
+		t.Fatalf("expected manifest body, got %s", string(body))
+	}
+	if signInCalls.Load() != 0 {
+		t.Fatalf("expected no sign-in calls, got %d", signInCalls.Load())
+	}
+	if refreshCalls.Load() != 0 {
+		t.Fatalf("expected no refresh calls, got %d", refreshCalls.Load())
 	}
 }
 
