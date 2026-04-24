@@ -24,6 +24,18 @@ func TestServerStartsSignInWhenLobeHubSessionIsMissing(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("expected POST, got %s", r.Method)
 			}
+			if r.Host != "chat.example.com" {
+				t.Fatalf("expected public host chat.example.com, got %s", r.Host)
+			}
+			if got := r.Header.Get("X-Forwarded-Proto"); got != "https" {
+				t.Fatalf("expected x-forwarded-proto https, got %s", got)
+			}
+			if got := r.Header.Get("X-Forwarded-For"); got != "203.0.113.10" {
+				t.Fatalf("expected x-forwarded-for 203.0.113.10, got %s", got)
+			}
+			if got := r.Header.Get("User-Agent"); got != "LobeHubGatewayTest/1.0" {
+				t.Fatalf("expected browser user-agent, got %s", got)
+			}
 			if got := r.Header.Get("Origin"); got != "https://chat.example.com" {
 				t.Fatalf("expected origin https://chat.example.com, got %s", got)
 			}
@@ -74,6 +86,8 @@ func TestServerStartsSignInWhenLobeHubSessionIsMissing(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/workspace", nil)
 	req.Host = "chat.example.com"
 	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	req.Header.Set("User-Agent", "LobeHubGatewayTest/1.0")
 	recorder := httptest.NewRecorder()
 
 	server.ServeHTTP(recorder, req)
@@ -491,11 +505,17 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	var applyCalls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/api/auth/list-accounts":
+			writeJSONResponse(t, w, []any{map[string]any{
+				"id":         "account-101",
+				"providerId": "generic-oidc",
+				"accountId":  "101",
+				"userId":     "user_internal_101",
+			}})
+			return
 		case "/api/auth/get-session":
 			writeJSONResponse(t, w, map[string]any{
-				"user": map[string]any{
-					"id": "101",
-				},
+				"user": map[string]any{"id": "user_internal_101"},
 			})
 			return
 		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
@@ -585,21 +605,101 @@ func TestBootstrapConsumesTicketRedirectsAndSetsSyncCookie(t *testing.T) {
 	}
 }
 
-func TestBootstrapStartsSignInWhenSessionUserDoesNotMatchTargetToken(t *testing.T) {
+func TestBootstrapRedirectsToRefreshTargetWhenSessionIsMissing(t *testing.T) {
 	t.Helper()
 
+	var signInCalls atomic.Int32
 	var consumeCalls atomic.Int32
 	var applyCalls atomic.Int32
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/auth/get-session":
-			writeJSONResponse(t, w, map[string]any{
-				"user": map[string]any{
-					"id": "202",
-				},
-			})
+		case "/api/auth/list-accounts":
+			http.Redirect(w, r, "/signin", http.StatusFound)
 		case "/api/auth/sign-in/oauth2":
+			signInCalls.Add(1)
+			writeJSONResponse(t, w, map[string]any{
+				"url":      "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456",
+				"redirect": true,
+			})
+		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
+			applyCalls.Add(1)
+			http.Error(w, "should not apply config without a readable session", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/lobehub/bootstrap/consume":
+			consumeCalls.Add(1)
+			http.Error(w, "should not consume ticket before session is readable", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	targetToken := newUnsignedJWT(t, map[string]any{
+		"user_id":                    101,
+		"desired_config_fingerprint": "fp-3",
+		"runtime_config_version":     "runtime-v1",
+		"exp":                        time.Now().Add(10 * time.Minute).Unix(),
+	})
+
+	server := mustNewTestServer(t, Config{
+		UpstreamURL:        upstream.URL,
+		Sub2APIAPIBaseURL:  backend.URL + "/api/v1",
+		Sub2APIFrontendURL: "https://app.example.com",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/__lobehub_bootstrap?mode=sync&ticket=ticket-123", nil)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.AddCookie(&http.Cookie{Name: TargetCookieName, Value: targetToken})
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	expected := "https://app.example.com/auth/lobehub-sso?mode=refresh-target&return_url=https%3A%2F%2Fchat.example.com%2F__lobehub_bootstrap%3Fmode%3Dsync%26ticket%3Dticket-123"
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != expected {
+		t.Fatalf("expected redirect %s, got %s", expected, resp.Header.Get("Location"))
+	}
+	if signInCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap sync not to start sign-in, got %d sign-in calls", signInCalls.Load())
+	}
+	if consumeCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap ticket to remain unused, got %d consume calls", consumeCalls.Load())
+	}
+	if applyCalls.Load() != 0 {
+		t.Fatalf("expected provider config not to be applied, got %d apply calls", applyCalls.Load())
+	}
+}
+
+func TestBootstrapRedirectsToRefreshTargetWhenSessionUserDoesNotMatchTargetToken(t *testing.T) {
+	t.Helper()
+
+	var signInCalls atomic.Int32
+	var consumeCalls atomic.Int32
+	var applyCalls atomic.Int32
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/list-accounts":
+			writeJSONResponse(t, w, []any{map[string]any{
+				"id":         "account-202",
+				"providerId": "generic-oidc",
+				"accountId":  "202",
+				"userId":     "user_internal_202",
+			}})
+		case "/api/auth/sign-in/oauth2":
+			signInCalls.Add(1)
 			writeJSONResponse(t, w, map[string]any{
 				"url":      "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456",
 				"redirect": true,
@@ -649,8 +749,12 @@ func TestBootstrapStartsSignInWhenSessionUserDoesNotMatchTargetToken(t *testing.
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("expected 302, got %d", resp.StatusCode)
 	}
-	if resp.Header.Get("Location") != "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456" {
-		t.Fatalf("unexpected redirect: %s", resp.Header.Get("Location"))
+	expected := "https://app.example.com/auth/lobehub-sso?mode=refresh-target&return_url=https%3A%2F%2Fchat.example.com%2F__lobehub_bootstrap%3Fticket%3Dticket-123"
+	if resp.Header.Get("Location") != expected {
+		t.Fatalf("expected redirect %s, got %s", expected, resp.Header.Get("Location"))
+	}
+	if signInCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap sync not to start sign-in, got %d sign-in calls", signInCalls.Load())
 	}
 	if consumeCalls.Load() != 0 {
 		t.Fatalf("expected bootstrap ticket to remain unused, got %d consume calls", consumeCalls.Load())

@@ -189,8 +189,16 @@ func NewServer(cfg Config) (*Server, error) {
 	proxy := httputil.NewSingleHostReverseProxy(upstreamURL)
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
+		incomingHost := effectiveHost(req)
+		incomingProto := requestScheme(req)
 		originalDirector(req)
-		req.Host = upstreamURL.Host
+		if incomingHost != "" {
+			req.Host = incomingHost
+			req.Header.Set("X-Forwarded-Host", incomingHost)
+		}
+		if incomingProto != "" {
+			req.Header.Set("X-Forwarded-Proto", incomingProto)
+		}
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, proxyErr error) {
 		http.Error(w, "upstream proxy error: "+proxyErr.Error(), http.StatusBadGateway)
@@ -317,17 +325,17 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessionUserID, err := s.fetchSessionUserID(r.Context(), r)
+	sessionAccountID, err := s.fetchSessionProviderAccountID(r.Context(), r)
 	if err != nil {
 		if errors.Is(err, errLobeHubSessionMissing) {
-			s.startSignIn(w, r)
+			s.redirectRefreshTarget(w, r)
 			return
 		}
 		http.Error(w, "failed to read lobehub session: "+err.Error(), http.StatusBadGateway)
 		return
 	}
-	if sessionUserID != targetClaims.UserID {
-		s.startSignIn(w, r)
+	if sessionAccountID != targetClaims.UserID {
+		s.redirectRefreshTarget(w, r)
 		return
 	}
 
@@ -338,7 +346,7 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.applyProviderConfig(r.Context(), r, result); err != nil {
 		if errors.Is(err, errLobeHubSessionMissing) {
-			s.startSignIn(w, r)
+			s.redirectRefreshTarget(w, r)
 			return
 		}
 		http.Error(w, "failed to apply lobehub provider config: "+err.Error(), http.StatusBadGateway)
@@ -399,6 +407,7 @@ func (s *Server) startSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	copyBrowserContextHeaders(req, r)
 	req.Header.Set("Origin", requestOrigin(r))
 	req.Header.Set("Referer", currentRequestURL(r))
 	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
@@ -458,6 +467,7 @@ func (s *Server) probeSession(ctx context.Context, r *http.Request) (bool, error
 		return false, err
 	}
 	req.Header.Set("Accept", "text/html")
+	copyBrowserContextHeaders(req, r)
 	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
 		req.Header.Set("Cookie", cookieHeader)
 	}
@@ -477,32 +487,9 @@ func (s *Server) probeSession(ctx context.Context, r *http.Request) (bool, error
 	return true, nil
 }
 
-func (s *Server) fetchSessionUserID(ctx context.Context, r *http.Request) (int64, error) {
-	var lastErr error
-	for _, path := range []string{"/api/auth/get-session", "/api/auth/session"} {
-		userID, err := s.fetchSessionUserIDFromPath(ctx, r, path)
-		if err == nil {
-			return userID, nil
-		}
-		if errors.Is(err, errLobeHubSessionMissing) {
-			return 0, err
-		}
-		var statusErr *statusError
-		if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound {
-			lastErr = err
-			continue
-		}
-		return 0, err
-	}
-	if lastErr != nil {
-		return 0, lastErr
-	}
-	return 0, errLobeHubSessionMissing
-}
-
-func (s *Server) fetchSessionUserIDFromPath(ctx context.Context, r *http.Request, path string) (int64, error) {
+func (s *Server) fetchSessionProviderAccountID(ctx context.Context, r *http.Request) (int64, error) {
 	endpoint := *s.upstreamURL
-	endpoint.Path = path
+	endpoint.Path = "/api/auth/list-accounts"
 	endpoint.RawPath = ""
 	endpoint.RawQuery = ""
 	endpoint.Fragment = ""
@@ -512,6 +499,7 @@ func (s *Server) fetchSessionUserIDFromPath(ctx context.Context, r *http.Request
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	copyBrowserContextHeaders(req, r)
 	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
 		req.Header.Set("Cookie", cookieHeader)
 	}
@@ -534,11 +522,11 @@ func (s *Server) fetchSessionUserIDFromPath(ctx context.Context, r *http.Request
 	if err != nil {
 		return 0, err
 	}
-	userID, ok := parseSessionUserID(body)
+	accountID, ok := parseProviderAccountID(body, s.providerID)
 	if !ok {
 		return 0, errLobeHubSessionMissing
 	}
-	return userID, nil
+	return accountID, nil
 }
 
 func (s *Server) getPublicSettings(ctx context.Context) (*publicSettings, error) {
@@ -645,6 +633,7 @@ func (s *Server) fetchObservedSettings(ctx context.Context, r *http.Request) (*c
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
+	copyBrowserContextHeaders(req, r)
 	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
 		req.Header.Set("Cookie", cookieHeader)
 	}
@@ -700,6 +689,7 @@ func (s *Server) applyProviderConfig(ctx context.Context, r *http.Request, confi
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/json")
+	copyBrowserContextHeaders(req, r)
 	if cookieHeader := r.Header.Get("Cookie"); cookieHeader != "" {
 		req.Header.Set("Cookie", cookieHeader)
 	}
@@ -773,6 +763,31 @@ func (s *Server) buildGatewayURL(r *http.Request, path string, query url.Values)
 		base.RawQuery = query.Encode()
 	}
 	return base.String()
+}
+
+func copyBrowserContextHeaders(dst *http.Request, src *http.Request) {
+	if dst == nil || src == nil {
+		return
+	}
+	if host := effectiveHost(src); host != "" {
+		dst.Host = host
+		dst.Header.Set("X-Forwarded-Host", host)
+	}
+	if proto := requestScheme(src); proto != "" {
+		dst.Header.Set("X-Forwarded-Proto", proto)
+	}
+	copyHeaderIfPresent(dst, src, "X-Forwarded-For")
+	copyHeaderIfPresent(dst, src, "X-Real-IP")
+	copyHeaderIfPresent(dst, src, "User-Agent")
+	copyHeaderIfPresent(dst, src, "Accept-Language")
+}
+
+func copyHeaderIfPresent(dst *http.Request, src *http.Request, name string) {
+	value := strings.TrimSpace(src.Header.Get(name))
+	if value == "" {
+		return
+	}
+	dst.Header.Set(name, value)
 }
 
 type statusError struct {
@@ -1146,42 +1161,46 @@ func findRuntimeConfigObject(value any) (map[string]any, bool) {
 	return nil, false
 }
 
-func parseSessionUserID(body []byte) (int64, bool) {
+func parseProviderAccountID(body []byte, providerID string) (int64, bool) {
 	var payload any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return 0, false
 	}
-	return findSessionUserID(payload)
+	return findProviderAccountID(payload, providerID)
 }
 
-func findSessionUserID(value any) (int64, bool) {
+func findProviderAccountID(value any, providerID string) (int64, bool) {
 	switch typed := value.(type) {
 	case map[string]any:
-		if user, ok := asStringMap(typed["user"]); ok {
-			for _, key := range []string{"id", "user_id", "userId", "sub"} {
-				if userID, ok := int64Value(user[key]); ok {
-					return userID, true
+		if isProviderAccount(typed, providerID) {
+			for _, key := range []string{"accountId", "account_id", "providerAccountId", "provider_account_id"} {
+				if accountID, ok := int64Value(typed[key]); ok {
+					return accountID, true
 				}
 			}
 		}
-		for _, key := range []string{"user_id", "userId", "sub"} {
-			if userID, ok := int64Value(typed[key]); ok {
-				return userID, true
-			}
-		}
-		for _, key := range []string{"session", "data", "result"} {
-			if userID, ok := findSessionUserID(typed[key]); ok {
-				return userID, true
+		for _, key := range []string{"accounts", "data", "result"} {
+			if accountID, ok := findProviderAccountID(typed[key], providerID); ok {
+				return accountID, true
 			}
 		}
 	case []any:
 		for _, item := range typed {
-			if userID, ok := findSessionUserID(item); ok {
-				return userID, true
+			if accountID, ok := findProviderAccountID(item, providerID); ok {
+				return accountID, true
 			}
 		}
 	}
 	return 0, false
+}
+
+func isProviderAccount(account map[string]any, providerID string) bool {
+	for _, key := range []string{"providerId", "provider_id", "providerID", "provider"} {
+		if strings.TrimSpace(stringValue(account[key])) == providerID {
+			return true
+		}
+	}
+	return false
 }
 
 func asStringMap(value any) (map[string]any, bool) {
