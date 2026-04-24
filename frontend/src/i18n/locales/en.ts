@@ -868,6 +868,119 @@ export default {
     userAgent: 'User-Agent'
   },
 
+  // Shared keys for channel monitor (admin + user views)
+  monitorCommon: {
+    status: {
+      operational: 'Operational',
+      degraded: 'Degraded',
+      failed: 'Failed',
+      error: 'Error',
+      unknown: '-'
+    },
+    providers: {
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      gemini: 'Gemini'
+    },
+    extraModelsHeader: 'Extra Models',
+    extraModelsEmpty: 'No extra models',
+    latencyEmpty: '-',
+    availabilityPrefix: 'Availability',
+    dialogLatency: 'Dialog Latency',
+    endpointPing: 'Endpoint PING',
+    history60pts: 'HISTORY ({n} PTS)',
+    nextUpdateIn: 'NEXT UPDATE IN {n}s',
+    past: 'PAST',
+    now: 'NOW',
+    maintenancePaused: 'Maintenance · timeline paused',
+    extraModelsCount: '+ {n} models',
+    pollEvery: '{n}s polling',
+    updatedAt: 'Updated {time}',
+    relativeSecondsAgo: '{n}s ago',
+    relativeMinutesAgo: '{n}m ago',
+    relativeHoursAgo: '{n}h ago',
+    relativeDaysAgo: '{n}d ago'
+  },
+
+  // Channel Status (user-facing read-only view)
+  channelStatus: {
+    title: 'Channel Status',
+    description: 'Inspect channel availability, latency and recent status',
+    searchPlaceholder: 'Search channels...',
+    allProviders: 'All Providers',
+    loadError: 'Failed to load channel status',
+    detailLoadError: 'Failed to load channel detail',
+    detailTitle: 'Channel Detail',
+    closeDetail: 'Close',
+    windowTab: {
+      '7d': '7 days',
+      '15d': '15 days',
+      '30d': '30 days'
+    },
+    overall: {
+      operational: 'OPERATIONAL',
+      degraded: 'DEGRADED',
+      unavailable: 'UNAVAILABLE'
+    },
+    columns: {
+      name: 'Name',
+      provider: 'Provider',
+      groupName: 'Group',
+      primaryModel: 'Primary Model',
+      availability7d: '7d Availability',
+      latency: 'Latency (ms)'
+    },
+    detailColumns: {
+      model: 'Model',
+      latestStatus: 'Latest Status',
+      latestLatency: 'Latest Latency (ms)',
+      availability7d: '7d Availability',
+      availability15d: '15d Availability',
+      availability30d: '30d Availability',
+      avgLatency7d: '7d Avg Latency (ms)'
+    },
+    empty: {
+      title: 'No channels available',
+      description: 'No monitored channels have been configured yet.'
+    }
+  },
+
+  // Available Channels (user-facing)
+  availableChannels: {
+    title: 'Available Channels',
+    description: 'Channels you can access, along with their supported models and pricing',
+    searchPlaceholder: 'Search channels or models...',
+    empty: 'No available channels',
+    noModels: 'No models configured',
+    noPricing: 'Pricing not configured',
+    exclusive: 'Exclusive',
+    public: 'Public',
+    exclusiveTooltip: 'Exclusive groups granted to you by an admin',
+    publicTooltip: 'Groups open to all users',
+    columns: {
+      name: 'Channel',
+      description: 'Description',
+      platform: 'Platform',
+      groups: 'Your Accessible Groups',
+      supportedModels: 'Supported Models'
+    },
+    pricing: {
+      billingMode: 'Billing Mode',
+      billingModeToken: 'Per Token',
+      billingModePerRequest: 'Per Request',
+      billingModeImage: 'Per Image',
+      inputPrice: 'Input',
+      outputPrice: 'Output',
+      cacheWritePrice: 'Cache Write',
+      cacheReadPrice: 'Cache Read',
+      imageOutputPrice: 'Image Output',
+      perRequestPrice: 'Per Request',
+      intervals: 'Tiered Pricing',
+      unitPerMillion: '/ 1M tokens',
+      unitPerRequest: '/ request'
+    }
+  },
+
   // Redeem
   redeem: {
     title: 'Redeem Code',

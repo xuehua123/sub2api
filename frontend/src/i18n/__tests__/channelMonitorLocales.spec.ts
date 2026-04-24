@@ -8,9 +8,10 @@ import zh from '../locales/zh'
 
 const srcRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../')
 const sourceExtensions = new Set(['.vue', '.ts'])
-const channelMonitorKeyPattern = /admin\.channelMonitor[\w.]+/g
+const channelMonitorKeyPattern =
+  /(?<![A-Za-z0-9_.])(?:admin\.channelMonitor|monitorCommon|channelStatus|availableChannels)(?:\.[A-Za-z0-9_]+)+/g
 
-describe('channel monitor locale keys', () => {
+describe('channel monitor feature locale keys', () => {
   const keys = collectChannelMonitorKeys(srcRoot)
 
   it('finds channel monitor keys in source files', () => {
@@ -18,13 +19,11 @@ describe('channel monitor locale keys', () => {
   })
 
   it.each(keys)('has zh text for %s', key => {
-    expect(resolveLocaleKey(zh, key)).toEqual(expect.any(String))
-    expect(resolveLocaleKey(zh, key)).not.toBe(key)
+    expectLocaleValue(zh, key)
   })
 
   it.each(keys)('has en text for %s', key => {
-    expect(resolveLocaleKey(en, key)).toEqual(expect.any(String))
-    expect(resolveLocaleKey(en, key)).not.toBe(key)
+    expectLocaleValue(en, key)
   })
 })
 
@@ -39,7 +38,9 @@ function collectChannelMonitorKeys(root: string): string[] {
       keys.add(match[0])
     }
   }
-  return [...keys].sort()
+  return [...keys]
+    .filter(key => ![...keys].some(other => other.startsWith(`${key}.`)))
+    .sort()
 }
 
 function walkFiles(root: string): string[] {
@@ -52,6 +53,12 @@ function walkFiles(root: string): string[] {
       continue
     }
     const fullPath = join(root, entry)
+    if (
+      fullPath.includes(`${join('src', 'i18n', 'locales')}`) ||
+      fullPath.includes(`${join('src', 'i18n', '__tests__')}`)
+    ) {
+      continue
+    }
     const stat = statSync(fullPath)
     if (stat.isDirectory()) {
       out.push(...walkFiles(fullPath))
@@ -69,4 +76,14 @@ function resolveLocaleKey(messages: unknown, key: string): unknown {
     }
     return (current as Record<string, unknown>)[part]
   }, messages)
+}
+
+function expectLocaleValue(messages: unknown, key: string): void {
+  const value = resolveLocaleKey(messages, key)
+  expect(value).not.toBeUndefined()
+  if (typeof value === 'string') {
+    expect(value).not.toBe(key)
+  } else {
+    expect(value).toEqual(expect.any(Object))
+  }
 }

@@ -872,6 +872,119 @@ export default {
     userAgent: 'User-Agent'
   },
 
+  // Shared keys for channel monitor (admin + user views)
+  monitorCommon: {
+    status: {
+      operational: '正常',
+      degraded: '降级',
+      failed: '失败',
+      error: '错误',
+      unknown: '-'
+    },
+    providers: {
+      openai: 'OpenAI',
+      anthropic: 'Anthropic',
+      gemini: 'Gemini'
+    },
+    extraModelsHeader: '附加模型',
+    extraModelsEmpty: '无附加模型',
+    latencyEmpty: '-',
+    availabilityPrefix: '可用性',
+    dialogLatency: '对话延迟',
+    endpointPing: '端点 PING',
+    history60pts: '近 {n} 次记录',
+    nextUpdateIn: '{n}s 后刷新',
+    past: 'PAST',
+    now: 'NOW',
+    maintenancePaused: '维护中 · 已暂停时间线采集',
+    extraModelsCount: '+ {n} 模型',
+    pollEvery: '{n}s 轮询',
+    updatedAt: '更新于 {time}',
+    relativeSecondsAgo: '{n} 秒前',
+    relativeMinutesAgo: '{n} 分钟前',
+    relativeHoursAgo: '{n} 小时前',
+    relativeDaysAgo: '{n} 天前'
+  },
+
+  // Channel Status (user-facing read-only view)
+  channelStatus: {
+    title: '渠道状态',
+    description: '查看渠道可用性、延迟和近期状态',
+    searchPlaceholder: '搜索渠道...',
+    allProviders: '全部供应商',
+    loadError: '加载渠道状态失败',
+    detailLoadError: '加载渠道详情失败',
+    detailTitle: '渠道详情',
+    closeDetail: '关闭',
+    windowTab: {
+      '7d': '7 天',
+      '15d': '15 天',
+      '30d': '30 天'
+    },
+    overall: {
+      operational: 'OPERATIONAL',
+      degraded: 'DEGRADED',
+      unavailable: 'UNAVAILABLE'
+    },
+    columns: {
+      name: '名称',
+      provider: '供应商',
+      groupName: '分组',
+      primaryModel: '主模型',
+      availability7d: '7 天可用率',
+      latency: '延迟 (ms)'
+    },
+    detailColumns: {
+      model: '模型',
+      latestStatus: '最新状态',
+      latestLatency: '最新延迟 (ms)',
+      availability7d: '7 天可用率',
+      availability15d: '15 天可用率',
+      availability30d: '30 天可用率',
+      avgLatency7d: '7 天平均延迟 (ms)'
+    },
+    empty: {
+      title: '暂无可显示的渠道',
+      description: '管理员尚未配置可监控的渠道。'
+    }
+  },
+
+  // Available Channels (user-facing)
+  availableChannels: {
+    title: '可用渠道',
+    description: '查看您可访问的渠道与其支持的模型、定价',
+    searchPlaceholder: '搜索渠道或模型...',
+    empty: '暂无可用渠道',
+    noModels: '未配置模型',
+    noPricing: '未配置定价',
+    exclusive: '专属',
+    public: '公开',
+    exclusiveTooltip: '管理员授权给你的专属分组',
+    publicTooltip: '对所有用户公开的分组',
+    columns: {
+      name: '渠道名',
+      description: '描述',
+      platform: '平台',
+      groups: '我可访问的分组',
+      supportedModels: '支持模型'
+    },
+    pricing: {
+      billingMode: '计费模式',
+      billingModeToken: '按 Token',
+      billingModePerRequest: '按次',
+      billingModeImage: '按图片',
+      inputPrice: '输入',
+      outputPrice: '输出',
+      cacheWritePrice: '缓存写入',
+      cacheReadPrice: '缓存读取',
+      imageOutputPrice: '图片输出',
+      perRequestPrice: '每次请求',
+      intervals: '阶梯定价',
+      unitPerMillion: '/ 1M token',
+      unitPerRequest: '/ 次'
+    }
+  },
+
   // Redeem
   redeem: {
     title: '兑换码',
