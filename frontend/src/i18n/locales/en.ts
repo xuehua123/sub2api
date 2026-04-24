@@ -4437,6 +4437,7 @@ export default {
       description: 'Manage registration, email verification, default values, and SMTP settings',
       tabs: {
         general: 'General',
+        features: 'Features',
         security: 'Security',
         users: 'Users',
         gateway: 'Gateway',
@@ -4448,6 +4449,24 @@ export default {
       },
       emailTabDisabledTitle: 'Email Verification Not Enabled',
       emailTabDisabledHint: 'Enable email verification in the Security tab to configure SMTP settings.',
+      features: {
+        channelMonitor: {
+          title: 'Channel Monitor',
+          description: 'Control channel monitoring jobs and the user-facing channel status page.',
+          configureLink: 'Manage channel monitors',
+          enabled: 'Enable channel monitor',
+          enabledHint: 'When enabled, the system periodically checks channel availability.',
+          defaultInterval: 'Default check interval (seconds)',
+          defaultIntervalHint: 'Default interval used for new monitor jobs. Keeping 60 seconds is recommended.'
+        },
+        availableChannels: {
+          title: 'Available Channels',
+          description: 'Control whether the user-facing available channels aggregate page is shown.',
+          configureLink: 'View available channels',
+          enabled: 'Enable available channels page',
+          enabledHint: 'When enabled, users can view available channels, supported models, and pricing.'
+        }
+      },
       registration: {
         title: 'Registration Settings',
         description: 'Control user registration and verification',
