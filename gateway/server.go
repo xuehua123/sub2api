@@ -513,6 +513,9 @@ func (s *Server) fetchSessionProviderAccountID(ctx context.Context, r *http.Requ
 	if isSignInRedirect(resp) || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return 0, errLobeHubSessionMissing
 	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return 0, errLobeHubSessionMissing
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
 		return 0, &statusError{StatusCode: resp.StatusCode, Message: string(body)}

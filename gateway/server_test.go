@@ -682,6 +682,85 @@ func TestBootstrapRedirectsToRefreshTargetWhenSessionIsMissing(t *testing.T) {
 	}
 }
 
+func TestBootstrapRedirectsToRefreshTargetWhenSessionAccountLookupIsRateLimited(t *testing.T) {
+	t.Helper()
+
+	var signInCalls atomic.Int32
+	var consumeCalls atomic.Int32
+	var applyCalls atomic.Int32
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/auth/list-accounts":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"message":"Too many requests. Please try again later."}`))
+		case "/api/auth/sign-in/oauth2":
+			signInCalls.Add(1)
+			writeJSONResponse(t, w, map[string]any{
+				"url":      "https://api.example.com/api/v1/lobehub/oidc/authorize?state=state-456",
+				"redirect": true,
+			})
+		case "/trpc/lambda/aiProvider.updateAiProviderConfig":
+			applyCalls.Add(1)
+			http.Error(w, "should not apply config while auth is rate limited", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/lobehub/bootstrap/consume":
+			consumeCalls.Add(1)
+			http.Error(w, "should not consume ticket while auth is rate limited", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer backend.Close()
+
+	targetToken := newUnsignedJWT(t, map[string]any{
+		"user_id":                    101,
+		"desired_config_fingerprint": "fp-3",
+		"runtime_config_version":     "runtime-v1",
+		"exp":                        time.Now().Add(10 * time.Minute).Unix(),
+	})
+
+	server := mustNewTestServer(t, Config{
+		UpstreamURL:        upstream.URL,
+		Sub2APIAPIBaseURL:  backend.URL + "/api/v1",
+		Sub2APIFrontendURL: "https://app.example.com",
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "http://chat.example.com/__lobehub_bootstrap?mode=sync&ticket=ticket-123", nil)
+	req.Host = "chat.example.com"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.AddCookie(&http.Cookie{Name: TargetCookieName, Value: targetToken})
+	recorder := httptest.NewRecorder()
+
+	server.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	expected := "https://app.example.com/auth/lobehub-sso?mode=refresh-target&return_url=https%3A%2F%2Fchat.example.com%2F__lobehub_bootstrap%3Fmode%3Dsync%26ticket%3Dticket-123"
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("expected 302, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Location") != expected {
+		t.Fatalf("expected redirect %s, got %s", expected, resp.Header.Get("Location"))
+	}
+	if signInCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap sync not to start sign-in, got %d sign-in calls", signInCalls.Load())
+	}
+	if consumeCalls.Load() != 0 {
+		t.Fatalf("expected bootstrap ticket to remain unused, got %d consume calls", consumeCalls.Load())
+	}
+	if applyCalls.Load() != 0 {
+		t.Fatalf("expected provider config not to be applied, got %d apply calls", applyCalls.Load())
+	}
+}
+
 func TestBootstrapRedirectsToRefreshTargetWhenSessionUserDoesNotMatchTargetToken(t *testing.T) {
 	t.Helper()
 
