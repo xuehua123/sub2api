@@ -245,6 +245,7 @@ export default {
   // Common
   common: {
     loading: 'Loading...',
+    submitting: 'Submitting...',
     justNow: 'just now',
     save: 'Save',
     saved: 'Saved successfully',
@@ -272,6 +273,7 @@ export default {
     no: 'No',
     all: 'All',
     none: 'None',
+    selectAll: 'Select All',
     noData: 'No data',
     expand: 'Expand',
     collapse: 'Collapse',
@@ -306,6 +308,12 @@ export default {
     saving: 'Saving...',
     selectedCount: '({count} selected)',
     refresh: 'Refresh',
+    autoRefresh: {
+      title: 'Auto Refresh',
+      enable: 'Enable auto refresh',
+      countdown: 'Auto refresh: {seconds}s',
+      seconds: '{n} seconds',
+    },
     view: 'View',
     settings: 'Settings',
     chooseFile: 'Choose File',
@@ -342,6 +350,7 @@ export default {
     users: 'Users',
     groups: 'Groups',
     channels: 'Channels',
+    channelManagement: 'Channel Management',
     channelPricing: 'Channel Pricing',
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
@@ -2062,6 +2071,46 @@ export default {
         geminiText: 'Gemini Text',
         geminiImage: 'Gemini Image',
         hint: 'Select at least one model family'
+      }
+    },
+
+    // Available Channels (aggregated read-only view)
+    availableChannels: {
+      title: 'Available Channels',
+      description: 'Aggregated view: each channel with its linked groups and supported models (wildcards expanded)',
+      searchPlaceholder: 'Search channels or models...',
+      columns: {
+        name: 'Channel',
+        status: 'Status',
+        billingSource: 'Billing Model Source',
+        groups: 'Linked Groups',
+        supportedModels: 'Supported Models'
+      },
+      empty: 'No data',
+      noGroups: 'No linked groups',
+      noModels: 'No model mapping configured',
+      noPricing: 'Pricing not configured',
+      statusActive: 'Active',
+      statusDisabled: 'Disabled',
+      billingSource: {
+        requested: 'Requested model',
+        upstream: 'Upstream model',
+        channel_mapped: 'Channel-mapped model'
+      },
+      pricing: {
+        billingMode: 'Billing Mode',
+        billingModeToken: 'Per Token',
+        billingModePerRequest: 'Per Request',
+        billingModeImage: 'Per Image',
+        inputPrice: 'Input',
+        outputPrice: 'Output',
+        cacheWritePrice: 'Cache Write',
+        cacheReadPrice: 'Cache Read',
+        imageOutputPrice: 'Image Output',
+        perRequestPrice: 'Per Request',
+        intervals: 'Tiered Pricing',
+        unitPerMillion: '/ 1M tokens',
+        unitPerRequest: '/ request'
       }
     },
 

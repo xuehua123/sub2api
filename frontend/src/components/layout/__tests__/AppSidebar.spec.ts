@@ -35,6 +35,24 @@ describe('AppSidebar header styles', () => {
 })
 
 describe('AppSidebar channel monitor navigation', () => {
+  it('uses feature-flagged shared self navigation for user and admin personal menus', () => {
+    expect(componentSource).toContain('function buildSelfNavItems(withDashboard: boolean): NavItem[]')
+    expect(componentSource).toContain('finalizeNav(buildSelfNavItems(true))')
+    expect(componentSource).toContain('finalizeNav(buildSelfNavItems(false))')
+    expect(componentSource).toContain('const flagPayment = makeSidebarFlag(FeatureFlags.payment)')
+    expect(componentSource).toContain('featureFlag: flagPayment')
+  })
+
+  it('keeps admin channel and order groups as expand-only sidebar groups', () => {
+    expect(componentSource).toContain('expandOnly?: boolean')
+    expect(componentSource).toContain('@click="handleGroupClick(item)"')
+    expect(componentSource).toContain('function handleGroupClick(item: NavItem)')
+    expect(componentSource).toContain("label: t('nav.channelManagement')")
+    expect(componentSource).toContain('expandOnly: true')
+    expect(componentSource).toContain("label: t('nav.orderManagement')")
+    expect(componentSource).toContain('featureFlag: flagAdminPayment')
+  })
+
   it('keeps user-facing channel monitor entries behind feature flags', () => {
     expect(componentSource).toContain("path: '/available-channels'")
     expect(componentSource).toContain("label: t('nav.availableChannels')")
@@ -51,7 +69,7 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(componentSource).toContain('featureFlag: flagChannelMonitor')
   })
 
-  it.each(['availableChannels', 'channelStatus', 'channelMonitor'])(
+  it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement'])(
     'has zh and en labels for nav.%s',
     key => {
       expect(resolveLocaleKey(zh, `nav.${key}`)).toEqual(expect.any(String))

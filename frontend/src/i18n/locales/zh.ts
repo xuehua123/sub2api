@@ -245,6 +245,7 @@ export default {
   // Common
   common: {
     loading: '加载中...',
+    submitting: '提交中...',
     justNow: '刚刚',
     save: '保存',
     saved: '保存成功',
@@ -272,6 +273,7 @@ export default {
     no: '否',
     all: '全部',
     none: '无',
+    selectAll: '全选',
     noData: '暂无数据',
     expand: '展开',
     collapse: '收起',
@@ -306,6 +308,12 @@ export default {
     saving: '保存中...',
     selectedCount: '（已选 {count} 个）',
     refresh: '刷新',
+    autoRefresh: {
+      title: '自动刷新',
+      enable: '启用自动刷新',
+      countdown: '自动刷新: {seconds}s',
+      seconds: '{n} 秒',
+    },
     view: '查看',
     settings: '设置',
     chooseFile: '选择文件',
@@ -342,6 +350,7 @@ export default {
     users: '用户管理',
     groups: '分组管理',
     channels: '渠道管理',
+    channelManagement: '渠道管理',
     channelPricing: '渠道定价',
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
@@ -2139,6 +2148,46 @@ export default {
         geminiText: 'Gemini Text',
         geminiImage: 'Gemini Image',
         hint: '至少选择一个模型系列'
+      }
+    },
+
+    // Available Channels (aggregated read-only view)
+    availableChannels: {
+      title: '可用渠道',
+      description: '按渠道聚合查看关联分组与支持模型（已展开通配符）',
+      searchPlaceholder: '搜索渠道或模型...',
+      columns: {
+        name: '渠道名',
+        status: '状态',
+        billingSource: '计费模型来源',
+        groups: '关联分组',
+        supportedModels: '支持模型'
+      },
+      empty: '暂无数据',
+      noGroups: '未关联分组',
+      noModels: '未配置模型映射',
+      noPricing: '未配置定价',
+      statusActive: '启用',
+      statusDisabled: '停用',
+      billingSource: {
+        requested: '请求模型',
+        upstream: '上游模型',
+        channel_mapped: '映射后模型'
+      },
+      pricing: {
+        billingMode: '计费模式',
+        billingModeToken: '按 Token',
+        billingModePerRequest: '按次',
+        billingModeImage: '按图片',
+        inputPrice: '输入',
+        outputPrice: '输出',
+        cacheWritePrice: '缓存写入',
+        cacheReadPrice: '缓存读取',
+        imageOutputPrice: '图片输出',
+        perRequestPrice: '每次请求',
+        intervals: '阶梯定价',
+        unitPerMillion: '/ 1M token',
+        unitPerRequest: '/ 次'
       }
     },
 
