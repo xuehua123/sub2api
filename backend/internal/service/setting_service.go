@@ -466,6 +466,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyBalanceLowNotifyThreshold,
 		SettingKeyBalanceLowNotifyRechargeURL,
 		SettingKeyAccountQuotaNotifyEnabled,
+		SettingKeyChannelMonitorEnabled,
+		SettingKeyChannelMonitorDefaultIntervalSeconds,
+		SettingKeyAvailableChannelsEnabled,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -560,10 +563,15 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ReferralCreditConversionEnabled: referralCreditConversionEnabledPublic(settings),
 		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
 		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
-		BalanceLowNotifyEnabled:         settings[SettingKeyBalanceLowNotifyEnabled] == "true",
-		AccountQuotaNotifyEnabled:       settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
-		BalanceLowNotifyThreshold:       balanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:     settings[SettingKeyBalanceLowNotifyRechargeURL],
+		ChannelMonitorEnabled:           !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
+		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(
+			settings[SettingKeyChannelMonitorDefaultIntervalSeconds],
+		),
+		AvailableChannelsEnabled:    settings[SettingKeyAvailableChannelsEnabled] == "true",
+		BalanceLowNotifyEnabled:     settings[SettingKeyBalanceLowNotifyEnabled] == "true",
+		AccountQuotaNotifyEnabled:   settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
+		BalanceLowNotifyThreshold:   balanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL: settings[SettingKeyBalanceLowNotifyRechargeURL],
 	}, nil
 }
 
@@ -576,6 +584,66 @@ func (s *SettingService) SetOnUpdateCallback(callback func()) {
 // SetVersion sets the application version for injection into public settings
 func (s *SettingService) SetVersion(version string) {
 	s.version = version
+}
+
+// PublicSettingsInjectionPayload is the JSON shape embedded into HTML as
+// window.__APP_CONFIG__. Keep its JSON tags in sync with handler/dto.PublicSettings.
+type PublicSettingsInjectionPayload struct {
+	RegistrationEnabled              bool            `json:"registration_enabled"`
+	EmailVerifyEnabled               bool            `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist []string        `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                 bool            `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool            `json:"password_reset_enabled"`
+	InvitationCodeEnabled            bool            `json:"invitation_code_enabled"`
+	TotpEnabled                      bool            `json:"totp_enabled"`
+	TurnstileEnabled                 bool            `json:"turnstile_enabled"`
+	TurnstileSiteKey                 string          `json:"turnstile_site_key"`
+	SiteName                         string          `json:"site_name"`
+	SiteLogo                         string          `json:"site_logo"`
+	SiteSubtitle                     string          `json:"site_subtitle"`
+	APIBaseURL                       string          `json:"api_base_url"`
+	ContactInfo                      string          `json:"contact_info"`
+	DocURL                           string          `json:"doc_url"`
+	HomeContent                      string          `json:"home_content"`
+	HideCcsImportButton              bool            `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled      bool            `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL          string          `json:"purchase_subscription_url"`
+	TableDefaultPageSize             int             `json:"table_default_page_size"`
+	TablePageSizeOptions             []int           `json:"table_page_size_options"`
+	CustomMenuItems                  json.RawMessage `json:"custom_menu_items"`
+	CustomEndpoints                  json.RawMessage `json:"custom_endpoints"`
+	LinuxDoOAuthEnabled              bool            `json:"linuxdo_oauth_enabled"`
+	WeChatOAuthEnabled               bool            `json:"wechat_oauth_enabled"`
+	WeChatOAuthOpenEnabled           bool            `json:"wechat_oauth_open_enabled"`
+	WeChatOAuthMPEnabled             bool            `json:"wechat_oauth_mp_enabled"`
+	WeChatOAuthMobileEnabled         bool            `json:"wechat_oauth_mobile_enabled"`
+	OIDCOAuthEnabled                 bool            `json:"oidc_oauth_enabled"`
+	OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
+	BackendModeEnabled               bool            `json:"backend_mode_enabled"`
+	PaymentEnabled                   bool            `json:"payment_enabled"`
+	ReferralEnabled                  bool            `json:"referral_enabled"`
+	ReferralAllowManualInput         bool            `json:"referral_allow_manual_input"`
+	ReferralBindBeforeFirstPaidOnly  bool            `json:"referral_bind_before_first_paid_only"`
+	ReferralWithdrawEnabled          bool            `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled  bool            `json:"referral_credit_conversion_enabled"`
+	ReferralSettlementCurrency       string          `json:"referral_settlement_currency"`
+	ReferralWithdrawMethodsEnabled   []string        `json:"referral_withdraw_methods_enabled"`
+	LobeHubEnabled                   bool            `json:"lobehub_enabled"`
+	LobeHubChatURL                   string          `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                string          `json:"lobehub_oidc_issuer"`
+	LobeHubDefaultProvider           string          `json:"lobehub_default_provider"`
+	LobeHubDefaultModel              string          `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion      string          `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton          bool            `json:"hide_lobehub_import_button"`
+	Version                          string          `json:"version"`
+	BalanceLowNotifyEnabled          bool            `json:"balance_low_notify_enabled"`
+	AccountQuotaNotifyEnabled        bool            `json:"account_quota_notify_enabled"`
+	BalanceLowNotifyThreshold        float64         `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL      string          `json:"balance_low_notify_recharge_url"`
+
+	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
+	AvailableChannelsEnabled             bool `json:"available_channels_enabled"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection
@@ -630,70 +698,137 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		LobeHubRuntimeConfigVersion string `json:"lobehub_runtime_config_version,omitempty"`
 		HideLobeHubImportButton     bool   `json:"hide_lobehub_import_button"`
 		// Referral
-		ReferralEnabled                 bool     `json:"referral_enabled"`
-		ReferralAllowManualInput        bool     `json:"referral_allow_manual_input"`
-		ReferralBindBeforeFirstPaidOnly bool     `json:"referral_bind_before_first_paid_only"`
-		ReferralWithdrawEnabled         bool     `json:"referral_withdraw_enabled"`
-		ReferralCreditConversionEnabled bool     `json:"referral_credit_conversion_enabled"`
-		ReferralSettlementCurrency      string   `json:"referral_settlement_currency"`
-		ReferralWithdrawMethodsEnabled  []string `json:"referral_withdraw_methods_enabled"`
-		BalanceLowNotifyEnabled         bool     `json:"balance_low_notify_enabled"`
-		AccountQuotaNotifyEnabled       bool     `json:"account_quota_notify_enabled"`
-		BalanceLowNotifyThreshold       float64  `json:"balance_low_notify_threshold"`
-		BalanceLowNotifyRechargeURL     string   `json:"balance_low_notify_recharge_url"`
+		ReferralEnabled                      bool     `json:"referral_enabled"`
+		ReferralAllowManualInput             bool     `json:"referral_allow_manual_input"`
+		ReferralBindBeforeFirstPaidOnly      bool     `json:"referral_bind_before_first_paid_only"`
+		ReferralWithdrawEnabled              bool     `json:"referral_withdraw_enabled"`
+		ReferralCreditConversionEnabled      bool     `json:"referral_credit_conversion_enabled"`
+		ReferralSettlementCurrency           string   `json:"referral_settlement_currency"`
+		ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
+		ChannelMonitorEnabled                bool     `json:"channel_monitor_enabled"`
+		ChannelMonitorDefaultIntervalSeconds int      `json:"channel_monitor_default_interval_seconds"`
+		AvailableChannelsEnabled             bool     `json:"available_channels_enabled"`
+		BalanceLowNotifyEnabled              bool     `json:"balance_low_notify_enabled"`
+		AccountQuotaNotifyEnabled            bool     `json:"account_quota_notify_enabled"`
+		BalanceLowNotifyThreshold            float64  `json:"balance_low_notify_threshold"`
+		BalanceLowNotifyRechargeURL          string   `json:"balance_low_notify_recharge_url"`
 	}{
-		RegistrationEnabled:              settings.RegistrationEnabled,
-		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
-		RegistrationEmailSuffixWhitelist: settings.RegistrationEmailSuffixWhitelist,
-		PromoCodeEnabled:                 settings.PromoCodeEnabled,
-		PasswordResetEnabled:             settings.PasswordResetEnabled,
-		InvitationCodeEnabled:            settings.InvitationCodeEnabled,
-		TotpEnabled:                      settings.TotpEnabled,
-		TurnstileEnabled:                 settings.TurnstileEnabled,
-		TurnstileSiteKey:                 settings.TurnstileSiteKey,
-		SiteName:                         settings.SiteName,
-		SiteLogo:                         settings.SiteLogo,
-		SiteSubtitle:                     settings.SiteSubtitle,
-		APIBaseURL:                       settings.APIBaseURL,
-		ContactInfo:                      settings.ContactInfo,
-		DocURL:                           settings.DocURL,
-		HomeContent:                      settings.HomeContent,
-		HideCcsImportButton:              settings.HideCcsImportButton,
-		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
-		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
-		TableDefaultPageSize:             settings.TableDefaultPageSize,
-		TablePageSizeOptions:             settings.TablePageSizeOptions,
-		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
-		CustomEndpoints:                  safeRawJSONArray(settings.CustomEndpoints),
-		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
-		WeChatOAuthEnabled:               settings.WeChatOAuthEnabled,
-		WeChatOAuthOpenEnabled:           settings.WeChatOAuthOpenEnabled,
-		WeChatOAuthMPEnabled:             settings.WeChatOAuthMPEnabled,
-		WeChatOAuthMobileEnabled:         settings.WeChatOAuthMobileEnabled,
-		BackendModeEnabled:               settings.BackendModeEnabled,
-		PaymentEnabled:                   settings.PaymentEnabled,
-		OIDCOAuthEnabled:                 settings.OIDCOAuthEnabled,
-		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
-		Version:                          s.version,
-		LobeHubEnabled:                   settings.LobeHubEnabled,
-		LobeHubChatURL:                   settings.LobeHubChatURL,
-		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,
-		LobeHubDefaultProvider:           settings.LobeHubDefaultProvider,
-		LobeHubDefaultModel:              settings.LobeHubDefaultModel,
-		LobeHubRuntimeConfigVersion:      settings.LobeHubRuntimeConfigVersion,
-		HideLobeHubImportButton:          settings.HideLobeHubImportButton,
-		ReferralEnabled:                  settings.ReferralEnabled,
-		ReferralAllowManualInput:         settings.ReferralAllowManualInput,
-		ReferralBindBeforeFirstPaidOnly:  settings.ReferralBindBeforeFirstPaidOnly,
-		ReferralWithdrawEnabled:          settings.ReferralWithdrawEnabled,
-		ReferralCreditConversionEnabled:  settings.ReferralCreditConversionEnabled,
-		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
-		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
-		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
-		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
-		BalanceLowNotifyThreshold:        settings.BalanceLowNotifyThreshold,
-		BalanceLowNotifyRechargeURL:      settings.BalanceLowNotifyRechargeURL,
+		RegistrationEnabled:                  settings.RegistrationEnabled,
+		EmailVerifyEnabled:                   settings.EmailVerifyEnabled,
+		RegistrationEmailSuffixWhitelist:     settings.RegistrationEmailSuffixWhitelist,
+		PromoCodeEnabled:                     settings.PromoCodeEnabled,
+		PasswordResetEnabled:                 settings.PasswordResetEnabled,
+		InvitationCodeEnabled:                settings.InvitationCodeEnabled,
+		TotpEnabled:                          settings.TotpEnabled,
+		TurnstileEnabled:                     settings.TurnstileEnabled,
+		TurnstileSiteKey:                     settings.TurnstileSiteKey,
+		SiteName:                             settings.SiteName,
+		SiteLogo:                             settings.SiteLogo,
+		SiteSubtitle:                         settings.SiteSubtitle,
+		APIBaseURL:                           settings.APIBaseURL,
+		ContactInfo:                          settings.ContactInfo,
+		DocURL:                               settings.DocURL,
+		HomeContent:                          settings.HomeContent,
+		HideCcsImportButton:                  settings.HideCcsImportButton,
+		PurchaseSubscriptionEnabled:          settings.PurchaseSubscriptionEnabled,
+		PurchaseSubscriptionURL:              settings.PurchaseSubscriptionURL,
+		TableDefaultPageSize:                 settings.TableDefaultPageSize,
+		TablePageSizeOptions:                 settings.TablePageSizeOptions,
+		CustomMenuItems:                      filterUserVisibleMenuItems(settings.CustomMenuItems),
+		CustomEndpoints:                      safeRawJSONArray(settings.CustomEndpoints),
+		LinuxDoOAuthEnabled:                  settings.LinuxDoOAuthEnabled,
+		WeChatOAuthEnabled:                   settings.WeChatOAuthEnabled,
+		WeChatOAuthOpenEnabled:               settings.WeChatOAuthOpenEnabled,
+		WeChatOAuthMPEnabled:                 settings.WeChatOAuthMPEnabled,
+		WeChatOAuthMobileEnabled:             settings.WeChatOAuthMobileEnabled,
+		BackendModeEnabled:                   settings.BackendModeEnabled,
+		PaymentEnabled:                       settings.PaymentEnabled,
+		OIDCOAuthEnabled:                     settings.OIDCOAuthEnabled,
+		OIDCOAuthProviderName:                settings.OIDCOAuthProviderName,
+		Version:                              s.version,
+		LobeHubEnabled:                       settings.LobeHubEnabled,
+		LobeHubChatURL:                       settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                    settings.LobeHubOIDCIssuer,
+		LobeHubDefaultProvider:               settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                  settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:          settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:              settings.HideLobeHubImportButton,
+		ReferralEnabled:                      settings.ReferralEnabled,
+		ReferralAllowManualInput:             settings.ReferralAllowManualInput,
+		ReferralBindBeforeFirstPaidOnly:      settings.ReferralBindBeforeFirstPaidOnly,
+		ReferralWithdrawEnabled:              settings.ReferralWithdrawEnabled,
+		ReferralCreditConversionEnabled:      settings.ReferralCreditConversionEnabled,
+		ReferralSettlementCurrency:           settings.ReferralSettlementCurrency,
+		ReferralWithdrawMethodsEnabled:       settings.ReferralWithdrawMethodsEnabled,
+		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
+		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
+		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
+		BalanceLowNotifyEnabled:              settings.BalanceLowNotifyEnabled,
+		AccountQuotaNotifyEnabled:            settings.AccountQuotaNotifyEnabled,
+		BalanceLowNotifyThreshold:            settings.BalanceLowNotifyThreshold,
+		BalanceLowNotifyRechargeURL:          settings.BalanceLowNotifyRechargeURL,
 	}, nil
+}
+
+// channelMonitorIntervalMin / channelMonitorIntervalMax bound the default interval.
+const (
+	channelMonitorIntervalMin      = 15
+	channelMonitorIntervalMax      = 3600
+	channelMonitorIntervalFallback = 60
+)
+
+func parseChannelMonitorInterval(raw string) int {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return channelMonitorIntervalFallback
+	}
+	return clampChannelMonitorInterval(v)
+}
+
+func clampChannelMonitorInterval(v int) int {
+	if v <= 0 {
+		return 0
+	}
+	if v < channelMonitorIntervalMin {
+		return channelMonitorIntervalMin
+	}
+	if v > channelMonitorIntervalMax {
+		return channelMonitorIntervalMax
+	}
+	return v
+}
+
+type ChannelMonitorRuntime struct {
+	Enabled                bool
+	DefaultIntervalSeconds int
+}
+
+func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{
+		SettingKeyChannelMonitorEnabled,
+		SettingKeyChannelMonitorDefaultIntervalSeconds,
+	})
+	if err != nil {
+		return ChannelMonitorRuntime{Enabled: true, DefaultIntervalSeconds: channelMonitorIntervalFallback}
+	}
+	return ChannelMonitorRuntime{
+		Enabled:                !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
+		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
+	}
+}
+
+type AvailableChannelsRuntime struct {
+	Enabled bool
+}
+
+func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) AvailableChannelsRuntime {
+	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyAvailableChannelsEnabled})
+	if err != nil {
+		return AvailableChannelsRuntime{Enabled: false}
+	}
+	return AvailableChannelsRuntime{
+		Enabled: vals[SettingKeyAvailableChannelsEnabled] == "true",
+	}
 }
 
 func DefaultWeChatConnectScopesForMode(mode string) string {
@@ -1167,6 +1302,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
 	updates[SettingPaymentVisibleMethodWxpayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodWxpayEnabled)
 	updates[openAIAdvancedSchedulerSettingKey] = strconv.FormatBool(settings.OpenAIAdvancedSchedulerEnabled)
+
+	// Channel monitor feature switch
+	updates[SettingKeyChannelMonitorEnabled] = strconv.FormatBool(settings.ChannelMonitorEnabled)
+	if v := clampChannelMonitorInterval(settings.ChannelMonitorDefaultIntervalSeconds); v > 0 {
+		updates[SettingKeyChannelMonitorDefaultIntervalSeconds] = strconv.Itoa(v)
+	}
+
+	// Available channels feature switch
+	updates[SettingKeyAvailableChannelsEnabled] = strconv.FormatBool(settings.AvailableChannelsEnabled)
 
 	// LobeHub integration
 	updates[SettingKeyLobeHubEnabled] = strconv.FormatBool(settings.LobeHubEnabled)
@@ -1760,6 +1904,13 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
 
+		// Channel monitor defaults (enabled, 60s)
+		SettingKeyChannelMonitorEnabled:                "true",
+		SettingKeyChannelMonitorDefaultIntervalSeconds: "60",
+
+		// Available channels feature (default disabled; opt-in)
+		SettingKeyAvailableChannelsEnabled: "false",
+
 		// 分组隔离（默认不允许未分组 Key 调度）
 		SettingKeyAllowUngroupedKeyScheduling:    "false",
 		SettingPaymentVisibleMethodAlipaySource:  "",
@@ -2065,6 +2216,15 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Claude Code version check
 	result.MinClaudeCodeVersion = settings[SettingKeyMinClaudeCodeVersion]
 	result.MaxClaudeCodeVersion = settings[SettingKeyMaxClaudeCodeVersion]
+
+	// Channel monitor feature (default: enabled, 60s)
+	result.ChannelMonitorEnabled = !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled])
+	result.ChannelMonitorDefaultIntervalSeconds = parseChannelMonitorInterval(
+		settings[SettingKeyChannelMonitorDefaultIntervalSeconds],
+	)
+
+	// Available channels feature (default: disabled; strict true)
+	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"

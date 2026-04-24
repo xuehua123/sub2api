@@ -305,6 +305,13 @@ type UpdateSettingsRequest struct {
 	PaymentCancelRateLimitUnit    *string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    *string `json:"payment_cancel_rate_limit_window_mode"`
 
+	// Channel Monitor feature switch
+	ChannelMonitorEnabled                *bool `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds *int  `json:"channel_monitor_default_interval_seconds"`
+
+	// Available Channels feature switch (user-facing)
+	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+
 	// Referral configuration
 	ReferralEnabled                      *bool    `json:"referral_enabled"`
 	ReferralLevel1Enabled                *bool    `json:"referral_level1_enabled"`
@@ -1303,6 +1310,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.OpenAIAdvancedSchedulerEnabled
 		}(),
+		ChannelMonitorEnabled: func() bool {
+			if req.ChannelMonitorEnabled != nil {
+				return *req.ChannelMonitorEnabled
+			}
+			return previousSettings.ChannelMonitorEnabled
+		}(),
+		ChannelMonitorDefaultIntervalSeconds: func() int {
+			if req.ChannelMonitorDefaultIntervalSeconds != nil {
+				return *req.ChannelMonitorDefaultIntervalSeconds
+			}
+			return previousSettings.ChannelMonitorDefaultIntervalSeconds
+		}(),
+		AvailableChannelsEnabled: func() bool {
+			if req.AvailableChannelsEnabled != nil {
+				return *req.AvailableChannelsEnabled
+			}
+			return previousSettings.AvailableChannelsEnabled
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -1740,6 +1765,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.BackendModeEnabled != after.BackendModeEnabled {
 		changed = append(changed, "backend_mode_enabled")
 	}
+	if before.ChannelMonitorEnabled != after.ChannelMonitorEnabled {
+		changed = append(changed, "channel_monitor_enabled")
+	}
+	if before.ChannelMonitorDefaultIntervalSeconds != after.ChannelMonitorDefaultIntervalSeconds {
+		changed = append(changed, "channel_monitor_default_interval_seconds")
+	}
+	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
+		changed = append(changed, "available_channels_enabled")
+	}
 	if before.ReferralWithdrawEnabled != after.ReferralWithdrawEnabled {
 		changed = append(changed, "referral_withdraw_enabled")
 	}
@@ -2054,6 +2088,9 @@ func buildSystemSettingsPayload(
 		PaymentCancelRateLimitWindow:           paymentCfg.CancelRateLimitWindow,
 		PaymentCancelRateLimitUnit:             paymentCfg.CancelRateLimitUnit,
 		PaymentCancelRateLimitMode:             paymentCfg.CancelRateLimitMode,
+		ChannelMonitorEnabled:                  settings.ChannelMonitorEnabled,
+		ChannelMonitorDefaultIntervalSeconds:   settings.ChannelMonitorDefaultIntervalSeconds,
+		AvailableChannelsEnabled:               settings.AvailableChannelsEnabled,
 		ReferralEnabled:                        settings.ReferralEnabled,
 		ReferralLevel1Enabled:                  settings.ReferralLevel1Enabled,
 		ReferralLevel1Rate:                     settings.ReferralLevel1Rate,

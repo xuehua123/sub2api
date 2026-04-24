@@ -168,6 +168,87 @@ func TestCalculateCost_OpenAIGPT54LongContextAppliesWholeSessionMultipliers(t *t
 	require.InDelta(t, expectedInput+expectedOutput, cost.ActualCost, 1e-10)
 }
 
+func TestCalculateCost_OpenAIGPT54LongContextChargesCacheReadAtLongContextRate(t *testing.T) {
+	svc := newTestBillingService()
+
+	tokens := UsageTokens{
+		InputTokens:     135,
+		OutputTokens:    612,
+		CacheReadTokens: 335744,
+	}
+
+	cost, err := svc.CalculateCost("gpt-5.4", tokens, 1.0)
+	require.NoError(t, err)
+
+	expectedInput := float64(tokens.InputTokens) * 5e-6
+	expectedOutput := float64(tokens.OutputTokens) * 22.5e-6
+	expectedCacheRead := float64(tokens.CacheReadTokens) * 0.5e-6
+	expectedTotal := expectedInput + expectedOutput + expectedCacheRead
+	require.InDelta(t, expectedInput, cost.InputCost, 1e-10)
+	require.InDelta(t, expectedOutput, cost.OutputCost, 1e-10)
+	require.InDelta(t, expectedCacheRead, cost.CacheReadCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
+}
+
+func TestCalculateCostWithServiceTier_OpenAIGPT54PriorityLongContextUsesStandardLongContextRate(t *testing.T) {
+	svc := newTestBillingService()
+
+	tokens := UsageTokens{
+		InputTokens:     200,
+		OutputTokens:    850,
+		CacheReadTokens: 831360,
+	}
+
+	cost, err := svc.CalculateCostWithServiceTier("gpt-5.4", tokens, 1.0, "priority")
+	require.NoError(t, err)
+
+	expectedInput := float64(tokens.InputTokens) * 5e-6
+	expectedOutput := float64(tokens.OutputTokens) * 22.5e-6
+	expectedCacheRead := float64(tokens.CacheReadTokens) * 0.5e-6
+	expectedTotal := expectedInput + expectedOutput + expectedCacheRead
+	require.InDelta(t, expectedInput, cost.InputCost, 1e-10)
+	require.InDelta(t, expectedOutput, cost.OutputCost, 1e-10)
+	require.InDelta(t, expectedCacheRead, cost.CacheReadCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.TotalCost, 1e-10)
+	require.InDelta(t, expectedTotal, cost.ActualCost, 1e-10)
+}
+
+func TestCalculateCost_OpenAIGPT54DynamicPricingStillAppliesMissingOfficialFloors(t *testing.T) {
+	pricingSvc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"gpt-5.4": {
+				InputCostPerToken:                  2.5e-6,
+				InputCostPerTokenPriority:          5e-6,
+				OutputCostPerToken:                 15e-6,
+				OutputCostPerTokenPriority:         22.5e-6,
+				CacheReadInputTokenCost:            0.25e-6,
+				CacheReadInputTokenCostPriority:    0.5e-6,
+				LongContextInputTokenThreshold:     openAIGPT54LongContextInputThreshold,
+				LongContextInputCostMultiplier:     openAIGPT54LongContextInputMultiplier,
+				LongContextOutputCostMultiplier:    openAIGPT54LongContextOutputMultiplier,
+				LongContextCacheReadCostMultiplier: 0,
+			},
+		},
+	}
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	longCost, err := svc.CalculateCost("gpt-5.4", UsageTokens{
+		InputTokens:     135,
+		OutputTokens:    612,
+		CacheReadTokens: 335744,
+	}, 1.0)
+	require.NoError(t, err)
+	require.InDelta(t, 335744*0.5e-6, longCost.CacheReadCost, 1e-10)
+
+	priorityCost, err := svc.CalculateCostWithServiceTier("gpt-5.4", UsageTokens{
+		InputTokens:  100,
+		OutputTokens: 100,
+	}, 1.0, "priority")
+	require.NoError(t, err)
+	require.InDelta(t, 100*openAIGPT54PriorityOutputPrice, priorityCost.OutputCost, 1e-10)
+}
+
 func TestGetFallbackPricing_FamilyMatching(t *testing.T) {
 	svc := newTestBillingService()
 

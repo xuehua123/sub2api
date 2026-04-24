@@ -4,14 +4,94 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestWriteSuccessResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name            string
+		providerKey     string
+		wantCode        int
+		wantContentType string
+		wantBody        string
+		checkJSON       bool
+		wantJSONCode    string
+		wantJSONMessage string
+	}{
+		{
+			name:            "wxpay returns JSON with code SUCCESS",
+			providerKey:     payment.TypeWxpay,
+			wantCode:        http.StatusOK,
+			wantContentType: "application/json",
+			checkJSON:       true,
+			wantJSONCode:    "SUCCESS",
+			wantJSONMessage: "成功",
+		},
+		{
+			name:            "stripe returns empty 200",
+			providerKey:     payment.TypeStripe,
+			wantCode:        http.StatusOK,
+			wantContentType: "text/plain",
+			wantBody:        "",
+		},
+		{
+			name:            "easypay returns plain text success",
+			providerKey:     payment.TypeEasyPay,
+			wantCode:        http.StatusOK,
+			wantContentType: "text/plain",
+			wantBody:        "success",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+
+			writeSuccessResponse(c, tt.providerKey)
+
+			assert.Equal(t, tt.wantCode, w.Code)
+			assert.Contains(t, w.Header().Get("Content-Type"), tt.wantContentType)
+
+			if tt.checkJSON {
+				var resp wxpaySuccessResponse
+				err := json.Unmarshal(w.Body.Bytes(), &resp)
+				require.NoError(t, err)
+				assert.Equal(t, tt.wantJSONCode, resp.Code)
+				assert.Equal(t, tt.wantJSONMessage, resp.Message)
+			} else {
+				assert.Equal(t, tt.wantBody, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestUnknownOrderWebhookAcksWithSuccess(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	wrapped := fmt.Errorf("%w: out_trade_no=sub2_missing_42", service.ErrOrderNotFound)
+	require.True(t, errors.Is(wrapped, service.ErrOrderNotFound))
+	require.False(t, errors.Is(errors.New("lookup order failed: connection refused"), service.ErrOrderNotFound))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	writeSuccessResponse(c, payment.TypeStripe)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, w.Body.String())
+}
 
 func TestExtractOutTradeNo_ParsesAlipayFormPayload(t *testing.T) {
 	got := extractOutTradeNo("out_trade_no=sub2_123&trade_no=2026abc", payment.TypeAlipay)
@@ -124,7 +204,7 @@ type webhookHandlerProviderStub struct {
 	verifyErr    error
 }
 
-func (p webhookHandlerProviderStub) Name() string { return p.key }
+func (p webhookHandlerProviderStub) Name() string        { return p.key }
 func (p webhookHandlerProviderStub) ProviderKey() string { return p.key }
 func (p webhookHandlerProviderStub) SupportedTypes() []payment.PaymentType {
 	return []payment.PaymentType{payment.PaymentType(p.key)}

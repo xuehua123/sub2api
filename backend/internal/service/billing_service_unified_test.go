@@ -202,6 +202,94 @@ func TestCalculateCostUnified_BillingModeFieldFilled(t *testing.T) {
 	require.Equal(t, "token", cost.BillingMode)
 }
 
+func TestCalculateCostUnified_GPT55ChannelPriorityUsesTwoPointFiveMultiplier(t *testing.T) {
+	groupID := int64(10)
+	cases := []struct {
+		name            string
+		model           string
+		inputPrice      float64
+		outputPrice     float64
+		cacheWritePrice float64
+		cacheReadPrice  float64
+	}{
+		{
+			name:            "gpt-5.5",
+			model:           "gpt-5.5",
+			inputPrice:      5e-6,
+			outputPrice:     30e-6,
+			cacheWritePrice: 5e-6,
+			cacheReadPrice:  0.5e-6,
+		},
+		{
+			name:            "gpt-5.5-pro wildcard",
+			model:           "gpt-5.5-pro-20260423",
+			inputPrice:      30e-6,
+			outputPrice:     180e-6,
+			cacheWritePrice: 30e-6,
+			cacheReadPrice:  3e-6,
+		},
+	}
+
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			bs := newTestBillingService()
+			cache := newEmptyChannelCache()
+			cache.groupPlatform[groupID] = PlatformOpenAI
+			cache.channelByGroupID[groupID] = &Channel{ID: 1, Status: StatusActive}
+			cache.wildcardByGroupPlatform[channelGroupPlatformKey{groupID: groupID, platform: PlatformOpenAI}] = []*wildcardPricingEntry{
+				{
+					prefix: "gpt-5.5-pro",
+					pricing: &ChannelModelPricing{
+						Platform:        PlatformOpenAI,
+						BillingMode:     BillingModeToken,
+						Models:          []string{"gpt-5.5-pro*"},
+						InputPrice:      testPtrFloat64(30e-6),
+						OutputPrice:     testPtrFloat64(180e-6),
+						CacheWritePrice: testPtrFloat64(30e-6),
+						CacheReadPrice:  testPtrFloat64(3e-6),
+					},
+				},
+				{
+					prefix: "gpt-5.5",
+					pricing: &ChannelModelPricing{
+						Platform:        PlatformOpenAI,
+						BillingMode:     BillingModeToken,
+						Models:          []string{"gpt-5.5*"},
+						InputPrice:      testPtrFloat64(5e-6),
+						OutputPrice:     testPtrFloat64(30e-6),
+						CacheWritePrice: testPtrFloat64(5e-6),
+						CacheReadPrice:  testPtrFloat64(0.5e-6),
+					},
+				},
+			}
+			cs := newTestChannelServiceWithCache(t, cache)
+			resolver := NewModelPricingResolver(cs, bs)
+			tokens := UsageTokens{InputTokens: 100, OutputTokens: 20, CacheCreationTokens: 4, CacheReadTokens: 10}
+
+			cost, err := bs.CalculateCostUnified(CostInput{
+				Ctx:            context.Background(),
+				Model:          tt.model,
+				GroupID:        &groupID,
+				Tokens:         tokens,
+				RateMultiplier: 1.0,
+				ServiceTier:    "priority",
+				Resolver:       resolver,
+			})
+			require.NoError(t, err)
+
+			expectedInput := float64(tokens.InputTokens) * tt.inputPrice * 2.5
+			expectedOutput := float64(tokens.OutputTokens) * tt.outputPrice * 2.5
+			expectedCacheWrite := float64(tokens.CacheCreationTokens) * tt.cacheWritePrice * 2.5
+			expectedCacheRead := float64(tokens.CacheReadTokens) * tt.cacheReadPrice * 2.5
+			require.InDelta(t, expectedInput, cost.InputCost, 1e-12)
+			require.InDelta(t, expectedOutput, cost.OutputCost, 1e-12)
+			require.InDelta(t, expectedCacheWrite, cost.CacheCreationCost, 1e-12)
+			require.InDelta(t, expectedCacheRead, cost.CacheReadCost, 1e-12)
+			require.InDelta(t, expectedInput+expectedOutput+expectedCacheWrite+expectedCacheRead, cost.TotalCost, 1e-12)
+		})
+	}
+}
+
 func TestCalculateCostUnified_UsesPreResolvedPricing(t *testing.T) {
 	bs := newTestBillingService()
 	resolver := NewModelPricingResolver(nil, bs)

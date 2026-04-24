@@ -56,6 +56,7 @@ type ModelPricing struct {
 	LongContextInputThreshold      int     // 超过阈值后按整次会话提升输入价格
 	LongContextInputMultiplier     float64 // 长上下文整次会话输入倍率
 	LongContextOutputMultiplier    float64 // 长上下文整次会话输出倍率
+	LongContextCacheReadMultiplier float64 // 长上下文整次会话缓存读取倍率
 	ImageOutputPricePerToken       float64 // 图片输出 token 价格 (USD)
 }
 
@@ -63,6 +64,11 @@ const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
 	openAIGPT54LongContextOutputMultiplier = 1.5
+	openAIGPT54LongContextCacheMultiplier  = 2.0
+	openAIGPT54PriorityInputPrice          = 5e-6
+	openAIGPT54PriorityOutputPrice         = 30e-6
+	openAIGPT54PriorityCacheReadPrice      = 0.5e-6
+	openAIGPT55PriorityMultiplier          = 2.5
 )
 
 func normalizeBillingServiceTier(serviceTier string) string {
@@ -85,6 +91,11 @@ func serviceTierCostMultiplier(serviceTier string) float64 {
 	default:
 		return 1.0
 	}
+}
+
+func isOpenAIGPT55Model(model string) bool {
+	normalized := strings.ToLower(normalizeModelNameForPricing(model))
+	return strings.HasPrefix(normalized, "gpt-5.5")
 }
 
 // UsageTokens 使用的token数量
@@ -216,9 +227,15 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputThreshold:      openAIGPT54LongContextInputThreshold,
 		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
+		LongContextCacheReadMultiplier: openAIGPT54LongContextCacheMultiplier,
 	}
-	// GPT-5.5 暂无独立定价，回退到 GPT-5.4
-	s.fallbackPrices["gpt-5.5"] = s.fallbackPrices["gpt-5.4"]
+	s.fallbackPrices["gpt-5.5"] = &ModelPricing{
+		InputPricePerToken:         5e-6,   // $5 per MTok
+		OutputPricePerToken:        30e-6,  // $30 per MTok
+		CacheCreationPricePerToken: 5e-6,   // $5 per MTok
+		CacheReadPricePerToken:     0.5e-6, // $0.5 per MTok
+		SupportsCacheBreakdown:     false,
+	}
 
 	s.fallbackPrices["gpt-5.4-mini"] = &ModelPricing{
 		InputPricePerToken:     7.5e-7,
@@ -336,6 +353,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 				LongContextInputThreshold:      litellmPricing.LongContextInputTokenThreshold,
 				LongContextInputMultiplier:     litellmPricing.LongContextInputCostMultiplier,
 				LongContextOutputMultiplier:    litellmPricing.LongContextOutputCostMultiplier,
+				LongContextCacheReadMultiplier: litellmPricing.LongContextCacheReadCostMultiplier,
 				ImageOutputPricePerToken:       litellmPricing.OutputCostPerImageToken,
 			}), nil
 		}
@@ -453,13 +471,13 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）
 	applyLongCtx := len(resolved.Intervals) == 0
 
-	return s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx), nil
+	return s.computeTokenBreakdown(input.Model, pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx), nil
 }
 
 // computeTokenBreakdown 是 token 计费的核心逻辑，由 calculateTokenCost 和 calculateCostInternal 共用。
 // applyLongCtx 控制是否检查长上下文定价（区间定价已自含上下文分层，不需要额外应用）。
 func (s *BillingService) computeTokenBreakdown(
-	pricing *ModelPricing, tokens UsageTokens,
+	model string, pricing *ModelPricing, tokens UsageTokens,
 	rateMultiplier float64, serviceTier string,
 	applyLongCtx bool,
 ) *CostBreakdown {
@@ -472,8 +490,16 @@ func (s *BillingService) computeTokenBreakdown(
 	outputPrice := pricing.OutputPricePerToken
 	cacheReadPrice := pricing.CacheReadPricePerToken
 	tierMultiplier := 1.0
+	normalizedServiceTier := normalizeBillingServiceTier(serviceTier)
+	applySessionLongContext := applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing)
+	useStandardRatesForPriorityLongContext := normalizedServiceTier == "priority" &&
+		applySessionLongContext && isOpenAIGPT54Model(model)
 
-	if usePriorityServiceTierPricing(serviceTier, pricing) {
+	if normalizedServiceTier == "priority" && isOpenAIGPT55Model(model) {
+		tierMultiplier = openAIGPT55PriorityMultiplier
+	} else if useStandardRatesForPriorityLongContext {
+		// OpenAI processes GPT-5.4 priority prompts above 272K at standard long-context rates.
+	} else if usePriorityServiceTierPricing(serviceTier, pricing) {
 		if pricing.InputPricePerTokenPriority > 0 {
 			inputPrice = pricing.InputPricePerTokenPriority
 		}
@@ -487,9 +513,12 @@ func (s *BillingService) computeTokenBreakdown(
 		tierMultiplier = serviceTierCostMultiplier(serviceTier)
 	}
 
-	if applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing) {
+	if applySessionLongContext {
 		inputPrice *= pricing.LongContextInputMultiplier
 		outputPrice *= pricing.LongContextOutputMultiplier
+		if pricing.LongContextCacheReadMultiplier > 0 {
+			cacheReadPrice *= pricing.LongContextCacheReadMultiplier
+		}
 	}
 
 	bd := &CostBreakdown{}
@@ -598,7 +627,7 @@ func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens,
 	}
 
 	// 旧路径始终检查长上下文定价（无区间定价概念）
-	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, true), nil
+	return s.computeTokenBreakdown(model, pricing, tokens, rateMultiplier, serviceTier, true), nil
 }
 
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {
@@ -606,9 +635,6 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 		return nil
 	}
 	if !isOpenAIGPT54Model(model) {
-		return pricing
-	}
-	if pricing.LongContextInputThreshold > 0 && pricing.LongContextInputMultiplier > 0 && pricing.LongContextOutputMultiplier > 0 {
 		return pricing
 	}
 	cloned := *pricing
@@ -620,6 +646,18 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	}
 	if cloned.LongContextOutputMultiplier <= 0 {
 		cloned.LongContextOutputMultiplier = openAIGPT54LongContextOutputMultiplier
+	}
+	if cloned.LongContextCacheReadMultiplier <= 0 {
+		cloned.LongContextCacheReadMultiplier = openAIGPT54LongContextCacheMultiplier
+	}
+	if cloned.InputPricePerTokenPriority < openAIGPT54PriorityInputPrice {
+		cloned.InputPricePerTokenPriority = openAIGPT54PriorityInputPrice
+	}
+	if cloned.OutputPricePerTokenPriority < openAIGPT54PriorityOutputPrice {
+		cloned.OutputPricePerTokenPriority = openAIGPT54PriorityOutputPrice
+	}
+	if cloned.CacheReadPricePerTokenPriority < openAIGPT54PriorityCacheReadPrice {
+		cloned.CacheReadPricePerTokenPriority = openAIGPT54PriorityCacheReadPrice
 	}
 	return &cloned
 }
@@ -643,7 +681,7 @@ func isOpenAIGPT54Model(model string) bool {
 		return false
 	}
 	normalized := normalizeCodexModel(trimmed)
-	return normalized == "gpt-5.4" || normalized == "gpt-5.5"
+	return normalized == "gpt-5.4"
 }
 
 // CalculateCostWithConfig 使用配置中的默认倍率计算费用

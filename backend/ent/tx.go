@@ -28,6 +28,14 @@ type Tx struct {
 	AuthIdentity *AuthIdentityClient
 	// AuthIdentityChannel is the client for interacting with the AuthIdentityChannel builders.
 	AuthIdentityChannel *AuthIdentityChannelClient
+	// ChannelMonitor is the client for interacting with the ChannelMonitor builders.
+	ChannelMonitor *ChannelMonitorClient
+	// ChannelMonitorDailyRollup is the client for interacting with the ChannelMonitorDailyRollup builders.
+	ChannelMonitorDailyRollup *ChannelMonitorDailyRollupClient
+	// ChannelMonitorHistory is the client for interacting with the ChannelMonitorHistory builders.
+	ChannelMonitorHistory *ChannelMonitorHistoryClient
+	// ChannelMonitorRequestTemplate is the client for interacting with the ChannelMonitorRequestTemplate builders.
+	ChannelMonitorRequestTemplate *ChannelMonitorRequestTemplateClient
 	// CommissionLedger is the client for interacting with the CommissionLedger builders.
 	CommissionLedger *CommissionLedgerClient
 	// CommissionPayoutAccount is the client for interacting with the CommissionPayoutAccount builders.
@@ -230,6 +238,10 @@ func (tx *Tx) init() {
 	tx.AnnouncementRead = NewAnnouncementReadClient(tx.config)
 	tx.AuthIdentity = NewAuthIdentityClient(tx.config)
 	tx.AuthIdentityChannel = NewAuthIdentityChannelClient(tx.config)
+	tx.ChannelMonitor = NewChannelMonitorClient(tx.config)
+	tx.ChannelMonitorDailyRollup = NewChannelMonitorDailyRollupClient(tx.config)
+	tx.ChannelMonitorHistory = NewChannelMonitorHistoryClient(tx.config)
+	tx.ChannelMonitorRequestTemplate = NewChannelMonitorRequestTemplateClient(tx.config)
 	tx.CommissionLedger = NewCommissionLedgerClient(tx.config)
 	tx.CommissionPayoutAccount = NewCommissionPayoutAccountClient(tx.config)
 	tx.CommissionReward = NewCommissionRewardClient(tx.config)

@@ -127,6 +127,16 @@ func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string)
 	}
 
 	if err := h.paymentService.HandlePaymentNotification(c.Request.Context(), notification, resolvedProviderKey); err != nil {
+		// Unknown orders are acknowledged so foreign or stale webhook senders stop retrying.
+		if errors.Is(err, service.ErrOrderNotFound) {
+			slog.Warn("[Payment Webhook] unknown order, acking to stop retries",
+				"provider", resolvedProviderKey,
+				"outTradeNo", notification.OrderID,
+				"tradeNo", notification.TradeNo,
+			)
+			writeSuccessResponse(c, resolvedProviderKey)
+			return
+		}
 		slog.Error("[Payment Webhook] handle notification failed", "provider", resolvedProviderKey, "error", err)
 		c.String(http.StatusInternalServerError, "handle failed")
 		return

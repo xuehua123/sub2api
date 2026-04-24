@@ -66,6 +66,7 @@ type LiteLLMModelPricing struct {
 	LongContextInputTokenThreshold      int     `json:"long_context_input_token_threshold,omitempty"`
 	LongContextInputCostMultiplier      float64 `json:"long_context_input_cost_multiplier,omitempty"`
 	LongContextOutputCostMultiplier     float64 `json:"long_context_output_cost_multiplier,omitempty"`
+	LongContextCacheReadCostMultiplier  float64 `json:"long_context_cache_read_cost_multiplier,omitempty"`
 	SupportsServiceTier                 bool    `json:"supports_service_tier"`
 	LiteLLMProvider                     string  `json:"litellm_provider"`
 	Mode                                string  `json:"mode"`
@@ -84,12 +85,15 @@ type PricingRemoteClient interface {
 type LiteLLMRawEntry struct {
 	InputCostPerToken                   *float64 `json:"input_cost_per_token"`
 	InputCostPerTokenPriority           *float64 `json:"input_cost_per_token_priority"`
+	InputCostPerTokenAbove272K          *float64 `json:"input_cost_per_token_above_272k_tokens"`
 	OutputCostPerToken                  *float64 `json:"output_cost_per_token"`
 	OutputCostPerTokenPriority          *float64 `json:"output_cost_per_token_priority"`
+	OutputCostPerTokenAbove272K         *float64 `json:"output_cost_per_token_above_272k_tokens"`
 	CacheCreationInputTokenCost         *float64 `json:"cache_creation_input_token_cost"`
 	CacheCreationInputTokenCostAbove1hr *float64 `json:"cache_creation_input_token_cost_above_1hr"`
 	CacheReadInputTokenCost             *float64 `json:"cache_read_input_token_cost"`
 	CacheReadInputTokenCostPriority     *float64 `json:"cache_read_input_token_cost_priority"`
+	CacheReadInputTokenCostAbove272K    *float64 `json:"cache_read_input_token_cost_above_272k_tokens"`
 	SupportsServiceTier                 bool     `json:"supports_service_tier"`
 	LiteLLMProvider                     string   `json:"litellm_provider"`
 	Mode                                string   `json:"mode"`
@@ -406,6 +410,18 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 		if entry.CacheReadInputTokenCostPriority != nil {
 			pricing.CacheReadInputTokenCostPriority = *entry.CacheReadInputTokenCostPriority
+		}
+		if entry.InputCostPerTokenAbove272K != nil && pricing.InputCostPerToken > 0 {
+			pricing.LongContextInputTokenThreshold = openAIGPT54LongContextInputThreshold
+			pricing.LongContextInputCostMultiplier = *entry.InputCostPerTokenAbove272K / pricing.InputCostPerToken
+		}
+		if entry.OutputCostPerTokenAbove272K != nil && pricing.OutputCostPerToken > 0 {
+			pricing.LongContextInputTokenThreshold = openAIGPT54LongContextInputThreshold
+			pricing.LongContextOutputCostMultiplier = *entry.OutputCostPerTokenAbove272K / pricing.OutputCostPerToken
+		}
+		if entry.CacheReadInputTokenCostAbove272K != nil && pricing.CacheReadInputTokenCost > 0 {
+			pricing.LongContextInputTokenThreshold = openAIGPT54LongContextInputThreshold
+			pricing.LongContextCacheReadCostMultiplier = *entry.CacheReadInputTokenCostAbove272K / pricing.CacheReadInputTokenCost
 		}
 		if entry.OutputCostPerImage != nil {
 			pricing.OutputCostPerImage = *entry.OutputCostPerImage
