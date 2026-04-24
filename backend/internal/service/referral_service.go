@@ -205,6 +205,13 @@ func (s *ReferralService) EnsureDefaultCode(ctx context.Context, userID int64) (
 		if !isUniqueConstraintError(createErr) {
 			return nil, createErr
 		}
+		code, err = s.repo.GetDefaultCodeByUserID(ctx, userID)
+		if err == nil {
+			return code, nil
+		}
+		if !errors.Is(err, ErrReferralCodeNotFound) {
+			return nil, err
+		}
 	}
 
 	return nil, infraerrors.InternalServer("REFERRAL_CODE_CREATE_FAILED", "failed to create referral code")

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,14 +13,31 @@ import (
 )
 
 type referralRepoStub struct {
-	codesByUser      map[int64]*ReferralCode
-	codesByCode      map[string]*ReferralCode
-	relationsByUser  map[int64]*ReferralRelation
-	relationHistory  []ReferralRelationHistory
-	paidUsers        map[int64]bool
-	nextCodeID       int64
-	nextRelationID   int64
-	nextHistoryID    int64
+	codesByUser     map[int64]*ReferralCode
+	codesByCode     map[string]*ReferralCode
+	relationsByUser map[int64]*ReferralRelation
+	relationHistory []ReferralRelationHistory
+	paidUsers       map[int64]bool
+	nextCodeID      int64
+	nextRelationID  int64
+	nextHistoryID   int64
+}
+
+type referralRepoConcurrentDefaultStub struct {
+	*referralRepoStub
+	getCalls int
+}
+
+func (s *referralRepoConcurrentDefaultStub) GetDefaultCodeByUserID(ctx context.Context, userID int64) (*ReferralCode, error) {
+	s.getCalls++
+	if s.getCalls == 1 {
+		return nil, ErrReferralCodeNotFound
+	}
+	return s.referralRepoStub.GetDefaultCodeByUserID(ctx, userID)
+}
+
+func (s *referralRepoConcurrentDefaultStub) CreateCode(ctx context.Context, code *ReferralCode) error {
+	return errors.New("duplicate key value violates unique constraint referral_codes_user_id_is_default_key")
 }
 
 func newReferralRepoStub() *referralRepoStub {
@@ -133,6 +151,27 @@ func TestReferralService_GetOverview_CreatesDefaultCodeWhenMissing(t *testing.T)
 	require.NotEmpty(t, overview.DefaultCode.Code)
 }
 
+func TestReferralService_EnsureDefaultCode_ReturnsExistingCodeAfterConcurrentCreateConflict(t *testing.T) {
+	baseRepo := newReferralRepoStub()
+	baseRepo.codesByUser[7] = &ReferralCode{
+		ID:        42,
+		UserID:    7,
+		Code:      "EXISTING",
+		Status:    ReferralCodeStatusActive,
+		IsDefault: true,
+	}
+	repo := &referralRepoConcurrentDefaultStub{referralRepoStub: baseRepo}
+	svc := newReferralServiceForTest(&userRepoStub{}, repo, map[string]string{
+		SettingKeyReferralEnabled:          "true",
+		SettingKeyReferralAllowManualInput: "true",
+	})
+
+	code, err := svc.EnsureDefaultCode(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, "EXISTING", code.Code)
+	require.GreaterOrEqual(t, repo.getCalls, 2)
+}
+
 func TestReferralService_GetOverview_AllowsBindingWhenManualInputEnabledEvenIfUserCannotInvite(t *testing.T) {
 	repo := newReferralRepoStub()
 	userRepo := &userRepoStub{user: &User{ID: 7, Email: "invitee@example.com", Username: "invitee"}}
@@ -159,7 +198,7 @@ func TestReferralService_BindReferralCode_CreatesRelationAndHistory(t *testing.T
 	}
 	userRepo := &userRepoStub{}
 	svc := newReferralServiceForTest(userRepo, repo, map[string]string{
-		SettingKeyReferralEnabled:         "true",
+		SettingKeyReferralEnabled:          "true",
 		SettingKeyReferralAllowManualInput: "true",
 	})
 
@@ -186,7 +225,7 @@ func TestReferralService_BindReferralCode_RejectsSelfInvite(t *testing.T) {
 		IsDefault: true,
 	}
 	svc := newReferralServiceForTest(&userRepoStub{}, repo, map[string]string{
-		SettingKeyReferralEnabled:         "true",
+		SettingKeyReferralEnabled:          "true",
 		SettingKeyReferralAllowManualInput: "true",
 	})
 
@@ -214,7 +253,7 @@ func TestReferralService_BindReferralCode_RejectsWhenAlreadyBound(t *testing.T) 
 		BindSource:     ReferralBindSourceLink,
 	}
 	svc := newReferralServiceForTest(&userRepoStub{}, repo, map[string]string{
-		SettingKeyReferralEnabled:         "true",
+		SettingKeyReferralEnabled:          "true",
 		SettingKeyReferralAllowManualInput: "true",
 	})
 
@@ -237,8 +276,8 @@ func TestReferralService_BindReferralCode_RejectsAfterPaidRechargeWhenConfigured
 		IsDefault: true,
 	}
 	svc := newReferralServiceForTest(&userRepoStub{}, repo, map[string]string{
-		SettingKeyReferralEnabled:                "true",
-		SettingKeyReferralAllowManualInput:       "true",
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralAllowManualInput:        "true",
 		SettingKeyReferralBindBeforeFirstPaidOnly: "true",
 	})
 
@@ -249,7 +288,6 @@ func TestReferralService_BindReferralCode_RejectsAfterPaidRechargeWhenConfigured
 	})
 	require.ErrorIs(t, err, ErrReferralBindAfterPaymentNotAllowed)
 }
-
 
 func TestReferralService_GetOverview_DoesNotCreateDefaultCodeWhenReferralDisabledForUser(t *testing.T) {
 	repo := newReferralRepoStub()

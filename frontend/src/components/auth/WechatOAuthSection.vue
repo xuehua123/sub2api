@@ -33,6 +33,7 @@ import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { resolveWeChatOAuthStart } from '@/api/auth'
 import { useAppStore } from '@/stores'
+import { persistOAuthReferralCode } from '@/utils/oauthReferral'
 
 const props = withDefaults(defineProps<{
   disabled?: boolean
@@ -84,6 +85,7 @@ function startLogin(): void {
     return
   }
   const redirectTo = (route.query.redirect as string) || '/dashboard'
+  persistOAuthReferralCode(route.query.ref)
   const apiBase = (import.meta.env.VITE_API_BASE_URL as string | undefined) || '/api/v1'
   const normalized = apiBase.replace(/\/$/, '')
   const mode = resolvedStart.value.mode

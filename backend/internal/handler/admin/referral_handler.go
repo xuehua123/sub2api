@@ -27,9 +27,10 @@ func NewReferralHandler(adminService *service.ReferralAdminService, withdrawalSe
 }
 
 type UpdateReferralRelationRequest struct {
-	Code   string `json:"code" binding:"required"`
-	Reason string `json:"reason"`
-	Notes  string `json:"notes"`
+	Code           string `json:"code"`
+	ReferrerUserID int64  `json:"referrer_user_id"`
+	Reason         string `json:"reason"`
+	Notes          string `json:"notes"`
 }
 
 type CommissionAdjustmentRequest struct {
@@ -94,6 +95,20 @@ func (h *ReferralHandler) ListRelations(c *gin.Context) {
 	response.Paginated(c, items, paginationResult.Total, page, pageSize)
 }
 
+func (h *ReferralHandler) GetRelation(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid user ID")
+		return
+	}
+	relation, err := h.adminService.GetRelation(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, relation)
+}
+
 func (h *ReferralHandler) ListRelationHistories(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
@@ -123,11 +138,12 @@ func (h *ReferralHandler) UpdateRelation(c *gin.Context) {
 		return
 	}
 	relation, err := h.adminService.UpdateRelation(c.Request.Context(), &service.AdminUpdateReferralRelationInput{
-		UserID:    userID,
-		Code:      strings.TrimSpace(req.Code),
-		ChangedBy: subject.UserID,
-		Reason:    strings.TrimSpace(req.Reason),
-		Notes:     strings.TrimSpace(req.Notes),
+		UserID:         userID,
+		Code:           strings.TrimSpace(req.Code),
+		ReferrerUserID: req.ReferrerUserID,
+		ChangedBy:      subject.UserID,
+		Reason:         strings.TrimSpace(req.Reason),
+		Notes:          strings.TrimSpace(req.Notes),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

@@ -174,6 +174,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 	ctx context.Context,
 	user *User,
 	invitationCode string,
+	referralCode string,
 	signupSource string,
 ) error {
 	if s == nil || user == nil || user.ID <= 0 {
@@ -191,6 +192,7 @@ func (s *AuthService) FinalizeOAuthEmailAccount(
 		}
 	}
 
+	s.bindReferralCodeForNewUser(ctx, user.ID, referralCode)
 	s.updateOAuthSignupSource(ctx, user.ID, signupSource)
 	grantPlan := s.resolveSignupGrantPlan(ctx, signupSource)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")

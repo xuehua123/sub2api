@@ -47,6 +47,13 @@ export async function listRelations(
   return data
 }
 
+export async function getRelation(userId: number): Promise<AdminReferralRelation | null> {
+  const { data } = await apiClient.get<AdminReferralRelation | null>(
+    `/admin/referral/relations/${userId}`
+  )
+  return data || null
+}
+
 export async function listRelationHistories(
   page: number = 1,
   pageSize: number = 20,
@@ -61,7 +68,7 @@ export async function listRelationHistories(
 
 export async function updateRelation(
   userId: number,
-  payload: { code: string; reason?: string; notes?: string }
+  payload: { code?: string; referrer_user_id?: number; reason?: string; notes?: string }
 ): Promise<ReferralRelationInfo> {
   const { data } = await apiClient.put<ReferralRelationInfo>(
     `/admin/referral/relations/${userId}`,
@@ -145,6 +152,7 @@ const referralAPI = {
   getOverview,
   getTree,
   listRelations,
+  getRelation,
   listRelationHistories,
   updateRelation,
   listCommissionRewards,

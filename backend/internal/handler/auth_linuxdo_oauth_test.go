@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -699,8 +700,26 @@ func TestLinuxDoOAuthCallbackCreatesBindPendingSessionForCurrentUser(t *testing.
 }
 
 func TestCompleteLinuxDoOAuthRegistrationAppliesPendingAdoptionDecision(t *testing.T) {
-	handler, client := newOAuthPendingFlowTestHandler(t, false)
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		settingValues: map[string]string{
+			service.SettingKeyReferralEnabled: "true",
+		},
+	})
 	ctx := context.Background()
+	referrer, err := client.User.Create().
+		SetEmail("linuxdo-referrer@example.com").
+		SetPasswordHash("hash").
+		SetUsername("linuxdo_referrer").
+		SetReferralEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.ReferralCode.Create().
+		SetUserID(referrer.ID).
+		SetCode("REFLINUX").
+		SetStatus(service.ReferralCodeStatusActive).
+		SetIsDefault(true).
+		Save(ctx)
+	require.NoError(t, err)
 
 	session, err := client.PendingAuthSession.Create().
 		SetSessionToken("linuxdo-complete-session").
@@ -725,7 +744,7 @@ func TestCompleteLinuxDoOAuthRegistrationAppliesPendingAdoptionDecision(t *testi
 	})
 	require.NoError(t, err)
 
-	body := bytes.NewBufferString(`{"invitation_code":"invite-1","adopt_display_name":true}`)
+	body := bytes.NewBufferString(`{"invitation_code":"invite-1","referral_code":"REFLINUX","adopt_display_name":true}`)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/linuxdo/complete-registration", body)
@@ -745,6 +764,13 @@ func TestCompleteLinuxDoOAuthRegistrationAppliesPendingAdoptionDecision(t *testi
 		Only(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "LinuxDo Display", userEntity.Username)
+	relation, err := client.ReferralRelation.Query().
+		Where(referralrelation.UserIDEQ(userEntity.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, referrer.ID, relation.ReferrerUserID)
+	require.NotNil(t, relation.BindCode)
+	require.Equal(t, "REFLINUX", *relation.BindCode)
 
 	identity, err := client.AuthIdentity.Query().
 		Where(

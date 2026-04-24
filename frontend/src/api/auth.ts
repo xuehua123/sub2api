@@ -574,9 +574,10 @@ export async function resetPassword(request: ResetPasswordRequest): Promise<Rese
  */
 export async function completeLinuxDoOAuthRegistration(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingLinuxDoOAuthAccount(invitationCode, decision)
+  return createPendingLinuxDoOAuthAccount(invitationCode, decision, referralCode)
 }
 
 /**
@@ -586,27 +587,31 @@ export async function completeLinuxDoOAuthRegistration(
  */
 export async function completeOIDCOAuthRegistration(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingOIDCOAuthAccount(invitationCode, decision)
+  return createPendingOIDCOAuthAccount(invitationCode, decision, referralCode)
 }
 
 export async function completeWeChatOAuthRegistration(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingWeChatOAuthAccount(invitationCode, decision)
+  return createPendingWeChatOAuthAccount(invitationCode, decision, referralCode)
 }
 
 async function createPendingOAuthAccount(
   provider: 'linuxdo' | 'oidc' | 'wechat',
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
   const { data } = await apiClient.post<PendingOAuthCreateAccountResponse>(
     `/auth/oauth/${provider}/complete-registration`,
     {
       invitation_code: invitationCode,
+      ...(referralCode?.trim() ? { referral_code: referralCode.trim() } : {}),
       ...serializeOAuthAdoptionDecision(decision)
     }
   )
@@ -625,23 +630,26 @@ export async function validateReferralCode(code: string): Promise<ValidateReferr
 
 export async function createPendingLinuxDoOAuthAccount(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('linuxdo', invitationCode, decision)
+  return createPendingOAuthAccount('linuxdo', invitationCode, decision, referralCode)
 }
 
 export async function createPendingOIDCOAuthAccount(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('oidc', invitationCode, decision)
+  return createPendingOAuthAccount('oidc', invitationCode, decision, referralCode)
 }
 
 export async function createPendingWeChatOAuthAccount(
   invitationCode: string,
-  decision?: OAuthAdoptionDecision
+  decision?: OAuthAdoptionDecision,
+  referralCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('wechat', invitationCode, decision)
+  return createPendingOAuthAccount('wechat', invitationCode, decision, referralCode)
 }
 
 export async function completePendingOAuthBindLogin(

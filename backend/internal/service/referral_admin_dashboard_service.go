@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"time"
 
@@ -88,7 +89,7 @@ func (s *ReferralAdminService) GetOverview(ctx context.Context) (*AdminReferralO
 		if userID <= 0 {
 			continue
 		}
-		code, err := s.baseService.EnsureDefaultCode(ctx, userID)
+		referralCode, err := s.lookupDefaultReferralCode(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
@@ -98,7 +99,7 @@ func (s *ReferralAdminService) GetOverview(ctx context.Context) (*AdminReferralO
 		frozen := frozenByUser[userID]
 		settled := settledByUser[userID]
 
-		item.ReferralCode = code.Code
+		item.ReferralCode = referralCode
 		if counts := inviteeCountsByUser[userID]; counts != nil {
 			item.DirectInvitees = counts.DirectInvitees
 			item.SecondLevelInvitees = counts.SecondLevelInvitees
@@ -147,7 +148,7 @@ func (s *ReferralAdminService) buildTreeNode(ctx context.Context, userID int64, 
 	if err != nil {
 		return nil, err
 	}
-	code, err := s.baseService.EnsureDefaultCode(ctx, userID)
+	referralCode, err := s.lookupDefaultReferralCode(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -176,7 +177,7 @@ func (s *ReferralAdminService) buildTreeNode(ctx context.Context, userID int64, 
 		UserID:              userID,
 		Email:               user.Email,
 		Username:            user.Username,
-		ReferralCode:        code.Code,
+		ReferralCode:        referralCode,
 		Level:               level,
 		DirectInvitees:      counts.DirectInvitees,
 		SecondLevelInvitees: counts.SecondLevelInvitees,
@@ -199,6 +200,23 @@ func (s *ReferralAdminService) buildTreeNode(ctx context.Context, userID int64, 
 		node.Children = append(node.Children, *child)
 	}
 	return node, nil
+}
+
+func (s *ReferralAdminService) lookupDefaultReferralCode(ctx context.Context, userID int64) (string, error) {
+	if s.baseService == nil || s.baseService.repo == nil {
+		return "", nil
+	}
+	code, err := s.baseService.repo.GetDefaultCodeByUserID(ctx, userID)
+	if errors.Is(err, ErrReferralCodeNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if code == nil {
+		return "", nil
+	}
+	return code.Code, nil
 }
 
 func (s *ReferralAdminService) collectAllRelations(ctx context.Context) ([]AdminReferralRelation, error) {

@@ -2040,10 +2040,15 @@ export interface AdminCommissionWithdrawal {
 export interface AdminReferralRelation {
   user_id: number
   user_email: string
-  referrer_user_id: number
-  referrer_email: string
-  referral_code: string
-  bound_at: string
+  username?: string
+  referrer_user_id?: number | null
+  referrer_email?: string | null
+  referrer_username?: string | null
+  bind_source: string
+  bind_code?: string | null
+  locked_at?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ReferralRelationHistoryEntry {

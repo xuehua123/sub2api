@@ -1624,6 +1624,14 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{ReferralCodesColumns[5]},
 			},
+			{
+				Name:    "referralcode_user_id_is_default",
+				Unique:  true,
+				Columns: []*schema.Column{ReferralCodesColumns[6], ReferralCodesColumns[5]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "is_default = true",
+				},
+			},
 		},
 	}
 	// ReferralRelationsColumns holds the columns for the "referral_relations" table.

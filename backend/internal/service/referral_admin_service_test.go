@@ -102,6 +102,7 @@ func (s *adminSearchUserRepoStub) DisableTotp(context.Context, int64) error { pa
 
 type adminReferralRepoStub struct {
 	*referralRepoStub
+	adminRelationsByUser  map[int64]*AdminReferralRelation
 	listRelations         []AdminReferralRelation
 	listRelationHistories []ReferralRelationHistory
 	inviteeCounts         map[int64]*ReferralInviteeCounts
@@ -110,9 +111,10 @@ type adminReferralRepoStub struct {
 
 func newAdminReferralRepoStub() *adminReferralRepoStub {
 	return &adminReferralRepoStub{
-		referralRepoStub: newReferralRepoStub(),
-		inviteeCounts:    make(map[int64]*ReferralInviteeCounts),
-		inviteesByUser:   make(map[int64][]ReferralInvitee),
+		referralRepoStub:     newReferralRepoStub(),
+		adminRelationsByUser: make(map[int64]*AdminReferralRelation),
+		inviteeCounts:        make(map[int64]*ReferralInviteeCounts),
+		inviteesByUser:       make(map[int64][]ReferralInvitee),
 	}
 }
 
@@ -137,6 +139,32 @@ func (s *adminReferralRepoStub) UpsertRelation(ctx context.Context, relation *Re
 
 func (s *adminReferralRepoStub) ListRelations(ctx context.Context, params pagination.PaginationParams, search string) ([]AdminReferralRelation, *pagination.PaginationResult, error) {
 	return s.listRelations, &pagination.PaginationResult{Total: int64(len(s.listRelations)), Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
+func (s *adminReferralRepoStub) GetAdminRelationByUserID(ctx context.Context, userID int64) (*AdminReferralRelation, error) {
+	if relation, ok := s.adminRelationsByUser[userID]; ok {
+		cloned := *relation
+		return &cloned, nil
+	}
+	relation, err := s.GetRelationByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	item := &AdminReferralRelation{
+		UserID:     relation.UserID,
+		BindSource: relation.BindSource,
+		BindCode:   relation.BindCode,
+		LockedAt:   relation.LockedAt,
+		CreatedAt:  relation.CreatedAt,
+		UpdatedAt:  relation.UpdatedAt,
+	}
+	for _, listed := range s.listRelations {
+		if listed.UserID == userID {
+			cloned := listed
+			return &cloned, nil
+		}
+	}
+	return item, nil
 }
 
 func (s *adminReferralRepoStub) ListRelationHistories(ctx context.Context, params pagination.PaginationParams, userID int64) ([]ReferralRelationHistory, *pagination.PaginationResult, error) {
@@ -385,6 +413,59 @@ func TestReferralAdminService_UpdateRelation_RebindsAndWritesHistory(t *testing.
 	require.Equal(t, int64(66), *refRepo.relationHistory[0].OldReferrerUserID)
 }
 
+func TestReferralAdminService_UpdateRelation_UsesReferrerUserIDAndCreatesMissingDefaultCode(t *testing.T) {
+	refRepo := newAdminReferralRepoStub()
+	commissionRepo := newAdminCommissionRepoStub()
+	svc := newReferralAdminServiceForTest(refRepo, commissionRepo, nil)
+
+	relation, err := svc.UpdateRelation(context.Background(), &AdminUpdateReferralRelationInput{
+		UserID:         7,
+		ReferrerUserID: 88,
+		ChangedBy:      9,
+		Reason:         "manual correction",
+	})
+	require.NoError(t, err)
+	require.Equal(t, int64(88), relation.ReferrerUserID)
+	require.NotNil(t, relation.BindCode)
+	require.NotEmpty(t, *relation.BindCode)
+	code := refRepo.codesByUser[88]
+	require.NotNil(t, code)
+	require.Equal(t, *relation.BindCode, code.Code)
+}
+
+func TestReferralAdminService_GetRelation_FetchesCurrentRelationByUserID(t *testing.T) {
+	refRepo := newAdminReferralRepoStub()
+	refRepo.listRelations = []AdminReferralRelation{
+		{UserID: 101, UserEmail: "other@example.com", Username: "other", ReferrerUserID: int64ValuePtr(88), ReferrerEmail: stringValuePtr("parent@example.com")},
+	}
+	refRepo.adminRelationsByUser[7] = &AdminReferralRelation{
+		UserID:           7,
+		UserEmail:        "target@example.com",
+		Username:         "target",
+		ReferrerUserID:   int64ValuePtr(99),
+		ReferrerEmail:    stringValuePtr("real-parent@example.com"),
+		ReferrerUsername: stringValuePtr("real-parent"),
+		BindSource:       ReferralBindSourceLink,
+		BindCode:         stringValuePtr("PARENT99"),
+	}
+	userRepo := &adminSearchUserRepoStub{
+		users: []User{
+			{ID: 7, Email: "target@example.com", Username: "target"},
+			{ID: 99, Email: "real-parent@example.com", Username: "real-parent"},
+		},
+	}
+	svc := newReferralAdminServiceForTest(refRepo, newAdminCommissionRepoStub(), userRepo)
+
+	relation, err := svc.GetRelation(context.Background(), 7)
+	require.NoError(t, err)
+	require.NotNil(t, relation)
+	require.Equal(t, int64(7), relation.UserID)
+	require.NotNil(t, relation.ReferrerUserID)
+	require.Equal(t, int64(99), *relation.ReferrerUserID)
+	require.NotNil(t, relation.ReferrerEmail)
+	require.Equal(t, "real-parent@example.com", *relation.ReferrerEmail)
+}
+
 func TestReferralAdminService_CreateCommissionAdjustment_UpdatesRewardBalance(t *testing.T) {
 	refRepo := newAdminReferralRepoStub()
 	commissionRepo := newAdminCommissionRepoStub()
@@ -416,8 +497,15 @@ func TestReferralAdminService_CreateCommissionAdjustment_UpdatesRewardBalance(t 
 	require.Equal(t, CommissionRewardStatusAvailable, commissionRepo.rewards[1].Status)
 }
 
-func TestReferralAdminService_SearchAccounts_ReturnsFixedCodes(t *testing.T) {
+func TestReferralAdminService_SearchAccounts_ReturnsExistingCodesWithoutCreating(t *testing.T) {
 	refRepo := newAdminReferralRepoStub()
+	refRepo.codesByUser[7] = &ReferralCode{
+		ID:        1,
+		UserID:    7,
+		Code:      "ALPHA01",
+		Status:    ReferralCodeStatusActive,
+		IsDefault: true,
+	}
 	commissionRepo := newAdminCommissionRepoStub()
 	userRepo := &adminSearchUserRepoStub{
 		users: []User{
@@ -432,8 +520,28 @@ func TestReferralAdminService_SearchAccounts_ReturnsFixedCodes(t *testing.T) {
 	require.Len(t, options, 1)
 	require.Equal(t, int64(7), options[0].UserID)
 	require.Equal(t, "alpha@example.com", options[0].Email)
-	require.NotEmpty(t, options[0].ReferralCode)
-	require.NotNil(t, refRepo.codesByUser[7])
+	require.Equal(t, "ALPHA01", options[0].ReferralCode)
+	require.Nil(t, refRepo.codesByUser[8])
+	require.Len(t, refRepo.codesByUser, 1)
+}
+
+func TestReferralAdminService_SearchAccounts_DoesNotCreateMissingCode(t *testing.T) {
+	refRepo := newAdminReferralRepoStub()
+	commissionRepo := newAdminCommissionRepoStub()
+	userRepo := &adminSearchUserRepoStub{
+		users: []User{
+			{ID: 8, Email: "bravo@example.com", Username: "bravo"},
+		},
+	}
+
+	svc := newReferralAdminServiceForTest(refRepo, commissionRepo, userRepo)
+	options, err := svc.SearchAccounts(context.Background(), "bravo", 10)
+	require.NoError(t, err)
+	require.Len(t, options, 1)
+	require.Equal(t, int64(8), options[0].UserID)
+	require.Empty(t, options[0].ReferralCode)
+	require.Empty(t, refRepo.codesByUser)
+	require.Empty(t, refRepo.codesByCode)
 }
 
 func TestReferralAdminService_GetOverview_ReturnsRankingAndStats(t *testing.T) {
@@ -487,6 +595,27 @@ func TestReferralAdminService_GetOverview_ReturnsRankingAndStats(t *testing.T) {
 	require.Equal(t, 6.0, overview.RecentTrend[3].WithdrawalAmount)
 }
 
+func TestReferralAdminService_GetOverview_DoesNotCreateMissingDefaultCodes(t *testing.T) {
+	refRepo := newAdminReferralRepoStub()
+	refRepo.listRelations = []AdminReferralRelation{
+		{UserID: 7, UserEmail: "alpha@example.com", Username: "alpha", ReferrerUserID: int64ValuePtr(8), ReferrerEmail: stringValuePtr("bravo@example.com"), ReferrerUsername: stringValuePtr("bravo")},
+	}
+	commissionRepo := newAdminCommissionRepoStub()
+	userRepo := &adminSearchUserRepoStub{
+		users: []User{
+			{ID: 7, Email: "alpha@example.com", Username: "alpha"},
+			{ID: 8, Email: "bravo@example.com", Username: "bravo"},
+		},
+	}
+
+	svc := newReferralAdminServiceForTest(refRepo, commissionRepo, userRepo)
+	overview, err := svc.GetOverview(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 2, overview.TotalAccounts)
+	require.Empty(t, refRepo.codesByUser)
+	require.Empty(t, refRepo.codesByCode)
+}
+
 func TestReferralAdminService_GetRelationTree_BuildsTwoLevels(t *testing.T) {
 	refRepo := newAdminReferralRepoStub()
 	refRepo.inviteeCounts[7] = &ReferralInviteeCounts{DirectInvitees: 2, SecondLevelInvitees: 2}
@@ -529,4 +658,21 @@ func TestReferralAdminService_GetRelationTree_BuildsTwoLevels(t *testing.T) {
 	require.Equal(t, 1, tree.Children[0].Level)
 	require.Len(t, tree.Children[0].Children, 1)
 	require.Equal(t, 2, tree.Children[0].Children[0].Level)
+}
+
+func TestReferralAdminService_GetRelationTree_DoesNotCreateMissingDefaultCodes(t *testing.T) {
+	refRepo := newAdminReferralRepoStub()
+	userRepo := &adminSearchUserRepoStub{
+		users: []User{
+			{ID: 7, Email: "root@example.com", Username: "root"},
+		},
+	}
+	svc := newReferralAdminServiceForTest(refRepo, newAdminCommissionRepoStub(), userRepo)
+
+	tree, err := svc.GetRelationTree(context.Background(), 7)
+	require.NoError(t, err)
+	require.Equal(t, int64(7), tree.UserID)
+	require.Empty(t, tree.ReferralCode)
+	require.Empty(t, refRepo.codesByUser)
+	require.Empty(t, refRepo.codesByCode)
 }

@@ -58,5 +58,8 @@ func (ReferralCode) Indexes() []ent.Index {
 		index.Fields("user_id"),
 		index.Fields("status"),
 		index.Fields("is_default"),
+		index.Fields("user_id", "is_default").
+			Unique().
+			Annotations(entsql.IndexWhere("is_default = true")),
 	}
 }

@@ -119,11 +119,12 @@ type AdminCommissionWithdrawalFilter struct {
 }
 
 type AdminUpdateReferralRelationInput struct {
-	UserID    int64
-	Code      string
-	ChangedBy int64
-	Reason    string
-	Notes     string
+	UserID         int64
+	Code           string
+	ReferrerUserID int64
+	ChangedBy      int64
+	Reason         string
+	Notes          string
 }
 
 type AdminCommissionAdjustmentInput struct {
@@ -142,6 +143,7 @@ type ReferralAdminRelationRepository interface {
 	CountAllInvitees(ctx context.Context) (map[int64]*ReferralInviteeCounts, error)
 	ListInvitees(ctx context.Context, userID int64, params pagination.PaginationParams) ([]ReferralInvitee, *pagination.PaginationResult, error)
 	ListRelations(ctx context.Context, params pagination.PaginationParams, search string) ([]AdminReferralRelation, *pagination.PaginationResult, error)
+	GetAdminRelationByUserID(ctx context.Context, userID int64) (*AdminReferralRelation, error)
 	ListRelationHistories(ctx context.Context, params pagination.PaginationParams, userID int64) ([]ReferralRelationHistory, *pagination.PaginationResult, error)
 }
 
@@ -188,7 +190,7 @@ func (s *ReferralAdminService) UpdateRelation(ctx context.Context, input *AdminU
 	if input == nil || input.UserID <= 0 {
 		return nil, ErrReferralRelationNotFound
 	}
-	code, err := s.baseService.ValidateReferralCode(ctx, input.Code)
+	code, err := s.resolveAdminReferrerCode(ctx, input)
 	if err != nil {
 		return nil, err
 	}
@@ -203,12 +205,13 @@ func (s *ReferralAdminService) UpdateRelation(ctx context.Context, input *AdminU
 	if err != nil && !errors.Is(err, ErrReferralRelationNotFound) {
 		return nil, err
 	}
+	bindCode := strings.TrimSpace(code.Code)
 
 	relation := &ReferralRelation{
 		UserID:         input.UserID,
 		ReferrerUserID: code.UserID,
 		BindSource:     ReferralBindSourceAdminOverride,
-		BindCode:       stringValuePtr(strings.TrimSpace(input.Code)),
+		BindCode:       stringValuePtr(bindCode),
 		Notes:          optionalTrimmedString(input.Notes),
 	}
 	if existing != nil {
@@ -219,7 +222,7 @@ func (s *ReferralAdminService) UpdateRelation(ctx context.Context, input *AdminU
 	history := &ReferralRelationHistory{
 		UserID:            input.UserID,
 		NewReferrerUserID: int64ValuePtr(code.UserID),
-		NewBindCode:       stringValuePtr(strings.TrimSpace(input.Code)),
+		NewBindCode:       stringValuePtr(bindCode),
 		ChangeSource:      ReferralBindSourceAdminOverride,
 		ChangedBy:         int64ValuePtr(input.ChangedBy),
 		Reason:            optionalTrimmedString(input.Reason),
@@ -240,6 +243,23 @@ func (s *ReferralAdminService) UpdateRelation(ctx context.Context, input *AdminU
 		return nil, err
 	}
 	return relation, nil
+}
+
+func (s *ReferralAdminService) resolveAdminReferrerCode(ctx context.Context, input *AdminUpdateReferralRelationInput) (*ReferralCode, error) {
+	if input.ReferrerUserID > 0 {
+		if input.ReferrerUserID == input.UserID {
+			return nil, ErrReferralSelfBind
+		}
+		enabled, err := s.baseService.isReferralEnabledForUser(ctx, input.ReferrerUserID)
+		if err != nil {
+			return nil, err
+		}
+		if !enabled {
+			return nil, ErrReferralDisabled
+		}
+		return s.baseService.EnsureDefaultCode(ctx, input.ReferrerUserID)
+	}
+	return s.baseService.ValidateReferralCode(ctx, input.Code)
 }
 
 func (s *ReferralAdminService) CreateCommissionAdjustment(ctx context.Context, input *AdminCommissionAdjustmentInput) (*CommissionLedger, error) {
@@ -330,6 +350,17 @@ func (s *ReferralAdminService) ListRelations(ctx context.Context, params paginat
 	return s.relationRepo.ListRelations(ctx, params, search)
 }
 
+func (s *ReferralAdminService) GetRelation(ctx context.Context, userID int64) (*AdminReferralRelation, error) {
+	if userID <= 0 {
+		return nil, ErrReferralRelationNotFound
+	}
+	relation, err := s.relationRepo.GetAdminRelationByUserID(ctx, userID)
+	if errors.Is(err, ErrReferralRelationNotFound) {
+		return nil, nil
+	}
+	return relation, err
+}
+
 func (s *ReferralAdminService) ListRelationHistories(ctx context.Context, params pagination.PaginationParams, userID int64) ([]ReferralRelationHistory, *pagination.PaginationResult, error) {
 	return s.relationRepo.ListRelationHistories(ctx, params, userID)
 }
@@ -372,15 +403,21 @@ func (s *ReferralAdminService) SearchAccounts(ctx context.Context, query string,
 	}
 	options := make([]AdminReferralAccountOption, 0, len(users))
 	for i := range users {
-		code, codeErr := s.baseService.EnsureDefaultCode(ctx, users[i].ID)
-		if codeErr != nil {
-			return nil, codeErr
+		referralCode := ""
+		if s.baseService.repo != nil {
+			code, codeErr := s.baseService.repo.GetDefaultCodeByUserID(ctx, users[i].ID)
+			if codeErr != nil && !errors.Is(codeErr, ErrReferralCodeNotFound) {
+				return nil, codeErr
+			}
+			if codeErr == nil && code != nil {
+				referralCode = code.Code
+			}
 		}
 		options = append(options, AdminReferralAccountOption{
 			UserID:       users[i].ID,
 			Email:        users[i].Email,
 			Username:     users[i].Username,
-			ReferralCode: code.Code,
+			ReferralCode: referralCode,
 		})
 	}
 	return options, nil

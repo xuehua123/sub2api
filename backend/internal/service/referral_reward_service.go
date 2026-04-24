@@ -455,6 +455,13 @@ func (s *ReferralRewardService) buildRewardsAndLedgers(
 		if rate <= 0 {
 			return nil
 		}
+		enabled, err := s.isReferralRewardEnabledForUser(ctx, settings, userID)
+		if err != nil {
+			return err
+		}
+		if !enabled {
+			return nil
+		}
 		ruleSnapshot := map[string]any{
 			"level":                 level,
 			"rate":                  rate,
@@ -511,6 +518,23 @@ func (s *ReferralRewardService) buildRewardsAndLedgers(
 	}
 
 	return rewards, ledgers, nil
+}
+
+func (s *ReferralRewardService) isReferralRewardEnabledForUser(ctx context.Context, settings *SystemSettings, userID int64) (bool, error) {
+	if settings != nil && settings.ReferralEnabled {
+		return true, nil
+	}
+	if s.userRepo == nil || userID <= 0 {
+		return false, nil
+	}
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if errors.Is(err, ErrUserNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return user.ReferralEnabled, nil
 }
 
 func (s *ReferralRewardService) loadSettings(ctx context.Context) (*SystemSettings, error) {

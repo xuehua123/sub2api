@@ -30,7 +30,8 @@ func (r *referralRepository) GetDefaultCodeByUserID(ctx context.Context, userID 
 			referralcode.UserIDEQ(userID),
 			referralcode.IsDefault(true),
 		).
-		Only(ctx)
+		Order(dbent.Asc(referralcode.FieldCreatedAt), dbent.Asc(referralcode.FieldID)).
+		First(ctx)
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrReferralCodeNotFound, nil)
 	}
@@ -419,6 +420,38 @@ func (r *referralRepository) ListRelations(ctx context.Context, params paginatio
 		items = append(items, item)
 	}
 	return items, paginationResultFrom(total, params), nil
+}
+
+func (r *referralRepository) GetAdminRelationByUserID(ctx context.Context, userID int64) (*service.AdminReferralRelation, error) {
+	model, err := clientFromContext(ctx, r.client).ReferralRelation.Query().
+		Where(referralrelation.UserIDEQ(userID)).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrReferralRelationNotFound, nil)
+	}
+	usersByID, err := r.loadUsersByID(ctx, []int64{model.UserID, model.ReferrerUserID})
+	if err != nil {
+		return nil, err
+	}
+
+	item := &service.AdminReferralRelation{
+		UserID:     model.UserID,
+		BindSource: model.BindSource,
+		BindCode:   model.BindCode,
+		LockedAt:   model.LockedAt,
+		CreatedAt:  model.CreatedAt,
+		UpdatedAt:  model.UpdatedAt,
+	}
+	if userModel := usersByID[model.UserID]; userModel != nil {
+		item.UserEmail = userModel.Email
+		item.Username = userModel.Username
+	}
+	if referrerModel := usersByID[model.ReferrerUserID]; referrerModel != nil {
+		item.ReferrerUserID = &referrerModel.ID
+		item.ReferrerEmail = &referrerModel.Email
+		item.ReferrerUsername = &referrerModel.Username
+	}
+	return item, nil
 }
 
 func (r *referralRepository) ListRelationHistories(ctx context.Context, params pagination.PaginationParams, userID int64) ([]service.ReferralRelationHistory, *pagination.PaginationResult, error) {

@@ -394,6 +394,40 @@ func TestReferralRewardService_CreditRechargeOrder_GeneratesLevel1Rewards(t *tes
 	require.Equal(t, CommissionLedgerEntryRewardPendingCredit, commissionRepo.ledgers[0].EntryType)
 }
 
+func TestReferralRewardService_CreditRechargeOrder_SkipsDisabledReferrerWhenGlobalReferralOff(t *testing.T) {
+	rechargeRepo := newRechargeOrderRepoStub()
+	commissionRepo := &commissionRepoStub{}
+	userRepo := newRewardUserRepoStub()
+	userRepo.users[100] = &User{ID: 100, Balance: 0}
+	userRepo.users[200] = &User{ID: 200, ReferralEnabled: false}
+
+	referralRepo := newReferralRepoStub()
+	referralRepo.relationsByUser[100] = &ReferralRelation{
+		UserID:         100,
+		ReferrerUserID: 200,
+		BindSource:     ReferralBindSourceLink,
+	}
+
+	svc := newReferralRewardServiceForTest(rechargeRepo, commissionRepo, userRepo, referralRepo, map[string]string{
+		SettingKeyReferralEnabled:       "false",
+		SettingKeyReferralLevel1Enabled: "true",
+		SettingKeyReferralLevel1Rate:    "0.10",
+		SettingKeyReferralRewardMode:    ReferralRewardModeEveryPaidOrder,
+	})
+
+	result, err := svc.CreditRechargeOrder(context.Background(), &RechargeCreditInput{
+		UserID:          100,
+		ExternalOrderID: "order-disabled-referrer",
+		Provider:        "sub2apipay",
+		Currency:        "CNY",
+		PaidAmount:      100,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Empty(t, result.CommissionRewards)
+	require.Empty(t, commissionRepo.ledgers)
+}
+
 func TestReferralRewardService_CreditRechargeOrder_UsesFirstPaidOrderMode(t *testing.T) {
 	rechargeRepo := newRechargeOrderRepoStub()
 	rechargeRepo.paidOrderCounts[100] = 1

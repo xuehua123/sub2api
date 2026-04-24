@@ -115,7 +115,7 @@
               <button
                 type="submit"
                 class="btn btn-primary w-full"
-                :disabled="savingRelation || !upstreamResultCode"
+                :disabled="savingRelation || !selectedUpstreamUserID"
               >
                 <LoadingSpinner v-if="savingRelation" class="mr-2 h-4 w-4" />
                 {{ t('admin.referral.confirmChangeUpstream') }}
@@ -301,7 +301,7 @@ const selectedUpstream = ref<AdminReferralAccountOption | null>(null)
 const upstreamLoading = ref(false)
 const selectedReward = ref<AdminCommissionReward | null>(null)
 
-const upstreamResultCode = computed(() => selectedUpstream.value?.referral_code || '')
+const selectedUpstreamUserID = computed(() => selectedUpstream.value?.user_id || 0)
 
 function closeDrawer() {
   drawerOpen.value = false
@@ -329,12 +329,12 @@ async function open(userId: number, initialAccount: AdminReferralRankingItem, de
 
   try {
     const [relRes, histRes, rwdsRes, wthdRes] = await Promise.all([
-      referralAdminAPI.listRelations(1, 20, initialAccount.email),
+      referralAdminAPI.getRelation(userId),
       referralAdminAPI.listRelationHistories(1, 20, userId),
       referralAdminAPI.listCommissionRewards(1, 20, { user_id: userId }),
       referralAdminAPI.listWithdrawals(1, 20, { user_id: userId })
     ])
-    relation.value = relRes.items.find((i) => i.user_id === userId) || null
+    relation.value = relRes
     relationHistories.value = histRes
     rewards.value = rwdsRes
     withdrawals.value = wthdRes
@@ -370,11 +370,11 @@ function clearUpstream() {
 }
 
 async function submitRelation() {
-  if (!account.value || !upstreamResultCode.value) return
+  if (!account.value || !selectedUpstreamUserID.value) return
   savingRelation.value = true
   try {
     await referralAdminAPI.updateRelation(account.value.user_id, {
-      code: upstreamResultCode.value,
+      referrer_user_id: selectedUpstreamUserID.value,
       reason: relationForm.reason.trim()
     })
     appStore.showSuccess(t('admin.referral.relationSaved', '上级已更换成功'))

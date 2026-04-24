@@ -8,6 +8,7 @@ const {
   searchAccounts,
   getOverview,
   getTree,
+  getRelation,
   listRelations,
   listRelationHistories,
   listCommissionRewards,
@@ -21,6 +22,7 @@ const {
   searchAccounts: vi.fn(),
   getOverview: vi.fn(),
   getTree: vi.fn(),
+  getRelation: vi.fn(),
   listRelations: vi.fn(),
   listRelationHistories: vi.fn(),
   listCommissionRewards: vi.fn(),
@@ -37,6 +39,7 @@ vi.mock('@/api/admin/referral', () => ({
     searchAccounts,
     getOverview,
     getTree,
+    getRelation,
     listRelations,
     listRelationHistories,
     listCommissionRewards,
@@ -48,6 +51,7 @@ vi.mock('@/api/admin/referral', () => ({
   searchAccounts,
   getOverview,
   getTree,
+  getRelation,
   listRelations,
   listRelationHistories,
   listCommissionRewards,
@@ -152,6 +156,7 @@ describe('admin ReferralView', () => {
       page_size: 20,
       pages: 1
     })
+    getRelation.mockResolvedValue({ user_id: 7, user_email: 'user@example.com', username: 'user', referrer_user_id: 99, referrer_email: 'parent@example.com', referrer_username: 'parent', bind_source: 'link', bind_code: 'REF-007', created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' })
     listRelationHistories.mockResolvedValue({
       items: [
         {
@@ -245,8 +250,16 @@ describe('admin ReferralView', () => {
     expect(document.body.textContent).toContain('child@example.com')
   })
 
-  it('opens workspace drawer and uses fixed upstream code for relation updates', async () => {
+  it('opens workspace drawer and updates relation by referrer user id', async () => {
     updateRelation.mockResolvedValue({})
+    getRelation.mockResolvedValue({ user_id: 7, user_email: 'user@example.com', username: 'user', referrer_user_id: 88, referrer_email: 'actual-parent@example.com', referrer_username: 'actual-parent', bind_source: 'link', bind_code: 'ACTUAL88', created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' })
+    listRelations.mockResolvedValue({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
 
     const wrapper = mount(ReferralView, {
       attachTo: document.body,
@@ -264,6 +277,7 @@ describe('admin ReferralView', () => {
     expect(manageButton).toBeTruthy()
     await manageButton!.trigger('click')
     await flushPromises()
+    expect(getRelation).toHaveBeenCalledWith(7)
 
     await wrapper.get('[data-test="workspace-upstream-input"]').setValue('parent@example.com')
     await flushPromises()
@@ -273,12 +287,13 @@ describe('admin ReferralView', () => {
       user_id: 99,
       email: 'parent@example.com',
       username: 'parent',
-      referral_code: 'PARENT01'
+      referral_code: ''
     }
     await flushPromises()
     await drawer.get('form[data-test="workspace-relation-form"]').trigger('submit')
     await flushPromises()
-    expect(updateRelation).toHaveBeenCalledWith(7, expect.objectContaining({ code: 'PARENT01' }))
+    expect(drawer.text()).toContain('actual-parent@example.com')
+    expect(updateRelation).toHaveBeenCalledWith(7, expect.objectContaining({ referrer_user_id: 99 }))
   })
 
   it('switches to adjustment and withdrawal tabs inside workspace', async () => {

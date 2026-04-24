@@ -59,6 +59,27 @@ describe('oauth adoption auth api', () => {
     })
   })
 
+  it('posts oauth registration referral codes when provided', async () => {
+    const { completeLinuxDoOAuthRegistration, createPendingOIDCOAuthAccount } = await import('@/api/auth')
+
+    await completeLinuxDoOAuthRegistration('invite-code', {
+      adoptDisplayName: true,
+      adoptAvatar: false
+    }, 'REF12345')
+    await createPendingOIDCOAuthAccount('', undefined, 'REF67890')
+
+    expect(post).toHaveBeenNthCalledWith(1, '/auth/oauth/linuxdo/complete-registration', {
+      invitation_code: 'invite-code',
+      referral_code: 'REF12345',
+      adopt_display_name: true,
+      adopt_avatar: false
+    })
+    expect(post).toHaveBeenNthCalledWith(2, '/auth/oauth/oidc/complete-registration', {
+      invitation_code: '',
+      referral_code: 'REF67890'
+    })
+  })
+
   it('posts linuxdo create-account completion with adoption decisions', async () => {
     const { createPendingLinuxDoOAuthAccount } = await import('@/api/auth')
 

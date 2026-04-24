@@ -614,6 +614,7 @@ func registerReferralAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		relations := referral.Group("/relations")
 		{
 			relations.GET("", h.Admin.Referral.ListRelations)
+			relations.GET("/:user_id", h.Admin.Referral.GetRelation)
 			relations.PUT("/:user_id", h.Admin.Referral.UpdateRelation)
 		}
 

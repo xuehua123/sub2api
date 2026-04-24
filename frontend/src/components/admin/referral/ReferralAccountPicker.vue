@@ -112,6 +112,7 @@ watch(
       searchDebounceTimer.value = null
     }
     if (!value.trim()) {
+      emit('clear')
       return
     }
     searchDebounceTimer.value = setTimeout(() => {

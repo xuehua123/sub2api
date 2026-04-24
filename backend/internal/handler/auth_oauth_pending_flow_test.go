@@ -17,6 +17,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
 	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralcode"
+	"github.com/Wei-Shaw/sub2api/ent/referralrelation"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -1047,6 +1049,80 @@ func TestCreateOIDCOAuthAccountCreatesUserBindsIdentityAndConsumesSession(t *tes
 	storedSession, err := client.PendingAuthSession.Get(ctx, session.ID)
 	require.NoError(t, err)
 	require.NotNil(t, storedSession.ConsumedAt)
+}
+
+func TestCreateOIDCOAuthAccountBindsReferralCode(t *testing.T) {
+	handler, client := newOAuthPendingFlowTestHandlerWithDependencies(t, oauthPendingFlowTestHandlerOptions{
+		emailVerifyEnabled: true,
+		emailCache: &oauthPendingFlowEmailCacheStub{
+			verificationCodes: map[string]*service.VerificationCodeData{
+				"fresh-ref@example.com": {
+					Code:      "246810",
+					Attempts:  0,
+					CreatedAt: time.Now().UTC(),
+					ExpiresAt: time.Now().UTC().Add(15 * time.Minute),
+				},
+			},
+		},
+		settingValues: map[string]string{
+			service.SettingKeyReferralEnabled: "true",
+		},
+	})
+	ctx := context.Background()
+	referrer, err := client.User.Create().
+		SetEmail("referrer@example.com").
+		SetPasswordHash("hash").
+		SetUsername("referrer").
+		SetReferralEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.ReferralCode.Create().
+		SetUserID(referrer.ID).
+		SetCode("REFPEND1").
+		SetStatus(service.ReferralCodeStatusActive).
+		SetIsDefault(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	session, err := client.PendingAuthSession.Create().
+		SetSessionToken("oidc-create-referral-session").
+		SetIntent("login").
+		SetProviderType("oidc").
+		SetProviderKey("oidc").
+		SetProviderSubject("oidc-ref-subject").
+		SetResolvedEmail("oidc-ref@example.com").
+		SetBrowserSessionKey("create-account-referral-browser-session-key").
+		SetUpstreamIdentityClaims(map[string]any{
+			"email":                  "fresh-ref@example.com",
+			"email_verified":         true,
+			"username":               "fresh_ref",
+			"suggested_display_name": "Fresh Referral User",
+		}).
+		SetExpiresAt(time.Now().UTC().Add(10 * time.Minute)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	body := bytes.NewBufferString(`{"email":"fresh-ref@example.com","verify_code":"246810","password":"secret-123","referral_code":"REFPEND1"}`)
+	recorder := httptest.NewRecorder()
+	ginCtx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/oauth/oidc/create-account", body)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: oauthPendingSessionCookieName, Value: encodeCookieValue(session.SessionToken)})
+	req.AddCookie(&http.Cookie{Name: oauthPendingBrowserCookieName, Value: encodeCookieValue("create-account-referral-browser-session-key")})
+	ginCtx.Request = req
+
+	handler.CreateOIDCOAuthAccount(ginCtx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	createdUser, err := client.User.Query().Where(dbuser.EmailEQ("fresh-ref@example.com")).Only(ctx)
+	require.NoError(t, err)
+	relation, err := client.ReferralRelation.Query().
+		Where(referralrelation.UserIDEQ(createdUser.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, referrer.ID, relation.ReferrerUserID)
+	require.NotNil(t, relation.BindCode)
+	require.Equal(t, "REFPEND1", *relation.BindCode)
 }
 
 func TestCreateOIDCOAuthAccountExistingEmailReturnsChoicePendingSessionState(t *testing.T) {
@@ -2190,6 +2266,7 @@ CREATE TABLE IF NOT EXISTS user_avatars (
 		options: options.userRepoOptions,
 	}
 	redeemRepo := &oauthPendingFlowRedeemCodeRepo{client: client}
+	referralSvc := service.NewReferralService(&oauthPendingFlowReferralRepo{client: client}, userRepo, client, settingSvc)
 	var emailService *service.EmailService
 	if options.emailCache != nil {
 		emailService = service.NewEmailService(&oauthPendingFlowSettingRepoStub{
@@ -2210,7 +2287,7 @@ CREATE TABLE IF NOT EXISTS user_avatars (
 		nil,
 		nil,
 		options.defaultSubAssigner,
-		nil,
+		referralSvc,
 	)
 	userSvc := service.NewUserService(userRepo, nil, nil, nil)
 	var totpSvc *service.TotpService
@@ -2399,6 +2476,167 @@ func (s *oauthPendingFlowRefreshTokenCacheStub) IsTokenInFamily(context.Context,
 
 type oauthPendingFlowRedeemCodeRepo struct {
 	client *dbent.Client
+}
+
+type oauthPendingFlowReferralRepo struct {
+	client *dbent.Client
+}
+
+func oauthPendingFlowClientFromContext(ctx context.Context, defaultClient *dbent.Client) *dbent.Client {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return tx.Client()
+	}
+	return defaultClient
+}
+
+func (r *oauthPendingFlowReferralRepo) GetDefaultCodeByUserID(ctx context.Context, userID int64) (*service.ReferralCode, error) {
+	entity, err := oauthPendingFlowClientFromContext(ctx, r.client).ReferralCode.Query().
+		Where(referralcode.UserIDEQ(userID), referralcode.IsDefault(true)).
+		Order(dbent.Asc(referralcode.FieldCreatedAt), dbent.Asc(referralcode.FieldID)).
+		First(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, service.ErrReferralCodeNotFound
+		}
+		return nil, err
+	}
+	return referralCodeEntityToService(entity), nil
+}
+
+func (r *oauthPendingFlowReferralRepo) GetCodeByCode(ctx context.Context, code string) (*service.ReferralCode, error) {
+	entity, err := oauthPendingFlowClientFromContext(ctx, r.client).ReferralCode.Query().
+		Where(referralcode.CodeEqualFold(code)).
+		Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, service.ErrReferralCodeNotFound
+		}
+		return nil, err
+	}
+	return referralCodeEntityToService(entity), nil
+}
+
+func (r *oauthPendingFlowReferralRepo) CreateCode(ctx context.Context, code *service.ReferralCode) error {
+	entity, err := oauthPendingFlowClientFromContext(ctx, r.client).ReferralCode.Create().
+		SetUserID(code.UserID).
+		SetCode(code.Code).
+		SetStatus(code.Status).
+		SetIsDefault(code.IsDefault).
+		Save(ctx)
+	if err != nil {
+		return err
+	}
+	code.ID = entity.ID
+	code.CreatedAt = entity.CreatedAt
+	code.UpdatedAt = entity.UpdatedAt
+	return nil
+}
+
+func (r *oauthPendingFlowReferralRepo) GetRelationByUserID(ctx context.Context, userID int64) (*service.ReferralRelation, error) {
+	entity, err := oauthPendingFlowClientFromContext(ctx, r.client).ReferralRelation.Query().
+		Where(referralrelation.UserIDEQ(userID)).
+		Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, service.ErrReferralRelationNotFound
+		}
+		return nil, err
+	}
+	return referralRelationEntityToService(entity), nil
+}
+
+func (r *oauthPendingFlowReferralRepo) CreateRelation(ctx context.Context, relation *service.ReferralRelation) error {
+	create := oauthPendingFlowClientFromContext(ctx, r.client).ReferralRelation.Create().
+		SetUserID(relation.UserID).
+		SetReferrerUserID(relation.ReferrerUserID).
+		SetBindSource(relation.BindSource)
+	if relation.BindCode != nil {
+		create.SetBindCode(*relation.BindCode)
+	}
+	if relation.LockedAt != nil {
+		create.SetLockedAt(*relation.LockedAt)
+	}
+	if relation.Notes != nil {
+		create.SetNotes(*relation.Notes)
+	}
+	entity, err := create.Save(ctx)
+	if err != nil {
+		return err
+	}
+	relation.ID = entity.ID
+	relation.CreatedAt = entity.CreatedAt
+	relation.UpdatedAt = entity.UpdatedAt
+	return nil
+}
+
+func (r *oauthPendingFlowReferralRepo) CreateRelationHistory(ctx context.Context, history *service.ReferralRelationHistory) error {
+	create := oauthPendingFlowClientFromContext(ctx, r.client).ReferralRelationHistory.Create().
+		SetUserID(history.UserID).
+		SetChangeSource(history.ChangeSource)
+	if history.OldReferrerUserID != nil {
+		create.SetOldReferrerUserID(*history.OldReferrerUserID)
+	}
+	if history.NewReferrerUserID != nil {
+		create.SetNewReferrerUserID(*history.NewReferrerUserID)
+	}
+	if history.OldBindCode != nil {
+		create.SetOldBindCode(*history.OldBindCode)
+	}
+	if history.NewBindCode != nil {
+		create.SetNewBindCode(*history.NewBindCode)
+	}
+	if history.ChangedBy != nil {
+		create.SetChangedBy(*history.ChangedBy)
+	}
+	if history.Reason != nil {
+		create.SetReason(*history.Reason)
+	}
+	if history.MetadataJSON != nil {
+		create.SetMetadataJSON(*history.MetadataJSON)
+	}
+	entity, err := create.Save(ctx)
+	if err != nil {
+		return err
+	}
+	history.ID = entity.ID
+	history.CreatedAt = entity.CreatedAt
+	return nil
+}
+
+func (r *oauthPendingFlowReferralRepo) HasPaidRecharge(context.Context, int64) (bool, error) {
+	return false, nil
+}
+
+func referralCodeEntityToService(entity *dbent.ReferralCode) *service.ReferralCode {
+	if entity == nil {
+		return nil
+	}
+	return &service.ReferralCode{
+		ID:        entity.ID,
+		UserID:    entity.UserID,
+		Code:      entity.Code,
+		Status:    entity.Status,
+		IsDefault: entity.IsDefault,
+		CreatedAt: entity.CreatedAt,
+		UpdatedAt: entity.UpdatedAt,
+	}
+}
+
+func referralRelationEntityToService(entity *dbent.ReferralRelation) *service.ReferralRelation {
+	if entity == nil {
+		return nil
+	}
+	return &service.ReferralRelation{
+		ID:             entity.ID,
+		UserID:         entity.UserID,
+		ReferrerUserID: entity.ReferrerUserID,
+		BindSource:     entity.BindSource,
+		BindCode:       entity.BindCode,
+		LockedAt:       entity.LockedAt,
+		Notes:          entity.Notes,
+		CreatedAt:      entity.CreatedAt,
+		UpdatedAt:      entity.UpdatedAt,
+	}
 }
 
 func (r *oauthPendingFlowRedeemCodeRepo) Create(context.Context, *service.RedeemCode) error {

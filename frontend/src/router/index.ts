@@ -591,6 +591,10 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/referral/withdrawals',
+    redirect: '/admin/referral-withdrawals'
+  },
+  {
     path: '/admin/referral-withdrawals',
     name: 'AdminReferralWithdrawals',
     component: () => import('@/views/admin/ReferralWithdrawalsView.vue'),

@@ -255,6 +255,7 @@ import {
   type OAuthTokenResponse,
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
+import { clearOAuthReferralCode, getOAuthReferralCode } from '@/utils/oauthReferral'
 
 const route = useRoute()
 const router = useRouter()
@@ -568,6 +569,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
   if (getOAuthCompletionKind(completion) === 'bind') {
     const bindRedirect = sanitizeRedirectPath(completion.redirect || '/profile')
     clearPendingAuthSession()
+    clearOAuthReferralCode()
     appStore.showSuccess(bindSuccessMessage)
     await router.replace(bindRedirect)
     return
@@ -579,6 +581,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
 
   persistOAuthTokenContext(completion)
   await authStore.setToken(completion.access_token)
+  clearOAuthReferralCode()
   appStore.showSuccess(t('auth.loginSuccess'))
   await router.replace(redirect)
 }
@@ -627,18 +630,19 @@ async function handleSubmitInvitation() {
 
   isSubmitting.value = true
   try {
+    const referralCode = getOAuthReferralCode()
     const completion: LinuxDoPendingActionResponse = legacyPendingOAuthToken.value
       ? (
           await apiClient.post<LinuxDoPendingActionResponse>('/auth/oauth/linuxdo/complete-registration', {
             pending_oauth_token: legacyPendingOAuthToken.value,
             invitation_code: invitationCode.value.trim(),
+            ...(referralCode ? { referral_code: referralCode } : {}),
             ...serializeAdoptionDecision(currentAdoptionDecision())
           })
         ).data
-      : await completeLinuxDoOAuthRegistration(
-          invitationCode.value.trim(),
-          currentAdoptionDecision()
-        )
+      : referralCode
+        ? await completeLinuxDoOAuthRegistration(invitationCode.value.trim(), currentAdoptionDecision(), referralCode)
+        : await completeLinuxDoOAuthRegistration(invitationCode.value.trim(), currentAdoptionDecision())
     await finalizePendingAccountResponse(completion)
   } catch (e: unknown) {
     const err = e as { message?: string; response?: { data?: { message?: string } } }
@@ -668,11 +672,13 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
 
   isSubmitting.value = true
   try {
+    const referralCode = getOAuthReferralCode()
     const { data } = await apiClient.post<LinuxDoPendingActionResponse>('/auth/oauth/pending/create-account', {
       email: payload.email,
       password: payload.password,
       verify_code: payload.verifyCode || undefined,
       invitation_code: payload.invitationCode || undefined,
+      ...(referralCode ? { referral_code: referralCode } : {}),
       ...serializeAdoptionDecision(currentAdoptionDecision())
     })
     await finalizePendingAccountResponse(data)
