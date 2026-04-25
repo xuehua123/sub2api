@@ -328,6 +328,11 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <LobeHubLaunchButton
+                v-if="row.status === 'active'"
+                :api-key-id="row.id"
+                :public-settings="publicSettings"
+              />
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -1065,6 +1070,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import SearchInput from '@/components/common/SearchInput.vue'
 	import Icon from '@/components/icons/Icon.vue'
 	import UseKeyModal from '@/components/keys/UseKeyModal.vue'
+	import LobeHubLaunchButton from '@/components/keys/LobeHubLaunchButton.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
