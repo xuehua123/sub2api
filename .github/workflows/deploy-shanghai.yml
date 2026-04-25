@@ -1,0 +1,61 @@
+name: Deploy Shanghai Sub2API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: shanghai-sub2api-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/xuehua123/sub2api
+
+jobs:
+  deploy:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Shanghai
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 101.35.240.224
+          username: root
+          key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
+          password: ${{ secrets.SH_PROD_PASSWORD }}
+          port: ${{ secrets.SH_PROD_PORT || '22' }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            set -e
+            cd /opt/platform
+
+            export COMPOSE_PROJECT_NAME=platform
+            export DOCKER_CONFIG=/tmp/docker-public
+            mkdir -p "$DOCKER_CONFIG"
+            rm -f "$DOCKER_CONFIG/config.json"
+
+            docker compose pull sub2api
+            docker compose up -d sub2api
+
+            docker image prune -f
+
+            sleep 10
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:18080/health > /dev/null 2>&1; then
+                echo "sub2api is healthy"
+                docker compose ps sub2api
+                exit 0
+              fi
+              sleep 3
+            done
+
+            echo "sub2api health check failed"
+            docker compose ps sub2api
+            docker compose logs sub2api --tail 50 || true
+            exit 1
