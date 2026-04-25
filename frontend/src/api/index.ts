@@ -20,6 +20,12 @@ export { userChannelsAPI } from './channels'
 export { totpAPI } from './totp'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
+export {
+  lobehubAPI,
+  type CreateLobeHubLaunchTicketResponse,
+  type CreateLobeHubOIDCWebSessionRequest,
+  type CreateLobeHubOIDCWebSessionResponse
+} from './lobehub'
 
 // Admin APIs
 export { adminAPI } from './admin'

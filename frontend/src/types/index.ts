@@ -93,6 +93,7 @@ export interface User {
   balance_notify_enabled: boolean
   balance_notify_threshold: number | null
   balance_notify_extra_emails: NotifyEmailEntry[]
+  default_chat_api_key_id?: number | null
   subscriptions?: UserSubscription[] // User's active subscriptions
   last_active_at?: string | null
   created_at: string
@@ -194,6 +195,14 @@ export interface PublicSettings {
   doc_url: string
   home_content: string
   hide_ccs_import_button: boolean
+  lobehub_enabled: boolean
+  lobehub_chat_url: string
+  lobehub_oidc_issuer: string
+  lobehub_default_provider: string
+  lobehub_default_model: string
+  lobehub_enabled_models?: string[]
+  lobehub_runtime_config_version: string
+  hide_lobehub_import_button: boolean
   payment_enabled: boolean
   table_default_page_size: number
   table_page_size_options: number[]

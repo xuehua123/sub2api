@@ -4205,7 +4205,166 @@
 
         </div><!-- /Tab: Features -->
 
-        <!-- Tab: Email -->
+        <!-- Tab: LobeHub -->
+        <div v-show="activeTab === 'lobehub'" class="space-y-6">
+          <div class="card">
+            <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.lobehub.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.lobehub.description") }}
+              </p>
+            </div>
+
+            <div class="space-y-5 p-6">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <label class="input-label mb-0">
+                    {{ t("admin.settings.lobehub.enabled") }}
+                  </label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.lobehub.enabledHint") }}
+                  </p>
+                </div>
+                <Toggle v-model="form.lobehub_enabled" />
+              </div>
+
+              <template v-if="form.lobehub_enabled">
+                <div>
+                  <label class="input-label">
+                    {{ t("admin.settings.lobehub.chatUrl") }}
+                  </label>
+                  <input
+                    v-model="form.lobehub_chat_url"
+                    type="text"
+                    class="input"
+                    :placeholder="t('admin.settings.lobehub.chatUrlPlaceholder')"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.lobehub.chatUrlHint") }}
+                  </p>
+                </div>
+
+                <div>
+                  <label class="input-label">
+                    {{ t("admin.settings.lobehub.oidcIssuer") }}
+                  </label>
+                  <input
+                    v-model="form.lobehub_oidc_issuer"
+                    type="text"
+                    class="input"
+                    :placeholder="t('admin.settings.lobehub.oidcIssuerPlaceholder')"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.lobehub.oidcIssuerHint") }}
+                  </p>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="input-label">
+                      {{ t("admin.settings.lobehub.clientId") }}
+                    </label>
+                    <input
+                      v-model="form.lobehub_oidc_client_id"
+                      type="text"
+                      class="input"
+                      :placeholder="t('admin.settings.lobehub.clientIdPlaceholder')"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.lobehub.clientIdHint") }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t("admin.settings.lobehub.clientSecret") }}
+                    </label>
+                    <input
+                      v-model="form.lobehub_oidc_client_secret"
+                      type="password"
+                      class="input"
+                      autocomplete="new-password"
+                      :placeholder="
+                        form.lobehub_oidc_client_secret_configured
+                          ? t('admin.settings.lobehub.clientSecretConfiguredPlaceholder')
+                          : t('admin.settings.lobehub.clientSecretPlaceholder')
+                      "
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{
+                        form.lobehub_oidc_client_secret_configured
+                          ? t("admin.settings.lobehub.clientSecretConfiguredHint")
+                          : t("admin.settings.lobehub.clientSecretHint")
+                      }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label class="input-label">
+                      {{ t("admin.settings.lobehub.defaultProvider") }}
+                    </label>
+                    <input
+                      v-model="form.lobehub_default_provider"
+                      type="text"
+                      class="input"
+                      placeholder="openai"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.lobehub.defaultProviderHint") }}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label class="input-label">
+                      {{ t("admin.settings.lobehub.defaultModel") }}
+                    </label>
+                    <input
+                      v-model="form.lobehub_default_model"
+                      type="text"
+                      class="input"
+                      :placeholder="t('admin.settings.lobehub.defaultModelPlaceholder')"
+                    />
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.lobehub.defaultModelHint") }}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="input-label">
+                    {{ t("admin.settings.lobehub.runtimeConfigVersion") }}
+                  </label>
+                  <input
+                    v-model="form.lobehub_runtime_config_version"
+                    type="text"
+                    class="input"
+                    :placeholder="t('admin.settings.lobehub.runtimeConfigVersionPlaceholder')"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.lobehub.runtimeConfigVersionHint") }}
+                  </p>
+                </div>
+              </template>
+
+              <div class="flex items-center justify-between gap-4 border-t border-gray-100 pt-5 dark:border-dark-700">
+                <div>
+                  <label class="input-label mb-0">
+                    {{ t("admin.settings.lobehub.hideImportButton") }}
+                  </label>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.settings.lobehub.hideImportButtonHint") }}
+                  </p>
+                </div>
+                <Toggle v-model="form.hide_lobehub_import_button" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Tab: Payment -->
         <div v-show="activeTab === 'payment'" class="space-y-6">
           <!-- Payment System Settings -->
@@ -5208,6 +5367,7 @@ type SettingsTab =
   | "users"
   | "gateway"
   | "payment"
+  | "lobehub"
   | "email"
   | "backup";
 const activeTab = ref<SettingsTab>("general");
@@ -5218,6 +5378,7 @@ const settingsTabs = [
   { key: "users" as SettingsTab, icon: "user" as const },
   { key: "gateway" as SettingsTab, icon: "server" as const },
   { key: "payment" as SettingsTab, icon: "creditCard" as const },
+  { key: "lobehub" as SettingsTab, icon: "globe" as const },
   { key: "email" as SettingsTab, icon: "mail" as const },
   { key: "backup" as SettingsTab, icon: "database" as const },
 ];
@@ -5318,6 +5479,7 @@ type SettingsForm = Omit<
   wechat_connect_mp_enabled: boolean;
   wechat_connect_mobile_enabled: boolean;
   oidc_connect_client_secret: string;
+  lobehub_oidc_client_secret: string;
   force_email_on_third_party_signup: boolean;
   openai_advanced_scheduler_enabled: boolean;
 };
@@ -5346,6 +5508,17 @@ const form = reactive<SettingsForm>({
   home_content: "",
   backend_mode_enabled: false,
   hide_ccs_import_button: false,
+  lobehub_enabled: false,
+  lobehub_chat_url: "",
+  lobehub_oidc_issuer: "",
+  lobehub_oidc_client_id: "",
+  lobehub_oidc_client_secret: "",
+  lobehub_oidc_client_secret_configured: false,
+  lobehub_default_provider: "openai",
+  lobehub_default_model: "",
+  lobehub_enabled_models: [],
+  lobehub_runtime_config_version: "1",
+  hide_lobehub_import_button: false,
   payment_enabled: false,
   payment_min_amount: 1,
   payment_max_amount: 10000,
@@ -6010,6 +6183,7 @@ async function loadSettings() {
     form.wechat_connect_open_app_secret = "";
     form.wechat_connect_mp_app_secret = "";
     form.wechat_connect_mobile_app_secret = "";
+    form.lobehub_oidc_client_secret = "";
     const wechatCapabilities = resolveWeChatConnectModeCapabilities(
       settings.wechat_connect_open_enabled,
       settings.wechat_connect_mp_enabled,
@@ -6274,6 +6448,16 @@ async function saveSettings() {
       home_content: form.home_content,
       backend_mode_enabled: form.backend_mode_enabled,
       hide_ccs_import_button: form.hide_ccs_import_button,
+      lobehub_enabled: form.lobehub_enabled,
+      lobehub_chat_url: form.lobehub_chat_url,
+      lobehub_oidc_issuer: form.lobehub_oidc_issuer,
+      lobehub_oidc_client_id: form.lobehub_oidc_client_id,
+      lobehub_oidc_client_secret: form.lobehub_oidc_client_secret || undefined,
+      lobehub_default_provider: form.lobehub_default_provider,
+      lobehub_default_model: form.lobehub_default_model,
+      lobehub_enabled_models: form.lobehub_enabled_models,
+      lobehub_runtime_config_version: form.lobehub_runtime_config_version,
+      hide_lobehub_import_button: form.hide_lobehub_import_button,
       table_default_page_size: form.table_default_page_size,
       table_page_size_options: form.table_page_size_options,
       custom_menu_items: form.custom_menu_items,
@@ -6431,6 +6615,7 @@ async function saveSettings() {
     form.wechat_connect_open_app_secret = "";
     form.wechat_connect_mp_app_secret = "";
     form.wechat_connect_mobile_app_secret = "";
+    form.lobehub_oidc_client_secret = "";
     const updatedWechatCapabilities = resolveWeChatConnectModeCapabilities(
       updated.wechat_connect_open_enabled,
       updated.wechat_connect_mp_enabled,
