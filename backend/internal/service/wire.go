@@ -404,6 +404,37 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg)
 }
 
+// ProvideLobeHubLaunchService creates LobeHubLaunchService with DI-compatible types.
+func ProvideLobeHubLaunchService(
+	settingService *SettingService,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubLaunchStateStore,
+	ssoService *LobeHubSSOService,
+) *LobeHubLaunchService {
+	return NewLobeHubLaunchService(settingService, apiKeyService, stateStore, ssoService, nil)
+}
+
+// ProvideLobeHubOIDCService creates LobeHubOIDCService with DI-compatible types.
+func ProvideLobeHubOIDCService(
+	settingService *SettingService,
+	userRepo UserRepository,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubOIDCService {
+	return NewLobeHubOIDCService(settingService, userRepo, stateStore, signingKeyProvider, nil)
+}
+
+// ProvideLobeHubSSOService creates LobeHubSSOService with DI-compatible types.
+func ProvideLobeHubSSOService(
+	settingService *SettingService,
+	userStore LobeHubUserPreferenceStore,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubSSOService {
+	return NewLobeHubSSOService(settingService, userStore, apiKeyService, stateStore, signingKeyProvider, nil)
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
@@ -487,6 +518,9 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	NewModelPricingResolver,
 	NewAffiliateService,
+	ProvideLobeHubLaunchService,
+	ProvideLobeHubOIDCService,
+	ProvideLobeHubSSOService,
 	ProvidePaymentConfigService,
 	NewPaymentService,
 	ProvidePaymentOrderExpiryService,

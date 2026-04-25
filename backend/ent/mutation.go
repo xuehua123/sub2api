@@ -37438,6 +37438,8 @@ type UserMutation struct {
 	concurrency                   *int
 	addconcurrency                *int
 	status                        *string
+	default_chat_api_key_id       *int64
+	adddefault_chat_api_key_id    *int64
 	username                      *string
 	notes                         *string
 	totp_secret_encrypted         *string
@@ -37970,6 +37972,76 @@ func (m *UserMutation) OldStatus(ctx context.Context) (v string, err error) {
 // ResetStatus resets all changes to the "status" field.
 func (m *UserMutation) ResetStatus() {
 	m.status = nil
+}
+
+// SetDefaultChatAPIKeyID sets the "default_chat_api_key_id" field.
+func (m *UserMutation) SetDefaultChatAPIKeyID(i int64) {
+	m.default_chat_api_key_id = &i
+	m.adddefault_chat_api_key_id = nil
+}
+
+// DefaultChatAPIKeyID returns the value of the "default_chat_api_key_id" field in the mutation.
+func (m *UserMutation) DefaultChatAPIKeyID() (r int64, exists bool) {
+	v := m.default_chat_api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldDefaultChatAPIKeyID returns the old "default_chat_api_key_id" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldDefaultChatAPIKeyID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldDefaultChatAPIKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldDefaultChatAPIKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldDefaultChatAPIKeyID: %w", err)
+	}
+	return oldValue.DefaultChatAPIKeyID, nil
+}
+
+// AddDefaultChatAPIKeyID adds i to the "default_chat_api_key_id" field.
+func (m *UserMutation) AddDefaultChatAPIKeyID(i int64) {
+	if m.adddefault_chat_api_key_id != nil {
+		*m.adddefault_chat_api_key_id += i
+	} else {
+		m.adddefault_chat_api_key_id = &i
+	}
+}
+
+// AddedDefaultChatAPIKeyID returns the value that was added to the "default_chat_api_key_id" field in this mutation.
+func (m *UserMutation) AddedDefaultChatAPIKeyID() (r int64, exists bool) {
+	v := m.adddefault_chat_api_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearDefaultChatAPIKeyID clears the value of the "default_chat_api_key_id" field.
+func (m *UserMutation) ClearDefaultChatAPIKeyID() {
+	m.default_chat_api_key_id = nil
+	m.adddefault_chat_api_key_id = nil
+	m.clearedFields[user.FieldDefaultChatAPIKeyID] = struct{}{}
+}
+
+// DefaultChatAPIKeyIDCleared returns if the "default_chat_api_key_id" field was cleared in this mutation.
+func (m *UserMutation) DefaultChatAPIKeyIDCleared() bool {
+	_, ok := m.clearedFields[user.FieldDefaultChatAPIKeyID]
+	return ok
+}
+
+// ResetDefaultChatAPIKeyID resets all changes to the "default_chat_api_key_id" field.
+func (m *UserMutation) ResetDefaultChatAPIKeyID() {
+	m.default_chat_api_key_id = nil
+	m.adddefault_chat_api_key_id = nil
+	delete(m.clearedFields, user.FieldDefaultChatAPIKeyID)
 }
 
 // SetUsername sets the "username" field.
@@ -39284,7 +39356,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -39311,6 +39383,9 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.status != nil {
 		fields = append(fields, user.FieldStatus)
+	}
+	if m.default_chat_api_key_id != nil {
+		fields = append(fields, user.FieldDefaultChatAPIKeyID)
 	}
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
@@ -39380,6 +39455,8 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Concurrency()
 	case user.FieldStatus:
 		return m.Status()
+	case user.FieldDefaultChatAPIKeyID:
+		return m.DefaultChatAPIKeyID()
 	case user.FieldUsername:
 		return m.Username()
 	case user.FieldNotes:
@@ -39435,6 +39512,8 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldConcurrency(ctx)
 	case user.FieldStatus:
 		return m.OldStatus(ctx)
+	case user.FieldDefaultChatAPIKeyID:
+		return m.OldDefaultChatAPIKeyID(ctx)
 	case user.FieldUsername:
 		return m.OldUsername(ctx)
 	case user.FieldNotes:
@@ -39534,6 +39613,13 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetStatus(v)
+		return nil
+	case user.FieldDefaultChatAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetDefaultChatAPIKeyID(v)
 		return nil
 	case user.FieldUsername:
 		v, ok := value.(string)
@@ -39647,6 +39733,9 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addconcurrency != nil {
 		fields = append(fields, user.FieldConcurrency)
 	}
+	if m.adddefault_chat_api_key_id != nil {
+		fields = append(fields, user.FieldDefaultChatAPIKeyID)
+	}
 	if m.addbalance_notify_threshold != nil {
 		fields = append(fields, user.FieldBalanceNotifyThreshold)
 	}
@@ -39668,6 +39757,8 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedBalance()
 	case user.FieldConcurrency:
 		return m.AddedConcurrency()
+	case user.FieldDefaultChatAPIKeyID:
+		return m.AddedDefaultChatAPIKeyID()
 	case user.FieldBalanceNotifyThreshold:
 		return m.AddedBalanceNotifyThreshold()
 	case user.FieldTotalRecharged:
@@ -39696,6 +39787,13 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddConcurrency(v)
+		return nil
+	case user.FieldDefaultChatAPIKeyID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddDefaultChatAPIKeyID(v)
 		return nil
 	case user.FieldBalanceNotifyThreshold:
 		v, ok := value.(float64)
@@ -39729,6 +39827,9 @@ func (m *UserMutation) ClearedFields() []string {
 	if m.FieldCleared(user.FieldDeletedAt) {
 		fields = append(fields, user.FieldDeletedAt)
 	}
+	if m.FieldCleared(user.FieldDefaultChatAPIKeyID) {
+		fields = append(fields, user.FieldDefaultChatAPIKeyID)
+	}
 	if m.FieldCleared(user.FieldTotpSecretEncrypted) {
 		fields = append(fields, user.FieldTotpSecretEncrypted)
 	}
@@ -39760,6 +39861,9 @@ func (m *UserMutation) ClearField(name string) error {
 	switch name {
 	case user.FieldDeletedAt:
 		m.ClearDeletedAt()
+		return nil
+	case user.FieldDefaultChatAPIKeyID:
+		m.ClearDefaultChatAPIKeyID()
 		return nil
 	case user.FieldTotpSecretEncrypted:
 		m.ClearTotpSecretEncrypted()
@@ -39810,6 +39914,9 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldStatus:
 		m.ResetStatus()
+		return nil
+	case user.FieldDefaultChatAPIKeyID:
+		m.ResetDefaultChatAPIKeyID()
 		return nil
 	case user.FieldUsername:
 		m.ResetUsername()

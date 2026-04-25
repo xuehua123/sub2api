@@ -33,6 +33,8 @@ const (
 	FieldConcurrency = "concurrency"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
+	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// FieldUsername holds the string denoting the username field in the database.
 	FieldUsername = "username"
 	// FieldNotes holds the string denoting the notes field in the database.
@@ -192,6 +194,7 @@ var Columns = []string{
 	FieldBalance,
 	FieldConcurrency,
 	FieldStatus,
+	FieldDefaultChatAPIKeyID,
 	FieldUsername,
 	FieldNotes,
 	FieldTotpSecretEncrypted,
@@ -329,6 +332,11 @@ func ByConcurrency(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
+func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
 }
 
 // ByUsername orders the results by the username field.

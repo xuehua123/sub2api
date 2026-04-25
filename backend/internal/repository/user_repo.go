@@ -90,6 +90,7 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
+		SetNillableDefaultChatAPIKeyID(userIn.DefaultChatAPIKeyID).
 		SetSignupSource(userSignupSourceOrDefault(userIn.SignupSource)).
 		SetNillableLastLoginAt(userIn.LastLoginAt).
 		SetNillableLastActiveAt(userIn.LastActiveAt).
@@ -216,6 +217,7 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetBalance(userIn.Balance).
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
+		SetNillableDefaultChatAPIKeyID(userIn.DefaultChatAPIKeyID).
 		SetBalanceNotifyEnabled(userIn.BalanceNotifyEnabled).
 		SetBalanceNotifyThresholdType(userIn.BalanceNotifyThresholdType).
 		SetNillableBalanceNotifyThreshold(userIn.BalanceNotifyThreshold).
@@ -230,6 +232,9 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	}
 	if userIn.LastActiveAt != nil {
 		updateOp = updateOp.SetLastActiveAt(*userIn.LastActiveAt)
+	}
+	if userIn.DefaultChatAPIKeyID == nil {
+		updateOp = updateOp.ClearDefaultChatAPIKeyID()
 	}
 	if userIn.BalanceNotifyThreshold == nil {
 		updateOp = updateOp.ClearBalanceNotifyThreshold()
@@ -253,6 +258,21 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	}
 
 	userIn.UpdatedAt = updated.UpdatedAt
+	return nil
+}
+
+// UpdateDefaultChatAPIKeyID updates the user's default LobeHub Chat API key ID.
+func (r *userRepository) UpdateDefaultChatAPIKeyID(ctx context.Context, userID int64, apiKeyID *int64) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.User.UpdateOneID(userID)
+	if apiKeyID == nil || *apiKeyID <= 0 {
+		update = update.ClearDefaultChatAPIKeyID()
+	} else {
+		update = update.SetDefaultChatAPIKeyID(*apiKeyID)
+	}
+	if _, err := update.Save(ctx); err != nil {
+		return translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
 	return nil
 }
 

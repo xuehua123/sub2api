@@ -447,6 +447,14 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingPaymentEnabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
+		// LobeHub public settings
+		SettingKeyLobeHubEnabled,
+		SettingKeyLobeHubChatURL,
+		SettingKeyLobeHubOIDCIssuer,
+		SettingKeyLobeHubDefaultProvider,
+		SettingKeyLobeHubDefaultModel,
+		SettingKeyLobeHubRuntimeConfigVersion,
+		SettingKeyHideLobeHubImportButton,
 		SettingKeyBalanceLowNotifyEnabled,
 		SettingKeyBalanceLowNotifyThreshold,
 		SettingKeyBalanceLowNotifyRechargeURL,
@@ -533,6 +541,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		PaymentEnabled:                   settings[SettingPaymentEnabled] == "true",
 		OIDCOAuthEnabled:                 oidcEnabled,
 		OIDCOAuthProviderName:            oidcProviderName,
+		LobeHubEnabled:                   settings[SettingKeyLobeHubEnabled] == "true",
+		LobeHubChatURL:                   strings.TrimSpace(settings[SettingKeyLobeHubChatURL]),
+		LobeHubOIDCIssuer:                strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer]),
+		LobeHubDefaultProvider:           strings.TrimSpace(settings[SettingKeyLobeHubDefaultProvider]),
+		LobeHubDefaultModel:              strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel]),
+		LobeHubRuntimeConfigVersion:      strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion]),
+		HideLobeHubImportButton:          settings[SettingKeyHideLobeHubImportButton] == "true",
 		BalanceLowNotifyEnabled:          settings[SettingKeyBalanceLowNotifyEnabled] == "true",
 		AccountQuotaNotifyEnabled:        settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
 		BalanceLowNotifyThreshold:        balanceLowNotifyThreshold,
@@ -678,6 +693,13 @@ type PublicSettingsInjectionPayload struct {
 	OIDCOAuthProviderName            string          `json:"oidc_oauth_provider_name"`
 	BackendModeEnabled               bool            `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool            `json:"payment_enabled"`
+	LobeHubEnabled                   bool            `json:"lobehub_enabled"`
+	LobeHubChatURL                   string          `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                string          `json:"lobehub_oidc_issuer"`
+	LobeHubDefaultProvider           string          `json:"lobehub_default_provider"`
+	LobeHubDefaultModel              string          `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion      string          `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton          bool            `json:"hide_lobehub_import_button"`
 	Version                          string          `json:"version"`
 	BalanceLowNotifyEnabled          bool            `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool            `json:"account_quota_notify_enabled"`
@@ -734,6 +756,13 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		OIDCOAuthProviderName:            settings.OIDCOAuthProviderName,
 		BackendModeEnabled:               settings.BackendModeEnabled,
 		PaymentEnabled:                   settings.PaymentEnabled,
+		LobeHubEnabled:                   settings.LobeHubEnabled,
+		LobeHubChatURL:                   settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,
+		LobeHubDefaultProvider:           settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:              settings.LobeHubDefaultModel,
+		LobeHubRuntimeConfigVersion:      settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:          settings.HideLobeHubImportButton,
 		Version:                          s.version,
 		BalanceLowNotifyEnabled:          settings.BalanceLowNotifyEnabled,
 		AccountQuotaNotifyEnabled:        settings.AccountQuotaNotifyEnabled,
@@ -1227,6 +1256,25 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
+
+	// LobeHub integration
+	updates[SettingKeyLobeHubEnabled] = strconv.FormatBool(settings.LobeHubEnabled)
+	updates[SettingKeyLobeHubChatURL] = strings.TrimSpace(settings.LobeHubChatURL)
+	updates[SettingKeyLobeHubOIDCIssuer] = strings.TrimSpace(settings.LobeHubOIDCIssuer)
+	updates[SettingKeyLobeHubOIDCClientID] = strings.TrimSpace(settings.LobeHubOIDCClientID)
+	if settings.LobeHubOIDCClientSecret != "" {
+		updates[SettingKeyLobeHubOIDCClientSecret] = strings.TrimSpace(settings.LobeHubOIDCClientSecret)
+	}
+	updates[SettingKeyLobeHubDefaultProvider] = strings.TrimSpace(settings.LobeHubDefaultProvider)
+	updates[SettingKeyLobeHubDefaultModel] = strings.TrimSpace(settings.LobeHubDefaultModel)
+	modelsJSON, err := json.Marshal(settings.LobeHubEnabledModels)
+	if err != nil {
+		return nil, fmt.Errorf("marshal lobehub enabled models: %w", err)
+	}
+	updates[SettingKeyLobeHubEnabledModels] = string(modelsJSON)
+	updates[SettingKeyLobeHubRuntimeConfigVersion] = strings.TrimSpace(settings.LobeHubRuntimeConfigVersion)
+	updates[SettingKeyHideLobeHubImportButton] = strconv.FormatBool(settings.HideLobeHubImportButton)
+
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -1806,6 +1854,18 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
 		SettingKeyAffiliateEnabled: "false",
 
+		// LobeHub integration (default disabled; opt-in)
+		SettingKeyLobeHubEnabled:              "false",
+		SettingKeyLobeHubChatURL:              "",
+		SettingKeyLobeHubOIDCIssuer:           "",
+		SettingKeyLobeHubOIDCClientID:         "",
+		SettingKeyLobeHubOIDCClientSecret:     "",
+		SettingKeyLobeHubDefaultProvider:      "openai",
+		SettingKeyLobeHubDefaultModel:         "",
+		SettingKeyLobeHubEnabledModels:        "[]",
+		SettingKeyLobeHubRuntimeConfigVersion: "1",
+		SettingKeyHideLobeHubImportButton:     "false",
+
 		// Claude Code version check (default: empty = disabled)
 		SettingKeyMinClaudeCodeVersion: "",
 		SettingKeyMaxClaudeCodeVersion: "",
@@ -2145,6 +2205,19 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
 
+	// LobeHub integration settings
+	result.LobeHubEnabled = settings[SettingKeyLobeHubEnabled] == "true"
+	result.LobeHubChatURL = strings.TrimSpace(settings[SettingKeyLobeHubChatURL])
+	result.LobeHubOIDCIssuer = strings.TrimSpace(settings[SettingKeyLobeHubOIDCIssuer])
+	result.LobeHubOIDCClientID = strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientID])
+	result.LobeHubOIDCClientSecret = strings.TrimSpace(settings[SettingKeyLobeHubOIDCClientSecret])
+	result.LobeHubOIDCClientSecretConfigured = result.LobeHubOIDCClientSecret != ""
+	result.LobeHubDefaultProvider = strings.TrimSpace(settings[SettingKeyLobeHubDefaultProvider])
+	result.LobeHubDefaultModel = strings.TrimSpace(settings[SettingKeyLobeHubDefaultModel])
+	result.LobeHubEnabledModels = parseNormalizedStringSliceSetting(settings[SettingKeyLobeHubEnabledModels])
+	result.LobeHubRuntimeConfigVersion = strings.TrimSpace(settings[SettingKeyLobeHubRuntimeConfigVersion])
+	result.HideLobeHubImportButton = settings[SettingKeyHideLobeHubImportButton] == "true"
+
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {
 		var wsCfg WebSearchEmulationConfig
@@ -2320,6 +2393,33 @@ func parseTablePreferences(defaultPageSizeRaw, optionsRaw string) (int, []int) {
 	}
 
 	return normalizeTablePreferences(defaultPageSize, options)
+}
+
+func parseNormalizedStringSliceSetting(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []string{}
+	}
+
+	var values []string
+	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func normalizeTablePreferences(defaultPageSize int, options []int) (int, []int) {
