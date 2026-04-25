@@ -62,6 +62,10 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 	return newSchedulerCacheWithChunkSizes(rdb, mgetChunkSize, writeChunkSize)
 }
 
+func ProvideLobeHubUserPreferenceStore(client *ent.Client, sqlDB *sql.DB) service.LobeHubUserPreferenceStore {
+	return newUserRepositoryWithSQL(client, sqlDB)
+}
+
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
 	NewUserRepository,
@@ -92,6 +96,12 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRepository,
 	NewChannelMonitorRequestTemplateRepository,
 	NewAffiliateRepository,
+
+	// LobeHub state stores
+	NewLobeHubLaunchStateStore,
+	NewLobeHubOIDCStateStore,
+	NewLobeHubOIDCSigningKeyProvider,
+	ProvideLobeHubUserPreferenceStore,
 
 	// Cache implementations
 	NewGatewayCache,

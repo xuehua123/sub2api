@@ -322,6 +322,18 @@ const (
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 false）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
 
+	// LobeHub Integration
+	SettingKeyLobeHubEnabled              = "lobehub_enabled"
+	SettingKeyLobeHubChatURL              = "lobehub_chat_url"
+	SettingKeyLobeHubOIDCIssuer           = "lobehub_oidc_issuer"
+	SettingKeyLobeHubOIDCClientID         = "lobehub_oidc_client_id"
+	SettingKeyLobeHubOIDCClientSecret     = "lobehub_oidc_client_secret"
+	SettingKeyLobeHubDefaultProvider      = "lobehub_default_provider"
+	SettingKeyLobeHubDefaultModel         = "lobehub_default_model"
+	SettingKeyLobeHubEnabledModels        = "lobehub_enabled_models"
+	SettingKeyLobeHubRuntimeConfigVersion = "lobehub_runtime_config_version"
+	SettingKeyHideLobeHubImportButton     = "hide_lobehub_import_button"
+
 	// Balance Low Notification
 	SettingKeyBalanceLowNotifyEnabled     = "balance_low_notify_enabled"      // 全局开关
 	SettingKeyBalanceLowNotifyThreshold   = "balance_low_notify_threshold"    // 默认阈值（USD）

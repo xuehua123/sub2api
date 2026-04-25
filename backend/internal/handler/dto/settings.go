@@ -143,6 +143,18 @@ type SystemSettings struct {
 	EnableMetadataPassthrough    bool `json:"enable_metadata_passthrough"`
 	EnableCCHSigning             bool `json:"enable_cch_signing"`
 
+	// LobeHub integration
+	LobeHubEnabled                    bool     `json:"lobehub_enabled"`
+	LobeHubChatURL                    string   `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                 string   `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID               string   `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecretConfigured bool     `json:"lobehub_oidc_client_secret_configured"`
+	LobeHubDefaultProvider            string   `json:"lobehub_default_provider"`
+	LobeHubDefaultModel               string   `json:"lobehub_default_model"`
+	LobeHubEnabledModels              []string `json:"lobehub_enabled_models"`
+	LobeHubRuntimeConfigVersion       string   `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton           bool     `json:"hide_lobehub_import_button"`
+
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
 
@@ -237,6 +249,13 @@ type PublicSettings struct {
 	SoraClientEnabled                bool             `json:"sora_client_enabled"`
 	BackendModeEnabled               bool             `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool             `json:"payment_enabled"`
+	LobeHubEnabled                   bool             `json:"lobehub_enabled"`
+	LobeHubChatURL                   string           `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                string           `json:"lobehub_oidc_issuer"`
+	LobeHubDefaultProvider           string           `json:"lobehub_default_provider"`
+	LobeHubDefaultModel              string           `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion      string           `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton          bool             `json:"hide_lobehub_import_button"`
 	Version                          string           `json:"version"`
 	BalanceLowNotifyEnabled          bool             `json:"balance_low_notify_enabled"`
 	AccountQuotaNotifyEnabled        bool             `json:"account_quota_notify_enabled"`

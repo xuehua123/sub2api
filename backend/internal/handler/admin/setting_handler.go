@@ -206,6 +206,16 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableFingerprintUnification:           settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       settings.EnableCCHSigning,
+		LobeHubEnabled:                         settings.LobeHubEnabled,
+		LobeHubChatURL:                         settings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                      settings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                    settings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:      settings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:                 settings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                    settings.LobeHubDefaultModel,
+		LobeHubEnabledModels:                   settings.LobeHubEnabledModels,
+		LobeHubRuntimeConfigVersion:            settings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:                settings.HideLobeHubImportButton,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
 		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
@@ -396,6 +406,18 @@ type UpdateSettingsRequest struct {
 	EnableFingerprintUnification *bool `json:"enable_fingerprint_unification"`
 	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
 	EnableCCHSigning             *bool `json:"enable_cch_signing"`
+
+	// LobeHub integration
+	LobeHubEnabled              *bool     `json:"lobehub_enabled"`
+	LobeHubChatURL              *string   `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer           *string   `json:"lobehub_oidc_issuer"`
+	LobeHubOIDCClientID         *string   `json:"lobehub_oidc_client_id"`
+	LobeHubOIDCClientSecret     *string   `json:"lobehub_oidc_client_secret"`
+	LobeHubDefaultProvider      *string   `json:"lobehub_default_provider"`
+	LobeHubDefaultModel         *string   `json:"lobehub_default_model"`
+	LobeHubEnabledModels        *[]string `json:"lobehub_enabled_models"`
+	LobeHubRuntimeConfigVersion *string   `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton     *bool     `json:"hide_lobehub_import_button"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -1059,6 +1081,83 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	// LobeHub configuration supports partial updates; omitted fields keep current values.
+	lobeHubEnabled := previousSettings.LobeHubEnabled
+	if req.LobeHubEnabled != nil {
+		lobeHubEnabled = *req.LobeHubEnabled
+	}
+	lobeHubChatURL := previousSettings.LobeHubChatURL
+	if req.LobeHubChatURL != nil {
+		lobeHubChatURL = strings.TrimSpace(*req.LobeHubChatURL)
+	}
+	lobeHubOIDCIssuer := previousSettings.LobeHubOIDCIssuer
+	if req.LobeHubOIDCIssuer != nil {
+		lobeHubOIDCIssuer = strings.TrimSpace(*req.LobeHubOIDCIssuer)
+	}
+	lobeHubOIDCClientID := previousSettings.LobeHubOIDCClientID
+	if req.LobeHubOIDCClientID != nil {
+		lobeHubOIDCClientID = strings.TrimSpace(*req.LobeHubOIDCClientID)
+	}
+	lobeHubOIDCClientSecret := previousSettings.LobeHubOIDCClientSecret
+	if req.LobeHubOIDCClientSecret != nil {
+		lobeHubOIDCClientSecret = strings.TrimSpace(*req.LobeHubOIDCClientSecret)
+		if lobeHubOIDCClientSecret == "" {
+			lobeHubOIDCClientSecret = previousSettings.LobeHubOIDCClientSecret
+		}
+	}
+	lobeHubDefaultProvider := previousSettings.LobeHubDefaultProvider
+	if req.LobeHubDefaultProvider != nil {
+		lobeHubDefaultProvider = strings.TrimSpace(*req.LobeHubDefaultProvider)
+	}
+	if lobeHubDefaultProvider == "" {
+		lobeHubDefaultProvider = "openai"
+	}
+	lobeHubDefaultModel := previousSettings.LobeHubDefaultModel
+	if req.LobeHubDefaultModel != nil {
+		lobeHubDefaultModel = strings.TrimSpace(*req.LobeHubDefaultModel)
+	}
+	lobeHubEnabledModels := normalizeStringSlice(previousSettings.LobeHubEnabledModels)
+	if req.LobeHubEnabledModels != nil {
+		lobeHubEnabledModels = normalizeStringSlice(*req.LobeHubEnabledModels)
+	}
+	lobeHubRuntimeConfigVersion := previousSettings.LobeHubRuntimeConfigVersion
+	if req.LobeHubRuntimeConfigVersion != nil {
+		lobeHubRuntimeConfigVersion = strings.TrimSpace(*req.LobeHubRuntimeConfigVersion)
+	}
+	if lobeHubRuntimeConfigVersion == "" {
+		lobeHubRuntimeConfigVersion = "1"
+	}
+	hideLobeHubImportButton := previousSettings.HideLobeHubImportButton
+	if req.HideLobeHubImportButton != nil {
+		hideLobeHubImportButton = *req.HideLobeHubImportButton
+	}
+	if lobeHubEnabled {
+		if lobeHubChatURL == "" {
+			response.BadRequest(c, "LobeHub Chat URL is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(lobeHubChatURL); err != nil {
+			response.BadRequest(c, "LobeHub Chat URL must be an absolute http(s) URL")
+			return
+		}
+		if lobeHubOIDCIssuer == "" {
+			response.BadRequest(c, "LobeHub OIDC Issuer is required when enabled")
+			return
+		}
+		if err := config.ValidateAbsoluteHTTPURL(lobeHubOIDCIssuer); err != nil {
+			response.BadRequest(c, "LobeHub OIDC Issuer must be an absolute http(s) URL")
+			return
+		}
+		if lobeHubOIDCClientID == "" {
+			response.BadRequest(c, "LobeHub OIDC Client ID is required when enabled")
+			return
+		}
+		if lobeHubOIDCClientSecret == "" {
+			response.BadRequest(c, "LobeHub OIDC Client Secret is required when enabled")
+			return
+		}
+	}
+
 	settings := &service.SystemSettings{
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
@@ -1192,6 +1291,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableCCHSigning
 		}(),
+		LobeHubEnabled:              lobeHubEnabled,
+		LobeHubChatURL:              lobeHubChatURL,
+		LobeHubOIDCIssuer:           lobeHubOIDCIssuer,
+		LobeHubOIDCClientID:         lobeHubOIDCClientID,
+		LobeHubOIDCClientSecret:     lobeHubOIDCClientSecret,
+		LobeHubDefaultProvider:      lobeHubDefaultProvider,
+		LobeHubDefaultModel:         lobeHubDefaultModel,
+		LobeHubEnabledModels:        lobeHubEnabledModels,
+		LobeHubRuntimeConfigVersion: lobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:     hideLobeHubImportButton,
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
 				return strings.TrimSpace(*req.PaymentVisibleMethodAlipaySource)
@@ -1478,6 +1587,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableFingerprintUnification:           updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:              updatedSettings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       updatedSettings.EnableCCHSigning,
+		LobeHubEnabled:                         updatedSettings.LobeHubEnabled,
+		LobeHubChatURL:                         updatedSettings.LobeHubChatURL,
+		LobeHubOIDCIssuer:                      updatedSettings.LobeHubOIDCIssuer,
+		LobeHubOIDCClientID:                    updatedSettings.LobeHubOIDCClientID,
+		LobeHubOIDCClientSecretConfigured:      updatedSettings.LobeHubOIDCClientSecretConfigured,
+		LobeHubDefaultProvider:                 updatedSettings.LobeHubDefaultProvider,
+		LobeHubDefaultModel:                    updatedSettings.LobeHubDefaultModel,
+		LobeHubEnabledModels:                   updatedSettings.LobeHubEnabledModels,
+		LobeHubRuntimeConfigVersion:            updatedSettings.LobeHubRuntimeConfigVersion,
+		HideLobeHubImportButton:                updatedSettings.HideLobeHubImportButton,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -1843,6 +1962,36 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.EnableCCHSigning != after.EnableCCHSigning {
 		changed = append(changed, "enable_cch_signing")
 	}
+	if before.LobeHubEnabled != after.LobeHubEnabled {
+		changed = append(changed, "lobehub_enabled")
+	}
+	if before.LobeHubChatURL != after.LobeHubChatURL {
+		changed = append(changed, "lobehub_chat_url")
+	}
+	if before.LobeHubOIDCIssuer != after.LobeHubOIDCIssuer {
+		changed = append(changed, "lobehub_oidc_issuer")
+	}
+	if before.LobeHubOIDCClientID != after.LobeHubOIDCClientID {
+		changed = append(changed, "lobehub_oidc_client_id")
+	}
+	if before.LobeHubOIDCClientSecretConfigured != after.LobeHubOIDCClientSecretConfigured {
+		changed = append(changed, "lobehub_oidc_client_secret")
+	}
+	if before.LobeHubDefaultProvider != after.LobeHubDefaultProvider {
+		changed = append(changed, "lobehub_default_provider")
+	}
+	if before.LobeHubDefaultModel != after.LobeHubDefaultModel {
+		changed = append(changed, "lobehub_default_model")
+	}
+	if !equalStringSlice(before.LobeHubEnabledModels, after.LobeHubEnabledModels) {
+		changed = append(changed, "lobehub_enabled_models")
+	}
+	if before.LobeHubRuntimeConfigVersion != after.LobeHubRuntimeConfigVersion {
+		changed = append(changed, "lobehub_runtime_config_version")
+	}
+	if before.HideLobeHubImportButton != after.HideLobeHubImportButton {
+		changed = append(changed, "hide_lobehub_import_button")
+	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")
 	}
@@ -1991,6 +2140,27 @@ func defaultSubscriptionsValueOrDefault(input *[]dto.DefaultSubscriptionSetting,
 		})
 	}
 	return result
+}
+
+func normalizeStringSlice(values []string) []string {
+	if len(values) == 0 {
+		return []string{}
+	}
+
+	seen := make(map[string]struct{}, len(values))
+	normalized := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		normalized = append(normalized, trimmed)
+	}
+	return normalized
 }
 
 func systemSettingsResponseData(settings dto.SystemSettings, authSourceDefaults *service.AuthSourceDefaultSettings) map[string]any {

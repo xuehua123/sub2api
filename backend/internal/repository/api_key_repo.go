@@ -661,6 +661,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		Balance:                    u.Balance,
 		Concurrency:                u.Concurrency,
 		Status:                     u.Status,
+		DefaultChatAPIKeyID:        u.DefaultChatAPIKeyID,
 		SignupSource:               u.SignupSource,
 		LastLoginAt:                u.LastLoginAt,
 		LastActiveAt:               u.LastActiveAt,

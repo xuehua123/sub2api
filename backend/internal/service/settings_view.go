@@ -150,6 +150,19 @@ type SystemSettings struct {
 	EnableMetadataPassthrough    bool // 是否透传客户端原始 metadata（默认 false）
 	EnableCCHSigning             bool // 是否对 billing header cch 进行签名（默认 false）
 
+	// LobeHub integration
+	LobeHubEnabled                    bool
+	LobeHubChatURL                    string
+	LobeHubOIDCIssuer                 string
+	LobeHubOIDCClientID               string
+	LobeHubOIDCClientSecret           string
+	LobeHubOIDCClientSecretConfigured bool
+	LobeHubDefaultProvider            string
+	LobeHubDefaultModel               string
+	LobeHubEnabledModels              []string
+	LobeHubRuntimeConfigVersion       string
+	HideLobeHubImportButton           bool
+
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool // 是否启用 web search 模拟
 
@@ -229,6 +242,15 @@ type PublicSettings struct {
 
 	// Affiliate (邀请返利) feature toggle
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	// LobeHub (public)
+	LobeHubEnabled              bool
+	LobeHubChatURL              string
+	LobeHubOIDCIssuer           string
+	LobeHubDefaultProvider      string
+	LobeHubDefaultModel         string
+	LobeHubRuntimeConfigVersion string
+	HideLobeHubImportButton     bool
 }
 
 type WeChatConnectOAuthConfig struct {
