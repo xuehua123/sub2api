@@ -258,6 +258,9 @@ func buildOpenAIImagesResponsesRequest(parsed *OpenAIImagesRequest, toolModel st
 		{path: "style", value: parsed.Style},
 	} {
 		if trimmed := strings.TrimSpace(field.value); trimmed != "" {
+			if field.path == "background" && strings.EqualFold(strings.TrimSpace(toolModel), "gpt-image-2") && isUnsupportedGPTImage2Background(trimmed) {
+				continue
+			}
 			tool, _ = sjson.SetBytes(tool, field.path, trimmed)
 		}
 	}

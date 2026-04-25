@@ -720,16 +720,37 @@ func stripUnsupportedOpenAIImagesNativeOptions(body []byte, contentType string, 
 	if err == nil && strings.EqualFold(mediaType, "multipart/form-data") {
 		return stripOpenAIImagesMultipartFields(body, contentType, map[string]struct{}{
 			"input_fidelity": {},
+		}, map[string]func(string) bool{
+			"background": isUnsupportedGPTImage2Background,
 		})
 	}
-	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.GetBytes(body, "input_fidelity").Exists() {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return body, contentType, nil
 	}
-	stripped, err := sjson.DeleteBytes(body, "input_fidelity")
-	if err != nil {
-		return nil, "", fmt.Errorf("strip unsupported image option input_fidelity: %w", err)
+	stripped := body
+	changed := false
+	if gjson.GetBytes(stripped, "input_fidelity").Exists() {
+		stripped, err = sjson.DeleteBytes(stripped, "input_fidelity")
+		if err != nil {
+			return nil, "", fmt.Errorf("strip unsupported image option input_fidelity: %w", err)
+		}
+		changed = true
+	}
+	if isUnsupportedGPTImage2Background(gjson.GetBytes(stripped, "background").String()) {
+		stripped, err = sjson.DeleteBytes(stripped, "background")
+		if err != nil {
+			return nil, "", fmt.Errorf("strip unsupported image option background: %w", err)
+		}
+		changed = true
+	}
+	if !changed {
+		return body, contentType, nil
 	}
 	return stripped, contentType, nil
+}
+
+func isUnsupportedGPTImage2Background(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "transparent")
 }
 
 func (s *OpenAIGatewayService) normalizeOpenAIImagesAPIKeyBody(
@@ -885,8 +906,8 @@ func rewriteOpenAIImagesMultipartModel(body []byte, contentType string, model st
 	return buffer.Bytes(), writer.FormDataContentType(), nil
 }
 
-func stripOpenAIImagesMultipartFields(body []byte, contentType string, fields map[string]struct{}) ([]byte, string, error) {
-	if len(fields) == 0 {
+func stripOpenAIImagesMultipartFields(body []byte, contentType string, fields map[string]struct{}, valueRules map[string]func(string) bool) ([]byte, string, error) {
+	if len(fields) == 0 && len(valueRules) == 0 {
 		return body, contentType, nil
 	}
 	_, params, err := mime.ParseMediaType(contentType)
@@ -917,6 +938,25 @@ func stripOpenAIImagesMultipartFields(body []byte, contentType string, fields ma
 			if _, shouldStrip := fields[formName]; shouldStrip {
 				changed = true
 				_ = part.Close()
+				continue
+			}
+			if shouldStrip, ok := valueRules[formName]; ok {
+				data, readErr := io.ReadAll(part)
+				_ = part.Close()
+				if readErr != nil {
+					return nil, "", fmt.Errorf("read multipart field %s: %w", formName, readErr)
+				}
+				if shouldStrip != nil && shouldStrip(string(data)) {
+					changed = true
+					continue
+				}
+				target, createErr := writer.CreatePart(cloneMultipartHeader(part.Header))
+				if createErr != nil {
+					return nil, "", fmt.Errorf("create multipart part: %w", createErr)
+				}
+				if _, writeErr := target.Write(data); writeErr != nil {
+					return nil, "", fmt.Errorf("copy multipart part: %w", writeErr)
+				}
 				continue
 			}
 		}

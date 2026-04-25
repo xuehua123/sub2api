@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -780,6 +781,87 @@ func TestBuildOpenAIImagesResponsesRequest_StripsInputFidelity(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, body)
 	require.False(t, gjson.GetBytes(body, "tools.0.input_fidelity").Exists())
+	require.Equal(t, "edit", gjson.GetBytes(body, "tools.0.action").String())
+}
+
+func TestStripUnsupportedOpenAIImagesNativeOptions_GPTImage2RemovesTransparentBackgroundJSON(t *testing.T) {
+	body := []byte(`{
+		"model":"gpt-image-2",
+		"prompt":"edit this image",
+		"background":"transparent",
+		"input_fidelity":"high",
+		"quality":"high"
+	}`)
+
+	stripped, contentType, err := stripUnsupportedOpenAIImagesNativeOptions(body, "application/json", "gpt-image-2")
+	require.NoError(t, err)
+	require.Equal(t, "application/json", contentType)
+	require.False(t, gjson.GetBytes(stripped, "background").Exists())
+	require.False(t, gjson.GetBytes(stripped, "input_fidelity").Exists())
+	require.Equal(t, "high", gjson.GetBytes(stripped, "quality").String())
+}
+
+func TestStripUnsupportedOpenAIImagesNativeOptions_GPTImage2RemovesTransparentBackgroundMultipart(t *testing.T) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "edit this image"))
+	require.NoError(t, writer.WriteField("background", "transparent"))
+	require.NoError(t, writer.WriteField("input_fidelity", "high"))
+	require.NoError(t, writer.WriteField("quality", "high"))
+	imagePart, err := writer.CreateFormFile("image", "source.png")
+	require.NoError(t, err)
+	_, err = imagePart.Write([]byte("png-image-content"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	stripped, contentType, err := stripUnsupportedOpenAIImagesNativeOptions(body.Bytes(), writer.FormDataContentType(), "gpt-image-2")
+	require.NoError(t, err)
+
+	mediaType, params, err := mime.ParseMediaType(contentType)
+	require.NoError(t, err)
+	require.Equal(t, "multipart/form-data", mediaType)
+	reader := multipart.NewReader(bytes.NewReader(stripped), params["boundary"])
+	fields := map[string]string{}
+	fileCount := 0
+	for {
+		part, err := reader.NextPart()
+		if err == io.EOF {
+			break
+		}
+		require.NoError(t, err)
+		data, err := io.ReadAll(part)
+		require.NoError(t, err)
+		if part.FileName() != "" {
+			fileCount++
+			require.Equal(t, "png-image-content", string(data))
+			continue
+		}
+		fields[part.FormName()] = string(data)
+	}
+
+	require.Equal(t, 1, fileCount)
+	require.NotContains(t, fields, "background")
+	require.NotContains(t, fields, "input_fidelity")
+	require.Equal(t, "high", fields["quality"])
+	require.Equal(t, "gpt-image-2", fields["model"])
+}
+
+func TestBuildOpenAIImagesResponsesRequest_StripsTransparentBackgroundForGPTImage2(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint:   openAIImagesEditsEndpoint,
+		Model:      "gpt-image-2",
+		Prompt:     "replace background",
+		Background: "transparent",
+		InputImageURLs: []string{
+			"https://example.com/source.png",
+		},
+	}
+
+	body, err := buildOpenAIImagesResponsesRequest(parsed, "gpt-image-2")
+	require.NoError(t, err)
+	require.NotNil(t, body)
+	require.False(t, gjson.GetBytes(body, "tools.0.background").Exists())
 	require.Equal(t, "edit", gjson.GetBytes(body, "tools.0.action").String())
 }
 
