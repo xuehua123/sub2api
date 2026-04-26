@@ -54,6 +54,9 @@ func (User) Fields() []ent.Field {
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),
+		field.Int64("default_chat_api_key_id").
+			Optional().
+			Nillable(),
 
 		// Optional profile fields (added later; default '' in DB migration)
 		field.String("username").
@@ -76,9 +79,6 @@ func (User) Fields() []ent.Field {
 			Nillable(),
 		field.Bool("referral_enabled").
 			Default(false),
-		field.Int64("default_chat_api_key_id").
-			Optional().
-			Nillable(),
 		field.String("signup_source").
 			Validate(func(value string) error {
 				switch value {

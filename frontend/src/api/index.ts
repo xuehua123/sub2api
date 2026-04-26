@@ -11,10 +11,7 @@ export { authAPI, isTotp2FARequired, type LoginResponse } from './auth'
 
 // User APIs
 export { keysAPI } from './keys'
-export {
-  createLaunchTicket,
-  createOIDCWebSession
-} from './lobehub'
+export { createLaunchTicket, createOIDCWebSession, lobehubAPI } from './lobehub'
 export { usageAPI } from './usage'
 export { userAPI } from './user'
 export { redeemAPI, type RedeemHistoryItem } from './redeem'
@@ -22,7 +19,6 @@ export { paymentAPI } from './payment'
 export { userGroupsAPI } from './groups'
 export { userChannelsAPI } from './channels'
 export { totpAPI } from './totp'
-export { lobehubAPI } from './lobehub'
 export type {
   CreateLobeHubLaunchTicketResponse,
   CreateLobeHubOIDCWebSessionRequest,
@@ -30,7 +26,6 @@ export type {
 } from './lobehub'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
-
 // Admin APIs
 export { adminAPI } from './admin'
 

@@ -404,6 +404,43 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg)
 }
 
+// ProvideLobeHubLaunchService creates LobeHubLaunchService with DI-compatible types.
+func ProvideLobeHubLaunchService(
+	settingService *SettingService,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubLaunchStateStore,
+	ssoService *LobeHubSSOService,
+) *LobeHubLaunchService {
+	return NewLobeHubLaunchService(settingService, apiKeyService, stateStore, ssoService, nil)
+}
+
+// ProvideLobeHubOIDCService creates LobeHubOIDCService with DI-compatible types.
+func ProvideLobeHubOIDCService(
+	settingService *SettingService,
+	userRepo UserRepository,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubOIDCService {
+	return NewLobeHubOIDCService(settingService, userRepo, stateStore, signingKeyProvider, nil)
+}
+
+// ProvideLobeHubSSOService creates LobeHubSSOService with DI-compatible types.
+func ProvideLobeHubSSOService(
+	settingService *SettingService,
+	userStore LobeHubUserPreferenceStore,
+	apiKeyService *APIKeyService,
+	stateStore LobeHubOIDCStateStore,
+	signingKeyProvider LobeHubOIDCSigningKeyProvider,
+) *LobeHubSSOService {
+	return NewLobeHubSSOService(settingService, userStore, apiKeyService, stateStore, signingKeyProvider, nil)
+}
+
+// ProvideLobeHubUserPreferenceStore exposes the user repository through the
+// narrower LobeHub preference interface expected by SSO services.
+func ProvideLobeHubUserPreferenceStore(userRepo UserRepository) LobeHubUserPreferenceStore {
+	return userRepo
+}
+
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
@@ -487,6 +524,10 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	NewModelPricingResolver,
 	NewAffiliateService,
+	ProvideLobeHubUserPreferenceStore,
+	ProvideLobeHubLaunchService,
+	ProvideLobeHubOIDCService,
+	ProvideLobeHubSSOService,
 	ProvidePaymentConfigService,
 	NewPaymentService,
 	ProvidePaymentOrderExpiryService,
@@ -500,46 +541,11 @@ var ProviderSet = wire.NewSet(
 	NewReferralSettlementService,
 	NewReferralRefundService,
 
-	// LobeHub services
-	ProvideLobeHubLaunchService,
-	ProvideLobeHubOIDCService,
-	ProvideLobeHubSSOService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,
 	ProvideChannelMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
 )
-
-// ProvideLobeHubLaunchService creates LobeHubLaunchService with DI-compatible types.
-func ProvideLobeHubLaunchService(
-	settingService *SettingService,
-	apiKeyService *APIKeyService,
-	stateStore LobeHubLaunchStateStore,
-	ssoService *LobeHubSSOService,
-) *LobeHubLaunchService {
-	return NewLobeHubLaunchService(settingService, apiKeyService, stateStore, ssoService, nil)
-}
-
-// ProvideLobeHubOIDCService creates LobeHubOIDCService with DI-compatible types.
-func ProvideLobeHubOIDCService(
-	settingService *SettingService,
-	userRepo UserRepository,
-	stateStore LobeHubOIDCStateStore,
-	signingKeyProvider LobeHubOIDCSigningKeyProvider,
-) *LobeHubOIDCService {
-	return NewLobeHubOIDCService(settingService, userRepo, stateStore, signingKeyProvider, nil)
-}
-
-// ProvideLobeHubSSOService creates LobeHubSSOService with DI-compatible types.
-func ProvideLobeHubSSOService(
-	settingService *SettingService,
-	userRepo UserRepository,
-	apiKeyService *APIKeyService,
-	stateStore LobeHubOIDCStateStore,
-	signingKeyProvider LobeHubOIDCSigningKeyProvider,
-) *LobeHubSSOService {
-	return NewLobeHubSSOService(settingService, userRepo, apiKeyService, stateStore, signingKeyProvider, nil)
-}
 
 // payment.EncryptionKey type instead of raw []byte, avoiding Wire ambiguity.
 func ProvidePaymentConfigService(entClient *dbent.Client, settingRepo SettingRepository, key payment.EncryptionKey) *PaymentConfigService {

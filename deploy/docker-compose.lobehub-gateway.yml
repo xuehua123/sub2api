@@ -1,8 +1,6 @@
 services:
   lobehub-gateway:
-    build:
-      context: ..
-      dockerfile: gateway/Dockerfile
+    image: ${LOBEHUB_GATEWAY_IMAGE:-ghcr.io/xuehua123/sub2api-lobehub-gateway:latest}
     container_name: lobehub-gateway
     restart: unless-stopped
     ports:

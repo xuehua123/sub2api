@@ -36,6 +36,8 @@ type User struct {
 	Concurrency int `json:"concurrency,omitempty"`
 	// Status holds the value of the "status" field.
 	Status string `json:"status,omitempty"`
+	// DefaultChatAPIKeyID holds the value of the "default_chat_api_key_id" field.
+	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
 	// Username holds the value of the "username" field.
 	Username string `json:"username,omitempty"`
 	// Notes holds the value of the "notes" field.
@@ -48,8 +50,6 @@ type User struct {
 	TotpEnabledAt *time.Time `json:"totp_enabled_at,omitempty"`
 	// ReferralEnabled holds the value of the "referral_enabled" field.
 	ReferralEnabled bool `json:"referral_enabled,omitempty"`
-	// DefaultChatAPIKeyID holds the value of the "default_chat_api_key_id" field.
-	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
 	// SignupSource holds the value of the "signup_source" field.
 	SignupSource string `json:"signup_source,omitempty"`
 	// LastLoginAt holds the value of the "last_login_at" field.
@@ -438,6 +438,13 @@ func (_m *User) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Status = value.String
 			}
+		case user.FieldDefaultChatAPIKeyID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field default_chat_api_key_id", values[i])
+			} else if value.Valid {
+				_m.DefaultChatAPIKeyID = new(int64)
+				*_m.DefaultChatAPIKeyID = value.Int64
+			}
 		case user.FieldUsername:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field username", values[i])
@@ -475,13 +482,6 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field referral_enabled", values[i])
 			} else if value.Valid {
 				_m.ReferralEnabled = value.Bool
-			}
-		case user.FieldDefaultChatAPIKeyID:
-			if value, ok := values[i].(*sql.NullInt64); !ok {
-				return fmt.Errorf("unexpected type %T for field default_chat_api_key_id", values[i])
-			} else if value.Valid {
-				_m.DefaultChatAPIKeyID = new(int64)
-				*_m.DefaultChatAPIKeyID = value.Int64
 			}
 		case user.FieldSignupSource:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -725,6 +725,11 @@ func (_m *User) String() string {
 	builder.WriteString("status=")
 	builder.WriteString(_m.Status)
 	builder.WriteString(", ")
+	if v := _m.DefaultChatAPIKeyID; v != nil {
+		builder.WriteString("default_chat_api_key_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
 	builder.WriteString("username=")
 	builder.WriteString(_m.Username)
 	builder.WriteString(", ")
@@ -746,11 +751,6 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("referral_enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ReferralEnabled))
-	builder.WriteString(", ")
-	if v := _m.DefaultChatAPIKeyID; v != nil {
-		builder.WriteString("default_chat_api_key_id=")
-		builder.WriteString(fmt.Sprintf("%v", *v))
-	}
 	builder.WriteString(", ")
 	builder.WriteString("signup_source=")
 	builder.WriteString(_m.SignupSource)

@@ -33,6 +33,8 @@ const (
 	FieldConcurrency = "concurrency"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
+	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// FieldUsername holds the string denoting the username field in the database.
 	FieldUsername = "username"
 	// FieldNotes holds the string denoting the notes field in the database.
@@ -45,8 +47,6 @@ const (
 	FieldTotpEnabledAt = "totp_enabled_at"
 	// FieldReferralEnabled holds the string denoting the referral_enabled field in the database.
 	FieldReferralEnabled = "referral_enabled"
-	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
-	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// FieldSignupSource holds the string denoting the signup_source field in the database.
 	FieldSignupSource = "signup_source"
 	// FieldLastLoginAt holds the string denoting the last_login_at field in the database.
@@ -295,13 +295,13 @@ var Columns = []string{
 	FieldBalance,
 	FieldConcurrency,
 	FieldStatus,
+	FieldDefaultChatAPIKeyID,
 	FieldUsername,
 	FieldNotes,
 	FieldTotpSecretEncrypted,
 	FieldTotpEnabled,
 	FieldTotpEnabledAt,
 	FieldReferralEnabled,
-	FieldDefaultChatAPIKeyID,
 	FieldSignupSource,
 	FieldLastLoginAt,
 	FieldLastActiveAt,
@@ -438,6 +438,11 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
 }
 
+// ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
+func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
+}
+
 // ByUsername orders the results by the username field.
 func ByUsername(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUsername, opts...).ToFunc()
@@ -466,11 +471,6 @@ func ByTotpEnabledAt(opts ...sql.OrderTermOption) OrderOption {
 // ByReferralEnabled orders the results by the referral_enabled field.
 func ByReferralEnabled(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReferralEnabled, opts...).ToFunc()
-}
-
-// ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
-func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
 }
 
 // BySignupSource orders the results by the signup_source field.

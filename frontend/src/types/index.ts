@@ -227,6 +227,7 @@ export interface PublicSettings {
   lobehub_oidc_issuer: string
   lobehub_default_provider: string
   lobehub_default_model: string
+  lobehub_enabled_models: string[]
   lobehub_runtime_config_version: string
   hide_lobehub_import_button: boolean
   balance_low_notify_enabled: boolean

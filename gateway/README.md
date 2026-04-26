@@ -49,7 +49,9 @@ go test ./...
 go run ./cmd/lobehub-gateway
 ```
 
-## Build Image
+## Local Build Image
+
+Build locally or in CI only. Production hosts should pull the prebuilt gateway image and restart the service.
 
 ```bash
 docker build -f gateway/Dockerfile -t sub2api/lobehub-gateway:local .

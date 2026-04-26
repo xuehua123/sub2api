@@ -345,6 +345,16 @@ export interface SystemSettings {
   doc_url: string;
   home_content: string;
   hide_ccs_import_button: boolean;
+  lobehub_enabled: boolean;
+  lobehub_chat_url: string;
+  lobehub_oidc_issuer: string;
+  lobehub_oidc_client_id: string;
+  lobehub_oidc_client_secret_configured: boolean;
+  lobehub_default_provider: string;
+  lobehub_default_model: string;
+  lobehub_enabled_models: string[];
+  lobehub_runtime_config_version: string;
+  hide_lobehub_import_button: boolean;
   table_default_page_size: number;
   table_page_size_options: number[];
   backend_mode_enabled: boolean;
@@ -506,16 +516,6 @@ export interface SystemSettings {
   referral_settlement_currency: string;
   referral_withdraw_methods_enabled: string[];
 
-  // LobeHub integration
-  lobehub_enabled: boolean;
-  lobehub_chat_url: string;
-  lobehub_oidc_issuer: string;
-  lobehub_oidc_client_id: string;
-  lobehub_oidc_client_secret_configured: boolean;
-  lobehub_default_provider: string;
-  lobehub_default_model: string;
-  lobehub_runtime_config_version: string;
-  hide_lobehub_import_button: boolean;
 }
 
 export interface UpdateSettingsRequest {
@@ -564,6 +564,16 @@ export interface UpdateSettingsRequest {
   doc_url?: string;
   home_content?: string;
   hide_ccs_import_button?: boolean;
+  lobehub_enabled?: boolean;
+  lobehub_chat_url?: string;
+  lobehub_oidc_issuer?: string;
+  lobehub_oidc_client_id?: string;
+  lobehub_oidc_client_secret?: string;
+  lobehub_default_provider?: string;
+  lobehub_default_model?: string;
+  lobehub_enabled_models?: string[];
+  lobehub_runtime_config_version?: string;
+  hide_lobehub_import_button?: boolean;
   table_default_page_size?: number;
   table_page_size_options?: number[];
   backend_mode_enabled?: boolean;
@@ -703,16 +713,6 @@ export interface UpdateSettingsRequest {
   referral_settlement_currency?: string;
   referral_withdraw_methods_enabled?: string[];
 
-  // LobeHub integration
-  lobehub_enabled?: boolean;
-  lobehub_chat_url?: string;
-  lobehub_oidc_issuer?: string;
-  lobehub_oidc_client_id?: string;
-  lobehub_oidc_client_secret?: string;
-  lobehub_default_provider?: string;
-  lobehub_default_model?: string;
-  lobehub_runtime_config_version?: string;
-  hide_lobehub_import_button?: boolean;
 }
 
 /**

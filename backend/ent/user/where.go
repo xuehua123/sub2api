@@ -100,6 +100,11 @@ func Status(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldStatus, v))
 }
 
+// DefaultChatAPIKeyID applies equality check predicate on the "default_chat_api_key_id" field. It's identical to DefaultChatAPIKeyIDEQ.
+func DefaultChatAPIKeyID(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
+}
+
 // Username applies equality check predicate on the "username" field. It's identical to UsernameEQ.
 func Username(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldUsername, v))
@@ -128,11 +133,6 @@ func TotpEnabledAt(v time.Time) predicate.User {
 // ReferralEnabled applies equality check predicate on the "referral_enabled" field. It's identical to ReferralEnabledEQ.
 func ReferralEnabled(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldReferralEnabled, v))
-}
-
-// DefaultChatAPIKeyID applies equality check predicate on the "default_chat_api_key_id" field. It's identical to DefaultChatAPIKeyIDEQ.
-func DefaultChatAPIKeyID(v int64) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
 }
 
 // SignupSource applies equality check predicate on the "signup_source" field. It's identical to SignupSourceEQ.
@@ -650,6 +650,56 @@ func StatusContainsFold(v string) predicate.User {
 	return predicate.User(sql.FieldContainsFold(FieldStatus, v))
 }
 
+// DefaultChatAPIKeyIDEQ applies the EQ predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDNEQ applies the NEQ predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNEQ(v int64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDIn applies the In predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldDefaultChatAPIKeyID, vs...))
+}
+
+// DefaultChatAPIKeyIDNotIn applies the NotIn predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNotIn(vs ...int64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldDefaultChatAPIKeyID, vs...))
+}
+
+// DefaultChatAPIKeyIDGT applies the GT predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDGT(v int64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDGTE applies the GTE predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDGTE(v int64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDLT applies the LT predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDLT(v int64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDLTE applies the LTE predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDLTE(v int64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldDefaultChatAPIKeyID, v))
+}
+
+// DefaultChatAPIKeyIDIsNil applies the IsNil predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldDefaultChatAPIKeyID))
+}
+
+// DefaultChatAPIKeyIDNotNil applies the NotNil predicate on the "default_chat_api_key_id" field.
+func DefaultChatAPIKeyIDNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldDefaultChatAPIKeyID))
+}
+
 // UsernameEQ applies the EQ predicate on the "username" field.
 func UsernameEQ(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldUsername, v))
@@ -923,56 +973,6 @@ func ReferralEnabledEQ(v bool) predicate.User {
 // ReferralEnabledNEQ applies the NEQ predicate on the "referral_enabled" field.
 func ReferralEnabledNEQ(v bool) predicate.User {
 	return predicate.User(sql.FieldNEQ(FieldReferralEnabled, v))
-}
-
-// DefaultChatAPIKeyIDEQ applies the EQ predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDEQ(v int64) predicate.User {
-	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDNEQ applies the NEQ predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDNEQ(v int64) predicate.User {
-	return predicate.User(sql.FieldNEQ(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDIn applies the In predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDIn(vs ...int64) predicate.User {
-	return predicate.User(sql.FieldIn(FieldDefaultChatAPIKeyID, vs...))
-}
-
-// DefaultChatAPIKeyIDNotIn applies the NotIn predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDNotIn(vs ...int64) predicate.User {
-	return predicate.User(sql.FieldNotIn(FieldDefaultChatAPIKeyID, vs...))
-}
-
-// DefaultChatAPIKeyIDGT applies the GT predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDGT(v int64) predicate.User {
-	return predicate.User(sql.FieldGT(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDGTE applies the GTE predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDGTE(v int64) predicate.User {
-	return predicate.User(sql.FieldGTE(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDLT applies the LT predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDLT(v int64) predicate.User {
-	return predicate.User(sql.FieldLT(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDLTE applies the LTE predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDLTE(v int64) predicate.User {
-	return predicate.User(sql.FieldLTE(FieldDefaultChatAPIKeyID, v))
-}
-
-// DefaultChatAPIKeyIDIsNil applies the IsNil predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDIsNil() predicate.User {
-	return predicate.User(sql.FieldIsNull(FieldDefaultChatAPIKeyID))
-}
-
-// DefaultChatAPIKeyIDNotNil applies the NotNil predicate on the "default_chat_api_key_id" field.
-func DefaultChatAPIKeyIDNotNil() predicate.User {
-	return predicate.User(sql.FieldNotNull(FieldDefaultChatAPIKeyID))
 }
 
 // SignupSourceEQ applies the EQ predicate on the "signup_source" field.

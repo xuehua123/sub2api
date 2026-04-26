@@ -5787,6 +5787,7 @@ const form = reactive<SettingsForm>({
   lobehub_oidc_client_secret_configured: false,
   lobehub_default_provider: "",
   lobehub_default_model: "",
+  lobehub_enabled_models: [],
   lobehub_runtime_config_version: "",
   hide_lobehub_import_button: false,
   // Balance & quota notification
@@ -6736,6 +6737,7 @@ async function saveSettings() {
       lobehub_oidc_client_secret: form.lobehub_oidc_client_secret || undefined,
       lobehub_default_provider: form.lobehub_default_provider,
       lobehub_default_model: form.lobehub_default_model,
+      lobehub_enabled_models: form.lobehub_enabled_models,
       lobehub_runtime_config_version: form.lobehub_runtime_config_version,
       hide_lobehub_import_button: form.hide_lobehub_import_button,
       // Balance & quota notification
