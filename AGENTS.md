@@ -10,6 +10,12 @@
   - Exceptions: `ops_aggregation_service.go`, `ops_alert_evaluator_service.go`, `ops_cleanup_service.go`, `ops_metrics_collector.go`, `ops_scheduled_report_service.go`, `wire.go`
 - **Dependency injection**: Google Wire in `backend/cmd/server/wire.go` — after changing DI bindings run `go generate ./cmd/server` in `backend/`
 
+## Critical Production Safety
+
+- **Never build Docker images on production business servers** such as the Shanghai Sub2API host or the psydo host. Docker builds can saturate CPU, disk IO, memory, and network, causing API 502s and user request failures.
+- Production deployment must use prebuilt images from local build, CI, or a dedicated build machine. A production host may only `docker pull`, switch image tags, restart services, run health checks, and roll back.
+- Before restarting production services, record the currently running image tag/container state and keep a tested rollback path. If a build is needed, stop and move it off the production host.
+
 ## Exact Commands
 
 ### Backend (run from `backend/`)
