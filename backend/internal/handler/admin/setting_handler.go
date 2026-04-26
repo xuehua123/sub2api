@@ -210,6 +210,10 @@ type UpdateSettingsRequest struct {
 	// 默认配置
 	DefaultConcurrency                       int                               `json:"default_concurrency"`
 	DefaultBalance                           float64                           `json:"default_balance"`
+	AffiliateRebateRate                      *float64                          `json:"affiliate_rebate_rate"`
+	AffiliateRebateFreezeHours               *int                              `json:"affiliate_rebate_freeze_hours"`
+	AffiliateRebateDurationDays              *int                              `json:"affiliate_rebate_duration_days"`
+	AffiliateRebatePerInviteeCap             *float64                          `json:"affiliate_rebate_per_invitee_cap"`
 	DefaultUserRPMLimit                      int                               `json:"default_user_rpm_limit"`
 	DefaultSubscriptions                     []dto.DefaultSubscriptionSetting  `json:"default_subscriptions"`
 	AuthSourceDefaultEmailBalance            *float64                          `json:"auth_source_default_email_balance"`
@@ -312,6 +316,9 @@ type UpdateSettingsRequest struct {
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
+	// Affiliate (邀请返利) feature switch
+	AffiliateEnabled *bool `json:"affiliate_enabled"`
+
 	// Referral configuration
 	ReferralEnabled                      *bool    `json:"referral_enabled"`
 	ReferralLevel1Enabled                *bool    `json:"referral_level1_enabled"`
@@ -372,6 +379,43 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	}
 	if req.DefaultBalance < 0 {
 		req.DefaultBalance = 0
+	}
+	affiliateRebateRate := previousSettings.AffiliateRebateRate
+	if req.AffiliateRebateRate != nil {
+		affiliateRebateRate = *req.AffiliateRebateRate
+	}
+	if affiliateRebateRate < service.AffiliateRebateRateMin {
+		affiliateRebateRate = service.AffiliateRebateRateMin
+	}
+	if affiliateRebateRate > service.AffiliateRebateRateMax {
+		affiliateRebateRate = service.AffiliateRebateRateMax
+	}
+	affiliateRebateFreezeHours := previousSettings.AffiliateRebateFreezeHours
+	if req.AffiliateRebateFreezeHours != nil {
+		affiliateRebateFreezeHours = *req.AffiliateRebateFreezeHours
+	}
+	if affiliateRebateFreezeHours < 0 {
+		affiliateRebateFreezeHours = service.AffiliateRebateFreezeHoursDefault
+	}
+	if affiliateRebateFreezeHours > service.AffiliateRebateFreezeHoursMax {
+		affiliateRebateFreezeHours = service.AffiliateRebateFreezeHoursMax
+	}
+	affiliateRebateDurationDays := previousSettings.AffiliateRebateDurationDays
+	if req.AffiliateRebateDurationDays != nil {
+		affiliateRebateDurationDays = *req.AffiliateRebateDurationDays
+	}
+	if affiliateRebateDurationDays < 0 {
+		affiliateRebateDurationDays = service.AffiliateRebateDurationDaysDefault
+	}
+	if affiliateRebateDurationDays > service.AffiliateRebateDurationDaysMax {
+		affiliateRebateDurationDays = service.AffiliateRebateDurationDaysMax
+	}
+	affiliateRebatePerInviteeCap := previousSettings.AffiliateRebatePerInviteeCap
+	if req.AffiliateRebatePerInviteeCap != nil {
+		affiliateRebatePerInviteeCap = *req.AffiliateRebatePerInviteeCap
+	}
+	if affiliateRebatePerInviteeCap < 0 {
+		affiliateRebatePerInviteeCap = service.AffiliateRebatePerInviteeCapDefault
 	}
 	// 通用表格配置：兼容旧客户端未传字段时保留当前值。
 	if req.TableDefaultPageSize <= 0 {
@@ -1101,19 +1145,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		CustomEndpoints:                  customEndpointsJSON,
 		DefaultConcurrency:               req.DefaultConcurrency,
 		DefaultBalance:                   req.DefaultBalance,
-		DefaultUserRPMLimit:              req.DefaultUserRPMLimit,
-		DefaultSubscriptions:             defaultSubscriptions,
-		EnableModelFallback:              req.EnableModelFallback,
-		FallbackModelAnthropic:           req.FallbackModelAnthropic,
-		FallbackModelOpenAI:              req.FallbackModelOpenAI,
-		FallbackModelGemini:              req.FallbackModelGemini,
-		FallbackModelAntigravity:         req.FallbackModelAntigravity,
-		EnableIdentityPatch:              req.EnableIdentityPatch,
-		IdentityPatchPrompt:              req.IdentityPatchPrompt,
-		MinClaudeCodeVersion:             req.MinClaudeCodeVersion,
-		MaxClaudeCodeVersion:             req.MaxClaudeCodeVersion,
-		AllowUngroupedKeyScheduling:      req.AllowUngroupedKeyScheduling,
-		BackendModeEnabled:               req.BackendModeEnabled,
+		AffiliateRebateRate:              affiliateRebateRate,
+		AffiliateRebateFreezeHours:       affiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:      affiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:     affiliateRebatePerInviteeCap,
+		AffiliateEnabled: func() bool {
+			if req.AffiliateEnabled != nil {
+				return *req.AffiliateEnabled
+			}
+			return previousSettings.AffiliateEnabled
+		}(),
+		DefaultUserRPMLimit:         req.DefaultUserRPMLimit,
+		DefaultSubscriptions:        defaultSubscriptions,
+		EnableModelFallback:         req.EnableModelFallback,
+		FallbackModelAnthropic:      req.FallbackModelAnthropic,
+		FallbackModelOpenAI:         req.FallbackModelOpenAI,
+		FallbackModelGemini:         req.FallbackModelGemini,
+		FallbackModelAntigravity:    req.FallbackModelAntigravity,
+		EnableIdentityPatch:         req.EnableIdentityPatch,
+		IdentityPatchPrompt:         req.IdentityPatchPrompt,
+		MinClaudeCodeVersion:        req.MinClaudeCodeVersion,
+		MaxClaudeCodeVersion:        req.MaxClaudeCodeVersion,
+		AllowUngroupedKeyScheduling: req.AllowUngroupedKeyScheduling,
+		BackendModeEnabled:          req.BackendModeEnabled,
 		OpsMonitoringEnabled: func() bool {
 			if req.OpsMonitoringEnabled != nil {
 				return *req.OpsMonitoringEnabled
@@ -1717,6 +1771,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.DefaultBalance != after.DefaultBalance {
 		changed = append(changed, "default_balance")
 	}
+	if before.AffiliateRebateRate != after.AffiliateRebateRate {
+		changed = append(changed, "affiliate_rebate_rate")
+	}
+	if before.AffiliateRebateFreezeHours != after.AffiliateRebateFreezeHours {
+		changed = append(changed, "affiliate_rebate_freeze_hours")
+	}
+	if before.AffiliateRebateDurationDays != after.AffiliateRebateDurationDays {
+		changed = append(changed, "affiliate_rebate_duration_days")
+	}
+	if before.AffiliateRebatePerInviteeCap != after.AffiliateRebatePerInviteeCap {
+		changed = append(changed, "affiliate_rebate_per_invitee_cap")
+	}
 	if !equalDefaultSubscriptions(before.DefaultSubscriptions, after.DefaultSubscriptions) {
 		changed = append(changed, "default_subscriptions")
 	}
@@ -1837,6 +1903,18 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if !equalNotifyEmailEntries(before.AccountQuotaNotifyEmails, after.AccountQuotaNotifyEmails) {
 		changed = append(changed, "account_quota_notify_emails")
+	}
+	if before.ChannelMonitorEnabled != after.ChannelMonitorEnabled {
+		changed = append(changed, "channel_monitor_enabled")
+	}
+	if before.ChannelMonitorDefaultIntervalSeconds != after.ChannelMonitorDefaultIntervalSeconds {
+		changed = append(changed, "channel_monitor_default_interval_seconds")
+	}
+	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
+		changed = append(changed, "available_channels_enabled")
+	}
+	if before.AffiliateEnabled != after.AffiliateEnabled {
+		changed = append(changed, "affiliate_enabled")
 	}
 	changed = appendAuthSourceDefaultChanges(changed, beforeAuthSourceDefaults, afterAuthSourceDefaults)
 	return changed
@@ -2037,6 +2115,11 @@ func buildSystemSettingsPayload(
 		CustomEndpoints:                        dto.ParseCustomEndpoints(settings.CustomEndpoints),
 		DefaultConcurrency:                     settings.DefaultConcurrency,
 		DefaultBalance:                         settings.DefaultBalance,
+		AffiliateRebateRate:                    settings.AffiliateRebateRate,
+		AffiliateRebateFreezeHours:             settings.AffiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:            settings.AffiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:           settings.AffiliateRebatePerInviteeCap,
+		AffiliateEnabled:                       settings.AffiliateEnabled,
 		DefaultUserRPMLimit:                    settings.DefaultUserRPMLimit,
 		DefaultSubscriptions:                   defaultSubscriptions,
 		EnableModelFallback:                    settings.EnableModelFallback,

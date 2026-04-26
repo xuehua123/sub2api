@@ -575,9 +575,10 @@ export async function resetPassword(request: ResetPasswordRequest): Promise<Rese
 export async function completeLinuxDoOAuthRegistration(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingLinuxDoOAuthAccount(invitationCode, decision, referralCode)
+  return createPendingLinuxDoOAuthAccount(invitationCode, decision, referralCode, affiliateCode)
 }
 
 /**
@@ -588,30 +589,36 @@ export async function completeLinuxDoOAuthRegistration(
 export async function completeOIDCOAuthRegistration(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingOIDCOAuthAccount(invitationCode, decision, referralCode)
+  return createPendingOIDCOAuthAccount(invitationCode, decision, referralCode, affiliateCode)
 }
 
 export async function completeWeChatOAuthRegistration(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<OAuthTokenResponse> {
-  return createPendingWeChatOAuthAccount(invitationCode, decision, referralCode)
+  return createPendingWeChatOAuthAccount(invitationCode, decision, referralCode, affiliateCode)
 }
 
 async function createPendingOAuthAccount(
   provider: 'linuxdo' | 'oidc' | 'wechat',
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
+  const normalizedReferralCode = referralCode?.trim()
+  const normalizedAffiliateCode = affiliateCode?.trim()
   const { data } = await apiClient.post<PendingOAuthCreateAccountResponse>(
     `/auth/oauth/${provider}/complete-registration`,
     {
       invitation_code: invitationCode,
-      ...(referralCode?.trim() ? { referral_code: referralCode.trim() } : {}),
+      ...(normalizedReferralCode ? { referral_code: normalizedReferralCode } : {}),
+      ...(normalizedAffiliateCode ? { aff_code: normalizedAffiliateCode } : {}),
       ...serializeOAuthAdoptionDecision(decision)
     }
   )
@@ -631,25 +638,28 @@ export async function validateReferralCode(code: string): Promise<ValidateReferr
 export async function createPendingLinuxDoOAuthAccount(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('linuxdo', invitationCode, decision, referralCode)
+  return createPendingOAuthAccount('linuxdo', invitationCode, decision, referralCode, affiliateCode)
 }
 
 export async function createPendingOIDCOAuthAccount(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('oidc', invitationCode, decision, referralCode)
+  return createPendingOAuthAccount('oidc', invitationCode, decision, referralCode, affiliateCode)
 }
 
 export async function createPendingWeChatOAuthAccount(
   invitationCode: string,
   decision?: OAuthAdoptionDecision,
-  referralCode?: string
+  referralCode?: string,
+  affiliateCode?: string
 ): Promise<PendingOAuthCreateAccountResponse> {
-  return createPendingOAuthAccount('wechat', invitationCode, decision, referralCode)
+  return createPendingOAuthAccount('wechat', invitationCode, decision, referralCode, affiliateCode)
 }
 
 export async function completePendingOAuthBindLogin(

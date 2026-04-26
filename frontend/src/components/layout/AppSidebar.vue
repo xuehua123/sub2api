@@ -236,6 +236,7 @@ const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
+const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 
@@ -663,6 +664,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     ...((appStore.cachedPublicSettings?.referral_enabled || authStore.user?.referral_enabled)
       ? [{ path: '/referral', label: t('nav.referral'), icon: ReferralIcon }]
       : []),
+    { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,

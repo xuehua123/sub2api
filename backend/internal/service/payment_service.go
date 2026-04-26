@@ -186,6 +186,7 @@ type PaymentService struct {
 	resumeService     *PaymentResumeService
 	referralRewardSvc *ReferralRewardService
 	referralRefundSvc *ReferralRefundService
+	affiliateService  *AffiliateService
 }
 
 func NewPaymentService(
@@ -199,6 +200,7 @@ func NewPaymentService(
 	groupRepo GroupRepository,
 	referralRewardSvc *ReferralRewardService,
 	referralRefundSvc *ReferralRefundService,
+	affiliateService *AffiliateService,
 ) *PaymentService {
 	svc := &PaymentService{
 		entClient:         entClient,
@@ -212,6 +214,7 @@ func NewPaymentService(
 		resumeService:     psNewPaymentResumeService(configService),
 		referralRewardSvc: referralRewardSvc,
 		referralRefundSvc: referralRefundSvc,
+		affiliateService:  affiliateService,
 	}
 	return svc
 }

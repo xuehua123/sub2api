@@ -265,6 +265,11 @@ import {
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
 import { clearOAuthReferralCode, getOAuthReferralCode } from '@/utils/oauthReferral'
+import {
+  clearAllAffiliateReferralCodes,
+  loadOAuthAffiliateCode,
+  oauthAffiliatePayload
+} from '@/utils/oauthAffiliate'
 
 const route = useRoute()
 const router = useRouter()
@@ -592,6 +597,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
     const bindRedirect = sanitizeRedirectPath(completion.redirect || '/profile')
     clearPendingAuthSession()
     clearOAuthReferralCode()
+    clearAllAffiliateReferralCodes()
     appStore.showSuccess(bindSuccessMessage)
     await router.replace(bindRedirect)
     return
@@ -604,6 +610,7 @@ async function finalizeCompletion(completion: PendingOAuthExchangeResponse, redi
   persistOAuthTokenContext(completion)
   await authStore.setToken(completion.access_token)
   clearOAuthReferralCode()
+  clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
   await router.replace(redirect)
 }
@@ -653,18 +660,23 @@ async function handleSubmitInvitation() {
   isSubmitting.value = true
   try {
     const referralCode = getOAuthReferralCode()
+    const affCode = loadOAuthAffiliateCode()
+    const decision = currentAdoptionDecision()
+    const normalizedReferralCode = referralCode || undefined
+    const normalizedAffCode = affCode || undefined
     const completion: PendingOidcCompletion = legacyPendingOAuthToken.value
       ? (
           await apiClient.post<PendingOidcCompletion>('/auth/oauth/oidc/complete-registration', {
             pending_oauth_token: legacyPendingOAuthToken.value,
             invitation_code: invitationCode.value.trim(),
-            ...(referralCode ? { referral_code: referralCode } : {}),
-            ...serializeAdoptionDecision(currentAdoptionDecision())
+            ...(normalizedReferralCode ? { referral_code: normalizedReferralCode } : {}),
+            ...oauthAffiliatePayload(normalizedAffCode),
+            ...serializeAdoptionDecision(decision)
           })
         ).data
-      : referralCode
-        ? await completeOIDCOAuthRegistration(invitationCode.value.trim(), currentAdoptionDecision(), referralCode)
-        : await completeOIDCOAuthRegistration(invitationCode.value.trim(), currentAdoptionDecision())
+      : normalizedReferralCode || normalizedAffCode
+        ? await completeOIDCOAuthRegistration(invitationCode.value.trim(), decision, normalizedReferralCode, normalizedAffCode)
+        : await completeOIDCOAuthRegistration(invitationCode.value.trim(), decision)
     await finalizePendingAccountResponse(completion)
   } catch (e: unknown) {
     const err = e as { message?: string; response?: { data?: { message?: string } } }
@@ -701,6 +713,7 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
       verify_code: payload.verifyCode || undefined,
       invitation_code: payload.invitationCode || undefined,
       ...(referralCode ? { referral_code: referralCode } : {}),
+      ...oauthAffiliatePayload(loadOAuthAffiliateCode()),
       ...serializeAdoptionDecision(currentAdoptionDecision())
     })
     await finalizePendingAccountResponse(data)
@@ -748,6 +761,7 @@ async function handleSubmitTotpChallenge() {
       totp_code: code
     })
     await authStore.setToken(completion.access_token)
+    clearAllAffiliateReferralCodes()
     appStore.showSuccess(t('auth.loginSuccess'))
     await router.replace(redirectTo.value)
   } catch (e: unknown) {
@@ -773,6 +787,7 @@ onMounted(async () => {
     if (legacyLogin) {
       persistOAuthTokenContext(legacyLogin)
       await authStore.setToken(legacyLogin.access_token)
+      clearAllAffiliateReferralCodes()
       appStore.showSuccess(t('auth.loginSuccess'))
       await router.replace(redirect)
       return

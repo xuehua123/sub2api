@@ -220,6 +220,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/affiliate',
+    name: 'Affiliate',
+    component: () => import('@/views/user/AffiliateView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Affiliate',
+      titleKey: 'affiliate.title',
+      descriptionKey: 'affiliate.description'
+    }
+  },
+  {
     path: '/available-channels',
     name: 'UserAvailableChannels',
     component: () => import('@/views/user/AvailableChannelsView.vue'),
@@ -309,11 +321,11 @@ const routes: RouteRecordRaw[] = [
     name: 'StripePayment',
     component: () => import('@/views/user/StripePaymentView.vue'),
     meta: {
-      requiresAuth: true,
+      requiresAuth: false,
       requiresAdmin: false,
       title: 'Stripe Payment',
       titleKey: 'payment.stripePay',
-      requiresPayment: true
+      requiresPayment: false
     }
   },
   {
@@ -321,10 +333,10 @@ const routes: RouteRecordRaw[] = [
     name: 'StripePopup',
     component: () => import('@/views/user/StripePopupView.vue'),
     meta: {
-      requiresAuth: true,
+      requiresAuth: false,
       requiresAdmin: false,
       title: 'Payment',
-      requiresPayment: true
+      requiresPayment: false
     }
   },
   {

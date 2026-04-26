@@ -100,6 +100,9 @@ func RegisterAdminRoutes(
 			orders := admin.Group("/recharge-orders")
 			orders.POST("/credit", h.Admin.RechargeOrder.Credit)
 		}
+
+		// 邀请返利（专属用户管理）
+		registerAffiliateRoutes(admin, h)
 	}
 }
 
@@ -635,6 +638,21 @@ func registerReferralAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 			withdrawals.POST("/:id/approve", h.Admin.Referral.ApproveWithdrawal)
 			withdrawals.POST("/:id/reject", h.Admin.Referral.RejectWithdrawal)
 			withdrawals.POST("/:id/paid", h.Admin.Referral.MarkWithdrawalPaid)
+		}
+	}
+}
+
+// registerAffiliateRoutes 注册邀请返利的管理端路由（专属用户配置）
+func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	affiliates := admin.Group("/affiliates")
+	{
+		users := affiliates.Group("/users")
+		{
+			users.GET("", h.Admin.Affiliate.ListUsers)
+			users.GET("/lookup", h.Admin.Affiliate.LookupUsers)
+			users.POST("/batch-rate", h.Admin.Affiliate.BatchSetRate)
+			users.PUT("/:user_id", h.Admin.Affiliate.UpdateUserSettings)
+			users.DELETE("/:user_id", h.Admin.Affiliate.ClearUserSettings)
 		}
 	}
 }

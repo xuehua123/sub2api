@@ -62,7 +62,7 @@ func TestStripeWebhook_AmbiguousProviderReturnsRetryableFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	registry := payment.NewRegistry()
-	svc := service.NewPaymentService(client, registry, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc := service.NewPaymentService(client, registry, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	h := NewPaymentWebhookHandler(svc, registry)
 
 	rec := httptest.NewRecorder()
