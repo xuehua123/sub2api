@@ -70,4 +70,13 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	if expired > 0 {
 		slog.Info("[PaymentOrderExpiry] expired timed-out orders", "count", expired)
 	}
+
+	recovered, err := s.paymentSvc.RetryFailedSubscriptionReferralRewards(ctx, defaultFailedReferralRewardRecoveryLimit)
+	if err != nil {
+		slog.Error("[PaymentOrderExpiry] failed to retry subscription referral rewards", "error", err)
+		return
+	}
+	if recovered > 0 {
+		slog.Info("[PaymentOrderExpiry] recovered subscription referral rewards", "count", recovered)
+	}
 }

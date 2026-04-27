@@ -29,7 +29,7 @@ type CreditRechargeOrderRequest struct {
 	DiscountAmount        float64 `json:"discount_amount"`
 	PaidAmount            float64 `json:"paid_amount" binding:"required,gt=0"`
 	GiftBalanceAmount     float64 `json:"gift_balance_amount"`
-	CreditedBalanceAmount float64 `json:"credited_balance_amount" binding:"required,gte=0"`
+	CreditedBalanceAmount float64 `json:"credited_balance_amount" binding:"gte=0"`
 	MetadataJSON          string  `json:"metadata_json"`
 	Notes                 string  `json:"notes"`
 }

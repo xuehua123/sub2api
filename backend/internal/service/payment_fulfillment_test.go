@@ -495,6 +495,271 @@ func requireAuditActionsForOrder(t *testing.T, ctx context.Context, client *dben
 	return logs
 }
 
+func TestExecuteSubscriptionFulfillment_SyncsReferralRewardWithoutCreditingBalance(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	paidAt := time.Now().Add(-time.Minute)
+	groupID := int64(88)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.90).
+		SetPayAmount(9.90).
+		SetRechargeCode("sub-referral-no-balance").
+		SetOutTradeNo("subscription_referral_order").
+		SetPaymentType(payment.TypeAlipayDirect).
+		SetPaymentTradeNo("trade-sub-referral").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(1).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(paidAt).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	subRepo := newSubscriptionUserSubRepoStub()
+	subscriptionSvc := NewSubscriptionService(
+		&paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	rechargeRepo := newRechargeOrderRepoStub()
+	commissionRepo := &commissionRepoStub{}
+	userRepo := newRewardUserRepoStub()
+	userRepo.users[200] = &User{ID: 200, ReferralEnabled: true}
+	referralRepo := newReferralRepoStub()
+	referralRepo.relationsByUser[user.ID] = &ReferralRelation{
+		UserID:         user.ID,
+		ReferrerUserID: 200,
+		BindSource:     ReferralBindSourceLink,
+	}
+	rewardSvc := newReferralRewardServiceForTest(rechargeRepo, commissionRepo, userRepo, referralRepo, map[string]string{
+		SettingKeyReferralEnabled:             "false",
+		SettingKeyReferralLevel1Enabled:       "true",
+		SettingKeyReferralLevel1Rate:          "0.05",
+		SettingKeyReferralRewardMode:          ReferralRewardModeEveryPaidOrder,
+		SettingKeyReferralSettlementDelayDays: "7",
+	})
+
+	service := &PaymentService{
+		entClient:         client,
+		subscriptionSvc:   subscriptionSvc,
+		groupRepo:         &paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		referralRewardSvc: rewardSvc,
+	}
+
+	err = service.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+	require.Empty(t, userRepo.updateBalanceCalls, "subscription referral sync must not credit user balance")
+
+	rechargeOrder, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeAlipay, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, user.ID, rechargeOrder.UserID)
+	require.Equal(t, 9.90, rechargeOrder.PaidAmount)
+	require.Equal(t, 0.0, rechargeOrder.CreditedBalanceAmount)
+	require.Equal(t, RechargeOrderStatusCredited, rechargeOrder.Status)
+
+	require.Len(t, commissionRepo.rewards, 1)
+	require.Equal(t, int64(200), commissionRepo.rewards[0].UserID)
+	require.Equal(t, user.ID, commissionRepo.rewards[0].SourceUserID)
+	require.Equal(t, 0.05, commissionRepo.rewards[0].RateSnapshot)
+	require.Equal(t, 0.495, commissionRepo.rewards[0].RewardAmount)
+	require.Len(t, commissionRepo.ledgers, 1)
+	require.Equal(t, CommissionLedgerEntryRewardPendingCredit, commissionRepo.ledgers[0].EntryType)
+}
+
+func TestExecuteSubscriptionFulfillment_CompletesWhenReferralRewardSyncFails(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupID := int64(89)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.90).
+		SetPayAmount(9.90).
+		SetRechargeCode("sub-referral-fails").
+		SetOutTradeNo("subscription_referral_fails_order").
+		SetPaymentType(payment.TypeAlipayDirect).
+		SetPaymentTradeNo("trade-sub-referral-fails").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(1).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	groupRepo := &paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	rewardSvc := newReferralRewardServiceForTest(
+		&failingRechargeOrderRepoStub{rechargeOrderRepoStub: newRechargeOrderRepoStub(), err: errors.New("referral store unavailable")},
+		&commissionRepoStub{},
+		newRewardUserRepoStub(),
+		newReferralRepoStub(),
+		map[string]string{SettingKeyReferralEnabled: "true"},
+	)
+	service := &PaymentService{
+		entClient:         client,
+		subscriptionSvc:   NewSubscriptionService(groupRepo, subRepo, nil, nil, nil),
+		groupRepo:         groupRepo,
+		referralRewardSvc: rewardSvc,
+	}
+
+	err = service.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, subRepo.createCalls)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+	requireAuditActionsForOrder(t, ctx, client, order.ID, "SUBSCRIPTION_ASSIGNED", "REFERRAL_REWARD_SYNC_FAILED", "SUBSCRIPTION_SUCCESS")
+}
+
+func TestExecuteSubscriptionFulfillment_RetryDoesNotExtendAlreadyAssignedSubscription(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	group, err := client.Group.Create().
+		SetName("paid-subscription-idempotency").
+		SetStatus(payment.EntityStatusActive).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.90).
+		SetPayAmount(9.90).
+		SetRechargeCode("sub-already-assigned").
+		SetOutTradeNo("subscription_already_assigned_order").
+		SetPaymentType(payment.TypeAlipayDirect).
+		SetPaymentTradeNo("trade-sub-already-assigned").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusFailed).
+		SetSubscriptionGroupID(group.ID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	expiresAt := time.Now().Add(10 * 24 * time.Hour).Truncate(time.Second)
+	_, err = client.UserSubscription.Create().
+		SetUserID(user.ID).
+		SetGroupID(group.ID).
+		SetStartsAt(time.Now().Add(-24 * time.Hour)).
+		SetExpiresAt(expiresAt).
+		SetStatus(SubscriptionStatusActive).
+		SetNotes(fmt.Sprintf("payment_order_id=%d", order.ID)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	service := &PaymentService{
+		entClient: client,
+		groupRepo: &paymentGroupRepoStub{
+			group: &Group{ID: group.ID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription},
+		},
+	}
+
+	err = service.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+
+	sub, err := client.UserSubscription.Query().Only(ctx)
+	require.NoError(t, err)
+	require.WithinDuration(t, expiresAt, sub.ExpiresAt, time.Second)
+}
+
+func TestRetryFailedSubscriptionReferralRewards_ReplaysCompletedSubscription(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.90).
+		SetPayAmount(9.90).
+		SetRechargeCode("sub-referral-replay").
+		SetOutTradeNo("subscription_referral_replay_order").
+		SetPaymentType(payment.TypeAlipayDirect).
+		SetPaymentTradeNo("trade-sub-referral-replay").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetSubscriptionGroupID(90).
+		SetSubscriptionDays(1).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Minute)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("REFERRAL_REWARD_SYNC_FAILED").
+		SetOperator("system").
+		SetDetail(`{"detail":"referral store unavailable"}`).
+		ExecX(ctx)
+
+	rechargeRepo := newRechargeOrderRepoStub()
+	commissionRepo := &commissionRepoStub{}
+	userRepo := newRewardUserRepoStub()
+	userRepo.users[200] = &User{ID: 200, ReferralEnabled: true}
+	referralRepo := newReferralRepoStub()
+	referralRepo.relationsByUser[user.ID] = &ReferralRelation{
+		UserID:         user.ID,
+		ReferrerUserID: 200,
+		BindSource:     ReferralBindSourceLink,
+	}
+	rewardSvc := newReferralRewardServiceForTest(rechargeRepo, commissionRepo, userRepo, referralRepo, map[string]string{
+		SettingKeyReferralEnabled:             "false",
+		SettingKeyReferralLevel1Enabled:       "true",
+		SettingKeyReferralLevel1Rate:          "0.05",
+		SettingKeyReferralRewardMode:          ReferralRewardModeEveryPaidOrder,
+		SettingKeyReferralSettlementDelayDays: "7",
+	})
+
+	service := &PaymentService{entClient: client, referralRewardSvc: rewardSvc}
+	recovered, err := service.RetryFailedSubscriptionReferralRewards(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+
+	rechargeOrder, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeAlipay, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, 9.90, rechargeOrder.PaidAmount)
+	require.Len(t, commissionRepo.rewards, 1)
+	require.Equal(t, int64(200), commissionRepo.rewards[0].UserID)
+	requireAuditActionsForOrder(t, ctx, client, order.ID, "REFERRAL_REWARD_SYNC_RECOVERED")
+}
+
 func TestCheckPaid_UsesProviderTradeNoWhenFallbackQuerySucceeds(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentServiceEntClient(t)
@@ -623,6 +888,192 @@ func TestHandlePaymentNotification_RefundedSubscriptionOrderRevokesAccess(t *tes
 
 	logs := requireAuditActionsForOrder(t, ctx, client, order.ID, "EXTERNAL_REFUND_SYNCED")
 	require.Contains(t, logs[0].Detail, `"tradeNo":"trade_subscription_refund"`)
+}
+
+func TestHandlePaymentNotification_RefundedSubscriptionOrderSyncsReferralState(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupID := int64(166)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-refund-referral").
+		SetOutTradeNo("subscription_refund_referral_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_refund_referral").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	subRepo := newSubscriptionUserSubRepoStub()
+	subRepo.seed(&UserSubscription{
+		ID:        601,
+		UserID:    user.ID,
+		GroupID:   groupID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  time.Now().Add(-24 * time.Hour),
+		ExpiresAt: time.Now().Add(29 * 24 * time.Hour),
+	})
+	subscriptionSvc := NewSubscriptionService(
+		&paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subRepo,
+		nil,
+		nil,
+		nil,
+	)
+
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeRepo.orders["stripe::subscription_refund_referral_order"] = &RechargeOrder{
+		ID:              301,
+		UserID:          user.ID,
+		Provider:        payment.TypeStripe,
+		ExternalOrderID: order.OutTradeNo,
+		PaidAmount:      90,
+		Status:          RechargeOrderStatusCredited,
+		Currency:        ReferralSettlementCurrencyCNY,
+	}
+	rewardID := int64(401)
+	commissionRepo := &commissionRepoStub{
+		rewards: []CommissionReward{{
+			ID:              rewardID,
+			UserID:          200,
+			SourceUserID:    user.ID,
+			RechargeOrderID: 301,
+			RewardAmount:    4.5,
+			Currency:        ReferralSettlementCurrencyCNY,
+			Status:          CommissionRewardStatusPending,
+		}},
+		ledgers: []CommissionLedger{{
+			ID:              501,
+			UserID:          200,
+			RewardID:        &rewardID,
+			RechargeOrderID: int64ValuePtr(301),
+			EntryType:       CommissionLedgerEntryRewardPendingCredit,
+			Bucket:          CommissionLedgerBucketPending,
+			Amount:          4.5,
+			Currency:        ReferralSettlementCurrencyCNY,
+		}},
+	}
+
+	service := &PaymentService{
+		entClient:         client,
+		subscriptionSvc:   subscriptionSvc,
+		referralRefundSvc: NewReferralRefundService(rechargeRepo, commissionRepo, nil, nil),
+	}
+
+	err = service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         90,
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+
+	updatedRecharge, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeStripe, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, RechargeOrderStatusRefunded, updatedRecharge.Status)
+	require.Equal(t, 90.0, updatedRecharge.RefundedAmount)
+	require.Len(t, commissionRepo.ledgers, 2)
+	require.Equal(t, CommissionLedgerEntryRefundReverse, commissionRepo.ledgers[1].EntryType)
+	require.Equal(t, -4.5, commissionRepo.ledgers[1].Amount)
+	require.Equal(t, CommissionRewardStatusReversed, commissionRepo.rewards[0].Status)
+}
+
+func TestMarkRefundOk_SubscriptionOrderSyncsReferralState(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	groupID := int64(167)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-admin-refund-referral").
+		SetOutTradeNo("subscription_admin_refund_referral_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_admin_refund_referral").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusRefunding).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(time.Now().Add(24 * time.Hour)).
+		SetPaidAt(time.Now().Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeRepo.orders["stripe::subscription_admin_refund_referral_order"] = &RechargeOrder{
+		ID:              302,
+		UserID:          user.ID,
+		Provider:        payment.TypeStripe,
+		ExternalOrderID: order.OutTradeNo,
+		PaidAmount:      90,
+		Status:          RechargeOrderStatusCredited,
+		Currency:        ReferralSettlementCurrencyCNY,
+	}
+	rewardID := int64(402)
+	commissionRepo := &commissionRepoStub{
+		rewards: []CommissionReward{{
+			ID:              rewardID,
+			UserID:          200,
+			SourceUserID:    user.ID,
+			RechargeOrderID: 302,
+			RewardAmount:    4.5,
+			Currency:        ReferralSettlementCurrencyCNY,
+			Status:          CommissionRewardStatusPending,
+		}},
+		ledgers: []CommissionLedger{{
+			ID:              502,
+			UserID:          200,
+			RewardID:        &rewardID,
+			RechargeOrderID: int64ValuePtr(302),
+			EntryType:       CommissionLedgerEntryRewardPendingCredit,
+			Bucket:          CommissionLedgerBucketPending,
+			Amount:          4.5,
+			Currency:        ReferralSettlementCurrencyCNY,
+		}},
+	}
+	service := &PaymentService{
+		entClient:         client,
+		referralRefundSvc: NewReferralRefundService(rechargeRepo, commissionRepo, nil, nil),
+	}
+
+	result, err := service.markRefundOk(ctx, &RefundPlan{
+		OrderID:       order.ID,
+		Order:         order,
+		RefundAmount:  90,
+		GatewayAmount: 90,
+		Reason:        "admin refund",
+	})
+	require.NoError(t, err)
+	require.True(t, result.Success)
+
+	updatedRecharge, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeStripe, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, RechargeOrderStatusRefunded, updatedRecharge.Status)
+	require.Equal(t, 90.0, updatedRecharge.RefundedAmount)
+	require.Len(t, commissionRepo.ledgers, 2)
+	require.Equal(t, CommissionLedgerEntryRefundReverse, commissionRepo.ledgers[1].EntryType)
+	require.Equal(t, -4.5, commissionRepo.ledgers[1].Amount)
+	require.Equal(t, CommissionRewardStatusReversed, commissionRepo.rewards[0].Status)
 }
 
 func TestHandlePaymentNotification_PartialSubscriptionRefundDeductsProportionalDays(t *testing.T) {

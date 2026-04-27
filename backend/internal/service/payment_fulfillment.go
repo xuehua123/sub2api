@@ -14,6 +14,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -25,6 +26,16 @@ import (
 // retrying forever (e.g. when a foreign environment's webhook endpoint is
 // misconfigured to point at us, or when our orders table has been wiped).
 var ErrOrderNotFound = errors.New("payment order not found")
+
+const (
+	paymentAuditActionReferralRewardSyncFailed    = "REFERRAL_REWARD_SYNC_FAILED"
+	paymentAuditActionReferralRewardSyncRecovered = "REFERRAL_REWARD_SYNC_RECOVERED"
+	paymentAuditActionSubscriptionAssigned        = "SUBSCRIPTION_ASSIGNED"
+	paymentAuditActionSubscriptionSuccess         = "SUBSCRIPTION_SUCCESS"
+
+	defaultFailedReferralRewardRecoveryLimit = 50
+	maxFailedReferralRewardRecoveryScan      = 500
+)
 
 // --- Payment Notification & Fulfillment ---
 
@@ -99,6 +110,9 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 				}
 			}
 		case payment.OrderTypeSubscription:
+			if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
+				return err
+			}
 			if err := s.syncExternalSubscriptionReversal(txCtx, currentOrder, refundAmountTotal); err != nil {
 				return err
 			}
@@ -175,16 +189,14 @@ func (s *PaymentService) findOrderForRefundNotification(ctx context.Context, n *
 }
 
 func (s *PaymentService) syncExternalReferralReversal(ctx context.Context, o *dbent.PaymentOrder, amount float64, amountSemantic string, chargeback bool) error {
-	if s.referralRefundSvc == nil || o == nil || o.OrderType != payment.OrderTypeBalance {
+	if s.referralRefundSvc == nil || o == nil {
+		return nil
+	}
+	if o.OrderType != payment.OrderTypeBalance && o.OrderType != payment.OrderTypeSubscription {
 		return nil
 	}
 
-	providerKey := payment.GetBasePaymentType(o.PaymentType)
-	if providerKey == "" {
-		providerKey = o.PaymentType
-	}
-
-	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(providerKey), strings.TrimSpace(o.OutTradeNo))
+	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(paymentReferralProviderKey(o)), strings.TrimSpace(o.OutTradeNo))
 	if err != nil {
 		if errors.Is(err, ErrRechargeOrderNotFound) {
 			return nil
@@ -666,9 +678,11 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
-	if o != nil && o.OrderType == payment.OrderTypeBalance {
-		if err := s.syncReferralReward(ctx, o); err != nil {
-			return fmt.Errorf("sync referral reward: %w", err)
+	var referralErr error
+	if o != nil {
+		referralErr = s.syncReferralReward(ctx, o)
+		if referralErr != nil && o.OrderType != payment.OrderTypeSubscription {
+			return fmt.Errorf("sync referral reward: %w", referralErr)
 		}
 	}
 
@@ -676,6 +690,11 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("mark completed: %w", err)
+	}
+	if referralErr != nil {
+		s.writeAuditLog(ctx, o.ID, paymentAuditActionReferralRewardSyncFailed, "system", map[string]any{
+			"detail": referralErr.Error(),
+		})
 	}
 	s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{
 		"rechargeCode":   o.RechargeCode,
@@ -686,15 +705,32 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 }
 
 func (s *PaymentService) syncReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
-	if s.referralRewardSvc == nil || o == nil || o.OrderType != payment.OrderTypeBalance {
+	if s.referralRewardSvc == nil || o == nil {
 		return nil
 	}
 
+	switch o.OrderType {
+	case payment.OrderTypeBalance:
+		return s.syncBalanceReferralReward(ctx, o)
+	case payment.OrderTypeSubscription:
+		return s.syncSubscriptionReferralReward(ctx, o)
+	default:
+		return nil
+	}
+}
+
+func paymentReferralProviderKey(o *dbent.PaymentOrder) string {
+	if o == nil {
+		return ""
+	}
 	providerKey := payment.GetBasePaymentType(o.PaymentType)
 	if providerKey == "" {
 		providerKey = o.PaymentType
 	}
+	return providerKey
+}
 
+func (s *PaymentService) syncBalanceReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
 	paidAmount := roundMoney(o.PayAmount)
 	if paidAmount <= 0 {
 		paidAmount = roundMoney(o.Amount)
@@ -713,7 +749,7 @@ func (s *PaymentService) syncReferralReward(ctx context.Context, o *dbent.Paymen
 	_, err := s.referralRewardSvc.CreditRechargeOrder(ctx, &RechargeCreditInput{
 		UserID:                o.UserID,
 		ExternalOrderID:       o.OutTradeNo,
-		Provider:              providerKey,
+		Provider:              paymentReferralProviderKey(o),
 		Channel:               o.PaymentType,
 		Currency:              ReferralSettlementCurrencyCNY,
 		GrossAmount:           grossAmount,
@@ -726,6 +762,144 @@ func (s *PaymentService) syncReferralReward(ctx context.Context, o *dbent.Paymen
 		Notes:                 fmt.Sprintf("payment order %d", o.ID),
 	})
 	return err
+}
+
+func (s *PaymentService) syncSubscriptionReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
+	paidAmount := roundMoney(o.PayAmount)
+	if paidAmount <= 0 {
+		paidAmount = roundMoney(o.Amount)
+	}
+	if paidAmount <= 0 {
+		return nil
+	}
+
+	grossAmount := roundMoney(o.Amount)
+	if grossAmount <= 0 || grossAmount < paidAmount {
+		grossAmount = paidAmount
+	}
+
+	metadata := map[string]any{
+		"order_type":       payment.OrderTypeSubscription,
+		"payment_order_id": o.ID,
+		"payment_trade_no": o.PaymentTradeNo,
+	}
+	if o.PlanID != nil {
+		metadata["plan_id"] = *o.PlanID
+	}
+	if o.SubscriptionGroupID != nil {
+		metadata["subscription_group_id"] = *o.SubscriptionGroupID
+	}
+	if o.SubscriptionDays != nil {
+		metadata["subscription_days"] = *o.SubscriptionDays
+	}
+	metadataJSON, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.referralRewardSvc.CreditRechargeOrder(ctx, &RechargeCreditInput{
+		UserID:                o.UserID,
+		ExternalOrderID:       o.OutTradeNo,
+		Provider:              paymentReferralProviderKey(o),
+		Channel:               o.PaymentType,
+		Currency:              ReferralSettlementCurrencyCNY,
+		GrossAmount:           grossAmount,
+		DiscountAmount:        0,
+		PaidAmount:            paidAmount,
+		GiftBalanceAmount:     0,
+		CreditedBalanceAmount: 0,
+		SkipBalanceCredit:     true,
+		PaidAt:                o.PaidAt,
+		MetadataJSON:          string(metadataJSON),
+		Notes:                 fmt.Sprintf("subscription payment order %d", o.ID),
+	})
+	return err
+}
+
+func (s *PaymentService) RetryFailedSubscriptionReferralRewards(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.entClient == nil || s.referralRewardSvc == nil {
+		return 0, nil
+	}
+	if limit <= 0 {
+		limit = defaultFailedReferralRewardRecoveryLimit
+	}
+	scanLimit := limit * 4
+	if scanLimit < defaultFailedReferralRewardRecoveryLimit {
+		scanLimit = defaultFailedReferralRewardRecoveryLimit
+	}
+	if scanLimit > maxFailedReferralRewardRecoveryScan {
+		scanLimit = maxFailedReferralRewardRecoveryScan
+	}
+
+	logs, err := s.entClient.PaymentAuditLog.Query().
+		Where(paymentauditlog.ActionEQ(paymentAuditActionReferralRewardSyncFailed)).
+		Order(paymentauditlog.ByCreatedAt()).
+		Limit(scanLimit).
+		All(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	recovered := 0
+	for _, log := range logs {
+		if recovered >= limit {
+			break
+		}
+		orderID, err := strconv.ParseInt(strings.TrimSpace(log.OrderID), 10, 64)
+		if err != nil {
+			slog.Warn("skip invalid failed referral sync audit", "orderID", log.OrderID, "error", err)
+			continue
+		}
+		if s.hasAuditLog(ctx, orderID, paymentAuditActionReferralRewardSyncRecovered) {
+			continue
+		}
+
+		order, err := s.entClient.PaymentOrder.Get(ctx, orderID)
+		if err != nil {
+			slog.Warn("skip failed referral sync audit with missing order", "orderID", orderID, "error", err)
+			continue
+		}
+		if order.OrderType != payment.OrderTypeSubscription || order.Status != OrderStatusCompleted {
+			continue
+		}
+
+		if err := s.syncSubscriptionReferralReward(ctx, order); err != nil {
+			slog.Warn("retry subscription referral reward sync failed", "orderID", orderID, "error", err)
+			continue
+		}
+		s.markReferralRewardSyncRecovered(ctx, orderID)
+		recovered++
+	}
+
+	return recovered, nil
+}
+
+func (s *PaymentService) markReferralRewardSyncRecovered(ctx context.Context, orderID int64) {
+	if s == nil || s.entClient == nil {
+		return
+	}
+	oid := strconv.FormatInt(orderID, 10)
+	detailJSON, _ := json.Marshal(map[string]any{
+		"source_action": paymentAuditActionReferralRewardSyncFailed,
+	})
+	updated, err := s.currentClient(ctx).PaymentAuditLog.Update().
+		Where(
+			paymentauditlog.OrderIDEQ(oid),
+			paymentauditlog.ActionEQ(paymentAuditActionReferralRewardSyncFailed),
+		).
+		SetAction(paymentAuditActionReferralRewardSyncRecovered).
+		SetDetail(string(detailJSON)).
+		SetOperator("system").
+		Save(ctx)
+	if err != nil {
+		slog.Error("mark referral reward sync recovered failed", "orderID", orderID, "error", err)
+		return
+	}
+	if updated == 0 {
+		s.writeAuditLog(ctx, orderID, paymentAuditActionReferralRewardSyncRecovered, "system", map[string]any{
+			"source_action": paymentAuditActionReferralRewardSyncFailed,
+		})
+	}
 }
 
 func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid int64) error {
@@ -766,18 +940,25 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 	if err != nil || g.Status != payment.EntityStatusActive {
 		return fmt.Errorf("group %d no longer exists or inactive", gid)
 	}
-	// Idempotency: check audit log to see if subscription was already assigned.
+	// Idempotency: check audit/notes to see if subscription was already assigned.
 	// Prevents double-extension on retry after markCompleted fails.
-	if s.hasAuditLog(ctx, o.ID, "SUBSCRIPTION_SUCCESS") {
+	if s.hasAuditLog(ctx, o.ID, paymentAuditActionSubscriptionSuccess) ||
+		s.hasAuditLog(ctx, o.ID, paymentAuditActionSubscriptionAssigned) ||
+		s.hasSubscriptionAssignmentMarker(ctx, o, gid) {
 		slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
-		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+		return s.markCompleted(ctx, o, paymentAuditActionSubscriptionSuccess)
 	}
-	orderNote := fmt.Sprintf("payment order %d", o.ID)
+	orderNote := subscriptionAssignmentMarker(o.ID)
 	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
 	if err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
-	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+	s.writeAuditLog(ctx, o.ID, paymentAuditActionSubscriptionAssigned, "system", map[string]any{
+		"groupID":      gid,
+		"validityDays": days,
+		"marker":       orderNote,
+	})
+	return s.markCompleted(ctx, o, paymentAuditActionSubscriptionSuccess)
 }
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {
@@ -786,6 +967,39 @@ func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action 
 		Where(paymentauditlog.OrderIDEQ(oid), paymentauditlog.ActionEQ(action)).
 		Limit(1).Count(ctx)
 	return c > 0
+}
+
+func subscriptionAssignmentMarker(orderID int64) string {
+	return fmt.Sprintf("payment_order_id=%d", orderID)
+}
+
+func legacySubscriptionAssignmentMarker(orderID int64) string {
+	return fmt.Sprintf("payment order %d", orderID)
+}
+
+func subscriptionNotesContainAssignmentMarker(notes string, orderID int64) bool {
+	for _, line := range strings.FieldsFunc(notes, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	}) {
+		line = strings.TrimSpace(line)
+		if line == subscriptionAssignmentMarker(orderID) || line == legacySubscriptionAssignmentMarker(orderID) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *PaymentService) hasSubscriptionAssignmentMarker(ctx context.Context, o *dbent.PaymentOrder, groupID int64) bool {
+	if s == nil || s.entClient == nil || o == nil {
+		return false
+	}
+	sub, err := s.entClient.UserSubscription.Query().
+		Where(usersubscription.UserIDEQ(o.UserID), usersubscription.GroupIDEQ(groupID)).
+		Only(ctx)
+	if err != nil || sub == nil || sub.Notes == nil {
+		return false
+	}
+	return subscriptionNotesContainAssignmentMarker(*sub.Notes, o.ID)
 }
 
 func (s *PaymentService) applyAffiliateRebateForOrder(ctx context.Context, o *dbent.PaymentOrder) error {

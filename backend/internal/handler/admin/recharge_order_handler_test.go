@@ -381,6 +381,28 @@ func TestRechargeOrderHandler_Credit_SuccessAndIdempotent(t *testing.T) {
 	require.Equal(t, 0, payload.Code)
 }
 
+func TestRechargeOrderHandler_Credit_AllowsZeroCreditedBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler, userRepo, rechargeRepo, _ := newRechargeOrderHandlerForTest()
+
+	router := gin.New()
+	router.Use(fakeAdminAuth())
+	router.POST("/credit", handler.Credit)
+
+	body := `{"external_order_id":"sub-order-1","provider":"sub2apipay","currency":"CNY","user_id":123,"paid_amount":9.9,"credited_balance_amount":0}`
+	req := httptest.NewRequest(http.MethodPost, "/credit", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 0.0, userRepo.balances[123])
+	order, err := rechargeRepo.GetByProviderAndExternalOrderID(context.Background(), "sub2apipay", "sub-order-1")
+	require.NoError(t, err)
+	require.Equal(t, 9.9, order.PaidAmount)
+	require.Equal(t, 0.0, order.CreditedBalanceAmount)
+}
+
 func TestRechargeOrderHandler_Credit_RejectsNonCNY(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, _, _, _ := newRechargeOrderHandlerForTest()

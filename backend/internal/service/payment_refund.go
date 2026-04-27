@@ -448,16 +448,14 @@ func (s *PaymentService) persistRefundSuccess(ctx context.Context, p *RefundPlan
 }
 
 func (s *PaymentService) syncReferralRefund(ctx context.Context, p *RefundPlan) error {
-	if s.referralRefundSvc == nil || p == nil || p.Order == nil || p.Order.OrderType != payment.OrderTypeBalance {
+	if s.referralRefundSvc == nil || p == nil || p.Order == nil {
+		return nil
+	}
+	if p.Order.OrderType != payment.OrderTypeBalance && p.Order.OrderType != payment.OrderTypeSubscription {
 		return nil
 	}
 
-	providerKey := payment.GetBasePaymentType(p.Order.PaymentType)
-	if providerKey == "" {
-		providerKey = p.Order.PaymentType
-	}
-
-	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(providerKey), strings.TrimSpace(p.Order.OutTradeNo))
+	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(paymentReferralProviderKey(p.Order)), strings.TrimSpace(p.Order.OutTradeNo))
 	if err != nil {
 		if errors.Is(err, ErrRechargeOrderNotFound) {
 			return nil
