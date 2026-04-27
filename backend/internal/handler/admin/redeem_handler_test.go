@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
@@ -18,8 +19,9 @@ import (
 // parameter-validation layer that runs before any service call.
 func newCreateAndRedeemHandler() *RedeemHandler {
 	return &RedeemHandler{
-		adminService:  newStubAdminService(),
-		redeemService: &service.RedeemService{}, // non-nil to pass nil guard
+		adminService:          newStubAdminService(),
+		redeemService:         &service.RedeemService{}, // non-nil to pass nil guard
+		referralRewardService: nil,
 	}
 }
 
@@ -138,4 +140,44 @@ func TestCreateAndRedeem_BalanceIgnoresSubscriptionFields(t *testing.T) {
 
 	assert.NotEqual(t, http.StatusBadRequest, code,
 		"balance type should not require group_id or validity_days")
+}
+
+func TestBuildSub2ApiPayReferralCreditInput_Subscription(t *testing.T) {
+	groupID := int64(12)
+	paidAt := time.Date(2026, 4, 27, 5, 19, 40, 0, time.UTC)
+
+	input := buildSub2ApiPayReferralCreditInput(CreateAndRedeemCodeRequest{
+		Code:         "s2p_cmogqzd8p00r701p8wz32c113df6",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+		Notes:        "sub2apipay subscription order:cmogqzd8p00r701p8wz3l9tgc",
+	}, paidAt)
+
+	require.NotNil(t, input)
+	assert.Equal(t, int64(486), input.UserID)
+	assert.Equal(t, "cmogqzd8p00r701p8wz3l9tgc", input.ExternalOrderID)
+	assert.Equal(t, "sub2apipay", input.Provider)
+	assert.Equal(t, service.RedeemTypeSubscription, input.Channel)
+	assert.Equal(t, 68.0, input.PaidAmount)
+	assert.Equal(t, 0.0, input.CreditedBalanceAmount)
+	assert.True(t, input.SkipBalanceCredit)
+	assert.Equal(t, "sub2apipay:cmogqzd8p00r701p8wz3l9tgc:referral", input.IdempotencyKey)
+	assert.Equal(t, paidAt, *input.PaidAt)
+	assert.Contains(t, input.MetadataJSON, `"source":"sub2apipay_create_and_redeem"`)
+	assert.Contains(t, input.MetadataJSON, `"validity_days":31`)
+}
+
+func TestBuildSub2ApiPayReferralCreditInput_IgnoresManualRedeem(t *testing.T) {
+	input := buildSub2ApiPayReferralCreditInput(CreateAndRedeemCodeRequest{
+		Code:   "manual-code",
+		Type:   service.RedeemTypeSubscription,
+		Value:  68,
+		UserID: 486,
+		Notes:  "manual gift",
+	}, time.Now())
+
+	assert.Nil(t, input)
 }
