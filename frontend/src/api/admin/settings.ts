@@ -517,6 +517,8 @@ export interface SystemSettings {
   referral_settlement_currency: string;
   referral_withdraw_methods_enabled: string[];
 
+  // OpenAI fast/flex policy
+  openai_fast_policy_settings?: OpenAIFastPolicySettings;
 }
 
 export interface UpdateSettingsRequest {
@@ -715,6 +717,8 @@ export interface UpdateSettingsRequest {
   referral_settlement_currency?: string;
   referral_withdraw_methods_enabled?: string[];
 
+  // OpenAI fast/flex policy
+  openai_fast_policy_settings?: OpenAIFastPolicySettings;
 }
 
 /**
@@ -940,6 +944,29 @@ export async function updateRectifierSettings(
     settings,
   );
   return data;
+}
+
+// ==================== OpenAI Fast Policy Settings ====================
+
+/**
+ * OpenAI fast/flex policy rule interface.
+ * Matches backend dto.OpenAIFastPolicyRule.
+ */
+export interface OpenAIFastPolicyRule {
+  service_tier: "all" | "priority" | "flex";
+  action: "pass" | "filter" | "block";
+  scope: "all" | "oauth" | "apikey" | "bedrock";
+  error_message?: string;
+  model_whitelist?: string[];
+  fallback_action?: "pass" | "filter" | "block";
+  fallback_error_message?: string;
+}
+
+/**
+ * OpenAI fast/flex policy settings interface.
+ */
+export interface OpenAIFastPolicySettings {
+  rules: OpenAIFastPolicyRule[];
 }
 
 // ==================== Beta Policy Settings ====================
