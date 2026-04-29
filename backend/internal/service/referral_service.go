@@ -75,6 +75,7 @@ type ReferralOverview struct {
 	BindBeforeFirstPaidOnly         bool              `json:"bind_before_first_paid_only"`
 	ReferralWithdrawEnabled         bool              `json:"referral_withdraw_enabled"`
 	ReferralCreditConversionEnabled bool              `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate    float64           `json:"referral_credit_conversion_rate"`
 	SettlementCurrency              string            `json:"settlement_currency"`
 	DefaultCode                     *ReferralCode     `json:"default_code,omitempty"`
 	Relation                        *ReferralRelation `json:"relation,omitempty"`
@@ -168,6 +169,7 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		BindBeforeFirstPaidOnly:         settings.ReferralBindBeforeFirstPaidOnly,
 		ReferralWithdrawEnabled:         settings.ReferralWithdrawEnabled,
 		ReferralCreditConversionEnabled: settings.ReferralCreditConversionEnabled,
+		ReferralCreditConversionRate:    settings.ReferralCreditConversionRate,
 		SettlementCurrency:              settings.ReferralSettlementCurrency,
 		DefaultCode:                     defaultCode,
 		Relation:                        relation,

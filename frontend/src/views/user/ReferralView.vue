@@ -445,6 +445,11 @@
                </button>
             </div>
           </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('referral.creditConversionRate', '转余额倍数') }}: {{ creditConversionRate }}，{{
+              t('referral.expectedCreditAmount', '预计到账额度')
+            }} {{ formatMoney(convertCreditAmount) }}
+          </p>
         </div>
 
         <div class="mt-6 flex gap-3">
@@ -595,6 +600,13 @@ const withdrawMethods = computed(() => overview.value?.withdraw_methods_enabled?
 const maxWithdrawable = computed(() => Number(overview.value?.available_commission || 0))
 const withdrawEnabled = computed(() => Boolean(overview.value?.referral_withdraw_enabled))
 const creditConversionEnabled = computed(() => Boolean(overview.value?.referral_credit_conversion_enabled))
+const creditConversionRate = computed(() => {
+  const rate = Number(overview.value?.referral_credit_conversion_rate || 1)
+  return rate > 0 ? rate : 1
+})
+const convertCreditAmount = computed(() =>
+  Number((Number(convertAmount.value || 0) * creditConversionRate.value).toFixed(2))
+)
 
 const inviteLink = computed(() => {
   if (!overview.value?.default_code?.code) return ''

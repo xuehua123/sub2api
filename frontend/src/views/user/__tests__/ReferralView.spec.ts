@@ -84,6 +84,7 @@ describe('user ReferralView', () => {
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: true,
       referral_credit_conversion_enabled: true,
+      referral_credit_conversion_rate: 1,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -191,6 +192,7 @@ describe('user ReferralView', () => {
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: false,
       referral_credit_conversion_enabled: true,
+      referral_credit_conversion_rate: 1,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -226,6 +228,7 @@ describe('user ReferralView', () => {
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: false,
       referral_credit_conversion_enabled: false,
+      referral_credit_conversion_rate: 1,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -260,4 +263,3 @@ describe('user ReferralView', () => {
     expect(getPayoutAccounts).not.toHaveBeenCalled()
   })
 })
-

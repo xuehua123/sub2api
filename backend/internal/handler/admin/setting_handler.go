@@ -329,6 +329,7 @@ type UpdateSettingsRequest struct {
 	ReferralAllowManualInput             *bool    `json:"referral_allow_manual_input"`
 	ReferralWithdrawEnabled              *bool    `json:"referral_withdraw_enabled"`
 	ReferralCreditConversionEnabled      *bool    `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate         *float64 `json:"referral_credit_conversion_rate"`
 	ReferralWithdrawMinAmount            *float64 `json:"referral_withdraw_min_amount"`
 	ReferralWithdrawMaxAmount            *float64 `json:"referral_withdraw_max_amount"`
 	ReferralWithdrawDailyLimit           *int     `json:"referral_withdraw_daily_limit"`
@@ -1264,6 +1265,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ReferralCreditConversionEnabled
 		}(),
+		ReferralCreditConversionRate: func() float64 {
+			if req.ReferralCreditConversionRate != nil {
+				return *req.ReferralCreditConversionRate
+			}
+			return previousSettings.ReferralCreditConversionRate
+		}(),
 		ReferralWithdrawMinAmount: func() float64 {
 			if req.ReferralWithdrawMinAmount != nil {
 				return *req.ReferralWithdrawMinAmount
@@ -1846,6 +1853,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ReferralCreditConversionEnabled != after.ReferralCreditConversionEnabled {
 		changed = append(changed, "referral_credit_conversion_enabled")
 	}
+	if before.ReferralCreditConversionRate != after.ReferralCreditConversionRate {
+		changed = append(changed, "referral_credit_conversion_rate")
+	}
 	if before.PurchaseSubscriptionEnabled != after.PurchaseSubscriptionEnabled {
 		changed = append(changed, "purchase_subscription_enabled")
 	}
@@ -2183,6 +2193,7 @@ func buildSystemSettingsPayload(
 		ReferralAllowManualInput:               settings.ReferralAllowManualInput,
 		ReferralWithdrawEnabled:                settings.ReferralWithdrawEnabled,
 		ReferralCreditConversionEnabled:        settings.ReferralCreditConversionEnabled,
+		ReferralCreditConversionRate:           settings.ReferralCreditConversionRate,
 		ReferralWithdrawMinAmount:              settings.ReferralWithdrawMinAmount,
 		ReferralWithdrawMaxAmount:              settings.ReferralWithdrawMaxAmount,
 		ReferralWithdrawDailyLimit:             settings.ReferralWithdrawDailyLimit,

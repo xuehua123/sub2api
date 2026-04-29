@@ -104,6 +104,7 @@ const baseSettings = {
   referral_bind_before_first_paid_only: true,
   referral_withdraw_enabled: false,
   referral_credit_conversion_enabled: false,
+  referral_credit_conversion_rate: 1,
   referral_settlement_currency: 'CNY',
   referral_withdraw_methods_enabled: []
 }

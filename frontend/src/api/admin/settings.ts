@@ -505,6 +505,7 @@ export interface SystemSettings {
   referral_bind_before_first_paid_only: boolean;
   referral_withdraw_enabled: boolean;
   referral_credit_conversion_enabled: boolean;
+  referral_credit_conversion_rate: number;
   referral_withdraw_min_amount: number;
   referral_withdraw_max_amount: number;
   referral_withdraw_daily_limit: number;
@@ -702,6 +703,7 @@ export interface UpdateSettingsRequest {
   referral_bind_before_first_paid_only?: boolean;
   referral_withdraw_enabled?: boolean;
   referral_credit_conversion_enabled?: boolean;
+  referral_credit_conversion_rate?: number;
   referral_withdraw_min_amount?: number;
   referral_withdraw_max_amount?: number;
   referral_withdraw_daily_limit?: number;

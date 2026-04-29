@@ -648,6 +648,7 @@ func (s *ReferralWithdrawalService) loadSettings(ctx context.Context) (*SystemSe
 			ReferralEnabled:                      false,
 			ReferralWithdrawEnabled:              false,
 			ReferralCreditConversionEnabled:      false,
+			ReferralCreditConversionRate:         1,
 			ReferralWithdrawMinAmount:            100,
 			ReferralWithdrawMaxAmount:            5000,
 			ReferralWithdrawFeeRate:              0,
@@ -805,13 +806,14 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 			return err
 		}
 
+		creditAmount := roundMoney(amount * settings.ReferralCreditConversionRate)
 		now := time.Now()
 		withdrawal := &CommissionWithdrawal{
 			UserID:       userID,
 			WithdrawalNo: generateWithdrawalNo(now),
 			Amount:       roundMoney(amount),
 			FeeAmount:    0,
-			NetAmount:    roundMoney(amount),
+			NetAmount:    creditAmount,
 			Currency:     ReferralSettlementCurrencyCNY,
 			Status:       CommissionWithdrawalStatusPaid,
 			PayoutMethod: "credit_conversion",
@@ -824,7 +826,14 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 
 		items := make([]CommissionWithdrawalItem, 0, len(allocations))
 		ledgers := make([]CommissionLedger, 0, len(allocations)*4)
-		for _, allocation := range allocations {
+		remainingNet := creditAmount
+		for i, allocation := range allocations {
+			itemNet := roundMoney(allocation.amount * settings.ReferralCreditConversionRate)
+			if i == len(allocations)-1 {
+				itemNet = remainingNet
+			}
+			remainingNet = roundMoney(remainingNet - itemNet)
+
 			ledgers = append(ledgers,
 				CommissionLedger{
 					UserID:          userID,
@@ -875,7 +884,7 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 				RechargeOrderID:    allocation.reward.RechargeOrderID,
 				AllocatedAmount:    allocation.amount,
 				FeeAllocatedAmount: 0,
-				NetAllocatedAmount: allocation.amount,
+				NetAllocatedAmount: itemNet,
 				Currency:           ReferralSettlementCurrencyCNY,
 				Status:             CommissionWithdrawalItemStatusPaid,
 			})
@@ -893,7 +902,7 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 			}
 		}
 
-		return s.userRepo.UpdateBalance(txCtx, userID, amount)
+		return s.userRepo.UpdateBalance(txCtx, userID, creditAmount)
 	}
 
 	return s.withOptionalTx(ctx, apply)

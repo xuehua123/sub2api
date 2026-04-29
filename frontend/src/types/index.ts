@@ -219,6 +219,7 @@ export interface PublicSettings {
   referral_bind_before_first_paid_only: boolean
   referral_withdraw_enabled: boolean
   referral_credit_conversion_enabled: boolean
+  referral_credit_conversion_rate: number
   referral_settlement_currency: string
   referral_withdraw_methods_enabled: string[]
   // LobeHub public settings
@@ -1814,6 +1815,7 @@ export interface ReferralCenterOverview {
   withdraw_methods_enabled: string[]
   referral_withdraw_enabled: boolean
   referral_credit_conversion_enabled: boolean
+  referral_credit_conversion_rate: number
 }
 
 export interface CommissionLedgerEntry {

@@ -192,6 +192,7 @@ type SystemSettings struct {
 	ReferralAllowManualInput             bool     `json:"referral_allow_manual_input"`
 	ReferralWithdrawEnabled              bool     `json:"referral_withdraw_enabled"`
 	ReferralCreditConversionEnabled      bool     `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate         float64  `json:"referral_credit_conversion_rate"`
 	ReferralWithdrawMinAmount            float64  `json:"referral_withdraw_min_amount"`
 	ReferralWithdrawMaxAmount            float64  `json:"referral_withdraw_max_amount"`
 	ReferralWithdrawDailyLimit           int      `json:"referral_withdraw_daily_limit"`
@@ -278,6 +279,7 @@ type PublicSettings struct {
 	ReferralBindBeforeFirstPaidOnly  bool             `json:"referral_bind_before_first_paid_only"`
 	ReferralWithdrawEnabled          bool             `json:"referral_withdraw_enabled"`
 	ReferralCreditConversionEnabled  bool             `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate     float64          `json:"referral_credit_conversion_rate"`
 	ReferralSettlementCurrency       string           `json:"referral_settlement_currency"`
 	ReferralWithdrawMethodsEnabled   []string         `json:"referral_withdraw_methods_enabled"`
 	LobeHubEnabled                   bool             `json:"lobehub_enabled"`

@@ -70,6 +70,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ReferralBindBeforeFirstPaidOnly:  settings.ReferralBindBeforeFirstPaidOnly,
 		ReferralWithdrawEnabled:          settings.ReferralWithdrawEnabled,
 		ReferralCreditConversionEnabled:  settings.ReferralCreditConversionEnabled,
+		ReferralCreditConversionRate:     settings.ReferralCreditConversionRate,
 		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
 		LobeHubEnabled:                   settings.LobeHubEnabled,

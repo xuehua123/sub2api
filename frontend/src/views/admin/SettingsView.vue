@@ -4804,6 +4804,20 @@
 
               <div class="grid gap-4 md:grid-cols-2">
                 <div>
+                  <label class="input-label">{{ t('admin.settings.referral.creditConversionRate', '转余额倍数') }}</label>
+                  <input
+                    v-model.number="form.referral_credit_conversion_rate"
+                    type="number"
+                    step="0.0001"
+                    min="0.0001"
+                    max="1000"
+                    class="input w-32"
+                  />
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    {{ t('admin.settings.referral.creditConversionRateDesc', '10 表示返佣 1 元转入 10 额度，0.8 表示返佣 100 元转入 80 额度。') }}
+                  </p>
+                </div>
+                <div>
                   <label class="input-label">{{ t('admin.settings.referral.withdrawMinAmount') }}</label>
                   <input v-model.number="form.referral_withdraw_min_amount" type="number" min="0" class="input w-32" />
                 </div>
@@ -5665,6 +5679,7 @@ const form = reactive<SettingsForm>({
   referral_bind_before_first_paid_only: false,
   referral_withdraw_enabled: false,
   referral_credit_conversion_enabled: false,
+  referral_credit_conversion_rate: 1,
   referral_withdraw_min_amount: 10,
   referral_withdraw_max_amount: 0,
   referral_withdraw_daily_limit: 0,
@@ -6567,6 +6582,22 @@ async function saveSettings() {
       form.wechat_connect_mobile_enabled,
       form.wechat_connect_mode,
     );
+    const referralCreditConversionRate = Number(
+      form.referral_credit_conversion_rate,
+    );
+    if (
+      !Number.isFinite(referralCreditConversionRate) ||
+      referralCreditConversionRate <= 0 ||
+      referralCreditConversionRate > 1000
+    ) {
+      appStore.showError(
+        localText(
+          "转余额倍数必须大于 0 且不超过 1000。",
+          "Credit conversion multiplier must be greater than 0 and no more than 1000.",
+        ),
+      );
+      return;
+    }
 
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
@@ -6719,6 +6750,7 @@ async function saveSettings() {
       referral_bind_before_first_paid_only: form.referral_bind_before_first_paid_only,
       referral_withdraw_enabled: form.referral_withdraw_enabled,
       referral_credit_conversion_enabled: form.referral_credit_conversion_enabled,
+      referral_credit_conversion_rate: referralCreditConversionRate,
       referral_withdraw_min_amount: Number(form.referral_withdraw_min_amount) || 0,
       referral_withdraw_max_amount: Number(form.referral_withdraw_max_amount) || 0,
       referral_withdraw_daily_limit: Number(form.referral_withdraw_daily_limit) || 0,

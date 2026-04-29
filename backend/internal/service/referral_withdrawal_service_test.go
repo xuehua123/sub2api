@@ -941,6 +941,93 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_DoesNotRequireWithd
 	require.Equal(t, 10.0, userRepo.balanceUpdates[200])
 }
 
+func TestReferralWithdrawalService_ConvertCommissionToCredit_AppliesConversionRate(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralCreditConversionRate:    "0.8",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.NoError(t, err)
+	require.Len(t, repo.withdrawals, 1)
+	require.Equal(t, 10.0, repo.withdrawals[0].Amount)
+	require.Equal(t, 8.0, repo.withdrawals[0].NetAmount)
+	require.Equal(t, 8.0, userRepo.balanceUpdates[200])
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_AllowsConversionMultiplierAboveOne(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 20, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 20, Currency: ReferralSettlementCurrencyCNY},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralCreditConversionRate:    "10",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.NoError(t, err)
+	require.Equal(t, 100.0, repo.withdrawals[0].NetAmount)
+	require.Equal(t, 100.0, userRepo.balanceUpdates[200])
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_DistributesMultiplierAcrossRewards(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 3.33, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+		{ID: 2, UserID: 200, RechargeOrderID: 12, RewardAmount: 3.33, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+		{ID: 3, UserID: 200, RechargeOrderID: 13, RewardAmount: 3.34, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 3.33, Currency: ReferralSettlementCurrencyCNY},
+		{ID: 2, UserID: 200, RewardID: int64ValuePtr(2), RechargeOrderID: int64ValuePtr(12), Bucket: CommissionLedgerBucketAvailable, Amount: 3.33, Currency: ReferralSettlementCurrencyCNY},
+		{ID: 3, UserID: 200, RewardID: int64ValuePtr(3), RechargeOrderID: int64ValuePtr(13), Bucket: CommissionLedgerBucketAvailable, Amount: 3.34, Currency: ReferralSettlementCurrencyCNY},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralCreditConversionRate:    "0.123456789",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.NoError(t, err)
+	require.Len(t, repo.withdrawals, 1)
+	require.Len(t, repo.withdrawalItems, 3)
+	require.Equal(t, 10.0, repo.withdrawals[0].Amount)
+	require.InDelta(t, 1.23456789, repo.withdrawals[0].NetAmount, 0.000000001)
+
+	netTotal := repo.withdrawalItems[0].NetAllocatedAmount + repo.withdrawalItems[1].NetAllocatedAmount + repo.withdrawalItems[2].NetAllocatedAmount
+	require.InDelta(t, repo.withdrawals[0].NetAmount, netTotal, 0.000000001)
+	require.InDelta(t, 0.41111111, repo.withdrawalItems[0].NetAllocatedAmount, 0.000000001)
+	require.InDelta(t, 0.41111111, repo.withdrawalItems[1].NetAllocatedAmount, 0.000000001)
+	require.InDelta(t, 0.41234567, repo.withdrawalItems[2].NetAllocatedAmount, 0.000000001)
+	require.Equal(t, CommissionRewardStatusPaid, repo.rewards[0].Status)
+	require.Equal(t, CommissionRewardStatusPaid, repo.rewards[1].Status)
+	require.Equal(t, CommissionRewardStatusPaid, repo.rewards[2].Status)
+	require.InDelta(t, 1.23456789, userRepo.balanceUpdates[200], 0.000000001)
+}
+
 func TestReferralWithdrawalService_ConvertCommissionToCredit_RechecksDailyLimitInsideTransaction(t *testing.T) {
 	repo := newWithdrawalCommissionRepoStub()
 	repo.rewards = []CommissionReward{

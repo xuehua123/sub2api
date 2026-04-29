@@ -66,7 +66,8 @@ func newBackendModeSettingService(t *testing.T, enabled string) *service.Setting
 	}
 	svc := service.NewSettingService(repo, &config.Config{})
 	require.NoError(t, svc.UpdateSettings(context.Background(), &service.SystemSettings{
-		BackendModeEnabled: enabled == "true",
+		BackendModeEnabled:           enabled == "true",
+		ReferralCreditConversionRate: 1,
 	}))
 
 	return svc

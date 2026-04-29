@@ -67,6 +67,8 @@ const versionBoundsErrorTTL = 5 * time.Second
 // versionBoundsDBTimeout singleflight 内 DB 查询超时，独立于请求 context
 const versionBoundsDBTimeout = 5 * time.Second
 
+const ReferralCreditConversionMultiplierMax = 1000
+
 // cachedBackendMode Backend Mode cache (in-process, 60s TTL)
 type cachedBackendMode struct {
 	value     bool
@@ -461,6 +463,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyReferralBindBeforeFirstPaidOnly,
 		SettingKeyReferralWithdrawEnabled,
 		SettingKeyReferralCreditConversionEnabled,
+		SettingKeyReferralCreditConversionRate,
 		SettingKeyReferralSettlementCurrency,
 		SettingKeyReferralWithdrawMethodsEnabled,
 		SettingKeyBalanceLowNotifyEnabled,
@@ -563,6 +566,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ReferralBindBeforeFirstPaidOnly: settings[SettingKeyReferralBindBeforeFirstPaidOnly] == "true",
 		ReferralWithdrawEnabled:         settings[SettingKeyReferralWithdrawEnabled] == "true",
 		ReferralCreditConversionEnabled: referralCreditConversionEnabledPublic(settings),
+		ReferralCreditConversionRate:    parseReferralCreditConversionRate(settings[SettingKeyReferralCreditConversionRate]),
 		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
 		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
 		ChannelMonitorEnabled:           !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
@@ -629,6 +633,7 @@ type PublicSettingsInjectionPayload struct {
 	ReferralBindBeforeFirstPaidOnly  bool            `json:"referral_bind_before_first_paid_only"`
 	ReferralWithdrawEnabled          bool            `json:"referral_withdraw_enabled"`
 	ReferralCreditConversionEnabled  bool            `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate     float64         `json:"referral_credit_conversion_rate"`
 	ReferralSettlementCurrency       string          `json:"referral_settlement_currency"`
 	ReferralWithdrawMethodsEnabled   []string        `json:"referral_withdraw_methods_enabled"`
 	LobeHubEnabled                   bool            `json:"lobehub_enabled"`
@@ -707,6 +712,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralBindBeforeFirstPaidOnly      bool     `json:"referral_bind_before_first_paid_only"`
 		ReferralWithdrawEnabled              bool     `json:"referral_withdraw_enabled"`
 		ReferralCreditConversionEnabled      bool     `json:"referral_credit_conversion_enabled"`
+		ReferralCreditConversionRate         float64  `json:"referral_credit_conversion_rate"`
 		ReferralSettlementCurrency           string   `json:"referral_settlement_currency"`
 		ReferralWithdrawMethodsEnabled       []string `json:"referral_withdraw_methods_enabled"`
 		AffiliateEnabled                     bool     `json:"affiliate_enabled"`
@@ -763,6 +769,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralBindBeforeFirstPaidOnly:      settings.ReferralBindBeforeFirstPaidOnly,
 		ReferralWithdrawEnabled:              settings.ReferralWithdrawEnabled,
 		ReferralCreditConversionEnabled:      settings.ReferralCreditConversionEnabled,
+		ReferralCreditConversionRate:         settings.ReferralCreditConversionRate,
 		ReferralSettlementCurrency:           settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:       settings.ReferralWithdrawMethodsEnabled,
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
@@ -1121,6 +1128,9 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	settings.PaymentVisibleMethodAlipaySource = alipaySource
 	settings.PaymentVisibleMethodWxpaySource = wxpaySource
+	if err := ValidateReferralCreditConversionMultiplier(settings.ReferralCreditConversionRate); err != nil {
+		return nil, err
+	}
 	settings.WeChatConnectAppID = strings.TrimSpace(settings.WeChatConnectAppID)
 	settings.WeChatConnectAppSecret = strings.TrimSpace(settings.WeChatConnectAppSecret)
 	settings.WeChatConnectOpenAppID = strings.TrimSpace(firstNonEmpty(settings.WeChatConnectOpenAppID, settings.WeChatConnectAppID))
@@ -1381,6 +1391,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyReferralAllowManualInput] = strconv.FormatBool(settings.ReferralAllowManualInput)
 	updates[SettingKeyReferralWithdrawEnabled] = strconv.FormatBool(settings.ReferralWithdrawEnabled)
 	updates[SettingKeyReferralCreditConversionEnabled] = strconv.FormatBool(settings.ReferralCreditConversionEnabled)
+	updates[SettingKeyReferralCreditConversionRate] = strconv.FormatFloat(settings.ReferralCreditConversionRate, 'f', 8, 64)
 	updates[SettingKeyReferralWithdrawMinAmount] = strconv.FormatFloat(settings.ReferralWithdrawMinAmount, 'f', 8, 64)
 	updates[SettingKeyReferralWithdrawMaxAmount] = strconv.FormatFloat(settings.ReferralWithdrawMaxAmount, 'f', 8, 64)
 	updates[SettingKeyReferralWithdrawDailyLimit] = strconv.Itoa(settings.ReferralWithdrawDailyLimit)
@@ -1998,6 +2009,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySMTPPort:                                 "587",
 		SettingKeySMTPUseTLS:                               "false",
 		SettingKeyReferralCreditConversionEnabled:          "false",
+		SettingKeyReferralCreditConversionRate:             "1",
 		// Model fallback defaults
 		SettingKeyEnableModelFallback:      "false",
 		SettingKeyFallbackModelAnthropic:   "claude-3-5-sonnet-20241022",
@@ -2426,6 +2438,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.ReferralCreditConversionEnabled = result.ReferralWithdrawEnabled
 	}
+	result.ReferralCreditConversionRate = parseReferralCreditConversionRate(settings[SettingKeyReferralCreditConversionRate])
 	if v, err := strconv.ParseFloat(settings[SettingKeyReferralWithdrawMinAmount], 64); err == nil {
 		result.ReferralWithdrawMinAmount = v
 	} else {
@@ -2727,6 +2740,24 @@ func referralCreditConversionEnabledPublic(settings map[string]string) bool {
 		return v == "true"
 	}
 	return settings[SettingKeyReferralWithdrawEnabled] == "true"
+}
+
+func parseReferralCreditConversionRate(raw string) float64 {
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || ValidateReferralCreditConversionMultiplier(rate) != nil {
+		return 1
+	}
+	return rate
+}
+
+func ValidateReferralCreditConversionMultiplier(multiplier float64) error {
+	if math.IsNaN(multiplier) || math.IsInf(multiplier, 0) || multiplier <= 0 || multiplier > ReferralCreditConversionMultiplierMax {
+		return infraerrors.BadRequest(
+			"INVALID_REFERRAL_CREDIT_CONVERSION_RATE",
+			fmt.Sprintf("referral credit conversion multiplier must be greater than 0 and no more than %d", ReferralCreditConversionMultiplierMax),
+		)
+	}
+	return nil
 }
 
 func (s *SettingService) getReferralCurrencyPublic(settings map[string]string) string {

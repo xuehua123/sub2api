@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -79,6 +80,7 @@ func TestSettingService_UpdateSettings_DefaultSubscriptions_ValidGroup(t *testin
 		DefaultSubscriptions: []DefaultSubscriptionSetting{
 			{GroupID: 11, ValidityDays: 30},
 		},
+		ReferralCreditConversionRate: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, []int64{11}, groupReader.calls)
@@ -178,6 +180,7 @@ func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Normaliz
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
 		RegistrationEmailSuffixWhitelist: []string{"example.com", "@EXAMPLE.com", " @foo.bar "},
+		ReferralCreditConversionRate:     1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, `["@example.com","@foo.bar"]`, repo.updates[SettingKeyRegistrationEmailSuffixWhitelist])
@@ -194,6 +197,35 @@ func TestSettingService_UpdateSettings_RegistrationEmailSuffixWhitelist_Invalid(
 	require.Equal(t, "INVALID_REGISTRATION_EMAIL_SUFFIX_WHITELIST", infraerrors.Reason(err))
 }
 
+func TestSettingService_UpdateSettings_ReferralCreditConversionMultiplier_AllowsAboveOne(t *testing.T) {
+	repo := &settingUpdateRepoStub{}
+	svc := NewSettingService(repo, &config.Config{})
+
+	err := svc.UpdateSettings(context.Background(), &SystemSettings{
+		ReferralCreditConversionRate: 10,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "10.00000000", repo.updates[SettingKeyReferralCreditConversionRate])
+}
+
+func TestSettingService_UpdateSettings_ReferralCreditConversionMultiplier_RejectsInvalidValues(t *testing.T) {
+	tests := []float64{0, -1, 1000.0001}
+
+	for _, value := range tests {
+		t.Run(strconv.FormatFloat(value, 'f', -1, 64), func(t *testing.T) {
+			repo := &settingUpdateRepoStub{}
+			svc := NewSettingService(repo, &config.Config{})
+
+			err := svc.UpdateSettings(context.Background(), &SystemSettings{
+				ReferralCreditConversionRate: value,
+			})
+			require.Error(t, err)
+			require.Equal(t, "INVALID_REFERRAL_CREDIT_CONVERSION_RATE", infraerrors.Reason(err))
+			require.Nil(t, repo.updates)
+		})
+	}
+}
+
 func TestParseDefaultSubscriptions_NormalizesValues(t *testing.T) {
 	got := parseDefaultSubscriptions(`[{"group_id":11,"validity_days":30},{"group_id":11,"validity_days":60},{"group_id":0,"validity_days":10},{"group_id":12,"validity_days":99999}]`)
 	require.Equal(t, []DefaultSubscriptionSetting{
@@ -208,16 +240,18 @@ func TestSettingService_UpdateSettings_TablePreferences(t *testing.T) {
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
-		TableDefaultPageSize: 50,
-		TablePageSizeOptions: []int{20, 50, 100},
+		TableDefaultPageSize:         50,
+		TablePageSizeOptions:         []int{20, 50, 100},
+		ReferralCreditConversionRate: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "50", repo.updates[SettingKeyTableDefaultPageSize])
 	require.Equal(t, "[20,50,100]", repo.updates[SettingKeyTablePageSizeOptions])
 
 	err = svc.UpdateSettings(context.Background(), &SystemSettings{
-		TableDefaultPageSize: 1000,
-		TablePageSizeOptions: []int{20, 100},
+		TableDefaultPageSize:         1000,
+		TablePageSizeOptions:         []int{20, 100},
+		ReferralCreditConversionRate: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "1000", repo.updates[SettingKeyTableDefaultPageSize])
@@ -234,6 +268,7 @@ func TestSettingService_UpdateSettings_PaymentVisibleMethodsAndAdvancedScheduler
 		PaymentVisibleMethodAlipayEnabled: true,
 		PaymentVisibleMethodWxpayEnabled:  false,
 		OpenAIAdvancedSchedulerEnabled:    true,
+		ReferralCreditConversionRate:      1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, VisibleMethodSourceOfficialAlipay, repo.updates[SettingPaymentVisibleMethodAlipaySource])

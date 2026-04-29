@@ -359,6 +359,7 @@ const (
 	SettingKeyReferralAllowManualInput             = "referral_allow_manual_input"
 	SettingKeyReferralWithdrawEnabled              = "referral_withdraw_enabled"
 	SettingKeyReferralCreditConversionEnabled      = "referral_credit_conversion_enabled"
+	SettingKeyReferralCreditConversionRate         = "referral_credit_conversion_rate"
 	SettingKeyReferralWithdrawMinAmount            = "referral_withdraw_min_amount"
 	SettingKeyReferralWithdrawMaxAmount            = "referral_withdraw_max_amount"
 	SettingKeyReferralWithdrawDailyLimit           = "referral_withdraw_daily_limit"

@@ -327,6 +327,7 @@ describe('useAppStore', () => {
         referral_bind_before_first_paid_only: false,
         referral_withdraw_enabled: false,
         referral_credit_conversion_enabled: false,
+        referral_credit_conversion_rate: 1,
         referral_settlement_currency: 'CNY',
         referral_withdraw_methods_enabled: [],
         lobehub_enabled: false,

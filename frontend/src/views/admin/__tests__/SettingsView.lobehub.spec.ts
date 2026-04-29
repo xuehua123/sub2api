@@ -175,6 +175,7 @@ describe('admin SettingsView LobeHub section', () => {
       referral_allow_manual_input: true,
       referral_withdraw_enabled: true,
       referral_credit_conversion_enabled: true,
+      referral_credit_conversion_rate: 1,
       referral_withdraw_min_amount: 100,
       referral_withdraw_max_amount: 3000,
       referral_withdraw_daily_limit: 2,
@@ -295,6 +296,7 @@ describe('admin SettingsView LobeHub section', () => {
         referral_allow_manual_input: true,
         referral_withdraw_enabled: true,
         referral_credit_conversion_enabled: true,
+        referral_credit_conversion_rate: 1,
         referral_withdraw_min_amount: 100,
         referral_withdraw_max_amount: 3000,
         referral_withdraw_daily_limit: 2,
@@ -307,5 +309,37 @@ describe('admin SettingsView LobeHub section', () => {
         referral_withdraw_methods_enabled: ['alipay', 'wechat']
       })
     )
+  })
+
+  it('rejects invalid referral credit conversion rate instead of clamping it', async () => {
+    const wrapper = mount(SettingsView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          Icon: true,
+          Select: true,
+          GroupBadge: true,
+          GroupOptionItem: true,
+          Toggle: {
+            props: ['modelValue'],
+            template: '<input type="checkbox" :checked="modelValue" />'
+          },
+          ImageUpload: true,
+          BackupSettings: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    const rateInput = wrapper.find('input[min="0.0001"][max="1000"]')
+    expect(rateInput.exists()).toBe(true)
+
+    await rateInput.setValue('0')
+    await wrapper.find('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateSettings).not.toHaveBeenCalled()
+    expect(showError).toHaveBeenCalled()
   })
 })
