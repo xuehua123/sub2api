@@ -18,4 +18,14 @@ describe('usePersistedPageSize', () => {
 
     expect(getPersistedPageSize()).toBe(1000)
   })
+
+  it('uses newly persisted page size when no legacy source marker exists', () => {
+    window.__APP_CONFIG__ = {
+      table_default_page_size: 1000,
+      table_page_size_options: [20, 50, 1000]
+    } as any
+    localStorage.setItem('table-page-size', '50')
+
+    expect(getPersistedPageSize()).toBe(50)
+  })
 })
