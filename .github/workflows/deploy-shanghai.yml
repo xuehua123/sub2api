@@ -35,8 +35,8 @@ jobs:
           RESIN_PROXY_URL: ${{ secrets.RESIN_PROXY_URL }}
           DOCKER_NO_PROXY: ${{ secrets.DOCKER_NO_PROXY || '127.0.0.1,localhost,postgres,redis' }}
         with:
-          host: ${{ secrets.SH_PROD_HOST || '119.45.125.174' }}
-          username: ${{ secrets.SH_PROD_USER || 'ubuntu' }}
+          host: ${{ secrets.SH_PROD_HOST || '101.35.240.224' }}
+          username: ${{ secrets.SH_PROD_USER || 'root' }}
           key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
           password: ${{ secrets.SH_PROD_PASSWORD }}
           port: ${{ secrets.SH_PROD_PORT || '22' }}
@@ -45,7 +45,7 @@ jobs:
           command_timeout: 10m
           script: |
             set -eu
-            cd /srv/sub2api
+            cd /opt/platform
 
             if echo "$DEPLOY_IMAGE_TAG" | grep -Eq '^[^/]+/[^:]+/.+[:@]'; then
               deploy_image="$DEPLOY_IMAGE_TAG"
@@ -54,7 +54,7 @@ jobs:
               deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}"
               safe_tag="$DEPLOY_IMAGE_TAG"
             fi
-            backup="compose.yml.bak-$(date +%Y%m%d-%H%M%S)-pre-${safe_tag}"
+            backup="docker-compose.yml.bak-$(date +%Y%m%d-%H%M%S)-pre-${safe_tag}"
 
             if [ -n "${GHCR_TOKEN:-}" ]; then
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:-x-access-token}" --password-stdin
@@ -69,11 +69,11 @@ jobs:
               export no_proxy="$DOCKER_NO_PROXY"
             fi
 
-            cp compose.yml "$backup"
-            DEPLOY_IMAGE="$deploy_image" python3 -c "from pathlib import Path; import os; path = Path('compose.yml'); deploy_image = os.environ['DEPLOY_IMAGE']; lines = path.read_text().splitlines(); index = next((i for i, line in enumerate(lines) if line.lstrip().startswith('image: ghcr.io/xuehua123/sub2api')), None); assert index is not None, 'compose image line not found'; line = lines[index]; stripped = line.lstrip(); indent = line[: len(line) - len(stripped)]; lines[index] = f'{indent}image: {deploy_image}'; path.write_text('\\n'.join(lines) + '\\n')"
+            cp docker-compose.yml "$backup"
+            DEPLOY_IMAGE="$deploy_image" python3 -c "from pathlib import Path; import os; path = Path('docker-compose.yml'); deploy_image = os.environ['DEPLOY_IMAGE']; lines = path.read_text().splitlines(); index = next((i for i, line in enumerate(lines) if line.lstrip().startswith('image: ghcr.io/xuehua123/sub2api')), None); assert index is not None, 'compose image line not found'; line = lines[index]; stripped = line.lstrip(); indent = line[: len(line) - len(stripped)]; lines[index] = f'{indent}image: {deploy_image}'; path.write_text('\\n'.join(lines) + '\\n')"
 
-            chmod +x ./update.sh
-            ./update.sh
+            docker compose pull sub2api
+            docker compose up -d --no-deps sub2api
 
             docker compose ps
             docker image prune -f
