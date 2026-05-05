@@ -168,7 +168,25 @@ jobs:
             fi
 
             cp compose.yml "$backup"
-            sed -i -E "0,/^[[:space:]]*image:[[:space:]]*ghcr\\.io\\/xuehua123\\/sub2api([:@][^[:space:]]*)?[[:space:]]*$/s#^[[:space:]]*image:[[:space:]]*ghcr\\.io\\/xuehua123\\/sub2api([:@][^[:space:]]*)?[[:space:]]*$#  image: ${deploy_image}#" compose.yml
+            DEPLOY_IMAGE="$deploy_image" python3 - <<'PY'
+from pathlib import Path
+import os
+
+path = Path("compose.yml")
+deploy_image = os.environ["DEPLOY_IMAGE"]
+lines = path.read_text().splitlines()
+
+for index, line in enumerate(lines):
+    stripped = line.lstrip()
+    if stripped.startswith("image: ghcr.io/xuehua123/sub2api"):
+        indent = line[: len(line) - len(stripped)]
+        lines[index] = f"{indent}image: {deploy_image}"
+        break
+else:
+    raise SystemExit("compose image line not found")
+
+path.write_text("\n".join(lines) + "\n")
+PY
 
             chmod +x ./update.sh
             ./update.sh
