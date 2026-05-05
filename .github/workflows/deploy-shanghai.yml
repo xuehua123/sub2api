@@ -70,17 +70,7 @@ jobs:
             fi
 
             cp compose.yml "$backup"
-            tmp="$(mktemp)"
-            awk -v image="$deploy_image" '
-              !done && $0 ~ /^[[:space:]]*image:[[:space:]]*ghcr\.io\/xuehua123\/sub2api([:@][^[:space:]]*)?[[:space:]]*$/ {
-                sub(/image:[[:space:]]*.*/, "image: " image)
-                done=1
-              }
-              { print }
-              END { if (!done) exit 42 }
-            ' compose.yml > "$tmp"
-            cat "$tmp" > compose.yml
-            rm -f "$tmp"
+            sed -i -E "0,/^[[:space:]]*image:[[:space:]]*ghcr\\.io\\/xuehua123\\/sub2api([:@][^[:space:]]*)?[[:space:]]*$/s#^[[:space:]]*image:[[:space:]]*ghcr\\.io\\/xuehua123\\/sub2api([:@][^[:space:]]*)?[[:space:]]*$#  image: ${deploy_image}#" compose.yml
 
             chmod +x ./update.sh
             ./update.sh
