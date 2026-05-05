@@ -30,7 +30,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
           RESIN_PROXY_URL: ${{ secrets.RESIN_PROXY_URL }}
           DOCKER_NO_PROXY: ${{ secrets.DOCKER_NO_PROXY || '127.0.0.1,localhost,postgres,redis' }}
