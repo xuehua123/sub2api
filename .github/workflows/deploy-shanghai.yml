@@ -70,25 +70,7 @@ jobs:
             fi
 
             cp compose.yml "$backup"
-            DEPLOY_IMAGE="$deploy_image" python3 - <<'PY'
-            from pathlib import Path
-            import os
-
-            path = Path("compose.yml")
-            deploy_image = os.environ["DEPLOY_IMAGE"]
-            lines = path.read_text().splitlines()
-
-            for index, line in enumerate(lines):
-                stripped = line.lstrip()
-                if stripped.startswith("image: ghcr.io/xuehua123/sub2api"):
-                    indent = line[: len(line) - len(stripped)]
-                    lines[index] = f"{indent}image: {deploy_image}"
-                    break
-            else:
-                raise SystemExit("compose image line not found")
-
-            path.write_text("\n".join(lines) + "\n")
-            PY
+            DEPLOY_IMAGE="$deploy_image" python3 -c "from pathlib import Path; import os; path = Path('compose.yml'); deploy_image = os.environ['DEPLOY_IMAGE']; lines = path.read_text().splitlines(); index = next((i for i, line in enumerate(lines) if line.lstrip().startswith('image: ghcr.io/xuehua123/sub2api')), None); assert index is not None, 'compose image line not found'; line = lines[index]; stripped = line.lstrip(); indent = line[: len(line) - len(stripped)]; lines[index] = f'{indent}image: {deploy_image}'; path.write_text('\\n'.join(lines) + '\\n')"
 
             chmod +x ./update.sh
             ./update.sh
