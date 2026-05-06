@@ -216,6 +216,7 @@ func TestGatewayServiceRecordUsage_FallsBackFirstSSEEventToFirstToken(t *testing
 	require.NotNil(t, usageRepo.lastLog)
 	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
 	require.Equal(t, firstTokenMs, *usageRepo.lastLog.FirstSSEEventMs)
+	require.Nil(t, usageRepo.lastLog.FirstClientFlushMs)
 }
 
 func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testing.T) {

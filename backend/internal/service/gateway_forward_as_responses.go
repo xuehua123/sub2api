@@ -381,6 +381,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	var firstSSEEventMs *int
+	var firstClientFlushMs *int
 	firstChunk := true
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -392,15 +393,16 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
-			RequestID:       requestID,
-			Usage:           usage,
-			Model:           originalModel,
-			UpstreamModel:   mappedModel,
-			ReasoningEffort: reasoningEffort,
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
-			FirstSSEEventMs: firstSSEEventMs,
+			RequestID:          requestID,
+			Usage:              usage,
+			Model:              originalModel,
+			UpstreamModel:      mappedModel,
+			ReasoningEffort:    reasoningEffort,
+			Stream:             true,
+			Duration:           time.Since(startTime),
+			FirstTokenMs:       firstTokenMs,
+			FirstSSEEventMs:    firstSSEEventMs,
+			FirstClientFlushMs: firstClientFlushMs,
 		}
 	}
 
@@ -442,6 +444,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 		}
 		if len(events) > 0 {
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 		return false
 	}
@@ -457,6 +460,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 				fmt.Fprint(c.Writer, out) //nolint:errcheck
 			}
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 		return resultWithUsage(), nil
 	}

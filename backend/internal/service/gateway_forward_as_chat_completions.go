@@ -370,6 +370,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	var usage ClaudeUsage
 	var firstTokenMs *int
 	var firstSSEEventMs *int
+	var firstClientFlushMs *int
 	firstChunk := true
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -381,15 +382,16 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
-			RequestID:       requestID,
-			Usage:           usage,
-			Model:           originalModel,
-			UpstreamModel:   mappedModel,
-			ReasoningEffort: reasoningEffort,
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
-			FirstSSEEventMs: firstSSEEventMs,
+			RequestID:          requestID,
+			Usage:              usage,
+			Model:              originalModel,
+			UpstreamModel:      mappedModel,
+			ReasoningEffort:    reasoningEffort,
+			Stream:             true,
+			Duration:           time.Since(startTime),
+			FirstTokenMs:       firstTokenMs,
+			FirstSSEEventMs:    firstSSEEventMs,
+			FirstClientFlushMs: firstClientFlushMs,
 		}
 	}
 
@@ -425,15 +427,20 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 		// Chain: Anthropic event → Responses events → CC chunks
 		responsesEvents := apicompat.AnthropicEventToResponsesEvents(event, anthState)
+		wroteChunk := false
 		for _, resEvt := range responsesEvents {
 			ccChunks := apicompat.ResponsesEventToChatChunks(&resEvt, ccState)
 			for _, chunk := range ccChunks {
 				if disconnected := writeChunk(chunk); disconnected {
 					return true
 				}
+				wroteChunk = true
 			}
 		}
-		c.Writer.Flush()
+		if wroteChunk {
+			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
+		}
 		return false
 	}
 
@@ -487,6 +494,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	// Write [DONE] marker
 	fmt.Fprint(c.Writer, "data: [DONE]\n\n") //nolint:errcheck
 	c.Writer.Flush()
+	setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 
 	return resultWithUsage(), nil
 }

@@ -857,6 +857,7 @@ export default {
     tokens: 'Token',
     cost: '费用',
     firstResponse: '首响应',
+    upstreamFirstEvent: '上游首事件',
     firstToken: '首 Token',
     duration: '耗时',
     time: '时间',

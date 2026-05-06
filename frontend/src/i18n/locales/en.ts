@@ -853,6 +853,7 @@ export default {
     tokens: 'Tokens',
     cost: 'Cost',
     firstResponse: 'First Response',
+    upstreamFirstEvent: 'Upstream First Event',
     firstToken: 'First Token',
     duration: 'Duration',
     time: 'Time',

@@ -1144,6 +1144,7 @@ export interface UsageLog {
   duration_ms: number
   first_token_ms: number | null
   first_sse_event_ms: number | null
+  first_client_flush_ms: number | null
 
   // 图片生成字段
   image_count: number

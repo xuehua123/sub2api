@@ -157,8 +157,10 @@ type UsageLog struct {
 	FirstTokenMs *int
 	// FirstSSEEventMs records the time until the first upstream SSE event reaches sub2api.
 	FirstSSEEventMs *int
-	UserAgent       *string
-	IPAddress       *string
+	// FirstClientFlushMs records the time until sub2api first flushes bytes to the downstream client.
+	FirstClientFlushMs *int
+	UserAgent          *string
+	IPAddress          *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool

@@ -46644,6 +46644,8 @@ type UsageLogMutation struct {
 	addfirst_token_ms           *int
 	first_sse_event_ms          *int
 	addfirst_sse_event_ms       *int
+	first_client_flush_ms       *int
+	addfirst_client_flush_ms    *int
 	user_agent                  *string
 	ip_address                  *string
 	image_count                 *int
@@ -48458,6 +48460,76 @@ func (m *UsageLogMutation) ResetFirstSseEventMs() {
 	delete(m.clearedFields, usagelog.FieldFirstSseEventMs)
 }
 
+// SetFirstClientFlushMs sets the "first_client_flush_ms" field.
+func (m *UsageLogMutation) SetFirstClientFlushMs(i int) {
+	m.first_client_flush_ms = &i
+	m.addfirst_client_flush_ms = nil
+}
+
+// FirstClientFlushMs returns the value of the "first_client_flush_ms" field in the mutation.
+func (m *UsageLogMutation) FirstClientFlushMs() (r int, exists bool) {
+	v := m.first_client_flush_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFirstClientFlushMs returns the old "first_client_flush_ms" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldFirstClientFlushMs(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFirstClientFlushMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFirstClientFlushMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFirstClientFlushMs: %w", err)
+	}
+	return oldValue.FirstClientFlushMs, nil
+}
+
+// AddFirstClientFlushMs adds i to the "first_client_flush_ms" field.
+func (m *UsageLogMutation) AddFirstClientFlushMs(i int) {
+	if m.addfirst_client_flush_ms != nil {
+		*m.addfirst_client_flush_ms += i
+	} else {
+		m.addfirst_client_flush_ms = &i
+	}
+}
+
+// AddedFirstClientFlushMs returns the value that was added to the "first_client_flush_ms" field in this mutation.
+func (m *UsageLogMutation) AddedFirstClientFlushMs() (r int, exists bool) {
+	v := m.addfirst_client_flush_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearFirstClientFlushMs clears the value of the "first_client_flush_ms" field.
+func (m *UsageLogMutation) ClearFirstClientFlushMs() {
+	m.first_client_flush_ms = nil
+	m.addfirst_client_flush_ms = nil
+	m.clearedFields[usagelog.FieldFirstClientFlushMs] = struct{}{}
+}
+
+// FirstClientFlushMsCleared returns if the "first_client_flush_ms" field was cleared in this mutation.
+func (m *UsageLogMutation) FirstClientFlushMsCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldFirstClientFlushMs]
+	return ok
+}
+
+// ResetFirstClientFlushMs resets all changes to the "first_client_flush_ms" field.
+func (m *UsageLogMutation) ResetFirstClientFlushMs() {
+	m.first_client_flush_ms = nil
+	m.addfirst_client_flush_ms = nil
+	delete(m.clearedFields, usagelog.FieldFirstClientFlushMs)
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (m *UsageLogMutation) SetUserAgent(s string) {
 	m.user_agent = &s
@@ -48902,7 +48974,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 38)
+	fields := make([]string, 0, 39)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -48999,6 +49071,9 @@ func (m *UsageLogMutation) Fields() []string {
 	if m.first_sse_event_ms != nil {
 		fields = append(fields, usagelog.FieldFirstSseEventMs)
 	}
+	if m.first_client_flush_ms != nil {
+		fields = append(fields, usagelog.FieldFirstClientFlushMs)
+	}
 	if m.user_agent != nil {
 		fields = append(fields, usagelog.FieldUserAgent)
 	}
@@ -49089,6 +49164,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.FirstTokenMs()
 	case usagelog.FieldFirstSseEventMs:
 		return m.FirstSseEventMs()
+	case usagelog.FieldFirstClientFlushMs:
+		return m.FirstClientFlushMs()
 	case usagelog.FieldUserAgent:
 		return m.UserAgent()
 	case usagelog.FieldIPAddress:
@@ -49174,6 +49251,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldFirstTokenMs(ctx)
 	case usagelog.FieldFirstSseEventMs:
 		return m.OldFirstSseEventMs(ctx)
+	case usagelog.FieldFirstClientFlushMs:
+		return m.OldFirstClientFlushMs(ctx)
 	case usagelog.FieldUserAgent:
 		return m.OldUserAgent(ctx)
 	case usagelog.FieldIPAddress:
@@ -49419,6 +49498,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetFirstSseEventMs(v)
 		return nil
+	case usagelog.FieldFirstClientFlushMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFirstClientFlushMs(v)
+		return nil
 	case usagelog.FieldUserAgent:
 		v, ok := value.(string)
 		if !ok {
@@ -49526,6 +49612,9 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addfirst_sse_event_ms != nil {
 		fields = append(fields, usagelog.FieldFirstSseEventMs)
 	}
+	if m.addfirst_client_flush_ms != nil {
+		fields = append(fields, usagelog.FieldFirstClientFlushMs)
+	}
 	if m.addimage_count != nil {
 		fields = append(fields, usagelog.FieldImageCount)
 	}
@@ -49575,6 +49664,8 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedFirstTokenMs()
 	case usagelog.FieldFirstSseEventMs:
 		return m.AddedFirstSseEventMs()
+	case usagelog.FieldFirstClientFlushMs:
+		return m.AddedFirstClientFlushMs()
 	case usagelog.FieldImageCount:
 		return m.AddedImageCount()
 	}
@@ -49719,6 +49810,13 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddFirstSseEventMs(v)
 		return nil
+	case usagelog.FieldFirstClientFlushMs:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddFirstClientFlushMs(v)
+		return nil
 	case usagelog.FieldImageCount:
 		v, ok := value.(int)
 		if !ok {
@@ -49769,6 +49867,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(usagelog.FieldFirstSseEventMs) {
 		fields = append(fields, usagelog.FieldFirstSseEventMs)
+	}
+	if m.FieldCleared(usagelog.FieldFirstClientFlushMs) {
+		fields = append(fields, usagelog.FieldFirstClientFlushMs)
 	}
 	if m.FieldCleared(usagelog.FieldUserAgent) {
 		fields = append(fields, usagelog.FieldUserAgent)
@@ -49828,6 +49929,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldFirstSseEventMs:
 		m.ClearFirstSseEventMs()
+		return nil
+	case usagelog.FieldFirstClientFlushMs:
+		m.ClearFirstClientFlushMs()
 		return nil
 	case usagelog.FieldUserAgent:
 		m.ClearUserAgent()
@@ -49941,6 +50045,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldFirstSseEventMs:
 		m.ResetFirstSseEventMs()
+		return nil
+	case usagelog.FieldFirstClientFlushMs:
+		m.ResetFirstClientFlushMs()
 		return nil
 	case usagelog.FieldUserAgent:
 		m.ResetUserAgent()

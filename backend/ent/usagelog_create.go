@@ -435,6 +435,20 @@ func (_c *UsageLogCreate) SetNillableFirstSseEventMs(v *int) *UsageLogCreate {
 	return _c
 }
 
+// SetFirstClientFlushMs sets the "first_client_flush_ms" field.
+func (_c *UsageLogCreate) SetFirstClientFlushMs(v int) *UsageLogCreate {
+	_c.mutation.SetFirstClientFlushMs(v)
+	return _c
+}
+
+// SetNillableFirstClientFlushMs sets the "first_client_flush_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableFirstClientFlushMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetFirstClientFlushMs(*v)
+	}
+	return _c
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_c *UsageLogCreate) SetUserAgent(v string) *UsageLogCreate {
 	_c.mutation.SetUserAgent(v)
@@ -917,6 +931,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FirstSseEventMs(); ok {
 		_spec.SetField(usagelog.FieldFirstSseEventMs, field.TypeInt, value)
 		_node.FirstSseEventMs = &value
+	}
+	if value, ok := _c.mutation.FirstClientFlushMs(); ok {
+		_spec.SetField(usagelog.FieldFirstClientFlushMs, field.TypeInt, value)
+		_node.FirstClientFlushMs = &value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)
@@ -1646,6 +1664,30 @@ func (u *UsageLogUpsert) AddFirstSseEventMs(v int) *UsageLogUpsert {
 // ClearFirstSseEventMs clears the value of the "first_sse_event_ms" field.
 func (u *UsageLogUpsert) ClearFirstSseEventMs() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldFirstSseEventMs)
+	return u
+}
+
+// SetFirstClientFlushMs sets the "first_client_flush_ms" field.
+func (u *UsageLogUpsert) SetFirstClientFlushMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldFirstClientFlushMs, v)
+	return u
+}
+
+// UpdateFirstClientFlushMs sets the "first_client_flush_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateFirstClientFlushMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldFirstClientFlushMs)
+	return u
+}
+
+// AddFirstClientFlushMs adds v to the "first_client_flush_ms" field.
+func (u *UsageLogUpsert) AddFirstClientFlushMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldFirstClientFlushMs, v)
+	return u
+}
+
+// ClearFirstClientFlushMs clears the value of the "first_client_flush_ms" field.
+func (u *UsageLogUpsert) ClearFirstClientFlushMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldFirstClientFlushMs)
 	return u
 }
 
@@ -2440,6 +2482,34 @@ func (u *UsageLogUpsertOne) UpdateFirstSseEventMs() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearFirstSseEventMs() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstSseEventMs()
+	})
+}
+
+// SetFirstClientFlushMs sets the "first_client_flush_ms" field.
+func (u *UsageLogUpsertOne) SetFirstClientFlushMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetFirstClientFlushMs(v)
+	})
+}
+
+// AddFirstClientFlushMs adds v to the "first_client_flush_ms" field.
+func (u *UsageLogUpsertOne) AddFirstClientFlushMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddFirstClientFlushMs(v)
+	})
+}
+
+// UpdateFirstClientFlushMs sets the "first_client_flush_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateFirstClientFlushMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateFirstClientFlushMs()
+	})
+}
+
+// ClearFirstClientFlushMs clears the value of the "first_client_flush_ms" field.
+func (u *UsageLogUpsertOne) ClearFirstClientFlushMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearFirstClientFlushMs()
 	})
 }
 
@@ -3414,6 +3484,34 @@ func (u *UsageLogUpsertBulk) UpdateFirstSseEventMs() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearFirstSseEventMs() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstSseEventMs()
+	})
+}
+
+// SetFirstClientFlushMs sets the "first_client_flush_ms" field.
+func (u *UsageLogUpsertBulk) SetFirstClientFlushMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetFirstClientFlushMs(v)
+	})
+}
+
+// AddFirstClientFlushMs adds v to the "first_client_flush_ms" field.
+func (u *UsageLogUpsertBulk) AddFirstClientFlushMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddFirstClientFlushMs(v)
+	})
+}
+
+// UpdateFirstClientFlushMs sets the "first_client_flush_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateFirstClientFlushMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateFirstClientFlushMs()
+	})
+}
+
+// ClearFirstClientFlushMs clears the value of the "first_client_flush_ms" field.
+func (u *UsageLogUpsertBulk) ClearFirstClientFlushMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearFirstClientFlushMs()
 	})
 }
 

@@ -428,6 +428,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	var firstSSEEventMs *int
+	var firstClientFlushMs *int
 	firstChunk := true
 	clientDisconnected := false
 
@@ -454,15 +455,16 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
-			RequestID:       requestID,
-			Usage:           usage,
-			Model:           originalModel,
-			BillingModel:    billingModel,
-			UpstreamModel:   upstreamModel,
-			Stream:          true,
-			Duration:        time.Since(startTime),
-			FirstTokenMs:    firstTokenMs,
-			FirstSSEEventMs: firstSSEEventMs,
+			RequestID:          requestID,
+			Usage:              usage,
+			Model:              originalModel,
+			BillingModel:       billingModel,
+			UpstreamModel:      upstreamModel,
+			Stream:             true,
+			Duration:           time.Since(startTime),
+			FirstTokenMs:       firstTokenMs,
+			FirstSSEEventMs:    firstSSEEventMs,
+			FirstClientFlushMs: firstClientFlushMs,
 		}
 	}
 
@@ -510,6 +512,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if len(chunks) > 0 && !clientDisconnected {
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 		return isTerminalEvent
 	}
@@ -541,6 +544,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		}
 		if !clientDisconnected {
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 		return resultWithUsage(), nil
 	}
@@ -681,6 +685,7 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 				continue
 			}
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 	}
 }

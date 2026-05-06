@@ -921,6 +921,7 @@ func TestOpenAIGatewayServiceRecordUsage_UsesRequestedModelAndUpstreamModelMetad
 	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
 	serviceTier := "priority"
 	reasoning := "high"
+	firstClientFlushMs := 95
 
 	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
 		Result: &OpenAIForwardResult{
@@ -934,9 +935,10 @@ func TestOpenAIGatewayServiceRecordUsage_UsesRequestedModelAndUpstreamModelMetad
 				InputTokens:  20,
 				OutputTokens: 10,
 			},
-			Duration:        2 * time.Second,
-			FirstTokenMs:    func() *int { v := 120; return &v }(),
-			FirstSSEEventMs: func() *int { v := 80; return &v }(),
+			Duration:           2 * time.Second,
+			FirstTokenMs:       func() *int { v := 120; return &v }(),
+			FirstSSEEventMs:    func() *int { v := 80; return &v }(),
+			FirstClientFlushMs: &firstClientFlushMs,
 		},
 		APIKey:    &APIKey{ID: 10, GroupID: i64p(11), Group: &Group{ID: 11, RateMultiplier: 1.2}},
 		User:      &User{ID: 20},
@@ -961,6 +963,8 @@ func TestOpenAIGatewayServiceRecordUsage_UsesRequestedModelAndUpstreamModelMetad
 	require.Equal(t, "127.0.0.1", *usageRepo.lastLog.IPAddress)
 	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
 	require.Equal(t, 80, *usageRepo.lastLog.FirstSSEEventMs)
+	require.NotNil(t, usageRepo.lastLog.FirstClientFlushMs)
+	require.Equal(t, firstClientFlushMs, *usageRepo.lastLog.FirstClientFlushMs)
 	require.NotNil(t, usageRepo.lastLog.GroupID)
 	require.Equal(t, int64(11), *usageRepo.lastLog.GroupID)
 	require.Equal(t, 1, userRepo.deductCalls)
@@ -990,6 +994,7 @@ func TestOpenAIGatewayServiceRecordUsage_FallsBackFirstSSEEventToFirstToken(t *t
 	require.NotNil(t, usageRepo.lastLog)
 	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
 	require.Equal(t, firstTokenMs, *usageRepo.lastLog.FirstSSEEventMs)
+	require.Nil(t, usageRepo.lastLog.FirstClientFlushMs)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_BillsMappedRequestsUsingRequestedModel(t *testing.T) {

@@ -73,6 +73,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // duration_ms
 			sqlmock.AnyArg(), // first_token_ms
 			sqlmock.AnyArg(), // first_sse_event_ms
+			sqlmock.AnyArg(), // first_client_flush_ms
 			sqlmock.AnyArg(), // user_agent
 			sqlmock.AnyArg(), // ip_address
 			log.ImageCount,
@@ -150,6 +151,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			int16(service.RequestTypeSync),
 			false,
 			false,
+			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
@@ -566,6 +568,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullInt64{},
 			sql.NullString{},
 			sql.NullString{},
 			0,
@@ -615,6 +618,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullInt64{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullInt64{},
 			sql.NullString{},
 			sql.NullString{},
 			0,
@@ -661,6 +665,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			int16(service.RequestTypeSync),
 			false,
 			false,
+			sql.NullInt64{},
 			sql.NullInt64{},
 			sql.NullInt64{},
 			sql.NullInt64{},

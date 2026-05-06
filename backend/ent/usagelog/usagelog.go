@@ -78,6 +78,8 @@ const (
 	FieldFirstTokenMs = "first_token_ms"
 	// FieldFirstSseEventMs holds the string denoting the first_sse_event_ms field in the database.
 	FieldFirstSseEventMs = "first_sse_event_ms"
+	// FieldFirstClientFlushMs holds the string denoting the first_client_flush_ms field in the database.
+	FieldFirstClientFlushMs = "first_client_flush_ms"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldIPAddress holds the string denoting the ip_address field in the database.
@@ -174,6 +176,7 @@ var Columns = []string{
 	FieldDurationMs,
 	FieldFirstTokenMs,
 	FieldFirstSseEventMs,
+	FieldFirstClientFlushMs,
 	FieldUserAgent,
 	FieldIPAddress,
 	FieldImageCount,
@@ -417,6 +420,11 @@ func ByFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
 // ByFirstSseEventMs orders the results by the first_sse_event_ms field.
 func ByFirstSseEventMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFirstSseEventMs, opts...).ToFunc()
+}
+
+// ByFirstClientFlushMs orders the results by the first_client_flush_ms field.
+func ByFirstClientFlushMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldFirstClientFlushMs, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.

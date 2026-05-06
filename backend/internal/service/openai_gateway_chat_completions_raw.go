@@ -262,6 +262,7 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	var usage OpenAIUsage
 	var firstTokenMs *int
 	var firstSSEEventMs *int
+	var firstClientFlushMs *int
 	clientDisconnected := false
 
 	for scanner.Scan() {
@@ -292,11 +293,13 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		if line == "" {
 			if !clientDisconnected {
 				c.Writer.Flush()
+				setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 			}
 			continue
 		}
 		if !clientDisconnected {
 			c.Writer.Flush()
+			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
 	}
 
@@ -310,17 +313,18 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 	}
 
 	return &OpenAIForwardResult{
-		RequestID:       requestID,
-		Usage:           usage,
-		Model:           originalModel,
-		BillingModel:    billingModel,
-		UpstreamModel:   upstreamModel,
-		ReasoningEffort: reasoningEffort,
-		ServiceTier:     serviceTier,
-		Stream:          true,
-		Duration:        time.Since(startTime),
-		FirstTokenMs:    firstTokenMs,
-		FirstSSEEventMs: firstSSEEventMs,
+		RequestID:          requestID,
+		Usage:              usage,
+		Model:              originalModel,
+		BillingModel:       billingModel,
+		UpstreamModel:      upstreamModel,
+		ReasoningEffort:    reasoningEffort,
+		ServiceTier:        serviceTier,
+		Stream:             true,
+		Duration:           time.Since(startTime),
+		FirstTokenMs:       firstTokenMs,
+		FirstSSEEventMs:    firstSSEEventMs,
+		FirstClientFlushMs: firstClientFlushMs,
 	}, nil
 }
 

@@ -121,6 +121,9 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int("first_sse_event_ms").
 			Optional().
 			Nillable(),
+		field.Int("first_client_flush_ms").
+			Optional().
+			Nillable(),
 		field.String("user_agent").
 			MaxLen(512).
 			Optional().

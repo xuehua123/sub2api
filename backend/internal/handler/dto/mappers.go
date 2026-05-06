@@ -598,6 +598,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		DurationMs:            l.DurationMs,
 		FirstTokenMs:          l.FirstTokenMs,
 		FirstSSEEventMs:       service.FirstSSEEventMsOrFallback(l.FirstSSEEventMs, l.FirstTokenMs),
+		FirstClientFlushMs:    l.FirstClientFlushMs,
 		ImageCount:            l.ImageCount,
 		ImageSize:             l.ImageSize,
 		MediaType:             l.MediaType,

@@ -170,6 +170,11 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-first_client_flush="{ row }">
+          <span v-if="firstResponseMs(row) != null" class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(firstResponseMs(row)) }}</span>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
         <template #cell-duration="{ row }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.duration_ms) }}</span>
         </template>
@@ -428,6 +433,10 @@ const formatDuration = (ms: number | null | undefined): string => {
   if (ms == null) return '-'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
+}
+
+const firstResponseMs = (log: AdminUsageLog): number | null => {
+  return log.first_client_flush_ms ?? log.first_sse_event_ms ?? log.first_token_ms
 }
 
 // Cost tooltip functions

@@ -215,6 +215,11 @@ func FirstSseEventMs(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldFirstSseEventMs, v))
 }
 
+// FirstClientFlushMs applies equality check predicate on the "first_client_flush_ms" field. It's identical to FirstClientFlushMsEQ.
+func FirstClientFlushMs(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldFirstClientFlushMs, v))
+}
+
 // UserAgent applies equality check predicate on the "user_agent" field. It's identical to UserAgentEQ.
 func UserAgent(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldUserAgent, v))
@@ -1688,6 +1693,56 @@ func FirstSseEventMsIsNil() predicate.UsageLog {
 // FirstSseEventMsNotNil applies the NotNil predicate on the "first_sse_event_ms" field.
 func FirstSseEventMsNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldFirstSseEventMs))
+}
+
+// FirstClientFlushMsEQ applies the EQ predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsNEQ applies the NEQ predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsIn applies the In predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldFirstClientFlushMs, vs...))
+}
+
+// FirstClientFlushMsNotIn applies the NotIn predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldFirstClientFlushMs, vs...))
+}
+
+// FirstClientFlushMsGT applies the GT predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsGTE applies the GTE predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsLT applies the LT predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsLTE applies the LTE predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldFirstClientFlushMs, v))
+}
+
+// FirstClientFlushMsIsNil applies the IsNil predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldFirstClientFlushMs))
+}
+
+// FirstClientFlushMsNotNil applies the NotNil predicate on the "first_client_flush_ms" field.
+func FirstClientFlushMsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldFirstClientFlushMs))
 }
 
 // UserAgentEQ applies the EQ predicate on the "user_agent" field.
