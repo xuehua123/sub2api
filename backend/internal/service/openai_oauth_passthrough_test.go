@@ -356,6 +356,65 @@ func TestOpenAIGatewayService_OAuthPassthrough_NonStreamForcesUpstreamSSEAndBuff
 	require.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
 }
 
+func TestOpenAIGatewayService_APIKeyCodexNonStreamBuffersUpstreamSSE(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Request.Header.Set("Accept", "application/json")
+
+	originalBody := []byte(`{"model":"gpt-5.5","stream":false,"instructions":"local-test-instructions","input":"hi"}`)
+	upstreamSSE := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"visible text"}`,
+		"",
+		`data: {"type":"response.completed","response":{"id":"resp_apikey","object":"response","model":"gpt-5.5","status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n")
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid-apikey-nonstream-sse"}},
+		Body:       io.NopCloser(strings.NewReader(upstreamSSE)),
+	}
+	upstream := &httpUpstreamRecorder{resp: resp}
+
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:             456,
+		Name:           "apikey-acc",
+		Platform:       PlatformOpenAI,
+		Type:           AccountTypeAPIKey,
+		Concurrency:    1,
+		Credentials:    map[string]any{"api_key": "sk-api-key"},
+		Status:         StatusActive,
+		Schedulable:    true,
+		RateMultiplier: f64p(1),
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, originalBody)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Stream)
+	require.Equal(t, 7, result.Usage.InputTokens)
+	require.Equal(t, 3, result.Usage.OutputTokens)
+
+	require.Equal(t, true, gjson.GetBytes(upstream.lastBody, "stream").Bool())
+	require.Equal(t, "text/event-stream", upstream.lastReq.Header.Get("Accept"))
+	require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
+	require.Equal(t, "Bearer sk-api-key", upstream.lastReq.Header.Get("Authorization"))
+
+	body := rec.Body.String()
+	require.Equal(t, "visible text", gjson.Get(body, "output.0.content.0.text").String())
+	require.Equal(t, "application/json; charset=utf-8", rec.Header().Get("Content-Type"))
+}
+
 func TestOpenAIGatewayService_OAuthPassthrough_CompactUsesJSONAndKeepsNonStreaming(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

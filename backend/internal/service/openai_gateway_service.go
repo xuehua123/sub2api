@@ -2044,6 +2044,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if v, ok := reqBody["stream"].(bool); ok {
 		reqStream = v
 	}
+	upstreamStream := reqStream
 	if promptCacheKey == "" {
 		if v, ok := reqBody["prompt_cache_key"].(string); ok {
 			promptCacheKey = strings.TrimSpace(v)
@@ -2355,6 +2356,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
+	forceAPIKeyCodexBufferedStream := account.Type == AccountTypeAPIKey &&
+		isCodexCLI &&
+		!reqStream &&
+		!isCompactRequest &&
+		isOpenAIResponsesBasePath(c)
+	if forceAPIKeyCodexBufferedStream {
+		reqBody["stream"] = true
+		bodyModified = true
+		upstreamStream = true
+		markPatchSet("stream", true)
+	}
+
 	// Re-serialize body only if modified
 	if bodyModified {
 		serializedByPatch := false
@@ -2602,10 +2615,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	for {
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
+		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, upstreamStream, promptCacheKey, isCodexCLI)
 		releaseUpstreamCtx()
 		if err != nil {
 			return nil, err
+		}
+		if forceAPIKeyCodexBufferedStream {
+			upstreamReq.Header.Set("accept", "text/event-stream")
 		}
 
 		// Get proxy URL
@@ -4926,6 +4942,14 @@ func NormalizeOpenAICompactRequestBodyForTest(body []byte) ([]byte, bool, error)
 func isOpenAIResponsesCompactPath(c *gin.Context) bool {
 	suffix := strings.TrimSpace(openAIResponsesRequestPathSuffix(c))
 	return suffix == "/compact" || strings.HasPrefix(suffix, "/compact/")
+}
+
+func isOpenAIResponsesBasePath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	normalizedPath := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
+	return normalizedPath != "" && strings.HasSuffix(normalizedPath, "/responses")
 }
 
 func normalizeOpenAICompactRequestBody(body []byte) ([]byte, bool, error) {
