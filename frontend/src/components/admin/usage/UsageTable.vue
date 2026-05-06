@@ -165,6 +165,11 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-first_sse_event="{ row }">
+          <span v-if="row.first_sse_event_ms != null" class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.first_sse_event_ms) }}</span>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
         <template #cell-duration="{ row }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.duration_ms) }}</span>
         </template>

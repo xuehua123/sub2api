@@ -550,6 +550,7 @@ func TestAPIContracts(t *testing.T) {
 							"stream": true,
 							"duration_ms": 100,
 							"first_token_ms": 50,
+							"first_sse_event_ms": 50,
 							"image_count": 0,
 							"image_size": null,
 							"media_type": null,

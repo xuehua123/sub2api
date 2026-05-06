@@ -148,6 +148,26 @@ func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *
 	require.Equal(t, "claude-3", adminDTO.Model)
 }
 
+func TestUsageLogFromService_FallsBackFirstSSEEventToFirstToken(t *testing.T) {
+	t.Parallel()
+
+	firstTokenMs := 120
+	log := &service.UsageLog{
+		RequestID:       "req_first_sse_fallback",
+		Model:           "claude-3",
+		FirstTokenMs:    &firstTokenMs,
+		FirstSSEEventMs: nil,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.NotNil(t, userDTO.FirstSSEEventMs)
+	require.Equal(t, firstTokenMs, *userDTO.FirstSSEEventMs)
+	require.NotNil(t, adminDTO.FirstSSEEventMs)
+	require.Equal(t, firstTokenMs, *adminDTO.FirstSSEEventMs)
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }

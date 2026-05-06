@@ -110,3 +110,14 @@ func TestUsageLogSyncRequestTypeAndLegacyFieldsNilReceiver(t *testing.T) {
 	var log *UsageLog
 	log.SyncRequestTypeAndLegacyFields()
 }
+
+func TestFirstSSEEventMsOrFallback(t *testing.T) {
+	t.Parallel()
+
+	firstSSEEventMs := 80
+	firstTokenMs := 120
+
+	require.Same(t, &firstSSEEventMs, FirstSSEEventMsOrFallback(&firstSSEEventMs, &firstTokenMs))
+	require.Same(t, &firstTokenMs, FirstSSEEventMsOrFallback(nil, &firstTokenMs))
+	require.Nil(t, FirstSSEEventMsOrFallback(nil, nil))
+}

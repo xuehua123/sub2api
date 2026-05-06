@@ -856,6 +856,7 @@ export default {
     type: '类型',
     tokens: 'Token',
     cost: '费用',
+    firstResponse: '首响应',
     firstToken: '首 Token',
     duration: '耗时',
     time: '时间',

@@ -65,3 +65,22 @@ func TestBuildUsageLogBatchInsertQuery_UsesConflictDoNothing(t *testing.T) {
 	require.Contains(t, query, "ON CONFLICT (request_id, api_key_id) DO NOTHING")
 	require.NotContains(t, strings.ToUpper(query), "DO UPDATE")
 }
+
+func TestPrepareUsageLogInsert_IncludesFirstSSEEventMs(t *testing.T) {
+	firstSSEEventMs := 85
+	log := &service.UsageLog{
+		UserID:          1,
+		APIKeyID:        2,
+		AccountID:       3,
+		RequestID:       "req-first-sse-event",
+		Model:           "gpt-5",
+		FirstSSEEventMs: &firstSSEEventMs,
+		CreatedAt:       time.Now().UTC(),
+	}
+
+	prepared := prepareUsageLogInsert(log)
+
+	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	require.Equal(t, "integer", usageLogInsertArgTypes[31])
+	require.Equal(t, nullInt(&firstSSEEventMs), prepared.args[31])
+}

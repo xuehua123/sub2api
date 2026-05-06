@@ -852,6 +852,7 @@ export default {
     type: 'Type',
     tokens: 'Tokens',
     cost: 'Cost',
+    firstResponse: 'First Response',
     firstToken: 'First Token',
     duration: 'Duration',
     time: 'Time',

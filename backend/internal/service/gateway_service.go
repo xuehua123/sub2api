@@ -497,6 +497,7 @@ type ForwardResult struct {
 	Stream           bool
 	Duration         time.Duration
 	FirstTokenMs     *int // 首字时间（流式请求）
+	FirstSSEEventMs  *int // 首响应时间：sub2api 收到首个上游 SSE 事件
 	ClientDisconnect bool // 客户端是否在流式传输过程中断开
 	ReasoningEffort  *string
 
@@ -8613,6 +8614,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		Stream:                result.Stream,
 		DurationMs:            &durationMs,
 		FirstTokenMs:          result.FirstTokenMs,
+		FirstSSEEventMs:       FirstSSEEventMsOrFallback(result.FirstSSEEventMs, result.FirstTokenMs),
 		ImageCount:            result.ImageCount,
 		ImageSize:             optionalTrimmedStringPtr(result.ImageSize),
 		CacheTTLOverridden:    cacheTTLOverridden,

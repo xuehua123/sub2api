@@ -192,6 +192,32 @@ func TestGatewayServiceRecordUsage_PreservesRequestedAndUpstreamModels(t *testin
 	require.Equal(t, mappedModel, *usageRepo.lastLog.UpstreamModel)
 }
 
+func TestGatewayServiceRecordUsage_FallsBackFirstSSEEventToFirstToken(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
+	firstTokenMs := 120
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:    "gateway_first_sse_fallback",
+			Usage:        ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:        "claude-sonnet-4",
+			Duration:     time.Second,
+			FirstTokenMs: &firstTokenMs,
+		},
+		APIKey:  &APIKey{ID: 504, Quota: 100},
+		User:    &User{ID: 604},
+		Account: &Account{ID: 704},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
+	require.Equal(t, firstTokenMs, *usageRepo.lastLog.FirstSSEEventMs)
+}
+
 func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: MarkUsageLogCreateNotPersisted(context.Canceled)}
 	userRepo := &openAIRecordUsageUserRepoStub{}

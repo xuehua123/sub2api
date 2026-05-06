@@ -155,8 +155,10 @@ type UsageLog struct {
 	OpenAIWSMode bool
 	DurationMs   *int
 	FirstTokenMs *int
-	UserAgent    *string
-	IPAddress    *string
+	// FirstSSEEventMs records the time until the first upstream SSE event reaches sub2api.
+	FirstSSEEventMs *int
+	UserAgent       *string
+	IPAddress       *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool
@@ -173,6 +175,13 @@ type UsageLog struct {
 	Account      *Account
 	Group        *Group
 	Subscription *UserSubscription
+}
+
+func FirstSSEEventMsOrFallback(firstSSEEventMs, firstTokenMs *int) *int {
+	if firstSSEEventMs != nil {
+		return firstSSEEventMs
+	}
+	return firstTokenMs
 }
 
 func (u *UsageLog) TotalTokens() int {

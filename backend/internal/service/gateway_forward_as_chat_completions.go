@@ -369,6 +369,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	var usage ClaudeUsage
 	var firstTokenMs *int
+	var firstSSEEventMs *int
 	firstChunk := true
 
 	scanner := bufio.NewScanner(resp.Body)
@@ -388,6 +389,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 			Stream:          true,
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
+			FirstSSEEventMs: firstSSEEventMs,
 		}
 	}
 
@@ -408,8 +410,8 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 	processAnthropicEvent := func(event *apicompat.AnthropicStreamEvent) bool {
 		if firstChunk {
 			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
+			setStreamElapsedMsOnce(&firstSSEEventMs, startTime)
+			setStreamElapsedMsOnce(&firstTokenMs, startTime)
 		}
 
 		// Extract usage from message_delta

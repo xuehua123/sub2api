@@ -506,6 +506,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	state.Model = originalModel
 	var usage OpenAIUsage
 	var firstTokenMs *int
+	var firstSSEEventMs *int
 	firstChunk := true
 	clientDisconnected := false
 
@@ -533,14 +534,15 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	// resultWithUsage builds the final result snapshot.
 	resultWithUsage := func() *OpenAIForwardResult {
 		return &OpenAIForwardResult{
-			RequestID:     requestID,
-			Usage:         usage,
-			Model:         originalModel,
-			BillingModel:  billingModel,
-			UpstreamModel: upstreamModel,
-			Stream:        true,
-			Duration:      time.Since(startTime),
-			FirstTokenMs:  firstTokenMs,
+			RequestID:       requestID,
+			Usage:           usage,
+			Model:           originalModel,
+			BillingModel:    billingModel,
+			UpstreamModel:   upstreamModel,
+			Stream:          true,
+			Duration:        time.Since(startTime),
+			FirstTokenMs:    firstTokenMs,
+			FirstSSEEventMs: firstSSEEventMs,
 		}
 	}
 
@@ -548,8 +550,8 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	processDataLine := func(payload string) bool {
 		if firstChunk {
 			firstChunk = false
-			ms := int(time.Since(startTime).Milliseconds())
-			firstTokenMs = &ms
+			setStreamElapsedMsOnce(&firstSSEEventMs, startTime)
+			setStreamElapsedMsOnce(&firstTokenMs, startTime)
 		}
 
 		var event apicompat.ResponsesStreamEvent

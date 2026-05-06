@@ -934,8 +934,9 @@ func TestOpenAIGatewayServiceRecordUsage_UsesRequestedModelAndUpstreamModelMetad
 				InputTokens:  20,
 				OutputTokens: 10,
 			},
-			Duration:     2 * time.Second,
-			FirstTokenMs: func() *int { v := 120; return &v }(),
+			Duration:        2 * time.Second,
+			FirstTokenMs:    func() *int { v := 120; return &v }(),
+			FirstSSEEventMs: func() *int { v := 80; return &v }(),
 		},
 		APIKey:    &APIKey{ID: 10, GroupID: i64p(11), Group: &Group{ID: 11, RateMultiplier: 1.2}},
 		User:      &User{ID: 20},
@@ -958,9 +959,37 @@ func TestOpenAIGatewayServiceRecordUsage_UsesRequestedModelAndUpstreamModelMetad
 	require.Equal(t, "codex-cli/1.0", *usageRepo.lastLog.UserAgent)
 	require.NotNil(t, usageRepo.lastLog.IPAddress)
 	require.Equal(t, "127.0.0.1", *usageRepo.lastLog.IPAddress)
+	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
+	require.Equal(t, 80, *usageRepo.lastLog.FirstSSEEventMs)
 	require.NotNil(t, usageRepo.lastLog.GroupID)
 	require.Equal(t, int64(11), *usageRepo.lastLog.GroupID)
 	require.Equal(t, 1, userRepo.deductCalls)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_FallsBackFirstSSEEventToFirstToken(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, subRepo, nil)
+	firstTokenMs := 150
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:    "openai_first_sse_fallback",
+			Model:        "gpt-5",
+			Usage:        OpenAIUsage{InputTokens: 20, OutputTokens: 10},
+			Duration:     2 * time.Second,
+			FirstTokenMs: &firstTokenMs,
+		},
+		APIKey:  &APIKey{ID: 11, Quota: 100},
+		User:    &User{ID: 21},
+		Account: &Account{ID: 31},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
+	require.Equal(t, firstTokenMs, *usageRepo.lastLog.FirstSSEEventMs)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_BillsMappedRequestsUsingRequestedModel(t *testing.T) {
