@@ -576,7 +576,7 @@ const columns = computed<Column[]>(() => [
   { key: 'billing_mode', label: t('admin.usage.billingMode'), sortable: false },
   { key: 'tokens', label: t('usage.tokens'), sortable: false },
   { key: 'cost', label: t('usage.cost'), sortable: false },
-  { key: 'first_client_flush', label: t('usage.firstResponse'), sortable: false },
+  { key: 'first_sse_event', label: t('usage.upstreamFirstEvent'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
   { key: 'user_agent', label: t('usage.userAgent'), sortable: false }
@@ -878,7 +878,7 @@ const exportToCSV = async () => {
       'Billed Cost',
       'Original Cost',
       'First Response (ms)',
-      'Upstream First Event (ms)',
+      'First Event (ms)',
       'First Token (ms)',
       'Duration (ms)'
     ]

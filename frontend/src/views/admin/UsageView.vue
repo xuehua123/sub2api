@@ -519,10 +519,10 @@ const exportToExcel = async () => {
 
 // Column visibility
 const ALWAYS_VISIBLE = ['user', 'created_at']
-const DEFAULT_HIDDEN_COLUMNS = ['reasoning_effort', 'first_token', 'user_agent']
+const DEFAULT_HIDDEN_COLUMNS = ['reasoning_effort', 'first_client_flush', 'first_token', 'user_agent']
 const HIDDEN_COLUMNS_KEY = 'usage-hidden-columns'
 const HIDDEN_COLUMNS_VERSION_KEY = 'usage-hidden-columns-version'
-const HIDDEN_COLUMNS_VERSION = '2'
+const HIDDEN_COLUMNS_VERSION = '3'
 
 const allColumns = computed(() => [
   { key: 'user', label: t('admin.usage.user'), sortable: false },
@@ -580,6 +580,8 @@ const loadSavedColumns = () => {
         hiddenColumns.add(key)
       })
       if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_VERSION) {
+        hiddenColumns.add('first_client_flush')
+        hiddenColumns.delete('first_sse_event')
         hiddenColumns.add('first_token')
         localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
         localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_VERSION)
