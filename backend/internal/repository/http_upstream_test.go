@@ -1,13 +1,17 @@
 package repository
 
 import (
+	"compress/gzip"
+	"context"
 	"io"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -114,6 +118,128 @@ func (s *HTTPUpstreamSuite) TestDo_WithoutProxy_GoesDirect() {
 	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	require.Equal(s.T(), "direct", string(b), "unexpected body")
+}
+
+func (s *HTTPUpstreamSuite) TestDo_RecordsOpsHTTPTrace() {
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		time.Sleep(20 * time.Millisecond)
+		_, _ = io.WriteString(w, "traced")
+	}))
+	s.T().Cleanup(upstream.Close)
+
+	trace := service.NewOpsHTTPTrace(time.Now())
+	ctx := service.ContextWithOpsHTTPTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL+"/trace", strings.NewReader(strings.Repeat("a", 1024)))
+	require.NoError(s.T(), err, "NewRequest")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	require.GreaterOrEqual(s.T(), trace.GotConnMs, int64(0))
+	require.GreaterOrEqual(s.T(), trace.WroteRequestMs, int64(0))
+	require.GreaterOrEqual(s.T(), trace.GotFirstResponseByteMs, int64(10))
+}
+
+func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamCompressesJSONWhenEnabled() {
+	seen := make(chan string, 1)
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(s.T(), "gzip", r.Header.Get("Content-Encoding"))
+		gr, err := gzip.NewReader(r.Body)
+		require.NoError(s.T(), err, "gzip reader")
+		defer func() { _ = gr.Close() }()
+		body, err := io.ReadAll(gr)
+		require.NoError(s.T(), err, "read gzip body")
+		seen <- string(body)
+		_, _ = io.WriteString(w, "compressed")
+	}))
+	s.T().Cleanup(upstream.Close)
+	s.T().Setenv("OPS_GZIP_UPSTREAM", "1")
+	s.T().Setenv("OPS_GZIP_UPSTREAM_MIN_BYTES", "1")
+
+	body := `{"input":"` + strings.Repeat("a", 1024) + `"}`
+	trace := service.NewOpsHTTPTrace(time.Now())
+	ctx := service.ContextWithOpsHTTPTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL+"/gzip", strings.NewReader(body))
+	require.NoError(s.T(), err, "NewRequest")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	select {
+	case body := <-seen:
+		require.Contains(s.T(), body, strings.Repeat("a", 1024))
+	case <-time.After(time.Second):
+		require.Fail(s.T(), "expected upstream body")
+	}
+	require.Equal(s.T(), "compressed", trace.GzipStatus)
+	require.Equal(s.T(), int64(len(body)), trace.GzipOriginalBytes)
+	require.Greater(s.T(), trace.GzipCompressedBytes, int64(0))
+	require.Less(s.T(), trace.GzipCompressedBytes, trace.GzipOriginalBytes)
+	require.GreaterOrEqual(s.T(), trace.GzipCompressMs, int64(0))
+}
+
+func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamDefaultOff() {
+	seenEncoding := make(chan string, 1)
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenEncoding <- r.Header.Get("Content-Encoding")
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = io.WriteString(w, "plain")
+	}))
+	s.T().Cleanup(upstream.Close)
+	s.T().Setenv("OPS_GZIP_UPSTREAM", "")
+
+	req, err := http.NewRequest(http.MethodPost, upstream.URL+"/plain", strings.NewReader(`{"input":"hello"}`))
+	require.NoError(s.T(), err, "NewRequest")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	select {
+	case encoding := <-seenEncoding:
+		require.Empty(s.T(), encoding)
+	case <-time.After(time.Second):
+		require.Fail(s.T(), "expected upstream request")
+	}
+}
+
+func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamRecordsBelowThreshold() {
+	seenEncoding := make(chan string, 1)
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenEncoding <- r.Header.Get("Content-Encoding")
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = io.WriteString(w, "plain")
+	}))
+	s.T().Cleanup(upstream.Close)
+	s.T().Setenv("OPS_GZIP_UPSTREAM", "1")
+	s.T().Setenv("OPS_GZIP_UPSTREAM_MIN_BYTES", "4096")
+
+	body := `{"input":"hello"}`
+	trace := service.NewOpsHTTPTrace(time.Now())
+	ctx := service.ContextWithOpsHTTPTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL+"/below-threshold", strings.NewReader(body))
+	require.NoError(s.T(), err, "NewRequest")
+	req.Header.Set("Content-Type", "application/vnd.api+json")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	select {
+	case encoding := <-seenEncoding:
+		require.Empty(s.T(), encoding)
+	case <-time.After(time.Second):
+		require.Fail(s.T(), "expected upstream request")
+	}
+	require.Equal(s.T(), "below_threshold", trace.GzipStatus)
+	require.Equal(s.T(), int64(len(body)), trace.GzipOriginalBytes)
+	require.Zero(s.T(), trace.GzipCompressedBytes)
+	require.Zero(s.T(), trace.GzipCompressMs)
 }
 
 // TestDo_WithHTTPProxy_UsesProxy 测试 HTTP 代理功能

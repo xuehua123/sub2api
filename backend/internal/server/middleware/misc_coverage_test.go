@@ -36,6 +36,25 @@ func TestClientRequestID_GeneratesWhenMissing(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestClientRequestID_UsesInboundHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	r.Use(ClientRequestID())
+	r.GET("/t", func(c *gin.Context) {
+		id, ok := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+		require.True(t, ok)
+		require.Equal(t, "client-stable-123", id)
+		c.Status(http.StatusOK)
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/t", nil)
+	req.Header.Set(clientRequestIDHeader, "client-stable-123")
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestClientRequestID_PreservesExisting(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

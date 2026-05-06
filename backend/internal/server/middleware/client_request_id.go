@@ -11,6 +11,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const clientRequestIDHeader = "X-Client-Request-ID"
+
 // ClientRequestID ensures every request has a unique client_request_id in request.Context().
 //
 // This is used by the Ops monitoring module for end-to-end request correlation.
@@ -26,7 +28,10 @@ func ClientRequestID() gin.HandlerFunc {
 			return
 		}
 
-		id := uuid.New().String()
+		id := strings.TrimSpace(c.GetHeader(clientRequestIDHeader))
+		if id == "" {
+			id = uuid.New().String()
+		}
 		ctx := context.WithValue(c.Request.Context(), ctxkey.ClientRequestID, id)
 		requestLogger := logger.FromContext(ctx).With(zap.String("client_request_id", strings.TrimSpace(id)))
 		ctx = logger.IntoContext(ctx, requestLogger)

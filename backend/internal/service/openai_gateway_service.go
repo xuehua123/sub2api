@@ -22,6 +22,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
@@ -57,6 +58,7 @@ const (
 	codexCLIVersion                    = "0.125.0"
 	// Codex 限额快照仅用于后台展示/诊断，不需要每个成功请求都立即落库。
 	openAICodexSnapshotPersistMinInterval = 30 * time.Second
+	openAIHTTPTraceLogThresholdMs         = 10_000
 )
 
 // OpenAI allowed headers whitelist (for non-passthrough).
@@ -69,6 +71,7 @@ var openaiAllowedHeaders = map[string]bool{
 	"session_id":            true,
 	"x-codex-turn-state":    true,
 	"x-codex-turn-metadata": true,
+	"x-client-request-id":   true,
 }
 
 // OpenAI passthrough allowed headers whitelist.
@@ -84,6 +87,7 @@ var openaiPassthroughAllowedHeaders = map[string]bool{
 	"session_id":            true,
 	"x-codex-turn-state":    true,
 	"x-codex-turn-metadata": true,
+	"x-client-request-id":   true,
 }
 
 // codex_cli_only 拒绝时记录的请求头白名单（仅用于诊断日志，不参与上游透传）
@@ -2634,8 +2638,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Send request
 		upstreamStart := time.Now()
+		httpTrace := NewOpsHTTPTrace(upstreamStart)
+		upstreamReq = upstreamReq.WithContext(ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace))
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		upstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, upstreamLatencyMs)
+		s.logOpenAIUpstreamHTTPTrace(c, account, upstreamReq, httpTrace, upstreamLatencyMs, err)
 		if err != nil {
 			// Ensure the client receives an error response (handlers assume Forward writes on non-failover errors).
 			safeErr := sanitizeUpstreamErrorMessage(err.Error())
@@ -2896,8 +2904,12 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 
 	upstreamStart := time.Now()
+	httpTrace := NewOpsHTTPTrace(upstreamStart)
+	upstreamReq = upstreamReq.WithContext(ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace))
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+	upstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
+	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, upstreamLatencyMs)
+	s.logOpenAIUpstreamHTTPTrace(c, account, upstreamReq, httpTrace, upstreamLatencyMs, err)
 	if err != nil {
 		safeErr := sanitizeUpstreamErrorMessage(err.Error())
 		setOpsUpstreamError(c, 0, safeErr, "")
@@ -2973,6 +2985,120 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}, nil
 }
 
+func ensureOpenAIClientRequestIDHeader(ctx context.Context, req *http.Request) {
+	if req == nil {
+		return
+	}
+	if strings.TrimSpace(req.Header.Get("X-Client-Request-ID")) != "" {
+		return
+	}
+	if ctx == nil {
+		return
+	}
+	clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string)
+	if clientRequestID = strings.TrimSpace(clientRequestID); clientRequestID != "" {
+		req.Header.Set("X-Client-Request-ID", clientRequestID)
+	}
+}
+
+func (s *OpenAIGatewayService) logOpenAIUpstreamHTTPTrace(c *gin.Context, account *Account, req *http.Request, trace *OpsHTTPTrace, upstreamLatencyMs int64, upstreamErr error) {
+	if s == nil || trace == nil || req == nil {
+		return
+	}
+	if upstreamLatencyMs < openAIHTTPTraceLogThresholdMs &&
+		trace.WroteRequestMs < openAIHTTPTraceLogThresholdMs &&
+		trace.GotFirstResponseByteMs < openAIHTTPTraceLogThresholdMs &&
+		trace.GzipStatus == "" {
+		return
+	}
+
+	fields := []zap.Field{
+		zap.String("component", "service.openai_gateway"),
+		zap.Int64("upstream_latency_ms", upstreamLatencyMs),
+		zap.Int64("dns_start_ms", trace.DNSStartMs),
+		zap.Int64("dns_done_ms", trace.DNSDoneMs),
+		zap.Int64("connect_start_ms", trace.ConnectStartMs),
+		zap.Int64("connect_done_ms", trace.ConnectDoneMs),
+		zap.Int64("tls_handshake_start_ms", trace.TLSHandshakeStartMs),
+		zap.Int64("tls_handshake_done_ms", trace.TLSHandshakeDoneMs),
+		zap.Int64("got_conn_ms", trace.GotConnMs),
+		zap.Bool("conn_reused", trace.GotConnReused),
+		zap.Bool("conn_was_idle", trace.GotConnWasIdle),
+		zap.Int64("conn_idle_time_ms", trace.GotConnIdleTime),
+		zap.Int64("wrote_request_ms", trace.WroteRequestMs),
+		zap.Int64("first_response_byte_ms", trace.GotFirstResponseByteMs),
+		zap.Int64("content_length", req.ContentLength),
+	}
+	if trace.GzipStatus != "" {
+		fields = append(fields,
+			zap.String("gzip_status", trace.GzipStatus),
+			zap.Int64("gzip_original_bytes", trace.GzipOriginalBytes),
+			zap.Int64("gzip_compressed_bytes", trace.GzipCompressedBytes),
+			zap.Int64("gzip_compress_ms", trace.GzipCompressMs),
+		)
+		if trace.GzipOriginalBytes > 0 && trace.GzipCompressedBytes > 0 {
+			fields = append(fields,
+				zap.Int64("gzip_saved_bytes", trace.GzipOriginalBytes-trace.GzipCompressedBytes),
+				zap.Float64("gzip_ratio", float64(trace.GzipCompressedBytes)/float64(trace.GzipOriginalBytes)),
+			)
+		}
+	}
+	if req.URL != nil {
+		fields = append(fields,
+			zap.String("upstream_host", req.URL.Host),
+			zap.String("upstream_url", safeUpstreamURL(req.URL.String())),
+		)
+	}
+	if upstreamClientRequestID := strings.TrimSpace(req.Header.Get("X-Client-Request-ID")); upstreamClientRequestID != "" {
+		fields = append(fields, zap.String("upstream_client_request_hash", hashSensitiveValueForLog(upstreamClientRequestID)))
+	}
+	if account != nil {
+		fields = append(fields,
+			zap.Int64("account_id", account.ID),
+			zap.String("account_name", account.Name),
+		)
+	}
+	if trace.WroteRequestError != "" {
+		fields = append(fields, zap.String("wrote_request_error", trace.WroteRequestError))
+	}
+	if upstreamErr != nil {
+		fields = append(fields, zap.Error(upstreamErr))
+	}
+	if c != nil && c.Request != nil {
+		ctx := c.Request.Context()
+		if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
+			fields = append(fields, zap.String("request_id", strings.TrimSpace(requestID)))
+		}
+		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
+			clientRequestID = strings.TrimSpace(clientRequestID)
+			fields = append(fields,
+				zap.String("client_request_id", clientRequestID),
+				zap.String("client_request_hash", hashSensitiveValueForLog(clientRequestID)),
+			)
+		}
+		if model := strings.TrimSpace(gjson.GetBytes(readOpenAITraceRequestBody(c), "model").String()); model != "" {
+			fields = append(fields, zap.String("model", model))
+		}
+	}
+
+	logger.L().Info("openai.upstream_http_trace", fields...)
+}
+
+func readOpenAITraceRequestBody(c *gin.Context) []byte {
+	if c == nil {
+		return nil
+	}
+	if v, ok := c.Get(OpsUpstreamRequestBodyKey); ok {
+		switch raw := v.(type) {
+		case []byte:
+			return raw
+		case string:
+			return []byte(raw)
+		}
+	}
+	return nil
+}
+
 func logOpenAIPassthroughInstructionsRejected(
 	ctx context.Context,
 	c *gin.Context,
@@ -3046,6 +3172,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			}
 		}
 	}
+	ensureOpenAIClientRequestIDHeader(ctx, req)
 
 	// 覆盖入站鉴权残留，并注入上游认证
 	req.Header.Del("authorization")
@@ -3769,6 +3896,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			}
 		}
 	}
+	ensureOpenAIClientRequestIDHeader(ctx, req)
 	if account.Type == AccountTypeOAuth {
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
 		req.Header.Del("conversation_id")

@@ -1,15 +1,20 @@
 package repository
 
 import (
+	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +54,8 @@ const (
 	defaultMaxUpstreamClients = 5000
 	// defaultClientIdleTTLSeconds: 默认客户端空闲回收阈值（15分钟）
 	defaultClientIdleTTLSeconds = 900
+	// defaultOpsGzipUpstreamMinBytes: 默认只压缩较大的 JSON 请求体，避免小请求浪费 CPU。
+	defaultOpsGzipUpstreamMinBytes = 256 << 10
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -131,11 +138,46 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	if err := s.validateRequestHost(req); err != nil {
 		return nil, err
 	}
+	if err := prepareOpsGzipUpstreamRequest(req); err != nil {
+		return nil, err
+	}
 
 	// 获取或创建对应的客户端，并标记请求占用
 	entry, err := s.acquireClient(proxyURL, accountID, accountConcurrency)
 	if err != nil {
 		return nil, err
+	}
+
+	if trace := service.OpsHTTPTraceFromContext(req.Context()); trace != nil {
+		req = req.WithContext(httptrace.WithClientTrace(req.Context(), &httptrace.ClientTrace{
+			DNSStart: func(httptrace.DNSStartInfo) {
+				trace.MarkDNSStart()
+			},
+			DNSDone: func(httptrace.DNSDoneInfo) {
+				trace.MarkDNSDone()
+			},
+			ConnectStart: func(_, _ string) {
+				trace.MarkConnectStart()
+			},
+			ConnectDone: func(_, _ string, _ error) {
+				trace.MarkConnectDone()
+			},
+			TLSHandshakeStart: func() {
+				trace.MarkTLSHandshakeStart()
+			},
+			TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+				trace.MarkTLSHandshakeDone()
+			},
+			GotConn: func(info httptrace.GotConnInfo) {
+				trace.MarkGotConn(info.Reused, info.WasIdle, info.IdleTime)
+			},
+			WroteRequest: func(info httptrace.WroteRequestInfo) {
+				trace.MarkWroteRequest(info.Err)
+			},
+			GotFirstResponseByte: func() {
+				trace.MarkGotFirstResponseByte()
+			},
+		}))
 	}
 
 	// 执行请求
@@ -180,6 +222,9 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	slog.Debug("tls_fingerprint_enabled", "account_id", accountID, "target", targetHost, "proxy", proxyInfo, "profile", profile.Name)
 
 	if err := s.validateRequestHost(req); err != nil {
+		return nil, err
+	}
+	if err := prepareOpsGzipUpstreamRequest(req); err != nil {
 		return nil, err
 	}
 
@@ -863,6 +908,123 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 		return body
 	}
 	return &trackedBody{ReadCloser: body, onClose: onClose}
+}
+
+func prepareOpsGzipUpstreamRequest(req *http.Request) error {
+	if !shouldOpsGzipUpstreamRequest(req) {
+		return nil
+	}
+	trace := service.OpsHTTPTraceFromContext(req.Context())
+
+	originalBody := req.Body
+	body, err := io.ReadAll(originalBody)
+	if err != nil {
+		recordOpsGzipUpstream(trace, "read_error", 0, 0, 0)
+		return fmt.Errorf("read upstream request body for gzip: %w", err)
+	}
+	_ = originalBody.Close()
+
+	minBytes := opsGzipUpstreamMinBytes()
+	if int64(len(body)) < minBytes {
+		setRequestBody(req, body)
+		recordOpsGzipUpstream(trace, "below_threshold", int64(len(body)), 0, 0)
+		return nil
+	}
+
+	var compressed bytes.Buffer
+	zw, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
+	if err != nil {
+		setRequestBody(req, body)
+		recordOpsGzipUpstream(trace, "writer_error", int64(len(body)), 0, 0)
+		return fmt.Errorf("create gzip writer: %w", err)
+	}
+	compressStart := time.Now()
+	if _, err := zw.Write(body); err != nil {
+		_ = zw.Close()
+		setRequestBody(req, body)
+		recordOpsGzipUpstream(trace, "write_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds())
+		return fmt.Errorf("compress upstream request body: %w", err)
+	}
+	if err := zw.Close(); err != nil {
+		setRequestBody(req, body)
+		recordOpsGzipUpstream(trace, "close_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds())
+		return fmt.Errorf("finish upstream request gzip: %w", err)
+	}
+	compressMs := time.Since(compressStart).Milliseconds()
+	if compressed.Len() >= len(body) {
+		setRequestBody(req, body)
+		recordOpsGzipUpstream(trace, "not_smaller", int64(len(body)), int64(compressed.Len()), compressMs)
+		return nil
+	}
+
+	setRequestBody(req, compressed.Bytes())
+	req.Header.Set("Content-Encoding", "gzip")
+	recordOpsGzipUpstream(trace, "compressed", int64(len(body)), int64(compressed.Len()), compressMs)
+	return nil
+}
+
+func shouldOpsGzipUpstreamRequest(req *http.Request) bool {
+	if !truthyEnv("OPS_GZIP_UPSTREAM") {
+		return false
+	}
+	if req == nil || req.URL == nil || req.Body == nil || req.Body == http.NoBody {
+		return false
+	}
+	switch req.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch:
+	default:
+		return false
+	}
+	if strings.TrimSpace(req.Header.Get("Content-Encoding")) != "" {
+		return false
+	}
+	contentType := strings.ToLower(req.Header.Get("Content-Type"))
+	if !opsGzipJSONContentType(contentType) {
+		return false
+	}
+	return true
+}
+
+func recordOpsGzipUpstream(trace *service.OpsHTTPTrace, status string, originalBytes, compressedBytes, compressMs int64) {
+	if trace == nil {
+		return
+	}
+	trace.RecordGzipUpstream(status, originalBytes, compressedBytes, compressMs)
+}
+
+func opsGzipJSONContentType(contentType string) bool {
+	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func opsGzipUpstreamMinBytes() int64 {
+	raw := strings.TrimSpace(os.Getenv("OPS_GZIP_UPSTREAM_MIN_BYTES"))
+	if raw == "" {
+		return defaultOpsGzipUpstreamMinBytes
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return defaultOpsGzipUpstreamMinBytes
+	}
+	return value
+}
+
+func truthyEnv(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func setRequestBody(req *http.Request, body []byte) {
+	req.Body = io.NopCloser(bytes.NewReader(body))
+	req.ContentLength = int64(len(body))
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(body)), nil
+	}
+	req.Header.Del("Content-Length")
 }
 
 // decompressResponseBody 根据 Content-Encoding 解压响应体。

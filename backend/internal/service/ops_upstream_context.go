@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"time"
@@ -37,6 +38,121 @@ const (
 	// ops_error_logger 中间件检查此 key，为 true 时跳过错误记录。
 	OpsSkipPassthroughKey = "ops_skip_passthrough"
 )
+
+type opsHTTPTraceContextKey struct{}
+
+// OpsHTTPTrace captures client-side net/http timing for an upstream request.
+// Durations are measured from the moment the gateway starts the upstream attempt.
+type OpsHTTPTrace struct {
+	start time.Time
+
+	DNSStartMs int64
+	DNSDoneMs  int64
+
+	ConnectStartMs int64
+	ConnectDoneMs  int64
+
+	TLSHandshakeStartMs int64
+	TLSHandshakeDoneMs  int64
+
+	GotConnMs       int64
+	GotConnReused   bool
+	GotConnWasIdle  bool
+	GotConnIdleTime int64
+
+	WroteRequestMs    int64
+	WroteRequestError string
+
+	GotFirstResponseByteMs int64
+
+	GzipStatus          string
+	GzipOriginalBytes   int64
+	GzipCompressedBytes int64
+	GzipCompressMs      int64
+}
+
+func NewOpsHTTPTrace(start time.Time) *OpsHTTPTrace {
+	if start.IsZero() {
+		start = time.Now()
+	}
+	return &OpsHTTPTrace{start: start}
+}
+
+func ContextWithOpsHTTPTrace(ctx context.Context, trace *OpsHTTPTrace) context.Context {
+	if ctx == nil || trace == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, opsHTTPTraceContextKey{}, trace)
+}
+
+func OpsHTTPTraceFromContext(ctx context.Context) *OpsHTTPTrace {
+	if ctx == nil {
+		return nil
+	}
+	trace, _ := ctx.Value(opsHTTPTraceContextKey{}).(*OpsHTTPTrace)
+	return trace
+}
+
+func (t *OpsHTTPTrace) MarkDNSStart() {
+	t.setOnce(&t.DNSStartMs)
+}
+
+func (t *OpsHTTPTrace) MarkDNSDone() {
+	t.setOnce(&t.DNSDoneMs)
+}
+
+func (t *OpsHTTPTrace) MarkConnectStart() {
+	t.setOnce(&t.ConnectStartMs)
+}
+
+func (t *OpsHTTPTrace) MarkConnectDone() {
+	t.setOnce(&t.ConnectDoneMs)
+}
+
+func (t *OpsHTTPTrace) MarkTLSHandshakeStart() {
+	t.setOnce(&t.TLSHandshakeStartMs)
+}
+
+func (t *OpsHTTPTrace) MarkTLSHandshakeDone() {
+	t.setOnce(&t.TLSHandshakeDoneMs)
+}
+
+func (t *OpsHTTPTrace) MarkGotConn(reused, wasIdle bool, idleTime time.Duration) {
+	t.setOnce(&t.GotConnMs)
+	t.GotConnReused = reused
+	t.GotConnWasIdle = wasIdle
+	if idleTime > 0 {
+		t.GotConnIdleTime = idleTime.Milliseconds()
+	}
+}
+
+func (t *OpsHTTPTrace) MarkWroteRequest(err error) {
+	t.setOnce(&t.WroteRequestMs)
+	if err != nil {
+		t.WroteRequestError = sanitizeUpstreamErrorMessage(err.Error())
+	}
+}
+
+func (t *OpsHTTPTrace) MarkGotFirstResponseByte() {
+	t.setOnce(&t.GotFirstResponseByteMs)
+}
+
+func (t *OpsHTTPTrace) RecordGzipUpstream(status string, originalBytes, compressedBytes, compressMs int64) {
+	if t == nil {
+		return
+	}
+	t.GzipStatus = sanitizeUpstreamErrorMessage(strings.TrimSpace(status))
+	t.GzipOriginalBytes = originalBytes
+	t.GzipCompressedBytes = compressedBytes
+	t.GzipCompressMs = compressMs
+}
+
+func (t *OpsHTTPTrace) setOnce(dst *int64) {
+	if t == nil || dst == nil || *dst > 0 {
+		return
+	}
+	*dst = time.Since(t.start).Milliseconds()
+}
 
 func setOpsUpstreamRequestBody(c *gin.Context, body []byte) {
 	if c == nil || len(body) == 0 {

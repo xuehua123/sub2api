@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
@@ -1850,6 +1851,52 @@ func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testi
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", false)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/v1/responses/compact", req.URL.String())
+}
+
+func TestOpenAIBuildUpstreamRequestAddsClientRequestIDFromContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "client-stable-123")
+	c.Request = httptest.NewRequest(http.MethodPost, "/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`))).WithContext(ctx)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		},
+	}}
+	account := &Account{
+		Type:        AccountTypeAPIKey,
+		Platform:    PlatformOpenAI,
+		Credentials: map[string]any{"base_url": "https://example.com/v1"},
+	}
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", false)
+	require.NoError(t, err)
+	require.Equal(t, "client-stable-123", req.Header.Get("X-Client-Request-ID"))
+}
+
+func TestOpenAIBuildUpstreamRequestPassthroughAddsClientRequestIDFromContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "client-passthrough-123")
+	c.Request = httptest.NewRequest(http.MethodPost, "/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`))).WithContext(ctx)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		},
+	}}
+	account := &Account{
+		Type:        AccountTypeAPIKey,
+		Platform:    PlatformOpenAI,
+		Credentials: map[string]any{"base_url": "https://example.com/v1"},
+	}
+
+	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false)
+	require.NoError(t, err)
+	require.Equal(t, "client-passthrough-123", req.Header.Get("X-Client-Request-ID"))
 }
 
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {
