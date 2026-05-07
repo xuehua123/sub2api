@@ -983,10 +983,7 @@ func shouldOpsGzipUpstreamRequest(req *http.Request) bool {
 		return false
 	}
 	contentType := strings.ToLower(req.Header.Get("Content-Type"))
-	if !opsGzipJSONContentType(contentType) {
-		return false
-	}
-	return true
+	return opsGzipJSONContentType(contentType)
 }
 
 func recordOpsGzipUpstream(trace *service.OpsHTTPTrace, status string, originalBytes, compressedBytes, compressMs int64, level int) {
