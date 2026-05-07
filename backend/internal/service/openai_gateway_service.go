@@ -3035,6 +3035,7 @@ func (s *OpenAIGatewayService) logOpenAIUpstreamHTTPTrace(c *gin.Context, accoun
 			zap.Int64("gzip_original_bytes", trace.GzipOriginalBytes),
 			zap.Int64("gzip_compressed_bytes", trace.GzipCompressedBytes),
 			zap.Int64("gzip_compress_ms", trace.GzipCompressMs),
+			zap.Int("gzip_level", trace.GzipLevel),
 		)
 		if trace.GzipOriginalBytes > 0 && trace.GzipCompressedBytes > 0 {
 			fields = append(fields,

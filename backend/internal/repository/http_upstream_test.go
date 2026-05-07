@@ -180,6 +180,48 @@ func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamCompressesJSONWhenEnabled() {
 	require.Greater(s.T(), trace.GzipCompressedBytes, int64(0))
 	require.Less(s.T(), trace.GzipCompressedBytes, trace.GzipOriginalBytes)
 	require.GreaterOrEqual(s.T(), trace.GzipCompressMs, int64(0))
+	require.Equal(s.T(), gzip.BestSpeed, trace.GzipLevel)
+}
+
+func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamUsesDefaultLevelForLargeJSON() {
+	seen := make(chan string, 1)
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(s.T(), "gzip", r.Header.Get("Content-Encoding"))
+		gr, err := gzip.NewReader(r.Body)
+		require.NoError(s.T(), err, "gzip reader")
+		defer func() { _ = gr.Close() }()
+		body, err := io.ReadAll(gr)
+		require.NoError(s.T(), err, "read gzip body")
+		seen <- string(body)
+		_, _ = io.WriteString(w, "compressed")
+	}))
+	s.T().Cleanup(upstream.Close)
+	s.T().Setenv("OPS_GZIP_UPSTREAM", "1")
+	s.T().Setenv("OPS_GZIP_UPSTREAM_MIN_BYTES", "1")
+	s.T().Setenv("OPS_GZIP_UPSTREAM_DEFAULT_LEVEL_MIN_BYTES", "1024")
+
+	body := `{"input":"` + strings.Repeat("a", 4096) + `"}`
+	trace := service.NewOpsHTTPTrace(time.Now())
+	ctx := service.ContextWithOpsHTTPTrace(context.Background(), trace)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL+"/gzip-default-level", strings.NewReader(body))
+	require.NoError(s.T(), err, "NewRequest")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	select {
+	case body := <-seen:
+		require.Contains(s.T(), body, strings.Repeat("a", 4096))
+	case <-time.After(time.Second):
+		require.Fail(s.T(), "expected upstream body")
+	}
+	require.Equal(s.T(), "compressed", trace.GzipStatus)
+	require.Equal(s.T(), gzip.DefaultCompression, trace.GzipLevel)
+	require.Equal(s.T(), int64(len(body)), trace.GzipOriginalBytes)
+	require.Greater(s.T(), trace.GzipCompressedBytes, int64(0))
+	require.Less(s.T(), trace.GzipCompressedBytes, trace.GzipOriginalBytes)
 }
 
 func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamDefaultOff() {
@@ -240,6 +282,14 @@ func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamRecordsBelowThreshold() {
 	require.Equal(s.T(), int64(len(body)), trace.GzipOriginalBytes)
 	require.Zero(s.T(), trace.GzipCompressedBytes)
 	require.Zero(s.T(), trace.GzipCompressMs)
+	require.Zero(s.T(), trace.GzipLevel)
+}
+
+func (s *HTTPUpstreamSuite) TestOpsGzipUpstreamLevelThreshold() {
+	s.T().Setenv("OPS_GZIP_UPSTREAM_DEFAULT_LEVEL_MIN_BYTES", "1024")
+
+	require.Equal(s.T(), gzip.BestSpeed, opsGzipUpstreamLevel(1023))
+	require.Equal(s.T(), gzip.DefaultCompression, opsGzipUpstreamLevel(1024))
 }
 
 // TestDo_WithHTTPProxy_UsesProxy 测试 HTTP 代理功能

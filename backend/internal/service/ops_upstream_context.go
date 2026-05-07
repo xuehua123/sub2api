@@ -69,6 +69,7 @@ type OpsHTTPTrace struct {
 	GzipOriginalBytes   int64
 	GzipCompressedBytes int64
 	GzipCompressMs      int64
+	GzipLevel           int
 }
 
 func NewOpsHTTPTrace(start time.Time) *OpsHTTPTrace {
@@ -137,7 +138,7 @@ func (t *OpsHTTPTrace) MarkGotFirstResponseByte() {
 	t.setOnce(&t.GotFirstResponseByteMs)
 }
 
-func (t *OpsHTTPTrace) RecordGzipUpstream(status string, originalBytes, compressedBytes, compressMs int64) {
+func (t *OpsHTTPTrace) RecordGzipUpstream(status string, originalBytes, compressedBytes, compressMs int64, level int) {
 	if t == nil {
 		return
 	}
@@ -145,6 +146,7 @@ func (t *OpsHTTPTrace) RecordGzipUpstream(status string, originalBytes, compress
 	t.GzipOriginalBytes = originalBytes
 	t.GzipCompressedBytes = compressedBytes
 	t.GzipCompressMs = compressMs
+	t.GzipLevel = level
 }
 
 func (t *OpsHTTPTrace) setOnce(dst *int64) {

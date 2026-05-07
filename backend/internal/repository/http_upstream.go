@@ -56,6 +56,8 @@ const (
 	defaultClientIdleTTLSeconds = 900
 	// defaultOpsGzipUpstreamMinBytes: 默认只压缩较大的 JSON 请求体，避免小请求浪费 CPU。
 	defaultOpsGzipUpstreamMinBytes = 256 << 10
+	// defaultOpsGzipUpstreamDefaultLevelMinBytes: 大请求使用 gzip 默认压缩等级，提高跨境上传收益。
+	defaultOpsGzipUpstreamDefaultLevelMinBytes = 1 << 20
 )
 
 var errUpstreamClientLimitReached = errors.New("upstream client cache limit reached")
@@ -919,7 +921,7 @@ func prepareOpsGzipUpstreamRequest(req *http.Request) error {
 	originalBody := req.Body
 	body, err := io.ReadAll(originalBody)
 	if err != nil {
-		recordOpsGzipUpstream(trace, "read_error", 0, 0, 0)
+		recordOpsGzipUpstream(trace, "read_error", 0, 0, 0, 0)
 		return fmt.Errorf("read upstream request body for gzip: %w", err)
 	}
 	_ = originalBody.Close()
@@ -927,39 +929,41 @@ func prepareOpsGzipUpstreamRequest(req *http.Request) error {
 	minBytes := opsGzipUpstreamMinBytes()
 	if int64(len(body)) < minBytes {
 		setRequestBody(req, body)
-		recordOpsGzipUpstream(trace, "below_threshold", int64(len(body)), 0, 0)
+		recordOpsGzipUpstream(trace, "below_threshold", int64(len(body)), 0, 0, 0)
 		return nil
 	}
 
+	level := opsGzipUpstreamLevel(len(body))
+
 	var compressed bytes.Buffer
-	zw, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
+	zw, err := gzip.NewWriterLevel(&compressed, level)
 	if err != nil {
 		setRequestBody(req, body)
-		recordOpsGzipUpstream(trace, "writer_error", int64(len(body)), 0, 0)
+		recordOpsGzipUpstream(trace, "writer_error", int64(len(body)), 0, 0, level)
 		return fmt.Errorf("create gzip writer: %w", err)
 	}
 	compressStart := time.Now()
 	if _, err := zw.Write(body); err != nil {
 		_ = zw.Close()
 		setRequestBody(req, body)
-		recordOpsGzipUpstream(trace, "write_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds())
+		recordOpsGzipUpstream(trace, "write_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds(), level)
 		return fmt.Errorf("compress upstream request body: %w", err)
 	}
 	if err := zw.Close(); err != nil {
 		setRequestBody(req, body)
-		recordOpsGzipUpstream(trace, "close_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds())
+		recordOpsGzipUpstream(trace, "close_error", int64(len(body)), int64(compressed.Len()), time.Since(compressStart).Milliseconds(), level)
 		return fmt.Errorf("finish upstream request gzip: %w", err)
 	}
 	compressMs := time.Since(compressStart).Milliseconds()
 	if compressed.Len() >= len(body) {
 		setRequestBody(req, body)
-		recordOpsGzipUpstream(trace, "not_smaller", int64(len(body)), int64(compressed.Len()), compressMs)
+		recordOpsGzipUpstream(trace, "not_smaller", int64(len(body)), int64(compressed.Len()), compressMs, level)
 		return nil
 	}
 
 	setRequestBody(req, compressed.Bytes())
 	req.Header.Set("Content-Encoding", "gzip")
-	recordOpsGzipUpstream(trace, "compressed", int64(len(body)), int64(compressed.Len()), compressMs)
+	recordOpsGzipUpstream(trace, "compressed", int64(len(body)), int64(compressed.Len()), compressMs, level)
 	return nil
 }
 
@@ -985,11 +989,11 @@ func shouldOpsGzipUpstreamRequest(req *http.Request) bool {
 	return true
 }
 
-func recordOpsGzipUpstream(trace *service.OpsHTTPTrace, status string, originalBytes, compressedBytes, compressMs int64) {
+func recordOpsGzipUpstream(trace *service.OpsHTTPTrace, status string, originalBytes, compressedBytes, compressMs int64, level int) {
 	if trace == nil {
 		return
 	}
-	trace.RecordGzipUpstream(status, originalBytes, compressedBytes, compressMs)
+	trace.RecordGzipUpstream(status, originalBytes, compressedBytes, compressMs, level)
 }
 
 func opsGzipJSONContentType(contentType string) bool {
@@ -1005,6 +1009,25 @@ func opsGzipUpstreamMinBytes() int64 {
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value < 0 {
 		return defaultOpsGzipUpstreamMinBytes
+	}
+	return value
+}
+
+func opsGzipUpstreamLevel(originalBytes int) int {
+	if int64(originalBytes) >= opsGzipUpstreamDefaultLevelMinBytes() {
+		return gzip.DefaultCompression
+	}
+	return gzip.BestSpeed
+}
+
+func opsGzipUpstreamDefaultLevelMinBytes() int64 {
+	raw := strings.TrimSpace(os.Getenv("OPS_GZIP_UPSTREAM_DEFAULT_LEVEL_MIN_BYTES"))
+	if raw == "" {
+		return defaultOpsGzipUpstreamDefaultLevelMinBytes
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value < 0 {
+		return defaultOpsGzipUpstreamDefaultLevelMinBytes
 	}
 	return value
 }
