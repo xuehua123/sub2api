@@ -355,6 +355,8 @@ export const useAppStore = defineStore('app', () => {
         wechat_oauth_mobile_enabled: false,
         oidc_oauth_enabled: false,
         oidc_oauth_provider_name: 'OIDC',
+        github_oauth_enabled: false,
+        google_oauth_enabled: false,
         backend_mode_enabled: false,
         version: siteVersion.value,
         channel_monitor_enabled: true,
@@ -371,6 +373,7 @@ export const useAppStore = defineStore('app', () => {
         balance_low_notify_enabled: false,
         account_quota_notify_enabled: false,
         balance_low_notify_threshold: 0,
+        risk_control_enabled: false,
         affiliate_enabled: false,
       }
     }

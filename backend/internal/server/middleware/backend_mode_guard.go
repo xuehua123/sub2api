@@ -43,6 +43,8 @@ func backendModeAllowsAuthPath(path string) bool {
 		"/auth/oauth/wechat/payment/callback",
 		"/auth/oauth/oidc/bind/start",
 		"/auth/oauth/oidc/callback",
+		"/auth/oauth/github/callback",
+		"/auth/oauth/google/callback",
 		"/auth/oauth/linuxdo/complete-registration",
 		"/auth/oauth/wechat/complete-registration",
 		"/auth/oauth/oidc/complete-registration",
