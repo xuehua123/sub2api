@@ -3156,6 +3156,9 @@ export default {
       setupTokenLongLived: 'Setup Token (Long-lived)',
       baseUrl: 'Base URL',
       baseUrlHint: 'Leave default for official Anthropic API',
+      upstreamGzip: 'Upstream request compression',
+      upstreamGzipDesc:
+        'Controls whether this account may gzip request bodies when forwarding upstream. OpenAI OAuth is off by default; internal codex2api relay accounts can opt in.',
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',

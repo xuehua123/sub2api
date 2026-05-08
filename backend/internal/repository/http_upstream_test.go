@@ -250,6 +250,40 @@ func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamDefaultOff() {
 	}
 }
 
+func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamDisabledByAccountPolicy() {
+	seenEncoding := make(chan string, 1)
+	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenEncoding <- r.Header.Get("Content-Encoding")
+		_, _ = io.Copy(io.Discard, r.Body)
+		_, _ = io.WriteString(w, "plain")
+	}))
+	s.T().Cleanup(upstream.Close)
+	s.T().Setenv("OPS_GZIP_UPSTREAM", "1")
+	s.T().Setenv("OPS_GZIP_UPSTREAM_MIN_BYTES", "1")
+
+	body := `{"input":"` + strings.Repeat("a", 1024) + `"}`
+	trace := service.NewOpsHTTPTrace(time.Now())
+	ctx := service.ContextWithOpsHTTPTrace(context.Background(), trace)
+	ctx = service.ContextWithOpsGzipUpstreamAllowed(ctx, false)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstream.URL+"/gzip-disabled", strings.NewReader(body))
+	require.NoError(s.T(), err, "NewRequest")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := NewHTTPUpstream(s.cfg).Do(req, "", 1, 1)
+	require.NoError(s.T(), err, "Do")
+	defer func() { _ = resp.Body.Close() }()
+
+	select {
+	case encoding := <-seenEncoding:
+		require.Empty(s.T(), encoding)
+	case <-time.After(time.Second):
+		require.Fail(s.T(), "expected upstream request")
+	}
+	require.Equal(s.T(), "disabled_by_account", trace.GzipStatus)
+	require.Zero(s.T(), trace.GzipOriginalBytes)
+	require.Zero(s.T(), trace.GzipCompressedBytes)
+}
+
 func (s *HTTPUpstreamSuite) TestDo_GzipUpstreamRecordsBelowThreshold() {
 	seenEncoding := make(chan string, 1)
 	upstream := newLocalTestServer(s.T(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

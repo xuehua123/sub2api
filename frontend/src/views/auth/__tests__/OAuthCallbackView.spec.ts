@@ -155,7 +155,7 @@ describe('OAuthCallbackView', () => {
     expect(exchangePendingOAuthCompletionMock).not.toHaveBeenCalled()
   })
 
-  it('submits stored affiliate code when completing invited email oauth registration', async () => {
+  it('submits stored affiliate and referral codes when completing invited email oauth registration', async () => {
     routeState.path = '/auth/oauth/callback'
     exchangePendingOAuthCompletionMock.mockResolvedValue({
       error: 'invitation_required',
@@ -170,6 +170,7 @@ describe('OAuthCallbackView', () => {
       },
     })
     window.sessionStorage.setItem('oauth_aff_code', 'AFF456')
+    window.sessionStorage.setItem('oauth_referral_code', 'REF789')
 
     const wrapper = mount(OAuthCallbackView)
     await vi.dynamicImportSettled()
@@ -183,9 +184,11 @@ describe('OAuthCallbackView', () => {
     expect(apiPostMock).toHaveBeenCalledWith('/auth/oauth/google/complete-registration', {
       password: 'secret-123',
       invitation_code: 'INVITE456',
+      referral_code: 'REF789',
       aff_code: 'AFF456',
     })
     expect(setTokenMock).toHaveBeenCalledWith('token-1')
+    expect(window.sessionStorage.getItem('oauth_referral_code')).toBeNull()
   })
 
   it('completes email oauth registration with readonly email and without posting email', async () => {

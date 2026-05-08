@@ -162,6 +162,7 @@ import {
   loadOAuthAffiliateCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { clearOAuthReferralCode, getOAuthReferralCode } from '@/utils/oauthReferral'
 
 const route = useRoute()
 const router = useRouter()
@@ -278,6 +279,7 @@ async function finalizeTokenResponse(tokenResponse: OAuthTokenResponse, redirect
   if (typeof window !== 'undefined') {
     window.sessionStorage.removeItem(EMAIL_OAUTH_PENDING_PROVIDER_KEY)
   }
+  clearOAuthReferralCode()
   clearAllAffiliateReferralCodes()
   appStore.showSuccess(t('auth.loginSuccess'))
   await router.replace(sanitizeRedirectPath(redirect))
@@ -343,12 +345,16 @@ async function handleSubmitRegistration() {
 
   isSubmitting.value = true
   try {
-    const payload: { password: string; invitation_code?: string; aff_code?: string } = {
+    const referralCode = getOAuthReferralCode()
+    const payload: { password: string; invitation_code?: string; referral_code?: string; aff_code?: string } = {
       password: password.value,
       ...oauthAffiliatePayload(loadOAuthAffiliateCode())
     }
     if (invitationRequired.value) {
       payload.invitation_code = code
+    }
+    if (referralCode) {
+      payload.referral_code = referralCode
     }
     const { data } = await apiClient.post<OAuthTokenResponse>(
       `/auth/oauth/${pendingProvider.value}/complete-registration`,

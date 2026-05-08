@@ -2720,7 +2720,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// Send request
 		upstreamStart := time.Now()
 		httpTrace := NewOpsHTTPTrace(upstreamStart)
-		upstreamReq = upstreamReq.WithContext(ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace))
+		upstreamCtxWithTrace := ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace)
+		upstreamReq = upstreamReq.WithContext(ContextWithAccountUpstreamGzipPolicy(upstreamCtxWithTrace, account))
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		upstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, upstreamLatencyMs)
@@ -3025,7 +3026,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 
 	upstreamStart := time.Now()
 	httpTrace := NewOpsHTTPTrace(upstreamStart)
-	upstreamReq = upstreamReq.WithContext(ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace))
+	upstreamCtxWithTrace := ContextWithOpsHTTPTrace(upstreamReq.Context(), httpTrace)
+	upstreamReq = upstreamReq.WithContext(ContextWithAccountUpstreamGzipPolicy(upstreamCtxWithTrace, account))
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	upstreamLatencyMs := time.Since(upstreamStart).Milliseconds()
 	SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, upstreamLatencyMs)

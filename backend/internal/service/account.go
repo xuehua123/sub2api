@@ -66,6 +66,8 @@ type Account struct {
 	modelMappingCacheRawSig         uint64
 }
 
+const AccountExtraUpstreamGzipEnabled = "upstream_gzip_enabled"
+
 type TempUnschedulableRule struct {
 	ErrorCode       int      `json:"error_code"`
 	Keywords        []string `json:"keywords"`
@@ -975,6 +977,20 @@ func (a *Account) IsOpenAIOAuth() bool {
 
 func (a *Account) IsOpenAIApiKey() bool {
 	return a.IsOpenAI() && a.Type == AccountTypeAPIKey
+}
+
+// IsUpstreamGzipEnabled returns whether requests for this account may be
+// compressed by the HTTP upstream layer when the global gzip flag is enabled.
+func (a *Account) IsUpstreamGzipEnabled() bool {
+	if a == nil {
+		return true
+	}
+	if a.Extra != nil {
+		if enabled, ok := a.Extra[AccountExtraUpstreamGzipEnabled].(bool); ok {
+			return enabled
+		}
+	}
+	return !a.IsOpenAIOAuth()
 }
 
 func (a *Account) GetOpenAIBaseURL() string {

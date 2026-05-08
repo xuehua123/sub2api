@@ -40,6 +40,7 @@ const (
 )
 
 type opsHTTPTraceContextKey struct{}
+type opsGzipUpstreamAllowedContextKey struct{}
 
 // OpsHTTPTrace captures client-side net/http timing for an upstream request.
 // Durations are measured from the moment the gateway starts the upstream attempt.
@@ -92,6 +93,25 @@ func OpsHTTPTraceFromContext(ctx context.Context) *OpsHTTPTrace {
 	}
 	trace, _ := ctx.Value(opsHTTPTraceContextKey{}).(*OpsHTTPTrace)
 	return trace
+}
+
+func ContextWithOpsGzipUpstreamAllowed(ctx context.Context, allowed bool) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, opsGzipUpstreamAllowedContextKey{}, allowed)
+}
+
+func ContextWithAccountUpstreamGzipPolicy(ctx context.Context, account *Account) context.Context {
+	return ContextWithOpsGzipUpstreamAllowed(ctx, account.IsUpstreamGzipEnabled())
+}
+
+func OpsGzipUpstreamAllowedFromContext(ctx context.Context) (bool, bool) {
+	if ctx == nil {
+		return false, false
+	}
+	allowed, ok := ctx.Value(opsGzipUpstreamAllowedContextKey{}).(bool)
+	return allowed, ok
 }
 
 func (t *OpsHTTPTrace) MarkDNSStart() {

@@ -37,9 +37,10 @@ describe('EmailOAuthButtons', () => {
     window.sessionStorage.clear()
   })
 
-  it('passes the affiliate code to the email oauth start URL', async () => {
+  it('passes affiliate and stores referral codes for email oauth', async () => {
     const wrapper = mount(EmailOAuthButtons, {
       props: {
+        referralCode: 'REF456',
         githubEnabled: true,
         googleEnabled: false,
       },
@@ -57,6 +58,7 @@ describe('EmailOAuthButtons', () => {
       '/api/v1/auth/oauth/github/start?redirect=%2Fbilling%3Fplan%3Dpro&aff_code=AFF123'
     )
     expect(window.sessionStorage.getItem('oauth_aff_code')).toBe('AFF123')
+    expect(window.sessionStorage.getItem('oauth_referral_code')).toBe('REF456')
     expect(window.sessionStorage.getItem('email_oauth_pending_provider')).toBe('github')
   })
 

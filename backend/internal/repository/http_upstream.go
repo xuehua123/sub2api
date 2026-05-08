@@ -913,6 +913,20 @@ func wrapTrackedBody(body io.ReadCloser, onClose func()) io.ReadCloser {
 }
 
 func prepareOpsGzipUpstreamRequest(req *http.Request) error {
+	if req == nil {
+		return nil
+	}
+	if !truthyEnv("OPS_GZIP_UPSTREAM") {
+		return nil
+	}
+	if allowed, ok := service.OpsGzipUpstreamAllowedFromContext(req.Context()); ok && !allowed {
+		recordOpsGzipUpstream(service.OpsHTTPTraceFromContext(req.Context()), "disabled_by_account", 0, 0, 0, 0)
+		return nil
+	}
+	if _, ok := service.OpsGzipUpstreamAllowedFromContext(req.Context()); !ok && isChatGPTUpstreamHost(req.URL) {
+		recordOpsGzipUpstream(service.OpsHTTPTraceFromContext(req.Context()), "disabled_by_host", 0, 0, 0, 0)
+		return nil
+	}
 	if !shouldOpsGzipUpstreamRequest(req) {
 		return nil
 	}
@@ -968,9 +982,6 @@ func prepareOpsGzipUpstreamRequest(req *http.Request) error {
 }
 
 func shouldOpsGzipUpstreamRequest(req *http.Request) bool {
-	if !truthyEnv("OPS_GZIP_UPSTREAM") {
-		return false
-	}
 	if req == nil || req.URL == nil || req.Body == nil || req.Body == http.NoBody {
 		return false
 	}
@@ -996,6 +1007,14 @@ func recordOpsGzipUpstream(trace *service.OpsHTTPTrace, status string, originalB
 func opsGzipJSONContentType(contentType string) bool {
 	mediaType := strings.TrimSpace(strings.Split(contentType, ";")[0])
 	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func isChatGPTUpstreamHost(url *url.URL) bool {
+	if url == nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(url.Hostname()))
+	return host == "chatgpt.com" || strings.HasSuffix(host, ".chatgpt.com")
 }
 
 func opsGzipUpstreamMinBytes() int64 {

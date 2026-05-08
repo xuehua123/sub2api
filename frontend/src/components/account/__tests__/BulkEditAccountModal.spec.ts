@@ -149,6 +149,25 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('批量编辑可开启账号级上游请求压缩', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-upstream-gzip-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-upstream-gzip-toggle').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        upstream_gzip_enabled: true
+      }
+    })
+  })
+
   it('OpenAI OAuth 批量编辑应提交 OAuth 专属 WS mode 字段', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
