@@ -2966,6 +2966,7 @@ export default {
       columns: {
         name: '名称',
         platformType: '平台/类型',
+        upstreamGzip: '压缩',
         platform: '平台',
         type: '类型',
         capacity: '容量',
@@ -3307,6 +3308,13 @@ export default {
       upstreamGzip: '上游请求压缩',
       upstreamGzipDesc:
         '控制该账号转发到上游时是否允许 gzip 请求体。OpenAI OAuth 默认关闭；内部 codex2api 中转账号可按需开启。',
+      upstreamGzipOn: '开启',
+      upstreamGzipOff: '关闭',
+      upstreamGzipDefault: '默认',
+      upstreamGzipExplicit: '手动',
+      upstreamGzipSource: '当前来源：{source}',
+      upstreamGzipEnabledTitle: '该账号转发上游时允许 gzip 请求体',
+      upstreamGzipDisabledTitle: '该账号转发上游时不压缩请求体',
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',

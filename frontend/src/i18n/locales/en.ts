@@ -2928,6 +2928,7 @@ export default {
       columns: {
         name: 'Name',
         platformType: 'Platform/Type',
+        upstreamGzip: 'Compression',
         platform: 'Platform',
         type: 'Type',
         capacity: 'Capacity',
@@ -3159,6 +3160,13 @@ export default {
       upstreamGzip: 'Upstream request compression',
       upstreamGzipDesc:
         'Controls whether this account may gzip request bodies when forwarding upstream. OpenAI OAuth is off by default; internal codex2api relay accounts can opt in.',
+      upstreamGzipOn: 'On',
+      upstreamGzipOff: 'Off',
+      upstreamGzipDefault: 'Default',
+      upstreamGzipExplicit: 'Manual',
+      upstreamGzipSource: 'Source: {source}',
+      upstreamGzipEnabledTitle: 'This account may gzip request bodies when forwarding upstream',
+      upstreamGzipDisabledTitle: 'This account forwards upstream without gzip request bodies',
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',

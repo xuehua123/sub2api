@@ -250,6 +250,23 @@
               </div>
             </div>
           </template>
+          <template #cell-upstream_gzip="{ row }">
+            <div class="flex min-w-[5.5rem] flex-col gap-1">
+              <span
+                :class="[
+                  'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium',
+                  getUpstreamGzipMeta(row).className
+                ]"
+                :title="getUpstreamGzipMeta(row).title"
+              >
+                <span :class="['h-1.5 w-1.5 rounded-full', getUpstreamGzipMeta(row).dotClass]" />
+                {{ getUpstreamGzipMeta(row).label }}
+              </span>
+              <span class="pl-1 text-[11px] leading-4 text-gray-400 dark:text-dark-400">
+                {{ getUpstreamGzipMeta(row).sourceLabel }}
+              </span>
+            </div>
+          </template>
           <template #cell-capacity="{ row }">
             <AccountCapacityCell :account="row" />
           </template>
@@ -1097,6 +1114,39 @@ function getOpenAICompactTitle(row: any): string {
   return `${label} | ${t('admin.accounts.openai.compactLastChecked')}: ${formatDateTime(new Date(checkedAt))}`
 }
 
+function getAccountUpstreamGzipEnabled(row: Account): boolean {
+  const extra = row.extra as Record<string, unknown> | undefined
+  if (typeof extra?.upstream_gzip_enabled === 'boolean') {
+    return extra.upstream_gzip_enabled
+  }
+  return !(row.platform === 'openai' && row.type === 'oauth')
+}
+
+function getUpstreamGzipMeta(row: Account): {
+  label: string
+  sourceLabel: string
+  className: string
+  dotClass: string
+  title: string
+} {
+  const enabled = getAccountUpstreamGzipEnabled(row)
+  const extra = row.extra as Record<string, unknown> | undefined
+  const explicit = typeof extra?.upstream_gzip_enabled === 'boolean'
+  const sourceLabel = explicit
+    ? t('admin.accounts.upstreamGzipExplicit')
+    : t('admin.accounts.upstreamGzipDefault')
+
+  return {
+    label: enabled ? t('admin.accounts.upstreamGzipOn') : t('admin.accounts.upstreamGzipOff'),
+    sourceLabel,
+    className: enabled
+      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+      : 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300',
+    dotClass: enabled ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500',
+    title: `${enabled ? t('admin.accounts.upstreamGzipEnabledTitle') : t('admin.accounts.upstreamGzipDisabledTitle')} (${sourceLabel})`
+  }
+}
+
 function getAntigravityTierClass(row: any): string {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
@@ -1113,6 +1163,7 @@ const allColumns = computed(() => {
     { key: 'select', label: '', sortable: false },
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
+    { key: 'upstream_gzip', label: t('admin.accounts.columns.upstreamGzip'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },

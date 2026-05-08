@@ -26,6 +26,48 @@
         <p class="input-hint">{{ t('admin.accounts.notesHint') }}</p>
       </div>
 
+      <!-- Upstream gzip -->
+      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between gap-4">
+          <div class="flex-1">
+            <label id="edit-upstream-gzip-label" class="input-label mb-0">
+              {{ t('admin.accounts.upstreamGzip') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.upstreamGzipDesc') }}
+            </p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-dark-400">
+              {{ t('admin.accounts.upstreamGzipSource', { source: upstreamGzipSourceLabel }) }}
+            </p>
+          </div>
+          <div class="flex flex-shrink-0 items-center gap-2">
+            <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+              {{ upstreamGzipEnabled ? t('admin.accounts.upstreamGzipOn') : t('admin.accounts.upstreamGzipOff') }}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              data-testid="edit-upstream-gzip-toggle"
+              aria-labelledby="edit-upstream-gzip-label"
+              :aria-checked="upstreamGzipEnabled"
+              :title="upstreamGzipToggleTitle"
+              @click="toggleUpstreamGzip"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                upstreamGzipEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  upstreamGzipEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div>
@@ -2236,6 +2278,17 @@ const baseUrlHint = computed(() => {
   return t('admin.accounts.baseUrlHint')
 })
 
+const getDefaultUpstreamGzipEnabled = (account: Account | null) =>
+  !(account?.platform === 'openai' && account?.type === 'oauth')
+
+const getAccountUpstreamGzipEnabled = (account: Account | null) => {
+  const extra = account?.extra as Record<string, unknown> | undefined
+  if (typeof extra?.upstream_gzip_enabled === 'boolean') {
+    return extra.upstream_gzip_enabled
+  }
+  return getDefaultUpstreamGzipEnabled(account)
+}
+
 const antigravityPresetMappings = computed(() => getPresetMappingsByPlatform('antigravity'))
 const bedrockPresets = computed(() => getPresetMappingsByPlatform('bedrock'))
 
@@ -2283,6 +2336,8 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(false)
+const upstreamGzipEnabled = ref(true)
+const upstreamGzipExplicit = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -2386,6 +2441,16 @@ const openaiResponsesWebSocketV2Mode = computed({
 })
 const openAIWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiResponsesWebSocketV2Mode.value)
+)
+const upstreamGzipSourceLabel = computed(() =>
+  upstreamGzipExplicit.value
+    ? t('admin.accounts.upstreamGzipExplicit')
+    : t('admin.accounts.upstreamGzipDefault')
+)
+const upstreamGzipToggleTitle = computed(() =>
+  upstreamGzipEnabled.value
+    ? t('admin.accounts.upstreamGzipEnabledTitle')
+    : t('admin.accounts.upstreamGzipDisabledTitle')
 )
 const codexImageGenerationBridgeOptions = computed<Array<{
   value: CodexImageGenerationBridgeMode
@@ -2542,6 +2607,31 @@ const normalizePoolModeRetryCount = (value: number) => {
   return normalized
 }
 
+const toggleUpstreamGzip = () => {
+  upstreamGzipEnabled.value = !upstreamGzipEnabled.value
+  upstreamGzipExplicit.value = true
+}
+
+const applyUpstreamGzipExtra = (updatePayload: Record<string, unknown>, account: Account) => {
+  const hasExtraPayload = Object.prototype.hasOwnProperty.call(updatePayload, 'extra')
+  const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+    ((account.extra as Record<string, unknown>) || {})
+  const newExtra: Record<string, unknown> = { ...currentExtra }
+  const shouldPersistOverride =
+    upstreamGzipExplicit.value ||
+    upstreamGzipEnabled.value !== getDefaultUpstreamGzipEnabled(account)
+
+  if (shouldPersistOverride) {
+    newExtra.upstream_gzip_enabled = upstreamGzipEnabled.value
+  } else {
+    delete newExtra.upstream_gzip_enabled
+  }
+
+  if (Object.keys(newExtra).length > 0 || hasExtraPayload || shouldPersistOverride) {
+    updatePayload.extra = newExtra
+  }
+}
+
 const syncFormFromAccount = (newAccount: Account | null) => {
   if (!newAccount) {
     return
@@ -2576,6 +2666,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
   const extra = newAccount.extra as Record<string, unknown> | undefined
+  upstreamGzipExplicit.value = typeof extra?.upstream_gzip_enabled === 'boolean'
+  upstreamGzipEnabled.value = getAccountUpstreamGzipEnabled(newAccount)
   mixedScheduling.value = extra?.mixed_scheduling === true
   allowOverages.value = extra?.allow_overages === true
 
@@ -3796,6 +3888,8 @@ const handleSubmit = async () => {
       writeQuotaNotifyToExtra(newExtra, 'update')
       updatePayload.extra = newExtra
     }
+
+    applyUpstreamGzipExtra(updatePayload, props.account)
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

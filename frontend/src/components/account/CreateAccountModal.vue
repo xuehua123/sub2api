@@ -774,6 +774,48 @@
         </div>
       </div>
 
+      <!-- Upstream gzip -->
+      <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between gap-4">
+          <div class="flex-1">
+            <label id="create-upstream-gzip-label" class="input-label mb-0">
+              {{ t('admin.accounts.upstreamGzip') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.upstreamGzipDesc') }}
+            </p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-dark-400">
+              {{ t('admin.accounts.upstreamGzipSource', { source: upstreamGzipSourceLabel }) }}
+            </p>
+          </div>
+          <div class="flex flex-shrink-0 items-center gap-2">
+            <span class="text-xs font-medium text-gray-600 dark:text-gray-300">
+              {{ upstreamGzipEnabled ? t('admin.accounts.upstreamGzipOn') : t('admin.accounts.upstreamGzipOff') }}
+            </span>
+            <button
+              type="button"
+              role="switch"
+              data-testid="create-upstream-gzip-toggle"
+              aria-labelledby="create-upstream-gzip-label"
+              :aria-checked="upstreamGzipEnabled"
+              :title="upstreamGzipToggleTitle"
+              @click="toggleUpstreamGzip"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+                upstreamGzipEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+              ]"
+            >
+              <span
+                :class="[
+                  'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                  upstreamGzipEnabled ? 'translate-x-5' : 'translate-x-0'
+                ]"
+              />
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Upstream config (only for Antigravity upstream type) -->
       <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'upstream'" class="space-y-4">
         <div>
@@ -3277,6 +3319,8 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
+const upstreamGzipEnabled = ref(true)
+const upstreamGzipExplicit = ref(false)
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -3500,6 +3544,49 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const getDefaultUpstreamGzipEnabled = (platform: AccountPlatform, type: AccountType) =>
+  !(platform === 'openai' && type === 'oauth')
+
+const currentUpstreamGzipDefault = computed(() =>
+  getDefaultUpstreamGzipEnabled(form.platform, form.type)
+)
+
+const upstreamGzipSourceLabel = computed(() =>
+  upstreamGzipExplicit.value
+    ? t('admin.accounts.upstreamGzipExplicit')
+    : t('admin.accounts.upstreamGzipDefault')
+)
+
+const upstreamGzipToggleTitle = computed(() =>
+  upstreamGzipEnabled.value
+    ? t('admin.accounts.upstreamGzipEnabledTitle')
+    : t('admin.accounts.upstreamGzipDisabledTitle')
+)
+
+const toggleUpstreamGzip = () => {
+  upstreamGzipEnabled.value = !upstreamGzipEnabled.value
+  upstreamGzipExplicit.value = true
+}
+
+const buildUpstreamGzipExtra = (
+  base?: Record<string, unknown>,
+  platform: AccountPlatform = form.platform,
+  type: AccountType = form.type
+): Record<string, unknown> | undefined => {
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  const shouldPersistOverride =
+    upstreamGzipExplicit.value ||
+    upstreamGzipEnabled.value !== getDefaultUpstreamGzipEnabled(platform, type)
+
+  if (shouldPersistOverride) {
+    extra.upstream_gzip_enabled = upstreamGzipEnabled.value
+  } else {
+    delete extra.upstream_gzip_enabled
+  }
+
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
 // Helper to check if current type needs OAuth flow
 const isOAuthFlow = computed(() => {
   // Antigravity upstream 类型不需要 OAuth 流程
@@ -3587,6 +3674,16 @@ watch(
       form.type = method as AccountType // 'oauth' or 'setup-token'
     } else {
       form.type = 'apikey'
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [() => form.platform, () => form.type],
+  () => {
+    if (!upstreamGzipExplicit.value) {
+      upstreamGzipEnabled.value = currentUpstreamGzipDefault.value
     }
   },
   { immediate: true }
@@ -4040,6 +4137,8 @@ const resetForm = () => {
   customErrorCodeInput.value = null
   interceptWarmupRequests.value = false
   autoPauseOnExpired.value = true
+  upstreamGzipExplicit.value = false
+  upstreamGzipEnabled.value = getDefaultUpstreamGzipEnabled(form.platform, form.type)
   openaiPassthroughEnabled.value = false
   openAICompactMode.value = 'auto'
   openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4129,7 +4228,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     delete extra.openai_compact_mode
   }
 
-  return Object.keys(extra).length > 0 ? extra : undefined
+  return buildUpstreamGzipExtra(extra, form.platform, form.type)
 }
 
 const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
@@ -4434,7 +4533,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildUpstreamGzipExtra(buildAnthropicExtra(buildOpenAIExtra()), form.platform, form.type)
 
   await doCreateAccount({
     ...form,
@@ -4496,9 +4595,9 @@ const createAccountAndFinish = async (
     return
   }
   // Inject quota limits for apikey/bedrock accounts
-  let finalExtra = extra
+  let finalExtra = buildUpstreamGzipExtra(extra, platform, type)
   if (type === 'apikey' || type === 'bedrock') {
-    const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
+    const quotaExtra: Record<string, unknown> = { ...(finalExtra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value
     }
