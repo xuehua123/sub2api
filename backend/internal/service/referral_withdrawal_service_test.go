@@ -313,6 +313,14 @@ func (s *withdrawalUserRepoStub) UpdateConcurrency(ctx context.Context, id int64
 	return nil
 }
 
+func (s *withdrawalUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+
+func (s *withdrawalUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	return 0, nil
+}
+
 func (s *withdrawalUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	return false, nil
 }

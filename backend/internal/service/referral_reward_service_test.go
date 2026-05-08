@@ -273,6 +273,12 @@ func (s *rewardUserRepoStub) DeductBalance(ctx context.Context, id int64, amount
 func (s *rewardUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, amount int) error {
 	panic("unexpected UpdateConcurrency")
 }
+func (s *rewardUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchSetConcurrency")
+}
+func (s *rewardUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchAddConcurrency")
+}
 func (s *rewardUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail")
 }

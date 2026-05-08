@@ -64,6 +64,12 @@ func (s *adminSearchUserRepoStub) DeductBalance(context.Context, int64, float64)
 func (s *adminSearchUserRepoStub) UpdateConcurrency(context.Context, int64, int) error {
 	panic("unexpected")
 }
+func (s *adminSearchUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected")
+}
 func (s *adminSearchUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
 	panic("unexpected")
 }

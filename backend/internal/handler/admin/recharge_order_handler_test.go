@@ -110,6 +110,12 @@ func (s *rechargeOrderHandlerUserRepoStub) DeductBalance(ctx context.Context, id
 func (s *rechargeOrderHandlerUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, amount int) error {
 	panic("unexpected UpdateConcurrency")
 }
+func (s *rechargeOrderHandlerUserRepoStub) BatchSetConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchSetConcurrency")
+}
+func (s *rechargeOrderHandlerUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
+	panic("unexpected BatchAddConcurrency")
+}
 func (s *rechargeOrderHandlerUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail")
 }
