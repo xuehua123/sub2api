@@ -37,10 +37,7 @@ func trimAnthropicCompatResponsesInputToLatestTurn(req *apicompat.ResponsesReque
 		return
 	}
 
-	start := len(items) - 1
-	for start > 0 && items[start].Type == "function_call_output" {
-		start--
-	}
+	start := anthropicCompatLatestTurnStart(items)
 	trimmed := append([]apicompat.ResponsesInputItem(nil), items[start:]...)
 	if len(trimmed) == len(items) {
 		return
@@ -48,6 +45,75 @@ func trimAnthropicCompatResponsesInputToLatestTurn(req *apicompat.ResponsesReque
 	if input, err := json.Marshal(trimmed); err == nil {
 		req.Input = input
 	}
+}
+
+func anthropicCompatLatestTurnStart(items []apicompat.ResponsesInputItem) int {
+	if len(items) == 0 {
+		return 0
+	}
+
+	last := len(items) - 1
+	if isAnthropicCompatUserMessageItem(items[last]) {
+		outputEnd := last - 1
+		outputStart := outputEnd
+		for outputStart >= 0 && items[outputStart].Type == "function_call_output" {
+			outputStart--
+		}
+		if outputStart < outputEnd {
+			return expandAnthropicCompatFunctionCallContextStart(items, outputStart+1, outputEnd)
+		}
+		return last
+	}
+
+	if items[last].Type != "function_call_output" {
+		return last
+	}
+	outputStart := last
+	for outputStart >= 0 && items[outputStart].Type == "function_call_output" {
+		outputStart--
+	}
+	return expandAnthropicCompatFunctionCallContextStart(items, outputStart+1, last)
+}
+
+func isAnthropicCompatUserMessageItem(item apicompat.ResponsesInputItem) bool {
+	return item.Type == "message" && strings.TrimSpace(item.Role) == "user"
+}
+
+func expandAnthropicCompatFunctionCallContextStart(items []apicompat.ResponsesInputItem, outputStart, outputEnd int) int {
+	if outputStart < 0 || outputStart >= len(items) || outputEnd < outputStart {
+		return max(outputStart, 0)
+	}
+
+	callIDs := make(map[string]struct{})
+	for i := outputStart; i <= outputEnd && i < len(items); i++ {
+		callID := strings.TrimSpace(items[i].CallID)
+		if callID != "" {
+			callIDs[callID] = struct{}{}
+		}
+	}
+	if len(callIDs) == 0 {
+		if prev := outputStart - 1; prev >= 0 && items[prev].Type == "function_call" {
+			return prev
+		}
+		return outputStart
+	}
+
+	start := outputStart
+	for i := outputStart - 1; i >= 0; i-- {
+		if items[i].Type != "function_call" {
+			break
+		}
+		callID := strings.TrimSpace(items[i].CallID)
+		if _, ok := callIDs[callID]; !ok {
+			continue
+		}
+		start = i
+		delete(callIDs, callID)
+		if len(callIDs) == 0 {
+			break
+		}
+	}
+	return start
 }
 
 func isOpenAICompatPreviousResponseNotFound(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
