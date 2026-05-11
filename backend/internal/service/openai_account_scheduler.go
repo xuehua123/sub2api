@@ -635,6 +635,9 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		})
 	}
 	if len(filtered) == 0 {
+		if s.service.isUnsupportedOpenAIModelSelection(ctx, req.GroupID, accounts, req.RequestedModel, req.ExcludedIDs, req.RequireCompact) {
+			return nil, 0, 0, 0, unsupportedModelError(req.RequestedModel)
+		}
 		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false)
 	}
 
@@ -1116,7 +1119,7 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
 			"model", requestedModel)
-		return nil, decision, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
+		return nil, decision, unsupportedModelError(requestedModel)
 	}
 
 	var stickyAccountID int64

@@ -305,6 +305,7 @@ func (r *userSubscriptionRepository) ActivateWindows(ctx context.Context, id int
 		SetDailyWindowStart(start).
 		SetWeeklyWindowStart(start).
 		SetMonthlyWindowStart(start).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
 		Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 }
@@ -314,6 +315,7 @@ func (r *userSubscriptionRepository) ResetDailyUsage(ctx context.Context, id int
 	_, err := client.UserSubscription.UpdateOneID(id).
 		SetDailyUsageUsd(0).
 		SetDailyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
 		Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 }
@@ -323,6 +325,7 @@ func (r *userSubscriptionRepository) ResetWeeklyUsage(ctx context.Context, id in
 	_, err := client.UserSubscription.UpdateOneID(id).
 		SetWeeklyUsageUsd(0).
 		SetWeeklyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
 		Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 }
@@ -332,6 +335,7 @@ func (r *userSubscriptionRepository) ResetMonthlyUsage(ctx context.Context, id i
 	_, err := client.UserSubscription.UpdateOneID(id).
 		SetMonthlyUsageUsd(0).
 		SetMonthlyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
 		Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 }

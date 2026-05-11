@@ -282,6 +282,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
+				if errors.Is(err, service.ErrUnsupportedModel) {
+					h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", service.UnsupportedModelMessage, streamStarted)
+					return
+				}
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
 					return
@@ -676,10 +680,12 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
-				if err != nil {
-					h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+				if errors.Is(err, service.ErrUnsupportedModel) {
+					h.anthropicStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", service.UnsupportedModelMessage, streamStarted)
 					return
 				}
+				h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
+				return
 			} else {
 				if lastFailoverErr != nil {
 					h.handleAnthropicFailoverExhausted(c, lastFailoverErr, streamStarted)

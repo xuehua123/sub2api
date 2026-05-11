@@ -125,6 +125,9 @@ func (s *quotaBaseAPIKeyRepoStub) ClearGroupIDByGroupID(context.Context, int64) 
 func (s *quotaBaseAPIKeyRepoStub) UpdateGroupIDByUserAndGroup(context.Context, int64, int64, int64) (int64, error) {
 	panic("unexpected UpdateGroupIDByUserAndGroup call")
 }
+func (s *quotaBaseAPIKeyRepoStub) CompareAndSwapGroupID(context.Context, int64, int64, int64) (bool, error) {
+	panic("unexpected CompareAndSwapGroupID call")
+}
 func (s *quotaBaseAPIKeyRepoStub) CountByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected CountByGroupID call")
 }

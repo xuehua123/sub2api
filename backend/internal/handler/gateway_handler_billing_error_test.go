@@ -46,6 +46,70 @@ func TestBillingErrorDetails_BillingServiceUnavailableMapsTo503(t *testing.T) {
 	require.Equal(t, 0, retryAfter, "non-RPM errors should not set Retry-After")
 }
 
+func TestBillingErrorDetails_SubscriptionUsageLimitsMapToUsageLimitExceeded(t *testing.T) {
+	for _, err := range []error{
+		service.ErrDailyLimitExceeded,
+		service.ErrWeeklyLimitExceeded,
+		service.ErrMonthlyLimitExceeded,
+	} {
+		status, code, msg, retryAfter := billingErrorDetails(err)
+		require.Equal(t, http.StatusTooManyRequests, status, "status for %v", err)
+		require.Equal(t, "USAGE_LIMIT_EXCEEDED", code, "code for %v", err)
+		require.NotEmpty(t, msg)
+		require.Equal(t, 0, retryAfter)
+	}
+}
+
+func TestBillingErrorDetails_SubscriptionErrorsKeepSubscriptionCodes(t *testing.T) {
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "not found",
+			err:        service.ErrSubscriptionNotFound,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "SUBSCRIPTION_NOT_FOUND",
+		},
+		{
+			name:       "expired",
+			err:        service.ErrSubscriptionExpired,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "SUBSCRIPTION_INVALID",
+		},
+		{
+			name:       "suspended",
+			err:        service.ErrSubscriptionSuspended,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "SUBSCRIPTION_INVALID",
+		},
+		{
+			name:       "invalid",
+			err:        service.ErrSubscriptionInvalid,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "SUBSCRIPTION_INVALID",
+		},
+		{
+			name:       "maintenance",
+			err:        service.ErrSubscriptionMaintenance,
+			wantStatus: http.StatusServiceUnavailable,
+			wantCode:   "SUBSCRIPTION_MAINTENANCE_FAILED",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, code, msg, retryAfter := billingErrorDetails(tt.err)
+			require.Equal(t, tt.wantStatus, status)
+			require.Equal(t, tt.wantCode, code)
+			require.NotEmpty(t, msg)
+			require.Equal(t, 0, retryAfter)
+		})
+	}
+}
+
 func TestBillingErrorDetails_UnknownErrorFallsBackTo403(t *testing.T) {
 	status, code, msg, _ := billingErrorDetails(service.ErrInsufficientBalance)
 	require.Equal(t, http.StatusForbidden, status)

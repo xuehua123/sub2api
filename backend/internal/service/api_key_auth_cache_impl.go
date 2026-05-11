@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 9 // v9: added API Key name for audit logs
+const apiKeyAuthSnapshotVersion = 10 // v10: added API Key auto subscription-group switching flag
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -206,20 +206,21 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		return nil
 	}
 	snapshot := &APIKeyAuthSnapshot{
-		Version:     apiKeyAuthSnapshotVersion,
-		APIKeyID:    apiKey.ID,
-		UserID:      apiKey.UserID,
-		GroupID:     apiKey.GroupID,
-		Name:        apiKey.Name,
-		Status:      apiKey.Status,
-		IPWhitelist: apiKey.IPWhitelist,
-		IPBlacklist: apiKey.IPBlacklist,
-		Quota:       apiKey.Quota,
-		QuotaUsed:   apiKey.QuotaUsed,
-		ExpiresAt:   apiKey.ExpiresAt,
-		RateLimit5h: apiKey.RateLimit5h,
-		RateLimit1d: apiKey.RateLimit1d,
-		RateLimit7d: apiKey.RateLimit7d,
+		Version:                apiKeyAuthSnapshotVersion,
+		APIKeyID:               apiKey.ID,
+		UserID:                 apiKey.UserID,
+		GroupID:                apiKey.GroupID,
+		Name:                   apiKey.Name,
+		AutoSwitchGroupEnabled: apiKey.AutoSwitchGroupEnabled,
+		Status:                 apiKey.Status,
+		IPWhitelist:            apiKey.IPWhitelist,
+		IPBlacklist:            apiKey.IPBlacklist,
+		Quota:                  apiKey.Quota,
+		QuotaUsed:              apiKey.QuotaUsed,
+		ExpiresAt:              apiKey.ExpiresAt,
+		RateLimit5h:            apiKey.RateLimit5h,
+		RateLimit1d:            apiKey.RateLimit1d,
+		RateLimit7d:            apiKey.RateLimit7d,
 		User: APIKeyAuthUserSnapshot{
 			ID:                         apiKey.User.ID,
 			Status:                     apiKey.User.Status,
@@ -283,20 +284,21 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		return nil
 	}
 	apiKey := &APIKey{
-		ID:          snapshot.APIKeyID,
-		UserID:      snapshot.UserID,
-		GroupID:     snapshot.GroupID,
-		Key:         key,
-		Name:        snapshot.Name,
-		Status:      snapshot.Status,
-		IPWhitelist: snapshot.IPWhitelist,
-		IPBlacklist: snapshot.IPBlacklist,
-		Quota:       snapshot.Quota,
-		QuotaUsed:   snapshot.QuotaUsed,
-		ExpiresAt:   snapshot.ExpiresAt,
-		RateLimit5h: snapshot.RateLimit5h,
-		RateLimit1d: snapshot.RateLimit1d,
-		RateLimit7d: snapshot.RateLimit7d,
+		ID:                     snapshot.APIKeyID,
+		UserID:                 snapshot.UserID,
+		GroupID:                snapshot.GroupID,
+		Key:                    key,
+		Name:                   snapshot.Name,
+		AutoSwitchGroupEnabled: snapshot.AutoSwitchGroupEnabled,
+		Status:                 snapshot.Status,
+		IPWhitelist:            snapshot.IPWhitelist,
+		IPBlacklist:            snapshot.IPBlacklist,
+		Quota:                  snapshot.Quota,
+		QuotaUsed:              snapshot.QuotaUsed,
+		ExpiresAt:              snapshot.ExpiresAt,
+		RateLimit5h:            snapshot.RateLimit5h,
+		RateLimit1d:            snapshot.RateLimit1d,
+		RateLimit7d:            snapshot.RateLimit7d,
 		User: &User{
 			ID:                         snapshot.User.ID,
 			Status:                     snapshot.User.Status,

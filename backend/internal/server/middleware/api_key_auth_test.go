@@ -177,6 +177,274 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 	})
 }
 
+func TestAPIKeyAuthSubscriptionBillingServiceUnavailableReturns503(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	limit := 1.0
+	group := &service.Group{
+		ID:               42,
+		Name:             "sub",
+		Status:           service.StatusActive,
+		Hydrated:         true,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+		DailyLimitUSD:    &limit,
+	}
+	user := &service.User{
+		ID:          7,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     10,
+		Concurrency: 3,
+	}
+	apiKey := &service.APIKey{
+		ID:     100,
+		UserID: user.ID,
+		Key:    "billing-service-down",
+		Status: service.StatusActive,
+		User:   user,
+		Group:  group,
+	}
+	apiKey.GroupID = &group.ID
+	apiKeyRepo := &stubApiKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			if key != apiKey.Key {
+				return nil, service.ErrAPIKeyNotFound
+			}
+			clone := *apiKey
+			return &clone, nil
+		},
+	}
+
+	now := time.Now()
+	sub := &service.UserSubscription{
+		ID:               55,
+		UserID:           user.ID,
+		GroupID:          group.ID,
+		Status:           service.SubscriptionStatusActive,
+		ExpiresAt:        now.Add(24 * time.Hour),
+		DailyWindowStart: &now,
+		DailyUsageUSD:    0,
+	}
+	subscriptionRepo := &stubUserSubscriptionRepo{
+		getActive: func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
+			if userID != sub.UserID || groupID != sub.GroupID {
+				return nil, service.ErrSubscriptionNotFound
+			}
+			clone := *sub
+			return &clone, nil
+		},
+	}
+	billingSubRepo := &stubUserSubscriptionRepo{
+		getActive: func(context.Context, int64, int64) (*service.UserSubscription, error) {
+			return nil, errors.New("billing store unavailable")
+		},
+	}
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	billingCacheService := service.NewBillingCacheService(nil, nil, billingSubRepo, nil, nil, nil, cfg)
+	subscriptionService := service.NewSubscriptionService(nil, subscriptionRepo, billingCacheService, nil, cfg)
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+	router := newAuthTestRouter(apiKeyService, subscriptionService, cfg)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/t", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "billing_service_error")
+	require.NotContains(t, w.Body.String(), "SUBSCRIPTION_INVALID")
+}
+
+func TestSimpleModeBlocksExpiredAndQuotaExhaustedAPIKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{
+		ID:          7,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     10,
+		Concurrency: 3,
+	}
+	tests := []struct {
+		name       string
+		status     string
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:       "expired",
+			status:     service.StatusAPIKeyExpired,
+			wantStatus: http.StatusForbidden,
+			wantCode:   "API_KEY_EXPIRED",
+		},
+		{
+			name:       "quota_exhausted",
+			status:     service.StatusAPIKeyQuotaExhausted,
+			wantStatus: http.StatusTooManyRequests,
+			wantCode:   "API_KEY_QUOTA_EXHAUSTED",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiKey := &service.APIKey{
+				ID:     100,
+				UserID: user.ID,
+				Key:    "test-key-" + tt.name,
+				Status: tt.status,
+				User:   user,
+			}
+			apiKeyRepo := &stubApiKeyRepo{
+				getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+					if key != apiKey.Key {
+						return nil, service.ErrAPIKeyNotFound
+					}
+					clone := *apiKey
+					return &clone, nil
+				},
+			}
+
+			cfg := &config.Config{RunMode: config.RunModeSimple}
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+			router := newAuthTestRouter(apiKeyService, nil, cfg)
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/t", nil)
+			req.Header.Set("x-api-key", apiKey.Key)
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, tt.wantStatus, w.Code)
+			require.Contains(t, w.Body.String(), tt.wantCode)
+		})
+	}
+}
+
+func TestUsageEndpointAllowsExpiredAndQuotaExhaustedAPIKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{
+		ID:          7,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     10,
+		Concurrency: 3,
+	}
+	tests := []struct {
+		name   string
+		status string
+	}{
+		{
+			name:   "expired",
+			status: service.StatusAPIKeyExpired,
+		},
+		{
+			name:   "quota_exhausted",
+			status: service.StatusAPIKeyQuotaExhausted,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			apiKey := &service.APIKey{
+				ID:     100,
+				UserID: user.ID,
+				Key:    "usage-key-" + tt.name,
+				Status: tt.status,
+				User:   user,
+			}
+			apiKeyRepo := &stubApiKeyRepo{
+				getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+					if key != apiKey.Key {
+						return nil, service.ErrAPIKeyNotFound
+					}
+					clone := *apiKey
+					return &clone, nil
+				},
+			}
+
+			cfg := &config.Config{RunMode: config.RunModeStandard}
+			apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+			router := gin.New()
+			router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+			router.GET("/v1/usage", func(c *gin.Context) {
+				c.JSON(http.StatusOK, gin.H{"ok": true})
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/v1/usage", nil)
+			req.Header.Set("x-api-key", apiKey.Key)
+			router.ServeHTTP(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code)
+			require.Contains(t, w.Body.String(), `"ok":true`)
+		})
+	}
+}
+
+func TestApplyResolvedSubscriptionGroupClearsCachedRPMOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	oldGroupID := int64(1)
+	newGroupID := int64(2)
+	override := 0
+	newGroup := &service.Group{
+		ID:       newGroupID,
+		Name:     "new-subscription-group",
+		Platform: service.PlatformOpenAI,
+		Status:   service.StatusActive,
+		Hydrated: true,
+	}
+	apiKey := &service.APIKey{
+		GroupID: &newGroupID,
+		User: &service.User{
+			ID:                   7,
+			UserGroupRPMOverride: &override,
+		},
+	}
+
+	applyResolvedSubscriptionGroup(c, apiKey, newGroup, oldGroupID)
+
+	require.Equal(t, newGroup, apiKey.Group)
+	require.NotNil(t, apiKey.GroupID)
+	require.Equal(t, newGroup.ID, *apiKey.GroupID)
+	require.Nil(t, apiKey.User.UserGroupRPMOverride)
+	ctxGroup, ok := c.Request.Context().Value(ctxkey.Group).(*service.Group)
+	require.True(t, ok)
+	require.Equal(t, newGroup.ID, ctxGroup.ID)
+}
+
+func TestApplyResolvedSubscriptionGroupPreservesCachedRPMOverrideWhenGroupUnchanged(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+
+	groupID := int64(2)
+	override := 12
+	group := &service.Group{
+		ID:       groupID,
+		Name:     "same-subscription-group",
+		Platform: service.PlatformOpenAI,
+		Status:   service.StatusActive,
+		Hydrated: true,
+	}
+	apiKey := &service.APIKey{
+		GroupID: &groupID,
+		Group:   group,
+		User: &service.User{
+			ID:                   7,
+			UserGroupRPMOverride: &override,
+		},
+	}
+
+	applyResolvedSubscriptionGroup(c, apiKey, group, groupID)
+
+	require.Equal(t, group, apiKey.Group)
+	require.NotNil(t, apiKey.User.UserGroupRPMOverride)
+	require.Equal(t, override, *apiKey.User.UserGroupRPMOverride)
+}
+
 func TestAPIKeyAuthSetsGroupContext(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -567,6 +835,10 @@ func (r *stubApiKeyRepo) ClearGroupIDByGroupID(ctx context.Context, groupID int6
 
 func (r *stubApiKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
+}
+
+func (r *stubApiKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	return true, nil
 }
 
 func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {

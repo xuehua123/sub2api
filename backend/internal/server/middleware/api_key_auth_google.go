@@ -42,7 +42,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
-		if !apiKey.IsActive() {
+		if !apiKey.IsActive() &&
+			apiKey.Status != service.StatusAPIKeyExpired &&
+			apiKey.Status != service.StatusAPIKeyQuotaExhausted {
 			abortWithGoogleError(c, 401, "API key is disabled")
 			return
 		}
@@ -52,6 +54,11 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 		if !apiKey.User.IsActive() {
 			abortWithGoogleError(c, 401, "User account is not active")
+			return
+		}
+
+		if status, _, message, blocked := apiKeyStatusBlock(apiKey); blocked {
+			abortWithGoogleError(c, status, message)
 			return
 		}
 
@@ -69,35 +76,38 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
+		if status, _, message, blocked := apiKeyBillingBlock(apiKey); blocked {
+			abortWithGoogleError(c, status, message)
+			return
+		}
+
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 		if isSubscriptionType && subscriptionService != nil {
-			subscription, err := subscriptionService.GetActiveSubscription(
-				c.Request.Context(),
-				apiKey.User.ID,
-				apiKey.Group.ID,
-			)
+			candidate, err := subscriptionService.ResolveUsableSubscriptionForAPIKey(c.Request.Context(), apiKey)
 			if err != nil {
-				abortWithGoogleError(c, 403, "No active subscription found for this group")
+				abortWithGoogleError(c, subscriptionErrorStatus(err), err.Error())
 				return
 			}
-
-			needsMaintenance, err := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
-			if err != nil {
-				status := 403
-				if errors.Is(err, service.ErrDailyLimitExceeded) ||
-					errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-					errors.Is(err, service.ErrMonthlyLimitExceeded) {
-					status = 429
+			if candidate != nil && candidate.Subscription != nil {
+				subscription := candidate.Subscription
+				if candidate.Switched {
+					swapped, err := apiKeyService.CompareAndSwapGroupID(c.Request.Context(), apiKey, candidate.FromGroupID, candidate.ToGroupID)
+					if err != nil {
+						abortWithGoogleError(c, 500, err.Error())
+						return
+					}
+					if !swapped {
+						apiKeyService.InvalidateAuthCacheByKey(c.Request.Context(), apiKey.Key)
+						abortWithGoogleError(c, 409, "Subscription group changed concurrently, please retry")
+						return
+					}
+					subscriptionService.LogAutoSwitch(c.Request.Context(), apiKey, candidate)
 				}
-				abortWithGoogleError(c, status, err.Error())
-				return
-			}
+				if candidate.Group != nil {
+					applyResolvedSubscriptionGroup(c, apiKey, candidate.Group, candidate.FromGroupID)
+				}
 
-			c.Set(string(ContextKeySubscription), subscription)
-
-			if needsMaintenance {
-				maintenanceCopy := *subscription
-				subscriptionService.DoWindowMaintenance(&maintenanceCopy)
+				c.Set(string(ContextKeySubscription), subscription)
 			}
 		} else {
 			if apiKey.User.Balance <= 0 {

@@ -111,6 +111,9 @@ func (s *apiKeyRepoStub) ClearGroupIDByGroupID(ctx context.Context, groupID int6
 func (s *apiKeyRepoStub) UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error) {
 	panic("unexpected UpdateGroupIDByUserAndGroup call")
 }
+func (s *apiKeyRepoStub) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	panic("unexpected CompareAndSwapGroupID call")
+}
 
 func (s *apiKeyRepoStub) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected CountByGroupID call")

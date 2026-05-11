@@ -116,6 +116,7 @@ type UsageBillingApplyResult struct {
 	APIKeyQuotaExhausted bool
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
+	SubscriptionVersion  int64              // post-increment subscription updated_at in Unix microseconds (0 = no subscription increment)
 }
 
 type UsageBillingRepository interface {

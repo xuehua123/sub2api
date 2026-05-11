@@ -157,6 +157,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
+				if errors.Is(err, service.ErrUnsupportedModel) {
+					h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", service.UnsupportedModelMessage, streamStarted)
+					return
+				}
 				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available compatible accounts", streamStarted)
 				return
 			}

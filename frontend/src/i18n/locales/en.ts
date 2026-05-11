@@ -682,6 +682,8 @@ export default {
     namePlaceholder: 'My API Key',
     groupLabel: 'Group',
     selectGroup: 'Select a group',
+    autoSwitchGroup: 'Auto-switch subscription group when quota is exhausted',
+    autoSwitchGroupHint: 'When enabled, this key moves to the next usable subscription group by your subscription priority.',
     statusLabel: 'Status',
     selectStatus: 'Select status',
     saving: 'Saving...',
@@ -6470,7 +6472,17 @@ export default {
     expiresOn: 'Expires on {date}',
     resetIn: 'Resets in {time}',
     windowNotActive: 'Awaiting first use',
-    usageOf: '{used} of {limit}'
+    usageOf: '{used} of {limit}',
+    switchPriority: 'Auto-switch Priority',
+    switchPriorityHint: 'Drag subscription groups to reorder them. API keys switch from top to bottom until a usable quota is found.',
+    switchPrioritySaved: 'Auto-switch priority saved',
+    switchPrioritySaveFailed: 'Failed to save auto-switch priority',
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    advanceMonthlyCycle: 'Use next cycle now',
+    advanceMonthlyConfirm: 'Use the next monthly cycle for "{group}" now? Current monthly usage will reset and about {days} day(s) will be deducted from the subscription validity.',
+    advanceMonthlySuccess: 'Monthly quota reset and {days} day(s) deducted',
+    advanceMonthlyFailed: 'Failed to advance monthly cycle'
   },
 
   // Onboarding Tour

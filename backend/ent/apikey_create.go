@@ -99,6 +99,20 @@ func (_c *APIKeyCreate) SetNillableGroupID(v *int64) *APIKeyCreate {
 	return _c
 }
 
+// SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
+func (_c *APIKeyCreate) SetAutoSwitchGroupEnabled(v bool) *APIKeyCreate {
+	_c.mutation.SetAutoSwitchGroupEnabled(v)
+	return _c
+}
+
+// SetNillableAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableAutoSwitchGroupEnabled(v *bool) *APIKeyCreate {
+	if v != nil {
+		_c.SetAutoSwitchGroupEnabled(*v)
+	}
+	return _c
+}
+
 // SetStatus sets the "status" field.
 func (_c *APIKeyCreate) SetStatus(v string) *APIKeyCreate {
 	_c.mutation.SetStatus(v)
@@ -383,6 +397,10 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
+		v := apikey.DefaultAutoSwitchGroupEnabled
+		_c.mutation.SetAutoSwitchGroupEnabled(v)
+	}
 	if _, ok := _c.mutation.Status(); !ok {
 		v := apikey.DefaultStatus
 		_c.mutation.SetStatus(v)
@@ -448,6 +466,9 @@ func (_c *APIKeyCreate) check() error {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
+		return &ValidationError{Name: "auto_switch_group_enabled", err: errors.New(`ent: missing required field "APIKey.auto_switch_group_enabled"`)}
 	}
 	if _, ok := _c.mutation.Status(); !ok {
 		return &ValidationError{Name: "status", err: errors.New(`ent: missing required field "APIKey.status"`)}
@@ -530,6 +551,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.AutoSwitchGroupEnabled(); ok {
+		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
+		_node.AutoSwitchGroupEnabled = value
 	}
 	if value, ok := _c.mutation.Status(); ok {
 		_spec.SetField(apikey.FieldStatus, field.TypeString, value)
@@ -778,6 +803,18 @@ func (u *APIKeyUpsert) UpdateGroupID() *APIKeyUpsert {
 // ClearGroupID clears the value of the "group_id" field.
 func (u *APIKeyUpsert) ClearGroupID() *APIKeyUpsert {
 	u.SetNull(apikey.FieldGroupID)
+	return u
+}
+
+// SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
+func (u *APIKeyUpsert) SetAutoSwitchGroupEnabled(v bool) *APIKeyUpsert {
+	u.Set(apikey.FieldAutoSwitchGroupEnabled, v)
+	return u
+}
+
+// UpdateAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateAutoSwitchGroupEnabled() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldAutoSwitchGroupEnabled)
 	return u
 }
 
@@ -1203,6 +1240,20 @@ func (u *APIKeyUpsertOne) UpdateGroupID() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearGroupID() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
+func (u *APIKeyUpsertOne) SetAutoSwitchGroupEnabled(v bool) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAutoSwitchGroupEnabled(v)
+	})
+}
+
+// UpdateAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateAutoSwitchGroupEnabled() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAutoSwitchGroupEnabled()
 	})
 }
 
@@ -1841,6 +1892,20 @@ func (u *APIKeyUpsertBulk) UpdateGroupID() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearGroupID() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
+func (u *APIKeyUpsertBulk) SetAutoSwitchGroupEnabled(v bool) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAutoSwitchGroupEnabled(v)
+	})
+}
+
+// UpdateAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateAutoSwitchGroupEnabled() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAutoSwitchGroupEnabled()
 	})
 }
 

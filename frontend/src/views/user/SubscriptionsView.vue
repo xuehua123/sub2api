@@ -23,14 +23,90 @@
         </p>
       </div>
 
-      <!-- Subscriptions Grid -->
-      <div v-else class="grid gap-6 lg:grid-cols-2">
+      <template v-else>
         <div
-          v-for="subscription in subscriptions"
-          :key="subscription.id"
-          class="overflow-hidden rounded-2xl border bg-white dark:bg-dark-800"
-          :class="platformBorderClass(subscription.group?.platform || '')"
+          v-if="switchPreferences.length > 1"
+          class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
         >
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                {{ t('userSubscriptions.switchPriority') }}
+              </h3>
+              <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                {{ t('userSubscriptions.switchPriorityHint') }}
+              </p>
+            </div>
+            <button
+              class="btn btn-secondary text-sm"
+              :disabled="savingPreferences"
+              @click="saveSwitchPreferences"
+            >
+              {{ savingPreferences ? t('common.saving') : t('common.save') }}
+            </button>
+          </div>
+          <div class="space-y-2">
+            <div
+              v-for="(pref, index) in switchPreferences"
+              :key="pref.group_id"
+              class="flex cursor-move items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 dark:border-dark-700 dark:bg-dark-900"
+              draggable="true"
+              @dragstart="onPreferenceDragStart(pref.group_id)"
+              @dragover.prevent
+              @drop="onPreferenceDrop(pref.group_id)"
+            >
+              <span class="w-6 text-xs font-semibold text-gray-400">#{{ index + 1 }}</span>
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                  {{ subscriptionByGroupID(pref.group_id)?.group?.name || `Group #${pref.group_id}` }}
+                </div>
+                <div class="text-xs text-gray-500 dark:text-dark-400">
+                  {{ platformLabel(subscriptionByGroupID(pref.group_id)?.group?.platform || '') }}
+                </div>
+              </div>
+              <button
+                type="button"
+                class="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-dark-700"
+                :disabled="index === 0"
+                @click="movePreference(index, -1)"
+              >
+                {{ t('userSubscriptions.moveUp') }}
+              </button>
+              <button
+                type="button"
+                class="rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-200 dark:text-gray-300 dark:hover:bg-dark-700"
+                :disabled="index === switchPreferences.length - 1"
+                @click="movePreference(index, 1)"
+              >
+                {{ t('userSubscriptions.moveDown') }}
+              </button>
+              <button
+                type="button"
+                @click="pref.enabled = !pref.enabled"
+                :class="[
+                  'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+                  pref.enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+                ]"
+              >
+                <span
+                  :class="[
+                    'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                    pref.enabled ? 'translate-x-4' : 'translate-x-0'
+                  ]"
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subscriptions Grid -->
+        <div class="grid gap-6 lg:grid-cols-2">
+          <div
+            v-for="subscription in subscriptions"
+            :key="subscription.id"
+            class="overflow-hidden rounded-2xl border bg-white dark:bg-dark-800"
+            :class="platformBorderClass(subscription.group?.platform || '')"
+          >
           <!-- Header -->
           <div
             class="flex items-center justify-between border-b border-gray-100 p-4 dark:border-dark-700"
@@ -215,6 +291,19 @@
                   })
                 }}
               </p>
+              <button
+                v-if="canAdvanceMonthlyCycle(subscription)"
+                type="button"
+                class="btn btn-secondary mt-1 text-xs"
+                :disabled="advancingSubscriptionId === subscription.id"
+                @click="advanceMonthlyCycle(subscription)"
+              >
+                {{
+                  advancingSubscriptionId === subscription.id
+                    ? t('common.processing')
+                    : t('userSubscriptions.advanceMonthlyCycle')
+                }}
+              </button>
             </div>
 
             <!-- No limits configured - Unlimited badge -->
@@ -240,7 +329,8 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </template>
     </div>
   </AppLayout>
 </template>
@@ -251,7 +341,7 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
-import type { UserSubscription } from '@/types'
+import type { SubscriptionGroupPreference, UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateOnly } from '@/utils/format'
@@ -273,16 +363,88 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const loading = ref(true)
+const switchPreferences = ref<SubscriptionGroupPreference[]>([])
+const savingPreferences = ref(false)
+const advancingSubscriptionId = ref<number | null>(null)
+const draggedPreferenceGroupID = ref<number | null>(null)
 
 async function loadSubscriptions() {
   try {
     loading.value = true
-    subscriptions.value = await subscriptionsAPI.getMySubscriptions()
+    const [subs, prefs] = await Promise.all([
+      subscriptionsAPI.getMySubscriptions(),
+      subscriptionsAPI.getGroupPreferences()
+    ])
+    subscriptions.value = subs
+    switchPreferences.value = buildSwitchPreferences(subs, prefs)
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
+  }
+}
+
+function subscriptionByGroupID(groupID: number): UserSubscription | undefined {
+  return subscriptions.value.find((sub) => sub.group_id === groupID)
+}
+
+function buildSwitchPreferences(
+  subs: UserSubscription[],
+  prefs: SubscriptionGroupPreference[]
+): SubscriptionGroupPreference[] {
+  const prefMap = new Map(prefs.map((pref) => [pref.group_id, pref]))
+  return subs
+    .filter((sub) => sub.status === 'active' && sub.group_id)
+    .map((sub, index) => {
+      const saved = prefMap.get(sub.group_id)
+      return {
+        group_id: sub.group_id,
+        sort_order: saved?.sort_order ?? index,
+        enabled: saved?.enabled ?? true
+      }
+    })
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((pref, index) => ({ ...pref, sort_order: index }))
+}
+
+function movePreference(index: number, direction: -1 | 1) {
+  const targetIndex = index + direction
+  if (targetIndex < 0 || targetIndex >= switchPreferences.value.length) return
+  const next = [...switchPreferences.value]
+  const [item] = next.splice(index, 1)
+  next.splice(targetIndex, 0, item)
+  switchPreferences.value = next.map((pref, i) => ({ ...pref, sort_order: i }))
+}
+
+function onPreferenceDragStart(groupID: number) {
+  draggedPreferenceGroupID.value = groupID
+}
+
+function onPreferenceDrop(targetGroupID: number) {
+  const sourceGroupID = draggedPreferenceGroupID.value
+  draggedPreferenceGroupID.value = null
+  if (!sourceGroupID || sourceGroupID === targetGroupID) return
+  const next = [...switchPreferences.value]
+  const from = next.findIndex((pref) => pref.group_id === sourceGroupID)
+  const to = next.findIndex((pref) => pref.group_id === targetGroupID)
+  if (from < 0 || to < 0) return
+  const [item] = next.splice(from, 1)
+  next.splice(to, 0, item)
+  switchPreferences.value = next.map((pref, index) => ({ ...pref, sort_order: index }))
+}
+
+async function saveSwitchPreferences() {
+  try {
+    savingPreferences.value = true
+    switchPreferences.value = await subscriptionsAPI.saveGroupPreferences(
+      switchPreferences.value.map((pref, index) => ({ ...pref, sort_order: index }))
+    )
+    appStore.showSuccess(t('userSubscriptions.switchPrioritySaved'))
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.switchPrioritySaveFailed'))
+  } finally {
+    savingPreferences.value = false
   }
 }
 
@@ -358,6 +520,69 @@ function formatResetTime(windowStart: string | null, windowHours: number): strin
   }
 
   return `${minutes}m`
+}
+
+function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
+  const limit = subscription.group?.monthly_limit_usd
+  if (
+    subscription.status !== 'active' ||
+    !subscription.expires_at ||
+    !limit ||
+    limit <= 0 ||
+    (subscription.monthly_usage_usd || 0) < limit
+  ) {
+    return false
+  }
+
+  const now = new Date()
+  const resetAt = getMonthlyResetAt(subscription, now)
+  const expiresAt = new Date(subscription.expires_at)
+  if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
+    return false
+  }
+
+  const deductedDays = estimateDeductedDays(subscription, now)
+  const newExpiresAt = new Date(expiresAt)
+  newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
+  return newExpiresAt.getTime() > now.getTime()
+}
+
+function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
+  return subscription.monthly_window_start
+    ? new Date(new Date(subscription.monthly_window_start).getTime() + 30 * 24 * 60 * 60 * 1000)
+    : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+}
+
+function isValidDate(value: Date): boolean {
+  return !Number.isNaN(value.getTime())
+}
+
+function estimateDeductedDays(subscription: UserSubscription, now = new Date()): number {
+  const resetAt = subscription.monthly_window_start
+    ? getMonthlyResetAt(subscription, now)
+    : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+  const diff = Math.max(resetAt.getTime() - now.getTime(), 24 * 60 * 60 * 1000)
+  return Math.ceil(diff / (24 * 60 * 60 * 1000))
+}
+
+async function advanceMonthlyCycle(subscription: UserSubscription) {
+  const groupName = subscription.group?.name || `Group #${subscription.group_id}`
+  const deductedDays = estimateDeductedDays(subscription)
+  if (!window.confirm(t('userSubscriptions.advanceMonthlyConfirm', { group: groupName, days: deductedDays }))) {
+    return
+  }
+  try {
+    advancingSubscriptionId.value = subscription.id
+    const result = await subscriptionsAPI.advanceMonthlyCycle(subscription.id)
+    appStore.showSuccess(
+      t('userSubscriptions.advanceMonthlySuccess', { days: result.deducted_days })
+    )
+    await loadSubscriptions()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.advanceMonthlyFailed'))
+  } finally {
+    advancingSubscriptionId.value = null
+  }
 }
 
 onMounted(() => {

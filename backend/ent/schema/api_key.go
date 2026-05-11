@@ -44,6 +44,9 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("group_id").
 			Optional().
 			Nillable(),
+		field.Bool("auto_switch_group_enabled").
+			Default(true).
+			Comment("Automatically switch to another usable subscription group when the current subscription quota is exhausted"),
 		field.String("status").
 			MaxLen(20).
 			Default(domain.StatusActive),

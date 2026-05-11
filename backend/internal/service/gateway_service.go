@@ -352,6 +352,18 @@ var (
 // ErrNoAvailableAccounts 表示没有可用的账号
 var ErrNoAvailableAccounts = errors.New("no available accounts")
 
+// ErrUnsupportedModel 表示请求模型不在当前分组/账号池支持范围内。
+var ErrUnsupportedModel = errors.New("unsupported model")
+
+const UnsupportedModelMessage = "不支持该模型，请切换到 gpt-5.5或支持的模型。"
+
+func unsupportedModelError(requestedModel string) error {
+	if strings.TrimSpace(requestedModel) == "" {
+		return ErrUnsupportedModel
+	}
+	return fmt.Errorf("%w: %s", ErrUnsupportedModel, requestedModel)
+}
+
 // ErrClaudeCodeOnly 表示分组仅允许 Claude Code 客户端访问
 var ErrClaudeCodeOnly = errors.New("this group only allows Claude Code clients")
 
@@ -8106,7 +8118,7 @@ func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps, resu
 
 	if p.IsSubscriptionBill {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
-			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
+			deps.billingCacheService.QueueUpdateSubscriptionUsageWithVersion(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost, result.SubscriptionVersion)
 		}
 	} else if p.Cost.ActualCost > 0 && p.User != nil {
 		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)

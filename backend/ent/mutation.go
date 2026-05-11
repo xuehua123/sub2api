@@ -116,51 +116,52 @@ const (
 // APIKeyMutation represents an operation that mutates the APIKey nodes in the graph.
 type APIKeyMutation struct {
 	config
-	op                 Op
-	typ                string
-	id                 *int64
-	created_at         *time.Time
-	updated_at         *time.Time
-	deleted_at         *time.Time
-	key                *string
-	name               *string
-	status             *string
-	last_used_at       *time.Time
-	ip_whitelist       *[]string
-	appendip_whitelist []string
-	ip_blacklist       *[]string
-	appendip_blacklist []string
-	quota              *float64
-	addquota           *float64
-	quota_used         *float64
-	addquota_used      *float64
-	expires_at         *time.Time
-	rate_limit_5h      *float64
-	addrate_limit_5h   *float64
-	rate_limit_1d      *float64
-	addrate_limit_1d   *float64
-	rate_limit_7d      *float64
-	addrate_limit_7d   *float64
-	usage_5h           *float64
-	addusage_5h        *float64
-	usage_1d           *float64
-	addusage_1d        *float64
-	usage_7d           *float64
-	addusage_7d        *float64
-	window_5h_start    *time.Time
-	window_1d_start    *time.Time
-	window_7d_start    *time.Time
-	clearedFields      map[string]struct{}
-	user               *int64
-	cleareduser        bool
-	group              *int64
-	clearedgroup       bool
-	usage_logs         map[int64]struct{}
-	removedusage_logs  map[int64]struct{}
-	clearedusage_logs  bool
-	done               bool
-	oldValue           func(context.Context) (*APIKey, error)
-	predicates         []predicate.APIKey
+	op                        Op
+	typ                       string
+	id                        *int64
+	created_at                *time.Time
+	updated_at                *time.Time
+	deleted_at                *time.Time
+	key                       *string
+	name                      *string
+	auto_switch_group_enabled *bool
+	status                    *string
+	last_used_at              *time.Time
+	ip_whitelist              *[]string
+	appendip_whitelist        []string
+	ip_blacklist              *[]string
+	appendip_blacklist        []string
+	quota                     *float64
+	addquota                  *float64
+	quota_used                *float64
+	addquota_used             *float64
+	expires_at                *time.Time
+	rate_limit_5h             *float64
+	addrate_limit_5h          *float64
+	rate_limit_1d             *float64
+	addrate_limit_1d          *float64
+	rate_limit_7d             *float64
+	addrate_limit_7d          *float64
+	usage_5h                  *float64
+	addusage_5h               *float64
+	usage_1d                  *float64
+	addusage_1d               *float64
+	usage_7d                  *float64
+	addusage_7d               *float64
+	window_5h_start           *time.Time
+	window_1d_start           *time.Time
+	window_7d_start           *time.Time
+	clearedFields             map[string]struct{}
+	user                      *int64
+	cleareduser               bool
+	group                     *int64
+	clearedgroup              bool
+	usage_logs                map[int64]struct{}
+	removedusage_logs         map[int64]struct{}
+	clearedusage_logs         bool
+	done                      bool
+	oldValue                  func(context.Context) (*APIKey, error)
+	predicates                []predicate.APIKey
 }
 
 var _ ent.Mutation = (*APIKeyMutation)(nil)
@@ -537,6 +538,42 @@ func (m *APIKeyMutation) GroupIDCleared() bool {
 func (m *APIKeyMutation) ResetGroupID() {
 	m.group = nil
 	delete(m.clearedFields, apikey.FieldGroupID)
+}
+
+// SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
+func (m *APIKeyMutation) SetAutoSwitchGroupEnabled(b bool) {
+	m.auto_switch_group_enabled = &b
+}
+
+// AutoSwitchGroupEnabled returns the value of the "auto_switch_group_enabled" field in the mutation.
+func (m *APIKeyMutation) AutoSwitchGroupEnabled() (r bool, exists bool) {
+	v := m.auto_switch_group_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAutoSwitchGroupEnabled returns the old "auto_switch_group_enabled" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldAutoSwitchGroupEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAutoSwitchGroupEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAutoSwitchGroupEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAutoSwitchGroupEnabled: %w", err)
+	}
+	return oldValue.AutoSwitchGroupEnabled, nil
+}
+
+// ResetAutoSwitchGroupEnabled resets all changes to the "auto_switch_group_enabled" field.
+func (m *APIKeyMutation) ResetAutoSwitchGroupEnabled() {
+	m.auto_switch_group_enabled = nil
 }
 
 // SetStatus sets the "status" field.
@@ -1540,7 +1577,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 23)
+	fields := make([]string, 0, 24)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1561,6 +1598,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.group != nil {
 		fields = append(fields, apikey.FieldGroupID)
+	}
+	if m.auto_switch_group_enabled != nil {
+		fields = append(fields, apikey.FieldAutoSwitchGroupEnabled)
 	}
 	if m.status != nil {
 		fields = append(fields, apikey.FieldStatus)
@@ -1632,6 +1672,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.Name()
 	case apikey.FieldGroupID:
 		return m.GroupID()
+	case apikey.FieldAutoSwitchGroupEnabled:
+		return m.AutoSwitchGroupEnabled()
 	case apikey.FieldStatus:
 		return m.Status()
 	case apikey.FieldLastUsedAt:
@@ -1687,6 +1729,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldName(ctx)
 	case apikey.FieldGroupID:
 		return m.OldGroupID(ctx)
+	case apikey.FieldAutoSwitchGroupEnabled:
+		return m.OldAutoSwitchGroupEnabled(ctx)
 	case apikey.FieldStatus:
 		return m.OldStatus(ctx)
 	case apikey.FieldLastUsedAt:
@@ -1776,6 +1820,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetGroupID(v)
+		return nil
+	case apikey.FieldAutoSwitchGroupEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAutoSwitchGroupEnabled(v)
 		return nil
 	case apikey.FieldStatus:
 		v, ok := value.(string)
@@ -2114,6 +2165,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldGroupID:
 		m.ResetGroupID()
+		return nil
+	case apikey.FieldAutoSwitchGroupEnabled:
+		m.ResetAutoSwitchGroupEnabled()
 		return nil
 	case apikey.FieldStatus:
 		m.ResetStatus()

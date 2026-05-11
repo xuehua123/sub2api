@@ -562,11 +562,11 @@ func TestOpenAISelectAccountForModelWithExclusions_NoModelSupport(t *testing.T) 
 	if err == nil {
 		t.Fatalf("expected error for unsupported model")
 	}
+	if !errors.Is(err, ErrUnsupportedModel) {
+		t.Fatalf("expected ErrUnsupportedModel, got %v", err)
+	}
 	if acc != nil {
 		t.Fatalf("expected nil account for unsupported model")
-	}
-	if !strings.Contains(err.Error(), "supporting model") {
-		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

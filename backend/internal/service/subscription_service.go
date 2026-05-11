@@ -2,9 +2,12 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,11 +35,14 @@ var (
 	ErrSubscriptionAssignConflict = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
 	ErrGroupNotSubscriptionType   = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
 	ErrInvalidInput               = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
+	ErrMonthlyCycleNotExhausted   = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "monthly quota must be exhausted before advancing the next cycle")
+	ErrMonthlyCycleNoFutureTime   = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not have enough future validity to advance the next cycle")
 	ErrDailyLimitExceeded         = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
 	ErrWeeklyLimitExceeded        = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
 	ErrMonthlyLimitExceeded       = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
 	ErrSubscriptionNilInput       = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
 	ErrAdjustWouldExpire          = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
+	ErrSubscriptionMaintenance    = infraerrors.ServiceUnavailable("SUBSCRIPTION_MAINTENANCE_FAILED", "subscription maintenance failed")
 )
 
 // SubscriptionService 订阅服务
@@ -53,6 +59,36 @@ type SubscriptionService struct {
 	subCacheJitter int // 抖动百分比
 
 	maintenanceQueue *SubscriptionMaintenanceQueue
+}
+
+type SubscriptionSwitchCandidate struct {
+	Subscription       *UserSubscription
+	Group              *Group
+	Switched           bool
+	FromGroupID        int64
+	ToGroupID          int64
+	FromSubscriptionID *int64
+	Reason             string
+}
+
+type SubscriptionGroupPreference struct {
+	GroupID   int64 `json:"group_id"`
+	SortOrder int   `json:"sort_order"`
+	Enabled   bool  `json:"enabled"`
+}
+
+type AdvanceMonthlyCycleResult struct {
+	Subscription          *UserSubscription `json:"subscription"`
+	PreviousExpiresAt     time.Time         `json:"previous_expires_at"`
+	NewExpiresAt          time.Time         `json:"new_expires_at"`
+	DeductedDays          int               `json:"deducted_days"`
+	PreviousMonthlyUsage  float64           `json:"previous_monthly_usage_usd"`
+	NewMonthlyWindowStart time.Time         `json:"new_monthly_window_start"`
+}
+
+type subscriptionGroupPreferenceRank struct {
+	SortOrder int
+	Enabled   bool
 }
 
 // NewSubscriptionService 创建订阅服务
@@ -140,6 +176,12 @@ func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
 		return
 	}
 	s.subCacheL1.Del(subCacheKey(userID, groupID))
+}
+
+func (s *SubscriptionService) waitSubCacheInvalidation() {
+	if s != nil && s.subCacheL1 != nil {
+		s.subCacheL1.Wait()
+	}
 }
 
 // AssignSubscriptionInput 分配订阅输入
@@ -251,11 +293,11 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 		// 失效订阅缓存
 		s.InvalidateSubCache(input.UserID, input.GroupID)
 		if s.billingCacheService != nil {
-			userID, groupID := input.UserID, input.GroupID
+			userID, groupID, staleVersion := input.UserID, input.GroupID, subscriptionCacheVersion(existingSub)
 			go func() {
 				cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+				_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
 			}()
 		}
 
@@ -477,11 +519,11 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 	// 失效订阅缓存
 	s.InvalidateSubCache(sub.UserID, sub.GroupID)
 	if s.billingCacheService != nil {
-		userID, groupID := sub.UserID, sub.GroupID
+		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
 		go func() {
 			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+			_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
 		}()
 	}
 
@@ -544,11 +586,11 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 	// 失效订阅缓存
 	s.InvalidateSubCache(sub.UserID, sub.GroupID)
 	if s.billingCacheService != nil {
-		userID, groupID := sub.UserID, sub.GroupID
+		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
 		go func() {
 			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
+			_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
 		}()
 	}
 
@@ -598,6 +640,551 @@ func (s *SubscriptionService) GetActiveSubscription(ctx context.Context, userID,
 	}
 	cp := *sub
 	return &cp, nil
+}
+
+func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKey(ctx context.Context, apiKey *APIKey) (*SubscriptionSwitchCandidate, error) {
+	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
+		return nil, nil
+	}
+
+	fromGroupID := apiKey.Group.ID
+	currentSub, currentErr := s.GetActiveSubscription(ctx, apiKey.User.ID, fromGroupID)
+	if currentErr == nil {
+		validateErr := s.validateSwitchCandidate(ctx, apiKey.User.ID, currentSub, apiKey.Group)
+		if validateErr == nil {
+			return &SubscriptionSwitchCandidate{
+				Subscription: currentSub,
+				Group:        apiKey.Group,
+				FromGroupID:  fromGroupID,
+				ToGroupID:    fromGroupID,
+			}, nil
+		}
+		currentErr = validateErr
+	}
+
+	if !apiKey.AutoSwitchGroupEnabled || !isAutoSwitchableSubscriptionError(currentErr) {
+		return nil, currentErr
+	}
+
+	candidates, err := s.listAutoSwitchCandidates(ctx, apiKey.User.ID, fromGroupID, apiKey.Group.Platform)
+	if err != nil {
+		return nil, err
+	}
+	var fromSubscriptionID *int64
+	if currentSub != nil {
+		id := currentSub.ID
+		fromSubscriptionID = &id
+	}
+	reason := subscriptionSwitchReason(currentErr)
+	var maintenanceErr error
+	for i := range candidates {
+		sub := &candidates[i]
+		if sub.GroupID == fromGroupID || sub.Group == nil || !sub.Group.IsSubscriptionType() || !sub.Group.IsActive() {
+			continue
+		}
+		validateErr := s.validateSwitchCandidate(ctx, apiKey.User.ID, sub, sub.Group)
+		if validateErr != nil {
+			if errors.Is(validateErr, ErrSubscriptionMaintenance) {
+				maintenanceErr = validateErr
+				continue
+			}
+			if !isAutoSwitchableSubscriptionError(validateErr) {
+				continue
+			}
+			continue
+		}
+		return &SubscriptionSwitchCandidate{
+			Subscription:       sub,
+			Group:              sub.Group,
+			Switched:           true,
+			FromGroupID:        fromGroupID,
+			ToGroupID:          sub.GroupID,
+			FromSubscriptionID: fromSubscriptionID,
+			Reason:             reason,
+		}, nil
+	}
+
+	if maintenanceErr != nil {
+		return nil, maintenanceErr
+	}
+	return nil, currentErr
+}
+
+func (s *SubscriptionService) validateSwitchCandidate(ctx context.Context, userID int64, sub *UserSubscription, group *Group) error {
+	if sub == nil || group == nil {
+		return ErrSubscriptionNotFound
+	}
+
+	needsMaintenance := false
+	if sub.NeedsDailyReset() {
+		sub.DailyUsageUSD = 0
+		needsMaintenance = true
+	}
+	if sub.NeedsWeeklyReset() {
+		sub.WeeklyUsageUSD = 0
+		needsMaintenance = true
+	}
+	if sub.NeedsMonthlyReset() {
+		sub.MonthlyUsageUSD = 0
+		needsMaintenance = true
+	}
+	if !sub.IsWindowActivated() {
+		needsMaintenance = true
+	}
+	if needsMaintenance {
+		if err := s.ensureWindowMaintenance(ctx, sub); err != nil {
+			return err
+		}
+	}
+
+	if s.billingCacheService == nil {
+		_, err := s.ValidateAndCheckLimits(sub, group)
+		return err
+	}
+
+	subData, err := s.billingCacheService.GetSubscriptionStatus(ctx, userID, group.ID)
+	if err != nil {
+		if s.billingCacheService.circuitBreaker != nil {
+			s.billingCacheService.circuitBreaker.OnFailure(err)
+		}
+		log.Printf("ALERT: billing subscription switch check failed for user %d group %d: %v", userID, group.ID, err)
+		return ErrBillingServiceUnavailable.WithCause(err)
+	}
+	if s.billingCacheService.circuitBreaker != nil {
+		s.billingCacheService.circuitBreaker.OnSuccess()
+	}
+
+	applySubscriptionCacheSnapshot(sub, subData)
+	return subscriptionSnapshotEligibilityError(group, subData)
+}
+
+func applySubscriptionCacheSnapshot(sub *UserSubscription, data *subscriptionCacheData) {
+	if sub == nil || data == nil {
+		return
+	}
+	sub.Status = data.Status
+	sub.ExpiresAt = data.ExpiresAt
+	sub.DailyUsageUSD = data.DailyUsage
+	sub.WeeklyUsageUSD = data.WeeklyUsage
+	sub.MonthlyUsageUSD = data.MonthlyUsage
+	if data.Version > 0 {
+		sub.UpdatedAt = time.UnixMicro(data.Version)
+	}
+}
+
+func subscriptionSnapshotEligibilityError(group *Group, data *subscriptionCacheData) error {
+	if group == nil || data == nil {
+		return ErrSubscriptionNotFound
+	}
+	switch data.Status {
+	case SubscriptionStatusActive:
+	case SubscriptionStatusExpired:
+		return ErrSubscriptionExpired
+	case SubscriptionStatusSuspended:
+		return ErrSubscriptionSuspended
+	default:
+		return ErrSubscriptionInvalid
+	}
+	if time.Now().After(data.ExpiresAt) {
+		return ErrSubscriptionExpired
+	}
+	if group.HasDailyLimit() && data.DailyUsage >= *group.DailyLimitUSD {
+		return ErrDailyLimitExceeded
+	}
+	if group.HasWeeklyLimit() && data.WeeklyUsage >= *group.WeeklyLimitUSD {
+		return ErrWeeklyLimitExceeded
+	}
+	if group.HasMonthlyLimit() && data.MonthlyUsage >= *group.MonthlyLimitUSD {
+		return ErrMonthlyLimitExceeded
+	}
+	return nil
+}
+
+func isAutoSwitchableSubscriptionError(err error) bool {
+	return err == nil ||
+		errors.Is(err, ErrSubscriptionNotFound) ||
+		errors.Is(err, ErrSubscriptionExpired) ||
+		errors.Is(err, ErrDailyLimitExceeded) ||
+		errors.Is(err, ErrWeeklyLimitExceeded) ||
+		errors.Is(err, ErrMonthlyLimitExceeded) ||
+		strings.Contains(err.Error(), "SUBSCRIPTION_NOT_FOUND") ||
+		strings.Contains(err.Error(), "SUBSCRIPTION_EXPIRED") ||
+		strings.Contains(err.Error(), "DAILY_LIMIT_EXCEEDED") ||
+		strings.Contains(err.Error(), "WEEKLY_LIMIT_EXCEEDED") ||
+		strings.Contains(err.Error(), "MONTHLY_LIMIT_EXCEEDED")
+}
+
+func subscriptionSwitchReason(err error) string {
+	if err == nil {
+		return "unknown"
+	}
+	switch {
+	case errors.Is(err, ErrSubscriptionNotFound) || strings.Contains(err.Error(), "SUBSCRIPTION_NOT_FOUND"):
+		return "subscription_not_found"
+	case errors.Is(err, ErrSubscriptionExpired) || strings.Contains(err.Error(), "SUBSCRIPTION_EXPIRED"):
+		return "subscription_expired"
+	case errors.Is(err, ErrDailyLimitExceeded) || strings.Contains(err.Error(), "DAILY_LIMIT_EXCEEDED"):
+		return "daily_limit_exceeded"
+	case errors.Is(err, ErrWeeklyLimitExceeded) || strings.Contains(err.Error(), "WEEKLY_LIMIT_EXCEEDED"):
+		return "weekly_limit_exceeded"
+	case errors.Is(err, ErrMonthlyLimitExceeded) || strings.Contains(err.Error(), "MONTHLY_LIMIT_EXCEEDED"):
+		return "monthly_limit_exceeded"
+	default:
+		return "subscription_unavailable"
+	}
+}
+
+func (s *SubscriptionService) listAutoSwitchCandidates(ctx context.Context, userID, currentGroupID int64, platform string) ([]UserSubscription, error) {
+	subs, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	preferences := s.loadSubscriptionGroupPreferences(ctx, userID)
+	const unranked = int(^uint(0) >> 1)
+	sort.SliceStable(subs, func(i, j int) bool {
+		pi, okI := preferences[subs[i].GroupID]
+		ri := unranked
+		if !okI {
+			ri = unranked
+		} else if pi.Enabled {
+			ri = pi.SortOrder
+		}
+		pj, okJ := preferences[subs[j].GroupID]
+		rj := unranked
+		if !okJ {
+			rj = unranked
+		} else if pj.Enabled {
+			rj = pj.SortOrder
+		}
+		if ri != rj {
+			return ri < rj
+		}
+		if !subs[i].ExpiresAt.Equal(subs[j].ExpiresAt) {
+			return subs[i].ExpiresAt.Before(subs[j].ExpiresAt)
+		}
+		var si, sj int
+		if subs[i].Group != nil {
+			si = subs[i].Group.SortOrder
+		}
+		if subs[j].Group != nil {
+			sj = subs[j].Group.SortOrder
+		}
+		if si != sj {
+			return si < sj
+		}
+		return subs[i].ID < subs[j].ID
+	})
+	filtered := subs[:0]
+	for i := range subs {
+		group := subs[i].Group
+		if group == nil || group.ID == currentGroupID {
+			continue
+		}
+		if pref, ok := preferences[group.ID]; ok && !pref.Enabled {
+			continue
+		}
+		if platform != "" && group.Platform != platform {
+			continue
+		}
+		filtered = append(filtered, subs[i])
+	}
+	return filtered, nil
+}
+
+func (s *SubscriptionService) loadSubscriptionGroupPreferences(ctx context.Context, userID int64) map[int64]subscriptionGroupPreferenceRank {
+	out := make(map[int64]subscriptionGroupPreferenceRank)
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return out
+	}
+	rows, err := s.entClient.QueryContext(ctx, `
+		SELECT group_id, sort_order, enabled
+		FROM user_subscription_group_preferences
+		WHERE user_id = $1
+		ORDER BY sort_order ASC, group_id ASC
+	`, userID)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var groupID int64
+		var sortOrder int
+		var enabled bool
+		if err := rows.Scan(&groupID, &sortOrder, &enabled); err == nil {
+			out[groupID] = subscriptionGroupPreferenceRank{SortOrder: sortOrder, Enabled: enabled}
+		}
+	}
+	return out
+}
+
+func (s *SubscriptionService) LogAutoSwitch(ctx context.Context, apiKey *APIKey, candidate *SubscriptionSwitchCandidate) {
+	if s == nil || s.entClient == nil || apiKey == nil || candidate == nil || candidate.Subscription == nil {
+		return
+	}
+	_, _ = s.entClient.ExecContext(ctx, `
+		INSERT INTO api_key_auto_switch_logs (
+			api_key_id, user_id, from_group_id, to_group_id, from_subscription_id, to_subscription_id, reason, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+	`, apiKey.ID, apiKey.UserID, candidate.FromGroupID, candidate.ToGroupID, candidate.FromSubscriptionID, candidate.Subscription.ID, candidate.Reason)
+}
+
+func (s *SubscriptionService) ListGroupPreferences(ctx context.Context, userID int64) ([]SubscriptionGroupPreference, error) {
+	if s == nil || s.entClient == nil {
+		return nil, nil
+	}
+	rows, err := s.entClient.QueryContext(ctx, `
+		SELECT group_id, sort_order, enabled
+		FROM user_subscription_group_preferences
+		WHERE user_id = $1
+		ORDER BY sort_order ASC, group_id ASC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]SubscriptionGroupPreference, 0)
+	for rows.Next() {
+		var pref SubscriptionGroupPreference
+		if err := rows.Scan(&pref.GroupID, &pref.SortOrder, &pref.Enabled); err != nil {
+			return nil, err
+		}
+		out = append(out, pref)
+	}
+	return out, rows.Err()
+}
+
+func (s *SubscriptionService) SaveGroupPreferences(ctx context.Context, userID int64, prefs []SubscriptionGroupPreference) ([]SubscriptionGroupPreference, error) {
+	if s == nil || s.entClient == nil {
+		return nil, nil
+	}
+	activeSubs, err := s.ListActiveUserSubscriptions(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	activeGroupIDs := make(map[int64]struct{}, len(activeSubs))
+	for i := range activeSubs {
+		activeGroupIDs[activeSubs[i].GroupID] = struct{}{}
+	}
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	txClient := tx.Client()
+	_, err = txClient.ExecContext(ctx, `DELETE FROM user_subscription_group_preferences WHERE user_id = $1`, userID)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	saved := make([]SubscriptionGroupPreference, 0, len(prefs))
+	seenGroupIDs := make(map[int64]struct{}, len(prefs))
+	for _, pref := range prefs {
+		if pref.GroupID <= 0 {
+			continue
+		}
+		if _, seen := seenGroupIDs[pref.GroupID]; seen {
+			continue
+		}
+		seenGroupIDs[pref.GroupID] = struct{}{}
+		if _, ok := activeGroupIDs[pref.GroupID]; !ok {
+			continue
+		}
+		pref.SortOrder = len(saved)
+		if !pref.Enabled {
+			pref.Enabled = false
+		} else {
+			pref.Enabled = true
+		}
+		if _, err := txClient.ExecContext(ctx, `
+			INSERT INTO user_subscription_group_preferences (user_id, group_id, sort_order, enabled, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, NOW(), NOW())
+		`, userID, pref.GroupID, pref.SortOrder, pref.Enabled); err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+		saved = append(saved, pref)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return saved, nil
+}
+
+func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, subscriptionID int64) (*AdvanceMonthlyCycleResult, error) {
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if sub.UserID != userID {
+		return nil, ErrSubscriptionNotFound
+	}
+	group := sub.Group
+	if group == nil {
+		group, err = s.groupRepo.GetByID(ctx, sub.GroupID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if group == nil || !group.HasMonthlyLimit() {
+		return nil, ErrMonthlyCycleNotExhausted
+	}
+	now := time.Now()
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	txClient := tx.Client()
+
+	var previousUsage float64
+	var previousWindowStart sql.NullTime
+	var previousExpiresAt time.Time
+	var previousStatus string
+	var previousUpdatedAt sql.NullTime
+	rows, err := txClient.QueryContext(ctx, `
+		SELECT monthly_usage_usd, monthly_window_start, expires_at, status, updated_at
+		FROM user_subscriptions
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, subscriptionID, userID)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if !rows.Next() {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		return nil, ErrSubscriptionNotFound
+	}
+	if err := rows.Scan(&previousUsage, &previousWindowStart, &previousExpiresAt, &previousStatus, &previousUpdatedAt); err != nil {
+		_ = rows.Close()
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	switch previousStatus {
+	case SubscriptionStatusActive:
+	case SubscriptionStatusSuspended:
+		_ = tx.Rollback()
+		return nil, ErrSubscriptionSuspended
+	default:
+		_ = tx.Rollback()
+		return nil, ErrSubscriptionExpired
+	}
+	if previousUsage < *group.MonthlyLimitUSD {
+		_ = tx.Rollback()
+		return nil, ErrMonthlyCycleNotExhausted
+	}
+	if !previousExpiresAt.After(now) {
+		_ = tx.Rollback()
+		return nil, ErrSubscriptionExpired
+	}
+	var resetAt time.Time
+	if previousWindowStart.Valid {
+		resetAt = previousWindowStart.Time.Add(30 * 24 * time.Hour)
+	} else {
+		resetAt = now.Add(30 * 24 * time.Hour)
+	}
+	if !resetAt.After(now) {
+		_ = tx.Rollback()
+		return nil, ErrMonthlyCycleNotExhausted
+	}
+	remaining := resetAt.Sub(now)
+	deductedDays := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
+	if deductedDays <= 0 {
+		deductedDays = 1
+	}
+	newExpiresAt := previousExpiresAt.AddDate(0, 0, -deductedDays)
+	if !newExpiresAt.After(now) {
+		_ = tx.Rollback()
+		return nil, ErrMonthlyCycleNoFutureTime
+	}
+	if s.billingCacheService != nil {
+		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersionFromNullTime(previousUpdatedAt)); err != nil {
+			_ = tx.Rollback()
+			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
+		}
+	}
+	newWindowStart := startOfDay(now)
+	newUpdatedAt := time.Now().Add(time.Millisecond)
+
+	result, err := txClient.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET monthly_usage_usd = 0,
+			monthly_window_start = $1,
+			expires_at = $2,
+			updated_at = $3
+		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
+	`, newWindowStart, newExpiresAt, newUpdatedAt, subscriptionID, userID)
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if affected == 0 {
+		_ = tx.Rollback()
+		return nil, ErrSubscriptionNotFound
+	}
+	if _, err := txClient.ExecContext(ctx, `
+		INSERT INTO subscription_cycle_reset_logs (
+			user_id, subscription_id, group_id, previous_expires_at, new_expires_at,
+			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start, deducted_days, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+	`, userID, subscriptionID, sub.GroupID, previousExpiresAt, newExpiresAt, previousUsage, nullableTimeArg(previousWindowStart), newWindowStart, deductedDays); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.InvalidateSubCache(sub.UserID, sub.GroupID)
+	s.waitSubCacheInvalidation()
+	updated, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	return &AdvanceMonthlyCycleResult{
+		Subscription:          updated,
+		PreviousExpiresAt:     previousExpiresAt,
+		NewExpiresAt:          newExpiresAt,
+		DeductedDays:          deductedDays,
+		PreviousMonthlyUsage:  previousUsage,
+		NewMonthlyWindowStart: newWindowStart,
+	}, nil
+}
+
+func nullableTimeArg(t sql.NullTime) any {
+	if !t.Valid {
+		return nil
+	}
+	return t.Time
+}
+
+func subscriptionCacheVersion(sub *UserSubscription) int64 {
+	if sub == nil {
+		return 0
+	}
+	return subscriptionCacheVersionFromTime(sub.UpdatedAt)
+}
+
+func subscriptionCacheVersionFromTime(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMicro()
+}
+
+func subscriptionCacheVersionFromNullTime(t sql.NullTime) int64 {
+	if !t.Valid {
+		return 0
+	}
+	return subscriptionCacheVersionFromTime(t.Time)
 }
 
 // ListUserSubscriptions 获取用户的所有订阅
@@ -693,7 +1280,33 @@ func (s *SubscriptionService) CheckAndActivateWindow(ctx context.Context, sub *U
 
 	// 使用当天零点作为窗口起始时间
 	windowStart := startOfDay(time.Now())
-	return s.userSubRepo.ActivateWindows(ctx, sub.ID, windowStart)
+	if err := s.userSubRepo.ActivateWindows(ctx, sub.ID, windowStart); err != nil {
+		return err
+	}
+	sub.DailyWindowStart = &windowStart
+	sub.WeeklyWindowStart = &windowStart
+	sub.MonthlyWindowStart = &windowStart
+	return nil
+}
+
+func (s *SubscriptionService) ensureWindowMaintenance(ctx context.Context, sub *UserSubscription) error {
+	if s == nil || sub == nil {
+		return nil
+	}
+	if s.billingCacheService != nil {
+		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
+			return ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
+		}
+	}
+	if err := s.CheckAndActivateWindow(ctx, sub); err != nil {
+		return ErrSubscriptionMaintenance.WithCause(fmt.Errorf("activate windows: %w", err))
+	}
+	if err := s.CheckAndResetWindows(ctx, sub); err != nil {
+		return ErrSubscriptionMaintenance.WithCause(fmt.Errorf("reset windows: %w", err))
+	}
+	s.InvalidateSubCache(sub.UserID, sub.GroupID)
+	s.waitSubCacheInvalidation()
+	return nil
 }
 
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
@@ -705,6 +1318,11 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
 	if err != nil {
 		return nil, err
+	}
+	if s.billingCacheService != nil {
+		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
+			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
+		}
 	}
 	windowStart := startOfDay(time.Now())
 	if resetDaily {
@@ -726,12 +1344,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	// so call Wait() immediately after to flush pending operations and guarantee
 	// the deleted key is not returned on the very next Get() call.
 	s.InvalidateSubCache(sub.UserID, sub.GroupID)
-	if s.subCacheL1 != nil {
-		s.subCacheL1.Wait()
-	}
-	if s.billingCacheService != nil {
-		_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
-	}
+	s.waitSubCacheInvalidation()
 	// Return the refreshed subscription from DB
 	return s.userSubRepo.GetByID(ctx, subscriptionID)
 }
@@ -741,6 +1354,12 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 	// 使用当天零点作为新窗口起始时间
 	windowStart := startOfDay(time.Now())
 	needsInvalidateCache := false
+	needsReset := sub.NeedsDailyReset() || sub.NeedsWeeklyReset() || sub.NeedsMonthlyReset()
+	if needsReset && s.billingCacheService != nil {
+		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
+			return err
+		}
+	}
 
 	// 日窗口重置（24小时）
 	if sub.NeedsDailyReset() {
@@ -775,9 +1394,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 	// 如果有窗口被重置，失效缓存以保持一致性
 	if needsInvalidateCache {
 		s.InvalidateSubCache(sub.UserID, sub.GroupID)
-		if s.billingCacheService != nil {
-			_ = s.billingCacheService.InvalidateSubscription(ctx, sub.UserID, sub.GroupID)
-		}
+		s.waitSubCacheInvalidation()
 	}
 
 	return nil
@@ -799,8 +1416,8 @@ func (s *SubscriptionService) CheckUsageLimits(ctx context.Context, sub *UserSub
 }
 
 // ValidateAndCheckLimits 合并验证+限额检查（中间件热路径专用）
-// 仅做内存检查，不触发 DB 写入。窗口重置的 DB 写入由 DoWindowMaintenance 异步完成。
-// 返回 needsMaintenance 表示是否需要异步执行窗口维护。
+// 仅做内存检查，不触发 DB 写入。窗口重置的 DB 写入由调用方选择同步或异步维护。
+// 返回 needsMaintenance 表示是否需要执行窗口维护。
 func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, group *Group) (needsMaintenance bool, err error) {
 	// 1. 验证订阅状态
 	if sub.Status == SubscriptionStatusExpired {
@@ -871,20 +1488,9 @@ func (s *SubscriptionService) doWindowMaintenance(sub *UserSubscription) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// 激活窗口（首次使用时）
-	if !sub.IsWindowActivated() {
-		if err := s.CheckAndActivateWindow(ctx, sub); err != nil {
-			log.Printf("Failed to activate subscription windows: %v", err)
-		}
+	if err := s.ensureWindowMaintenance(ctx, sub); err != nil {
+		log.Printf("Failed to maintain subscription windows: %v", err)
 	}
-
-	// 重置过期窗口
-	if err := s.CheckAndResetWindows(ctx, sub); err != nil {
-		log.Printf("Failed to reset subscription windows: %v", err)
-	}
-
-	// 失效 L1 缓存，确保后续请求拿到更新后的数据
-	s.InvalidateSubCache(sub.UserID, sub.GroupID)
 }
 
 // RecordUsage 记录使用量到订阅

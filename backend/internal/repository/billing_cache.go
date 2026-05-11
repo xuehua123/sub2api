@@ -47,6 +47,10 @@ func billingSubKey(userID, groupID int64) string {
 	return fmt.Sprintf("%s%d:%d", billingSubKeyPrefix, userID, groupID)
 }
 
+func billingSubInvalidationKey(userID, groupID int64) string {
+	return fmt.Sprintf("%sinvalidated:%d:%d", billingSubKeyPrefix, userID, groupID)
+}
+
 const (
 	subFieldStatus       = "status"
 	subFieldExpiresAt    = "expires_at"
@@ -88,11 +92,59 @@ var (
 			return 0
 		end
 		local cost = tonumber(ARGV[1])
+		local update_version = tonumber(ARGV[3]) or 0
+		local cached_version = 0
+		if update_version > 0 then
+			local invalidated = redis.call('GET', KEYS[2])
+			if invalidated ~= false and update_version <= tonumber(invalidated) then
+				return 0
+			end
+			cached_version = tonumber(redis.call('HGET', KEYS[1], 'version') or 0) or 0
+		end
 		redis.call('HINCRBYFLOAT', KEYS[1], 'daily_usage', cost)
 		redis.call('HINCRBYFLOAT', KEYS[1], 'weekly_usage', cost)
 		redis.call('HINCRBYFLOAT', KEYS[1], 'monthly_usage', cost)
+		if update_version > 0 and update_version > cached_version then
+			redis.call('HSET', KEYS[1], 'version', update_version)
+		end
 		redis.call('EXPIRE', KEYS[1], ARGV[2])
 		return 1
+	`)
+
+	setSubCacheScript = redis.NewScript(`
+		local invalidated = redis.call('GET', KEYS[2])
+		local incoming_version = tonumber(ARGV[6])
+		if invalidated ~= false and incoming_version <= tonumber(invalidated) then
+			return 0
+		end
+		redis.call(
+			'HSET',
+			KEYS[1],
+			'status', ARGV[1],
+			'expires_at', ARGV[2],
+			'daily_usage', ARGV[3],
+			'weekly_usage', ARGV[4],
+			'monthly_usage', ARGV[5],
+			'version', ARGV[6]
+		)
+		redis.call('EXPIRE', KEYS[1], ARGV[7])
+		return 1
+	`)
+
+	invalidateSubCacheScript = redis.NewScript(`
+		local marker = tonumber(ARGV[1]) or 0
+		local cached_version = tonumber(redis.call('HGET', KEYS[1], 'version') or 0) or 0
+		local existing_marker = tonumber(redis.call('GET', KEYS[2]) or 0) or 0
+		if cached_version > marker then
+			marker = cached_version
+		end
+		if existing_marker > marker then
+			marker = existing_marker
+		end
+		if marker > 0 then
+			redis.call('SET', KEYS[2], tostring(marker), 'EX', ARGV[2])
+		end
+		return redis.call('DEL', KEYS[1])
 	`)
 
 	// updateRateLimitUsageScript atomically increments all three rate limit usage counters
@@ -223,26 +275,31 @@ func (c *billingCache) SetSubscriptionCache(ctx context.Context, userID, groupID
 	}
 
 	key := billingSubKey(userID, groupID)
+	invalidationKey := billingSubInvalidationKey(userID, groupID)
 
-	fields := map[string]any{
-		subFieldStatus:       data.Status,
-		subFieldExpiresAt:    data.ExpiresAt.Unix(),
-		subFieldDailyUsage:   data.DailyUsage,
-		subFieldWeeklyUsage:  data.WeeklyUsage,
-		subFieldMonthlyUsage: data.MonthlyUsage,
-		subFieldVersion:      data.Version,
-	}
-
-	pipe := c.rdb.Pipeline()
-	pipe.HSet(ctx, key, fields)
-	pipe.Expire(ctx, key, jitteredTTL())
-	_, err := pipe.Exec(ctx)
+	_, err := setSubCacheScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key, invalidationKey},
+		data.Status,
+		data.ExpiresAt.Unix(),
+		data.DailyUsage,
+		data.WeeklyUsage,
+		data.MonthlyUsage,
+		data.Version,
+		int(jitteredTTL().Seconds()),
+	).Result()
 	return err
 }
 
 func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, groupID int64, cost float64) error {
+	return c.UpdateSubscriptionUsageWithVersion(ctx, userID, groupID, cost, 0)
+}
+
+func (c *billingCache) UpdateSubscriptionUsageWithVersion(ctx context.Context, userID, groupID int64, cost float64, version int64) error {
 	key := billingSubKey(userID, groupID)
-	_, err := updateSubUsageScript.Run(ctx, c.rdb, []string{key}, cost, int(jitteredTTL().Seconds())).Result()
+	invalidationKey := billingSubInvalidationKey(userID, groupID)
+	_, err := updateSubUsageScript.Run(ctx, c.rdb, []string{key, invalidationKey}, cost, int(jitteredTTL().Seconds()), version).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		log.Printf("Warning: update subscription usage cache failed for user %d group %d: %v", userID, groupID, err)
 		return err
@@ -251,8 +308,20 @@ func (c *billingCache) UpdateSubscriptionUsage(ctx context.Context, userID, grou
 }
 
 func (c *billingCache) InvalidateSubscriptionCache(ctx context.Context, userID, groupID int64) error {
+	return c.InvalidateSubscriptionCacheBefore(ctx, userID, groupID, 0)
+}
+
+func (c *billingCache) InvalidateSubscriptionCacheBefore(ctx context.Context, userID, groupID int64, staleBeforeVersion int64) error {
 	key := billingSubKey(userID, groupID)
-	return c.rdb.Del(ctx, key).Err()
+	invalidationKey := billingSubInvalidationKey(userID, groupID)
+	_, err := invalidateSubCacheScript.Run(
+		ctx,
+		c.rdb,
+		[]string{key, invalidationKey},
+		staleBeforeVersion,
+		int(jitteredTTL().Seconds()),
+	).Result()
+	return err
 }
 
 func (c *billingCache) GetAPIKeyRateLimit(ctx context.Context, keyID int64) (*service.APIKeyRateLimitCacheData, error) {

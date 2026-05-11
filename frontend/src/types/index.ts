@@ -579,6 +579,7 @@ export interface ApiKey {
   key: string
   name: string
   group_id: number | null
+  auto_switch_group_enabled: boolean
   status: 'active' | 'inactive' | 'quota_exhausted' | 'expired'
   ip_whitelist: string[]
   ip_blacklist: string[]
@@ -606,6 +607,7 @@ export interface ApiKey {
 export interface CreateApiKeyRequest {
   name: string
   group_id?: number | null
+  auto_switch_group_enabled?: boolean
   custom_key?: string // Optional custom API Key
   ip_whitelist?: string[]
   ip_blacklist?: string[]
@@ -619,6 +621,7 @@ export interface CreateApiKeyRequest {
 export interface UpdateApiKeyRequest {
   name?: string
   group_id?: number | null
+  auto_switch_group_enabled?: boolean
   status?: 'active' | 'inactive'
   ip_whitelist?: string[]
   ip_blacklist?: string[]
@@ -1540,6 +1543,21 @@ export interface SubscriptionProgress {
   } | null
   expires_at: string | null
   days_remaining: number | null
+}
+
+export interface SubscriptionGroupPreference {
+  group_id: number
+  sort_order: number
+  enabled: boolean
+}
+
+export interface AdvanceMonthlyCycleResult {
+  subscription: UserSubscription
+  previous_expires_at: string
+  new_expires_at: string
+  deducted_days: number
+  previous_monthly_usage_usd: number
+  new_monthly_window_start: string
 }
 
 export interface AssignSubscriptionRequest {

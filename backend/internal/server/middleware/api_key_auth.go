@@ -109,6 +109,16 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 
+		// skipBilling: /v1/usage 只需鉴权，跳过所有计费执行
+		skipBilling := c.Request.URL.Path == "/v1/usage"
+
+		if !skipBilling {
+			if status, code, message, blocked := apiKeyStatusBlock(apiKey); blocked {
+				AbortWithError(c, status, code, message)
+				return
+			}
+		}
+
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
 		if cfg.RunMode == config.RunModeSimple {
@@ -126,52 +136,57 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		// ── 5. 加载订阅（订阅模式时始终加载） ───────────────────────
 
-		// skipBilling: /v1/usage 只需鉴权，跳过所有计费执行
-		skipBilling := c.Request.URL.Path == "/v1/usage"
+		if !skipBilling {
+			if status, code, message, blocked := apiKeyBillingBlock(apiKey); blocked {
+				AbortWithError(c, status, code, message)
+				return
+			}
+		}
 
 		var subscription *service.UserSubscription
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 
 		if isSubscriptionType && subscriptionService != nil {
-			sub, subErr := subscriptionService.GetActiveSubscription(
-				c.Request.Context(),
-				apiKey.User.ID,
-				apiKey.Group.ID,
-			)
-			if subErr != nil {
-				if !skipBilling {
-					AbortWithError(c, 403, "SUBSCRIPTION_NOT_FOUND", "No active subscription found for this group")
+			if skipBilling {
+				sub, subErr := subscriptionService.GetActiveSubscription(
+					c.Request.Context(),
+					apiKey.User.ID,
+					apiKey.Group.ID,
+				)
+				if subErr == nil {
+					subscription = sub
+				}
+			} else {
+				candidate, subErr := subscriptionService.ResolveUsableSubscriptionForAPIKey(c.Request.Context(), apiKey)
+				if subErr != nil {
+					AbortWithError(c, subscriptionErrorStatus(subErr), subscriptionErrorCode(subErr), subErr.Error())
 					return
 				}
-				// skipBilling: 订阅不存在也放行，handler 会返回可用的数据
-			} else {
-				subscription = sub
+				if candidate != nil && candidate.Subscription != nil {
+					subscription = candidate.Subscription
+					if candidate.Switched {
+						swapped, err := apiKeyService.CompareAndSwapGroupID(c.Request.Context(), apiKey, candidate.FromGroupID, candidate.ToGroupID)
+						if err != nil {
+							AbortWithError(c, 500, "SUBSCRIPTION_SWITCH_FAILED", err.Error())
+							return
+						}
+						if !swapped {
+							apiKeyService.InvalidateAuthCacheByKey(c.Request.Context(), apiKey.Key)
+							AbortWithError(c, 409, "SUBSCRIPTION_SWITCH_CONFLICT", "subscription group changed concurrently, please retry")
+							return
+						}
+						subscriptionService.LogAutoSwitch(c.Request.Context(), apiKey, candidate)
+					}
+					if candidate.Group != nil {
+						applyResolvedSubscriptionGroup(c, apiKey, candidate.Group, candidate.FromGroupID)
+					}
+				}
 			}
 		}
 
 		// ── 6. 计费执行（skipBilling 时整块跳过） ────────────────────
 
 		if !skipBilling {
-			// Key 状态检查
-			switch apiKey.Status {
-			case service.StatusAPIKeyQuotaExhausted:
-				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
-				return
-			case service.StatusAPIKeyExpired:
-				AbortWithError(c, 403, "API_KEY_EXPIRED", "API key 已过期")
-				return
-			}
-
-			// 运行时过期/配额检查（即使状态是 active，也要检查时间和用量）
-			if apiKey.IsExpired() {
-				AbortWithError(c, 403, "API_KEY_EXPIRED", "API key 已过期")
-				return
-			}
-			if apiKey.IsQuotaExhausted() {
-				AbortWithError(c, 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完")
-				return
-			}
-
 			// 订阅模式：验证订阅限额
 			if subscription != nil {
 				needsMaintenance, validateErr := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
@@ -218,6 +233,80 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		c.Next()
 	}
+}
+
+func applyResolvedSubscriptionGroup(c *gin.Context, apiKey *service.APIKey, group *service.Group, previousGroupID int64) {
+	if apiKey == nil || group == nil {
+		return
+	}
+	if previousGroupID <= 0 && apiKey.GroupID != nil {
+		previousGroupID = *apiKey.GroupID
+	} else if previousGroupID <= 0 && apiKey.Group != nil {
+		previousGroupID = apiKey.Group.ID
+	}
+	apiKey.Group = group
+	groupID := group.ID
+	apiKey.GroupID = &groupID
+	if apiKey.User != nil && previousGroupID > 0 && previousGroupID != group.ID {
+		apiKey.User.UserGroupRPMOverride = nil
+	}
+	setGroupContext(c, group)
+}
+
+func apiKeyStatusBlock(apiKey *service.APIKey) (status int, code string, message string, blocked bool) {
+	switch apiKey.Status {
+	case service.StatusAPIKeyQuotaExhausted:
+		return 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完", true
+	case service.StatusAPIKeyExpired:
+		return 403, "API_KEY_EXPIRED", "API key 已过期", true
+	}
+	return 0, "", "", false
+}
+
+func apiKeyBillingBlock(apiKey *service.APIKey) (status int, code string, message string, blocked bool) {
+	if status, code, message, blocked := apiKeyStatusBlock(apiKey); blocked {
+		return status, code, message, true
+	}
+	if apiKey.IsExpired() {
+		return 403, "API_KEY_EXPIRED", "API key 已过期", true
+	}
+	if apiKey.IsQuotaExhausted() {
+		return 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完", true
+	}
+	return 0, "", "", false
+}
+
+func subscriptionErrorStatus(err error) int {
+	if errors.Is(err, service.ErrBillingServiceUnavailable) {
+		return 503
+	}
+	if errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded) {
+		return 429
+	}
+	if errors.Is(err, service.ErrSubscriptionMaintenance) {
+		return 503
+	}
+	return 403
+}
+
+func subscriptionErrorCode(err error) string {
+	if errors.Is(err, service.ErrBillingServiceUnavailable) {
+		return "billing_service_error"
+	}
+	if errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded) {
+		return "USAGE_LIMIT_EXCEEDED"
+	}
+	if errors.Is(err, service.ErrSubscriptionNotFound) {
+		return "SUBSCRIPTION_NOT_FOUND"
+	}
+	if errors.Is(err, service.ErrSubscriptionMaintenance) {
+		return "SUBSCRIPTION_MAINTENANCE_FAILED"
+	}
+	return "SUBSCRIPTION_INVALID"
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

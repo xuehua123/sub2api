@@ -108,8 +108,11 @@ func RegisterUserRoutes(
 		{
 			subscriptions.GET("", h.Subscription.List)
 			subscriptions.GET("/active", h.Subscription.GetActive)
+			subscriptions.GET("/group-preferences", h.Subscription.GetGroupPreferences)
+			subscriptions.PUT("/group-preferences", h.Subscription.SaveGroupPreferences)
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
+			subscriptions.POST("/:id/advance-monthly-cycle", h.Subscription.AdvanceMonthlyCycle)
 		}
 
 		// 渠道监控（用户只读）

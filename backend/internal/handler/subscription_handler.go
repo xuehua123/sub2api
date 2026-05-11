@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"strconv"
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -28,6 +31,24 @@ type SubscriptionSummaryItem struct {
 type SubscriptionProgressInfo struct {
 	Subscription *dto.UserSubscription         `json:"subscription"`
 	Progress     *service.SubscriptionProgress `json:"progress"`
+}
+
+type SaveSubscriptionGroupPreferencesRequest struct {
+	Preferences []SubscriptionGroupPreferenceRequest `json:"preferences"`
+}
+
+type SubscriptionGroupPreferenceRequest struct {
+	GroupID int64 `json:"group_id"`
+	Enabled *bool `json:"enabled"`
+}
+
+type AdvanceMonthlyCycleResponse struct {
+	Subscription          *dto.UserSubscription `json:"subscription"`
+	PreviousExpiresAt     time.Time             `json:"previous_expires_at"`
+	NewExpiresAt          time.Time             `json:"new_expires_at"`
+	DeductedDays          int                   `json:"deducted_days"`
+	PreviousMonthlyUsage  float64               `json:"previous_monthly_usage_usd"`
+	NewMonthlyWindowStart time.Time             `json:"new_monthly_window_start"`
 }
 
 // SubscriptionHandler handles user subscription operations
@@ -84,6 +105,87 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 		out = append(out, *dto.UserSubscriptionFromService(&subscriptions[i]))
 	}
 	response.Success(c, out)
+}
+
+func (h *SubscriptionHandler) GetGroupPreferences(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	prefs, err := h.subscriptionService.ListGroupPreferences(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, prefs)
+}
+
+func (h *SubscriptionHandler) SaveGroupPreferences(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	var req SaveSubscriptionGroupPreferencesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	prefs := make([]service.SubscriptionGroupPreference, 0, len(req.Preferences))
+	for _, pref := range req.Preferences {
+		enabled := true
+		if pref.Enabled != nil {
+			enabled = *pref.Enabled
+		}
+		prefs = append(prefs, service.SubscriptionGroupPreference{
+			GroupID: pref.GroupID,
+			Enabled: enabled,
+		})
+	}
+	saved, err := h.subscriptionService.SaveGroupPreferences(c.Request.Context(), subject.UserID, prefs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, saved)
+}
+
+func (h *SubscriptionHandler) AdvanceMonthlyCycle(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+	result, err := h.subscriptionService.AdvanceMonthlyCycle(c.Request.Context(), subject.UserID, subscriptionID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, advanceMonthlyCycleResponseFromService(result))
+}
+
+func advanceMonthlyCycleResponseFromService(result *service.AdvanceMonthlyCycleResult) *AdvanceMonthlyCycleResponse {
+	if result == nil {
+		return nil
+	}
+	subscription := dto.UserSubscriptionFromService(result.Subscription)
+	if subscription != nil {
+		subscription.User = nil
+	}
+	return &AdvanceMonthlyCycleResponse{
+		Subscription:          subscription,
+		PreviousExpiresAt:     result.PreviousExpiresAt,
+		NewExpiresAt:          result.NewExpiresAt,
+		DeductedDays:          result.DeductedDays,
+		PreviousMonthlyUsage:  result.PreviousMonthlyUsage,
+		NewMonthlyWindowStart: result.NewMonthlyWindowStart,
+	}
 }
 
 // GetProgress handles getting subscription progress for current user

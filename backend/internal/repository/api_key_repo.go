@@ -38,11 +38,20 @@ func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
 }
 
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
-	builder := r.client.APIKey.Create().
+	created, err := r.createWithClient(ctx, clientFromContext(ctx, r.client), key)
+	if err == nil {
+		populateCreatedAPIKey(key, created)
+	}
+	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
+}
+
+func (r *apiKeyRepository) createWithClient(ctx context.Context, client *dbent.Client, key *service.APIKey) (*dbent.APIKey, error) {
+	builder := client.APIKey.Create().
 		SetUserID(key.UserID).
 		SetKey(key.Key).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetAutoSwitchGroupEnabled(key.AutoSwitchGroupEnabled).
 		SetNillableGroupID(key.GroupID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
@@ -59,14 +68,15 @@ func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) erro
 		builder.SetIPBlacklist(key.IPBlacklist)
 	}
 
-	created, err := builder.Save(ctx)
-	if err == nil {
-		key.ID = created.ID
-		key.LastUsedAt = created.LastUsedAt
-		key.CreatedAt = created.CreatedAt
-		key.UpdatedAt = created.UpdatedAt
-	}
-	return translatePersistenceError(err, nil, service.ErrAPIKeyExists)
+	return builder.Save(ctx)
+}
+
+func populateCreatedAPIKey(key *service.APIKey, created *dbent.APIKey) {
+	key.ID = created.ID
+	key.AutoSwitchGroupEnabled = created.AutoSwitchGroupEnabled
+	key.LastUsedAt = created.LastUsedAt
+	key.CreatedAt = created.CreatedAt
+	key.UpdatedAt = created.UpdatedAt
 }
 
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
@@ -125,6 +135,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldID,
 			apikey.FieldUserID,
 			apikey.FieldGroupID,
+			apikey.FieldAutoSwitchGroupEnabled,
 			apikey.FieldName,
 			apikey.FieldStatus,
 			apikey.FieldIPWhitelist,
@@ -197,17 +208,21 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
+	return r.updateWithClient(ctx, clientFromContext(ctx, r.client), key)
+}
+
+func (r *apiKeyRepository) updateWithClient(ctx context.Context, client *dbent.Client, key *service.APIKey) error {
 	// 使用原子操作：将软删除检查与更新合并到同一语句，避免竞态条件。
 	// 之前的实现先检查 Exist 再 UpdateOneID，若在两步之间发生软删除，
 	// 则会更新已删除的记录。
 	// 这里选择 Update().Where()，确保只有未软删除记录能被更新。
 	// 同时显式设置 updated_at，避免二次查询带来的并发可见性问题。
-	client := clientFromContext(ctx, r.client)
 	now := time.Now()
 	builder := client.APIKey.Update().
 		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetAutoSwitchGroupEnabled(key.AutoSwitchGroupEnabled).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
 		SetRateLimit5h(key.RateLimit5h).
@@ -471,6 +486,25 @@ func (r *apiKeyRepository) UpdateGroupIDByUserAndGroup(ctx context.Context, user
 	return int64(n), err
 }
 
+func (r *apiKeyRepository) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+		UPDATE api_keys
+		SET group_id = $1, updated_at = NOW()
+		WHERE id = $2
+			AND group_id = $3
+			AND deleted_at IS NULL
+	`, newGroupID, id, oldGroupID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
@@ -618,29 +652,30 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:            m.ID,
-		UserID:        m.UserID,
-		Key:           m.Key,
-		Name:          m.Name,
-		Status:        m.Status,
-		IPWhitelist:   m.IPWhitelist,
-		IPBlacklist:   m.IPBlacklist,
-		LastUsedAt:    m.LastUsedAt,
-		CreatedAt:     m.CreatedAt,
-		UpdatedAt:     m.UpdatedAt,
-		GroupID:       m.GroupID,
-		Quota:         m.Quota,
-		QuotaUsed:     m.QuotaUsed,
-		ExpiresAt:     m.ExpiresAt,
-		RateLimit5h:   m.RateLimit5h,
-		RateLimit1d:   m.RateLimit1d,
-		RateLimit7d:   m.RateLimit7d,
-		Usage5h:       m.Usage5h,
-		Usage1d:       m.Usage1d,
-		Usage7d:       m.Usage7d,
-		Window5hStart: m.Window5hStart,
-		Window1dStart: m.Window1dStart,
-		Window7dStart: m.Window7dStart,
+		ID:                     m.ID,
+		UserID:                 m.UserID,
+		Key:                    m.Key,
+		Name:                   m.Name,
+		Status:                 m.Status,
+		AutoSwitchGroupEnabled: m.AutoSwitchGroupEnabled,
+		IPWhitelist:            m.IPWhitelist,
+		IPBlacklist:            m.IPBlacklist,
+		LastUsedAt:             m.LastUsedAt,
+		CreatedAt:              m.CreatedAt,
+		UpdatedAt:              m.UpdatedAt,
+		GroupID:                m.GroupID,
+		Quota:                  m.Quota,
+		QuotaUsed:              m.QuotaUsed,
+		ExpiresAt:              m.ExpiresAt,
+		RateLimit5h:            m.RateLimit5h,
+		RateLimit1d:            m.RateLimit1d,
+		RateLimit7d:            m.RateLimit7d,
+		Usage5h:                m.Usage5h,
+		Usage1d:                m.Usage1d,
+		Usage7d:                m.Usage7d,
+		Window5hStart:          m.Window5hStart,
+		Window1dStart:          m.Window1dStart,
+		Window7dStart:          m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

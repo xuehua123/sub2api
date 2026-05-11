@@ -42,6 +42,8 @@ type CreateAPIKeyRequest struct {
 	RateLimit5h *float64 `json:"rate_limit_5h"`
 	RateLimit1d *float64 `json:"rate_limit_1d"`
 	RateLimit7d *float64 `json:"rate_limit_7d"`
+
+	AutoSwitchGroupEnabled *bool `json:"auto_switch_group_enabled"`
 }
 
 // UpdateAPIKeyRequest represents the update API key request payload
@@ -60,6 +62,8 @@ type UpdateAPIKeyRequest struct {
 	RateLimit1d         *float64 `json:"rate_limit_1d"`
 	RateLimit7d         *float64 `json:"rate_limit_7d"`
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // 重置限速用量
+
+	AutoSwitchGroupEnabled *bool `json:"auto_switch_group_enabled"`
 }
 
 // List handles listing user's API keys with pagination
@@ -154,12 +158,13 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	svcReq := service.CreateAPIKeyRequest{
-		Name:          req.Name,
-		GroupID:       req.GroupID,
-		CustomKey:     req.CustomKey,
-		IPWhitelist:   req.IPWhitelist,
-		IPBlacklist:   req.IPBlacklist,
-		ExpiresInDays: req.ExpiresInDays,
+		Name:                   req.Name,
+		GroupID:                req.GroupID,
+		CustomKey:              req.CustomKey,
+		IPWhitelist:            req.IPWhitelist,
+		IPBlacklist:            req.IPBlacklist,
+		ExpiresInDays:          req.ExpiresInDays,
+		AutoSwitchGroupEnabled: req.AutoSwitchGroupEnabled,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -205,14 +210,15 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 	}
 
 	svcReq := service.UpdateAPIKeyRequest{
-		IPWhitelist:         req.IPWhitelist,
-		IPBlacklist:         req.IPBlacklist,
-		Quota:               req.Quota,
-		ResetQuota:          req.ResetQuota,
-		RateLimit5h:         req.RateLimit5h,
-		RateLimit1d:         req.RateLimit1d,
-		RateLimit7d:         req.RateLimit7d,
-		ResetRateLimitUsage: req.ResetRateLimitUsage,
+		IPWhitelist:            req.IPWhitelist,
+		IPBlacklist:            req.IPBlacklist,
+		Quota:                  req.Quota,
+		ResetQuota:             req.ResetQuota,
+		RateLimit5h:            req.RateLimit5h,
+		RateLimit1d:            req.RateLimit1d,
+		RateLimit7d:            req.RateLimit7d,
+		ResetRateLimitUsage:    req.ResetRateLimitUsage,
+		AutoSwitchGroupEnabled: req.AutoSwitchGroupEnabled,
 	}
 	if req.Name != "" {
 		svcReq.Name = &req.Name

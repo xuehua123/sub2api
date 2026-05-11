@@ -499,6 +499,42 @@ func (s *OpenAIGatewayService) needsUpstreamChannelRestrictionCheck(ctx context.
 	return ch.BillingModelSource == BillingModelSourceUpstream
 }
 
+func (s *OpenAIGatewayService) isUnsupportedOpenAIModelSelection(ctx context.Context, groupID *int64, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool) bool {
+	if strings.TrimSpace(requestedModel) == "" || len(accounts) == 0 {
+		return false
+	}
+	considered := 0
+	modelSupported := 0
+	upstreamAllowed := 0
+	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
+
+	for i := range accounts {
+		account := &accounts[i]
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				continue
+			}
+		}
+		if !account.IsSchedulable() || !account.IsOpenAI() {
+			continue
+		}
+		considered++
+		if !account.IsModelSupported(requestedModel) {
+			continue
+		}
+		modelSupported++
+		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, derefGroupID(groupID), account, requestedModel, requireCompact) {
+			continue
+		}
+		upstreamAllowed++
+	}
+
+	if considered == 0 {
+		return false
+	}
+	return modelSupported == 0 || upstreamAllowed == 0
+}
+
 // ReplaceModelInBody 替换请求体中的 JSON model 字段（通用 gjson/sjson 实现）。
 func (s *OpenAIGatewayService) ReplaceModelInBody(body []byte, newModel string) []byte {
 	return ReplaceModelInBody(body, newModel)
@@ -1354,7 +1390,7 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
 			"model", requestedModel)
-		return nil, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
+		return nil, unsupportedModelError(requestedModel)
 	}
 
 	// 1. 尝试粘性会话命中
@@ -1375,6 +1411,9 @@ func (s *OpenAIGatewayService) selectAccountForModelWithExclusions(ctx context.C
 	selected, compactBlocked := s.selectBestAccount(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact)
 
 	if selected == nil {
+		if s.isUnsupportedOpenAIModelSelection(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact) {
+			return nil, unsupportedModelError(requestedModel)
+		}
 		return nil, noAvailableOpenAISelectionError(requestedModel, compactBlocked)
 	}
 
@@ -1555,7 +1594,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
 			"model", requestedModel)
-		return nil, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
+		return nil, unsupportedModelError(requestedModel)
 	}
 
 	cfg := s.schedulingConfig()
@@ -1673,6 +1712,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	if len(candidates) == 0 {
+		if s.isUnsupportedOpenAIModelSelection(ctx, groupID, accounts, requestedModel, excludedIDs, requireCompact) {
+			return nil, unsupportedModelError(requestedModel)
+		}
 		return nil, ErrNoAvailableAccounts
 	}
 

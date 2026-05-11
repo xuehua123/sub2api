@@ -4,7 +4,12 @@
  */
 
 import { apiClient } from './client'
-import type { UserSubscription, SubscriptionProgress } from '@/types'
+import type {
+  AdvanceMonthlyCycleResult,
+  SubscriptionGroupPreference,
+  SubscriptionProgress,
+  UserSubscription
+} from '@/types'
 
 /**
  * Subscription summary for user dashboard
@@ -67,10 +72,36 @@ export async function getSubscriptionProgress(
   return response.data
 }
 
+export async function getGroupPreferences(): Promise<SubscriptionGroupPreference[]> {
+  const response = await apiClient.get<SubscriptionGroupPreference[]>('/subscriptions/group-preferences')
+  return response.data
+}
+
+export async function saveGroupPreferences(
+  preferences: SubscriptionGroupPreference[]
+): Promise<SubscriptionGroupPreference[]> {
+  const response = await apiClient.put<SubscriptionGroupPreference[]>('/subscriptions/group-preferences', {
+    preferences
+  })
+  return response.data
+}
+
+export async function advanceMonthlyCycle(
+  subscriptionId: number
+): Promise<AdvanceMonthlyCycleResult> {
+  const response = await apiClient.post<AdvanceMonthlyCycleResult>(
+    `/subscriptions/${subscriptionId}/advance-monthly-cycle`
+  )
+  return response.data
+}
+
 export default {
   getMySubscriptions,
   getActiveSubscriptions,
   getSubscriptionsProgress,
   getSubscriptionSummary,
-  getSubscriptionProgress
+  getSubscriptionProgress,
+  getGroupPreferences,
+  saveGroupPreferences,
+  advanceMonthlyCycle
 }

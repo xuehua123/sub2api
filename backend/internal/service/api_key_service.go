@@ -65,6 +65,7 @@ type APIKeyRepository interface {
 	ClearGroupIDByGroupID(ctx context.Context, groupID int64) (int64, error)
 	// UpdateGroupIDByUserAndGroup 将用户下绑定 oldGroupID 的所有 Key 迁移到 newGroupID
 	UpdateGroupIDByUserAndGroup(ctx context.Context, userID, oldGroupID, newGroupID int64) (int64, error)
+	CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error)
 	CountByGroupID(ctx context.Context, groupID int64) (int64, error)
 	ListKeysByUserID(ctx context.Context, userID int64) ([]string, error)
 	ListKeysByGroupID(ctx context.Context, groupID int64) ([]string, error)
@@ -163,6 +164,8 @@ type CreateAPIKeyRequest struct {
 	RateLimit5h float64 `json:"rate_limit_5h"`
 	RateLimit1d float64 `json:"rate_limit_1d"`
 	RateLimit7d float64 `json:"rate_limit_7d"`
+
+	AutoSwitchGroupEnabled *bool `json:"auto_switch_group_enabled"`
 }
 
 // UpdateAPIKeyRequest 更新API Key请求
@@ -184,6 +187,8 @@ type UpdateAPIKeyRequest struct {
 	RateLimit1d         *float64 `json:"rate_limit_1d"`
 	RateLimit7d         *float64 `json:"rate_limit_7d"`
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // Reset all usage counters to 0
+
+	AutoSwitchGroupEnabled *bool `json:"auto_switch_group_enabled"`
 }
 
 // APIKeyService API Key服务
@@ -396,19 +401,24 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	}
 
 	// 创建API Key记录
+	autoSwitchGroupEnabled := true
+	if req.AutoSwitchGroupEnabled != nil {
+		autoSwitchGroupEnabled = *req.AutoSwitchGroupEnabled
+	}
 	apiKey := &APIKey{
-		UserID:      userID,
-		Key:         key,
-		Name:        req.Name,
-		GroupID:     req.GroupID,
-		Status:      StatusActive,
-		IPWhitelist: req.IPWhitelist,
-		IPBlacklist: req.IPBlacklist,
-		Quota:       req.Quota,
-		QuotaUsed:   0,
-		RateLimit5h: req.RateLimit5h,
-		RateLimit1d: req.RateLimit1d,
-		RateLimit7d: req.RateLimit7d,
+		UserID:                 userID,
+		Key:                    key,
+		Name:                   req.Name,
+		GroupID:                req.GroupID,
+		AutoSwitchGroupEnabled: autoSwitchGroupEnabled,
+		Status:                 StatusActive,
+		IPWhitelist:            req.IPWhitelist,
+		IPBlacklist:            req.IPBlacklist,
+		Quota:                  req.Quota,
+		QuotaUsed:              0,
+		RateLimit5h:            req.RateLimit5h,
+		RateLimit1d:            req.RateLimit1d,
+		RateLimit7d:            req.RateLimit7d,
 	}
 
 	// Set expiration time if specified
@@ -510,6 +520,24 @@ func (s *APIKeyService) GetByKey(ctx context.Context, key string) (*APIKey, erro
 	return apiKey, nil
 }
 
+func (s *APIKeyService) CompareAndSwapGroupID(ctx context.Context, apiKey *APIKey, oldGroupID, newGroupID int64) (bool, error) {
+	if apiKey == nil {
+		return false, ErrAPIKeyNotFound
+	}
+	if oldGroupID <= 0 || newGroupID <= 0 || oldGroupID == newGroupID {
+		return false, nil
+	}
+	swapped, err := s.apiKeyRepo.CompareAndSwapGroupID(ctx, apiKey.ID, oldGroupID, newGroupID)
+	if err != nil {
+		return false, fmt.Errorf("switch api key group: %w", err)
+	}
+	if swapped {
+		apiKey.GroupID = &newGroupID
+		s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+	}
+	return swapped, nil
+}
+
 // Update 更新API Key
 func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req UpdateAPIKeyRequest) (*APIKey, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, id)
@@ -566,6 +594,9 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		if s.cache != nil {
 			_ = s.cache.DeleteCreateAttemptCount(ctx, apiKey.UserID)
 		}
+	}
+	if req.AutoSwitchGroupEnabled != nil {
+		apiKey.AutoSwitchGroupEnabled = *req.AutoSwitchGroupEnabled
 	}
 
 	// Update quota fields

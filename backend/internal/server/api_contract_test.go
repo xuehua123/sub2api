@@ -5,6 +5,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -14,9 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -205,6 +211,7 @@ func TestAPIContracts(t *testing.T) {
 					"key": "sk_custom_1234567890",
 					"name": "Key One",
 					"group_id": null,
+					"auto_switch_group_enabled": true,
 					"status": "active",
 					"ip_whitelist": null,
 					"ip_blacklist": null,
@@ -231,13 +238,14 @@ func TestAPIContracts(t *testing.T) {
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
 				deps.apiKeyRepo.MustSeed(&service.APIKey{
-					ID:        100,
-					UserID:    1,
-					Key:       "sk_custom_1234567890",
-					Name:      "Key One",
-					Status:    service.StatusActive,
-					CreatedAt: deps.now,
-					UpdatedAt: deps.now,
+					ID:                     100,
+					UserID:                 1,
+					Key:                    "sk_custom_1234567890",
+					Name:                   "Key One",
+					Status:                 service.StatusActive,
+					AutoSwitchGroupEnabled: true,
+					CreatedAt:              deps.now,
+					UpdatedAt:              deps.now,
 				})
 			},
 			method:     http.MethodGet,
@@ -254,6 +262,7 @@ func TestAPIContracts(t *testing.T) {
 							"key": "sk_custom_1234567890",
 							"name": "Key One",
 							"group_id": null,
+							"auto_switch_group_enabled": true,
 							"status": "active",
 							"ip_whitelist": null,
 							"ip_blacklist": null,
@@ -1208,6 +1217,116 @@ func TestAPIContracts(t *testing.T) {
 	}
 }
 
+func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	deps := newContractDeps(t)
+	userID := int64(1)
+	subscriptionID := int64(777)
+	groupID := int64(88)
+	limit := 10.0
+	previousUsage := 12.5
+	previousWindowStart := time.Now().Add(12 * time.Hour)
+	previousExpiresAt := time.Now().Add(45 * 24 * time.Hour)
+	previousUpdatedAt := time.Now().Add(-time.Hour)
+	encryptedSecret := "encrypted-totp-secret"
+	group := &service.Group{
+		ID:               groupID,
+		Name:             "Pro Group",
+		Description:      "subscription group",
+		Platform:         service.PlatformOpenAI,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+		CreatedAt:        deps.now,
+		UpdatedAt:        deps.now,
+	}
+	deps.userSubRepo.SetByID(&service.UserSubscription{
+		ID:                 subscriptionID,
+		UserID:             userID,
+		GroupID:            groupID,
+		Group:              group,
+		StartsAt:           deps.now,
+		ExpiresAt:          previousExpiresAt,
+		Status:             service.SubscriptionStatusActive,
+		MonthlyWindowStart: &previousWindowStart,
+		MonthlyUsageUSD:    previousUsage,
+		UpdatedAt:          previousUpdatedAt,
+	})
+	deps.userSubRepo.SetRefreshedByID(&service.UserSubscription{
+		ID:                 subscriptionID,
+		UserID:             userID,
+		GroupID:            groupID,
+		Group:              group,
+		User:               &service.User{ID: userID, Email: "alice@example.com", Username: "alice", PasswordHash: "secret-hash", TotpSecretEncrypted: &encryptedSecret},
+		StartsAt:           deps.now,
+		ExpiresAt:          previousExpiresAt.AddDate(0, 0, -1),
+		Status:             service.SubscriptionStatusActive,
+		MonthlyWindowStart: ptr(time.Now()),
+		MonthlyUsageUSD:    0,
+		AssignedBy:         ptr(int64(999)),
+		AssignedAt:         deps.now,
+		Notes:              "admin-only-note",
+		CreatedAt:          deps.now,
+		UpdatedAt:          time.Now(),
+	})
+
+	deps.sqlMock.ExpectBegin()
+	deps.sqlMock.ExpectQuery(`(?s)SELECT monthly_usage_usd, monthly_window_start, expires_at, status, updated_at\s+FROM user_subscriptions\s+WHERE id = \$1 AND user_id = \$2 AND deleted_at IS NULL\s+FOR UPDATE`).
+		WithArgs(subscriptionID, userID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"monthly_usage_usd",
+			"monthly_window_start",
+			"expires_at",
+			"status",
+			"updated_at",
+		}).AddRow(previousUsage, previousWindowStart, previousExpiresAt, service.SubscriptionStatusActive, previousUpdatedAt))
+	deps.sqlMock.ExpectExec(`(?s)UPDATE user_subscriptions\s+SET monthly_usage_usd = 0,\s+monthly_window_start = \$1,\s+expires_at = \$2,\s+updated_at = \$3\s+WHERE id = \$4 AND user_id = \$5 AND deleted_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), subscriptionID, userID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	deps.sqlMock.ExpectExec(`(?s)INSERT INTO subscription_cycle_reset_logs \(\s+user_id, subscription_id, group_id, previous_expires_at, new_expires_at,\s+previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start, deducted_days, created_at\s+\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, NOW\(\)\)`).
+		WithArgs(userID, subscriptionID, groupID, previousExpiresAt, sqlmock.AnyArg(), previousUsage, previousWindowStart, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	deps.sqlMock.ExpectCommit()
+
+	status, body := doRequest(t, deps.router, http.MethodPost, "/api/v1/subscriptions/777/advance-monthly-cycle", "", nil)
+
+	require.Equal(t, http.StatusOK, status)
+	require.NotContains(t, body, "PasswordHash")
+	require.NotContains(t, body, "TotpSecretEncrypted")
+	require.NotContains(t, body, "MonthlyUsageUSD")
+	require.NotContains(t, body, "PreviousExpiresAt")
+	require.NotContains(t, body, "assigned_by")
+	require.NotContains(t, body, "admin-only-note")
+
+	var got struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    struct {
+			Subscription          *dto.UserSubscription `json:"subscription"`
+			PreviousExpiresAt     time.Time             `json:"previous_expires_at"`
+			NewExpiresAt          time.Time             `json:"new_expires_at"`
+			DeductedDays          int                   `json:"deducted_days"`
+			PreviousMonthlyUsage  float64               `json:"previous_monthly_usage_usd"`
+			NewMonthlyWindowStart time.Time             `json:"new_monthly_window_start"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &got))
+	require.Equal(t, 0, got.Code)
+	require.Equal(t, "success", got.Message)
+	require.NotNil(t, got.Data.Subscription)
+	require.Nil(t, got.Data.Subscription.User)
+	require.Equal(t, subscriptionID, got.Data.Subscription.ID)
+	require.Equal(t, groupID, got.Data.Subscription.GroupID)
+	require.Equal(t, 0.0, got.Data.Subscription.MonthlyUsageUSD)
+	require.NotNil(t, got.Data.Subscription.Group)
+	require.Equal(t, "Pro Group", got.Data.Subscription.Group.Name)
+	require.Equal(t, previousUsage, got.Data.PreviousMonthlyUsage)
+	require.Greater(t, got.Data.DeductedDays, 0)
+	require.NoError(t, deps.sqlMock.ExpectationsWereMet())
+}
+
 type contractDeps struct {
 	now         time.Time
 	router      http.Handler
@@ -1218,6 +1337,7 @@ type contractDeps struct {
 	usageRepo   *stubUsageLogRepo
 	settingRepo *stubSettingRepo
 	redeemRepo  *stubRedeemCodeRepo
+	sqlMock     sqlmock.Sqlmock
 }
 
 func newContractDeps(t *testing.T) *contractDeps {
@@ -1258,13 +1378,17 @@ func newContractDeps(t *testing.T) *contractDeps {
 		RunMode: config.RunModeStandard,
 	}
 
+	db, sqlMock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	entClient := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+
 	userService := service.NewUserService(userRepo, nil, nil, nil)
 	apiKeyService := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, nil, apiKeyCache, cfg)
 
 	usageRepo := newStubUsageLogRepo()
 	usageService := service.NewUsageService(usageRepo, userRepo, nil, nil)
 
-	subscriptionService := service.NewSubscriptionService(groupRepo, userSubRepo, nil, nil, cfg)
+	subscriptionService := service.NewSubscriptionService(groupRepo, userSubRepo, nil, entClient, cfg)
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
 
 	redeemService := service.NewRedeemService(redeemRepo, userRepo, subscriptionService, nil, nil, nil, nil, nil)
@@ -1319,6 +1443,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Subs := v1.Group("")
 	v1Subs.Use(jwtAuth)
 	v1Subs.GET("/subscriptions", subscriptionHandler.List)
+	v1Subs.POST("/subscriptions/:id/advance-monthly-cycle", subscriptionHandler.AdvanceMonthlyCycle)
 
 	v1Redeem := v1.Group("")
 	v1Redeem.Use(jwtAuth)
@@ -1339,6 +1464,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 		usageRepo:   usageRepo,
 		settingRepo: settingRepo,
 		redeemRepo:  redeemRepo,
+		sqlMock:     sqlMock,
 	}
 }
 
@@ -1909,6 +2035,9 @@ func (stubRedeemCodeRepo) SumPositiveBalanceByUser(ctx context.Context, userID i
 type stubUserSubscriptionRepo struct {
 	byUser       map[int64][]service.UserSubscription
 	activeByUser map[int64][]service.UserSubscription
+	byID         map[int64]service.UserSubscription
+	refreshed    map[int64]service.UserSubscription
+	getByIDCalls map[int64]int
 }
 
 func (r *stubUserSubscriptionRepo) SetByUserID(userID int64, subs []service.UserSubscription) {
@@ -1925,11 +2054,47 @@ func (r *stubUserSubscriptionRepo) SetActiveByUserID(userID int64, subs []servic
 	r.activeByUser[userID] = append([]service.UserSubscription(nil), subs...)
 }
 
+func (r *stubUserSubscriptionRepo) SetByID(sub *service.UserSubscription) {
+	if sub == nil {
+		return
+	}
+	if r.byID == nil {
+		r.byID = make(map[int64]service.UserSubscription)
+	}
+	r.byID[sub.ID] = *sub
+}
+
+func (r *stubUserSubscriptionRepo) SetRefreshedByID(sub *service.UserSubscription) {
+	if sub == nil {
+		return
+	}
+	if r.refreshed == nil {
+		r.refreshed = make(map[int64]service.UserSubscription)
+	}
+	r.refreshed[sub.ID] = *sub
+}
+
 func (stubUserSubscriptionRepo) Create(ctx context.Context, sub *service.UserSubscription) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) GetByID(ctx context.Context, id int64) (*service.UserSubscription, error) {
-	return nil, errors.New("not implemented")
+func (r *stubUserSubscriptionRepo) GetByID(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	if r.getByIDCalls == nil {
+		r.getByIDCalls = make(map[int64]int)
+	}
+	r.getByIDCalls[id]++
+	if r.getByIDCalls[id] > 1 && r.refreshed != nil {
+		if sub, ok := r.refreshed[id]; ok {
+			clone := sub
+			return &clone, nil
+		}
+	}
+	if r.byID != nil {
+		if sub, ok := r.byID[id]; ok {
+			clone := sub
+			return &clone, nil
+		}
+	}
+	return nil, service.ErrSubscriptionNotFound
 }
 func (stubUserSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
@@ -2192,6 +2357,22 @@ func (r *stubApiKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID
 		updated++
 	}
 	return updated, nil
+}
+
+func (r *stubApiKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	key, ok := r.byID[id]
+	if !ok {
+		return false, service.ErrAPIKeyNotFound
+	}
+	if key.GroupID == nil || *key.GroupID != oldGroupID {
+		return false, nil
+	}
+	clone := *key
+	gid := newGroupID
+	clone.GroupID = &gid
+	r.byID[id] = &clone
+	r.byKey[clone.Key] = &clone
+	return true, nil
 }
 
 func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {

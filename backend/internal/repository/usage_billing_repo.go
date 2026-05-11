@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -107,9 +108,11 @@ func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *s
 
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
 	if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
-		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
+		updatedAt, err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost)
+		if err != nil {
 			return err
 		}
+		result.SubscriptionVersion = updatedAt.UnixMicro()
 	}
 
 	if cmd.BalanceCost > 0 {
@@ -145,7 +148,7 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	return nil
 }
 
-func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) error {
+func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscriptionID int64, costUSD float64) (time.Time, error) {
 	const updateSQL = `
 		UPDATE user_subscriptions us
 		SET
@@ -158,19 +161,16 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 			AND us.deleted_at IS NULL
 			AND us.group_id = g.id
 			AND g.deleted_at IS NULL
+		RETURNING us.updated_at
 	`
-	res, err := tx.ExecContext(ctx, updateSQL, costUSD, subscriptionID)
-	if err != nil {
-		return err
+	var updatedAt time.Time
+	if err := tx.QueryRowContext(ctx, updateSQL, costUSD, subscriptionID).Scan(&updatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, service.ErrSubscriptionNotFound
+		}
+		return time.Time{}, err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected > 0 {
-		return nil
-	}
-	return service.ErrSubscriptionNotFound
+	return updatedAt, nil
 }
 
 func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, error) {

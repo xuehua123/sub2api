@@ -244,6 +244,107 @@ func (s *BillingCacheSuite) TestSubscriptionCache() {
 			},
 		},
 		{
+			name: "stale_set_after_invalidate_is_ignored",
+			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
+				userID := int64(104)
+				groupID := int64(12)
+				staleVersion := int64(1000)
+
+				data := &service.SubscriptionCacheData{
+					Status:       "active",
+					ExpiresAt:    time.Now().Add(1 * time.Hour),
+					DailyUsage:   1.0,
+					WeeklyUsage:  2.0,
+					MonthlyUsage: 3.0,
+					Version:      staleVersion,
+				}
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "SetSubscriptionCache")
+				require.NoError(s.T(), cache.InvalidateSubscriptionCache(ctx, userID, groupID), "InvalidateSubscriptionCache")
+
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "stale SetSubscriptionCache")
+				_, err := cache.GetSubscriptionCache(ctx, userID, groupID)
+				require.ErrorIs(s.T(), err, redis.Nil, "stale cache data should not be restored after invalidate")
+
+				data.Version = staleVersion + 1
+				data.MonthlyUsage = 0
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "fresh SetSubscriptionCache")
+				gotSub, err := cache.GetSubscriptionCache(ctx, userID, groupID)
+				require.NoError(s.T(), err, "fresh cache data should be accepted")
+				require.Equal(s.T(), 0.0, gotSub.MonthlyUsage)
+			},
+		},
+		{
+			name: "stale_usage_increment_after_reset_is_ignored",
+			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
+				userID := int64(105)
+				groupID := int64(13)
+				staleVersion := int64(1000)
+				freshVersion := int64(2000)
+				versionedCache, ok := cache.(interface {
+					UpdateSubscriptionUsageWithVersion(context.Context, int64, int64, float64, int64) error
+				})
+				require.True(s.T(), ok, "cache should support versioned subscription usage updates")
+
+				data := &service.SubscriptionCacheData{
+					Status:       "active",
+					ExpiresAt:    time.Now().Add(1 * time.Hour),
+					DailyUsage:   0,
+					WeeklyUsage:  0,
+					MonthlyUsage: 9,
+					Version:      staleVersion,
+				}
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "initial SetSubscriptionCache")
+				require.NoError(s.T(), cache.InvalidateSubscriptionCache(ctx, userID, groupID), "InvalidateSubscriptionCache")
+
+				data.MonthlyUsage = 0
+				data.Version = freshVersion
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "fresh SetSubscriptionCache")
+
+				require.NoError(s.T(), versionedCache.UpdateSubscriptionUsageWithVersion(ctx, userID, groupID, 1.0, staleVersion), "stale usage update")
+				gotSub, err := cache.GetSubscriptionCache(ctx, userID, groupID)
+				require.NoError(s.T(), err, "GetSubscriptionCache after stale update")
+				require.Equal(s.T(), 0.0, gotSub.MonthlyUsage, "stale usage should not pollute reset cache")
+				require.Equal(s.T(), freshVersion, gotSub.Version)
+
+				require.NoError(s.T(), versionedCache.UpdateSubscriptionUsageWithVersion(ctx, userID, groupID, 1.0, freshVersion+1), "fresh usage update")
+				gotSub, err = cache.GetSubscriptionCache(ctx, userID, groupID)
+				require.NoError(s.T(), err, "GetSubscriptionCache after fresh update")
+				require.Equal(s.T(), 1.0, gotSub.MonthlyUsage)
+				require.Equal(s.T(), freshVersion+1, gotSub.Version)
+			},
+		},
+		{
+			name: "out_of_order_usage_increments_in_same_cycle_are_applied",
+			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
+				userID := int64(106)
+				groupID := int64(14)
+				firstVersion := int64(3000)
+				secondVersion := int64(3001)
+				versionedCache, ok := cache.(interface {
+					UpdateSubscriptionUsageWithVersion(context.Context, int64, int64, float64, int64) error
+				})
+				require.True(s.T(), ok, "cache should support versioned subscription usage updates")
+
+				data := &service.SubscriptionCacheData{
+					Status:       "active",
+					ExpiresAt:    time.Now().Add(1 * time.Hour),
+					DailyUsage:   0,
+					WeeklyUsage:  0,
+					MonthlyUsage: 0,
+					Version:      firstVersion,
+				}
+				require.NoError(s.T(), cache.SetSubscriptionCache(ctx, userID, groupID, data), "initial SetSubscriptionCache")
+
+				require.NoError(s.T(), versionedCache.UpdateSubscriptionUsageWithVersion(ctx, userID, groupID, 2.0, secondVersion), "newer usage update")
+				require.NoError(s.T(), versionedCache.UpdateSubscriptionUsageWithVersion(ctx, userID, groupID, 1.0, firstVersion), "older usage update")
+
+				gotSub, err := cache.GetSubscriptionCache(ctx, userID, groupID)
+				require.NoError(s.T(), err, "GetSubscriptionCache")
+				require.Equal(s.T(), 3.0, gotSub.MonthlyUsage, "same-cycle out-of-order increments should both apply")
+				require.Equal(s.T(), secondVersion, gotSub.Version, "cache version should not move backwards")
+			},
+		},
+		{
 			name: "missing_status_returns_parsing_error",
 			fn: func(ctx context.Context, rdb *redis.Client, cache service.BillingCache) {
 				userID := int64(102)

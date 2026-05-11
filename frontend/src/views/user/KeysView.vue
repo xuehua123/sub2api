@@ -449,6 +449,30 @@
           </Select>
         </div>
 
+        <div class="flex items-center justify-between rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+          <div>
+            <label class="input-label mb-0">{{ t('keys.autoSwitchGroup') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+              {{ t('keys.autoSwitchGroupHint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="formData.auto_switch_group_enabled = !formData.auto_switch_group_enabled"
+            :class="[
+              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
+              formData.auto_switch_group_enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                formData.auto_switch_group_enabled ? 'translate-x-4' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+
         <!-- Custom Key Section (only for create) -->
         <div v-if="!showEditModal" class="space-y-3">
           <div class="flex items-center justify-between">
@@ -1185,6 +1209,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 const formData = ref({
   name: '',
   group_id: null as number | null,
+  auto_switch_group_enabled: true,
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
   custom_key: '',
@@ -1474,6 +1499,7 @@ const editKey = (key: ApiKey) => {
   formData.value = {
     name: key.name,
     group_id: key.group_id,
+    auto_switch_group_enabled: key.auto_switch_group_enabled !== false,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
     custom_key: '',
@@ -1625,6 +1651,7 @@ const handleSubmit = async () => {
       await keysAPI.update(selectedKey.value.id, {
         name: formData.value.name,
         group_id: formData.value.group_id,
+        auto_switch_group_enabled: formData.value.auto_switch_group_enabled,
         status: formData.value.status,
         ip_whitelist: ipWhitelist,
         ip_blacklist: ipBlacklist,
@@ -1645,7 +1672,8 @@ const handleSubmit = async () => {
         ipBlacklist,
         quota,
         expiresInDays,
-        rateLimitData
+        rateLimitData,
+        formData.value.auto_switch_group_enabled
       )
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
@@ -1699,6 +1727,7 @@ const closeModals = () => {
   formData.value = {
     name: '',
     group_id: null,
+    auto_switch_group_enabled: true,
     status: 'active',
     use_custom_key: false,
     custom_key: '',

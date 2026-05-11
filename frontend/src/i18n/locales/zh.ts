@@ -681,6 +681,8 @@ export default {
     namePlaceholder: '我的 API 密钥',
     groupLabel: '分组',
     selectGroup: '选择分组',
+    autoSwitchGroup: '额度耗尽时自动切换订阅分组',
+    autoSwitchGroupHint: '开启后，此密钥所在订阅分组用尽时会按订阅优先级切到仍有余额的分组。',
     statusLabel: '状态',
     selectStatus: '选择状态',
     saving: '保存中...',
@@ -6628,7 +6630,17 @@ export default {
     expiresOn: '{date} 到期',
     resetIn: '{time} 后重置',
     windowNotActive: '等待首次使用',
-    usageOf: '已用 {used} / {limit}'
+    usageOf: '已用 {used} / {limit}',
+    switchPriority: '自动切换优先级',
+    switchPriorityHint: '拖动订阅分组排序；API Key 自动切换时会从上到下寻找可用额度。',
+    switchPrioritySaved: '自动切换优先级已保存',
+    switchPrioritySaveFailed: '保存自动切换优先级失败',
+    moveUp: '上移',
+    moveDown: '下移',
+    advanceMonthlyCycle: '提前使用下月额度',
+    advanceMonthlyConfirm: '确定提前使用「{group}」的下月额度吗？本月用量会重置，并从订阅有效期扣减约 {days} 天。',
+    advanceMonthlySuccess: '已重置本月额度，并扣减 {days} 天有效期',
+    advanceMonthlyFailed: '提前使用下月额度失败'
   },
 
   // Onboarding Tour
