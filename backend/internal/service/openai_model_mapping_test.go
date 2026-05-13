@@ -86,6 +86,24 @@ func TestResolveOpenAIForwardModel(t *testing.T) {
 			expectedModel:      "gpt-5.3-codex-spark",
 		},
 		{
+			name: "uses account mapping for codex spark alias",
+			account: &Account{
+				Platform: PlatformOpenAI,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"gpt-5.3-codex-spark":        "gpt-5.3-codex",
+						"gpt-5.3-codex-spark-low":    "gpt-5.3-codex",
+						"gpt-5.3-codex-spark-medium": "gpt-5.3-codex",
+						"gpt-5.3-codex-spark-high":   "gpt-5.3-codex",
+						"gpt-5.3-codex-spark-xhigh":  "gpt-5.3-codex",
+					},
+				},
+			},
+			requestedModel:     "gpt-5.3-codex-spark-high",
+			defaultMappedModel: "gpt-5.4",
+			expectedModel:      "gpt-5.3-codex",
+		},
+		{
 			name: "preserves gpt-5.5 instead of group default",
 			account: &Account{
 				Credentials: map[string]any{},
