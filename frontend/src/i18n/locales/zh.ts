@@ -585,7 +585,7 @@ export default {
       title: '问题管理',
       detailTitle: '问题管理详情',
       description: '按精确语法检索、诊断并处理用户公开问题。',
-      searchPlaceholder: '例如 key:ab12cd email:user@example.com status:open',
+      searchPlaceholder: "例如 key:ab12cd email:user{'@'}example.com status:open",
       searchSyntaxIntro: '管理员搜索支持：',
       keySearchWarning: 'API Key 只输入后缀，不要输入完整 Key。',
       emptyTitle: '没有匹配的问题',

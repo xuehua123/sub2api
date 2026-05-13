@@ -585,7 +585,7 @@ export default {
       title: 'Issue Management',
       detailTitle: 'Issue Management Detail',
       description: 'Search, diagnose, and moderate public user issues with exact syntax.',
-      searchPlaceholder: 'Example: key:ab12cd email:user@example.com status:open',
+      searchPlaceholder: "Example: key:ab12cd email:user{'@'}example.com status:open",
       searchSyntaxIntro: 'Admin search supports:',
       keySearchWarning: 'Enter only an API key suffix, never a full key.',
       emptyTitle: 'No matching issues',

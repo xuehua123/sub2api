@@ -24,6 +24,11 @@ describe('issue center locale messages', () => {
     expect(resolveLocaleKey(zh, key)).toEqual(expect.any(String))
     expect(resolveLocaleKey(en, key)).toEqual(expect.any(String))
   })
+
+  it('escapes literal at signs in issue center messages', () => {
+    expect(unescapedAtSignMessages(zh.issueCenter, 'zh.issueCenter')).toEqual([])
+    expect(unescapedAtSignMessages(en.issueCenter, 'en.issueCenter')).toEqual([])
+  })
 })
 
 function resolveLocaleKey(messages: unknown, key: string): unknown {
@@ -33,4 +38,14 @@ function resolveLocaleKey(messages: unknown, key: string): unknown {
     }
     return (current as Record<string, unknown>)[part]
   }, messages)
+}
+
+function unescapedAtSignMessages(messages: unknown, path: string): string[] {
+  if (typeof messages === 'string') {
+    return messages.replaceAll("{'@'}", '').includes('@') ? [path] : []
+  }
+  if (!messages || typeof messages !== 'object') {
+    return []
+  }
+  return Object.entries(messages).flatMap(([key, value]) => unescapedAtSignMessages(value, `${path}.${key}`))
 }
