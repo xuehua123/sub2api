@@ -291,23 +291,96 @@ func TestSupportIssueService_SuggestSimilarReturnsAtMostFive(t *testing.T) {
 }
 
 func TestSupportIssueService_GetPublicUsesVisibleQuery(t *testing.T) {
-	repo := &fakeSupportIssueRepository{issue: &SupportIssue{ID: 12, Status: SupportIssueStatusOpen}}
+	uploadedByUserID := int64(42)
+	hiddenByUserID := int64(99)
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:     12,
+		Status: SupportIssueStatusOpen,
+		Comments: []SupportIssueComment{{
+			ID:             31,
+			IssueID:        12,
+			AuthorUserID:   &uploadedByUserID,
+			AuthorRole:     RoleUser,
+			Content:        "visible public comment",
+			HiddenByUserID: &hiddenByUserID,
+			HideReason:     "admin moderation detail",
+		}},
+		Attachments: []SupportIssueAttachment{{
+			ID:               44,
+			IssueID:          12,
+			UploadedByUserID: &uploadedByUserID,
+			FilePath:         "data/support-issue-attachments/private.png",
+			FileURL:          "/uploads/support-issues/public.png",
+			FileName:         "public.png",
+			MimeType:         "image/png",
+			SizeBytes:        1024,
+			OCRText:          "visible ocr text",
+			Visibility:       SupportIssueAttachmentVisibilityPublic,
+			HiddenByUserID:   &hiddenByUserID,
+		}},
+	}}
 	svc := NewSupportIssueService(repo)
 
-	_, err := svc.GetPublic(context.Background(), 12)
+	issue, err := svc.GetPublic(context.Background(), 12)
 
 	require.NoError(t, err)
 	require.Equal(t, []bool{false}, repo.getIssueIncludeHidden)
+	require.Len(t, issue.Attachments, 1)
+	require.Empty(t, issue.Attachments[0].FilePath)
+	require.Nil(t, issue.Attachments[0].UploadedByUserID)
+	require.Nil(t, issue.Attachments[0].HiddenByUserID)
+	require.Equal(t, "/uploads/support-issues/public.png", issue.Attachments[0].FileURL)
+	require.Equal(t, "public.png", issue.Attachments[0].FileName)
+	require.Equal(t, "image/png", issue.Attachments[0].MimeType)
+	require.Equal(t, int64(1024), issue.Attachments[0].SizeBytes)
+	require.Equal(t, "visible ocr text", issue.Attachments[0].OCRText)
+	require.Len(t, issue.Comments, 1)
+	require.Nil(t, issue.Comments[0].AuthorUserID)
+	require.Nil(t, issue.Comments[0].HiddenByUserID)
+	require.Empty(t, issue.Comments[0].HideReason)
 }
 
 func TestSupportIssueService_AdminGetUsesHiddenQuery(t *testing.T) {
-	repo := &fakeSupportIssueRepository{issue: &SupportIssue{ID: 12, Status: SupportIssueStatusOpen}}
+	uploadedByUserID := int64(42)
+	hiddenByUserID := int64(99)
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:     12,
+		Status: SupportIssueStatusOpen,
+		Comments: []SupportIssueComment{{
+			ID:             31,
+			IssueID:        12,
+			AuthorUserID:   &uploadedByUserID,
+			AuthorRole:     RoleUser,
+			Content:        "visible admin comment",
+			HiddenByUserID: &hiddenByUserID,
+			HideReason:     "admin moderation detail",
+		}},
+		Attachments: []SupportIssueAttachment{{
+			ID:               44,
+			IssueID:          12,
+			UploadedByUserID: &uploadedByUserID,
+			FilePath:         "data/support-issue-attachments/private.png",
+			FileURL:          "/uploads/support-issues/public.png",
+			FileName:         "public.png",
+			MimeType:         "image/png",
+			SizeBytes:        1024,
+			Visibility:       SupportIssueAttachmentVisibilityPublic,
+			HiddenByUserID:   &hiddenByUserID,
+		}},
+	}}
 	svc := NewSupportIssueService(repo)
 
-	_, err := svc.AdminGet(context.Background(), 12)
+	issue, err := svc.AdminGet(context.Background(), 12)
 
 	require.NoError(t, err)
 	require.Equal(t, []bool{true}, repo.getIssueIncludeHidden)
+	require.Len(t, issue.Attachments, 1)
+	require.Equal(t, "data/support-issue-attachments/private.png", issue.Attachments[0].FilePath)
+	require.NotNil(t, issue.Attachments[0].UploadedByUserID)
+	require.NotNil(t, issue.Attachments[0].HiddenByUserID)
+	require.Len(t, issue.Comments, 1)
+	require.Equal(t, "admin moderation detail", issue.Comments[0].HideReason)
+	require.NotNil(t, issue.Comments[0].HiddenByUserID)
 }
 
 type fakeSupportIssueRepository struct {

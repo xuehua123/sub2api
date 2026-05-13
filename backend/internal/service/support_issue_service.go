@@ -473,7 +473,7 @@ func visibleSupportIssueComments(comments []SupportIssueComment) []SupportIssueC
 	out := make([]SupportIssueComment, 0, len(comments))
 	for _, comment := range comments {
 		if comment.HiddenAt == nil {
-			out = append(out, comment)
+			out = append(out, sanitizeSupportIssueCommentForPublic(comment))
 		}
 	}
 	return out
@@ -483,10 +483,35 @@ func visibleSupportIssueAttachments(attachments []SupportIssueAttachment) []Supp
 	out := make([]SupportIssueAttachment, 0, len(attachments))
 	for _, attachment := range attachments {
 		if attachment.Visibility == "" || attachment.Visibility == SupportIssueAttachmentVisibilityPublic {
-			out = append(out, attachment)
+			out = append(out, sanitizeSupportIssueAttachmentForPublic(attachment))
 		}
 	}
 	return out
+}
+
+func sanitizeSupportIssueCommentForPublic(comment SupportIssueComment) SupportIssueComment {
+	return SupportIssueComment{
+		ID:         comment.ID,
+		IssueID:    comment.IssueID,
+		AuthorRole: comment.AuthorRole,
+		Content:    comment.Content,
+		CreatedAt:  comment.CreatedAt,
+		UpdatedAt:  comment.UpdatedAt,
+	}
+}
+
+func sanitizeSupportIssueAttachmentForPublic(attachment SupportIssueAttachment) SupportIssueAttachment {
+	return SupportIssueAttachment{
+		ID:         attachment.ID,
+		IssueID:    attachment.IssueID,
+		FileURL:    attachment.FileURL,
+		FileName:   attachment.FileName,
+		MimeType:   attachment.MimeType,
+		SizeBytes:  attachment.SizeBytes,
+		OCRText:    attachment.OCRText,
+		Visibility: attachment.Visibility,
+		CreatedAt:  attachment.CreatedAt,
+	}
 }
 
 func supportIssuePtrInt64(v int64) *int64 {
