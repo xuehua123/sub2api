@@ -101,6 +101,7 @@ function mountView() {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         LoadingSpinner: { template: '<div>loading</div>' },
+        RouterLink: { template: '<a><slot /></a>' },
       },
     },
   })
@@ -167,5 +168,35 @@ describe('IssueDetailView', () => {
     await wrapper.find('[data-testid="admin-manage-issue-button"]').trigger('click')
 
     expect(router.push).toHaveBeenCalledWith('/admin/issues/123')
+  })
+
+  it('shows pinned, solution, and related solved issue guidance', async () => {
+    get.mockResolvedValue(makeIssue({
+      pinned_at: '2026-05-13T09:00:00Z',
+      solution_comment_id: 1,
+      related_issue_id: 999,
+      related_issue: {
+        id: 999,
+        public_id: 'ISS-000999',
+        title: 'Resolved rate limit case',
+        status: 'resolved',
+        resolved_at: '2026-05-13T09:00:00Z',
+      },
+      solution_comment: {
+        id: 1,
+        issue_id: 123,
+        author_role: 'admin',
+        content: 'Use the resolved channel and retry.',
+        created_at: '2026-05-13T08:30:00Z',
+        updated_at: '2026-05-13T08:30:00Z',
+      },
+    }))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('issueCenter.detail.pinned')
+    expect(wrapper.text()).toContain('Resolved rate limit case')
+    expect(wrapper.text()).toContain('Use the resolved channel and retry.')
   })
 })

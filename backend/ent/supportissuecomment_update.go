@@ -98,6 +98,33 @@ func (_u *SupportIssueCommentUpdate) SetNillableContent(v *string) *SupportIssue
 	return _u
 }
 
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdate) SetRelatedIssueID(v int64) *SupportIssueCommentUpdate {
+	_u.mutation.ResetRelatedIssueID()
+	_u.mutation.SetRelatedIssueID(v)
+	return _u
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_u *SupportIssueCommentUpdate) SetNillableRelatedIssueID(v *int64) *SupportIssueCommentUpdate {
+	if v != nil {
+		_u.SetRelatedIssueID(*v)
+	}
+	return _u
+}
+
+// AddRelatedIssueID adds value to the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdate) AddRelatedIssueID(v int64) *SupportIssueCommentUpdate {
+	_u.mutation.AddRelatedIssueID(v)
+	return _u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdate) ClearRelatedIssueID() *SupportIssueCommentUpdate {
+	_u.mutation.ClearRelatedIssueID()
+	return _u
+}
+
 // SetHiddenAt sets the "hidden_at" field.
 func (_u *SupportIssueCommentUpdate) SetHiddenAt(v time.Time) *SupportIssueCommentUpdate {
 	_u.mutation.SetHiddenAt(v)
@@ -267,6 +294,15 @@ func (_u *SupportIssueCommentUpdate) sqlSave(ctx context.Context) (_node int, er
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(supportissuecomment.FieldContent, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRelatedIssueID(); ok {
+		_spec.AddField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if _u.mutation.RelatedIssueIDCleared() {
+		_spec.ClearField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64)
+	}
 	if value, ok := _u.mutation.HiddenAt(); ok {
 		_spec.SetField(supportissuecomment.FieldHiddenAt, field.TypeTime, value)
 	}
@@ -403,6 +439,33 @@ func (_u *SupportIssueCommentUpdateOne) SetNillableContent(v *string) *SupportIs
 	if v != nil {
 		_u.SetContent(*v)
 	}
+	return _u
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdateOne) SetRelatedIssueID(v int64) *SupportIssueCommentUpdateOne {
+	_u.mutation.ResetRelatedIssueID()
+	_u.mutation.SetRelatedIssueID(v)
+	return _u
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_u *SupportIssueCommentUpdateOne) SetNillableRelatedIssueID(v *int64) *SupportIssueCommentUpdateOne {
+	if v != nil {
+		_u.SetRelatedIssueID(*v)
+	}
+	return _u
+}
+
+// AddRelatedIssueID adds value to the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdateOne) AddRelatedIssueID(v int64) *SupportIssueCommentUpdateOne {
+	_u.mutation.AddRelatedIssueID(v)
+	return _u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (_u *SupportIssueCommentUpdateOne) ClearRelatedIssueID() *SupportIssueCommentUpdateOne {
+	_u.mutation.ClearRelatedIssueID()
 	return _u
 }
 
@@ -604,6 +667,15 @@ func (_u *SupportIssueCommentUpdateOne) sqlSave(ctx context.Context) (_node *Sup
 	}
 	if value, ok := _u.mutation.Content(); ok {
 		_spec.SetField(supportissuecomment.FieldContent, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRelatedIssueID(); ok {
+		_spec.AddField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if _u.mutation.RelatedIssueIDCleared() {
+		_spec.ClearField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.HiddenAt(); ok {
 		_spec.SetField(supportissuecomment.FieldHiddenAt, field.TypeTime, value)

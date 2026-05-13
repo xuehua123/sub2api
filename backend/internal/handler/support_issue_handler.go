@@ -22,7 +22,7 @@ type supportIssueUserService interface {
 	ListPublic(ctx context.Context, params pagination.PaginationParams, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
 	SearchPublic(ctx context.Context, params pagination.PaginationParams, rawQuery string, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
 	GetPublic(ctx context.Context, issueID int64, viewer service.SupportIssueViewer) (*service.SupportIssue, error)
-	AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string) (*service.SupportIssueComment, error)
+	AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string, relatedIssueID *int64) (*service.SupportIssueComment, error)
 	Resolve(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
 	SuggestSimilar(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) ([]service.SupportIssue, error)
 	UploadAttachment(ctx context.Context, actor service.SupportIssueActor, input service.UploadSupportIssueAttachmentInput) (*service.SupportIssueAttachment, error)
@@ -177,7 +177,7 @@ func (h *SupportIssueHandler) AddComment(c *gin.Context) {
 		return
 	}
 
-	comment, err := h.supportIssueService.AddComment(c.Request.Context(), actor, issueID, req.Content)
+	comment, err := h.supportIssueService.AddComment(c.Request.Context(), actor, issueID, req.Content, req.RelatedIssueID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -164,7 +164,11 @@ func (r *supportIssueRepository) GetIssue(ctx context.Context, id int64, include
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
 	}
-	return supportIssueEntityToService(row), nil
+	issue := supportIssueEntityToService(row)
+	if err := r.populateSupportIssueReferences(ctx, client, issue, includeHidden); err != nil {
+		return nil, err
+	}
+	return issue, nil
 }
 
 func (r *supportIssueRepository) RecordView(ctx context.Context, issueID int64, viewer service.SupportIssueViewer, throttleWindow time.Duration) error {
@@ -501,6 +505,214 @@ func (r *supportIssueRepository) RestoreIssue(
 	return out, err
 }
 
+func (r *supportIssueRepository) PinIssue(
+	ctx context.Context,
+	input service.PinSupportIssueInput,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		now := time.Now()
+		row, err := txClient.SupportIssue.UpdateOneID(input.IssueID).
+			SetPinnedAt(now).
+			SetPinnedByUserID(input.PinnedByUserID).
+			SetPinnedReason(strings.TrimSpace(input.Reason)).
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = input.IssueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventIssuePinned
+		}
+		if event.ActorUserID == nil && input.PinnedByUserID > 0 {
+			event.ActorUserID = &input.PinnedByUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) UnpinIssue(
+	ctx context.Context,
+	issueID int64,
+	actorUserID int64,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		row, err := txClient.SupportIssue.UpdateOneID(issueID).
+			ClearPinnedAt().
+			ClearPinnedByUserID().
+			SetPinnedReason("").
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = issueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventIssueUnpinned
+		}
+		if event.ActorUserID == nil && actorUserID > 0 {
+			event.ActorUserID = &actorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) SetSolutionComment(
+	ctx context.Context,
+	issueID int64,
+	commentID int64,
+	actorUserID int64,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		_, err := txClient.SupportIssueComment.Query().
+			Where(
+				supportissuecomment.IDEQ(commentID),
+				supportissuecomment.IssueIDEQ(issueID),
+				supportissuecomment.HiddenAtIsNil(),
+			).
+			Only(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueCommentNotFound, nil)
+		}
+
+		row, err := txClient.SupportIssue.UpdateOneID(issueID).
+			SetSolutionCommentID(commentID).
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = issueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventSolutionMarked
+		}
+		if event.ActorUserID == nil && actorUserID > 0 {
+			event.ActorUserID = &actorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) ClearSolutionComment(
+	ctx context.Context,
+	issueID int64,
+	actorUserID int64,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		row, err := txClient.SupportIssue.UpdateOneID(issueID).
+			ClearSolutionCommentID().
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = issueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventSolutionCleared
+		}
+		if event.ActorUserID == nil && actorUserID > 0 {
+			event.ActorUserID = &actorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) SetRelatedIssue(
+	ctx context.Context,
+	input service.SetRelatedSupportIssueInput,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if input.IssueID <= 0 || input.RelatedIssueID <= 0 || input.IssueID == input.RelatedIssueID {
+			return service.ErrSupportIssueInvalidInput
+		}
+		targetExists, err := txClient.SupportIssue.Query().
+			Where(
+				supportissue.IDEQ(input.RelatedIssueID),
+				supportissue.HiddenAtIsNil(),
+				supportissue.StatusEQ(service.SupportIssueStatusResolved),
+			).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !targetExists {
+			return service.ErrSupportIssueInvalidInput
+		}
+
+		row, err := txClient.SupportIssue.UpdateOneID(input.IssueID).
+			SetRelatedIssueID(input.RelatedIssueID).
+			SetRelatedIssueReason(strings.TrimSpace(input.Reason)).
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = input.IssueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventRelatedSet
+		}
+		if event.ActorUserID == nil && input.ActorUserID > 0 {
+			event.ActorUserID = &input.ActorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) ClearRelatedIssue(
+	ctx context.Context,
+	issueID int64,
+	actorUserID int64,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		row, err := txClient.SupportIssue.UpdateOneID(issueID).
+			ClearRelatedIssueID().
+			SetRelatedIssueReason("").
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = issueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventRelatedCleared
+		}
+		if event.ActorUserID == nil && actorUserID > 0 {
+			event.ActorUserID = &actorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
 func (r *supportIssueRepository) HideAttachment(
 	ctx context.Context,
 	input service.HideSupportIssueAttachmentInput,
@@ -660,6 +872,24 @@ func buildSupportIssueCreate(
 	if issue.HiddenCommentCount > 0 {
 		builder.SetHiddenCommentCount(issue.HiddenCommentCount)
 	}
+	if issue.PinnedAt != nil {
+		builder.SetPinnedAt(*issue.PinnedAt)
+	}
+	if issue.PinnedByUserID != nil {
+		builder.SetPinnedByUserID(*issue.PinnedByUserID)
+	}
+	if strings.TrimSpace(issue.PinnedReason) != "" {
+		builder.SetPinnedReason(strings.TrimSpace(issue.PinnedReason))
+	}
+	if issue.SolutionCommentID != nil {
+		builder.SetSolutionCommentID(*issue.SolutionCommentID)
+	}
+	if issue.RelatedIssueID != nil {
+		builder.SetRelatedIssueID(*issue.RelatedIssueID)
+	}
+	if strings.TrimSpace(issue.RelatedIssueReason) != "" {
+		builder.SetRelatedIssueReason(strings.TrimSpace(issue.RelatedIssueReason))
+	}
 
 	return builder
 }
@@ -683,6 +913,9 @@ func createSupportIssueComment(
 	}
 	if comment.HiddenByUserID != nil {
 		builder.SetHiddenByUserID(*comment.HiddenByUserID)
+	}
+	if comment.RelatedIssueID != nil {
+		builder.SetRelatedIssueID(*comment.RelatedIssueID)
 	}
 	return builder.Save(ctx)
 }
@@ -927,17 +1160,21 @@ func supportIssueTextPredicate(value string) predicate.SupportIssue {
 
 func supportIssueListOrders(params pagination.PaginationParams) []func(*entsql.Selector) {
 	field, sortOrder := supportIssueListOrder(params)
+	pinnedFirst := func(s *entsql.Selector) {
+		column := s.C(supportissue.FieldPinnedAt)
+		s.OrderExpr(entsql.Expr(column+" IS NULL"), entsql.Expr(column+" DESC"))
+	}
 	if sortOrder == pagination.SortOrderAsc {
 		if field == supportissue.FieldID {
-			return []func(*entsql.Selector){dbent.Asc(field)}
+			return []func(*entsql.Selector){pinnedFirst, dbent.Asc(field)}
 		}
-		return []func(*entsql.Selector){dbent.Asc(field), dbent.Asc(supportissue.FieldID)}
+		return []func(*entsql.Selector){pinnedFirst, dbent.Asc(field), dbent.Asc(supportissue.FieldID)}
 	}
 
 	if field == supportissue.FieldID {
-		return []func(*entsql.Selector){dbent.Desc(field)}
+		return []func(*entsql.Selector){pinnedFirst, dbent.Desc(field)}
 	}
-	return []func(*entsql.Selector){dbent.Desc(field), dbent.Desc(supportissue.FieldID)}
+	return []func(*entsql.Selector){pinnedFirst, dbent.Desc(field), dbent.Desc(supportissue.FieldID)}
 }
 
 func supportIssueListOrder(params pagination.PaginationParams) (string, string) {
@@ -958,6 +1195,8 @@ func supportIssueListOrder(params pagination.PaginationParams) (string, string) 
 		return supportissue.FieldCommentCount, sortOrder
 	case "view_count", "views", "popular", "hot", "hot_24h":
 		return supportissue.FieldViewCount, sortOrder
+	case "pinned_at", "pinned":
+		return supportissue.FieldPinnedAt, sortOrder
 	case "status":
 		return supportissue.FieldStatus, sortOrder
 	case "category":
@@ -981,6 +1220,99 @@ func supportIssueEntityToService(row *dbent.SupportIssue) *service.SupportIssue 
 	out.Attachments = supportIssueAttachmentEntitiesToService(row.Edges.Attachments)
 	out.Events = supportIssueEventEntitiesToService(row.Edges.Events)
 	return out
+}
+
+func (r *supportIssueRepository) populateSupportIssueReferences(
+	ctx context.Context,
+	client *dbent.Client,
+	issue *service.SupportIssue,
+	includeHidden bool,
+) error {
+	if issue == nil {
+		return nil
+	}
+
+	if issue.SolutionCommentID != nil {
+		for i := range issue.Comments {
+			if issue.Comments[i].ID == *issue.SolutionCommentID {
+				comment := issue.Comments[i]
+				issue.SolutionComment = &comment
+				break
+			}
+		}
+	}
+
+	ids := make([]int64, 0, len(issue.Comments)+1)
+	if issue.RelatedIssueID != nil {
+		ids = append(ids, *issue.RelatedIssueID)
+	}
+	for i := range issue.Comments {
+		if issue.Comments[i].RelatedIssueID != nil {
+			ids = append(ids, *issue.Comments[i].RelatedIssueID)
+		}
+	}
+	refs, err := supportIssueReferencesByID(ctx, client, ids, includeHidden)
+	if err != nil {
+		return err
+	}
+	if issue.RelatedIssueID != nil {
+		issue.RelatedIssue = refs[*issue.RelatedIssueID]
+	}
+	for i := range issue.Comments {
+		if issue.Comments[i].RelatedIssueID != nil {
+			issue.Comments[i].RelatedIssue = refs[*issue.Comments[i].RelatedIssueID]
+		}
+	}
+	if issue.SolutionComment != nil && issue.SolutionComment.RelatedIssueID != nil {
+		issue.SolutionComment.RelatedIssue = refs[*issue.SolutionComment.RelatedIssueID]
+	}
+	return nil
+}
+
+func supportIssueReferencesByID(
+	ctx context.Context,
+	client *dbent.Client,
+	ids []int64,
+	includeHidden bool,
+) (map[int64]*service.SupportIssueReference, error) {
+	out := map[int64]*service.SupportIssueReference{}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	unique := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return out, nil
+	}
+
+	q := client.SupportIssue.Query().Where(supportissue.IDIn(unique...))
+	if !includeHidden {
+		q = q.Where(supportissue.HiddenAtIsNil())
+	}
+	rows, err := q.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.ID] = &service.SupportIssueReference{
+			ID:         row.ID,
+			PublicID:   row.PublicID,
+			Title:      row.Title,
+			Status:     row.Status,
+			ResolvedAt: row.ResolvedAt,
+		}
+	}
+	return out, nil
 }
 
 func applySupportIssueEntityToService(dst *service.SupportIssue, row *dbent.SupportIssue) {
@@ -1012,6 +1344,12 @@ func applySupportIssueEntityToService(dst *service.SupportIssue, row *dbent.Supp
 	dst.HiddenAt = row.HiddenAt
 	dst.HiddenByUserID = row.HiddenByUserID
 	dst.HideReason = row.HideReason
+	dst.PinnedAt = row.PinnedAt
+	dst.PinnedByUserID = row.PinnedByUserID
+	dst.PinnedReason = row.PinnedReason
+	dst.SolutionCommentID = row.SolutionCommentID
+	dst.RelatedIssueID = row.RelatedIssueID
+	dst.RelatedIssueReason = row.RelatedIssueReason
 	dst.LastCommentAt = row.LastCommentAt
 	dst.LastViewedAt = row.LastViewedAt
 	dst.CommentCount = row.CommentCount
@@ -1051,6 +1389,7 @@ func applySupportIssueCommentEntityToService(dst *service.SupportIssueComment, r
 	dst.AuthorUserID = row.AuthorUserID
 	dst.AuthorRole = row.AuthorRole
 	dst.Content = row.Content
+	dst.RelatedIssueID = row.RelatedIssueID
 	dst.HiddenAt = row.HiddenAt
 	dst.HiddenByUserID = row.HiddenByUserID
 	dst.HideReason = row.HideReason

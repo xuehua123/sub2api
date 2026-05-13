@@ -65,6 +65,18 @@ type SupportIssue struct {
 	HiddenByUserID *int64 `json:"hidden_by_user_id,omitempty"`
 	// HideReason holds the value of the "hide_reason" field.
 	HideReason string `json:"hide_reason,omitempty"`
+	// PinnedAt holds the value of the "pinned_at" field.
+	PinnedAt *time.Time `json:"pinned_at,omitempty"`
+	// PinnedByUserID holds the value of the "pinned_by_user_id" field.
+	PinnedByUserID *int64 `json:"pinned_by_user_id,omitempty"`
+	// PinnedReason holds the value of the "pinned_reason" field.
+	PinnedReason string `json:"pinned_reason,omitempty"`
+	// SolutionCommentID holds the value of the "solution_comment_id" field.
+	SolutionCommentID *int64 `json:"solution_comment_id,omitempty"`
+	// RelatedIssueID holds the value of the "related_issue_id" field.
+	RelatedIssueID *int64 `json:"related_issue_id,omitempty"`
+	// RelatedIssueReason holds the value of the "related_issue_reason" field.
+	RelatedIssueReason string `json:"related_issue_reason,omitempty"`
 	// LastCommentAt holds the value of the "last_comment_at" field.
 	LastCommentAt *time.Time `json:"last_comment_at,omitempty"`
 	// LastViewedAt holds the value of the "last_viewed_at" field.
@@ -145,11 +157,11 @@ func (*SupportIssue) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case supportissue.FieldID, supportissue.FieldHTTPStatus, supportissue.FieldCreatedByUserID, supportissue.FieldResolvedByUserID, supportissue.FieldHiddenByUserID, supportissue.FieldCommentCount, supportissue.FieldHiddenCommentCount, supportissue.FieldAttachmentCount, supportissue.FieldViewCount:
+		case supportissue.FieldID, supportissue.FieldHTTPStatus, supportissue.FieldCreatedByUserID, supportissue.FieldResolvedByUserID, supportissue.FieldHiddenByUserID, supportissue.FieldPinnedByUserID, supportissue.FieldSolutionCommentID, supportissue.FieldRelatedIssueID, supportissue.FieldCommentCount, supportissue.FieldHiddenCommentCount, supportissue.FieldAttachmentCount, supportissue.FieldViewCount:
 			values[i] = new(sql.NullInt64)
-		case supportissue.FieldPublicID, supportissue.FieldTitle, supportissue.FieldDescription, supportissue.FieldAccountEmail, supportissue.FieldAccountEmailNormalized, supportissue.FieldAccountEmailMasked, supportissue.FieldScreenshotText, supportissue.FieldScreenshotLanguage, supportissue.FieldCategory, supportissue.FieldSeverity, supportissue.FieldStatus, supportissue.FieldModelName, supportissue.FieldClientName, supportissue.FieldErrorCode, supportissue.FieldAPIKeySuffix, supportissue.FieldHideReason, supportissue.FieldSearchText:
+		case supportissue.FieldPublicID, supportissue.FieldTitle, supportissue.FieldDescription, supportissue.FieldAccountEmail, supportissue.FieldAccountEmailNormalized, supportissue.FieldAccountEmailMasked, supportissue.FieldScreenshotText, supportissue.FieldScreenshotLanguage, supportissue.FieldCategory, supportissue.FieldSeverity, supportissue.FieldStatus, supportissue.FieldModelName, supportissue.FieldClientName, supportissue.FieldErrorCode, supportissue.FieldAPIKeySuffix, supportissue.FieldHideReason, supportissue.FieldPinnedReason, supportissue.FieldRelatedIssueReason, supportissue.FieldSearchText:
 			values[i] = new(sql.NullString)
-		case supportissue.FieldOccurredAt, supportissue.FieldResolvedAt, supportissue.FieldLockedAt, supportissue.FieldHiddenAt, supportissue.FieldLastCommentAt, supportissue.FieldLastViewedAt, supportissue.FieldCreatedAt, supportissue.FieldUpdatedAt:
+		case supportissue.FieldOccurredAt, supportissue.FieldResolvedAt, supportissue.FieldLockedAt, supportissue.FieldHiddenAt, supportissue.FieldPinnedAt, supportissue.FieldLastCommentAt, supportissue.FieldLastViewedAt, supportissue.FieldCreatedAt, supportissue.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -322,6 +334,46 @@ func (_m *SupportIssue) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field hide_reason", values[i])
 			} else if value.Valid {
 				_m.HideReason = value.String
+			}
+		case supportissue.FieldPinnedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field pinned_at", values[i])
+			} else if value.Valid {
+				_m.PinnedAt = new(time.Time)
+				*_m.PinnedAt = value.Time
+			}
+		case supportissue.FieldPinnedByUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field pinned_by_user_id", values[i])
+			} else if value.Valid {
+				_m.PinnedByUserID = new(int64)
+				*_m.PinnedByUserID = value.Int64
+			}
+		case supportissue.FieldPinnedReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field pinned_reason", values[i])
+			} else if value.Valid {
+				_m.PinnedReason = value.String
+			}
+		case supportissue.FieldSolutionCommentID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field solution_comment_id", values[i])
+			} else if value.Valid {
+				_m.SolutionCommentID = new(int64)
+				*_m.SolutionCommentID = value.Int64
+			}
+		case supportissue.FieldRelatedIssueID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field related_issue_id", values[i])
+			} else if value.Valid {
+				_m.RelatedIssueID = new(int64)
+				*_m.RelatedIssueID = value.Int64
+			}
+		case supportissue.FieldRelatedIssueReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field related_issue_reason", values[i])
+			} else if value.Valid {
+				_m.RelatedIssueReason = value.String
 			}
 		case supportissue.FieldLastCommentAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -517,6 +569,32 @@ func (_m *SupportIssue) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("hide_reason=")
 	builder.WriteString(_m.HideReason)
+	builder.WriteString(", ")
+	if v := _m.PinnedAt; v != nil {
+		builder.WriteString("pinned_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.PinnedByUserID; v != nil {
+		builder.WriteString("pinned_by_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("pinned_reason=")
+	builder.WriteString(_m.PinnedReason)
+	builder.WriteString(", ")
+	if v := _m.SolutionCommentID; v != nil {
+		builder.WriteString("solution_comment_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.RelatedIssueID; v != nil {
+		builder.WriteString("related_issue_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("related_issue_reason=")
+	builder.WriteString(_m.RelatedIssueReason)
 	builder.WriteString(", ")
 	if v := _m.LastCommentAt; v != nil {
 		builder.WriteString("last_comment_at=")

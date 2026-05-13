@@ -3,6 +3,9 @@ import type {
   AdminSupportIssue,
   BasePaginationResponse,
   FetchOptions,
+  MarkSupportIssueSolutionRequest,
+  PinSupportIssueRequest,
+  SetRelatedSupportIssueRequest,
   SupportIssueEvent,
   SupportIssueListParams,
   SupportIssueReasonRequest,
@@ -57,6 +60,45 @@ export async function restoreIssue(
   return data
 }
 
+export async function pin(
+  id: number,
+  request?: PinSupportIssueRequest
+): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/pin`, request ?? {})
+  return data
+}
+
+export async function unpin(id: number): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/unpin`, {})
+  return data
+}
+
+export async function markSolution(
+  id: number,
+  request: MarkSupportIssueSolutionRequest
+): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/solution`, request)
+  return data
+}
+
+export async function clearSolution(id: number): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/solution/clear`, {})
+  return data
+}
+
+export async function setRelatedIssue(
+  id: number,
+  request: SetRelatedSupportIssueRequest
+): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/related-issue`, request)
+  return data
+}
+
+export async function clearRelatedIssue(id: number): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/related-issue/clear`, {})
+  return data
+}
+
 export async function hideComment(
   issueId: number,
   commentId: number,
@@ -93,6 +135,12 @@ export const adminIssuesAPI = {
   reopen,
   hideIssue,
   restoreIssue,
+  pin,
+  unpin,
+  markSolution,
+  clearSolution,
+  setRelatedIssue,
+  clearRelatedIssue,
   hideComment,
   hideAttachment,
   events

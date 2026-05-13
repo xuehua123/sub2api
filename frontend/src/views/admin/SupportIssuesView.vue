@@ -144,6 +144,7 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-mono text-xs font-semibold text-gray-500 dark:text-gray-400">{{ issue.public_id }}</span>
                   <span :class="statusBadgeClass(issue.status)">{{ t(`issueCenter.status.${issue.status}`) }}</span>
+                  <span v-if="issue.pinned_at" class="badge badge-primary">{{ t('issueCenter.detail.pinned') }}</span>
                   <span v-if="issue.hidden_at" class="badge badge-warning">{{ t('issueCenter.admin.hidden') }}</span>
                   <span :class="severityBadgeClass(issue.severity)">{{ t(`issueCenter.severity.${issue.severity}`) }}</span>
                   <span class="badge badge-gray">{{ t(`issueCenter.category.${issue.category}`) }}</span>

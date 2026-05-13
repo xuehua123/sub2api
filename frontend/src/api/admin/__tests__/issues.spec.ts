@@ -100,6 +100,25 @@ describe('admin issues api', () => {
     expect(post).toHaveBeenCalledWith('/admin/issues/123/restore', { reason: 'redacted' })
   })
 
+  it('pins, unpins, marks solutions, and links related solved issues', async () => {
+    await adminIssuesAPI.pin(123, { reason: 'frequent duplicate' })
+    await adminIssuesAPI.unpin(123)
+    await adminIssuesAPI.markSolution(123, { comment_id: 456 })
+    await adminIssuesAPI.clearSolution(123)
+    await adminIssuesAPI.setRelatedIssue(123, { related_issue_id: 789, reason: 'same resolved issue' })
+    await adminIssuesAPI.clearRelatedIssue(123)
+
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/pin', { reason: 'frequent duplicate' })
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/unpin', {})
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/solution', { comment_id: 456 })
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/solution/clear', {})
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/related-issue', {
+      related_issue_id: 789,
+      reason: 'same resolved issue'
+    })
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/related-issue/clear', {})
+  })
+
   it('hides a comment', async () => {
     const payload = { reason: 'sensitive info' }
 

@@ -33,7 +33,8 @@ type SupportIssueAttachmentRequest struct {
 }
 
 type AddSupportIssueCommentRequest struct {
-	Content string `json:"content" binding:"required"`
+	Content        string `json:"content" binding:"required"`
+	RelatedIssueID *int64 `json:"related_issue_id"`
 }
 
 type UpdateSupportIssueStatusRequest struct {
@@ -43,6 +44,27 @@ type UpdateSupportIssueStatusRequest struct {
 
 type SupportIssueReasonRequest struct {
 	Reason string `json:"reason"`
+}
+
+type PinSupportIssueRequest struct {
+	Reason string `json:"reason"`
+}
+
+type MarkSupportIssueSolutionRequest struct {
+	CommentID int64 `json:"comment_id" binding:"required"`
+}
+
+type SetRelatedSupportIssueRequest struct {
+	RelatedIssueID int64  `json:"related_issue_id" binding:"required"`
+	Reason         string `json:"reason"`
+}
+
+type SupportIssueReference struct {
+	ID         int64      `json:"id"`
+	PublicID   string     `json:"public_id"`
+	Title      string     `json:"title"`
+	Status     string     `json:"status"`
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
 }
 
 type PublicSupportIssue struct {
@@ -63,6 +85,9 @@ type PublicSupportIssue struct {
 	ErrorCode          string                         `json:"error_code,omitempty"`
 	ResolvedAt         *time.Time                     `json:"resolved_at,omitempty"`
 	LockedAt           *time.Time                     `json:"locked_at,omitempty"`
+	PinnedAt           *time.Time                     `json:"pinned_at,omitempty"`
+	SolutionCommentID  *int64                         `json:"solution_comment_id,omitempty"`
+	RelatedIssueID     *int64                         `json:"related_issue_id,omitempty"`
 	LastCommentAt      *time.Time                     `json:"last_comment_at,omitempty"`
 	LastViewedAt       *time.Time                     `json:"last_viewed_at,omitempty"`
 	CommentCount       int                            `json:"comment_count"`
@@ -72,15 +97,19 @@ type PublicSupportIssue struct {
 	UpdatedAt          time.Time                      `json:"updated_at"`
 	Comments           []PublicSupportIssueComment    `json:"comments,omitempty"`
 	Attachments        []PublicSupportIssueAttachment `json:"attachments,omitempty"`
+	SolutionComment    *PublicSupportIssueComment     `json:"solution_comment,omitempty"`
+	RelatedIssue       *SupportIssueReference         `json:"related_issue,omitempty"`
 }
 
 type PublicSupportIssueComment struct {
-	ID         int64     `json:"id"`
-	IssueID    int64     `json:"issue_id"`
-	AuthorRole string    `json:"author_role"`
-	Content    string    `json:"content"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID             int64                  `json:"id"`
+	IssueID        int64                  `json:"issue_id"`
+	AuthorRole     string                 `json:"author_role"`
+	Content        string                 `json:"content"`
+	RelatedIssueID *int64                 `json:"related_issue_id,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	RelatedIssue   *SupportIssueReference `json:"related_issue,omitempty"`
 }
 
 type PublicSupportIssueAttachment struct {
@@ -130,6 +159,12 @@ type AdminSupportIssue struct {
 	HiddenAt               *time.Time                    `json:"hidden_at,omitempty"`
 	HiddenByUserID         *int64                        `json:"hidden_by_user_id,omitempty"`
 	HideReason             string                        `json:"hide_reason,omitempty"`
+	PinnedAt               *time.Time                    `json:"pinned_at,omitempty"`
+	PinnedByUserID         *int64                        `json:"pinned_by_user_id,omitempty"`
+	PinnedReason           string                        `json:"pinned_reason,omitempty"`
+	SolutionCommentID      *int64                        `json:"solution_comment_id,omitempty"`
+	RelatedIssueID         *int64                        `json:"related_issue_id,omitempty"`
+	RelatedIssueReason     string                        `json:"related_issue_reason,omitempty"`
 	LastCommentAt          *time.Time                    `json:"last_comment_at,omitempty"`
 	LastViewedAt           *time.Time                    `json:"last_viewed_at,omitempty"`
 	CommentCount           int                           `json:"comment_count"`
@@ -141,19 +176,23 @@ type AdminSupportIssue struct {
 	Comments               []AdminSupportIssueComment    `json:"comments,omitempty"`
 	Attachments            []AdminSupportIssueAttachment `json:"attachments,omitempty"`
 	Events                 []SupportIssueEvent           `json:"events,omitempty"`
+	SolutionComment        *AdminSupportIssueComment     `json:"solution_comment,omitempty"`
+	RelatedIssue           *SupportIssueReference        `json:"related_issue,omitempty"`
 }
 
 type AdminSupportIssueComment struct {
-	ID             int64      `json:"id"`
-	IssueID        int64      `json:"issue_id"`
-	AuthorUserID   *int64     `json:"author_user_id,omitempty"`
-	AuthorRole     string     `json:"author_role"`
-	Content        string     `json:"content"`
-	HiddenAt       *time.Time `json:"hidden_at,omitempty"`
-	HiddenByUserID *int64     `json:"hidden_by_user_id,omitempty"`
-	HideReason     string     `json:"hide_reason,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	ID             int64                  `json:"id"`
+	IssueID        int64                  `json:"issue_id"`
+	AuthorUserID   *int64                 `json:"author_user_id,omitempty"`
+	AuthorRole     string                 `json:"author_role"`
+	Content        string                 `json:"content"`
+	RelatedIssueID *int64                 `json:"related_issue_id,omitempty"`
+	HiddenAt       *time.Time             `json:"hidden_at,omitempty"`
+	HiddenByUserID *int64                 `json:"hidden_by_user_id,omitempty"`
+	HideReason     string                 `json:"hide_reason,omitempty"`
+	CreatedAt      time.Time              `json:"created_at"`
+	UpdatedAt      time.Time              `json:"updated_at"`
+	RelatedIssue   *SupportIssueReference `json:"related_issue,omitempty"`
 }
 
 type AdminSupportIssueAttachment struct {
@@ -235,6 +274,9 @@ func PublicSupportIssueFromService(issue *service.SupportIssue) *PublicSupportIs
 		ErrorCode:          issue.ErrorCode,
 		ResolvedAt:         issue.ResolvedAt,
 		LockedAt:           issue.LockedAt,
+		PinnedAt:           issue.PinnedAt,
+		SolutionCommentID:  issue.SolutionCommentID,
+		RelatedIssueID:     issue.RelatedIssueID,
 		LastCommentAt:      issue.LastCommentAt,
 		LastViewedAt:       issue.LastViewedAt,
 		CommentCount:       issue.CommentCount,
@@ -244,6 +286,8 @@ func PublicSupportIssueFromService(issue *service.SupportIssue) *PublicSupportIs
 		UpdatedAt:          issue.UpdatedAt,
 		Comments:           PublicSupportIssueCommentsFromService(issue.Comments),
 		Attachments:        PublicSupportIssueAttachmentsFromService(issue.Attachments),
+		SolutionComment:    PublicSupportIssueCommentFromService(issue.SolutionComment),
+		RelatedIssue:       SupportIssueReferenceFromService(issue.RelatedIssue),
 	}
 	return out
 }
@@ -273,12 +317,14 @@ func PublicSupportIssueCommentFromService(item *service.SupportIssueComment) *Pu
 		return nil
 	}
 	return &PublicSupportIssueComment{
-		ID:         item.ID,
-		IssueID:    item.IssueID,
-		AuthorRole: item.AuthorRole,
-		Content:    item.Content,
-		CreatedAt:  item.CreatedAt,
-		UpdatedAt:  item.UpdatedAt,
+		ID:             item.ID,
+		IssueID:        item.IssueID,
+		AuthorRole:     item.AuthorRole,
+		Content:        item.Content,
+		RelatedIssueID: item.RelatedIssueID,
+		CreatedAt:      item.CreatedAt,
+		UpdatedAt:      item.UpdatedAt,
+		RelatedIssue:   SupportIssueReferenceFromService(item.RelatedIssue),
 	}
 }
 
@@ -353,6 +399,12 @@ func AdminSupportIssueFromService(issue *service.SupportIssue) *AdminSupportIssu
 		HiddenAt:               issue.HiddenAt,
 		HiddenByUserID:         issue.HiddenByUserID,
 		HideReason:             issue.HideReason,
+		PinnedAt:               issue.PinnedAt,
+		PinnedByUserID:         issue.PinnedByUserID,
+		PinnedReason:           issue.PinnedReason,
+		SolutionCommentID:      issue.SolutionCommentID,
+		RelatedIssueID:         issue.RelatedIssueID,
+		RelatedIssueReason:     issue.RelatedIssueReason,
 		LastCommentAt:          issue.LastCommentAt,
 		LastViewedAt:           issue.LastViewedAt,
 		CommentCount:           issue.CommentCount,
@@ -364,6 +416,8 @@ func AdminSupportIssueFromService(issue *service.SupportIssue) *AdminSupportIssu
 		Comments:               AdminSupportIssueCommentsFromService(issue.Comments),
 		Attachments:            AdminSupportIssueAttachmentsFromService(issue.Attachments),
 		Events:                 SupportIssueEventsFromService(issue.Events),
+		SolutionComment:        AdminSupportIssueCommentFromService(issue.SolutionComment),
+		RelatedIssue:           SupportIssueReferenceFromService(issue.RelatedIssue),
 	}
 }
 
@@ -380,20 +434,44 @@ func AdminSupportIssuesFromService(items []service.SupportIssue) []AdminSupportI
 func AdminSupportIssueCommentsFromService(items []service.SupportIssueComment) []AdminSupportIssueComment {
 	out := make([]AdminSupportIssueComment, 0, len(items))
 	for i := range items {
-		out = append(out, AdminSupportIssueComment{
-			ID:             items[i].ID,
-			IssueID:        items[i].IssueID,
-			AuthorUserID:   items[i].AuthorUserID,
-			AuthorRole:     items[i].AuthorRole,
-			Content:        items[i].Content,
-			HiddenAt:       items[i].HiddenAt,
-			HiddenByUserID: items[i].HiddenByUserID,
-			HideReason:     items[i].HideReason,
-			CreatedAt:      items[i].CreatedAt,
-			UpdatedAt:      items[i].UpdatedAt,
-		})
+		if item := AdminSupportIssueCommentFromService(&items[i]); item != nil {
+			out = append(out, *item)
+		}
 	}
 	return out
+}
+
+func AdminSupportIssueCommentFromService(item *service.SupportIssueComment) *AdminSupportIssueComment {
+	if item == nil {
+		return nil
+	}
+	return &AdminSupportIssueComment{
+		ID:             item.ID,
+		IssueID:        item.IssueID,
+		AuthorUserID:   item.AuthorUserID,
+		AuthorRole:     item.AuthorRole,
+		Content:        item.Content,
+		RelatedIssueID: item.RelatedIssueID,
+		HiddenAt:       item.HiddenAt,
+		HiddenByUserID: item.HiddenByUserID,
+		HideReason:     item.HideReason,
+		CreatedAt:      item.CreatedAt,
+		UpdatedAt:      item.UpdatedAt,
+		RelatedIssue:   SupportIssueReferenceFromService(item.RelatedIssue),
+	}
+}
+
+func SupportIssueReferenceFromService(item *service.SupportIssueReference) *SupportIssueReference {
+	if item == nil {
+		return nil
+	}
+	return &SupportIssueReference{
+		ID:         item.ID,
+		PublicID:   item.PublicID,
+		Title:      item.Title,
+		Status:     item.Status,
+		ResolvedAt: item.ResolvedAt,
+	}
 }
 
 func AdminSupportIssueAttachmentsFromService(items []service.SupportIssueAttachment) []AdminSupportIssueAttachment {

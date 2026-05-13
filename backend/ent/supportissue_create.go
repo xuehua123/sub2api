@@ -298,6 +298,90 @@ func (_c *SupportIssueCreate) SetNillableHideReason(v *string) *SupportIssueCrea
 	return _c
 }
 
+// SetPinnedAt sets the "pinned_at" field.
+func (_c *SupportIssueCreate) SetPinnedAt(v time.Time) *SupportIssueCreate {
+	_c.mutation.SetPinnedAt(v)
+	return _c
+}
+
+// SetNillablePinnedAt sets the "pinned_at" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillablePinnedAt(v *time.Time) *SupportIssueCreate {
+	if v != nil {
+		_c.SetPinnedAt(*v)
+	}
+	return _c
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (_c *SupportIssueCreate) SetPinnedByUserID(v int64) *SupportIssueCreate {
+	_c.mutation.SetPinnedByUserID(v)
+	return _c
+}
+
+// SetNillablePinnedByUserID sets the "pinned_by_user_id" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillablePinnedByUserID(v *int64) *SupportIssueCreate {
+	if v != nil {
+		_c.SetPinnedByUserID(*v)
+	}
+	return _c
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (_c *SupportIssueCreate) SetPinnedReason(v string) *SupportIssueCreate {
+	_c.mutation.SetPinnedReason(v)
+	return _c
+}
+
+// SetNillablePinnedReason sets the "pinned_reason" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillablePinnedReason(v *string) *SupportIssueCreate {
+	if v != nil {
+		_c.SetPinnedReason(*v)
+	}
+	return _c
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (_c *SupportIssueCreate) SetSolutionCommentID(v int64) *SupportIssueCreate {
+	_c.mutation.SetSolutionCommentID(v)
+	return _c
+}
+
+// SetNillableSolutionCommentID sets the "solution_comment_id" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableSolutionCommentID(v *int64) *SupportIssueCreate {
+	if v != nil {
+		_c.SetSolutionCommentID(*v)
+	}
+	return _c
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_c *SupportIssueCreate) SetRelatedIssueID(v int64) *SupportIssueCreate {
+	_c.mutation.SetRelatedIssueID(v)
+	return _c
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableRelatedIssueID(v *int64) *SupportIssueCreate {
+	if v != nil {
+		_c.SetRelatedIssueID(*v)
+	}
+	return _c
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (_c *SupportIssueCreate) SetRelatedIssueReason(v string) *SupportIssueCreate {
+	_c.mutation.SetRelatedIssueReason(v)
+	return _c
+}
+
+// SetNillableRelatedIssueReason sets the "related_issue_reason" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableRelatedIssueReason(v *string) *SupportIssueCreate {
+	if v != nil {
+		_c.SetRelatedIssueReason(*v)
+	}
+	return _c
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_c *SupportIssueCreate) SetLastCommentAt(v time.Time) *SupportIssueCreate {
 	_c.mutation.SetLastCommentAt(v)
@@ -555,6 +639,14 @@ func (_c *SupportIssueCreate) defaults() {
 		v := supportissue.DefaultHideReason
 		_c.mutation.SetHideReason(v)
 	}
+	if _, ok := _c.mutation.PinnedReason(); !ok {
+		v := supportissue.DefaultPinnedReason
+		_c.mutation.SetPinnedReason(v)
+	}
+	if _, ok := _c.mutation.RelatedIssueReason(); !ok {
+		v := supportissue.DefaultRelatedIssueReason
+		_c.mutation.SetRelatedIssueReason(v)
+	}
 	if _, ok := _c.mutation.CommentCount(); !ok {
 		v := supportissue.DefaultCommentCount
 		_c.mutation.SetCommentCount(v)
@@ -718,6 +810,22 @@ func (_c *SupportIssueCreate) check() error {
 			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.PinnedReason(); !ok {
+		return &ValidationError{Name: "pinned_reason", err: errors.New(`ent: missing required field "SupportIssue.pinned_reason"`)}
+	}
+	if v, ok := _c.mutation.PinnedReason(); ok {
+		if err := supportissue.PinnedReasonValidator(v); err != nil {
+			return &ValidationError{Name: "pinned_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.pinned_reason": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.RelatedIssueReason(); !ok {
+		return &ValidationError{Name: "related_issue_reason", err: errors.New(`ent: missing required field "SupportIssue.related_issue_reason"`)}
+	}
+	if v, ok := _c.mutation.RelatedIssueReason(); ok {
+		if err := supportissue.RelatedIssueReasonValidator(v); err != nil {
+			return &ValidationError{Name: "related_issue_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.related_issue_reason": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.CommentCount(); !ok {
 		return &ValidationError{Name: "comment_count", err: errors.New(`ent: missing required field "SupportIssue.comment_count"`)}
 	}
@@ -861,6 +969,30 @@ func (_c *SupportIssueCreate) createSpec() (*SupportIssue, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.HideReason(); ok {
 		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
 		_node.HideReason = value
+	}
+	if value, ok := _c.mutation.PinnedAt(); ok {
+		_spec.SetField(supportissue.FieldPinnedAt, field.TypeTime, value)
+		_node.PinnedAt = &value
+	}
+	if value, ok := _c.mutation.PinnedByUserID(); ok {
+		_spec.SetField(supportissue.FieldPinnedByUserID, field.TypeInt64, value)
+		_node.PinnedByUserID = &value
+	}
+	if value, ok := _c.mutation.PinnedReason(); ok {
+		_spec.SetField(supportissue.FieldPinnedReason, field.TypeString, value)
+		_node.PinnedReason = value
+	}
+	if value, ok := _c.mutation.SolutionCommentID(); ok {
+		_spec.SetField(supportissue.FieldSolutionCommentID, field.TypeInt64, value)
+		_node.SolutionCommentID = &value
+	}
+	if value, ok := _c.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueID, field.TypeInt64, value)
+		_node.RelatedIssueID = &value
+	}
+	if value, ok := _c.mutation.RelatedIssueReason(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueReason, field.TypeString, value)
+		_node.RelatedIssueReason = value
 	}
 	if value, ok := _c.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)
@@ -1365,6 +1497,120 @@ func (u *SupportIssueUpsert) SetHideReason(v string) *SupportIssueUpsert {
 // UpdateHideReason sets the "hide_reason" field to the value that was provided on create.
 func (u *SupportIssueUpsert) UpdateHideReason() *SupportIssueUpsert {
 	u.SetExcluded(supportissue.FieldHideReason)
+	return u
+}
+
+// SetPinnedAt sets the "pinned_at" field.
+func (u *SupportIssueUpsert) SetPinnedAt(v time.Time) *SupportIssueUpsert {
+	u.Set(supportissue.FieldPinnedAt, v)
+	return u
+}
+
+// UpdatePinnedAt sets the "pinned_at" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdatePinnedAt() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldPinnedAt)
+	return u
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (u *SupportIssueUpsert) ClearPinnedAt() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldPinnedAt)
+	return u
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (u *SupportIssueUpsert) SetPinnedByUserID(v int64) *SupportIssueUpsert {
+	u.Set(supportissue.FieldPinnedByUserID, v)
+	return u
+}
+
+// UpdatePinnedByUserID sets the "pinned_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdatePinnedByUserID() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldPinnedByUserID)
+	return u
+}
+
+// AddPinnedByUserID adds v to the "pinned_by_user_id" field.
+func (u *SupportIssueUpsert) AddPinnedByUserID(v int64) *SupportIssueUpsert {
+	u.Add(supportissue.FieldPinnedByUserID, v)
+	return u
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (u *SupportIssueUpsert) ClearPinnedByUserID() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldPinnedByUserID)
+	return u
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (u *SupportIssueUpsert) SetPinnedReason(v string) *SupportIssueUpsert {
+	u.Set(supportissue.FieldPinnedReason, v)
+	return u
+}
+
+// UpdatePinnedReason sets the "pinned_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdatePinnedReason() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldPinnedReason)
+	return u
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (u *SupportIssueUpsert) SetSolutionCommentID(v int64) *SupportIssueUpsert {
+	u.Set(supportissue.FieldSolutionCommentID, v)
+	return u
+}
+
+// UpdateSolutionCommentID sets the "solution_comment_id" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateSolutionCommentID() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldSolutionCommentID)
+	return u
+}
+
+// AddSolutionCommentID adds v to the "solution_comment_id" field.
+func (u *SupportIssueUpsert) AddSolutionCommentID(v int64) *SupportIssueUpsert {
+	u.Add(supportissue.FieldSolutionCommentID, v)
+	return u
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (u *SupportIssueUpsert) ClearSolutionCommentID() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldSolutionCommentID)
+	return u
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueUpsert) SetRelatedIssueID(v int64) *SupportIssueUpsert {
+	u.Set(supportissue.FieldRelatedIssueID, v)
+	return u
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateRelatedIssueID() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldRelatedIssueID)
+	return u
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueUpsert) AddRelatedIssueID(v int64) *SupportIssueUpsert {
+	u.Add(supportissue.FieldRelatedIssueID, v)
+	return u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueUpsert) ClearRelatedIssueID() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldRelatedIssueID)
+	return u
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (u *SupportIssueUpsert) SetRelatedIssueReason(v string) *SupportIssueUpsert {
+	u.Set(supportissue.FieldRelatedIssueReason, v)
+	return u
+}
+
+// UpdateRelatedIssueReason sets the "related_issue_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateRelatedIssueReason() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldRelatedIssueReason)
 	return u
 }
 
@@ -1955,6 +2201,139 @@ func (u *SupportIssueUpsertOne) SetHideReason(v string) *SupportIssueUpsertOne {
 func (u *SupportIssueUpsertOne) UpdateHideReason() *SupportIssueUpsertOne {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.UpdateHideReason()
+	})
+}
+
+// SetPinnedAt sets the "pinned_at" field.
+func (u *SupportIssueUpsertOne) SetPinnedAt(v time.Time) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedAt(v)
+	})
+}
+
+// UpdatePinnedAt sets the "pinned_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdatePinnedAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedAt()
+	})
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (u *SupportIssueUpsertOne) ClearPinnedAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearPinnedAt()
+	})
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertOne) SetPinnedByUserID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedByUserID(v)
+	})
+}
+
+// AddPinnedByUserID adds v to the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertOne) AddPinnedByUserID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddPinnedByUserID(v)
+	})
+}
+
+// UpdatePinnedByUserID sets the "pinned_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdatePinnedByUserID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedByUserID()
+	})
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertOne) ClearPinnedByUserID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearPinnedByUserID()
+	})
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (u *SupportIssueUpsertOne) SetPinnedReason(v string) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedReason(v)
+	})
+}
+
+// UpdatePinnedReason sets the "pinned_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdatePinnedReason() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedReason()
+	})
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (u *SupportIssueUpsertOne) SetSolutionCommentID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetSolutionCommentID(v)
+	})
+}
+
+// AddSolutionCommentID adds v to the "solution_comment_id" field.
+func (u *SupportIssueUpsertOne) AddSolutionCommentID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddSolutionCommentID(v)
+	})
+}
+
+// UpdateSolutionCommentID sets the "solution_comment_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateSolutionCommentID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateSolutionCommentID()
+	})
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (u *SupportIssueUpsertOne) ClearSolutionCommentID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearSolutionCommentID()
+	})
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueUpsertOne) SetRelatedIssueID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetRelatedIssueID(v)
+	})
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueUpsertOne) AddRelatedIssueID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddRelatedIssueID(v)
+	})
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateRelatedIssueID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateRelatedIssueID()
+	})
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueUpsertOne) ClearRelatedIssueID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearRelatedIssueID()
+	})
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (u *SupportIssueUpsertOne) SetRelatedIssueReason(v string) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetRelatedIssueReason(v)
+	})
+}
+
+// UpdateRelatedIssueReason sets the "related_issue_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateRelatedIssueReason() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateRelatedIssueReason()
 	})
 }
 
@@ -2733,6 +3112,139 @@ func (u *SupportIssueUpsertBulk) SetHideReason(v string) *SupportIssueUpsertBulk
 func (u *SupportIssueUpsertBulk) UpdateHideReason() *SupportIssueUpsertBulk {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.UpdateHideReason()
+	})
+}
+
+// SetPinnedAt sets the "pinned_at" field.
+func (u *SupportIssueUpsertBulk) SetPinnedAt(v time.Time) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedAt(v)
+	})
+}
+
+// UpdatePinnedAt sets the "pinned_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdatePinnedAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedAt()
+	})
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (u *SupportIssueUpsertBulk) ClearPinnedAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearPinnedAt()
+	})
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertBulk) SetPinnedByUserID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedByUserID(v)
+	})
+}
+
+// AddPinnedByUserID adds v to the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertBulk) AddPinnedByUserID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddPinnedByUserID(v)
+	})
+}
+
+// UpdatePinnedByUserID sets the "pinned_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdatePinnedByUserID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedByUserID()
+	})
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (u *SupportIssueUpsertBulk) ClearPinnedByUserID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearPinnedByUserID()
+	})
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (u *SupportIssueUpsertBulk) SetPinnedReason(v string) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetPinnedReason(v)
+	})
+}
+
+// UpdatePinnedReason sets the "pinned_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdatePinnedReason() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdatePinnedReason()
+	})
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (u *SupportIssueUpsertBulk) SetSolutionCommentID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetSolutionCommentID(v)
+	})
+}
+
+// AddSolutionCommentID adds v to the "solution_comment_id" field.
+func (u *SupportIssueUpsertBulk) AddSolutionCommentID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddSolutionCommentID(v)
+	})
+}
+
+// UpdateSolutionCommentID sets the "solution_comment_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateSolutionCommentID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateSolutionCommentID()
+	})
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (u *SupportIssueUpsertBulk) ClearSolutionCommentID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearSolutionCommentID()
+	})
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueUpsertBulk) SetRelatedIssueID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetRelatedIssueID(v)
+	})
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueUpsertBulk) AddRelatedIssueID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddRelatedIssueID(v)
+	})
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateRelatedIssueID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateRelatedIssueID()
+	})
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueUpsertBulk) ClearRelatedIssueID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearRelatedIssueID()
+	})
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (u *SupportIssueUpsertBulk) SetRelatedIssueReason(v string) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetRelatedIssueReason(v)
+	})
+}
+
+// UpdateRelatedIssueReason sets the "related_issue_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateRelatedIssueReason() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateRelatedIssueReason()
 	})
 }
 

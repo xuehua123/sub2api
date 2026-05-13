@@ -1821,6 +1821,12 @@ var (
 		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "hide_reason", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "pinned_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "pinned_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "pinned_reason", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "solution_comment_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "related_issue_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "related_issue_reason", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "last_comment_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "last_viewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "comment_count", Type: field.TypeInt, Default: 0},
@@ -1845,12 +1851,12 @@ var (
 			{
 				Name:    "supportissue_status_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[33]},
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[39]},
 			},
 			{
 				Name:    "supportissue_status_last_comment_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[25]},
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[31]},
 			},
 			{
 				Name:    "supportissue_category_status",
@@ -1860,7 +1866,7 @@ var (
 			{
 				Name:    "supportissue_created_by_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[18], SupportIssuesColumns[32]},
+				Columns: []*schema.Column{SupportIssuesColumns[18], SupportIssuesColumns[38]},
 			},
 			{
 				Name:    "supportissue_account_email_normalized",
@@ -1878,14 +1884,29 @@ var (
 				Columns: []*schema.Column{SupportIssuesColumns[22]},
 			},
 			{
+				Name:    "supportissue_pinned_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[25]},
+			},
+			{
+				Name:    "supportissue_solution_comment_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[28]},
+			},
+			{
+				Name:    "supportissue_related_issue_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[29]},
+			},
+			{
 				Name:    "supportissue_view_count",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[30]},
+				Columns: []*schema.Column{SupportIssuesColumns[36]},
 			},
 			{
 				Name:    "supportissue_last_viewed_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[26]},
+				Columns: []*schema.Column{SupportIssuesColumns[32]},
 			},
 			{
 				Name:    "supportissue_http_status",
@@ -1942,6 +1963,7 @@ var (
 		{Name: "author_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "author_role", Type: field.TypeString, Size: 16},
 		{Name: "content", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "related_issue_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "hide_reason", Type: field.TypeString, Size: 255, Default: ""},
@@ -1957,7 +1979,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "support_issue_comments_support_issues_comments",
-				Columns:    []*schema.Column{SupportIssueCommentsColumns[9]},
+				Columns:    []*schema.Column{SupportIssueCommentsColumns[10]},
 				RefColumns: []*schema.Column{SupportIssuesColumns[0]},
 				OnDelete:   schema.Cascade,
 			},
@@ -1966,12 +1988,17 @@ var (
 			{
 				Name:    "supportissuecomment_issue_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssueCommentsColumns[9], SupportIssueCommentsColumns[7]},
+				Columns: []*schema.Column{SupportIssueCommentsColumns[10], SupportIssueCommentsColumns[8]},
 			},
 			{
 				Name:    "supportissuecomment_issue_id_hidden_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssueCommentsColumns[9], SupportIssueCommentsColumns[4]},
+				Columns: []*schema.Column{SupportIssueCommentsColumns[10], SupportIssueCommentsColumns[5]},
+			},
+			{
+				Name:    "supportissuecomment_related_issue_id",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueCommentsColumns[4]},
 			},
 		},
 	}

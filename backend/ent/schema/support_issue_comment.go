@@ -35,6 +35,9 @@ func (SupportIssueComment) Fields() []ent.Field {
 		field.String("content").
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
 			NotEmpty(),
+		field.Int64("related_issue_id").
+			Optional().
+			Nillable(),
 		field.Time("hidden_at").
 			Optional().
 			Nillable().
@@ -70,5 +73,6 @@ func (SupportIssueComment) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("issue_id", "created_at"),
 		index.Fields("issue_id", "hidden_at"),
+		index.Fields("related_issue_id"),
 	}
 }

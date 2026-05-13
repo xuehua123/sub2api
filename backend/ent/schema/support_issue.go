@@ -105,6 +105,25 @@ func (SupportIssue) Fields() []ent.Field {
 		field.String("hide_reason").
 			MaxLen(255).
 			Default(""),
+		field.Time("pinned_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Int64("pinned_by_user_id").
+			Optional().
+			Nillable(),
+		field.String("pinned_reason").
+			MaxLen(255).
+			Default(""),
+		field.Int64("solution_comment_id").
+			Optional().
+			Nillable(),
+		field.Int64("related_issue_id").
+			Optional().
+			Nillable(),
+		field.String("related_issue_reason").
+			MaxLen(255).
+			Default(""),
 		field.Time("last_comment_at").
 			Optional().
 			Nillable().
@@ -158,6 +177,9 @@ func (SupportIssue) Indexes() []ent.Index {
 		index.Fields("account_email_normalized"),
 		index.Fields("occurred_at"),
 		index.Fields("hidden_at"),
+		index.Fields("pinned_at"),
+		index.Fields("solution_comment_id"),
+		index.Fields("related_issue_id"),
 		index.Fields("view_count"),
 		index.Fields("last_viewed_at"),
 		index.Fields("http_status"),

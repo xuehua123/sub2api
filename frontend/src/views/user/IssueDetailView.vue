@@ -23,6 +23,7 @@
                 <span :class="statusBadgeClass(issue.status)">{{ t(`issueCenter.status.${issue.status}`) }}</span>
                 <span :class="severityBadgeClass(issue.severity)">{{ t(`issueCenter.severity.${issue.severity}`) }}</span>
                 <span class="badge badge-gray">{{ t(`issueCenter.category.${issue.category}`) }}</span>
+                <span v-if="issue.pinned_at" class="badge badge-primary">{{ t('issueCenter.detail.pinned') }}</span>
               </div>
               <h1 class="mt-2 break-words text-2xl font-semibold tracking-normal text-gray-900 dark:text-white">
                 {{ issue.title }}
@@ -48,6 +49,31 @@
               >
                 {{ resolving ? t('common.processing') : t('issueCenter.detail.markResolved') }}
               </button>
+            </div>
+          </div>
+
+          <div
+            v-if="issue.related_issue"
+            class="mt-4 rounded-lg border border-primary-200 bg-primary-50 p-3 text-sm text-primary-800 dark:border-primary-900/60 dark:bg-primary-950/30 dark:text-primary-200"
+            data-testid="related-solved-issue"
+          >
+            <div class="font-semibold">{{ t('issueCenter.detail.relatedSolvedIssue') }}</div>
+            <RouterLink class="mt-1 inline-flex break-words underline" :to="`/issues/${issue.related_issue.id}`">
+              {{ issue.related_issue.public_id }} · {{ issue.related_issue.title }}
+            </RouterLink>
+          </div>
+
+          <div
+            v-if="issue.solution_comment"
+            class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm dark:border-emerald-900/60 dark:bg-emerald-950/30"
+            data-testid="solution-comment"
+          >
+            <div class="font-semibold text-emerald-800 dark:text-emerald-200">{{ t('issueCenter.detail.solution') }}</div>
+            <p class="mt-2 whitespace-pre-wrap break-words leading-6 text-emerald-900 dark:text-emerald-100">
+              {{ issue.solution_comment.content }}
+            </p>
+            <div class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
+              {{ formatDateTime(issue.solution_comment.created_at) }}
             </div>
           </div>
 
@@ -112,11 +138,19 @@
             >
               <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <span class="badge badge-gray">{{ t(`issueCenter.roles.${comment.author_role}`) }}</span>
+                <span v-if="comment.id === issue.solution_comment_id" class="badge badge-success">{{ t('issueCenter.detail.solution') }}</span>
                 <span>{{ formatDateTime(comment.created_at) }}</span>
               </div>
               <p class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
                 {{ comment.content }}
               </p>
+              <RouterLink
+                v-if="comment.related_issue"
+                class="mt-2 inline-flex text-sm font-medium text-primary-600 underline dark:text-primary-300"
+                :to="`/issues/${comment.related_issue.id}`"
+              >
+                {{ t('issueCenter.detail.relatedIssueLink', { publicId: comment.related_issue.public_id }) }}
+              </RouterLink>
             </article>
           </div>
           <p v-else class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ t('issueCenter.detail.noComments') }}</p>

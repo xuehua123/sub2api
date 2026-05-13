@@ -55,6 +55,20 @@ func (_c *SupportIssueCommentCreate) SetContent(v string) *SupportIssueCommentCr
 	return _c
 }
 
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_c *SupportIssueCommentCreate) SetRelatedIssueID(v int64) *SupportIssueCommentCreate {
+	_c.mutation.SetRelatedIssueID(v)
+	return _c
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_c *SupportIssueCommentCreate) SetNillableRelatedIssueID(v *int64) *SupportIssueCommentCreate {
+	if v != nil {
+		_c.SetRelatedIssueID(*v)
+	}
+	return _c
+}
+
 // SetHiddenAt sets the "hidden_at" field.
 func (_c *SupportIssueCommentCreate) SetHiddenAt(v time.Time) *SupportIssueCommentCreate {
 	_c.mutation.SetHiddenAt(v)
@@ -256,6 +270,10 @@ func (_c *SupportIssueCommentCreate) createSpec() (*SupportIssueComment, *sqlgra
 		_spec.SetField(supportissuecomment.FieldContent, field.TypeString, value)
 		_node.Content = value
 	}
+	if value, ok := _c.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissuecomment.FieldRelatedIssueID, field.TypeInt64, value)
+		_node.RelatedIssueID = &value
+	}
 	if value, ok := _c.mutation.HiddenAt(); ok {
 		_spec.SetField(supportissuecomment.FieldHiddenAt, field.TypeTime, value)
 		_node.HiddenAt = &value
@@ -402,6 +420,30 @@ func (u *SupportIssueCommentUpsert) SetContent(v string) *SupportIssueCommentUps
 // UpdateContent sets the "content" field to the value that was provided on create.
 func (u *SupportIssueCommentUpsert) UpdateContent() *SupportIssueCommentUpsert {
 	u.SetExcluded(supportissuecomment.FieldContent)
+	return u
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueCommentUpsert) SetRelatedIssueID(v int64) *SupportIssueCommentUpsert {
+	u.Set(supportissuecomment.FieldRelatedIssueID, v)
+	return u
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueCommentUpsert) UpdateRelatedIssueID() *SupportIssueCommentUpsert {
+	u.SetExcluded(supportissuecomment.FieldRelatedIssueID)
+	return u
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueCommentUpsert) AddRelatedIssueID(v int64) *SupportIssueCommentUpsert {
+	u.Add(supportissuecomment.FieldRelatedIssueID, v)
+	return u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueCommentUpsert) ClearRelatedIssueID() *SupportIssueCommentUpsert {
+	u.SetNull(supportissuecomment.FieldRelatedIssueID)
 	return u
 }
 
@@ -583,6 +625,34 @@ func (u *SupportIssueCommentUpsertOne) SetContent(v string) *SupportIssueComment
 func (u *SupportIssueCommentUpsertOne) UpdateContent() *SupportIssueCommentUpsertOne {
 	return u.Update(func(s *SupportIssueCommentUpsert) {
 		s.UpdateContent()
+	})
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertOne) SetRelatedIssueID(v int64) *SupportIssueCommentUpsertOne {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.SetRelatedIssueID(v)
+	})
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertOne) AddRelatedIssueID(v int64) *SupportIssueCommentUpsertOne {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.AddRelatedIssueID(v)
+	})
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueCommentUpsertOne) UpdateRelatedIssueID() *SupportIssueCommentUpsertOne {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.UpdateRelatedIssueID()
+	})
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertOne) ClearRelatedIssueID() *SupportIssueCommentUpsertOne {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.ClearRelatedIssueID()
 	})
 }
 
@@ -941,6 +1011,34 @@ func (u *SupportIssueCommentUpsertBulk) SetContent(v string) *SupportIssueCommen
 func (u *SupportIssueCommentUpsertBulk) UpdateContent() *SupportIssueCommentUpsertBulk {
 	return u.Update(func(s *SupportIssueCommentUpsert) {
 		s.UpdateContent()
+	})
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertBulk) SetRelatedIssueID(v int64) *SupportIssueCommentUpsertBulk {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.SetRelatedIssueID(v)
+	})
+}
+
+// AddRelatedIssueID adds v to the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertBulk) AddRelatedIssueID(v int64) *SupportIssueCommentUpsertBulk {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.AddRelatedIssueID(v)
+	})
+}
+
+// UpdateRelatedIssueID sets the "related_issue_id" field to the value that was provided on create.
+func (u *SupportIssueCommentUpsertBulk) UpdateRelatedIssueID() *SupportIssueCommentUpsertBulk {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.UpdateRelatedIssueID()
+	})
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (u *SupportIssueCommentUpsertBulk) ClearRelatedIssueID() *SupportIssueCommentUpsertBulk {
+	return u.Update(func(s *SupportIssueCommentUpsert) {
+		s.ClearRelatedIssueID()
 	})
 }
 

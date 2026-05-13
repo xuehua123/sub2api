@@ -289,7 +289,7 @@ func TestSupportIssueService_AddCommentRejectsLockedIssue(t *testing.T) {
 	}}
 	svc := NewSupportIssueService(repo)
 
-	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.")
+	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.", nil)
 
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrSupportIssueLocked))
@@ -304,7 +304,7 @@ func TestSupportIssueService_AddCommentRejectsResolvedIssue(t *testing.T) {
 	}}
 	svc := NewSupportIssueService(repo)
 
-	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.")
+	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.", nil)
 
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrSupportIssueLocked))
@@ -319,7 +319,7 @@ func TestSupportIssueService_AddCommentOnOpenIssueCreatesCommentedEvent(t *testi
 	}}
 	svc := NewSupportIssueService(repo)
 
-	comment, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "  I can reproduce this.  ")
+	comment, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "  I can reproduce this.  ", nil)
 
 	require.NoError(t, err)
 	require.True(t, repo.addCommentCalled)
@@ -668,6 +668,32 @@ type fakeSupportIssueRepository struct {
 	restoreIssueEvent   SupportIssueEvent
 	restoreIssueErr     error
 
+	pinIssueCalled          bool
+	lastPinIssueInput       PinSupportIssueInput
+	pinIssueEvent           SupportIssueEvent
+	pinIssueErr             error
+	unpinIssueCalled        bool
+	lastUnpinIssueID        int64
+	unpinIssueEvent         SupportIssueEvent
+	unpinIssueErr           error
+	setSolutionCalled       bool
+	lastSolutionIssueID     int64
+	lastSolutionCommentID   int64
+	setSolutionEvent        SupportIssueEvent
+	setSolutionErr          error
+	clearSolutionCalled     bool
+	lastClearSolutionID     int64
+	clearSolutionEvent      SupportIssueEvent
+	clearSolutionErr        error
+	setRelatedIssueCalled   bool
+	lastSetRelatedInput     SetRelatedSupportIssueInput
+	setRelatedIssueEvent    SupportIssueEvent
+	setRelatedIssueErr      error
+	clearRelatedIssueCalled bool
+	lastClearRelatedID      int64
+	clearRelatedIssueEvent  SupportIssueEvent
+	clearRelatedIssueErr    error
+
 	hideCommentCalled    bool
 	lastHideCommentInput HideSupportIssueCommentInput
 	hideCommentEvent     SupportIssueEvent
@@ -858,6 +884,110 @@ func (r *fakeSupportIssueRepository) RestoreIssue(ctx context.Context, issueID i
 		copy.HiddenAt = nil
 		copy.HiddenByUserID = nil
 		copy.HideReason = ""
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) PinIssue(ctx context.Context, input PinSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error) {
+	r.pinIssueCalled = true
+	r.lastPinIssueInput = input
+	r.pinIssueEvent = event
+	if r.pinIssueErr != nil {
+		return nil, r.pinIssueErr
+	}
+	now := time.Now()
+	updated := &SupportIssue{ID: input.IssueID, PinnedAt: &now, PinnedByUserID: &input.PinnedByUserID, PinnedReason: input.Reason}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.PinnedAt = &now
+		copy.PinnedByUserID = &input.PinnedByUserID
+		copy.PinnedReason = input.Reason
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) UnpinIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error) {
+	r.unpinIssueCalled = true
+	r.lastUnpinIssueID = issueID
+	r.unpinIssueEvent = event
+	if r.unpinIssueErr != nil {
+		return nil, r.unpinIssueErr
+	}
+	updated := &SupportIssue{ID: issueID}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.PinnedAt = nil
+		copy.PinnedByUserID = nil
+		copy.PinnedReason = ""
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) SetSolutionComment(ctx context.Context, issueID int64, commentID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error) {
+	r.setSolutionCalled = true
+	r.lastSolutionIssueID = issueID
+	r.lastSolutionCommentID = commentID
+	r.setSolutionEvent = event
+	if r.setSolutionErr != nil {
+		return nil, r.setSolutionErr
+	}
+	updated := &SupportIssue{ID: issueID, SolutionCommentID: &commentID}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.SolutionCommentID = &commentID
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) ClearSolutionComment(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error) {
+	r.clearSolutionCalled = true
+	r.lastClearSolutionID = issueID
+	r.clearSolutionEvent = event
+	if r.clearSolutionErr != nil {
+		return nil, r.clearSolutionErr
+	}
+	updated := &SupportIssue{ID: issueID}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.SolutionCommentID = nil
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) SetRelatedIssue(ctx context.Context, input SetRelatedSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error) {
+	r.setRelatedIssueCalled = true
+	r.lastSetRelatedInput = input
+	r.setRelatedIssueEvent = event
+	if r.setRelatedIssueErr != nil {
+		return nil, r.setRelatedIssueErr
+	}
+	updated := &SupportIssue{ID: input.IssueID, RelatedIssueID: &input.RelatedIssueID, RelatedIssueReason: input.Reason}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.RelatedIssueID = &input.RelatedIssueID
+		copy.RelatedIssueReason = input.Reason
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) ClearRelatedIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error) {
+	r.clearRelatedIssueCalled = true
+	r.lastClearRelatedID = issueID
+	r.clearRelatedIssueEvent = event
+	if r.clearRelatedIssueErr != nil {
+		return nil, r.clearRelatedIssueErr
+	}
+	updated := &SupportIssue{ID: issueID}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.RelatedIssueID = nil
+		copy.RelatedIssueReason = ""
 		updated = &copy
 	}
 	return updated, nil

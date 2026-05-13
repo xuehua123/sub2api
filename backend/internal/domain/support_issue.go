@@ -53,6 +53,12 @@ const (
 	SupportIssueEventAttachmentHidden = "attachment_hidden"
 	SupportIssueEventIssueHidden      = "issue_hidden"
 	SupportIssueEventIssueRestored    = "issue_restored"
+	SupportIssueEventIssuePinned      = "issue_pinned"
+	SupportIssueEventIssueUnpinned    = "issue_unpinned"
+	SupportIssueEventSolutionMarked   = "solution_marked"
+	SupportIssueEventSolutionCleared  = "solution_cleared"
+	SupportIssueEventRelatedSet       = "related_set"
+	SupportIssueEventRelatedCleared   = "related_cleared"
 )
 
 const (

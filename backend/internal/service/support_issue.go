@@ -53,6 +53,12 @@ const (
 	SupportIssueEventAttachmentHidden = domain.SupportIssueEventAttachmentHidden
 	SupportIssueEventIssueHidden      = domain.SupportIssueEventIssueHidden
 	SupportIssueEventIssueRestored    = domain.SupportIssueEventIssueRestored
+	SupportIssueEventIssuePinned      = domain.SupportIssueEventIssuePinned
+	SupportIssueEventIssueUnpinned    = domain.SupportIssueEventIssueUnpinned
+	SupportIssueEventSolutionMarked   = domain.SupportIssueEventSolutionMarked
+	SupportIssueEventSolutionCleared  = domain.SupportIssueEventSolutionCleared
+	SupportIssueEventRelatedSet       = domain.SupportIssueEventRelatedSet
+	SupportIssueEventRelatedCleared   = domain.SupportIssueEventRelatedCleared
 )
 
 const (
@@ -113,6 +119,12 @@ type SupportIssue struct {
 	HiddenAt               *time.Time
 	HiddenByUserID         *int64
 	HideReason             string
+	PinnedAt               *time.Time
+	PinnedByUserID         *int64
+	PinnedReason           string
+	SolutionCommentID      *int64
+	RelatedIssueID         *int64
+	RelatedIssueReason     string
 	LastCommentAt          *time.Time
 	LastViewedAt           *time.Time
 	CommentCount           int
@@ -125,6 +137,16 @@ type SupportIssue struct {
 	Comments               []SupportIssueComment
 	Attachments            []SupportIssueAttachment
 	Events                 []SupportIssueEvent
+	SolutionComment        *SupportIssueComment
+	RelatedIssue           *SupportIssueReference
+}
+
+type SupportIssueReference struct {
+	ID         int64
+	PublicID   string
+	Title      string
+	Status     string
+	ResolvedAt *time.Time
 }
 
 type SupportIssueComment struct {
@@ -133,11 +155,13 @@ type SupportIssueComment struct {
 	AuthorUserID   *int64
 	AuthorRole     string
 	Content        string
+	RelatedIssueID *int64
 	HiddenAt       *time.Time
 	HiddenByUserID *int64
 	HideReason     string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	RelatedIssue   *SupportIssueReference
 }
 
 type SupportIssueAttachment struct {
@@ -212,10 +236,11 @@ type SearchSupportIssueQuery struct {
 }
 
 type AddSupportIssueCommentInput struct {
-	IssueID      int64
-	AuthorUserID int64
-	AuthorRole   string
-	Content      string
+	IssueID        int64
+	AuthorUserID   int64
+	AuthorRole     string
+	Content        string
+	RelatedIssueID *int64
 }
 
 type UpdateSupportIssueStatusInput struct {
@@ -244,6 +269,19 @@ type HideSupportIssueInput struct {
 	HideReason     string
 }
 
+type PinSupportIssueInput struct {
+	IssueID        int64
+	PinnedByUserID int64
+	Reason         string
+}
+
+type SetRelatedSupportIssueInput struct {
+	IssueID        int64
+	RelatedIssueID int64
+	ActorUserID    int64
+	Reason         string
+}
+
 type SupportIssueActor struct {
 	UserID  int64
 	Email   string
@@ -270,6 +308,12 @@ type SupportIssueRepository interface {
 	UpdateStatus(ctx context.Context, issueID int64, nextStatus string, actorUserID int64, actorIsAdmin bool, event SupportIssueEvent) (*SupportIssue, error)
 	HideIssue(ctx context.Context, input HideSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error)
 	RestoreIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
+	PinIssue(ctx context.Context, input PinSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error)
+	UnpinIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
+	SetSolutionComment(ctx context.Context, issueID int64, commentID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
+	ClearSolutionComment(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
+	SetRelatedIssue(ctx context.Context, input SetRelatedSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error)
+	ClearRelatedIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
 	HideComment(ctx context.Context, input HideSupportIssueCommentInput, event SupportIssueEvent) error
 	HideAttachment(ctx context.Context, input HideSupportIssueAttachmentInput, event SupportIssueEvent) error
 	ListEvents(ctx context.Context, issueID int64) ([]SupportIssueEvent, error)

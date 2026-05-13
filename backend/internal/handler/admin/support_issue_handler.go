@@ -22,6 +22,12 @@ type supportIssueAdminService interface {
 	AdminReopen(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
 	AdminHideIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
 	AdminRestoreIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
+	AdminPinIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
+	AdminUnpinIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
+	AdminMarkSolution(ctx context.Context, actor service.SupportIssueActor, issueID int64, commentID int64) (*service.SupportIssue, error)
+	AdminClearSolution(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
+	AdminSetRelatedIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, relatedIssueID int64, reason string) (*service.SupportIssue, error)
+	AdminClearRelatedIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
 	AdminHideComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, commentID int64, reason string) error
 	AdminHideAttachment(ctx context.Context, actor service.SupportIssueActor, issueID int64, attachmentID int64, reason string) error
 	AdminListEvents(ctx context.Context, issueID int64) ([]service.SupportIssueEvent, error)
@@ -168,6 +174,138 @@ func (h *SupportIssueHandler) RestoreIssue(c *gin.Context) {
 	}
 
 	issue, err := h.supportIssueService.AdminRestoreIssue(c.Request.Context(), actor, issueID, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) PinIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.PinSupportIssueRequest
+	if err := c.ShouldBindJSON(&req); err != nil && c.Request.ContentLength > 0 {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminPinIssue(c.Request.Context(), actor, issueID, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) UnpinIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminUnpinIssue(c.Request.Context(), actor, issueID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) MarkSolution(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.MarkSupportIssueSolutionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminMarkSolution(c.Request.Context(), actor, issueID, req.CommentID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) ClearSolution(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminClearSolution(c.Request.Context(), actor, issueID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) SetRelatedIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.SetRelatedSupportIssueRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminSetRelatedIssue(c.Request.Context(), actor, issueID, req.RelatedIssueID, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) ClearRelatedIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminClearRelatedIssue(c.Request.Context(), actor, issueID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

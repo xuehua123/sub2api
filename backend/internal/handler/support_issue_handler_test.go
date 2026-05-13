@@ -272,9 +272,10 @@ type fakeSupportIssueUserService struct {
 	createdActor service.SupportIssueActor
 	createdInput service.CreateSupportIssueInput
 
-	addCommentCalled bool
-	resolveCalled    bool
-	lastViewer       service.SupportIssueViewer
+	addCommentCalled   bool
+	lastRelatedIssueID *int64
+	resolveCalled      bool
+	lastViewer         service.SupportIssueViewer
 
 	uploadAttachmentCalled bool
 	lastUploadInput        service.UploadSupportIssueAttachmentInput
@@ -312,9 +313,10 @@ func (f *fakeSupportIssueUserService) GetPublic(ctx context.Context, issueID int
 	return supportIssueHandlerFixture(), nil
 }
 
-func (f *fakeSupportIssueUserService) AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string) (*service.SupportIssueComment, error) {
+func (f *fakeSupportIssueUserService) AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string, relatedIssueID *int64) (*service.SupportIssueComment, error) {
 	f.addCommentCalled = true
-	return &service.SupportIssueComment{ID: 20, IssueID: issueID, AuthorRole: service.RoleUser, Content: content, CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
+	f.lastRelatedIssueID = relatedIssueID
+	return &service.SupportIssueComment{ID: 20, IssueID: issueID, AuthorRole: service.RoleUser, Content: content, RelatedIssueID: relatedIssueID, CreatedAt: time.Now(), UpdatedAt: time.Now()}, nil
 }
 
 func (f *fakeSupportIssueUserService) Resolve(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error) {

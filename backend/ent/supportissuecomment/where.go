@@ -75,6 +75,11 @@ func Content(v string) predicate.SupportIssueComment {
 	return predicate.SupportIssueComment(sql.FieldEQ(FieldContent, v))
 }
 
+// RelatedIssueID applies equality check predicate on the "related_issue_id" field. It's identical to RelatedIssueIDEQ.
+func RelatedIssueID(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldEQ(FieldRelatedIssueID, v))
+}
+
 // HiddenAt applies equality check predicate on the "hidden_at" field. It's identical to HiddenAtEQ.
 func HiddenAt(v time.Time) predicate.SupportIssueComment {
 	return predicate.SupportIssueComment(sql.FieldEQ(FieldHiddenAt, v))
@@ -298,6 +303,56 @@ func ContentEqualFold(v string) predicate.SupportIssueComment {
 // ContentContainsFold applies the ContainsFold predicate on the "content" field.
 func ContentContainsFold(v string) predicate.SupportIssueComment {
 	return predicate.SupportIssueComment(sql.FieldContainsFold(FieldContent, v))
+}
+
+// RelatedIssueIDEQ applies the EQ predicate on the "related_issue_id" field.
+func RelatedIssueIDEQ(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldEQ(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDNEQ applies the NEQ predicate on the "related_issue_id" field.
+func RelatedIssueIDNEQ(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldNEQ(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDIn applies the In predicate on the "related_issue_id" field.
+func RelatedIssueIDIn(vs ...int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldIn(FieldRelatedIssueID, vs...))
+}
+
+// RelatedIssueIDNotIn applies the NotIn predicate on the "related_issue_id" field.
+func RelatedIssueIDNotIn(vs ...int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldNotIn(FieldRelatedIssueID, vs...))
+}
+
+// RelatedIssueIDGT applies the GT predicate on the "related_issue_id" field.
+func RelatedIssueIDGT(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldGT(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDGTE applies the GTE predicate on the "related_issue_id" field.
+func RelatedIssueIDGTE(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldGTE(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDLT applies the LT predicate on the "related_issue_id" field.
+func RelatedIssueIDLT(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldLT(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDLTE applies the LTE predicate on the "related_issue_id" field.
+func RelatedIssueIDLTE(v int64) predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldLTE(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDIsNil applies the IsNil predicate on the "related_issue_id" field.
+func RelatedIssueIDIsNil() predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldIsNull(FieldRelatedIssueID))
+}
+
+// RelatedIssueIDNotNil applies the NotNil predicate on the "related_issue_id" field.
+func RelatedIssueIDNotNil() predicate.SupportIssueComment {
+	return predicate.SupportIssueComment(sql.FieldNotNull(FieldRelatedIssueID))
 }
 
 // HiddenAtEQ applies the EQ predicate on the "hidden_at" field.

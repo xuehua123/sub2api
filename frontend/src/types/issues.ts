@@ -15,11 +15,21 @@ export type SupportIssueSeverity = 'blocked' | 'partial' | 'intermittent' | 'que
 
 export type SupportIssueScreenshotLanguage = 'zh' | 'en' | 'mixed' | 'unknown'
 
+export interface SupportIssueReference {
+  id: number
+  public_id: string
+  title: string
+  status: SupportIssueStatus
+  resolved_at?: string | null
+}
+
 export interface PublicSupportIssueComment {
   id: number
   issue_id: number
   author_role: string
   content: string
+  related_issue_id?: number | null
+  related_issue?: SupportIssueReference | null
   created_at: string
   updated_at: string
 }
@@ -63,6 +73,10 @@ export interface PublicSupportIssue {
   error_code?: string
   resolved_at?: string | null
   locked_at?: string | null
+  pinned_at?: string | null
+  solution_comment_id?: number | null
+  related_issue_id?: number | null
+  related_issue?: SupportIssueReference | null
   last_comment_at?: string | null
   last_viewed_at?: string | null
   comment_count: number
@@ -72,6 +86,7 @@ export interface PublicSupportIssue {
   updated_at: string
   comments?: PublicSupportIssueComment[]
   attachments?: PublicSupportIssueAttachment[]
+  solution_comment?: PublicSupportIssueComment | null
 }
 
 export interface AdminSupportIssueComment extends PublicSupportIssueComment {
@@ -109,10 +124,18 @@ export interface AdminSupportIssue
   hidden_at?: string | null
   hidden_by_user_id?: number | null
   hide_reason?: string
+  pinned_at?: string | null
+  pinned_by_user_id?: number | null
+  pinned_reason?: string
+  solution_comment_id?: number | null
+  related_issue_id?: number | null
+  related_issue_reason?: string
   hidden_comment_count: number
   comments?: AdminSupportIssueComment[]
   attachments?: AdminSupportIssueAttachment[]
   events?: SupportIssueEvent[]
+  solution_comment?: AdminSupportIssueComment | null
+  related_issue?: SupportIssueReference | null
 }
 
 export interface CreateSupportIssueRequest {
@@ -134,6 +157,7 @@ export interface CreateSupportIssueRequest {
 
 export interface AddSupportIssueCommentRequest {
   content: string
+  related_issue_id?: number | null
 }
 
 export interface UpdateSupportIssueStatusRequest {
@@ -142,6 +166,19 @@ export interface UpdateSupportIssueStatusRequest {
 }
 
 export interface SupportIssueReasonRequest {
+  reason?: string
+}
+
+export interface PinSupportIssueRequest {
+  reason?: string
+}
+
+export interface MarkSupportIssueSolutionRequest {
+  comment_id: number
+}
+
+export interface SetRelatedSupportIssueRequest {
+  related_issue_id: number
   reason?: string
 }
 

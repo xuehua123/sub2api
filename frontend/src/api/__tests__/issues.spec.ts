@@ -118,8 +118,8 @@ describe('issues api', () => {
     expect(createRequestOmitsInlineAttachments).toBe(true)
   })
 
-  it('adds a comment', async () => {
-    const payload = { content: 'same issue here' }
+  it('adds a comment and can carry a related solved issue link', async () => {
+    const payload = { content: 'same issue here', related_issue_id: 456 }
 
     await issuesAPI.addComment(123, payload)
 

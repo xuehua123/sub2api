@@ -22,6 +22,8 @@ const (
 	FieldAuthorRole = "author_role"
 	// FieldContent holds the string denoting the content field in the database.
 	FieldContent = "content"
+	// FieldRelatedIssueID holds the string denoting the related_issue_id field in the database.
+	FieldRelatedIssueID = "related_issue_id"
 	// FieldHiddenAt holds the string denoting the hidden_at field in the database.
 	FieldHiddenAt = "hidden_at"
 	// FieldHiddenByUserID holds the string denoting the hidden_by_user_id field in the database.
@@ -52,6 +54,7 @@ var Columns = []string{
 	FieldAuthorUserID,
 	FieldAuthorRole,
 	FieldContent,
+	FieldRelatedIssueID,
 	FieldHiddenAt,
 	FieldHiddenByUserID,
 	FieldHideReason,
@@ -112,6 +115,11 @@ func ByAuthorRole(opts ...sql.OrderTermOption) OrderOption {
 // ByContent orders the results by the content field.
 func ByContent(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldContent, opts...).ToFunc()
+}
+
+// ByRelatedIssueID orders the results by the related_issue_id field.
+func ByRelatedIssueID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelatedIssueID, opts...).ToFunc()
 }
 
 // ByHiddenAt orders the results by the hidden_at field.

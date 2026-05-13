@@ -121,6 +121,12 @@ type fakeSupportIssueAdminService struct {
 	reopenCalled         bool
 	hideIssueCalled      bool
 	restoreIssueCalled   bool
+	pinIssueCalled       bool
+	unpinIssueCalled     bool
+	markSolutionCalled   bool
+	clearSolutionCalled  bool
+	setRelatedCalled     bool
+	clearRelatedCalled   bool
 	hideCommentCalled    bool
 	hideAttachmentCalled bool
 	eventsCalled         bool
@@ -129,6 +135,7 @@ type fakeSupportIssueAdminService struct {
 	lastIssueID      int64
 	lastCommentID    int64
 	lastAttachmentID int64
+	lastRelatedID    int64
 	lastStatus       string
 	lastReason       string
 }
@@ -186,6 +193,70 @@ func (f *fakeSupportIssueAdminService) AdminRestoreIssue(ctx context.Context, ac
 	f.lastActor = actor
 	f.lastIssueID = issueID
 	f.lastReason = reason
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminPinIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error) {
+	f.pinIssueCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	f.lastReason = reason
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	now := time.Now()
+	issue.PinnedAt = &now
+	issue.PinnedReason = reason
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminUnpinIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error) {
+	f.unpinIssueCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminMarkSolution(ctx context.Context, actor service.SupportIssueActor, issueID int64, commentID int64) (*service.SupportIssue, error) {
+	f.markSolutionCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	f.lastCommentID = commentID
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	issue.SolutionCommentID = &commentID
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminClearSolution(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error) {
+	f.clearSolutionCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminSetRelatedIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, relatedIssueID int64, reason string) (*service.SupportIssue, error) {
+	f.setRelatedCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	f.lastRelatedID = relatedIssueID
+	f.lastReason = reason
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	issue.RelatedIssueID = &relatedIssueID
+	issue.RelatedIssueReason = reason
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminClearRelatedIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error) {
+	f.clearRelatedCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
 	issue := adminSupportIssueHandlerFixture()
 	issue.ID = issueID
 	return issue, nil

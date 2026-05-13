@@ -26,6 +26,8 @@ type SupportIssueComment struct {
 	AuthorRole string `json:"author_role,omitempty"`
 	// Content holds the value of the "content" field.
 	Content string `json:"content,omitempty"`
+	// RelatedIssueID holds the value of the "related_issue_id" field.
+	RelatedIssueID *int64 `json:"related_issue_id,omitempty"`
 	// HiddenAt holds the value of the "hidden_at" field.
 	HiddenAt *time.Time `json:"hidden_at,omitempty"`
 	// HiddenByUserID holds the value of the "hidden_by_user_id" field.
@@ -67,7 +69,7 @@ func (*SupportIssueComment) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case supportissuecomment.FieldID, supportissuecomment.FieldIssueID, supportissuecomment.FieldAuthorUserID, supportissuecomment.FieldHiddenByUserID:
+		case supportissuecomment.FieldID, supportissuecomment.FieldIssueID, supportissuecomment.FieldAuthorUserID, supportissuecomment.FieldRelatedIssueID, supportissuecomment.FieldHiddenByUserID:
 			values[i] = new(sql.NullInt64)
 		case supportissuecomment.FieldAuthorRole, supportissuecomment.FieldContent, supportissuecomment.FieldHideReason:
 			values[i] = new(sql.NullString)
@@ -118,6 +120,13 @@ func (_m *SupportIssueComment) assignValues(columns []string, values []any) erro
 				return fmt.Errorf("unexpected type %T for field content", values[i])
 			} else if value.Valid {
 				_m.Content = value.String
+			}
+		case supportissuecomment.FieldRelatedIssueID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field related_issue_id", values[i])
+			} else if value.Valid {
+				_m.RelatedIssueID = new(int64)
+				*_m.RelatedIssueID = value.Int64
 			}
 		case supportissuecomment.FieldHiddenAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -205,6 +214,11 @@ func (_m *SupportIssueComment) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("content=")
 	builder.WriteString(_m.Content)
+	builder.WriteString(", ")
+	if v := _m.RelatedIssueID; v != nil {
+		builder.WriteString("related_issue_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.HiddenAt; v != nil {
 		builder.WriteString("hidden_at=")

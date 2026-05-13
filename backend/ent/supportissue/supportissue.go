@@ -62,6 +62,18 @@ const (
 	FieldHiddenByUserID = "hidden_by_user_id"
 	// FieldHideReason holds the string denoting the hide_reason field in the database.
 	FieldHideReason = "hide_reason"
+	// FieldPinnedAt holds the string denoting the pinned_at field in the database.
+	FieldPinnedAt = "pinned_at"
+	// FieldPinnedByUserID holds the string denoting the pinned_by_user_id field in the database.
+	FieldPinnedByUserID = "pinned_by_user_id"
+	// FieldPinnedReason holds the string denoting the pinned_reason field in the database.
+	FieldPinnedReason = "pinned_reason"
+	// FieldSolutionCommentID holds the string denoting the solution_comment_id field in the database.
+	FieldSolutionCommentID = "solution_comment_id"
+	// FieldRelatedIssueID holds the string denoting the related_issue_id field in the database.
+	FieldRelatedIssueID = "related_issue_id"
+	// FieldRelatedIssueReason holds the string denoting the related_issue_reason field in the database.
+	FieldRelatedIssueReason = "related_issue_reason"
 	// FieldLastCommentAt holds the string denoting the last_comment_at field in the database.
 	FieldLastCommentAt = "last_comment_at"
 	// FieldLastViewedAt holds the string denoting the last_viewed_at field in the database.
@@ -147,6 +159,12 @@ var Columns = []string{
 	FieldHiddenAt,
 	FieldHiddenByUserID,
 	FieldHideReason,
+	FieldPinnedAt,
+	FieldPinnedByUserID,
+	FieldPinnedReason,
+	FieldSolutionCommentID,
+	FieldRelatedIssueID,
+	FieldRelatedIssueReason,
 	FieldLastCommentAt,
 	FieldLastViewedAt,
 	FieldCommentCount,
@@ -219,6 +237,14 @@ var (
 	DefaultHideReason string
 	// HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
 	HideReasonValidator func(string) error
+	// DefaultPinnedReason holds the default value on creation for the "pinned_reason" field.
+	DefaultPinnedReason string
+	// PinnedReasonValidator is a validator for the "pinned_reason" field. It is called by the builders before save.
+	PinnedReasonValidator func(string) error
+	// DefaultRelatedIssueReason holds the default value on creation for the "related_issue_reason" field.
+	DefaultRelatedIssueReason string
+	// RelatedIssueReasonValidator is a validator for the "related_issue_reason" field. It is called by the builders before save.
+	RelatedIssueReasonValidator func(string) error
 	// DefaultCommentCount holds the default value on creation for the "comment_count" field.
 	DefaultCommentCount int
 	// DefaultHiddenCommentCount holds the default value on creation for the "hidden_comment_count" field.
@@ -363,6 +389,36 @@ func ByHiddenByUserID(opts ...sql.OrderTermOption) OrderOption {
 // ByHideReason orders the results by the hide_reason field.
 func ByHideReason(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldHideReason, opts...).ToFunc()
+}
+
+// ByPinnedAt orders the results by the pinned_at field.
+func ByPinnedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPinnedAt, opts...).ToFunc()
+}
+
+// ByPinnedByUserID orders the results by the pinned_by_user_id field.
+func ByPinnedByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPinnedByUserID, opts...).ToFunc()
+}
+
+// ByPinnedReason orders the results by the pinned_reason field.
+func ByPinnedReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPinnedReason, opts...).ToFunc()
+}
+
+// BySolutionCommentID orders the results by the solution_comment_id field.
+func BySolutionCommentID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSolutionCommentID, opts...).ToFunc()
+}
+
+// ByRelatedIssueID orders the results by the related_issue_id field.
+func ByRelatedIssueID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelatedIssueID, opts...).ToFunc()
+}
+
+// ByRelatedIssueReason orders the results by the related_issue_reason field.
+func ByRelatedIssueReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRelatedIssueReason, opts...).ToFunc()
 }
 
 // ByLastCommentAt orders the results by the last_comment_at field.

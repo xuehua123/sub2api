@@ -438,6 +438,135 @@ func (_u *SupportIssueUpdate) SetNillableHideReason(v *string) *SupportIssueUpda
 	return _u
 }
 
+// SetPinnedAt sets the "pinned_at" field.
+func (_u *SupportIssueUpdate) SetPinnedAt(v time.Time) *SupportIssueUpdate {
+	_u.mutation.SetPinnedAt(v)
+	return _u
+}
+
+// SetNillablePinnedAt sets the "pinned_at" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillablePinnedAt(v *time.Time) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetPinnedAt(*v)
+	}
+	return _u
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (_u *SupportIssueUpdate) ClearPinnedAt() *SupportIssueUpdate {
+	_u.mutation.ClearPinnedAt()
+	return _u
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdate) SetPinnedByUserID(v int64) *SupportIssueUpdate {
+	_u.mutation.ResetPinnedByUserID()
+	_u.mutation.SetPinnedByUserID(v)
+	return _u
+}
+
+// SetNillablePinnedByUserID sets the "pinned_by_user_id" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillablePinnedByUserID(v *int64) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetPinnedByUserID(*v)
+	}
+	return _u
+}
+
+// AddPinnedByUserID adds value to the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdate) AddPinnedByUserID(v int64) *SupportIssueUpdate {
+	_u.mutation.AddPinnedByUserID(v)
+	return _u
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdate) ClearPinnedByUserID() *SupportIssueUpdate {
+	_u.mutation.ClearPinnedByUserID()
+	return _u
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (_u *SupportIssueUpdate) SetPinnedReason(v string) *SupportIssueUpdate {
+	_u.mutation.SetPinnedReason(v)
+	return _u
+}
+
+// SetNillablePinnedReason sets the "pinned_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillablePinnedReason(v *string) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetPinnedReason(*v)
+	}
+	return _u
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (_u *SupportIssueUpdate) SetSolutionCommentID(v int64) *SupportIssueUpdate {
+	_u.mutation.ResetSolutionCommentID()
+	_u.mutation.SetSolutionCommentID(v)
+	return _u
+}
+
+// SetNillableSolutionCommentID sets the "solution_comment_id" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableSolutionCommentID(v *int64) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetSolutionCommentID(*v)
+	}
+	return _u
+}
+
+// AddSolutionCommentID adds value to the "solution_comment_id" field.
+func (_u *SupportIssueUpdate) AddSolutionCommentID(v int64) *SupportIssueUpdate {
+	_u.mutation.AddSolutionCommentID(v)
+	return _u
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (_u *SupportIssueUpdate) ClearSolutionCommentID() *SupportIssueUpdate {
+	_u.mutation.ClearSolutionCommentID()
+	return _u
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_u *SupportIssueUpdate) SetRelatedIssueID(v int64) *SupportIssueUpdate {
+	_u.mutation.ResetRelatedIssueID()
+	_u.mutation.SetRelatedIssueID(v)
+	return _u
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableRelatedIssueID(v *int64) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetRelatedIssueID(*v)
+	}
+	return _u
+}
+
+// AddRelatedIssueID adds value to the "related_issue_id" field.
+func (_u *SupportIssueUpdate) AddRelatedIssueID(v int64) *SupportIssueUpdate {
+	_u.mutation.AddRelatedIssueID(v)
+	return _u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (_u *SupportIssueUpdate) ClearRelatedIssueID() *SupportIssueUpdate {
+	_u.mutation.ClearRelatedIssueID()
+	return _u
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (_u *SupportIssueUpdate) SetRelatedIssueReason(v string) *SupportIssueUpdate {
+	_u.mutation.SetRelatedIssueReason(v)
+	return _u
+}
+
+// SetNillableRelatedIssueReason sets the "related_issue_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableRelatedIssueReason(v *string) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetRelatedIssueReason(*v)
+	}
+	return _u
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_u *SupportIssueUpdate) SetLastCommentAt(v time.Time) *SupportIssueUpdate {
 	_u.mutation.SetLastCommentAt(v)
@@ -849,6 +978,16 @@ func (_u *SupportIssueUpdate) check() error {
 			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PinnedReason(); ok {
+		if err := supportissue.PinnedReasonValidator(v); err != nil {
+			return &ValidationError{Name: "pinned_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.pinned_reason": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RelatedIssueReason(); ok {
+		if err := supportissue.RelatedIssueReasonValidator(v); err != nil {
+			return &ValidationError{Name: "related_issue_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.related_issue_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -968,6 +1107,45 @@ func (_u *SupportIssueUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.HideReason(); ok {
 		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PinnedAt(); ok {
+		_spec.SetField(supportissue.FieldPinnedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PinnedAtCleared() {
+		_spec.ClearField(supportissue.FieldPinnedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PinnedByUserID(); ok {
+		_spec.SetField(supportissue.FieldPinnedByUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPinnedByUserID(); ok {
+		_spec.AddField(supportissue.FieldPinnedByUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.PinnedByUserIDCleared() {
+		_spec.ClearField(supportissue.FieldPinnedByUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PinnedReason(); ok {
+		_spec.SetField(supportissue.FieldPinnedReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SolutionCommentID(); ok {
+		_spec.SetField(supportissue.FieldSolutionCommentID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSolutionCommentID(); ok {
+		_spec.AddField(supportissue.FieldSolutionCommentID, field.TypeInt64, value)
+	}
+	if _u.mutation.SolutionCommentIDCleared() {
+		_spec.ClearField(supportissue.FieldSolutionCommentID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRelatedIssueID(); ok {
+		_spec.AddField(supportissue.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if _u.mutation.RelatedIssueIDCleared() {
+		_spec.ClearField(supportissue.FieldRelatedIssueID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RelatedIssueReason(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueReason, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)
@@ -1617,6 +1795,135 @@ func (_u *SupportIssueUpdateOne) SetNillableHideReason(v *string) *SupportIssueU
 	return _u
 }
 
+// SetPinnedAt sets the "pinned_at" field.
+func (_u *SupportIssueUpdateOne) SetPinnedAt(v time.Time) *SupportIssueUpdateOne {
+	_u.mutation.SetPinnedAt(v)
+	return _u
+}
+
+// SetNillablePinnedAt sets the "pinned_at" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillablePinnedAt(v *time.Time) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetPinnedAt(*v)
+	}
+	return _u
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (_u *SupportIssueUpdateOne) ClearPinnedAt() *SupportIssueUpdateOne {
+	_u.mutation.ClearPinnedAt()
+	return _u
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdateOne) SetPinnedByUserID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.ResetPinnedByUserID()
+	_u.mutation.SetPinnedByUserID(v)
+	return _u
+}
+
+// SetNillablePinnedByUserID sets the "pinned_by_user_id" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillablePinnedByUserID(v *int64) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetPinnedByUserID(*v)
+	}
+	return _u
+}
+
+// AddPinnedByUserID adds value to the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdateOne) AddPinnedByUserID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.AddPinnedByUserID(v)
+	return _u
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (_u *SupportIssueUpdateOne) ClearPinnedByUserID() *SupportIssueUpdateOne {
+	_u.mutation.ClearPinnedByUserID()
+	return _u
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (_u *SupportIssueUpdateOne) SetPinnedReason(v string) *SupportIssueUpdateOne {
+	_u.mutation.SetPinnedReason(v)
+	return _u
+}
+
+// SetNillablePinnedReason sets the "pinned_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillablePinnedReason(v *string) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetPinnedReason(*v)
+	}
+	return _u
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (_u *SupportIssueUpdateOne) SetSolutionCommentID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.ResetSolutionCommentID()
+	_u.mutation.SetSolutionCommentID(v)
+	return _u
+}
+
+// SetNillableSolutionCommentID sets the "solution_comment_id" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableSolutionCommentID(v *int64) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetSolutionCommentID(*v)
+	}
+	return _u
+}
+
+// AddSolutionCommentID adds value to the "solution_comment_id" field.
+func (_u *SupportIssueUpdateOne) AddSolutionCommentID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.AddSolutionCommentID(v)
+	return _u
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (_u *SupportIssueUpdateOne) ClearSolutionCommentID() *SupportIssueUpdateOne {
+	_u.mutation.ClearSolutionCommentID()
+	return _u
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (_u *SupportIssueUpdateOne) SetRelatedIssueID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.ResetRelatedIssueID()
+	_u.mutation.SetRelatedIssueID(v)
+	return _u
+}
+
+// SetNillableRelatedIssueID sets the "related_issue_id" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableRelatedIssueID(v *int64) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetRelatedIssueID(*v)
+	}
+	return _u
+}
+
+// AddRelatedIssueID adds value to the "related_issue_id" field.
+func (_u *SupportIssueUpdateOne) AddRelatedIssueID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.AddRelatedIssueID(v)
+	return _u
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (_u *SupportIssueUpdateOne) ClearRelatedIssueID() *SupportIssueUpdateOne {
+	_u.mutation.ClearRelatedIssueID()
+	return _u
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (_u *SupportIssueUpdateOne) SetRelatedIssueReason(v string) *SupportIssueUpdateOne {
+	_u.mutation.SetRelatedIssueReason(v)
+	return _u
+}
+
+// SetNillableRelatedIssueReason sets the "related_issue_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableRelatedIssueReason(v *string) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetRelatedIssueReason(*v)
+	}
+	return _u
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_u *SupportIssueUpdateOne) SetLastCommentAt(v time.Time) *SupportIssueUpdateOne {
 	_u.mutation.SetLastCommentAt(v)
@@ -2041,6 +2348,16 @@ func (_u *SupportIssueUpdateOne) check() error {
 			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.PinnedReason(); ok {
+		if err := supportissue.PinnedReasonValidator(v); err != nil {
+			return &ValidationError{Name: "pinned_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.pinned_reason": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.RelatedIssueReason(); ok {
+		if err := supportissue.RelatedIssueReasonValidator(v); err != nil {
+			return &ValidationError{Name: "related_issue_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.related_issue_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -2177,6 +2494,45 @@ func (_u *SupportIssueUpdateOne) sqlSave(ctx context.Context) (_node *SupportIss
 	}
 	if value, ok := _u.mutation.HideReason(); ok {
 		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.PinnedAt(); ok {
+		_spec.SetField(supportissue.FieldPinnedAt, field.TypeTime, value)
+	}
+	if _u.mutation.PinnedAtCleared() {
+		_spec.ClearField(supportissue.FieldPinnedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PinnedByUserID(); ok {
+		_spec.SetField(supportissue.FieldPinnedByUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedPinnedByUserID(); ok {
+		_spec.AddField(supportissue.FieldPinnedByUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.PinnedByUserIDCleared() {
+		_spec.ClearField(supportissue.FieldPinnedByUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.PinnedReason(); ok {
+		_spec.SetField(supportissue.FieldPinnedReason, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.SolutionCommentID(); ok {
+		_spec.SetField(supportissue.FieldSolutionCommentID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedSolutionCommentID(); ok {
+		_spec.AddField(supportissue.FieldSolutionCommentID, field.TypeInt64, value)
+	}
+	if _u.mutation.SolutionCommentIDCleared() {
+		_spec.ClearField(supportissue.FieldSolutionCommentID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RelatedIssueID(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedRelatedIssueID(); ok {
+		_spec.AddField(supportissue.FieldRelatedIssueID, field.TypeInt64, value)
+	}
+	if _u.mutation.RelatedIssueIDCleared() {
+		_spec.ClearField(supportissue.FieldRelatedIssueID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RelatedIssueReason(); ok {
+		_spec.SetField(supportissue.FieldRelatedIssueReason, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)

@@ -192,7 +192,13 @@ func (s *SupportIssueService) OpenAttachmentForPublic(ctx context.Context, attac
 	return attachment, nil
 }
 
-func (s *SupportIssueService) AddComment(ctx context.Context, actor SupportIssueActor, issueID int64, content string) (*SupportIssueComment, error) {
+func (s *SupportIssueService) AddComment(
+	ctx context.Context,
+	actor SupportIssueActor,
+	issueID int64,
+	content string,
+	relatedIssueID *int64,
+) (*SupportIssueComment, error) {
 	if err := validateSupportIssueActor(actor); err != nil {
 		return nil, err
 	}
@@ -212,14 +218,24 @@ func (s *SupportIssueService) AddComment(ctx context.Context, actor SupportIssue
 	if err != nil {
 		return nil, err
 	}
+	if relatedIssueID != nil {
+		if _, err := s.validateRelatedSolvedIssue(ctx, *relatedIssueID, issueID); err != nil {
+			return nil, err
+		}
+	}
 
 	comment := &SupportIssueComment{
-		IssueID:      issueID,
-		AuthorUserID: supportIssuePtrInt64(actor.UserID),
-		AuthorRole:   supportIssueActorRole(actor),
-		Content:      trimmed,
+		IssueID:        issueID,
+		AuthorUserID:   supportIssuePtrInt64(actor.UserID),
+		AuthorRole:     supportIssueActorRole(actor),
+		Content:        trimmed,
+		RelatedIssueID: relatedIssueID,
 	}
-	event := supportIssueEvent(actor, SupportIssueEventCommented, nil)
+	metadata := map[string]any{}
+	if relatedIssueID != nil {
+		metadata["related_issue_id"] = *relatedIssueID
+	}
+	event := supportIssueEvent(actor, SupportIssueEventCommented, metadata)
 	if err := s.repo.AddComment(ctx, comment, event); err != nil {
 		return nil, err
 	}
@@ -349,6 +365,83 @@ func (s *SupportIssueService) AdminRestoreIssue(ctx context.Context, actor Suppo
 	}))
 }
 
+func (s *SupportIssueService) AdminPinIssue(ctx context.Context, actor SupportIssueActor, issueID int64, reason string) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	reason = strings.TrimSpace(reason)
+	return s.repo.PinIssue(ctx, PinSupportIssueInput{
+		IssueID:        issueID,
+		PinnedByUserID: actor.UserID,
+		Reason:         reason,
+	}, supportIssueEvent(actor, SupportIssueEventIssuePinned, map[string]any{
+		"reason": reason,
+	}))
+}
+
+func (s *SupportIssueService) AdminUnpinIssue(ctx context.Context, actor SupportIssueActor, issueID int64) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	return s.repo.UnpinIssue(ctx, issueID, actor.UserID, supportIssueEvent(actor, SupportIssueEventIssueUnpinned, nil))
+}
+
+func (s *SupportIssueService) AdminMarkSolution(
+	ctx context.Context,
+	actor SupportIssueActor,
+	issueID int64,
+	commentID int64,
+) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	if commentID <= 0 {
+		return nil, ErrSupportIssueCommentNotFound
+	}
+	return s.repo.SetSolutionComment(ctx, issueID, commentID, actor.UserID, supportIssueEvent(actor, SupportIssueEventSolutionMarked, map[string]any{
+		"comment_id": commentID,
+	}))
+}
+
+func (s *SupportIssueService) AdminClearSolution(ctx context.Context, actor SupportIssueActor, issueID int64) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	return s.repo.ClearSolutionComment(ctx, issueID, actor.UserID, supportIssueEvent(actor, SupportIssueEventSolutionCleared, nil))
+}
+
+func (s *SupportIssueService) AdminSetRelatedIssue(
+	ctx context.Context,
+	actor SupportIssueActor,
+	issueID int64,
+	relatedIssueID int64,
+	reason string,
+) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	if _, err := s.validateRelatedSolvedIssue(ctx, relatedIssueID, issueID); err != nil {
+		return nil, err
+	}
+	reason = strings.TrimSpace(reason)
+	return s.repo.SetRelatedIssue(ctx, SetRelatedSupportIssueInput{
+		IssueID:        issueID,
+		RelatedIssueID: relatedIssueID,
+		ActorUserID:    actor.UserID,
+		Reason:         reason,
+	}, supportIssueEvent(actor, SupportIssueEventRelatedSet, map[string]any{
+		"related_issue_id": relatedIssueID,
+		"reason":           reason,
+	}))
+}
+
+func (s *SupportIssueService) AdminClearRelatedIssue(ctx context.Context, actor SupportIssueActor, issueID int64) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	return s.repo.ClearRelatedIssue(ctx, issueID, actor.UserID, supportIssueEvent(actor, SupportIssueEventRelatedCleared, nil))
+}
+
 func (s *SupportIssueService) AdminHideComment(ctx context.Context, actor SupportIssueActor, issueID int64, commentID int64, reason string) error {
 	if err := validateSupportIssueAdmin(actor); err != nil {
 		return err
@@ -433,6 +526,20 @@ func validateSupportIssueCommentContent(content string) (string, error) {
 		return "", ErrSupportIssueInvalidInput
 	}
 	return trimmed, nil
+}
+
+func (s *SupportIssueService) validateRelatedSolvedIssue(ctx context.Context, relatedIssueID int64, currentIssueID int64) (*SupportIssue, error) {
+	if relatedIssueID <= 0 || relatedIssueID == currentIssueID {
+		return nil, ErrSupportIssueInvalidInput
+	}
+	relatedIssue, err := s.repo.GetIssue(ctx, relatedIssueID, false)
+	if err != nil {
+		return nil, err
+	}
+	if relatedIssue.HiddenAt != nil || relatedIssue.Status != SupportIssueStatusResolved {
+		return nil, ErrSupportIssueInvalidInput
+	}
+	return relatedIssue, nil
 }
 
 func buildSupportIssueSearchText(issue *SupportIssue) string {
@@ -560,9 +667,16 @@ func sanitizeSupportIssueForPublic(issue *SupportIssue) *SupportIssue {
 	out.HiddenAt = nil
 	out.HiddenByUserID = nil
 	out.HideReason = ""
+	out.PinnedByUserID = nil
+	out.PinnedReason = ""
+	out.RelatedIssueReason = ""
 	out.Comments = visibleSupportIssueComments(issue.Comments)
 	out.Attachments = visibleSupportIssueAttachments(issue.Attachments)
 	out.Events = nil
+	if issue.SolutionComment != nil {
+		sanitized := sanitizeSupportIssueCommentForPublic(*issue.SolutionComment)
+		out.SolutionComment = &sanitized
+	}
 	return &out
 }
 
@@ -588,12 +702,14 @@ func visibleSupportIssueAttachments(attachments []SupportIssueAttachment) []Supp
 
 func sanitizeSupportIssueCommentForPublic(comment SupportIssueComment) SupportIssueComment {
 	return SupportIssueComment{
-		ID:         comment.ID,
-		IssueID:    comment.IssueID,
-		AuthorRole: comment.AuthorRole,
-		Content:    comment.Content,
-		CreatedAt:  comment.CreatedAt,
-		UpdatedAt:  comment.UpdatedAt,
+		ID:             comment.ID,
+		IssueID:        comment.IssueID,
+		AuthorRole:     comment.AuthorRole,
+		Content:        comment.Content,
+		RelatedIssueID: comment.RelatedIssueID,
+		CreatedAt:      comment.CreatedAt,
+		UpdatedAt:      comment.UpdatedAt,
+		RelatedIssue:   comment.RelatedIssue,
 	}
 }
 

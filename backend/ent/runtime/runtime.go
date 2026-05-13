@@ -2071,32 +2071,44 @@ func init() {
 	supportissue.DefaultHideReason = supportissueDescHideReason.Default.(string)
 	// supportissue.HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
 	supportissue.HideReasonValidator = supportissueDescHideReason.Validators[0].(func(string) error)
+	// supportissueDescPinnedReason is the schema descriptor for pinned_reason field.
+	supportissueDescPinnedReason := supportissueFields[26].Descriptor()
+	// supportissue.DefaultPinnedReason holds the default value on creation for the pinned_reason field.
+	supportissue.DefaultPinnedReason = supportissueDescPinnedReason.Default.(string)
+	// supportissue.PinnedReasonValidator is a validator for the "pinned_reason" field. It is called by the builders before save.
+	supportissue.PinnedReasonValidator = supportissueDescPinnedReason.Validators[0].(func(string) error)
+	// supportissueDescRelatedIssueReason is the schema descriptor for related_issue_reason field.
+	supportissueDescRelatedIssueReason := supportissueFields[29].Descriptor()
+	// supportissue.DefaultRelatedIssueReason holds the default value on creation for the related_issue_reason field.
+	supportissue.DefaultRelatedIssueReason = supportissueDescRelatedIssueReason.Default.(string)
+	// supportissue.RelatedIssueReasonValidator is a validator for the "related_issue_reason" field. It is called by the builders before save.
+	supportissue.RelatedIssueReasonValidator = supportissueDescRelatedIssueReason.Validators[0].(func(string) error)
 	// supportissueDescCommentCount is the schema descriptor for comment_count field.
-	supportissueDescCommentCount := supportissueFields[26].Descriptor()
+	supportissueDescCommentCount := supportissueFields[32].Descriptor()
 	// supportissue.DefaultCommentCount holds the default value on creation for the comment_count field.
 	supportissue.DefaultCommentCount = supportissueDescCommentCount.Default.(int)
 	// supportissueDescHiddenCommentCount is the schema descriptor for hidden_comment_count field.
-	supportissueDescHiddenCommentCount := supportissueFields[27].Descriptor()
+	supportissueDescHiddenCommentCount := supportissueFields[33].Descriptor()
 	// supportissue.DefaultHiddenCommentCount holds the default value on creation for the hidden_comment_count field.
 	supportissue.DefaultHiddenCommentCount = supportissueDescHiddenCommentCount.Default.(int)
 	// supportissueDescAttachmentCount is the schema descriptor for attachment_count field.
-	supportissueDescAttachmentCount := supportissueFields[28].Descriptor()
+	supportissueDescAttachmentCount := supportissueFields[34].Descriptor()
 	// supportissue.DefaultAttachmentCount holds the default value on creation for the attachment_count field.
 	supportissue.DefaultAttachmentCount = supportissueDescAttachmentCount.Default.(int)
 	// supportissueDescViewCount is the schema descriptor for view_count field.
-	supportissueDescViewCount := supportissueFields[29].Descriptor()
+	supportissueDescViewCount := supportissueFields[35].Descriptor()
 	// supportissue.DefaultViewCount holds the default value on creation for the view_count field.
 	supportissue.DefaultViewCount = supportissueDescViewCount.Default.(int)
 	// supportissueDescSearchText is the schema descriptor for search_text field.
-	supportissueDescSearchText := supportissueFields[30].Descriptor()
+	supportissueDescSearchText := supportissueFields[36].Descriptor()
 	// supportissue.DefaultSearchText holds the default value on creation for the search_text field.
 	supportissue.DefaultSearchText = supportissueDescSearchText.Default.(string)
 	// supportissueDescCreatedAt is the schema descriptor for created_at field.
-	supportissueDescCreatedAt := supportissueFields[31].Descriptor()
+	supportissueDescCreatedAt := supportissueFields[37].Descriptor()
 	// supportissue.DefaultCreatedAt holds the default value on creation for the created_at field.
 	supportissue.DefaultCreatedAt = supportissueDescCreatedAt.Default.(func() time.Time)
 	// supportissueDescUpdatedAt is the schema descriptor for updated_at field.
-	supportissueDescUpdatedAt := supportissueFields[32].Descriptor()
+	supportissueDescUpdatedAt := supportissueFields[38].Descriptor()
 	// supportissue.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	supportissue.DefaultUpdatedAt = supportissueDescUpdatedAt.Default.(func() time.Time)
 	// supportissue.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -2214,17 +2226,17 @@ func init() {
 	// supportissuecomment.ContentValidator is a validator for the "content" field. It is called by the builders before save.
 	supportissuecomment.ContentValidator = supportissuecommentDescContent.Validators[0].(func(string) error)
 	// supportissuecommentDescHideReason is the schema descriptor for hide_reason field.
-	supportissuecommentDescHideReason := supportissuecommentFields[6].Descriptor()
+	supportissuecommentDescHideReason := supportissuecommentFields[7].Descriptor()
 	// supportissuecomment.DefaultHideReason holds the default value on creation for the hide_reason field.
 	supportissuecomment.DefaultHideReason = supportissuecommentDescHideReason.Default.(string)
 	// supportissuecomment.HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
 	supportissuecomment.HideReasonValidator = supportissuecommentDescHideReason.Validators[0].(func(string) error)
 	// supportissuecommentDescCreatedAt is the schema descriptor for created_at field.
-	supportissuecommentDescCreatedAt := supportissuecommentFields[7].Descriptor()
+	supportissuecommentDescCreatedAt := supportissuecommentFields[8].Descriptor()
 	// supportissuecomment.DefaultCreatedAt holds the default value on creation for the created_at field.
 	supportissuecomment.DefaultCreatedAt = supportissuecommentDescCreatedAt.Default.(func() time.Time)
 	// supportissuecommentDescUpdatedAt is the schema descriptor for updated_at field.
-	supportissuecommentDescUpdatedAt := supportissuecommentFields[8].Descriptor()
+	supportissuecommentDescUpdatedAt := supportissuecommentFields[9].Descriptor()
 	// supportissuecomment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	supportissuecomment.DefaultUpdatedAt = supportissuecommentDescUpdatedAt.Default.(func() time.Time)
 	// supportissuecomment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.

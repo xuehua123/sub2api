@@ -12,6 +12,12 @@ const {
   hideAttachment,
   hideIssue,
   restoreIssue,
+  pin,
+  unpin,
+  markSolution,
+  clearSolution,
+  setRelatedIssue,
+  clearRelatedIssue,
   addComment,
   route,
   router,
@@ -24,6 +30,12 @@ const {
   hideAttachment: vi.fn(),
   hideIssue: vi.fn(),
   restoreIssue: vi.fn(),
+  pin: vi.fn(),
+  unpin: vi.fn(),
+  markSolution: vi.fn(),
+  clearSolution: vi.fn(),
+  setRelatedIssue: vi.fn(),
+  clearRelatedIssue: vi.fn(),
   addComment: vi.fn(),
   route: {
     params: { id: '123' },
@@ -44,6 +56,12 @@ vi.mock('@/api/admin/issues', () => ({
     hideAttachment,
     hideIssue,
     restoreIssue,
+    pin,
+    unpin,
+    markSolution,
+    clearSolution,
+    setRelatedIssue,
+    clearRelatedIssue,
   },
   default: {
     get,
@@ -54,6 +72,12 @@ vi.mock('@/api/admin/issues', () => ({
     hideAttachment,
     hideIssue,
     restoreIssue,
+    pin,
+    unpin,
+    markSolution,
+    clearSolution,
+    setRelatedIssue,
+    clearRelatedIssue,
   },
 }))
 
@@ -87,7 +111,7 @@ const event: SupportIssueEvent = {
   created_at: '2026-05-13T08:00:00Z',
 }
 
-function makeIssue(): AdminSupportIssue {
+function makeIssue(overrides: Partial<AdminSupportIssue> = {}): AdminSupportIssue {
   return {
     id: 123,
     public_id: 'ISS-000123',
@@ -142,6 +166,7 @@ function makeIssue(): AdminSupportIssue {
       },
     ],
     events: [event],
+    ...overrides,
   }
 }
 
@@ -151,6 +176,7 @@ function mountView() {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         LoadingSpinner: { template: '<div>loading</div>' },
+        RouterLink: { template: '<a><slot /></a>' },
       },
     },
   })
@@ -166,6 +192,12 @@ describe('admin SupportIssueDetailView', () => {
     hideAttachment.mockReset()
     hideIssue.mockReset()
     restoreIssue.mockReset()
+    pin.mockReset()
+    unpin.mockReset()
+    markSolution.mockReset()
+    clearSolution.mockReset()
+    setRelatedIssue.mockReset()
+    clearRelatedIssue.mockReset()
     addComment.mockReset()
     router.push.mockReset()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -178,6 +210,12 @@ describe('admin SupportIssueDetailView', () => {
     hideAttachment.mockResolvedValue({ message: 'ok' })
     hideIssue.mockResolvedValue(makeIssue())
     restoreIssue.mockResolvedValue(makeIssue())
+    pin.mockResolvedValue(makeIssue({ pinned_at: '2026-05-13T09:00:00Z' }))
+    unpin.mockResolvedValue(makeIssue())
+    markSolution.mockResolvedValue(makeIssue({ solution_comment_id: 501 }))
+    clearSolution.mockResolvedValue(makeIssue())
+    setRelatedIssue.mockResolvedValue(makeIssue({ related_issue_id: 999 }))
+    clearRelatedIssue.mockResolvedValue(makeIssue())
     addComment.mockResolvedValue({
       id: 502,
       issue_id: 123,
@@ -246,5 +284,32 @@ describe('admin SupportIssueDetailView', () => {
     await flushPromises()
 
     expect(addComment).toHaveBeenCalledWith(123, { content: 'admin note' })
+  })
+
+  it('supports pinning, solution marking, and related solved issue linking', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.get('[data-testid="admin-pin-reason"]').setValue('frequent duplicate')
+    await wrapper.get('[data-testid="admin-pin-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(pin).toHaveBeenCalledWith(123, { reason: 'frequent duplicate' })
+
+    await wrapper.get('[data-testid="admin-solution-comment-select"]').setValue('501')
+    await wrapper.get('[data-testid="admin-solution-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(markSolution).toHaveBeenCalledWith(123, { comment_id: 501 })
+
+    await wrapper.get('[data-testid="admin-related-issue-id"]').setValue(999)
+    await wrapper.get('[data-testid="admin-related-issue-reason"]').setValue('same resolved issue')
+    await wrapper.get('[data-testid="admin-related-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(setRelatedIssue).toHaveBeenCalledWith(123, {
+      related_issue_id: 999,
+      reason: 'same resolved issue',
+    })
   })
 })

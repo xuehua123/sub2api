@@ -44428,6 +44428,15 @@ type SupportIssueMutation struct {
 	hidden_by_user_id        *int64
 	addhidden_by_user_id     *int64
 	hide_reason              *string
+	pinned_at                *time.Time
+	pinned_by_user_id        *int64
+	addpinned_by_user_id     *int64
+	pinned_reason            *string
+	solution_comment_id      *int64
+	addsolution_comment_id   *int64
+	related_issue_id         *int64
+	addrelated_issue_id      *int64
+	related_issue_reason     *string
 	last_comment_at          *time.Time
 	last_viewed_at           *time.Time
 	comment_count            *int
@@ -45596,6 +45605,337 @@ func (m *SupportIssueMutation) ResetHideReason() {
 	m.hide_reason = nil
 }
 
+// SetPinnedAt sets the "pinned_at" field.
+func (m *SupportIssueMutation) SetPinnedAt(t time.Time) {
+	m.pinned_at = &t
+}
+
+// PinnedAt returns the value of the "pinned_at" field in the mutation.
+func (m *SupportIssueMutation) PinnedAt() (r time.Time, exists bool) {
+	v := m.pinned_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPinnedAt returns the old "pinned_at" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldPinnedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPinnedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPinnedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPinnedAt: %w", err)
+	}
+	return oldValue.PinnedAt, nil
+}
+
+// ClearPinnedAt clears the value of the "pinned_at" field.
+func (m *SupportIssueMutation) ClearPinnedAt() {
+	m.pinned_at = nil
+	m.clearedFields[supportissue.FieldPinnedAt] = struct{}{}
+}
+
+// PinnedAtCleared returns if the "pinned_at" field was cleared in this mutation.
+func (m *SupportIssueMutation) PinnedAtCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldPinnedAt]
+	return ok
+}
+
+// ResetPinnedAt resets all changes to the "pinned_at" field.
+func (m *SupportIssueMutation) ResetPinnedAt() {
+	m.pinned_at = nil
+	delete(m.clearedFields, supportissue.FieldPinnedAt)
+}
+
+// SetPinnedByUserID sets the "pinned_by_user_id" field.
+func (m *SupportIssueMutation) SetPinnedByUserID(i int64) {
+	m.pinned_by_user_id = &i
+	m.addpinned_by_user_id = nil
+}
+
+// PinnedByUserID returns the value of the "pinned_by_user_id" field in the mutation.
+func (m *SupportIssueMutation) PinnedByUserID() (r int64, exists bool) {
+	v := m.pinned_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPinnedByUserID returns the old "pinned_by_user_id" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldPinnedByUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPinnedByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPinnedByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPinnedByUserID: %w", err)
+	}
+	return oldValue.PinnedByUserID, nil
+}
+
+// AddPinnedByUserID adds i to the "pinned_by_user_id" field.
+func (m *SupportIssueMutation) AddPinnedByUserID(i int64) {
+	if m.addpinned_by_user_id != nil {
+		*m.addpinned_by_user_id += i
+	} else {
+		m.addpinned_by_user_id = &i
+	}
+}
+
+// AddedPinnedByUserID returns the value that was added to the "pinned_by_user_id" field in this mutation.
+func (m *SupportIssueMutation) AddedPinnedByUserID() (r int64, exists bool) {
+	v := m.addpinned_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearPinnedByUserID clears the value of the "pinned_by_user_id" field.
+func (m *SupportIssueMutation) ClearPinnedByUserID() {
+	m.pinned_by_user_id = nil
+	m.addpinned_by_user_id = nil
+	m.clearedFields[supportissue.FieldPinnedByUserID] = struct{}{}
+}
+
+// PinnedByUserIDCleared returns if the "pinned_by_user_id" field was cleared in this mutation.
+func (m *SupportIssueMutation) PinnedByUserIDCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldPinnedByUserID]
+	return ok
+}
+
+// ResetPinnedByUserID resets all changes to the "pinned_by_user_id" field.
+func (m *SupportIssueMutation) ResetPinnedByUserID() {
+	m.pinned_by_user_id = nil
+	m.addpinned_by_user_id = nil
+	delete(m.clearedFields, supportissue.FieldPinnedByUserID)
+}
+
+// SetPinnedReason sets the "pinned_reason" field.
+func (m *SupportIssueMutation) SetPinnedReason(s string) {
+	m.pinned_reason = &s
+}
+
+// PinnedReason returns the value of the "pinned_reason" field in the mutation.
+func (m *SupportIssueMutation) PinnedReason() (r string, exists bool) {
+	v := m.pinned_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPinnedReason returns the old "pinned_reason" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldPinnedReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPinnedReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPinnedReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPinnedReason: %w", err)
+	}
+	return oldValue.PinnedReason, nil
+}
+
+// ResetPinnedReason resets all changes to the "pinned_reason" field.
+func (m *SupportIssueMutation) ResetPinnedReason() {
+	m.pinned_reason = nil
+}
+
+// SetSolutionCommentID sets the "solution_comment_id" field.
+func (m *SupportIssueMutation) SetSolutionCommentID(i int64) {
+	m.solution_comment_id = &i
+	m.addsolution_comment_id = nil
+}
+
+// SolutionCommentID returns the value of the "solution_comment_id" field in the mutation.
+func (m *SupportIssueMutation) SolutionCommentID() (r int64, exists bool) {
+	v := m.solution_comment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSolutionCommentID returns the old "solution_comment_id" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldSolutionCommentID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSolutionCommentID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSolutionCommentID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSolutionCommentID: %w", err)
+	}
+	return oldValue.SolutionCommentID, nil
+}
+
+// AddSolutionCommentID adds i to the "solution_comment_id" field.
+func (m *SupportIssueMutation) AddSolutionCommentID(i int64) {
+	if m.addsolution_comment_id != nil {
+		*m.addsolution_comment_id += i
+	} else {
+		m.addsolution_comment_id = &i
+	}
+}
+
+// AddedSolutionCommentID returns the value that was added to the "solution_comment_id" field in this mutation.
+func (m *SupportIssueMutation) AddedSolutionCommentID() (r int64, exists bool) {
+	v := m.addsolution_comment_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearSolutionCommentID clears the value of the "solution_comment_id" field.
+func (m *SupportIssueMutation) ClearSolutionCommentID() {
+	m.solution_comment_id = nil
+	m.addsolution_comment_id = nil
+	m.clearedFields[supportissue.FieldSolutionCommentID] = struct{}{}
+}
+
+// SolutionCommentIDCleared returns if the "solution_comment_id" field was cleared in this mutation.
+func (m *SupportIssueMutation) SolutionCommentIDCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldSolutionCommentID]
+	return ok
+}
+
+// ResetSolutionCommentID resets all changes to the "solution_comment_id" field.
+func (m *SupportIssueMutation) ResetSolutionCommentID() {
+	m.solution_comment_id = nil
+	m.addsolution_comment_id = nil
+	delete(m.clearedFields, supportissue.FieldSolutionCommentID)
+}
+
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (m *SupportIssueMutation) SetRelatedIssueID(i int64) {
+	m.related_issue_id = &i
+	m.addrelated_issue_id = nil
+}
+
+// RelatedIssueID returns the value of the "related_issue_id" field in the mutation.
+func (m *SupportIssueMutation) RelatedIssueID() (r int64, exists bool) {
+	v := m.related_issue_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelatedIssueID returns the old "related_issue_id" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldRelatedIssueID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelatedIssueID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelatedIssueID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelatedIssueID: %w", err)
+	}
+	return oldValue.RelatedIssueID, nil
+}
+
+// AddRelatedIssueID adds i to the "related_issue_id" field.
+func (m *SupportIssueMutation) AddRelatedIssueID(i int64) {
+	if m.addrelated_issue_id != nil {
+		*m.addrelated_issue_id += i
+	} else {
+		m.addrelated_issue_id = &i
+	}
+}
+
+// AddedRelatedIssueID returns the value that was added to the "related_issue_id" field in this mutation.
+func (m *SupportIssueMutation) AddedRelatedIssueID() (r int64, exists bool) {
+	v := m.addrelated_issue_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (m *SupportIssueMutation) ClearRelatedIssueID() {
+	m.related_issue_id = nil
+	m.addrelated_issue_id = nil
+	m.clearedFields[supportissue.FieldRelatedIssueID] = struct{}{}
+}
+
+// RelatedIssueIDCleared returns if the "related_issue_id" field was cleared in this mutation.
+func (m *SupportIssueMutation) RelatedIssueIDCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldRelatedIssueID]
+	return ok
+}
+
+// ResetRelatedIssueID resets all changes to the "related_issue_id" field.
+func (m *SupportIssueMutation) ResetRelatedIssueID() {
+	m.related_issue_id = nil
+	m.addrelated_issue_id = nil
+	delete(m.clearedFields, supportissue.FieldRelatedIssueID)
+}
+
+// SetRelatedIssueReason sets the "related_issue_reason" field.
+func (m *SupportIssueMutation) SetRelatedIssueReason(s string) {
+	m.related_issue_reason = &s
+}
+
+// RelatedIssueReason returns the value of the "related_issue_reason" field in the mutation.
+func (m *SupportIssueMutation) RelatedIssueReason() (r string, exists bool) {
+	v := m.related_issue_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelatedIssueReason returns the old "related_issue_reason" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldRelatedIssueReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelatedIssueReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelatedIssueReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelatedIssueReason: %w", err)
+	}
+	return oldValue.RelatedIssueReason, nil
+}
+
+// ResetRelatedIssueReason resets all changes to the "related_issue_reason" field.
+func (m *SupportIssueMutation) ResetRelatedIssueReason() {
+	m.related_issue_reason = nil
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (m *SupportIssueMutation) SetLastCommentAt(t time.Time) {
 	m.last_comment_at = &t
@@ -46276,7 +46616,7 @@ func (m *SupportIssueMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SupportIssueMutation) Fields() []string {
-	fields := make([]string, 0, 33)
+	fields := make([]string, 0, 39)
 	if m.public_id != nil {
 		fields = append(fields, supportissue.FieldPublicID)
 	}
@@ -46348,6 +46688,24 @@ func (m *SupportIssueMutation) Fields() []string {
 	}
 	if m.hide_reason != nil {
 		fields = append(fields, supportissue.FieldHideReason)
+	}
+	if m.pinned_at != nil {
+		fields = append(fields, supportissue.FieldPinnedAt)
+	}
+	if m.pinned_by_user_id != nil {
+		fields = append(fields, supportissue.FieldPinnedByUserID)
+	}
+	if m.pinned_reason != nil {
+		fields = append(fields, supportissue.FieldPinnedReason)
+	}
+	if m.solution_comment_id != nil {
+		fields = append(fields, supportissue.FieldSolutionCommentID)
+	}
+	if m.related_issue_id != nil {
+		fields = append(fields, supportissue.FieldRelatedIssueID)
+	}
+	if m.related_issue_reason != nil {
+		fields = append(fields, supportissue.FieldRelatedIssueReason)
 	}
 	if m.last_comment_at != nil {
 		fields = append(fields, supportissue.FieldLastCommentAt)
@@ -46432,6 +46790,18 @@ func (m *SupportIssueMutation) Field(name string) (ent.Value, bool) {
 		return m.HiddenByUserID()
 	case supportissue.FieldHideReason:
 		return m.HideReason()
+	case supportissue.FieldPinnedAt:
+		return m.PinnedAt()
+	case supportissue.FieldPinnedByUserID:
+		return m.PinnedByUserID()
+	case supportissue.FieldPinnedReason:
+		return m.PinnedReason()
+	case supportissue.FieldSolutionCommentID:
+		return m.SolutionCommentID()
+	case supportissue.FieldRelatedIssueID:
+		return m.RelatedIssueID()
+	case supportissue.FieldRelatedIssueReason:
+		return m.RelatedIssueReason()
 	case supportissue.FieldLastCommentAt:
 		return m.LastCommentAt()
 	case supportissue.FieldLastViewedAt:
@@ -46507,6 +46877,18 @@ func (m *SupportIssueMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldHiddenByUserID(ctx)
 	case supportissue.FieldHideReason:
 		return m.OldHideReason(ctx)
+	case supportissue.FieldPinnedAt:
+		return m.OldPinnedAt(ctx)
+	case supportissue.FieldPinnedByUserID:
+		return m.OldPinnedByUserID(ctx)
+	case supportissue.FieldPinnedReason:
+		return m.OldPinnedReason(ctx)
+	case supportissue.FieldSolutionCommentID:
+		return m.OldSolutionCommentID(ctx)
+	case supportissue.FieldRelatedIssueID:
+		return m.OldRelatedIssueID(ctx)
+	case supportissue.FieldRelatedIssueReason:
+		return m.OldRelatedIssueReason(ctx)
 	case supportissue.FieldLastCommentAt:
 		return m.OldLastCommentAt(ctx)
 	case supportissue.FieldLastViewedAt:
@@ -46702,6 +47084,48 @@ func (m *SupportIssueMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetHideReason(v)
 		return nil
+	case supportissue.FieldPinnedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPinnedAt(v)
+		return nil
+	case supportissue.FieldPinnedByUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPinnedByUserID(v)
+		return nil
+	case supportissue.FieldPinnedReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPinnedReason(v)
+		return nil
+	case supportissue.FieldSolutionCommentID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSolutionCommentID(v)
+		return nil
+	case supportissue.FieldRelatedIssueID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelatedIssueID(v)
+		return nil
+	case supportissue.FieldRelatedIssueReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelatedIssueReason(v)
+		return nil
 	case supportissue.FieldLastCommentAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -46785,6 +47209,15 @@ func (m *SupportIssueMutation) AddedFields() []string {
 	if m.addhidden_by_user_id != nil {
 		fields = append(fields, supportissue.FieldHiddenByUserID)
 	}
+	if m.addpinned_by_user_id != nil {
+		fields = append(fields, supportissue.FieldPinnedByUserID)
+	}
+	if m.addsolution_comment_id != nil {
+		fields = append(fields, supportissue.FieldSolutionCommentID)
+	}
+	if m.addrelated_issue_id != nil {
+		fields = append(fields, supportissue.FieldRelatedIssueID)
+	}
 	if m.addcomment_count != nil {
 		fields = append(fields, supportissue.FieldCommentCount)
 	}
@@ -46813,6 +47246,12 @@ func (m *SupportIssueMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedResolvedByUserID()
 	case supportissue.FieldHiddenByUserID:
 		return m.AddedHiddenByUserID()
+	case supportissue.FieldPinnedByUserID:
+		return m.AddedPinnedByUserID()
+	case supportissue.FieldSolutionCommentID:
+		return m.AddedSolutionCommentID()
+	case supportissue.FieldRelatedIssueID:
+		return m.AddedRelatedIssueID()
 	case supportissue.FieldCommentCount:
 		return m.AddedCommentCount()
 	case supportissue.FieldHiddenCommentCount:
@@ -46857,6 +47296,27 @@ func (m *SupportIssueMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddHiddenByUserID(v)
+		return nil
+	case supportissue.FieldPinnedByUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddPinnedByUserID(v)
+		return nil
+	case supportissue.FieldSolutionCommentID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSolutionCommentID(v)
+		return nil
+	case supportissue.FieldRelatedIssueID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelatedIssueID(v)
 		return nil
 	case supportissue.FieldCommentCount:
 		v, ok := value.(int)
@@ -46915,6 +47375,18 @@ func (m *SupportIssueMutation) ClearedFields() []string {
 	if m.FieldCleared(supportissue.FieldHiddenByUserID) {
 		fields = append(fields, supportissue.FieldHiddenByUserID)
 	}
+	if m.FieldCleared(supportissue.FieldPinnedAt) {
+		fields = append(fields, supportissue.FieldPinnedAt)
+	}
+	if m.FieldCleared(supportissue.FieldPinnedByUserID) {
+		fields = append(fields, supportissue.FieldPinnedByUserID)
+	}
+	if m.FieldCleared(supportissue.FieldSolutionCommentID) {
+		fields = append(fields, supportissue.FieldSolutionCommentID)
+	}
+	if m.FieldCleared(supportissue.FieldRelatedIssueID) {
+		fields = append(fields, supportissue.FieldRelatedIssueID)
+	}
 	if m.FieldCleared(supportissue.FieldLastCommentAt) {
 		fields = append(fields, supportissue.FieldLastCommentAt)
 	}
@@ -46955,6 +47427,18 @@ func (m *SupportIssueMutation) ClearField(name string) error {
 		return nil
 	case supportissue.FieldHiddenByUserID:
 		m.ClearHiddenByUserID()
+		return nil
+	case supportissue.FieldPinnedAt:
+		m.ClearPinnedAt()
+		return nil
+	case supportissue.FieldPinnedByUserID:
+		m.ClearPinnedByUserID()
+		return nil
+	case supportissue.FieldSolutionCommentID:
+		m.ClearSolutionCommentID()
+		return nil
+	case supportissue.FieldRelatedIssueID:
+		m.ClearRelatedIssueID()
 		return nil
 	case supportissue.FieldLastCommentAt:
 		m.ClearLastCommentAt()
@@ -47041,6 +47525,24 @@ func (m *SupportIssueMutation) ResetField(name string) error {
 		return nil
 	case supportissue.FieldHideReason:
 		m.ResetHideReason()
+		return nil
+	case supportissue.FieldPinnedAt:
+		m.ResetPinnedAt()
+		return nil
+	case supportissue.FieldPinnedByUserID:
+		m.ResetPinnedByUserID()
+		return nil
+	case supportissue.FieldPinnedReason:
+		m.ResetPinnedReason()
+		return nil
+	case supportissue.FieldSolutionCommentID:
+		m.ResetSolutionCommentID()
+		return nil
+	case supportissue.FieldRelatedIssueID:
+		m.ResetRelatedIssueID()
+		return nil
+	case supportissue.FieldRelatedIssueReason:
+		m.ResetRelatedIssueReason()
 		return nil
 	case supportissue.FieldLastCommentAt:
 		m.ResetLastCommentAt()
@@ -48402,6 +48904,8 @@ type SupportIssueCommentMutation struct {
 	addauthor_user_id    *int64
 	author_role          *string
 	content              *string
+	related_issue_id     *int64
+	addrelated_issue_id  *int64
 	hidden_at            *time.Time
 	hidden_by_user_id    *int64
 	addhidden_by_user_id *int64
@@ -48692,6 +49196,76 @@ func (m *SupportIssueCommentMutation) ResetContent() {
 	m.content = nil
 }
 
+// SetRelatedIssueID sets the "related_issue_id" field.
+func (m *SupportIssueCommentMutation) SetRelatedIssueID(i int64) {
+	m.related_issue_id = &i
+	m.addrelated_issue_id = nil
+}
+
+// RelatedIssueID returns the value of the "related_issue_id" field in the mutation.
+func (m *SupportIssueCommentMutation) RelatedIssueID() (r int64, exists bool) {
+	v := m.related_issue_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRelatedIssueID returns the old "related_issue_id" field's value of the SupportIssueComment entity.
+// If the SupportIssueComment object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueCommentMutation) OldRelatedIssueID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRelatedIssueID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRelatedIssueID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRelatedIssueID: %w", err)
+	}
+	return oldValue.RelatedIssueID, nil
+}
+
+// AddRelatedIssueID adds i to the "related_issue_id" field.
+func (m *SupportIssueCommentMutation) AddRelatedIssueID(i int64) {
+	if m.addrelated_issue_id != nil {
+		*m.addrelated_issue_id += i
+	} else {
+		m.addrelated_issue_id = &i
+	}
+}
+
+// AddedRelatedIssueID returns the value that was added to the "related_issue_id" field in this mutation.
+func (m *SupportIssueCommentMutation) AddedRelatedIssueID() (r int64, exists bool) {
+	v := m.addrelated_issue_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearRelatedIssueID clears the value of the "related_issue_id" field.
+func (m *SupportIssueCommentMutation) ClearRelatedIssueID() {
+	m.related_issue_id = nil
+	m.addrelated_issue_id = nil
+	m.clearedFields[supportissuecomment.FieldRelatedIssueID] = struct{}{}
+}
+
+// RelatedIssueIDCleared returns if the "related_issue_id" field was cleared in this mutation.
+func (m *SupportIssueCommentMutation) RelatedIssueIDCleared() bool {
+	_, ok := m.clearedFields[supportissuecomment.FieldRelatedIssueID]
+	return ok
+}
+
+// ResetRelatedIssueID resets all changes to the "related_issue_id" field.
+func (m *SupportIssueCommentMutation) ResetRelatedIssueID() {
+	m.related_issue_id = nil
+	m.addrelated_issue_id = nil
+	delete(m.clearedFields, supportissuecomment.FieldRelatedIssueID)
+}
+
 // SetHiddenAt sets the "hidden_at" field.
 func (m *SupportIssueCommentMutation) SetHiddenAt(t time.Time) {
 	m.hidden_at = &t
@@ -48980,7 +49554,7 @@ func (m *SupportIssueCommentMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SupportIssueCommentMutation) Fields() []string {
-	fields := make([]string, 0, 9)
+	fields := make([]string, 0, 10)
 	if m.issue != nil {
 		fields = append(fields, supportissuecomment.FieldIssueID)
 	}
@@ -48992,6 +49566,9 @@ func (m *SupportIssueCommentMutation) Fields() []string {
 	}
 	if m.content != nil {
 		fields = append(fields, supportissuecomment.FieldContent)
+	}
+	if m.related_issue_id != nil {
+		fields = append(fields, supportissuecomment.FieldRelatedIssueID)
 	}
 	if m.hidden_at != nil {
 		fields = append(fields, supportissuecomment.FieldHiddenAt)
@@ -49024,6 +49601,8 @@ func (m *SupportIssueCommentMutation) Field(name string) (ent.Value, bool) {
 		return m.AuthorRole()
 	case supportissuecomment.FieldContent:
 		return m.Content()
+	case supportissuecomment.FieldRelatedIssueID:
+		return m.RelatedIssueID()
 	case supportissuecomment.FieldHiddenAt:
 		return m.HiddenAt()
 	case supportissuecomment.FieldHiddenByUserID:
@@ -49051,6 +49630,8 @@ func (m *SupportIssueCommentMutation) OldField(ctx context.Context, name string)
 		return m.OldAuthorRole(ctx)
 	case supportissuecomment.FieldContent:
 		return m.OldContent(ctx)
+	case supportissuecomment.FieldRelatedIssueID:
+		return m.OldRelatedIssueID(ctx)
 	case supportissuecomment.FieldHiddenAt:
 		return m.OldHiddenAt(ctx)
 	case supportissuecomment.FieldHiddenByUserID:
@@ -49098,6 +49679,13 @@ func (m *SupportIssueCommentMutation) SetField(name string, value ent.Value) err
 		}
 		m.SetContent(v)
 		return nil
+	case supportissuecomment.FieldRelatedIssueID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRelatedIssueID(v)
+		return nil
 	case supportissuecomment.FieldHiddenAt:
 		v, ok := value.(time.Time)
 		if !ok {
@@ -49144,6 +49732,9 @@ func (m *SupportIssueCommentMutation) AddedFields() []string {
 	if m.addauthor_user_id != nil {
 		fields = append(fields, supportissuecomment.FieldAuthorUserID)
 	}
+	if m.addrelated_issue_id != nil {
+		fields = append(fields, supportissuecomment.FieldRelatedIssueID)
+	}
 	if m.addhidden_by_user_id != nil {
 		fields = append(fields, supportissuecomment.FieldHiddenByUserID)
 	}
@@ -49157,6 +49748,8 @@ func (m *SupportIssueCommentMutation) AddedField(name string) (ent.Value, bool) 
 	switch name {
 	case supportissuecomment.FieldAuthorUserID:
 		return m.AddedAuthorUserID()
+	case supportissuecomment.FieldRelatedIssueID:
+		return m.AddedRelatedIssueID()
 	case supportissuecomment.FieldHiddenByUserID:
 		return m.AddedHiddenByUserID()
 	}
@@ -49175,6 +49768,13 @@ func (m *SupportIssueCommentMutation) AddField(name string, value ent.Value) err
 		}
 		m.AddAuthorUserID(v)
 		return nil
+	case supportissuecomment.FieldRelatedIssueID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRelatedIssueID(v)
+		return nil
 	case supportissuecomment.FieldHiddenByUserID:
 		v, ok := value.(int64)
 		if !ok {
@@ -49192,6 +49792,9 @@ func (m *SupportIssueCommentMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(supportissuecomment.FieldAuthorUserID) {
 		fields = append(fields, supportissuecomment.FieldAuthorUserID)
+	}
+	if m.FieldCleared(supportissuecomment.FieldRelatedIssueID) {
+		fields = append(fields, supportissuecomment.FieldRelatedIssueID)
 	}
 	if m.FieldCleared(supportissuecomment.FieldHiddenAt) {
 		fields = append(fields, supportissuecomment.FieldHiddenAt)
@@ -49215,6 +49818,9 @@ func (m *SupportIssueCommentMutation) ClearField(name string) error {
 	switch name {
 	case supportissuecomment.FieldAuthorUserID:
 		m.ClearAuthorUserID()
+		return nil
+	case supportissuecomment.FieldRelatedIssueID:
+		m.ClearRelatedIssueID()
 		return nil
 	case supportissuecomment.FieldHiddenAt:
 		m.ClearHiddenAt()
@@ -49241,6 +49847,9 @@ func (m *SupportIssueCommentMutation) ResetField(name string) error {
 		return nil
 	case supportissuecomment.FieldContent:
 		m.ResetContent()
+		return nil
+	case supportissuecomment.FieldRelatedIssueID:
+		m.ResetRelatedIssueID()
 		return nil
 	case supportissuecomment.FieldHiddenAt:
 		m.ResetHiddenAt()

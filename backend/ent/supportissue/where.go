@@ -175,6 +175,36 @@ func HideReason(v string) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldHideReason, v))
 }
 
+// PinnedAt applies equality check predicate on the "pinned_at" field. It's identical to PinnedAtEQ.
+func PinnedAt(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedAt, v))
+}
+
+// PinnedByUserID applies equality check predicate on the "pinned_by_user_id" field. It's identical to PinnedByUserIDEQ.
+func PinnedByUserID(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedByUserID, v))
+}
+
+// PinnedReason applies equality check predicate on the "pinned_reason" field. It's identical to PinnedReasonEQ.
+func PinnedReason(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedReason, v))
+}
+
+// SolutionCommentID applies equality check predicate on the "solution_comment_id" field. It's identical to SolutionCommentIDEQ.
+func SolutionCommentID(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldSolutionCommentID, v))
+}
+
+// RelatedIssueID applies equality check predicate on the "related_issue_id" field. It's identical to RelatedIssueIDEQ.
+func RelatedIssueID(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueReason applies equality check predicate on the "related_issue_reason" field. It's identical to RelatedIssueReasonEQ.
+func RelatedIssueReason(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldRelatedIssueReason, v))
+}
+
 // LastCommentAt applies equality check predicate on the "last_comment_at" field. It's identical to LastCommentAtEQ.
 func LastCommentAt(v time.Time) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldLastCommentAt, v))
@@ -1648,6 +1678,336 @@ func HideReasonEqualFold(v string) predicate.SupportIssue {
 // HideReasonContainsFold applies the ContainsFold predicate on the "hide_reason" field.
 func HideReasonContainsFold(v string) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldContainsFold(FieldHideReason, v))
+}
+
+// PinnedAtEQ applies the EQ predicate on the "pinned_at" field.
+func PinnedAtEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedAt, v))
+}
+
+// PinnedAtNEQ applies the NEQ predicate on the "pinned_at" field.
+func PinnedAtNEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldPinnedAt, v))
+}
+
+// PinnedAtIn applies the In predicate on the "pinned_at" field.
+func PinnedAtIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldPinnedAt, vs...))
+}
+
+// PinnedAtNotIn applies the NotIn predicate on the "pinned_at" field.
+func PinnedAtNotIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldPinnedAt, vs...))
+}
+
+// PinnedAtGT applies the GT predicate on the "pinned_at" field.
+func PinnedAtGT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldPinnedAt, v))
+}
+
+// PinnedAtGTE applies the GTE predicate on the "pinned_at" field.
+func PinnedAtGTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldPinnedAt, v))
+}
+
+// PinnedAtLT applies the LT predicate on the "pinned_at" field.
+func PinnedAtLT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldPinnedAt, v))
+}
+
+// PinnedAtLTE applies the LTE predicate on the "pinned_at" field.
+func PinnedAtLTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldPinnedAt, v))
+}
+
+// PinnedAtIsNil applies the IsNil predicate on the "pinned_at" field.
+func PinnedAtIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldPinnedAt))
+}
+
+// PinnedAtNotNil applies the NotNil predicate on the "pinned_at" field.
+func PinnedAtNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldPinnedAt))
+}
+
+// PinnedByUserIDEQ applies the EQ predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDNEQ applies the NEQ predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDNEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDIn applies the In predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldPinnedByUserID, vs...))
+}
+
+// PinnedByUserIDNotIn applies the NotIn predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDNotIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldPinnedByUserID, vs...))
+}
+
+// PinnedByUserIDGT applies the GT predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDGT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDGTE applies the GTE predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDGTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDLT applies the LT predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDLT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDLTE applies the LTE predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDLTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldPinnedByUserID, v))
+}
+
+// PinnedByUserIDIsNil applies the IsNil predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldPinnedByUserID))
+}
+
+// PinnedByUserIDNotNil applies the NotNil predicate on the "pinned_by_user_id" field.
+func PinnedByUserIDNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldPinnedByUserID))
+}
+
+// PinnedReasonEQ applies the EQ predicate on the "pinned_reason" field.
+func PinnedReasonEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldPinnedReason, v))
+}
+
+// PinnedReasonNEQ applies the NEQ predicate on the "pinned_reason" field.
+func PinnedReasonNEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldPinnedReason, v))
+}
+
+// PinnedReasonIn applies the In predicate on the "pinned_reason" field.
+func PinnedReasonIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldPinnedReason, vs...))
+}
+
+// PinnedReasonNotIn applies the NotIn predicate on the "pinned_reason" field.
+func PinnedReasonNotIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldPinnedReason, vs...))
+}
+
+// PinnedReasonGT applies the GT predicate on the "pinned_reason" field.
+func PinnedReasonGT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldPinnedReason, v))
+}
+
+// PinnedReasonGTE applies the GTE predicate on the "pinned_reason" field.
+func PinnedReasonGTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldPinnedReason, v))
+}
+
+// PinnedReasonLT applies the LT predicate on the "pinned_reason" field.
+func PinnedReasonLT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldPinnedReason, v))
+}
+
+// PinnedReasonLTE applies the LTE predicate on the "pinned_reason" field.
+func PinnedReasonLTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldPinnedReason, v))
+}
+
+// PinnedReasonContains applies the Contains predicate on the "pinned_reason" field.
+func PinnedReasonContains(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContains(FieldPinnedReason, v))
+}
+
+// PinnedReasonHasPrefix applies the HasPrefix predicate on the "pinned_reason" field.
+func PinnedReasonHasPrefix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasPrefix(FieldPinnedReason, v))
+}
+
+// PinnedReasonHasSuffix applies the HasSuffix predicate on the "pinned_reason" field.
+func PinnedReasonHasSuffix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasSuffix(FieldPinnedReason, v))
+}
+
+// PinnedReasonEqualFold applies the EqualFold predicate on the "pinned_reason" field.
+func PinnedReasonEqualFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEqualFold(FieldPinnedReason, v))
+}
+
+// PinnedReasonContainsFold applies the ContainsFold predicate on the "pinned_reason" field.
+func PinnedReasonContainsFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContainsFold(FieldPinnedReason, v))
+}
+
+// SolutionCommentIDEQ applies the EQ predicate on the "solution_comment_id" field.
+func SolutionCommentIDEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDNEQ applies the NEQ predicate on the "solution_comment_id" field.
+func SolutionCommentIDNEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDIn applies the In predicate on the "solution_comment_id" field.
+func SolutionCommentIDIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldSolutionCommentID, vs...))
+}
+
+// SolutionCommentIDNotIn applies the NotIn predicate on the "solution_comment_id" field.
+func SolutionCommentIDNotIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldSolutionCommentID, vs...))
+}
+
+// SolutionCommentIDGT applies the GT predicate on the "solution_comment_id" field.
+func SolutionCommentIDGT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDGTE applies the GTE predicate on the "solution_comment_id" field.
+func SolutionCommentIDGTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDLT applies the LT predicate on the "solution_comment_id" field.
+func SolutionCommentIDLT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDLTE applies the LTE predicate on the "solution_comment_id" field.
+func SolutionCommentIDLTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldSolutionCommentID, v))
+}
+
+// SolutionCommentIDIsNil applies the IsNil predicate on the "solution_comment_id" field.
+func SolutionCommentIDIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldSolutionCommentID))
+}
+
+// SolutionCommentIDNotNil applies the NotNil predicate on the "solution_comment_id" field.
+func SolutionCommentIDNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldSolutionCommentID))
+}
+
+// RelatedIssueIDEQ applies the EQ predicate on the "related_issue_id" field.
+func RelatedIssueIDEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDNEQ applies the NEQ predicate on the "related_issue_id" field.
+func RelatedIssueIDNEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDIn applies the In predicate on the "related_issue_id" field.
+func RelatedIssueIDIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldRelatedIssueID, vs...))
+}
+
+// RelatedIssueIDNotIn applies the NotIn predicate on the "related_issue_id" field.
+func RelatedIssueIDNotIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldRelatedIssueID, vs...))
+}
+
+// RelatedIssueIDGT applies the GT predicate on the "related_issue_id" field.
+func RelatedIssueIDGT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDGTE applies the GTE predicate on the "related_issue_id" field.
+func RelatedIssueIDGTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDLT applies the LT predicate on the "related_issue_id" field.
+func RelatedIssueIDLT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDLTE applies the LTE predicate on the "related_issue_id" field.
+func RelatedIssueIDLTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldRelatedIssueID, v))
+}
+
+// RelatedIssueIDIsNil applies the IsNil predicate on the "related_issue_id" field.
+func RelatedIssueIDIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldRelatedIssueID))
+}
+
+// RelatedIssueIDNotNil applies the NotNil predicate on the "related_issue_id" field.
+func RelatedIssueIDNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldRelatedIssueID))
+}
+
+// RelatedIssueReasonEQ applies the EQ predicate on the "related_issue_reason" field.
+func RelatedIssueReasonEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonNEQ applies the NEQ predicate on the "related_issue_reason" field.
+func RelatedIssueReasonNEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonIn applies the In predicate on the "related_issue_reason" field.
+func RelatedIssueReasonIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldRelatedIssueReason, vs...))
+}
+
+// RelatedIssueReasonNotIn applies the NotIn predicate on the "related_issue_reason" field.
+func RelatedIssueReasonNotIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldRelatedIssueReason, vs...))
+}
+
+// RelatedIssueReasonGT applies the GT predicate on the "related_issue_reason" field.
+func RelatedIssueReasonGT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonGTE applies the GTE predicate on the "related_issue_reason" field.
+func RelatedIssueReasonGTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonLT applies the LT predicate on the "related_issue_reason" field.
+func RelatedIssueReasonLT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonLTE applies the LTE predicate on the "related_issue_reason" field.
+func RelatedIssueReasonLTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonContains applies the Contains predicate on the "related_issue_reason" field.
+func RelatedIssueReasonContains(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContains(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonHasPrefix applies the HasPrefix predicate on the "related_issue_reason" field.
+func RelatedIssueReasonHasPrefix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasPrefix(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonHasSuffix applies the HasSuffix predicate on the "related_issue_reason" field.
+func RelatedIssueReasonHasSuffix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasSuffix(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonEqualFold applies the EqualFold predicate on the "related_issue_reason" field.
+func RelatedIssueReasonEqualFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEqualFold(FieldRelatedIssueReason, v))
+}
+
+// RelatedIssueReasonContainsFold applies the ContainsFold predicate on the "related_issue_reason" field.
+func RelatedIssueReasonContainsFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContainsFold(FieldRelatedIssueReason, v))
 }
 
 // LastCommentAtEQ applies the EQ predicate on the "last_comment_at" field.
