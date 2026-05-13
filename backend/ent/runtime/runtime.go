@@ -41,6 +41,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportissue"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -1912,6 +1916,344 @@ func init() {
 	subscriptionplan.DefaultUpdatedAt = subscriptionplanDescUpdatedAt.Default.(func() time.Time)
 	// subscriptionplan.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	subscriptionplan.UpdateDefaultUpdatedAt = subscriptionplanDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportissueFields := schema.SupportIssue{}.Fields()
+	_ = supportissueFields
+	// supportissueDescPublicID is the schema descriptor for public_id field.
+	supportissueDescPublicID := supportissueFields[0].Descriptor()
+	// supportissue.PublicIDValidator is a validator for the "public_id" field. It is called by the builders before save.
+	supportissue.PublicIDValidator = func() func(string) error {
+		validators := supportissueDescPublicID.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(public_id string) error {
+			for _, fn := range fns {
+				if err := fn(public_id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueDescTitle is the schema descriptor for title field.
+	supportissueDescTitle := supportissueFields[1].Descriptor()
+	// supportissue.TitleValidator is a validator for the "title" field. It is called by the builders before save.
+	supportissue.TitleValidator = func() func(string) error {
+		validators := supportissueDescTitle.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(title string) error {
+			for _, fn := range fns {
+				if err := fn(title); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueDescDescription is the schema descriptor for description field.
+	supportissueDescDescription := supportissueFields[2].Descriptor()
+	// supportissue.DescriptionValidator is a validator for the "description" field. It is called by the builders before save.
+	supportissue.DescriptionValidator = supportissueDescDescription.Validators[0].(func(string) error)
+	// supportissueDescAccountEmail is the schema descriptor for account_email field.
+	supportissueDescAccountEmail := supportissueFields[3].Descriptor()
+	// supportissue.AccountEmailValidator is a validator for the "account_email" field. It is called by the builders before save.
+	supportissue.AccountEmailValidator = func() func(string) error {
+		validators := supportissueDescAccountEmail.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(account_email string) error {
+			for _, fn := range fns {
+				if err := fn(account_email); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueDescAccountEmailNormalized is the schema descriptor for account_email_normalized field.
+	supportissueDescAccountEmailNormalized := supportissueFields[4].Descriptor()
+	// supportissue.AccountEmailNormalizedValidator is a validator for the "account_email_normalized" field. It is called by the builders before save.
+	supportissue.AccountEmailNormalizedValidator = func() func(string) error {
+		validators := supportissueDescAccountEmailNormalized.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(account_email_normalized string) error {
+			for _, fn := range fns {
+				if err := fn(account_email_normalized); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueDescAccountEmailMasked is the schema descriptor for account_email_masked field.
+	supportissueDescAccountEmailMasked := supportissueFields[5].Descriptor()
+	// supportissue.AccountEmailMaskedValidator is a validator for the "account_email_masked" field. It is called by the builders before save.
+	supportissue.AccountEmailMaskedValidator = func() func(string) error {
+		validators := supportissueDescAccountEmailMasked.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(account_email_masked string) error {
+			for _, fn := range fns {
+				if err := fn(account_email_masked); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueDescScreenshotText is the schema descriptor for screenshot_text field.
+	supportissueDescScreenshotText := supportissueFields[7].Descriptor()
+	// supportissue.ScreenshotTextValidator is a validator for the "screenshot_text" field. It is called by the builders before save.
+	supportissue.ScreenshotTextValidator = supportissueDescScreenshotText.Validators[0].(func(string) error)
+	// supportissueDescScreenshotLanguage is the schema descriptor for screenshot_language field.
+	supportissueDescScreenshotLanguage := supportissueFields[8].Descriptor()
+	// supportissue.DefaultScreenshotLanguage holds the default value on creation for the screenshot_language field.
+	supportissue.DefaultScreenshotLanguage = supportissueDescScreenshotLanguage.Default.(string)
+	// supportissue.ScreenshotLanguageValidator is a validator for the "screenshot_language" field. It is called by the builders before save.
+	supportissue.ScreenshotLanguageValidator = supportissueDescScreenshotLanguage.Validators[0].(func(string) error)
+	// supportissueDescCategory is the schema descriptor for category field.
+	supportissueDescCategory := supportissueFields[9].Descriptor()
+	// supportissue.DefaultCategory holds the default value on creation for the category field.
+	supportissue.DefaultCategory = supportissueDescCategory.Default.(string)
+	// supportissue.CategoryValidator is a validator for the "category" field. It is called by the builders before save.
+	supportissue.CategoryValidator = supportissueDescCategory.Validators[0].(func(string) error)
+	// supportissueDescSeverity is the schema descriptor for severity field.
+	supportissueDescSeverity := supportissueFields[10].Descriptor()
+	// supportissue.DefaultSeverity holds the default value on creation for the severity field.
+	supportissue.DefaultSeverity = supportissueDescSeverity.Default.(string)
+	// supportissue.SeverityValidator is a validator for the "severity" field. It is called by the builders before save.
+	supportissue.SeverityValidator = supportissueDescSeverity.Validators[0].(func(string) error)
+	// supportissueDescStatus is the schema descriptor for status field.
+	supportissueDescStatus := supportissueFields[11].Descriptor()
+	// supportissue.DefaultStatus holds the default value on creation for the status field.
+	supportissue.DefaultStatus = supportissueDescStatus.Default.(string)
+	// supportissue.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	supportissue.StatusValidator = supportissueDescStatus.Validators[0].(func(string) error)
+	// supportissueDescModelName is the schema descriptor for model_name field.
+	supportissueDescModelName := supportissueFields[12].Descriptor()
+	// supportissue.DefaultModelName holds the default value on creation for the model_name field.
+	supportissue.DefaultModelName = supportissueDescModelName.Default.(string)
+	// supportissue.ModelNameValidator is a validator for the "model_name" field. It is called by the builders before save.
+	supportissue.ModelNameValidator = supportissueDescModelName.Validators[0].(func(string) error)
+	// supportissueDescClientName is the schema descriptor for client_name field.
+	supportissueDescClientName := supportissueFields[13].Descriptor()
+	// supportissue.DefaultClientName holds the default value on creation for the client_name field.
+	supportissue.DefaultClientName = supportissueDescClientName.Default.(string)
+	// supportissue.ClientNameValidator is a validator for the "client_name" field. It is called by the builders before save.
+	supportissue.ClientNameValidator = supportissueDescClientName.Validators[0].(func(string) error)
+	// supportissueDescErrorCode is the schema descriptor for error_code field.
+	supportissueDescErrorCode := supportissueFields[15].Descriptor()
+	// supportissue.DefaultErrorCode holds the default value on creation for the error_code field.
+	supportissue.DefaultErrorCode = supportissueDescErrorCode.Default.(string)
+	// supportissue.ErrorCodeValidator is a validator for the "error_code" field. It is called by the builders before save.
+	supportissue.ErrorCodeValidator = supportissueDescErrorCode.Validators[0].(func(string) error)
+	// supportissueDescAPIKeySuffix is the schema descriptor for api_key_suffix field.
+	supportissueDescAPIKeySuffix := supportissueFields[16].Descriptor()
+	// supportissue.DefaultAPIKeySuffix holds the default value on creation for the api_key_suffix field.
+	supportissue.DefaultAPIKeySuffix = supportissueDescAPIKeySuffix.Default.(string)
+	// supportissue.APIKeySuffixValidator is a validator for the "api_key_suffix" field. It is called by the builders before save.
+	supportissue.APIKeySuffixValidator = supportissueDescAPIKeySuffix.Validators[0].(func(string) error)
+	// supportissueDescCommentCount is the schema descriptor for comment_count field.
+	supportissueDescCommentCount := supportissueFields[22].Descriptor()
+	// supportissue.DefaultCommentCount holds the default value on creation for the comment_count field.
+	supportissue.DefaultCommentCount = supportissueDescCommentCount.Default.(int)
+	// supportissueDescHiddenCommentCount is the schema descriptor for hidden_comment_count field.
+	supportissueDescHiddenCommentCount := supportissueFields[23].Descriptor()
+	// supportissue.DefaultHiddenCommentCount holds the default value on creation for the hidden_comment_count field.
+	supportissue.DefaultHiddenCommentCount = supportissueDescHiddenCommentCount.Default.(int)
+	// supportissueDescAttachmentCount is the schema descriptor for attachment_count field.
+	supportissueDescAttachmentCount := supportissueFields[24].Descriptor()
+	// supportissue.DefaultAttachmentCount holds the default value on creation for the attachment_count field.
+	supportissue.DefaultAttachmentCount = supportissueDescAttachmentCount.Default.(int)
+	// supportissueDescSearchText is the schema descriptor for search_text field.
+	supportissueDescSearchText := supportissueFields[25].Descriptor()
+	// supportissue.DefaultSearchText holds the default value on creation for the search_text field.
+	supportissue.DefaultSearchText = supportissueDescSearchText.Default.(string)
+	// supportissueDescCreatedAt is the schema descriptor for created_at field.
+	supportissueDescCreatedAt := supportissueFields[26].Descriptor()
+	// supportissue.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportissue.DefaultCreatedAt = supportissueDescCreatedAt.Default.(func() time.Time)
+	// supportissueDescUpdatedAt is the schema descriptor for updated_at field.
+	supportissueDescUpdatedAt := supportissueFields[27].Descriptor()
+	// supportissue.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	supportissue.DefaultUpdatedAt = supportissueDescUpdatedAt.Default.(func() time.Time)
+	// supportissue.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	supportissue.UpdateDefaultUpdatedAt = supportissueDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportissueattachmentFields := schema.SupportIssueAttachment{}.Fields()
+	_ = supportissueattachmentFields
+	// supportissueattachmentDescFilePath is the schema descriptor for file_path field.
+	supportissueattachmentDescFilePath := supportissueattachmentFields[2].Descriptor()
+	// supportissueattachment.FilePathValidator is a validator for the "file_path" field. It is called by the builders before save.
+	supportissueattachment.FilePathValidator = func() func(string) error {
+		validators := supportissueattachmentDescFilePath.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(file_path string) error {
+			for _, fn := range fns {
+				if err := fn(file_path); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueattachmentDescFileURL is the schema descriptor for file_url field.
+	supportissueattachmentDescFileURL := supportissueattachmentFields[3].Descriptor()
+	// supportissueattachment.FileURLValidator is a validator for the "file_url" field. It is called by the builders before save.
+	supportissueattachment.FileURLValidator = func() func(string) error {
+		validators := supportissueattachmentDescFileURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(file_url string) error {
+			for _, fn := range fns {
+				if err := fn(file_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueattachmentDescFileName is the schema descriptor for file_name field.
+	supportissueattachmentDescFileName := supportissueattachmentFields[4].Descriptor()
+	// supportissueattachment.FileNameValidator is a validator for the "file_name" field. It is called by the builders before save.
+	supportissueattachment.FileNameValidator = func() func(string) error {
+		validators := supportissueattachmentDescFileName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(file_name string) error {
+			for _, fn := range fns {
+				if err := fn(file_name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueattachmentDescMimeType is the schema descriptor for mime_type field.
+	supportissueattachmentDescMimeType := supportissueattachmentFields[5].Descriptor()
+	// supportissueattachment.MimeTypeValidator is a validator for the "mime_type" field. It is called by the builders before save.
+	supportissueattachment.MimeTypeValidator = func() func(string) error {
+		validators := supportissueattachmentDescMimeType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(mime_type string) error {
+			for _, fn := range fns {
+				if err := fn(mime_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueattachmentDescOcrText is the schema descriptor for ocr_text field.
+	supportissueattachmentDescOcrText := supportissueattachmentFields[7].Descriptor()
+	// supportissueattachment.DefaultOcrText holds the default value on creation for the ocr_text field.
+	supportissueattachment.DefaultOcrText = supportissueattachmentDescOcrText.Default.(string)
+	// supportissueattachmentDescVisibility is the schema descriptor for visibility field.
+	supportissueattachmentDescVisibility := supportissueattachmentFields[8].Descriptor()
+	// supportissueattachment.DefaultVisibility holds the default value on creation for the visibility field.
+	supportissueattachment.DefaultVisibility = supportissueattachmentDescVisibility.Default.(string)
+	// supportissueattachment.VisibilityValidator is a validator for the "visibility" field. It is called by the builders before save.
+	supportissueattachment.VisibilityValidator = supportissueattachmentDescVisibility.Validators[0].(func(string) error)
+	// supportissueattachmentDescCreatedAt is the schema descriptor for created_at field.
+	supportissueattachmentDescCreatedAt := supportissueattachmentFields[11].Descriptor()
+	// supportissueattachment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportissueattachment.DefaultCreatedAt = supportissueattachmentDescCreatedAt.Default.(func() time.Time)
+	supportissuecommentFields := schema.SupportIssueComment{}.Fields()
+	_ = supportissuecommentFields
+	// supportissuecommentDescAuthorRole is the schema descriptor for author_role field.
+	supportissuecommentDescAuthorRole := supportissuecommentFields[2].Descriptor()
+	// supportissuecomment.AuthorRoleValidator is a validator for the "author_role" field. It is called by the builders before save.
+	supportissuecomment.AuthorRoleValidator = func() func(string) error {
+		validators := supportissuecommentDescAuthorRole.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(author_role string) error {
+			for _, fn := range fns {
+				if err := fn(author_role); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissuecommentDescContent is the schema descriptor for content field.
+	supportissuecommentDescContent := supportissuecommentFields[3].Descriptor()
+	// supportissuecomment.ContentValidator is a validator for the "content" field. It is called by the builders before save.
+	supportissuecomment.ContentValidator = supportissuecommentDescContent.Validators[0].(func(string) error)
+	// supportissuecommentDescHideReason is the schema descriptor for hide_reason field.
+	supportissuecommentDescHideReason := supportissuecommentFields[6].Descriptor()
+	// supportissuecomment.DefaultHideReason holds the default value on creation for the hide_reason field.
+	supportissuecomment.DefaultHideReason = supportissuecommentDescHideReason.Default.(string)
+	// supportissuecomment.HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
+	supportissuecomment.HideReasonValidator = supportissuecommentDescHideReason.Validators[0].(func(string) error)
+	// supportissuecommentDescCreatedAt is the schema descriptor for created_at field.
+	supportissuecommentDescCreatedAt := supportissuecommentFields[7].Descriptor()
+	// supportissuecomment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportissuecomment.DefaultCreatedAt = supportissuecommentDescCreatedAt.Default.(func() time.Time)
+	// supportissuecommentDescUpdatedAt is the schema descriptor for updated_at field.
+	supportissuecommentDescUpdatedAt := supportissuecommentFields[8].Descriptor()
+	// supportissuecomment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	supportissuecomment.DefaultUpdatedAt = supportissuecommentDescUpdatedAt.Default.(func() time.Time)
+	// supportissuecomment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	supportissuecomment.UpdateDefaultUpdatedAt = supportissuecommentDescUpdatedAt.UpdateDefault.(func() time.Time)
+	supportissueeventFields := schema.SupportIssueEvent{}.Fields()
+	_ = supportissueeventFields
+	// supportissueeventDescEventType is the schema descriptor for event_type field.
+	supportissueeventDescEventType := supportissueeventFields[2].Descriptor()
+	// supportissueevent.EventTypeValidator is a validator for the "event_type" field. It is called by the builders before save.
+	supportissueevent.EventTypeValidator = func() func(string) error {
+		validators := supportissueeventDescEventType.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(event_type string) error {
+			for _, fn := range fns {
+				if err := fn(event_type); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueeventDescFromStatus is the schema descriptor for from_status field.
+	supportissueeventDescFromStatus := supportissueeventFields[3].Descriptor()
+	// supportissueevent.FromStatusValidator is a validator for the "from_status" field. It is called by the builders before save.
+	supportissueevent.FromStatusValidator = supportissueeventDescFromStatus.Validators[0].(func(string) error)
+	// supportissueeventDescToStatus is the schema descriptor for to_status field.
+	supportissueeventDescToStatus := supportissueeventFields[4].Descriptor()
+	// supportissueevent.ToStatusValidator is a validator for the "to_status" field. It is called by the builders before save.
+	supportissueevent.ToStatusValidator = supportissueeventDescToStatus.Validators[0].(func(string) error)
+	// supportissueeventDescMetadata is the schema descriptor for metadata field.
+	supportissueeventDescMetadata := supportissueeventFields[5].Descriptor()
+	// supportissueevent.DefaultMetadata holds the default value on creation for the metadata field.
+	supportissueevent.DefaultMetadata = supportissueeventDescMetadata.Default.(func() map[string]interface{})
+	// supportissueeventDescCreatedAt is the schema descriptor for created_at field.
+	supportissueeventDescCreatedAt := supportissueeventFields[6].Descriptor()
+	// supportissueevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportissueevent.DefaultCreatedAt = supportissueeventDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

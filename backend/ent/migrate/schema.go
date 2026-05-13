@@ -1794,6 +1794,199 @@ var (
 			},
 		},
 	}
+	// SupportIssuesColumns holds the columns for the "support_issues" table.
+	SupportIssuesColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "public_id", Type: field.TypeString, Size: 32},
+		{Name: "title", Type: field.TypeString, Size: 160},
+		{Name: "description", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "account_email", Type: field.TypeString, Size: 255},
+		{Name: "account_email_normalized", Type: field.TypeString, Size: 255},
+		{Name: "account_email_masked", Type: field.TypeString, Size: 255},
+		{Name: "occurred_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "screenshot_text", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "screenshot_language", Type: field.TypeString, Size: 16, Default: "unknown"},
+		{Name: "category", Type: field.TypeString, Size: 32, Default: "other"},
+		{Name: "severity", Type: field.TypeString, Size: 32, Default: "question"},
+		{Name: "status", Type: field.TypeString, Size: 32, Default: "open"},
+		{Name: "model_name", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "client_name", Type: field.TypeString, Size: 120, Default: ""},
+		{Name: "http_status", Type: field.TypeInt, Nullable: true},
+		{Name: "error_code", Type: field.TypeString, Size: 120, Default: ""},
+		{Name: "api_key_suffix", Type: field.TypeString, Size: 16, Default: ""},
+		{Name: "created_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "resolved_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "resolved_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "locked_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_comment_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "comment_count", Type: field.TypeInt, Default: 0},
+		{Name: "hidden_comment_count", Type: field.TypeInt, Default: 0},
+		{Name: "attachment_count", Type: field.TypeInt, Default: 0},
+		{Name: "search_text", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+	}
+	// SupportIssuesTable holds the schema information for the "support_issues" table.
+	SupportIssuesTable = &schema.Table{
+		Name:       "support_issues",
+		Columns:    SupportIssuesColumns,
+		PrimaryKey: []*schema.Column{SupportIssuesColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportissue_public_id",
+				Unique:  true,
+				Columns: []*schema.Column{SupportIssuesColumns[1]},
+			},
+			{
+				Name:    "supportissue_status_updated_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[28]},
+			},
+			{
+				Name:    "supportissue_status_last_comment_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[22]},
+			},
+			{
+				Name:    "supportissue_category_status",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[10], SupportIssuesColumns[12]},
+			},
+			{
+				Name:    "supportissue_created_by_user_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[18], SupportIssuesColumns[27]},
+			},
+			{
+				Name:    "supportissue_account_email_normalized",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[5]},
+			},
+			{
+				Name:    "supportissue_occurred_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[7]},
+			},
+			{
+				Name:    "supportissue_http_status",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[15]},
+			},
+			{
+				Name:    "supportissue_error_code",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[16]},
+			},
+		},
+	}
+	// SupportIssueAttachmentsColumns holds the columns for the "support_issue_attachments" table.
+	SupportIssueAttachmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "uploaded_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "file_path", Type: field.TypeString, Size: 512},
+		{Name: "file_url", Type: field.TypeString, Size: 512},
+		{Name: "file_name", Type: field.TypeString, Size: 255},
+		{Name: "mime_type", Type: field.TypeString, Size: 100},
+		{Name: "size_bytes", Type: field.TypeInt64},
+		{Name: "ocr_text", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "visibility", Type: field.TypeString, Size: 16, Default: "public"},
+		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "issue_id", Type: field.TypeInt64},
+	}
+	// SupportIssueAttachmentsTable holds the schema information for the "support_issue_attachments" table.
+	SupportIssueAttachmentsTable = &schema.Table{
+		Name:       "support_issue_attachments",
+		Columns:    SupportIssueAttachmentsColumns,
+		PrimaryKey: []*schema.Column{SupportIssueAttachmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_issue_attachments_support_issues_attachments",
+				Columns:    []*schema.Column{SupportIssueAttachmentsColumns[12]},
+				RefColumns: []*schema.Column{SupportIssuesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportissueattachment_issue_id_visibility",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueAttachmentsColumns[12], SupportIssueAttachmentsColumns[8]},
+			},
+		},
+	}
+	// SupportIssueCommentsColumns holds the columns for the "support_issue_comments" table.
+	SupportIssueCommentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "author_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "author_role", Type: field.TypeString, Size: 16},
+		{Name: "content", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "hide_reason", Type: field.TypeString, Size: 255, Default: ""},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "issue_id", Type: field.TypeInt64},
+	}
+	// SupportIssueCommentsTable holds the schema information for the "support_issue_comments" table.
+	SupportIssueCommentsTable = &schema.Table{
+		Name:       "support_issue_comments",
+		Columns:    SupportIssueCommentsColumns,
+		PrimaryKey: []*schema.Column{SupportIssueCommentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_issue_comments_support_issues_comments",
+				Columns:    []*schema.Column{SupportIssueCommentsColumns[9]},
+				RefColumns: []*schema.Column{SupportIssuesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportissuecomment_issue_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueCommentsColumns[9], SupportIssueCommentsColumns[7]},
+			},
+			{
+				Name:    "supportissuecomment_issue_id_hidden_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueCommentsColumns[9], SupportIssueCommentsColumns[4]},
+			},
+		},
+	}
+	// SupportIssueEventsColumns holds the columns for the "support_issue_events" table.
+	SupportIssueEventsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "actor_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "event_type", Type: field.TypeString, Size: 32},
+		{Name: "from_status", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "to_status", Type: field.TypeString, Nullable: true, Size: 32},
+		{Name: "metadata", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "issue_id", Type: field.TypeInt64},
+	}
+	// SupportIssueEventsTable holds the schema information for the "support_issue_events" table.
+	SupportIssueEventsTable = &schema.Table{
+		Name:       "support_issue_events",
+		Columns:    SupportIssueEventsColumns,
+		PrimaryKey: []*schema.Column{SupportIssueEventsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_issue_events_support_issues_events",
+				Columns:    []*schema.Column{SupportIssueEventsColumns[7]},
+				RefColumns: []*schema.Column{SupportIssuesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportissueevent_issue_id_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueEventsColumns[7], SupportIssueEventsColumns[6]},
+			},
+		},
+	}
 	// TLSFingerprintProfilesColumns holds the columns for the "tls_fingerprint_profiles" table.
 	TLSFingerprintProfilesColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -2291,6 +2484,10 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionPlansTable,
+		SupportIssuesTable,
+		SupportIssueAttachmentsTable,
+		SupportIssueCommentsTable,
+		SupportIssueEventsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2446,6 +2643,21 @@ func init() {
 	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	SupportIssuesTable.Annotation = &entsql.Annotation{
+		Table: "support_issues",
+	}
+	SupportIssueAttachmentsTable.ForeignKeys[0].RefTable = SupportIssuesTable
+	SupportIssueAttachmentsTable.Annotation = &entsql.Annotation{
+		Table: "support_issue_attachments",
+	}
+	SupportIssueCommentsTable.ForeignKeys[0].RefTable = SupportIssuesTable
+	SupportIssueCommentsTable.Annotation = &entsql.Annotation{
+		Table: "support_issue_comments",
+	}
+	SupportIssueEventsTable.ForeignKeys[0].RefTable = SupportIssuesTable
+	SupportIssueEventsTable.Annotation = &entsql.Annotation{
+		Table: "support_issue_events",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

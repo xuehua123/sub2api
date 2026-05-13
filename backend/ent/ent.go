@@ -47,6 +47,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportissue"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -150,6 +154,10 @@ func checkColumn(t, c string) error {
 			securitysecret.Table:                securitysecret.ValidColumn,
 			setting.Table:                       setting.ValidColumn,
 			subscriptionplan.Table:              subscriptionplan.ValidColumn,
+			supportissue.Table:                  supportissue.ValidColumn,
+			supportissueattachment.Table:        supportissueattachment.ValidColumn,
+			supportissuecomment.Table:           supportissuecomment.ValidColumn,
+			supportissueevent.Table:             supportissueevent.ValidColumn,
 			tlsfingerprintprofile.Table:         tlsfingerprintprofile.ValidColumn,
 			usagecleanuptask.Table:              usagecleanuptask.ValidColumn,
 			usagelog.Table:                      usagelog.ValidColumn,
