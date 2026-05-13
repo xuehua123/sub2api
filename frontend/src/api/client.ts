@@ -61,6 +61,14 @@ const getUserTimezone = (): string => {
 
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    if (config.data instanceof FormData && config.headers) {
+      const headers = config.headers as typeof config.headers & {
+        setContentType?: (value: false) => void
+      }
+      headers.setContentType?.(false)
+      delete config.headers['Content-Type']
+    }
+
     // Attach token from localStorage
     const token = localStorage.getItem('auth_token')
     if (token && config.headers) {

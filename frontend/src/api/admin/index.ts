@@ -32,6 +32,7 @@ import adminPaymentAPI from './payment'
 import referralAPI from './referral'
 import affiliatesAPI from './affiliates'
 import riskControlAPI from './riskControl'
+import adminIssuesAPI from './issues'
 
 /**
  * Unified admin API object for convenient access
@@ -65,7 +66,8 @@ export const adminAPI = {
   payment: adminPaymentAPI,
   referral: referralAPI,
   affiliates: affiliatesAPI,
-  riskControl: riskControlAPI
+  riskControl: riskControlAPI,
+  issues: adminIssuesAPI
 }
 
 export {
@@ -97,7 +99,8 @@ export {
   adminPaymentAPI,
   referralAPI,
   affiliatesAPI,
-  riskControlAPI
+  riskControlAPI,
+  adminIssuesAPI
 }
 
 export default adminAPI

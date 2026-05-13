@@ -26,6 +26,7 @@ export type {
 } from './lobehub'
 export { default as announcementsAPI } from './announcements'
 export { channelMonitorUserAPI } from './channelMonitor'
+export { issuesAPI } from './issues'
 // Admin APIs
 export { adminAPI } from './admin'
 

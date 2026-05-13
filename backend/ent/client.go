@@ -50,6 +50,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/supportissue"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -137,6 +141,14 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SupportIssue is the client for interacting with the SupportIssue builders.
+	SupportIssue *SupportIssueClient
+	// SupportIssueAttachment is the client for interacting with the SupportIssueAttachment builders.
+	SupportIssueAttachment *SupportIssueAttachmentClient
+	// SupportIssueComment is the client for interacting with the SupportIssueComment builders.
+	SupportIssueComment *SupportIssueCommentClient
+	// SupportIssueEvent is the client for interacting with the SupportIssueEvent builders.
+	SupportIssueEvent *SupportIssueEventClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -199,6 +211,10 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
+	c.SupportIssue = NewSupportIssueClient(c.config)
+	c.SupportIssueAttachment = NewSupportIssueAttachmentClient(c.config)
+	c.SupportIssueComment = NewSupportIssueCommentClient(c.config)
+	c.SupportIssueEvent = NewSupportIssueEventClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -334,6 +350,10 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SupportIssue:                  NewSupportIssueClient(cfg),
+		SupportIssueAttachment:        NewSupportIssueAttachmentClient(cfg),
+		SupportIssueComment:           NewSupportIssueCommentClient(cfg),
+		SupportIssueEvent:             NewSupportIssueEventClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -396,6 +416,10 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                NewSecuritySecretClient(cfg),
 		Setting:                       NewSettingClient(cfg),
 		SubscriptionPlan:              NewSubscriptionPlanClient(cfg),
+		SupportIssue:                  NewSupportIssueClient(cfg),
+		SupportIssueAttachment:        NewSupportIssueAttachmentClient(cfg),
+		SupportIssueComment:           NewSupportIssueCommentClient(cfg),
+		SupportIssueEvent:             NewSupportIssueEventClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -443,8 +467,9 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
 		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
+		c.SupportIssueEvent, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Use(hooks...)
@@ -465,8 +490,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode, c.PromoCodeUsage,
 		c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
 		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
-		c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
+		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
+		c.SupportIssueEvent, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
+		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
 		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
@@ -546,6 +572,14 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionPlanMutation:
 		return c.SubscriptionPlan.mutate(ctx, m)
+	case *SupportIssueMutation:
+		return c.SupportIssue.mutate(ctx, m)
+	case *SupportIssueAttachmentMutation:
+		return c.SupportIssueAttachment.mutate(ctx, m)
+	case *SupportIssueCommentMutation:
+		return c.SupportIssueComment.mutate(ctx, m)
+	case *SupportIssueEventMutation:
+		return c.SupportIssueEvent.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -6269,6 +6303,634 @@ func (c *SubscriptionPlanClient) mutate(ctx context.Context, m *SubscriptionPlan
 	}
 }
 
+// SupportIssueClient is a client for the SupportIssue schema.
+type SupportIssueClient struct {
+	config
+}
+
+// NewSupportIssueClient returns a client for the SupportIssue from the given config.
+func NewSupportIssueClient(c config) *SupportIssueClient {
+	return &SupportIssueClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportissue.Hooks(f(g(h())))`.
+func (c *SupportIssueClient) Use(hooks ...Hook) {
+	c.hooks.SupportIssue = append(c.hooks.SupportIssue, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportissue.Intercept(f(g(h())))`.
+func (c *SupportIssueClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportIssue = append(c.inters.SupportIssue, interceptors...)
+}
+
+// Create returns a builder for creating a SupportIssue entity.
+func (c *SupportIssueClient) Create() *SupportIssueCreate {
+	mutation := newSupportIssueMutation(c.config, OpCreate)
+	return &SupportIssueCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportIssue entities.
+func (c *SupportIssueClient) CreateBulk(builders ...*SupportIssueCreate) *SupportIssueCreateBulk {
+	return &SupportIssueCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportIssueClient) MapCreateBulk(slice any, setFunc func(*SupportIssueCreate, int)) *SupportIssueCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportIssueCreateBulk{err: fmt.Errorf("calling to SupportIssueClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportIssueCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportIssueCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportIssue.
+func (c *SupportIssueClient) Update() *SupportIssueUpdate {
+	mutation := newSupportIssueMutation(c.config, OpUpdate)
+	return &SupportIssueUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportIssueClient) UpdateOne(_m *SupportIssue) *SupportIssueUpdateOne {
+	mutation := newSupportIssueMutation(c.config, OpUpdateOne, withSupportIssue(_m))
+	return &SupportIssueUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportIssueClient) UpdateOneID(id int64) *SupportIssueUpdateOne {
+	mutation := newSupportIssueMutation(c.config, OpUpdateOne, withSupportIssueID(id))
+	return &SupportIssueUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportIssue.
+func (c *SupportIssueClient) Delete() *SupportIssueDelete {
+	mutation := newSupportIssueMutation(c.config, OpDelete)
+	return &SupportIssueDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportIssueClient) DeleteOne(_m *SupportIssue) *SupportIssueDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportIssueClient) DeleteOneID(id int64) *SupportIssueDeleteOne {
+	builder := c.Delete().Where(supportissue.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportIssueDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportIssue.
+func (c *SupportIssueClient) Query() *SupportIssueQuery {
+	return &SupportIssueQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportIssue},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportIssue entity by its id.
+func (c *SupportIssueClient) Get(ctx context.Context, id int64) (*SupportIssue, error) {
+	return c.Query().Where(supportissue.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportIssueClient) GetX(ctx context.Context, id int64) *SupportIssue {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryComments queries the comments edge of a SupportIssue.
+func (c *SupportIssueClient) QueryComments(_m *SupportIssue) *SupportIssueCommentQuery {
+	query := (&SupportIssueCommentClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissue.Table, supportissue.FieldID, id),
+			sqlgraph.To(supportissuecomment.Table, supportissuecomment.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.CommentsTable, supportissue.CommentsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAttachments queries the attachments edge of a SupportIssue.
+func (c *SupportIssueClient) QueryAttachments(_m *SupportIssue) *SupportIssueAttachmentQuery {
+	query := (&SupportIssueAttachmentClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissue.Table, supportissue.FieldID, id),
+			sqlgraph.To(supportissueattachment.Table, supportissueattachment.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.AttachmentsTable, supportissue.AttachmentsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryEvents queries the events edge of a SupportIssue.
+func (c *SupportIssueClient) QueryEvents(_m *SupportIssue) *SupportIssueEventQuery {
+	query := (&SupportIssueEventClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissue.Table, supportissue.FieldID, id),
+			sqlgraph.To(supportissueevent.Table, supportissueevent.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.EventsTable, supportissue.EventsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportIssueClient) Hooks() []Hook {
+	return c.hooks.SupportIssue
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportIssueClient) Interceptors() []Interceptor {
+	return c.inters.SupportIssue
+}
+
+func (c *SupportIssueClient) mutate(ctx context.Context, m *SupportIssueMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportIssueCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportIssueUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportIssueUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportIssueDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportIssue mutation op: %q", m.Op())
+	}
+}
+
+// SupportIssueAttachmentClient is a client for the SupportIssueAttachment schema.
+type SupportIssueAttachmentClient struct {
+	config
+}
+
+// NewSupportIssueAttachmentClient returns a client for the SupportIssueAttachment from the given config.
+func NewSupportIssueAttachmentClient(c config) *SupportIssueAttachmentClient {
+	return &SupportIssueAttachmentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportissueattachment.Hooks(f(g(h())))`.
+func (c *SupportIssueAttachmentClient) Use(hooks ...Hook) {
+	c.hooks.SupportIssueAttachment = append(c.hooks.SupportIssueAttachment, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportissueattachment.Intercept(f(g(h())))`.
+func (c *SupportIssueAttachmentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportIssueAttachment = append(c.inters.SupportIssueAttachment, interceptors...)
+}
+
+// Create returns a builder for creating a SupportIssueAttachment entity.
+func (c *SupportIssueAttachmentClient) Create() *SupportIssueAttachmentCreate {
+	mutation := newSupportIssueAttachmentMutation(c.config, OpCreate)
+	return &SupportIssueAttachmentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportIssueAttachment entities.
+func (c *SupportIssueAttachmentClient) CreateBulk(builders ...*SupportIssueAttachmentCreate) *SupportIssueAttachmentCreateBulk {
+	return &SupportIssueAttachmentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportIssueAttachmentClient) MapCreateBulk(slice any, setFunc func(*SupportIssueAttachmentCreate, int)) *SupportIssueAttachmentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportIssueAttachmentCreateBulk{err: fmt.Errorf("calling to SupportIssueAttachmentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportIssueAttachmentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportIssueAttachmentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportIssueAttachment.
+func (c *SupportIssueAttachmentClient) Update() *SupportIssueAttachmentUpdate {
+	mutation := newSupportIssueAttachmentMutation(c.config, OpUpdate)
+	return &SupportIssueAttachmentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportIssueAttachmentClient) UpdateOne(_m *SupportIssueAttachment) *SupportIssueAttachmentUpdateOne {
+	mutation := newSupportIssueAttachmentMutation(c.config, OpUpdateOne, withSupportIssueAttachment(_m))
+	return &SupportIssueAttachmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportIssueAttachmentClient) UpdateOneID(id int64) *SupportIssueAttachmentUpdateOne {
+	mutation := newSupportIssueAttachmentMutation(c.config, OpUpdateOne, withSupportIssueAttachmentID(id))
+	return &SupportIssueAttachmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportIssueAttachment.
+func (c *SupportIssueAttachmentClient) Delete() *SupportIssueAttachmentDelete {
+	mutation := newSupportIssueAttachmentMutation(c.config, OpDelete)
+	return &SupportIssueAttachmentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportIssueAttachmentClient) DeleteOne(_m *SupportIssueAttachment) *SupportIssueAttachmentDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportIssueAttachmentClient) DeleteOneID(id int64) *SupportIssueAttachmentDeleteOne {
+	builder := c.Delete().Where(supportissueattachment.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportIssueAttachmentDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportIssueAttachment.
+func (c *SupportIssueAttachmentClient) Query() *SupportIssueAttachmentQuery {
+	return &SupportIssueAttachmentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportIssueAttachment},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportIssueAttachment entity by its id.
+func (c *SupportIssueAttachmentClient) Get(ctx context.Context, id int64) (*SupportIssueAttachment, error) {
+	return c.Query().Where(supportissueattachment.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportIssueAttachmentClient) GetX(ctx context.Context, id int64) *SupportIssueAttachment {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIssue queries the issue edge of a SupportIssueAttachment.
+func (c *SupportIssueAttachmentClient) QueryIssue(_m *SupportIssueAttachment) *SupportIssueQuery {
+	query := (&SupportIssueClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissueattachment.Table, supportissueattachment.FieldID, id),
+			sqlgraph.To(supportissue.Table, supportissue.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportissueattachment.IssueTable, supportissueattachment.IssueColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportIssueAttachmentClient) Hooks() []Hook {
+	return c.hooks.SupportIssueAttachment
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportIssueAttachmentClient) Interceptors() []Interceptor {
+	return c.inters.SupportIssueAttachment
+}
+
+func (c *SupportIssueAttachmentClient) mutate(ctx context.Context, m *SupportIssueAttachmentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportIssueAttachmentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportIssueAttachmentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportIssueAttachmentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportIssueAttachmentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportIssueAttachment mutation op: %q", m.Op())
+	}
+}
+
+// SupportIssueCommentClient is a client for the SupportIssueComment schema.
+type SupportIssueCommentClient struct {
+	config
+}
+
+// NewSupportIssueCommentClient returns a client for the SupportIssueComment from the given config.
+func NewSupportIssueCommentClient(c config) *SupportIssueCommentClient {
+	return &SupportIssueCommentClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportissuecomment.Hooks(f(g(h())))`.
+func (c *SupportIssueCommentClient) Use(hooks ...Hook) {
+	c.hooks.SupportIssueComment = append(c.hooks.SupportIssueComment, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportissuecomment.Intercept(f(g(h())))`.
+func (c *SupportIssueCommentClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportIssueComment = append(c.inters.SupportIssueComment, interceptors...)
+}
+
+// Create returns a builder for creating a SupportIssueComment entity.
+func (c *SupportIssueCommentClient) Create() *SupportIssueCommentCreate {
+	mutation := newSupportIssueCommentMutation(c.config, OpCreate)
+	return &SupportIssueCommentCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportIssueComment entities.
+func (c *SupportIssueCommentClient) CreateBulk(builders ...*SupportIssueCommentCreate) *SupportIssueCommentCreateBulk {
+	return &SupportIssueCommentCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportIssueCommentClient) MapCreateBulk(slice any, setFunc func(*SupportIssueCommentCreate, int)) *SupportIssueCommentCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportIssueCommentCreateBulk{err: fmt.Errorf("calling to SupportIssueCommentClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportIssueCommentCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportIssueCommentCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportIssueComment.
+func (c *SupportIssueCommentClient) Update() *SupportIssueCommentUpdate {
+	mutation := newSupportIssueCommentMutation(c.config, OpUpdate)
+	return &SupportIssueCommentUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportIssueCommentClient) UpdateOne(_m *SupportIssueComment) *SupportIssueCommentUpdateOne {
+	mutation := newSupportIssueCommentMutation(c.config, OpUpdateOne, withSupportIssueComment(_m))
+	return &SupportIssueCommentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportIssueCommentClient) UpdateOneID(id int64) *SupportIssueCommentUpdateOne {
+	mutation := newSupportIssueCommentMutation(c.config, OpUpdateOne, withSupportIssueCommentID(id))
+	return &SupportIssueCommentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportIssueComment.
+func (c *SupportIssueCommentClient) Delete() *SupportIssueCommentDelete {
+	mutation := newSupportIssueCommentMutation(c.config, OpDelete)
+	return &SupportIssueCommentDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportIssueCommentClient) DeleteOne(_m *SupportIssueComment) *SupportIssueCommentDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportIssueCommentClient) DeleteOneID(id int64) *SupportIssueCommentDeleteOne {
+	builder := c.Delete().Where(supportissuecomment.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportIssueCommentDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportIssueComment.
+func (c *SupportIssueCommentClient) Query() *SupportIssueCommentQuery {
+	return &SupportIssueCommentQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportIssueComment},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportIssueComment entity by its id.
+func (c *SupportIssueCommentClient) Get(ctx context.Context, id int64) (*SupportIssueComment, error) {
+	return c.Query().Where(supportissuecomment.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportIssueCommentClient) GetX(ctx context.Context, id int64) *SupportIssueComment {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIssue queries the issue edge of a SupportIssueComment.
+func (c *SupportIssueCommentClient) QueryIssue(_m *SupportIssueComment) *SupportIssueQuery {
+	query := (&SupportIssueClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissuecomment.Table, supportissuecomment.FieldID, id),
+			sqlgraph.To(supportissue.Table, supportissue.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportissuecomment.IssueTable, supportissuecomment.IssueColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportIssueCommentClient) Hooks() []Hook {
+	return c.hooks.SupportIssueComment
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportIssueCommentClient) Interceptors() []Interceptor {
+	return c.inters.SupportIssueComment
+}
+
+func (c *SupportIssueCommentClient) mutate(ctx context.Context, m *SupportIssueCommentMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportIssueCommentCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportIssueCommentUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportIssueCommentUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportIssueCommentDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportIssueComment mutation op: %q", m.Op())
+	}
+}
+
+// SupportIssueEventClient is a client for the SupportIssueEvent schema.
+type SupportIssueEventClient struct {
+	config
+}
+
+// NewSupportIssueEventClient returns a client for the SupportIssueEvent from the given config.
+func NewSupportIssueEventClient(c config) *SupportIssueEventClient {
+	return &SupportIssueEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportissueevent.Hooks(f(g(h())))`.
+func (c *SupportIssueEventClient) Use(hooks ...Hook) {
+	c.hooks.SupportIssueEvent = append(c.hooks.SupportIssueEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportissueevent.Intercept(f(g(h())))`.
+func (c *SupportIssueEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportIssueEvent = append(c.inters.SupportIssueEvent, interceptors...)
+}
+
+// Create returns a builder for creating a SupportIssueEvent entity.
+func (c *SupportIssueEventClient) Create() *SupportIssueEventCreate {
+	mutation := newSupportIssueEventMutation(c.config, OpCreate)
+	return &SupportIssueEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportIssueEvent entities.
+func (c *SupportIssueEventClient) CreateBulk(builders ...*SupportIssueEventCreate) *SupportIssueEventCreateBulk {
+	return &SupportIssueEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportIssueEventClient) MapCreateBulk(slice any, setFunc func(*SupportIssueEventCreate, int)) *SupportIssueEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportIssueEventCreateBulk{err: fmt.Errorf("calling to SupportIssueEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportIssueEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportIssueEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportIssueEvent.
+func (c *SupportIssueEventClient) Update() *SupportIssueEventUpdate {
+	mutation := newSupportIssueEventMutation(c.config, OpUpdate)
+	return &SupportIssueEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportIssueEventClient) UpdateOne(_m *SupportIssueEvent) *SupportIssueEventUpdateOne {
+	mutation := newSupportIssueEventMutation(c.config, OpUpdateOne, withSupportIssueEvent(_m))
+	return &SupportIssueEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportIssueEventClient) UpdateOneID(id int64) *SupportIssueEventUpdateOne {
+	mutation := newSupportIssueEventMutation(c.config, OpUpdateOne, withSupportIssueEventID(id))
+	return &SupportIssueEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportIssueEvent.
+func (c *SupportIssueEventClient) Delete() *SupportIssueEventDelete {
+	mutation := newSupportIssueEventMutation(c.config, OpDelete)
+	return &SupportIssueEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportIssueEventClient) DeleteOne(_m *SupportIssueEvent) *SupportIssueEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportIssueEventClient) DeleteOneID(id int64) *SupportIssueEventDeleteOne {
+	builder := c.Delete().Where(supportissueevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportIssueEventDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportIssueEvent.
+func (c *SupportIssueEventClient) Query() *SupportIssueEventQuery {
+	return &SupportIssueEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportIssueEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportIssueEvent entity by its id.
+func (c *SupportIssueEventClient) Get(ctx context.Context, id int64) (*SupportIssueEvent, error) {
+	return c.Query().Where(supportissueevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportIssueEventClient) GetX(ctx context.Context, id int64) *SupportIssueEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIssue queries the issue edge of a SupportIssueEvent.
+func (c *SupportIssueEventClient) QueryIssue(_m *SupportIssueEvent) *SupportIssueQuery {
+	query := (&SupportIssueClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissueevent.Table, supportissueevent.FieldID, id),
+			sqlgraph.To(supportissue.Table, supportissue.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportissueevent.IssueTable, supportissueevent.IssueColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportIssueEventClient) Hooks() []Hook {
+	return c.hooks.SupportIssueEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportIssueEventClient) Interceptors() []Interceptor {
+	return c.inters.SupportIssueEvent
+}
+
+func (c *SupportIssueEventClient) mutate(ctx context.Context, m *SupportIssueEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportIssueEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportIssueEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportIssueEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportIssueEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportIssueEvent mutation op: %q", m.Op())
+	}
+}
+
 // TLSFingerprintProfileClient is a client for the TLSFingerprintProfile schema.
 type TLSFingerprintProfileClient struct {
 	config
@@ -7910,6 +8572,7 @@ type (
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionPlan,
+		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
 		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
 		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Hook
 	}
@@ -7923,6 +8586,7 @@ type (
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionPlan,
+		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
 		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
 		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Interceptor
 	}

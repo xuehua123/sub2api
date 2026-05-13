@@ -167,6 +167,37 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/issues',
+    name: 'Issues',
+    component: () => import('@/views/user/IssuesView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Issue Center',
+      titleKey: 'issueCenter.title'
+    }
+  },
+  {
+    path: '/issues/new',
+    name: 'NewIssue',
+    component: () => import('@/views/user/NewIssueView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'New Issue',
+      titleKey: 'issueCenter.new.title'
+    }
+  },
+  {
+    path: '/issues/:id',
+    name: 'IssueDetail',
+    component: () => import('@/views/user/IssueDetailView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'Issue Detail',
+      titleKey: 'issueCenter.detail.title'
+    }
+  },
+  {
     path: '/legal/:documentId',
     name: 'LegalDocument',
     component: () => import('@/views/public/LegalDocumentView.vue'),
@@ -501,6 +532,29 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/issues',
+    name: 'AdminSupportIssues',
+    component: () => import('@/views/admin/SupportIssuesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Issue Management',
+      titleKey: 'issueCenter.admin.title',
+      descriptionKey: 'issueCenter.admin.description'
+    }
+  },
+  {
+    path: '/admin/issues/:id',
+    name: 'AdminSupportIssueDetail',
+    component: () => import('@/views/admin/SupportIssueDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Issue Detail',
+      titleKey: 'issueCenter.admin.detailTitle'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
@@ -740,6 +794,10 @@ const BACKEND_MODE_CALLBACK_PATHS = [
 const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
 
 function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
+  if (path === '/issues' || /^\/issues\/\d+$/.test(path)) {
+    return true
+  }
+
   if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(allowedPath))) {
     return true
   }
