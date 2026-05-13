@@ -172,9 +172,61 @@
                 </RouterLink>
               </div>
               <label class="block">
-                <span class="input-label">{{ t('issueCenter.admin.relatedIssueID') }}</span>
-                <input v-model.number="relatedIssueForm.relatedIssueID" class="input" data-testid="admin-related-issue-id" min="1" type="number" />
+                <span class="input-label">{{ t('issueCenter.admin.relatedIssueSearch') }}</span>
+                <div class="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    v-model.trim="relatedIssueSearch"
+                    class="input"
+                    data-testid="admin-related-issue-search-input"
+                    type="search"
+                    :placeholder="t('issueCenter.admin.relatedIssueSearchPlaceholder')"
+                    @keydown.enter.prevent="searchRelatedIssues"
+                  />
+                  <button
+                    class="btn btn-secondary shrink-0"
+                    type="button"
+                    :disabled="relatedIssueSearchLoading"
+                    data-testid="admin-related-search-button"
+                    @click="searchRelatedIssues"
+                  >
+                    {{ relatedIssueSearchLoading ? t('common.loading') : t('issueCenter.admin.searchResolvedIssues') }}
+                  </button>
+                </div>
               </label>
+              <div
+                v-if="selectedRelatedIssue"
+                class="rounded-md border border-primary-200 bg-white p-2 text-xs dark:border-primary-900/60 dark:bg-dark-800"
+                data-testid="admin-selected-related-issue"
+              >
+                <span class="font-medium">{{ t('issueCenter.admin.selectedRelatedIssue') }}:</span>
+                <span class="ml-1">{{ selectedRelatedIssue.public_id }} · {{ selectedRelatedIssue.title }}</span>
+              </div>
+              <div v-if="relatedIssueSearchError" class="text-xs text-red-600 dark:text-red-400">
+                {{ relatedIssueSearchError }}
+              </div>
+              <div v-if="relatedIssueSearchResults.length" class="space-y-2">
+                <button
+                  v-for="candidate in relatedIssueSearchResults"
+                  :key="candidate.id"
+                  class="w-full rounded-md border border-gray-200 bg-white p-2 text-left text-xs transition hover:border-primary-300 hover:bg-primary-50 dark:border-dark-600 dark:bg-dark-800 dark:hover:border-primary-700 dark:hover:bg-primary-950/30"
+                  data-testid="admin-related-result"
+                  type="button"
+                  @click="selectRelatedIssue(candidate)"
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-mono font-semibold">{{ candidate.public_id }}</span>
+                    <span class="badge badge-success">{{ t(`issueCenter.status.${candidate.status}`) }}</span>
+                    <span v-if="candidate.http_status">HTTP {{ candidate.http_status }}</span>
+                    <span v-if="candidate.error_code">{{ candidate.error_code }}</span>
+                  </div>
+                  <div class="mt-1 break-words font-medium text-gray-900 dark:text-white">
+                    {{ candidate.title }}
+                  </div>
+                </button>
+              </div>
+              <p v-else-if="relatedIssueSearchTouched && !relatedIssueSearchLoading" class="text-xs text-gray-500 dark:text-gray-400">
+                {{ t('issueCenter.admin.relatedIssueSearchEmpty') }}
+              </p>
               <label class="block">
                 <span class="input-label">{{ t('issueCenter.admin.reason') }}</span>
                 <input v-model.trim="relatedIssueForm.reason" class="input" data-testid="admin-related-issue-reason" type="text" />
@@ -187,7 +239,7 @@
                   {{ t('issueCenter.admin.clearRelatedIssue') }}
                 </button>
               </div>
-              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('issueCenter.admin.relatedIssueHint') }}</p>
+              <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('issueCenter.admin.relatedIssueSearchHint') }}</p>
             </form>
           </div>
           <p v-if="actionError" class="mt-3 text-sm text-red-600 dark:text-red-400" data-testid="admin-action-error">
@@ -389,6 +441,12 @@ const reopenReason = ref('')
 const visibilityReason = ref('')
 const pinReason = ref('')
 const solutionCommentID = ref(0)
+const relatedIssueSearch = ref('')
+const relatedIssueSearchResults = ref<AdminSupportIssue[]>([])
+const relatedIssueSearchLoading = ref(false)
+const relatedIssueSearchTouched = ref(false)
+const relatedIssueSearchError = ref('')
+const selectedRelatedIssue = ref<SupportIssueReference | null>(null)
 const statusForm = reactive({
   status: 'open' as SupportIssueStatus,
   reason: '',
@@ -419,11 +477,55 @@ async function loadIssue() {
     solutionCommentID.value = loadedIssue.solution_comment_id ?? 0
     relatedIssueForm.relatedIssueID = loadedIssue.related_issue_id ?? 0
     relatedIssueForm.reason = loadedIssue.related_issue_reason ?? ''
+    selectedRelatedIssue.value = loadedIssue.related_issue ?? null
   } catch (error) {
     errorMessage.value = getErrorMessage(error, t('issueCenter.admin.errors.loadDetailFailed'))
   } finally {
     loading.value = false
   }
+}
+
+async function searchRelatedIssues() {
+  relatedIssueSearchTouched.value = true
+  relatedIssueSearchLoading.value = true
+  relatedIssueSearchError.value = ''
+  try {
+    const result = await adminIssuesAPI.list({
+      q: normalizeRelatedIssueSearchQuery(relatedIssueSearch.value),
+      status: 'resolved',
+      page: 1,
+      page_size: 8,
+      sort_by: 'updated_at',
+      sort_order: 'desc',
+    })
+    relatedIssueSearchResults.value = result.items.filter((item) => item.id !== issueID.value)
+  } catch (error) {
+    relatedIssueSearchResults.value = []
+    relatedIssueSearchError.value = getErrorMessage(error, t('issueCenter.admin.errors.relatedIssueSearchFailed'))
+  } finally {
+    relatedIssueSearchLoading.value = false
+  }
+}
+
+function selectRelatedIssue(candidate: AdminSupportIssue) {
+  relatedIssueForm.relatedIssueID = candidate.id
+  selectedRelatedIssue.value = {
+    id: candidate.id,
+    public_id: candidate.public_id,
+    title: candidate.title,
+    status: candidate.status,
+    resolved_at: candidate.resolved_at,
+  }
+  relatedIssueSearch.value = `${candidate.public_id} ${candidate.title}`
+  relatedIssueSearchResults.value = []
+  relatedIssueSearchTouched.value = false
+}
+
+function normalizeRelatedIssueSearchQuery(raw: string): string {
+  const value = raw.trim()
+  if (/^\d+$/.test(value)) return `id:${value}`
+  if (/^ISS-\d+$/i.test(value)) return `id:${value.toUpperCase()}`
+  return value
 }
 
 async function togglePin() {
@@ -499,6 +601,8 @@ async function clearRelatedIssue() {
     await adminIssuesAPI.clearRelatedIssue(issue.value.id)
     relatedIssueForm.relatedIssueID = 0
     relatedIssueForm.reason = ''
+    selectedRelatedIssue.value = null
+    relatedIssueSearch.value = ''
     await loadIssue()
   } catch (error) {
     actionError.value = getErrorMessage(error, t('issueCenter.admin.errors.relatedIssueFailed'))

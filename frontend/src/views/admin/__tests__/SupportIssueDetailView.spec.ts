@@ -4,6 +4,7 @@ import SupportIssueDetailView from '../SupportIssueDetailView.vue'
 import type { AdminSupportIssue, SupportIssueEvent } from '@/types'
 
 const {
+  list,
   get,
   events,
   updateStatus,
@@ -22,6 +23,7 @@ const {
   route,
   router,
 } = vi.hoisted(() => ({
+  list: vi.fn(),
   get: vi.fn(),
   events: vi.fn(),
   updateStatus: vi.fn(),
@@ -48,6 +50,7 @@ const {
 
 vi.mock('@/api/admin/issues', () => ({
   adminIssuesAPI: {
+    list,
     get,
     events,
     updateStatus,
@@ -64,6 +67,7 @@ vi.mock('@/api/admin/issues', () => ({
     clearRelatedIssue,
   },
   default: {
+    list,
     get,
     events,
     updateStatus,
@@ -184,6 +188,7 @@ function mountView() {
 
 describe('admin SupportIssueDetailView', () => {
   beforeEach(() => {
+    list.mockReset()
     get.mockReset()
     events.mockReset()
     updateStatus.mockReset()
@@ -202,6 +207,21 @@ describe('admin SupportIssueDetailView', () => {
     router.push.mockReset()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
+    list.mockResolvedValue({
+      items: [
+        makeIssue({
+          id: 999,
+          public_id: 'ISS-000999',
+          title: 'Resolved rate limit case',
+          status: 'resolved',
+          resolved_at: '2026-05-13T09:00:00Z',
+        }),
+      ],
+      total: 1,
+      page: 1,
+      page_size: 8,
+      pages: 1,
+    })
     get.mockResolvedValue(makeIssue())
     events.mockResolvedValue([event])
     updateStatus.mockResolvedValue(makeIssue())
@@ -302,7 +322,20 @@ describe('admin SupportIssueDetailView', () => {
 
     expect(markSolution).toHaveBeenCalledWith(123, { comment_id: 501 })
 
-    await wrapper.get('[data-testid="admin-related-issue-id"]').setValue(999)
+    await wrapper.get('[data-testid="admin-related-issue-search-input"]').setValue('999')
+    await wrapper.get('[data-testid="admin-related-search-button"]').trigger('click')
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith({
+      q: 'id:999',
+      status: 'resolved',
+      page: 1,
+      page_size: 8,
+      sort_by: 'updated_at',
+      sort_order: 'desc',
+    })
+
+    await wrapper.get('[data-testid="admin-related-result"]').trigger('click')
     await wrapper.get('[data-testid="admin-related-issue-reason"]').setValue('same resolved issue')
     await wrapper.get('[data-testid="admin-related-form"]').trigger('submit')
     await flushPromises()

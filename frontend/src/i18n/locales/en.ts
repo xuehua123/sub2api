@@ -662,6 +662,12 @@ export default {
       setRelatedIssue: 'Link solved issue',
       clearRelatedIssue: 'Clear link',
       relatedIssueHint: 'Only a resolved issue can be linked, so users can jump to the matching solved thread.',
+      relatedIssueSearch: 'Search resolved issues',
+      relatedIssueSearchPlaceholder: 'Enter ISS ID, numeric ID, title, error code, or model',
+      searchResolvedIssues: 'Quick search',
+      selectedRelatedIssue: 'Selected',
+      relatedIssueSearchEmpty: 'No resolved issue found for linking.',
+      relatedIssueSearchHint: 'Results only include resolved issues. Numeric input searches internal ID; ISS-000123 searches the public ID.',
       commentRelatedIssueID: 'Comment related issue ID (optional)',
       confirmClearSolution: 'Clear the current solution marker?',
       confirmClearRelatedIssue: 'Clear the current related issue link?',
@@ -677,6 +683,7 @@ export default {
         pinFailed: 'Failed to update pinned state.',
         solutionFailed: 'Failed to update solution.',
         relatedIssueFailed: 'Failed to update related issue.',
+        relatedIssueSearchFailed: 'Failed to search resolved issues.',
         hideCommentFailed: 'Failed to hide comment.',
         hideAttachmentFailed: 'Failed to hide attachment.'
       }

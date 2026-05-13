@@ -662,6 +662,12 @@ export default {
       setRelatedIssue: '关联已解决问题',
       clearRelatedIssue: '清除关联',
       relatedIssueHint: '只能关联一个状态为“已解决”的问题，用来引导用户跳转到相同问题的解决帖。',
+      relatedIssueSearch: '搜索已解决问题',
+      relatedIssueSearchPlaceholder: '输入 ISS 编号、数字 ID、标题、错误码或模型',
+      searchResolvedIssues: '速查',
+      selectedRelatedIssue: '已选择',
+      relatedIssueSearchEmpty: '没有找到可关联的已解决问题。',
+      relatedIssueSearchHint: '搜索结果只包含已解决问题；输入数字会按内部 ID 搜索，输入 ISS-000123 会按公开编号搜索。',
       commentRelatedIssueID: '回复关联问题 ID（可选）',
       confirmClearSolution: '确认清除当前解决方案标记？',
       confirmClearRelatedIssue: '确认清除当前关联问题？',
@@ -677,6 +683,7 @@ export default {
         pinFailed: '更新置顶状态失败。',
         solutionFailed: '更新解决方案失败。',
         relatedIssueFailed: '更新关联问题失败。',
+        relatedIssueSearchFailed: '搜索已解决问题失败。',
         hideCommentFailed: '隐藏评论失败。',
         hideAttachmentFailed: '隐藏附件失败。'
       }
