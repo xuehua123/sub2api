@@ -19,7 +19,7 @@ type SupportIssueAttachment struct {
 	// ID of the ent.
 	ID int64 `json:"id,omitempty"`
 	// IssueID holds the value of the "issue_id" field.
-	IssueID int64 `json:"issue_id,omitempty"`
+	IssueID *int64 `json:"issue_id,omitempty"`
 	// UploadedByUserID holds the value of the "uploaded_by_user_id" field.
 	UploadedByUserID *int64 `json:"uploaded_by_user_id,omitempty"`
 	// FilePath holds the value of the "file_path" field.
@@ -104,7 +104,8 @@ func (_m *SupportIssueAttachment) assignValues(columns []string, values []any) e
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field issue_id", values[i])
 			} else if value.Valid {
-				_m.IssueID = value.Int64
+				_m.IssueID = new(int64)
+				*_m.IssueID = value.Int64
 			}
 		case supportissueattachment.FieldUploadedByUserID:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -216,8 +217,10 @@ func (_m *SupportIssueAttachment) String() string {
 	var builder strings.Builder
 	builder.WriteString("SupportIssueAttachment(")
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
-	builder.WriteString("issue_id=")
-	builder.WriteString(fmt.Sprintf("%v", _m.IssueID))
+	if v := _m.IssueID; v != nil {
+		builder.WriteString("issue_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
 	builder.WriteString(", ")
 	if v := _m.UploadedByUserID; v != nil {
 		builder.WriteString("uploaded_by_user_id=")

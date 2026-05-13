@@ -3,10 +3,15 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +51,19 @@ func TestSupportIssuePublicDTOExcludesPrivateFields(t *testing.T) {
 	require.NotContains(t, comment, "author_user_id")
 	require.NotContains(t, comment, "hidden_by_user_id")
 	require.NotContains(t, comment, "hide_reason")
+}
+
+func TestSupportIssueAdminDTOStillIncludesFilePath(t *testing.T) {
+	issue := supportIssueHandlerFixture()
+
+	payload, err := json.Marshal(dto.AdminSupportIssueFromService(issue))
+	require.NoError(t, err)
+
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(payload, &got))
+	attachments := got["attachments"].([]any)
+	attachment := attachments[0].(map[string]any)
+	require.Equal(t, "data/private.png", attachment["file_path"])
 }
 
 func TestSupportIssueHandler_ListUsesSearchWhenQueryPresent(t *testing.T) {
@@ -102,6 +120,124 @@ func TestSupportIssueHandler_ResolveRequiresAuth(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+func TestSupportIssueHandler_UploadAttachmentRequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &SupportIssueHandler{supportIssueService: &fakeSupportIssueUserService{}}
+
+	w := performSupportIssueHandlerRequest(http.MethodPost, "/issues/attachments", "/issues/attachments", h.UploadAttachment, false, "")
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSupportIssueHandler_UploadAttachmentRejectsInvalidMIME(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{uploadErr: service.ErrSupportIssueAttachmentInvalidType}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueUploadRequest(t, h.UploadAttachment, true, "note.txt", "text/plain", []byte("plain text"))
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.True(t, fake.uploadAttachmentCalled)
+}
+
+func TestSupportIssueHandler_UploadAttachmentHidesFilePath(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueUploadRequest(t, h.UploadAttachment, true, "../screenshot.png", "image/png", supportIssueHandlerPNG())
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, fake.uploadAttachmentCalled)
+	require.Equal(t, "screenshot.png", fake.lastUploadInput.FileName)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	data := got["data"].(map[string]any)
+	require.NotContains(t, data, "file_path")
+	require.NotContains(t, data, "uploaded_by_user_id")
+	require.Equal(t, "safe.png", data["file_name"])
+}
+
+func TestSupportIssueHandler_CreateRejectsInlineAttachments(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	body := `{
+		"title":"Payment issue",
+		"description":"The payment balance did not arrive after checkout.",
+		"account_email":"user@example.com",
+		"occurred_at":"2026-05-13T10:00:00Z",
+		"screenshot_text":"rate limit error",
+		"screenshot_language":"en",
+		"category":"payment",
+		"severity":"blocked",
+		"attachments":[{"file_url":"/unsafe","file_name":"unsafe.png","mime_type":"image/png","size_bytes":1}]
+	}`
+
+	w := performSupportIssueHandlerRequest(http.MethodPost, "/issues", "/issues", h.Create, true, body)
+
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	require.False(t, fake.createCalled)
+}
+
+func TestSupportIssueHandler_CreatePassesAttachmentIDs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	body := `{
+		"title":"Payment issue",
+		"description":"The payment balance did not arrive after checkout.",
+		"account_email":"user@example.com",
+		"occurred_at":"2026-05-13T10:00:00Z",
+		"screenshot_text":"rate limit error",
+		"screenshot_language":"en",
+		"category":"payment",
+		"severity":"blocked",
+		"attachment_ids":[777]
+	}`
+
+	w := performSupportIssueHandlerRequest(http.MethodPost, "/issues", "/issues", h.Create, true, body)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, fake.createCalled)
+	require.Equal(t, []int64{777}, fake.createdInput.AttachmentIDs)
+}
+
+func TestSupportIssueHandler_ServeAttachmentFileReturnsPublicFile(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	filePath := filepath.Join(t.TempDir(), "safe.png")
+	require.NoError(t, os.WriteFile(filePath, []byte("png"), 0o600))
+	fake := &fakeSupportIssueUserService{
+		publicAttachment: &service.SupportIssueAttachment{
+			ID:         777,
+			IssueID:    123,
+			FilePath:   filePath,
+			FileName:   "safe.png",
+			MimeType:   "image/png",
+			Visibility: service.SupportIssueAttachmentVisibilityPublic,
+		},
+	}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/attachments/777/file", "/issues/attachments/:id/file", h.ServeAttachmentFile, false, "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "png", w.Body.String())
+	require.Equal(t, int64(777), fake.lastOpenAttachmentID)
+}
+
+func TestSupportIssueHandler_ServeAttachmentFileRejectsHiddenOrUnbound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{openAttachmentErr: service.ErrSupportIssueAttachmentNotFound}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/attachments/777/file", "/issues/attachments/:id/file", h.ServeAttachmentFile, false, "")
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
 type fakeSupportIssueUserService struct {
 	listPublicCalled   bool
 	searchPublicCalled bool
@@ -115,6 +251,14 @@ type fakeSupportIssueUserService struct {
 
 	addCommentCalled bool
 	resolveCalled    bool
+
+	uploadAttachmentCalled bool
+	lastUploadInput        service.UploadSupportIssueAttachmentInput
+	uploadErr              error
+
+	publicAttachment     *service.SupportIssueAttachment
+	lastOpenAttachmentID int64
+	openAttachmentErr    error
 }
 
 func (f *fakeSupportIssueUserService) Create(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) (*service.SupportIssue, error) {
@@ -160,6 +304,38 @@ func (f *fakeSupportIssueUserService) SuggestSimilar(ctx context.Context, actor 
 	return []service.SupportIssue{*supportIssueHandlerFixture()}, nil
 }
 
+func (f *fakeSupportIssueUserService) UploadAttachment(ctx context.Context, actor service.SupportIssueActor, input service.UploadSupportIssueAttachmentInput) (*service.SupportIssueAttachment, error) {
+	f.uploadAttachmentCalled = true
+	f.lastUploadInput = input
+	if f.uploadErr != nil {
+		return nil, f.uploadErr
+	}
+	now := time.Now()
+	return &service.SupportIssueAttachment{
+		ID:               777,
+		UploadedByUserID: &actor.UserID,
+		FilePath:         "data/support-issue-attachments/private.png",
+		FileURL:          "/api/v1/issues/attachments/777/file",
+		FileName:         "safe.png",
+		MimeType:         "image/png",
+		SizeBytes:        int64(len(input.Content)),
+		Visibility:       service.SupportIssueAttachmentVisibilityPublic,
+		CreatedAt:        now,
+	}, nil
+}
+
+func (f *fakeSupportIssueUserService) OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*service.SupportIssueAttachment, error) {
+	f.lastOpenAttachmentID = attachmentID
+	if f.openAttachmentErr != nil {
+		return nil, f.openAttachmentErr
+	}
+	if f.publicAttachment == nil {
+		return nil, service.ErrSupportIssueAttachmentNotFound
+	}
+	out := *f.publicAttachment
+	return &out, nil
+}
+
 func performSupportIssueHandlerRequest(method, target, routePath string, handler gin.HandlerFunc, authenticated bool, body string) *httptest.ResponseRecorder {
 	r := gin.New()
 	r.Handle(method, routePath, func(c *gin.Context) {
@@ -176,6 +352,43 @@ func performSupportIssueHandlerRequest(method, target, routePath string, handler
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	return w
+}
+
+func performSupportIssueUploadRequest(t *testing.T, handler gin.HandlerFunc, authenticated bool, fileName string, contentType string, content []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreatePart(textprotoMIMEHeader(map[string]string{
+		`Content-Disposition`: `form-data; name="file"; filename="` + fileName + `"`,
+		`Content-Type`:        contentType,
+	}))
+	require.NoError(t, err)
+	_, err = part.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	r := gin.New()
+	r.POST("/issues/attachments", func(c *gin.Context) {
+		if authenticated {
+			c.Set(string(middleware2.ContextKeyUser), middleware2.AuthSubject{UserID: 42})
+			c.Set(string(middleware2.ContextKeyUserRole), service.RoleUser)
+		}
+		handler(c)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/issues/attachments", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func textprotoMIMEHeader(values map[string]string) textproto.MIMEHeader {
+	header := make(textproto.MIMEHeader, len(values))
+	for key, value := range values {
+		header.Set(key, value)
+	}
+	return header
 }
 
 func supportIssueHandlerFixture() *service.SupportIssue {
@@ -249,4 +462,14 @@ func supportIssueHandlerFixture() *service.SupportIssue {
 
 func supportIssueHandlerPage() *pagination.PaginationResult {
 	return &pagination.PaginationResult{Total: 1, Page: 1, PageSize: 20, Pages: 1}
+}
+
+func supportIssueHandlerPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89,
+	}
 }

@@ -410,7 +410,10 @@ func (_q *SupportIssueAttachmentQuery) loadIssue(ctx context.Context, query *Sup
 	ids := make([]int64, 0, len(nodes))
 	nodeids := make(map[int64][]*SupportIssueAttachment)
 	for i := range nodes {
-		fk := nodes[i].IssueID
+		if nodes[i].IssueID == nil {
+			continue
+		}
+		fk := *nodes[i].IssueID
 		if _, ok := nodeids[fk]; !ok {
 			ids = append(ids, fk)
 		}

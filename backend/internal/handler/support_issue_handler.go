@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"io"
+	"mime"
 	"strconv"
 	"strings"
 
@@ -22,6 +24,8 @@ type supportIssueUserService interface {
 	AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string) (*service.SupportIssueComment, error)
 	Resolve(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
 	SuggestSimilar(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) ([]service.SupportIssue, error)
+	UploadAttachment(ctx context.Context, actor service.SupportIssueActor, input service.UploadSupportIssueAttachmentInput) (*service.SupportIssueAttachment, error)
+	OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*service.SupportIssueAttachment, error)
 }
 
 type SupportIssueHandler struct {
@@ -83,6 +87,10 @@ func (h *SupportIssueHandler) Create(c *gin.Context) {
 	var req dto.CreateSupportIssueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.Attachments) > 0 {
+		response.BadRequest(c, "inline attachments are not supported; upload attachments first and pass attachment_ids")
 		return
 	}
 
@@ -157,6 +165,55 @@ func (h *SupportIssueHandler) SearchSuggestions(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.PublicSupportIssuesFromService(items))
+}
+
+func (h *SupportIssueHandler) UploadAttachment(c *gin.Context) {
+	actor, ok := supportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	file, header, err := c.Request.FormFile("file")
+	if err != nil {
+		response.BadRequest(c, "file is required")
+		return
+	}
+	defer file.Close()
+
+	content, err := io.ReadAll(io.LimitReader(file, service.SupportIssueMaxAttachmentBytes+1))
+	if err != nil {
+		response.BadRequest(c, "invalid file")
+		return
+	}
+
+	attachment, err := h.supportIssueService.UploadAttachment(c.Request.Context(), actor, service.UploadSupportIssueAttachmentInput{
+		FileName:    header.Filename,
+		ContentType: header.Header.Get("Content-Type"),
+		Content:     content,
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.UploadedSupportIssueAttachmentFromService(attachment))
+}
+
+func (h *SupportIssueHandler) ServeAttachmentFile(c *gin.Context) {
+	attachmentID, ok := supportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	attachment, err := h.supportIssueService.OpenAttachmentForPublic(c.Request.Context(), attachmentID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Content-Type", attachment.MimeType)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": attachment.FileName}))
+	c.File(attachment.FilePath)
 }
 
 func supportIssueActorFromContext(c *gin.Context) (service.SupportIssueActor, bool) {

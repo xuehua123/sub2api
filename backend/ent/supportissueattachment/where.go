@@ -135,6 +135,16 @@ func IssueIDNotIn(vs ...int64) predicate.SupportIssueAttachment {
 	return predicate.SupportIssueAttachment(sql.FieldNotIn(FieldIssueID, vs...))
 }
 
+// IssueIDIsNil applies the IsNil predicate on the "issue_id" field.
+func IssueIDIsNil() predicate.SupportIssueAttachment {
+	return predicate.SupportIssueAttachment(sql.FieldIsNull(FieldIssueID))
+}
+
+// IssueIDNotNil applies the NotNil predicate on the "issue_id" field.
+func IssueIDNotNil() predicate.SupportIssueAttachment {
+	return predicate.SupportIssueAttachment(sql.FieldNotNull(FieldIssueID))
+}
+
 // UploadedByUserIDEQ applies the EQ predicate on the "uploaded_by_user_id" field.
 func UploadedByUserIDEQ(v int64) predicate.SupportIssueAttachment {
 	return predicate.SupportIssueAttachment(sql.FieldEQ(FieldUploadedByUserID, v))

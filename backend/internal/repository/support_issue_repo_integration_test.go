@@ -34,6 +34,82 @@ func TestSupportIssueRepository_CreateIssueCreatesPublicIDAttachmentAndEvent(t *
 	require.Equal(t, service.SupportIssueEventCreated, issue.Events[0].EventType)
 }
 
+func TestSupportIssueRepository_CreateUnboundAttachmentThenBindToIssue(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	attachment := newSupportIssueAttachmentFixture(user.ID)
+
+	require.NoError(t, repo.CreateUnboundAttachment(ctx, &attachment))
+	require.NotZero(t, attachment.ID)
+	require.Zero(t, attachment.IssueID)
+	require.Equal(t, fmt.Sprintf("/api/v1/issues/attachments/%d/file", attachment.ID), attachment.FileURL)
+
+	unbound, err := repo.ListUnboundAttachmentsForUser(ctx, user.ID, []int64{attachment.ID})
+	require.NoError(t, err)
+	require.Len(t, unbound, 1)
+
+	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil, unbound[0])
+	require.Len(t, issue.Attachments, 1)
+	require.Equal(t, attachment.ID, issue.Attachments[0].ID)
+	require.Equal(t, issue.ID, issue.Attachments[0].IssueID)
+	require.Equal(t, 1, issue.AttachmentCount)
+
+	unbound, err = repo.ListUnboundAttachmentsForUser(ctx, user.ID, []int64{attachment.ID})
+	require.NoError(t, err)
+	require.Empty(t, unbound)
+}
+
+func TestSupportIssueRepository_ListUnboundAttachmentsRequiresOwner(t *testing.T) {
+	ctx, client, repo, user := newSupportIssueRepoTest(t)
+	other := mustCreateUser(t, client, &service.User{
+		Email: fmt.Sprintf("%s@example.com", uniqueTestValue(t, "support-issue-other-user")),
+	})
+	attachment := newSupportIssueAttachmentFixture(user.ID)
+	require.NoError(t, repo.CreateUnboundAttachment(ctx, &attachment))
+
+	items, err := repo.ListUnboundAttachmentsForUser(ctx, other.ID, []int64{attachment.ID})
+
+	require.NoError(t, err)
+	require.Empty(t, items)
+}
+
+func TestSupportIssueRepository_OpenAttachmentForPublicRequiresPublicBoundAttachment(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil, newSupportIssueAttachmentFixture(user.ID))
+
+	attachment, err := repo.OpenAttachmentForPublic(ctx, issue.Attachments[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, issue.ID, attachment.IssueID)
+	require.Equal(t, service.SupportIssueAttachmentVisibilityPublic, attachment.Visibility)
+	require.NotEmpty(t, attachment.FilePath)
+}
+
+func TestSupportIssueRepository_OpenAttachmentForPublicRejectsHiddenAttachment(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil, newSupportIssueAttachmentFixture(user.ID))
+	require.NoError(t, repo.HideAttachment(ctx, service.HideSupportIssueAttachmentInput{
+		IssueID:        issue.ID,
+		AttachmentID:   issue.Attachments[0].ID,
+		HiddenByUserID: user.ID,
+	}, newSupportIssueEvent(user.ID, service.SupportIssueEventAttachmentHidden)))
+
+	_, err := repo.OpenAttachmentForPublic(ctx, issue.Attachments[0].ID)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, service.ErrSupportIssueAttachmentNotFound)
+}
+
+func TestSupportIssueRepository_OpenAttachmentForPublicRejectsUnboundAttachment(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	attachment := newSupportIssueAttachmentFixture(user.ID)
+	require.NoError(t, repo.CreateUnboundAttachment(ctx, &attachment))
+
+	_, err := repo.OpenAttachmentForPublic(ctx, attachment.ID)
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, service.ErrSupportIssueAttachmentNotFound)
+}
+
 func TestSupportIssueRepository_GetIssueExcludesHiddenContent(t *testing.T) {
 	ctx, _, repo, user := newSupportIssueRepoTest(t)
 	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil, newSupportIssueAttachmentFixture(user.ID))

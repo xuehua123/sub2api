@@ -43,6 +43,12 @@ func (_u *SupportIssueAttachmentUpdate) SetNillableIssueID(v *int64) *SupportIss
 	return _u
 }
 
+// ClearIssueID clears the value of the "issue_id" field.
+func (_u *SupportIssueAttachmentUpdate) ClearIssueID() *SupportIssueAttachmentUpdate {
+	_u.mutation.ClearIssueID()
+	return _u
+}
+
 // SetUploadedByUserID sets the "uploaded_by_user_id" field.
 func (_u *SupportIssueAttachmentUpdate) SetUploadedByUserID(v int64) *SupportIssueAttachmentUpdate {
 	_u.mutation.ResetUploadedByUserID()
@@ -292,9 +298,6 @@ func (_u *SupportIssueAttachmentUpdate) check() error {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "SupportIssueAttachment.visibility": %w`, err)}
 		}
 	}
-	if _u.mutation.IssueCleared() && len(_u.mutation.IssueIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "SupportIssueAttachment.issue"`)
-	}
 	return nil
 }
 
@@ -418,6 +421,12 @@ func (_u *SupportIssueAttachmentUpdateOne) SetNillableIssueID(v *int64) *Support
 	if v != nil {
 		_u.SetIssueID(*v)
 	}
+	return _u
+}
+
+// ClearIssueID clears the value of the "issue_id" field.
+func (_u *SupportIssueAttachmentUpdateOne) ClearIssueID() *SupportIssueAttachmentUpdateOne {
+	_u.mutation.ClearIssueID()
 	return _u
 }
 
@@ -682,9 +691,6 @@ func (_u *SupportIssueAttachmentUpdateOne) check() error {
 		if err := supportissueattachment.VisibilityValidator(v); err != nil {
 			return &ValidationError{Name: "visibility", err: fmt.Errorf(`ent: validator failed for field "SupportIssueAttachment.visibility": %w`, err)}
 		}
-	}
-	if _u.mutation.IssueCleared() && len(_u.mutation.IssueIDs()) > 0 {
-		return errors.New(`ent: clearing a required unique edge "SupportIssueAttachment.issue"`)
 	}
 	return nil
 }

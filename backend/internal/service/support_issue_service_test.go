@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +84,176 @@ func TestSupportIssueService_CreateDoesNotTrustCallerDerivedFields(t *testing.T)
 	require.Equal(t, "u***@example.com", issue.AccountEmailMasked)
 	require.Equal(t, SupportIssueStatusOpen, issue.Status)
 	require.NotEqual(t, "caller supplied search text", issue.SearchText)
+}
+
+func TestSupportIssueService_UploadAttachmentRejectsNonImageMIME(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.UploadAttachment(context.Background(), supportIssueTestActor(42, false), UploadSupportIssueAttachmentInput{
+		FileName:    "note.txt",
+		ContentType: "text/plain",
+		Content:     []byte("not an image"),
+	})
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentInvalidType))
+	require.False(t, repo.createUnboundAttachmentCalled)
+}
+
+func TestSupportIssueService_UploadAttachmentRejectsTooLargeFile(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.UploadAttachment(context.Background(), supportIssueTestActor(42, false), UploadSupportIssueAttachmentInput{
+		FileName:    "large.png",
+		ContentType: "image/png",
+		Content:     append(supportIssueTestPNG(), make([]byte, SupportIssueMaxAttachmentBytes)...),
+	})
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentTooLarge))
+	require.False(t, repo.createUnboundAttachmentCalled)
+}
+
+func TestSupportIssueService_UploadAttachmentSanitizesFileNameAndHidesPath(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+	oldRoot := supportIssueAttachmentStorageRoot
+	supportIssueAttachmentStorageRoot = t.TempDir()
+	t.Cleanup(func() {
+		supportIssueAttachmentStorageRoot = oldRoot
+	})
+
+	attachment, err := svc.UploadAttachment(context.Background(), supportIssueTestActor(42, false), UploadSupportIssueAttachmentInput{
+		FileName:    "../bad\\name\u0000.png",
+		ContentType: "image/png",
+		Content:     supportIssueTestPNG(),
+	})
+
+	require.NoError(t, err)
+	require.True(t, repo.createUnboundAttachmentCalled)
+	require.NotContains(t, repo.createdUnboundAttachment.FileName, "/")
+	require.NotContains(t, repo.createdUnboundAttachment.FileName, "\\")
+	require.NotContains(t, repo.createdUnboundAttachment.FileName, "\u0000")
+	require.NoFileExists(t, repo.createdUnboundAttachment.FileName)
+	require.FileExists(t, repo.createdUnboundAttachment.FilePath)
+	require.Empty(t, attachment.FilePath)
+	require.Nil(t, attachment.UploadedByUserID)
+	require.Equal(t, int64(777), attachment.ID)
+	require.Equal(t, "/api/v1/issues/attachments/777/file", attachment.FileURL)
+}
+
+func TestSupportIssueService_CreateBindsAttachmentIDs(t *testing.T) {
+	userID := int64(42)
+	repo := &fakeSupportIssueRepository{
+		unboundAttachments: []SupportIssueAttachment{supportIssueTestUnboundAttachment(777, userID)},
+	}
+	svc := NewSupportIssueService(repo)
+
+	issue, err := svc.Create(context.Background(), supportIssueTestActor(userID, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.AttachmentIDs = []int64{777}
+	}))
+
+	require.NoError(t, err)
+	require.True(t, repo.listUnboundAttachmentsCalled)
+	require.Equal(t, []int64{777}, repo.lastUnboundAttachmentIDs)
+	require.Len(t, repo.createdAttachments, 1)
+	require.Equal(t, int64(777), repo.createdAttachments[0].ID)
+	require.Equal(t, 1, issue.AttachmentCount)
+	require.Len(t, issue.Attachments, 1)
+}
+
+func TestSupportIssueService_CreateRejectsForeignAttachmentID(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Create(context.Background(), supportIssueTestActor(42, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.AttachmentIDs = []int64{777}
+	}))
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentNotFound))
+	require.Nil(t, repo.createdIssue)
+}
+
+func TestSupportIssueService_CreateRejectsAlreadyBoundAttachmentID(t *testing.T) {
+	attachment := supportIssueTestUnboundAttachment(777, 42)
+	attachment.IssueID = 99
+	repo := &fakeSupportIssueRepository{unboundAttachments: []SupportIssueAttachment{attachment}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Create(context.Background(), supportIssueTestActor(42, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.AttachmentIDs = []int64{777}
+	}))
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentNotFound))
+	require.Nil(t, repo.createdIssue)
+}
+
+func TestSupportIssueService_CreateRejectsTooManyAttachmentIDs(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Create(context.Background(), supportIssueTestActor(42, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.AttachmentIDs = []int64{1, 2, 3, 4, 5, 6}
+	}))
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueInvalidInput))
+	require.False(t, repo.listUnboundAttachmentsCalled)
+	require.Nil(t, repo.createdIssue)
+}
+
+func TestSupportIssueService_OpenAttachmentForPublicRequiresPublicBoundAttachment(t *testing.T) {
+	oldRoot := supportIssueAttachmentStorageRoot
+	supportIssueAttachmentStorageRoot = t.TempDir()
+	t.Cleanup(func() {
+		supportIssueAttachmentStorageRoot = oldRoot
+	})
+	filePath := filepath.Join(supportIssueAttachmentStorageRoot, "public.png")
+	require.NoError(t, os.WriteFile(filePath, supportIssueTestPNG(), 0o600))
+
+	repo := &fakeSupportIssueRepository{
+		publicAttachment: func() *SupportIssueAttachment {
+			attachment := supportIssueTestUnboundAttachment(777, 42)
+			attachment.IssueID = 123
+			attachment.FilePath = filePath
+			return &attachment
+		}(),
+	}
+	svc := NewSupportIssueService(repo)
+
+	attachment, err := svc.OpenAttachmentForPublic(context.Background(), 777)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(123), attachment.IssueID)
+	require.Equal(t, filepath.Clean(filePath), filepath.Clean(attachment.FilePath))
+}
+
+func TestSupportIssueService_OpenAttachmentForPublicRejectsHiddenAttachment(t *testing.T) {
+	attachment := supportIssueTestUnboundAttachment(777, 42)
+	attachment.IssueID = 123
+	attachment.Visibility = SupportIssueAttachmentVisibilityHidden
+	repo := &fakeSupportIssueRepository{publicAttachment: &attachment}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.OpenAttachmentForPublic(context.Background(), 777)
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentNotFound))
+}
+
+func TestSupportIssueService_OpenAttachmentForPublicRejectsUnboundAttachment(t *testing.T) {
+	attachment := supportIssueTestUnboundAttachment(777, 42)
+	repo := &fakeSupportIssueRepository{publicAttachment: &attachment}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.OpenAttachmentForPublic(context.Background(), 777)
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueAttachmentNotFound))
 }
 
 func TestSupportIssueService_SearchPublicRejectsKeyFilter(t *testing.T) {
@@ -389,6 +561,20 @@ type fakeSupportIssueRepository struct {
 	createdEvent       SupportIssueEvent
 	createErr          error
 
+	createUnboundAttachmentCalled bool
+	createdUnboundAttachment      SupportIssueAttachment
+	createUnboundAttachmentErr    error
+
+	listUnboundAttachmentsCalled bool
+	lastUnboundAttachmentUserID  int64
+	lastUnboundAttachmentIDs     []int64
+	unboundAttachments           []SupportIssueAttachment
+	listUnboundAttachmentsErr    error
+
+	publicAttachment        *SupportIssueAttachment
+	openPublicAttachmentID  int64
+	openPublicAttachmentErr error
+
 	issue                 *SupportIssue
 	getIssueErr           error
 	getIssueIncludeHidden []bool
@@ -443,7 +629,59 @@ func (r *fakeSupportIssueRepository) CreateIssue(ctx context.Context, issue *Sup
 	if issue.PublicID == "" {
 		issue.PublicID = "ISS-000123"
 	}
+	issue.AttachmentCount = len(attachments)
+	issue.Attachments = append([]SupportIssueAttachment(nil), attachments...)
+	for i := range issue.Attachments {
+		issue.Attachments[i].IssueID = issue.ID
+	}
 	return nil
+}
+
+func (r *fakeSupportIssueRepository) CreateUnboundAttachment(ctx context.Context, attachment *SupportIssueAttachment) error {
+	r.createUnboundAttachmentCalled = true
+	if r.createUnboundAttachmentErr != nil {
+		return r.createUnboundAttachmentErr
+	}
+	if attachment.ID == 0 {
+		attachment.ID = 777
+	}
+	if attachment.FileURL == "" {
+		attachment.FileURL = fmt.Sprintf("/api/v1/issues/attachments/%d/file", attachment.ID)
+	}
+	r.createdUnboundAttachment = *attachment
+	return nil
+}
+
+func (r *fakeSupportIssueRepository) ListUnboundAttachmentsForUser(ctx context.Context, userID int64, ids []int64) ([]SupportIssueAttachment, error) {
+	r.listUnboundAttachmentsCalled = true
+	r.lastUnboundAttachmentUserID = userID
+	r.lastUnboundAttachmentIDs = append([]int64(nil), ids...)
+	if r.listUnboundAttachmentsErr != nil {
+		return nil, r.listUnboundAttachmentsErr
+	}
+	idSet := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		idSet[id] = struct{}{}
+	}
+	out := make([]SupportIssueAttachment, 0, len(r.unboundAttachments))
+	for _, attachment := range r.unboundAttachments {
+		if _, ok := idSet[attachment.ID]; ok {
+			out = append(out, attachment)
+		}
+	}
+	return out, nil
+}
+
+func (r *fakeSupportIssueRepository) OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*SupportIssueAttachment, error) {
+	r.openPublicAttachmentID = attachmentID
+	if r.openPublicAttachmentErr != nil {
+		return nil, r.openPublicAttachmentErr
+	}
+	if r.publicAttachment == nil {
+		return nil, ErrSupportIssueAttachmentNotFound
+	}
+	out := *r.publicAttachment
+	return &out, nil
 }
 
 func (r *fakeSupportIssueRepository) GetIssue(ctx context.Context, id int64, includeHidden bool) (*SupportIssue, error) {
@@ -606,4 +844,27 @@ func TestSupportIssueService_SearchTextKeepsRequiredFieldsReadable(t *testing.T)
 
 func supportIssueTestInt(v int) *int {
 	return &v
+}
+
+func supportIssueTestPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89,
+	}
+}
+
+func supportIssueTestUnboundAttachment(id int64, userID int64) SupportIssueAttachment {
+	return SupportIssueAttachment{
+		ID:               id,
+		UploadedByUserID: &userID,
+		FilePath:         "data/support-issue-attachments/test.png",
+		FileURL:          fmt.Sprintf("/api/v1/issues/attachments/%d/file", id),
+		FileName:         "test.png",
+		MimeType:         "image/png",
+		SizeBytes:        int64(len(supportIssueTestPNG())),
+		Visibility:       SupportIssueAttachmentVisibilityPublic,
+	}
 }

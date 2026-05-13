@@ -1893,7 +1893,7 @@ var (
 		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
-		{Name: "issue_id", Type: field.TypeInt64},
+		{Name: "issue_id", Type: field.TypeInt64, Nullable: true},
 	}
 	// SupportIssueAttachmentsTable holds the schema information for the "support_issue_attachments" table.
 	SupportIssueAttachmentsTable = &schema.Table{

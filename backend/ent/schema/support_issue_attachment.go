@@ -25,7 +25,9 @@ func (SupportIssueAttachment) Annotations() []schema.Annotation {
 
 func (SupportIssueAttachment) Fields() []ent.Field {
 	return []ent.Field{
-		field.Int64("issue_id"),
+		field.Int64("issue_id").
+			Optional().
+			Nillable(),
 		field.Int64("uploaded_by_user_id").
 			Optional().
 			Nillable(),
@@ -68,8 +70,7 @@ func (SupportIssueAttachment) Edges() []ent.Edge {
 		edge.From("issue", SupportIssue.Type).
 			Ref("attachments").
 			Field("issue_id").
-			Unique().
-			Required(),
+			Unique(),
 	}
 }
 

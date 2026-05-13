@@ -29,6 +29,14 @@ func (_c *SupportIssueAttachmentCreate) SetIssueID(v int64) *SupportIssueAttachm
 	return _c
 }
 
+// SetNillableIssueID sets the "issue_id" field if the given value is not nil.
+func (_c *SupportIssueAttachmentCreate) SetNillableIssueID(v *int64) *SupportIssueAttachmentCreate {
+	if v != nil {
+		_c.SetIssueID(*v)
+	}
+	return _c
+}
+
 // SetUploadedByUserID sets the "uploaded_by_user_id" field.
 func (_c *SupportIssueAttachmentCreate) SetUploadedByUserID(v int64) *SupportIssueAttachmentCreate {
 	_c.mutation.SetUploadedByUserID(v)
@@ -199,9 +207,6 @@ func (_c *SupportIssueAttachmentCreate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_c *SupportIssueAttachmentCreate) check() error {
-	if _, ok := _c.mutation.IssueID(); !ok {
-		return &ValidationError{Name: "issue_id", err: errors.New(`ent: missing required field "SupportIssueAttachment.issue_id"`)}
-	}
 	if _, ok := _c.mutation.FilePath(); !ok {
 		return &ValidationError{Name: "file_path", err: errors.New(`ent: missing required field "SupportIssueAttachment.file_path"`)}
 	}
@@ -250,9 +255,6 @@ func (_c *SupportIssueAttachmentCreate) check() error {
 	}
 	if _, ok := _c.mutation.CreatedAt(); !ok {
 		return &ValidationError{Name: "created_at", err: errors.New(`ent: missing required field "SupportIssueAttachment.created_at"`)}
-	}
-	if len(_c.mutation.IssueIDs()) == 0 {
-		return &ValidationError{Name: "issue", err: errors.New(`ent: missing required edge "SupportIssueAttachment.issue"`)}
 	}
 	return nil
 }
@@ -339,7 +341,7 @@ func (_c *SupportIssueAttachmentCreate) createSpec() (*SupportIssueAttachment, *
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
-		_node.IssueID = nodes[0]
+		_node.IssueID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -403,6 +405,12 @@ func (u *SupportIssueAttachmentUpsert) SetIssueID(v int64) *SupportIssueAttachme
 // UpdateIssueID sets the "issue_id" field to the value that was provided on create.
 func (u *SupportIssueAttachmentUpsert) UpdateIssueID() *SupportIssueAttachmentUpsert {
 	u.SetExcluded(supportissueattachment.FieldIssueID)
+	return u
+}
+
+// ClearIssueID clears the value of the "issue_id" field.
+func (u *SupportIssueAttachmentUpsert) ClearIssueID() *SupportIssueAttachmentUpsert {
+	u.SetNull(supportissueattachment.FieldIssueID)
 	return u
 }
 
@@ -618,6 +626,13 @@ func (u *SupportIssueAttachmentUpsertOne) SetIssueID(v int64) *SupportIssueAttac
 func (u *SupportIssueAttachmentUpsertOne) UpdateIssueID() *SupportIssueAttachmentUpsertOne {
 	return u.Update(func(s *SupportIssueAttachmentUpsert) {
 		s.UpdateIssueID()
+	})
+}
+
+// ClearIssueID clears the value of the "issue_id" field.
+func (u *SupportIssueAttachmentUpsertOne) ClearIssueID() *SupportIssueAttachmentUpsertOne {
+	return u.Update(func(s *SupportIssueAttachmentUpsert) {
+		s.ClearIssueID()
 	})
 }
 
@@ -1025,6 +1040,13 @@ func (u *SupportIssueAttachmentUpsertBulk) SetIssueID(v int64) *SupportIssueAtta
 func (u *SupportIssueAttachmentUpsertBulk) UpdateIssueID() *SupportIssueAttachmentUpsertBulk {
 	return u.Update(func(s *SupportIssueAttachmentUpsert) {
 		s.UpdateIssueID()
+	})
+}
+
+// ClearIssueID clears the value of the "issue_id" field.
+func (u *SupportIssueAttachmentUpsertBulk) ClearIssueID() *SupportIssueAttachmentUpsertBulk {
+	return u.Update(func(s *SupportIssueAttachmentUpsert) {
+		s.ClearIssueID()
 	})
 }
 

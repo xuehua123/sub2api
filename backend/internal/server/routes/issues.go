@@ -18,6 +18,7 @@ func RegisterIssueRoutes(
 	issues := v1.Group("/issues")
 	{
 		issues.GET("", h.SupportIssue.List)
+		issues.GET("/attachments/:id/file", h.SupportIssue.ServeAttachmentFile)
 		issues.GET("/:id", h.SupportIssue.Get)
 	}
 
@@ -26,6 +27,7 @@ func RegisterIssueRoutes(
 	authenticated.Use(middleware.BackendModeUserGuard(settingService))
 	{
 		authenticated.POST("", h.SupportIssue.Create)
+		authenticated.POST("/attachments", h.SupportIssue.UploadAttachment)
 		authenticated.POST("/search-suggestions", h.SupportIssue.SearchSuggestions)
 		authenticated.POST("/:id/comments", h.SupportIssue.AddComment)
 		authenticated.PATCH("/:id/resolve", h.SupportIssue.Resolve)

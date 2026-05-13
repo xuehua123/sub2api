@@ -46899,7 +46899,7 @@ func (m *SupportIssueAttachmentMutation) IssueID() (r int64, exists bool) {
 // OldIssueID returns the old "issue_id" field's value of the SupportIssueAttachment entity.
 // If the SupportIssueAttachment object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *SupportIssueAttachmentMutation) OldIssueID(ctx context.Context) (v int64, err error) {
+func (m *SupportIssueAttachmentMutation) OldIssueID(ctx context.Context) (v *int64, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldIssueID is only allowed on UpdateOne operations")
 	}
@@ -46913,9 +46913,22 @@ func (m *SupportIssueAttachmentMutation) OldIssueID(ctx context.Context) (v int6
 	return oldValue.IssueID, nil
 }
 
+// ClearIssueID clears the value of the "issue_id" field.
+func (m *SupportIssueAttachmentMutation) ClearIssueID() {
+	m.issue = nil
+	m.clearedFields[supportissueattachment.FieldIssueID] = struct{}{}
+}
+
+// IssueIDCleared returns if the "issue_id" field was cleared in this mutation.
+func (m *SupportIssueAttachmentMutation) IssueIDCleared() bool {
+	_, ok := m.clearedFields[supportissueattachment.FieldIssueID]
+	return ok
+}
+
 // ResetIssueID resets all changes to the "issue_id" field.
 func (m *SupportIssueAttachmentMutation) ResetIssueID() {
 	m.issue = nil
+	delete(m.clearedFields, supportissueattachment.FieldIssueID)
 }
 
 // SetUploadedByUserID sets the "uploaded_by_user_id" field.
@@ -47423,7 +47436,7 @@ func (m *SupportIssueAttachmentMutation) ClearIssue() {
 
 // IssueCleared reports if the "issue" edge to the SupportIssue entity was cleared.
 func (m *SupportIssueAttachmentMutation) IssueCleared() bool {
-	return m.clearedissue
+	return m.IssueIDCleared() || m.clearedissue
 }
 
 // IssueIDs returns the "issue" edge IDs in the mutation.
@@ -47740,6 +47753,9 @@ func (m *SupportIssueAttachmentMutation) AddField(name string, value ent.Value) 
 // mutation.
 func (m *SupportIssueAttachmentMutation) ClearedFields() []string {
 	var fields []string
+	if m.FieldCleared(supportissueattachment.FieldIssueID) {
+		fields = append(fields, supportissueattachment.FieldIssueID)
+	}
 	if m.FieldCleared(supportissueattachment.FieldUploadedByUserID) {
 		fields = append(fields, supportissueattachment.FieldUploadedByUserID)
 	}
@@ -47763,6 +47779,9 @@ func (m *SupportIssueAttachmentMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *SupportIssueAttachmentMutation) ClearField(name string) error {
 	switch name {
+	case supportissueattachment.FieldIssueID:
+		m.ClearIssueID()
+		return nil
 	case supportissueattachment.FieldUploadedByUserID:
 		m.ClearUploadedByUserID()
 		return nil

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS support_issue_comments (
 
 CREATE TABLE IF NOT EXISTS support_issue_attachments (
     id                 BIGSERIAL PRIMARY KEY,
-    issue_id           BIGINT NOT NULL REFERENCES support_issues(id) ON DELETE CASCADE,
+    issue_id           BIGINT REFERENCES support_issues(id) ON DELETE CASCADE,
     uploaded_by_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
     file_path          VARCHAR(512) NOT NULL,
     file_url           VARCHAR(512) NOT NULL,
@@ -82,6 +82,7 @@ CREATE INDEX IF NOT EXISTS idx_support_issues_error_code ON support_issues(error
 CREATE INDEX IF NOT EXISTS idx_support_issue_comments_issue_created ON support_issue_comments(issue_id, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_support_issue_comments_hidden ON support_issue_comments(issue_id, hidden_at);
 CREATE INDEX IF NOT EXISTS idx_support_issue_attachments_issue ON support_issue_attachments(issue_id, visibility);
+CREATE INDEX IF NOT EXISTS idx_support_issue_attachments_unbound_user ON support_issue_attachments(uploaded_by_user_id, issue_id);
 CREATE INDEX IF NOT EXISTS idx_support_issue_events_issue_created ON support_issue_events(issue_id, created_at DESC);
 
 DO $$

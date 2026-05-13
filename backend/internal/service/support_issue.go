@@ -61,6 +61,9 @@ const (
 const (
 	SupportIssueDefaultHideReason      = "admin moderation"
 	SupportIssueMaxCommentContentRunes = 8000
+	SupportIssueMaxAttachmentsPerIssue = 5
+	SupportIssueMaxAttachmentBytes     = 5 * 1024 * 1024
+	SupportIssueAttachmentStorageDir   = "data/support-issue-attachments"
 )
 
 var (
@@ -174,7 +177,13 @@ type CreateSupportIssueInput struct {
 	ErrorCode              string
 	APIKeySuffix           string
 	SearchText             string
-	Attachments            []SupportIssueAttachment
+	AttachmentIDs          []int64
+}
+
+type UploadSupportIssueAttachmentInput struct {
+	FileName    string
+	ContentType string
+	Content     []byte
 }
 
 type ListSupportIssueFilters struct {
@@ -226,6 +235,9 @@ type SupportIssueActor struct {
 
 type SupportIssueRepository interface {
 	CreateIssue(ctx context.Context, issue *SupportIssue, attachments []SupportIssueAttachment, event SupportIssueEvent) error
+	CreateUnboundAttachment(ctx context.Context, attachment *SupportIssueAttachment) error
+	ListUnboundAttachmentsForUser(ctx context.Context, userID int64, ids []int64) ([]SupportIssueAttachment, error)
+	OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*SupportIssueAttachment, error)
 	GetIssue(ctx context.Context, id int64, includeHidden bool) (*SupportIssue, error)
 	ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error)
 	SearchIssues(ctx context.Context, params pagination.PaginationParams, query SearchSupportIssueQuery) ([]SupportIssue, *pagination.PaginationResult, error)

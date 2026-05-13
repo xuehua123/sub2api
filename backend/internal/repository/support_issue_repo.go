@@ -55,7 +55,15 @@ func (r *supportIssueRepository) CreateIssue(
 
 		for i := range attachments {
 			attachments[i].IssueID = created.ID
-			att, err := createSupportIssueAttachment(txCtx, txClient, attachments[i])
+			var (
+				att *dbent.SupportIssueAttachment
+				err error
+			)
+			if attachments[i].ID > 0 {
+				att, err = bindSupportIssueAttachment(txCtx, txClient, attachments[i], created.ID)
+			} else {
+				att, err = createSupportIssueAttachment(txCtx, txClient, attachments[i])
+			}
 			if err != nil {
 				return err
 			}
@@ -73,6 +81,74 @@ func (r *supportIssueRepository) CreateIssue(
 		issue.Events = append(issue.Events, *supportIssueEventEntityToService(createdEvent))
 		return nil
 	})
+}
+
+func (r *supportIssueRepository) CreateUnboundAttachment(ctx context.Context, attachment *service.SupportIssueAttachment) error {
+	if attachment == nil {
+		return service.ErrSupportIssueInvalidInput
+	}
+
+	client := clientFromContext(ctx, r.client)
+	attachment.IssueID = 0
+	if strings.TrimSpace(attachment.Visibility) == "" {
+		attachment.Visibility = service.SupportIssueAttachmentVisibilityPublic
+	}
+	attachment.FileURL = "pending"
+
+	created, err := createSupportIssueAttachment(ctx, client, *attachment)
+	if err != nil {
+		return err
+	}
+	fileURL := supportIssueAttachmentFileURL(created.ID)
+	created, err = client.SupportIssueAttachment.UpdateOneID(created.ID).
+		SetFileURL(fileURL).
+		Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrSupportIssueAttachmentNotFound, nil)
+	}
+	applySupportIssueAttachmentEntityToService(attachment, created)
+	return nil
+}
+
+func (r *supportIssueRepository) ListUnboundAttachmentsForUser(
+	ctx context.Context,
+	userID int64,
+	ids []int64,
+) ([]service.SupportIssueAttachment, error) {
+	if userID <= 0 || len(ids) == 0 {
+		return nil, nil
+	}
+
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.SupportIssueAttachment.Query().
+		Where(
+			supportissueattachment.IDIn(ids...),
+			supportissueattachment.UploadedByUserIDEQ(userID),
+			supportissueattachment.IssueIDIsNil(),
+			supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic),
+			supportissueattachment.HiddenAtIsNil(),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return supportIssueAttachmentEntitiesToService(rows), nil
+}
+
+func (r *supportIssueRepository) OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*service.SupportIssueAttachment, error) {
+	client := clientFromContext(ctx, r.client)
+	row, err := client.SupportIssueAttachment.Query().
+		Where(
+			supportissueattachment.IDEQ(attachmentID),
+			supportissueattachment.IssueIDNotNil(),
+			supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic),
+			supportissueattachment.HiddenAtIsNil(),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSupportIssueAttachmentNotFound, nil)
+	}
+	return supportIssueAttachmentEntityToService(row), nil
 }
 
 func (r *supportIssueRepository) GetIssue(ctx context.Context, id int64, includeHidden bool) (*service.SupportIssue, error) {
@@ -500,7 +576,6 @@ func createSupportIssueAttachment(
 ) (*dbent.SupportIssueAttachment, error) {
 	visibility := defaultString(attachment.Visibility, service.SupportIssueAttachmentVisibilityPublic)
 	builder := client.SupportIssueAttachment.Create().
-		SetIssueID(attachment.IssueID).
 		SetFilePath(attachment.FilePath).
 		SetFileURL(attachment.FileURL).
 		SetFileName(attachment.FileName).
@@ -509,6 +584,9 @@ func createSupportIssueAttachment(
 		SetOcrText(attachment.OCRText).
 		SetVisibility(visibility)
 
+	if attachment.IssueID > 0 {
+		builder.SetIssueID(attachment.IssueID)
+	}
 	if attachment.UploadedByUserID != nil {
 		builder.SetUploadedByUserID(*attachment.UploadedByUserID)
 	}
@@ -519,6 +597,31 @@ func createSupportIssueAttachment(
 		builder.SetHiddenByUserID(*attachment.HiddenByUserID)
 	}
 	return builder.Save(ctx)
+}
+
+func bindSupportIssueAttachment(
+	ctx context.Context,
+	client *dbent.Client,
+	attachment service.SupportIssueAttachment,
+	issueID int64,
+) (*dbent.SupportIssueAttachment, error) {
+	q := client.SupportIssueAttachment.Query().
+		Where(
+			supportissueattachment.IDEQ(attachment.ID),
+			supportissueattachment.IssueIDIsNil(),
+			supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic),
+			supportissueattachment.HiddenAtIsNil(),
+		)
+	if attachment.UploadedByUserID != nil {
+		q = q.Where(supportissueattachment.UploadedByUserIDEQ(*attachment.UploadedByUserID))
+	}
+	current, err := q.Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSupportIssueAttachmentNotFound, nil)
+	}
+	return client.SupportIssueAttachment.UpdateOneID(current.ID).
+		SetIssueID(issueID).
+		Save(ctx)
 }
 
 func createSupportIssueEvent(
@@ -817,9 +920,8 @@ func supportIssueAttachmentEntityToService(row *dbent.SupportIssueAttachment) *s
 	if row == nil {
 		return nil
 	}
-	return &service.SupportIssueAttachment{
+	out := &service.SupportIssueAttachment{
 		ID:               row.ID,
-		IssueID:          row.IssueID,
 		UploadedByUserID: row.UploadedByUserID,
 		FilePath:         row.FilePath,
 		FileURL:          row.FileURL,
@@ -831,6 +933,19 @@ func supportIssueAttachmentEntityToService(row *dbent.SupportIssueAttachment) *s
 		HiddenAt:         row.HiddenAt,
 		HiddenByUserID:   row.HiddenByUserID,
 		CreatedAt:        row.CreatedAt,
+	}
+	if row.IssueID != nil {
+		out.IssueID = *row.IssueID
+	}
+	return out
+}
+
+func applySupportIssueAttachmentEntityToService(dst *service.SupportIssueAttachment, row *dbent.SupportIssueAttachment) {
+	if dst == nil || row == nil {
+		return
+	}
+	if item := supportIssueAttachmentEntityToService(row); item != nil {
+		*dst = *item
 	}
 }
 
@@ -878,6 +993,10 @@ func visibleSupportIssueAttachmentCount(attachments []service.SupportIssueAttach
 		}
 	}
 	return count
+}
+
+func supportIssueAttachmentFileURL(id int64) string {
+	return fmt.Sprintf("/api/v1/issues/attachments/%d/file", id)
 }
 
 func defaultString(value string, fallback string) string {

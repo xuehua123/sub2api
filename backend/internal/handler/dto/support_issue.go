@@ -93,6 +93,15 @@ type PublicSupportIssueAttachment struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type UploadedSupportIssueAttachment struct {
+	ID        int64     `json:"id"`
+	FileURL   string    `json:"file_url"`
+	FileName  string    `json:"file_name"`
+	MimeType  string    `json:"mime_type"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type AdminSupportIssue struct {
 	ID                     int64                         `json:"id"`
 	PublicID               string                        `json:"public_id"`
@@ -168,10 +177,6 @@ type SupportIssueEvent struct {
 }
 
 func (r CreateSupportIssueRequest) ToServiceInput() service.CreateSupportIssueInput {
-	attachments := make([]service.SupportIssueAttachment, 0, len(r.Attachments))
-	for i := range r.Attachments {
-		attachments = append(attachments, r.Attachments[i].ToServiceAttachment())
-	}
 	return service.CreateSupportIssueInput{
 		Title:              r.Title,
 		Description:        r.Description,
@@ -186,7 +191,7 @@ func (r CreateSupportIssueRequest) ToServiceInput() service.CreateSupportIssueIn
 		HTTPStatus:         r.HTTPStatus,
 		ErrorCode:          r.ErrorCode,
 		APIKeySuffix:       r.APIKeySuffix,
-		Attachments:        attachments,
+		AttachmentIDs:      append([]int64(nil), r.AttachmentIDs...),
 	}
 }
 
@@ -271,19 +276,42 @@ func PublicSupportIssueCommentFromService(item *service.SupportIssueComment) *Pu
 func PublicSupportIssueAttachmentsFromService(items []service.SupportIssueAttachment) []PublicSupportIssueAttachment {
 	out := make([]PublicSupportIssueAttachment, 0, len(items))
 	for i := range items {
-		out = append(out, PublicSupportIssueAttachment{
-			ID:         items[i].ID,
-			IssueID:    items[i].IssueID,
-			FileURL:    items[i].FileURL,
-			FileName:   items[i].FileName,
-			MimeType:   items[i].MimeType,
-			SizeBytes:  items[i].SizeBytes,
-			OCRText:    items[i].OCRText,
-			Visibility: items[i].Visibility,
-			CreatedAt:  items[i].CreatedAt,
-		})
+		if item := PublicSupportIssueAttachmentFromService(&items[i]); item != nil {
+			out = append(out, *item)
+		}
 	}
 	return out
+}
+
+func PublicSupportIssueAttachmentFromService(item *service.SupportIssueAttachment) *PublicSupportIssueAttachment {
+	if item == nil {
+		return nil
+	}
+	return &PublicSupportIssueAttachment{
+		ID:         item.ID,
+		IssueID:    item.IssueID,
+		FileURL:    item.FileURL,
+		FileName:   item.FileName,
+		MimeType:   item.MimeType,
+		SizeBytes:  item.SizeBytes,
+		OCRText:    item.OCRText,
+		Visibility: item.Visibility,
+		CreatedAt:  item.CreatedAt,
+	}
+}
+
+func UploadedSupportIssueAttachmentFromService(item *service.SupportIssueAttachment) *UploadedSupportIssueAttachment {
+	if item == nil {
+		return nil
+	}
+	return &UploadedSupportIssueAttachment{
+		ID:        item.ID,
+		FileURL:   item.FileURL,
+		FileName:  item.FileName,
+		MimeType:  item.MimeType,
+		SizeBytes: item.SizeBytes,
+		CreatedAt: item.CreatedAt,
+	}
 }
 
 func AdminSupportIssueFromService(issue *service.SupportIssue) *AdminSupportIssue {
