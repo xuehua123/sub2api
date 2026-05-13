@@ -32,6 +32,17 @@ export async function trending(
   return data
 }
 
+export async function mine(
+  params?: SupportIssueListParams,
+  options?: FetchOptions
+): Promise<BasePaginationResponse<PublicSupportIssue>> {
+  const { data } = await apiClient.get<BasePaginationResponse<PublicSupportIssue>>('/issues/mine', {
+    params,
+    signal: options?.signal
+  })
+  return data
+}
+
 export async function get(id: number): Promise<PublicSupportIssue> {
   const { data } = await apiClient.get<PublicSupportIssue>(`/issues/${id}`)
   return data
@@ -75,6 +86,7 @@ export function attachmentFileURL(id: number): string {
 export const issuesAPI = {
   list,
   trending,
+  mine,
   get,
   create,
   addComment,

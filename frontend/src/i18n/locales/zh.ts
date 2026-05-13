@@ -469,6 +469,7 @@ export default {
     },
     feed: {
       active: '最新回复',
+      mine: '我的提问',
       latest: '最新发布',
       popular: '热门查看',
       replied: '回复最多',
@@ -490,6 +491,7 @@ export default {
       commentLabel: '添加评论',
       submitComment: '提交评论',
       markResolved: '标记已解决',
+      adminManage: '后台管理',
       views: '查看次数'
     },
     new: {

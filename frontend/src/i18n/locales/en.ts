@@ -469,6 +469,7 @@ export default {
     },
     feed: {
       active: 'Latest replies',
+      mine: 'My issues',
       latest: 'Newest',
       popular: 'Popular',
       replied: 'Most replied',
@@ -490,6 +491,7 @@ export default {
       commentLabel: 'Add comment',
       submitComment: 'Submit comment',
       markResolved: 'Mark resolved',
+      adminManage: 'Admin manage',
       views: 'Views'
     },
     new: {

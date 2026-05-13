@@ -208,6 +208,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import { issuesAPI } from '@/api/issues'
+import { useAuthStore } from '@/stores/auth'
 import type {
   PublicSupportIssue,
   SupportIssueCategory,
@@ -218,13 +219,15 @@ import type {
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const statuses: SupportIssueStatus[] = ['open', 'needs_info', 'in_progress', 'resolved', 'closed']
 const categories: SupportIssueCategory[] = ['login', 'payment', 'api_call', 'model_unavailable', 'api_key', 'balance', 'subscription', 'channel', 'other']
 const severities: SupportIssueSeverity[] = ['blocked', 'partial', 'intermittent', 'question']
-type FeedMode = 'active' | 'latest' | 'popular' | 'replied' | 'hot24'
+type FeedMode = 'active' | 'mine' | 'latest' | 'popular' | 'replied' | 'hot24'
 const feedModes: Array<{ value: FeedMode; labelKey: string }> = [
   { value: 'active', labelKey: 'issueCenter.feed.active' },
+  { value: 'mine', labelKey: 'issueCenter.feed.mine' },
   { value: 'latest', labelKey: 'issueCenter.feed.latest' },
   { value: 'popular', labelKey: 'issueCenter.feed.popular' },
   { value: 'replied', labelKey: 'issueCenter.feed.replied' },
@@ -299,13 +302,15 @@ function buildParams() {
 }
 
 async function loadIssues() {
+  if (feedMode.value === 'mine' && !authStore.isAuthenticated) {
+    router.push({ path: '/login', query: { redirect: route.fullPath || '/issues?tab=mine' } })
+    return
+  }
   loading.value = true
   errorMessage.value = ''
   try {
     const params = buildParams()
-    const result = feedMode.value === 'hot24'
-      ? await issuesAPI.trending(params)
-      : await issuesAPI.list(params)
+    const result = await loadIssuesForFeed(params)
     issues.value = result.items
     pagination.total = result.total
     pagination.pages = result.pages
@@ -316,7 +321,21 @@ async function loadIssues() {
   }
 }
 
+function loadIssuesForFeed(params: ReturnType<typeof buildParams>) {
+  if (feedMode.value === 'mine') {
+    return issuesAPI.mine(params)
+  }
+  if (feedMode.value === 'hot24') {
+    return issuesAPI.trending(params)
+  }
+  return issuesAPI.list(params)
+}
+
 async function setFeedMode(mode: FeedMode) {
+  if (mode === 'mine' && !authStore.isAuthenticated) {
+    router.push({ path: '/login', query: { redirect: '/issues?tab=mine' } })
+    return
+  }
   feedMode.value = mode
   pagination.page = 1
   await replaceRouteQuery()
@@ -336,6 +355,8 @@ function normalizeFeedMode(value: string): FeedMode {
 
 function sortForFeedMode(mode: FeedMode): { sort_by: string } {
   switch (mode) {
+    case 'mine':
+      return { sort_by: 'created_at' }
     case 'latest':
       return { sort_by: 'created_at' }
     case 'popular':

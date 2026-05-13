@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import IssuesView from '../IssuesView.vue'
 import type { PublicSupportIssue } from '@/types'
 
-const { list, trending, route, router } = vi.hoisted(() => ({
+const { list, trending, mine, route, router, authStore } = vi.hoisted(() => ({
   list: vi.fn(),
   trending: vi.fn(),
+  mine: vi.fn(),
   route: {
     path: '/issues',
     query: {} as Record<string, string>,
@@ -16,13 +17,21 @@ const { list, trending, route, router } = vi.hoisted(() => ({
     push: vi.fn(),
     replace: vi.fn(),
   },
+  authStore: {
+    isAuthenticated: true,
+  },
 }))
 
 vi.mock('@/api/issues', () => ({
   issuesAPI: {
     list,
     trending,
+    mine,
   },
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authStore,
 }))
 
 vi.mock('vue-router', () => ({
@@ -81,8 +90,10 @@ describe('IssuesView', () => {
   beforeEach(() => {
     list.mockReset()
     trending.mockReset()
+    mine.mockReset()
     router.push.mockReset()
     router.replace.mockReset()
+    authStore.isAuthenticated = true
     route.query = {}
     route.fullPath = '/issues'
   })
@@ -107,6 +118,29 @@ describe('IssuesView', () => {
       sort_order: 'desc',
       window: '24h',
     })
+  })
+
+  it('uses the authenticated mine endpoint for my issues tab', async () => {
+    route.query = { tab: 'mine' }
+    route.fullPath = '/issues?tab=mine'
+    mine.mockResolvedValue({
+      items: [issue],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(mine).toHaveBeenCalledWith({
+      page: 1,
+      page_size: 20,
+      sort_by: 'created_at',
+      sort_order: 'desc',
+    })
+    expect(wrapper.text()).toContain('Rate limit on Claude')
   })
 
   it('loads issues with q/status/category/severity/has_image from the URL and displays the list', async () => {

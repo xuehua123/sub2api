@@ -18,6 +18,7 @@ func RegisterIssueRoutes(
 	issues := v1.Group("/issues")
 	{
 		issues.GET("", h.SupportIssue.List)
+		issues.GET("/mine", gin.HandlerFunc(jwtAuth), middleware.BackendModeUserGuard(settingService), h.SupportIssue.Mine)
 		issues.GET("/trending", h.SupportIssue.Trending)
 		issues.GET("/attachments/:id/file", h.SupportIssue.ServeAttachmentFile)
 		issues.GET("/:id", h.SupportIssue.Get)

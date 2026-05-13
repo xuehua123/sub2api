@@ -824,6 +824,9 @@ func applySupportIssueListFilters(
 			supportissue.LastViewedAtGTE(*filters.ActiveSince),
 		))
 	}
+	if filters.CreatedByUserID != nil {
+		q = q.Where(supportissue.CreatedByUserIDEQ(*filters.CreatedByUserID))
+	}
 	return q
 }
 

@@ -87,6 +87,40 @@ func (h *SupportIssueHandler) Trending(c *gin.Context) {
 	response.Paginated(c, dto.PublicSupportIssuesFromService(items), supportIssuePageTotal(pageResult), page, pageSize)
 }
 
+func (h *SupportIssueHandler) Mine(c *gin.Context) {
+	actor, ok := supportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	page, pageSize := response.ParsePagination(c)
+	params := supportIssuePaginationParams(c, page, pageSize)
+	filters, ok := supportIssueListFiltersFromQuery(c)
+	if !ok {
+		return
+	}
+	filters.CreatedByUserID = &actor.UserID
+
+	q := strings.TrimSpace(c.Query("q"))
+	var (
+		items      []service.SupportIssue
+		pageResult *pagination.PaginationResult
+		err        error
+	)
+	if q != "" {
+		items, pageResult, err = h.supportIssueService.SearchPublic(c.Request.Context(), params, q, filters)
+	} else {
+		items, pageResult, err = h.supportIssueService.ListPublic(c.Request.Context(), params, filters)
+	}
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Paginated(c, dto.PublicSupportIssuesFromService(items), supportIssuePageTotal(pageResult), page, pageSize)
+}
+
 func (h *SupportIssueHandler) Get(c *gin.Context) {
 	issueID, ok := supportIssueIDParam(c, "id")
 	if !ok {

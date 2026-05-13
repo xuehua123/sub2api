@@ -93,6 +93,29 @@ func TestSupportIssueHandler_ListUsesListWhenQueryEmpty(t *testing.T) {
 	require.Equal(t, service.SupportIssueCategoryPayment, fake.lastFilters.Category)
 }
 
+func TestSupportIssueHandler_MineRequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &SupportIssueHandler{supportIssueService: &fakeSupportIssueUserService{}}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/mine", "/issues/mine", h.Mine, false, "")
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSupportIssueHandler_MineFiltersByAuthenticatedUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/mine?q=rate&status=open", "/issues/mine", h.Mine, true, "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, fake.searchPublicCalled)
+	require.NotNil(t, fake.lastFilters.CreatedByUserID)
+	require.Equal(t, int64(42), *fake.lastFilters.CreatedByUserID)
+	require.Equal(t, service.SupportIssueStatusOpen, fake.lastFilters.Status)
+}
+
 func TestSupportIssueHandler_CreateRequiresAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &SupportIssueHandler{supportIssueService: &fakeSupportIssueUserService{}}

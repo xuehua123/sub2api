@@ -9,6 +9,8 @@ describe('issue center locale messages', () => {
     'issueCenter.title',
     'issueCenter.new.title',
     'issueCenter.detail.title',
+    'issueCenter.detail.adminManage',
+    'issueCenter.feed.mine',
     'issueCenter.admin.title',
     'issueCenter.admin.detailTitle',
     'issueCenter.admin.keySearchWarning',

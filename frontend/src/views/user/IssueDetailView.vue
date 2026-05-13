@@ -28,16 +28,27 @@
                 {{ issue.title }}
               </h1>
             </div>
-            <button
-              v-if="authStore.isAuthenticated"
-              class="btn btn-secondary"
-              type="button"
-              :disabled="resolving || isLocked"
-              data-testid="resolve-issue-button"
-              @click="resolveIssue"
-            >
-              {{ resolving ? t('common.processing') : t('issueCenter.detail.markResolved') }}
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-if="authStore.isAdmin"
+                class="btn btn-primary"
+                type="button"
+                data-testid="admin-manage-issue-button"
+                @click="router.push(`/admin/issues/${issue.id}`)"
+              >
+                {{ t('issueCenter.detail.adminManage') }}
+              </button>
+              <button
+                v-if="authStore.isAuthenticated"
+                class="btn btn-secondary"
+                type="button"
+                :disabled="resolving || isLocked"
+                data-testid="resolve-issue-button"
+                @click="resolveIssue"
+              >
+                {{ resolving ? t('common.processing') : t('issueCenter.detail.markResolved') }}
+              </button>
+            </div>
           </div>
 
           <div class="mt-5 grid gap-4 text-sm md:grid-cols-2">

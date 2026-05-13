@@ -16,6 +16,7 @@ const { get, addComment, resolve, route, router, authStore } = vi.hoisted(() => 
   },
   authStore: {
     isAuthenticated: true,
+    isAdmin: false,
   },
 }))
 
@@ -112,6 +113,7 @@ describe('IssueDetailView', () => {
     resolve.mockReset()
     router.push.mockReset()
     authStore.isAuthenticated = true
+    authStore.isAdmin = false
   })
 
   it.each([
@@ -153,5 +155,17 @@ describe('IssueDetailView', () => {
     await flushPromises()
 
     expect(resolve).toHaveBeenCalledWith(123)
+  })
+
+  it('shows an admin management shortcut on the public detail page for admins', async () => {
+    authStore.isAdmin = true
+    get.mockResolvedValue(makeIssue())
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper.find('[data-testid="admin-manage-issue-button"]').trigger('click')
+
+    expect(router.push).toHaveBeenCalledWith('/admin/issues/123')
   })
 })

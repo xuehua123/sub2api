@@ -195,13 +195,14 @@ type UploadSupportIssueAttachmentInput struct {
 }
 
 type ListSupportIssueFilters struct {
-	Status        string
-	Category      string
-	Severity      string
-	HasImage      *bool
-	Hidden        *bool
-	IncludeHidden bool
-	ActiveSince   *time.Time
+	Status          string
+	Category        string
+	Severity        string
+	HasImage        *bool
+	Hidden          *bool
+	IncludeHidden   bool
+	ActiveSince     *time.Time
+	CreatedByUserID *int64
 }
 
 type SearchSupportIssueQuery struct {
