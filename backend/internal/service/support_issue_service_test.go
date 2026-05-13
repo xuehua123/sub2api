@@ -1,0 +1,536 @@
+//go:build unit
+
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSupportIssueService_CreateNormalizesEmailAndBuildsIssue(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+	code := 429
+
+	issue, err := svc.Create(context.Background(), supportIssueTestActor(42, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.HTTPStatus = &code
+		input.ModelName = "claude-sonnet"
+		input.ClientName = "Claude Code"
+		input.ErrorCode = "insufficient_quota"
+	}))
+
+	require.NoError(t, err)
+	require.Same(t, repo.createdIssue, issue)
+	require.Equal(t, "user@example.com", issue.AccountEmail)
+	require.Equal(t, "user@example.com", issue.AccountEmailNormalized)
+	require.Equal(t, "u***@example.com", issue.AccountEmailMasked)
+	require.NotNil(t, issue.CreatedByUserID)
+	require.Equal(t, int64(42), *issue.CreatedByUserID)
+	require.Equal(t, SupportIssueStatusOpen, issue.Status)
+	require.Contains(t, issue.SearchText, issue.Title)
+	require.Contains(t, issue.SearchText, issue.Description)
+	require.Contains(t, issue.SearchText, issue.AccountEmailMasked)
+	require.Contains(t, issue.SearchText, issue.AccountEmailNormalized)
+	require.Contains(t, issue.SearchText, issue.ScreenshotText)
+	require.Contains(t, issue.SearchText, issue.Category)
+	require.Contains(t, issue.SearchText, issue.Severity)
+	require.Contains(t, issue.SearchText, issue.ModelName)
+	require.Contains(t, issue.SearchText, issue.ClientName)
+	require.Contains(t, issue.SearchText, issue.ErrorCode)
+	require.Contains(t, issue.SearchText, "429")
+	require.Equal(t, SupportIssueEventCreated, repo.createdEvent.EventType)
+	require.NotNil(t, repo.createdEvent.ActorUserID)
+	require.Equal(t, int64(42), *repo.createdEvent.ActorUserID)
+}
+
+func TestSupportIssueService_CreateMissingRequiredFieldsFails(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+	input := validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.Title = ""
+	})
+
+	_, err := svc.Create(context.Background(), supportIssueTestActor(42, false), input)
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueTitleInvalid))
+	require.Nil(t, repo.createdIssue)
+}
+
+func TestSupportIssueService_CreateDoesNotTrustCallerDerivedFields(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+	input := validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.AccountEmail = "User@Example.com"
+		input.AccountEmailNormalized = "attacker@example.net"
+		input.AccountEmailMasked = "a***@example.net"
+		input.Status = SupportIssueStatusClosed
+		input.SearchText = "caller supplied search text"
+	})
+
+	issue, err := svc.Create(context.Background(), supportIssueTestActor(42, false), input)
+
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", issue.AccountEmailNormalized)
+	require.Equal(t, "u***@example.com", issue.AccountEmailMasked)
+	require.Equal(t, SupportIssueStatusOpen, issue.Status)
+	require.NotEqual(t, "caller supplied search text", issue.SearchText)
+}
+
+func TestSupportIssueService_SearchPublicRejectsKeyFilter(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, _, err := svc.SearchPublic(context.Background(), pagination.PaginationParams{Page: 1, PageSize: 20}, "key:ab12cd", ListSupportIssueFilters{})
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueSearchInvalid))
+	require.False(t, repo.searchCalled)
+}
+
+func TestSupportIssueService_AdminSearchAllowsKeyFilter(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, _, err := svc.AdminSearch(context.Background(), pagination.PaginationParams{Page: 1, PageSize: 20}, "key:ab12cd", ListSupportIssueFilters{})
+
+	require.NoError(t, err)
+	require.True(t, repo.searchCalled)
+	require.Equal(t, "ab12cd", repo.lastSearchQuery.Parsed.APIKeySuffix)
+	require.True(t, repo.lastSearchQuery.IncludeHidden)
+}
+
+func TestSupportIssueService_AddCommentRejectsLockedIssue(t *testing.T) {
+	lockedAt := time.Now()
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusOpen,
+		LockedAt:        &lockedAt,
+		CreatedByUserID: supportIssueTestInt64(42),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueLocked))
+	require.False(t, repo.addCommentCalled)
+}
+
+func TestSupportIssueService_AddCommentRejectsResolvedIssue(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusResolved,
+		CreatedByUserID: supportIssueTestInt64(42),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "I can reproduce this.")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueLocked))
+	require.False(t, repo.addCommentCalled)
+}
+
+func TestSupportIssueService_AddCommentOnOpenIssueCreatesCommentedEvent(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusOpen,
+		CreatedByUserID: supportIssueTestInt64(42),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	comment, err := svc.AddComment(context.Background(), supportIssueTestActor(42, false), 12, "  I can reproduce this.  ")
+
+	require.NoError(t, err)
+	require.True(t, repo.addCommentCalled)
+	require.Equal(t, int64(12), comment.IssueID)
+	require.Equal(t, "I can reproduce this.", comment.Content)
+	require.Equal(t, RoleUser, comment.AuthorRole)
+	require.Equal(t, SupportIssueEventCommented, repo.addCommentEvent.EventType)
+	require.NotNil(t, repo.addCommentEvent.ActorUserID)
+	require.Equal(t, int64(42), *repo.addCommentEvent.ActorUserID)
+}
+
+func TestSupportIssueService_ResolveReporterOwnIssueSucceeds(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusOpen,
+		CreatedByUserID: supportIssueTestInt64(42),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Resolve(context.Background(), supportIssueTestActor(42, false), 12)
+
+	require.NoError(t, err)
+	require.True(t, repo.updateStatusCalled)
+	require.Equal(t, SupportIssueStatusResolved, repo.lastUpdateStatus)
+	require.False(t, repo.lastUpdateActorIsAdmin)
+}
+
+func TestSupportIssueService_ResolveAdminAnyIssueSucceeds(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusOpen,
+		CreatedByUserID: supportIssueTestInt64(7),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Resolve(context.Background(), supportIssueTestActor(42, true), 12)
+
+	require.NoError(t, err)
+	require.True(t, repo.updateStatusCalled)
+	require.Equal(t, SupportIssueStatusResolved, repo.lastUpdateStatus)
+	require.True(t, repo.lastUpdateActorIsAdmin)
+}
+
+func TestSupportIssueService_ResolveOtherUserIssueFails(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:              12,
+		Status:          SupportIssueStatusOpen,
+		CreatedByUserID: supportIssueTestInt64(7),
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.Resolve(context.Background(), supportIssueTestActor(42, false), 12)
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+	require.False(t, repo.updateStatusCalled)
+}
+
+func TestSupportIssueService_AdminUpdateStatusRejectsNonAdmin(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminUpdateStatus(context.Background(), supportIssueTestActor(42, false), 12, SupportIssueStatusInProgress, "")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+}
+
+func TestSupportIssueService_AdminReopenRejectsNonAdmin(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminReopen(context.Background(), supportIssueTestActor(42, false), 12, "")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+}
+
+func TestSupportIssueService_AdminHideCommentRejectsNonAdmin(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	err := svc.AdminHideComment(context.Background(), supportIssueTestActor(42, false), 12, 99, "")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+	require.False(t, repo.hideCommentCalled)
+}
+
+func TestSupportIssueService_AdminHideAttachmentRejectsNonAdmin(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	err := svc.AdminHideAttachment(context.Background(), supportIssueTestActor(42, false), 12, 99, "")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+	require.False(t, repo.hideAttachmentCalled)
+}
+
+func TestSupportIssueService_AdminHideCommentUsesDefaultReason(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	err := svc.AdminHideComment(context.Background(), supportIssueTestActor(42, true), 12, 99, "")
+
+	require.NoError(t, err)
+	require.True(t, repo.hideCommentCalled)
+	require.Equal(t, SupportIssueDefaultHideReason, repo.lastHideCommentInput.HideReason)
+	require.Equal(t, SupportIssueEventCommentHidden, repo.hideCommentEvent.EventType)
+}
+
+func TestSupportIssueService_SuggestSimilarReturnsAtMostFive(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	for i := 0; i < 8; i++ {
+		repo.searchIssuesResult = append(repo.searchIssuesResult, SupportIssue{
+			ID:                 int64(i + 1),
+			Title:              fmt.Sprintf("rate limit %d", i),
+			AccountEmail:       "user@example.com",
+			AccountEmailMasked: "u***@example.com",
+			APIKeySuffix:       "ab12cd",
+		})
+	}
+	svc := NewSupportIssueService(repo)
+	code := 429
+
+	items, err := svc.SuggestSimilar(context.Background(), supportIssueTestActor(42, false), validCreateSupportIssueInput(func(input *CreateSupportIssueInput) {
+		input.Title = "rate limit on claude"
+		input.ScreenshotText = "rate limit error"
+		input.ErrorCode = "rate_limit"
+		input.HTTPStatus = &code
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, items, 5)
+	require.True(t, repo.searchCalled)
+	require.Equal(t, 5, repo.lastSearchParams.PageSize)
+	require.Equal(t, "rate_limit", repo.lastSearchQuery.Parsed.ErrorCode)
+	require.NotNil(t, repo.lastSearchQuery.Parsed.HTTPStatus)
+	require.Equal(t, 429, *repo.lastSearchQuery.Parsed.HTTPStatus)
+}
+
+func TestSupportIssueService_GetPublicUsesVisibleQuery(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{ID: 12, Status: SupportIssueStatusOpen}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.GetPublic(context.Background(), 12)
+
+	require.NoError(t, err)
+	require.Equal(t, []bool{false}, repo.getIssueIncludeHidden)
+}
+
+func TestSupportIssueService_AdminGetUsesHiddenQuery(t *testing.T) {
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{ID: 12, Status: SupportIssueStatusOpen}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminGet(context.Background(), 12)
+
+	require.NoError(t, err)
+	require.Equal(t, []bool{true}, repo.getIssueIncludeHidden)
+}
+
+type fakeSupportIssueRepository struct {
+	createdIssue       *SupportIssue
+	createdAttachments []SupportIssueAttachment
+	createdEvent       SupportIssueEvent
+	createErr          error
+
+	issue                 *SupportIssue
+	getIssueErr           error
+	getIssueIncludeHidden []bool
+
+	listIssuesResult []SupportIssue
+	listPage         *pagination.PaginationResult
+	listErr          error
+
+	searchCalled       bool
+	searchIssuesResult []SupportIssue
+	searchPage         *pagination.PaginationResult
+	searchErr          error
+	lastSearchParams   pagination.PaginationParams
+	lastSearchQuery    SearchSupportIssueQuery
+
+	addCommentCalled bool
+	lastComment      *SupportIssueComment
+	addCommentEvent  SupportIssueEvent
+	addCommentErr    error
+
+	updateStatusCalled     bool
+	lastUpdateIssueID      int64
+	lastUpdateStatus       string
+	lastUpdateActorID      int64
+	lastUpdateActorIsAdmin bool
+	lastUpdateEvent        SupportIssueEvent
+	updateStatusErr        error
+
+	hideCommentCalled    bool
+	lastHideCommentInput HideSupportIssueCommentInput
+	hideCommentEvent     SupportIssueEvent
+	hideCommentErr       error
+	hideAttachmentCalled bool
+	lastHideAttachment   HideSupportIssueAttachmentInput
+	hideAttachmentEvent  SupportIssueEvent
+	hideAttachmentErr    error
+	listEventsCalled     bool
+	listEventsResult     []SupportIssueEvent
+	listEventsErr        error
+}
+
+func (r *fakeSupportIssueRepository) CreateIssue(ctx context.Context, issue *SupportIssue, attachments []SupportIssueAttachment, event SupportIssueEvent) error {
+	r.createdIssue = issue
+	r.createdAttachments = append([]SupportIssueAttachment(nil), attachments...)
+	r.createdEvent = event
+	if r.createErr != nil {
+		return r.createErr
+	}
+	if issue.ID == 0 {
+		issue.ID = 123
+	}
+	if issue.PublicID == "" {
+		issue.PublicID = "ISS-000123"
+	}
+	return nil
+}
+
+func (r *fakeSupportIssueRepository) GetIssue(ctx context.Context, id int64, includeHidden bool) (*SupportIssue, error) {
+	r.getIssueIncludeHidden = append(r.getIssueIncludeHidden, includeHidden)
+	if r.getIssueErr != nil {
+		return nil, r.getIssueErr
+	}
+	if r.issue == nil {
+		return nil, ErrSupportIssueNotFound
+	}
+	out := *r.issue
+	return &out, nil
+}
+
+func (r *fakeSupportIssueRepository) ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error) {
+	if r.listErr != nil {
+		return nil, nil, r.listErr
+	}
+	return append([]SupportIssue(nil), r.listIssuesResult...), r.listPage, nil
+}
+
+func (r *fakeSupportIssueRepository) SearchIssues(ctx context.Context, params pagination.PaginationParams, query SearchSupportIssueQuery) ([]SupportIssue, *pagination.PaginationResult, error) {
+	r.searchCalled = true
+	r.lastSearchParams = params
+	r.lastSearchQuery = query
+	if r.searchErr != nil {
+		return nil, nil, r.searchErr
+	}
+	return append([]SupportIssue(nil), r.searchIssuesResult...), r.searchPage, nil
+}
+
+func (r *fakeSupportIssueRepository) AddComment(ctx context.Context, comment *SupportIssueComment, event SupportIssueEvent) error {
+	r.addCommentCalled = true
+	r.lastComment = comment
+	r.addCommentEvent = event
+	if r.addCommentErr != nil {
+		return r.addCommentErr
+	}
+	if comment.ID == 0 {
+		comment.ID = 321
+	}
+	return nil
+}
+
+func (r *fakeSupportIssueRepository) UpdateStatus(
+	ctx context.Context,
+	issueID int64,
+	nextStatus string,
+	actorUserID int64,
+	actorIsAdmin bool,
+	event SupportIssueEvent,
+) (*SupportIssue, error) {
+	r.updateStatusCalled = true
+	r.lastUpdateIssueID = issueID
+	r.lastUpdateStatus = nextStatus
+	r.lastUpdateActorID = actorUserID
+	r.lastUpdateActorIsAdmin = actorIsAdmin
+	r.lastUpdateEvent = event
+	if r.updateStatusErr != nil {
+		return nil, r.updateStatusErr
+	}
+	updated := &SupportIssue{ID: issueID, Status: nextStatus}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.Status = nextStatus
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) HideComment(ctx context.Context, input HideSupportIssueCommentInput, event SupportIssueEvent) error {
+	r.hideCommentCalled = true
+	r.lastHideCommentInput = input
+	r.hideCommentEvent = event
+	return r.hideCommentErr
+}
+
+func (r *fakeSupportIssueRepository) HideAttachment(ctx context.Context, input HideSupportIssueAttachmentInput, event SupportIssueEvent) error {
+	r.hideAttachmentCalled = true
+	r.lastHideAttachment = input
+	r.hideAttachmentEvent = event
+	return r.hideAttachmentErr
+}
+
+func (r *fakeSupportIssueRepository) ListEvents(ctx context.Context, issueID int64) ([]SupportIssueEvent, error) {
+	r.listEventsCalled = true
+	if r.listEventsErr != nil {
+		return nil, r.listEventsErr
+	}
+	return append([]SupportIssueEvent(nil), r.listEventsResult...), nil
+}
+
+func validCreateSupportIssueInput(mutate func(*CreateSupportIssueInput)) CreateSupportIssueInput {
+	input := CreateSupportIssueInput{
+		Title:              "Payment issue",
+		Description:        "The payment balance did not arrive after checkout.",
+		AccountEmail:       "User@Example.com",
+		OccurredAt:         time.Now().UTC().Add(-time.Hour),
+		ScreenshotText:     "Your account is temporarily unavailable",
+		ScreenshotLanguage: SupportIssueScreenshotLanguageEN,
+		Category:           SupportIssueCategoryPayment,
+		Severity:           SupportIssueSeverityBlocked,
+		ModelName:          "claude-sonnet",
+		ClientName:         "Claude Code",
+		ErrorCode:          "temporarily_unavailable",
+	}
+	if mutate != nil {
+		mutate(&input)
+	}
+	return input
+}
+
+func supportIssueTestActor(userID int64, admin bool) SupportIssueActor {
+	role := RoleUser
+	if admin {
+		role = RoleAdmin
+	}
+	return SupportIssueActor{
+		UserID:  userID,
+		Email:   fmt.Sprintf("user-%d@example.com", userID),
+		Role:    role,
+		IsAdmin: admin,
+	}
+}
+
+func supportIssueTestInt64(v int64) *int64 {
+	return &v
+}
+
+func TestSupportIssueService_SearchTextKeepsRequiredFieldsReadable(t *testing.T) {
+	text := buildSupportIssueSearchText(&SupportIssue{
+		Title:                  "余额未到账",
+		Description:            "Payment balance is missing",
+		AccountEmailMasked:     "u***@example.com",
+		AccountEmailNormalized: "user@example.com",
+		ScreenshotText:         "insufficient_quota",
+		Category:               SupportIssueCategoryBalance,
+		Severity:               SupportIssueSeverityPartial,
+		ModelName:              "claude",
+		ClientName:             "claude-code",
+		ErrorCode:              "insufficient_quota",
+		HTTPStatus:             supportIssueTestInt(429),
+	})
+
+	for _, want := range []string{
+		"余额未到账",
+		"Payment balance is missing",
+		"u***@example.com",
+		"user@example.com",
+		"insufficient_quota",
+		SupportIssueCategoryBalance,
+		SupportIssueSeverityPartial,
+		"claude",
+		"claude-code",
+		"429",
+	} {
+		require.True(t, strings.Contains(text, want), "search_text missing %q in %q", want, text)
+	}
+}
+
+func supportIssueTestInt(v int) *int {
+	return &v
+}

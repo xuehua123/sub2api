@@ -58,6 +58,11 @@ const (
 	SupportIssueAttachmentVisibilityHidden = "hidden"
 )
 
+const (
+	SupportIssueDefaultHideReason      = "admin moderation"
+	SupportIssueMaxCommentContentRunes = 8000
+)
+
 var (
 	ErrSupportIssueNotFound              = domain.ErrSupportIssueNotFound
 	ErrSupportIssueLocked                = domain.ErrSupportIssueLocked
@@ -152,20 +157,24 @@ type SupportIssueEvent struct {
 }
 
 type CreateSupportIssueInput struct {
-	Title              string
-	Description        string
-	AccountEmail       string
-	OccurredAt         time.Time
-	ScreenshotText     string
-	ScreenshotLanguage string
-	Category           string
-	Severity           string
-	ModelName          string
-	ClientName         string
-	HTTPStatus         *int
-	ErrorCode          string
-	APIKeySuffix       string
-	Attachments        []SupportIssueAttachment
+	Title                  string
+	Description            string
+	AccountEmail           string
+	AccountEmailNormalized string
+	AccountEmailMasked     string
+	OccurredAt             time.Time
+	ScreenshotText         string
+	ScreenshotLanguage     string
+	Category               string
+	Severity               string
+	Status                 string
+	ModelName              string
+	ClientName             string
+	HTTPStatus             *int
+	ErrorCode              string
+	APIKeySuffix           string
+	SearchText             string
+	Attachments            []SupportIssueAttachment
 }
 
 type ListSupportIssueFilters struct {
