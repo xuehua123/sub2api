@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/server/routes"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -1325,6 +1326,55 @@ func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 	require.Equal(t, previousUsage, got.Data.PreviousMonthlyUsage)
 	require.Greater(t, got.Data.DeductedDays, 0)
 	require.NoError(t, deps.sqlMock.ExpectationsWereMet())
+}
+
+func TestIssueRoutesAreRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	r := gin.New()
+	v1 := r.Group("/api/v1")
+	jwtAuth := middleware.JWTAuthMiddleware(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 1, Concurrency: 5})
+		c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+		c.Next()
+	})
+	adminAuth := middleware.AdminAuthMiddleware(func(c *gin.Context) {
+		middleware.AbortWithError(c, http.StatusForbidden, "FORBIDDEN", "Admin access required")
+	})
+	handlers := &handler.Handlers{
+		SupportIssue: handler.NewSupportIssueHandler(nil),
+		Admin: &handler.AdminHandlers{
+			SupportIssue: adminhandler.NewSupportIssueHandler(nil),
+		},
+	}
+
+	routes.RegisterIssueRoutes(v1, handlers, jwtAuth, adminAuth, nil)
+
+	registered := make(map[string]struct{})
+	for _, route := range r.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+
+	for _, want := range []string{
+		"GET /api/v1/issues",
+		"GET /api/v1/issues/:id",
+		"POST /api/v1/issues",
+		"POST /api/v1/issues/:id/comments",
+		"PATCH /api/v1/issues/:id/resolve",
+		"POST /api/v1/issues/search-suggestions",
+		"GET /api/v1/admin/issues",
+		"GET /api/v1/admin/issues/:id",
+		"PATCH /api/v1/admin/issues/:id/status",
+		"POST /api/v1/admin/issues/:id/reopen",
+		"POST /api/v1/admin/issues/:id/comments/:comment_id/hide",
+		"POST /api/v1/admin/issues/:id/attachments/:attachment_id/hide",
+		"GET /api/v1/admin/issues/:id/events",
+	} {
+		require.Contains(t, registered, want)
+	}
+
+	status, _ := doRequest(t, r, http.MethodGet, "/api/v1/admin/issues", "", nil)
+	require.Equal(t, http.StatusForbidden, status)
 }
 
 type contractDeps struct {
