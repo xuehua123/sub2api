@@ -251,6 +251,7 @@ type fakeSupportIssueUserService struct {
 
 	addCommentCalled bool
 	resolveCalled    bool
+	lastViewer       service.SupportIssueViewer
 
 	uploadAttachmentCalled bool
 	lastUploadInput        service.UploadSupportIssueAttachmentInput
@@ -283,7 +284,8 @@ func (f *fakeSupportIssueUserService) SearchPublic(ctx context.Context, params p
 	return []service.SupportIssue{*supportIssueHandlerFixture()}, supportIssueHandlerPage(), nil
 }
 
-func (f *fakeSupportIssueUserService) GetPublic(ctx context.Context, issueID int64) (*service.SupportIssue, error) {
+func (f *fakeSupportIssueUserService) GetPublic(ctx context.Context, issueID int64, viewer service.SupportIssueViewer) (*service.SupportIssue, error) {
+	f.lastViewer = viewer
 	return supportIssueHandlerFixture(), nil
 }
 

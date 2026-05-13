@@ -54,6 +54,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -149,6 +150,8 @@ type Client struct {
 	SupportIssueComment *SupportIssueCommentClient
 	// SupportIssueEvent is the client for interacting with the SupportIssueEvent builders.
 	SupportIssueEvent *SupportIssueEventClient
+	// SupportIssueView is the client for interacting with the SupportIssueView builders.
+	SupportIssueView *SupportIssueViewClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -215,6 +218,7 @@ func (c *Client) init() {
 	c.SupportIssueAttachment = NewSupportIssueAttachmentClient(c.config)
 	c.SupportIssueComment = NewSupportIssueCommentClient(c.config)
 	c.SupportIssueEvent = NewSupportIssueEventClient(c.config)
+	c.SupportIssueView = NewSupportIssueViewClient(c.config)
 	c.TLSFingerprintProfile = NewTLSFingerprintProfileClient(c.config)
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
@@ -354,6 +358,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SupportIssueAttachment:        NewSupportIssueAttachmentClient(cfg),
 		SupportIssueComment:           NewSupportIssueCommentClient(cfg),
 		SupportIssueEvent:             NewSupportIssueEventClient(cfg),
+		SupportIssueView:              NewSupportIssueViewClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -420,6 +425,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SupportIssueAttachment:        NewSupportIssueAttachmentClient(cfg),
 		SupportIssueComment:           NewSupportIssueCommentClient(cfg),
 		SupportIssueEvent:             NewSupportIssueEventClient(cfg),
+		SupportIssueView:              NewSupportIssueViewClient(cfg),
 		TLSFingerprintProfile:         NewTLSFingerprintProfileClient(cfg),
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
@@ -468,9 +474,9 @@ func (c *Client) Use(hooks ...Hook) {
 		c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
 		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
-		c.SupportIssueEvent, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserSubscription,
+		c.SupportIssueEvent, c.SupportIssueView, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -491,9 +497,9 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode, c.ReferralRelation,
 		c.ReferralRelationHistory, c.SecuritySecret, c.Setting, c.SubscriptionPlan,
 		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
-		c.SupportIssueEvent, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserSubscription,
+		c.SupportIssueEvent, c.SupportIssueView, c.TLSFingerprintProfile,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -580,6 +586,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.SupportIssueComment.mutate(ctx, m)
 	case *SupportIssueEventMutation:
 		return c.SupportIssueEvent.mutate(ctx, m)
+	case *SupportIssueViewMutation:
+		return c.SupportIssueView.mutate(ctx, m)
 	case *TLSFingerprintProfileMutation:
 		return c.TLSFingerprintProfile.mutate(ctx, m)
 	case *UsageCleanupTaskMutation:
@@ -6459,6 +6467,22 @@ func (c *SupportIssueClient) QueryEvents(_m *SupportIssue) *SupportIssueEventQue
 	return query
 }
 
+// QueryViews queries the views edge of a SupportIssue.
+func (c *SupportIssueClient) QueryViews(_m *SupportIssue) *SupportIssueViewQuery {
+	query := (&SupportIssueViewClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissue.Table, supportissue.FieldID, id),
+			sqlgraph.To(supportissueview.Table, supportissueview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.ViewsTable, supportissue.ViewsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // Hooks returns the client hooks.
 func (c *SupportIssueClient) Hooks() []Hook {
 	return c.hooks.SupportIssue
@@ -6928,6 +6952,155 @@ func (c *SupportIssueEventClient) mutate(ctx context.Context, m *SupportIssueEve
 		return (&SupportIssueEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown SupportIssueEvent mutation op: %q", m.Op())
+	}
+}
+
+// SupportIssueViewClient is a client for the SupportIssueView schema.
+type SupportIssueViewClient struct {
+	config
+}
+
+// NewSupportIssueViewClient returns a client for the SupportIssueView from the given config.
+func NewSupportIssueViewClient(c config) *SupportIssueViewClient {
+	return &SupportIssueViewClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `supportissueview.Hooks(f(g(h())))`.
+func (c *SupportIssueViewClient) Use(hooks ...Hook) {
+	c.hooks.SupportIssueView = append(c.hooks.SupportIssueView, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `supportissueview.Intercept(f(g(h())))`.
+func (c *SupportIssueViewClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SupportIssueView = append(c.inters.SupportIssueView, interceptors...)
+}
+
+// Create returns a builder for creating a SupportIssueView entity.
+func (c *SupportIssueViewClient) Create() *SupportIssueViewCreate {
+	mutation := newSupportIssueViewMutation(c.config, OpCreate)
+	return &SupportIssueViewCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SupportIssueView entities.
+func (c *SupportIssueViewClient) CreateBulk(builders ...*SupportIssueViewCreate) *SupportIssueViewCreateBulk {
+	return &SupportIssueViewCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SupportIssueViewClient) MapCreateBulk(slice any, setFunc func(*SupportIssueViewCreate, int)) *SupportIssueViewCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SupportIssueViewCreateBulk{err: fmt.Errorf("calling to SupportIssueViewClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SupportIssueViewCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SupportIssueViewCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SupportIssueView.
+func (c *SupportIssueViewClient) Update() *SupportIssueViewUpdate {
+	mutation := newSupportIssueViewMutation(c.config, OpUpdate)
+	return &SupportIssueViewUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SupportIssueViewClient) UpdateOne(_m *SupportIssueView) *SupportIssueViewUpdateOne {
+	mutation := newSupportIssueViewMutation(c.config, OpUpdateOne, withSupportIssueView(_m))
+	return &SupportIssueViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SupportIssueViewClient) UpdateOneID(id int64) *SupportIssueViewUpdateOne {
+	mutation := newSupportIssueViewMutation(c.config, OpUpdateOne, withSupportIssueViewID(id))
+	return &SupportIssueViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SupportIssueView.
+func (c *SupportIssueViewClient) Delete() *SupportIssueViewDelete {
+	mutation := newSupportIssueViewMutation(c.config, OpDelete)
+	return &SupportIssueViewDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SupportIssueViewClient) DeleteOne(_m *SupportIssueView) *SupportIssueViewDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SupportIssueViewClient) DeleteOneID(id int64) *SupportIssueViewDeleteOne {
+	builder := c.Delete().Where(supportissueview.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SupportIssueViewDeleteOne{builder}
+}
+
+// Query returns a query builder for SupportIssueView.
+func (c *SupportIssueViewClient) Query() *SupportIssueViewQuery {
+	return &SupportIssueViewQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSupportIssueView},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SupportIssueView entity by its id.
+func (c *SupportIssueViewClient) Get(ctx context.Context, id int64) (*SupportIssueView, error) {
+	return c.Query().Where(supportissueview.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SupportIssueViewClient) GetX(ctx context.Context, id int64) *SupportIssueView {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryIssue queries the issue edge of a SupportIssueView.
+func (c *SupportIssueViewClient) QueryIssue(_m *SupportIssueView) *SupportIssueQuery {
+	query := (&SupportIssueClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissueview.Table, supportissueview.FieldID, id),
+			sqlgraph.To(supportissue.Table, supportissue.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, supportissueview.IssueTable, supportissueview.IssueColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *SupportIssueViewClient) Hooks() []Hook {
+	return c.hooks.SupportIssueView
+}
+
+// Interceptors returns the client interceptors.
+func (c *SupportIssueViewClient) Interceptors() []Interceptor {
+	return c.inters.SupportIssueView
+}
+
+func (c *SupportIssueViewClient) mutate(ctx context.Context, m *SupportIssueViewMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SupportIssueViewCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SupportIssueViewUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SupportIssueViewUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SupportIssueViewDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SupportIssueView mutation op: %q", m.Op())
 	}
 }
 
@@ -8573,8 +8746,9 @@ type (
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionPlan,
 		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Hook
+		SupportIssueView, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
@@ -8587,8 +8761,9 @@ type (
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionPlan,
 		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserSubscription []ent.Interceptor
+		SupportIssueView, TLSFingerprintProfile, UsageCleanupTask, UsageLog, User,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserSubscription []ent.Interceptor
 	}
 )
 

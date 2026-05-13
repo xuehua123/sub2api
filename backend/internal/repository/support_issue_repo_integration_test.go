@@ -110,6 +110,44 @@ func TestSupportIssueRepository_OpenAttachmentForPublicRejectsUnboundAttachment(
 	require.ErrorIs(t, err, service.ErrSupportIssueAttachmentNotFound)
 }
 
+func TestSupportIssueRepository_HideAndRestoreIssue(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil)
+
+	hidden, err := repo.HideIssue(ctx, service.HideSupportIssueInput{
+		IssueID:        issue.ID,
+		HiddenByUserID: user.ID,
+		HideReason:     "contains private data",
+	}, newSupportIssueEvent(user.ID, service.SupportIssueEventIssueHidden))
+	require.NoError(t, err)
+	require.NotNil(t, hidden.HiddenAt)
+	require.Equal(t, "contains private data", hidden.HideReason)
+
+	visible := false
+	items, _, err := repo.ListIssues(ctx, pagination.PaginationParams{Page: 1, PageSize: 20}, service.ListSupportIssueFilters{Hidden: &visible})
+	require.NoError(t, err)
+	requireSupportIssueIDsNotContain(t, items, issue.ID)
+
+	restored, err := repo.RestoreIssue(ctx, issue.ID, user.ID, newSupportIssueEvent(user.ID, service.SupportIssueEventIssueRestored))
+	require.NoError(t, err)
+	require.Nil(t, restored.HiddenAt)
+	require.Empty(t, restored.HideReason)
+}
+
+func TestSupportIssueRepository_RecordViewThrottlesByViewer(t *testing.T) {
+	ctx, _, repo, user := newSupportIssueRepoTest(t)
+	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil)
+	viewer := service.SupportIssueViewer{IP: "127.0.0.1", UserAgent: "unit-test"}
+
+	require.NoError(t, repo.RecordView(ctx, issue.ID, viewer, time.Hour))
+	require.NoError(t, repo.RecordView(ctx, issue.ID, viewer, time.Hour))
+
+	loaded, err := repo.GetIssue(ctx, issue.ID, true)
+	require.NoError(t, err)
+	require.Equal(t, 1, loaded.ViewCount)
+	require.NotNil(t, loaded.LastViewedAt)
+}
+
 func TestSupportIssueRepository_GetIssueExcludesHiddenContent(t *testing.T) {
 	ctx, _, repo, user := newSupportIssueRepoTest(t)
 	issue := mustCreateSupportIssue(t, ctx, repo, user.ID, nil, newSupportIssueAttachmentFixture(user.ID))
@@ -430,6 +468,16 @@ func requireSupportIssueIDsContain(t *testing.T, items []service.SupportIssue, i
 		}
 	}
 	t.Fatalf("support issue id %d not found in %#v", id, items)
+}
+
+func requireSupportIssueIDsNotContain(t *testing.T, items []service.SupportIssue, id int64) {
+	t.Helper()
+
+	for _, item := range items {
+		if item.ID == id {
+			t.Fatalf("support issue id %d unexpectedly found in %#v", id, items)
+		}
+	}
 }
 
 func ptrInt(v int) *int {

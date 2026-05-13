@@ -64,8 +64,10 @@ type PublicSupportIssue struct {
 	ResolvedAt         *time.Time                     `json:"resolved_at,omitempty"`
 	LockedAt           *time.Time                     `json:"locked_at,omitempty"`
 	LastCommentAt      *time.Time                     `json:"last_comment_at,omitempty"`
+	LastViewedAt       *time.Time                     `json:"last_viewed_at,omitempty"`
 	CommentCount       int                            `json:"comment_count"`
 	AttachmentCount    int                            `json:"attachment_count"`
+	ViewCount          int                            `json:"view_count"`
 	CreatedAt          time.Time                      `json:"created_at"`
 	UpdatedAt          time.Time                      `json:"updated_at"`
 	Comments           []PublicSupportIssueComment    `json:"comments,omitempty"`
@@ -125,10 +127,15 @@ type AdminSupportIssue struct {
 	ResolvedByUserID       *int64                        `json:"resolved_by_user_id,omitempty"`
 	ResolvedAt             *time.Time                    `json:"resolved_at,omitempty"`
 	LockedAt               *time.Time                    `json:"locked_at,omitempty"`
+	HiddenAt               *time.Time                    `json:"hidden_at,omitempty"`
+	HiddenByUserID         *int64                        `json:"hidden_by_user_id,omitempty"`
+	HideReason             string                        `json:"hide_reason,omitempty"`
 	LastCommentAt          *time.Time                    `json:"last_comment_at,omitempty"`
+	LastViewedAt           *time.Time                    `json:"last_viewed_at,omitempty"`
 	CommentCount           int                           `json:"comment_count"`
 	HiddenCommentCount     int                           `json:"hidden_comment_count"`
 	AttachmentCount        int                           `json:"attachment_count"`
+	ViewCount              int                           `json:"view_count"`
 	CreatedAt              time.Time                     `json:"created_at"`
 	UpdatedAt              time.Time                     `json:"updated_at"`
 	Comments               []AdminSupportIssueComment    `json:"comments,omitempty"`
@@ -229,8 +236,10 @@ func PublicSupportIssueFromService(issue *service.SupportIssue) *PublicSupportIs
 		ResolvedAt:         issue.ResolvedAt,
 		LockedAt:           issue.LockedAt,
 		LastCommentAt:      issue.LastCommentAt,
+		LastViewedAt:       issue.LastViewedAt,
 		CommentCount:       issue.CommentCount,
 		AttachmentCount:    issue.AttachmentCount,
+		ViewCount:          issue.ViewCount,
 		CreatedAt:          issue.CreatedAt,
 		UpdatedAt:          issue.UpdatedAt,
 		Comments:           PublicSupportIssueCommentsFromService(issue.Comments),
@@ -341,10 +350,15 @@ func AdminSupportIssueFromService(issue *service.SupportIssue) *AdminSupportIssu
 		ResolvedByUserID:       issue.ResolvedByUserID,
 		ResolvedAt:             issue.ResolvedAt,
 		LockedAt:               issue.LockedAt,
+		HiddenAt:               issue.HiddenAt,
+		HiddenByUserID:         issue.HiddenByUserID,
+		HideReason:             issue.HideReason,
 		LastCommentAt:          issue.LastCommentAt,
+		LastViewedAt:           issue.LastViewedAt,
 		CommentCount:           issue.CommentCount,
 		HiddenCommentCount:     issue.HiddenCommentCount,
 		AttachmentCount:        issue.AttachmentCount,
+		ViewCount:              issue.ViewCount,
 		CreatedAt:              issue.CreatedAt,
 		UpdatedAt:              issue.UpdatedAt,
 		Comments:               AdminSupportIssueCommentsFromService(issue.Comments),

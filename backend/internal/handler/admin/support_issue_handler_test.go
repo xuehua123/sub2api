@@ -119,6 +119,8 @@ func TestSupportIssueAdminHandler_EventsCallsService(t *testing.T) {
 type fakeSupportIssueAdminService struct {
 	updateStatusCalled   bool
 	reopenCalled         bool
+	hideIssueCalled      bool
+	restoreIssueCalled   bool
 	hideCommentCalled    bool
 	hideAttachmentCalled bool
 	eventsCalled         bool
@@ -163,6 +165,29 @@ func (f *fakeSupportIssueAdminService) AdminReopen(ctx context.Context, actor se
 	issue := adminSupportIssueHandlerFixture()
 	issue.ID = issueID
 	issue.Status = service.SupportIssueStatusOpen
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminHideIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error) {
+	f.hideIssueCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	f.lastReason = reason
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
+	now := time.Now()
+	issue.HiddenAt = &now
+	issue.HideReason = reason
+	return issue, nil
+}
+
+func (f *fakeSupportIssueAdminService) AdminRestoreIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error) {
+	f.restoreIssueCalled = true
+	f.lastActor = actor
+	f.lastIssueID = issueID
+	f.lastReason = reason
+	issue := adminSupportIssueHandlerFixture()
+	issue.ID = issueID
 	return issue, nil
 }
 

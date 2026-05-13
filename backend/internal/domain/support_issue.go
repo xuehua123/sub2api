@@ -51,6 +51,8 @@ const (
 	SupportIssueEventReopened         = "reopened"
 	SupportIssueEventCommentHidden    = "comment_hidden"
 	SupportIssueEventAttachmentHidden = "attachment_hidden"
+	SupportIssueEventIssueHidden      = "issue_hidden"
+	SupportIssueEventIssueRestored    = "issue_restored"
 )
 
 const (

@@ -10,6 +10,8 @@ const {
   reopen,
   hideComment,
   hideAttachment,
+  hideIssue,
+  restoreIssue,
   addComment,
   route,
   router,
@@ -20,6 +22,8 @@ const {
   reopen: vi.fn(),
   hideComment: vi.fn(),
   hideAttachment: vi.fn(),
+  hideIssue: vi.fn(),
+  restoreIssue: vi.fn(),
   addComment: vi.fn(),
   route: {
     params: { id: '123' },
@@ -38,6 +42,8 @@ vi.mock('@/api/admin/issues', () => ({
     reopen,
     hideComment,
     hideAttachment,
+    hideIssue,
+    restoreIssue,
   },
   default: {
     get,
@@ -46,6 +52,8 @@ vi.mock('@/api/admin/issues', () => ({
     reopen,
     hideComment,
     hideAttachment,
+    hideIssue,
+    restoreIssue,
   },
 }))
 
@@ -104,6 +112,7 @@ function makeIssue(): AdminSupportIssue {
     hidden_comment_count: 1,
     comment_count: 1,
     attachment_count: 1,
+    view_count: 5,
     created_at: '2026-05-13T08:00:00Z',
     updated_at: '2026-05-13T08:00:00Z',
     comments: [
@@ -155,6 +164,8 @@ describe('admin SupportIssueDetailView', () => {
     reopen.mockReset()
     hideComment.mockReset()
     hideAttachment.mockReset()
+    hideIssue.mockReset()
+    restoreIssue.mockReset()
     addComment.mockReset()
     router.push.mockReset()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -165,6 +176,8 @@ describe('admin SupportIssueDetailView', () => {
     reopen.mockResolvedValue(makeIssue())
     hideComment.mockResolvedValue({ message: 'ok' })
     hideAttachment.mockResolvedValue({ message: 'ok' })
+    hideIssue.mockResolvedValue(makeIssue())
+    restoreIssue.mockResolvedValue(makeIssue())
     addComment.mockResolvedValue({
       id: 502,
       issue_id: 123,
@@ -209,6 +222,12 @@ describe('admin SupportIssueDetailView', () => {
     await flushPromises()
 
     expect(reopen).toHaveBeenCalledWith(123, { reason: 'user replied' })
+
+    await wrapper.get('[data-testid="admin-visibility-reason"]').setValue('private data')
+    await wrapper.get('[data-testid="admin-visibility-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(hideIssue).toHaveBeenCalledWith(123, { reason: 'private data' })
 
     await wrapper.get('[data-testid="admin-hide-comment-reason"]').setValue('contains private data')
     await wrapper.get('[data-testid="admin-hide-comment-form"]').trigger('submit')

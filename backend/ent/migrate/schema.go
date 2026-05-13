@@ -1818,10 +1818,15 @@ var (
 		{Name: "resolved_by_user_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "resolved_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "locked_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "hidden_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "hidden_by_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "hide_reason", Type: field.TypeString, Size: 255, Default: ""},
 		{Name: "last_comment_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_viewed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "comment_count", Type: field.TypeInt, Default: 0},
 		{Name: "hidden_comment_count", Type: field.TypeInt, Default: 0},
 		{Name: "attachment_count", Type: field.TypeInt, Default: 0},
+		{Name: "view_count", Type: field.TypeInt, Default: 0},
 		{Name: "search_text", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -1840,12 +1845,12 @@ var (
 			{
 				Name:    "supportissue_status_updated_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[28]},
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[33]},
 			},
 			{
 				Name:    "supportissue_status_last_comment_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[22]},
+				Columns: []*schema.Column{SupportIssuesColumns[12], SupportIssuesColumns[25]},
 			},
 			{
 				Name:    "supportissue_category_status",
@@ -1855,7 +1860,7 @@ var (
 			{
 				Name:    "supportissue_created_by_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{SupportIssuesColumns[18], SupportIssuesColumns[27]},
+				Columns: []*schema.Column{SupportIssuesColumns[18], SupportIssuesColumns[32]},
 			},
 			{
 				Name:    "supportissue_account_email_normalized",
@@ -1866,6 +1871,21 @@ var (
 				Name:    "supportissue_occurred_at",
 				Unique:  false,
 				Columns: []*schema.Column{SupportIssuesColumns[7]},
+			},
+			{
+				Name:    "supportissue_hidden_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[22]},
+			},
+			{
+				Name:    "supportissue_view_count",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[30]},
+			},
+			{
+				Name:    "supportissue_last_viewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssuesColumns[26]},
 			},
 			{
 				Name:    "supportissue_http_status",
@@ -1984,6 +2004,46 @@ var (
 				Name:    "supportissueevent_issue_id_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{SupportIssueEventsColumns[7], SupportIssueEventsColumns[6]},
+			},
+		},
+	}
+	// SupportIssueViewsColumns holds the columns for the "support_issue_views" table.
+	SupportIssueViewsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "viewer_user_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "viewer_hash", Type: field.TypeString, Size: 64},
+		{Name: "viewed_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "issue_id", Type: field.TypeInt64},
+	}
+	// SupportIssueViewsTable holds the schema information for the "support_issue_views" table.
+	SupportIssueViewsTable = &schema.Table{
+		Name:       "support_issue_views",
+		Columns:    SupportIssueViewsColumns,
+		PrimaryKey: []*schema.Column{SupportIssueViewsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "support_issue_views_support_issues_views",
+				Columns:    []*schema.Column{SupportIssueViewsColumns[5]},
+				RefColumns: []*schema.Column{SupportIssuesColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "supportissueview_issue_id_viewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueViewsColumns[5], SupportIssueViewsColumns[3]},
+			},
+			{
+				Name:    "supportissueview_viewer_hash_issue_id_viewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueViewsColumns[2], SupportIssueViewsColumns[5], SupportIssueViewsColumns[3]},
+			},
+			{
+				Name:    "supportissueview_viewer_user_id_issue_id_viewed_at",
+				Unique:  false,
+				Columns: []*schema.Column{SupportIssueViewsColumns[1], SupportIssueViewsColumns[5], SupportIssueViewsColumns[3]},
 			},
 		},
 	}
@@ -2488,6 +2548,7 @@ var (
 		SupportIssueAttachmentsTable,
 		SupportIssueCommentsTable,
 		SupportIssueEventsTable,
+		SupportIssueViewsTable,
 		TLSFingerprintProfilesTable,
 		UsageCleanupTasksTable,
 		UsageLogsTable,
@@ -2658,6 +2719,10 @@ func init() {
 	SupportIssueEventsTable.ForeignKeys[0].RefTable = SupportIssuesTable
 	SupportIssueEventsTable.Annotation = &entsql.Annotation{
 		Table: "support_issue_events",
+	}
+	SupportIssueViewsTable.ForeignKeys[0].RefTable = SupportIssuesTable
+	SupportIssueViewsTable.Annotation = &entsql.Annotation{
+		Table: "support_issue_views",
 	}
 	TLSFingerprintProfilesTable.Annotation = &entsql.Annotation{
 		Table: "tls_fingerprint_profiles",

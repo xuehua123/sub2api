@@ -20,6 +20,8 @@ type supportIssueAdminService interface {
 	AdminGet(ctx context.Context, issueID int64) (*service.SupportIssue, error)
 	AdminUpdateStatus(ctx context.Context, actor service.SupportIssueActor, issueID int64, nextStatus string, reason string) (*service.SupportIssue, error)
 	AdminReopen(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
+	AdminHideIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
+	AdminRestoreIssue(ctx context.Context, actor service.SupportIssueActor, issueID int64, reason string) (*service.SupportIssue, error)
 	AdminHideComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, commentID int64, reason string) error
 	AdminHideAttachment(ctx context.Context, actor service.SupportIssueActor, issueID int64, attachmentID int64, reason string) error
 	AdminListEvents(ctx context.Context, issueID int64) ([]service.SupportIssueEvent, error)
@@ -123,6 +125,56 @@ func (h *SupportIssueHandler) Reopen(c *gin.Context) {
 	response.Success(c, dto.AdminSupportIssueFromService(issue))
 }
 
+func (h *SupportIssueHandler) HideIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.SupportIssueReasonRequest
+	if err := c.ShouldBindJSON(&req); err != nil && c.Request.ContentLength > 0 {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminHideIssue(c.Request.Context(), actor, issueID, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
+func (h *SupportIssueHandler) RestoreIssue(c *gin.Context) {
+	actor, ok := adminSupportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	issueID, ok := adminSupportIssueIDParam(c, "id")
+	if !ok {
+		return
+	}
+
+	var req dto.SupportIssueReasonRequest
+	if err := c.ShouldBindJSON(&req); err != nil && c.Request.ContentLength > 0 {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	issue, err := h.supportIssueService.AdminRestoreIssue(c.Request.Context(), actor, issueID, req.Reason)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.AdminSupportIssueFromService(issue))
+}
+
 func (h *SupportIssueHandler) HideComment(c *gin.Context) {
 	actor, ok := adminSupportIssueActorFromContext(c)
 	if !ok {
@@ -219,11 +271,17 @@ func adminSupportIssueListFiltersFromQuery(c *gin.Context) (service.ListSupportI
 	if !ok {
 		return service.ListSupportIssueFilters{}, false
 	}
+	hidden, ok := adminSupportIssueOptionalBoolQuery(c, "hidden")
+	if !ok {
+		return service.ListSupportIssueFilters{}, false
+	}
 	return service.ListSupportIssueFilters{
-		Status:   strings.TrimSpace(c.Query("status")),
-		Category: strings.TrimSpace(c.Query("category")),
-		Severity: strings.TrimSpace(c.Query("severity")),
-		HasImage: hasImage,
+		Status:        strings.TrimSpace(c.Query("status")),
+		Category:      strings.TrimSpace(c.Query("category")),
+		Severity:      strings.TrimSpace(c.Query("severity")),
+		HasImage:      hasImage,
+		Hidden:        hidden,
+		IncludeHidden: true,
 	}, true
 }
 

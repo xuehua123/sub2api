@@ -56,14 +56,24 @@ const (
 	FieldResolvedAt = "resolved_at"
 	// FieldLockedAt holds the string denoting the locked_at field in the database.
 	FieldLockedAt = "locked_at"
+	// FieldHiddenAt holds the string denoting the hidden_at field in the database.
+	FieldHiddenAt = "hidden_at"
+	// FieldHiddenByUserID holds the string denoting the hidden_by_user_id field in the database.
+	FieldHiddenByUserID = "hidden_by_user_id"
+	// FieldHideReason holds the string denoting the hide_reason field in the database.
+	FieldHideReason = "hide_reason"
 	// FieldLastCommentAt holds the string denoting the last_comment_at field in the database.
 	FieldLastCommentAt = "last_comment_at"
+	// FieldLastViewedAt holds the string denoting the last_viewed_at field in the database.
+	FieldLastViewedAt = "last_viewed_at"
 	// FieldCommentCount holds the string denoting the comment_count field in the database.
 	FieldCommentCount = "comment_count"
 	// FieldHiddenCommentCount holds the string denoting the hidden_comment_count field in the database.
 	FieldHiddenCommentCount = "hidden_comment_count"
 	// FieldAttachmentCount holds the string denoting the attachment_count field in the database.
 	FieldAttachmentCount = "attachment_count"
+	// FieldViewCount holds the string denoting the view_count field in the database.
+	FieldViewCount = "view_count"
 	// FieldSearchText holds the string denoting the search_text field in the database.
 	FieldSearchText = "search_text"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
@@ -76,6 +86,8 @@ const (
 	EdgeAttachments = "attachments"
 	// EdgeEvents holds the string denoting the events edge name in mutations.
 	EdgeEvents = "events"
+	// EdgeViews holds the string denoting the views edge name in mutations.
+	EdgeViews = "views"
 	// Table holds the table name of the supportissue in the database.
 	Table = "support_issues"
 	// CommentsTable is the table that holds the comments relation/edge.
@@ -99,6 +111,13 @@ const (
 	EventsInverseTable = "support_issue_events"
 	// EventsColumn is the table column denoting the events relation/edge.
 	EventsColumn = "issue_id"
+	// ViewsTable is the table that holds the views relation/edge.
+	ViewsTable = "support_issue_views"
+	// ViewsInverseTable is the table name for the SupportIssueView entity.
+	// It exists in this package in order to avoid circular dependency with the "supportissueview" package.
+	ViewsInverseTable = "support_issue_views"
+	// ViewsColumn is the table column denoting the views relation/edge.
+	ViewsColumn = "issue_id"
 )
 
 // Columns holds all SQL columns for supportissue fields.
@@ -125,10 +144,15 @@ var Columns = []string{
 	FieldResolvedByUserID,
 	FieldResolvedAt,
 	FieldLockedAt,
+	FieldHiddenAt,
+	FieldHiddenByUserID,
+	FieldHideReason,
 	FieldLastCommentAt,
+	FieldLastViewedAt,
 	FieldCommentCount,
 	FieldHiddenCommentCount,
 	FieldAttachmentCount,
+	FieldViewCount,
 	FieldSearchText,
 	FieldCreatedAt,
 	FieldUpdatedAt,
@@ -191,12 +215,18 @@ var (
 	DefaultAPIKeySuffix string
 	// APIKeySuffixValidator is a validator for the "api_key_suffix" field. It is called by the builders before save.
 	APIKeySuffixValidator func(string) error
+	// DefaultHideReason holds the default value on creation for the "hide_reason" field.
+	DefaultHideReason string
+	// HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
+	HideReasonValidator func(string) error
 	// DefaultCommentCount holds the default value on creation for the "comment_count" field.
 	DefaultCommentCount int
 	// DefaultHiddenCommentCount holds the default value on creation for the "hidden_comment_count" field.
 	DefaultHiddenCommentCount int
 	// DefaultAttachmentCount holds the default value on creation for the "attachment_count" field.
 	DefaultAttachmentCount int
+	// DefaultViewCount holds the default value on creation for the "view_count" field.
+	DefaultViewCount int
 	// DefaultSearchText holds the default value on creation for the "search_text" field.
 	DefaultSearchText string
 	// DefaultCreatedAt holds the default value on creation for the "created_at" field.
@@ -320,9 +350,29 @@ func ByLockedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLockedAt, opts...).ToFunc()
 }
 
+// ByHiddenAt orders the results by the hidden_at field.
+func ByHiddenAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHiddenAt, opts...).ToFunc()
+}
+
+// ByHiddenByUserID orders the results by the hidden_by_user_id field.
+func ByHiddenByUserID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHiddenByUserID, opts...).ToFunc()
+}
+
+// ByHideReason orders the results by the hide_reason field.
+func ByHideReason(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldHideReason, opts...).ToFunc()
+}
+
 // ByLastCommentAt orders the results by the last_comment_at field.
 func ByLastCommentAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldLastCommentAt, opts...).ToFunc()
+}
+
+// ByLastViewedAt orders the results by the last_viewed_at field.
+func ByLastViewedAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastViewedAt, opts...).ToFunc()
 }
 
 // ByCommentCount orders the results by the comment_count field.
@@ -338,6 +388,11 @@ func ByHiddenCommentCount(opts ...sql.OrderTermOption) OrderOption {
 // ByAttachmentCount orders the results by the attachment_count field.
 func ByAttachmentCount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldAttachmentCount, opts...).ToFunc()
+}
+
+// ByViewCount orders the results by the view_count field.
+func ByViewCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldViewCount, opts...).ToFunc()
 }
 
 // BySearchText orders the results by the search_text field.
@@ -396,6 +451,20 @@ func ByEvents(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newEventsStep(), append([]sql.OrderTerm{term}, terms...)...)
 	}
 }
+
+// ByViewsCount orders the results by views count.
+func ByViewsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newViewsStep(), opts...)
+	}
+}
+
+// ByViews orders the results by views terms.
+func ByViews(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newViewsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
 func newCommentsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -415,5 +484,12 @@ func newEventsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(EventsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, EventsTable, EventsColumn),
+	)
+}
+func newViewsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ViewsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ViewsTable, ViewsColumn),
 	)
 }

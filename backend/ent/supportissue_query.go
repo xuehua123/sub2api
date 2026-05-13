@@ -18,6 +18,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 )
 
 // SupportIssueQuery is the builder for querying SupportIssue entities.
@@ -30,6 +31,7 @@ type SupportIssueQuery struct {
 	withComments    *SupportIssueCommentQuery
 	withAttachments *SupportIssueAttachmentQuery
 	withEvents      *SupportIssueEventQuery
+	withViews       *SupportIssueViewQuery
 	modifiers       []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
@@ -126,6 +128,28 @@ func (_q *SupportIssueQuery) QueryEvents() *SupportIssueEventQuery {
 			sqlgraph.From(supportissue.Table, supportissue.FieldID, selector),
 			sqlgraph.To(supportissueevent.Table, supportissueevent.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.EventsTable, supportissue.EventsColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryViews chains the current query on the "views" edge.
+func (_q *SupportIssueQuery) QueryViews() *SupportIssueViewQuery {
+	query := (&SupportIssueViewClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(supportissue.Table, supportissue.FieldID, selector),
+			sqlgraph.To(supportissueview.Table, supportissueview.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, supportissue.ViewsTable, supportissue.ViewsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -328,6 +352,7 @@ func (_q *SupportIssueQuery) Clone() *SupportIssueQuery {
 		withComments:    _q.withComments.Clone(),
 		withAttachments: _q.withAttachments.Clone(),
 		withEvents:      _q.withEvents.Clone(),
+		withViews:       _q.withViews.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -364,6 +389,17 @@ func (_q *SupportIssueQuery) WithEvents(opts ...func(*SupportIssueEventQuery)) *
 		opt(query)
 	}
 	_q.withEvents = query
+	return _q
+}
+
+// WithViews tells the query-builder to eager-load the nodes that are connected to
+// the "views" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *SupportIssueQuery) WithViews(opts ...func(*SupportIssueViewQuery)) *SupportIssueQuery {
+	query := (&SupportIssueViewClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withViews = query
 	return _q
 }
 
@@ -445,10 +481,11 @@ func (_q *SupportIssueQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 	var (
 		nodes       = []*SupportIssue{}
 		_spec       = _q.querySpec()
-		loadedTypes = [3]bool{
+		loadedTypes = [4]bool{
 			_q.withComments != nil,
 			_q.withAttachments != nil,
 			_q.withEvents != nil,
+			_q.withViews != nil,
 		}
 	)
 	_spec.ScanValues = func(columns []string) ([]any, error) {
@@ -490,6 +527,13 @@ func (_q *SupportIssueQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]
 		if err := _q.loadEvents(ctx, query, nodes,
 			func(n *SupportIssue) { n.Edges.Events = []*SupportIssueEvent{} },
 			func(n *SupportIssue, e *SupportIssueEvent) { n.Edges.Events = append(n.Edges.Events, e) }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withViews; query != nil {
+		if err := _q.loadViews(ctx, query, nodes,
+			func(n *SupportIssue) { n.Edges.Views = []*SupportIssueView{} },
+			func(n *SupportIssue, e *SupportIssueView) { n.Edges.Views = append(n.Edges.Views, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -574,6 +618,36 @@ func (_q *SupportIssueQuery) loadEvents(ctx context.Context, query *SupportIssue
 	}
 	query.Where(predicate.SupportIssueEvent(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(supportissue.EventsColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.IssueID
+		node, ok := nodeids[fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "issue_id" returned %v for node %v`, fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *SupportIssueQuery) loadViews(ctx context.Context, query *SupportIssueViewQuery, nodes []*SupportIssue, init func(*SupportIssue), assign func(*SupportIssue, *SupportIssueView)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*SupportIssue)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(supportissueview.FieldIssueID)
+	}
+	query.Where(predicate.SupportIssueView(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(supportissue.ViewsColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

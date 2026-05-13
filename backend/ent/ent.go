@@ -51,6 +51,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -158,6 +159,7 @@ func checkColumn(t, c string) error {
 			supportissueattachment.Table:        supportissueattachment.ValidColumn,
 			supportissuecomment.Table:           supportissuecomment.ValidColumn,
 			supportissueevent.Table:             supportissueevent.ValidColumn,
+			supportissueview.Table:              supportissueview.ValidColumn,
 			tlsfingerprintprofile.Table:         tlsfingerprintprofile.ValidColumn,
 			usagecleanuptask.Table:              usagecleanuptask.ValidColumn,
 			usagelog.Table:                      usagelog.ValidColumn,

@@ -6,6 +6,7 @@ import (
 	"mime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -20,7 +21,7 @@ type supportIssueUserService interface {
 	Create(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) (*service.SupportIssue, error)
 	ListPublic(ctx context.Context, params pagination.PaginationParams, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
 	SearchPublic(ctx context.Context, params pagination.PaginationParams, rawQuery string, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
-	GetPublic(ctx context.Context, issueID int64) (*service.SupportIssue, error)
+	GetPublic(ctx context.Context, issueID int64, viewer service.SupportIssueViewer) (*service.SupportIssue, error)
 	AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string) (*service.SupportIssueComment, error)
 	Resolve(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
 	SuggestSimilar(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) ([]service.SupportIssue, error)
@@ -63,13 +64,36 @@ func (h *SupportIssueHandler) List(c *gin.Context) {
 	response.Paginated(c, dto.PublicSupportIssuesFromService(items), supportIssuePageTotal(pageResult), page, pageSize)
 }
 
+func (h *SupportIssueHandler) Trending(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	params := supportIssuePaginationParams(c, page, pageSize)
+	if params.SortBy == "" {
+		params.SortBy = "hot_24h"
+		params.SortOrder = pagination.SortOrderDesc
+	}
+	filters, ok := supportIssueListFiltersFromQuery(c)
+	if !ok {
+		return
+	}
+	window := supportIssueTrendingWindow(c.Query("window"))
+	since := timeNow().Add(-window)
+	filters.ActiveSince = &since
+
+	items, pageResult, err := h.supportIssueService.ListPublic(c.Request.Context(), params, filters)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, dto.PublicSupportIssuesFromService(items), supportIssuePageTotal(pageResult), page, pageSize)
+}
+
 func (h *SupportIssueHandler) Get(c *gin.Context) {
 	issueID, ok := supportIssueIDParam(c, "id")
 	if !ok {
 		return
 	}
 
-	issue, err := h.supportIssueService.GetPublic(c.Request.Context(), issueID)
+	issue, err := h.supportIssueService.GetPublic(c.Request.Context(), issueID, supportIssueViewerFromContext(c))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -229,6 +253,17 @@ func supportIssueActorFromContext(c *gin.Context) (service.SupportIssueActor, bo
 	}, true
 }
 
+func supportIssueViewerFromContext(c *gin.Context) service.SupportIssueViewer {
+	viewer := service.SupportIssueViewer{
+		IP:        c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}
+	if subject, ok := middleware2.GetAuthSubjectFromContext(c); ok && subject.UserID > 0 {
+		viewer.UserID = subject.UserID
+	}
+	return viewer
+}
+
 func supportIssueIDParam(c *gin.Context, name string) (int64, bool) {
 	id, err := strconv.ParseInt(c.Param(name), 10, 64)
 	if err != nil || id <= 0 {
@@ -237,6 +272,17 @@ func supportIssueIDParam(c *gin.Context, name string) (int64, bool) {
 	}
 	return id, true
 }
+
+func supportIssueTrendingWindow(raw string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "7d", "week":
+		return 7 * 24 * time.Hour
+	default:
+		return 24 * time.Hour
+	}
+}
+
+var timeNow = time.Now
 
 func supportIssueListFiltersFromQuery(c *gin.Context) (service.ListSupportIssueFilters, bool) {
 	hasImage, ok := supportIssueOptionalBoolQuery(c, "has_image")

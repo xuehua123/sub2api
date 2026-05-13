@@ -420,6 +420,17 @@ func TestSupportIssueService_AdminHideAttachmentRejectsNonAdmin(t *testing.T) {
 	require.False(t, repo.hideAttachmentCalled)
 }
 
+func TestSupportIssueService_AdminHideIssueRejectsNonAdmin(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminHideIssue(context.Background(), supportIssueTestActor(42, false), 12, "")
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssuePermissionDenied))
+	require.False(t, repo.hideIssueCalled)
+}
+
 func TestSupportIssueService_AdminHideCommentUsesDefaultReason(t *testing.T) {
 	repo := &fakeSupportIssueRepository{}
 	svc := NewSupportIssueService(repo)
@@ -430,6 +441,30 @@ func TestSupportIssueService_AdminHideCommentUsesDefaultReason(t *testing.T) {
 	require.True(t, repo.hideCommentCalled)
 	require.Equal(t, SupportIssueDefaultHideReason, repo.lastHideCommentInput.HideReason)
 	require.Equal(t, SupportIssueEventCommentHidden, repo.hideCommentEvent.EventType)
+}
+
+func TestSupportIssueService_AdminHideIssueUsesDefaultReason(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminHideIssue(context.Background(), supportIssueTestActor(42, true), 12, "")
+
+	require.NoError(t, err)
+	require.True(t, repo.hideIssueCalled)
+	require.Equal(t, SupportIssueDefaultHideReason, repo.lastHideIssueInput.HideReason)
+	require.Equal(t, SupportIssueEventIssueHidden, repo.hideIssueEvent.EventType)
+}
+
+func TestSupportIssueService_AdminRestoreIssueCallsRepository(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.AdminRestoreIssue(context.Background(), supportIssueTestActor(42, true), 12, "visible again")
+
+	require.NoError(t, err)
+	require.True(t, repo.restoreIssueCalled)
+	require.Equal(t, int64(12), repo.lastRestoreIssueID)
+	require.Equal(t, "visible again", repo.restoreIssueEvent.Metadata["reason"])
 }
 
 func TestSupportIssueService_SuggestSimilarReturnsAtMostFive(t *testing.T) {
@@ -493,10 +528,11 @@ func TestSupportIssueService_GetPublicUsesVisibleQuery(t *testing.T) {
 	}}
 	svc := NewSupportIssueService(repo)
 
-	issue, err := svc.GetPublic(context.Background(), 12)
+	issue, err := svc.GetPublic(context.Background(), 12, SupportIssueViewer{IP: "127.0.0.1", UserAgent: "test"})
 
 	require.NoError(t, err)
 	require.Equal(t, []bool{false}, repo.getIssueIncludeHidden)
+	require.True(t, repo.recordViewCalled)
 	require.Len(t, issue.Attachments, 1)
 	require.Empty(t, issue.Attachments[0].FilePath)
 	require.Nil(t, issue.Attachments[0].UploadedByUserID)
@@ -510,6 +546,22 @@ func TestSupportIssueService_GetPublicUsesVisibleQuery(t *testing.T) {
 	require.Nil(t, issue.Comments[0].AuthorUserID)
 	require.Nil(t, issue.Comments[0].HiddenByUserID)
 	require.Empty(t, issue.Comments[0].HideReason)
+}
+
+func TestSupportIssueService_GetPublicRejectsHiddenIssue(t *testing.T) {
+	now := time.Now()
+	repo := &fakeSupportIssueRepository{issue: &SupportIssue{
+		ID:       12,
+		Status:   SupportIssueStatusOpen,
+		HiddenAt: &now,
+	}}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.GetPublic(context.Background(), 12, SupportIssueViewer{IP: "127.0.0.1"})
+
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrSupportIssueNotFound))
+	require.False(t, repo.recordViewCalled)
 }
 
 func TestSupportIssueService_AdminGetUsesHiddenQuery(t *testing.T) {
@@ -578,6 +630,9 @@ type fakeSupportIssueRepository struct {
 	issue                 *SupportIssue
 	getIssueErr           error
 	getIssueIncludeHidden []bool
+	recordViewCalled      bool
+	lastViewIssueID       int64
+	lastViewer            SupportIssueViewer
 
 	listIssuesResult []SupportIssue
 	listPage         *pagination.PaginationResult
@@ -602,6 +657,16 @@ type fakeSupportIssueRepository struct {
 	lastUpdateActorIsAdmin bool
 	lastUpdateEvent        SupportIssueEvent
 	updateStatusErr        error
+
+	hideIssueCalled     bool
+	lastHideIssueInput  HideSupportIssueInput
+	hideIssueEvent      SupportIssueEvent
+	hideIssueErr        error
+	restoreIssueCalled  bool
+	lastRestoreIssueID  int64
+	restoreIssueActorID int64
+	restoreIssueEvent   SupportIssueEvent
+	restoreIssueErr     error
 
 	hideCommentCalled    bool
 	lastHideCommentInput HideSupportIssueCommentInput
@@ -696,6 +761,13 @@ func (r *fakeSupportIssueRepository) GetIssue(ctx context.Context, id int64, inc
 	return &out, nil
 }
 
+func (r *fakeSupportIssueRepository) RecordView(ctx context.Context, issueID int64, viewer SupportIssueViewer, throttleWindow time.Duration) error {
+	r.recordViewCalled = true
+	r.lastViewIssueID = issueID
+	r.lastViewer = viewer
+	return nil
+}
+
 func (r *fakeSupportIssueRepository) ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error) {
 	if r.listErr != nil {
 		return nil, nil, r.listErr
@@ -747,6 +819,45 @@ func (r *fakeSupportIssueRepository) UpdateStatus(
 	if r.issue != nil {
 		copy := *r.issue
 		copy.Status = nextStatus
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) HideIssue(ctx context.Context, input HideSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error) {
+	r.hideIssueCalled = true
+	r.lastHideIssueInput = input
+	r.hideIssueEvent = event
+	if r.hideIssueErr != nil {
+		return nil, r.hideIssueErr
+	}
+	updated := &SupportIssue{ID: input.IssueID, HiddenByUserID: &input.HiddenByUserID, HideReason: input.HideReason}
+	now := time.Now()
+	updated.HiddenAt = &now
+	if r.issue != nil {
+		copy := *r.issue
+		copy.HiddenAt = &now
+		copy.HiddenByUserID = &input.HiddenByUserID
+		copy.HideReason = input.HideReason
+		updated = &copy
+	}
+	return updated, nil
+}
+
+func (r *fakeSupportIssueRepository) RestoreIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error) {
+	r.restoreIssueCalled = true
+	r.lastRestoreIssueID = issueID
+	r.restoreIssueActorID = actorUserID
+	r.restoreIssueEvent = event
+	if r.restoreIssueErr != nil {
+		return nil, r.restoreIssueErr
+	}
+	updated := &SupportIssue{ID: issueID}
+	if r.issue != nil {
+		copy := *r.issue
+		copy.HiddenAt = nil
+		copy.HiddenByUserID = nil
+		copy.HideReason = ""
 		updated = &copy
 	}
 	return updated, nil

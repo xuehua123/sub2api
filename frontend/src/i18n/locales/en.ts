@@ -463,8 +463,16 @@ export default {
     },
     list: {
       comments: '{count} comments',
+      views: '{count} views',
       attachments: '{count} attachments',
       lastActivity: 'Last activity'
+    },
+    feed: {
+      active: 'Latest replies',
+      latest: 'Newest',
+      popular: 'Popular',
+      replied: 'Most replied',
+      hot24: '24h ranking'
     },
     empty: {
       title: 'No issues found',
@@ -481,7 +489,8 @@ export default {
       loginToComment: 'Log in to comment',
       commentLabel: 'Add comment',
       submitComment: 'Submit comment',
-      markResolved: 'Mark resolved'
+      markResolved: 'Mark resolved',
+      views: 'Views'
     },
     new: {
       title: 'Submit Issue',
@@ -585,8 +594,16 @@ export default {
       nextStatus: 'Next status',
       reason: 'Reason',
       reopenReason: 'Reopen reason',
+      restoreReason: 'Restore reason',
       updateStatus: 'Update status',
       reopen: 'Reopen',
+      hideIssue: 'Hide issue',
+      restoreIssue: 'Restore issue',
+      visibility: 'Visibility',
+      visibleOnly: 'Visible only',
+      hiddenOnly: 'Hidden only',
+      sortBy: 'Sort by',
+      occurredSort: 'Occurred time',
       maskedEmail: 'Masked email',
       normalizedEmail: 'Normalized email',
       createdByUserID: 'Created by user ID',
@@ -608,12 +625,18 @@ export default {
       noEvents: 'No events yet',
       resolvedAt: 'Resolved at',
       lockedAt: 'Locked at',
+      hiddenAt: 'Hidden at',
+      viewCount: 'Views',
+      lastViewedAt: 'Last viewed',
+      confirmHideIssue: 'Hide this issue? It will disappear from public lists and search.',
+      confirmRestoreIssue: 'Restore this issue? It will reappear in public lists and search.',
       errors: {
         loadFailed: 'Failed to load issue management list.',
         loadDetailFailed: 'Failed to load issue management detail.',
         reasonRequired: 'Please enter a reason.',
         updateStatusFailed: 'Failed to update status.',
         reopenFailed: 'Failed to reopen issue.',
+        visibilityFailed: 'Failed to update issue visibility.',
         hideCommentFailed: 'Failed to hide comment.',
         hideAttachmentFailed: 'Failed to hide attachment.'
       }

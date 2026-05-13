@@ -477,6 +477,18 @@ func (f SupportIssueEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SupportIssueEventMutation", m)
 }
 
+// The SupportIssueViewFunc type is an adapter to allow the use of ordinary
+// function as SupportIssueView mutator.
+type SupportIssueViewFunc func(context.Context, *ent.SupportIssueViewMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SupportIssueViewFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SupportIssueViewMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SupportIssueViewMutation", m)
+}
+
 // The TLSFingerprintProfileFunc type is an adapter to allow the use of ordinary
 // function as TLSFingerprintProfile mutator.
 type TLSFingerprintProfileFunc func(context.Context, *ent.TLSFingerprintProfileMutation) (ent.Value, error)

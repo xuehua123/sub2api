@@ -90,6 +90,16 @@ describe('admin issues api', () => {
     expect(post).toHaveBeenCalledWith('/admin/issues/123/reopen', payload)
   })
 
+  it('hides and restores an issue', async () => {
+    const payload = { reason: 'contains sensitive data' }
+
+    await adminIssuesAPI.hideIssue(123, payload)
+    await adminIssuesAPI.restoreIssue(123, { reason: 'redacted' })
+
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/hide', payload)
+    expect(post).toHaveBeenCalledWith('/admin/issues/123/restore', { reason: 'redacted' })
+  })
+
   it('hides a comment', async () => {
     const payload = { reason: 'sensitive info' }
 
@@ -133,6 +143,7 @@ describe('admin issues api', () => {
       comment_count: 1,
       hidden_comment_count: 1,
       attachment_count: 1,
+      view_count: 3,
       created_at: '2026-05-13T08:00:00Z',
       updated_at: '2026-05-13T08:00:00Z',
       attachments: [

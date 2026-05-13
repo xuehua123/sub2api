@@ -160,9 +160,29 @@ func LockedAt(v time.Time) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldLockedAt, v))
 }
 
+// HiddenAt applies equality check predicate on the "hidden_at" field. It's identical to HiddenAtEQ.
+func HiddenAt(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHiddenAt, v))
+}
+
+// HiddenByUserID applies equality check predicate on the "hidden_by_user_id" field. It's identical to HiddenByUserIDEQ.
+func HiddenByUserID(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHiddenByUserID, v))
+}
+
+// HideReason applies equality check predicate on the "hide_reason" field. It's identical to HideReasonEQ.
+func HideReason(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHideReason, v))
+}
+
 // LastCommentAt applies equality check predicate on the "last_comment_at" field. It's identical to LastCommentAtEQ.
 func LastCommentAt(v time.Time) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldLastCommentAt, v))
+}
+
+// LastViewedAt applies equality check predicate on the "last_viewed_at" field. It's identical to LastViewedAtEQ.
+func LastViewedAt(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldLastViewedAt, v))
 }
 
 // CommentCount applies equality check predicate on the "comment_count" field. It's identical to CommentCountEQ.
@@ -178,6 +198,11 @@ func HiddenCommentCount(v int) predicate.SupportIssue {
 // AttachmentCount applies equality check predicate on the "attachment_count" field. It's identical to AttachmentCountEQ.
 func AttachmentCount(v int) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldAttachmentCount, v))
+}
+
+// ViewCount applies equality check predicate on the "view_count" field. It's identical to ViewCountEQ.
+func ViewCount(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldViewCount, v))
 }
 
 // SearchText applies equality check predicate on the "search_text" field. It's identical to SearchTextEQ.
@@ -1460,6 +1485,171 @@ func LockedAtNotNil() predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldNotNull(FieldLockedAt))
 }
 
+// HiddenAtEQ applies the EQ predicate on the "hidden_at" field.
+func HiddenAtEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHiddenAt, v))
+}
+
+// HiddenAtNEQ applies the NEQ predicate on the "hidden_at" field.
+func HiddenAtNEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldHiddenAt, v))
+}
+
+// HiddenAtIn applies the In predicate on the "hidden_at" field.
+func HiddenAtIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldHiddenAt, vs...))
+}
+
+// HiddenAtNotIn applies the NotIn predicate on the "hidden_at" field.
+func HiddenAtNotIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldHiddenAt, vs...))
+}
+
+// HiddenAtGT applies the GT predicate on the "hidden_at" field.
+func HiddenAtGT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldHiddenAt, v))
+}
+
+// HiddenAtGTE applies the GTE predicate on the "hidden_at" field.
+func HiddenAtGTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldHiddenAt, v))
+}
+
+// HiddenAtLT applies the LT predicate on the "hidden_at" field.
+func HiddenAtLT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldHiddenAt, v))
+}
+
+// HiddenAtLTE applies the LTE predicate on the "hidden_at" field.
+func HiddenAtLTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldHiddenAt, v))
+}
+
+// HiddenAtIsNil applies the IsNil predicate on the "hidden_at" field.
+func HiddenAtIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldHiddenAt))
+}
+
+// HiddenAtNotNil applies the NotNil predicate on the "hidden_at" field.
+func HiddenAtNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldHiddenAt))
+}
+
+// HiddenByUserIDEQ applies the EQ predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDNEQ applies the NEQ predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDNEQ(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDIn applies the In predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldHiddenByUserID, vs...))
+}
+
+// HiddenByUserIDNotIn applies the NotIn predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDNotIn(vs ...int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldHiddenByUserID, vs...))
+}
+
+// HiddenByUserIDGT applies the GT predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDGT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDGTE applies the GTE predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDGTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDLT applies the LT predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDLT(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDLTE applies the LTE predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDLTE(v int64) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldHiddenByUserID, v))
+}
+
+// HiddenByUserIDIsNil applies the IsNil predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldHiddenByUserID))
+}
+
+// HiddenByUserIDNotNil applies the NotNil predicate on the "hidden_by_user_id" field.
+func HiddenByUserIDNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldHiddenByUserID))
+}
+
+// HideReasonEQ applies the EQ predicate on the "hide_reason" field.
+func HideReasonEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldHideReason, v))
+}
+
+// HideReasonNEQ applies the NEQ predicate on the "hide_reason" field.
+func HideReasonNEQ(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldHideReason, v))
+}
+
+// HideReasonIn applies the In predicate on the "hide_reason" field.
+func HideReasonIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldHideReason, vs...))
+}
+
+// HideReasonNotIn applies the NotIn predicate on the "hide_reason" field.
+func HideReasonNotIn(vs ...string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldHideReason, vs...))
+}
+
+// HideReasonGT applies the GT predicate on the "hide_reason" field.
+func HideReasonGT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldHideReason, v))
+}
+
+// HideReasonGTE applies the GTE predicate on the "hide_reason" field.
+func HideReasonGTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldHideReason, v))
+}
+
+// HideReasonLT applies the LT predicate on the "hide_reason" field.
+func HideReasonLT(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldHideReason, v))
+}
+
+// HideReasonLTE applies the LTE predicate on the "hide_reason" field.
+func HideReasonLTE(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldHideReason, v))
+}
+
+// HideReasonContains applies the Contains predicate on the "hide_reason" field.
+func HideReasonContains(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContains(FieldHideReason, v))
+}
+
+// HideReasonHasPrefix applies the HasPrefix predicate on the "hide_reason" field.
+func HideReasonHasPrefix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasPrefix(FieldHideReason, v))
+}
+
+// HideReasonHasSuffix applies the HasSuffix predicate on the "hide_reason" field.
+func HideReasonHasSuffix(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldHasSuffix(FieldHideReason, v))
+}
+
+// HideReasonEqualFold applies the EqualFold predicate on the "hide_reason" field.
+func HideReasonEqualFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEqualFold(FieldHideReason, v))
+}
+
+// HideReasonContainsFold applies the ContainsFold predicate on the "hide_reason" field.
+func HideReasonContainsFold(v string) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldContainsFold(FieldHideReason, v))
+}
+
 // LastCommentAtEQ applies the EQ predicate on the "last_comment_at" field.
 func LastCommentAtEQ(v time.Time) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldEQ(FieldLastCommentAt, v))
@@ -1508,6 +1698,56 @@ func LastCommentAtIsNil() predicate.SupportIssue {
 // LastCommentAtNotNil applies the NotNil predicate on the "last_comment_at" field.
 func LastCommentAtNotNil() predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldNotNull(FieldLastCommentAt))
+}
+
+// LastViewedAtEQ applies the EQ predicate on the "last_viewed_at" field.
+func LastViewedAtEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldLastViewedAt, v))
+}
+
+// LastViewedAtNEQ applies the NEQ predicate on the "last_viewed_at" field.
+func LastViewedAtNEQ(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldLastViewedAt, v))
+}
+
+// LastViewedAtIn applies the In predicate on the "last_viewed_at" field.
+func LastViewedAtIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldLastViewedAt, vs...))
+}
+
+// LastViewedAtNotIn applies the NotIn predicate on the "last_viewed_at" field.
+func LastViewedAtNotIn(vs ...time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldLastViewedAt, vs...))
+}
+
+// LastViewedAtGT applies the GT predicate on the "last_viewed_at" field.
+func LastViewedAtGT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldLastViewedAt, v))
+}
+
+// LastViewedAtGTE applies the GTE predicate on the "last_viewed_at" field.
+func LastViewedAtGTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldLastViewedAt, v))
+}
+
+// LastViewedAtLT applies the LT predicate on the "last_viewed_at" field.
+func LastViewedAtLT(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldLastViewedAt, v))
+}
+
+// LastViewedAtLTE applies the LTE predicate on the "last_viewed_at" field.
+func LastViewedAtLTE(v time.Time) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldLastViewedAt, v))
+}
+
+// LastViewedAtIsNil applies the IsNil predicate on the "last_viewed_at" field.
+func LastViewedAtIsNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIsNull(FieldLastViewedAt))
+}
+
+// LastViewedAtNotNil applies the NotNil predicate on the "last_viewed_at" field.
+func LastViewedAtNotNil() predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotNull(FieldLastViewedAt))
 }
 
 // CommentCountEQ applies the EQ predicate on the "comment_count" field.
@@ -1628,6 +1868,46 @@ func AttachmentCountLT(v int) predicate.SupportIssue {
 // AttachmentCountLTE applies the LTE predicate on the "attachment_count" field.
 func AttachmentCountLTE(v int) predicate.SupportIssue {
 	return predicate.SupportIssue(sql.FieldLTE(FieldAttachmentCount, v))
+}
+
+// ViewCountEQ applies the EQ predicate on the "view_count" field.
+func ViewCountEQ(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldEQ(FieldViewCount, v))
+}
+
+// ViewCountNEQ applies the NEQ predicate on the "view_count" field.
+func ViewCountNEQ(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNEQ(FieldViewCount, v))
+}
+
+// ViewCountIn applies the In predicate on the "view_count" field.
+func ViewCountIn(vs ...int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldIn(FieldViewCount, vs...))
+}
+
+// ViewCountNotIn applies the NotIn predicate on the "view_count" field.
+func ViewCountNotIn(vs ...int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldNotIn(FieldViewCount, vs...))
+}
+
+// ViewCountGT applies the GT predicate on the "view_count" field.
+func ViewCountGT(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGT(FieldViewCount, v))
+}
+
+// ViewCountGTE applies the GTE predicate on the "view_count" field.
+func ViewCountGTE(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldGTE(FieldViewCount, v))
+}
+
+// ViewCountLT applies the LT predicate on the "view_count" field.
+func ViewCountLT(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLT(FieldViewCount, v))
+}
+
+// ViewCountLTE applies the LTE predicate on the "view_count" field.
+func ViewCountLTE(v int) predicate.SupportIssue {
+	return predicate.SupportIssue(sql.FieldLTE(FieldViewCount, v))
 }
 
 // SearchTextEQ applies the EQ predicate on the "search_text" field.
@@ -1836,6 +2116,29 @@ func HasEvents() predicate.SupportIssue {
 func HasEventsWith(preds ...predicate.SupportIssueEvent) predicate.SupportIssue {
 	return predicate.SupportIssue(func(s *sql.Selector) {
 		step := newEventsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasViews applies the HasEdge predicate on the "views" edge.
+func HasViews() predicate.SupportIssue {
+	return predicate.SupportIssue(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, ViewsTable, ViewsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasViewsWith applies the HasEdge predicate on the "views" edge with a given conditions (other predicates).
+func HasViewsWith(preds ...predicate.SupportIssueView) predicate.SupportIssue {
+	return predicate.SupportIssue(func(s *sql.Selector) {
+		step := newViewsStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

@@ -59,14 +59,24 @@ type SupportIssue struct {
 	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
 	// LockedAt holds the value of the "locked_at" field.
 	LockedAt *time.Time `json:"locked_at,omitempty"`
+	// HiddenAt holds the value of the "hidden_at" field.
+	HiddenAt *time.Time `json:"hidden_at,omitempty"`
+	// HiddenByUserID holds the value of the "hidden_by_user_id" field.
+	HiddenByUserID *int64 `json:"hidden_by_user_id,omitempty"`
+	// HideReason holds the value of the "hide_reason" field.
+	HideReason string `json:"hide_reason,omitempty"`
 	// LastCommentAt holds the value of the "last_comment_at" field.
 	LastCommentAt *time.Time `json:"last_comment_at,omitempty"`
+	// LastViewedAt holds the value of the "last_viewed_at" field.
+	LastViewedAt *time.Time `json:"last_viewed_at,omitempty"`
 	// CommentCount holds the value of the "comment_count" field.
 	CommentCount int `json:"comment_count,omitempty"`
 	// HiddenCommentCount holds the value of the "hidden_comment_count" field.
 	HiddenCommentCount int `json:"hidden_comment_count,omitempty"`
 	// AttachmentCount holds the value of the "attachment_count" field.
 	AttachmentCount int `json:"attachment_count,omitempty"`
+	// ViewCount holds the value of the "view_count" field.
+	ViewCount int `json:"view_count,omitempty"`
 	// SearchText holds the value of the "search_text" field.
 	SearchText string `json:"search_text,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
@@ -87,9 +97,11 @@ type SupportIssueEdges struct {
 	Attachments []*SupportIssueAttachment `json:"attachments,omitempty"`
 	// Events holds the value of the events edge.
 	Events []*SupportIssueEvent `json:"events,omitempty"`
+	// Views holds the value of the views edge.
+	Views []*SupportIssueView `json:"views,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [3]bool
+	loadedTypes [4]bool
 }
 
 // CommentsOrErr returns the Comments value or an error if the edge
@@ -119,16 +131,25 @@ func (e SupportIssueEdges) EventsOrErr() ([]*SupportIssueEvent, error) {
 	return nil, &NotLoadedError{edge: "events"}
 }
 
+// ViewsOrErr returns the Views value or an error if the edge
+// was not loaded in eager-loading.
+func (e SupportIssueEdges) ViewsOrErr() ([]*SupportIssueView, error) {
+	if e.loadedTypes[3] {
+		return e.Views, nil
+	}
+	return nil, &NotLoadedError{edge: "views"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*SupportIssue) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case supportissue.FieldID, supportissue.FieldHTTPStatus, supportissue.FieldCreatedByUserID, supportissue.FieldResolvedByUserID, supportissue.FieldCommentCount, supportissue.FieldHiddenCommentCount, supportissue.FieldAttachmentCount:
+		case supportissue.FieldID, supportissue.FieldHTTPStatus, supportissue.FieldCreatedByUserID, supportissue.FieldResolvedByUserID, supportissue.FieldHiddenByUserID, supportissue.FieldCommentCount, supportissue.FieldHiddenCommentCount, supportissue.FieldAttachmentCount, supportissue.FieldViewCount:
 			values[i] = new(sql.NullInt64)
-		case supportissue.FieldPublicID, supportissue.FieldTitle, supportissue.FieldDescription, supportissue.FieldAccountEmail, supportissue.FieldAccountEmailNormalized, supportissue.FieldAccountEmailMasked, supportissue.FieldScreenshotText, supportissue.FieldScreenshotLanguage, supportissue.FieldCategory, supportissue.FieldSeverity, supportissue.FieldStatus, supportissue.FieldModelName, supportissue.FieldClientName, supportissue.FieldErrorCode, supportissue.FieldAPIKeySuffix, supportissue.FieldSearchText:
+		case supportissue.FieldPublicID, supportissue.FieldTitle, supportissue.FieldDescription, supportissue.FieldAccountEmail, supportissue.FieldAccountEmailNormalized, supportissue.FieldAccountEmailMasked, supportissue.FieldScreenshotText, supportissue.FieldScreenshotLanguage, supportissue.FieldCategory, supportissue.FieldSeverity, supportissue.FieldStatus, supportissue.FieldModelName, supportissue.FieldClientName, supportissue.FieldErrorCode, supportissue.FieldAPIKeySuffix, supportissue.FieldHideReason, supportissue.FieldSearchText:
 			values[i] = new(sql.NullString)
-		case supportissue.FieldOccurredAt, supportissue.FieldResolvedAt, supportissue.FieldLockedAt, supportissue.FieldLastCommentAt, supportissue.FieldCreatedAt, supportissue.FieldUpdatedAt:
+		case supportissue.FieldOccurredAt, supportissue.FieldResolvedAt, supportissue.FieldLockedAt, supportissue.FieldHiddenAt, supportissue.FieldLastCommentAt, supportissue.FieldLastViewedAt, supportissue.FieldCreatedAt, supportissue.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -282,12 +303,39 @@ func (_m *SupportIssue) assignValues(columns []string, values []any) error {
 				_m.LockedAt = new(time.Time)
 				*_m.LockedAt = value.Time
 			}
+		case supportissue.FieldHiddenAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field hidden_at", values[i])
+			} else if value.Valid {
+				_m.HiddenAt = new(time.Time)
+				*_m.HiddenAt = value.Time
+			}
+		case supportissue.FieldHiddenByUserID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field hidden_by_user_id", values[i])
+			} else if value.Valid {
+				_m.HiddenByUserID = new(int64)
+				*_m.HiddenByUserID = value.Int64
+			}
+		case supportissue.FieldHideReason:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field hide_reason", values[i])
+			} else if value.Valid {
+				_m.HideReason = value.String
+			}
 		case supportissue.FieldLastCommentAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field last_comment_at", values[i])
 			} else if value.Valid {
 				_m.LastCommentAt = new(time.Time)
 				*_m.LastCommentAt = value.Time
+			}
+		case supportissue.FieldLastViewedAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_viewed_at", values[i])
+			} else if value.Valid {
+				_m.LastViewedAt = new(time.Time)
+				*_m.LastViewedAt = value.Time
 			}
 		case supportissue.FieldCommentCount:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -306,6 +354,12 @@ func (_m *SupportIssue) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field attachment_count", values[i])
 			} else if value.Valid {
 				_m.AttachmentCount = int(value.Int64)
+			}
+		case supportissue.FieldViewCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field view_count", values[i])
+			} else if value.Valid {
+				_m.ViewCount = int(value.Int64)
 			}
 		case supportissue.FieldSearchText:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -351,6 +405,11 @@ func (_m *SupportIssue) QueryAttachments() *SupportIssueAttachmentQuery {
 // QueryEvents queries the "events" edge of the SupportIssue entity.
 func (_m *SupportIssue) QueryEvents() *SupportIssueEventQuery {
 	return NewSupportIssueClient(_m.config).QueryEvents(_m)
+}
+
+// QueryViews queries the "views" edge of the SupportIssue entity.
+func (_m *SupportIssue) QueryViews() *SupportIssueViewQuery {
+	return NewSupportIssueClient(_m.config).QueryViews(_m)
 }
 
 // Update returns a builder for updating this SupportIssue.
@@ -446,8 +505,26 @@ func (_m *SupportIssue) String() string {
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
+	if v := _m.HiddenAt; v != nil {
+		builder.WriteString("hidden_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.HiddenByUserID; v != nil {
+		builder.WriteString("hidden_by_user_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("hide_reason=")
+	builder.WriteString(_m.HideReason)
+	builder.WriteString(", ")
 	if v := _m.LastCommentAt; v != nil {
 		builder.WriteString("last_comment_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	if v := _m.LastViewedAt; v != nil {
+		builder.WriteString("last_viewed_at=")
 		builder.WriteString(v.Format(time.ANSIC))
 	}
 	builder.WriteString(", ")
@@ -459,6 +536,9 @@ func (_m *SupportIssue) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("attachment_count=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AttachmentCount))
+	builder.WriteString(", ")
+	builder.WriteString("view_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ViewCount))
 	builder.WriteString(", ")
 	builder.WriteString("search_text=")
 	builder.WriteString(_m.SearchText)

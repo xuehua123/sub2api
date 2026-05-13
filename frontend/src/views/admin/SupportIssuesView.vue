@@ -33,7 +33,7 @@
             </button>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
             <label class="block">
               <span class="input-label">{{ t('issueCenter.fields.status') }}</span>
               <select v-model="filters.status" class="input" data-testid="admin-issue-status-filter">
@@ -67,6 +67,24 @@
                 <option value="">{{ t('common.all') }}</option>
                 <option value="true">{{ t('common.yes') }}</option>
                 <option value="false">{{ t('common.no') }}</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="input-label">{{ t('issueCenter.admin.visibility') }}</span>
+              <select v-model="hiddenFilter" class="input" data-testid="admin-issue-hidden-filter">
+                <option value="">{{ t('common.all') }}</option>
+                <option value="false">{{ t('issueCenter.admin.visibleOnly') }}</option>
+                <option value="true">{{ t('issueCenter.admin.hiddenOnly') }}</option>
+              </select>
+            </label>
+            <label class="block">
+              <span class="input-label">{{ t('issueCenter.admin.sortBy') }}</span>
+              <select v-model="sortMode" class="input" data-testid="admin-issue-sort-filter">
+                <option value="last_comment_at">{{ t('issueCenter.feed.active') }}</option>
+                <option value="created_at">{{ t('issueCenter.feed.latest') }}</option>
+                <option value="view_count">{{ t('issueCenter.feed.popular') }}</option>
+                <option value="comment_count">{{ t('issueCenter.feed.replied') }}</option>
+                <option value="occurred_at">{{ t('issueCenter.admin.occurredSort') }}</option>
               </select>
             </label>
           </div>
@@ -126,6 +144,7 @@
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-mono text-xs font-semibold text-gray-500 dark:text-gray-400">{{ issue.public_id }}</span>
                   <span :class="statusBadgeClass(issue.status)">{{ t(`issueCenter.status.${issue.status}`) }}</span>
+                  <span v-if="issue.hidden_at" class="badge badge-warning">{{ t('issueCenter.admin.hidden') }}</span>
                   <span :class="severityBadgeClass(issue.severity)">{{ t(`issueCenter.severity.${issue.severity}`) }}</span>
                   <span class="badge badge-gray">{{ t(`issueCenter.category.${issue.category}`) }}</span>
                 </div>
@@ -140,6 +159,7 @@
                   <span>{{ t('issueCenter.fields.client') }}: {{ issue.client_name || '-' }}</span>
                   <span>{{ t('issueCenter.fields.httpStatus') }}: {{ issue.http_status || '-' }}</span>
                   <span>{{ t('issueCenter.fields.errorCode') }}: {{ issue.error_code || '-' }}</span>
+                  <span>{{ t('issueCenter.list.views', { count: issue.view_count }) }}</span>
                   <span>{{ t('issueCenter.list.lastActivity') }}: {{ formatDateTime(issue.last_comment_at || issue.updated_at) }}</span>
                 </div>
               </div>
@@ -204,6 +224,8 @@ const filters = reactive({
   severity: '' as '' | SupportIssueSeverity,
 })
 const hasImageFilter = ref('')
+const hiddenFilter = ref('')
+const sortMode = ref('last_comment_at')
 const issues = ref<AdminSupportIssue[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
@@ -225,6 +247,8 @@ function syncStateFromRoute() {
   filters.category = queryString(route.query.category) as '' | SupportIssueCategory
   filters.severity = queryString(route.query.severity) as '' | SupportIssueSeverity
   hasImageFilter.value = queryString(route.query.has_image)
+  hiddenFilter.value = queryString(route.query.hidden)
+  sortMode.value = queryString(route.query.sort_by) || 'last_comment_at'
   pagination.page = Number(queryString(route.query.page) || 1) || 1
   pagination.page_size = Number(queryString(route.query.page_size) || 20) || 20
 }
@@ -236,6 +260,8 @@ function buildQuery() {
     ...(filters.category ? { category: filters.category } : {}),
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value } : {}),
+    ...(hiddenFilter.value ? { hidden: hiddenFilter.value } : {}),
+    ...(sortMode.value !== 'last_comment_at' ? { sort_by: sortMode.value } : {}),
     ...(pagination.page > 1 ? { page: String(pagination.page) } : {}),
     ...(pagination.page_size !== 20 ? { page_size: String(pagination.page_size) } : {}),
   }
@@ -252,9 +278,10 @@ function buildParams() {
     ...(filters.category ? { category: filters.category } : {}),
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value === 'true' } : {}),
+    ...(hiddenFilter.value ? { hidden: hiddenFilter.value === 'true' } : {}),
     page: pagination.page,
     page_size: pagination.page_size,
-    sort_by: 'last_comment_at',
+    sort_by: sortMode.value,
     sort_order: 'desc' as const,
   }
 }
@@ -286,6 +313,8 @@ async function clearFilters() {
   filters.category = ''
   filters.severity = ''
   hasImageFilter.value = ''
+  hiddenFilter.value = ''
+  sortMode.value = 'last_comment_at'
   pagination.page = 1
   await replaceRouteQuery()
   await loadIssues()

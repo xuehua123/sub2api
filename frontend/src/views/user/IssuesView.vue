@@ -17,6 +17,37 @@
       </header>
 
       <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="mb-4 flex flex-wrap gap-2" data-testid="issue-feed-tabs">
+          <button
+            v-for="mode in feedModes"
+            :key="mode.value"
+            type="button"
+            :class="feedMode === mode.value ? 'btn btn-primary' : 'btn btn-secondary'"
+            @click="setFeedMode(mode.value)"
+          >
+            {{ t(mode.labelKey) }}
+          </button>
+        </div>
+
+        <div class="mb-4 flex flex-wrap gap-2" data-testid="issue-category-shortcuts">
+          <button
+            type="button"
+            :class="filters.category === '' ? 'category-pill-active' : 'category-pill'"
+            @click="setCategory('')"
+          >
+            {{ t('common.all') }}
+          </button>
+          <button
+            v-for="category in categories"
+            :key="category"
+            type="button"
+            :class="filters.category === category ? 'category-pill-active' : 'category-pill'"
+            @click="setCategory(category)"
+          >
+            {{ t(`issueCenter.category.${category}`) }}
+          </button>
+        </div>
+
         <form class="space-y-4" @submit.prevent="applyFilters">
           <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
             <label class="block">
@@ -148,6 +179,7 @@
               </div>
               <div class="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400 lg:justify-end">
                 <span>{{ t('issueCenter.list.comments', { count: issue.comment_count }) }}</span>
+                <span>{{ t('issueCenter.list.views', { count: issue.view_count }) }}</span>
                 <span>{{ t('issueCenter.list.attachments', { count: issue.attachment_count }) }}</span>
                 <span>{{ t('issueCenter.list.lastActivity') }}: {{ formatDateTime(issue.last_comment_at || issue.updated_at) }}</span>
               </div>
@@ -190,6 +222,14 @@ const router = useRouter()
 const statuses: SupportIssueStatus[] = ['open', 'needs_info', 'in_progress', 'resolved', 'closed']
 const categories: SupportIssueCategory[] = ['login', 'payment', 'api_call', 'model_unavailable', 'api_key', 'balance', 'subscription', 'channel', 'other']
 const severities: SupportIssueSeverity[] = ['blocked', 'partial', 'intermittent', 'question']
+type FeedMode = 'active' | 'latest' | 'popular' | 'replied' | 'hot24'
+const feedModes: Array<{ value: FeedMode; labelKey: string }> = [
+  { value: 'active', labelKey: 'issueCenter.feed.active' },
+  { value: 'latest', labelKey: 'issueCenter.feed.latest' },
+  { value: 'popular', labelKey: 'issueCenter.feed.popular' },
+  { value: 'replied', labelKey: 'issueCenter.feed.replied' },
+  { value: 'hot24', labelKey: 'issueCenter.feed.hot24' },
+]
 
 const filters = reactive({
   q: '',
@@ -201,6 +241,7 @@ const hasImageFilter = ref('')
 const issues = ref<PublicSupportIssue[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+const feedMode = ref<FeedMode>('active')
 const pagination = reactive({
   page: 1,
   page_size: 20,
@@ -219,6 +260,7 @@ function syncStateFromRoute() {
   filters.category = queryString(route.query.category) as '' | SupportIssueCategory
   filters.severity = queryString(route.query.severity) as '' | SupportIssueSeverity
   hasImageFilter.value = queryString(route.query.has_image)
+  feedMode.value = normalizeFeedMode(queryString(route.query.tab))
   pagination.page = Number(queryString(route.query.page) || 1) || 1
   pagination.page_size = Number(queryString(route.query.page_size) || 20) || 20
 }
@@ -230,6 +272,7 @@ function buildQuery() {
     ...(filters.category ? { category: filters.category } : {}),
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value } : {}),
+    ...(feedMode.value !== 'active' ? { tab: feedMode.value } : {}),
     ...(pagination.page > 1 ? { page: String(pagination.page) } : {}),
     ...(pagination.page_size !== 20 ? { page_size: String(pagination.page_size) } : {}),
   }
@@ -240,6 +283,7 @@ async function replaceRouteQuery() {
 }
 
 function buildParams() {
+  const sort = sortForFeedMode(feedMode.value)
   return {
     ...(filters.q ? { q: filters.q } : {}),
     ...(filters.status ? { status: filters.status } : {}),
@@ -248,8 +292,9 @@ function buildParams() {
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value === 'true' } : {}),
     page: pagination.page,
     page_size: pagination.page_size,
-    sort_by: 'last_comment_at',
+    sort_by: sort.sort_by,
     sort_order: 'desc' as const,
+    ...(feedMode.value === 'hot24' ? { window: '24h' } : {}),
   }
 }
 
@@ -257,7 +302,10 @@ async function loadIssues() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const result = await issuesAPI.list(buildParams())
+    const params = buildParams()
+    const result = feedMode.value === 'hot24'
+      ? await issuesAPI.trending(params)
+      : await issuesAPI.list(params)
     issues.value = result.items
     pagination.total = result.total
     pagination.pages = result.pages
@@ -265,6 +313,39 @@ async function loadIssues() {
     errorMessage.value = getErrorMessage(error)
   } finally {
     loading.value = false
+  }
+}
+
+async function setFeedMode(mode: FeedMode) {
+  feedMode.value = mode
+  pagination.page = 1
+  await replaceRouteQuery()
+  await loadIssues()
+}
+
+async function setCategory(category: '' | SupportIssueCategory) {
+  filters.category = category
+  pagination.page = 1
+  await replaceRouteQuery()
+  await loadIssues()
+}
+
+function normalizeFeedMode(value: string): FeedMode {
+  return feedModes.some((mode) => mode.value === value) ? value as FeedMode : 'active'
+}
+
+function sortForFeedMode(mode: FeedMode): { sort_by: string } {
+  switch (mode) {
+    case 'latest':
+      return { sort_by: 'created_at' }
+    case 'popular':
+      return { sort_by: 'view_count' }
+    case 'replied':
+      return { sort_by: 'comment_count' }
+    case 'hot24':
+      return { sort_by: 'hot_24h' }
+    default:
+      return { sort_by: 'last_comment_at' }
   }
 }
 
@@ -342,5 +423,13 @@ onMounted(() => {
 <style scoped>
 .issue-chip {
   @apply inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-gray-600 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300;
+}
+
+.category-pill {
+  @apply rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition hover:border-primary-300 hover:text-primary-700 dark:border-dark-600 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:text-primary-300;
+}
+
+.category-pill-active {
+  @apply rounded-md border border-primary-500 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-200;
 }
 </style>

@@ -48,6 +48,7 @@
             <InfoRow :label="t('issueCenter.fields.client')" :value="issue.client_name || '-'" />
             <InfoRow :label="t('issueCenter.fields.httpStatus')" :value="issue.http_status ? String(issue.http_status) : '-'" />
             <InfoRow :label="t('issueCenter.fields.errorCode')" :value="issue.error_code || '-'" />
+            <InfoRow :label="t('issueCenter.detail.views')" :value="String(issue.view_count)" />
           </div>
 
           <section class="mt-6">

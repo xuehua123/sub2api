@@ -463,8 +463,16 @@ export default {
     },
     list: {
       comments: '{count} 条评论',
+      views: '{count} 次查看',
       attachments: '{count} 个附件',
       lastActivity: '最近活动'
+    },
+    feed: {
+      active: '最新回复',
+      latest: '最新发布',
+      popular: '热门查看',
+      replied: '回复最多',
+      hot24: '24 小时榜'
     },
     empty: {
       title: '没有找到问题',
@@ -481,7 +489,8 @@ export default {
       loginToComment: '登录后评论',
       commentLabel: '添加评论',
       submitComment: '提交评论',
-      markResolved: '标记已解决'
+      markResolved: '标记已解决',
+      views: '查看次数'
     },
     new: {
       title: '提交问题',
@@ -585,8 +594,16 @@ export default {
       nextStatus: '目标状态',
       reason: '处理原因',
       reopenReason: '重新打开原因',
+      restoreReason: '恢复原因',
       updateStatus: '更新状态',
       reopen: '重新打开',
+      hideIssue: '隐藏问题',
+      restoreIssue: '恢复问题',
+      visibility: '可见性',
+      visibleOnly: '仅可见',
+      hiddenOnly: '仅隐藏',
+      sortBy: '排序',
+      occurredSort: '发生时间',
       maskedEmail: '脱敏邮箱',
       normalizedEmail: '规范化邮箱',
       createdByUserID: '创建用户 ID',
@@ -608,12 +625,18 @@ export default {
       noEvents: '暂无事件',
       resolvedAt: '解决时间',
       lockedAt: '锁定时间',
+      hiddenAt: '隐藏时间',
+      viewCount: '查看次数',
+      lastViewedAt: '最近查看',
+      confirmHideIssue: '确认隐藏这个问题？公开列表和搜索将不再显示它。',
+      confirmRestoreIssue: '确认恢复这个问题？公开列表和搜索将重新显示它。',
       errors: {
         loadFailed: '加载问题管理列表失败。',
         loadDetailFailed: '加载问题管理详情失败。',
         reasonRequired: '请填写操作原因。',
         updateStatusFailed: '更新状态失败。',
         reopenFailed: '重新打开失败。',
+        visibilityFailed: '更新问题可见性失败。',
         hideCommentFailed: '隐藏评论失败。',
         hideAttachmentFailed: '隐藏附件失败。'
       }

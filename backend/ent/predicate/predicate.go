@@ -123,6 +123,9 @@ type SupportIssueComment func(*sql.Selector)
 // SupportIssueEvent is the predicate function for supportissueevent builders.
 type SupportIssueEvent func(*sql.Selector)
 
+// SupportIssueView is the predicate function for supportissueview builders.
+type SupportIssueView func(*sql.Selector)
+
 // TLSFingerprintProfile is the predicate function for tlsfingerprintprofile builders.
 type TLSFingerprintProfile func(*sql.Selector)
 

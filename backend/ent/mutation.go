@@ -52,6 +52,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -111,6 +112,7 @@ const (
 	TypeSupportIssueAttachment        = "SupportIssueAttachment"
 	TypeSupportIssueComment           = "SupportIssueComment"
 	TypeSupportIssueEvent             = "SupportIssueEvent"
+	TypeSupportIssueView              = "SupportIssueView"
 	TypeTLSFingerprintProfile         = "TLSFingerprintProfile"
 	TypeUsageCleanupTask              = "UsageCleanupTask"
 	TypeUsageLog                      = "UsageLog"
@@ -44422,13 +44424,20 @@ type SupportIssueMutation struct {
 	addresolved_by_user_id   *int64
 	resolved_at              *time.Time
 	locked_at                *time.Time
+	hidden_at                *time.Time
+	hidden_by_user_id        *int64
+	addhidden_by_user_id     *int64
+	hide_reason              *string
 	last_comment_at          *time.Time
+	last_viewed_at           *time.Time
 	comment_count            *int
 	addcomment_count         *int
 	hidden_comment_count     *int
 	addhidden_comment_count  *int
 	attachment_count         *int
 	addattachment_count      *int
+	view_count               *int
+	addview_count            *int
 	search_text              *string
 	created_at               *time.Time
 	updated_at               *time.Time
@@ -44442,6 +44451,9 @@ type SupportIssueMutation struct {
 	events                   map[int64]struct{}
 	removedevents            map[int64]struct{}
 	clearedevents            bool
+	views                    map[int64]struct{}
+	removedviews             map[int64]struct{}
+	clearedviews             bool
 	done                     bool
 	oldValue                 func(context.Context) (*SupportIssue, error)
 	predicates               []predicate.SupportIssue
@@ -45429,6 +45441,161 @@ func (m *SupportIssueMutation) ResetLockedAt() {
 	delete(m.clearedFields, supportissue.FieldLockedAt)
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (m *SupportIssueMutation) SetHiddenAt(t time.Time) {
+	m.hidden_at = &t
+}
+
+// HiddenAt returns the value of the "hidden_at" field in the mutation.
+func (m *SupportIssueMutation) HiddenAt() (r time.Time, exists bool) {
+	v := m.hidden_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHiddenAt returns the old "hidden_at" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldHiddenAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHiddenAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHiddenAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHiddenAt: %w", err)
+	}
+	return oldValue.HiddenAt, nil
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (m *SupportIssueMutation) ClearHiddenAt() {
+	m.hidden_at = nil
+	m.clearedFields[supportissue.FieldHiddenAt] = struct{}{}
+}
+
+// HiddenAtCleared returns if the "hidden_at" field was cleared in this mutation.
+func (m *SupportIssueMutation) HiddenAtCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldHiddenAt]
+	return ok
+}
+
+// ResetHiddenAt resets all changes to the "hidden_at" field.
+func (m *SupportIssueMutation) ResetHiddenAt() {
+	m.hidden_at = nil
+	delete(m.clearedFields, supportissue.FieldHiddenAt)
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (m *SupportIssueMutation) SetHiddenByUserID(i int64) {
+	m.hidden_by_user_id = &i
+	m.addhidden_by_user_id = nil
+}
+
+// HiddenByUserID returns the value of the "hidden_by_user_id" field in the mutation.
+func (m *SupportIssueMutation) HiddenByUserID() (r int64, exists bool) {
+	v := m.hidden_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHiddenByUserID returns the old "hidden_by_user_id" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldHiddenByUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHiddenByUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHiddenByUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHiddenByUserID: %w", err)
+	}
+	return oldValue.HiddenByUserID, nil
+}
+
+// AddHiddenByUserID adds i to the "hidden_by_user_id" field.
+func (m *SupportIssueMutation) AddHiddenByUserID(i int64) {
+	if m.addhidden_by_user_id != nil {
+		*m.addhidden_by_user_id += i
+	} else {
+		m.addhidden_by_user_id = &i
+	}
+}
+
+// AddedHiddenByUserID returns the value that was added to the "hidden_by_user_id" field in this mutation.
+func (m *SupportIssueMutation) AddedHiddenByUserID() (r int64, exists bool) {
+	v := m.addhidden_by_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (m *SupportIssueMutation) ClearHiddenByUserID() {
+	m.hidden_by_user_id = nil
+	m.addhidden_by_user_id = nil
+	m.clearedFields[supportissue.FieldHiddenByUserID] = struct{}{}
+}
+
+// HiddenByUserIDCleared returns if the "hidden_by_user_id" field was cleared in this mutation.
+func (m *SupportIssueMutation) HiddenByUserIDCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldHiddenByUserID]
+	return ok
+}
+
+// ResetHiddenByUserID resets all changes to the "hidden_by_user_id" field.
+func (m *SupportIssueMutation) ResetHiddenByUserID() {
+	m.hidden_by_user_id = nil
+	m.addhidden_by_user_id = nil
+	delete(m.clearedFields, supportissue.FieldHiddenByUserID)
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (m *SupportIssueMutation) SetHideReason(s string) {
+	m.hide_reason = &s
+}
+
+// HideReason returns the value of the "hide_reason" field in the mutation.
+func (m *SupportIssueMutation) HideReason() (r string, exists bool) {
+	v := m.hide_reason
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldHideReason returns the old "hide_reason" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldHideReason(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldHideReason is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldHideReason requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldHideReason: %w", err)
+	}
+	return oldValue.HideReason, nil
+}
+
+// ResetHideReason resets all changes to the "hide_reason" field.
+func (m *SupportIssueMutation) ResetHideReason() {
+	m.hide_reason = nil
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (m *SupportIssueMutation) SetLastCommentAt(t time.Time) {
 	m.last_comment_at = &t
@@ -45476,6 +45643,55 @@ func (m *SupportIssueMutation) LastCommentAtCleared() bool {
 func (m *SupportIssueMutation) ResetLastCommentAt() {
 	m.last_comment_at = nil
 	delete(m.clearedFields, supportissue.FieldLastCommentAt)
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (m *SupportIssueMutation) SetLastViewedAt(t time.Time) {
+	m.last_viewed_at = &t
+}
+
+// LastViewedAt returns the value of the "last_viewed_at" field in the mutation.
+func (m *SupportIssueMutation) LastViewedAt() (r time.Time, exists bool) {
+	v := m.last_viewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastViewedAt returns the old "last_viewed_at" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldLastViewedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastViewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastViewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastViewedAt: %w", err)
+	}
+	return oldValue.LastViewedAt, nil
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (m *SupportIssueMutation) ClearLastViewedAt() {
+	m.last_viewed_at = nil
+	m.clearedFields[supportissue.FieldLastViewedAt] = struct{}{}
+}
+
+// LastViewedAtCleared returns if the "last_viewed_at" field was cleared in this mutation.
+func (m *SupportIssueMutation) LastViewedAtCleared() bool {
+	_, ok := m.clearedFields[supportissue.FieldLastViewedAt]
+	return ok
+}
+
+// ResetLastViewedAt resets all changes to the "last_viewed_at" field.
+func (m *SupportIssueMutation) ResetLastViewedAt() {
+	m.last_viewed_at = nil
+	delete(m.clearedFields, supportissue.FieldLastViewedAt)
 }
 
 // SetCommentCount sets the "comment_count" field.
@@ -45644,6 +45860,62 @@ func (m *SupportIssueMutation) AddedAttachmentCount() (r int, exists bool) {
 func (m *SupportIssueMutation) ResetAttachmentCount() {
 	m.attachment_count = nil
 	m.addattachment_count = nil
+}
+
+// SetViewCount sets the "view_count" field.
+func (m *SupportIssueMutation) SetViewCount(i int) {
+	m.view_count = &i
+	m.addview_count = nil
+}
+
+// ViewCount returns the value of the "view_count" field in the mutation.
+func (m *SupportIssueMutation) ViewCount() (r int, exists bool) {
+	v := m.view_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldViewCount returns the old "view_count" field's value of the SupportIssue entity.
+// If the SupportIssue object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueMutation) OldViewCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldViewCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldViewCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldViewCount: %w", err)
+	}
+	return oldValue.ViewCount, nil
+}
+
+// AddViewCount adds i to the "view_count" field.
+func (m *SupportIssueMutation) AddViewCount(i int) {
+	if m.addview_count != nil {
+		*m.addview_count += i
+	} else {
+		m.addview_count = &i
+	}
+}
+
+// AddedViewCount returns the value that was added to the "view_count" field in this mutation.
+func (m *SupportIssueMutation) AddedViewCount() (r int, exists bool) {
+	v := m.addview_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetViewCount resets all changes to the "view_count" field.
+func (m *SupportIssueMutation) ResetViewCount() {
+	m.view_count = nil
+	m.addview_count = nil
 }
 
 // SetSearchText sets the "search_text" field.
@@ -45916,6 +46188,60 @@ func (m *SupportIssueMutation) ResetEvents() {
 	m.removedevents = nil
 }
 
+// AddViewIDs adds the "views" edge to the SupportIssueView entity by ids.
+func (m *SupportIssueMutation) AddViewIDs(ids ...int64) {
+	if m.views == nil {
+		m.views = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.views[ids[i]] = struct{}{}
+	}
+}
+
+// ClearViews clears the "views" edge to the SupportIssueView entity.
+func (m *SupportIssueMutation) ClearViews() {
+	m.clearedviews = true
+}
+
+// ViewsCleared reports if the "views" edge to the SupportIssueView entity was cleared.
+func (m *SupportIssueMutation) ViewsCleared() bool {
+	return m.clearedviews
+}
+
+// RemoveViewIDs removes the "views" edge to the SupportIssueView entity by IDs.
+func (m *SupportIssueMutation) RemoveViewIDs(ids ...int64) {
+	if m.removedviews == nil {
+		m.removedviews = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.views, ids[i])
+		m.removedviews[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedViews returns the removed IDs of the "views" edge to the SupportIssueView entity.
+func (m *SupportIssueMutation) RemovedViewsIDs() (ids []int64) {
+	for id := range m.removedviews {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ViewsIDs returns the "views" edge IDs in the mutation.
+func (m *SupportIssueMutation) ViewsIDs() (ids []int64) {
+	for id := range m.views {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetViews resets all changes to the "views" edge.
+func (m *SupportIssueMutation) ResetViews() {
+	m.views = nil
+	m.clearedviews = false
+	m.removedviews = nil
+}
+
 // Where appends a list predicates to the SupportIssueMutation builder.
 func (m *SupportIssueMutation) Where(ps ...predicate.SupportIssue) {
 	m.predicates = append(m.predicates, ps...)
@@ -45950,7 +46276,7 @@ func (m *SupportIssueMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *SupportIssueMutation) Fields() []string {
-	fields := make([]string, 0, 28)
+	fields := make([]string, 0, 33)
 	if m.public_id != nil {
 		fields = append(fields, supportissue.FieldPublicID)
 	}
@@ -46014,8 +46340,20 @@ func (m *SupportIssueMutation) Fields() []string {
 	if m.locked_at != nil {
 		fields = append(fields, supportissue.FieldLockedAt)
 	}
+	if m.hidden_at != nil {
+		fields = append(fields, supportissue.FieldHiddenAt)
+	}
+	if m.hidden_by_user_id != nil {
+		fields = append(fields, supportissue.FieldHiddenByUserID)
+	}
+	if m.hide_reason != nil {
+		fields = append(fields, supportissue.FieldHideReason)
+	}
 	if m.last_comment_at != nil {
 		fields = append(fields, supportissue.FieldLastCommentAt)
+	}
+	if m.last_viewed_at != nil {
+		fields = append(fields, supportissue.FieldLastViewedAt)
 	}
 	if m.comment_count != nil {
 		fields = append(fields, supportissue.FieldCommentCount)
@@ -46025,6 +46363,9 @@ func (m *SupportIssueMutation) Fields() []string {
 	}
 	if m.attachment_count != nil {
 		fields = append(fields, supportissue.FieldAttachmentCount)
+	}
+	if m.view_count != nil {
+		fields = append(fields, supportissue.FieldViewCount)
 	}
 	if m.search_text != nil {
 		fields = append(fields, supportissue.FieldSearchText)
@@ -46085,14 +46426,24 @@ func (m *SupportIssueMutation) Field(name string) (ent.Value, bool) {
 		return m.ResolvedAt()
 	case supportissue.FieldLockedAt:
 		return m.LockedAt()
+	case supportissue.FieldHiddenAt:
+		return m.HiddenAt()
+	case supportissue.FieldHiddenByUserID:
+		return m.HiddenByUserID()
+	case supportissue.FieldHideReason:
+		return m.HideReason()
 	case supportissue.FieldLastCommentAt:
 		return m.LastCommentAt()
+	case supportissue.FieldLastViewedAt:
+		return m.LastViewedAt()
 	case supportissue.FieldCommentCount:
 		return m.CommentCount()
 	case supportissue.FieldHiddenCommentCount:
 		return m.HiddenCommentCount()
 	case supportissue.FieldAttachmentCount:
 		return m.AttachmentCount()
+	case supportissue.FieldViewCount:
+		return m.ViewCount()
 	case supportissue.FieldSearchText:
 		return m.SearchText()
 	case supportissue.FieldCreatedAt:
@@ -46150,14 +46501,24 @@ func (m *SupportIssueMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldResolvedAt(ctx)
 	case supportissue.FieldLockedAt:
 		return m.OldLockedAt(ctx)
+	case supportissue.FieldHiddenAt:
+		return m.OldHiddenAt(ctx)
+	case supportissue.FieldHiddenByUserID:
+		return m.OldHiddenByUserID(ctx)
+	case supportissue.FieldHideReason:
+		return m.OldHideReason(ctx)
 	case supportissue.FieldLastCommentAt:
 		return m.OldLastCommentAt(ctx)
+	case supportissue.FieldLastViewedAt:
+		return m.OldLastViewedAt(ctx)
 	case supportissue.FieldCommentCount:
 		return m.OldCommentCount(ctx)
 	case supportissue.FieldHiddenCommentCount:
 		return m.OldHiddenCommentCount(ctx)
 	case supportissue.FieldAttachmentCount:
 		return m.OldAttachmentCount(ctx)
+	case supportissue.FieldViewCount:
+		return m.OldViewCount(ctx)
 	case supportissue.FieldSearchText:
 		return m.OldSearchText(ctx)
 	case supportissue.FieldCreatedAt:
@@ -46320,12 +46681,40 @@ func (m *SupportIssueMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetLockedAt(v)
 		return nil
+	case supportissue.FieldHiddenAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHiddenAt(v)
+		return nil
+	case supportissue.FieldHiddenByUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHiddenByUserID(v)
+		return nil
+	case supportissue.FieldHideReason:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetHideReason(v)
+		return nil
 	case supportissue.FieldLastCommentAt:
 		v, ok := value.(time.Time)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetLastCommentAt(v)
+		return nil
+	case supportissue.FieldLastViewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastViewedAt(v)
 		return nil
 	case supportissue.FieldCommentCount:
 		v, ok := value.(int)
@@ -46347,6 +46736,13 @@ func (m *SupportIssueMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetAttachmentCount(v)
+		return nil
+	case supportissue.FieldViewCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetViewCount(v)
 		return nil
 	case supportissue.FieldSearchText:
 		v, ok := value.(string)
@@ -46386,6 +46782,9 @@ func (m *SupportIssueMutation) AddedFields() []string {
 	if m.addresolved_by_user_id != nil {
 		fields = append(fields, supportissue.FieldResolvedByUserID)
 	}
+	if m.addhidden_by_user_id != nil {
+		fields = append(fields, supportissue.FieldHiddenByUserID)
+	}
 	if m.addcomment_count != nil {
 		fields = append(fields, supportissue.FieldCommentCount)
 	}
@@ -46394,6 +46793,9 @@ func (m *SupportIssueMutation) AddedFields() []string {
 	}
 	if m.addattachment_count != nil {
 		fields = append(fields, supportissue.FieldAttachmentCount)
+	}
+	if m.addview_count != nil {
+		fields = append(fields, supportissue.FieldViewCount)
 	}
 	return fields
 }
@@ -46409,12 +46811,16 @@ func (m *SupportIssueMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedCreatedByUserID()
 	case supportissue.FieldResolvedByUserID:
 		return m.AddedResolvedByUserID()
+	case supportissue.FieldHiddenByUserID:
+		return m.AddedHiddenByUserID()
 	case supportissue.FieldCommentCount:
 		return m.AddedCommentCount()
 	case supportissue.FieldHiddenCommentCount:
 		return m.AddedHiddenCommentCount()
 	case supportissue.FieldAttachmentCount:
 		return m.AddedAttachmentCount()
+	case supportissue.FieldViewCount:
+		return m.AddedViewCount()
 	}
 	return nil, false
 }
@@ -46445,6 +46851,13 @@ func (m *SupportIssueMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddResolvedByUserID(v)
 		return nil
+	case supportissue.FieldHiddenByUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddHiddenByUserID(v)
+		return nil
 	case supportissue.FieldCommentCount:
 		v, ok := value.(int)
 		if !ok {
@@ -46465,6 +46878,13 @@ func (m *SupportIssueMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddAttachmentCount(v)
+		return nil
+	case supportissue.FieldViewCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddViewCount(v)
 		return nil
 	}
 	return fmt.Errorf("unknown SupportIssue numeric field %s", name)
@@ -46489,8 +46909,17 @@ func (m *SupportIssueMutation) ClearedFields() []string {
 	if m.FieldCleared(supportissue.FieldLockedAt) {
 		fields = append(fields, supportissue.FieldLockedAt)
 	}
+	if m.FieldCleared(supportissue.FieldHiddenAt) {
+		fields = append(fields, supportissue.FieldHiddenAt)
+	}
+	if m.FieldCleared(supportissue.FieldHiddenByUserID) {
+		fields = append(fields, supportissue.FieldHiddenByUserID)
+	}
 	if m.FieldCleared(supportissue.FieldLastCommentAt) {
 		fields = append(fields, supportissue.FieldLastCommentAt)
+	}
+	if m.FieldCleared(supportissue.FieldLastViewedAt) {
+		fields = append(fields, supportissue.FieldLastViewedAt)
 	}
 	return fields
 }
@@ -46521,8 +46950,17 @@ func (m *SupportIssueMutation) ClearField(name string) error {
 	case supportissue.FieldLockedAt:
 		m.ClearLockedAt()
 		return nil
+	case supportissue.FieldHiddenAt:
+		m.ClearHiddenAt()
+		return nil
+	case supportissue.FieldHiddenByUserID:
+		m.ClearHiddenByUserID()
+		return nil
 	case supportissue.FieldLastCommentAt:
 		m.ClearLastCommentAt()
+		return nil
+	case supportissue.FieldLastViewedAt:
+		m.ClearLastViewedAt()
 		return nil
 	}
 	return fmt.Errorf("unknown SupportIssue nullable field %s", name)
@@ -46595,8 +47033,20 @@ func (m *SupportIssueMutation) ResetField(name string) error {
 	case supportissue.FieldLockedAt:
 		m.ResetLockedAt()
 		return nil
+	case supportissue.FieldHiddenAt:
+		m.ResetHiddenAt()
+		return nil
+	case supportissue.FieldHiddenByUserID:
+		m.ResetHiddenByUserID()
+		return nil
+	case supportissue.FieldHideReason:
+		m.ResetHideReason()
+		return nil
 	case supportissue.FieldLastCommentAt:
 		m.ResetLastCommentAt()
+		return nil
+	case supportissue.FieldLastViewedAt:
+		m.ResetLastViewedAt()
 		return nil
 	case supportissue.FieldCommentCount:
 		m.ResetCommentCount()
@@ -46606,6 +47056,9 @@ func (m *SupportIssueMutation) ResetField(name string) error {
 		return nil
 	case supportissue.FieldAttachmentCount:
 		m.ResetAttachmentCount()
+		return nil
+	case supportissue.FieldViewCount:
+		m.ResetViewCount()
 		return nil
 	case supportissue.FieldSearchText:
 		m.ResetSearchText()
@@ -46622,7 +47075,7 @@ func (m *SupportIssueMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *SupportIssueMutation) AddedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.comments != nil {
 		edges = append(edges, supportissue.EdgeComments)
 	}
@@ -46631,6 +47084,9 @@ func (m *SupportIssueMutation) AddedEdges() []string {
 	}
 	if m.events != nil {
 		edges = append(edges, supportissue.EdgeEvents)
+	}
+	if m.views != nil {
+		edges = append(edges, supportissue.EdgeViews)
 	}
 	return edges
 }
@@ -46657,13 +47113,19 @@ func (m *SupportIssueMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case supportissue.EdgeViews:
+		ids := make([]ent.Value, 0, len(m.views))
+		for id := range m.views {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *SupportIssueMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.removedcomments != nil {
 		edges = append(edges, supportissue.EdgeComments)
 	}
@@ -46672,6 +47134,9 @@ func (m *SupportIssueMutation) RemovedEdges() []string {
 	}
 	if m.removedevents != nil {
 		edges = append(edges, supportissue.EdgeEvents)
+	}
+	if m.removedviews != nil {
+		edges = append(edges, supportissue.EdgeViews)
 	}
 	return edges
 }
@@ -46698,13 +47163,19 @@ func (m *SupportIssueMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case supportissue.EdgeViews:
+		ids := make([]ent.Value, 0, len(m.removedviews))
+		for id := range m.removedviews {
+			ids = append(ids, id)
+		}
+		return ids
 	}
 	return nil
 }
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *SupportIssueMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 3)
+	edges := make([]string, 0, 4)
 	if m.clearedcomments {
 		edges = append(edges, supportissue.EdgeComments)
 	}
@@ -46713,6 +47184,9 @@ func (m *SupportIssueMutation) ClearedEdges() []string {
 	}
 	if m.clearedevents {
 		edges = append(edges, supportissue.EdgeEvents)
+	}
+	if m.clearedviews {
+		edges = append(edges, supportissue.EdgeViews)
 	}
 	return edges
 }
@@ -46727,6 +47201,8 @@ func (m *SupportIssueMutation) EdgeCleared(name string) bool {
 		return m.clearedattachments
 	case supportissue.EdgeEvents:
 		return m.clearedevents
+	case supportissue.EdgeViews:
+		return m.clearedviews
 	}
 	return false
 }
@@ -46751,6 +47227,9 @@ func (m *SupportIssueMutation) ResetEdge(name string) error {
 		return nil
 	case supportissue.EdgeEvents:
 		m.ResetEvents()
+		return nil
+	case supportissue.EdgeViews:
+		m.ResetViews()
 		return nil
 	}
 	return fmt.Errorf("unknown SupportIssue edge %s", name)
@@ -49655,6 +50134,661 @@ func (m *SupportIssueEventMutation) ResetEdge(name string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown SupportIssueEvent edge %s", name)
+}
+
+// SupportIssueViewMutation represents an operation that mutates the SupportIssueView nodes in the graph.
+type SupportIssueViewMutation struct {
+	config
+	op                Op
+	typ               string
+	id                *int64
+	viewer_user_id    *int64
+	addviewer_user_id *int64
+	viewer_hash       *string
+	viewed_at         *time.Time
+	created_at        *time.Time
+	clearedFields     map[string]struct{}
+	issue             *int64
+	clearedissue      bool
+	done              bool
+	oldValue          func(context.Context) (*SupportIssueView, error)
+	predicates        []predicate.SupportIssueView
+}
+
+var _ ent.Mutation = (*SupportIssueViewMutation)(nil)
+
+// supportissueviewOption allows management of the mutation configuration using functional options.
+type supportissueviewOption func(*SupportIssueViewMutation)
+
+// newSupportIssueViewMutation creates new mutation for the SupportIssueView entity.
+func newSupportIssueViewMutation(c config, op Op, opts ...supportissueviewOption) *SupportIssueViewMutation {
+	m := &SupportIssueViewMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeSupportIssueView,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withSupportIssueViewID sets the ID field of the mutation.
+func withSupportIssueViewID(id int64) supportissueviewOption {
+	return func(m *SupportIssueViewMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *SupportIssueView
+		)
+		m.oldValue = func(ctx context.Context) (*SupportIssueView, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().SupportIssueView.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withSupportIssueView sets the old SupportIssueView of the mutation.
+func withSupportIssueView(node *SupportIssueView) supportissueviewOption {
+	return func(m *SupportIssueViewMutation) {
+		m.oldValue = func(context.Context) (*SupportIssueView, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m SupportIssueViewMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m SupportIssueViewMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *SupportIssueViewMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *SupportIssueViewMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().SupportIssueView.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetIssueID sets the "issue_id" field.
+func (m *SupportIssueViewMutation) SetIssueID(i int64) {
+	m.issue = &i
+}
+
+// IssueID returns the value of the "issue_id" field in the mutation.
+func (m *SupportIssueViewMutation) IssueID() (r int64, exists bool) {
+	v := m.issue
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldIssueID returns the old "issue_id" field's value of the SupportIssueView entity.
+// If the SupportIssueView object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueViewMutation) OldIssueID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldIssueID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldIssueID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldIssueID: %w", err)
+	}
+	return oldValue.IssueID, nil
+}
+
+// ResetIssueID resets all changes to the "issue_id" field.
+func (m *SupportIssueViewMutation) ResetIssueID() {
+	m.issue = nil
+}
+
+// SetViewerUserID sets the "viewer_user_id" field.
+func (m *SupportIssueViewMutation) SetViewerUserID(i int64) {
+	m.viewer_user_id = &i
+	m.addviewer_user_id = nil
+}
+
+// ViewerUserID returns the value of the "viewer_user_id" field in the mutation.
+func (m *SupportIssueViewMutation) ViewerUserID() (r int64, exists bool) {
+	v := m.viewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldViewerUserID returns the old "viewer_user_id" field's value of the SupportIssueView entity.
+// If the SupportIssueView object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueViewMutation) OldViewerUserID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldViewerUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldViewerUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldViewerUserID: %w", err)
+	}
+	return oldValue.ViewerUserID, nil
+}
+
+// AddViewerUserID adds i to the "viewer_user_id" field.
+func (m *SupportIssueViewMutation) AddViewerUserID(i int64) {
+	if m.addviewer_user_id != nil {
+		*m.addviewer_user_id += i
+	} else {
+		m.addviewer_user_id = &i
+	}
+}
+
+// AddedViewerUserID returns the value that was added to the "viewer_user_id" field in this mutation.
+func (m *SupportIssueViewMutation) AddedViewerUserID() (r int64, exists bool) {
+	v := m.addviewer_user_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearViewerUserID clears the value of the "viewer_user_id" field.
+func (m *SupportIssueViewMutation) ClearViewerUserID() {
+	m.viewer_user_id = nil
+	m.addviewer_user_id = nil
+	m.clearedFields[supportissueview.FieldViewerUserID] = struct{}{}
+}
+
+// ViewerUserIDCleared returns if the "viewer_user_id" field was cleared in this mutation.
+func (m *SupportIssueViewMutation) ViewerUserIDCleared() bool {
+	_, ok := m.clearedFields[supportissueview.FieldViewerUserID]
+	return ok
+}
+
+// ResetViewerUserID resets all changes to the "viewer_user_id" field.
+func (m *SupportIssueViewMutation) ResetViewerUserID() {
+	m.viewer_user_id = nil
+	m.addviewer_user_id = nil
+	delete(m.clearedFields, supportissueview.FieldViewerUserID)
+}
+
+// SetViewerHash sets the "viewer_hash" field.
+func (m *SupportIssueViewMutation) SetViewerHash(s string) {
+	m.viewer_hash = &s
+}
+
+// ViewerHash returns the value of the "viewer_hash" field in the mutation.
+func (m *SupportIssueViewMutation) ViewerHash() (r string, exists bool) {
+	v := m.viewer_hash
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldViewerHash returns the old "viewer_hash" field's value of the SupportIssueView entity.
+// If the SupportIssueView object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueViewMutation) OldViewerHash(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldViewerHash is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldViewerHash requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldViewerHash: %w", err)
+	}
+	return oldValue.ViewerHash, nil
+}
+
+// ResetViewerHash resets all changes to the "viewer_hash" field.
+func (m *SupportIssueViewMutation) ResetViewerHash() {
+	m.viewer_hash = nil
+}
+
+// SetViewedAt sets the "viewed_at" field.
+func (m *SupportIssueViewMutation) SetViewedAt(t time.Time) {
+	m.viewed_at = &t
+}
+
+// ViewedAt returns the value of the "viewed_at" field in the mutation.
+func (m *SupportIssueViewMutation) ViewedAt() (r time.Time, exists bool) {
+	v := m.viewed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldViewedAt returns the old "viewed_at" field's value of the SupportIssueView entity.
+// If the SupportIssueView object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueViewMutation) OldViewedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldViewedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldViewedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldViewedAt: %w", err)
+	}
+	return oldValue.ViewedAt, nil
+}
+
+// ResetViewedAt resets all changes to the "viewed_at" field.
+func (m *SupportIssueViewMutation) ResetViewedAt() {
+	m.viewed_at = nil
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *SupportIssueViewMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *SupportIssueViewMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the SupportIssueView entity.
+// If the SupportIssueView object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *SupportIssueViewMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *SupportIssueViewMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// ClearIssue clears the "issue" edge to the SupportIssue entity.
+func (m *SupportIssueViewMutation) ClearIssue() {
+	m.clearedissue = true
+	m.clearedFields[supportissueview.FieldIssueID] = struct{}{}
+}
+
+// IssueCleared reports if the "issue" edge to the SupportIssue entity was cleared.
+func (m *SupportIssueViewMutation) IssueCleared() bool {
+	return m.clearedissue
+}
+
+// IssueIDs returns the "issue" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// IssueID instead. It exists only for internal usage by the builders.
+func (m *SupportIssueViewMutation) IssueIDs() (ids []int64) {
+	if id := m.issue; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetIssue resets all changes to the "issue" edge.
+func (m *SupportIssueViewMutation) ResetIssue() {
+	m.issue = nil
+	m.clearedissue = false
+}
+
+// Where appends a list predicates to the SupportIssueViewMutation builder.
+func (m *SupportIssueViewMutation) Where(ps ...predicate.SupportIssueView) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the SupportIssueViewMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *SupportIssueViewMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.SupportIssueView, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *SupportIssueViewMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *SupportIssueViewMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (SupportIssueView).
+func (m *SupportIssueViewMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *SupportIssueViewMutation) Fields() []string {
+	fields := make([]string, 0, 5)
+	if m.issue != nil {
+		fields = append(fields, supportissueview.FieldIssueID)
+	}
+	if m.viewer_user_id != nil {
+		fields = append(fields, supportissueview.FieldViewerUserID)
+	}
+	if m.viewer_hash != nil {
+		fields = append(fields, supportissueview.FieldViewerHash)
+	}
+	if m.viewed_at != nil {
+		fields = append(fields, supportissueview.FieldViewedAt)
+	}
+	if m.created_at != nil {
+		fields = append(fields, supportissueview.FieldCreatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *SupportIssueViewMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case supportissueview.FieldIssueID:
+		return m.IssueID()
+	case supportissueview.FieldViewerUserID:
+		return m.ViewerUserID()
+	case supportissueview.FieldViewerHash:
+		return m.ViewerHash()
+	case supportissueview.FieldViewedAt:
+		return m.ViewedAt()
+	case supportissueview.FieldCreatedAt:
+		return m.CreatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *SupportIssueViewMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case supportissueview.FieldIssueID:
+		return m.OldIssueID(ctx)
+	case supportissueview.FieldViewerUserID:
+		return m.OldViewerUserID(ctx)
+	case supportissueview.FieldViewerHash:
+		return m.OldViewerHash(ctx)
+	case supportissueview.FieldViewedAt:
+		return m.OldViewedAt(ctx)
+	case supportissueview.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown SupportIssueView field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SupportIssueViewMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case supportissueview.FieldIssueID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetIssueID(v)
+		return nil
+	case supportissueview.FieldViewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetViewerUserID(v)
+		return nil
+	case supportissueview.FieldViewerHash:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetViewerHash(v)
+		return nil
+	case supportissueview.FieldViewedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetViewedAt(v)
+		return nil
+	case supportissueview.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *SupportIssueViewMutation) AddedFields() []string {
+	var fields []string
+	if m.addviewer_user_id != nil {
+		fields = append(fields, supportissueview.FieldViewerUserID)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *SupportIssueViewMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case supportissueview.FieldViewerUserID:
+		return m.AddedViewerUserID()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *SupportIssueViewMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case supportissueview.FieldViewerUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddViewerUserID(v)
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *SupportIssueViewMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(supportissueview.FieldViewerUserID) {
+		fields = append(fields, supportissueview.FieldViewerUserID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *SupportIssueViewMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *SupportIssueViewMutation) ClearField(name string) error {
+	switch name {
+	case supportissueview.FieldViewerUserID:
+		m.ClearViewerUserID()
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *SupportIssueViewMutation) ResetField(name string) error {
+	switch name {
+	case supportissueview.FieldIssueID:
+		m.ResetIssueID()
+		return nil
+	case supportissueview.FieldViewerUserID:
+		m.ResetViewerUserID()
+		return nil
+	case supportissueview.FieldViewerHash:
+		m.ResetViewerHash()
+		return nil
+	case supportissueview.FieldViewedAt:
+		m.ResetViewedAt()
+		return nil
+	case supportissueview.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *SupportIssueViewMutation) AddedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.issue != nil {
+		edges = append(edges, supportissueview.EdgeIssue)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *SupportIssueViewMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case supportissueview.EdgeIssue:
+		if id := m.issue; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *SupportIssueViewMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 1)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *SupportIssueViewMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *SupportIssueViewMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 1)
+	if m.clearedissue {
+		edges = append(edges, supportissueview.EdgeIssue)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *SupportIssueViewMutation) EdgeCleared(name string) bool {
+	switch name {
+	case supportissueview.EdgeIssue:
+		return m.clearedissue
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *SupportIssueViewMutation) ClearEdge(name string) error {
+	switch name {
+	case supportissueview.EdgeIssue:
+		m.ClearIssue()
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *SupportIssueViewMutation) ResetEdge(name string) error {
+	switch name {
+	case supportissueview.EdgeIssue:
+		m.ResetIssue()
+		return nil
+	}
+	return fmt.Errorf("unknown SupportIssueView edge %s", name)
 }
 
 // TLSFingerprintProfileMutation represents an operation that mutates the TLSFingerprintProfile nodes in the graph.

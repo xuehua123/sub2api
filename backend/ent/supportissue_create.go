@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 )
 
 // SupportIssueCreate is the builder for creating a SupportIssue entity.
@@ -255,6 +256,48 @@ func (_c *SupportIssueCreate) SetNillableLockedAt(v *time.Time) *SupportIssueCre
 	return _c
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (_c *SupportIssueCreate) SetHiddenAt(v time.Time) *SupportIssueCreate {
+	_c.mutation.SetHiddenAt(v)
+	return _c
+}
+
+// SetNillableHiddenAt sets the "hidden_at" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableHiddenAt(v *time.Time) *SupportIssueCreate {
+	if v != nil {
+		_c.SetHiddenAt(*v)
+	}
+	return _c
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (_c *SupportIssueCreate) SetHiddenByUserID(v int64) *SupportIssueCreate {
+	_c.mutation.SetHiddenByUserID(v)
+	return _c
+}
+
+// SetNillableHiddenByUserID sets the "hidden_by_user_id" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableHiddenByUserID(v *int64) *SupportIssueCreate {
+	if v != nil {
+		_c.SetHiddenByUserID(*v)
+	}
+	return _c
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (_c *SupportIssueCreate) SetHideReason(v string) *SupportIssueCreate {
+	_c.mutation.SetHideReason(v)
+	return _c
+}
+
+// SetNillableHideReason sets the "hide_reason" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableHideReason(v *string) *SupportIssueCreate {
+	if v != nil {
+		_c.SetHideReason(*v)
+	}
+	return _c
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_c *SupportIssueCreate) SetLastCommentAt(v time.Time) *SupportIssueCreate {
 	_c.mutation.SetLastCommentAt(v)
@@ -265,6 +308,20 @@ func (_c *SupportIssueCreate) SetLastCommentAt(v time.Time) *SupportIssueCreate 
 func (_c *SupportIssueCreate) SetNillableLastCommentAt(v *time.Time) *SupportIssueCreate {
 	if v != nil {
 		_c.SetLastCommentAt(*v)
+	}
+	return _c
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (_c *SupportIssueCreate) SetLastViewedAt(v time.Time) *SupportIssueCreate {
+	_c.mutation.SetLastViewedAt(v)
+	return _c
+}
+
+// SetNillableLastViewedAt sets the "last_viewed_at" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableLastViewedAt(v *time.Time) *SupportIssueCreate {
+	if v != nil {
+		_c.SetLastViewedAt(*v)
 	}
 	return _c
 }
@@ -307,6 +364,20 @@ func (_c *SupportIssueCreate) SetAttachmentCount(v int) *SupportIssueCreate {
 func (_c *SupportIssueCreate) SetNillableAttachmentCount(v *int) *SupportIssueCreate {
 	if v != nil {
 		_c.SetAttachmentCount(*v)
+	}
+	return _c
+}
+
+// SetViewCount sets the "view_count" field.
+func (_c *SupportIssueCreate) SetViewCount(v int) *SupportIssueCreate {
+	_c.mutation.SetViewCount(v)
+	return _c
+}
+
+// SetNillableViewCount sets the "view_count" field if the given value is not nil.
+func (_c *SupportIssueCreate) SetNillableViewCount(v *int) *SupportIssueCreate {
+	if v != nil {
+		_c.SetViewCount(*v)
 	}
 	return _c
 }
@@ -398,6 +469,21 @@ func (_c *SupportIssueCreate) AddEvents(v ...*SupportIssueEvent) *SupportIssueCr
 	return _c.AddEventIDs(ids...)
 }
 
+// AddViewIDs adds the "views" edge to the SupportIssueView entity by IDs.
+func (_c *SupportIssueCreate) AddViewIDs(ids ...int64) *SupportIssueCreate {
+	_c.mutation.AddViewIDs(ids...)
+	return _c
+}
+
+// AddViews adds the "views" edges to the SupportIssueView entity.
+func (_c *SupportIssueCreate) AddViews(v ...*SupportIssueView) *SupportIssueCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddViewIDs(ids...)
+}
+
 // Mutation returns the SupportIssueMutation object of the builder.
 func (_c *SupportIssueCreate) Mutation() *SupportIssueMutation {
 	return _c.mutation
@@ -465,6 +551,10 @@ func (_c *SupportIssueCreate) defaults() {
 		v := supportissue.DefaultAPIKeySuffix
 		_c.mutation.SetAPIKeySuffix(v)
 	}
+	if _, ok := _c.mutation.HideReason(); !ok {
+		v := supportissue.DefaultHideReason
+		_c.mutation.SetHideReason(v)
+	}
 	if _, ok := _c.mutation.CommentCount(); !ok {
 		v := supportissue.DefaultCommentCount
 		_c.mutation.SetCommentCount(v)
@@ -476,6 +566,10 @@ func (_c *SupportIssueCreate) defaults() {
 	if _, ok := _c.mutation.AttachmentCount(); !ok {
 		v := supportissue.DefaultAttachmentCount
 		_c.mutation.SetAttachmentCount(v)
+	}
+	if _, ok := _c.mutation.ViewCount(); !ok {
+		v := supportissue.DefaultViewCount
+		_c.mutation.SetViewCount(v)
 	}
 	if _, ok := _c.mutation.SearchText(); !ok {
 		v := supportissue.DefaultSearchText
@@ -616,6 +710,14 @@ func (_c *SupportIssueCreate) check() error {
 			return &ValidationError{Name: "api_key_suffix", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.api_key_suffix": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.HideReason(); !ok {
+		return &ValidationError{Name: "hide_reason", err: errors.New(`ent: missing required field "SupportIssue.hide_reason"`)}
+	}
+	if v, ok := _c.mutation.HideReason(); ok {
+		if err := supportissue.HideReasonValidator(v); err != nil {
+			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.CommentCount(); !ok {
 		return &ValidationError{Name: "comment_count", err: errors.New(`ent: missing required field "SupportIssue.comment_count"`)}
 	}
@@ -624,6 +726,9 @@ func (_c *SupportIssueCreate) check() error {
 	}
 	if _, ok := _c.mutation.AttachmentCount(); !ok {
 		return &ValidationError{Name: "attachment_count", err: errors.New(`ent: missing required field "SupportIssue.attachment_count"`)}
+	}
+	if _, ok := _c.mutation.ViewCount(); !ok {
+		return &ValidationError{Name: "view_count", err: errors.New(`ent: missing required field "SupportIssue.view_count"`)}
 	}
 	if _, ok := _c.mutation.SearchText(); !ok {
 		return &ValidationError{Name: "search_text", err: errors.New(`ent: missing required field "SupportIssue.search_text"`)}
@@ -745,9 +850,25 @@ func (_c *SupportIssueCreate) createSpec() (*SupportIssue, *sqlgraph.CreateSpec)
 		_spec.SetField(supportissue.FieldLockedAt, field.TypeTime, value)
 		_node.LockedAt = &value
 	}
+	if value, ok := _c.mutation.HiddenAt(); ok {
+		_spec.SetField(supportissue.FieldHiddenAt, field.TypeTime, value)
+		_node.HiddenAt = &value
+	}
+	if value, ok := _c.mutation.HiddenByUserID(); ok {
+		_spec.SetField(supportissue.FieldHiddenByUserID, field.TypeInt64, value)
+		_node.HiddenByUserID = &value
+	}
+	if value, ok := _c.mutation.HideReason(); ok {
+		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
+		_node.HideReason = value
+	}
 	if value, ok := _c.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)
 		_node.LastCommentAt = &value
+	}
+	if value, ok := _c.mutation.LastViewedAt(); ok {
+		_spec.SetField(supportissue.FieldLastViewedAt, field.TypeTime, value)
+		_node.LastViewedAt = &value
 	}
 	if value, ok := _c.mutation.CommentCount(); ok {
 		_spec.SetField(supportissue.FieldCommentCount, field.TypeInt, value)
@@ -760,6 +881,10 @@ func (_c *SupportIssueCreate) createSpec() (*SupportIssue, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.AttachmentCount(); ok {
 		_spec.SetField(supportissue.FieldAttachmentCount, field.TypeInt, value)
 		_node.AttachmentCount = value
+	}
+	if value, ok := _c.mutation.ViewCount(); ok {
+		_spec.SetField(supportissue.FieldViewCount, field.TypeInt, value)
+		_node.ViewCount = value
 	}
 	if value, ok := _c.mutation.SearchText(); ok {
 		_spec.SetField(supportissue.FieldSearchText, field.TypeString, value)
@@ -814,6 +939,22 @@ func (_c *SupportIssueCreate) createSpec() (*SupportIssue, *sqlgraph.CreateSpec)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(supportissueevent.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ViewsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1173,6 +1314,60 @@ func (u *SupportIssueUpsert) ClearLockedAt() *SupportIssueUpsert {
 	return u
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (u *SupportIssueUpsert) SetHiddenAt(v time.Time) *SupportIssueUpsert {
+	u.Set(supportissue.FieldHiddenAt, v)
+	return u
+}
+
+// UpdateHiddenAt sets the "hidden_at" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateHiddenAt() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldHiddenAt)
+	return u
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (u *SupportIssueUpsert) ClearHiddenAt() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldHiddenAt)
+	return u
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (u *SupportIssueUpsert) SetHiddenByUserID(v int64) *SupportIssueUpsert {
+	u.Set(supportissue.FieldHiddenByUserID, v)
+	return u
+}
+
+// UpdateHiddenByUserID sets the "hidden_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateHiddenByUserID() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldHiddenByUserID)
+	return u
+}
+
+// AddHiddenByUserID adds v to the "hidden_by_user_id" field.
+func (u *SupportIssueUpsert) AddHiddenByUserID(v int64) *SupportIssueUpsert {
+	u.Add(supportissue.FieldHiddenByUserID, v)
+	return u
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (u *SupportIssueUpsert) ClearHiddenByUserID() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldHiddenByUserID)
+	return u
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (u *SupportIssueUpsert) SetHideReason(v string) *SupportIssueUpsert {
+	u.Set(supportissue.FieldHideReason, v)
+	return u
+}
+
+// UpdateHideReason sets the "hide_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateHideReason() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldHideReason)
+	return u
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (u *SupportIssueUpsert) SetLastCommentAt(v time.Time) *SupportIssueUpsert {
 	u.Set(supportissue.FieldLastCommentAt, v)
@@ -1188,6 +1383,24 @@ func (u *SupportIssueUpsert) UpdateLastCommentAt() *SupportIssueUpsert {
 // ClearLastCommentAt clears the value of the "last_comment_at" field.
 func (u *SupportIssueUpsert) ClearLastCommentAt() *SupportIssueUpsert {
 	u.SetNull(supportissue.FieldLastCommentAt)
+	return u
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (u *SupportIssueUpsert) SetLastViewedAt(v time.Time) *SupportIssueUpsert {
+	u.Set(supportissue.FieldLastViewedAt, v)
+	return u
+}
+
+// UpdateLastViewedAt sets the "last_viewed_at" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateLastViewedAt() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldLastViewedAt)
+	return u
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (u *SupportIssueUpsert) ClearLastViewedAt() *SupportIssueUpsert {
+	u.SetNull(supportissue.FieldLastViewedAt)
 	return u
 }
 
@@ -1242,6 +1455,24 @@ func (u *SupportIssueUpsert) UpdateAttachmentCount() *SupportIssueUpsert {
 // AddAttachmentCount adds v to the "attachment_count" field.
 func (u *SupportIssueUpsert) AddAttachmentCount(v int) *SupportIssueUpsert {
 	u.Add(supportissue.FieldAttachmentCount, v)
+	return u
+}
+
+// SetViewCount sets the "view_count" field.
+func (u *SupportIssueUpsert) SetViewCount(v int) *SupportIssueUpsert {
+	u.Set(supportissue.FieldViewCount, v)
+	return u
+}
+
+// UpdateViewCount sets the "view_count" field to the value that was provided on create.
+func (u *SupportIssueUpsert) UpdateViewCount() *SupportIssueUpsert {
+	u.SetExcluded(supportissue.FieldViewCount)
+	return u
+}
+
+// AddViewCount adds v to the "view_count" field.
+func (u *SupportIssueUpsert) AddViewCount(v int) *SupportIssueUpsert {
+	u.Add(supportissue.FieldViewCount, v)
 	return u
 }
 
@@ -1664,6 +1895,69 @@ func (u *SupportIssueUpsertOne) ClearLockedAt() *SupportIssueUpsertOne {
 	})
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (u *SupportIssueUpsertOne) SetHiddenAt(v time.Time) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHiddenAt(v)
+	})
+}
+
+// UpdateHiddenAt sets the "hidden_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateHiddenAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHiddenAt()
+	})
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (u *SupportIssueUpsertOne) ClearHiddenAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearHiddenAt()
+	})
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertOne) SetHiddenByUserID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHiddenByUserID(v)
+	})
+}
+
+// AddHiddenByUserID adds v to the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertOne) AddHiddenByUserID(v int64) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddHiddenByUserID(v)
+	})
+}
+
+// UpdateHiddenByUserID sets the "hidden_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateHiddenByUserID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHiddenByUserID()
+	})
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertOne) ClearHiddenByUserID() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearHiddenByUserID()
+	})
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (u *SupportIssueUpsertOne) SetHideReason(v string) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHideReason(v)
+	})
+}
+
+// UpdateHideReason sets the "hide_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateHideReason() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHideReason()
+	})
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (u *SupportIssueUpsertOne) SetLastCommentAt(v time.Time) *SupportIssueUpsertOne {
 	return u.Update(func(s *SupportIssueUpsert) {
@@ -1682,6 +1976,27 @@ func (u *SupportIssueUpsertOne) UpdateLastCommentAt() *SupportIssueUpsertOne {
 func (u *SupportIssueUpsertOne) ClearLastCommentAt() *SupportIssueUpsertOne {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.ClearLastCommentAt()
+	})
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (u *SupportIssueUpsertOne) SetLastViewedAt(v time.Time) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetLastViewedAt(v)
+	})
+}
+
+// UpdateLastViewedAt sets the "last_viewed_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateLastViewedAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateLastViewedAt()
+	})
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (u *SupportIssueUpsertOne) ClearLastViewedAt() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearLastViewedAt()
 	})
 }
 
@@ -1745,6 +2060,27 @@ func (u *SupportIssueUpsertOne) AddAttachmentCount(v int) *SupportIssueUpsertOne
 func (u *SupportIssueUpsertOne) UpdateAttachmentCount() *SupportIssueUpsertOne {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.UpdateAttachmentCount()
+	})
+}
+
+// SetViewCount sets the "view_count" field.
+func (u *SupportIssueUpsertOne) SetViewCount(v int) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetViewCount(v)
+	})
+}
+
+// AddViewCount adds v to the "view_count" field.
+func (u *SupportIssueUpsertOne) AddViewCount(v int) *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddViewCount(v)
+	})
+}
+
+// UpdateViewCount sets the "view_count" field to the value that was provided on create.
+func (u *SupportIssueUpsertOne) UpdateViewCount() *SupportIssueUpsertOne {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateViewCount()
 	})
 }
 
@@ -2337,6 +2673,69 @@ func (u *SupportIssueUpsertBulk) ClearLockedAt() *SupportIssueUpsertBulk {
 	})
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (u *SupportIssueUpsertBulk) SetHiddenAt(v time.Time) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHiddenAt(v)
+	})
+}
+
+// UpdateHiddenAt sets the "hidden_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateHiddenAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHiddenAt()
+	})
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (u *SupportIssueUpsertBulk) ClearHiddenAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearHiddenAt()
+	})
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertBulk) SetHiddenByUserID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHiddenByUserID(v)
+	})
+}
+
+// AddHiddenByUserID adds v to the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertBulk) AddHiddenByUserID(v int64) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddHiddenByUserID(v)
+	})
+}
+
+// UpdateHiddenByUserID sets the "hidden_by_user_id" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateHiddenByUserID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHiddenByUserID()
+	})
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (u *SupportIssueUpsertBulk) ClearHiddenByUserID() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearHiddenByUserID()
+	})
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (u *SupportIssueUpsertBulk) SetHideReason(v string) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetHideReason(v)
+	})
+}
+
+// UpdateHideReason sets the "hide_reason" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateHideReason() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateHideReason()
+	})
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (u *SupportIssueUpsertBulk) SetLastCommentAt(v time.Time) *SupportIssueUpsertBulk {
 	return u.Update(func(s *SupportIssueUpsert) {
@@ -2355,6 +2754,27 @@ func (u *SupportIssueUpsertBulk) UpdateLastCommentAt() *SupportIssueUpsertBulk {
 func (u *SupportIssueUpsertBulk) ClearLastCommentAt() *SupportIssueUpsertBulk {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.ClearLastCommentAt()
+	})
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (u *SupportIssueUpsertBulk) SetLastViewedAt(v time.Time) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetLastViewedAt(v)
+	})
+}
+
+// UpdateLastViewedAt sets the "last_viewed_at" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateLastViewedAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateLastViewedAt()
+	})
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (u *SupportIssueUpsertBulk) ClearLastViewedAt() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.ClearLastViewedAt()
 	})
 }
 
@@ -2418,6 +2838,27 @@ func (u *SupportIssueUpsertBulk) AddAttachmentCount(v int) *SupportIssueUpsertBu
 func (u *SupportIssueUpsertBulk) UpdateAttachmentCount() *SupportIssueUpsertBulk {
 	return u.Update(func(s *SupportIssueUpsert) {
 		s.UpdateAttachmentCount()
+	})
+}
+
+// SetViewCount sets the "view_count" field.
+func (u *SupportIssueUpsertBulk) SetViewCount(v int) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.SetViewCount(v)
+	})
+}
+
+// AddViewCount adds v to the "view_count" field.
+func (u *SupportIssueUpsertBulk) AddViewCount(v int) *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.AddViewCount(v)
+	})
+}
+
+// UpdateViewCount sets the "view_count" field to the value that was provided on create.
+func (u *SupportIssueUpsertBulk) UpdateViewCount() *SupportIssueUpsertBulk {
+	return u.Update(func(s *SupportIssueUpsert) {
+		s.UpdateViewCount()
 	})
 }
 

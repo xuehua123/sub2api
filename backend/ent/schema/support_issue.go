@@ -95,7 +95,21 @@ func (SupportIssue) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("hidden_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Int64("hidden_by_user_id").
+			Optional().
+			Nillable(),
+		field.String("hide_reason").
+			MaxLen(255).
+			Default(""),
 		field.Time("last_comment_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
+		field.Time("last_viewed_at").
 			Optional().
 			Nillable().
 			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
@@ -104,6 +118,8 @@ func (SupportIssue) Fields() []ent.Field {
 		field.Int("hidden_comment_count").
 			Default(0),
 		field.Int("attachment_count").
+			Default(0),
+		field.Int("view_count").
 			Default(0),
 		field.String("search_text").
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
@@ -127,6 +143,8 @@ func (SupportIssue) Edges() []ent.Edge {
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("events", SupportIssueEvent.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("views", SupportIssueView.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
 	}
 }
 
@@ -139,6 +157,9 @@ func (SupportIssue) Indexes() []ent.Index {
 		index.Fields("created_by_user_id", "created_at"),
 		index.Fields("account_email_normalized"),
 		index.Fields("occurred_at"),
+		index.Fields("hidden_at"),
+		index.Fields("view_count"),
+		index.Fields("last_viewed_at"),
 		index.Fields("http_status"),
 		index.Fields("error_code"),
 	}

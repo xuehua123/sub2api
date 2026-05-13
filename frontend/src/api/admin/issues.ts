@@ -41,6 +41,22 @@ export async function reopen(
   return data
 }
 
+export async function hideIssue(
+  id: number,
+  request?: SupportIssueReasonRequest
+): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/hide`, request ?? {})
+  return data
+}
+
+export async function restoreIssue(
+  id: number,
+  request?: SupportIssueReasonRequest
+): Promise<AdminSupportIssue> {
+  const { data } = await apiClient.post<AdminSupportIssue>(`/admin/issues/${id}/restore`, request ?? {})
+  return data
+}
+
 export async function hideComment(
   issueId: number,
   commentId: number,
@@ -75,6 +91,8 @@ export const adminIssuesAPI = {
   get,
   updateStatus,
   reopen,
+  hideIssue,
+  restoreIssue,
   hideComment,
   hideAttachment,
   events

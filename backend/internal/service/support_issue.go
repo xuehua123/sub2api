@@ -51,6 +51,8 @@ const (
 	SupportIssueEventReopened         = domain.SupportIssueEventReopened
 	SupportIssueEventCommentHidden    = domain.SupportIssueEventCommentHidden
 	SupportIssueEventAttachmentHidden = domain.SupportIssueEventAttachmentHidden
+	SupportIssueEventIssueHidden      = domain.SupportIssueEventIssueHidden
+	SupportIssueEventIssueRestored    = domain.SupportIssueEventIssueRestored
 )
 
 const (
@@ -64,6 +66,7 @@ const (
 	SupportIssueMaxAttachmentsPerIssue = 5
 	SupportIssueMaxAttachmentBytes     = 5 * 1024 * 1024
 	SupportIssueAttachmentStorageDir   = "data/support-issue-attachments"
+	SupportIssueViewThrottleWindow     = time.Hour
 )
 
 var (
@@ -107,10 +110,15 @@ type SupportIssue struct {
 	ResolvedByUserID       *int64
 	ResolvedAt             *time.Time
 	LockedAt               *time.Time
+	HiddenAt               *time.Time
+	HiddenByUserID         *int64
+	HideReason             string
 	LastCommentAt          *time.Time
+	LastViewedAt           *time.Time
 	CommentCount           int
 	HiddenCommentCount     int
 	AttachmentCount        int
+	ViewCount              int
 	SearchText             string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
@@ -187,10 +195,13 @@ type UploadSupportIssueAttachmentInput struct {
 }
 
 type ListSupportIssueFilters struct {
-	Status   string
-	Category string
-	Severity string
-	HasImage *bool
+	Status        string
+	Category      string
+	Severity      string
+	HasImage      *bool
+	Hidden        *bool
+	IncludeHidden bool
+	ActiveSince   *time.Time
 }
 
 type SearchSupportIssueQuery struct {
@@ -226,11 +237,23 @@ type HideSupportIssueAttachmentInput struct {
 	HiddenByUserID int64
 }
 
+type HideSupportIssueInput struct {
+	IssueID        int64
+	HiddenByUserID int64
+	HideReason     string
+}
+
 type SupportIssueActor struct {
 	UserID  int64
 	Email   string
 	Role    string
 	IsAdmin bool
+}
+
+type SupportIssueViewer struct {
+	UserID    int64
+	IP        string
+	UserAgent string
 }
 
 type SupportIssueRepository interface {
@@ -239,10 +262,13 @@ type SupportIssueRepository interface {
 	ListUnboundAttachmentsForUser(ctx context.Context, userID int64, ids []int64) ([]SupportIssueAttachment, error)
 	OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*SupportIssueAttachment, error)
 	GetIssue(ctx context.Context, id int64, includeHidden bool) (*SupportIssue, error)
+	RecordView(ctx context.Context, issueID int64, viewer SupportIssueViewer, throttleWindow time.Duration) error
 	ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error)
 	SearchIssues(ctx context.Context, params pagination.PaginationParams, query SearchSupportIssueQuery) ([]SupportIssue, *pagination.PaginationResult, error)
 	AddComment(ctx context.Context, comment *SupportIssueComment, event SupportIssueEvent) error
 	UpdateStatus(ctx context.Context, issueID int64, nextStatus string, actorUserID int64, actorIsAdmin bool, event SupportIssueEvent) (*SupportIssue, error)
+	HideIssue(ctx context.Context, input HideSupportIssueInput, event SupportIssueEvent) (*SupportIssue, error)
+	RestoreIssue(ctx context.Context, issueID int64, actorUserID int64, event SupportIssueEvent) (*SupportIssue, error)
 	HideComment(ctx context.Context, input HideSupportIssueCommentInput, event SupportIssueEvent) error
 	HideAttachment(ctx context.Context, input HideSupportIssueAttachmentInput, event SupportIssueEvent) error
 	ListEvents(ctx context.Context, issueID int64) ([]SupportIssueEvent, error)

@@ -45,6 +45,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
@@ -2064,28 +2065,38 @@ func init() {
 	supportissue.DefaultAPIKeySuffix = supportissueDescAPIKeySuffix.Default.(string)
 	// supportissue.APIKeySuffixValidator is a validator for the "api_key_suffix" field. It is called by the builders before save.
 	supportissue.APIKeySuffixValidator = supportissueDescAPIKeySuffix.Validators[0].(func(string) error)
+	// supportissueDescHideReason is the schema descriptor for hide_reason field.
+	supportissueDescHideReason := supportissueFields[23].Descriptor()
+	// supportissue.DefaultHideReason holds the default value on creation for the hide_reason field.
+	supportissue.DefaultHideReason = supportissueDescHideReason.Default.(string)
+	// supportissue.HideReasonValidator is a validator for the "hide_reason" field. It is called by the builders before save.
+	supportissue.HideReasonValidator = supportissueDescHideReason.Validators[0].(func(string) error)
 	// supportissueDescCommentCount is the schema descriptor for comment_count field.
-	supportissueDescCommentCount := supportissueFields[22].Descriptor()
+	supportissueDescCommentCount := supportissueFields[26].Descriptor()
 	// supportissue.DefaultCommentCount holds the default value on creation for the comment_count field.
 	supportissue.DefaultCommentCount = supportissueDescCommentCount.Default.(int)
 	// supportissueDescHiddenCommentCount is the schema descriptor for hidden_comment_count field.
-	supportissueDescHiddenCommentCount := supportissueFields[23].Descriptor()
+	supportissueDescHiddenCommentCount := supportissueFields[27].Descriptor()
 	// supportissue.DefaultHiddenCommentCount holds the default value on creation for the hidden_comment_count field.
 	supportissue.DefaultHiddenCommentCount = supportissueDescHiddenCommentCount.Default.(int)
 	// supportissueDescAttachmentCount is the schema descriptor for attachment_count field.
-	supportissueDescAttachmentCount := supportissueFields[24].Descriptor()
+	supportissueDescAttachmentCount := supportissueFields[28].Descriptor()
 	// supportissue.DefaultAttachmentCount holds the default value on creation for the attachment_count field.
 	supportissue.DefaultAttachmentCount = supportissueDescAttachmentCount.Default.(int)
+	// supportissueDescViewCount is the schema descriptor for view_count field.
+	supportissueDescViewCount := supportissueFields[29].Descriptor()
+	// supportissue.DefaultViewCount holds the default value on creation for the view_count field.
+	supportissue.DefaultViewCount = supportissueDescViewCount.Default.(int)
 	// supportissueDescSearchText is the schema descriptor for search_text field.
-	supportissueDescSearchText := supportissueFields[25].Descriptor()
+	supportissueDescSearchText := supportissueFields[30].Descriptor()
 	// supportissue.DefaultSearchText holds the default value on creation for the search_text field.
 	supportissue.DefaultSearchText = supportissueDescSearchText.Default.(string)
 	// supportissueDescCreatedAt is the schema descriptor for created_at field.
-	supportissueDescCreatedAt := supportissueFields[26].Descriptor()
+	supportissueDescCreatedAt := supportissueFields[31].Descriptor()
 	// supportissue.DefaultCreatedAt holds the default value on creation for the created_at field.
 	supportissue.DefaultCreatedAt = supportissueDescCreatedAt.Default.(func() time.Time)
 	// supportissueDescUpdatedAt is the schema descriptor for updated_at field.
-	supportissueDescUpdatedAt := supportissueFields[27].Descriptor()
+	supportissueDescUpdatedAt := supportissueFields[32].Descriptor()
 	// supportissue.DefaultUpdatedAt holds the default value on creation for the updated_at field.
 	supportissue.DefaultUpdatedAt = supportissueDescUpdatedAt.Default.(func() time.Time)
 	// supportissue.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
@@ -2254,6 +2265,34 @@ func init() {
 	supportissueeventDescCreatedAt := supportissueeventFields[6].Descriptor()
 	// supportissueevent.DefaultCreatedAt holds the default value on creation for the created_at field.
 	supportissueevent.DefaultCreatedAt = supportissueeventDescCreatedAt.Default.(func() time.Time)
+	supportissueviewFields := schema.SupportIssueView{}.Fields()
+	_ = supportissueviewFields
+	// supportissueviewDescViewerHash is the schema descriptor for viewer_hash field.
+	supportissueviewDescViewerHash := supportissueviewFields[2].Descriptor()
+	// supportissueview.ViewerHashValidator is a validator for the "viewer_hash" field. It is called by the builders before save.
+	supportissueview.ViewerHashValidator = func() func(string) error {
+		validators := supportissueviewDescViewerHash.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(viewer_hash string) error {
+			for _, fn := range fns {
+				if err := fn(viewer_hash); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// supportissueviewDescViewedAt is the schema descriptor for viewed_at field.
+	supportissueviewDescViewedAt := supportissueviewFields[3].Descriptor()
+	// supportissueview.DefaultViewedAt holds the default value on creation for the viewed_at field.
+	supportissueview.DefaultViewedAt = supportissueviewDescViewedAt.Default.(func() time.Time)
+	// supportissueviewDescCreatedAt is the schema descriptor for created_at field.
+	supportissueviewDescCreatedAt := supportissueviewFields[4].Descriptor()
+	// supportissueview.DefaultCreatedAt holds the default value on creation for the created_at field.
+	supportissueview.DefaultCreatedAt = supportissueviewDescCreatedAt.Default.(func() time.Time)
 	tlsfingerprintprofileMixin := schema.TLSFingerprintProfile{}.Mixin()
 	tlsfingerprintprofileMixinFields0 := tlsfingerprintprofileMixin[0].Fields()
 	_ = tlsfingerprintprofileMixinFields0

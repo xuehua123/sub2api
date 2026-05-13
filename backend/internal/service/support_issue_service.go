@@ -118,6 +118,9 @@ func (s *SupportIssueService) ListPublic(
 	params pagination.PaginationParams,
 	filters ListSupportIssueFilters,
 ) ([]SupportIssue, *pagination.PaginationResult, error) {
+	filters.IncludeHidden = false
+	hidden := false
+	filters.Hidden = &hidden
 	items, page, err := s.repo.ListIssues(ctx, params, filters)
 	if err != nil {
 		return nil, nil, err
@@ -131,6 +134,9 @@ func (s *SupportIssueService) SearchPublic(
 	rawQuery string,
 	filters ListSupportIssueFilters,
 ) ([]SupportIssue, *pagination.PaginationResult, error) {
+	filters.IncludeHidden = false
+	hidden := false
+	filters.Hidden = &hidden
 	parsed, err := ParseSupportIssueSearch(rawQuery)
 	if err != nil {
 		return nil, nil, err
@@ -149,9 +155,15 @@ func (s *SupportIssueService) SearchPublic(
 	return sanitizeSupportIssuesForPublic(items), page, nil
 }
 
-func (s *SupportIssueService) GetPublic(ctx context.Context, issueID int64) (*SupportIssue, error) {
+func (s *SupportIssueService) GetPublic(ctx context.Context, issueID int64, viewer SupportIssueViewer) (*SupportIssue, error) {
 	issue, err := s.repo.GetIssue(ctx, issueID, false)
 	if err != nil {
+		return nil, err
+	}
+	if issue.HiddenAt != nil {
+		return nil, ErrSupportIssueNotFound
+	}
+	if err := s.repo.RecordView(ctx, issueID, viewer, SupportIssueViewThrottleWindow); err != nil {
 		return nil, err
 	}
 	return sanitizeSupportIssueForPublic(issue), nil
@@ -168,6 +180,7 @@ func (s *SupportIssueService) OpenAttachmentForPublic(ctx context.Context, attac
 	if attachment == nil ||
 		attachment.IssueID <= 0 ||
 		attachment.Visibility != SupportIssueAttachmentVisibilityPublic ||
+		attachment.HiddenAt != nil ||
 		attachment.FilePath == "" {
 		return nil, ErrSupportIssueAttachmentNotFound
 	}
@@ -187,6 +200,9 @@ func (s *SupportIssueService) AddComment(ctx context.Context, actor SupportIssue
 	issue, err := s.repo.GetIssue(ctx, issueID, false)
 	if err != nil {
 		return nil, err
+	}
+	if issue.HiddenAt != nil {
+		return nil, ErrSupportIssueNotFound
 	}
 	if issue.LockedAt != nil || domain.IsSupportIssueLockedStatus(issue.Status) {
 		return nil, ErrSupportIssueLocked
@@ -219,6 +235,9 @@ func (s *SupportIssueService) Resolve(ctx context.Context, actor SupportIssueAct
 	if err != nil {
 		return nil, err
 	}
+	if issue.HiddenAt != nil {
+		return nil, ErrSupportIssueNotFound
+	}
 	if !supportIssueActorIsAdmin(actor) && !supportIssueActorOwnsIssue(actor, issue) {
 		return nil, ErrSupportIssuePermissionDenied
 	}
@@ -239,6 +258,7 @@ func (s *SupportIssueService) AdminList(
 	params pagination.PaginationParams,
 	filters ListSupportIssueFilters,
 ) ([]SupportIssue, *pagination.PaginationResult, error) {
+	filters.IncludeHidden = true
 	return s.repo.ListIssues(ctx, params, filters)
 }
 
@@ -252,6 +272,7 @@ func (s *SupportIssueService) AdminSearch(
 	if err != nil {
 		return nil, nil, err
 	}
+	filters.IncludeHidden = true
 	return s.repo.SearchIssues(ctx, params, SearchSupportIssueQuery{
 		Parsed:        parsed,
 		Filters:       filters,
@@ -303,6 +324,29 @@ func (s *SupportIssueService) AdminReopen(ctx context.Context, actor SupportIssu
 	}
 
 	return s.repo.UpdateStatus(ctx, issueID, SupportIssueStatusOpen, actor.UserID, true, supportIssueStatusEventWithType(actor, SupportIssueEventReopened, issue.Status, SupportIssueStatusOpen, reason))
+}
+
+func (s *SupportIssueService) AdminHideIssue(ctx context.Context, actor SupportIssueActor, issueID int64, reason string) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	reason = supportIssueHideReason(reason)
+	return s.repo.HideIssue(ctx, HideSupportIssueInput{
+		IssueID:        issueID,
+		HiddenByUserID: actor.UserID,
+		HideReason:     reason,
+	}, supportIssueEvent(actor, SupportIssueEventIssueHidden, map[string]any{
+		"reason": reason,
+	}))
+}
+
+func (s *SupportIssueService) AdminRestoreIssue(ctx context.Context, actor SupportIssueActor, issueID int64, reason string) (*SupportIssue, error) {
+	if err := validateSupportIssueAdmin(actor); err != nil {
+		return nil, err
+	}
+	return s.repo.RestoreIssue(ctx, issueID, actor.UserID, supportIssueEvent(actor, SupportIssueEventIssueRestored, map[string]any{
+		"reason": strings.TrimSpace(reason),
+	}))
 }
 
 func (s *SupportIssueService) AdminHideComment(ctx context.Context, actor SupportIssueActor, issueID int64, commentID int64, reason string) error {
@@ -513,6 +557,9 @@ func sanitizeSupportIssueForPublic(issue *SupportIssue) *SupportIssue {
 	out.CreatedByUserID = nil
 	out.ResolvedByUserID = nil
 	out.HiddenCommentCount = 0
+	out.HiddenAt = nil
+	out.HiddenByUserID = nil
+	out.HideReason = ""
 	out.Comments = visibleSupportIssueComments(issue.Comments)
 	out.Attachments = visibleSupportIssueAttachments(issue.Attachments)
 	out.Events = nil

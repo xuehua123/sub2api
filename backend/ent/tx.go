@@ -92,6 +92,8 @@ type Tx struct {
 	SupportIssueComment *SupportIssueCommentClient
 	// SupportIssueEvent is the client for interacting with the SupportIssueEvent builders.
 	SupportIssueEvent *SupportIssueEventClient
+	// SupportIssueView is the client for interacting with the SupportIssueView builders.
+	SupportIssueView *SupportIssueViewClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
@@ -278,6 +280,7 @@ func (tx *Tx) init() {
 	tx.SupportIssueAttachment = NewSupportIssueAttachmentClient(tx.config)
 	tx.SupportIssueComment = NewSupportIssueCommentClient(tx.config)
 	tx.SupportIssueEvent = NewSupportIssueEventClient(tx.config)
+	tx.SupportIssueView = NewSupportIssueViewClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)

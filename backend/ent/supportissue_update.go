@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 )
 
 // SupportIssueUpdate is the builder for updating SupportIssue entities.
@@ -376,6 +377,67 @@ func (_u *SupportIssueUpdate) ClearLockedAt() *SupportIssueUpdate {
 	return _u
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (_u *SupportIssueUpdate) SetHiddenAt(v time.Time) *SupportIssueUpdate {
+	_u.mutation.SetHiddenAt(v)
+	return _u
+}
+
+// SetNillableHiddenAt sets the "hidden_at" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableHiddenAt(v *time.Time) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetHiddenAt(*v)
+	}
+	return _u
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (_u *SupportIssueUpdate) ClearHiddenAt() *SupportIssueUpdate {
+	_u.mutation.ClearHiddenAt()
+	return _u
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdate) SetHiddenByUserID(v int64) *SupportIssueUpdate {
+	_u.mutation.ResetHiddenByUserID()
+	_u.mutation.SetHiddenByUserID(v)
+	return _u
+}
+
+// SetNillableHiddenByUserID sets the "hidden_by_user_id" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableHiddenByUserID(v *int64) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetHiddenByUserID(*v)
+	}
+	return _u
+}
+
+// AddHiddenByUserID adds value to the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdate) AddHiddenByUserID(v int64) *SupportIssueUpdate {
+	_u.mutation.AddHiddenByUserID(v)
+	return _u
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdate) ClearHiddenByUserID() *SupportIssueUpdate {
+	_u.mutation.ClearHiddenByUserID()
+	return _u
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (_u *SupportIssueUpdate) SetHideReason(v string) *SupportIssueUpdate {
+	_u.mutation.SetHideReason(v)
+	return _u
+}
+
+// SetNillableHideReason sets the "hide_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableHideReason(v *string) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetHideReason(*v)
+	}
+	return _u
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_u *SupportIssueUpdate) SetLastCommentAt(v time.Time) *SupportIssueUpdate {
 	_u.mutation.SetLastCommentAt(v)
@@ -393,6 +455,26 @@ func (_u *SupportIssueUpdate) SetNillableLastCommentAt(v *time.Time) *SupportIss
 // ClearLastCommentAt clears the value of the "last_comment_at" field.
 func (_u *SupportIssueUpdate) ClearLastCommentAt() *SupportIssueUpdate {
 	_u.mutation.ClearLastCommentAt()
+	return _u
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (_u *SupportIssueUpdate) SetLastViewedAt(v time.Time) *SupportIssueUpdate {
+	_u.mutation.SetLastViewedAt(v)
+	return _u
+}
+
+// SetNillableLastViewedAt sets the "last_viewed_at" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableLastViewedAt(v *time.Time) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetLastViewedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (_u *SupportIssueUpdate) ClearLastViewedAt() *SupportIssueUpdate {
+	_u.mutation.ClearLastViewedAt()
 	return _u
 }
 
@@ -456,6 +538,27 @@ func (_u *SupportIssueUpdate) SetNillableAttachmentCount(v *int) *SupportIssueUp
 // AddAttachmentCount adds value to the "attachment_count" field.
 func (_u *SupportIssueUpdate) AddAttachmentCount(v int) *SupportIssueUpdate {
 	_u.mutation.AddAttachmentCount(v)
+	return _u
+}
+
+// SetViewCount sets the "view_count" field.
+func (_u *SupportIssueUpdate) SetViewCount(v int) *SupportIssueUpdate {
+	_u.mutation.ResetViewCount()
+	_u.mutation.SetViewCount(v)
+	return _u
+}
+
+// SetNillableViewCount sets the "view_count" field if the given value is not nil.
+func (_u *SupportIssueUpdate) SetNillableViewCount(v *int) *SupportIssueUpdate {
+	if v != nil {
+		_u.SetViewCount(*v)
+	}
+	return _u
+}
+
+// AddViewCount adds value to the "view_count" field.
+func (_u *SupportIssueUpdate) AddViewCount(v int) *SupportIssueUpdate {
+	_u.mutation.AddViewCount(v)
 	return _u
 }
 
@@ -524,6 +627,21 @@ func (_u *SupportIssueUpdate) AddEvents(v ...*SupportIssueEvent) *SupportIssueUp
 	return _u.AddEventIDs(ids...)
 }
 
+// AddViewIDs adds the "views" edge to the SupportIssueView entity by IDs.
+func (_u *SupportIssueUpdate) AddViewIDs(ids ...int64) *SupportIssueUpdate {
+	_u.mutation.AddViewIDs(ids...)
+	return _u
+}
+
+// AddViews adds the "views" edges to the SupportIssueView entity.
+func (_u *SupportIssueUpdate) AddViews(v ...*SupportIssueView) *SupportIssueUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddViewIDs(ids...)
+}
+
 // Mutation returns the SupportIssueMutation object of the builder.
 func (_u *SupportIssueUpdate) Mutation() *SupportIssueMutation {
 	return _u.mutation
@@ -590,6 +708,27 @@ func (_u *SupportIssueUpdate) RemoveEvents(v ...*SupportIssueEvent) *SupportIssu
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveEventIDs(ids...)
+}
+
+// ClearViews clears all "views" edges to the SupportIssueView entity.
+func (_u *SupportIssueUpdate) ClearViews() *SupportIssueUpdate {
+	_u.mutation.ClearViews()
+	return _u
+}
+
+// RemoveViewIDs removes the "views" edge to SupportIssueView entities by IDs.
+func (_u *SupportIssueUpdate) RemoveViewIDs(ids ...int64) *SupportIssueUpdate {
+	_u.mutation.RemoveViewIDs(ids...)
+	return _u
+}
+
+// RemoveViews removes "views" edges to SupportIssueView entities.
+func (_u *SupportIssueUpdate) RemoveViews(v ...*SupportIssueView) *SupportIssueUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveViewIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -705,6 +844,11 @@ func (_u *SupportIssueUpdate) check() error {
 			return &ValidationError{Name: "api_key_suffix", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.api_key_suffix": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.HideReason(); ok {
+		if err := supportissue.HideReasonValidator(v); err != nil {
+			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -807,11 +951,35 @@ func (_u *SupportIssueUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if _u.mutation.LockedAtCleared() {
 		_spec.ClearField(supportissue.FieldLockedAt, field.TypeTime)
 	}
+	if value, ok := _u.mutation.HiddenAt(); ok {
+		_spec.SetField(supportissue.FieldHiddenAt, field.TypeTime, value)
+	}
+	if _u.mutation.HiddenAtCleared() {
+		_spec.ClearField(supportissue.FieldHiddenAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HiddenByUserID(); ok {
+		_spec.SetField(supportissue.FieldHiddenByUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedHiddenByUserID(); ok {
+		_spec.AddField(supportissue.FieldHiddenByUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.HiddenByUserIDCleared() {
+		_spec.ClearField(supportissue.FieldHiddenByUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.HideReason(); ok {
+		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)
 	}
 	if _u.mutation.LastCommentAtCleared() {
 		_spec.ClearField(supportissue.FieldLastCommentAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LastViewedAt(); ok {
+		_spec.SetField(supportissue.FieldLastViewedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastViewedAtCleared() {
+		_spec.ClearField(supportissue.FieldLastViewedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.CommentCount(); ok {
 		_spec.SetField(supportissue.FieldCommentCount, field.TypeInt, value)
@@ -830,6 +998,12 @@ func (_u *SupportIssueUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.AddedAttachmentCount(); ok {
 		_spec.AddField(supportissue.FieldAttachmentCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ViewCount(); ok {
+		_spec.SetField(supportissue.FieldViewCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedViewCount(); ok {
+		_spec.AddField(supportissue.FieldViewCount, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.SearchText(); ok {
 		_spec.SetField(supportissue.FieldSearchText, field.TypeString, value)
@@ -965,6 +1139,51 @@ func (_u *SupportIssueUpdate) sqlSave(ctx context.Context) (_node int, err error
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(supportissueevent.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ViewsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedViewsIDs(); len(nodes) > 0 && !_u.mutation.ViewsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ViewsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -1337,6 +1556,67 @@ func (_u *SupportIssueUpdateOne) ClearLockedAt() *SupportIssueUpdateOne {
 	return _u
 }
 
+// SetHiddenAt sets the "hidden_at" field.
+func (_u *SupportIssueUpdateOne) SetHiddenAt(v time.Time) *SupportIssueUpdateOne {
+	_u.mutation.SetHiddenAt(v)
+	return _u
+}
+
+// SetNillableHiddenAt sets the "hidden_at" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableHiddenAt(v *time.Time) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetHiddenAt(*v)
+	}
+	return _u
+}
+
+// ClearHiddenAt clears the value of the "hidden_at" field.
+func (_u *SupportIssueUpdateOne) ClearHiddenAt() *SupportIssueUpdateOne {
+	_u.mutation.ClearHiddenAt()
+	return _u
+}
+
+// SetHiddenByUserID sets the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdateOne) SetHiddenByUserID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.ResetHiddenByUserID()
+	_u.mutation.SetHiddenByUserID(v)
+	return _u
+}
+
+// SetNillableHiddenByUserID sets the "hidden_by_user_id" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableHiddenByUserID(v *int64) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetHiddenByUserID(*v)
+	}
+	return _u
+}
+
+// AddHiddenByUserID adds value to the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdateOne) AddHiddenByUserID(v int64) *SupportIssueUpdateOne {
+	_u.mutation.AddHiddenByUserID(v)
+	return _u
+}
+
+// ClearHiddenByUserID clears the value of the "hidden_by_user_id" field.
+func (_u *SupportIssueUpdateOne) ClearHiddenByUserID() *SupportIssueUpdateOne {
+	_u.mutation.ClearHiddenByUserID()
+	return _u
+}
+
+// SetHideReason sets the "hide_reason" field.
+func (_u *SupportIssueUpdateOne) SetHideReason(v string) *SupportIssueUpdateOne {
+	_u.mutation.SetHideReason(v)
+	return _u
+}
+
+// SetNillableHideReason sets the "hide_reason" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableHideReason(v *string) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetHideReason(*v)
+	}
+	return _u
+}
+
 // SetLastCommentAt sets the "last_comment_at" field.
 func (_u *SupportIssueUpdateOne) SetLastCommentAt(v time.Time) *SupportIssueUpdateOne {
 	_u.mutation.SetLastCommentAt(v)
@@ -1354,6 +1634,26 @@ func (_u *SupportIssueUpdateOne) SetNillableLastCommentAt(v *time.Time) *Support
 // ClearLastCommentAt clears the value of the "last_comment_at" field.
 func (_u *SupportIssueUpdateOne) ClearLastCommentAt() *SupportIssueUpdateOne {
 	_u.mutation.ClearLastCommentAt()
+	return _u
+}
+
+// SetLastViewedAt sets the "last_viewed_at" field.
+func (_u *SupportIssueUpdateOne) SetLastViewedAt(v time.Time) *SupportIssueUpdateOne {
+	_u.mutation.SetLastViewedAt(v)
+	return _u
+}
+
+// SetNillableLastViewedAt sets the "last_viewed_at" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableLastViewedAt(v *time.Time) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetLastViewedAt(*v)
+	}
+	return _u
+}
+
+// ClearLastViewedAt clears the value of the "last_viewed_at" field.
+func (_u *SupportIssueUpdateOne) ClearLastViewedAt() *SupportIssueUpdateOne {
+	_u.mutation.ClearLastViewedAt()
 	return _u
 }
 
@@ -1417,6 +1717,27 @@ func (_u *SupportIssueUpdateOne) SetNillableAttachmentCount(v *int) *SupportIssu
 // AddAttachmentCount adds value to the "attachment_count" field.
 func (_u *SupportIssueUpdateOne) AddAttachmentCount(v int) *SupportIssueUpdateOne {
 	_u.mutation.AddAttachmentCount(v)
+	return _u
+}
+
+// SetViewCount sets the "view_count" field.
+func (_u *SupportIssueUpdateOne) SetViewCount(v int) *SupportIssueUpdateOne {
+	_u.mutation.ResetViewCount()
+	_u.mutation.SetViewCount(v)
+	return _u
+}
+
+// SetNillableViewCount sets the "view_count" field if the given value is not nil.
+func (_u *SupportIssueUpdateOne) SetNillableViewCount(v *int) *SupportIssueUpdateOne {
+	if v != nil {
+		_u.SetViewCount(*v)
+	}
+	return _u
+}
+
+// AddViewCount adds value to the "view_count" field.
+func (_u *SupportIssueUpdateOne) AddViewCount(v int) *SupportIssueUpdateOne {
+	_u.mutation.AddViewCount(v)
 	return _u
 }
 
@@ -1485,6 +1806,21 @@ func (_u *SupportIssueUpdateOne) AddEvents(v ...*SupportIssueEvent) *SupportIssu
 	return _u.AddEventIDs(ids...)
 }
 
+// AddViewIDs adds the "views" edge to the SupportIssueView entity by IDs.
+func (_u *SupportIssueUpdateOne) AddViewIDs(ids ...int64) *SupportIssueUpdateOne {
+	_u.mutation.AddViewIDs(ids...)
+	return _u
+}
+
+// AddViews adds the "views" edges to the SupportIssueView entity.
+func (_u *SupportIssueUpdateOne) AddViews(v ...*SupportIssueView) *SupportIssueUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddViewIDs(ids...)
+}
+
 // Mutation returns the SupportIssueMutation object of the builder.
 func (_u *SupportIssueUpdateOne) Mutation() *SupportIssueMutation {
 	return _u.mutation
@@ -1551,6 +1887,27 @@ func (_u *SupportIssueUpdateOne) RemoveEvents(v ...*SupportIssueEvent) *SupportI
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveEventIDs(ids...)
+}
+
+// ClearViews clears all "views" edges to the SupportIssueView entity.
+func (_u *SupportIssueUpdateOne) ClearViews() *SupportIssueUpdateOne {
+	_u.mutation.ClearViews()
+	return _u
+}
+
+// RemoveViewIDs removes the "views" edge to SupportIssueView entities by IDs.
+func (_u *SupportIssueUpdateOne) RemoveViewIDs(ids ...int64) *SupportIssueUpdateOne {
+	_u.mutation.RemoveViewIDs(ids...)
+	return _u
+}
+
+// RemoveViews removes "views" edges to SupportIssueView entities.
+func (_u *SupportIssueUpdateOne) RemoveViews(v ...*SupportIssueView) *SupportIssueUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveViewIDs(ids...)
 }
 
 // Where appends a list predicates to the SupportIssueUpdate builder.
@@ -1679,6 +2036,11 @@ func (_u *SupportIssueUpdateOne) check() error {
 			return &ValidationError{Name: "api_key_suffix", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.api_key_suffix": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.HideReason(); ok {
+		if err := supportissue.HideReasonValidator(v); err != nil {
+			return &ValidationError{Name: "hide_reason", err: fmt.Errorf(`ent: validator failed for field "SupportIssue.hide_reason": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1798,11 +2160,35 @@ func (_u *SupportIssueUpdateOne) sqlSave(ctx context.Context) (_node *SupportIss
 	if _u.mutation.LockedAtCleared() {
 		_spec.ClearField(supportissue.FieldLockedAt, field.TypeTime)
 	}
+	if value, ok := _u.mutation.HiddenAt(); ok {
+		_spec.SetField(supportissue.FieldHiddenAt, field.TypeTime, value)
+	}
+	if _u.mutation.HiddenAtCleared() {
+		_spec.ClearField(supportissue.FieldHiddenAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.HiddenByUserID(); ok {
+		_spec.SetField(supportissue.FieldHiddenByUserID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedHiddenByUserID(); ok {
+		_spec.AddField(supportissue.FieldHiddenByUserID, field.TypeInt64, value)
+	}
+	if _u.mutation.HiddenByUserIDCleared() {
+		_spec.ClearField(supportissue.FieldHiddenByUserID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.HideReason(); ok {
+		_spec.SetField(supportissue.FieldHideReason, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.LastCommentAt(); ok {
 		_spec.SetField(supportissue.FieldLastCommentAt, field.TypeTime, value)
 	}
 	if _u.mutation.LastCommentAtCleared() {
 		_spec.ClearField(supportissue.FieldLastCommentAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.LastViewedAt(); ok {
+		_spec.SetField(supportissue.FieldLastViewedAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastViewedAtCleared() {
+		_spec.ClearField(supportissue.FieldLastViewedAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.CommentCount(); ok {
 		_spec.SetField(supportissue.FieldCommentCount, field.TypeInt, value)
@@ -1821,6 +2207,12 @@ func (_u *SupportIssueUpdateOne) sqlSave(ctx context.Context) (_node *SupportIss
 	}
 	if value, ok := _u.mutation.AddedAttachmentCount(); ok {
 		_spec.AddField(supportissue.FieldAttachmentCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.ViewCount(); ok {
+		_spec.SetField(supportissue.FieldViewCount, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedViewCount(); ok {
+		_spec.AddField(supportissue.FieldViewCount, field.TypeInt, value)
 	}
 	if value, ok := _u.mutation.SearchText(); ok {
 		_spec.SetField(supportissue.FieldSearchText, field.TypeString, value)
@@ -1956,6 +2348,51 @@ func (_u *SupportIssueUpdateOne) sqlSave(ctx context.Context) (_node *SupportIss
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(supportissueevent.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ViewsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedViewsIDs(); len(nodes) > 0 && !_u.mutation.ViewsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ViewsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   supportissue.ViewsTable,
+			Columns: []string{supportissue.ViewsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(supportissueview.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

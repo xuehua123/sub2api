@@ -3,8 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import IssuesView from '../IssuesView.vue'
 import type { PublicSupportIssue } from '@/types'
 
-const { list, route, router } = vi.hoisted(() => ({
+const { list, trending, route, router } = vi.hoisted(() => ({
   list: vi.fn(),
+  trending: vi.fn(),
   route: {
     path: '/issues',
     query: {} as Record<string, string>,
@@ -20,6 +21,7 @@ const { list, route, router } = vi.hoisted(() => ({
 vi.mock('@/api/issues', () => ({
   issuesAPI: {
     list,
+    trending,
   },
 }))
 
@@ -57,6 +59,7 @@ const issue: PublicSupportIssue = {
   error_code: 'rate_limit',
   comment_count: 2,
   attachment_count: 1,
+  view_count: 4,
   created_at: '2026-05-13T08:00:00Z',
   updated_at: '2026-05-13T08:00:00Z',
   last_comment_at: '2026-05-13T09:00:00Z',
@@ -77,10 +80,33 @@ function mountView() {
 describe('IssuesView', () => {
   beforeEach(() => {
     list.mockReset()
+    trending.mockReset()
     router.push.mockReset()
     router.replace.mockReset()
     route.query = {}
     route.fullPath = '/issues'
+  })
+
+  it('uses the trending endpoint for the 24 hour ranking tab', async () => {
+    route.query = { tab: 'hot24' }
+    trending.mockResolvedValue({
+      items: [issue],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    mountView()
+    await flushPromises()
+
+    expect(trending).toHaveBeenCalledWith({
+      page: 1,
+      page_size: 20,
+      sort_by: 'hot_24h',
+      sort_order: 'desc',
+      window: '24h',
+    })
   })
 
   it('loads issues with q/status/category/severity/has_image from the URL and displays the list', async () => {

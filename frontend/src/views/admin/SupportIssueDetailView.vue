@@ -50,6 +50,11 @@
               <InfoRow :label="t('issueCenter.fields.errorCode')" :value="issue.error_code || '-'" />
               <InfoRow :label="t('issueCenter.admin.resolvedAt')" :value="formatDateTime(issue.resolved_at)" />
               <InfoRow :label="t('issueCenter.admin.lockedAt')" :value="formatDateTime(issue.locked_at)" />
+              <InfoRow :label="t('issueCenter.admin.viewCount')" :value="String(issue.view_count)" />
+              <InfoRow :label="t('issueCenter.admin.lastViewedAt')" :value="formatDateTime(issue.last_viewed_at)" />
+              <InfoRow :label="t('issueCenter.admin.hiddenAt')" :value="formatDateTime(issue.hidden_at)" />
+              <InfoRow :label="t('issueCenter.admin.hiddenByUserID')" :value="formatNullableNumber(issue.hidden_by_user_id)" />
+              <InfoRow :label="t('issueCenter.admin.hideReason')" :value="issue.hide_reason || '-'" />
             </div>
           </section>
 
@@ -68,7 +73,7 @@
 
         <section class="rounded-lg border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-800">
           <h2 class="section-heading">{{ t('issueCenter.admin.actions') }}</h2>
-          <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          <div class="mt-4 grid gap-4 lg:grid-cols-3">
             <form class="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-900" data-testid="admin-update-status-form" @submit.prevent="updateStatus">
               <label class="block">
                 <span class="input-label">{{ t('issueCenter.admin.nextStatus') }}</span>
@@ -94,6 +99,21 @@
               </label>
               <button class="btn btn-secondary" type="submit" :disabled="actionLoading" data-testid="admin-reopen-button">
                 {{ t('issueCenter.admin.reopen') }}
+              </button>
+            </form>
+
+            <form class="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-900" data-testid="admin-visibility-form" @submit.prevent="toggleIssueVisibility">
+              <label class="block">
+                <span class="input-label">{{ issue.hidden_at ? t('issueCenter.admin.restoreReason') : t('issueCenter.admin.hideReason') }}</span>
+                <textarea v-model.trim="visibilityReason" class="input min-h-[80px]" data-testid="admin-visibility-reason"></textarea>
+              </label>
+              <button
+                :class="issue.hidden_at ? 'btn btn-secondary' : 'btn btn-danger'"
+                type="submit"
+                :disabled="actionLoading"
+                data-testid="admin-toggle-issue-visibility-button"
+              >
+                {{ issue.hidden_at ? t('issueCenter.admin.restoreIssue') : t('issueCenter.admin.hideIssue') }}
               </button>
             </form>
           </div>
@@ -278,6 +298,7 @@ const commentContent = ref('')
 const commentError = ref('')
 const commenting = ref(false)
 const reopenReason = ref('')
+const visibilityReason = ref('')
 const statusForm = reactive({
   status: 'open' as SupportIssueStatus,
   reason: '',
@@ -341,6 +362,31 @@ async function reopenIssue() {
     await loadIssue()
   } catch (error) {
     actionError.value = getErrorMessage(error, t('issueCenter.admin.errors.reopenFailed'))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
+async function toggleIssueVisibility() {
+  if (!issue.value) return
+  if (!visibilityReason.value) {
+    actionError.value = t('issueCenter.admin.errors.reasonRequired')
+    return
+  }
+  const confirmKey = issue.value.hidden_at ? 'issueCenter.admin.confirmRestoreIssue' : 'issueCenter.admin.confirmHideIssue'
+  if (!window.confirm(t(confirmKey))) return
+  actionLoading.value = true
+  actionError.value = ''
+  try {
+    if (issue.value.hidden_at) {
+      await adminIssuesAPI.restoreIssue(issue.value.id, { reason: visibilityReason.value })
+    } else {
+      await adminIssuesAPI.hideIssue(issue.value.id, { reason: visibilityReason.value })
+    }
+    visibilityReason.value = ''
+    await loadIssue()
+  } catch (error) {
+    actionError.value = getErrorMessage(error, t('issueCenter.admin.errors.visibilityFailed'))
   } finally {
     actionLoading.value = false
   }

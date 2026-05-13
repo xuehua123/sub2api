@@ -18,6 +18,7 @@ func RegisterIssueRoutes(
 	issues := v1.Group("/issues")
 	{
 		issues.GET("", h.SupportIssue.List)
+		issues.GET("/trending", h.SupportIssue.Trending)
 		issues.GET("/attachments/:id/file", h.SupportIssue.ServeAttachmentFile)
 		issues.GET("/:id", h.SupportIssue.Get)
 	}
@@ -40,6 +41,8 @@ func RegisterIssueRoutes(
 		adminIssues.GET("/:id", h.Admin.SupportIssue.Get)
 		adminIssues.PATCH("/:id/status", h.Admin.SupportIssue.UpdateStatus)
 		adminIssues.POST("/:id/reopen", h.Admin.SupportIssue.Reopen)
+		adminIssues.POST("/:id/hide", h.Admin.SupportIssue.HideIssue)
+		adminIssues.POST("/:id/restore", h.Admin.SupportIssue.RestoreIssue)
 		adminIssues.POST("/:id/comments/:comment_id/hide", h.Admin.SupportIssue.HideComment)
 		adminIssues.POST("/:id/attachments/:attachment_id/hide", h.Admin.SupportIssue.HideAttachment)
 		adminIssues.GET("/:id/events", h.Admin.SupportIssue.Events)

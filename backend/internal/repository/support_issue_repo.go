@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
+	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -143,6 +146,7 @@ func (r *supportIssueRepository) OpenAttachmentForPublic(ctx context.Context, at
 			supportissueattachment.IssueIDNotNil(),
 			supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic),
 			supportissueattachment.HiddenAtIsNil(),
+			supportissueattachment.HasIssueWith(supportissue.HiddenAtIsNil()),
 		).
 		Only(ctx)
 	if err != nil {
@@ -161,6 +165,58 @@ func (r *supportIssueRepository) GetIssue(ctx context.Context, id int64, include
 		return nil, translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
 	}
 	return supportIssueEntityToService(row), nil
+}
+
+func (r *supportIssueRepository) RecordView(ctx context.Context, issueID int64, viewer service.SupportIssueViewer, throttleWindow time.Duration) error {
+	if issueID <= 0 {
+		return service.ErrSupportIssueNotFound
+	}
+	if throttleWindow <= 0 {
+		throttleWindow = service.SupportIssueViewThrottleWindow
+	}
+	now := time.Now()
+	viewerHash := supportIssueViewerHash(viewer)
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		exists, err := txClient.SupportIssue.Query().
+			Where(supportissue.IDEQ(issueID), supportissue.HiddenAtIsNil()).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrSupportIssueNotFound
+		}
+
+		recent, err := txClient.SupportIssueView.Query().
+			Where(
+				supportissueview.IssueIDEQ(issueID),
+				supportissueview.ViewerHashEQ(viewerHash),
+				supportissueview.ViewedAtGTE(now.Add(-throttleWindow)),
+			).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if recent {
+			return nil
+		}
+
+		create := txClient.SupportIssueView.Create().
+			SetIssueID(issueID).
+			SetViewerHash(viewerHash).
+			SetViewedAt(now)
+		if viewer.UserID > 0 {
+			create.SetViewerUserID(viewer.UserID)
+		}
+		if _, err := create.Save(txCtx); err != nil {
+			return err
+		}
+		_, err = txClient.SupportIssue.UpdateOneID(issueID).
+			AddViewCount(1).
+			SetLastViewedAt(now).
+			Save(txCtx)
+		return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+	})
 }
 
 func (r *supportIssueRepository) ListIssues(
@@ -381,6 +437,68 @@ func (r *supportIssueRepository) HideComment(
 		_, err = createSupportIssueEvent(txCtx, txClient, event)
 		return err
 	})
+}
+
+func (r *supportIssueRepository) HideIssue(
+	ctx context.Context,
+	input service.HideSupportIssueInput,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		now := time.Now()
+		update := txClient.SupportIssue.UpdateOneID(input.IssueID).
+			SetHiddenAt(now).
+			SetHiddenByUserID(input.HiddenByUserID).
+			SetHideReason(input.HideReason)
+		row, err := update.Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = input.IssueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventIssueHidden
+		}
+		if event.ActorUserID == nil && input.HiddenByUserID > 0 {
+			event.ActorUserID = &input.HiddenByUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
+}
+
+func (r *supportIssueRepository) RestoreIssue(
+	ctx context.Context,
+	issueID int64,
+	actorUserID int64,
+	event service.SupportIssueEvent,
+) (*service.SupportIssue, error) {
+	var out *service.SupportIssue
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		row, err := txClient.SupportIssue.UpdateOneID(issueID).
+			ClearHiddenAt().
+			ClearHiddenByUserID().
+			SetHideReason("").
+			Save(txCtx)
+		if err != nil {
+			return translatePersistenceError(err, service.ErrSupportIssueNotFound, nil)
+		}
+		out = supportIssueEntityToService(row)
+
+		event.IssueID = issueID
+		if event.EventType == "" {
+			event.EventType = service.SupportIssueEventIssueRestored
+		}
+		if event.ActorUserID == nil && actorUserID > 0 {
+			event.ActorUserID = &actorUserID
+		}
+		_, err = createSupportIssueEvent(txCtx, txClient, event)
+		return err
+	})
+	return out, err
 }
 
 func (r *supportIssueRepository) HideAttachment(
@@ -660,7 +778,10 @@ func supportIssueQueryWithRelations(q *dbent.SupportIssueQuery, includeHidden bo
 		}).
 		WithAttachments(func(aq *dbent.SupportIssueAttachmentQuery) {
 			if !includeHidden {
-				aq.Where(supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic))
+				aq.Where(
+					supportissueattachment.VisibilityEQ(service.SupportIssueAttachmentVisibilityPublic),
+					supportissueattachment.HiddenAtIsNil(),
+				)
 			}
 			aq.Order(dbent.Asc(supportissueattachment.FieldID))
 		})
@@ -670,6 +791,15 @@ func applySupportIssueListFilters(
 	q *dbent.SupportIssueQuery,
 	filters service.ListSupportIssueFilters,
 ) *dbent.SupportIssueQuery {
+	if filters.Hidden != nil {
+		if *filters.Hidden {
+			q = q.Where(supportissue.HiddenAtNotNil())
+		} else {
+			q = q.Where(supportissue.HiddenAtIsNil())
+		}
+	} else if !filters.IncludeHidden {
+		q = q.Where(supportissue.HiddenAtIsNil())
+	}
 	if filters.Status != "" {
 		q = q.Where(supportissue.StatusEQ(filters.Status))
 	}
@@ -685,6 +815,14 @@ func applySupportIssueListFilters(
 		} else {
 			q = q.Where(supportissue.AttachmentCountEQ(0))
 		}
+	}
+	if filters.ActiveSince != nil {
+		q = q.Where(supportissue.Or(
+			supportissue.CreatedAtGTE(*filters.ActiveSince),
+			supportissue.UpdatedAtGTE(*filters.ActiveSince),
+			supportissue.LastCommentAtGTE(*filters.ActiveSince),
+			supportissue.LastViewedAtGTE(*filters.ActiveSince),
+		))
 	}
 	return q
 }
@@ -811,6 +949,12 @@ func supportIssueListOrder(params pagination.PaginationParams) (string, string) 
 		return supportissue.FieldCreatedAt, sortOrder
 	case "last_comment_at", "last_activity":
 		return supportissue.FieldLastCommentAt, sortOrder
+	case "last_viewed_at":
+		return supportissue.FieldLastViewedAt, sortOrder
+	case "comment_count", "replies", "reply_count":
+		return supportissue.FieldCommentCount, sortOrder
+	case "view_count", "views", "popular", "hot", "hot_24h":
+		return supportissue.FieldViewCount, sortOrder
 	case "status":
 		return supportissue.FieldStatus, sortOrder
 	case "category":
@@ -862,10 +1006,15 @@ func applySupportIssueEntityToService(dst *service.SupportIssue, row *dbent.Supp
 	dst.ResolvedByUserID = row.ResolvedByUserID
 	dst.ResolvedAt = row.ResolvedAt
 	dst.LockedAt = row.LockedAt
+	dst.HiddenAt = row.HiddenAt
+	dst.HiddenByUserID = row.HiddenByUserID
+	dst.HideReason = row.HideReason
 	dst.LastCommentAt = row.LastCommentAt
+	dst.LastViewedAt = row.LastViewedAt
 	dst.CommentCount = row.CommentCount
 	dst.HiddenCommentCount = row.HiddenCommentCount
 	dst.AttachmentCount = row.AttachmentCount
+	dst.ViewCount = row.ViewCount
 	dst.SearchText = row.SearchText
 	dst.CreatedAt = row.CreatedAt
 	dst.UpdatedAt = row.UpdatedAt
@@ -1004,4 +1153,14 @@ func defaultString(value string, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func supportIssueViewerHash(viewer service.SupportIssueViewer) string {
+	parts := []string{
+		fmt.Sprintf("user:%d", viewer.UserID),
+		"ip:" + strings.TrimSpace(viewer.IP),
+		"ua:" + strings.TrimSpace(viewer.UserAgent),
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "|")))
+	return hex.EncodeToString(sum[:])
 }

@@ -66,6 +66,18 @@ describe('issues api', () => {
     expect(get).toHaveBeenCalledWith('/issues', { params, signal })
   })
 
+  it('lists trending issues through the 24h endpoint', async () => {
+    const params: SupportIssueListParams = {
+      window: '24h',
+      sort_by: 'hot_24h',
+      sort_order: 'desc'
+    }
+
+    await issuesAPI.trending(params)
+
+    expect(get).toHaveBeenCalledWith('/issues/trending', { params, signal: undefined })
+  })
+
   it('gets an issue by id', async () => {
     await issuesAPI.get(123)
 

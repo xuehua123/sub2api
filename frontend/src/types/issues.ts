@@ -64,8 +64,10 @@ export interface PublicSupportIssue {
   resolved_at?: string | null
   locked_at?: string | null
   last_comment_at?: string | null
+  last_viewed_at?: string | null
   comment_count: number
   attachment_count: number
+  view_count: number
   created_at: string
   updated_at: string
   comments?: PublicSupportIssueComment[]
@@ -104,6 +106,9 @@ export interface AdminSupportIssue
   api_key_suffix?: string
   created_by_user_id?: number | null
   resolved_by_user_id?: number | null
+  hidden_at?: string | null
+  hidden_by_user_id?: number | null
+  hide_reason?: string
   hidden_comment_count: number
   comments?: AdminSupportIssueComment[]
   attachments?: AdminSupportIssueAttachment[]
@@ -145,10 +150,12 @@ export interface SupportIssueListFilters {
   category?: SupportIssueCategory
   severity?: SupportIssueSeverity
   has_image?: boolean
+  hidden?: boolean
 }
 
 export interface SupportIssueListParams extends SupportIssueListFilters {
   q?: string
+  window?: '24h' | '7d' | string
   page?: number
   page_size?: number
   sort_by?: string
