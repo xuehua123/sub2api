@@ -7,8 +7,14 @@ import (
 )
 
 var codexModelMap = map[string]string{
+	"codex-auto-review":          "gpt-5.5",
 	"gpt-5.5":                    "gpt-5.5",
+	"gpt-5.5-chat":               "gpt-5.5",
+	"gpt-5.5-codex":              "gpt-5.5",
+	"gpt-5.5-openai":             "gpt-5.5",
 	"gpt-5.4":                    "gpt-5.4",
+	"gpt-5.4-chat":               "gpt-5.4",
+	"gpt-5.4-codex":              "gpt-5.4",
 	"gpt-5.4-mini":               "gpt-5.4-mini",
 	"gpt-5.4-none":               "gpt-5.4",
 	"gpt-5.4-low":                "gpt-5.4",
@@ -33,6 +39,8 @@ var codexModelMap = map[string]string{
 	"gpt-5.3-codex-high":         "gpt-5.3-codex",
 	"gpt-5.3-codex-xhigh":        "gpt-5.3-codex",
 	"gpt-5.2":                    "gpt-5.2",
+	"gpt-5.2-chat-latest":        "gpt-5.2",
+	"gpt-5.2-pro":                "gpt-5.2",
 	"gpt-5.2-none":               "gpt-5.2",
 	"gpt-5.2-low":                "gpt-5.2",
 	"gpt-5.2-medium":             "gpt-5.2",

@@ -197,6 +197,61 @@ func TestAccountIsModelSupported(t *testing.T) {
 			expected:       true,
 		},
 		{
+			name:     "openai codex auto review alias matches normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "codex-auto-review",
+			expected:       true,
+		},
+		{
+			name:     "openai codex version alias matches normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.3-codex": "gpt-5.3-codex",
+				},
+			},
+			requestedModel: "gpt-5.1-codex",
+			expected:       true,
+		},
+		{
+			name:     "openai compact spelling alias matches normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "GPT5.5",
+			expected:       true,
+		},
+		{
+			name:     "openai image legacy alias matches normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-image-2": "gpt-image-2",
+				},
+			},
+			requestedModel: "gpt-image-1",
+			expected:       true,
+		},
+		{
+			name:     "openai pro variant is not implicitly supported by base mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "gpt-5.5-pro",
+			expected:       false,
+		},
+		{
 			name: "wildcard match not supported",
 			credentials: map[string]any{
 				"model_mapping": map[string]any{
@@ -281,6 +336,61 @@ func TestAccountGetMappedModel(t *testing.T) {
 			},
 			requestedModel: "gemini-3.1-pro-preview-customtools",
 			expected:       "gemini-3.1-pro-preview",
+		},
+		{
+			name:     "openai codex auto review alias resolves through normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "codex-auto-review",
+			expected:       "gpt-5.5",
+		},
+		{
+			name:     "openai codex version alias resolves through normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.3-codex": "gpt-5.3-codex",
+				},
+			},
+			requestedModel: "gpt-5.1-codex-mini",
+			expected:       "gpt-5.3-codex",
+		},
+		{
+			name:     "openai compact spelling alias resolves through normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "GPT-5.5",
+			expected:       "gpt-5.5",
+		},
+		{
+			name:     "openai image legacy alias resolves through normalized mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-image-2": "gpt-image-2",
+				},
+			},
+			requestedModel: "gpt-image-1.5",
+			expected:       "gpt-image-2",
+		},
+		{
+			name:     "openai pro variant does not resolve through base mapping",
+			platform: PlatformOpenAI,
+			credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+				},
+			},
+			requestedModel: "gpt-5.5-pro",
+			expected:       "gpt-5.5-pro",
 		},
 		{
 			name:     "gemini customtools exact mapping wins over normalized fallback",
