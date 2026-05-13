@@ -905,7 +905,7 @@ func (s *SubscriptionService) loadSubscriptionGroupPreferences(ctx context.Conte
 	if err != nil {
 		return out
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	for rows.Next() {
 		var groupID int64
 		var sortOrder int
@@ -941,7 +941,7 @@ func (s *SubscriptionService) ListGroupPreferences(ctx context.Context, userID i
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	defer rows.Close()
 	out := make([]SubscriptionGroupPreference, 0)
 	for rows.Next() {
 		var pref SubscriptionGroupPreference
