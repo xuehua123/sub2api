@@ -458,6 +458,7 @@ export default {
       label: 'Exact search',
       placeholder: 'Example: status:open code:429 "rate limit"',
       clear: 'Clear',
+      moreFilters: 'More filters',
       syntaxIntro: 'Supported syntax:',
       exactPhrase: 'exact phrase'
     },
@@ -465,7 +466,15 @@ export default {
       comments: '{count} comments',
       views: '{count} views',
       attachments: '{count} attachments',
-      lastActivity: 'Last activity'
+      lastActivity: 'Last activity',
+      commentLabel: 'Comments',
+      viewLabel: 'Views',
+      attachmentLabel: 'Images',
+      activeLabel: 'Active',
+      justNow: 'Now',
+      minutesAgo: '{count}m ago',
+      hoursAgo: '{count}h ago',
+      daysAgo: '{count}d ago'
     },
     feed: {
       active: 'Latest replies',

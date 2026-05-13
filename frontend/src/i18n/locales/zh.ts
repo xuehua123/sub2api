@@ -458,6 +458,7 @@ export default {
       label: '精确搜索',
       placeholder: '例如 status:open code:429 "rate limit"',
       clear: '清空',
+      moreFilters: '更多筛选',
       syntaxIntro: '支持语法：',
       exactPhrase: '完整短语'
     },
@@ -465,7 +466,15 @@ export default {
       comments: '{count} 条评论',
       views: '{count} 次查看',
       attachments: '{count} 个附件',
-      lastActivity: '最近活动'
+      lastActivity: '最近活动',
+      commentLabel: '评论',
+      viewLabel: '查看',
+      attachmentLabel: '截图',
+      activeLabel: '活跃',
+      justNow: '刚刚',
+      minutesAgo: '{count} 分钟前',
+      hoursAgo: '{count} 小时前',
+      daysAgo: '{count} 天前'
     },
     feed: {
       active: '最新回复',

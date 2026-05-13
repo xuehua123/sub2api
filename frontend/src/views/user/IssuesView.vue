@@ -1,10 +1,9 @@
 <template>
   <AppLayout>
-    <div class="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 sm:px-6 lg:px-8">
-      <header class="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-dark-700 lg:flex-row lg:items-end lg:justify-between">
+    <div class="mx-auto flex w-full max-w-6xl flex-col gap-4 px-4 py-5 sm:px-6 lg:px-8">
+      <header class="flex flex-col gap-3 border-b border-gray-200 pb-4 dark:border-dark-700 lg:flex-row lg:items-center lg:justify-between">
         <div class="min-w-0">
-          <p class="text-sm font-medium text-primary-600 dark:text-primary-400">{{ t('issueCenter.kicker') }}</p>
-          <h1 class="mt-1 text-2xl font-semibold tracking-normal text-gray-900 dark:text-white">
+          <h1 class="text-2xl font-semibold tracking-normal text-gray-900 dark:text-white">
             {{ t('issueCenter.title') }}
           </h1>
           <p class="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
@@ -16,117 +15,128 @@
         </button>
       </header>
 
-      <section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-        <div class="mb-4 flex flex-wrap gap-2" data-testid="issue-feed-tabs">
+      <section class="space-y-3">
+        <div
+          class="inline-flex max-w-full gap-1 overflow-x-auto rounded-lg border border-gray-200 bg-white p-1 shadow-sm dark:border-dark-700 dark:bg-dark-800"
+          data-testid="issue-feed-tabs"
+        >
           <button
             v-for="mode in feedModes"
             :key="mode.value"
             type="button"
-            :class="feedMode === mode.value ? 'btn btn-primary' : 'btn btn-secondary'"
+            :class="feedMode === mode.value ? 'feed-tab-active' : 'feed-tab'"
             @click="setFeedMode(mode.value)"
           >
             {{ t(mode.labelKey) }}
           </button>
         </div>
 
-        <div class="mb-4 flex flex-wrap gap-2" data-testid="issue-category-shortcuts">
-          <button
-            type="button"
-            :class="filters.category === '' ? 'category-pill-active' : 'category-pill'"
-            @click="setCategory('')"
-          >
-            {{ t('common.all') }}
-          </button>
-          <button
-            v-for="category in categories"
-            :key="category"
-            type="button"
-            :class="filters.category === category ? 'category-pill-active' : 'category-pill'"
-            @click="setCategory(category)"
-          >
-            {{ t(`issueCenter.category.${category}`) }}
-          </button>
-        </div>
+        <form class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-dark-700 dark:bg-dark-800" @submit.prevent="applyFilters">
+          <div class="flex flex-col gap-2 md:flex-row">
+            <input
+              v-model.trim="filters.q"
+              class="input min-h-11 flex-1"
+              type="search"
+              name="q"
+              :placeholder="t('issueCenter.search.placeholder')"
+              data-testid="issue-search-input"
+            />
+            <div class="grid grid-cols-2 gap-2 sm:flex">
+              <button class="btn btn-primary" type="submit" :disabled="loading">
+                {{ t('common.search') }}
+              </button>
+              <button class="btn btn-secondary" type="button" @click="clearFilters">
+                {{ t('issueCenter.search.clear') }}
+              </button>
+            </div>
+          </div>
 
-        <form class="space-y-4" @submit.prevent="applyFilters">
-          <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto] lg:items-end">
-            <label class="block">
-              <span class="input-label">{{ t('issueCenter.search.label') }}</span>
-              <input
-                v-model.trim="filters.q"
-                class="input"
-                type="search"
-                name="q"
-                :placeholder="t('issueCenter.search.placeholder')"
-                data-testid="issue-search-input"
-              />
-            </label>
-            <button class="btn btn-secondary" type="submit" :disabled="loading">
-              {{ t('common.search') }}
+          <div class="mt-3 flex gap-2 overflow-x-auto pb-1" data-testid="issue-category-shortcuts">
+            <button
+              type="button"
+              :class="filters.category === '' ? 'category-pill-active' : 'category-pill'"
+              @click="setCategory('')"
+            >
+              {{ t('common.all') }}
             </button>
-            <button class="btn btn-secondary" type="button" @click="clearFilters">
-              {{ t('issueCenter.search.clear') }}
+            <button
+              v-for="category in categories"
+              :key="category"
+              type="button"
+              :class="filters.category === category ? 'category-pill-active' : 'category-pill'"
+              @click="setCategory(category)"
+            >
+              {{ t(`issueCenter.category.${category}`) }}
             </button>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <label class="block">
-              <span class="input-label">{{ t('issueCenter.fields.status') }}</span>
-              <select v-model="filters.status" class="input" data-testid="issue-status-filter">
-                <option value="">{{ t('common.all') }}</option>
-                <option v-for="status in statuses" :key="status" :value="status">
-                  {{ t(`issueCenter.status.${status}`) }}
-                </option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="input-label">{{ t('issueCenter.fields.category') }}</span>
-              <select v-model="filters.category" class="input" data-testid="issue-category-filter">
-                <option value="">{{ t('common.all') }}</option>
-                <option v-for="category in categories" :key="category" :value="category">
-                  {{ t(`issueCenter.category.${category}`) }}
-                </option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="input-label">{{ t('issueCenter.fields.severity') }}</span>
-              <select v-model="filters.severity" class="input" data-testid="issue-severity-filter">
-                <option value="">{{ t('common.all') }}</option>
-                <option v-for="severity in severities" :key="severity" :value="severity">
-                  {{ t(`issueCenter.severity.${severity}`) }}
-                </option>
-              </select>
-            </label>
-            <label class="block">
-              <span class="input-label">{{ t('issueCenter.fields.hasImage') }}</span>
-              <select v-model="hasImageFilter" class="input" data-testid="issue-has-image-filter">
-                <option value="">{{ t('common.all') }}</option>
-                <option value="true">{{ t('common.yes') }}</option>
-                <option value="false">{{ t('common.no') }}</option>
-              </select>
-            </label>
-          </div>
+          <details class="mt-2 rounded-md border border-gray-200 bg-gray-50/70 px-3 py-2 dark:border-dark-700 dark:bg-dark-900/40">
+            <summary class="cursor-pointer select-none text-sm font-medium text-gray-700 dark:text-gray-200">
+              {{ t('issueCenter.search.moreFilters') }}
+              <span v-if="activeFilterCount" class="ml-1 text-primary-600 dark:text-primary-400">{{ activeFilterCount }}</span>
+            </summary>
+
+            <div class="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label class="block">
+                <span class="input-label">{{ t('issueCenter.fields.status') }}</span>
+                <select v-model="filters.status" class="input" data-testid="issue-status-filter">
+                  <option value="">{{ t('common.all') }}</option>
+                  <option v-for="status in statuses" :key="status" :value="status">
+                    {{ t(`issueCenter.status.${status}`) }}
+                  </option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="input-label">{{ t('issueCenter.fields.category') }}</span>
+                <select v-model="filters.category" class="input" data-testid="issue-category-filter">
+                  <option value="">{{ t('common.all') }}</option>
+                  <option v-for="category in categories" :key="category" :value="category">
+                    {{ t(`issueCenter.category.${category}`) }}
+                  </option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="input-label">{{ t('issueCenter.fields.severity') }}</span>
+                <select v-model="filters.severity" class="input" data-testid="issue-severity-filter">
+                  <option value="">{{ t('common.all') }}</option>
+                  <option v-for="severity in severities" :key="severity" :value="severity">
+                    {{ t(`issueCenter.severity.${severity}`) }}
+                  </option>
+                </select>
+              </label>
+              <label class="block">
+                <span class="input-label">{{ t('issueCenter.fields.hasImage') }}</span>
+                <select v-model="hasImageFilter" class="input" data-testid="issue-has-image-filter">
+                  <option value="">{{ t('common.all') }}</option>
+                  <option value="true">{{ t('common.yes') }}</option>
+                  <option value="false">{{ t('common.no') }}</option>
+                </select>
+              </label>
+            </div>
+          </details>
+
+          <details class="mt-2 rounded-md border border-dashed border-gray-200 px-3 py-2 text-xs leading-5 text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            <summary class="cursor-pointer select-none font-medium">{{ t('issueCenter.search.syntaxIntro') }}</summary>
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              <code class="code">id:</code>
+              <code class="code">status:</code>
+              <code class="code">category:</code>
+              <code class="code">severity:</code>
+              <code class="code">model:</code>
+              <code class="code">client:</code>
+              <code class="code">code:</code>
+              <code class="code">error:</code>
+              <code class="code">email:</code>
+              <code class="code">lang:</code>
+              <code class="code">has:image</code>
+              <code class="code">time:</code>
+              <code class="code">"{{ t('issueCenter.search.exactPhrase') }}"</code>
+            </div>
+          </details>
         </form>
-
-        <div class="mt-4 rounded-md border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs leading-5 text-gray-600 dark:border-dark-600 dark:bg-dark-900/60 dark:text-gray-400">
-          {{ t('issueCenter.search.syntaxIntro') }}
-          <code class="code">id:</code>
-          <code class="code">status:</code>
-          <code class="code">category:</code>
-          <code class="code">severity:</code>
-          <code class="code">model:</code>
-          <code class="code">client:</code>
-          <code class="code">code:</code>
-          <code class="code">error:</code>
-          <code class="code">email:</code>
-          <code class="code">lang:</code>
-          <code class="code">has:image</code>
-          <code class="code">time:</code>
-          <code class="code">"{{ t('issueCenter.search.exactPhrase') }}"</code>
-        </div>
       </section>
 
-      <section class="min-h-[280px]">
+      <section class="min-h-[260px]">
         <div v-if="loading" class="flex items-center justify-center py-16">
           <LoadingSpinner />
         </div>
@@ -139,22 +149,22 @@
         </div>
         <div
           v-else-if="issues.length === 0"
-          class="rounded-lg border border-gray-200 bg-white p-8 text-center dark:border-dark-700 dark:bg-dark-800"
+          class="rounded-lg border border-gray-200 bg-white px-5 py-10 text-center shadow-sm dark:border-dark-700 dark:bg-dark-800"
           data-testid="issues-empty"
         >
           <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('issueCenter.empty.title') }}</h2>
           <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ t('issueCenter.empty.description') }}</p>
           <button class="btn btn-primary mt-5" @click="goNewIssue">{{ t('issueCenter.newIssue') }}</button>
         </div>
-        <div v-else class="space-y-3" data-testid="issues-list">
+        <div v-else class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800" data-testid="issues-list">
           <article
             v-for="issue in issues"
             :key="issue.id"
-            class="cursor-pointer rounded-lg border border-gray-200 bg-white p-4 shadow-sm transition hover:border-primary-300 hover:shadow-md dark:border-dark-700 dark:bg-dark-800 dark:hover:border-primary-700"
+            class="cursor-pointer border-b border-gray-100 px-4 py-3 transition last:border-b-0 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60"
             data-testid="issue-list-item"
             @click="router.push(`/issues/${issue.id}`)"
           >
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div class="min-w-0 flex-1">
                 <div class="flex flex-wrap items-center gap-2">
                   <span class="font-mono text-xs font-semibold text-gray-500 dark:text-gray-400">{{ issue.public_id }}</span>
@@ -162,26 +172,36 @@
                   <span :class="severityBadgeClass(issue.severity)">{{ t(`issueCenter.severity.${issue.severity}`) }}</span>
                   <span class="badge badge-gray">{{ t(`issueCenter.category.${issue.category}`) }}</span>
                 </div>
-                <h2 class="mt-2 break-words text-base font-semibold text-gray-900 dark:text-white">
+                <h2 class="mt-1 break-words text-base font-semibold text-gray-900 dark:text-white">
                   {{ issue.title }}
                 </h2>
                 <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-                  <span>{{ t('issueCenter.fields.email') }}: {{ issue.account_email_masked }}</span>
-                  <span>{{ t('issueCenter.fields.occurredAt') }}: {{ formatDateTime(issue.occurred_at) }}</span>
-                  <span>{{ t('issueCenter.fields.screenshotLanguage') }}: {{ t(`issueCenter.language.${issue.screenshot_language}`) }}</span>
-                </div>
-                <div class="mt-3 flex flex-wrap gap-2 text-xs">
-                  <span v-if="issue.model_name" class="issue-chip">{{ issue.model_name }}</span>
-                  <span v-if="issue.client_name" class="issue-chip">{{ issue.client_name }}</span>
-                  <span v-if="issue.http_status" class="issue-chip">HTTP {{ issue.http_status }}</span>
-                  <span v-if="issue.error_code" class="issue-chip">{{ issue.error_code }}</span>
+                  <span>{{ issue.account_email_masked }}</span>
+                  <span>{{ formatDateTime(issue.occurred_at) }}</span>
+                  <span>{{ t(`issueCenter.language.${issue.screenshot_language}`) }}</span>
+                  <span v-if="issue.model_name">{{ issue.model_name }}</span>
+                  <span v-if="issue.client_name">{{ issue.client_name }}</span>
+                  <span v-if="issue.http_status">HTTP {{ issue.http_status }}</span>
+                  <span v-if="issue.error_code">{{ issue.error_code }}</span>
                 </div>
               </div>
-              <div class="flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400 lg:justify-end">
-                <span>{{ t('issueCenter.list.comments', { count: issue.comment_count }) }}</span>
-                <span>{{ t('issueCenter.list.views', { count: issue.view_count }) }}</span>
-                <span>{{ t('issueCenter.list.attachments', { count: issue.attachment_count }) }}</span>
-                <span>{{ t('issueCenter.list.lastActivity') }}: {{ formatDateTime(issue.last_comment_at || issue.updated_at) }}</span>
+              <div class="grid grid-cols-4 gap-2 text-center text-xs text-gray-500 dark:text-gray-400 lg:w-72">
+                <div class="issue-stat">
+                  <strong>{{ issue.comment_count }}</strong>
+                  <span>{{ t('issueCenter.list.commentLabel') }}</span>
+                </div>
+                <div class="issue-stat">
+                  <strong>{{ issue.view_count }}</strong>
+                  <span>{{ t('issueCenter.list.viewLabel') }}</span>
+                </div>
+                <div class="issue-stat">
+                  <strong>{{ issue.attachment_count }}</strong>
+                  <span>{{ t('issueCenter.list.attachmentLabel') }}</span>
+                </div>
+                <div class="issue-stat">
+                  <strong>{{ formatRelative(issue.last_comment_at || issue.updated_at) }}</strong>
+                  <span>{{ t('issueCenter.list.activeLabel') }}</span>
+                </div>
               </div>
             </div>
           </article>
@@ -201,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -250,6 +270,10 @@ const pagination = reactive({
   page_size: 20,
   total: 0,
   pages: 0,
+})
+
+const activeFilterCount = computed(() => {
+  return [filters.status, filters.category, filters.severity, hasImageFilter.value].filter(Boolean).length
 })
 
 function queryString(value: unknown): string {
@@ -418,6 +442,21 @@ function formatDateTime(value?: string | null): string {
   return date.toLocaleString()
 }
 
+function formatRelative(value?: string | null): string {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  const diffMs = Date.now() - date.getTime()
+  const minute = 60 * 1000
+  const hour = 60 * minute
+  const day = 24 * hour
+  if (diffMs < minute) return t('issueCenter.list.justNow')
+  if (diffMs < hour) return t('issueCenter.list.minutesAgo', { count: Math.max(1, Math.floor(diffMs / minute)) })
+  if (diffMs < day) return t('issueCenter.list.hoursAgo', { count: Math.floor(diffMs / hour) })
+  if (diffMs < 7 * day) return t('issueCenter.list.daysAgo', { count: Math.floor(diffMs / day) })
+  return date.toLocaleDateString()
+}
+
 function statusBadgeClass(status: SupportIssueStatus): string {
   const base = 'badge'
   if (status === 'resolved') return `${base} badge-success`
@@ -442,15 +481,31 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.issue-chip {
-  @apply inline-flex items-center rounded-md border border-gray-200 bg-gray-50 px-2 py-1 font-medium text-gray-600 dark:border-dark-600 dark:bg-dark-700 dark:text-gray-300;
+.feed-tab {
+  @apply shrink-0 rounded-md px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-dark-700 dark:hover:text-white;
+}
+
+.feed-tab-active {
+  @apply shrink-0 rounded-md bg-primary-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-500/20;
 }
 
 .category-pill {
-  @apply rounded-md border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition hover:border-primary-300 hover:text-primary-700 dark:border-dark-600 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:text-primary-300;
+  @apply shrink-0 rounded-full border border-gray-200 px-3 py-1.5 text-sm text-gray-600 transition hover:border-primary-300 hover:text-primary-700 dark:border-dark-600 dark:text-gray-300 dark:hover:border-primary-700 dark:hover:text-primary-300;
 }
 
 .category-pill-active {
-  @apply rounded-md border border-primary-500 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-200;
+  @apply shrink-0 rounded-full border border-primary-500 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700 dark:border-primary-700 dark:bg-primary-950/40 dark:text-primary-200;
+}
+
+.issue-stat {
+  @apply rounded-md bg-gray-50 px-2 py-1.5 dark:bg-dark-900/70;
+}
+
+.issue-stat strong {
+  @apply block truncate text-sm font-semibold text-gray-900 dark:text-white;
+}
+
+.issue-stat span {
+  @apply block truncate text-[11px] text-gray-500 dark:text-gray-400;
 }
 </style>
