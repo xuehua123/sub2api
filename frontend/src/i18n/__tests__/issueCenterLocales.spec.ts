@@ -5,9 +5,14 @@ import zh from '../locales/zh'
 describe('issue center locale messages', () => {
   it.each([
     'nav.issueCenter',
+    'nav.issueManagement',
     'issueCenter.title',
     'issueCenter.new.title',
     'issueCenter.detail.title',
+    'issueCenter.admin.title',
+    'issueCenter.admin.detailTitle',
+    'issueCenter.admin.keySearchWarning',
+    'issueCenter.admin.errors.reasonRequired',
     'issueCenter.search.placeholder',
     'issueCenter.status.open',
     'issueCenter.category.payment',

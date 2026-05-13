@@ -532,6 +532,29 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/issues',
+    name: 'AdminSupportIssues',
+    component: () => import('@/views/admin/SupportIssuesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Issue Management',
+      titleKey: 'issueCenter.admin.title',
+      descriptionKey: 'issueCenter.admin.description'
+    }
+  },
+  {
+    path: '/admin/issues/:id',
+    name: 'AdminSupportIssueDetail',
+    component: () => import('@/views/admin/SupportIssueDetailView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Issue Detail',
+      titleKey: 'issueCenter.admin.detailTitle'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
