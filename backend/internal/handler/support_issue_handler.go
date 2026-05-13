@@ -179,7 +179,7 @@ func (h *SupportIssueHandler) UploadAttachment(c *gin.Context) {
 		response.BadRequest(c, "file is required")
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	content, err := io.ReadAll(io.LimitReader(file, service.SupportIssueMaxAttachmentBytes+1))
 	if err != nil {

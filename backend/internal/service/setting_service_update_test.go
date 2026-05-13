@@ -319,7 +319,8 @@ func TestSettingService_UpdateSettings_AntigravityUserAgentVersion(t *testing.T)
 	svc := NewSettingService(repo, &config.Config{})
 
 	err := svc.UpdateSettings(context.Background(), &SystemSettings{
-		AntigravityUserAgentVersion: "1.23.2",
+		AntigravityUserAgentVersion:  "1.23.2",
+		ReferralCreditConversionRate: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, "1.23.2", repo.updates[SettingKeyAntigravityUserAgentVersion])

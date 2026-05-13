@@ -692,9 +692,9 @@ func sanitizeSupportIssueAttachmentFileName(fileName string) string {
 		case unicode.IsControl(r):
 			continue
 		case strings.ContainsRune(`/\<>:"|?*`, r):
-			b.WriteRune('_')
+			_, _ = b.WriteRune('_')
 		default:
-			b.WriteRune(r)
+			_, _ = b.WriteRune(r)
 		}
 	}
 
