@@ -90,6 +90,43 @@ func normalizeKnownOpenAICodexModel(model string) string {
 	}
 }
 
+func normalizeKnownOpenAIModelForMappingLookup(model string) string {
+	trimmed := strings.TrimSpace(model)
+	if trimmed == "" {
+		return ""
+	}
+
+	if isOpenAIImageGenerationModel(trimmed) {
+		switch strings.ToLower(lastOpenAIModelSegment(trimmed)) {
+		case "gpt-image-1", "gpt-image-1.5":
+			return "gpt-image-2"
+		default:
+			return strings.ToLower(lastOpenAIModelSegment(trimmed))
+		}
+	}
+
+	key := canonicalizeOpenAIModelAliasSpelling(trimmed)
+	if key == "" {
+		key = codexModelLookupKey(trimmed)
+	}
+	if key == "" {
+		return ""
+	}
+	if mapped := getNormalizedCodexModel(key); mapped != "" {
+		return mapped
+	}
+	for _, item := range codexVersionModelPrefixes {
+		if key == item.prefix {
+			return item.target
+		}
+		suffix, ok := strings.CutPrefix(key, item.prefix+"-")
+		if ok && isKnownCodexModelSuffix(suffix) {
+			return item.target
+		}
+	}
+	return ""
+}
+
 func appendUsageBillingModelCandidate(candidates []string, seen map[string]struct{}, model string) []string {
 	trimmed := strings.TrimSpace(model)
 	if trimmed == "" {
