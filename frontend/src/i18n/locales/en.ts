@@ -360,6 +360,7 @@ export default {
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
     availableChannels: 'Available Channels',
+    issueCenter: 'Issue Center',
     subscriptions: 'Subscriptions',
     accounts: 'Accounts',
     proxies: 'Proxies',
@@ -386,6 +387,122 @@ export default {
     referralOverview: 'Referral Overview',
     referralWithdrawals: 'Withdrawals',
     riskControl: 'Risk Control',
+  },
+
+  issueCenter: {
+    kicker: 'Public issue archive',
+    title: 'Issue Center',
+    description: 'Browse public issues, search resolved cases with exact syntax, and submit a structured report after login.',
+    newIssue: 'New Issue',
+    fields: {
+      title: 'Title',
+      description: 'Description',
+      email: 'Account email',
+      occurredAt: 'Occurred at',
+      screenshotText: 'Screenshot text',
+      screenshotLanguage: 'Screenshot language',
+      category: 'Category',
+      severity: 'Severity',
+      status: 'Status',
+      model: 'Model',
+      client: 'Client',
+      httpStatus: 'HTTP status',
+      errorCode: 'Error code',
+      apiKeySuffix: 'API key suffix',
+      hasImage: 'Has screenshot'
+    },
+    status: {
+      open: 'Open',
+      needs_info: 'Needs info',
+      in_progress: 'In progress',
+      resolved: 'Resolved',
+      closed: 'Closed'
+    },
+    category: {
+      login: 'Login',
+      payment: 'Payment',
+      api_call: 'API call',
+      model_unavailable: 'Model unavailable',
+      api_key: 'API key',
+      balance: 'Balance',
+      subscription: 'Subscription',
+      channel: 'Channel',
+      other: 'Other'
+    },
+    severity: {
+      blocked: 'Blocked',
+      partial: 'Partial',
+      intermittent: 'Intermittent',
+      question: 'Question'
+    },
+    language: {
+      zh: 'Chinese',
+      en: 'English',
+      mixed: 'Mixed',
+      unknown: 'Unknown'
+    },
+    roles: {
+      admin: 'Admin',
+      user: 'User'
+    },
+    search: {
+      label: 'Exact search',
+      placeholder: 'Example: status:open code:429 "rate limit"',
+      clear: 'Clear',
+      syntaxIntro: 'Supported syntax:',
+      exactPhrase: 'exact phrase'
+    },
+    list: {
+      comments: '{count} comments',
+      attachments: '{count} attachments',
+      lastActivity: 'Last activity'
+    },
+    empty: {
+      title: 'No issues found',
+      description: 'Adjust the search filters or submit a structured issue.'
+    },
+    detail: {
+      title: 'Issue Detail',
+      backToList: 'Back to list',
+      attachments: 'Screenshot attachments',
+      noAttachments: 'No attachments',
+      comments: 'Comments',
+      noComments: 'No comments yet',
+      lockedHint: 'This issue is finished and no longer accepts comments.',
+      loginToComment: 'Log in to comment',
+      commentLabel: 'Add comment',
+      submitComment: 'Submit comment',
+      markResolved: 'Mark resolved'
+    },
+    new: {
+      title: 'Submit Issue',
+      description: 'Fill in the account email, time, screenshot, and screenshot text so admins can diagnose the issue once.',
+      keySuffixHint: 'Enter only the last 4-16 characters. Do not enter the full key.',
+      screenshotTextHint: 'Manually copy the Chinese or English error text from the screenshot. Do not use HTML.',
+      uploadTitle: 'Screenshot upload',
+      uploadHint: 'PNG, JPEG, WebP, and GIF only. Max 5MB each, up to 5 files.',
+      uploading: 'Uploading...',
+      similarTitle: 'Similar issues',
+      similarHint: 'Before submitting, check public issues for an existing answer.',
+      findSimilar: 'Find similar',
+      submit: 'Submit issue',
+      requiredError: 'Please complete all required fields.',
+      httpStatusError: 'HTTP status must be between 100 and 599.',
+      keySuffixError: 'API key suffix must be 4-16 letters, numbers, underscores, or hyphens.',
+      occurredAtError: 'Please choose a valid occurrence time.',
+      invalidFileType: 'Only image files are allowed.',
+      fileTooLarge: 'Each screenshot must be 5MB or smaller.',
+      tooManyAttachments: 'Each issue can have at most 5 screenshots.',
+      uploadFailed: 'Failed to upload screenshot.',
+      suggestionsFailed: 'Failed to find similar issues.',
+      submitFailed: 'Failed to submit issue.'
+    },
+    errors: {
+      loadFailed: 'Failed to load issues.',
+      loadDetailFailed: 'Failed to load issue detail.',
+      commentFailed: 'Failed to submit comment.',
+      resolveFailed: 'Failed to mark resolved.'
+    }
   },
 
   // Auth

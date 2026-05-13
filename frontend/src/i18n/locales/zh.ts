@@ -360,6 +360,7 @@ export default {
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
     availableChannels: '可用渠道',
+    issueCenter: '问题中心',
     subscriptions: '订阅管理',
     accounts: '账号管理',
     proxies: 'IP管理',
@@ -386,6 +387,122 @@ export default {
     referralOverview: '推荐概览',
     referralWithdrawals: '提现管理',
     riskControl: '风控中心',
+  },
+
+  issueCenter: {
+    kicker: '公开问题档案',
+    title: '问题中心',
+    description: '浏览公开问题、用精确语法搜索已解决案例，登录后可提交新问题。',
+    newIssue: '新建问题',
+    fields: {
+      title: '标题',
+      description: '问题描述',
+      email: '账号邮箱',
+      occurredAt: '发生时间',
+      screenshotText: '截图文字',
+      screenshotLanguage: '截图语言',
+      category: '分类',
+      severity: '严重程度',
+      status: '状态',
+      model: '模型',
+      client: '客户端',
+      httpStatus: 'HTTP 状态码',
+      errorCode: '错误码',
+      apiKeySuffix: 'API Key 后缀',
+      hasImage: '有截图'
+    },
+    status: {
+      open: '待处理',
+      needs_info: '需要信息',
+      in_progress: '处理中',
+      resolved: '已解决',
+      closed: '已关闭'
+    },
+    category: {
+      login: '登录',
+      payment: '支付',
+      api_call: 'API 调用',
+      model_unavailable: '模型不可用',
+      api_key: 'API Key',
+      balance: '余额',
+      subscription: '订阅',
+      channel: '渠道',
+      other: '其他'
+    },
+    severity: {
+      blocked: '完全阻断',
+      partial: '部分可用',
+      intermittent: '偶发',
+      question: '使用问题'
+    },
+    language: {
+      zh: '中文',
+      en: '英文',
+      mixed: '中英混合',
+      unknown: '未知'
+    },
+    roles: {
+      admin: '管理员',
+      user: '用户'
+    },
+    search: {
+      label: '精确搜索',
+      placeholder: '例如 status:open code:429 "rate limit"',
+      clear: '清空',
+      syntaxIntro: '支持语法：',
+      exactPhrase: '完整短语'
+    },
+    list: {
+      comments: '{count} 条评论',
+      attachments: '{count} 个附件',
+      lastActivity: '最近活动'
+    },
+    empty: {
+      title: '没有找到问题',
+      description: '调整搜索条件，或提交一个结构化问题。'
+    },
+    detail: {
+      title: '问题详情',
+      backToList: '返回列表',
+      attachments: '截图附件',
+      noAttachments: '暂无附件',
+      comments: '评论',
+      noComments: '暂无评论',
+      lockedHint: '该问题已结束，不能继续评论。',
+      loginToComment: '登录后评论',
+      commentLabel: '添加评论',
+      submitComment: '提交评论',
+      markResolved: '标记已解决'
+    },
+    new: {
+      title: '提交问题',
+      description: '请填写账号邮箱、发生时间、截图和截图文字，帮助管理员一次性定位问题。',
+      keySuffixHint: '只填写最后 4-16 位，不要输入完整 Key。',
+      screenshotTextHint: '请手工抄录截图中的中文或英文错误文字，不要使用 HTML。',
+      uploadTitle: '截图上传',
+      uploadHint: '仅支持 PNG、JPEG、WebP、GIF，单张最大 5MB，最多 5 张。',
+      uploading: '上传中...',
+      similarTitle: '类似问题',
+      similarHint: '提交前可查找类似公开问题，确认是否已有解决方案。',
+      findSimilar: '查找类似问题',
+      submit: '提交问题',
+      requiredError: '请填写所有必填字段。',
+      httpStatusError: 'HTTP 状态码必须在 100-599 之间。',
+      keySuffixError: 'API Key 后缀只能包含 4-16 位字母、数字、下划线或短横线。',
+      occurredAtError: '请选择有效的发生时间。',
+      invalidFileType: '只允许上传图片文件。',
+      fileTooLarge: '单张截图不能超过 5MB。',
+      tooManyAttachments: '每个问题最多上传 5 张截图。',
+      uploadFailed: '截图上传失败。',
+      suggestionsFailed: '查找类似问题失败。',
+      submitFailed: '提交问题失败。'
+    },
+    errors: {
+      loadFailed: '加载问题列表失败。',
+      loadDetailFailed: '加载问题详情失败。',
+      commentFailed: '评论提交失败。',
+      resolveFailed: '标记解决失败。'
+    }
   },
 
   // Auth

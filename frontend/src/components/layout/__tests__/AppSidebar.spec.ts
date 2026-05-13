@@ -63,13 +63,19 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(componentSource).toContain('featureFlag: flagChannelMonitor')
   })
 
+  it('includes the issue center in user and admin personal navigation', () => {
+    expect(componentSource).toContain("path: '/issues'")
+    expect(componentSource).toContain("label: t('nav.issueCenter')")
+    expect(componentSource).toContain('const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))')
+  })
+
   it('keeps admin channel monitor entry behind the channel monitor flag', () => {
     expect(componentSource).toContain("path: '/admin/channels/monitor'")
     expect(componentSource).toContain("label: t('nav.channelMonitor')")
     expect(componentSource).toContain('featureFlag: flagChannelMonitor')
   })
 
-  it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement'])(
+  it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement', 'issueCenter'])(
     'has zh and en labels for nav.%s',
     key => {
       expect(resolveLocaleKey(zh, `nav.${key}`)).toEqual(expect.any(String))
