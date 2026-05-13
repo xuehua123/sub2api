@@ -88,7 +88,10 @@
             >
               <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
               <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+              <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+                <span class="min-w-0 truncate">{{ item.label }}</span>
+                <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
+              </span>
             </router-link>
           </template>
         </div>
@@ -113,7 +116,10 @@
           >
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+              <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
+            </span>
           </router-link>
         </div>
       </template>
@@ -133,7 +139,10 @@
           >
             <span v-if="item.iconSvg" class="h-5 w-5 flex-shrink-0 sidebar-svg-icon" v-html="sanitizeSvg(item.iconSvg)"></span>
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
-            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{ item.label }}</span>
+            <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+              <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
+            </span>
           </router-link>
         </div>
       </template>
@@ -183,7 +192,7 @@
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useSupportIssueNotificationStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
@@ -197,6 +206,7 @@ interface NavItem {
   children?: NavItem[]
   expandOnly?: boolean
   featureFlag?: () => boolean
+  badgeCount?: number
 }
 
 function applyFeatureFlags(items: NavItem[]): NavItem[] {
@@ -218,11 +228,13 @@ const appStore = useAppStore()
 const authStore = useAuthStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
+const issueNotificationStore = useSupportIssueNotificationStore()
 
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const isDark = ref(document.documentElement.classList.contains('dark'))
+const issueUnreadCount = computed(() => issueNotificationStore.unreadCount)
 
 // Track which parent nav groups are expanded
 const expandedGroups = ref<Set<string>>(new Set())
@@ -678,7 +690,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       featureFlag: flagAvailableChannels,
     },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
-    { path: '/issues', label: t('nav.issueCenter'), icon: TicketIcon },
+    { path: '/issues', label: t('nav.issueCenter'), icon: TicketIcon, badgeCount: issueUnreadCount.value },
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -877,6 +889,17 @@ function handleGroupClick(item: NavItem) {
   }
 }
 
+function formatNavBadge(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
+function applyIssueNotificationDocumentTitle() {
+  const baseTitle = document.title.replace(/^\(\d+\)\s+/, '')
+  document.title = issueUnreadCount.value > 0
+    ? `(${formatNavBadge(issueUnreadCount.value)}) ${baseTitle}`
+    : baseTitle
+}
+
 // Initialize theme
 const savedTheme = localStorage.getItem('theme')
 if (
@@ -894,6 +917,26 @@ watch(
     if (v) {
       adminSettingsStore.fetch()
     }
+  },
+  { immediate: true }
+)
+
+watch(
+  () => authStore.isAuthenticated,
+  (authenticated) => {
+    if (authenticated) {
+      issueNotificationStore.start()
+    } else {
+      issueNotificationStore.stop()
+    }
+  },
+  { immediate: true }
+)
+
+watch(
+  [issueUnreadCount, () => route.fullPath],
+  () => {
+    setTimeout(applyIssueNotificationDocumentTitle, 0)
   },
   { immediate: true }
 )
@@ -949,6 +992,10 @@ onMounted(() => {
   padding-right: 0.875rem;
 }
 
+.sidebar-badge {
+  @apply ml-auto min-w-5 rounded-full bg-primary-500 px-1.5 text-center text-[11px] font-bold leading-[18px] text-white shadow-sm shadow-primary-500/25;
+}
+
 .sidebar-section-title {
   position: relative;
   display: flex;
@@ -996,7 +1043,9 @@ onMounted(() => {
 }
 
 .sidebar-label {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

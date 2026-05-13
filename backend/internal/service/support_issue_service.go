@@ -192,6 +192,17 @@ func (s *SupportIssueService) OpenAttachmentForPublic(ctx context.Context, attac
 	return attachment, nil
 }
 
+func (s *SupportIssueService) NotificationSummary(ctx context.Context, actor SupportIssueActor) (*SupportIssueNotificationSummary, error) {
+	if err := validateSupportIssueActor(actor); err != nil {
+		return nil, err
+	}
+	summary, err := s.repo.GetUserNotificationSummary(ctx, actor.UserID)
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
+}
+
 func (s *SupportIssueService) AddComment(
 	ctx context.Context,
 	actor SupportIssueActor,

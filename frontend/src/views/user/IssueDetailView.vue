@@ -191,6 +191,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useSupportIssueNotificationStore } from '@/stores/supportIssueNotifications'
 import { issuesAPI } from '@/api/issues'
 import type { PublicSupportIssue, SupportIssueSeverity, SupportIssueStatus } from '@/types'
 
@@ -211,6 +212,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const issueNotificationStore = useSupportIssueNotificationStore()
 
 const issue = ref<PublicSupportIssue | null>(null)
 const loading = ref(false)
@@ -231,6 +233,9 @@ async function loadIssue() {
   errorMessage.value = ''
   try {
     issue.value = await issuesAPI.get(issueID.value)
+    if (authStore.isAuthenticated) {
+      issueNotificationStore.refresh().catch(() => {})
+    }
   } catch (error) {
     errorMessage.value = getErrorMessage(error, t('issueCenter.errors.loadDetailFailed'))
   } finally {

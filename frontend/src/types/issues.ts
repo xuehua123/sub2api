@@ -79,6 +79,10 @@ export interface PublicSupportIssue {
   related_issue?: SupportIssueReference | null
   last_comment_at?: string | null
   last_viewed_at?: string | null
+  viewer_last_viewed_at?: string | null
+  viewer_last_activity_at?: string | null
+  has_unread_activity?: boolean
+  attention_reason?: 'new_activity' | 'needs_info' | 'resolved' | 'solution' | 'related_solved' | string
   comment_count: number
   attachment_count: number
   view_count: number
@@ -87,6 +91,13 @@ export interface PublicSupportIssue {
   comments?: PublicSupportIssueComment[]
   attachments?: PublicSupportIssueAttachment[]
   solution_comment?: PublicSupportIssueComment | null
+}
+
+export interface SupportIssueNotificationSummary {
+  unread_count: number
+  needs_info_count: number
+  resolved_unread_count: number
+  latest_activity_at?: string | null
 }
 
 export interface AdminSupportIssueComment extends PublicSupportIssueComment {

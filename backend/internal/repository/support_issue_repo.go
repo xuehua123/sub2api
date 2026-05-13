@@ -223,6 +223,47 @@ func (r *supportIssueRepository) RecordView(ctx context.Context, issueID int64, 
 	})
 }
 
+func (r *supportIssueRepository) GetUserNotificationSummary(ctx context.Context, userID int64) (service.SupportIssueNotificationSummary, error) {
+	if userID <= 0 {
+		return service.SupportIssueNotificationSummary{}, service.ErrSupportIssuePermissionDenied
+	}
+
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.SupportIssue.Query().
+		Where(
+			supportissue.CreatedByUserIDEQ(userID),
+			supportissue.HiddenAtIsNil(),
+		).
+		All(ctx)
+	if err != nil {
+		return service.SupportIssueNotificationSummary{}, err
+	}
+
+	items := supportIssueEntitiesToService(rows)
+	if err := populateSupportIssueViewerState(ctx, client, items, userID); err != nil {
+		return service.SupportIssueNotificationSummary{}, err
+	}
+
+	var summary service.SupportIssueNotificationSummary
+	for i := range items {
+		item := &items[i]
+		if item.HasUnreadActivity || item.ViewerAttentionReason == "needs_info" {
+			summary.UnreadCount++
+		}
+		if item.Status == service.SupportIssueStatusNeedsInfo {
+			summary.NeedsInfoCount++
+		}
+		if item.HasUnreadActivity && item.Status == service.SupportIssueStatusResolved {
+			summary.ResolvedUnreadCount++
+		}
+		if item.ViewerLastActivityAt != nil && (summary.LatestActivityAt == nil || item.ViewerLastActivityAt.After(*summary.LatestActivityAt)) {
+			latest := *item.ViewerLastActivityAt
+			summary.LatestActivityAt = &latest
+		}
+	}
+	return summary, nil
+}
+
 func (r *supportIssueRepository) ListIssues(
 	ctx context.Context,
 	params pagination.PaginationParams,
@@ -248,7 +289,13 @@ func (r *supportIssueRepository) ListIssues(
 		return nil, nil, err
 	}
 
-	return supportIssueEntitiesToService(rows), paginationResultFromTotal(int64(total), params), nil
+	items := supportIssueEntitiesToService(rows)
+	if filters.CreatedByUserID != nil {
+		if err := populateSupportIssueViewerState(ctx, client, items, *filters.CreatedByUserID); err != nil {
+			return nil, nil, err
+		}
+	}
+	return items, paginationResultFromTotal(int64(total), params), nil
 }
 
 func (r *supportIssueRepository) SearchIssues(
@@ -277,7 +324,13 @@ func (r *supportIssueRepository) SearchIssues(
 		return nil, nil, err
 	}
 
-	return supportIssueEntitiesToService(rows), paginationResultFromTotal(int64(total), params), nil
+	items := supportIssueEntitiesToService(rows)
+	if query.Filters.CreatedByUserID != nil {
+		if err := populateSupportIssueViewerState(ctx, client, items, *query.Filters.CreatedByUserID); err != nil {
+			return nil, nil, err
+		}
+	}
+	return items, paginationResultFromTotal(int64(total), params), nil
 }
 
 func (r *supportIssueRepository) AddComment(
@@ -1369,6 +1422,112 @@ func supportIssueEntitiesToService(rows []*dbent.SupportIssue) []service.Support
 		}
 	}
 	return out
+}
+
+func populateSupportIssueViewerState(ctx context.Context, client *dbent.Client, items []service.SupportIssue, viewerUserID int64) error {
+	if viewerUserID <= 0 || len(items) == 0 {
+		return nil
+	}
+
+	ids := make([]int64, 0, len(items))
+	for i := range items {
+		if items[i].ID > 0 {
+			ids = append(ids, items[i].ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	lastViewed, err := supportIssueViewerLastViewedAt(ctx, client, viewerUserID, ids)
+	if err != nil {
+		return err
+	}
+	lastActivity, err := supportIssueViewerLastExternalActivityAt(ctx, client, viewerUserID, ids)
+	if err != nil {
+		return err
+	}
+
+	for i := range items {
+		issue := &items[i]
+		if viewedAt, ok := lastViewed[issue.ID]; ok {
+			value := viewedAt
+			issue.ViewerLastViewedAt = &value
+		}
+		if activityAt, ok := lastActivity[issue.ID]; ok {
+			value := activityAt
+			issue.ViewerLastActivityAt = &value
+			issue.HasUnreadActivity = issue.ViewerLastViewedAt == nil || activityAt.After(*issue.ViewerLastViewedAt)
+		}
+		issue.ViewerAttentionReason = supportIssueViewerAttentionReason(issue)
+	}
+	return nil
+}
+
+func supportIssueViewerLastViewedAt(ctx context.Context, client *dbent.Client, viewerUserID int64, issueIDs []int64) (map[int64]time.Time, error) {
+	rows, err := client.SupportIssueView.Query().
+		Where(
+			supportissueview.IssueIDIn(issueIDs...),
+			supportissueview.ViewerUserIDEQ(viewerUserID),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[int64]time.Time, len(rows))
+	for _, row := range rows {
+		if current, ok := out[row.IssueID]; !ok || row.ViewedAt.After(current) {
+			out[row.IssueID] = row.ViewedAt
+		}
+	}
+	return out, nil
+}
+
+func supportIssueViewerLastExternalActivityAt(ctx context.Context, client *dbent.Client, viewerUserID int64, issueIDs []int64) (map[int64]time.Time, error) {
+	rows, err := client.SupportIssueEvent.Query().
+		Where(
+			supportissueevent.IssueIDIn(issueIDs...),
+			supportissueevent.EventTypeNEQ(service.SupportIssueEventCreated),
+			supportissueevent.Or(
+				supportissueevent.ActorUserIDIsNil(),
+				supportissueevent.ActorUserIDNEQ(viewerUserID),
+			),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[int64]time.Time, len(rows))
+	for _, row := range rows {
+		if current, ok := out[row.IssueID]; !ok || row.CreatedAt.After(current) {
+			out[row.IssueID] = row.CreatedAt
+		}
+	}
+	return out, nil
+}
+
+func supportIssueViewerAttentionReason(issue *service.SupportIssue) string {
+	if issue == nil {
+		return ""
+	}
+	if issue.Status == service.SupportIssueStatusNeedsInfo {
+		return "needs_info"
+	}
+	if !issue.HasUnreadActivity {
+		return ""
+	}
+	if issue.SolutionCommentID != nil {
+		return "solution"
+	}
+	if issue.RelatedIssueID != nil {
+		return "related_solved"
+	}
+	if issue.Status == service.SupportIssueStatusResolved {
+		return "resolved"
+	}
+	return "new_activity"
 }
 
 func supportIssueCommentEntityToService(row *dbent.SupportIssueComment) *service.SupportIssueComment {

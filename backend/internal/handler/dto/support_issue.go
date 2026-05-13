@@ -68,37 +68,48 @@ type SupportIssueReference struct {
 }
 
 type PublicSupportIssue struct {
-	ID                 int64                          `json:"id"`
-	PublicID           string                         `json:"public_id"`
-	Title              string                         `json:"title"`
-	Description        string                         `json:"description"`
-	AccountEmailMasked string                         `json:"account_email_masked"`
-	OccurredAt         time.Time                      `json:"occurred_at"`
-	ScreenshotText     string                         `json:"screenshot_text"`
-	ScreenshotLanguage string                         `json:"screenshot_language"`
-	Category           string                         `json:"category"`
-	Severity           string                         `json:"severity"`
-	Status             string                         `json:"status"`
-	ModelName          string                         `json:"model_name,omitempty"`
-	ClientName         string                         `json:"client_name,omitempty"`
-	HTTPStatus         *int                           `json:"http_status,omitempty"`
-	ErrorCode          string                         `json:"error_code,omitempty"`
-	ResolvedAt         *time.Time                     `json:"resolved_at,omitempty"`
-	LockedAt           *time.Time                     `json:"locked_at,omitempty"`
-	PinnedAt           *time.Time                     `json:"pinned_at,omitempty"`
-	SolutionCommentID  *int64                         `json:"solution_comment_id,omitempty"`
-	RelatedIssueID     *int64                         `json:"related_issue_id,omitempty"`
-	LastCommentAt      *time.Time                     `json:"last_comment_at,omitempty"`
-	LastViewedAt       *time.Time                     `json:"last_viewed_at,omitempty"`
-	CommentCount       int                            `json:"comment_count"`
-	AttachmentCount    int                            `json:"attachment_count"`
-	ViewCount          int                            `json:"view_count"`
-	CreatedAt          time.Time                      `json:"created_at"`
-	UpdatedAt          time.Time                      `json:"updated_at"`
-	Comments           []PublicSupportIssueComment    `json:"comments,omitempty"`
-	Attachments        []PublicSupportIssueAttachment `json:"attachments,omitempty"`
-	SolutionComment    *PublicSupportIssueComment     `json:"solution_comment,omitempty"`
-	RelatedIssue       *SupportIssueReference         `json:"related_issue,omitempty"`
+	ID                   int64                          `json:"id"`
+	PublicID             string                         `json:"public_id"`
+	Title                string                         `json:"title"`
+	Description          string                         `json:"description"`
+	AccountEmailMasked   string                         `json:"account_email_masked"`
+	OccurredAt           time.Time                      `json:"occurred_at"`
+	ScreenshotText       string                         `json:"screenshot_text"`
+	ScreenshotLanguage   string                         `json:"screenshot_language"`
+	Category             string                         `json:"category"`
+	Severity             string                         `json:"severity"`
+	Status               string                         `json:"status"`
+	ModelName            string                         `json:"model_name,omitempty"`
+	ClientName           string                         `json:"client_name,omitempty"`
+	HTTPStatus           *int                           `json:"http_status,omitempty"`
+	ErrorCode            string                         `json:"error_code,omitempty"`
+	ResolvedAt           *time.Time                     `json:"resolved_at,omitempty"`
+	LockedAt             *time.Time                     `json:"locked_at,omitempty"`
+	PinnedAt             *time.Time                     `json:"pinned_at,omitempty"`
+	SolutionCommentID    *int64                         `json:"solution_comment_id,omitempty"`
+	RelatedIssueID       *int64                         `json:"related_issue_id,omitempty"`
+	LastCommentAt        *time.Time                     `json:"last_comment_at,omitempty"`
+	LastViewedAt         *time.Time                     `json:"last_viewed_at,omitempty"`
+	ViewerLastViewedAt   *time.Time                     `json:"viewer_last_viewed_at,omitempty"`
+	ViewerLastActivityAt *time.Time                     `json:"viewer_last_activity_at,omitempty"`
+	HasUnreadActivity    bool                           `json:"has_unread_activity"`
+	AttentionReason      string                         `json:"attention_reason,omitempty"`
+	CommentCount         int                            `json:"comment_count"`
+	AttachmentCount      int                            `json:"attachment_count"`
+	ViewCount            int                            `json:"view_count"`
+	CreatedAt            time.Time                      `json:"created_at"`
+	UpdatedAt            time.Time                      `json:"updated_at"`
+	Comments             []PublicSupportIssueComment    `json:"comments,omitempty"`
+	Attachments          []PublicSupportIssueAttachment `json:"attachments,omitempty"`
+	SolutionComment      *PublicSupportIssueComment     `json:"solution_comment,omitempty"`
+	RelatedIssue         *SupportIssueReference         `json:"related_issue,omitempty"`
+}
+
+type SupportIssueNotificationSummary struct {
+	UnreadCount         int        `json:"unread_count"`
+	NeedsInfoCount      int        `json:"needs_info_count"`
+	ResolvedUnreadCount int        `json:"resolved_unread_count"`
+	LatestActivityAt    *time.Time `json:"latest_activity_at,omitempty"`
 }
 
 type PublicSupportIssueComment struct {
@@ -257,37 +268,41 @@ func PublicSupportIssueFromService(issue *service.SupportIssue) *PublicSupportIs
 		return nil
 	}
 	out := &PublicSupportIssue{
-		ID:                 issue.ID,
-		PublicID:           issue.PublicID,
-		Title:              issue.Title,
-		Description:        issue.Description,
-		AccountEmailMasked: issue.AccountEmailMasked,
-		OccurredAt:         issue.OccurredAt,
-		ScreenshotText:     issue.ScreenshotText,
-		ScreenshotLanguage: issue.ScreenshotLanguage,
-		Category:           issue.Category,
-		Severity:           issue.Severity,
-		Status:             issue.Status,
-		ModelName:          issue.ModelName,
-		ClientName:         issue.ClientName,
-		HTTPStatus:         issue.HTTPStatus,
-		ErrorCode:          issue.ErrorCode,
-		ResolvedAt:         issue.ResolvedAt,
-		LockedAt:           issue.LockedAt,
-		PinnedAt:           issue.PinnedAt,
-		SolutionCommentID:  issue.SolutionCommentID,
-		RelatedIssueID:     issue.RelatedIssueID,
-		LastCommentAt:      issue.LastCommentAt,
-		LastViewedAt:       issue.LastViewedAt,
-		CommentCount:       issue.CommentCount,
-		AttachmentCount:    issue.AttachmentCount,
-		ViewCount:          issue.ViewCount,
-		CreatedAt:          issue.CreatedAt,
-		UpdatedAt:          issue.UpdatedAt,
-		Comments:           PublicSupportIssueCommentsFromService(issue.Comments),
-		Attachments:        PublicSupportIssueAttachmentsFromService(issue.Attachments),
-		SolutionComment:    PublicSupportIssueCommentFromService(issue.SolutionComment),
-		RelatedIssue:       SupportIssueReferenceFromService(issue.RelatedIssue),
+		ID:                   issue.ID,
+		PublicID:             issue.PublicID,
+		Title:                issue.Title,
+		Description:          issue.Description,
+		AccountEmailMasked:   issue.AccountEmailMasked,
+		OccurredAt:           issue.OccurredAt,
+		ScreenshotText:       issue.ScreenshotText,
+		ScreenshotLanguage:   issue.ScreenshotLanguage,
+		Category:             issue.Category,
+		Severity:             issue.Severity,
+		Status:               issue.Status,
+		ModelName:            issue.ModelName,
+		ClientName:           issue.ClientName,
+		HTTPStatus:           issue.HTTPStatus,
+		ErrorCode:            issue.ErrorCode,
+		ResolvedAt:           issue.ResolvedAt,
+		LockedAt:             issue.LockedAt,
+		PinnedAt:             issue.PinnedAt,
+		SolutionCommentID:    issue.SolutionCommentID,
+		RelatedIssueID:       issue.RelatedIssueID,
+		LastCommentAt:        issue.LastCommentAt,
+		LastViewedAt:         issue.LastViewedAt,
+		ViewerLastViewedAt:   issue.ViewerLastViewedAt,
+		ViewerLastActivityAt: issue.ViewerLastActivityAt,
+		HasUnreadActivity:    issue.HasUnreadActivity,
+		AttentionReason:      issue.ViewerAttentionReason,
+		CommentCount:         issue.CommentCount,
+		AttachmentCount:      issue.AttachmentCount,
+		ViewCount:            issue.ViewCount,
+		CreatedAt:            issue.CreatedAt,
+		UpdatedAt:            issue.UpdatedAt,
+		Comments:             PublicSupportIssueCommentsFromService(issue.Comments),
+		Attachments:          PublicSupportIssueAttachmentsFromService(issue.Attachments),
+		SolutionComment:      PublicSupportIssueCommentFromService(issue.SolutionComment),
+		RelatedIssue:         SupportIssueReferenceFromService(issue.RelatedIssue),
 	}
 	return out
 }
@@ -300,6 +315,18 @@ func PublicSupportIssuesFromService(items []service.SupportIssue) []PublicSuppor
 		}
 	}
 	return out
+}
+
+func SupportIssueNotificationSummaryFromService(summary *service.SupportIssueNotificationSummary) *SupportIssueNotificationSummary {
+	if summary == nil {
+		return nil
+	}
+	return &SupportIssueNotificationSummary{
+		UnreadCount:         summary.UnreadCount,
+		NeedsInfoCount:      summary.NeedsInfoCount,
+		ResolvedUnreadCount: summary.ResolvedUnreadCount,
+		LatestActivityAt:    summary.LatestActivityAt,
+	}
 }
 
 func PublicSupportIssueCommentsFromService(items []service.SupportIssueComment) []PublicSupportIssueComment {

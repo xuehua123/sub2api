@@ -92,6 +92,12 @@ describe('issues api', () => {
     expect(get).toHaveBeenCalledWith('/issues/mine', { params, signal: undefined })
   })
 
+  it('loads my issue notification summary', async () => {
+    await issuesAPI.notifications()
+
+    expect(get).toHaveBeenCalledWith('/issues/notifications')
+  })
+
   it('gets an issue by id', async () => {
     await issuesAPI.get(123)
 

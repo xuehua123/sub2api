@@ -484,6 +484,16 @@ export default {
       replied: 'Most replied',
       hot24: '24h ranking'
     },
+    notifications: {
+      newActivity: 'New',
+      reason: {
+        new_activity: 'New reply',
+        needs_info: 'Needs info',
+        resolved: 'Resolved',
+        solution: 'Solution',
+        related_solved: 'Linked solution'
+      }
+    },
     empty: {
       title: 'No issues found',
       description: 'Adjust the search filters or submit a structured issue.'

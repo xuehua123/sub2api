@@ -6,6 +6,7 @@ import type {
   FetchOptions,
   PublicSupportIssue,
   PublicSupportIssueComment,
+  SupportIssueNotificationSummary,
   SupportIssueListParams,
   UploadedSupportIssueAttachment
 } from '@/types'
@@ -40,6 +41,11 @@ export async function mine(
     params,
     signal: options?.signal
   })
+  return data
+}
+
+export async function notifications(): Promise<SupportIssueNotificationSummary> {
+  const { data } = await apiClient.get<SupportIssueNotificationSummary>('/issues/notifications')
   return data
 }
 
@@ -87,6 +93,7 @@ export const issuesAPI = {
   list,
   trending,
   mine,
+  notifications,
   get,
   create,
   addComment,

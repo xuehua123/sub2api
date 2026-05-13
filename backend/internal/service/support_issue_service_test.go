@@ -564,6 +564,29 @@ func TestSupportIssueService_GetPublicRejectsHiddenIssue(t *testing.T) {
 	require.False(t, repo.recordViewCalled)
 }
 
+func TestSupportIssueService_NotificationSummaryRequiresActor(t *testing.T) {
+	repo := &fakeSupportIssueRepository{}
+	svc := NewSupportIssueService(repo)
+
+	_, err := svc.NotificationSummary(context.Background(), SupportIssueActor{})
+
+	require.Error(t, err)
+}
+
+func TestSupportIssueService_NotificationSummaryReturnsRepoSummary(t *testing.T) {
+	repo := &fakeSupportIssueRepository{notificationSummary: SupportIssueNotificationSummary{
+		UnreadCount:    2,
+		NeedsInfoCount: 1,
+	}}
+	svc := NewSupportIssueService(repo)
+
+	got, err := svc.NotificationSummary(context.Background(), SupportIssueActor{UserID: 42})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, got.UnreadCount)
+	require.Equal(t, 1, got.NeedsInfoCount)
+}
+
 func TestSupportIssueService_AdminGetUsesHiddenQuery(t *testing.T) {
 	uploadedByUserID := int64(42)
 	hiddenByUserID := int64(99)
@@ -633,6 +656,8 @@ type fakeSupportIssueRepository struct {
 	recordViewCalled      bool
 	lastViewIssueID       int64
 	lastViewer            SupportIssueViewer
+	notificationSummary   SupportIssueNotificationSummary
+	notificationErr       error
 
 	listIssuesResult []SupportIssue
 	listPage         *pagination.PaginationResult
@@ -792,6 +817,13 @@ func (r *fakeSupportIssueRepository) RecordView(ctx context.Context, issueID int
 	r.lastViewIssueID = issueID
 	r.lastViewer = viewer
 	return nil
+}
+
+func (r *fakeSupportIssueRepository) GetUserNotificationSummary(ctx context.Context, userID int64) (SupportIssueNotificationSummary, error) {
+	if r.notificationErr != nil {
+		return SupportIssueNotificationSummary{}, r.notificationErr
+	}
+	return r.notificationSummary, nil
 }
 
 func (r *fakeSupportIssueRepository) ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error) {

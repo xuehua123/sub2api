@@ -116,6 +116,28 @@ func TestSupportIssueHandler_MineFiltersByAuthenticatedUser(t *testing.T) {
 	require.Equal(t, service.SupportIssueStatusOpen, fake.lastFilters.Status)
 }
 
+func TestSupportIssueHandler_NotificationsRequiresAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &SupportIssueHandler{supportIssueService: &fakeSupportIssueUserService{}}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/notifications", "/issues/notifications", h.Notifications, false, "")
+
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestSupportIssueHandler_NotificationsReturnsSummary(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueUserService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performSupportIssueHandlerRequest(http.MethodGet, "/issues/notifications", "/issues/notifications", h.Notifications, true, "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.True(t, fake.notificationCalled)
+	require.Contains(t, w.Body.String(), `"unread_count":2`)
+	require.Contains(t, w.Body.String(), `"needs_info_count":1`)
+}
+
 func TestSupportIssueHandler_CreateRequiresAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &SupportIssueHandler{supportIssueService: &fakeSupportIssueUserService{}}
@@ -276,6 +298,7 @@ type fakeSupportIssueUserService struct {
 	lastRelatedIssueID *int64
 	resolveCalled      bool
 	lastViewer         service.SupportIssueViewer
+	notificationCalled bool
 
 	uploadAttachmentCalled bool
 	lastUploadInput        service.UploadSupportIssueAttachmentInput
@@ -311,6 +334,11 @@ func (f *fakeSupportIssueUserService) SearchPublic(ctx context.Context, params p
 func (f *fakeSupportIssueUserService) GetPublic(ctx context.Context, issueID int64, viewer service.SupportIssueViewer) (*service.SupportIssue, error) {
 	f.lastViewer = viewer
 	return supportIssueHandlerFixture(), nil
+}
+
+func (f *fakeSupportIssueUserService) NotificationSummary(ctx context.Context, actor service.SupportIssueActor) (*service.SupportIssueNotificationSummary, error) {
+	f.notificationCalled = true
+	return &service.SupportIssueNotificationSummary{UnreadCount: 2, NeedsInfoCount: 1}, nil
 }
 
 func (f *fakeSupportIssueUserService) AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string, relatedIssueID *int64) (*service.SupportIssueComment, error) {

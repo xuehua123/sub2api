@@ -22,6 +22,7 @@ type supportIssueUserService interface {
 	ListPublic(ctx context.Context, params pagination.PaginationParams, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
 	SearchPublic(ctx context.Context, params pagination.PaginationParams, rawQuery string, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error)
 	GetPublic(ctx context.Context, issueID int64, viewer service.SupportIssueViewer) (*service.SupportIssue, error)
+	NotificationSummary(ctx context.Context, actor service.SupportIssueActor) (*service.SupportIssueNotificationSummary, error)
 	AddComment(ctx context.Context, actor service.SupportIssueActor, issueID int64, content string, relatedIssueID *int64) (*service.SupportIssueComment, error)
 	Resolve(ctx context.Context, actor service.SupportIssueActor, issueID int64) (*service.SupportIssue, error)
 	SuggestSimilar(ctx context.Context, actor service.SupportIssueActor, input service.CreateSupportIssueInput) ([]service.SupportIssue, error)
@@ -119,6 +120,21 @@ func (h *SupportIssueHandler) Mine(c *gin.Context) {
 	}
 
 	response.Paginated(c, dto.PublicSupportIssuesFromService(items), supportIssuePageTotal(pageResult), page, pageSize)
+}
+
+func (h *SupportIssueHandler) Notifications(c *gin.Context) {
+	actor, ok := supportIssueActorFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	summary, err := h.supportIssueService.NotificationSummary(c.Request.Context(), actor)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.SupportIssueNotificationSummaryFromService(summary))
 }
 
 func (h *SupportIssueHandler) Get(c *gin.Context) {

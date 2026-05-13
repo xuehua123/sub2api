@@ -484,6 +484,16 @@ export default {
       replied: '回复最多',
       hot24: '24 小时榜'
     },
+    notifications: {
+      newActivity: '新动态',
+      reason: {
+        new_activity: '有新回复',
+        needs_info: '需补充',
+        resolved: '已解决',
+        solution: '有解决方案',
+        related_solved: '已关联解决'
+      }
+    },
     empty: {
       title: '没有找到问题',
       description: '调整搜索条件，或提交一个结构化问题。'

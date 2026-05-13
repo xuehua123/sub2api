@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import IssuesView from '../IssuesView.vue'
 import type { PublicSupportIssue } from '@/types'
 
-const { list, trending, mine, route, router, authStore } = vi.hoisted(() => ({
+const { list, trending, mine, route, router, authStore, issueNotificationStore } = vi.hoisted(() => ({
   list: vi.fn(),
   trending: vi.fn(),
   mine: vi.fn(),
@@ -20,6 +20,10 @@ const { list, trending, mine, route, router, authStore } = vi.hoisted(() => ({
   authStore: {
     isAuthenticated: true,
   },
+  issueNotificationStore: {
+    unreadCount: 0,
+    refresh: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/issues', () => ({
@@ -32,6 +36,10 @@ vi.mock('@/api/issues', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStore,
+}))
+
+vi.mock('@/stores/supportIssueNotifications', () => ({
+  useSupportIssueNotificationStore: () => issueNotificationStore,
 }))
 
 vi.mock('vue-router', () => ({
@@ -91,6 +99,9 @@ describe('IssuesView', () => {
     list.mockReset()
     trending.mockReset()
     mine.mockReset()
+    issueNotificationStore.refresh.mockReset()
+    issueNotificationStore.refresh.mockResolvedValue(undefined)
+    issueNotificationStore.unreadCount = 0
     router.push.mockReset()
     router.replace.mockReset()
     authStore.isAuthenticated = true

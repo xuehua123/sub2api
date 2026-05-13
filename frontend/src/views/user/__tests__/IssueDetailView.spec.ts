@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import IssueDetailView from '../IssueDetailView.vue'
 import type { PublicSupportIssue } from '@/types'
 
-const { get, addComment, resolve, route, router, authStore } = vi.hoisted(() => ({
+const { get, addComment, resolve, route, router, authStore, issueNotificationStore } = vi.hoisted(() => ({
   get: vi.fn(),
   addComment: vi.fn(),
   resolve: vi.fn(),
@@ -18,6 +18,9 @@ const { get, addComment, resolve, route, router, authStore } = vi.hoisted(() => 
     isAuthenticated: true,
     isAdmin: false,
   },
+  issueNotificationStore: {
+    refresh: vi.fn(),
+  },
 }))
 
 vi.mock('@/api/issues', () => ({
@@ -31,6 +34,10 @@ vi.mock('@/api/issues', () => ({
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStore,
+}))
+
+vi.mock('@/stores/supportIssueNotifications', () => ({
+  useSupportIssueNotificationStore: () => issueNotificationStore,
 }))
 
 vi.mock('vue-router', () => ({
@@ -112,6 +119,8 @@ describe('IssueDetailView', () => {
     get.mockReset()
     addComment.mockReset()
     resolve.mockReset()
+    issueNotificationStore.refresh.mockReset()
+    issueNotificationStore.refresh.mockResolvedValue(undefined)
     router.push.mockReset()
     authStore.isAuthenticated = true
     authStore.isAdmin = false

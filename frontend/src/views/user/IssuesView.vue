@@ -28,6 +28,7 @@
             @click="setFeedMode(mode.value)"
           >
             {{ t(mode.labelKey) }}
+            <span v-if="mode.value === 'mine' && issueUnreadCount" class="feed-tab-badge">{{ formatBadgeCount(issueUnreadCount) }}</span>
           </button>
         </div>
 
@@ -170,6 +171,8 @@
                   <span class="font-mono text-xs font-semibold text-gray-500 dark:text-gray-400">{{ issue.public_id }}</span>
                   <span :class="statusBadgeClass(issue.status)">{{ t(`issueCenter.status.${issue.status}`) }}</span>
                   <span v-if="issue.pinned_at" class="badge badge-primary">{{ t('issueCenter.detail.pinned') }}</span>
+                  <span v-if="issue.has_unread_activity" class="badge badge-primary">{{ t('issueCenter.notifications.newActivity') }}</span>
+                  <span v-if="issue.attention_reason" :class="attentionBadgeClass(issue.attention_reason)">{{ t(`issueCenter.notifications.reason.${issue.attention_reason}`) }}</span>
                   <span :class="severityBadgeClass(issue.severity)">{{ t(`issueCenter.severity.${issue.severity}`) }}</span>
                   <span class="badge badge-gray">{{ t(`issueCenter.category.${issue.category}`) }}</span>
                 </div>
@@ -230,6 +233,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import { issuesAPI } from '@/api/issues'
 import { useAuthStore } from '@/stores/auth'
+import { useSupportIssueNotificationStore } from '@/stores/supportIssueNotifications'
 import type {
   PublicSupportIssue,
   SupportIssueCategory,
@@ -241,6 +245,7 @@ const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const issueNotificationStore = useSupportIssueNotificationStore()
 
 const statuses: SupportIssueStatus[] = ['open', 'needs_info', 'in_progress', 'resolved', 'closed']
 const categories: SupportIssueCategory[] = ['login', 'payment', 'api_call', 'model_unavailable', 'api_key', 'balance', 'subscription', 'channel', 'other']
@@ -266,6 +271,7 @@ const issues = ref<PublicSupportIssue[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const feedMode = ref<FeedMode>('active')
+const issueUnreadCount = computed(() => issueNotificationStore.unreadCount)
 const pagination = reactive({
   page: 1,
   page_size: 20,
@@ -339,6 +345,9 @@ async function loadIssues() {
     issues.value = result.items
     pagination.total = result.total
     pagination.pages = result.pages
+    if (feedMode.value === 'mine' && authStore.isAuthenticated) {
+      issueNotificationStore.refresh().catch(() => {})
+    }
   } catch (error) {
     errorMessage.value = getErrorMessage(error)
   } finally {
@@ -458,6 +467,10 @@ function formatRelative(value?: string | null): string {
   return date.toLocaleDateString()
 }
 
+function formatBadgeCount(count: number): string {
+  return count > 99 ? '99+' : String(count)
+}
+
 function statusBadgeClass(status: SupportIssueStatus): string {
   const base = 'badge'
   if (status === 'resolved') return `${base} badge-success`
@@ -465,6 +478,13 @@ function statusBadgeClass(status: SupportIssueStatus): string {
   if (status === 'in_progress') return `${base} badge-primary`
   if (status === 'needs_info') return `${base} badge-warning`
   return `${base} badge-gray`
+}
+
+function attentionBadgeClass(reason: string): string {
+  const base = 'badge'
+  if (reason === 'needs_info') return `${base} badge-warning`
+  if (reason === 'resolved' || reason === 'solution' || reason === 'related_solved') return `${base} badge-success`
+  return `${base} badge-primary`
 }
 
 function severityBadgeClass(severity: SupportIssueSeverity): string {
@@ -488,6 +508,10 @@ onMounted(() => {
 
 .feed-tab-active {
   @apply shrink-0 rounded-md bg-primary-500 px-3 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-500/20;
+}
+
+.feed-tab-badge {
+  @apply ml-2 inline-flex min-w-5 items-center justify-center rounded-full bg-white/95 px-1.5 text-[11px] font-bold leading-[18px] text-primary-700;
 }
 
 .category-pill {

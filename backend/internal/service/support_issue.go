@@ -127,6 +127,10 @@ type SupportIssue struct {
 	RelatedIssueReason     string
 	LastCommentAt          *time.Time
 	LastViewedAt           *time.Time
+	ViewerLastViewedAt     *time.Time
+	ViewerLastActivityAt   *time.Time
+	HasUnreadActivity      bool
+	ViewerAttentionReason  string
 	CommentCount           int
 	HiddenCommentCount     int
 	AttachmentCount        int
@@ -295,6 +299,13 @@ type SupportIssueViewer struct {
 	UserAgent string
 }
 
+type SupportIssueNotificationSummary struct {
+	UnreadCount         int
+	NeedsInfoCount      int
+	ResolvedUnreadCount int
+	LatestActivityAt    *time.Time
+}
+
 type SupportIssueRepository interface {
 	CreateIssue(ctx context.Context, issue *SupportIssue, attachments []SupportIssueAttachment, event SupportIssueEvent) error
 	CreateUnboundAttachment(ctx context.Context, attachment *SupportIssueAttachment) error
@@ -302,6 +313,7 @@ type SupportIssueRepository interface {
 	OpenAttachmentForPublic(ctx context.Context, attachmentID int64) (*SupportIssueAttachment, error)
 	GetIssue(ctx context.Context, id int64, includeHidden bool) (*SupportIssue, error)
 	RecordView(ctx context.Context, issueID int64, viewer SupportIssueViewer, throttleWindow time.Duration) error
+	GetUserNotificationSummary(ctx context.Context, userID int64) (SupportIssueNotificationSummary, error)
 	ListIssues(ctx context.Context, params pagination.PaginationParams, filters ListSupportIssueFilters) ([]SupportIssue, *pagination.PaginationResult, error)
 	SearchIssues(ctx context.Context, params pagination.PaginationParams, query SearchSupportIssueQuery) ([]SupportIssue, *pagination.PaginationResult, error)
 	AddComment(ctx context.Context, comment *SupportIssueComment, event SupportIssueEvent) error
