@@ -37,7 +37,8 @@
             <label class="block">
               <span class="input-label">{{ t('issueCenter.fields.status') }}</span>
               <select v-model="filters.status" class="input" data-testid="admin-issue-status-filter">
-                <option value="">{{ t('common.all') }}</option>
+                <option value="pending">{{ t('issueCenter.admin.pending') }}</option>
+                <option value="all">{{ t('common.all') }}</option>
                 <option v-for="status in statuses" :key="status" :value="status">
                   {{ t(`issueCenter.status.${status}`) }}
                 </option>
@@ -220,7 +221,7 @@ const severities: SupportIssueSeverity[] = ['blocked', 'partial', 'intermittent'
 
 const filters = reactive({
   q: '',
-  status: '' as '' | SupportIssueStatus,
+  status: 'pending' as 'pending' | 'all' | SupportIssueStatus,
   category: '' as '' | SupportIssueCategory,
   severity: '' as '' | SupportIssueSeverity,
 })
@@ -244,7 +245,7 @@ function queryString(value: unknown): string {
 
 function syncStateFromRoute() {
   filters.q = queryString(route.query.q)
-  filters.status = queryString(route.query.status) as '' | SupportIssueStatus
+  filters.status = (queryString(route.query.status) || 'pending') as 'pending' | 'all' | SupportIssueStatus
   filters.category = queryString(route.query.category) as '' | SupportIssueCategory
   filters.severity = queryString(route.query.severity) as '' | SupportIssueSeverity
   hasImageFilter.value = queryString(route.query.has_image)
@@ -257,7 +258,7 @@ function syncStateFromRoute() {
 function buildQuery() {
   return {
     ...(filters.q ? { q: filters.q } : {}),
-    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.status !== 'pending' ? { status: filters.status } : {}),
     ...(filters.category ? { category: filters.category } : {}),
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value } : {}),
@@ -275,7 +276,7 @@ async function replaceRouteQuery() {
 function buildParams() {
   return {
     ...(filters.q ? { q: filters.q } : {}),
-    ...(filters.status ? { status: filters.status } : {}),
+    ...(filters.status !== 'all' ? { status: filters.status } : {}),
     ...(filters.category ? { category: filters.category } : {}),
     ...(filters.severity ? { severity: filters.severity } : {}),
     ...(hasImageFilter.value ? { has_image: hasImageFilter.value === 'true' } : {}),
@@ -310,7 +311,7 @@ async function applyFilters() {
 
 async function clearFilters() {
   filters.q = ''
-  filters.status = ''
+  filters.status = 'pending'
   filters.category = ''
   filters.severity = ''
   hasImageFilter.value = ''

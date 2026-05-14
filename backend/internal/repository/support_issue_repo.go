@@ -1087,7 +1087,9 @@ func applySupportIssueListFilters(
 	} else if !filters.IncludeHidden {
 		q = q.Where(supportissue.HiddenAtIsNil())
 	}
-	if filters.Status != "" {
+	if len(filters.Statuses) > 0 {
+		q = q.Where(supportissue.StatusIn(filters.Statuses...))
+	} else if filters.Status != "" {
 		q = q.Where(supportissue.StatusEQ(filters.Status))
 	}
 	if filters.Category != "" {

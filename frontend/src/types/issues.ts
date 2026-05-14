@@ -195,7 +195,7 @@ export interface SetRelatedSupportIssueRequest {
 }
 
 export interface SupportIssueListFilters {
-  status?: SupportIssueStatus
+  status?: SupportIssueStatus | 'pending' | 'all'
   category?: SupportIssueCategory
   severity?: SupportIssueSeverity
   has_image?: boolean

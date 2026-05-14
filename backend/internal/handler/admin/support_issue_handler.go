@@ -413,8 +413,22 @@ func adminSupportIssueListFiltersFromQuery(c *gin.Context) (service.ListSupportI
 	if !ok {
 		return service.ListSupportIssueFilters{}, false
 	}
+	status := strings.TrimSpace(c.Query("status"))
+	statuses := []string(nil)
+	switch status {
+	case "pending":
+		status = ""
+		statuses = []string{
+			service.SupportIssueStatusOpen,
+			service.SupportIssueStatusNeedsInfo,
+			service.SupportIssueStatusInProgress,
+		}
+	case "all":
+		status = ""
+	}
 	return service.ListSupportIssueFilters{
-		Status:        strings.TrimSpace(c.Query("status")),
+		Status:        status,
+		Statuses:      statuses,
 		Category:      strings.TrimSpace(c.Query("category")),
 		Severity:      strings.TrimSpace(c.Query("severity")),
 		HasImage:      hasImage,

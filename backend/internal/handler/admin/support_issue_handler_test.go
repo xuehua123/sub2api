@@ -116,6 +116,22 @@ func TestSupportIssueAdminHandler_EventsCallsService(t *testing.T) {
 	require.Equal(t, int64(10), fake.lastIssueID)
 }
 
+func TestSupportIssueAdminHandler_ListPendingStatusMapsToActionableStatuses(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSupportIssueAdminService{}
+	h := &SupportIssueHandler{supportIssueService: fake}
+
+	w := performAdminSupportIssueHandlerRequest(http.MethodGet, "/admin/issues?status=pending", "/admin/issues", h.List, "")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Empty(t, fake.lastFilters.Status)
+	require.Equal(t, []string{
+		service.SupportIssueStatusOpen,
+		service.SupportIssueStatusNeedsInfo,
+		service.SupportIssueStatusInProgress,
+	}, fake.lastFilters.Statuses)
+}
+
 type fakeSupportIssueAdminService struct {
 	updateStatusCalled   bool
 	reopenCalled         bool
@@ -138,13 +154,16 @@ type fakeSupportIssueAdminService struct {
 	lastRelatedID    int64
 	lastStatus       string
 	lastReason       string
+	lastFilters      service.ListSupportIssueFilters
 }
 
 func (f *fakeSupportIssueAdminService) AdminList(ctx context.Context, params pagination.PaginationParams, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error) {
+	f.lastFilters = filters
 	return []service.SupportIssue{*adminSupportIssueHandlerFixture()}, &pagination.PaginationResult{Total: 1, Page: 1, PageSize: 20, Pages: 1}, nil
 }
 
 func (f *fakeSupportIssueAdminService) AdminSearch(ctx context.Context, params pagination.PaginationParams, rawQuery string, filters service.ListSupportIssueFilters) ([]service.SupportIssue, *pagination.PaginationResult, error) {
+	f.lastFilters = filters
 	return []service.SupportIssue{*adminSupportIssueHandlerFixture()}, &pagination.PaginationResult{Total: 1, Page: 1, PageSize: 20, Pages: 1}, nil
 }
 

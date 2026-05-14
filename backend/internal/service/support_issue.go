@@ -225,6 +225,7 @@ type UploadSupportIssueAttachmentInput struct {
 
 type ListSupportIssueFilters struct {
 	Status          string
+	Statuses        []string
 	Category        string
 	Severity        string
 	HasImage        *bool

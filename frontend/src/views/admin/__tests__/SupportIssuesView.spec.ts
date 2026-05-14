@@ -130,4 +130,23 @@ describe('admin SupportIssuesView', () => {
     expect(wrapper.text()).toContain('key:')
     expect(wrapper.text()).toContain('email:')
   })
+
+  it('defaults to pending issues so sidebar badge points to visible work', async () => {
+    list.mockResolvedValue({
+      items: [issue],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    mountView()
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'pending',
+      page: 1,
+      page_size: 20,
+    }))
+  })
 })

@@ -625,6 +625,7 @@ export default {
       hideIssue: '隐藏问题',
       restoreIssue: '恢复问题',
       visibility: '可见性',
+      pending: '待处理',
       visibleOnly: '仅可见',
       hiddenOnly: '仅隐藏',
       sortBy: '排序',

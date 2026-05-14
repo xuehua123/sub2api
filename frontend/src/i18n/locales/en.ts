@@ -625,6 +625,7 @@ export default {
       hideIssue: 'Hide issue',
       restoreIssue: 'Restore issue',
       visibility: 'Visibility',
+      pending: 'Pending',
       visibleOnly: 'Visible only',
       hiddenOnly: 'Hidden only',
       sortBy: 'Sort by',
