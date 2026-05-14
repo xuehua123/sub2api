@@ -397,6 +397,7 @@ export default {
     newIssue: 'New Issue',
     emoji: {
       title: 'Insert emoji',
+      shortLabel: 'Emoji',
       button: 'Open emoji picker',
       close: 'Close emoji picker',
       hint: 'Click to insert at the current cursor position',
@@ -404,9 +405,13 @@ export default {
       groups: {
         recent: 'Recent',
         mood: 'Mood',
+        hands: 'Hands',
         reaction: 'Reaction',
         status: 'Status',
-        work: 'Debug'
+        work: 'Debug',
+        issue: 'Issue',
+        symbols: 'Symbols',
+        fun: 'Common'
       }
     },
     fields: {

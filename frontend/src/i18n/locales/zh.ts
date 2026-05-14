@@ -397,6 +397,7 @@ export default {
     newIssue: '新建问题',
     emoji: {
       title: '插入表情',
+      shortLabel: '表情',
       button: '打开表情选择器',
       close: '关闭表情选择器',
       hint: '点击可连续插入到当前光标位置',
@@ -404,9 +405,13 @@ export default {
       groups: {
         recent: '最近',
         mood: '心情',
+        hands: '手势',
         reaction: '反馈',
         status: '状态',
-        work: '排障'
+        work: '排障',
+        issue: '问题',
+        symbols: '符号',
+        fun: '常用'
       }
     },
     fields: {

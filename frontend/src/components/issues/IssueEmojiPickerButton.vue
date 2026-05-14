@@ -1,7 +1,7 @@
 <template>
   <div ref="root" class="relative inline-flex">
     <button
-      class="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 bg-white text-base shadow-sm transition hover:border-primary-300 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-dark-600 dark:bg-dark-900 dark:hover:border-primary-700 dark:hover:bg-primary-950/40"
+      class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-primary-200 bg-primary-50 px-3 text-sm font-semibold text-primary-700 shadow-sm transition hover:border-primary-300 hover:bg-primary-100 hover:text-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-500/40 disabled:cursor-not-allowed disabled:opacity-50 dark:border-primary-900/70 dark:bg-primary-950/40 dark:text-primary-200 dark:hover:border-primary-700 dark:hover:bg-primary-900/60"
       type="button"
       :aria-label="t('issueCenter.emoji.button')"
       :aria-expanded="open"
@@ -10,7 +10,8 @@
       @mousedown.prevent.stop
       @click.stop="toggle"
     >
-      ☺
+      <span class="text-base leading-none">😀</span>
+      <span>{{ t('issueCenter.emoji.shortLabel') }}</span>
     </button>
 
     <Transition
@@ -23,7 +24,7 @@
     >
       <div
         v-if="open"
-        class="absolute right-0 top-full z-40 mt-2 w-[min(22rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-dark-600 dark:bg-dark-800 dark:ring-white/10"
+        class="absolute right-0 top-full z-40 mt-2 w-[min(30rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-xl border border-gray-200 bg-white shadow-2xl ring-1 ring-black/5 dark:border-dark-600 dark:bg-dark-800 dark:ring-white/10"
         data-testid="issue-emoji-picker"
         @mousedown.prevent.stop
       >
@@ -57,11 +58,11 @@
           </div>
         </div>
 
-        <div class="grid max-h-64 grid-cols-8 gap-1 overflow-y-auto p-3">
+        <div class="grid max-h-80 grid-cols-8 gap-1.5 overflow-y-auto p-3 sm:grid-cols-10">
           <button
             v-for="emoji in activeEmojis"
             :key="`${activeGroupID}-${emoji}`"
-            class="flex aspect-square items-center justify-center rounded-lg text-xl transition hover:bg-primary-50 hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary-500/40 dark:hover:bg-primary-950/40"
+            class="flex aspect-square items-center justify-center rounded-lg text-2xl transition hover:scale-110 hover:bg-primary-50 focus:outline-none focus:ring-2 focus:ring-primary-500/40 dark:hover:bg-primary-950/40"
             type="button"
             data-testid="issue-emoji-option"
             @click.stop="selectEmoji(emoji)"
@@ -112,22 +113,66 @@ const baseGroups: EmojiGroup[] = [
   {
     id: 'mood',
     labelKey: 'issueCenter.emoji.groups.mood',
-    emojis: ['😀', '😄', '😅', '😂', '🙂', '😊', '😌', '😍', '🤩', '😎', '🥳', '😭', '😤', '😵‍💫', '🤔', '🙏'],
+    emojis: [
+      '😀', '😃', '😄', '😁', '😆', '😅', '😂', '🤣', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😋', '😛', '😜',
+      '🤪', '😎', '🥳', '😏', '😌', '😔', '😪', '🥱', '😴', '🤤', '😮‍💨', '😵‍💫', '🤯', '😭', '😤', '😡', '🤔', '🫡', '🫠', '🙏',
+    ],
+  },
+  {
+    id: 'hands',
+    labelKey: 'issueCenter.emoji.groups.hands',
+    emojis: [
+      '👍', '👎', '👌', '🤌', '🤏', '✌️', '🤞', '🫰', '🤟', '🤘', '🤙', '👈', '👉', '👆', '👇', '☝️', '✋', '🤚', '🖐️', '🖖',
+      '👋', '👏', '🙌', '🫶', '🤲', '🤝', '🙏', '💪', '🦾', '✍️', '💅', '👀', '🧠', '🫵', '🫳', '🫴',
+    ],
   },
   {
     id: 'reaction',
     labelKey: 'issueCenter.emoji.groups.reaction',
-    emojis: ['👍', '👎', '👌', '👏', '🙌', '💪', '👀', '💬', '💯', '✅', '❌', '⚠️', '🚨', '💥', '✨', '🎉'],
+    emojis: [
+      '💬', '💭', '💯', '✅', '☑️', '✔️', '❌', '⭕', '🚫', '⚠️', '🚨', '❗', '❓', '⁉️', '‼️', '💥', '✨', '⭐', '🌟', '💫',
+      '🎉', '🎊', '🏆', '🥇', '🔥', '🧊', '💤', '🫧', '🆘', '🛟', '📣', '🔔', '🔕', '📢', '💌', '📝',
+    ],
   },
   {
     id: 'status',
     labelKey: 'issueCenter.emoji.groups.status',
-    emojis: ['🟢', '🟡', '🔴', '🔵', '🟣', '⚪', '⬆️', '⬇️', '➡️', '🔁', '⏳', '⏱️', '⚡', '🔥', '🧊', '🧯'],
+    emojis: [
+      '🟢', '🟡', '🔴', '🔵', '🟣', '🟠', '⚪', '⚫', '🟩', '🟨', '🟥', '⬆️', '⬇️', '➡️', '↩️', '↪️', '🔁', '🔄', '⏳', '⌛',
+      '⏱️', '⏲️', '🕒', '⚡', '🔥', '🧯', '🧊', '🌡️', '📈', '📉', '🚦', '🛑', '🚧', '🧪', '🧰', '🪛',
+    ],
   },
   {
     id: 'work',
     labelKey: 'issueCenter.emoji.groups.work',
-    emojis: ['💡', '📌', '📎', '📷', '🧾', '📊', '🔍', '🔧', '🧪', '🧩', '🔐', '🔑', '💳', '💰', '🚀', '🏁'],
+    emojis: [
+      '💡', '📌', '📍', '📎', '🧷', '📷', '🖼️', '🧾', '📄', '📋', '📊', '📈', '📉', '🔍', '🔎', '🔧', '🔨', '⚙️', '🛠️', '🧪',
+      '🧩', '🧱', '🗂️', '🗃️', '🗄️', '🔐', '🔒', '🔓', '🔑', '💳', '💰', '🧮', '💻', '⌨️', '🖥️', '📱', '🛜', '🚀', '🏁', '🎯',
+    ],
+  },
+  {
+    id: 'issue',
+    labelKey: 'issueCenter.emoji.groups.issue',
+    emojis: [
+      '🧨', '💣', '🕳️', '🪫', '🔌', '📡', '🛰️', '🧭', '🪪', '🧱', '🪜', '🧵', '🪢', '🧲', '🧬', '🩹', '🚑', '🛠️', '⚙️', '🔧',
+      '🧰', '🔦', '🧯', '🚧', '🛑', '⛔', '🔋', '🟡', '🔴', '🟢', '💸', '💳', '🔑', '🔐', '📵', '🌐',
+    ],
+  },
+  {
+    id: 'symbols',
+    labelKey: 'issueCenter.emoji.groups.symbols',
+    emojis: [
+      '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❤️‍🔥', '💖', '💗', '💓', '💞', '💟', '♻️', '🔰', '🔱', '⚜️',
+      '🔅', '🔆', '〽️', '✳️', '✴️', '❇️', '©️', '®️', '™️', '🔢', '🔤', '🔡', '🔠', '#️⃣', '*️⃣', '0️⃣', '1️⃣', '2️⃣', '3️⃣', '4️⃣',
+    ],
+  },
+  {
+    id: 'fun',
+    labelKey: 'issueCenter.emoji.groups.fun',
+    emojis: [
+      '🍺', '☕', '🍵', '🥤', '🧋', '🍰', '🍪', '🍭', '🍉', '🍓', '🌈', '☀️', '🌙', '🌧️', '⛈️', '☁️', '❄️', '🌪️', '🌊', '🏔️',
+      '🏖️', '🎮', '🎲', '🎧', '🎵', '🎬', '🎁', '🪄', '🧸', '🪩', '🚗', '✈️', '🚄', '🚢', '🏠', '🏢',
+    ],
   },
 ]
 
