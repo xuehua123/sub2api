@@ -395,6 +395,20 @@ export default {
     title: 'Issue Center',
     description: 'Browse public issues, search resolved cases with exact syntax, and submit a structured report after login.',
     newIssue: 'New Issue',
+    emoji: {
+      title: 'Insert emoji',
+      button: 'Open emoji picker',
+      close: 'Close emoji picker',
+      hint: 'Click to insert at the current cursor position',
+      footer: 'Works in titles, descriptions, comments, and admin reasons. Emoji are preserved as text.',
+      groups: {
+        recent: 'Recent',
+        mood: 'Mood',
+        reaction: 'Reaction',
+        status: 'Status',
+        work: 'Debug'
+      }
+    },
     fields: {
       title: 'Title',
       description: 'Description',

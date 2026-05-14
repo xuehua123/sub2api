@@ -167,8 +167,12 @@
             </button>
             <form v-else class="space-y-3" @submit.prevent="submitComment">
               <label class="block">
-                <span class="input-label">{{ t('issueCenter.detail.commentLabel') }}</span>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.detail.commentLabel') }}</span>
+                  <IssueEmojiPickerButton v-model="commentContent" target-id="issue-comment-input" />
+                </span>
                 <textarea
+                  id="issue-comment-input"
                   v-model.trim="commentContent"
                   class="input min-h-[110px]"
                   data-testid="comment-input"
@@ -193,6 +197,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import IssueEmojiPickerButton from '@/components/issues/IssueEmojiPickerButton.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSupportIssueNotificationStore } from '@/stores/supportIssueNotifications'
 import { issuesAPI } from '@/api/issues'

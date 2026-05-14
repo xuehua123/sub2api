@@ -395,6 +395,20 @@ export default {
     title: '问题中心',
     description: '浏览公开问题、用精确语法搜索已解决案例，登录后可提交新问题。',
     newIssue: '新建问题',
+    emoji: {
+      title: '插入表情',
+      button: '打开表情选择器',
+      close: '关闭表情选择器',
+      hint: '点击可连续插入到当前光标位置',
+      footer: '支持标题、描述、评论和处理原因，显示时会原样保留。',
+      groups: {
+        recent: '最近',
+        mood: '心情',
+        reaction: '反馈',
+        status: '状态',
+        work: '排障'
+      }
+    },
     fields: {
       title: '标题',
       description: '问题描述',

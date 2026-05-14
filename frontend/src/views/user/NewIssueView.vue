@@ -25,8 +25,12 @@
 
           <div class="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
             <label class="block min-w-0">
-              <span class="input-label">{{ t('issueCenter.fields.title') }}</span>
+              <span class="input-label flex items-center justify-between gap-2">
+                <span>{{ t('issueCenter.fields.title') }}</span>
+                <IssueEmojiPickerButton v-model="form.title" target-id="new-issue-title-input" />
+              </span>
               <input
+                id="new-issue-title-input"
                 v-model.trim="form.title"
                 class="input"
                 required
@@ -101,8 +105,12 @@
 
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
             <label class="block min-w-0">
-              <span class="input-label">{{ t('issueCenter.new.errorSummaryLabel') }}</span>
+              <span class="input-label flex items-center justify-between gap-2">
+                <span>{{ t('issueCenter.new.errorSummaryLabel') }}</span>
+                <IssueEmojiPickerButton v-model="form.error_summary" target-id="new-issue-error-summary-input" />
+              </span>
               <textarea
+                id="new-issue-error-summary-input"
                 v-model.trim="form.error_summary"
                 class="input min-h-[130px] resize-y leading-6"
                 required
@@ -114,8 +122,12 @@
             </label>
 
             <label class="block min-w-0">
-              <span class="input-label">{{ t('issueCenter.new.descriptionLabel') }}</span>
+              <span class="input-label flex items-center justify-between gap-2">
+                <span>{{ t('issueCenter.new.descriptionLabel') }}</span>
+                <IssueEmojiPickerButton v-model="form.description" target-id="new-issue-description-input" />
+              </span>
               <textarea
+                id="new-issue-description-input"
                 v-model.trim="form.description"
                 class="input min-h-[130px] resize-y leading-6"
                 required
@@ -137,8 +149,12 @@
           <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-1">
               <label class="block min-w-0">
-                <span class="input-label">{{ t('issueCenter.new.screenshotTextLabel') }}</span>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.new.screenshotTextLabel') }}</span>
+                  <IssueEmojiPickerButton v-model="form.screenshot_text" target-id="new-issue-screenshot-text-input" />
+                </span>
                 <textarea
+                  id="new-issue-screenshot-text-input"
                   v-model.trim="form.screenshot_text"
                   class="input min-h-[130px] resize-y leading-6"
                   required
@@ -150,8 +166,12 @@
               </label>
 
               <label class="block min-w-0">
-                <span class="input-label">{{ t('issueCenter.new.screenshotMeaningLabel') }}</span>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.new.screenshotMeaningLabel') }}</span>
+                  <IssueEmojiPickerButton v-model="form.screenshot_meaning" target-id="new-issue-screenshot-meaning-input" />
+                </span>
                 <textarea
+                  id="new-issue-screenshot-meaning-input"
                   v-model.trim="form.screenshot_meaning"
                   class="input min-h-[130px] resize-y leading-6"
                   data-testid="new-issue-screenshot-meaning"
@@ -392,6 +412,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import IssueEmojiPickerButton from '@/components/issues/IssueEmojiPickerButton.vue'
 import { issuesAPI } from '@/api/issues'
 import { usageAPI } from '@/api/usage'
 import { useAuthStore } from '@/stores/auth'

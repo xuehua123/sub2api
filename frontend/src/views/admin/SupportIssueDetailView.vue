@@ -90,8 +90,11 @@
                 </select>
               </label>
               <label class="block">
-                <span class="input-label">{{ t('issueCenter.admin.reason') }}</span>
-                <textarea v-model.trim="statusForm.reason" class="input min-h-[80px]" data-testid="admin-status-reason"></textarea>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.admin.reason') }}</span>
+                  <IssueEmojiPickerButton v-model="statusForm.reason" target-id="admin-status-reason-input" />
+                </span>
+                <textarea id="admin-status-reason-input" v-model.trim="statusForm.reason" class="input min-h-[80px]" data-testid="admin-status-reason"></textarea>
               </label>
               <button class="btn btn-primary" type="submit" :disabled="actionLoading" data-testid="admin-update-status-button">
                 {{ t('issueCenter.admin.updateStatus') }}
@@ -100,8 +103,11 @@
 
             <form class="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-900" data-testid="admin-reopen-form" @submit.prevent="reopenIssue">
               <label class="block">
-                <span class="input-label">{{ t('issueCenter.admin.reopenReason') }}</span>
-                <textarea v-model.trim="reopenReason" class="input min-h-[80px]" data-testid="admin-reopen-reason"></textarea>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.admin.reopenReason') }}</span>
+                  <IssueEmojiPickerButton v-model="reopenReason" target-id="admin-reopen-reason-input" />
+                </span>
+                <textarea id="admin-reopen-reason-input" v-model.trim="reopenReason" class="input min-h-[80px]" data-testid="admin-reopen-reason"></textarea>
               </label>
               <button class="btn btn-secondary" type="submit" :disabled="actionLoading" data-testid="admin-reopen-button">
                 {{ t('issueCenter.admin.reopen') }}
@@ -110,8 +116,11 @@
 
             <form class="space-y-3 rounded-lg bg-gray-50 p-3 dark:bg-dark-900" data-testid="admin-visibility-form" @submit.prevent="toggleIssueVisibility">
               <label class="block">
-                <span class="input-label">{{ issue.hidden_at ? t('issueCenter.admin.restoreReason') : t('issueCenter.admin.hideReason') }}</span>
-                <textarea v-model.trim="visibilityReason" class="input min-h-[80px]" data-testid="admin-visibility-reason"></textarea>
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ issue.hidden_at ? t('issueCenter.admin.restoreReason') : t('issueCenter.admin.hideReason') }}</span>
+                  <IssueEmojiPickerButton v-model="visibilityReason" target-id="admin-visibility-reason-input" />
+                </span>
+                <textarea id="admin-visibility-reason-input" v-model.trim="visibilityReason" class="input min-h-[80px]" data-testid="admin-visibility-reason"></textarea>
               </label>
               <button
                 :class="issue.hidden_at ? 'btn btn-secondary' : 'btn btn-danger'"
@@ -131,8 +140,11 @@
                 </p>
               </div>
               <label v-if="!issue.pinned_at" class="block">
-                <span class="input-label">{{ t('issueCenter.admin.reason') }}</span>
-                <input v-model.trim="pinReason" class="input" data-testid="admin-pin-reason" type="text" />
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.admin.reason') }}</span>
+                  <IssueEmojiPickerButton v-model="pinReason" target-id="admin-pin-reason-input" />
+                </span>
+                <input id="admin-pin-reason-input" v-model.trim="pinReason" class="input" data-testid="admin-pin-reason" type="text" />
               </label>
               <button
                 :class="issue.pinned_at ? 'btn btn-secondary' : 'btn btn-primary'"
@@ -228,8 +240,11 @@
                 {{ t('issueCenter.admin.relatedIssueSearchEmpty') }}
               </p>
               <label class="block">
-                <span class="input-label">{{ t('issueCenter.admin.reason') }}</span>
-                <input v-model.trim="relatedIssueForm.reason" class="input" data-testid="admin-related-issue-reason" type="text" />
+                <span class="input-label flex items-center justify-between gap-2">
+                  <span>{{ t('issueCenter.admin.reason') }}</span>
+                  <IssueEmojiPickerButton v-model="relatedIssueForm.reason" target-id="admin-related-issue-reason-input" />
+                </span>
+                <input id="admin-related-issue-reason-input" v-model.trim="relatedIssueForm.reason" class="input" data-testid="admin-related-issue-reason" type="text" />
               </label>
               <div class="flex flex-wrap gap-2">
                 <button class="btn btn-primary" type="submit" :disabled="actionLoading || !relatedIssueForm.relatedIssueID" data-testid="admin-set-related-button">
@@ -251,8 +266,12 @@
           <h2 class="section-heading">{{ t('issueCenter.detail.comments') }}</h2>
           <form class="mt-4 space-y-3 border-b border-gray-200 pb-4 dark:border-dark-700" data-testid="admin-comment-form" @submit.prevent="submitAdminComment">
             <label class="block">
-              <span class="input-label">{{ t('issueCenter.detail.commentLabel') }}</span>
+              <span class="input-label flex items-center justify-between gap-2">
+                <span>{{ t('issueCenter.detail.commentLabel') }}</span>
+                <IssueEmojiPickerButton v-model="commentContent" target-id="admin-comment-input-field" />
+              </span>
               <textarea
+                id="admin-comment-input-field"
                 v-model.trim="commentContent"
                 class="input min-h-[110px]"
                 data-testid="admin-comment-input"
@@ -301,8 +320,12 @@
               </div>
               <form v-else class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end" data-testid="admin-hide-comment-form" @submit.prevent="hideComment(comment.id)">
                 <label class="min-w-0 flex-1">
-                  <span class="input-label">{{ t('issueCenter.admin.hideReason') }}</span>
+                  <span class="input-label flex items-center justify-between gap-2">
+                    <span>{{ t('issueCenter.admin.hideReason') }}</span>
+                    <IssueEmojiPickerButton v-model="commentHideReasons[comment.id]" :target-id="`admin-hide-comment-reason-${comment.id}`" />
+                  </span>
                   <input
+                    :id="`admin-hide-comment-reason-${comment.id}`"
                     v-model.trim="commentHideReasons[comment.id]"
                     class="input"
                     data-testid="admin-hide-comment-reason"
@@ -350,8 +373,12 @@
                 </div>
                 <form v-else class="flex flex-col gap-2 sm:flex-row sm:items-end" data-testid="admin-hide-attachment-form" @submit.prevent="hideAttachment(attachment.id)">
                   <label class="min-w-0 flex-1">
-                    <span class="input-label">{{ t('issueCenter.admin.hideReason') }}</span>
+                    <span class="input-label flex items-center justify-between gap-2">
+                      <span>{{ t('issueCenter.admin.hideReason') }}</span>
+                      <IssueEmojiPickerButton v-model="attachmentHideReasons[attachment.id]" :target-id="`admin-hide-attachment-reason-${attachment.id}`" />
+                    </span>
                     <input
+                      :id="`admin-hide-attachment-reason-${attachment.id}`"
                       v-model.trim="attachmentHideReasons[attachment.id]"
                       class="input"
                       data-testid="admin-hide-attachment-reason"
@@ -400,6 +427,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
+import IssueEmojiPickerButton from '@/components/issues/IssueEmojiPickerButton.vue'
 import { issuesAPI } from '@/api/issues'
 import { adminIssuesAPI } from '@/api/admin/issues'
 import type {
