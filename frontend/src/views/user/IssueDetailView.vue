@@ -69,9 +69,7 @@
             data-testid="solution-comment"
           >
             <div class="font-semibold text-emerald-800 dark:text-emerald-200">{{ t('issueCenter.detail.solution') }}</div>
-            <p class="mt-2 whitespace-pre-wrap break-words leading-6 text-emerald-900 dark:text-emerald-100">
-              {{ issue.solution_comment.content }}
-            </p>
+            <IssueMarkdownContent class="mt-2 text-emerald-900 dark:text-emerald-100" :content="issue.solution_comment.content" />
             <div class="mt-2 text-xs text-emerald-700 dark:text-emerald-300">
               {{ formatDateTime(issue.solution_comment.created_at) }}
             </div>
@@ -90,9 +88,7 @@
 
           <section class="mt-6">
             <h2 class="section-heading">{{ t('issueCenter.fields.description') }}</h2>
-            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
-              {{ issue.description }}
-            </p>
+            <IssueMarkdownContent class="mt-2 text-gray-700 dark:text-gray-300" :content="issue.description" />
           </section>
 
           <section class="mt-6">
@@ -144,9 +140,7 @@
                 <span v-if="comment.id === issue.solution_comment_id" class="badge badge-success">{{ t('issueCenter.detail.solution') }}</span>
                 <span>{{ formatDateTime(comment.created_at) }}</span>
               </div>
-              <p class="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
-                {{ comment.content }}
-              </p>
+              <IssueMarkdownContent class="text-gray-700 dark:text-gray-300" :content="comment.content" />
               <RouterLink
                 v-if="comment.related_issue"
                 class="mt-2 inline-flex text-sm font-medium text-primary-600 underline dark:text-primary-300"
@@ -198,6 +192,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import IssueEmojiPickerButton from '@/components/issues/IssueEmojiPickerButton.vue'
+import IssueMarkdownContent from '@/components/issues/IssueMarkdownContent.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useSupportIssueNotificationStore } from '@/stores/supportIssueNotifications'
 import { issuesAPI } from '@/api/issues'

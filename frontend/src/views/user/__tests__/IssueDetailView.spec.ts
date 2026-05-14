@@ -208,4 +208,37 @@ describe('IssueDetailView', () => {
     expect(wrapper.text()).toContain('Resolved rate limit case')
     expect(wrapper.text()).toContain('Use the resolved channel and retry.')
   })
+
+  it('renders description, solution, and comments as safe markdown', async () => {
+    get.mockResolvedValue(makeIssue({
+      description: '**错误现象**\n\n- 一直重连\n\n<script>alert(1)</script>',
+      solution_comment_id: 1,
+      solution_comment: {
+        id: 1,
+        issue_id: 123,
+        author_role: 'admin',
+        content: '请先尝试 `切换渠道`。',
+        created_at: '2026-05-13T08:30:00Z',
+        updated_at: '2026-05-13T08:30:00Z',
+      },
+      comments: [
+        {
+          id: 1,
+          issue_id: 123,
+          author_role: 'user',
+          content: '[复现链接](/issues/1)',
+          created_at: '2026-05-13T08:10:00Z',
+          updated_at: '2026-05-13T08:10:00Z',
+        },
+      ],
+    }))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('<strong>错误现象</strong>')
+    expect(wrapper.html()).toContain('<code>切换渠道</code>')
+    expect(wrapper.get('a[href="/issues/1"]').exists()).toBe(true)
+    expect(wrapper.find('script').exists()).toBe(false)
+  })
 })

@@ -66,9 +66,7 @@
 
           <section class="mt-6">
             <h2 class="section-heading">{{ t('issueCenter.fields.description') }}</h2>
-            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
-              {{ issue.description }}
-            </p>
+            <IssueMarkdownContent class="mt-2 text-gray-700 dark:text-gray-300" :content="issue.description" />
           </section>
 
           <section class="mt-6">
@@ -304,9 +302,7 @@
                 <span>{{ formatDateTime(comment.created_at) }}</span>
                 <span v-if="comment.hidden_at" class="badge badge-warning">{{ t('issueCenter.admin.hidden') }}</span>
               </div>
-              <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-gray-700 dark:text-gray-300">
-                {{ comment.content }}
-              </p>
+              <IssueMarkdownContent class="mt-2 text-gray-700 dark:text-gray-300" :content="comment.content" />
               <RouterLink
                 v-if="comment.related_issue"
                 class="mt-2 inline-flex text-sm font-medium text-primary-600 underline dark:text-primary-300"
@@ -428,6 +424,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import IssueEmojiPickerButton from '@/components/issues/IssueEmojiPickerButton.vue'
+import IssueMarkdownContent from '@/components/issues/IssueMarkdownContent.vue'
 import { issuesAPI } from '@/api/issues'
 import { adminIssuesAPI } from '@/api/admin/issues'
 import type {

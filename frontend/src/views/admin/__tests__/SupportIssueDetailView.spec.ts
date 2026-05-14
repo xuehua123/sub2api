@@ -345,4 +345,28 @@ describe('admin SupportIssueDetailView', () => {
       reason: 'same resolved issue',
     })
   })
+
+  it('renders admin issue descriptions and comments as safe markdown', async () => {
+    get.mockResolvedValue(makeIssue({
+      description: '**诊断**\n\n- 上游 429\n\n<script>alert(1)</script>',
+      comments: [
+        {
+          id: 501,
+          issue_id: 123,
+          author_user_id: 10,
+          author_role: 'user',
+          content: '日志里看到 `insufficient_quota`',
+          created_at: '2026-05-13T08:10:00Z',
+          updated_at: '2026-05-13T08:10:00Z',
+        },
+      ],
+    }))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.html()).toContain('<strong>诊断</strong>')
+    expect(wrapper.html()).toContain('<code>insufficient_quota</code>')
+    expect(wrapper.find('script').exists()).toBe(false)
+  })
 })
