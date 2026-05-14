@@ -209,10 +209,10 @@ function close() {
 }
 
 function selectEmoji(emoji: string) {
-  const value = props.modelValue ?? ''
   const target = getTarget()
-  const start = target?.selectionStart ?? value.length
-  const end = target?.selectionEnd ?? start
+  const value = target?.value ?? props.modelValue ?? ''
+  const start = clampSelectionIndex(target?.selectionStart, value.length)
+  const end = clampSelectionIndex(target?.selectionEnd, value.length, start)
   const nextValue = `${value.slice(0, start)}${emoji}${value.slice(end)}`
   emit('update:modelValue', nextValue)
   emit('select', emoji)
@@ -225,6 +225,13 @@ function selectEmoji(emoji: string) {
     nextTarget.focus()
     nextTarget.setSelectionRange(cursor, cursor)
   })
+}
+
+function clampSelectionIndex(index: number | null | undefined, length: number, fallback = length): number {
+  if (typeof index !== 'number') return fallback
+  if (index < 0) return 0
+  if (index > length) return length
+  return index
 }
 
 function getTarget(): HTMLInputElement | HTMLTextAreaElement | null {

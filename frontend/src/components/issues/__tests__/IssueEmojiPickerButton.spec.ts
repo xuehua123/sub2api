@@ -49,4 +49,20 @@ describe('IssueEmojiPickerButton', () => {
 
     wrapper.unmount()
   })
+
+  it('uses the live textarea value when the model has not synced yet', async () => {
+    const wrapper = mount(TestHost, { attachTo: document.body })
+    const target = wrapper.get('[data-testid="target"]').element as HTMLTextAreaElement
+    target.value = 'Unsynced typed text'
+    target.focus()
+    target.setSelectionRange(8, 8)
+
+    await wrapper.get('[data-testid="issue-emoji-trigger"]').trigger('click')
+    await wrapper.findAll('[data-testid="issue-emoji-option"]')[0].trigger('click')
+    await nextTick()
+
+    expect(target.value).toBe('Unsynced😀 typed text')
+
+    wrapper.unmount()
+  })
 })
