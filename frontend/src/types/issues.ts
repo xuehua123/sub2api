@@ -27,6 +27,7 @@ export interface PublicSupportIssueComment {
   id: number
   issue_id: number
   author_role: string
+  author_display_name?: string
   content: string
   related_issue_id?: number | null
   related_issue?: SupportIssueReference | null

@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
+	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -1285,6 +1286,10 @@ func (r *supportIssueRepository) populateSupportIssueReferences(
 		return nil
 	}
 
+	if err := populateSupportIssueCommentAuthors(ctx, client, issue.Comments); err != nil {
+		return err
+	}
+
 	if issue.SolutionCommentID != nil {
 		for i := range issue.Comments {
 			if issue.Comments[i].ID == *issue.SolutionCommentID {
@@ -1320,6 +1325,82 @@ func (r *supportIssueRepository) populateSupportIssueReferences(
 		issue.SolutionComment.RelatedIssue = refs[*issue.SolutionComment.RelatedIssueID]
 	}
 	return nil
+}
+
+func populateSupportIssueCommentAuthors(
+	ctx context.Context,
+	client *dbent.Client,
+	comments []service.SupportIssueComment,
+) error {
+	if len(comments) == 0 {
+		return nil
+	}
+	seen := map[int64]struct{}{}
+	ids := make([]int64, 0, len(comments))
+	for i := range comments {
+		if comments[i].AuthorUserID == nil || *comments[i].AuthorUserID <= 0 {
+			continue
+		}
+		id := *comments[i].AuthorUserID
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	rows, err := client.User.Query().
+		Where(user.IDIn(ids...)).
+		All(ctx)
+	if err != nil {
+		return err
+	}
+	displayNames := make(map[int64]string, len(rows))
+	for _, row := range rows {
+		displayNames[row.ID] = supportIssueCommentAuthorDisplayName(row.Username, row.Email)
+	}
+	for i := range comments {
+		if comments[i].AuthorUserID == nil {
+			continue
+		}
+		if displayName := displayNames[*comments[i].AuthorUserID]; displayName != "" {
+			comments[i].AuthorDisplayName = displayName
+		}
+	}
+	return nil
+}
+
+func supportIssueCommentAuthorDisplayName(username string, email string) string {
+	if displayName := strings.TrimSpace(username); displayName != "" {
+		return displayName
+	}
+	return maskSupportIssueDisplayEmail(email)
+}
+
+func maskSupportIssueDisplayEmail(email string) string {
+	normalized := strings.TrimSpace(strings.ToLower(email))
+	parts := strings.SplitN(normalized, "@", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return normalized
+	}
+
+	localRunes := []rune(parts[0])
+	if len(localRunes) <= 4 {
+		return fmt.Sprintf("%c***@%s", localRunes[0], parts[1])
+	}
+	maskRunes := 3
+	head := (len(localRunes) - maskRunes + 1) / 2
+	tail := len(localRunes) - maskRunes - head
+	if head < 1 {
+		head = 1
+	}
+	if tail < 1 {
+		tail = 1
+	}
+	return fmt.Sprintf("%s***%s@%s", string(localRunes[:head]), string(localRunes[len(localRunes)-tail:]), parts[1])
 }
 
 func supportIssueReferencesByID(

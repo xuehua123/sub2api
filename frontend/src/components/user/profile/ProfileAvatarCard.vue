@@ -86,6 +86,7 @@ import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import type { User } from '@/types'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { leadingGraphemes, userDisplayName } from '@/utils/userDisplay'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -104,8 +105,8 @@ const avatarQualitySteps = [0.92, 0.84, 0.76, 0.68, 0.6, 0.52, 0.44, 0.36]
 const avatarDraft = ref('')
 const avatarSaving = ref(false)
 
-const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
-const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
+const displayName = computed(() => userDisplayName(props.user?.username, props.user?.email, t('profile.user')))
+const avatarInitial = computed(() => leadingGraphemes(displayName.value, 1).toUpperCase() || 'U')
 const avatarPreviewUrl = computed(() => avatarDraft.value.trim() || props.user?.avatar_url?.trim() || '')
 
 watch(

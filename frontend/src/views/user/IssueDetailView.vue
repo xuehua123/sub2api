@@ -137,6 +137,9 @@
               class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-900"
             >
               <div class="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <span v-if="comment.author_display_name" class="font-medium text-gray-700 dark:text-gray-200">
+                  {{ comment.author_display_name }}
+                </span>
                 <span class="badge badge-gray">{{ t(`issueCenter.roles.${comment.author_role}`) }}</span>
                 <span v-if="comment.id === issue.solution_comment_id" class="badge badge-success">{{ t('issueCenter.detail.solution') }}</span>
                 <span>{{ formatDateTime(comment.created_at) }}</span>

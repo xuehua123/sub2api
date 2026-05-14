@@ -222,6 +222,7 @@ import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { leadingGraphemes, userDisplayName } from '@/utils/userDisplay'
 
 const router = useRouter()
 const route = useRoute()
@@ -245,21 +246,12 @@ const showOnboardingButton = computed(() => {
 
 const userInitials = computed(() => {
   if (!user.value) return ''
-  // Prefer username, fallback to email
-  if (user.value.username) {
-    return user.value.username.substring(0, 2).toUpperCase()
-  }
-  if (user.value.email) {
-    // Get the part before @ and take first 2 chars
-    const localPart = user.value.email.split('@')[0]
-    return localPart.substring(0, 2).toUpperCase()
-  }
-  return ''
+  return leadingGraphemes(displayName.value, 2).toUpperCase()
 })
 
 const displayName = computed(() => {
   if (!user.value) return ''
-  return user.value.username || user.value.email?.split('@')[0] || ''
+  return userDisplayName(user.value.username, user.value.email)
 })
 
 const pageTitle = computed(() => {

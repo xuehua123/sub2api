@@ -113,14 +113,15 @@ type SupportIssueNotificationSummary struct {
 }
 
 type PublicSupportIssueComment struct {
-	ID             int64                  `json:"id"`
-	IssueID        int64                  `json:"issue_id"`
-	AuthorRole     string                 `json:"author_role"`
-	Content        string                 `json:"content"`
-	RelatedIssueID *int64                 `json:"related_issue_id,omitempty"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	RelatedIssue   *SupportIssueReference `json:"related_issue,omitempty"`
+	ID                int64                  `json:"id"`
+	IssueID           int64                  `json:"issue_id"`
+	AuthorRole        string                 `json:"author_role"`
+	AuthorDisplayName string                 `json:"author_display_name,omitempty"`
+	Content           string                 `json:"content"`
+	RelatedIssueID    *int64                 `json:"related_issue_id,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at"`
+	RelatedIssue      *SupportIssueReference `json:"related_issue,omitempty"`
 }
 
 type PublicSupportIssueAttachment struct {
@@ -192,18 +193,19 @@ type AdminSupportIssue struct {
 }
 
 type AdminSupportIssueComment struct {
-	ID             int64                  `json:"id"`
-	IssueID        int64                  `json:"issue_id"`
-	AuthorUserID   *int64                 `json:"author_user_id,omitempty"`
-	AuthorRole     string                 `json:"author_role"`
-	Content        string                 `json:"content"`
-	RelatedIssueID *int64                 `json:"related_issue_id,omitempty"`
-	HiddenAt       *time.Time             `json:"hidden_at,omitempty"`
-	HiddenByUserID *int64                 `json:"hidden_by_user_id,omitempty"`
-	HideReason     string                 `json:"hide_reason,omitempty"`
-	CreatedAt      time.Time              `json:"created_at"`
-	UpdatedAt      time.Time              `json:"updated_at"`
-	RelatedIssue   *SupportIssueReference `json:"related_issue,omitempty"`
+	ID                int64                  `json:"id"`
+	IssueID           int64                  `json:"issue_id"`
+	AuthorUserID      *int64                 `json:"author_user_id,omitempty"`
+	AuthorRole        string                 `json:"author_role"`
+	AuthorDisplayName string                 `json:"author_display_name,omitempty"`
+	Content           string                 `json:"content"`
+	RelatedIssueID    *int64                 `json:"related_issue_id,omitempty"`
+	HiddenAt          *time.Time             `json:"hidden_at,omitempty"`
+	HiddenByUserID    *int64                 `json:"hidden_by_user_id,omitempty"`
+	HideReason        string                 `json:"hide_reason,omitempty"`
+	CreatedAt         time.Time              `json:"created_at"`
+	UpdatedAt         time.Time              `json:"updated_at"`
+	RelatedIssue      *SupportIssueReference `json:"related_issue,omitempty"`
 }
 
 type AdminSupportIssueAttachment struct {
@@ -344,14 +346,15 @@ func PublicSupportIssueCommentFromService(item *service.SupportIssueComment) *Pu
 		return nil
 	}
 	return &PublicSupportIssueComment{
-		ID:             item.ID,
-		IssueID:        item.IssueID,
-		AuthorRole:     item.AuthorRole,
-		Content:        item.Content,
-		RelatedIssueID: item.RelatedIssueID,
-		CreatedAt:      item.CreatedAt,
-		UpdatedAt:      item.UpdatedAt,
-		RelatedIssue:   SupportIssueReferenceFromService(item.RelatedIssue),
+		ID:                item.ID,
+		IssueID:           item.IssueID,
+		AuthorRole:        item.AuthorRole,
+		AuthorDisplayName: item.AuthorDisplayName,
+		Content:           item.Content,
+		RelatedIssueID:    item.RelatedIssueID,
+		CreatedAt:         item.CreatedAt,
+		UpdatedAt:         item.UpdatedAt,
+		RelatedIssue:      SupportIssueReferenceFromService(item.RelatedIssue),
 	}
 }
 
@@ -473,18 +476,19 @@ func AdminSupportIssueCommentFromService(item *service.SupportIssueComment) *Adm
 		return nil
 	}
 	return &AdminSupportIssueComment{
-		ID:             item.ID,
-		IssueID:        item.IssueID,
-		AuthorUserID:   item.AuthorUserID,
-		AuthorRole:     item.AuthorRole,
-		Content:        item.Content,
-		RelatedIssueID: item.RelatedIssueID,
-		HiddenAt:       item.HiddenAt,
-		HiddenByUserID: item.HiddenByUserID,
-		HideReason:     item.HideReason,
-		CreatedAt:      item.CreatedAt,
-		UpdatedAt:      item.UpdatedAt,
-		RelatedIssue:   SupportIssueReferenceFromService(item.RelatedIssue),
+		ID:                item.ID,
+		IssueID:           item.IssueID,
+		AuthorUserID:      item.AuthorUserID,
+		AuthorRole:        item.AuthorRole,
+		AuthorDisplayName: item.AuthorDisplayName,
+		Content:           item.Content,
+		RelatedIssueID:    item.RelatedIssueID,
+		HiddenAt:          item.HiddenAt,
+		HiddenByUserID:    item.HiddenByUserID,
+		HideReason:        item.HideReason,
+		CreatedAt:         item.CreatedAt,
+		UpdatedAt:         item.UpdatedAt,
+		RelatedIssue:      SupportIssueReferenceFromService(item.RelatedIssue),
 	}
 }
 

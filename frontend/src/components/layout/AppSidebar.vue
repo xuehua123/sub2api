@@ -189,13 +189,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useSupportIssueNotificationStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
+import { adminIssuesAPI } from '@/api/admin/issues'
 
 interface NavItem {
   path: string
@@ -235,6 +236,14 @@ const mobileOpen = computed(() => appStore.mobileOpen)
 const isAdmin = computed(() => authStore.isAdmin)
 const isDark = ref(document.documentElement.classList.contains('dark'))
 const issueUnreadCount = computed(() => issueNotificationStore.unreadCount)
+const adminUnresolvedIssueCount = ref(0)
+const issueTitleBadgeCount = computed(() => isAdmin.value
+  ? Math.max(issueUnreadCount.value, adminUnresolvedIssueCount.value)
+  : issueUnreadCount.value)
+const adminUnresolvedStatuses = ['open', 'needs_info', 'in_progress'] as const
+const adminIssueRefreshIntervalMs = 60 * 1000
+let adminIssueRefreshTimer: ReturnType<typeof setInterval> | null = null
+let adminIssueRefreshInFlight = false
 
 // Track which parent nav groups are expanded
 const expandedGroups = ref<Set<string>>(new Set())
@@ -755,7 +764,7 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
-    { path: '/admin/issues', label: t('nav.issueManagement'), icon: TicketIcon },
+    { path: '/admin/issues', label: t('nav.issueManagement'), icon: TicketIcon, badgeCount: adminUnresolvedIssueCount.value },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     { path: '/admin/risk-control', label: t('nav.riskControl'), icon: ShieldIcon, hideInSimpleMode: true, featureFlag: flagRiskControl },
@@ -895,9 +904,41 @@ function formatNavBadge(count: number): string {
 
 function applyIssueNotificationDocumentTitle() {
   const baseTitle = document.title.replace(/^\(\d+\)\s+/, '')
-  document.title = issueUnreadCount.value > 0
-    ? `(${formatNavBadge(issueUnreadCount.value)}) ${baseTitle}`
+  document.title = issueTitleBadgeCount.value > 0
+    ? `(${formatNavBadge(issueTitleBadgeCount.value)}) ${baseTitle}`
     : baseTitle
+}
+
+async function refreshAdminUnresolvedIssueCount() {
+  if (!isAdmin.value || adminIssueRefreshInFlight) return
+  adminIssueRefreshInFlight = true
+  try {
+    const results = await Promise.all(adminUnresolvedStatuses.map(status => adminIssuesAPI.list({
+      status,
+      page: 1,
+      page_size: 1,
+    })))
+    adminUnresolvedIssueCount.value = results.reduce((sum, result) => sum + result.total, 0)
+  } catch {
+    adminUnresolvedIssueCount.value = 0
+  } finally {
+    adminIssueRefreshInFlight = false
+  }
+}
+
+function startAdminIssueNotifications() {
+  if (adminIssueRefreshTimer) return
+  refreshAdminUnresolvedIssueCount()
+  adminIssueRefreshTimer = setInterval(refreshAdminUnresolvedIssueCount, adminIssueRefreshIntervalMs)
+}
+
+function stopAdminIssueNotifications() {
+  if (adminIssueRefreshTimer) {
+    clearInterval(adminIssueRefreshTimer)
+    adminIssueRefreshTimer = null
+  }
+  adminUnresolvedIssueCount.value = 0
+  adminIssueRefreshInFlight = false
 }
 
 // Initialize theme
@@ -916,6 +957,9 @@ watch(
   (v) => {
     if (v) {
       adminSettingsStore.fetch()
+      startAdminIssueNotifications()
+    } else {
+      stopAdminIssueNotifications()
     }
   },
   { immediate: true }
@@ -934,7 +978,7 @@ watch(
 )
 
 watch(
-  [issueUnreadCount, () => route.fullPath],
+  [issueTitleBadgeCount, () => route.fullPath],
   () => {
     setTimeout(applyIssueNotificationDocumentTitle, 0)
   },
@@ -945,6 +989,10 @@ onMounted(() => {
   if (isAdmin.value) {
     adminSettingsStore.fetch()
   }
+})
+
+onBeforeUnmount(() => {
+  stopAdminIssueNotifications()
 })
 </script>
 

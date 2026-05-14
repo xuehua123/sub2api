@@ -154,18 +154,19 @@ type SupportIssueReference struct {
 }
 
 type SupportIssueComment struct {
-	ID             int64
-	IssueID        int64
-	AuthorUserID   *int64
-	AuthorRole     string
-	Content        string
-	RelatedIssueID *int64
-	HiddenAt       *time.Time
-	HiddenByUserID *int64
-	HideReason     string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	RelatedIssue   *SupportIssueReference
+	ID                int64
+	IssueID           int64
+	AuthorUserID      *int64
+	AuthorRole        string
+	AuthorDisplayName string
+	Content           string
+	RelatedIssueID    *int64
+	HiddenAt          *time.Time
+	HiddenByUserID    *int64
+	HideReason        string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+	RelatedIssue      *SupportIssueReference
 }
 
 type SupportIssueAttachment struct {

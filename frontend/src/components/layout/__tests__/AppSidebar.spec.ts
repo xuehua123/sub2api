@@ -72,6 +72,8 @@ describe('AppSidebar channel monitor navigation', () => {
   it('includes issue management in the admin navigation', () => {
     expect(componentSource).toContain("path: '/admin/issues'")
     expect(componentSource).toContain("label: t('nav.issueManagement')")
+    expect(componentSource).toContain('badgeCount: adminUnresolvedIssueCount.value')
+    expect(componentSource).toContain("const adminUnresolvedStatuses = ['open', 'needs_info', 'in_progress'] as const")
   })
 
   it('keeps admin channel monitor entry behind the channel monitor flag', () => {

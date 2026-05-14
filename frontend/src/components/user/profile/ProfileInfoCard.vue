@@ -186,6 +186,7 @@ import ProfileAvatarCard from '@/components/user/profile/ProfileAvatarCard.vue'
 import ProfileEditForm from '@/components/user/profile/ProfileEditForm.vue'
 import ProfileIdentityBindingsSection from '@/components/user/profile/ProfileIdentityBindingsSection.vue'
 import type { User, UserAuthBindingStatus, UserAuthProvider, UserProfileSourceContext } from '@/types'
+import { leadingGraphemes, userDisplayName } from '@/utils/userDisplay'
 
 const props = withDefaults(defineProps<{
   user: User | null
@@ -230,7 +231,7 @@ function isEmailBound(user: User | null | undefined): boolean {
 }
 
 const avatarUrl = computed(() => props.user?.avatar_url?.trim() || '')
-const displayName = computed(() => props.user?.username?.trim() || props.user?.email?.trim() || t('profile.user'))
+const displayName = computed(() => userDisplayName(props.user?.username, props.user?.email, t('profile.user')))
 const primaryEmailDisplay = computed(() => {
   const email = props.user?.email?.trim() || ''
   if (!email) {
@@ -241,7 +242,7 @@ const primaryEmailDisplay = computed(() => {
   }
   return email
 })
-const avatarInitial = computed(() => displayName.value.charAt(0).toUpperCase() || 'U')
+const avatarInitial = computed(() => leadingGraphemes(displayName.value, 1).toUpperCase() || 'U')
 const memberSinceLabel = computed(() => {
   const raw = props.user?.created_at?.trim()
   if (!raw) {
