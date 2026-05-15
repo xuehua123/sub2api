@@ -26,6 +26,7 @@ var MaxExpiresAt = time.Date(2099, 12, 31, 23, 59, 59, 0, time.UTC)
 
 // MaxValidityDays is the maximum allowed validity days for subscriptions (100 years)
 const MaxValidityDays = 36500
+const monthlyCycleAdvanceUsageThreshold = 0.9
 
 var (
 	ErrSubscriptionNotFound       = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
@@ -35,7 +36,7 @@ var (
 	ErrSubscriptionAssignConflict = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
 	ErrGroupNotSubscriptionType   = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
 	ErrInvalidInput               = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
-	ErrMonthlyCycleNotExhausted   = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "monthly quota must be exhausted before advancing the next cycle")
+	ErrMonthlyCycleNotExhausted   = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
 	ErrMonthlyCycleNoFutureTime   = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not have enough future validity to advance the next cycle")
 	ErrDailyLimitExceeded         = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
 	ErrWeeklyLimitExceeded        = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
@@ -1073,7 +1074,7 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		_ = tx.Rollback()
 		return nil, ErrSubscriptionExpired
 	}
-	if previousUsage < *group.MonthlyLimitUSD {
+	if !canAdvanceMonthlyCycleByUsage(previousUsage, *group.MonthlyLimitUSD) {
 		_ = tx.Rollback()
 		return nil, ErrMonthlyCycleNotExhausted
 	}
@@ -1157,6 +1158,10 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		PreviousMonthlyUsage:  previousUsage,
 		NewMonthlyWindowStart: newWindowStart,
 	}, nil
+}
+
+func canAdvanceMonthlyCycleByUsage(usage, limit float64) bool {
+	return limit > 0 && usage >= limit*monthlyCycleAdvanceUsageThreshold
 }
 
 func nullableTimeArg(t sql.NullTime) any {

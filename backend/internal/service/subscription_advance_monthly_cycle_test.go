@@ -51,7 +51,7 @@ func TestAdvanceMonthlyCycleRunsLockedUpdateAndLogInTransaction(t *testing.T) {
 	subscriptionID := int64(100)
 	groupID := int64(20)
 	limit := 10.0
-	previousUsage := 15.0
+	previousUsage := 9.0
 	previousWindow := time.Now().Add(12 * time.Hour)
 	previousExpiresAt := time.Now().Add(45 * 24 * time.Hour)
 	previousUpdatedAt := time.Now().Add(-time.Hour)
@@ -108,6 +108,14 @@ func TestAdvanceMonthlyCycleRunsLockedUpdateAndLogInTransaction(t *testing.T) {
 	require.NotNil(t, result.Subscription)
 	require.Zero(t, result.Subscription.MonthlyUsageUSD)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCanAdvanceMonthlyCycleByUsageAllowsLastTenPercent(t *testing.T) {
+	require.True(t, canAdvanceMonthlyCycleByUsage(9.0, 10.0))
+	require.True(t, canAdvanceMonthlyCycleByUsage(10.0, 10.0))
+	require.False(t, canAdvanceMonthlyCycleByUsage(8.99, 10.0))
+	require.False(t, canAdvanceMonthlyCycleByUsage(0, 10.0))
+	require.False(t, canAdvanceMonthlyCycleByUsage(10.0, 0))
 }
 
 func TestAdvanceMonthlyCycleRollsBackWhenLockedRowIsAlreadyReset(t *testing.T) {

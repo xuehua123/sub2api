@@ -292,10 +292,10 @@
                 }}
               </p>
               <button
-                v-if="canAdvanceMonthlyCycle(subscription)"
                 type="button"
-                class="btn btn-secondary mt-1 text-xs"
-                :disabled="advancingSubscriptionId === subscription.id"
+                class="btn btn-secondary mt-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="advancingSubscriptionId === subscription.id || !canAdvanceMonthlyCycle(subscription)"
+                :title="advanceMonthlyCycleHint(subscription)"
                 @click="advanceMonthlyCycle(subscription)"
               >
                 {{
@@ -304,6 +304,12 @@
                     : t('userSubscriptions.advanceMonthlyCycle')
                 }}
               </button>
+              <p
+                v-if="!canAdvanceMonthlyCycle(subscription)"
+                class="text-xs text-gray-500 dark:text-dark-400"
+              >
+                {{ advanceMonthlyCycleHint(subscription) }}
+              </p>
             </div>
 
             <!-- No limits configured - Unlimited badge -->
@@ -367,6 +373,7 @@ const switchPreferences = ref<SubscriptionGroupPreference[]>([])
 const savingPreferences = ref(false)
 const advancingSubscriptionId = ref<number | null>(null)
 const draggedPreferenceGroupID = ref<number | null>(null)
+const monthlyCycleAdvanceThreshold = 0.9
 
 async function loadSubscriptions() {
   try {
@@ -529,7 +536,7 @@ function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
     !subscription.expires_at ||
     !limit ||
     limit <= 0 ||
-    (subscription.monthly_usage_usd || 0) < limit
+    !hasReachedMonthlyCycleAdvanceThreshold(subscription)
   ) {
     return false
   }
@@ -545,6 +552,43 @@ function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
   const newExpiresAt = new Date(expiresAt)
   newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
   return newExpiresAt.getTime() > now.getTime()
+}
+
+function hasReachedMonthlyCycleAdvanceThreshold(subscription: UserSubscription): boolean {
+  const limit = subscription.group?.monthly_limit_usd
+  if (!limit || limit <= 0) return false
+  return (subscription.monthly_usage_usd || 0) >= limit * monthlyCycleAdvanceThreshold
+}
+
+function advanceMonthlyCycleHint(subscription: UserSubscription): string {
+  const limit = subscription.group?.monthly_limit_usd
+  if (subscription.status !== 'active') {
+    return t('userSubscriptions.advanceMonthlyUnavailableInactive')
+  }
+  if (!subscription.expires_at) {
+    return t('userSubscriptions.advanceMonthlyUnavailableNoExpiration')
+  }
+  if (!limit || limit <= 0) {
+    return t('userSubscriptions.advanceMonthlyUnavailableNoMonthlyLimit')
+  }
+  if (!hasReachedMonthlyCycleAdvanceThreshold(subscription)) {
+    return t('userSubscriptions.advanceMonthlyThresholdHint', {
+      percent: Math.round((1 - monthlyCycleAdvanceThreshold) * 100)
+    })
+  }
+  const now = new Date()
+  const resetAt = getMonthlyResetAt(subscription, now)
+  const expiresAt = new Date(subscription.expires_at)
+  if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
+    return t('userSubscriptions.advanceMonthlyUnavailableWindow')
+  }
+  const deductedDays = estimateDeductedDays(subscription, now)
+  const newExpiresAt = new Date(expiresAt)
+  newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
+  if (newExpiresAt.getTime() <= now.getTime()) {
+    return t('userSubscriptions.advanceMonthlyUnavailableValidity')
+  }
+  return t('userSubscriptions.advanceMonthlyAvailableHint', { days: deductedDays })
 }
 
 function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
@@ -566,9 +610,19 @@ function estimateDeductedDays(subscription: UserSubscription, now = new Date()):
 }
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {
+  if (!canAdvanceMonthlyCycle(subscription)) return
   const groupName = subscription.group?.name || `Group #${subscription.group_id}`
   const deductedDays = estimateDeductedDays(subscription)
-  if (!window.confirm(t('userSubscriptions.advanceMonthlyConfirm', { group: groupName, days: deductedDays }))) {
+  const limit = subscription.group?.monthly_limit_usd || 0
+  const used = subscription.monthly_usage_usd || 0
+  const remaining = Math.max(limit - used, 0)
+  if (!window.confirm(t('userSubscriptions.advanceMonthlyConfirm', {
+    group: groupName,
+    days: deductedDays,
+    used: used.toFixed(2),
+    limit: limit.toFixed(2),
+    remaining: remaining.toFixed(2)
+  }))) {
     return
   }
   try {
