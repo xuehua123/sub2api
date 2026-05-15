@@ -4201,6 +4201,27 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d (passthrough rule matched) message=%s", resp.StatusCode, upstreamMsg)
 	}
 
+	if isOpenAIPromptBlockedError(resp.StatusCode, body) {
+		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+			Platform:           account.Platform,
+			AccountID:          account.ID,
+			AccountName:        account.Name,
+			UpstreamStatusCode: resp.StatusCode,
+			UpstreamRequestID:  resp.Header.Get("x-request-id"),
+			Kind:               "http_error",
+			Message:            upstreamMsg,
+			Detail:             upstreamDetail,
+		})
+		if requestID := strings.TrimSpace(resp.Header.Get("x-request-id")); requestID != "" {
+			c.Header("x-request-id", requestID)
+		}
+		writeOpenAIClientErrorResponse(c, resp.StatusCode, body, upstreamMsg)
+		if upstreamMsg == "" {
+			return nil, fmt.Errorf("upstream error: %d code=prompt_blocked", resp.StatusCode)
+		}
+		return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+	}
+
 	// Check custom error codes
 	if !account.ShouldHandleErrorCode(resp.StatusCode) {
 		appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
@@ -4290,6 +4311,43 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)
 	}
 	return nil, fmt.Errorf("upstream error: %d message=%s", resp.StatusCode, upstreamMsg)
+}
+
+func isOpenAIPromptBlockedError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(extractUpstreamErrorCode(body)), "prompt_blocked")
+}
+
+func writeOpenAIClientErrorResponse(c *gin.Context, statusCode int, body []byte, upstreamMsg string) {
+	errType := strings.TrimSpace(gjson.GetBytes(body, "error.type").String())
+	if errType == "" {
+		errType = "invalid_request_error"
+	}
+	errCode := strings.TrimSpace(extractUpstreamErrorCode(body))
+	errMsg := strings.TrimSpace(upstreamMsg)
+	if errMsg == "" {
+		switch strings.ToLower(errCode) {
+		case "prompt_blocked":
+			errMsg = "OpenAI rejected this request because the submitted content was blocked by its prompt filter."
+		default:
+			errMsg = "The upstream provider rejected this request."
+		}
+	}
+
+	payload := gin.H{
+		"type":    errType,
+		"message": errMsg,
+	}
+	if errCode != "" {
+		payload["code"] = errCode
+	}
+	if param := strings.TrimSpace(gjson.GetBytes(body, "error.param").String()); param != "" {
+		payload["param"] = param
+	}
+
+	c.JSON(statusCode, gin.H{"error": payload})
 }
 
 // compatErrorWriter is the signature for format-specific error writers used by
