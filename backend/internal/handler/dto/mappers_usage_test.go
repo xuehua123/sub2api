@@ -168,6 +168,25 @@ func TestUsageLogFromService_FallsBackFirstSSEEventToFirstToken(t *testing.T) {
 	require.Equal(t, firstTokenMs, *adminDTO.FirstSSEEventMs)
 }
 
+func TestUsageLogFromService_IncludesIPAddressForOwnerAndAdmin(t *testing.T) {
+	t.Parallel()
+
+	ipAddress := "203.0.113.10"
+	log := &service.UsageLog{
+		RequestID: "req_ip",
+		Model:     "gpt-5.4",
+		IPAddress: &ipAddress,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.NotNil(t, userDTO.IPAddress)
+	require.Equal(t, ipAddress, *userDTO.IPAddress)
+	require.NotNil(t, adminDTO.IPAddress)
+	require.Equal(t, ipAddress, *adminDTO.IPAddress)
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }

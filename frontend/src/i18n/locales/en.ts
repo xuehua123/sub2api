@@ -1236,7 +1236,8 @@ export default {
     exportExcelSuccess: 'Usage data exported successfully (Excel format)',
     exportExcelFailed: 'Failed to export usage data',
     imageUnit: ' images',
-    userAgent: 'User-Agent'
+    userAgent: 'User-Agent',
+    ipAddress: 'IP'
   },
 
   // Shared keys for channel monitor (admin + user views)

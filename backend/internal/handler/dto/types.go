@@ -412,6 +412,9 @@ type UsageLog struct {
 	// User-Agent
 	UserAgent *string `json:"user_agent"`
 
+	// IPAddress 用户自己的请求 IP
+	IPAddress *string `json:"ip_address,omitempty"`
+
 	// Cache TTL Override 标记
 	CacheTTLOverridden bool `json:"cache_ttl_overridden"`
 

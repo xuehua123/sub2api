@@ -351,6 +351,11 @@
             <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
           </template>
 
+          <template #cell-ip_address="{ row }">
+            <span v-if="row.ip_address" class="text-sm font-mono text-gray-600 dark:text-gray-400">{{ row.ip_address }}</span>
+            <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+          </template>
+
           <template #empty>
             <EmptyState :message="t('usage.noRecords')" />
           </template>
@@ -593,7 +598,8 @@ const columns = computed<Column[]>(() => [
   { key: 'first_sse_event', label: t('usage.upstreamFirstEvent'), sortable: false },
   { key: 'duration', label: t('usage.duration'), sortable: false },
   { key: 'created_at', label: t('usage.time'), sortable: true },
-  { key: 'user_agent', label: t('usage.userAgent'), sortable: false }
+  { key: 'user_agent', label: t('usage.userAgent'), sortable: false },
+  { key: 'ip_address', label: t('usage.ipAddress'), sortable: false }
 ])
 
 const usageLogs = ref<UsageLog[]>([])
@@ -901,7 +907,8 @@ const exportToCSV = async () => {
       'First Response (ms)',
       'First Event (ms)',
       'First Token (ms)',
-      'Duration (ms)'
+      'Duration (ms)',
+      'IP Address'
     ]
     const rows = allLogs.map((log) =>
       [
@@ -922,7 +929,8 @@ const exportToCSV = async () => {
         log.first_client_flush_ms ?? '',
         log.first_sse_event_ms ?? '',
         log.first_token_ms ?? '',
-        log.duration_ms
+        log.duration_ms,
+        log.ip_address || ''
       ].map(escapeCSVValue)
     )
 

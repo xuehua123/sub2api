@@ -43,6 +43,7 @@ const messages: Record<string, string> = {
   'usage.duration': 'Duration',
   'usage.time': 'Time',
   'usage.userAgent': 'User Agent',
+  'usage.ipAddress': 'IP',
 }
 
 vi.mock('@/api', () => ({
@@ -211,6 +212,7 @@ describe('user UsageView tooltip', () => {
         first_sse_event_ms: 10,
         first_client_flush_ms: 11,
         duration_ms: 345,
+        ip_address: '203.0.113.10',
         created_at: '2026-03-08T00:00:00Z',
         model: 'gpt-5.4',
         reasoning_effort: null,
@@ -275,6 +277,8 @@ describe('user UsageView tooltip', () => {
     expect(hasSortedExportQuery).toBe(true)
     expect(clickSpy).toHaveBeenCalled()
     expect(showSuccess).toHaveBeenCalled()
+
+    expect(setupState.columns.some((column: { key: string }) => column.key === 'ip_address')).toBe(true)
 
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL

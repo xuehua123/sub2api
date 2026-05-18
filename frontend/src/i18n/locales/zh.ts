@@ -1240,7 +1240,8 @@ export default {
     exportExcelSuccess: '使用数据导出成功（Excel格式）',
     exportExcelFailed: '使用数据导出失败',
     imageUnit: '张',
-    userAgent: 'User-Agent'
+    userAgent: 'User-Agent',
+    ipAddress: 'IP'
   },
 
   // Shared keys for channel monitor (admin + user views)

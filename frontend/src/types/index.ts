@@ -1226,6 +1226,9 @@ export interface UsageLog {
   // User-Agent
   user_agent: string | null
 
+  // Request IP for the current user's own usage records
+  ip_address?: string | null
+
   // Cache TTL Override
   cache_ttl_overridden: boolean
 
