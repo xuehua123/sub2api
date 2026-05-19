@@ -366,7 +366,7 @@ func TestForwardAsChatCompletions_BufferedTerminalWithoutUpstreamCloseReturns(t 
 	}()
 	upstream := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "x-request-id": []string{"rid_chat_buffered_terminal_no_close"}},
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "Content-Encoding": []string{"gzip"}, "x-request-id": []string{"rid_chat_buffered_terminal_no_close"}},
 		Body:       upstreamStream,
 	}}
 
@@ -401,6 +401,10 @@ func TestForwardAsChatCompletions_BufferedTerminalWithoutUpstreamCloseReturns(t 
 		require.Equal(t, 8, got.result.Usage.OutputTokens)
 		require.Equal(t, 6, got.result.Usage.CacheReadInputTokens)
 		require.Contains(t, rec.Body.String(), `"finish_reason":"stop"`)
+		require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+		require.NotContains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+		require.Empty(t, rec.Header().Get("Content-Encoding"))
+		require.Equal(t, "rid_chat_buffered_terminal_no_close", rec.Header().Get("x-request-id"))
 	case <-time.After(time.Second):
 		require.Fail(t, "ForwardAsChatCompletions buffered response should return after terminal usage event even if upstream keeps the connection open")
 	}

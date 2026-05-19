@@ -50,7 +50,7 @@ func TestGeminiForwardAsChatCompletions_OAuthRoutesToGeminiAndReturnsChatFormat(
 	httpStub := &geminiCompatHTTPUpstreamStub{
 		response: &http.Response{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+			Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "Content-Encoding": []string{"gzip"}, "x-request-id": []string{"rid_gemini_chat"}},
 			Body:       io.NopCloser(strings.NewReader(upstreamBody)),
 		},
 	}
@@ -115,6 +115,10 @@ func TestGeminiForwardAsChatCompletions_OAuthRoutesToGeminiAndReturnsChatFormat(
 	require.Equal(t, float64(7), usage["prompt_tokens"])
 	require.Equal(t, float64(3), usage["completion_tokens"])
 	require.Equal(t, float64(10), usage["total_tokens"])
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	require.NotContains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Empty(t, rec.Header().Get("Content-Encoding"))
+	require.Equal(t, "rid_gemini_chat", rec.Header().Get("x-request-id"))
 }
 
 func TestGeminiForwardAsChatCompletions_StreamsOpenAIChunksFromGeminiSSE(t *testing.T) {

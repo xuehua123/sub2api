@@ -32,7 +32,7 @@ func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsag
 	c, _ := gin.CreateTestContext(rec)
 
 	resp := &http.Response{
-		Header: http.Header{"x-request-id": []string{"rid_buffered"}},
+		Header: http.Header{"Content-Type": []string{"text/event-stream"}, "Content-Encoding": []string{"gzip"}, "x-request-id": []string{"rid_buffered"}},
 		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
 			`event: message_start`,
 			`data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4.5","stop_reason":"","usage":{"input_tokens":12,"cache_read_input_tokens":9,"cache_creation_input_tokens":3}}}`,
@@ -55,6 +55,10 @@ func TestHandleResponsesBufferedStreamingResponse_PreservesMessageStartCacheUsag
 	require.Equal(t, 9, result.Usage.CacheReadInputTokens)
 	require.Equal(t, 3, result.Usage.CacheCreationInputTokens)
 	require.Contains(t, rec.Body.String(), `"cached_tokens":9`)
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	require.NotContains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Empty(t, rec.Header().Get("Content-Encoding"))
+	require.Equal(t, "rid_buffered", rec.Header().Get("x-request-id"))
 }
 
 func TestHandleResponsesStreamingResponse_PreservesMessageStartCacheUsage(t *testing.T) {

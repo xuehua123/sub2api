@@ -2314,7 +2314,7 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 	svc := &OpenAIGatewayService{cfg: &config.Config{}}
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "Content-Encoding": []string{"gzip"}, "x-request-id": []string{"rid_sse_to_json"}},
 	}
 	body := []byte(strings.Join([]string{
 		`data: {"type":"response.in_progress","response":{"id":"resp_2"}}`,
@@ -2328,7 +2328,10 @@ func TestHandleSSEToJSON_CompletedEventReturnsJSON(t *testing.T) {
 	require.Equal(t, 7, usage.InputTokens)
 	require.Equal(t, 9, usage.OutputTokens)
 	require.Equal(t, 1, usage.CacheReadInputTokens)
-	// Header 可能由上游 Content-Type 透传；关键是 body 已转换为最终 JSON 响应。
+	require.Contains(t, rec.Header().Get("Content-Type"), "application/json")
+	require.NotContains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+	require.Empty(t, rec.Header().Get("Content-Encoding"))
+	require.Equal(t, "rid_sse_to_json", rec.Header().Get("x-request-id"))
 	require.NotContains(t, rec.Body.String(), "event:")
 	require.Contains(t, rec.Body.String(), `"id":"resp_2"`)
 	require.NotContains(t, rec.Body.String(), "data:")
