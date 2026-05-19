@@ -20,7 +20,7 @@ FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Install pnpm
+# Install pnpm (pinned to v9 to match CI and keep builds reproducible)
 ARG PNPM_VERSION=9.15.9
 RUN corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 

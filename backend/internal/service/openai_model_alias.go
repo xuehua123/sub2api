@@ -112,6 +112,11 @@ func normalizeKnownOpenAIModelForMappingLookup(model string) string {
 	if key == "" {
 		return ""
 	}
+	if key == "codex-auto-review" {
+		// Account mappings keep the legacy routing alias, while billing/model
+		// normalization treats codex-auto-review as its own priced model.
+		return "gpt-5.5"
+	}
 	if mapped := getNormalizedCodexModel(key); mapped != "" {
 		return mapped
 	}

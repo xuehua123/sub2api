@@ -7,7 +7,7 @@ import (
 )
 
 var codexModelMap = map[string]string{
-	"codex-auto-review":          "gpt-5.5",
+	"codex-auto-review":          "codex-auto-review",
 	"gpt-5.5":                    "gpt-5.5",
 	"gpt-5.5-chat":               "gpt-5.5",
 	"gpt-5.5-codex":              "gpt-5.5",
@@ -1038,7 +1038,7 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 				return id
 			}
 			if strings.HasPrefix(id, "call_") {
-				return "fc" + strings.TrimPrefix(id, "call_")
+				return "fc_" + strings.TrimPrefix(id, "call_")
 			}
 			return "fc_" + id
 		}

@@ -350,7 +350,8 @@ func (h *AuthHandler) findLinuxDoCompatEmailUser(ctx context.Context, email stri
 	if email == "" ||
 		strings.HasSuffix(email, service.LinuxDoConnectSyntheticEmailDomain) ||
 		strings.HasSuffix(email, service.OIDCConnectSyntheticEmailDomain) ||
-		strings.HasSuffix(email, service.WeChatConnectSyntheticEmailDomain) {
+		strings.HasSuffix(email, service.WeChatConnectSyntheticEmailDomain) ||
+		strings.HasSuffix(email, service.DingTalkConnectSyntheticEmailDomain) {
 		return nil, nil
 	}
 
@@ -520,7 +521,7 @@ func (h *AuthHandler) CompleteLinuxDoOAuthRegistration(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(c.Request.Context(), email, username, req.InvitationCode, strings.TrimSpace(req.ReferralCode), strings.TrimSpace(req.AffCode))
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(c.Request.Context(), email, username, req.InvitationCode, strings.TrimSpace(req.ReferralCode), strings.TrimSpace(req.AffCode), "linuxdo")
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
