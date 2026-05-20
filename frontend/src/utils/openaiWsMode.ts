@@ -1,7 +1,6 @@
 export const OPENAI_WS_MODE_OFF = 'off'
 export const OPENAI_WS_MODE_CTX_POOL = 'ctx_pool'
 export const OPENAI_WS_MODE_PASSTHROUGH = 'passthrough'
-export const DEFAULT_OPENAI_WS_MODE = OPENAI_WS_MODE_CTX_POOL
 
 export type OpenAIWSMode =
   | typeof OPENAI_WS_MODE_OFF
@@ -55,7 +54,7 @@ export const resolveOpenAIWSModeFromExtra = (
   extra: Record<string, unknown> | null | undefined,
   options: ResolveOpenAIWSModeOptions
 ): OpenAIWSMode => {
-  const fallback = options.defaultMode ?? DEFAULT_OPENAI_WS_MODE
+  const fallback = options.defaultMode ?? OPENAI_WS_MODE_OFF
   if (!extra) return fallback
 
   const mode = normalizeOpenAIWSMode(extra[options.modeKey])
