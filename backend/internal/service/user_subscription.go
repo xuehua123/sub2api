@@ -146,7 +146,10 @@ func needsWindowResetAt(windowStart *time.Time, startsAt time.Time, cycle time.D
 	if start == nil {
 		return false
 	}
-	return start.After(*windowStart)
+	if !start.After(*windowStart) {
+		return false
+	}
+	return start.Sub(*windowStart) >= cycle
 }
 
 func effectiveWindowStartAt(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) *time.Time {

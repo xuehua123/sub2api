@@ -148,7 +148,8 @@ func TestUserSubscriptionNeedsDailyReset_MultiDaySubscriptionStillRefreshes(t *t
 	}
 
 	require.False(t, sub.HasOneTimeDailyQuota())
-	require.True(t, sub.NeedsDailyResetAt(dailyWindowStart.Add(24*time.Hour)), "多日订阅仍应按 24 小时日窗口刷新")
+	require.False(t, sub.NeedsDailyResetAt(dailyWindowStart.Add(24*time.Hour)), "旧 0 点窗口不能在购买时刻满 24 小时前提前刷新")
+	require.True(t, sub.NeedsDailyResetAt(start.Add(24*time.Hour)), "多日订阅仍应按购买时刻对齐的 24 小时窗口刷新")
 }
 
 func TestUserSubscriptionDailyResetTime_DailyCardReturnsExpiry(t *testing.T) {
@@ -234,6 +235,23 @@ func TestEffectiveWindowStartAt_PrefersManualResetAnchor(t *testing.T) {
 	require.Equal(t, manualResetAt, *start)
 	require.False(t, needsWindowResetAt(&manualResetAt, startsAt, 30*24*time.Hour, manualResetAt.Add(29*24*time.Hour)))
 	require.True(t, needsWindowResetAt(&manualResetAt, startsAt, 30*24*time.Hour, manualResetAt.Add(30*24*time.Hour)))
+}
+
+func TestNeedsWindowResetAt_LegacyMonthlyAnchorDoesNotResetBeforeAlignedCycleEnds(t *testing.T) {
+	startsAt := time.Date(2026, 5, 7, 15, 31, 55, 0, time.UTC)
+	legacyWindowStart := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 5, 20, 14, 32, 0, 0, time.UTC)
+
+	require.False(t, needsWindowResetAt(&legacyWindowStart, startsAt, 30*24*time.Hour, now))
+}
+
+func TestNeedsWindowResetAt_LegacyMonthlyAnchorResetsAfterFullAlignedCycle(t *testing.T) {
+	startsAt := time.Date(2026, 5, 7, 15, 31, 55, 0, time.UTC)
+	legacyWindowStart := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)
+	now := startsAt.Add(30 * 24 * time.Hour)
+
+	require.True(t, needsWindowResetAt(&legacyWindowStart, startsAt, 30*24*time.Hour, now))
+	require.Equal(t, startsAt.Add(30*24*time.Hour), resolvedWindowResetStart(&legacyWindowStart, startsAt, 30*24*time.Hour, now))
 }
 
 func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t *testing.T) {
