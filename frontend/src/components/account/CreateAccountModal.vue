@@ -3202,6 +3202,7 @@ import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/forma
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
+  DEFAULT_OPENAI_WS_MODE,
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
@@ -3347,8 +3348,8 @@ const upstreamGzipExplicit = ref(false)
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
-const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
-const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
+const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
+const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
 const codexCLIOnlyEnabled = ref(false)
 const anthropicPassthroughEnabled = ref(false)
 const webSearchEmulationMode = ref('default')
@@ -3771,8 +3772,8 @@ watch(
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
-      openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-      openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+      openaiOAuthResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
+      openaiAPIKeyResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
       codexCLIOnlyEnabled.value = false
     }
     if (newPlatform !== 'anthropic') {
@@ -4171,8 +4172,8 @@ const resetForm = () => {
   openaiPassthroughEnabled.value = false
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
-  openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-  openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+  openaiOAuthResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
+  openaiAPIKeyResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
   codexCLIOnlyEnabled.value = false
   anthropicPassthroughEnabled.value = false
   webSearchEmulationMode.value = 'default'

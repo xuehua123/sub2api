@@ -64,8 +64,6 @@ func resolveOpenAIWSDecisionByClientTransport(
 	decision OpenAIWSProtocolDecision,
 	clientTransport OpenAIClientTransport,
 ) OpenAIWSProtocolDecision {
-	if clientTransport == OpenAIClientTransportHTTP {
-		return openAIWSHTTPDecision("client_protocol_http")
-	}
+	_ = clientTransport
 	return decision
 }

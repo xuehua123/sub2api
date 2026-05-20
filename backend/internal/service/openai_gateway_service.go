@@ -2072,7 +2072,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
 	clientTransport := GetOpenAIClientTransport(c)
-	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
+	// 记录客户端入站协议，但允许 HTTP 入站请求按账号策略走 WSv2 上游，
+	// 这样 /responses 的 HTTP 客户端也能享受到 ctx_pool / 预热收益。
 	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport)
 	if c != nil {
 		c.Set("openai_ws_transport_decision", string(wsDecision.Transport))

@@ -1154,6 +1154,7 @@ import {
   getPresetMappingsByPlatform
 } from '@/composables/useModelWhitelist'
 import {
+  DEFAULT_OPENAI_WS_MODE,
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
@@ -1293,8 +1294,8 @@ const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const upstreamGzipEnabled = ref(false)
 const openaiPassthroughEnabled = ref(false)
-const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
-const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
+const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
+const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
 const codexCLIOnlyEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
@@ -1782,8 +1783,8 @@ watch(
       status.value = 'active'
       groupIds.value = []
       upstreamGzipEnabled.value = false
-      openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-      openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+      openaiOAuthResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
+      openaiAPIKeyResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
       codexCLIOnlyEnabled.value = false
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []

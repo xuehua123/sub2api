@@ -2274,6 +2274,7 @@ import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } fro
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
 import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
 import {
+  DEFAULT_OPENAI_WS_MODE,
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
@@ -2426,8 +2427,8 @@ const customBaseUrl = ref('')
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
-const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
-const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
+const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
+const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(DEFAULT_OPENAI_WS_MODE)
 const codexCLIOnlyEnabled = ref(false)
 type CodexImageGenerationBridgeMode = 'inherit' | 'enabled' | 'disabled'
 const codexImageGenerationBridgeMode = ref<CodexImageGenerationBridgeMode>('inherit')
@@ -2755,8 +2756,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAICompactModelMappings.value = []
-  openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
-  openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
+  openaiOAuthResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
+  openaiAPIKeyResponsesWebSocketV2Mode.value = DEFAULT_OPENAI_WS_MODE
   codexCLIOnlyEnabled.value = false
   codexImageGenerationBridgeMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
@@ -2779,13 +2780,13 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       modeKey: 'openai_oauth_responses_websockets_v2_mode',
       enabledKey: 'openai_oauth_responses_websockets_v2_enabled',
       fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
-      defaultMode: OPENAI_WS_MODE_OFF
+      defaultMode: DEFAULT_OPENAI_WS_MODE
     })
     openaiAPIKeyResponsesWebSocketV2Mode.value = resolveOpenAIWSModeFromExtra(extra, {
       modeKey: 'openai_apikey_responses_websockets_v2_mode',
       enabledKey: 'openai_apikey_responses_websockets_v2_enabled',
       fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled'],
-      defaultMode: OPENAI_WS_MODE_OFF
+      defaultMode: DEFAULT_OPENAI_WS_MODE
     })
     if (newAccount.type === 'oauth') {
       codexCLIOnlyEnabled.value = extra?.codex_cli_only === true

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_OPENAI_WS_MODE,
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
   OPENAI_WS_MODE_PASSTHROUGH,
@@ -40,7 +41,16 @@ describe('openaiWsMode utils', () => {
     expect(mode).toBe(OPENAI_WS_MODE_PASSTHROUGH)
   })
 
-  it('falls back to default when nothing is present', () => {
+  it('falls back to ctx_pool default when nothing is present', () => {
+    const mode = resolveOpenAIWSModeFromExtra({}, {
+      modeKey: 'openai_apikey_responses_websockets_v2_mode',
+      enabledKey: 'openai_apikey_responses_websockets_v2_enabled',
+      fallbackEnabledKeys: ['responses_websockets_v2_enabled', 'openai_ws_enabled']
+    })
+    expect(mode).toBe(DEFAULT_OPENAI_WS_MODE)
+  })
+
+  it('supports an explicit default override', () => {
     const mode = resolveOpenAIWSModeFromExtra({}, {
       modeKey: 'openai_apikey_responses_websockets_v2_mode',
       enabledKey: 'openai_apikey_responses_websockets_v2_enabled',
