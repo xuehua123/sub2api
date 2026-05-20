@@ -43,13 +43,21 @@ func (r *resetQuotaUserSubRepoStub) ResetDailyUsage(_ context.Context, _ int64, 
 	return r.resetDailyErr
 }
 
-func (r *resetQuotaUserSubRepoStub) ResetWeeklyUsage(_ context.Context, _ int64, _ time.Time) error {
+func (r *resetQuotaUserSubRepoStub) ResetWeeklyUsage(_ context.Context, _ int64, windowStart time.Time) error {
 	r.resetWeeklyCalled = true
+	if r.resetWeeklyErr == nil && r.sub != nil {
+		r.sub.WeeklyUsageUSD = 0
+		r.sub.WeeklyWindowStart = &windowStart
+	}
 	return r.resetWeeklyErr
 }
 
-func (r *resetQuotaUserSubRepoStub) ResetMonthlyUsage(_ context.Context, _ int64, _ time.Time) error {
+func (r *resetQuotaUserSubRepoStub) ResetMonthlyUsage(_ context.Context, _ int64, windowStart time.Time) error {
 	r.resetMonthlyCalled = true
+	if r.resetMonthlyErr == nil && r.sub != nil {
+		r.sub.MonthlyUsageUSD = 0
+		r.sub.MonthlyWindowStart = &windowStart
+	}
 	return r.resetMonthlyErr
 }
 
@@ -204,4 +212,30 @@ func TestAdminResetQuota_ReturnsRefreshedSub(t *testing.T) {
 	// 服务应返回第二次 GetByID 的刷新值而非初始的 99.9
 	require.Equal(t, float64(0), result.DailyUsageUSD, "返回的订阅应反映已归零的用量")
 	require.True(t, stub.resetDailyCalled)
+}
+
+func TestAdminResetQuota_MonthlyResetBecomesNewCycleAnchor(t *testing.T) {
+	startsAt := time.Date(2026, 5, 1, 15, 30, 0, 0, time.UTC)
+	stub := &resetQuotaUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:                 10,
+			UserID:             10,
+			GroupID:            20,
+			StartsAt:           startsAt,
+			ExpiresAt:          startsAt.AddDate(0, 0, 90),
+			MonthlyUsageUSD:    99.9,
+			MonthlyWindowStart: func() *time.Time { t := startsAt; return &t }(),
+		},
+	}
+
+	svc := newResetQuotaSvc(stub)
+	result, err := svc.AdminResetQuota(context.Background(), 10, false, false, true)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, stub.resetMonthlyCalled)
+	require.NotNil(t, result.MonthlyWindowStart)
+	resetAt := result.MonthlyResetTime()
+	require.NotNil(t, resetAt)
+	require.Equal(t, result.MonthlyWindowStart.Add(30*24*time.Hour), *resetAt)
 }

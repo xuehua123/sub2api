@@ -42,6 +42,9 @@
         <div><label class="input-label">{{ t('payment.admin.validityDays') }} <span class="text-red-500">*</span></label><input v-model.number="planForm.validity_days" type="number" min="1" class="input" required /></div>
         <div><label class="input-label">{{ t('payment.admin.validityUnit') }} <span class="text-red-500">*</span></label><Select v-model="planForm.validity_unit" :options="validityUnitOptions" /></div>
       </div>
+      <p v-if="invalidValidityUnit" class="text-xs text-amber-600 dark:text-amber-400">
+        {{ t('payment.admin.invalidValidityUnitHint', { unit: invalidValidityUnit }) }}
+      </p>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
       </div>
@@ -89,6 +92,7 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import { platformTextClass } from '@/utils/platformColors'
+import { parsePlanValidityUnit } from '@/utils/subscriptionTime'
 
 const props = defineProps<{
   show: boolean
@@ -105,14 +109,31 @@ const { t } = useI18n()
 const appStore = useAppStore()
 
 const saving = ref(false)
-const planForm = reactive({ name: '', group_id: null as number | null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true })
+const planForm = reactive({ name: '', group_id: null as number | null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'day', sort_order: 0, for_sale: true })
 const planFeaturesText = ref('')
+const invalidValidityUnit = ref<string | null>(null)
 
-const validityUnitOptions = computed(() => [
-  { value: 'days', label: t('payment.admin.days') },
-  { value: 'weeks', label: t('payment.admin.weeks') },
-  { value: 'months', label: t('payment.admin.months') },
-])
+const validityUnitOptions = computed(() => {
+  const options = [
+    { value: 'day', label: t('payment.admin.days') },
+    { value: 'week', label: t('payment.admin.weeks') },
+    { value: 'month', label: t('payment.admin.months') },
+    { value: 'year', label: t('payment.years') },
+  ]
+
+  if (invalidValidityUnit.value) {
+    return [
+      {
+        value: invalidValidityUnit.value,
+        label: t('payment.admin.invalidValidityUnitOption', { unit: invalidValidityUnit.value }),
+        disabled: true,
+      },
+      ...options,
+    ]
+  }
+
+  return options
+})
 
 const groupOptions = computed(() =>
   props.groups
@@ -133,16 +154,40 @@ const selectedGroupInfo = computed(() => {
 watch(() => props.show, (visible) => {
   if (!visible) return
   if (props.plan) {
-    Object.assign(planForm, { name: props.plan.name, group_id: props.plan.group_id, description: props.plan.description, price: props.plan.price, original_price: props.plan.original_price || 0, validity_days: props.plan.validity_days, validity_unit: props.plan.validity_unit || 'days', sort_order: props.plan.sort_order || 0, for_sale: props.plan.for_sale })
+    const parsedValidityUnit = parsePlanValidityUnit(props.plan.validity_unit)
+    invalidValidityUnit.value = parsedValidityUnit ? null : (props.plan.validity_unit?.trim() || null)
+    Object.assign(planForm, {
+      name: props.plan.name,
+      group_id: props.plan.group_id,
+      description: props.plan.description,
+      price: props.plan.price,
+      original_price: props.plan.original_price || 0,
+      validity_days: props.plan.validity_days,
+      validity_unit: parsedValidityUnit ?? invalidValidityUnit.value ?? 'day',
+      sort_order: props.plan.sort_order || 0,
+      for_sale: props.plan.for_sale,
+    })
     planFeaturesText.value = (props.plan.features || []).join('\n')
   } else {
-    Object.assign(planForm, { name: '', group_id: null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'days', sort_order: 0, for_sale: true })
+    Object.assign(planForm, { name: '', group_id: null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'day', sort_order: 0, for_sale: true })
     planFeaturesText.value = ''
+    invalidValidityUnit.value = null
+  }
+})
+
+watch(() => planForm.validity_unit, (value) => {
+  if (!invalidValidityUnit.value) return
+  if (value !== invalidValidityUnit.value && parsePlanValidityUnit(value)) {
+    invalidValidityUnit.value = null
   }
 })
 
 /** Build request payload with snake_case keys matching backend JSON tags */
 function buildPlanPayload() {
+  const parsedValidityUnit = parsePlanValidityUnit(planForm.validity_unit)
+  if (!parsedValidityUnit) {
+    return null
+  }
   const features = planFeaturesText.value.split('\n').map(f => f.trim()).filter(Boolean).join('\n')
   return {
     name: planForm.name,
@@ -151,7 +196,7 @@ function buildPlanPayload() {
     price: planForm.price,
     original_price: planForm.original_price || 0,
     validity_days: planForm.validity_days,
-    validity_unit: planForm.validity_unit,
+    validity_unit: parsedValidityUnit,
     sort_order: planForm.sort_order,
     for_sale: planForm.for_sale,
     features,
@@ -171,9 +216,17 @@ async function handleSavePlan() {
     appStore.showError(t('payment.admin.validityDaysRequired'))
     return
   }
+  if (!parsePlanValidityUnit(planForm.validity_unit)) {
+    appStore.showError(t('payment.admin.invalidValidityUnitMessage', { unit: planForm.validity_unit || '-' }))
+    return
+  }
   saving.value = true
   try {
     const data = buildPlanPayload()
+    if (!data) {
+      appStore.showError(t('payment.admin.invalidValidityUnitMessage', { unit: planForm.validity_unit || '-' }))
+      return
+    }
     if (props.plan) { await adminPaymentAPI.updatePlan(props.plan.id, data) }
     else { await adminPaymentAPI.createPlan(data) }
     appStore.showSuccess(t('common.saved'))

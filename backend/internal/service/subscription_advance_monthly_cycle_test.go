@@ -53,7 +53,7 @@ func TestAdvanceMonthlyCycleRunsLockedUpdateAndLogInTransaction(t *testing.T) {
 	limit := 10.0
 	previousUsage := 9.0
 	previousStartsAt := time.Now().Add(-2 * 24 * time.Hour)
-	previousWindow := time.Now().Add(12 * time.Hour)
+	previousWindow := previousStartsAt
 	previousExpiresAt := time.Now().Add(75 * 24 * time.Hour)
 	previousUpdatedAt := time.Now().Add(-time.Hour)
 	group := &Group{
@@ -108,8 +108,77 @@ func TestAdvanceMonthlyCycleRunsLockedUpdateAndLogInTransaction(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, previousUsage, result.PreviousMonthlyUsage)
 	require.Greater(t, result.DeductedSeconds, int64(0))
+	require.Equal(t, previousStartsAt.Add(monthlyCycleDuration), result.NewMonthlyWindowStart)
 	require.NotNil(t, result.Subscription)
 	require.Zero(t, result.Subscription.MonthlyUsageUSD)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
+	ctx := context.Background()
+	userID := int64(8)
+	subscriptionID := int64(101)
+	groupID := int64(21)
+	limit := 10.0
+	previousUsage := 9.5
+	previousStartsAt := time.Date(2026, 5, 1, 15, 30, 0, 0, time.UTC)
+	manualWindowStart := time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC)
+	previousExpiresAt := manualWindowStart.Add(60 * 24 * time.Hour)
+	previousUpdatedAt := manualWindowStart.Add(-time.Hour)
+	group := &Group{
+		ID:              groupID,
+		MonthlyLimitUSD: &limit,
+	}
+	repo := &advanceMonthlyCycleUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:                 subscriptionID,
+			UserID:             userID,
+			GroupID:            groupID,
+			Group:              group,
+			Status:             SubscriptionStatusActive,
+			MonthlyUsageUSD:    previousUsage,
+			StartsAt:           previousStartsAt,
+			MonthlyWindowStart: &manualWindowStart,
+			ExpiresAt:          previousExpiresAt,
+		},
+		refreshedSub: &UserSubscription{
+			ID:                 subscriptionID,
+			UserID:             userID,
+			GroupID:            groupID,
+			Group:              group,
+			Status:             SubscriptionStatusActive,
+			MonthlyUsageUSD:    0,
+			MonthlyWindowStart: func() *time.Time { t := manualWindowStart.Add(monthlyCycleDuration); return &t }(),
+			ExpiresAt:          previousExpiresAt.AddDate(0, 0, -1),
+		},
+	}
+	client, mock := newAdvanceMonthlyCycleMockClient(t)
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, client, nil)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(`(?s)SELECT monthly_usage_usd, monthly_window_start, starts_at, expires_at, status, updated_at\s+FROM user_subscriptions\s+WHERE id = \$1 AND user_id = \$2 AND deleted_at IS NULL\s+FOR UPDATE`).
+		WithArgs(subscriptionID, userID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"monthly_usage_usd",
+			"monthly_window_start",
+			"starts_at",
+			"expires_at",
+			"status",
+			"updated_at",
+		}).AddRow(previousUsage, manualWindowStart, previousStartsAt, previousExpiresAt, SubscriptionStatusActive, previousUpdatedAt))
+	mock.ExpectExec(`(?s)UPDATE user_subscriptions\s+SET monthly_usage_usd = 0,\s+monthly_window_start = \$1,\s+expires_at = \$2,\s+updated_at = \$3\s+WHERE id = \$4 AND user_id = \$5 AND deleted_at IS NULL`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), subscriptionID, userID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`(?s)INSERT INTO subscription_cycle_reset_logs \(\s+user_id, subscription_id, group_id, previous_expires_at, new_expires_at,\s+previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,\s+deducted_days, deducted_seconds, created_at\s+\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, NOW\(\)\)`).
+		WithArgs(userID, subscriptionID, groupID, previousExpiresAt, sqlmock.AnyArg(), previousUsage, manualWindowStart, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	result, err := svc.AdvanceMonthlyCycle(ctx, userID, subscriptionID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, manualWindowStart.Add(monthlyCycleDuration), result.NewMonthlyWindowStart)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

@@ -68,48 +68,45 @@ func (s *UserSubscription) NeedsDailyResetAt(now time.Time) bool {
 	if s.HasOneTimeDailyQuota() {
 		return false
 	}
-	return !now.Before(s.DailyWindowStart.Add(24 * time.Hour))
+	return needsWindowResetAt(s.DailyWindowStart, s.StartsAt, 24*time.Hour, now)
 }
 
 func (s *UserSubscription) NeedsWeeklyReset() bool {
-	if s.WeeklyWindowStart == nil {
-		return false
-	}
-	return time.Since(*s.WeeklyWindowStart) >= 7*24*time.Hour
+	return needsWindowResetAt(s.WeeklyWindowStart, s.StartsAt, 7*24*time.Hour, time.Now())
 }
 
 func (s *UserSubscription) NeedsMonthlyReset() bool {
-	if s.MonthlyWindowStart == nil {
-		return false
-	}
-	return time.Since(*s.MonthlyWindowStart) >= 30*24*time.Hour
+	return needsWindowResetAt(s.MonthlyWindowStart, s.StartsAt, 30*24*time.Hour, time.Now())
 }
 
 func (s *UserSubscription) DailyResetTime() *time.Time {
-	if s.DailyWindowStart == nil {
-		return nil
-	}
 	if s.HasOneTimeDailyQuota() {
 		t := s.ExpiresAt
 		return &t
 	}
-	t := s.DailyWindowStart.Add(24 * time.Hour)
+	start := effectiveWindowStartAt(s.DailyWindowStart, s.StartsAt, 24*time.Hour, time.Now())
+	if start == nil {
+		return nil
+	}
+	t := start.Add(24 * time.Hour)
 	return &t
 }
 
 func (s *UserSubscription) WeeklyResetTime() *time.Time {
-	if s.WeeklyWindowStart == nil {
+	start := effectiveWindowStartAt(s.WeeklyWindowStart, s.StartsAt, 7*24*time.Hour, time.Now())
+	if start == nil {
 		return nil
 	}
-	t := s.WeeklyWindowStart.Add(7 * 24 * time.Hour)
+	t := start.Add(7 * 24 * time.Hour)
 	return &t
 }
 
 func (s *UserSubscription) MonthlyResetTime() *time.Time {
-	if s.MonthlyWindowStart == nil {
+	start := effectiveWindowStartAt(s.MonthlyWindowStart, s.StartsAt, 30*24*time.Hour, time.Now())
+	if start == nil {
 		return nil
 	}
-	t := s.MonthlyWindowStart.Add(30 * 24 * time.Hour)
+	t := start.Add(30 * 24 * time.Hour)
 	return &t
 }
 
@@ -139,4 +136,62 @@ func (s *UserSubscription) CheckAllLimits(group *Group, additionalCost float64) 
 	weekly = s.CheckWeeklyLimit(group, additionalCost)
 	monthly = s.CheckMonthlyLimit(group, additionalCost)
 	return
+}
+
+func needsWindowResetAt(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) bool {
+	if windowStart == nil {
+		return false
+	}
+	start := effectiveWindowStartAt(windowStart, startsAt, cycle, now)
+	if start == nil {
+		return false
+	}
+	return start.After(*windowStart)
+}
+
+func effectiveWindowStartAt(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) *time.Time {
+	if windowStart == nil {
+		return nil
+	}
+
+	windowBased := advanceWindowStart(*windowStart, cycle, now)
+	if aligned, ok := alignedCycleStart(startsAt, cycle, now); ok {
+		if isLegacyWindowAnchor(*windowStart, startsAt, cycle) || isAlignedWindowAnchor(*windowStart, startsAt, cycle) {
+			return &aligned
+		}
+	}
+	return &windowBased
+}
+
+func alignedCycleStart(startsAt time.Time, cycle time.Duration, now time.Time) (time.Time, bool) {
+	if startsAt.IsZero() || cycle <= 0 {
+		return time.Time{}, false
+	}
+	if now.Before(startsAt) {
+		return startsAt, true
+	}
+	elapsed := now.Sub(startsAt)
+	steps := elapsed / cycle
+	return startsAt.Add(steps * cycle), true
+}
+
+func isAlignedWindowAnchor(windowStart, startsAt time.Time, cycle time.Duration) bool {
+	if cycle <= 0 || windowStart.IsZero() || startsAt.IsZero() || windowStart.Before(startsAt) {
+		return false
+	}
+	return windowStart.Sub(startsAt)%cycle == 0
+}
+
+func isLegacyWindowAnchor(windowStart, startsAt time.Time, cycle time.Duration) bool {
+	if !isStartOfDay(windowStart) || startsAt.IsZero() || windowStart.IsZero() || cycle <= 0 {
+		return false
+	}
+	if windowStart.Before(startsAt) {
+		return true
+	}
+	return !isAlignedWindowAnchor(windowStart, startsAt, cycle)
+}
+
+func isStartOfDay(t time.Time) bool {
+	return t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
 }

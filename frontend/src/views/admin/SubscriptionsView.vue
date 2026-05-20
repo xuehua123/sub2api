@@ -232,7 +232,7 @@
                     ${{ row.group?.daily_limit_usd?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="reset-info" v-if="row.daily_window_start">
+                <div class="reset-info">
                   <svg
                     class="h-3 w-3"
                     fill="none"
@@ -269,7 +269,7 @@
                     ${{ row.group?.weekly_limit_usd?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="reset-info" v-if="row.weekly_window_start">
+                <div class="reset-info">
                   <svg
                     class="h-3 w-3"
                     fill="none"
@@ -283,7 +283,7 @@
                       d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  <span>{{ formatResetTime(row.weekly_window_start, 'weekly') }}</span>
+                  <span>{{ formatResetTime(row.weekly_window_start, row.starts_at, 'weekly') }}</span>
                 </div>
               </div>
 
@@ -306,7 +306,7 @@
                     ${{ row.group?.monthly_limit_usd?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="reset-info" v-if="row.monthly_window_start">
+                <div class="reset-info">
                   <svg
                     class="h-3 w-3"
                     fill="none"
@@ -320,7 +320,7 @@
                       d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  <span>{{ formatResetTime(row.monthly_window_start, 'monthly') }}</span>
+                  <span>{{ formatResetTime(row.monthly_window_start, row.starts_at, 'monthly') }}</span>
                 </div>
               </div>
 
@@ -353,8 +353,8 @@
               >
                 {{ formatDateOnly(value) }}
               </span>
-              <div v-if="getDaysRemaining(value) !== null" class="text-xs text-gray-500">
-                {{ getDaysRemaining(value) }} {{ t('admin.subscriptions.daysRemaining') }}
+              <div v-if="formatExpirationRemaining(value)" class="text-xs text-gray-500">
+                {{ formatExpirationRemaining(value) }}
               </div>
             </div>
             <span v-else class="text-sm text-gray-500">{{
@@ -598,7 +598,7 @@
           <p v-if="extendingSubscription.expires_at" class="mt-1 text-sm text-gray-600 dark:text-gray-400">
             {{ t('admin.subscriptions.remainingDays') }}:
             <span class="font-medium text-gray-900 dark:text-white">
-              {{ getDaysRemaining(extendingSubscription.expires_at) ?? 0 }}
+              {{ formatExpirationRemaining(extendingSubscription.expires_at) || '0m' }}
             </span>
           </p>
         </div>
@@ -759,6 +759,7 @@ import GroupBadge from '@/components/common/GroupBadge.vue'
 import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import { formatRemainingDurationCompact, getCycleResetAt, getRemainingHours } from '@/utils/subscriptionTime'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -1285,17 +1286,13 @@ const confirmResetQuota = async () => {
 }
 
 // Helper functions
-const getDaysRemaining = (expiresAt: string): number | null => {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diff = expires.getTime() - now.getTime()
-  if (diff < 0) return null
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+const formatExpirationRemaining = (expiresAt: string): string | null => {
+  return formatRemainingDurationCompact(expiresAt)
 }
 
 const isExpiringSoon = (expiresAt: string): boolean => {
-  const days = getDaysRemaining(expiresAt)
-  return days !== null && days <= 7
+  const remainingHours = getRemainingHours(expiresAt)
+  return remainingHours !== null && remainingHours <= 7 * 24
 }
 
 const getProgressWidth = (used: number | null | undefined, limit: number | null): string => {
@@ -1344,31 +1341,20 @@ const formatDailyUsageWindow = (subscription: UserSubscription): string => {
     return parts ? formatQuotaEndDuration(parts) : t('admin.subscriptions.windowNotActive')
   }
 
-  return formatResetTime(subscription.daily_window_start, 'daily')
+  return formatResetTime(subscription.daily_window_start, subscription.starts_at, 'daily')
 }
 
 // Format reset time based on window start and period type
-const formatResetTime = (windowStart: string | null, period: 'daily' | 'weekly' | 'monthly'): string => {
-  if (!windowStart) return t('admin.subscriptions.windowNotActive')
+const formatResetTime = (
+  windowStart: string | null,
+  startsAt: string,
+  period: 'daily' | 'weekly' | 'monthly'
+): string => {
+  const cycleHours = period === 'daily' ? 24 : period === 'weekly' ? 24 * 7 : 24 * 30
+  const resetTime = getCycleResetAt(windowStart, startsAt, cycleHours)
+  if (!resetTime) return t('admin.subscriptions.windowNotActive')
 
-  const start = new Date(windowStart)
-  const now = new Date()
-
-  // Calculate reset time based on period
-  let resetTime: Date
-  switch (period) {
-    case 'daily':
-      resetTime = new Date(start.getTime() + 24 * 60 * 60 * 1000)
-      break
-    case 'weekly':
-      resetTime = new Date(start.getTime() + 7 * 24 * 60 * 60 * 1000)
-      break
-    case 'monthly':
-      resetTime = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000)
-      break
-  }
-
-  const parts = getRemainingDurationParts(resetTime, now)
+  const parts = getRemainingDurationParts(resetTime, new Date())
 
   return parts ? formatResetDuration(parts) : t('admin.subscriptions.windowNotActive')
 }

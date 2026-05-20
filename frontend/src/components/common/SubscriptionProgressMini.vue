@@ -183,6 +183,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useSubscriptionStore } from '@/stores'
 import type { UserSubscription } from '@/types'
+import { formatRemainingDurationCompact, getRemainingHours } from '@/utils/subscriptionTime'
 
 const { t } = useI18n()
 
@@ -258,23 +259,13 @@ function formatUsage(used: number | undefined, limit: number | null | undefined)
 }
 
 function formatDaysRemaining(expiresAt: string): string {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diff = expires.getTime() - now.getTime()
-  if (diff < 0) return t('subscriptionProgress.expired')
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
-  if (days === 0) return t('subscriptionProgress.expiresToday')
-  if (days === 1) return t('subscriptionProgress.expiresTomorrow')
-  return t('subscriptionProgress.daysRemaining', { days })
+  return formatRemainingDurationCompact(expiresAt) || t('subscriptionProgress.expired')
 }
 
 function getDaysRemainingClass(expiresAt: string): string {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diff = expires.getTime() - now.getTime()
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
-  if (days <= 3) return 'text-red-600 dark:text-red-400'
-  if (days <= 7) return 'text-orange-600 dark:text-orange-400'
+  const remainingHours = getRemainingHours(expiresAt)
+  if (remainingHours === null || remainingHours <= 72) return 'text-red-600 dark:text-red-400'
+  if (remainingHours <= 168) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-500 dark:text-dark-400'
 }
 

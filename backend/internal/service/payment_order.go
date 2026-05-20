@@ -131,7 +131,7 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 		return nil, infraerrors.BadRequest("INVALID_INPUT", "subscription order requires a plan")
 	}
 	plan, err := s.configService.GetPlan(ctx, req.PlanID)
-	if err != nil || !plan.ForSale {
+	if err != nil || !plan.ForSale || !isSupportedValidityUnit(plan.ValidityUnit) {
 		return nil, infraerrors.NotFound("PLAN_NOT_AVAILABLE", "plan not found or not for sale")
 	}
 	group, err := s.groupRepo.GetByID(ctx, plan.GroupID)

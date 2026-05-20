@@ -361,7 +361,7 @@ func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn f
 
 func renewedSubscriptionTerm(existingSub *UserSubscription, notes string, startsAt, expiresAt time.Time) *UserSubscription {
 	renewed := *existingSub
-	windowStart := startOfDay(startsAt)
+	windowStart := startsAt
 	renewed.StartsAt = startsAt
 	renewed.ExpiresAt = expiresAt
 	renewed.Status = SubscriptionStatusActive
@@ -400,17 +400,21 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 	if expiresAt.After(MaxExpiresAt) {
 		expiresAt = MaxExpiresAt
 	}
+	windowStart := now
 
 	sub := &UserSubscription{
-		UserID:     input.UserID,
-		GroupID:    input.GroupID,
-		StartsAt:   now,
-		ExpiresAt:  expiresAt,
-		Status:     SubscriptionStatusActive,
-		AssignedAt: now,
-		Notes:      input.Notes,
-		CreatedAt:  now,
-		UpdatedAt:  now,
+		UserID:             input.UserID,
+		GroupID:            input.GroupID,
+		StartsAt:           now,
+		ExpiresAt:          expiresAt,
+		Status:             SubscriptionStatusActive,
+		DailyWindowStart:   &windowStart,
+		WeeklyWindowStart:  &windowStart,
+		MonthlyWindowStart: &windowStart,
+		AssignedAt:         now,
+		Notes:              input.Notes,
+		CreatedAt:          now,
+		UpdatedAt:          now,
 	}
 	// 只有当 AssignedBy > 0 时才设置（0 表示系统分配，如兑换码）
 	if input.AssignedBy > 0 {
@@ -1143,9 +1147,29 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 	}
 	var resetAt time.Time
 	if previousWindowStart.Valid {
-		resetAt = previousWindowStart.Time.Add(monthlyCycleDuration)
-	} else {
+		effectiveStart := effectiveWindowStartAt(&previousWindowStart.Time, previousStartsAt, monthlyCycleDuration, now)
+		if effectiveStart != nil {
+			resetAt = effectiveStart.Add(monthlyCycleDuration)
+		}
+	}
+	if resetAt.IsZero() {
+		if alignedStart, ok := alignedCycleStart(previousStartsAt, monthlyCycleDuration, now); ok {
+			resetAt = alignedStart.Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
+	} else if !resetAt.After(now) {
+		resetAt = advanceWindowStart(resetAt, monthlyCycleDuration, now)
+	}
+	if resetAt.IsZero() {
 		resetAt = now.Add(monthlyCycleDuration)
+	}
+	if !resetAt.After(now) {
+		if previousWindowStart.Valid {
+			resetAt = advanceWindowStart(previousWindowStart.Time, monthlyCycleDuration, now).Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
 	}
 	if !resetAt.After(now) {
 		_ = tx.Rollback()
@@ -1172,7 +1196,7 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
 		}
 	}
-	newWindowStart := startOfDay(now)
+	newWindowStart := resetAt
 	newUpdatedAt := time.Now().Add(time.Millisecond)
 
 	result, err := txClient.ExecContext(ctx, `
@@ -1360,14 +1384,16 @@ func startOfDay(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-// CheckAndActivateWindow 检查并激活窗口（首次使用时）
+// CheckAndActivateWindow 检查并激活窗口（为历史未初始化订阅补齐窗口）
 func (s *SubscriptionService) CheckAndActivateWindow(ctx context.Context, sub *UserSubscription) error {
 	if sub.IsWindowActivated() {
 		return nil
 	}
 
-	// 使用当天零点作为窗口起始时间
-	windowStart := startOfDay(time.Now())
+	windowStart := time.Now()
+	if sub != nil && !sub.StartsAt.IsZero() {
+		windowStart = sub.StartsAt
+	}
 	if err := s.userSubRepo.ActivateWindows(ctx, sub.ID, windowStart); err != nil {
 		return err
 	}
@@ -1398,7 +1424,6 @@ func (s *SubscriptionService) ensureWindowMaintenance(ctx context.Context, sub *
 }
 
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
-// Uses startOfDay(now) as the new window start, matching automatic resets.
 func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionID int64, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error) {
 	if !resetDaily && !resetWeekly && !resetMonthly {
 		return nil, ErrInvalidInput
@@ -1412,7 +1437,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
 		}
 	}
-	windowStart := startOfDay(time.Now())
+	windowStart := time.Now()
 	if resetDaily {
 		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, windowStart); err != nil {
 			return nil, err
@@ -1439,8 +1464,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 
 // CheckAndResetWindows 检查并重置过期的窗口
 func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *UserSubscription) error {
-	// 使用当天零点作为新窗口起始时间
-	windowStart := startOfDay(time.Now())
+	now := time.Now()
 	needsInvalidateCache := false
 	needsReset := sub.NeedsDailyReset() || sub.NeedsWeeklyReset() || sub.NeedsMonthlyReset()
 	if needsReset && s.billingCacheService != nil {
@@ -1451,6 +1475,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 
 	// 日窗口重置（24小时）
 	if sub.NeedsDailyReset() {
+		windowStart := resolvedWindowResetStart(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now)
 		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, windowStart); err != nil {
 			return err
 		}
@@ -1461,6 +1486,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 
 	// 周窗口重置（7天）
 	if sub.NeedsWeeklyReset() {
+		windowStart := resolvedWindowResetStart(sub.WeeklyWindowStart, sub.StartsAt, 7*24*time.Hour, now)
 		if err := s.userSubRepo.ResetWeeklyUsage(ctx, sub.ID, windowStart); err != nil {
 			return err
 		}
@@ -1471,6 +1497,7 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 
 	// 月窗口重置（30天）
 	if sub.NeedsMonthlyReset() {
+		windowStart := resolvedWindowResetStart(sub.MonthlyWindowStart, sub.StartsAt, monthlyCycleDuration, now)
 		if err := s.userSubRepo.ResetMonthlyUsage(ctx, sub.ID, windowStart); err != nil {
 			return err
 		}
@@ -1486,6 +1513,30 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 	}
 
 	return nil
+}
+
+func advanceWindowStart(windowStart time.Time, cycle time.Duration, now time.Time) time.Time {
+	if cycle <= 0 || windowStart.IsZero() {
+		return windowStart
+	}
+	if now.Before(windowStart.Add(cycle)) {
+		return windowStart
+	}
+
+	elapsed := now.Sub(windowStart)
+	steps := elapsed / cycle
+	if steps < 1 {
+		steps = 1
+	}
+	return windowStart.Add(steps * cycle)
+}
+
+func resolvedWindowResetStart(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) time.Time {
+	effectiveStart := effectiveWindowStartAt(windowStart, startsAt, cycle, now)
+	if effectiveStart == nil {
+		return now
+	}
+	return advanceWindowStart(*effectiveStart, cycle, now)
 }
 
 // CheckUsageLimits 检查使用限额（返回错误如果超限）

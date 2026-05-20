@@ -199,10 +199,7 @@
                   }"
                 ></div>
               </div>
-              <p
-                v-if="subscription.daily_window_start"
-                class="text-xs text-gray-500 dark:text-dark-400"
-              >
+              <p class="text-xs text-gray-500 dark:text-dark-400">
                 {{ formatDailyUsageWindow(subscription) }}
               </p>
             </div>
@@ -236,13 +233,10 @@
                   }"
                 ></div>
               </div>
-              <p
-                v-if="subscription.weekly_window_start"
-                class="text-xs text-gray-500 dark:text-dark-400"
-              >
+              <p class="text-xs text-gray-500 dark:text-dark-400">
                 {{
                   t('userSubscriptions.resetIn', {
-                    time: formatResetTime(subscription.weekly_window_start, 168)
+                    time: formatResetTime(subscription.weekly_window_start, 168, subscription.starts_at)
                   })
                 }}
               </p>
@@ -277,13 +271,10 @@
                   }"
                 ></div>
               </div>
-              <p
-                v-if="subscription.monthly_window_start"
-                class="text-xs text-gray-500 dark:text-dark-400"
-              >
+              <p class="text-xs text-gray-500 dark:text-dark-400">
                 {{
                   t('userSubscriptions.resetIn', {
-                    time: formatResetTime(subscription.monthly_window_start, 720)
+                    time: formatResetTime(subscription.monthly_window_start, 720, subscription.starts_at)
                   })
                 }}
               </p>
@@ -346,9 +337,14 @@ import subscriptionsAPI from '@/api/subscriptions'
 import type { SubscriptionGroupPreference, UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateOnly } from '@/utils/format'
+import { formatDateTime } from '@/utils/format'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
 import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import {
+  getCycleResetAt,
+  formatRemainingDurationCompact,
+  getRemainingHours,
+} from '@/utils/subscriptionTime'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -468,36 +464,18 @@ function getProgressBarClass(used: number | undefined, limit: number | null | un
 }
 
 function formatExpirationDate(expiresAt: string): string {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diff = expires.getTime() - now.getTime()
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
-
-  if (days < 0) {
+  const relative = formatRemainingDurationCompact(expiresAt)
+  if (!relative) {
     return t('userSubscriptions.status.expired')
   }
-
-  const dateStr = formatDateOnly(expires)
-
-  if (days === 0) {
-    return `${dateStr} (${t('common.today')})`
-  }
-  if (days === 1) {
-    return `${dateStr} (${t('common.tomorrow')})`
-  }
-
-  return t('userSubscriptions.daysRemaining', { days }) + ` (${dateStr})`
+  return `${relative} (${formatDateTime(expiresAt)})`
 }
 
 function getExpirationClass(expiresAt: string): string {
-  const now = new Date()
-  const expires = new Date(expiresAt)
-  const diff = expires.getTime() - now.getTime()
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
-
-  if (days <= 0) return 'text-red-600 dark:text-red-400 font-medium'
-  if (days <= 3) return 'text-red-600 dark:text-red-400'
-  if (days <= 7) return 'text-orange-600 dark:text-orange-400'
+  const remainingHours = getRemainingHours(expiresAt)
+  if (remainingHours === null || remainingHours <= 0) return 'text-red-600 dark:text-red-400 font-medium'
+  if (remainingHours <= 72) return 'text-red-600 dark:text-red-400'
+  if (remainingHours <= 168) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-700 dark:text-gray-300'
 }
 
@@ -521,15 +499,13 @@ function formatDailyUsageWindow(subscription: UserSubscription): string {
   }
 
   return t('userSubscriptions.resetIn', {
-    time: formatResetTime(subscription.daily_window_start, 24)
+    time: formatResetTime(subscription.daily_window_start, 24, subscription.starts_at)
   })
 }
 
-function formatResetTime(windowStart: string | null, windowHours: number): string {
-  if (!windowStart) return t('userSubscriptions.windowNotActive')
-
-  const start = new Date(windowStart)
-  const end = new Date(start.getTime() + windowHours * 60 * 60 * 1000)
+function formatResetTime(windowStart: string | null, windowHours: number, startsAt?: string): string {
+  const end = getCycleResetAt(windowStart, startsAt, windowHours)
+  if (!end) return t('userSubscriptions.windowNotActive')
   const parts = getRemainingDurationParts(end)
 
   return parts ? formatDurationParts(parts) : t('userSubscriptions.windowNotActive')
@@ -604,9 +580,8 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
 }
 
 function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
-  return subscription.monthly_window_start
-    ? new Date(new Date(subscription.monthly_window_start).getTime() + monthlyCycleDurationMs)
-    : new Date(now.getTime() + monthlyCycleDurationMs)
+  return getCycleResetAt(subscription.monthly_window_start, subscription.starts_at, 720, now)
+    || new Date(now.getTime() + monthlyCycleDurationMs)
 }
 
 function isValidDate(value: Date): boolean {
@@ -625,9 +600,7 @@ function hasFullNextMonthlyCycle(
 }
 
 function estimateDeductedDays(subscription: UserSubscription, now = new Date()): number {
-  const resetAt = subscription.monthly_window_start
-    ? getMonthlyResetAt(subscription, now)
-    : new Date(now.getTime() + monthlyCycleDurationMs)
+  const resetAt = getMonthlyResetAt(subscription, now)
   const oneDayMs = 24 * 60 * 60 * 1000
   const diff = Math.max(resetAt.getTime() - now.getTime(), oneDayMs)
   return Math.ceil(diff / oneDayMs)

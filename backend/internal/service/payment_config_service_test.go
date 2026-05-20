@@ -10,6 +10,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
+	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -197,6 +198,49 @@ func TestParsePaymentConfig(t *testing.T) {
 			t.Fatalf("expected empty EnabledTypes for empty string, got %v", cfg.EnabledTypes)
 		}
 	})
+}
+
+func TestListPlansForSale_FiltersInvalidValidityUnits(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+
+	group, err := client.Group.Create().
+		SetName("saleable-plans-group").
+		SetStatus(payment.EntityStatusActive).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.SubscriptionPlan.Create().
+		SetGroupID(group.ID).
+		SetName("Valid Monthly").
+		SetDescription("valid").
+		SetPrice(9.9).
+		SetValidityDays(1).
+		SetValidityUnit("month").
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.SubscriptionPlan.Create().
+		SetGroupID(group.ID).
+		SetName("Broken Plan").
+		SetDescription("broken").
+		SetPrice(19.9).
+		SetValidityDays(1).
+		SetValidityUnit("wek").
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	plans, err := svc.ListPlansForSale(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, plans, 1)
+	require.Equal(t, "Valid Monthly", plans[0].Name)
 }
 
 func TestGetBasePaymentType(t *testing.T) {

@@ -73,6 +73,12 @@ func TestValidatePlanRequired_WhitespaceValidityUnit(t *testing.T) {
 	require.Contains(t, err.Error(), "validity unit")
 }
 
+func TestValidatePlanRequired_InvalidValidityUnit(t *testing.T) {
+	err := validatePlanRequired("Pro", 1, 9.99, 30, "wek", nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "valid validity unit")
+}
+
 func TestValidatePlanRequired_NameValidatedFirst(t *testing.T) {
 	err := validatePlanRequired("", 0, 0, 0, "", nil)
 	require.Error(t, err)
@@ -185,6 +191,12 @@ func TestValidatePlanPatch_EmptyValidityUnit(t *testing.T) {
 func TestValidatePlanPatch_ValidValidityUnit(t *testing.T) {
 	err := validatePlanPatch(UpdatePlanRequest{ValidityUnit: ptrStr("days")})
 	require.NoError(t, err)
+}
+
+func TestValidatePlanPatch_InvalidValidityUnit(t *testing.T) {
+	err := validatePlanPatch(UpdatePlanRequest{ValidityUnit: ptrStr("wek")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "valid validity unit")
 }
 
 func TestValidatePlanPatch_AllNil(t *testing.T) {

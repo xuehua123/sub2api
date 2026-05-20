@@ -13,11 +13,48 @@ type dailyResetTrackingUserSubRepo struct {
 	userSubRepoNoop
 
 	resetDailyCalled bool
+	resetDailyStart  time.Time
 }
 
-func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(context.Context, int64, time.Time) error {
+func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(_ context.Context, _ int64, windowStart time.Time) error {
 	r.resetDailyCalled = true
+	r.resetDailyStart = windowStart
 	return nil
+}
+
+type windowActivationTrackingUserSubRepo struct {
+	userSubRepoNoop
+
+	activated   bool
+	windowStart time.Time
+}
+
+func (r *windowActivationTrackingUserSubRepo) ActivateWindows(_ context.Context, _ int64, windowStart time.Time) error {
+	r.activated = true
+	r.windowStart = windowStart
+	return nil
+}
+
+func TestCreateSubscription_InitializesAlignedUsageWindows(t *testing.T) {
+	groupRepo := &subscriptionGroupRepoStub{
+		group: &Group{ID: 1, SubscriptionType: SubscriptionTypeSubscription},
+	}
+	subRepo := newSubscriptionUserSubRepoStub()
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+
+	created, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       300,
+		GroupID:      1,
+		ValidityDays: 30,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, created.DailyWindowStart)
+	require.NotNil(t, created.WeeklyWindowStart)
+	require.NotNil(t, created.MonthlyWindowStart)
+	require.Equal(t, created.StartsAt, *created.DailyWindowStart)
+	require.Equal(t, created.StartsAt, *created.WeeklyWindowStart)
+	require.Equal(t, created.StartsAt, *created.MonthlyWindowStart)
 }
 
 func TestAssignOrExtendSubscription_ExpiredDailyCardStartsNewOneTimeQuota(t *testing.T) {
@@ -26,7 +63,7 @@ func TestAssignOrExtendSubscription_ExpiredDailyCardStartsNewOneTimeQuota(t *tes
 	}
 	subRepo := newSubscriptionUserSubRepoStub()
 	oldStart := time.Now().AddDate(0, 0, -3)
-	oldWindowStart := startOfDay(oldStart)
+	oldWindowStart := oldStart
 	subRepo.seed(&UserSubscription{
 		ID:                 100,
 		UserID:             200,
@@ -58,11 +95,33 @@ func TestAssignOrExtendSubscription_ExpiredDailyCardStartsNewOneTimeQuota(t *tes
 	require.True(t, renewed.StartsAt.After(oldStart), "重新购买过期订阅时应重置当前周期 StartsAt")
 	require.False(t, renewed.ExpiresAt.After(renewed.StartsAt.AddDate(0, 0, 1)))
 	require.NotNil(t, renewed.DailyWindowStart)
-	require.Equal(t, startOfDay(renewed.StartsAt), *renewed.DailyWindowStart)
+	require.Equal(t, renewed.StartsAt, *renewed.DailyWindowStart)
 	require.Equal(t, 0.0, renewed.DailyUsageUSD)
 	require.Equal(t, 0.0, renewed.WeeklyUsageUSD)
 	require.Equal(t, 0.0, renewed.MonthlyUsageUSD)
 	require.Equal(t, "old\nnew", renewed.Notes)
+}
+
+func TestCheckAndActivateWindow_UsesSubscriptionStartTime(t *testing.T) {
+	repo := &windowActivationTrackingUserSubRepo{}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+	startsAt := time.Date(2026, 5, 20, 15, 30, 0, 0, time.UTC)
+	sub := &UserSubscription{
+		ID:        1,
+		UserID:    10,
+		GroupID:   20,
+		StartsAt:  startsAt,
+		ExpiresAt: startsAt.AddDate(0, 0, 30),
+	}
+
+	err := svc.CheckAndActivateWindow(context.Background(), sub)
+
+	require.NoError(t, err)
+	require.True(t, repo.activated)
+	require.Equal(t, startsAt, repo.windowStart)
+	require.Equal(t, startsAt, *sub.DailyWindowStart)
+	require.Equal(t, startsAt, *sub.WeeklyWindowStart)
+	require.Equal(t, startsAt, *sub.MonthlyWindowStart)
 }
 
 func TestUserSubscriptionNeedsDailyReset_DailyCardKeepsOneTimeQuota(t *testing.T) {
@@ -133,7 +192,7 @@ func TestCheckAndResetWindows_DailyCardDoesNotResetDailyUsage(t *testing.T) {
 func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testing.T) {
 	now := time.Now()
 	startsAt := now.Add(-48 * time.Hour)
-	dailyWindowStart := now.Add(-25 * time.Hour)
+	dailyWindowStart := startOfDay(startsAt)
 	repo := &dailyResetTrackingUserSubRepo{}
 	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
 	sub := &UserSubscription{
@@ -151,6 +210,30 @@ func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testi
 	require.NoError(t, err)
 	require.True(t, repo.resetDailyCalled, "多日订阅仍应重置过期 daily window")
 	require.Equal(t, 0.0, sub.DailyUsageUSD)
+	require.Equal(t, startsAt.Add(48*time.Hour), repo.resetDailyStart)
+}
+
+func TestAlignedCycleStart_PreservesOriginalPurchaseTime(t *testing.T) {
+	startsAt := time.Date(2026, 5, 20, 15, 30, 0, 0, time.UTC)
+	now := startsAt.Add(35 * time.Hour)
+
+	aligned, ok := alignedCycleStart(startsAt, 24*time.Hour, now)
+
+	require.True(t, ok)
+	require.Equal(t, startsAt.Add(24*time.Hour), aligned)
+}
+
+func TestEffectiveWindowStartAt_PrefersManualResetAnchor(t *testing.T) {
+	startsAt := time.Date(2026, 5, 1, 15, 30, 0, 0, time.UTC)
+	manualResetAt := time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 5, 15, 10, 0, 0, 0, time.UTC)
+
+	start := effectiveWindowStartAt(&manualResetAt, startsAt, 30*24*time.Hour, now)
+
+	require.NotNil(t, start)
+	require.Equal(t, manualResetAt, *start)
+	require.False(t, needsWindowResetAt(&manualResetAt, startsAt, 30*24*time.Hour, manualResetAt.Add(29*24*time.Hour)))
+	require.True(t, needsWindowResetAt(&manualResetAt, startsAt, 30*24*time.Hour, manualResetAt.Add(30*24*time.Hour)))
 }
 
 func TestValidateAndCheckLimits_DailyCardDoesNotAllowSecondQuotaAfterMidnight(t *testing.T) {

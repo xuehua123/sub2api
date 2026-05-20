@@ -99,6 +99,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { UserSubscription } from '@/types'
+import { normalizePlanValidityUnit } from '@/utils/subscriptionTime'
 import {
   platformAccentBarClass,
   platformBadgeLightClass,
@@ -154,7 +155,8 @@ const modelScopeLabels = computed(() => {
 })
 
 const validitySuffix = computed(() => {
-  const u = props.plan.validity_unit || 'day'
+  const u = normalizePlanValidityUnit(props.plan.validity_unit)
+  if (u === 'week') return `${props.plan.validity_days}${t('payment.admin.weeks')}`
   if (u === 'month') return t('payment.perMonth')
   if (u === 'year') return t('payment.perYear')
   return `${props.plan.validity_days}${t('payment.days')}`
