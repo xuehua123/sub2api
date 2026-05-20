@@ -6954,7 +6954,7 @@ export default {
     advanceMonthlyUnavailableNoExpiration: 'Subscriptions without an expiration cannot use the next cycle early',
     advanceMonthlyUnavailableNoMonthlyLimit: 'Monthly quota is not configured for this subscription',
     advanceMonthlyUnavailableWindow: 'This monthly cycle cannot be advanced right now',
-    advanceMonthlyUnavailableValidity: 'Not enough remaining validity to advance the monthly cycle',
+    advanceMonthlyUnavailableValidity: 'Subscription does not cover a full next monthly cycle',
     advanceMonthlyConfirm: 'Use the next monthly cycle for "{group}" now? Current usage is ${used} / ${limit}; the remaining ${remaining} quota will be forfeited. Monthly usage will reset and about {days} day(s) will be deducted from the subscription validity.',
     advanceMonthlySuccess: 'Monthly quota reset and {days} day(s) deducted',
     advanceMonthlyFailed: 'Failed to advance monthly cycle'

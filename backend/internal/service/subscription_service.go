@@ -26,7 +26,10 @@ var MaxExpiresAt = time.Date(2099, 12, 31, 23, 59, 59, 0, time.UTC)
 
 // MaxValidityDays is the maximum allowed validity days for subscriptions (100 years)
 const MaxValidityDays = 36500
-const monthlyCycleAdvanceUsageThreshold = 0.9
+const (
+	monthlyCycleDuration              = 30 * 24 * time.Hour
+	monthlyCycleAdvanceUsageThreshold = 0.9
+)
 
 var (
 	ErrSubscriptionNotFound       = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
@@ -37,7 +40,7 @@ var (
 	ErrGroupNotSubscriptionType   = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
 	ErrInvalidInput               = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
 	ErrMonthlyCycleNotExhausted   = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
-	ErrMonthlyCycleNoFutureTime   = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not have enough future validity to advance the next cycle")
+	ErrMonthlyCycleNoFutureTime   = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not include a full next monthly cycle to advance")
 	ErrDailyLimitExceeded         = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
 	ErrWeeklyLimitExceeded        = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
 	ErrMonthlyLimitExceeded       = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
@@ -83,6 +86,7 @@ type AdvanceMonthlyCycleResult struct {
 	PreviousExpiresAt     time.Time         `json:"previous_expires_at"`
 	NewExpiresAt          time.Time         `json:"new_expires_at"`
 	DeductedDays          int               `json:"deducted_days"`
+	DeductedSeconds       int64             `json:"deducted_seconds"`
 	PreviousMonthlyUsage  float64           `json:"previous_monthly_usage_usd"`
 	NewMonthlyWindowStart time.Time         `json:"new_monthly_window_start"`
 }
@@ -1092,11 +1096,12 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 
 	var previousUsage float64
 	var previousWindowStart sql.NullTime
+	var previousStartsAt time.Time
 	var previousExpiresAt time.Time
 	var previousStatus string
 	var previousUpdatedAt sql.NullTime
 	rows, err := txClient.QueryContext(ctx, `
-		SELECT monthly_usage_usd, monthly_window_start, expires_at, status, updated_at
+		SELECT monthly_usage_usd, monthly_window_start, starts_at, expires_at, status, updated_at
 		FROM user_subscriptions
 		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
 		FOR UPDATE
@@ -1110,7 +1115,7 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		_ = tx.Rollback()
 		return nil, ErrSubscriptionNotFound
 	}
-	if err := rows.Scan(&previousUsage, &previousWindowStart, &previousExpiresAt, &previousStatus, &previousUpdatedAt); err != nil {
+	if err := rows.Scan(&previousUsage, &previousWindowStart, &previousStartsAt, &previousExpiresAt, &previousStatus, &previousUpdatedAt); err != nil {
 		_ = rows.Close()
 		_ = tx.Rollback()
 		return nil, err
@@ -1138,20 +1143,25 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 	}
 	var resetAt time.Time
 	if previousWindowStart.Valid {
-		resetAt = previousWindowStart.Time.Add(30 * 24 * time.Hour)
+		resetAt = previousWindowStart.Time.Add(monthlyCycleDuration)
 	} else {
-		resetAt = now.Add(30 * 24 * time.Hour)
+		resetAt = now.Add(monthlyCycleDuration)
 	}
 	if !resetAt.After(now) {
 		_ = tx.Rollback()
 		return nil, ErrMonthlyCycleNotExhausted
 	}
+	if !canAdvanceMonthlyCycleByValidity(previousStartsAt, previousExpiresAt, resetAt) {
+		_ = tx.Rollback()
+		return nil, ErrMonthlyCycleNoFutureTime
+	}
 	remaining := resetAt.Sub(now)
-	deductedDays := int((remaining + 24*time.Hour - 1) / (24 * time.Hour))
+	deductedSeconds := ceilDurationSeconds(remaining)
+	deductedDays := int((time.Duration(deductedSeconds)*time.Second + 24*time.Hour - 1) / (24 * time.Hour))
 	if deductedDays <= 0 {
 		deductedDays = 1
 	}
-	newExpiresAt := previousExpiresAt.AddDate(0, 0, -deductedDays)
+	newExpiresAt := previousExpiresAt.Add(-time.Duration(deductedSeconds) * time.Second)
 	if !newExpiresAt.After(now) {
 		_ = tx.Rollback()
 		return nil, ErrMonthlyCycleNoFutureTime
@@ -1189,9 +1199,10 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 	if _, err := txClient.ExecContext(ctx, `
 		INSERT INTO subscription_cycle_reset_logs (
 			user_id, subscription_id, group_id, previous_expires_at, new_expires_at,
-			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start, deducted_days, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
-	`, userID, subscriptionID, sub.GroupID, previousExpiresAt, newExpiresAt, previousUsage, nullableTimeArg(previousWindowStart), newWindowStart, deductedDays); err != nil {
+			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,
+			deducted_days, deducted_seconds, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+	`, userID, subscriptionID, sub.GroupID, previousExpiresAt, newExpiresAt, previousUsage, nullableTimeArg(previousWindowStart), newWindowStart, deductedDays, deductedSeconds); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
@@ -1209,6 +1220,7 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		PreviousExpiresAt:     previousExpiresAt,
 		NewExpiresAt:          newExpiresAt,
 		DeductedDays:          deductedDays,
+		DeductedSeconds:       deductedSeconds,
 		PreviousMonthlyUsage:  previousUsage,
 		NewMonthlyWindowStart: newWindowStart,
 	}, nil
@@ -1216,6 +1228,23 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 
 func canAdvanceMonthlyCycleByUsage(usage, limit float64) bool {
 	return limit > 0 && usage >= limit*monthlyCycleAdvanceUsageThreshold
+}
+
+func canAdvanceMonthlyCycleByValidity(startsAt, expiresAt, resetAt time.Time) bool {
+	if startsAt.IsZero() || expiresAt.IsZero() || resetAt.IsZero() {
+		return false
+	}
+	if !expiresAt.After(startsAt.Add(monthlyCycleDuration)) {
+		return false
+	}
+	return !expiresAt.Before(resetAt.Add(monthlyCycleDuration))
+}
+
+func ceilDurationSeconds(d time.Duration) int64 {
+	if d <= 0 {
+		return 0
+	}
+	return int64((d + time.Second - 1) / time.Second)
 }
 
 func nullableTimeArg(t sql.NullTime) any {

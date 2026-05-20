@@ -1284,8 +1284,9 @@ func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 	groupID := int64(88)
 	limit := 10.0
 	previousUsage := 12.5
+	previousStartsAt := time.Now().Add(-2 * 24 * time.Hour)
 	previousWindowStart := time.Now().Add(12 * time.Hour)
-	previousExpiresAt := time.Now().Add(45 * 24 * time.Hour)
+	previousExpiresAt := time.Now().Add(75 * 24 * time.Hour)
 	previousUpdatedAt := time.Now().Add(-time.Hour)
 	encryptedSecret := "encrypted-totp-secret"
 	group := &service.Group{
@@ -1331,20 +1332,21 @@ func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 	})
 
 	deps.sqlMock.ExpectBegin()
-	deps.sqlMock.ExpectQuery(`(?s)SELECT monthly_usage_usd, monthly_window_start, expires_at, status, updated_at\s+FROM user_subscriptions\s+WHERE id = \$1 AND user_id = \$2 AND deleted_at IS NULL\s+FOR UPDATE`).
+	deps.sqlMock.ExpectQuery(`(?s)SELECT monthly_usage_usd, monthly_window_start, starts_at, expires_at, status, updated_at\s+FROM user_subscriptions\s+WHERE id = \$1 AND user_id = \$2 AND deleted_at IS NULL\s+FOR UPDATE`).
 		WithArgs(subscriptionID, userID).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"monthly_usage_usd",
 			"monthly_window_start",
+			"starts_at",
 			"expires_at",
 			"status",
 			"updated_at",
-		}).AddRow(previousUsage, previousWindowStart, previousExpiresAt, service.SubscriptionStatusActive, previousUpdatedAt))
+		}).AddRow(previousUsage, previousWindowStart, previousStartsAt, previousExpiresAt, service.SubscriptionStatusActive, previousUpdatedAt))
 	deps.sqlMock.ExpectExec(`(?s)UPDATE user_subscriptions\s+SET monthly_usage_usd = 0,\s+monthly_window_start = \$1,\s+expires_at = \$2,\s+updated_at = \$3\s+WHERE id = \$4 AND user_id = \$5 AND deleted_at IS NULL`).
 		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), subscriptionID, userID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	deps.sqlMock.ExpectExec(`(?s)INSERT INTO subscription_cycle_reset_logs \(\s+user_id, subscription_id, group_id, previous_expires_at, new_expires_at,\s+previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start, deducted_days, created_at\s+\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, NOW\(\)\)`).
-		WithArgs(userID, subscriptionID, groupID, previousExpiresAt, sqlmock.AnyArg(), previousUsage, previousWindowStart, sqlmock.AnyArg(), sqlmock.AnyArg()).
+	deps.sqlMock.ExpectExec(`(?s)INSERT INTO subscription_cycle_reset_logs \(\s+user_id, subscription_id, group_id, previous_expires_at, new_expires_at,\s+previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,\s+deducted_days, deducted_seconds, created_at\s+\) VALUES \(\$1, \$2, \$3, \$4, \$5, \$6, \$7, \$8, \$9, \$10, NOW\(\)\)`).
+		WithArgs(userID, subscriptionID, groupID, previousExpiresAt, sqlmock.AnyArg(), previousUsage, previousWindowStart, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	deps.sqlMock.ExpectCommit()
 
@@ -1366,6 +1368,7 @@ func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 			PreviousExpiresAt     time.Time             `json:"previous_expires_at"`
 			NewExpiresAt          time.Time             `json:"new_expires_at"`
 			DeductedDays          int                   `json:"deducted_days"`
+			DeductedSeconds       int64                 `json:"deducted_seconds"`
 			PreviousMonthlyUsage  float64               `json:"previous_monthly_usage_usd"`
 			NewMonthlyWindowStart time.Time             `json:"new_monthly_window_start"`
 		} `json:"data"`
@@ -1382,6 +1385,7 @@ func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 	require.Equal(t, "Pro Group", got.Data.Subscription.Group.Name)
 	require.Equal(t, previousUsage, got.Data.PreviousMonthlyUsage)
 	require.Greater(t, got.Data.DeductedDays, 0)
+	require.Greater(t, got.Data.DeductedSeconds, int64(0))
 	require.NoError(t, deps.sqlMock.ExpectationsWereMet())
 }
 

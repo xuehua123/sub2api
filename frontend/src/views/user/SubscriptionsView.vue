@@ -371,6 +371,7 @@ const savingPreferences = ref(false)
 const advancingSubscriptionId = ref<number | null>(null)
 const draggedPreferenceGroupID = ref<number | null>(null)
 const monthlyCycleAdvanceThreshold = 0.9
+const monthlyCycleDurationMs = 30 * 24 * 60 * 60 * 1000
 
 async function loadSubscriptions() {
   try {
@@ -552,6 +553,9 @@ function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
   if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
     return false
   }
+  if (!hasFullNextMonthlyCycle(subscription, resetAt, expiresAt)) {
+    return false
+  }
 
   const deductedDays = estimateDeductedDays(subscription, now)
   const newExpiresAt = new Date(expiresAt)
@@ -587,6 +591,9 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
   if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
     return t('userSubscriptions.advanceMonthlyUnavailableWindow')
   }
+  if (!hasFullNextMonthlyCycle(subscription, resetAt, expiresAt)) {
+    return t('userSubscriptions.advanceMonthlyUnavailableValidity')
+  }
   const deductedDays = estimateDeductedDays(subscription, now)
   const newExpiresAt = new Date(expiresAt)
   newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
@@ -598,20 +605,32 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
 
 function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
   return subscription.monthly_window_start
-    ? new Date(new Date(subscription.monthly_window_start).getTime() + 30 * 24 * 60 * 60 * 1000)
-    : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+    ? new Date(new Date(subscription.monthly_window_start).getTime() + monthlyCycleDurationMs)
+    : new Date(now.getTime() + monthlyCycleDurationMs)
 }
 
 function isValidDate(value: Date): boolean {
   return !Number.isNaN(value.getTime())
 }
 
+function hasFullNextMonthlyCycle(
+  subscription: UserSubscription,
+  resetAt: Date,
+  expiresAt: Date
+): boolean {
+  const startsAt = new Date(subscription.starts_at)
+  if (!isValidDate(startsAt)) return false
+  if (expiresAt.getTime() <= startsAt.getTime() + monthlyCycleDurationMs) return false
+  return expiresAt.getTime() >= resetAt.getTime() + monthlyCycleDurationMs
+}
+
 function estimateDeductedDays(subscription: UserSubscription, now = new Date()): number {
   const resetAt = subscription.monthly_window_start
     ? getMonthlyResetAt(subscription, now)
-    : new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-  const diff = Math.max(resetAt.getTime() - now.getTime(), 24 * 60 * 60 * 1000)
-  return Math.ceil(diff / (24 * 60 * 60 * 1000))
+    : new Date(now.getTime() + monthlyCycleDurationMs)
+  const oneDayMs = 24 * 60 * 60 * 1000
+  const diff = Math.max(resetAt.getTime() - now.getTime(), oneDayMs)
+  return Math.ceil(diff / oneDayMs)
 }
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {

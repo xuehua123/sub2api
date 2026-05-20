@@ -1581,6 +1581,7 @@ export interface AdvanceMonthlyCycleResult {
   previous_expires_at: string
   new_expires_at: string
   deducted_days: number
+  deducted_seconds: number
   previous_monthly_usage_usd: number
   new_monthly_window_start: string
 }

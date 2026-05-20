@@ -47,6 +47,7 @@ type AdvanceMonthlyCycleResponse struct {
 	PreviousExpiresAt     time.Time             `json:"previous_expires_at"`
 	NewExpiresAt          time.Time             `json:"new_expires_at"`
 	DeductedDays          int                   `json:"deducted_days"`
+	DeductedSeconds       int64                 `json:"deducted_seconds"`
 	PreviousMonthlyUsage  float64               `json:"previous_monthly_usage_usd"`
 	NewMonthlyWindowStart time.Time             `json:"new_monthly_window_start"`
 }
@@ -183,6 +184,7 @@ func advanceMonthlyCycleResponseFromService(result *service.AdvanceMonthlyCycleR
 		PreviousExpiresAt:     result.PreviousExpiresAt,
 		NewExpiresAt:          result.NewExpiresAt,
 		DeductedDays:          result.DeductedDays,
+		DeductedSeconds:       result.DeductedSeconds,
 		PreviousMonthlyUsage:  result.PreviousMonthlyUsage,
 		NewMonthlyWindowStart: result.NewMonthlyWindowStart,
 	}

@@ -7111,7 +7111,7 @@ export default {
     advanceMonthlyUnavailableNoExpiration: '无到期时间的订阅不可提前使用下月额度',
     advanceMonthlyUnavailableNoMonthlyLimit: '未设置月额度，无法提前使用下月额度',
     advanceMonthlyUnavailableWindow: '当前月度周期暂不可提前重置',
-    advanceMonthlyUnavailableValidity: '剩余有效期不足，无法提前使用下月额度',
+    advanceMonthlyUnavailableValidity: '订阅未覆盖完整下一个月，无法提前使用下月额度',
     advanceMonthlyConfirm: '确定提前使用「{group}」的下月额度吗？当前已用 ${used} / ${limit}，剩余额度 ${remaining} 会作废；本月用量会清零，并从订阅有效期扣减约 {days} 天。',
     advanceMonthlySuccess: '已重置本月额度，并扣减 {days} 天有效期',
     advanceMonthlyFailed: '提前使用下月额度失败'
