@@ -34,8 +34,6 @@ export const STATUS_ERROR: MonitorStatus = 'error'
 
 export const MONITOR_STATUSES: readonly MonitorStatus[] = [
   STATUS_OPERATIONAL,
-  STATUS_DEGRADED,
-  STATUS_FAILED,
   STATUS_ERROR,
 ]
 

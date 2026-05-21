@@ -246,6 +246,9 @@ func (s *ChannelMonitorService) ListHistory(ctx context.Context, id int64, model
 	if err != nil {
 		return nil, fmt.Errorf("list history: %w", err)
 	}
+	for _, entry := range entries {
+		entry.Status = NormalizeMonitorStatus(entry.Status)
+	}
 	return entries, nil
 }
 
@@ -274,7 +277,7 @@ func (s *ChannelMonitorService) persistCheckResults(ctx context.Context, m *Chan
 		rows = append(rows, &ChannelMonitorHistoryRow{
 			MonitorID:     m.ID,
 			Model:         r.Model,
-			Status:        r.Status,
+			Status:        NormalizeMonitorStatus(r.Status),
 			LatencyMs:     r.LatencyMs,
 			PingLatencyMs: r.PingLatencyMs,
 			Message:       r.Message,

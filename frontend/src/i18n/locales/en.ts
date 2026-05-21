@@ -1295,8 +1295,8 @@ export default {
   monitorCommon: {
     status: {
       operational: 'Operational',
-      degraded: 'Degraded',
-      failed: 'Failed',
+      degraded: 'Operational',
+      failed: 'Error',
       error: 'Error',
       unknown: '-'
     },
@@ -1342,8 +1342,9 @@ export default {
     },
     overall: {
       operational: 'OPERATIONAL',
-      degraded: 'DEGRADED',
-      unavailable: 'UNAVAILABLE'
+      degraded: 'ERROR',
+      error: 'ERROR',
+      unavailable: 'ERROR'
     },
     columns: {
       name: 'Name',

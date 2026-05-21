@@ -202,7 +202,7 @@ func buildStatusSummary(
 	summary := MonitorStatusSummary{ExtraModels: make([]ExtraModelStatus, 0, len(extras))}
 	if primary != "" {
 		if l, ok := latestByModel[primary]; ok {
-			summary.PrimaryStatus = l.Status
+			summary.PrimaryStatus = NormalizeMonitorStatus(l.Status)
 			summary.PrimaryLatencyMs = l.LatencyMs
 		}
 		if a, ok := availByModel[primary]; ok {
@@ -212,7 +212,7 @@ func buildStatusSummary(
 	for _, model := range extras {
 		entry := ExtraModelStatus{Model: model}
 		if l, ok := latestByModel[model]; ok {
-			entry.Status = l.Status
+			entry.Status = NormalizeMonitorStatus(l.Status)
 			entry.LatencyMs = l.LatencyMs
 		}
 		summary.ExtraModels = append(summary.ExtraModels, entry)
@@ -251,7 +251,7 @@ func buildTimelinePoints(entries []*ChannelMonitorHistoryEntry) []UserMonitorTim
 	out := make([]UserMonitorTimelinePoint, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, UserMonitorTimelinePoint{
-			Status:        e.Status,
+			Status:        NormalizeMonitorStatus(e.Status),
 			LatencyMs:     e.LatencyMs,
 			PingLatencyMs: e.PingLatencyMs,
 			CheckedAt:     e.CheckedAt,
@@ -273,7 +273,7 @@ func mergeModelDetails(
 	for _, model := range all {
 		d := ModelDetail{Model: model}
 		if l, ok := latestByModel[model]; ok {
-			d.LatestStatus = l.Status
+			d.LatestStatus = NormalizeMonitorStatus(l.Status)
 			d.LatestLatencyMs = l.LatencyMs
 		}
 		if a, ok := availMap[monitorAvailability7Days][model]; ok {

@@ -345,7 +345,7 @@ func TestRunCheckForModel_ReplaceMode_FullBodyUsedAndChallengeSkipped(t *testing
 	}
 }
 
-func TestRunCheckForModel_ReplaceMode_EmptyResponseIsFailed(t *testing.T) {
+func TestRunCheckForModel_ReplaceMode_EmptyResponseIsError(t *testing.T) {
 	h := &captureHandler{respondText: ""} // 上游 200 但 content[0].text 为空
 	endpoint := setupFakeAnthropic(t, h)
 
@@ -355,8 +355,8 @@ func TestRunCheckForModel_ReplaceMode_EmptyResponseIsFailed(t *testing.T) {
 	}
 	res := runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", opts)
 
-	if res.Status != MonitorStatusFailed {
-		t.Errorf("replace mode with empty text should be failed, got status=%s", res.Status)
+	if res.Status != MonitorStatusError {
+		t.Errorf("replace mode with empty text should be error, got status=%s", res.Status)
 	}
 	if !strings.Contains(res.Message, "replace-mode") {
 		t.Errorf("failure message should hint replace-mode, got %q", res.Message)

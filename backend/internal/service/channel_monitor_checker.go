@@ -52,7 +52,7 @@ type CheckOptions struct {
 }
 
 // runCheckForModel 对单个 (provider, model) 做一次完整检测。
-// 不返回 error：所有失败都包装进 CheckResult.Status=error/failed。
+// 不返回 error：所有失败都包装进 CheckResult.Status=error。
 //
 // opts 承载模板 / 监控快照带来的自定义配置。nil 等同于 "off + 无 extra headers"。
 func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions) *CheckResult {
@@ -87,33 +87,28 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 
 	// Replace 模式：跳过 challenge 校验（用户 body 是静态的，challenge 没法嵌入）。
 	// 改用「HTTP 2xx + 响应文本（adapter.textPath 抽取）非空」作为 operational 判定。
-	// 响应文本为空则降级为 failed（视为上游回了 200 但没实际内容）。
+	// 响应文本为空则记为 error（视为上游回了 200 但没实际内容）。
 	if mode == MonitorBodyOverrideModeReplace {
 		if strings.TrimSpace(respText) == "" {
-			res.Status = MonitorStatusFailed
+			res.Status = MonitorStatusError
 			res.Message = truncateMessage("replace-mode: upstream returned 2xx with empty text")
 			return res
 		}
-		return finalizeOperationalOrDegraded(res, latency, latencyMs)
+		return finalizeOperational(res)
 	}
 
 	if !validateChallenge(respText, challenge.Expected) {
-		res.Status = MonitorStatusFailed
+		res.Status = MonitorStatusError
 		res.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("challenge mismatch (expected %s, got %q)", challenge.Expected, respText)))
 		return res
 	}
 
-	return finalizeOperationalOrDegraded(res, latency, latencyMs)
+	return finalizeOperational(res)
 }
 
-// finalizeOperationalOrDegraded 负责走到最后一步的 operational/degraded 判定。
-// 拆出来是为了让 runCheckForModel 不超过 30 行。
-func finalizeOperationalOrDegraded(res *CheckResult, latency time.Duration, latencyMs int) *CheckResult {
-	if latency >= monitorDegradedThreshold {
-		res.Status = MonitorStatusDegraded
-		res.Message = truncateMessage(fmt.Sprintf("slow response: %dms", latencyMs))
-		return res
-	}
+// finalizeOperational 负责走到最后一步的成功判定。
+// 慢响应只保留 latency_ms，不再单独标记为 degraded。
+func finalizeOperational(res *CheckResult) *CheckResult {
 	res.Status = MonitorStatusOperational
 	return res
 }

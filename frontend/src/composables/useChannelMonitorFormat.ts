@@ -34,23 +34,32 @@ export interface AvailabilityRow {
   availability_7d: number | null | undefined
 }
 
+export function normalizeMonitorStatusForDisplay(s: MonitorStatus | ''): MonitorStatus | '' {
+  switch (s) {
+    case STATUS_DEGRADED:
+      return STATUS_OPERATIONAL
+    case STATUS_FAILED:
+      return STATUS_ERROR
+    default:
+      return s
+  }
+}
+
 export function useChannelMonitorFormat() {
   const { t } = useI18n()
 
   function statusLabel(s: MonitorStatus | ''): string {
-    if (!s) return t('monitorCommon.status.unknown')
-    return t(`monitorCommon.status.${s}`)
+    const normalized = normalizeMonitorStatusForDisplay(s)
+    if (!normalized) return t('monitorCommon.status.unknown')
+    return t(`monitorCommon.status.${normalized}`)
   }
 
   function statusBadgeClass(s: MonitorStatus | ''): string {
-    switch (s) {
+    switch (normalizeMonitorStatusForDisplay(s)) {
       case STATUS_OPERATIONAL:
         return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-      case STATUS_DEGRADED:
-        return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
-      case STATUS_FAILED:
-        return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
       case STATUS_ERROR:
+        return 'bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300'
       default:
         return NEUTRAL_BADGE
     }
@@ -113,7 +122,7 @@ export function useChannelMonitorFormat() {
   }
 
   function formatAvailability(row: AvailabilityRow): string {
-    if (!row.primary_status) return '-'
+    if (!normalizeMonitorStatusForDisplay(row.primary_status)) return '-'
     return formatPercent(row.availability_7d)
   }
 

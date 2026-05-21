@@ -169,7 +169,7 @@ func channelMonitorToResponse(m *service.ChannelMonitor) *channelMonitorResponse
 func checkResultToResponse(r *service.CheckResult) channelMonitorCheckResultResponse {
 	return channelMonitorCheckResultResponse{
 		Model:         r.Model,
-		Status:        r.Status,
+		Status:        service.NormalizeMonitorStatus(r.Status),
 		LatencyMs:     r.LatencyMs,
 		PingLatencyMs: r.PingLatencyMs,
 		Message:       r.Message,
@@ -181,7 +181,7 @@ func historyEntryToResponse(e *service.ChannelMonitorHistoryEntry) channelMonito
 	return channelMonitorHistoryItemResponse{
 		ID:            e.ID,
 		Model:         e.Model,
-		Status:        e.Status,
+		Status:        service.NormalizeMonitorStatus(e.Status),
 		LatencyMs:     e.LatencyMs,
 		PingLatencyMs: e.PingLatencyMs,
 		Message:       e.Message,

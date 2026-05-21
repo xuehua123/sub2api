@@ -108,7 +108,7 @@ type ChannelMonitorUpdateParams struct {
 // CheckResult 单个模型一次检测的结果。
 type CheckResult struct {
 	Model         string
-	Status        string // operational / degraded / failed / error
+	Status        string // operational / error (degraded/failed only for historical rows)
 	LatencyMs     *int
 	PingLatencyMs *int
 	Message       string
@@ -214,4 +214,17 @@ type MonitorStatusSummary struct {
 	PrimaryLatencyMs *int
 	Availability7d   float64 // 0-100，无历史时为 0
 	ExtraModels      []ExtraModelStatus
+}
+
+// NormalizeMonitorStatus collapses legacy four-state monitor results into the
+// current two-state model: a valid response is operational; all failures are error.
+func NormalizeMonitorStatus(status string) string {
+	switch status {
+	case MonitorStatusDegraded:
+		return MonitorStatusOperational
+	case MonitorStatusFailed:
+		return MonitorStatusError
+	default:
+		return status
+	}
 }

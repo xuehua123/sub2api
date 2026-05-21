@@ -1299,8 +1299,8 @@ export default {
   monitorCommon: {
     status: {
       operational: '正常',
-      degraded: '降级',
-      failed: '失败',
+      degraded: '正常',
+      failed: '错误',
       error: '错误',
       unknown: '-'
     },
@@ -1345,9 +1345,10 @@ export default {
       '30d': '30 天'
     },
     overall: {
-      operational: 'OPERATIONAL',
-      degraded: 'DEGRADED',
-      unavailable: 'UNAVAILABLE'
+      operational: '正常',
+      degraded: '错误',
+      error: '错误',
+      unavailable: '错误'
     },
     columns: {
       name: '名称',
