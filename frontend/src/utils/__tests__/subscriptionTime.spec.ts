@@ -54,6 +54,19 @@ describe('subscriptionTime', () => {
     )
   })
 
+  it('keeps a future monthly advance anchor as the active cycle anchor', () => {
+    const startsAt = '2026-04-22T16:40:26+08:00'
+    const advanceWindowStart = '2026-05-22T16:40:26+08:00'
+    const now = new Date('2026-05-21T16:31:00+08:00')
+
+    expect(getEffectiveCycleStart(advanceWindowStart, startsAt, 24 * 30, now)?.toISOString()).toBe(
+      '2026-05-22T08:40:26.000Z'
+    )
+    expect(getCycleResetAt(advanceWindowStart, startsAt, 24 * 30, now)?.toISOString()).toBe(
+      '2026-06-21T08:40:26.000Z'
+    )
+  })
+
   it('falls back to starts_at-aligned reset time when the window start is missing', () => {
     const startsAt = '2026-04-24T15:30:00+08:00'
     const now = new Date('2026-05-20T10:00:00+08:00')

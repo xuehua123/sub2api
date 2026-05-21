@@ -237,6 +237,19 @@ func TestEffectiveWindowStartAt_PrefersManualResetAnchor(t *testing.T) {
 	require.True(t, needsWindowResetAt(&manualResetAt, startsAt, 30*24*time.Hour, manualResetAt.Add(30*24*time.Hour)))
 }
 
+func TestEffectiveWindowStartAt_PrefersFutureAdvanceAnchor(t *testing.T) {
+	startsAt := time.Date(2026, 4, 22, 8, 40, 26, 0, time.UTC)
+	advanceAnchor := time.Date(2026, 5, 22, 8, 40, 26, 0, time.UTC)
+	now := time.Date(2026, 5, 21, 8, 31, 0, 0, time.UTC)
+
+	start := effectiveWindowStartAt(&advanceAnchor, startsAt, 30*24*time.Hour, now)
+
+	require.NotNil(t, start)
+	require.Equal(t, advanceAnchor, *start)
+	require.False(t, needsWindowResetAt(&advanceAnchor, startsAt, 30*24*time.Hour, now))
+	require.True(t, needsWindowResetAt(&advanceAnchor, startsAt, 30*24*time.Hour, advanceAnchor.Add(30*24*time.Hour)))
+}
+
 func TestNeedsWindowResetAt_LegacyMonthlyAnchorDoesNotResetBeforeAlignedCycleEnds(t *testing.T) {
 	startsAt := time.Date(2026, 5, 7, 15, 31, 55, 0, time.UTC)
 	legacyWindowStart := time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC)

@@ -156,6 +156,10 @@ export function getEffectiveCycleStart(
   const resolvedStartsAt = resolveTime(startsAt)
   const cycleMs = cycleHours * 60 * 60 * 1000
 
+  if (resolvedWindowStart.getTime() > now.getTime()) {
+    return windowBasedStart
+  }
+
   if (
     alignedStart &&
     resolvedStartsAt &&

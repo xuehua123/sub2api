@@ -158,6 +158,9 @@ func effectiveWindowStartAt(windowStart *time.Time, startsAt time.Time, cycle ti
 	}
 
 	windowBased := advanceWindowStart(*windowStart, cycle, now)
+	if windowStart.After(now) {
+		return &windowBased
+	}
 	if aligned, ok := alignedCycleStart(startsAt, cycle, now); ok {
 		if isLegacyWindowAnchor(*windowStart, startsAt, cycle) || isAlignedWindowAnchor(*windowStart, startsAt, cycle) {
 			return &aligned
