@@ -84,6 +84,7 @@ type CreateOrderRequest struct {
 	PaymentSource   string
 	OrderType       string
 	PlanID          int64
+	Locale          string
 }
 
 type CreateOrderResponse struct {
@@ -177,20 +178,21 @@ type TopUserStat struct {
 // --- Service ---
 
 type PaymentService struct {
-	providerMu        sync.Mutex
-	providersLoaded   bool
-	entClient         *dbent.Client
-	registry          *payment.Registry
-	loadBalancer      payment.LoadBalancer
-	redeemService     *RedeemService
-	subscriptionSvc   *SubscriptionService
-	configService     *PaymentConfigService
-	userRepo          UserRepository
-	groupRepo         GroupRepository
-	resumeService     *PaymentResumeService
-	referralRewardSvc *ReferralRewardService
-	referralRefundSvc *ReferralRefundService
-	affiliateService  *AffiliateService
+	providerMu               sync.Mutex
+	providersLoaded          bool
+	entClient                *dbent.Client
+	registry                 *payment.Registry
+	loadBalancer             payment.LoadBalancer
+	redeemService            *RedeemService
+	subscriptionSvc          *SubscriptionService
+	configService            *PaymentConfigService
+	userRepo                 UserRepository
+	groupRepo                GroupRepository
+	resumeService            *PaymentResumeService
+	referralRewardSvc        *ReferralRewardService
+	referralRefundSvc        *ReferralRefundService
+	affiliateService         *AffiliateService
+	notificationEmailService *NotificationEmailService
 }
 
 func NewPaymentService(
@@ -221,6 +223,10 @@ func NewPaymentService(
 		affiliateService:  affiliateService,
 	}
 	return svc
+}
+
+func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
+	s.notificationEmailService = notificationEmailService
 }
 
 // --- Provider Registry ---

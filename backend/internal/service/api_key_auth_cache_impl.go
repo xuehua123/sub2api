@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 10 // v10: added API Key auto subscription-group switching flag
+const apiKeyAuthSnapshotVersion = 10 // v10: reload snapshots for group availability checks and API Key auto subscription-group switching
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
