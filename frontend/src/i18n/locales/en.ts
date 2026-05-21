@@ -7002,14 +7002,14 @@ export default {
     moveDown: 'Move down',
     advanceMonthlyCycle: 'Use next cycle now',
     advanceMonthlyThresholdHint: 'Available when remaining monthly quota is {percent}% or less',
-    advanceMonthlyAvailableHint: 'Available now. About {days} day(s) will be deducted',
+    advanceMonthlyAvailableHint: 'Available now. About {duration} will be deducted',
     advanceMonthlyUnavailableInactive: 'Only active subscriptions can use the next cycle early',
     advanceMonthlyUnavailableNoExpiration: 'Subscriptions without an expiration cannot use the next cycle early',
     advanceMonthlyUnavailableNoMonthlyLimit: 'Monthly quota is not configured for this subscription',
     advanceMonthlyUnavailableWindow: 'This monthly cycle cannot be advanced right now',
     advanceMonthlyUnavailableValidity: 'Subscription does not cover a full next monthly cycle',
-    advanceMonthlyConfirm: 'Use the next monthly cycle for "{group}" now? Current usage is ${used} / ${limit}; the remaining ${remaining} quota will be forfeited. Monthly usage will reset and about {days} day(s) will be deducted from the subscription validity.',
-    advanceMonthlySuccess: 'Monthly quota reset and {days} day(s) deducted',
+    advanceMonthlyConfirm: 'Use the next monthly cycle for "{group}" now? Current usage is ${used} / ${limit}; the remaining ${remaining} quota will be forfeited. Monthly usage will reset, the new cycle will start now, and about {duration} will be deducted from the subscription validity.',
+    advanceMonthlySuccess: 'Monthly quota reset, the new cycle starts now, and {duration} deducted',
     advanceMonthlyFailed: 'Failed to advance monthly cycle'
   },
 

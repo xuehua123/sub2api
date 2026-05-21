@@ -7158,14 +7158,14 @@ export default {
     moveDown: '下移',
     advanceMonthlyCycle: '提前使用下月额度',
     advanceMonthlyThresholdHint: '剩余额度低于或等于 {percent}% 后可提前使用下月额度',
-    advanceMonthlyAvailableHint: '可提前使用下月额度，将扣减约 {days} 天有效期',
+    advanceMonthlyAvailableHint: '可提前使用下月额度，将扣减约 {duration} 有效期',
     advanceMonthlyUnavailableInactive: '仅有效订阅可提前使用下月额度',
     advanceMonthlyUnavailableNoExpiration: '无到期时间的订阅不可提前使用下月额度',
     advanceMonthlyUnavailableNoMonthlyLimit: '未设置月额度，无法提前使用下月额度',
     advanceMonthlyUnavailableWindow: '当前月度周期暂不可提前重置',
     advanceMonthlyUnavailableValidity: '订阅未覆盖完整下一个月，无法提前使用下月额度',
-    advanceMonthlyConfirm: '确定提前使用「{group}」的下月额度吗？当前已用 ${used} / ${limit}，剩余额度 ${remaining} 会作废；本月用量会清零，并从订阅有效期扣减约 {days} 天。',
-    advanceMonthlySuccess: '已重置本月额度，并扣减 {days} 天有效期',
+    advanceMonthlyConfirm: '确定提前使用「{group}」的下月额度吗？当前已用 ${used} / ${limit}，剩余额度 ${remaining} 会作废；本月用量会清零，新周期从现在开始，并从订阅有效期扣减约 {duration}。',
+    advanceMonthlySuccess: '已重置本月额度，新周期已从现在开始，并扣减 {duration} 有效期',
     advanceMonthlyFailed: '提前使用下月额度失败'
   },
 

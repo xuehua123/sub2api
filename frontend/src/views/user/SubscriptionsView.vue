@@ -356,7 +356,7 @@ function platformAccentDotClass(p: string): string {
   }
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
 
@@ -533,9 +533,9 @@ function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
     return false
   }
 
-  const deductedDays = estimateDeductedDays(subscription, now)
+  const deductedSeconds = estimateDeductedSeconds(subscription, now)
   const newExpiresAt = new Date(expiresAt)
-  newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
+  newExpiresAt.setSeconds(newExpiresAt.getSeconds() - deductedSeconds)
   return newExpiresAt.getTime() > now.getTime()
 }
 
@@ -570,13 +570,13 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
   if (!hasFullNextMonthlyCycle(subscription, resetAt, expiresAt)) {
     return t('userSubscriptions.advanceMonthlyUnavailableValidity')
   }
-  const deductedDays = estimateDeductedDays(subscription, now)
+  const deductedSeconds = estimateDeductedSeconds(subscription, now)
   const newExpiresAt = new Date(expiresAt)
-  newExpiresAt.setDate(newExpiresAt.getDate() - deductedDays)
+  newExpiresAt.setSeconds(newExpiresAt.getSeconds() - deductedSeconds)
   if (newExpiresAt.getTime() <= now.getTime()) {
     return t('userSubscriptions.advanceMonthlyUnavailableValidity')
   }
-  return t('userSubscriptions.advanceMonthlyAvailableHint', { days: deductedDays })
+  return t('userSubscriptions.advanceMonthlyAvailableHint', { duration: formatPreciseDuration(deductedSeconds) })
 }
 
 function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
@@ -599,23 +599,47 @@ function hasFullNextMonthlyCycle(
   return expiresAt.getTime() >= resetAt.getTime() + monthlyCycleDurationMs
 }
 
-function estimateDeductedDays(subscription: UserSubscription, now = new Date()): number {
+function estimateDeductedSeconds(subscription: UserSubscription, now = new Date()): number {
   const resetAt = getMonthlyResetAt(subscription, now)
-  const oneDayMs = 24 * 60 * 60 * 1000
-  const diff = Math.max(resetAt.getTime() - now.getTime(), oneDayMs)
-  return Math.ceil(diff / oneDayMs)
+  const diff = resetAt.getTime() - now.getTime()
+  return Math.max(Math.ceil(diff / 1000), 1)
+}
+
+function formatPreciseDuration(totalSeconds: number): string {
+  const seconds = Math.max(Math.floor(totalSeconds), 0)
+  const days = Math.floor(seconds / 86400)
+  const hours = Math.floor((seconds % 86400) / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+  const remainingSeconds = seconds % 60
+  const zh = locale.value.toLowerCase().startsWith('zh')
+
+  if (zh) {
+    const parts: string[] = []
+    if (days) parts.push(`${days}天`)
+    if (hours) parts.push(`${hours}小时`)
+    if (minutes) parts.push(`${minutes}分钟`)
+    if (remainingSeconds || parts.length === 0) parts.push(`${remainingSeconds}秒`)
+    return parts.join(' ')
+  }
+
+  const parts: string[] = []
+  if (days) parts.push(`${days}d`)
+  if (hours) parts.push(`${hours}h`)
+  if (minutes) parts.push(`${minutes}m`)
+  if (remainingSeconds || parts.length === 0) parts.push(`${remainingSeconds}s`)
+  return parts.join(' ')
 }
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {
   if (!canAdvanceMonthlyCycle(subscription)) return
   const groupName = subscription.group?.name || `Group #${subscription.group_id}`
-  const deductedDays = estimateDeductedDays(subscription)
+  const deductedSeconds = estimateDeductedSeconds(subscription)
   const limit = subscription.group?.monthly_limit_usd || 0
   const used = subscription.monthly_usage_usd || 0
   const remaining = Math.max(limit - used, 0)
   if (!window.confirm(t('userSubscriptions.advanceMonthlyConfirm', {
     group: groupName,
-    days: deductedDays,
+    duration: formatPreciseDuration(deductedSeconds),
     used: used.toFixed(2),
     limit: limit.toFixed(2),
     remaining: remaining.toFixed(2)
@@ -626,7 +650,7 @@ async function advanceMonthlyCycle(subscription: UserSubscription) {
     advancingSubscriptionId.value = subscription.id
     const result = await subscriptionsAPI.advanceMonthlyCycle(subscription.id)
     appStore.showSuccess(
-      t('userSubscriptions.advanceMonthlySuccess', { days: result.deducted_days })
+      t('userSubscriptions.advanceMonthlySuccess', { duration: formatPreciseDuration(result.deducted_seconds) })
     )
     await loadSubscriptions()
   } catch (error: any) {

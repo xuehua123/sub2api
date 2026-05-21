@@ -1090,7 +1090,7 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 	if group == nil || !group.HasMonthlyLimit() {
 		return nil, ErrMonthlyCycleNotExhausted
 	}
-	now := time.Now()
+	now := time.Now().Truncate(time.Second)
 
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
@@ -1196,8 +1196,8 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
 		}
 	}
-	newWindowStart := resetAt
-	newUpdatedAt := time.Now().Add(time.Millisecond)
+	newWindowStart := now
+	newUpdatedAt := now.Add(time.Millisecond)
 
 	result, err := txClient.ExecContext(ctx, `
 		UPDATE user_subscriptions

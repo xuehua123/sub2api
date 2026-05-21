@@ -102,13 +102,17 @@ func TestAdvanceMonthlyCycleRunsLockedUpdateAndLogInTransaction(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
+	before := time.Now().Truncate(time.Second)
 	result, err := svc.AdvanceMonthlyCycle(ctx, userID, subscriptionID)
+	after := time.Now().Truncate(time.Second)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, previousUsage, result.PreviousMonthlyUsage)
 	require.Greater(t, result.DeductedSeconds, int64(0))
-	require.Equal(t, previousStartsAt.Add(monthlyCycleDuration), result.NewMonthlyWindowStart)
+	require.False(t, result.NewMonthlyWindowStart.Before(before.Add(-time.Second)))
+	require.False(t, result.NewMonthlyWindowStart.After(after.Add(time.Second)))
+	require.Zero(t, result.NewMonthlyWindowStart.Nanosecond())
 	require.NotNil(t, result.Subscription)
 	require.Zero(t, result.Subscription.MonthlyUsageUSD)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -142,14 +146,13 @@ func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
 			ExpiresAt:          previousExpiresAt,
 		},
 		refreshedSub: &UserSubscription{
-			ID:                 subscriptionID,
-			UserID:             userID,
-			GroupID:            groupID,
-			Group:              group,
-			Status:             SubscriptionStatusActive,
-			MonthlyUsageUSD:    0,
-			MonthlyWindowStart: func() *time.Time { t := manualWindowStart.Add(monthlyCycleDuration); return &t }(),
-			ExpiresAt:          previousExpiresAt.AddDate(0, 0, -1),
+			ID:              subscriptionID,
+			UserID:          userID,
+			GroupID:         groupID,
+			Group:           group,
+			Status:          SubscriptionStatusActive,
+			MonthlyUsageUSD: 0,
+			ExpiresAt:       previousExpiresAt.AddDate(0, 0, -1),
 		},
 	}
 	client, mock := newAdvanceMonthlyCycleMockClient(t)
@@ -174,11 +177,16 @@ func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
+	before := time.Now().Truncate(time.Second)
 	result, err := svc.AdvanceMonthlyCycle(ctx, userID, subscriptionID)
+	after := time.Now().Truncate(time.Second)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, manualWindowStart.Add(monthlyCycleDuration), result.NewMonthlyWindowStart)
+	require.False(t, result.NewMonthlyWindowStart.Before(before.Add(-time.Second)))
+	require.False(t, result.NewMonthlyWindowStart.After(after.Add(time.Second)))
+	require.Zero(t, result.NewMonthlyWindowStart.Nanosecond())
+	require.True(t, manualWindowStart.Add(monthlyCycleDuration).Equal(result.NewMonthlyWindowStart.Add(time.Duration(result.DeductedSeconds)*time.Second)))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
