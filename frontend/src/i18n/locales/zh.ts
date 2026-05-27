@@ -7151,9 +7151,16 @@ export default {
     windowNotActive: '等待首次使用',
     usageOf: '已用 {used} / {limit}',
     switchPriority: '自动切换优先级',
-    switchPriorityHint: '拖动订阅分组排序；API Key 自动切换时会从上到下寻找可用额度。',
+    switchPriorityHint:
+      '拖动订阅分组排序；API Key 会优先使用当前分组，仅在当前分组不可用或额度耗尽时，才按同平台同类型从上到下切换。',
     switchPrioritySaved: '自动切换优先级已保存',
     switchPrioritySaveFailed: '保存自动切换优先级失败',
+    switchCandidateToggleHint: '是否作为自动切换候选；不会影响 API Key 当前分组优先使用。',
+    switchMode: {
+      openaiMessages: 'Codex + Claude 入口',
+      openaiCodex: 'Codex only',
+      antigravity: 'Antigravity'
+    },
     moveUp: '上移',
     moveDown: '下移',
     advanceMonthlyCycle: '提前使用下月额度',

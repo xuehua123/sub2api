@@ -32,21 +32,22 @@ const (
 )
 
 var (
-	ErrSubscriptionNotFound       = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
-	ErrSubscriptionExpired        = infraerrors.Forbidden("SUBSCRIPTION_EXPIRED", "subscription has expired")
-	ErrSubscriptionSuspended      = infraerrors.Forbidden("SUBSCRIPTION_SUSPENDED", "subscription is suspended")
-	ErrSubscriptionAlreadyExists  = infraerrors.Conflict("SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists for this user and group")
-	ErrSubscriptionAssignConflict = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
-	ErrGroupNotSubscriptionType   = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
-	ErrInvalidInput               = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
-	ErrMonthlyCycleNotExhausted   = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
-	ErrMonthlyCycleNoFutureTime   = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not include a full next monthly cycle to advance")
-	ErrDailyLimitExceeded         = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
-	ErrWeeklyLimitExceeded        = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
-	ErrMonthlyLimitExceeded       = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
-	ErrSubscriptionNilInput       = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
-	ErrAdjustWouldExpire          = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
-	ErrSubscriptionMaintenance    = infraerrors.ServiceUnavailable("SUBSCRIPTION_MAINTENANCE_FAILED", "subscription maintenance failed")
+	ErrSubscriptionNotFound            = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
+	ErrSubscriptionExpired             = infraerrors.Forbidden("SUBSCRIPTION_EXPIRED", "subscription has expired")
+	ErrSubscriptionSuspended           = infraerrors.Forbidden("SUBSCRIPTION_SUSPENDED", "subscription is suspended")
+	ErrSubscriptionAlreadyExists       = infraerrors.Conflict("SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists for this user and group")
+	ErrSubscriptionAssignConflict      = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
+	ErrGroupNotSubscriptionType        = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
+	ErrInvalidInput                    = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
+	ErrMonthlyCycleNotExhausted        = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
+	ErrMonthlyCycleNoFutureTime        = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not include a full next monthly cycle to advance")
+	ErrDailyLimitExceeded              = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
+	ErrWeeklyLimitExceeded             = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
+	ErrMonthlyLimitExceeded            = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
+	ErrSubscriptionNilInput            = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
+	ErrAdjustWouldExpire               = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
+	ErrSubscriptionMaintenance         = infraerrors.ServiceUnavailable("SUBSCRIPTION_MAINTENANCE_FAILED", "subscription maintenance failed")
+	ErrSubscriptionEndpointUnsupported = infraerrors.Forbidden("SUBSCRIPTION_ENDPOINT_UNSUPPORTED", "subscription group does not support this endpoint")
 )
 
 // SubscriptionService 订阅服务
@@ -73,6 +74,10 @@ type SubscriptionSwitchCandidate struct {
 	ToGroupID          int64
 	FromSubscriptionID *int64
 	Reason             string
+}
+
+type SubscriptionSwitchRequest struct {
+	InboundEndpoint string
 }
 
 type SubscriptionGroupPreference struct {
@@ -158,6 +163,14 @@ func subCacheKey(userID, groupID int64) string {
 	return "sub:" + strconv.FormatInt(userID, 10) + ":" + strconv.FormatInt(groupID, 10)
 }
 
+func activeSubscriptionsCacheKey(userID int64) string {
+	return "sub:list:" + strconv.FormatInt(userID, 10)
+}
+
+func subscriptionGroupPreferenceCacheKey(userID int64) string {
+	return "sub:prefs:" + strconv.FormatInt(userID, 10)
+}
+
 // jitteredTTL 为 TTL 添加抖动，避免集中过期
 func (s *SubscriptionService) jitteredTTL(ttl time.Duration) time.Duration {
 	if ttl <= 0 || s.subCacheJitter <= 0 {
@@ -181,6 +194,7 @@ func (s *SubscriptionService) InvalidateSubCache(userID, groupID int64) {
 		return
 	}
 	s.subCacheL1.Del(subCacheKey(userID, groupID))
+	s.subCacheL1.Del(activeSubscriptionsCacheKey(userID))
 }
 
 func (s *SubscriptionService) waitSubCacheInvalidation() {
@@ -706,6 +720,10 @@ func (s *SubscriptionService) GetActiveSubscription(ctx context.Context, userID,
 }
 
 func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKey(ctx context.Context, apiKey *APIKey) (*SubscriptionSwitchCandidate, error) {
+	return s.ResolveUsableSubscriptionForAPIKeyWithRequest(ctx, apiKey, SubscriptionSwitchRequest{})
+}
+
+func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKeyWithRequest(ctx context.Context, apiKey *APIKey, req SubscriptionSwitchRequest) (*SubscriptionSwitchCandidate, error) {
 	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.IsSubscriptionType() {
 		return nil, nil
 	}
@@ -713,7 +731,10 @@ func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKey(ctx context.Con
 	fromGroupID := apiKey.Group.ID
 	currentSub, currentErr := s.GetActiveSubscription(ctx, apiKey.User.ID, fromGroupID)
 	if currentErr == nil {
-		validateErr := s.validateSwitchCandidate(ctx, apiKey.User.ID, currentSub, apiKey.Group)
+		validateErr := subscriptionSwitchRequestEligibilityError(apiKey.Group, req)
+		if validateErr == nil {
+			validateErr = s.validateSwitchCandidate(ctx, apiKey.User.ID, currentSub, apiKey.Group)
+		}
 		if validateErr == nil {
 			return &SubscriptionSwitchCandidate{
 				Subscription: currentSub,
@@ -729,7 +750,8 @@ func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKey(ctx context.Con
 		return nil, currentErr
 	}
 
-	candidates, err := s.listAutoSwitchCandidates(ctx, apiKey.User.ID, fromGroupID, apiKey.Group.Platform)
+	preferences := s.loadSubscriptionGroupPreferencesCached(ctx, apiKey.User.ID)
+	candidates, err := s.listAutoSwitchCandidates(ctx, apiKey.User.ID, fromGroupID, apiKey.Group, req, preferences, false)
 	if err != nil {
 		return nil, err
 	}
@@ -870,11 +892,13 @@ func isAutoSwitchableSubscriptionError(err error) bool {
 		errors.Is(err, ErrDailyLimitExceeded) ||
 		errors.Is(err, ErrWeeklyLimitExceeded) ||
 		errors.Is(err, ErrMonthlyLimitExceeded) ||
+		errors.Is(err, ErrSubscriptionEndpointUnsupported) ||
 		strings.Contains(err.Error(), "SUBSCRIPTION_NOT_FOUND") ||
 		strings.Contains(err.Error(), "SUBSCRIPTION_EXPIRED") ||
 		strings.Contains(err.Error(), "DAILY_LIMIT_EXCEEDED") ||
 		strings.Contains(err.Error(), "WEEKLY_LIMIT_EXCEEDED") ||
-		strings.Contains(err.Error(), "MONTHLY_LIMIT_EXCEEDED")
+		strings.Contains(err.Error(), "MONTHLY_LIMIT_EXCEEDED") ||
+		strings.Contains(err.Error(), "SUBSCRIPTION_ENDPOINT_UNSUPPORTED")
 }
 
 func subscriptionSwitchReason(err error) string {
@@ -892,17 +916,21 @@ func subscriptionSwitchReason(err error) string {
 		return "weekly_limit_exceeded"
 	case errors.Is(err, ErrMonthlyLimitExceeded) || strings.Contains(err.Error(), "MONTHLY_LIMIT_EXCEEDED"):
 		return "monthly_limit_exceeded"
+	case errors.Is(err, ErrSubscriptionEndpointUnsupported) || strings.Contains(err.Error(), "SUBSCRIPTION_ENDPOINT_UNSUPPORTED"):
+		return "endpoint_unsupported"
 	default:
 		return "subscription_unavailable"
 	}
 }
 
-func (s *SubscriptionService) listAutoSwitchCandidates(ctx context.Context, userID, currentGroupID int64, platform string) ([]UserSubscription, error) {
-	subs, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+func (s *SubscriptionService) listAutoSwitchCandidates(ctx context.Context, userID, currentGroupID int64, currentGroup *Group, req SubscriptionSwitchRequest, preferences map[int64]subscriptionGroupPreferenceRank, includeCurrent bool) ([]UserSubscription, error) {
+	subs, err := s.listActiveSubscriptionsForSwitch(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	preferences := s.loadSubscriptionGroupPreferences(ctx, userID)
+	if preferences == nil {
+		preferences = map[int64]subscriptionGroupPreferenceRank{}
+	}
 	const unranked = int(^uint(0) >> 1)
 	sort.SliceStable(subs, func(i, j int) bool {
 		pi, okI := preferences[subs[i].GroupID]
@@ -940,18 +968,194 @@ func (s *SubscriptionService) listAutoSwitchCandidates(ctx context.Context, user
 	filtered := subs[:0]
 	for i := range subs {
 		group := subs[i].Group
-		if group == nil || group.ID == currentGroupID {
+		if group == nil {
+			continue
+		}
+		if !includeCurrent && group.ID == currentGroupID {
 			continue
 		}
 		if pref, ok := preferences[group.ID]; ok && !pref.Enabled {
 			continue
 		}
-		if platform != "" && group.Platform != platform {
+		if err := subscriptionSwitchRequestEligibilityError(group, req); err != nil {
+			continue
+		}
+		if currentGroup != nil && currentGroup.Platform != "" && group.Platform != currentGroup.Platform {
+			continue
+		}
+		if !subscriptionSwitchGroupsCompatible(currentGroup, group, req) {
 			continue
 		}
 		filtered = append(filtered, subs[i])
 	}
 	return filtered, nil
+}
+
+func (s *SubscriptionService) listActiveSubscriptionsForSwitch(ctx context.Context, userID int64) ([]UserSubscription, error) {
+	if s == nil || userID <= 0 {
+		return nil, ErrSubscriptionNotFound
+	}
+	key := activeSubscriptionsCacheKey(userID)
+	if s.subCacheL1 != nil {
+		if v, ok := s.subCacheL1.Get(key); ok {
+			if cached, ok := v.([]UserSubscription); ok {
+				return cloneUserSubscriptions(cached), nil
+			}
+		}
+	}
+	subs, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	subs = cloneUserSubscriptions(subs)
+	if s.subCacheL1 != nil {
+		_ = s.subCacheL1.SetWithTTL(key, cloneUserSubscriptions(subs), 1, s.jitteredTTL(s.subCacheTTL))
+	}
+	return subs, nil
+}
+
+func cloneUserSubscriptions(in []UserSubscription) []UserSubscription {
+	out := make([]UserSubscription, len(in))
+	for i := range in {
+		out[i] = in[i]
+		if in[i].Group != nil {
+			group := *in[i].Group
+			out[i].Group = &group
+		}
+		if in[i].User != nil {
+			user := *in[i].User
+			out[i].User = &user
+		}
+	}
+	return out
+}
+
+func subscriptionSwitchGroupsCompatible(currentGroup, candidateGroup *Group, req SubscriptionSwitchRequest) bool {
+	if currentGroup == nil || candidateGroup == nil {
+		return false
+	}
+	if currentGroup.Platform != "" && candidateGroup.Platform != currentGroup.Platform {
+		return false
+	}
+
+	switch currentGroup.Platform {
+	case PlatformOpenAI:
+		if normalizeSubscriptionSwitchEndpoint(req.InboundEndpoint) != "" {
+			return true
+		}
+		return currentGroup.AllowMessagesDispatch == candidateGroup.AllowMessagesDispatch
+	case PlatformAntigravity:
+		return true
+	default:
+		return true
+	}
+}
+
+func subscriptionSwitchRequestEligibilityError(group *Group, req SubscriptionSwitchRequest) error {
+	if group == nil {
+		return ErrSubscriptionNotFound
+	}
+	endpoint := normalizeSubscriptionSwitchEndpoint(req.InboundEndpoint)
+	if endpoint == "" {
+		return nil
+	}
+	switch group.Platform {
+	case PlatformOpenAI:
+		if endpoint == "/v1/messages" && !group.AllowMessagesDispatch {
+			return ErrSubscriptionEndpointUnsupported
+		}
+		if endpoint != "/v1/messages" && group.ClaudeCodeOnly {
+			return ErrSubscriptionEndpointUnsupported
+		}
+	case PlatformAntigravity:
+		requiredScope := subscriptionSwitchAntigravityScope(endpoint)
+		if requiredScope != "" && !subscriptionSwitchGroupSupportsScope(group, requiredScope) {
+			return ErrSubscriptionEndpointUnsupported
+		}
+	}
+	return nil
+}
+
+func subscriptionSwitchAntigravityScope(endpoint string) string {
+	switch normalizeSubscriptionSwitchEndpoint(endpoint) {
+	case "/v1/messages":
+		return "claude"
+	case "/v1beta/models":
+		return "gemini_text"
+	default:
+		return ""
+	}
+}
+
+func subscriptionSwitchGroupSupportsScope(group *Group, requiredScope string) bool {
+	if group == nil || requiredScope == "" || len(group.SupportedModelScopes) == 0 {
+		return true
+	}
+	for _, scope := range group.SupportedModelScopes {
+		if strings.EqualFold(strings.TrimSpace(scope), requiredScope) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *SubscriptionService) loadSubscriptionGroupPreferencesCached(ctx context.Context, userID int64) map[int64]subscriptionGroupPreferenceRank {
+	if s == nil || userID <= 0 {
+		return map[int64]subscriptionGroupPreferenceRank{}
+	}
+	key := subscriptionGroupPreferenceCacheKey(userID)
+	if s.subCacheL1 != nil {
+		if v, ok := s.subCacheL1.Get(key); ok {
+			if cached, ok := v.(map[int64]subscriptionGroupPreferenceRank); ok {
+				return cloneSubscriptionGroupPreferences(cached)
+			}
+		}
+	}
+	preferences := s.loadSubscriptionGroupPreferences(ctx, userID)
+	if s.subCacheL1 != nil {
+		_ = s.subCacheL1.SetWithTTL(key, cloneSubscriptionGroupPreferences(preferences), 1, s.jitteredTTL(s.subCacheTTL))
+	}
+	return preferences
+}
+
+func cloneSubscriptionGroupPreferences(in map[int64]subscriptionGroupPreferenceRank) map[int64]subscriptionGroupPreferenceRank {
+	out := make(map[int64]subscriptionGroupPreferenceRank, len(in))
+	for groupID, pref := range in {
+		out[groupID] = pref
+	}
+	return out
+}
+
+func (s *SubscriptionService) invalidateSubscriptionGroupPreferencesCache(userID int64) {
+	if s == nil || s.subCacheL1 == nil || userID <= 0 {
+		return
+	}
+	s.subCacheL1.Del(subscriptionGroupPreferenceCacheKey(userID))
+	s.subCacheL1.Wait()
+}
+
+func NewSubscriptionSwitchRequestFromPath(path string) SubscriptionSwitchRequest {
+	return SubscriptionSwitchRequest{InboundEndpoint: normalizeSubscriptionSwitchEndpoint(path)}
+}
+
+func normalizeSubscriptionSwitchEndpoint(path string) string {
+	path = strings.TrimSpace(strings.ToLower(path))
+	switch {
+	case strings.Contains(path, "/v1/chat/completions"):
+		return "/v1/chat/completions"
+	case strings.Contains(path, "/v1/messages"):
+		return "/v1/messages"
+	case strings.Contains(path, "/images/generations"):
+		return "/v1/images/generations"
+	case strings.Contains(path, "/images/edits"):
+		return "/v1/images/edits"
+	case strings.Contains(path, "/responses"):
+		return "/v1/responses"
+	case strings.Contains(path, "/v1beta/models"):
+		return "/v1beta/models"
+	default:
+		return path
+	}
 }
 
 func (s *SubscriptionService) loadSubscriptionGroupPreferences(ctx context.Context, userID int64) map[int64]subscriptionGroupPreferenceRank {
@@ -966,6 +1170,7 @@ func (s *SubscriptionService) loadSubscriptionGroupPreferences(ctx context.Conte
 		ORDER BY sort_order ASC, group_id ASC
 	`, userID)
 	if err != nil {
+		log.Printf("Warning: failed to load subscription group preferences for user %d: %v", userID, err)
 		return out
 	}
 	defer func() { _ = rows.Close() }()
@@ -976,6 +1181,9 @@ func (s *SubscriptionService) loadSubscriptionGroupPreferences(ctx context.Conte
 		if err := rows.Scan(&groupID, &sortOrder, &enabled); err == nil {
 			out[groupID] = subscriptionGroupPreferenceRank{SortOrder: sortOrder, Enabled: enabled}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("Warning: failed to read subscription group preferences for user %d: %v", userID, err)
 	}
 	return out
 }
@@ -1069,6 +1277,7 @@ func (s *SubscriptionService) SaveGroupPreferences(ctx context.Context, userID i
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	s.invalidateSubscriptionGroupPreferencesCache(userID)
 	return saved, nil
 }
 

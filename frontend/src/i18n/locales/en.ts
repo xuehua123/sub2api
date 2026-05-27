@@ -6995,9 +6995,17 @@ export default {
     windowNotActive: 'Awaiting first use',
     usageOf: '{used} of {limit}',
     switchPriority: 'Auto-switch Priority',
-    switchPriorityHint: 'Drag subscription groups to reorder them. API keys switch from top to bottom until a usable quota is found.',
+    switchPriorityHint:
+      'Drag subscription groups to reorder fallback candidates. API keys keep using their current group, and only switch top-down within the same platform and type when that group is unavailable or out of quota.',
     switchPrioritySaved: 'Auto-switch priority saved',
     switchPrioritySaveFailed: 'Failed to save auto-switch priority',
+    switchCandidateToggleHint:
+      'Whether this group can be used as an auto-switch fallback. This does not stop an API key from using its current group first.',
+    switchMode: {
+      openaiMessages: 'Codex + Claude endpoint',
+      openaiCodex: 'Codex only',
+      antigravity: 'Antigravity'
+    },
     moveUp: 'Move up',
     moveDown: 'Move down',
     advanceMonthlyCycle: 'Use next cycle now',

@@ -60,8 +60,14 @@
                 <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
                   {{ subscriptionByGroupID(pref.group_id)?.group?.name || `Group #${pref.group_id}` }}
                 </div>
-                <div class="text-xs text-gray-500 dark:text-dark-400">
-                  {{ platformLabel(subscriptionByGroupID(pref.group_id)?.group?.platform || '') }}
+                <div class="flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-dark-400">
+                  <span>{{ platformLabel(subscriptionByGroupID(pref.group_id)?.group?.platform || '') }}</span>
+                  <span
+                    v-if="subscriptionSwitchModeLabel(subscriptionByGroupID(pref.group_id))"
+                    class="rounded border border-gray-200 px-1.5 py-0.5 text-[11px] text-gray-600 dark:border-dark-600 dark:text-gray-300"
+                  >
+                    {{ subscriptionSwitchModeLabel(subscriptionByGroupID(pref.group_id)) }}
+                  </span>
                 </div>
               </div>
               <button
@@ -82,6 +88,8 @@
               </button>
               <button
                 type="button"
+                :aria-label="t('userSubscriptions.switchCandidateToggleHint')"
+                :title="t('userSubscriptions.switchCandidateToggleHint')"
                 @click="pref.enabled = !pref.enabled"
                 :class="[
                   'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
@@ -120,6 +128,12 @@
                   </h3>
                   <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
+                  </span>
+                  <span
+                    v-if="subscriptionSwitchModeLabel(subscription)"
+                    class="rounded-md border border-gray-200 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:border-dark-600 dark:text-gray-300"
+                  >
+                    {{ subscriptionSwitchModeLabel(subscription) }}
                   </span>
                 </div>
                 <p v-if="subscription.group?.description" class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
@@ -388,6 +402,20 @@ async function loadSubscriptions() {
 
 function subscriptionByGroupID(groupID: number): UserSubscription | undefined {
   return subscriptions.value.find((sub) => sub.group_id === groupID)
+}
+
+function subscriptionSwitchModeLabel(subscription: UserSubscription | undefined): string {
+  const group = subscription?.group
+  if (!group) return ''
+  if (group.platform === 'openai') {
+    return group.allow_messages_dispatch
+      ? t('userSubscriptions.switchMode.openaiMessages')
+      : t('userSubscriptions.switchMode.openaiCodex')
+  }
+  if (group.platform === 'antigravity') {
+    return t('userSubscriptions.switchMode.antigravity')
+  }
+  return ''
 }
 
 function buildSwitchPreferences(

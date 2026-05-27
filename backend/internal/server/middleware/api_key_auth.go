@@ -164,7 +164,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					subscription = sub
 				}
 			} else {
-				candidate, subErr := subscriptionService.ResolveUsableSubscriptionForAPIKey(c.Request.Context(), apiKey)
+				candidate, subErr := subscriptionService.ResolveUsableSubscriptionForAPIKeyWithRequest(
+					c.Request.Context(),
+					apiKey,
+					subscriptionSwitchRequestForContext(c),
+				)
 				if subErr != nil {
 					AbortWithError(c, subscriptionErrorStatus(subErr), subscriptionErrorCode(subErr), subErr.Error())
 					return
@@ -313,6 +317,9 @@ func subscriptionErrorCode(err error) string {
 	if errors.Is(err, service.ErrSubscriptionMaintenance) {
 		return "SUBSCRIPTION_MAINTENANCE_FAILED"
 	}
+	if errors.Is(err, service.ErrSubscriptionEndpointUnsupported) {
+		return "SUBSCRIPTION_ENDPOINT_UNSUPPORTED"
+	}
 	return "SUBSCRIPTION_INVALID"
 }
 
@@ -368,4 +375,15 @@ func validateAPIKeyGroupAvailable(apiKey *service.APIKey) (string, string, bool)
 		return "GROUP_DISABLED", "API Key 所属分组已停用", false
 	}
 	return "", "", true
+}
+
+func subscriptionSwitchRequestForContext(c *gin.Context) service.SubscriptionSwitchRequest {
+	if c == nil {
+		return service.SubscriptionSwitchRequest{}
+	}
+	path := c.FullPath()
+	if path == "" && c.Request != nil && c.Request.URL != nil {
+		path = c.Request.URL.Path
+	}
+	return service.NewSubscriptionSwitchRequestFromPath(path)
 }

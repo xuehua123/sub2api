@@ -87,7 +87,11 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 		if isSubscriptionType && subscriptionService != nil {
-			candidate, err := subscriptionService.ResolveUsableSubscriptionForAPIKey(c.Request.Context(), apiKey)
+			candidate, err := subscriptionService.ResolveUsableSubscriptionForAPIKeyWithRequest(
+				c.Request.Context(),
+				apiKey,
+				subscriptionSwitchRequestForContext(c),
+			)
 			if err != nil {
 				abortWithGoogleError(c, subscriptionErrorStatus(err), err.Error())
 				return

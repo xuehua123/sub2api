@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ type autoSwitchUserSubRepoStub struct {
 
 	activeByGroup     map[int64]UserSubscription
 	list              []UserSubscription
+	listCalls         int
 	resetMonthlyCalls int
 	resetMonthlyID    int64
 }
@@ -28,6 +30,7 @@ func (r *autoSwitchUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Contex
 }
 
 func (r *autoSwitchUserSubRepoStub) ListActiveByUserID(_ context.Context, userID int64) ([]UserSubscription, error) {
+	r.listCalls++
 	out := make([]UserSubscription, 0, len(r.list))
 	for _, sub := range r.list {
 		if sub.UserID == userID {
@@ -279,4 +282,482 @@ func TestResolveUsableSubscriptionForAPIKey_UsesBillingCacheUsageView(t *testing
 	needsMaintenance, validateErr := svc.ValidateAndCheckLimits(candidate.Subscription, candidate.Group)
 	require.NoError(t, validateErr)
 	require.False(t, needsMaintenance)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_OpenAIResponsesCanFallbackAcrossMessagesDispatchCapability(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	codexGroup := &Group{
+		ID:                    1,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: false,
+	}
+	claudeMessagesGroup := &Group{
+		ID:                    2,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: true,
+	}
+	currentSub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            codexGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    limit + 1,
+		Group:              codexGroup,
+	}
+	claudeMessagesSub := UserSubscription{
+		ID:                 22,
+		UserID:             userID,
+		GroupID:            claudeMessagesGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              claudeMessagesGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{codexGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, claudeMessagesSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &codexGroup.ID,
+		AutoSwitchGroupEnabled: true,
+		User:                   &User{ID: userID},
+		Group:                  codexGroup,
+	}, NewSubscriptionSwitchRequestFromPath("/backend-api/codex/responses"))
+
+	require.NoError(t, err)
+	require.NotNil(t, candidate)
+	require.True(t, candidate.Switched)
+	require.Equal(t, claudeMessagesGroup.ID, candidate.ToGroupID)
+	require.Equal(t, "monthly_limit_exceeded", candidate.Reason)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_SwitchesWithinSameOpenAIBucket(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	currentGroup := &Group{
+		ID:                    1,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: true,
+	}
+	wrongBucketGroup := &Group{
+		ID:                    2,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: false,
+	}
+	sameBucketGroup := &Group{
+		ID:                    3,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: true,
+	}
+	currentSub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    limit + 1,
+		Group:              currentGroup,
+	}
+	wrongBucketSub := UserSubscription{
+		ID:                 22,
+		UserID:             userID,
+		GroupID:            wrongBucketGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(36 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              wrongBucketGroup,
+	}
+	sameBucketSub := UserSubscription{
+		ID:                 33,
+		UserID:             userID,
+		GroupID:            sameBucketGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              sameBucketGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, wrongBucketSub, sameBucketSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &currentGroup.ID,
+		AutoSwitchGroupEnabled: true,
+		User:                   &User{ID: userID},
+		Group:                  currentGroup,
+	}, NewSubscriptionSwitchRequestFromPath("/v1/messages"))
+
+	require.NoError(t, err)
+	require.NotNil(t, candidate)
+	require.True(t, candidate.Switched)
+	require.Equal(t, sameBucketGroup.ID, candidate.ToGroupID)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_OpenAIMessagesRequiresMessagesDispatchCandidate(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	currentGroup := &Group{
+		ID:                    1,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: false,
+	}
+	messagesGroup := &Group{
+		ID:                    2,
+		Platform:              PlatformOpenAI,
+		Status:                StatusActive,
+		SubscriptionType:      SubscriptionTypeSubscription,
+		MonthlyLimitUSD:       &limit,
+		AllowMessagesDispatch: true,
+	}
+	currentSub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              currentGroup,
+	}
+	messagesSub := UserSubscription{
+		ID:                 22,
+		UserID:             userID,
+		GroupID:            messagesGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              messagesGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, messagesSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &currentGroup.ID,
+		AutoSwitchGroupEnabled: true,
+		User:                   &User{ID: userID},
+		Group:                  currentGroup,
+	}, NewSubscriptionSwitchRequestFromPath("/v1/messages"))
+
+	require.NoError(t, err)
+	require.NotNil(t, candidate)
+	require.True(t, candidate.Switched)
+	require.Equal(t, messagesGroup.ID, candidate.ToGroupID)
+	require.Equal(t, "endpoint_unsupported", candidate.Reason)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_KeepsCurrentGroupWhenUsable(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	highPriorityGroup := &Group{
+		ID:               1,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	currentGroup := &Group{
+		ID:               2,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	highPrioritySub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            highPriorityGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              highPriorityGroup,
+	}
+	currentSub := UserSubscription{
+		ID:                 22,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              currentGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, highPrioritySub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &currentGroup.ID,
+		AutoSwitchGroupEnabled: true,
+		User:                   &User{ID: userID},
+		Group:                  currentGroup,
+	}, SubscriptionSwitchRequest{})
+
+	require.NoError(t, err)
+	require.NotNil(t, candidate)
+	require.False(t, candidate.Switched)
+	require.Equal(t, currentGroup.ID, candidate.ToGroupID)
+	require.Equal(t, 0, repo.listCalls)
+}
+
+func TestListAutoSwitchCandidates_UsesPreferencesOnlyForFallbackOrder(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	currentGroup := &Group{
+		ID:               1,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	lowPriorityGroup := &Group{
+		ID:               2,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	highPriorityGroup := &Group{
+		ID:               3,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	disabledGroup := &Group{
+		ID:               4,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	currentSub := UserSubscription{
+		ID:                 1,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              currentGroup,
+	}
+	lowPrioritySub := UserSubscription{
+		ID:                 2,
+		UserID:             userID,
+		GroupID:            lowPriorityGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(72 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              lowPriorityGroup,
+	}
+	highPrioritySub := UserSubscription{
+		ID:                 3,
+		UserID:             userID,
+		GroupID:            highPriorityGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(96 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              highPriorityGroup,
+	}
+	disabledSub := UserSubscription{
+		ID:                 4,
+		UserID:             userID,
+		GroupID:            disabledGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(12 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              disabledGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, lowPrioritySub, highPrioritySub, disabledSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidates, err := svc.listAutoSwitchCandidates(context.Background(), userID, currentGroup.ID, currentGroup, SubscriptionSwitchRequest{}, map[int64]subscriptionGroupPreferenceRank{
+		highPriorityGroup.ID: {SortOrder: 0, Enabled: true},
+		lowPriorityGroup.ID:  {SortOrder: 1, Enabled: true},
+		disabledGroup.ID:     {SortOrder: 2, Enabled: false},
+		currentGroup.ID:      {SortOrder: 3, Enabled: true},
+	}, false)
+
+	require.NoError(t, err)
+	require.Len(t, candidates, 2)
+	require.Equal(t, highPriorityGroup.ID, candidates[0].GroupID)
+	require.Equal(t, lowPriorityGroup.ID, candidates[1].GroupID)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_FallsBackByPreferenceWhenCurrentExhausted(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	currentGroup := &Group{
+		ID:               1,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	candidateGroup := &Group{
+		ID:               2,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	currentSub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    limit + 1,
+		Group:              currentGroup,
+	}
+	candidateSub := UserSubscription{
+		ID:                 22,
+		UserID:             userID,
+		GroupID:            candidateGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    0,
+		Group:              candidateGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub, candidateSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+	preferences := map[int64]subscriptionGroupPreferenceRank{
+		candidateGroup.ID: {SortOrder: 0, Enabled: true},
+		currentGroup.ID:   {SortOrder: 1, Enabled: true},
+	}
+
+	candidates, err := svc.listAutoSwitchCandidates(context.Background(), userID, currentGroup.ID, currentGroup, SubscriptionSwitchRequest{}, preferences, false)
+	require.NoError(t, err)
+	require.Len(t, candidates, 1)
+	require.Equal(t, candidateGroup.ID, candidates[0].GroupID)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &currentGroup.ID,
+		AutoSwitchGroupEnabled: true,
+		User:                   &User{ID: userID},
+		Group:                  currentGroup,
+	}, SubscriptionSwitchRequest{})
+
+	require.NoError(t, err)
+	require.NotNil(t, candidate)
+	require.True(t, candidate.Switched)
+	require.Equal(t, candidateGroup.ID, candidate.ToGroupID)
+	require.Equal(t, "monthly_limit_exceeded", candidate.Reason)
+}
+
+func TestResolveUsableSubscriptionForAPIKey_DisabledAutoSwitchStaysFixed(t *testing.T) {
+	now := time.Now()
+	currentWindow := now.Add(-time.Hour)
+	limit := 10.0
+	userID := int64(1001)
+
+	currentGroup := &Group{
+		ID:               1,
+		Platform:         PlatformOpenAI,
+		Status:           StatusActive,
+		SubscriptionType: SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &limit,
+	}
+	currentSub := UserSubscription{
+		ID:                 11,
+		UserID:             userID,
+		GroupID:            currentGroup.ID,
+		Status:             SubscriptionStatusActive,
+		ExpiresAt:          now.Add(24 * time.Hour),
+		MonthlyWindowStart: &currentWindow,
+		MonthlyUsageUSD:    limit + 1,
+		Group:              currentGroup,
+	}
+	repo := &autoSwitchUserSubRepoStub{
+		activeByGroup: map[int64]UserSubscription{currentGroup.ID: currentSub},
+		list:          []UserSubscription{currentSub},
+	}
+	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
+
+	candidate, err := svc.ResolveUsableSubscriptionForAPIKeyWithRequest(context.Background(), &APIKey{
+		ID:                     101,
+		UserID:                 userID,
+		GroupID:                &currentGroup.ID,
+		AutoSwitchGroupEnabled: false,
+		User:                   &User{ID: userID},
+		Group:                  currentGroup,
+	}, SubscriptionSwitchRequest{})
+
+	require.Nil(t, candidate)
+	require.True(t, errors.Is(err, ErrMonthlyLimitExceeded))
+	require.Equal(t, 0, repo.listCalls)
 }
