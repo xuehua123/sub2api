@@ -131,6 +131,22 @@ func (s *autoSwitchBillingCacheStub) InvalidateAPIKeyRateLimit(context.Context, 
 	return nil
 }
 
+func (s *autoSwitchBillingCacheStub) GetUserPlatformQuotaCache(context.Context, int64, string) (*UserPlatformQuotaCacheEntry, bool, error) {
+	return nil, false, nil
+}
+
+func (s *autoSwitchBillingCacheStub) SetUserPlatformQuotaCache(context.Context, int64, string, *UserPlatformQuotaCacheEntry, time.Duration) error {
+	return nil
+}
+
+func (s *autoSwitchBillingCacheStub) DeleteUserPlatformQuotaCache(context.Context, int64, string) error {
+	return nil
+}
+
+func (s *autoSwitchBillingCacheStub) IncrUserPlatformQuotaUsageCache(context.Context, int64, string, float64, time.Duration) error {
+	return nil
+}
+
 func TestResolveUsableSubscriptionForAPIKey_ResetsCandidateWindowSynchronously(t *testing.T) {
 	now := time.Now()
 	currentWindow := now.Add(-time.Hour)
