@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import ReferralAccountPicker from '../ReferralAccountPicker.vue'
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key, locale: { value: 'en' } } }),
   useI18n: () => ({
     t: (key: string, fallback?: string) => fallback || key
   })

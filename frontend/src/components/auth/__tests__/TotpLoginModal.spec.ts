@@ -7,6 +7,7 @@ const { showErrorMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key, locale: { value: 'en' } } }),
   useI18n: () => ({
     t: (key: string) => key,
   }),

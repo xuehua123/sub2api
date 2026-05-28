@@ -17,6 +17,7 @@ const messages: Record<string, string> = {
 }
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key, locale: { value: 'en' } } }),
   useI18n: () => ({
     t: (key: string, params?: Record<string, string>) => {
       const message = messages[key] ?? key

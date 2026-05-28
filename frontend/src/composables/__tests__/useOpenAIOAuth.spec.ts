@@ -7,6 +7,7 @@ vi.mock('@/stores/app', () => ({
 }))
 
 vi.mock('vue-i18n', () => ({
+  createI18n: () => ({ global: { t: (key: string) => key, locale: { value: 'en' } } }),
   useI18n: () => ({
     t: (key: string) => {
       const messages: Record<string, string> = {
