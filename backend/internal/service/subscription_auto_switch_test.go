@@ -143,8 +143,20 @@ func (s *autoSwitchBillingCacheStub) DeleteUserPlatformQuotaCache(context.Contex
 	return nil
 }
 
-func (s *autoSwitchBillingCacheStub) IncrUserPlatformQuotaUsageCache(context.Context, int64, string, float64, time.Duration) error {
+func (s *autoSwitchBillingCacheStub) IncrUserPlatformQuotaUsageCache(context.Context, int64, string, float64, time.Duration, bool) error {
 	return nil
+}
+
+func (s *autoSwitchBillingCacheStub) PopDirtyUserPlatformQuotaKeys(context.Context, int) ([]UserPlatformQuotaKey, error) {
+	return nil, nil
+}
+
+func (s *autoSwitchBillingCacheStub) ReaddDirtyUserPlatformQuotaKeys(context.Context, []UserPlatformQuotaKey) error {
+	return nil
+}
+
+func (s *autoSwitchBillingCacheStub) BatchGetUserPlatformQuotaCache(context.Context, []UserPlatformQuotaKey) ([]*UserPlatformQuotaCacheEntry, error) {
+	return nil, nil
 }
 
 func TestResolveUsableSubscriptionForAPIKey_ResetsCandidateWindowSynchronously(t *testing.T) {
