@@ -8293,15 +8293,9 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	// by the caller after recording the usage log.
 }
 
-func resolveUsageBillingRequestID(ctx context.Context, upstreamRequestID string) string {
-	if ctx != nil {
-		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
-			return "client:" + strings.TrimSpace(clientRequestID)
-		}
-		if requestID, _ := ctx.Value(ctxkey.RequestID).(string); strings.TrimSpace(requestID) != "" {
-			return "local:" + strings.TrimSpace(requestID)
-		}
-	}
+func resolveUsageBillingRequestID(_ context.Context, upstreamRequestID string) string {
+	// Billing idempotency must not trust client/header-derived correlation IDs;
+	// some clients reuse them across distinct successful requests.
 	if requestID := strings.TrimSpace(upstreamRequestID); requestID != "" {
 		return requestID
 	}
