@@ -156,6 +156,39 @@ describe('KeyUsageView daily detail', () => {
             cost: 0.15,
             actual_cost: 0.12,
           },
+          {
+            date: '2026-05-18',
+            requests: 1,
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_read_tokens: 0,
+            cache_write_tokens: 0,
+            total_tokens: 2,
+            cost: 0.99,
+          },
+        ],
+        model_stats: [
+          {
+            model: 'gpt-visible',
+            requests: 1,
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: 30,
+            cost: 0.15,
+            actual_cost: 0.12,
+          },
+          {
+            model: 'gpt-cost-only',
+            requests: 1,
+            input_tokens: 1,
+            output_tokens: 1,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            total_tokens: 2,
+            cost: 0.88,
+          },
         ],
       }),
     }))
@@ -202,6 +235,8 @@ describe('KeyUsageView daily detail', () => {
     expect(text).toContain('30')
     expect(text).toContain('10')
     expect(text).toContain('$0.12')
+    expect(text).not.toContain('$0.99')
+    expect(text).not.toContain('$0.88')
 
     wrapper.unmount()
   })

@@ -6,6 +6,7 @@ import TokenUsageTrend from '../TokenUsageTrend.vue'
 const messages: Record<string, string> = {
   'admin.dashboard.tokenUsageTrend': 'Token Usage Trend',
   'admin.dashboard.noDataAvailable': 'No data available',
+  'usage.cost': 'Cost',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -20,6 +21,7 @@ vi.mock('vue-i18n', async () => {
 
 vi.mock('vue-chartjs', () => ({
   Line: {
+    name: 'Line',
     props: ['data', 'options'],
     template: '<div class="chart-data">{{ JSON.stringify(data) }}</div>',
   },
@@ -116,5 +118,36 @@ describe('TokenUsageTrend', () => {
     )
     // Hit rate = 500 / (200 + 500 + 300) * 100 = 50%
     expect(hitRateDataset.data[0]).toBe(50)
+  })
+
+  it('hides standard cost from tooltip footer when cost breakdown is disabled', () => {
+    const wrapper = mount(TokenUsageTrend, {
+      props: {
+        showCostBreakdown: false,
+        trendData: [
+          {
+            date: '2026-05-08',
+            requests: 1,
+            input_tokens: 200,
+            output_tokens: 50,
+            cache_creation_tokens: 0,
+            cache_read_tokens: 0,
+            cost: 0.02,
+            actual_cost: 0.01,
+          },
+        ],
+      },
+      global: {
+        stubs: {
+          LoadingSpinner: true,
+        },
+      },
+    })
+
+    const line = wrapper.findComponent({ name: 'Line' })
+    const options = line.props('options') as any
+    const footer = options.plugins.tooltip.callbacks.footer([{ dataIndex: 0 }])
+    expect(footer).toBe('Cost: $0.010')
+    expect(footer).not.toContain('Standard')
   })
 })

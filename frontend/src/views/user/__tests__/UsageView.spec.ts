@@ -16,6 +16,8 @@ const { query, getStatsByDateRange, list, showError, showWarning, showSuccess, s
 
 const messages: Record<string, string> = {
   'usage.costDetails': 'Cost Breakdown',
+  'usage.actualCost': 'Actual Cost',
+  'usage.inSelectedRange': 'In selected range',
   'admin.usage.inputCost': 'Input Cost',
   'admin.usage.outputCost': 'Output Cost',
   'admin.usage.cacheCreationCost': 'Cache Creation Cost',
@@ -135,7 +137,7 @@ describe('user UsageView tooltip', () => {
     }
   })
 
-  it('shows fast service tier and unit prices in user tooltip', async () => {
+  it('shows only billed cost in user cost tooltip', async () => {
     query.mockResolvedValue({
       items: [
         {
@@ -211,17 +213,21 @@ describe('user UsageView tooltip', () => {
     await nextTick()
 
     const text = wrapper.text()
-    expect(text).toContain('Service tier')
-    expect(text).toContain('Fast')
-    expect(text).toContain('Rate')
-    expect(text).toContain('1.00x')
+    expect(text).toContain('Cost')
+    expect(text).toContain('Actual Cost')
     expect(text).toContain('Billed')
     expect(text).toContain('$0.092883')
-    expect(text).toContain('$5.0000 / 1M tokens')
-    expect(text).toContain('$30.0000 / 1M tokens')
+    expect(text).not.toContain('Service tier')
+    expect(text).not.toContain('Fast')
+    expect(text).not.toContain('Rate')
+    expect(text).not.toContain('1.00x')
+    expect(text).not.toContain('Original')
+    expect(text).not.toContain('Input price')
+    expect(text).not.toContain('Output price')
+    expect(text).not.toContain('/ 1M tokens')
   })
 
-  it('exports csv with input and output unit price columns', async () => {
+  it('exports csv with only billed cost', async () => {
     const exportedLogs = [
       {
         request_id: 'req-user-export',
@@ -313,6 +319,16 @@ describe('user UsageView tooltip', () => {
     expect(showSuccess).toHaveBeenCalled()
 
     expect(setupState.columns.some((column: { key: string }) => column.key === 'ip_address')).toBe(true)
+    const csv = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(exportedBlob as Blob)
+    })
+    expect(csv).toContain('Cost')
+    expect(csv).toContain('0.09288300')
+    expect(csv).not.toContain('Rate Multiplier')
+    expect(csv).not.toContain('Original Cost')
 
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL
