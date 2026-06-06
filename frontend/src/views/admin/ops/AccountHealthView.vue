@@ -224,22 +224,22 @@
         暂无账号健康数据
       </section>
 
-      <section v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <section v-else class="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
         <article
           v-for="item in sortedItems"
           :key="item.account_id"
           class="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-dark-800"
           :class="accountBorderClass(item)"
         >
-          <div class="p-4 sm:p-5">
+          <div class="p-4">
             <div class="flex items-start justify-between gap-3">
-              <div class="flex min-w-0 items-start gap-3">
-                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-base font-bold" :class="platformAvatarClass(item)">
+              <div class="flex min-w-0 items-start gap-2.5">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold" :class="platformAvatarClass(item)">
                   {{ platformInitial(item.platform) }}
                 </div>
                 <div class="min-w-0">
                   <div class="flex min-w-0 flex-wrap items-center gap-2">
-                    <h2 class="min-w-0 truncate text-lg font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</h2>
+                    <h2 class="min-w-0 truncate text-base font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</h2>
                     <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
                   </div>
                   <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
@@ -270,34 +270,34 @@
               <StatusBadge v-if="item.has_error" text="错误状态" kind="danger" />
             </div>
 
-            <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(item) }}</div>
-                <div class="mt-1 truncate text-3xl font-semibold" :class="primaryMetricClass(item)">
+                <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="primaryMetricClass(item)">
                   {{ primaryMetricText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ primaryMetricHint(item) }}</div>
               </div>
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">延迟</div>
-                <div class="mt-1 truncate text-3xl font-semibold text-gray-900 dark:text-white">
+                <div class="mt-1 truncate text-2xl font-semibold text-gray-900 dark:text-white 2xl:text-3xl">
                   {{ latencyText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ latencyHint(item) }}</div>
               </div>
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">首 Token · 5m</div>
-                <div class="mt-1 truncate text-3xl font-semibold" :class="firstTokenMetricClass(item)">
+                <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="firstTokenMetricClass(item)">
                   {{ firstTokenMetricText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(item) }}</div>
               </div>
             </div>
 
-            <div class="mt-5 border-t border-gray-200 pt-4 dark:border-dark-700">
+            <div class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-700">
               <div class="flex items-end justify-between gap-3">
                 <div class="text-sm text-gray-500 dark:text-gray-400">{{ headlineHealthLabel(item) }}</div>
-                <div class="text-4xl font-semibold" :class="headlineHealthClass(item)">
+                <div class="text-3xl font-semibold 2xl:text-4xl" :class="headlineHealthClass(item)">
                   {{ headlineHealthText(item) }}
                 </div>
               </div>
@@ -313,7 +313,7 @@
                 <span class="truncate text-right">{{ headlineHealthRightMeta(item) }}</span>
               </div>
               <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <div v-for="window in windowOrder" :key="window" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+                <div v-for="window in windowOrder" :key="window" class="rounded-lg border border-gray-200 p-2.5 dark:border-dark-700">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
                     <span class="text-xs text-gray-400">{{ windowCountText(item, window) }}</span>
@@ -339,7 +339,7 @@
               </div>
             </div>
 
-            <div class="mt-5">
+            <div class="mt-4">
               <div class="flex items-center justify-between gap-3">
                 <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ recentTimelineTitle(item) }}</div>
                 <div class="text-xs text-gray-400">PAST -> NOW</div>
@@ -355,7 +355,7 @@
               </div>
             </div>
 
-            <div class="mt-5 rounded-lg border p-3" :class="recommendationPanelClass(item)">
+            <div class="mt-4 rounded-lg border p-3" :class="recommendationPanelClass(item)">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
@@ -369,7 +369,7 @@
                       {{ probeStatusLabel(item) }}
                     </span>
                   </div>
-                  <h3 class="mt-3 text-lg font-semibold text-gray-900 dark:text-white">{{ item.recommendation.title }}</h3>
+                  <h3 class="mt-3 text-base font-semibold text-gray-900 dark:text-white">{{ item.recommendation.title }}</h3>
                   <p class="mt-2 break-words text-sm text-gray-600 dark:text-gray-300">{{ item.recommendation.reason || '-' }}</p>
                 </div>
                 <Icon :name="recommendationIcon(item)" size="lg" :class="recommendationIconClass(item)" />
