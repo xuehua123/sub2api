@@ -139,6 +139,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/account-availability", h.Admin.Ops.GetAccountAvailability)
 		ops.GET("/account-health", h.Admin.Ops.GetAccountHealth)
 		ops.PATCH("/account-health/settings", h.Admin.Ops.UpdateAccountHealthSettings)
+		ops.POST("/account-health/:id/probe", h.Admin.Ops.RunAccountHealthProbe)
 		ops.GET("/realtime-traffic", h.Admin.Ops.GetRealtimeTrafficSummary)
 
 		// Alerts (rules + events)

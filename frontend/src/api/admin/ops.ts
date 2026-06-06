@@ -557,6 +557,15 @@ export async function updateAccountHealthSettings(settings: OpsAccountHealthSett
   return data
 }
 
+export async function runAccountHealthProbe(accountId: number, modelId?: string): Promise<OpsAccountHealthProbe> {
+  const payload: Record<string, any> = {}
+  if (modelId) {
+    payload.model_id = modelId
+  }
+  const { data } = await apiClient.post<OpsAccountHealthProbe>(`/admin/ops/account-health/${accountId}/probe`, payload)
+  return data
+}
+
 export interface OpsRateSummary {
   current: number
   peak: number
@@ -1439,6 +1448,7 @@ export const opsAPI = {
   getAccountAvailabilityStats,
   getAccountHealth,
   updateAccountHealthSettings,
+  runAccountHealthProbe,
   getRealtimeTrafficSummary,
   subscribeQPS,
 

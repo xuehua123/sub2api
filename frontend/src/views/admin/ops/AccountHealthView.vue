@@ -205,94 +205,113 @@
         暂无账号健康数据
       </section>
 
-      <section v-else class="space-y-3">
+      <section v-else class="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <article
           v-for="item in sortedItems"
           :key="item.account_id"
-          class="rounded-lg border bg-white p-4 shadow-sm dark:bg-dark-800"
+          class="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-dark-800"
           :class="accountBorderClass(item)"
         >
-          <div class="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(18rem,1.4fr)_minmax(20rem,1.4fr)_minmax(18rem,1fr)]">
-            <div class="min-w-0">
-              <div class="flex items-start gap-3">
-                <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm font-bold" :class="platformAvatarClass(item)">
+          <div class="p-4 sm:p-5">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex min-w-0 items-start gap-3">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg text-base font-bold" :class="platformAvatarClass(item)">
                   {{ platformInitial(item.platform) }}
                 </div>
-                <div class="min-w-0 flex-1">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <h2 class="truncate text-base font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</h2>
-                    <span class="text-xs text-gray-400">#{{ item.account_id }}</span>
+                <div class="min-w-0">
+                  <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    <h2 class="min-w-0 truncate text-lg font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</h2>
+                    <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
                   </div>
                   <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <span>{{ item.platform || '-' }}</span>
                     <span>{{ item.group_name || '-' }}</span>
                     <span>group {{ item.group_id }}</span>
                   </div>
-                  <div class="mt-3 flex flex-wrap gap-2">
-                    <StatusBadge :text="item.is_opened ? '账号已打开' : '账号已关闭'" :kind="item.is_opened ? 'success' : 'muted'" />
-                    <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
-                    <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
-                    <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
-                    <StatusBadge v-if="item.is_temp_unschedulable" text="临时暂停" kind="warning" />
-                    <StatusBadge v-if="item.has_error" text="错误状态" kind="danger" />
-                  </div>
                 </div>
               </div>
+              <button
+                type="button"
+                class="btn btn-secondary btn-sm shrink-0"
+                :disabled="isProbing(item.account_id)"
+                @click="runProbe(item)"
+              >
+                <Icon name="beaker" size="xs" :class="isProbing(item.account_id) ? 'animate-pulse' : ''" />
+                <span>{{ isProbing(item.account_id) ? '探测中' : '探测' }}</span>
+              </button>
+            </div>
 
-              <div class="mt-4 grid grid-cols-2 gap-2">
-                <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
-                  <div class="text-xs text-gray-500 dark:text-gray-400">主成功率</div>
-                  <div class="mt-1 text-3xl font-semibold" :class="successTextClass(primaryStat(item))">
-                    {{ formatPercent(primaryStat(item)?.success_rate_percent) }}
-                  </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <StatusBadge :text="item.is_opened ? '账号已打开' : '账号已关闭'" :kind="item.is_opened ? 'success' : 'muted'" />
+              <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
+              <StatusBadge v-if="!hasTraffic(item)" text="暂无流量" kind="muted" />
+              <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
+              <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
+              <StatusBadge v-if="item.is_temp_unschedulable" text="临时暂停" kind="warning" />
+              <StatusBadge v-if="item.has_error" text="错误状态" kind="danger" />
+            </div>
+
+            <div class="mt-5 grid grid-cols-2 gap-3">
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">主成功率</div>
+                <div class="mt-1 truncate text-3xl font-semibold" :class="primaryMetricClass(item)">
+                  {{ primaryMetricText(item) }}
                 </div>
-                <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
-                  <div class="text-xs text-gray-500 dark:text-gray-400">上游错误</div>
-                  <div class="mt-1 text-3xl font-semibold" :class="errorTextClass(primaryStat(item)?.upstream_error_rate_percent)">
-                    {{ formatPercent(primaryStat(item)?.upstream_error_rate_percent) }}
-                  </div>
+                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ primaryMetricHint(item) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">延迟</div>
+                <div class="mt-1 truncate text-3xl font-semibold text-gray-900 dark:text-white">
+                  {{ latencyText(item) }}
                 </div>
+                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ probeText(item) || '近 10m 平均' }}</div>
               </div>
             </div>
 
-            <div class="min-w-0">
-              <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <div class="mt-5 border-t border-gray-200 pt-4 dark:border-dark-700">
+              <div class="flex items-end justify-between gap-3">
+                <div class="text-sm text-gray-500 dark:text-gray-400">{{ headlineHealthLabel(item) }}</div>
+                <div class="text-4xl font-semibold" :class="headlineHealthClass(item)">
+                  {{ headlineHealthText(item) }}
+                </div>
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <div v-for="window in windowOrder" :key="window" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
-                    <span class="text-xs text-gray-400">{{ statFor(item, window)?.request_count ?? 0 }} 次</span>
+                    <span class="text-xs text-gray-400">{{ metricCountText(statFor(item, window)) }}</span>
                   </div>
-                  <div class="mt-2 text-lg font-semibold" :class="successTextClass(statFor(item, window))">
-                    {{ formatPercent(statFor(item, window)?.success_rate_percent) }}
+                  <div class="mt-2 text-lg font-semibold" :class="metricValueClass(statFor(item, window))">
+                    {{ metricValueText(statFor(item, window)) }}
                   </div>
                   <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
                     <div class="h-full rounded-full" :class="windowBarClass(statFor(item, window))" :style="{ width: `${boundedPercent(statFor(item, window)?.success_rate_percent)}%` }"></div>
                   </div>
                   <div class="mt-2 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
-                    <span>错 {{ formatPercent(statFor(item, window)?.error_rate_percent) }}</span>
-                    <span>上 {{ formatPercent(statFor(item, window)?.upstream_error_rate_percent) }}</span>
+                    <span>错 {{ metricValueText(statFor(item, window), 'error_rate_percent') }}</span>
+                    <span>上 {{ metricValueText(statFor(item, window), 'upstream_error_rate_percent') }}</span>
                   </div>
-                </div>
-              </div>
-
-              <div class="mt-4">
-                <div class="flex items-center justify-between gap-3">
-                  <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">最近 {{ item.recent.length || 0 }} 次记录</div>
-                  <div class="text-xs text-gray-400">PAST -> NOW</div>
-                </div>
-                <div class="mt-2 grid grid-cols-[repeat(60,minmax(3px,1fr))] gap-1">
-                  <span
-                    v-for="(sample, idx) in recentSamplesForDisplay(item)"
-                    :key="`${item.account_id}-${idx}-${sample?.created_at || 'empty'}`"
-                    class="h-7 min-w-0 rounded-sm"
-                    :class="sampleClass(sample)"
-                    :title="sampleTitle(sample)"
-                  ></span>
                 </div>
               </div>
             </div>
 
-            <div class="min-w-0 rounded-lg border p-3" :class="recommendationPanelClass(item)">
+            <div class="mt-5">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">最近 {{ item.recent.length || 0 }} 次记录</div>
+                <div class="text-xs text-gray-400">PAST -> NOW</div>
+              </div>
+              <div class="mt-2 grid grid-cols-[repeat(60,minmax(3px,1fr))] gap-1">
+                <span
+                  v-for="(sample, idx) in recentSamplesForDisplay(item)"
+                  :key="`${item.account_id}-${idx}-${sample?.created_at || 'empty'}`"
+                  class="h-7 min-w-0 rounded-sm"
+                  :class="sampleClass(sample)"
+                  :title="sampleTitle(sample)"
+                ></span>
+              </div>
+            </div>
+
+            <div class="mt-5 rounded-lg border p-3" :class="recommendationPanelClass(item)">
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <div class="flex flex-wrap items-center gap-2">
@@ -301,6 +320,9 @@
                     </span>
                     <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(item.recommendation.notify_mode)">
                       {{ notifyLabel(item.recommendation.notify_mode) }}
+                    </span>
+                    <span v-if="item.probe?.checked_at" class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="probeStatusClass(item)">
+                      {{ probeStatusLabel(item) }}
                     </span>
                   </div>
                   <h3 class="mt-3 text-lg font-semibold text-gray-900 dark:text-white">{{ item.recommendation.title }}</h3>
@@ -324,9 +346,6 @@
 
               <div v-if="cooldownText(item)" class="mt-3 rounded-lg bg-white/60 px-3 py-2 text-xs text-gray-600 dark:bg-dark-900/30 dark:text-gray-300">
                 {{ cooldownText(item) }}
-              </div>
-              <div v-if="probeText(item)" class="mt-3 rounded-lg bg-white/60 px-3 py-2 text-xs text-gray-600 dark:bg-dark-900/30 dark:text-gray-300">
-                {{ probeText(item) }}
               </div>
             </div>
           </div>
@@ -408,6 +427,7 @@ const platformFilter = ref('')
 const groupIdInput = ref('')
 const settingsOpen = ref(false)
 const lastUpdated = ref<Date | null>(null)
+const probingAccounts = ref<Set<number>>(new Set())
 const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
@@ -524,6 +544,35 @@ async function saveSettings() {
   }
 }
 
+async function runProbe(item: OpsAccountHealthItem) {
+  if (!item?.account_id || isProbing(item.account_id)) return
+  setProbing(item.account_id, true)
+  try {
+    await opsAPI.runAccountHealthProbe(item.account_id, settingsForm.value.probe.model_id || undefined)
+    appStore.showSuccess('账号探测已完成')
+    await fetchData()
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '账号探测失败')
+    await fetchData()
+  } finally {
+    setProbing(item.account_id, false)
+  }
+}
+
+function isProbing(accountID: number): boolean {
+  return probingAccounts.value.has(accountID)
+}
+
+function setProbing(accountID: number, probing: boolean) {
+  const next = new Set(probingAccounts.value)
+  if (probing) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  probingAccounts.value = next
+}
+
 function applySettingsToForm(settings: OpsAccountHealthSettings) {
   applyingSettings = true
   settingsForm.value = cloneSettings(settings)
@@ -603,6 +652,10 @@ function primaryStat(item: OpsAccountHealthItem): OpsAccountHealthWindowStats | 
   return statFor(item, '30m') || statFor(item, '1h') || tenMin
 }
 
+function hasTraffic(item: OpsAccountHealthItem): boolean {
+  return windowOrder.some(window => (statFor(item, window)?.request_count ?? 0) > 0)
+}
+
 function boundedPercent(value: number | null | undefined): number {
   if (!Number.isFinite(value as number)) return 0
   return Math.max(0, Math.min(100, Number(value)))
@@ -611,6 +664,72 @@ function boundedPercent(value: number | null | undefined): number {
 function formatPercent(value: number | null | undefined): string {
   if (!Number.isFinite(value as number)) return '0.0%'
   return `${Number(value).toFixed(1)}%`
+}
+
+function metricValueText(stat?: OpsAccountHealthWindowStats | null, field: keyof OpsAccountHealthWindowStats = 'success_rate_percent'): string {
+  if (!stat || stat.request_count <= 0) return '暂无'
+  const value = stat[field]
+  return typeof value === 'number' ? formatPercent(value) : '暂无'
+}
+
+function metricValueClass(stat?: OpsAccountHealthWindowStats | null): string {
+  if (!stat || stat.request_count <= 0) return 'text-gray-400 dark:text-gray-500'
+  return successTextClass(stat)
+}
+
+function metricCountText(stat?: OpsAccountHealthWindowStats | null): string {
+  if (!stat || stat.request_count <= 0) return '0 次'
+  return `${stat.request_count} 次`
+}
+
+function primaryMetricText(item: OpsAccountHealthItem): string {
+  const stat = primaryStat(item)
+  if (stat && stat.request_count > 0) return formatPercent(stat.success_rate_percent)
+  if (item.probe?.status === 'success') return '100.0%'
+  if (item.probe?.status === 'failed') return '0.0%'
+  return '待探测'
+}
+
+function primaryMetricHint(item: OpsAccountHealthItem): string {
+  const stat = primaryStat(item)
+  if (stat && stat.request_count > 0) return `${stat.request_count} 次请求样本`
+  if (item.probe?.checked_at) return `最近探测 ${formatTime(item.probe.checked_at)}`
+  return item.is_opened ? '等待请求进入' : '关闭账号需主动探测'
+}
+
+function primaryMetricClass(item: OpsAccountHealthItem): string {
+  const stat = primaryStat(item)
+  if (stat && stat.request_count > 0) return successTextClass(stat)
+  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
+  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
+  return 'text-gray-400 dark:text-gray-500'
+}
+
+function latencyText(item: OpsAccountHealthItem): string {
+  const stat = primaryStat(item)
+  if (stat?.avg_duration_ms && stat.request_count > 0) return `${Math.round(stat.avg_duration_ms)} ms`
+  if (item.probe?.latency_ms) return `${item.probe.latency_ms} ms`
+  return '暂无'
+}
+
+function headlineHealthLabel(item: OpsAccountHealthItem): string {
+  return hasTraffic(item) ? '健康度 · 1 小时' : '健康度 · 主动探测'
+}
+
+function headlineHealthText(item: OpsAccountHealthItem): string {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) return formatPercent(stat.success_rate_percent)
+  if (item.probe?.status === 'success') return '100.0%'
+  if (item.probe?.status === 'failed') return '0.0%'
+  return '待探测'
+}
+
+function headlineHealthClass(item: OpsAccountHealthItem): string {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) return successTextClass(stat)
+  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
+  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
+  return 'text-gray-400 dark:text-gray-500'
 }
 
 function formatTime(raw?: string | null): string {
@@ -631,18 +750,23 @@ function successTextClass(stat?: OpsAccountHealthWindowStats | null): string {
   return 'text-red-600 dark:text-red-300'
 }
 
-function errorTextClass(value?: number | null): string {
-  const v = value ?? 0
-  if (v >= 20) return 'text-red-600 dark:text-red-300'
-  if (v >= 10) return 'text-amber-600 dark:text-amber-300'
-  return 'text-emerald-600 dark:text-emerald-300'
-}
-
 function windowBarClass(stat?: OpsAccountHealthWindowStats): string {
   if (!stat || stat.request_count === 0) return 'bg-gray-300 dark:bg-gray-600'
   if (stat.success_rate_percent >= 98) return 'bg-emerald-500'
   if (stat.success_rate_percent >= 90) return 'bg-amber-500'
   return 'bg-red-500'
+}
+
+function probeStatusLabel(item: OpsAccountHealthItem): string {
+  if (item.probe?.status === 'success') return '探测成功'
+  if (item.probe?.status === 'failed') return '探测失败'
+  return '已探测'
+}
+
+function probeStatusClass(item: OpsAccountHealthItem): string {
+  if (item.probe?.status === 'success') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (item.probe?.status === 'failed') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
 }
 
 function recentSamplesForDisplay(item: OpsAccountHealthItem): Array<OpsAccountHealthSample | null> {

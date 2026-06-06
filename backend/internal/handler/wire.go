@@ -99,6 +99,12 @@ func ProvideAdminSettingHandler(settingService *service.SettingService, emailSer
 	return h
 }
 
+func ProvideOpsHandler(opsService *service.OpsService, accountTestService *service.AccountTestService) *admin.OpsHandler {
+	h := admin.NewOpsHandler(opsService)
+	h.SetAccountTestService(accountTestService)
+	return h
+}
+
 func ProvidePaymentConfigReader(configService *service.PaymentConfigService) paymentConfigReader {
 	return configService
 }
@@ -190,7 +196,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewRedeemHandler,
 	admin.NewPromoHandler,
 	ProvideAdminSettingHandler,
-	admin.NewOpsHandler,
+	ProvideOpsHandler,
 	ProvideSystemHandler,
 	admin.NewSubscriptionHandler,
 	admin.NewUsageHandler,
