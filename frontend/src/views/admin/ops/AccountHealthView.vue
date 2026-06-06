@@ -69,7 +69,7 @@
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="flex items-center gap-2">
             <Icon name="bell" size="md" class="text-sky-500" />
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">通知与开关判断</h2>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">客服判断与通知规则</h2>
           </div>
           <div class="flex items-center gap-2">
             <button type="button" class="btn btn-secondary btn-sm" :disabled="loadingRuntime || savingSettings" @click="loadRuntimeSettings">
@@ -153,7 +153,7 @@
             <div class="flex items-center justify-between gap-3">
               <div>
                 <label class="text-sm font-semibold text-gray-900 dark:text-white">持续变差</label>
-                <div class="mt-1 text-xs text-amber-600 dark:text-amber-300">建议关闭或继续观察</div>
+                <div class="mt-1 text-xs text-amber-600 dark:text-amber-300">页面先提示，持续踩线才汇总</div>
               </div>
               <input v-model="settingsForm.degrade.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
             </div>
@@ -161,12 +161,12 @@
               {{ degradeRuleText }}
             </div>
             <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.degrade.window_minutes" label="观察分钟" />
+              <NumberField v-model="settingsForm.degrade.window_minutes" label="页面观察分钟" />
               <NumberField v-model="settingsForm.degrade.min_requests" label="至少请求" />
               <NumberField v-model="settingsForm.degrade.success_rate_min_percent" label="成功率低于 %" />
               <NumberField v-model="settingsForm.degrade.error_rate_percent" label="错误率达到 %" />
               <NumberField v-model="settingsForm.degrade.upstream_error_rate_percent" label="上游错误达到 %" />
-              <NumberField v-model="settingsForm.degrade.cooldown_minutes" label="重复提醒间隔" />
+              <NumberField v-model="settingsForm.degrade.cooldown_minutes" label="汇总冷却分钟" />
             </div>
           </div>
 
@@ -336,7 +336,7 @@
                 <span>{{ headlineHealthLeftMeta(item) }}</span>
                 <span class="truncate text-right">{{ headlineHealthRightMeta(item) }}</span>
               </div>
-              <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 2xl:grid-cols-5">
                 <div v-for="window in windowOrder" :key="window" class="rounded-lg border border-gray-200 p-2.5 dark:border-dark-700">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
@@ -503,9 +503,10 @@ const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
 
-const windowOrder: OpsAccountHealthWindow[] = ['1m', '10m', '30m', '1h']
+const windowOrder: OpsAccountHealthWindow[] = ['1m', '5m', '10m', '30m', '1h']
 const probeWindowMinutes: Record<OpsAccountHealthWindow, number> = {
   '1m': 1,
+  '5m': 5,
   '10m': 10,
   '30m': 30,
   '1h': 60
@@ -582,7 +583,7 @@ const burstRuleText = computed(() => {
 const degradeRuleText = computed(() => {
   const rule = settingsForm.value.degrade
   if (!rule.enabled) return '已关闭：成功率变差不会触发关闭建议'
-  return `${rule.window_minutes}m 内请求 >= ${rule.min_requests}，且成功率 < ${rule.success_rate_min_percent}% 或错误率 >= ${rule.error_rate_percent}%`
+  return `${rule.window_minutes}m 踩线先在看板提示；5m/10m/30m 都请求 >= ${rule.min_requests} 且成功率 < ${rule.success_rate_min_percent}%、错误率 >= ${rule.error_rate_percent}% 或上游错误 >= ${rule.upstream_error_rate_percent}% 时汇总通知`
 })
 
 const recoveryRuleText = computed(() => {

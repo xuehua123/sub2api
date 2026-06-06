@@ -4,6 +4,7 @@ import "time"
 
 const (
 	OpsAccountHealthWindow1m  = "1m"
+	OpsAccountHealthWindow5m  = "5m"
 	OpsAccountHealthWindow10m = "10m"
 	OpsAccountHealthWindow30m = "30m"
 	OpsAccountHealthWindow1h  = "1h"

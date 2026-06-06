@@ -696,6 +696,7 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 
 	now := time.Now().UTC()
 	sent := 0
+	digestItems := make([]*OpsAccountHealthItem, 0)
 	for _, item := range health.Items {
 		if item == nil {
 			continue
@@ -709,6 +710,10 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 			continue
 		}
 		if !immediate {
+			if shouldDigestOpsAccountHealthNotification(item) {
+				digestItems = append(digestItems, item)
+				continue
+			}
 			if s.accountHealthLimiter == nil {
 				s.accountHealthLimiter = newSlidingWindowLimiter(settings.RateLimitPerHour, time.Hour)
 			}
@@ -716,6 +721,14 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 			if !s.accountHealthLimiter.Allow(now) {
 				continue
 			}
+			content := buildOpsAccountHealthWeComText(item, now)
+			if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, false); err != nil {
+				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health send failed (account=%d): %v", item.AccountID, err)
+				continue
+			}
+			s.markAccountHealthNotificationSent(ctx, item, settings, now)
+			sent++
+			continue
 		}
 
 		mentionAll := immediate && settings.Notification.MentionAllOnImmediate
@@ -727,8 +740,35 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 		s.markAccountHealthNotificationSent(ctx, item, settings, now)
 		sent++
 	}
+	if len(digestItems) > 0 {
+		if s.accountHealthLimiter == nil {
+			s.accountHealthLimiter = newSlidingWindowLimiter(settings.RateLimitPerHour, time.Hour)
+		}
+		s.accountHealthLimiter.SetLimit(settings.RateLimitPerHour)
+		if s.accountHealthLimiter.Allow(now) {
+			content := buildOpsAccountHealthDigestWeComText(digestItems, now)
+			if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, false); err != nil {
+				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health digest send failed (items=%d): %v", len(digestItems), err)
+			} else {
+				for _, item := range digestItems {
+					s.markAccountHealthNotificationSent(ctx, item, settings, now)
+				}
+				sent++
+			}
+		}
+	}
 	_ = s.scheduleAccountHealthRecoveryProbes(ctx, health.Items, settings)
 	return sent
+}
+
+func shouldDigestOpsAccountHealthNotification(item *OpsAccountHealthItem) bool {
+	if item == nil {
+		return false
+	}
+	rec := item.Recommendation
+	return rec.NotifyMode == OpsAccountHealthNotifyDigest &&
+		strings.TrimSpace(rec.Severity) == "P2" &&
+		strings.TrimSpace(rec.Title) == "账号持续变差，建议处理"
 }
 
 func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx context.Context, items []*OpsAccountHealthItem, settings OpsAccountHealthSettings) int {
@@ -910,6 +950,7 @@ func buildOpsAccountHealthWeComText(item *OpsAccountHealthItem, now time.Time) s
 		return ""
 	}
 	stat1m := item.Windows[OpsAccountHealthWindow1m]
+	stat5m := item.Windows[OpsAccountHealthWindow5m]
 	stat10m := item.Windows[OpsAccountHealthWindow10m]
 	stat30m := item.Windows[OpsAccountHealthWindow30m]
 	rec := item.Recommendation
@@ -923,10 +964,74 @@ func buildOpsAccountHealthWeComText(item *OpsAccountHealthItem, now time.Time) s
 		fmt.Sprintf("建议: %s [%s]", strings.TrimSpace(rec.Title), strings.TrimSpace(rec.Severity)),
 		fmt.Sprintf("原因: %s", strings.TrimSpace(rec.Reason)),
 		fmt.Sprintf("1m: %s", formatOpsAccountHealthWindowForNotify(stat1m)),
+		fmt.Sprintf("5m: %s", formatOpsAccountHealthWindowForNotify(stat5m)),
 		fmt.Sprintf("10m: %s", formatOpsAccountHealthWindowForNotify(stat10m)),
 		fmt.Sprintf("30m: %s", formatOpsAccountHealthWindowForNotify(stat30m)),
 	}
 	return truncateString(strings.Join(lines, "\n"), 1900)
+}
+
+func buildOpsAccountHealthDigestWeComText(items []*OpsAccountHealthItem, now time.Time) string {
+	lines := []string{
+		"Sub2API 账号健康汇总",
+		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
+		fmt.Sprintf("本轮命中: %d 个账号", len(items)),
+		"说明: P2 汇总仅包含 5m/10m/30m 持续变差账号，客服可按建议动作处理。",
+	}
+	limit := 12
+	shown := 0
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if shown >= limit {
+			lines = append(lines, fmt.Sprintf("... 还有 %d 个账号未列出", len(items)-limit))
+			break
+		}
+		rec := item.Recommendation
+		name := strings.TrimSpace(item.AccountName)
+		if name == "" {
+			name = fmt.Sprintf("#%d", item.AccountID)
+		}
+		shown++
+		lines = append(lines, fmt.Sprintf(
+			"%d. [%s] %s (#%d) %s - %s",
+			shown,
+			strings.TrimSpace(rec.Severity),
+			name,
+			item.AccountID,
+			opsAccountHealthNotifyActionText(rec.Action),
+			strings.TrimSpace(rec.Title),
+		))
+		lines = append(lines, fmt.Sprintf("   5m %s | 10m %s | 30m %s",
+			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow5m]),
+			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow10m]),
+			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow30m]),
+		))
+		if reason := strings.TrimSpace(rec.Reason); reason != "" {
+			lines = append(lines, "   "+reason)
+		}
+	}
+	return truncateString(strings.Join(lines, "\n"), 1900)
+}
+
+func opsAccountHealthNotifyActionText(action string) string {
+	switch strings.TrimSpace(action) {
+	case OpsAccountHealthActionCloseNow:
+		return "建议关闭"
+	case OpsAccountHealthActionWatch:
+		return "继续观察"
+	case OpsAccountHealthActionCanOpen:
+		return "可尝试打开"
+	case OpsAccountHealthActionKeepOpen:
+		return "保持开启"
+	case OpsAccountHealthActionKeepClosed:
+		return "保持关闭"
+	case OpsAccountHealthActionNeedsProbe:
+		return "需要探测"
+	default:
+		return "查看看板"
+	}
 }
 
 func formatOpsAccountHealthWindowForNotify(stat *OpsAccountHealthWindowStats) string {

@@ -267,6 +267,35 @@ func TestShouldProbeAccountHealthRecoveryContinuesAfterCanOpen(t *testing.T) {
 	require.True(t, shouldProbeAccountHealthRecovery(item, settings))
 }
 
+func TestBuildOpsAccountHealthDigestWeComTextIncludesSustainedWindows(t *testing.T) {
+	t.Parallel()
+
+	item := &OpsAccountHealthItem{
+		AccountID:   7,
+		AccountName: "codex plus pro",
+		Windows:     defaultOpsAccountHealthWindows(),
+		Recommendation: OpsAccountHealthRecommendation{
+			Action:   OpsAccountHealthActionCloseNow,
+			Severity: "P2",
+			Title:    "账号持续变差，建议处理",
+			Reason:   "5m/10m/30m all degraded",
+		},
+	}
+	item.Windows[OpsAccountHealthWindow5m] = accountHealthTestWindow(OpsAccountHealthWindow5m, 24, 18, 6, 4)
+	item.Windows[OpsAccountHealthWindow10m] = accountHealthTestWindow(OpsAccountHealthWindow10m, 50, 40, 10, 8)
+	item.Windows[OpsAccountHealthWindow30m] = accountHealthTestWindow(OpsAccountHealthWindow30m, 120, 102, 18, 14)
+	normalizeAccountHealthMetrics(&OpsAccountHealthMetrics{Windows: item.Windows})
+
+	text := buildOpsAccountHealthDigestWeComText([]*OpsAccountHealthItem{item}, time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC))
+
+	require.Contains(t, text, "账号健康汇总")
+	require.Contains(t, text, "codex plus pro")
+	require.Contains(t, text, "建议关闭")
+	require.Contains(t, text, "5m")
+	require.Contains(t, text, "10m")
+	require.Contains(t, text, "30m")
+}
+
 func TestShouldMentionAllForOpsAlertEnterpriseWeChat(t *testing.T) {
 	t.Parallel()
 

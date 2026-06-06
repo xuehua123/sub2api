@@ -42,7 +42,7 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 	}
 
 	out := map[int64]*service.OpsAccountHealthMetrics{}
-	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, start10m, start30m, start1h, platform, groupID); err != nil {
+	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID); err != nil {
 		return nil, err
 	}
 	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID); err != nil {
@@ -59,6 +59,7 @@ func (r *opsRepository) loadAccountHealthWindowStats(
 	out map[int64]*service.OpsAccountHealthMetrics,
 	endTime time.Time,
 	start1m time.Time,
+	start5m time.Time,
 	start10m time.Time,
 	start30m time.Time,
 	start1h time.Time,
@@ -77,10 +78,10 @@ WITH combined AS (
   FROM usage_logs ul
   LEFT JOIN groups g ON g.id = ul.group_id
   LEFT JOIN accounts a ON a.id = ul.account_id
-  WHERE ul.created_at >= $5 AND ul.created_at < $1
+  WHERE ul.created_at >= $6 AND ul.created_at < $1
     AND ul.account_id IS NOT NULL
-    AND ($6 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $6)
-    AND ($7::BIGINT <= 0 OR ul.group_id = $7)
+    AND ($7 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
+    AND ($8::BIGINT <= 0 OR ul.group_id = $8)
 
   UNION ALL
 
@@ -94,18 +95,19 @@ WITH combined AS (
   FROM ops_error_logs o
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
-  WHERE o.created_at >= $5 AND o.created_at < $1
+  WHERE o.created_at >= $6 AND o.created_at < $1
     AND o.account_id IS NOT NULL
     AND COALESCE(o.upstream_status_code, o.status_code, 0) >= 400
-    AND ($6 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $6)
-    AND ($7::BIGINT <= 0 OR o.group_id = $7)
+    AND ($7 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
+    AND ($8::BIGINT <= 0 OR o.group_id = $8)
 ),
 windows(label, start_at) AS (
   VALUES
     ('1m'::TEXT, $2::TIMESTAMPTZ),
-    ('10m'::TEXT, $3::TIMESTAMPTZ),
-    ('30m'::TEXT, $4::TIMESTAMPTZ),
-    ('1h'::TEXT, $5::TIMESTAMPTZ)
+    ('5m'::TEXT, $3::TIMESTAMPTZ),
+    ('10m'::TEXT, $4::TIMESTAMPTZ),
+    ('30m'::TEXT, $5::TIMESTAMPTZ),
+    ('1h'::TEXT, $6::TIMESTAMPTZ)
 )
 SELECT
   c.account_id,
@@ -123,7 +125,7 @@ GROUP BY c.account_id, w.label
 ORDER BY c.account_id, w.label
 `
 
-	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start10m, start30m, start1h, platform, groupID)
+	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID)
 	if err != nil {
 		return fmt.Errorf("query account health windows: %w", err)
 	}

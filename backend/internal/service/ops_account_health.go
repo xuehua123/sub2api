@@ -417,6 +417,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 func defaultOpsAccountHealthWindows() map[string]*OpsAccountHealthWindowStats {
 	return map[string]*OpsAccountHealthWindowStats{
 		OpsAccountHealthWindow1m:  {Window: OpsAccountHealthWindow1m},
+		OpsAccountHealthWindow5m:  {Window: OpsAccountHealthWindow5m},
 		OpsAccountHealthWindow10m: {Window: OpsAccountHealthWindow10m},
 		OpsAccountHealthWindow30m: {Window: OpsAccountHealthWindow30m},
 		OpsAccountHealthWindow1h:  {Window: OpsAccountHealthWindow1h},
@@ -524,15 +525,23 @@ func decideOpsAccountHealth(item *OpsAccountHealthItem, settings OpsAccountHealt
 
 	if settings.Degrade.Enabled {
 		if stat := windowStatForMinutes(item, settings.Degrade.WindowMinutes); stat != nil && stat.RequestCount >= int64(settings.Degrade.MinRequests) {
-			if stat.SuccessRatePercent < settings.Degrade.SuccessRateMinPercent ||
-				stat.ErrorRatePercent >= settings.Degrade.ErrorRatePercent ||
-				stat.UpstreamErrorRatePercent >= settings.Degrade.UpstreamErrorRatePercent {
+			if accountHealthWindowIsDegraded(stat, settings.Degrade) {
+				sustainedStats := sustainedAccountHealthDegradeStats(item, settings.Degrade)
+				if len(sustainedStats) >= 3 {
+					return OpsAccountHealthRecommendation{
+						Action:     pickOpenedAction(item, OpsAccountHealthActionCloseNow, OpsAccountHealthActionKeepClosed),
+						Severity:   "P2",
+						Title:      "账号持续变差，建议处理",
+						Reason:     formatSustainedAccountHealthDegradeReason(sustainedStats),
+						NotifyMode: notifyModeForAccount(item, settings, false),
+					}
+				}
 				return OpsAccountHealthRecommendation{
-					Action:     pickOpenedAction(item, OpsAccountHealthActionCloseNow, OpsAccountHealthActionKeepClosed),
-					Severity:   "P1",
-					Title:      "账号成功率低于阈值",
+					Action:     pickOpenedAction(item, OpsAccountHealthActionWatch, OpsAccountHealthActionKeepClosed),
+					Severity:   "P2",
+					Title:      "账号短期变差，继续观察",
 					Reason:     fmt.Sprintf("%dm success_rate=%.1f%% error_rate=%.1f%% upstream_error_rate=%.1f%%", settings.Degrade.WindowMinutes, stat.SuccessRatePercent, stat.ErrorRatePercent, stat.UpstreamErrorRatePercent),
-					NotifyMode: notifyModeForAccount(item, settings, false),
+					NotifyMode: OpsAccountHealthNotifyNone,
 				}
 			}
 		}
@@ -676,6 +685,8 @@ func windowStatForMinutes(item *OpsAccountHealthItem, minutes int) *OpsAccountHe
 	switch {
 	case minutes <= 1:
 		return item.Windows[OpsAccountHealthWindow1m]
+	case minutes <= 5:
+		return item.Windows[OpsAccountHealthWindow5m]
 	case minutes <= 10:
 		return item.Windows[OpsAccountHealthWindow10m]
 	case minutes <= 30:
@@ -683,6 +694,47 @@ func windowStatForMinutes(item *OpsAccountHealthItem, minutes int) *OpsAccountHe
 	default:
 		return item.Windows[OpsAccountHealthWindow1h]
 	}
+}
+
+func accountHealthWindowIsDegraded(stat *OpsAccountHealthWindowStats, settings OpsAccountHealthDegradeSettings) bool {
+	if stat == nil || stat.RequestCount < int64(settings.MinRequests) {
+		return false
+	}
+	return stat.SuccessRatePercent < settings.SuccessRateMinPercent ||
+		stat.ErrorRatePercent >= settings.ErrorRatePercent ||
+		stat.UpstreamErrorRatePercent >= settings.UpstreamErrorRatePercent
+}
+
+func sustainedAccountHealthDegradeStats(item *OpsAccountHealthItem, settings OpsAccountHealthDegradeSettings) []*OpsAccountHealthWindowStats {
+	if item == nil || item.Windows == nil {
+		return nil
+	}
+	out := make([]*OpsAccountHealthWindowStats, 0, 3)
+	for _, window := range []string{OpsAccountHealthWindow5m, OpsAccountHealthWindow10m, OpsAccountHealthWindow30m} {
+		stat := item.Windows[window]
+		if !accountHealthWindowIsDegraded(stat, settings) {
+			return nil
+		}
+		out = append(out, stat)
+	}
+	return out
+}
+
+func formatSustainedAccountHealthDegradeReason(stats []*OpsAccountHealthWindowStats) string {
+	parts := make([]string, 0, len(stats))
+	for _, stat := range stats {
+		if stat == nil {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s req=%d success=%.1f%% err=%.1f%% upstream=%.1f%%",
+			stat.Window,
+			stat.RequestCount,
+			stat.SuccessRatePercent,
+			stat.ErrorRatePercent,
+			stat.UpstreamErrorRatePercent,
+		))
+	}
+	return strings.Join(parts, "; ")
 }
 
 func hasAnyRequests(item *OpsAccountHealthItem) bool {

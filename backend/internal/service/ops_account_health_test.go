@@ -126,7 +126,60 @@ func TestDecideOpsAccountHealth_ClosedProbeSuccessDoesNotOverrideBadRecentTraffi
 	require.Equal(t, OpsAccountHealthActionKeepClosed, rec.Action)
 	require.False(t, rec.RecoveryReady)
 	require.Equal(t, OpsAccountHealthNotifyNone, rec.NotifyMode)
-	require.Contains(t, rec.Title, "成功率低于阈值")
+	require.Contains(t, rec.Title, "短期变差")
+}
+
+func TestDecideOpsAccountHealth_OpenedSingleWindowDegradeOnlyWatches(t *testing.T) {
+	t.Parallel()
+
+	item := &OpsAccountHealthItem{
+		AccountID: 1,
+		IsOpened:  true,
+		Windows:   defaultOpsAccountHealthWindows(),
+		Recent:    []*OpsAccountHealthSample{},
+	}
+	item.Windows[OpsAccountHealthWindow10m] = accountHealthTestWindow(OpsAccountHealthWindow10m, 32, 23, 9, 9)
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Degrade.WindowMinutes = 10
+	settings.Degrade.MinRequests = 20
+	settings.Degrade.SuccessRateMinPercent = 90
+
+	normalizeAccountHealthMetrics(&OpsAccountHealthMetrics{Windows: item.Windows, Recent: item.Recent})
+	rec := decideOpsAccountHealth(item, settings)
+	require.Equal(t, OpsAccountHealthActionWatch, rec.Action)
+	require.Equal(t, "P2", rec.Severity)
+	require.Equal(t, OpsAccountHealthNotifyNone, rec.NotifyMode)
+	require.Contains(t, rec.Title, "短期变差")
+}
+
+func TestDecideOpsAccountHealth_OpenedSustainedDegradeDigestCloseNow(t *testing.T) {
+	t.Parallel()
+
+	item := &OpsAccountHealthItem{
+		AccountID: 1,
+		IsOpened:  true,
+		Windows:   defaultOpsAccountHealthWindows(),
+		Recent:    []*OpsAccountHealthSample{},
+	}
+	item.Windows[OpsAccountHealthWindow5m] = accountHealthTestWindow(OpsAccountHealthWindow5m, 24, 18, 6, 4)
+	item.Windows[OpsAccountHealthWindow10m] = accountHealthTestWindow(OpsAccountHealthWindow10m, 50, 40, 10, 8)
+	item.Windows[OpsAccountHealthWindow30m] = accountHealthTestWindow(OpsAccountHealthWindow30m, 120, 102, 18, 14)
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Degrade.WindowMinutes = 10
+	settings.Degrade.MinRequests = 20
+	settings.Degrade.SuccessRateMinPercent = 90
+
+	normalizeAccountHealthMetrics(&OpsAccountHealthMetrics{Windows: item.Windows, Recent: item.Recent})
+	rec := decideOpsAccountHealth(item, settings)
+	require.Equal(t, OpsAccountHealthActionCloseNow, rec.Action)
+	require.Equal(t, "P2", rec.Severity)
+	require.Equal(t, OpsAccountHealthNotifyDigest, rec.NotifyMode)
+	require.Contains(t, rec.Title, "持续变差")
+	require.Contains(t, rec.Reason, "5m")
+	require.Contains(t, rec.Reason, "10m")
+	require.Contains(t, rec.Reason, "30m")
 }
 
 func TestAccountHealthProbeFromAccountSummarizesProbeHistory(t *testing.T) {
@@ -258,4 +311,14 @@ func seedOpsAlertRuntimeSettings(t *testing.T, repo *mockSettingRepo, cfg *OpsAl
 
 func accountHealthTestIntPtr(v int) *int {
 	return &v
+}
+
+func accountHealthTestWindow(window string, requestCount, successCount, errorCount, upstreamErrorCount int64) *OpsAccountHealthWindowStats {
+	return &OpsAccountHealthWindowStats{
+		Window:             window,
+		RequestCount:       requestCount,
+		SuccessCount:       successCount,
+		ErrorCount:         errorCount,
+		UpstreamErrorCount: upstreamErrorCount,
+	}
 }

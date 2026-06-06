@@ -397,7 +397,7 @@ export interface AccountAvailability {
   health_probe?: OpsAccountHealthProbe | null
 }
 
-export type OpsAccountHealthWindow = '1m' | '10m' | '30m' | '1h'
+export type OpsAccountHealthWindow = '1m' | '5m' | '10m' | '30m' | '1h'
 export type OpsAccountHealthAction = 'keep_open' | 'watch' | 'close_now' | 'can_open' | 'needs_probe' | 'keep_closed' | 'unavailable'
 export type OpsAccountHealthNotifyMode = 'none' | 'digest' | 'immediate'
 export type OpsAccountHealthMode = 'smart' | 'opened_only' | 'all'
