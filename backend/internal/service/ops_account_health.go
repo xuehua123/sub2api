@@ -398,6 +398,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			Windows:                metrics.Windows,
 			Recent:                 metrics.Recent,
 			FirstToken5m:           metrics.FirstToken5m,
+			FirstTokenWindows:      metrics.FirstTokenWindows,
 			Probe:                  availability.HealthProbe,
 		}
 		item.Recommendation = decideOpsAccountHealth(item, settings)
@@ -448,6 +449,9 @@ func normalizeAccountHealthMetrics(metrics *OpsAccountHealthMetrics) {
 	}
 	if metrics.Recent == nil {
 		metrics.Recent = []*OpsAccountHealthSample{}
+	}
+	if metrics.FirstTokenWindows == nil {
+		metrics.FirstTokenWindows = map[string]*OpsAccountHealthFirstTokenStats{}
 	}
 }
 

@@ -321,6 +321,9 @@
                   <div class="mt-2 text-lg font-semibold" :class="windowMetricClass(item, window)">
                     {{ windowMetricText(item, window) }}
                   </div>
+                  <div v-if="item.is_opened" class="mt-1 truncate text-[11px] font-medium" :class="windowFirstTokenClass(item, window)">
+                    首 {{ windowFirstTokenText(item, window) }}
+                  </div>
                   <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
                     <div
                       class="h-full rounded-full transition-all"
@@ -404,6 +407,7 @@ import { useAppStore, useAdminSettingsStore } from '@/stores'
 import {
   opsAPI,
   type OpsAccountHealthItem,
+  type OpsAccountHealthFirstTokenStats,
   type OpsAccountHealthResponse,
   type OpsAccountHealthSettings,
   type OpsAccountHealthSample,
@@ -412,6 +416,8 @@ import {
 } from '@/api/admin/ops'
 
 const WEBHOOK_MASK = '__configured__'
+
+type FirstTokenWindow = OpsAccountHealthWindow | '5m'
 
 const NumberField = defineComponent({
   name: 'NumberField',
@@ -899,9 +905,25 @@ function latencyHint(item: OpsAccountHealthItem): string {
   return probeText(item) || '等待主动探测'
 }
 
+function firstTokenStatFor(item: OpsAccountHealthItem, window: FirstTokenWindow): OpsAccountHealthFirstTokenStats | undefined {
+  const stat = item.first_token_windows?.[window]
+  if (stat) return stat
+  if (window === '5m') return item.first_token_5m ?? undefined
+  return undefined
+}
+
+function firstTokenAvgMs(item: OpsAccountHealthItem, window: FirstTokenWindow): number | null {
+  const stat = firstTokenStatFor(item, window)
+  const avg = stat?.avg_ms
+  if (!item.is_opened || !stat || stat.sample_count <= 0 || typeof avg !== 'number' || !Number.isFinite(avg)) {
+    return null
+  }
+  return avg
+}
+
 function firstTokenMetricText(item: OpsAccountHealthItem): string {
-  const avg = item.first_token_5m?.avg_ms
-  if (item.is_opened && typeof avg === 'number' && Number.isFinite(avg) && (item.first_token_5m?.sample_count ?? 0) > 0) {
+  const avg = firstTokenAvgMs(item, '5m')
+  if (avg !== null) {
     return `${Math.round(avg)} ms`
   }
   return '暂无'
@@ -909,16 +931,28 @@ function firstTokenMetricText(item: OpsAccountHealthItem): string {
 
 function firstTokenMetricHint(item: OpsAccountHealthItem): string {
   if (!item.is_opened) return '关闭账号不统计'
-  const count = item.first_token_5m?.sample_count ?? 0
+  const count = firstTokenStatFor(item, '5m')?.sample_count ?? 0
   if (count > 0) return `5m · ${count} 次首 Token样本`
   return hasTraffic(item) ? '5m 暂无首 Token样本' : '等待请求进入'
 }
 
 function firstTokenMetricClass(item: OpsAccountHealthItem): string {
-  const avg = item.first_token_5m?.avg_ms
-  if (!item.is_opened || typeof avg !== 'number' || !Number.isFinite(avg) || (item.first_token_5m?.sample_count ?? 0) <= 0) {
-    return 'text-gray-400 dark:text-gray-500'
-  }
+  const avg = firstTokenAvgMs(item, '5m')
+  return firstTokenTextClass(avg)
+}
+
+function windowFirstTokenText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const avg = firstTokenAvgMs(item, window)
+  if (avg !== null) return `${Math.round(avg)}ms`
+  return '暂无'
+}
+
+function windowFirstTokenClass(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  return firstTokenTextClass(firstTokenAvgMs(item, window))
+}
+
+function firstTokenTextClass(avg: number | null): string {
+  if (avg === null) return 'text-gray-400 dark:text-gray-500'
   if (avg <= 800) return 'text-emerald-600 dark:text-emerald-300'
   if (avg <= 2000) return 'text-amber-600 dark:text-amber-300'
   return 'text-red-600 dark:text-red-300'

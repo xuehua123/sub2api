@@ -45,7 +45,7 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, start10m, start30m, start1h, platform, groupID); err != nil {
 		return nil, err
 	}
-	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start5m, platform, groupID); err != nil {
+	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID); err != nil {
 		return nil, err
 	}
 	if err := r.loadAccountHealthRecentSamples(ctx, out, endTime, start1h, platform, groupID, limit); err != nil {
@@ -167,27 +167,42 @@ func (r *opsRepository) loadAccountHealthFirstTokenStats(
 	ctx context.Context,
 	out map[int64]*service.OpsAccountHealthMetrics,
 	endTime time.Time,
+	start1m time.Time,
 	start5m time.Time,
+	start10m time.Time,
+	start30m time.Time,
+	start1h time.Time,
 	platform string,
 	groupID int64,
 ) error {
 	query := `
+WITH windows(label, start_at) AS (
+  VALUES
+    ('1m'::TEXT, $2::TIMESTAMPTZ),
+    ('5m'::TEXT, $3::TIMESTAMPTZ),
+    ('10m'::TEXT, $4::TIMESTAMPTZ),
+    ('30m'::TEXT, $5::TIMESTAMPTZ),
+    ('1h'::TEXT, $6::TIMESTAMPTZ)
+)
 SELECT
   ul.account_id,
+  w.label,
   COUNT(*)::BIGINT AS sample_count,
   AVG(ul.first_token_ms)::DOUBLE PRECISION AS avg_first_token_ms
 FROM usage_logs ul
+JOIN windows w ON ul.created_at >= w.start_at
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
-WHERE ul.created_at >= $2 AND ul.created_at < $1
+WHERE ul.created_at >= $6 AND ul.created_at < $1
   AND ul.account_id IS NOT NULL
   AND ul.first_token_ms IS NOT NULL
-  AND ($3 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $3)
-  AND ($4::BIGINT <= 0 OR ul.group_id = $4)
-GROUP BY ul.account_id
+  AND ($7 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
+  AND ($8::BIGINT <= 0 OR ul.group_id = $8)
+GROUP BY ul.account_id, w.label
+ORDER BY ul.account_id, w.label
 `
 
-	rows, err := r.db.QueryContext(ctx, query, endTime, start5m, platform, groupID)
+	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID)
 	if err != nil {
 		return fmt.Errorf("query account health first token stats: %w", err)
 	}
@@ -196,19 +211,26 @@ GROUP BY ul.account_id
 	for rows.Next() {
 		var (
 			accountID int64
+			label     string
 			stat      service.OpsAccountHealthFirstTokenStats
 			avg       sql.NullFloat64
 		)
-		if err := rows.Scan(&accountID, &stat.SampleCount, &avg); err != nil {
+		if err := rows.Scan(&accountID, &label, &stat.SampleCount, &avg); err != nil {
 			return fmt.Errorf("scan account health first token stats: %w", err)
 		}
-		stat.Window = "5m"
+		stat.Window = label
 		if avg.Valid {
 			v := avg.Float64
 			stat.AvgMs = &v
 		}
 		metrics := ensureAccountHealthMetrics(out, accountID)
-		metrics.FirstToken5m = &stat
+		if metrics.FirstTokenWindows == nil {
+			metrics.FirstTokenWindows = map[string]*service.OpsAccountHealthFirstTokenStats{}
+		}
+		metrics.FirstTokenWindows[label] = &stat
+		if label == "5m" {
+			metrics.FirstToken5m = &stat
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate account health first token stats: %w", err)
@@ -338,9 +360,10 @@ func ensureAccountHealthMetrics(out map[int64]*service.OpsAccountHealthMetrics, 
 		return metrics
 	}
 	metrics = &service.OpsAccountHealthMetrics{
-		AccountID: accountID,
-		Windows:   map[string]*service.OpsAccountHealthWindowStats{},
-		Recent:    []*service.OpsAccountHealthSample{},
+		AccountID:         accountID,
+		Windows:           map[string]*service.OpsAccountHealthWindowStats{},
+		Recent:            []*service.OpsAccountHealthSample{},
+		FirstTokenWindows: map[string]*service.OpsAccountHealthFirstTokenStats{},
 	}
 	out[accountID] = metrics
 	return metrics

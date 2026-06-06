@@ -70,10 +70,11 @@ type OpsAccountHealthSample struct {
 }
 
 type OpsAccountHealthMetrics struct {
-	AccountID    int64
-	Windows      map[string]*OpsAccountHealthWindowStats
-	Recent       []*OpsAccountHealthSample
-	FirstToken5m *OpsAccountHealthFirstTokenStats
+	AccountID         int64
+	Windows           map[string]*OpsAccountHealthWindowStats
+	Recent            []*OpsAccountHealthSample
+	FirstToken5m      *OpsAccountHealthFirstTokenStats
+	FirstTokenWindows map[string]*OpsAccountHealthFirstTokenStats
 }
 
 type OpsAccountHealthProbe struct {
@@ -126,11 +127,12 @@ type OpsAccountHealthItem struct {
 	TempUnschedulableUntil *time.Time `json:"temp_unschedulable_until,omitempty"`
 	ErrorMessage           string     `json:"error_message,omitempty"`
 
-	Windows        map[string]*OpsAccountHealthWindowStats `json:"windows"`
-	Recent         []*OpsAccountHealthSample               `json:"recent"`
-	FirstToken5m   *OpsAccountHealthFirstTokenStats        `json:"first_token_5m,omitempty"`
-	Probe          *OpsAccountHealthProbe                  `json:"probe,omitempty"`
-	Recommendation OpsAccountHealthRecommendation          `json:"recommendation"`
+	Windows           map[string]*OpsAccountHealthWindowStats     `json:"windows"`
+	Recent            []*OpsAccountHealthSample                   `json:"recent"`
+	FirstToken5m      *OpsAccountHealthFirstTokenStats            `json:"first_token_5m,omitempty"`
+	FirstTokenWindows map[string]*OpsAccountHealthFirstTokenStats `json:"first_token_windows,omitempty"`
+	Probe             *OpsAccountHealthProbe                      `json:"probe,omitempty"`
+	Recommendation    OpsAccountHealthRecommendation              `json:"recommendation"`
 }
 
 type OpsAccountHealthResponse struct {
