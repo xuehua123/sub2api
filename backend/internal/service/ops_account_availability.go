@@ -125,12 +125,16 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 			GroupName:   displayGroupName,
 			Status:      acc.Status,
 
-			IsAvailable:   isAvailable,
-			IsRateLimited: isRateLimited,
-			IsOverloaded:  isOverloaded,
-			HasError:      hasError,
+			IsOpened:            acc.Status == StatusActive && acc.Schedulable,
+			IsSchedulable:       acc.Schedulable,
+			IsAvailable:         isAvailable,
+			IsRateLimited:       isRateLimited,
+			IsOverloaded:        isOverloaded,
+			IsTempUnschedulable: isTempUnsched,
+			HasError:            hasError,
 
 			ErrorMessage: acc.ErrorMessage,
+			HealthProbe:  accountHealthProbeFromAccount(&acc),
 		}
 
 		if isRateLimited && acc.RateLimitResetAt != nil {

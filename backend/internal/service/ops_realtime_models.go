@@ -78,10 +78,14 @@ type AccountAvailability struct {
 
 	Status string `json:"status"`
 
-	IsAvailable   bool `json:"is_available"`
-	IsRateLimited bool `json:"is_rate_limited"`
-	IsOverloaded  bool `json:"is_overloaded"`
-	HasError      bool `json:"has_error"`
+	IsOpened      bool `json:"is_opened"`
+	IsSchedulable bool `json:"is_schedulable"`
+
+	IsAvailable         bool `json:"is_available"`
+	IsRateLimited       bool `json:"is_rate_limited"`
+	IsOverloaded        bool `json:"is_overloaded"`
+	IsTempUnschedulable bool `json:"is_temp_unschedulable"`
+	HasError            bool `json:"has_error"`
 
 	RateLimitResetAt       *time.Time `json:"rate_limit_reset_at"`
 	RateLimitRemainingSec  *int64     `json:"rate_limit_remaining_sec"`
@@ -89,4 +93,6 @@ type AccountAvailability struct {
 	OverloadRemainingSec   *int64     `json:"overload_remaining_sec"`
 	ErrorMessage           string     `json:"error_message"`
 	TempUnschedulableUntil *time.Time `json:"temp_unschedulable_until,omitempty"`
+
+	HealthProbe *OpsAccountHealthProbe `json:"health_probe,omitempty"`
 }

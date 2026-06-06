@@ -210,6 +210,8 @@ func defaultOpsAlertRuntimeSettings() *OpsAlertRuntimeSettings {
 			GlobalReason:       "",
 			Entries:            []OpsAlertSilenceEntry{},
 		},
+		Thresholds:    *defaultOpsMetricThresholds(),
+		AccountHealth: defaultOpsAccountHealthSettings(),
 	}
 }
 
@@ -306,6 +308,7 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 	}
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
+	normalizeOpsAccountHealthSettings(&cfg.AccountHealth)
 
 	return cfg, nil
 }
@@ -321,6 +324,13 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 		return nil, errors.New("invalid config")
 	}
 
+	existing, err := s.GetOpsAlertRuntimeSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if existing == nil {
+		existing = defaultOpsAlertRuntimeSettings()
+	}
 	if cfg.EvaluationIntervalSeconds < 1 || cfg.EvaluationIntervalSeconds > int((24*time.Hour).Seconds()) {
 		return nil, errors.New("evaluation_interval_seconds must be between 1 and 86400")
 	}
@@ -338,7 +348,41 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 	defaultCfg := defaultOpsAlertRuntimeSettings()
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
+	cfg.AccountHealth = existing.AccountHealth
 
+	return s.storeOpsAlertRuntimeSettings(ctx, cfg)
+}
+
+func (s *OpsService) UpdateOpsAccountHealthSettings(ctx context.Context, settings OpsAccountHealthSettings) (OpsAccountHealthSettings, error) {
+	if s == nil || s.settingRepo == nil {
+		return OpsAccountHealthSettings{}, errors.New("setting repository not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cfg, err := s.GetOpsAlertRuntimeSettings(ctx)
+	if err != nil {
+		return OpsAccountHealthSettings{}, err
+	}
+	if cfg == nil {
+		cfg = defaultOpsAlertRuntimeSettings()
+	}
+
+	preserveMaskedOpsAccountHealthWebhook(&settings, cfg.AccountHealth)
+	normalizeOpsAccountHealthSettings(&settings)
+	if err := validateOpsAccountHealthSettings(settings); err != nil {
+		return OpsAccountHealthSettings{}, err
+	}
+
+	cfg.AccountHealth = settings
+	if _, err := s.storeOpsAlertRuntimeSettings(ctx, cfg); err != nil {
+		return OpsAccountHealthSettings{}, err
+	}
+	return settings, nil
+}
+
+func (s *OpsService) storeOpsAlertRuntimeSettings(ctx context.Context, cfg *OpsAlertRuntimeSettings) (*OpsAlertRuntimeSettings, error) {
 	raw, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, err
@@ -351,6 +395,33 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 	updated := &OpsAlertRuntimeSettings{}
 	_ = json.Unmarshal(raw, updated)
 	return updated, nil
+}
+
+func preserveMaskedOpsAccountHealthWebhook(next *OpsAccountHealthSettings, existing OpsAccountHealthSettings) {
+	if next == nil {
+		return
+	}
+	incoming := strings.TrimSpace(next.Notification.EnterpriseWeChatWebhookURL)
+	if !isOpsWebhookMasked(incoming) {
+		return
+	}
+	existingURL := strings.TrimSpace(existing.Notification.EnterpriseWeChatWebhookURL)
+	if existingURL != "" {
+		next.Notification.EnterpriseWeChatWebhookURL = existingURL
+	}
+}
+
+func MaskOpsAlertRuntimeSettingsForResponse(cfg *OpsAlertRuntimeSettings) *OpsAlertRuntimeSettings {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	out.AccountHealth = maskOpsAccountHealthSettings(out.AccountHealth)
+	return &out
+}
+
+func MaskOpsAccountHealthSettingsForResponse(settings OpsAccountHealthSettings) OpsAccountHealthSettings {
+	return maskOpsAccountHealthSettings(settings)
 }
 
 // =========================

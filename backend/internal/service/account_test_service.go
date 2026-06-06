@@ -1713,6 +1713,44 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 	}, nil
 }
 
+func (s *AccountTestService) RunAccountHealthProbe(ctx context.Context, accountID int64, modelID string) (*OpsAccountHealthProbe, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, errors.New("account test service is not initialized")
+	}
+	result, err := s.RunTestBackground(ctx, accountID, modelID)
+	now := time.Now().UTC()
+	probe := &OpsAccountHealthProbe{
+		Status:    "failed",
+		CheckedAt: &now,
+		ModelID:   strings.TrimSpace(modelID),
+	}
+	if result != nil {
+		latency := result.LatencyMs
+		probe.LatencyMs = &latency
+		if strings.EqualFold(result.Status, "success") {
+			probe.Status = "success"
+		}
+		probe.ErrorMessage = strings.TrimSpace(result.ErrorMessage)
+	}
+	if err != nil && probe.ErrorMessage == "" {
+		probe.ErrorMessage = err.Error()
+	}
+
+	updates := map[string]any{
+		accountHealthProbeStatusExtraKey:    probe.Status,
+		accountHealthProbeCheckedAtExtraKey: now.Format(time.RFC3339Nano),
+		accountHealthProbeModelIDExtraKey:   strings.TrimSpace(modelID),
+		accountHealthProbeErrorExtraKey:     probe.ErrorMessage,
+	}
+	if probe.LatencyMs != nil {
+		updates[accountHealthProbeLatencyMsExtraKey] = *probe.LatencyMs
+	}
+	if updateErr := s.accountRepo.UpdateExtra(ctx, accountID, updates); updateErr != nil {
+		return probe, updateErr
+	}
+	return probe, err
+}
+
 // parseTestSSEOutput extracts response text and error message from captured SSE output.
 func parseTestSSEOutput(body string) (responseText, errMsg string) {
 	var texts []string

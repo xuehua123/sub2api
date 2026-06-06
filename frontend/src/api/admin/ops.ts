@@ -381,6 +381,8 @@ export interface AccountAvailability {
   group_id: number
   group_name: string
   status: string
+  is_opened: boolean
+  is_schedulable: boolean
   is_available: boolean
   is_rate_limited: boolean
   rate_limit_reset_at?: string
@@ -388,8 +390,127 @@ export interface AccountAvailability {
   is_overloaded: boolean
   overload_until?: string
   overload_remaining_sec?: number
+  is_temp_unschedulable: boolean
+  temp_unschedulable_until?: string
   has_error: boolean
   error_message?: string
+  health_probe?: OpsAccountHealthProbe | null
+}
+
+export type OpsAccountHealthWindow = '1m' | '10m' | '30m' | '1h'
+export type OpsAccountHealthAction = 'keep_open' | 'watch' | 'close_now' | 'can_open' | 'needs_probe' | 'keep_closed' | 'unavailable'
+export type OpsAccountHealthNotifyMode = 'none' | 'digest' | 'immediate'
+export type OpsAccountHealthMode = 'smart' | 'opened_only' | 'all'
+
+export interface OpsAccountHealthWindowStats {
+  window: OpsAccountHealthWindow | string
+  request_count: number
+  success_count: number
+  error_count: number
+  upstream_error_count: number
+  status_429_count: number
+  status_529_count: number
+  success_rate_percent: number
+  error_rate_percent: number
+  upstream_error_rate_percent: number
+  avg_duration_ms?: number | null
+}
+
+export interface OpsAccountHealthSample {
+  kind: 'success' | 'error' | string
+  created_at: string
+  request_id?: string
+  model?: string
+  duration_ms?: number | null
+  status_code?: number | null
+  message?: string
+}
+
+export interface OpsAccountHealthProbe {
+  status: 'success' | 'failed' | string
+  checked_at?: string | null
+  latency_ms?: number | null
+  model_id?: string
+  error_message?: string
+}
+
+export interface OpsAccountHealthRecommendation {
+  action: OpsAccountHealthAction | string
+  severity: string
+  title: string
+  reason: string
+  notify_mode: OpsAccountHealthNotifyMode | string
+  immediate: boolean
+  recovery_ready: boolean
+}
+
+export interface OpsAccountHealthItem extends AccountAvailability {
+  windows: Record<OpsAccountHealthWindow | string, OpsAccountHealthWindowStats>
+  recent: OpsAccountHealthSample[]
+  probe?: OpsAccountHealthProbe | null
+  recommendation: OpsAccountHealthRecommendation
+}
+
+export interface OpsAccountHealthBurstSettings {
+  enabled: boolean
+  window_minutes: number
+  min_requests: number
+  error_rate_percent: number
+  upstream_error_rate_percent: number
+  cooldown_minutes: number
+  bypass_digest: boolean
+}
+
+export interface OpsAccountHealthDegradeSettings {
+  enabled: boolean
+  window_minutes: number
+  min_requests: number
+  success_rate_min_percent: number
+  error_rate_percent: number
+  upstream_error_rate_percent: number
+  cooldown_minutes: number
+}
+
+export interface OpsAccountHealthRecoverySettings {
+  enabled: boolean
+  window_minutes: number
+  min_requests: number
+  success_rate_min_percent: number
+  notify_opened_accounts: boolean
+  notify_closed_accounts: boolean
+  cooldown_minutes: number
+}
+
+export interface OpsAccountHealthProbeSettings {
+  enabled: boolean
+  interval_minutes: number
+  max_per_run: number
+  timeout_seconds: number
+  model_id?: string
+}
+
+export interface OpsAccountHealthNotificationSettings {
+  enterprise_wechat_enabled: boolean
+  enterprise_wechat_webhook_url?: string
+  mention_all_on_immediate: boolean
+}
+
+export interface OpsAccountHealthSettings {
+  enabled: boolean
+  mode: OpsAccountHealthMode | string
+  burst: OpsAccountHealthBurstSettings
+  degrade: OpsAccountHealthDegradeSettings
+  recovery: OpsAccountHealthRecoverySettings
+  probe: OpsAccountHealthProbeSettings
+  notification: OpsAccountHealthNotificationSettings
+  rate_limit_per_hour: number
+}
+
+export interface OpsAccountHealthResponse {
+  enabled: boolean
+  generated_at: string
+  items: OpsAccountHealthItem[]
+  settings: OpsAccountHealthSettings
 }
 
 export interface OpsAccountAvailabilityStatsResponse {
@@ -409,6 +530,30 @@ export async function getAccountAvailabilityStats(platform?: string, groupId?: n
     params.group_id = groupId
   }
   const { data } = await apiClient.get<OpsAccountAvailabilityStatsResponse>('/admin/ops/account-availability', { params })
+  return data
+}
+
+export async function getAccountHealth(params: {
+  platform?: string
+  group_id?: number | null
+  recent_limit?: number
+} = {}): Promise<OpsAccountHealthResponse> {
+  const query: Record<string, any> = {}
+  if (params.platform) {
+    query.platform = params.platform
+  }
+  if (typeof params.group_id === 'number' && params.group_id > 0) {
+    query.group_id = params.group_id
+  }
+  if (typeof params.recent_limit === 'number' && params.recent_limit > 0) {
+    query.recent_limit = params.recent_limit
+  }
+  const { data } = await apiClient.get<OpsAccountHealthResponse>('/admin/ops/account-health', { params: query })
+  return data
+}
+
+export async function updateAccountHealthSettings(settings: OpsAccountHealthSettings): Promise<OpsAccountHealthSettings> {
+  const { data } = await apiClient.patch<OpsAccountHealthSettings>('/admin/ops/account-health/settings', settings)
   return data
 }
 
@@ -776,6 +921,7 @@ export interface OpsAlertRuntimeSettings {
     }>
   }
   thresholds: OpsMetricThresholds // 指标阈值配置
+  account_health: OpsAccountHealthSettings
 }
 
 export interface OpsOpenAIAccountQuotaAutoPauseSettings {
@@ -1291,6 +1437,8 @@ export const opsAPI = {
   getConcurrencyStats,
   getUserConcurrencyStats,
   getAccountAvailabilityStats,
+  getAccountHealth,
+  updateAccountHealthSettings,
   getRealtimeTrafficSummary,
   subscribeQPS,
 

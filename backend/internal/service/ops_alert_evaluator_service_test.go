@@ -4,6 +4,9 @@ package service
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +29,10 @@ func (s *stubOpsRepo) GetDashboardOverview(ctx context.Context, filter *OpsDashb
 		return s.overview, nil
 	}
 	return &OpsDashboardOverview{}, nil
+}
+
+func (s *stubOpsRepo) GetAccountHealthMetrics(ctx context.Context, filter *OpsAccountHealthFilter) (map[int64]*OpsAccountHealthMetrics, error) {
+	return map[int64]*OpsAccountHealthMetrics{}, nil
 }
 
 func TestComputeGroupAvailableRatio(t *testing.T) {
@@ -209,4 +216,82 @@ func TestComputeRuleMetricNewIndicators(t *testing.T) {
 			require.InDelta(t, tt.wantValue, gotValue, 0.0001)
 		})
 	}
+}
+
+func TestScheduleAccountHealthRecoveryProbesDoesNotBlock(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Probe.Enabled = true
+	settings.Probe.IntervalMinutes = 30
+	settings.Probe.MaxPerRun = 2
+	settings.Probe.TimeoutSeconds = 1
+	settings.Recovery.Enabled = true
+
+	svc := &OpsAlertEvaluatorService{
+		accountTestService:   &AccountTestService{},
+		accountHealthProbeAt: map[int64]time.Time{},
+	}
+	items := []*OpsAccountHealthItem{
+		{AccountID: 1, IsOpened: false, Recommendation: OpsAccountHealthRecommendation{Action: OpsAccountHealthActionNeedsProbe}},
+		{AccountID: 2, IsOpened: false, Recommendation: OpsAccountHealthRecommendation{Action: OpsAccountHealthActionKeepClosed}},
+		{AccountID: 3, IsOpened: false, Recommendation: OpsAccountHealthRecommendation{Action: OpsAccountHealthActionUnavailable}},
+	}
+
+	startedAt := time.Now()
+	scheduled := svc.scheduleAccountHealthRecoveryProbes(context.Background(), items, settings)
+
+	require.Equal(t, 2, scheduled)
+	require.Less(t, time.Since(startedAt), 500*time.Millisecond)
+	require.Len(t, svc.accountHealthProbeAt, 2)
+}
+
+func TestShouldMentionAllForOpsAlertEnterpriseWeChat(t *testing.T) {
+	t.Parallel()
+
+	notification := OpsAccountHealthNotificationSettings{
+		MentionAllOnImmediate: true,
+	}
+
+	require.True(t, shouldMentionAllForOpsAlertEnterpriseWeChat(notification, &OpsAlertEvent{Severity: "P0"}))
+	require.True(t, shouldMentionAllForOpsAlertEnterpriseWeChat(notification, &OpsAlertEvent{Severity: "critical"}))
+	require.False(t, shouldMentionAllForOpsAlertEnterpriseWeChat(notification, &OpsAlertEvent{Severity: "P1"}))
+	require.False(t, shouldMentionAllForOpsAlertEnterpriseWeChat(OpsAccountHealthNotificationSettings{}, &OpsAlertEvent{Severity: "P0"}))
+}
+
+func TestSendOpsEnterpriseWeChatTextUsesShortTimeout(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+
+	var sawDeadline bool
+	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		deadline, ok := req.Context().Deadline()
+		require.True(t, ok, "enterprise wechat request should carry a short deadline")
+		sawDeadline = true
+		require.LessOrEqual(t, time.Until(deadline), opsEnterpriseWeChatSendTimeout+time.Second)
+		require.Greater(t, time.Until(deadline), time.Duration(0))
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"errcode":0,"errmsg":"ok"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+
+	err := sendOpsEnterpriseWeChatText(
+		context.Background(),
+		"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+		"hello",
+		false,
+	)
+	require.NoError(t, err)
+	require.True(t, sawDeadline)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }

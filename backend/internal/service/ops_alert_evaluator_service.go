@@ -1,9 +1,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +26,7 @@ const (
 	opsAlertEvaluatorLeaderLockKey   = "ops:alert:evaluator:leader"
 	opsAlertEvaluatorLeaderLockTTL   = 90 * time.Second
 	opsAlertEvaluatorSkipLogInterval = 1 * time.Minute
+	opsEnterpriseWeChatSendTimeout   = 5 * time.Second
 )
 
 var opsAlertEvaluatorReleaseScript = redis.NewScript(`
@@ -32,9 +37,10 @@ return 0
 `)
 
 type OpsAlertEvaluatorService struct {
-	opsService   *OpsService
-	opsRepo      OpsRepository
-	emailService *EmailService
+	opsService         *OpsService
+	opsRepo            OpsRepository
+	emailService       *EmailService
+	accountTestService *AccountTestService
 
 	redisClient *redis.Client
 	cfg         *config.Config
@@ -48,7 +54,10 @@ type OpsAlertEvaluatorService struct {
 	mu         sync.Mutex
 	ruleStates map[int64]*opsAlertRuleState
 
-	emailLimiter *slidingWindowLimiter
+	emailLimiter          *slidingWindowLimiter
+	accountHealthLimiter  *slidingWindowLimiter
+	accountHealthNotifyAt map[string]time.Time
+	accountHealthProbeAt  map[int64]time.Time
 
 	skipLogMu sync.Mutex
 	skipLogAt time.Time
@@ -65,18 +74,23 @@ func NewOpsAlertEvaluatorService(
 	opsService *OpsService,
 	opsRepo OpsRepository,
 	emailService *EmailService,
+	accountTestService *AccountTestService,
 	redisClient *redis.Client,
 	cfg *config.Config,
 ) *OpsAlertEvaluatorService {
 	return &OpsAlertEvaluatorService{
-		opsService:   opsService,
-		opsRepo:      opsRepo,
-		emailService: emailService,
-		redisClient:  redisClient,
-		cfg:          cfg,
-		instanceID:   uuid.NewString(),
-		ruleStates:   map[int64]*opsAlertRuleState{},
-		emailLimiter: newSlidingWindowLimiter(0, time.Hour),
+		opsService:            opsService,
+		opsRepo:               opsRepo,
+		emailService:          emailService,
+		accountTestService:    accountTestService,
+		redisClient:           redisClient,
+		cfg:                   cfg,
+		instanceID:            uuid.NewString(),
+		ruleStates:            map[int64]*opsAlertRuleState{},
+		emailLimiter:          newSlidingWindowLimiter(0, time.Hour),
+		accountHealthLimiter:  newSlidingWindowLimiter(0, time.Hour),
+		accountHealthNotifyAt: map[string]time.Time{},
+		accountHealthProbeAt:  map[int64]time.Time{},
 	}
 }
 
@@ -196,6 +210,7 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 	eventsCreated := 0
 	eventsResolved := 0
 	emailsSent := 0
+	enterpriseWeChatSent := 0
 
 	now := time.Now().UTC()
 	safeEnd := now.Truncate(time.Minute)
@@ -292,6 +307,9 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 				if s.maybeSendAlertEmail(ctx, runtimeCfg, rule, created) {
 					emailsSent++
 				}
+				if s.maybeSendAlertEnterpriseWeChat(ctx, runtimeCfg, rule, created) {
+					enterpriseWeChatSent++
+				}
 			}
 			continue
 		}
@@ -307,7 +325,9 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 		}
 	}
 
-	result := truncateString(fmt.Sprintf("rules=%d enabled=%d evaluated=%d created=%d resolved=%d emails_sent=%d", rulesTotal, rulesEnabled, rulesEvaluated, eventsCreated, eventsResolved, emailsSent), 2048)
+	accountHealthSent := s.evaluateAccountHealthNotifications(ctx, runtimeCfg)
+
+	result := truncateString(fmt.Sprintf("rules=%d enabled=%d evaluated=%d created=%d resolved=%d emails_sent=%d enterprise_wechat_sent=%d account_health_sent=%d", rulesTotal, rulesEnabled, rulesEvaluated, eventsCreated, eventsResolved, emailsSent, enterpriseWeChatSent, accountHealthSent), 2048)
 	s.recordHeartbeatSuccess(runAt, time.Since(startedAt), result)
 }
 
@@ -640,6 +660,405 @@ func buildOpsAlertDescription(rule *OpsAlertRule, value float64, windowMinutes i
 		windowMinutes,
 		strings.TrimSpace(scope),
 	)
+}
+
+func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx context.Context, runtimeCfg *OpsAlertRuntimeSettings) int {
+	if s == nil || s.opsService == nil || runtimeCfg == nil {
+		return 0
+	}
+
+	settings := runtimeCfg.AccountHealth
+	normalizeOpsAccountHealthSettings(&settings)
+	if !settings.Enabled {
+		return 0
+	}
+
+	health, err := s.opsService.GetAccountHealth(ctx, &OpsAccountHealthFilter{
+		RecentLimit: opsAccountHealthDefaultRecentLimit,
+	})
+	if err != nil || health == nil {
+		if err != nil {
+			logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health load failed: %v", err)
+		}
+		return 0
+	}
+
+	webhookURL := strings.TrimSpace(settings.Notification.EnterpriseWeChatWebhookURL)
+	if !settings.Notification.EnterpriseWeChatEnabled || webhookURL == "" || isOpsWebhookMasked(webhookURL) {
+		_ = s.scheduleAccountHealthRecoveryProbes(ctx, health.Items, settings)
+		return 0
+	}
+	if err := validateOpsEnterpriseWeChatWebhookURL(webhookURL); err != nil {
+		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat webhook invalid: %v", err)
+		_ = s.scheduleAccountHealthRecoveryProbes(ctx, health.Items, settings)
+		return 0
+	}
+
+	now := time.Now().UTC()
+	sent := 0
+	for _, item := range health.Items {
+		if item == nil {
+			continue
+		}
+		mode := strings.TrimSpace(item.Recommendation.NotifyMode)
+		if mode == "" || mode == OpsAccountHealthNotifyNone {
+			continue
+		}
+		immediate := mode == OpsAccountHealthNotifyImmediate || item.Recommendation.Immediate
+		if !s.shouldSendAccountHealthNotification(ctx, item, settings, now) {
+			continue
+		}
+		if !immediate {
+			if s.accountHealthLimiter == nil {
+				s.accountHealthLimiter = newSlidingWindowLimiter(settings.RateLimitPerHour, time.Hour)
+			}
+			s.accountHealthLimiter.SetLimit(settings.RateLimitPerHour)
+			if !s.accountHealthLimiter.Allow(now) {
+				continue
+			}
+		}
+
+		mentionAll := immediate && settings.Notification.MentionAllOnImmediate
+		content := buildOpsAccountHealthWeComText(item, now)
+		if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, mentionAll); err != nil {
+			logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health send failed (account=%d): %v", item.AccountID, err)
+			continue
+		}
+		s.markAccountHealthNotificationSent(ctx, item, settings, now)
+		sent++
+	}
+	_ = s.scheduleAccountHealthRecoveryProbes(ctx, health.Items, settings)
+	return sent
+}
+
+func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx context.Context, items []*OpsAccountHealthItem, settings OpsAccountHealthSettings) int {
+	if s == nil || s.accountTestService == nil || !settings.Probe.Enabled || !settings.Recovery.Enabled {
+		return 0
+	}
+	maxPerRun := settings.Probe.MaxPerRun
+	if maxPerRun <= 0 {
+		maxPerRun = 1
+	}
+	if maxPerRun > 20 {
+		maxPerRun = 20
+	}
+	timeout := time.Duration(settings.Probe.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 20 * time.Second
+	}
+
+	runs := 0
+	for _, item := range items {
+		if runs >= maxPerRun {
+			break
+		}
+		if !shouldProbeAccountHealthRecovery(item, settings) {
+			continue
+		}
+		if !s.tryAcquireAccountHealthProbeSlot(ctx, item.AccountID, settings) {
+			continue
+		}
+		accountID := item.AccountID
+		modelID := settings.Probe.ModelID
+		runs++
+		go s.runAccountHealthRecoveryProbe(accountID, modelID, timeout)
+	}
+	return runs
+}
+
+func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64, modelID string, timeout time.Duration) {
+	if s == nil || s.accountTestService == nil || accountID <= 0 {
+		return
+	}
+	if timeout <= 0 {
+		timeout = 20 * time.Second
+	}
+	probeCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if _, err := s.accountTestService.RunAccountHealthProbe(probeCtx, accountID, modelID); err != nil {
+		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health probe failed (account=%d): %v", accountID, err)
+	}
+}
+
+func shouldProbeAccountHealthRecovery(item *OpsAccountHealthItem, settings OpsAccountHealthSettings) bool {
+	if item == nil || item.AccountID <= 0 || item.IsOpened {
+		return false
+	}
+	if probeRecoveryReady(item.Probe, settings.Recovery.WindowMinutes) {
+		return false
+	}
+	switch item.Recommendation.Action {
+	case OpsAccountHealthActionNeedsProbe, OpsAccountHealthActionKeepClosed, OpsAccountHealthActionUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *OpsAlertEvaluatorService) tryAcquireAccountHealthProbeSlot(ctx context.Context, accountID int64, settings OpsAccountHealthSettings) bool {
+	if s == nil || accountID <= 0 {
+		return false
+	}
+	ttl := time.Duration(settings.Probe.IntervalMinutes) * time.Minute
+	if ttl <= 0 {
+		ttl = 30 * time.Minute
+	}
+	key := fmt.Sprintf("ops:account-health:probe:%d", accountID)
+	if s.redisClient != nil {
+		ok, err := s.redisClient.SetNX(ctx, key, time.Now().UTC().Format(time.RFC3339Nano), ttl).Result()
+		if err == nil {
+			return ok
+		}
+		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health probe redis cooldown failed: %v", err)
+	}
+
+	now := time.Now().UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.accountHealthProbeAt == nil {
+		s.accountHealthProbeAt = map[int64]time.Time{}
+	}
+	last := s.accountHealthProbeAt[accountID]
+	if !last.IsZero() && now.Sub(last) < ttl {
+		return false
+	}
+	s.accountHealthProbeAt[accountID] = now
+	return true
+}
+
+func (s *OpsAlertEvaluatorService) shouldSendAccountHealthNotification(ctx context.Context, item *OpsAccountHealthItem, settings OpsAccountHealthSettings, now time.Time) bool {
+	if s == nil || item == nil {
+		return false
+	}
+	key := accountHealthNotifyKey(item)
+	if key == "" {
+		return false
+	}
+	cooldownMinutes := accountHealthNotifyCooldownMinutes(item, settings)
+	if cooldownMinutes <= 0 {
+		return true
+	}
+	if s.redisClient != nil {
+		redisKey := "ops:account-health:notify:" + key
+		exists, err := s.redisClient.Exists(ctx, redisKey).Result()
+		if err == nil {
+			return exists == 0
+		}
+		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health notify redis cooldown failed: %v", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.accountHealthNotifyAt == nil {
+		s.accountHealthNotifyAt = map[string]time.Time{}
+	}
+	last := s.accountHealthNotifyAt[key]
+	if !last.IsZero() && now.Sub(last) < time.Duration(cooldownMinutes)*time.Minute {
+		return false
+	}
+	return true
+}
+
+func (s *OpsAlertEvaluatorService) markAccountHealthNotificationSent(ctx context.Context, item *OpsAccountHealthItem, settings OpsAccountHealthSettings, now time.Time) {
+	if s == nil || item == nil {
+		return
+	}
+	key := accountHealthNotifyKey(item)
+	if key == "" {
+		return
+	}
+	cooldownMinutes := accountHealthNotifyCooldownMinutes(item, settings)
+	if cooldownMinutes > 0 && s.redisClient != nil {
+		redisKey := "ops:account-health:notify:" + key
+		if err := s.redisClient.Set(ctx, redisKey, now.Format(time.RFC3339Nano), time.Duration(cooldownMinutes)*time.Minute).Err(); err != nil {
+			logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health notify redis mark failed: %v", err)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.accountHealthNotifyAt == nil {
+		s.accountHealthNotifyAt = map[string]time.Time{}
+	}
+	s.accountHealthNotifyAt[key] = now
+}
+
+func accountHealthNotifyKey(item *OpsAccountHealthItem) string {
+	if item == nil || item.AccountID <= 0 {
+		return ""
+	}
+	rec := item.Recommendation
+	return fmt.Sprintf("%d:%s:%s:%s", item.AccountID, strings.TrimSpace(rec.Action), strings.TrimSpace(rec.NotifyMode), strings.TrimSpace(rec.Severity))
+}
+
+func accountHealthNotifyCooldownMinutes(item *OpsAccountHealthItem, settings OpsAccountHealthSettings) int {
+	if item == nil {
+		return 30
+	}
+	if item.Recommendation.NotifyMode == OpsAccountHealthNotifyImmediate || item.Recommendation.Immediate {
+		return settings.Burst.CooldownMinutes
+	}
+	if item.Recommendation.RecoveryReady || item.Recommendation.Action == OpsAccountHealthActionCanOpen {
+		return settings.Recovery.CooldownMinutes
+	}
+	if item.Recommendation.Action == OpsAccountHealthActionCloseNow {
+		return settings.Degrade.CooldownMinutes
+	}
+	return 30
+}
+
+func buildOpsAccountHealthWeComText(item *OpsAccountHealthItem, now time.Time) string {
+	if item == nil {
+		return ""
+	}
+	stat1m := item.Windows[OpsAccountHealthWindow1m]
+	stat10m := item.Windows[OpsAccountHealthWindow10m]
+	stat30m := item.Windows[OpsAccountHealthWindow30m]
+	rec := item.Recommendation
+
+	lines := []string{
+		"Sub2API 账号健康通知",
+		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
+		fmt.Sprintf("账号: %s (#%d)", strings.TrimSpace(item.AccountName), item.AccountID),
+		fmt.Sprintf("平台/分组: %s / %s (#%d)", strings.TrimSpace(item.Platform), strings.TrimSpace(item.GroupName), item.GroupID),
+		fmt.Sprintf("状态: 打开=%t 可调度=%t", item.IsOpened, item.IsAvailable),
+		fmt.Sprintf("建议: %s [%s]", strings.TrimSpace(rec.Title), strings.TrimSpace(rec.Severity)),
+		fmt.Sprintf("原因: %s", strings.TrimSpace(rec.Reason)),
+		fmt.Sprintf("1m: %s", formatOpsAccountHealthWindowForNotify(stat1m)),
+		fmt.Sprintf("10m: %s", formatOpsAccountHealthWindowForNotify(stat10m)),
+		fmt.Sprintf("30m: %s", formatOpsAccountHealthWindowForNotify(stat30m)),
+	}
+	return truncateString(strings.Join(lines, "\n"), 1900)
+}
+
+func formatOpsAccountHealthWindowForNotify(stat *OpsAccountHealthWindowStats) string {
+	if stat == nil || stat.RequestCount <= 0 {
+		return "无数据"
+	}
+	return fmt.Sprintf("req=%d success=%.1f%% err=%.1f%% upstream=%.1f%%",
+		stat.RequestCount,
+		stat.SuccessRatePercent,
+		stat.ErrorRatePercent,
+		stat.UpstreamErrorRatePercent,
+	)
+}
+
+func sendOpsEnterpriseWeChatText(ctx context.Context, webhookURL string, content string, mentionAll bool) error {
+	webhookURL = strings.TrimSpace(webhookURL)
+	if webhookURL == "" {
+		return fmt.Errorf("enterprise wechat webhook url is empty")
+	}
+	if err := validateOpsEnterpriseWeChatWebhookURL(webhookURL); err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, opsEnterpriseWeChatSendTimeout)
+	defer cancel()
+
+	payload := struct {
+		MsgType string `json:"msgtype"`
+		Text    struct {
+			Content       string   `json:"content"`
+			MentionedList []string `json:"mentioned_list,omitempty"`
+		} `json:"text"`
+	}{
+		MsgType: "text",
+	}
+	payload.Text.Content = strings.TrimSpace(content)
+	if mentionAll {
+		payload.Text.MentionedList = []string{"@all"}
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("enterprise wechat status %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+	var result struct {
+		ErrCode int    `json:"errcode"`
+		ErrMsg  string `json:"errmsg"`
+	}
+	if err := json.Unmarshal(respBody, &result); err == nil && result.ErrCode != 0 {
+		return fmt.Errorf("enterprise wechat errcode %d: %s", result.ErrCode, strings.TrimSpace(result.ErrMsg))
+	}
+	return nil
+}
+
+func (s *OpsAlertEvaluatorService) maybeSendAlertEnterpriseWeChat(ctx context.Context, runtimeCfg *OpsAlertRuntimeSettings, rule *OpsAlertRule, event *OpsAlertEvent) bool {
+	if s == nil || runtimeCfg == nil || event == nil {
+		return false
+	}
+	settings := runtimeCfg.AccountHealth
+	normalizeOpsAccountHealthSettings(&settings)
+	notification := settings.Notification
+	webhookURL := strings.TrimSpace(notification.EnterpriseWeChatWebhookURL)
+	if !notification.EnterpriseWeChatEnabled || webhookURL == "" || isOpsWebhookMasked(webhookURL) {
+		return false
+	}
+	content := buildOpsAlertEventWeComText(rule, event, time.Now().UTC())
+	mentionAll := shouldMentionAllForOpsAlertEnterpriseWeChat(notification, event)
+	if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, mentionAll); err != nil {
+		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat alert event send failed (event=%d): %v", event.ID, err)
+		return false
+	}
+	return true
+}
+
+func shouldMentionAllForOpsAlertEnterpriseWeChat(notification OpsAccountHealthNotificationSettings, event *OpsAlertEvent) bool {
+	if !notification.MentionAllOnImmediate || event == nil {
+		return false
+	}
+	return isCriticalOpsAlertSeverity(event.Severity)
+}
+
+func isCriticalOpsAlertSeverity(severity string) bool {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "p0", "critical":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildOpsAlertEventWeComText(rule *OpsAlertRule, event *OpsAlertEvent, now time.Time) string {
+	if event == nil {
+		return ""
+	}
+	lines := []string{
+		"Sub2API 运维告警",
+		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
+		fmt.Sprintf("级别: %s", strings.TrimSpace(event.Severity)),
+		fmt.Sprintf("标题: %s", strings.TrimSpace(event.Title)),
+	}
+	if rule != nil {
+		lines = append(lines,
+			fmt.Sprintf("规则: %s (#%d)", strings.TrimSpace(rule.Name), rule.ID),
+			fmt.Sprintf("指标: %s %s %.2f", strings.TrimSpace(rule.MetricType), strings.TrimSpace(rule.Operator), rule.Threshold),
+		)
+	}
+	if event.MetricValue != nil {
+		lines = append(lines, fmt.Sprintf("当前值: %.2f", *event.MetricValue))
+	}
+	if desc := strings.TrimSpace(event.Description); desc != "" {
+		lines = append(lines, fmt.Sprintf("说明: %s", desc))
+	}
+	return truncateString(strings.Join(lines, "\n"), 1900)
 }
 
 func (s *OpsAlertEvaluatorService) maybeSendAlertEmail(ctx context.Context, runtimeCfg *OpsAlertRuntimeSettings, rule *OpsAlertRule, event *OpsAlertEvent) bool {

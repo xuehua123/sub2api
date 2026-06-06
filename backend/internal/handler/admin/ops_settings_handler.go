@@ -73,7 +73,7 @@ func (h *OpsHandler) GetAlertRuntimeSettings(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "Failed to get alert runtime settings")
 		return
 	}
-	response.Success(c, cfg)
+	response.Success(c, service.MaskOpsAlertRuntimeSettingsForResponse(cfg))
 }
 
 // UpdateAlertRuntimeSettings updates Ops alert evaluator runtime settings (DB-backed).
@@ -99,7 +99,7 @@ func (h *OpsHandler) UpdateAlertRuntimeSettings(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
-	response.Success(c, updated)
+	response.Success(c, service.MaskOpsAlertRuntimeSettingsForResponse(updated))
 }
 
 // GetRuntimeLogConfig returns runtime log config (DB-backed).
