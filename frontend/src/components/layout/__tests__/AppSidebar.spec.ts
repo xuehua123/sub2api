@@ -76,10 +76,13 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(componentSource).toContain("const adminUnresolvedStatuses = ['open', 'needs_info', 'in_progress'] as const")
   })
 
-  it('keeps admin channel monitor entry behind the channel monitor flag', () => {
-    expect(componentSource).toContain("path: '/admin/channels/monitor'")
-    expect(componentSource).toContain("label: t('nav.channelMonitor')")
-    expect(componentSource).toContain('featureFlag: flagChannelMonitor')
+  it('keeps admin channel monitor configuration entry visible even when user-facing monitor is disabled', () => {
+    const adminChannelMonitorItem = componentSource.match(
+      /\{\s*path: '\/admin\/channels\/monitor',[\s\S]*?label: t\('nav\.channelMonitor'\),[\s\S]*?icon: SignalIcon,[\s\S]*?\}/,
+    )
+
+    expect(adminChannelMonitorItem).not.toBeNull()
+    expect(adminChannelMonitorItem?.[0]).not.toContain('featureFlag: flagChannelMonitor')
   })
 
   it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement', 'issueCenter', 'issueManagement'])(

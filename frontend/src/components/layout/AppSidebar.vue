@@ -759,7 +759,6 @@ const adminNavItems = computed((): NavItem[] => {
           path: '/admin/channels/monitor',
           label: t('nav.channelMonitor'),
           icon: SignalIcon,
-          featureFlag: flagChannelMonitor,
         },
       ],
     },
