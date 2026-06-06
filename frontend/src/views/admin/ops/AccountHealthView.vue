@@ -69,7 +69,7 @@
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="flex items-center gap-2">
             <Icon name="bell" size="md" class="text-sky-500" />
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">智能通知规则</h2>
+            <h2 class="text-base font-semibold text-gray-900 dark:text-white">通知与开关判断</h2>
           </div>
           <div class="flex items-center gap-2">
             <button type="button" class="btn btn-secondary btn-sm" :disabled="loadingRuntime || savingSettings" @click="loadRuntimeSettings">
@@ -83,23 +83,29 @@
           </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-6">
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700 xl:col-span-3">
             <div class="flex items-center justify-between gap-3">
-              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">总开关</label>
+              <div>
+                <label class="text-sm font-semibold text-gray-900 dark:text-white">通知范围</label>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ notificationScopeText }}</div>
+              </div>
               <input v-model="settingsForm.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
             </div>
-            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">通知模式</label>
+            <div class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 dark:bg-dark-700/60 dark:text-slate-200">
+              每小时最多 {{ settingsForm.rate_limit_per_hour }} 条通知
+            </div>
+            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">哪些账号发通知</label>
             <select v-model="settingsForm.mode" class="input mt-1 h-9">
-              <option value="smart">智能</option>
+              <option value="smart">智能：异常只看打开账号，恢复按下方勾选</option>
               <option value="opened_only">只通知打开账号</option>
               <option value="all">全部账号</option>
             </select>
-            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">每小时上限</label>
+            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">每小时最多通知</label>
             <input v-model.number="settingsForm.rate_limit_per_hour" type="number" min="0" max="1000" class="input mt-1 h-9" />
             <label class="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
               <input v-model="settingsForm.notification.enterprise_wechat_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
-              企业微信
+              推送到企业微信
             </label>
             <input
               v-if="settingsForm.notification.enterprise_wechat_enabled"
@@ -120,73 +126,91 @@
             </label>
           </div>
 
-          <div class="rounded-lg border border-red-200 p-3 dark:border-red-900/50">
+          <div class="rounded-lg border border-red-200 p-3 dark:border-red-900/50 xl:col-span-3">
             <div class="flex items-center justify-between gap-3">
-              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">1 分钟突增</label>
+              <div>
+                <label class="text-sm font-semibold text-gray-900 dark:text-white">短时异常</label>
+                <div class="mt-1 text-xs text-red-600 dark:text-red-300">1 分钟爆错时直接提醒</div>
+              </div>
               <input v-model="settingsForm.burst.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
             </div>
+            <div class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-200">
+              {{ burstRuleText }}
+            </div>
             <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.burst.min_requests" label="最少请求" />
-              <NumberField v-model="settingsForm.burst.error_rate_percent" label="错误率 %" />
-              <NumberField v-model="settingsForm.burst.upstream_error_rate_percent" label="上游错误 %" />
-              <NumberField v-model="settingsForm.burst.cooldown_minutes" label="冷却分钟" />
+              <NumberField v-model="settingsForm.burst.min_requests" label="1m 至少请求" />
+              <NumberField v-model="settingsForm.burst.error_rate_percent" label="错误率达到 %" />
+              <NumberField v-model="settingsForm.burst.upstream_error_rate_percent" label="上游错误达到 %" />
+              <NumberField v-model="settingsForm.burst.cooldown_minutes" label="重复提醒间隔" />
             </div>
             <label class="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
               <input v-model="settingsForm.burst.bypass_digest" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
-              立即通知
+              命中后立即通知
             </label>
           </div>
 
-          <div class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50">
+          <div class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50 xl:col-span-3">
             <div class="flex items-center justify-between gap-3">
-              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">降级关闭</label>
+              <div>
+                <label class="text-sm font-semibold text-gray-900 dark:text-white">持续变差</label>
+                <div class="mt-1 text-xs text-amber-600 dark:text-amber-300">建议关闭或继续观察</div>
+              </div>
               <input v-model="settingsForm.degrade.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
             </div>
+            <div class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+              {{ degradeRuleText }}
+            </div>
             <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.degrade.window_minutes" label="窗口分钟" />
-              <NumberField v-model="settingsForm.degrade.min_requests" label="最少请求" />
-              <NumberField v-model="settingsForm.degrade.success_rate_min_percent" label="成功率 >=" />
-              <NumberField v-model="settingsForm.degrade.error_rate_percent" label="错误率 >=" />
-              <NumberField v-model="settingsForm.degrade.upstream_error_rate_percent" label="上游错误 >=" />
-              <NumberField v-model="settingsForm.degrade.cooldown_minutes" label="冷却分钟" />
+              <NumberField v-model="settingsForm.degrade.window_minutes" label="观察分钟" />
+              <NumberField v-model="settingsForm.degrade.min_requests" label="至少请求" />
+              <NumberField v-model="settingsForm.degrade.success_rate_min_percent" label="成功率低于 %" />
+              <NumberField v-model="settingsForm.degrade.error_rate_percent" label="错误率达到 %" />
+              <NumberField v-model="settingsForm.degrade.upstream_error_rate_percent" label="上游错误达到 %" />
+              <NumberField v-model="settingsForm.degrade.cooldown_minutes" label="重复提醒间隔" />
             </div>
           </div>
 
-          <div class="rounded-lg border border-emerald-200 p-3 dark:border-emerald-900/50">
+          <div class="rounded-lg border border-emerald-200 p-3 dark:border-emerald-900/50 xl:col-span-3">
             <div class="flex items-center justify-between gap-3">
-              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">恢复打开</label>
+              <div>
+                <label class="text-sm font-semibold text-gray-900 dark:text-white">恢复可开</label>
+                <div class="mt-1 text-xs text-emerald-600 dark:text-emerald-300">满足后建议打开或保持开启</div>
+              </div>
               <input v-model="settingsForm.recovery.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
             </div>
+            <div class="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200">
+              {{ recoveryRuleText }}
+            </div>
             <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.recovery.window_minutes" label="窗口分钟" />
-              <NumberField v-model="settingsForm.recovery.min_requests" label="最少请求" />
-              <NumberField v-model="settingsForm.recovery.success_rate_min_percent" label="成功率 >=" />
-              <NumberField v-model="settingsForm.recovery.cooldown_minutes" label="冷却分钟" />
+              <NumberField v-model="settingsForm.recovery.window_minutes" label="观察分钟" />
+              <NumberField v-model="settingsForm.recovery.min_requests" label="至少请求" />
+              <NumberField v-model="settingsForm.recovery.success_rate_min_percent" label="成功率达到 %" />
+              <NumberField v-model="settingsForm.recovery.cooldown_minutes" label="重复提醒间隔" />
             </div>
             <div class="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600 dark:text-gray-300">
               <label class="flex items-center gap-2">
                 <input v-model="settingsForm.recovery.notify_opened_accounts" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-                打开账号恢复通知
+                打开账号稳定后通知
               </label>
               <label class="flex items-center gap-2">
                 <input v-model="settingsForm.recovery.notify_closed_accounts" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-                关闭账号恢复通知
+                关闭账号可打开时通知
               </label>
             </div>
           </div>
 
-          <div class="rounded-lg border border-sky-200 p-3 dark:border-sky-900/50 xl:col-span-2">
+          <div class="rounded-lg border border-sky-200 p-3 dark:border-sky-900/50 xl:col-span-12">
             <div class="flex items-center justify-between gap-3">
               <div>
-                <label class="text-sm font-medium text-gray-800 dark:text-gray-100">关闭账号自动探测</label>
-                <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">按频率自动探测关闭账号，手动探测也使用这里的请求方式</p>
+                <label class="text-sm font-semibold text-gray-900 dark:text-white">关闭账号探测</label>
+                <p class="mt-0.5 text-[11px] text-sky-600 dark:text-sky-300">{{ probeRuleText }}</p>
               </div>
               <input v-model="settingsForm.probe.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
             </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.probe.interval_minutes" label="间隔分钟" />
-              <NumberField v-model="settingsForm.probe.max_per_run" label="每轮最多" />
-              <NumberField v-model="settingsForm.probe.timeout_seconds" label="超时秒" />
+            <div class="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
+              <NumberField v-model="settingsForm.probe.interval_minutes" label="每隔几分钟" />
+              <NumberField v-model="settingsForm.probe.max_per_run" label="每轮最多账号" />
+              <NumberField v-model="settingsForm.probe.timeout_seconds" label="单次超时秒" />
               <label class="block min-w-0">
                 <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">请求模式</span>
                 <select v-model="settingsForm.probe.mode" class="input mt-1 h-8 text-sm">
@@ -200,7 +224,7 @@
               </label>
             </div>
             <label class="mt-3 block min-w-0">
-              <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">探测 prompt</span>
+              <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">探测内容</span>
               <textarea
                 v-model.trim="settingsForm.probe.prompt"
                 rows="2"
@@ -535,6 +559,42 @@ const summaryCards = computed(() => {
     { label: '可恢复', value: canOpen, className: canOpen ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-900 dark:text-white' },
     { label: '立即通知', value: immediate, className: immediate ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white' }
   ]
+})
+
+const notificationScopeText = computed(() => {
+  if (!settingsForm.value.enabled) return '已关闭，不发送通知'
+  switch (settingsForm.value.mode) {
+    case 'opened_only':
+      return '只通知当前打开的账号'
+    case 'all':
+      return '打开和关闭账号都会通知'
+    default:
+      return '异常看打开账号，恢复按勾选项通知'
+  }
+})
+
+const burstRuleText = computed(() => {
+  const rule = settingsForm.value.burst
+  if (!rule.enabled) return '已关闭：短时间爆错不会触发立即提醒'
+  return `1m 内请求 >= ${rule.min_requests}，且错误率 >= ${rule.error_rate_percent}% 或上游错误 >= ${rule.upstream_error_rate_percent}%`
+})
+
+const degradeRuleText = computed(() => {
+  const rule = settingsForm.value.degrade
+  if (!rule.enabled) return '已关闭：成功率变差不会触发关闭建议'
+  return `${rule.window_minutes}m 内请求 >= ${rule.min_requests}，且成功率 < ${rule.success_rate_min_percent}% 或错误率 >= ${rule.error_rate_percent}%`
+})
+
+const recoveryRuleText = computed(() => {
+  const rule = settingsForm.value.recovery
+  if (!rule.enabled) return '已关闭：恢复后不会主动提示可打开'
+  return `${rule.window_minutes}m 内请求 >= ${rule.min_requests}，成功率 >= ${rule.success_rate_min_percent}% 且无错误`
+})
+
+const probeRuleText = computed(() => {
+  const rule = settingsForm.value.probe
+  if (!rule.enabled) return '已关闭：关闭账号只靠手动探测或真实流量判断'
+  return `关闭账号每 ${rule.interval_minutes}m 自动探测，每轮最多 ${rule.max_per_run} 个，单次超时 ${rule.timeout_seconds}s`
 })
 
 watch(
