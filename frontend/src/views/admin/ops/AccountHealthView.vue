@@ -272,7 +272,7 @@
 
             <div class="mt-5 grid grid-cols-2 gap-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
-                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">主成功率</div>
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(item) }}</div>
                 <div class="mt-1 truncate text-3xl font-semibold" :class="primaryMetricClass(item)">
                   {{ primaryMetricText(item) }}
                 </div>
@@ -701,10 +701,20 @@ function statFor(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): Op
   return item.windows?.[window]
 }
 
-function primaryStat(item: OpsAccountHealthItem): OpsAccountHealthWindowStats | undefined {
+function primaryMetricWindow(item: OpsAccountHealthItem): OpsAccountHealthWindow | null {
   const tenMin = statFor(item, '10m')
-  if (tenMin && tenMin.request_count > 0) return tenMin
-  return statFor(item, '30m') || statFor(item, '1h') || tenMin
+  if (tenMin && tenMin.request_count > 0) return '10m'
+  const thirtyMin = statFor(item, '30m')
+  if (thirtyMin && thirtyMin.request_count > 0) return '30m'
+  const oneHour = statFor(item, '1h')
+  if (oneHour && oneHour.request_count > 0) return '1h'
+  return null
+}
+
+function primaryStat(item: OpsAccountHealthItem): OpsAccountHealthWindowStats | undefined {
+  const window = primaryMetricWindow(item)
+  if (window) return statFor(item, window)
+  return statFor(item, '10m')
 }
 
 function hasTraffic(item: OpsAccountHealthItem): boolean {
@@ -841,9 +851,18 @@ function primaryMetricText(item: OpsAccountHealthItem): string {
   return '待探测'
 }
 
+function primaryMetricLabel(item: OpsAccountHealthItem): string {
+  const window = primaryMetricWindow(item)
+  if (window) return `成功率 · ${window}`
+  const probeSummary = primaryProbeSummary(item)
+  if (probeSummary.count > 0 || item.probe?.checked_at) return '成功率 · 主动探测'
+  return '成功率'
+}
+
 function primaryMetricHint(item: OpsAccountHealthItem): string {
+  const window = primaryMetricWindow(item)
   const stat = primaryStat(item)
-  if (stat && stat.request_count > 0) return `${stat.request_count} 次请求样本`
+  if (window && stat && stat.request_count > 0) return `${window} · ${stat.request_count} 次请求样本`
   const probeSummary = primaryProbeSummary(item)
   if (probeSummary.count > 0) return `${probeSummary.count} 次探测样本`
   if (item.probe?.checked_at) return `最近探测 ${formatTime(item.probe.checked_at)}`
@@ -867,13 +886,14 @@ function latencyText(item: OpsAccountHealthItem): string {
 }
 
 function latencyHint(item: OpsAccountHealthItem): string {
+  const window = primaryMetricWindow(item)
   const stat = primaryStat(item)
-  if (stat && stat.request_count > 0) return `${stat.request_count} 次请求平均`
+  if (window && stat && stat.request_count > 0) return `${window} · ${stat.request_count} 次请求平均`
   return probeText(item) || '等待主动探测'
 }
 
 function headlineHealthLabel(item: OpsAccountHealthItem): string {
-  return hasTraffic(item) ? '健康度 · 1 小时' : '健康度 · 主动探测'
+  return hasTraffic(item) ? '健康度 · 1h' : '健康度 · 主动探测'
 }
 
 function headlineHealthText(item: OpsAccountHealthItem): string {
