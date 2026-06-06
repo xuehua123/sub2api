@@ -93,6 +93,42 @@ func TestDecideOpsAccountHealth_ErrorStateProbeSuccessCanOpen(t *testing.T) {
 	require.Contains(t, rec.Title, "探测已恢复")
 }
 
+func TestDecideOpsAccountHealth_ClosedProbeSuccessDoesNotOverrideBadRecentTraffic(t *testing.T) {
+	t.Parallel()
+
+	checkedAt := time.Now().UTC().Add(-5 * time.Minute)
+	item := &OpsAccountHealthItem{
+		AccountID: 1,
+		IsOpened:  false,
+		Windows:   defaultOpsAccountHealthWindows(),
+		Recent:    []*OpsAccountHealthSample{},
+		Probe: &OpsAccountHealthProbe{
+			Status:    "success",
+			CheckedAt: &checkedAt,
+		},
+	}
+	item.Windows[OpsAccountHealthWindow10m] = &OpsAccountHealthWindowStats{
+		Window:             OpsAccountHealthWindow10m,
+		RequestCount:       32,
+		SuccessCount:       23,
+		ErrorCount:         9,
+		UpstreamErrorCount: 9,
+	}
+	settings := defaultOpsAccountHealthSettings()
+	settings.Degrade.WindowMinutes = 10
+	settings.Degrade.MinRequests = 20
+	settings.Degrade.SuccessRateMinPercent = 90
+	settings.Recovery.WindowMinutes = 30
+	settings.Recovery.NotifyClosedAccounts = true
+
+	normalizeAccountHealthMetrics(&OpsAccountHealthMetrics{Windows: item.Windows, Recent: item.Recent})
+	rec := decideOpsAccountHealth(item, settings)
+	require.Equal(t, OpsAccountHealthActionKeepClosed, rec.Action)
+	require.False(t, rec.RecoveryReady)
+	require.Equal(t, OpsAccountHealthNotifyNone, rec.NotifyMode)
+	require.Contains(t, rec.Title, "成功率低于阈值")
+}
+
 func TestAccountHealthProbeFromAccountSummarizesProbeHistory(t *testing.T) {
 	t.Parallel()
 

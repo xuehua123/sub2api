@@ -465,7 +465,7 @@ func decideOpsAccountHealth(item *OpsAccountHealthItem, settings OpsAccountHealt
 		}
 	}
 
-	if !item.IsOpened && settings.Recovery.Enabled && probeRecoveryReady(item.Probe, settings.Recovery.WindowMinutes) {
+	if !item.IsOpened && settings.Recovery.Enabled && probeRecoveryReady(item.Probe, settings.Recovery.WindowMinutes) && !hasAnyRequests(item) {
 		return OpsAccountHealthRecommendation{
 			Action:        OpsAccountHealthActionCanOpen,
 			Severity:      "P2",
