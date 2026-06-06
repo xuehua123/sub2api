@@ -1725,6 +1725,9 @@ func (s *AccountTestService) RunAccountHealthProbeWithOptions(ctx context.Contex
 	if s == nil || s.accountRepo == nil {
 		return nil, errors.New("account test service is not initialized")
 	}
+	account, _ := s.accountRepo.GetByID(ctx, accountID)
+	history := accountHealthProbeHistoryFromAccount(account)
+
 	result, err := s.RunTestBackgroundWithOptions(ctx, accountID, modelID, prompt, mode)
 	now := time.Now().UTC()
 	probe := &OpsAccountHealthProbe{
@@ -1743,12 +1746,15 @@ func (s *AccountTestService) RunAccountHealthProbeWithOptions(ctx context.Contex
 	if err != nil && probe.ErrorMessage == "" {
 		probe.ErrorMessage = err.Error()
 	}
+	history = appendAccountHealthProbeHistory(history, accountHealthProbeSampleFromProbe(probe))
+	applyAccountHealthProbeHistoryStats(probe, history)
 
 	updates := map[string]any{
 		accountHealthProbeStatusExtraKey:    probe.Status,
 		accountHealthProbeCheckedAtExtraKey: now.Format(time.RFC3339Nano),
 		accountHealthProbeModelIDExtraKey:   strings.TrimSpace(modelID),
 		accountHealthProbeErrorExtraKey:     probe.ErrorMessage,
+		accountHealthProbeHistoryExtraKey:   history,
 	}
 	if probe.LatencyMs != nil {
 		updates[accountHealthProbeLatencyMsExtraKey] = *probe.LatencyMs

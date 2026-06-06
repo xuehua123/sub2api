@@ -786,11 +786,8 @@ func shouldProbeAccountHealthRecovery(item *OpsAccountHealthItem, settings OpsAc
 	if item == nil || item.AccountID <= 0 || item.IsOpened {
 		return false
 	}
-	if probeRecoveryReady(item.Probe, settings.Recovery.WindowMinutes) {
-		return false
-	}
 	switch item.Recommendation.Action {
-	case OpsAccountHealthActionNeedsProbe, OpsAccountHealthActionKeepClosed, OpsAccountHealthActionUnavailable:
+	case OpsAccountHealthActionCanOpen, OpsAccountHealthActionNeedsProbe, OpsAccountHealthActionKeepClosed, OpsAccountHealthActionUnavailable:
 		return true
 	default:
 		return false

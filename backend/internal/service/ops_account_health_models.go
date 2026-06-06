@@ -75,6 +75,14 @@ type OpsAccountHealthProbe struct {
 	LatencyMs    *int64     `json:"latency_ms,omitempty"`
 	ModelID      string     `json:"model_id,omitempty"`
 	ErrorMessage string     `json:"error_message,omitempty"`
+
+	RequestCount       int64                     `json:"request_count,omitempty"`
+	SuccessCount       int64                     `json:"success_count,omitempty"`
+	ErrorCount         int64                     `json:"error_count,omitempty"`
+	SuccessRatePercent float64                   `json:"success_rate_percent,omitempty"`
+	ErrorRatePercent   float64                   `json:"error_rate_percent,omitempty"`
+	AvgLatencyMs       *float64                  `json:"avg_latency_ms,omitempty"`
+	Recent             []*OpsAccountHealthSample `json:"recent,omitempty"`
 }
 
 type OpsAccountHealthRecommendation struct {

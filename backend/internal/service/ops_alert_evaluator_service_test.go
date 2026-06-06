@@ -246,6 +246,27 @@ func TestScheduleAccountHealthRecoveryProbesDoesNotBlock(t *testing.T) {
 	require.Len(t, svc.accountHealthProbeAt, 2)
 }
 
+func TestShouldProbeAccountHealthRecoveryContinuesAfterCanOpen(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	checkedAt := time.Now().UTC().Add(-2 * time.Minute)
+	item := &OpsAccountHealthItem{
+		AccountID: 1,
+		IsOpened:  false,
+		Probe: &OpsAccountHealthProbe{
+			Status:    "success",
+			CheckedAt: &checkedAt,
+		},
+		Recommendation: OpsAccountHealthRecommendation{
+			Action:        OpsAccountHealthActionCanOpen,
+			RecoveryReady: true,
+		},
+	}
+
+	require.True(t, shouldProbeAccountHealthRecovery(item, settings))
+}
+
 func TestShouldMentionAllForOpsAlertEnterpriseWeChat(t *testing.T) {
 	t.Parallel()
 

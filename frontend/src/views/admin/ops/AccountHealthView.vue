@@ -467,6 +467,21 @@ let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
 
 const windowOrder: OpsAccountHealthWindow[] = ['1m', '10m', '30m', '1h']
+const probeWindowMinutes: Record<OpsAccountHealthWindow, number> = {
+  '1m': 1,
+  '10m': 10,
+  '30m': 30,
+  '1h': 60
+}
+
+interface ProbeWindowSummary {
+  count: number
+  successCount: number
+  errorCount: number
+  successRatePercent: number
+  errorRatePercent: number
+  avgDurationMs: number | null
+}
 
 const settingsForm = ref<OpsAccountHealthSettings>(defaultAccountHealthSettings())
 const settingsLoaded = ref(false)
@@ -696,6 +711,100 @@ function hasTraffic(item: OpsAccountHealthItem): boolean {
   return windowOrder.some(window => (statFor(item, window)?.request_count ?? 0) > 0)
 }
 
+function probeSamples(item: OpsAccountHealthItem): OpsAccountHealthSample[] {
+  const raw = item.probe?.recent?.length ? item.probe.recent : []
+  const samples = raw.length > 0 ? raw : syntheticProbeSamples(item)
+  return sortSamplesByTime(samples).slice(-60)
+}
+
+function syntheticProbeSamples(item: OpsAccountHealthItem): OpsAccountHealthSample[] {
+  const probe = item.probe
+  if (!probe?.checked_at) return []
+  return [{
+    kind: probe.status === 'success' ? 'success' : 'error',
+    created_at: probe.checked_at,
+    model: probe.model_id,
+    duration_ms: probe.latency_ms ? Number(probe.latency_ms) : null,
+    message: probe.error_message || '主动探测'
+  }]
+}
+
+function sortSamplesByTime(samples: OpsAccountHealthSample[]): OpsAccountHealthSample[] {
+  return [...samples].sort((a, b) => sampleTimestamp(a) - sampleTimestamp(b))
+}
+
+function sampleTimestamp(sample: OpsAccountHealthSample): number {
+  const timestamp = new Date(sample.created_at).getTime()
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function probeWindowSummary(item: OpsAccountHealthItem, window?: OpsAccountHealthWindow): ProbeWindowSummary {
+  let samples = probeSamples(item)
+  if (window) {
+    const cutoff = Date.now() - probeWindowMinutes[window] * 60_000
+    samples = samples.filter(sample => sampleTimestamp(sample) >= cutoff)
+  }
+  return summarizeProbeSamples(samples)
+}
+
+function primaryProbeSummary(item: OpsAccountHealthItem): ProbeWindowSummary {
+  const tenMin = probeWindowSummary(item, '10m')
+  if (tenMin.count > 0) return tenMin
+  const thirtyMin = probeWindowSummary(item, '30m')
+  if (thirtyMin.count > 0) return thirtyMin
+  const oneHour = probeWindowSummary(item, '1h')
+  if (oneHour.count > 0) return oneHour
+  return probeWindowSummary(item)
+}
+
+function headlineProbeSummary(item: OpsAccountHealthItem): ProbeWindowSummary {
+  const oneHour = probeWindowSummary(item, '1h')
+  return oneHour.count > 0 ? oneHour : probeWindowSummary(item)
+}
+
+function summarizeProbeSamples(samples: OpsAccountHealthSample[]): ProbeWindowSummary {
+  const count = samples.length
+  let successCount = 0
+  let latencySum = 0
+  let latencyCount = 0
+  for (const sample of samples) {
+    if (sample.kind === 'success') successCount++
+    if (typeof sample.duration_ms === 'number' && Number.isFinite(sample.duration_ms)) {
+      latencySum += sample.duration_ms
+      latencyCount++
+    }
+  }
+  const errorCount = Math.max(0, count - successCount)
+  return {
+    count,
+    successCount,
+    errorCount,
+    successRatePercent: count > 0 ? (successCount / count) * 100 : 0,
+    errorRatePercent: count > 0 ? (errorCount / count) * 100 : 0,
+    avgDurationMs: latencyCount > 0 ? latencySum / latencyCount : null
+  }
+}
+
+function probeMetricClass(summary: ProbeWindowSummary, item: OpsAccountHealthItem): string {
+  if (summary.count > 0) {
+    if (summary.successRatePercent >= 98) return 'text-emerald-600 dark:text-emerald-300'
+    if (summary.successRatePercent >= 90) return 'text-amber-600 dark:text-amber-300'
+    return 'text-red-600 dark:text-red-300'
+  }
+  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
+  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
+  return 'text-gray-400 dark:text-gray-500'
+}
+
+function probeMetricBarClass(summary: ProbeWindowSummary, item: OpsAccountHealthItem): string {
+  if (summary.count > 0) {
+    if (summary.successRatePercent >= 98) return 'bg-emerald-500'
+    if (summary.successRatePercent >= 90) return 'bg-amber-500'
+    return 'bg-red-500'
+  }
+  return probeBarClass(item)
+}
+
 function boundedPercent(value: number | null | undefined): number {
   if (!Number.isFinite(value as number)) return 0
   return Math.max(0, Math.min(100, Number(value)))
@@ -725,6 +834,8 @@ function metricCountText(stat?: OpsAccountHealthWindowStats | null): string {
 function primaryMetricText(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (stat && stat.request_count > 0) return formatPercent(stat.success_rate_percent)
+  const probeSummary = primaryProbeSummary(item)
+  if (probeSummary.count > 0) return formatPercent(probeSummary.successRatePercent)
   if (item.probe?.status === 'success') return '100.0%'
   if (item.probe?.status === 'failed') return '0.0%'
   return '待探测'
@@ -733,6 +844,8 @@ function primaryMetricText(item: OpsAccountHealthItem): string {
 function primaryMetricHint(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (stat && stat.request_count > 0) return `${stat.request_count} 次请求样本`
+  const probeSummary = primaryProbeSummary(item)
+  if (probeSummary.count > 0) return `${probeSummary.count} 次探测样本`
   if (item.probe?.checked_at) return `最近探测 ${formatTime(item.probe.checked_at)}`
   return item.is_opened ? '等待请求进入' : '关闭账号需主动探测'
 }
@@ -740,14 +853,15 @@ function primaryMetricHint(item: OpsAccountHealthItem): string {
 function primaryMetricClass(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (stat && stat.request_count > 0) return successTextClass(stat)
-  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
-  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
-  return 'text-gray-400 dark:text-gray-500'
+  return probeMetricClass(primaryProbeSummary(item), item)
 }
 
 function latencyText(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (stat?.avg_duration_ms && stat.request_count > 0) return `${Math.round(stat.avg_duration_ms)} ms`
+  const probeSummary = primaryProbeSummary(item)
+  if (probeSummary.avgDurationMs !== null) return `${Math.round(probeSummary.avgDurationMs)} ms`
+  if (item.probe?.avg_latency_ms) return `${Math.round(item.probe.avg_latency_ms)} ms`
   if (item.probe?.latency_ms) return `${item.probe.latency_ms} ms`
   return '暂无'
 }
@@ -759,6 +873,8 @@ function headlineHealthLabel(item: OpsAccountHealthItem): string {
 function headlineHealthText(item: OpsAccountHealthItem): string {
   const stat = statFor(item, '1h')
   if (stat && stat.request_count > 0) return formatPercent(stat.success_rate_percent)
+  const probeSummary = headlineProbeSummary(item)
+  if (probeSummary.count > 0) return formatPercent(probeSummary.successRatePercent)
   if (item.probe?.status === 'success') return '100.0%'
   if (item.probe?.status === 'failed') return '0.0%'
   return '待探测'
@@ -767,26 +883,28 @@ function headlineHealthText(item: OpsAccountHealthItem): string {
 function headlineHealthClass(item: OpsAccountHealthItem): string {
   const stat = statFor(item, '1h')
   if (stat && stat.request_count > 0) return successTextClass(stat)
-  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
-  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
-  return 'text-gray-400 dark:text-gray-500'
+  return probeMetricClass(headlineProbeSummary(item), item)
 }
 
 function headlineHealthPercent(item: OpsAccountHealthItem): number {
   const stat = statFor(item, '1h')
   if (stat && stat.request_count > 0) return boundedPercent(stat.success_rate_percent)
+  const probeSummary = headlineProbeSummary(item)
+  if (probeSummary.count > 0) return boundedPercent(probeSummary.successRatePercent)
   return probeBarPercent(item)
 }
 
 function headlineHealthBarClass(item: OpsAccountHealthItem): string {
   const stat = statFor(item, '1h')
   if (stat && stat.request_count > 0) return windowStatBarClass(stat)
-  return probeBarClass(item)
+  return probeMetricBarClass(headlineProbeSummary(item), item)
 }
 
 function headlineHealthLeftMeta(item: OpsAccountHealthItem): string {
   const stat = statFor(item, '1h')
   if (stat && stat.request_count > 0) return `${stat.request_count} 次请求样本`
+  const probeSummary = headlineProbeSummary(item)
+  if (probeSummary.count > 0) return `${probeSummary.count} 次探测样本`
   if (item.probe?.checked_at) return probeStatusLabel(item)
   return '等待主动探测'
 }
@@ -796,19 +914,27 @@ function headlineHealthRightMeta(item: OpsAccountHealthItem): string {
   if (stat && stat.request_count > 0) {
     return `错 ${formatPercent(stat.error_rate_percent)} · 上 ${formatPercent(stat.upstream_error_rate_percent)}`
   }
+  const probeSummary = headlineProbeSummary(item)
+  if (probeSummary.count > 0) {
+    return `错 ${formatPercent(probeSummary.errorRatePercent)} · 失败 ${probeSummary.errorCount}/${probeSummary.count}`
+  }
   return probeText(item) || '点击探测获取健康度'
 }
 
 function windowCountText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return metricCountText(stat)
-  if (item.probe?.checked_at) return '探测'
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.count > 0) return `${probeSummary.count} 次`
+  if (item.probe?.checked_at) return '1 次'
   return '0 次'
 }
 
 function windowMetricText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return metricValueText(stat)
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.count > 0) return formatPercent(probeSummary.successRatePercent)
   if (item.probe?.status === 'success') return '100.0%'
   if (item.probe?.status === 'failed') return '0.0%'
   return '暂无'
@@ -817,26 +943,28 @@ function windowMetricText(item: OpsAccountHealthItem, window: OpsAccountHealthWi
 function windowMetricClass(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return metricValueClass(stat)
-  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
-  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
-  return 'text-gray-400 dark:text-gray-500'
+  return probeMetricClass(probeWindowSummary(item, window), item)
 }
 
 function windowBarPercent(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): number {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return boundedPercent(stat.success_rate_percent)
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.count > 0) return boundedPercent(probeSummary.successRatePercent)
   return probeBarPercent(item)
 }
 
 function windowBarClass(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return windowStatBarClass(stat)
-  return probeBarClass(item)
+  return probeMetricBarClass(probeWindowSummary(item, window), item)
 }
 
 function windowLeftMeta(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return `错 ${metricValueText(stat, 'error_rate_percent')}`
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.count > 0) return `错 ${formatPercent(probeSummary.errorRatePercent)}`
   if (item.probe?.checked_at) return `探 ${probeStatusLabel(item).replace('探测', '')}`
   return '错 暂无'
 }
@@ -844,6 +972,10 @@ function windowLeftMeta(item: OpsAccountHealthItem, window: OpsAccountHealthWind
 function windowRightMeta(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
   const stat = statFor(item, window)
   if (stat && stat.request_count > 0) return `上 ${metricValueText(stat, 'upstream_error_rate_percent')}`
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.count > 0) {
+    return probeSummary.avgDurationMs !== null ? `延 ${Math.round(probeSummary.avgDurationMs)}ms` : `失 ${probeSummary.errorCount} 次`
+  }
   if (item.probe?.checked_at) return item.probe.latency_ms ? `延 ${item.probe.latency_ms}ms` : '延 暂无'
   return '上 暂无'
 }
@@ -898,16 +1030,8 @@ function probeStatusClass(item: OpsAccountHealthItem): string {
 }
 
 function recentSamplesForDisplay(item: OpsAccountHealthItem): Array<OpsAccountHealthSample | null> {
-  const samples: Array<OpsAccountHealthSample | null> = [...(item.recent ?? [])].reverse().slice(-60)
-  if (samples.length === 0 && item.probe?.checked_at) {
-    samples.push({
-      kind: item.probe.status === 'success' ? 'success' : 'error',
-      created_at: item.probe.checked_at,
-      model: item.probe.model_id,
-      duration_ms: item.probe.latency_ms ? Number(item.probe.latency_ms) : null,
-      message: '主动探测'
-    })
-  }
+  const source = hasTraffic(item) ? sortSamplesByTime(item.recent ?? []) : probeSamples(item)
+  const samples: Array<OpsAccountHealthSample | null> = source.slice(-60)
   while (samples.length < 60) {
     samples.unshift(null)
   }
@@ -915,8 +1039,9 @@ function recentSamplesForDisplay(item: OpsAccountHealthItem): Array<OpsAccountHe
 }
 
 function recentTimelineTitle(item: OpsAccountHealthItem): string {
-  if (item.recent.length > 0) return `最近 ${item.recent.length} 次记录`
-  if (item.probe?.checked_at) return '最近 1 次探测'
+  if (hasTraffic(item) && item.recent.length > 0) return `最近 ${item.recent.length} 次记录`
+  const probeCount = probeSamples(item).length
+  if (probeCount > 0) return `最近 ${probeCount} 次探测`
   return '最近 0 次记录'
 }
 

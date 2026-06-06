@@ -93,6 +93,38 @@ func TestDecideOpsAccountHealth_ErrorStateProbeSuccessCanOpen(t *testing.T) {
 	require.Contains(t, rec.Title, "探测已恢复")
 }
 
+func TestAccountHealthProbeFromAccountSummarizesProbeHistory(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now().UTC()
+	account := &Account{
+		ID: 1,
+		Extra: map[string]any{
+			accountHealthProbeStatusExtraKey:    "failed",
+			accountHealthProbeCheckedAtExtraKey: now.Format(time.RFC3339Nano),
+			accountHealthProbeLatencyMsExtraKey: 900,
+			accountHealthProbeErrorExtraKey:     "upstream timeout",
+			accountHealthProbeHistoryExtraKey: []*OpsAccountHealthSample{
+				{Kind: "success", CreatedAt: now.Add(-4 * time.Minute), DurationMs: accountHealthTestIntPtr(1000)},
+				{Kind: "success", CreatedAt: now.Add(-2 * time.Minute), DurationMs: accountHealthTestIntPtr(800)},
+				{Kind: "error", CreatedAt: now, DurationMs: accountHealthTestIntPtr(900), Message: "upstream timeout"},
+			},
+		},
+	}
+
+	probe := accountHealthProbeFromAccount(account)
+	require.NotNil(t, probe)
+	require.Equal(t, "failed", probe.Status)
+	require.Equal(t, int64(3), probe.RequestCount)
+	require.Equal(t, int64(2), probe.SuccessCount)
+	require.Equal(t, int64(1), probe.ErrorCount)
+	require.InDelta(t, 66.666, probe.SuccessRatePercent, 0.01)
+	require.InDelta(t, 33.333, probe.ErrorRatePercent, 0.01)
+	require.NotNil(t, probe.AvgLatencyMs)
+	require.InDelta(t, 900, *probe.AvgLatencyMs, 0.01)
+	require.Len(t, probe.Recent, 3)
+}
+
 func TestUpdateOpsAlertRuntimeSettingsPreservesAccountHealth(t *testing.T) {
 	t.Parallel()
 
@@ -171,4 +203,8 @@ func seedOpsAlertRuntimeSettings(t *testing.T, repo *mockSettingRepo, cfg *OpsAl
 	raw, err := json.Marshal(cfg)
 	require.NoError(t, err)
 	require.NoError(t, repo.Set(context.Background(), SettingKeyOpsAlertRuntimeSettings, string(raw)))
+}
+
+func accountHealthTestIntPtr(v int) *int {
+	return &v
 }

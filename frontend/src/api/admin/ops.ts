@@ -432,6 +432,13 @@ export interface OpsAccountHealthProbe {
   latency_ms?: number | null
   model_id?: string
   error_message?: string
+  request_count?: number
+  success_count?: number
+  error_count?: number
+  success_rate_percent?: number
+  error_rate_percent?: number
+  avg_latency_ms?: number | null
+  recent?: OpsAccountHealthSample[]
 }
 
 export interface OpsAccountHealthRecommendation {

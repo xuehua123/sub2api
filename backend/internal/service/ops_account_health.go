@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sort"
@@ -21,6 +22,7 @@ const (
 	accountHealthProbeLatencyMsExtraKey = "ops_health_probe_latency_ms"
 	accountHealthProbeModelIDExtraKey   = "ops_health_probe_model_id"
 	accountHealthProbeErrorExtraKey     = "ops_health_probe_error"
+	accountHealthProbeHistoryExtraKey   = "ops_health_probe_history"
 )
 
 func defaultOpsAccountHealthSettings() OpsAccountHealthSettings {
@@ -782,7 +784,8 @@ func accountHealthProbeFromAccount(account *Account) *OpsAccountHealthProbe {
 	}
 	status := strings.TrimSpace(account.getExtraString(accountHealthProbeStatusExtraKey))
 	checkedAt := account.getExtraTime(accountHealthProbeCheckedAtExtraKey)
-	if status == "" && checkedAt.IsZero() {
+	history := accountHealthProbeHistoryFromAccount(account)
+	if status == "" && checkedAt.IsZero() && len(history) == 0 {
 		return nil
 	}
 	probe := &OpsAccountHealthProbe{
@@ -797,5 +800,157 @@ func accountHealthProbeFromAccount(account *Account) *OpsAccountHealthProbe {
 		v := int64(latency)
 		probe.LatencyMs = &v
 	}
+	if probe.Status == "" && len(history) > 0 {
+		last := history[len(history)-1]
+		probe.Status = "failed"
+		if strings.EqualFold(last.Kind, "success") {
+			probe.Status = "success"
+		}
+		if !last.CreatedAt.IsZero() {
+			t := last.CreatedAt
+			probe.CheckedAt = &t
+		}
+		probe.ModelID = strings.TrimSpace(last.Model)
+		probe.ErrorMessage = strings.TrimSpace(last.Message)
+		if last.DurationMs != nil {
+			v := int64(*last.DurationMs)
+			probe.LatencyMs = &v
+		}
+	}
+	if len(history) == 0 && probe.CheckedAt != nil {
+		history = []*OpsAccountHealthSample{accountHealthProbeSampleFromProbe(probe)}
+	}
+	applyAccountHealthProbeHistoryStats(probe, history)
 	return probe
+}
+
+func accountHealthProbeHistoryFromAccount(account *Account) []*OpsAccountHealthSample {
+	if account == nil || account.Extra == nil {
+		return []*OpsAccountHealthSample{}
+	}
+	raw, ok := account.Extra[accountHealthProbeHistoryExtraKey]
+	if !ok || raw == nil {
+		return []*OpsAccountHealthSample{}
+	}
+	if text, ok := raw.(string); ok {
+		text = strings.TrimSpace(text)
+		if text == "" {
+			return []*OpsAccountHealthSample{}
+		}
+		var samples []*OpsAccountHealthSample
+		if err := json.Unmarshal([]byte(text), &samples); err == nil {
+			return normalizeAccountHealthProbeHistory(samples)
+		}
+		return []*OpsAccountHealthSample{}
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return []*OpsAccountHealthSample{}
+	}
+	var samples []*OpsAccountHealthSample
+	if err := json.Unmarshal(payload, &samples); err != nil {
+		return []*OpsAccountHealthSample{}
+	}
+	return normalizeAccountHealthProbeHistory(samples)
+}
+
+func appendAccountHealthProbeHistory(history []*OpsAccountHealthSample, sample *OpsAccountHealthSample) []*OpsAccountHealthSample {
+	history = normalizeAccountHealthProbeHistory(history)
+	if sample != nil {
+		history = append(history, sample)
+	}
+	return normalizeAccountHealthProbeHistory(history)
+}
+
+func normalizeAccountHealthProbeHistory(samples []*OpsAccountHealthSample) []*OpsAccountHealthSample {
+	if len(samples) == 0 {
+		return []*OpsAccountHealthSample{}
+	}
+	normalized := make([]*OpsAccountHealthSample, 0, len(samples))
+	for _, sample := range samples {
+		if sample == nil || sample.CreatedAt.IsZero() {
+			continue
+		}
+		kind := strings.ToLower(strings.TrimSpace(sample.Kind))
+		switch kind {
+		case "success":
+		default:
+			kind = "error"
+		}
+		normalized = append(normalized, &OpsAccountHealthSample{
+			Kind:       kind,
+			CreatedAt:  sample.CreatedAt.UTC(),
+			RequestID:  strings.TrimSpace(sample.RequestID),
+			Model:      strings.TrimSpace(sample.Model),
+			DurationMs: sample.DurationMs,
+			StatusCode: sample.StatusCode,
+			Message:    strings.TrimSpace(sample.Message),
+		})
+	}
+	if len(normalized) > opsAccountHealthDefaultRecentLimit {
+		normalized = normalized[len(normalized)-opsAccountHealthDefaultRecentLimit:]
+	}
+	return normalized
+}
+
+func accountHealthProbeSampleFromProbe(probe *OpsAccountHealthProbe) *OpsAccountHealthSample {
+	if probe == nil || probe.CheckedAt == nil || probe.CheckedAt.IsZero() {
+		return nil
+	}
+	kind := "error"
+	if strings.EqualFold(strings.TrimSpace(probe.Status), "success") {
+		kind = "success"
+	}
+	var durationMs *int
+	if probe.LatencyMs != nil {
+		v := int(*probe.LatencyMs)
+		durationMs = &v
+	}
+	message := strings.TrimSpace(probe.ErrorMessage)
+	if message == "" {
+		message = "主动探测"
+	}
+	return &OpsAccountHealthSample{
+		Kind:       kind,
+		CreatedAt:  probe.CheckedAt.UTC(),
+		Model:      strings.TrimSpace(probe.ModelID),
+		DurationMs: durationMs,
+		Message:    message,
+	}
+}
+
+func applyAccountHealthProbeHistoryStats(probe *OpsAccountHealthProbe, history []*OpsAccountHealthSample) {
+	if probe == nil {
+		return
+	}
+	history = normalizeAccountHealthProbeHistory(history)
+	probe.Recent = history
+	probe.RequestCount = int64(len(history))
+	probe.SuccessCount = 0
+	probe.ErrorCount = 0
+	probe.SuccessRatePercent = 0
+	probe.ErrorRatePercent = 0
+	probe.AvgLatencyMs = nil
+	if probe.RequestCount == 0 {
+		return
+	}
+	var latencySum int64
+	var latencyCount int64
+	for _, sample := range history {
+		if strings.EqualFold(sample.Kind, "success") {
+			probe.SuccessCount++
+		} else {
+			probe.ErrorCount++
+		}
+		if sample.DurationMs != nil {
+			latencySum += int64(*sample.DurationMs)
+			latencyCount++
+		}
+	}
+	probe.SuccessRatePercent = ratioPercent(probe.SuccessCount, probe.RequestCount)
+	probe.ErrorRatePercent = ratioPercent(probe.ErrorCount, probe.RequestCount)
+	if latencyCount > 0 {
+		avg := float64(latencySum) / float64(latencyCount)
+		probe.AvgLatencyMs = &avg
+	}
 }
