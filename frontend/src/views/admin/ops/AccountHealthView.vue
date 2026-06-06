@@ -275,21 +275,36 @@
                   {{ headlineHealthText(item) }}
                 </div>
               </div>
+              <div class="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                <div
+                  class="h-full rounded-full transition-all"
+                  :class="headlineHealthBarClass(item)"
+                  :style="{ width: `${headlineHealthPercent(item)}%` }"
+                ></div>
+              </div>
+              <div class="mt-2 flex justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                <span>{{ headlineHealthLeftMeta(item) }}</span>
+                <span class="truncate text-right">{{ headlineHealthRightMeta(item) }}</span>
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <div v-for="window in windowOrder" :key="window" class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
                   <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
-                    <span class="text-xs text-gray-400">{{ metricCountText(statFor(item, window)) }}</span>
+                    <span class="text-xs text-gray-400">{{ windowCountText(item, window) }}</span>
                   </div>
-                  <div class="mt-2 text-lg font-semibold" :class="metricValueClass(statFor(item, window))">
-                    {{ metricValueText(statFor(item, window)) }}
+                  <div class="mt-2 text-lg font-semibold" :class="windowMetricClass(item, window)">
+                    {{ windowMetricText(item, window) }}
                   </div>
                   <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
-                    <div class="h-full rounded-full" :class="windowBarClass(statFor(item, window))" :style="{ width: `${boundedPercent(statFor(item, window)?.success_rate_percent)}%` }"></div>
+                    <div
+                      class="h-full rounded-full transition-all"
+                      :class="windowBarClass(item, window)"
+                      :style="{ width: `${windowBarPercent(item, window)}%` }"
+                    ></div>
                   </div>
                   <div class="mt-2 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
-                    <span>错 {{ metricValueText(statFor(item, window), 'error_rate_percent') }}</span>
-                    <span>上 {{ metricValueText(statFor(item, window), 'upstream_error_rate_percent') }}</span>
+                    <span>{{ windowLeftMeta(item, window) }}</span>
+                    <span>{{ windowRightMeta(item, window) }}</span>
                   </div>
                 </div>
               </div>
@@ -297,7 +312,7 @@
 
             <div class="mt-5">
               <div class="flex items-center justify-between gap-3">
-                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">最近 {{ item.recent.length || 0 }} 次记录</div>
+                <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ recentTimelineTitle(item) }}</div>
                 <div class="text-xs text-gray-400">PAST -> NOW</div>
               </div>
               <div class="mt-2 grid grid-cols-[repeat(60,minmax(3px,1fr))] gap-1">
@@ -732,6 +747,94 @@ function headlineHealthClass(item: OpsAccountHealthItem): string {
   return 'text-gray-400 dark:text-gray-500'
 }
 
+function headlineHealthPercent(item: OpsAccountHealthItem): number {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) return boundedPercent(stat.success_rate_percent)
+  return probeBarPercent(item)
+}
+
+function headlineHealthBarClass(item: OpsAccountHealthItem): string {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) return windowStatBarClass(stat)
+  return probeBarClass(item)
+}
+
+function headlineHealthLeftMeta(item: OpsAccountHealthItem): string {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) return `${stat.request_count} 次请求样本`
+  if (item.probe?.checked_at) return probeStatusLabel(item)
+  return '等待主动探测'
+}
+
+function headlineHealthRightMeta(item: OpsAccountHealthItem): string {
+  const stat = statFor(item, '1h')
+  if (stat && stat.request_count > 0) {
+    return `错 ${formatPercent(stat.error_rate_percent)} · 上 ${formatPercent(stat.upstream_error_rate_percent)}`
+  }
+  return probeText(item) || '点击探测获取健康度'
+}
+
+function windowCountText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return metricCountText(stat)
+  if (item.probe?.checked_at) return '探测'
+  return '0 次'
+}
+
+function windowMetricText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return metricValueText(stat)
+  if (item.probe?.status === 'success') return '100.0%'
+  if (item.probe?.status === 'failed') return '0.0%'
+  return '暂无'
+}
+
+function windowMetricClass(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return metricValueClass(stat)
+  if (item.probe?.status === 'success') return 'text-emerald-600 dark:text-emerald-300'
+  if (item.probe?.status === 'failed') return 'text-red-600 dark:text-red-300'
+  return 'text-gray-400 dark:text-gray-500'
+}
+
+function windowBarPercent(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): number {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return boundedPercent(stat.success_rate_percent)
+  return probeBarPercent(item)
+}
+
+function windowBarClass(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return windowStatBarClass(stat)
+  return probeBarClass(item)
+}
+
+function windowLeftMeta(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return `错 ${metricValueText(stat, 'error_rate_percent')}`
+  if (item.probe?.checked_at) return `探 ${probeStatusLabel(item).replace('探测', '')}`
+  return '错 暂无'
+}
+
+function windowRightMeta(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0) return `上 ${metricValueText(stat, 'upstream_error_rate_percent')}`
+  if (item.probe?.checked_at) return item.probe.latency_ms ? `延 ${item.probe.latency_ms}ms` : '延 暂无'
+  return '上 暂无'
+}
+
+function probeBarPercent(item: OpsAccountHealthItem): number {
+  if (item.probe?.status === 'success') return 100
+  if (item.probe?.status === 'failed') return 100
+  return 0
+}
+
+function probeBarClass(item: OpsAccountHealthItem): string {
+  if (item.probe?.status === 'success') return 'bg-emerald-500'
+  if (item.probe?.status === 'failed') return 'bg-red-500'
+  return 'bg-gray-300 dark:bg-gray-600'
+}
+
 function formatTime(raw?: string | null): string {
   if (!raw) return '-'
   return formatLocalTime(new Date(raw))
@@ -750,7 +853,7 @@ function successTextClass(stat?: OpsAccountHealthWindowStats | null): string {
   return 'text-red-600 dark:text-red-300'
 }
 
-function windowBarClass(stat?: OpsAccountHealthWindowStats): string {
+function windowStatBarClass(stat?: OpsAccountHealthWindowStats): string {
   if (!stat || stat.request_count === 0) return 'bg-gray-300 dark:bg-gray-600'
   if (stat.success_rate_percent >= 98) return 'bg-emerald-500'
   if (stat.success_rate_percent >= 90) return 'bg-amber-500'
@@ -771,10 +874,25 @@ function probeStatusClass(item: OpsAccountHealthItem): string {
 
 function recentSamplesForDisplay(item: OpsAccountHealthItem): Array<OpsAccountHealthSample | null> {
   const samples: Array<OpsAccountHealthSample | null> = [...(item.recent ?? [])].reverse().slice(-60)
+  if (samples.length === 0 && item.probe?.checked_at) {
+    samples.push({
+      kind: item.probe.status === 'success' ? 'success' : 'error',
+      created_at: item.probe.checked_at,
+      model: item.probe.model_id,
+      duration_ms: item.probe.latency_ms ? Number(item.probe.latency_ms) : null,
+      message: '主动探测'
+    })
+  }
   while (samples.length < 60) {
     samples.unshift(null)
   }
   return samples
+}
+
+function recentTimelineTitle(item: OpsAccountHealthItem): string {
+  if (item.recent.length > 0) return `最近 ${item.recent.length} 次记录`
+  if (item.probe?.checked_at) return '最近 1 次探测'
+  return '最近 0 次记录'
 }
 
 function sampleClass(sample: OpsAccountHealthSample | null): string {
@@ -789,7 +907,8 @@ function sampleTitle(sample: OpsAccountHealthSample | null): string {
   const status = sample.status_code ? ` status=${sample.status_code}` : ''
   const model = sample.model ? ` model=${sample.model}` : ''
   const duration = sample.duration_ms ? ` ${sample.duration_ms}ms` : ''
-  return `${sample.kind}${status}${model}${duration}`
+  const message = sample.message ? ` ${sample.message}` : ''
+  return `${sample.kind}${status}${model}${duration}${message}`
 }
 
 function severityRank(severity?: string): number {
