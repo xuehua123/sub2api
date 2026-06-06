@@ -416,6 +416,12 @@ export interface OpsAccountHealthWindowStats {
   avg_duration_ms?: number | null
 }
 
+export interface OpsAccountHealthFirstTokenStats {
+  window: '5m' | string
+  sample_count: number
+  avg_ms?: number | null
+}
+
 export interface OpsAccountHealthSample {
   kind: 'success' | 'error' | string
   created_at: string
@@ -454,6 +460,7 @@ export interface OpsAccountHealthRecommendation {
 export interface OpsAccountHealthItem extends AccountAvailability {
   windows: Record<OpsAccountHealthWindow | string, OpsAccountHealthWindowStats>
   recent: OpsAccountHealthSample[]
+  first_token_5m?: OpsAccountHealthFirstTokenStats | null
   probe?: OpsAccountHealthProbe | null
   recommendation: OpsAccountHealthRecommendation
 }

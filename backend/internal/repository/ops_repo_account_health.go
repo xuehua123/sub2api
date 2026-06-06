@@ -20,6 +20,7 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 		endTime = filter.EndTime.UTC()
 	}
 	start1m := endTime.Add(-1 * time.Minute)
+	start5m := endTime.Add(-5 * time.Minute)
 	start10m := endTime.Add(-10 * time.Minute)
 	start30m := endTime.Add(-30 * time.Minute)
 	start1h := endTime.Add(-1 * time.Hour)
@@ -42,6 +43,9 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 
 	out := map[int64]*service.OpsAccountHealthMetrics{}
 	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, start10m, start30m, start1h, platform, groupID); err != nil {
+		return nil, err
+	}
+	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start5m, platform, groupID); err != nil {
 		return nil, err
 	}
 	if err := r.loadAccountHealthRecentSamples(ctx, out, endTime, start1h, platform, groupID, limit); err != nil {
@@ -155,6 +159,59 @@ ORDER BY c.account_id, w.label
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate account health windows: %w", err)
+	}
+	return nil
+}
+
+func (r *opsRepository) loadAccountHealthFirstTokenStats(
+	ctx context.Context,
+	out map[int64]*service.OpsAccountHealthMetrics,
+	endTime time.Time,
+	start5m time.Time,
+	platform string,
+	groupID int64,
+) error {
+	query := `
+SELECT
+  ul.account_id,
+  COUNT(*)::BIGINT AS sample_count,
+  AVG(ul.first_token_ms)::DOUBLE PRECISION AS avg_first_token_ms
+FROM usage_logs ul
+LEFT JOIN groups g ON g.id = ul.group_id
+LEFT JOIN accounts a ON a.id = ul.account_id
+WHERE ul.created_at >= $2 AND ul.created_at < $1
+  AND ul.account_id IS NOT NULL
+  AND ul.first_token_ms IS NOT NULL
+  AND ($3 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $3)
+  AND ($4::BIGINT <= 0 OR ul.group_id = $4)
+GROUP BY ul.account_id
+`
+
+	rows, err := r.db.QueryContext(ctx, query, endTime, start5m, platform, groupID)
+	if err != nil {
+		return fmt.Errorf("query account health first token stats: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			accountID int64
+			stat      service.OpsAccountHealthFirstTokenStats
+			avg       sql.NullFloat64
+		)
+		if err := rows.Scan(&accountID, &stat.SampleCount, &avg); err != nil {
+			return fmt.Errorf("scan account health first token stats: %w", err)
+		}
+		stat.Window = "5m"
+		if avg.Valid {
+			v := avg.Float64
+			stat.AvgMs = &v
+		}
+		metrics := ensureAccountHealthMetrics(out, accountID)
+		metrics.FirstToken5m = &stat
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate account health first token stats: %w", err)
 	}
 	return nil
 }

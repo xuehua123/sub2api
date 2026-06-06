@@ -397,6 +397,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			ErrorMessage:           availability.ErrorMessage,
 			Windows:                metrics.Windows,
 			Recent:                 metrics.Recent,
+			FirstToken5m:           metrics.FirstToken5m,
 			Probe:                  availability.HealthProbe,
 		}
 		item.Recommendation = decideOpsAccountHealth(item, settings)

@@ -270,7 +270,7 @@
               <StatusBadge v-if="item.has_error" text="错误状态" kind="danger" />
             </div>
 
-            <div class="mt-5 grid grid-cols-2 gap-3">
+            <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(item) }}</div>
                 <div class="mt-1 truncate text-3xl font-semibold" :class="primaryMetricClass(item)">
@@ -284,6 +284,13 @@
                   {{ latencyText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ latencyHint(item) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">首 Token · 5m</div>
+                <div class="mt-1 truncate text-3xl font-semibold" :class="firstTokenMetricClass(item)">
+                  {{ firstTokenMetricText(item) }}
+                </div>
+                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(item) }}</div>
               </div>
             </div>
 
@@ -890,6 +897,31 @@ function latencyHint(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (window && stat && stat.request_count > 0) return `${window} · ${stat.request_count} 次请求平均`
   return probeText(item) || '等待主动探测'
+}
+
+function firstTokenMetricText(item: OpsAccountHealthItem): string {
+  const avg = item.first_token_5m?.avg_ms
+  if (item.is_opened && typeof avg === 'number' && Number.isFinite(avg) && (item.first_token_5m?.sample_count ?? 0) > 0) {
+    return `${Math.round(avg)} ms`
+  }
+  return '暂无'
+}
+
+function firstTokenMetricHint(item: OpsAccountHealthItem): string {
+  if (!item.is_opened) return '关闭账号不统计'
+  const count = item.first_token_5m?.sample_count ?? 0
+  if (count > 0) return `5m · ${count} 次首 Token样本`
+  return hasTraffic(item) ? '5m 暂无首 Token样本' : '等待请求进入'
+}
+
+function firstTokenMetricClass(item: OpsAccountHealthItem): string {
+  const avg = item.first_token_5m?.avg_ms
+  if (!item.is_opened || typeof avg !== 'number' || !Number.isFinite(avg) || (item.first_token_5m?.sample_count ?? 0) <= 0) {
+    return 'text-gray-400 dark:text-gray-500'
+  }
+  if (avg <= 800) return 'text-emerald-600 dark:text-emerald-300'
+  if (avg <= 2000) return 'text-amber-600 dark:text-amber-300'
+  return 'text-red-600 dark:text-red-300'
 }
 
 function headlineHealthLabel(item: OpsAccountHealthItem): string {

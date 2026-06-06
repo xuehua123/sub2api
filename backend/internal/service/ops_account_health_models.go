@@ -51,6 +51,12 @@ type OpsAccountHealthWindowStats struct {
 	AvgDurationMs            *float64 `json:"avg_duration_ms,omitempty"`
 }
 
+type OpsAccountHealthFirstTokenStats struct {
+	Window      string   `json:"window"`
+	SampleCount int64    `json:"sample_count"`
+	AvgMs       *float64 `json:"avg_ms,omitempty"`
+}
+
 type OpsAccountHealthSample struct {
 	Kind      string    `json:"kind"`
 	CreatedAt time.Time `json:"created_at"`
@@ -64,9 +70,10 @@ type OpsAccountHealthSample struct {
 }
 
 type OpsAccountHealthMetrics struct {
-	AccountID int64
-	Windows   map[string]*OpsAccountHealthWindowStats
-	Recent    []*OpsAccountHealthSample
+	AccountID    int64
+	Windows      map[string]*OpsAccountHealthWindowStats
+	Recent       []*OpsAccountHealthSample
+	FirstToken5m *OpsAccountHealthFirstTokenStats
 }
 
 type OpsAccountHealthProbe struct {
@@ -121,6 +128,7 @@ type OpsAccountHealthItem struct {
 
 	Windows        map[string]*OpsAccountHealthWindowStats `json:"windows"`
 	Recent         []*OpsAccountHealthSample               `json:"recent"`
+	FirstToken5m   *OpsAccountHealthFirstTokenStats        `json:"first_token_5m,omitempty"`
 	Probe          *OpsAccountHealthProbe                  `json:"probe,omitempty"`
 	Recommendation OpsAccountHealthRecommendation          `json:"recommendation"`
 }
