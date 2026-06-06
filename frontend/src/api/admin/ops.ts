@@ -487,6 +487,8 @@ export interface OpsAccountHealthProbeSettings {
   max_per_run: number
   timeout_seconds: number
   model_id?: string
+  mode?: string
+  prompt?: string
 }
 
 export interface OpsAccountHealthNotificationSettings {
@@ -557,10 +559,20 @@ export async function updateAccountHealthSettings(settings: OpsAccountHealthSett
   return data
 }
 
-export async function runAccountHealthProbe(accountId: number, modelId?: string): Promise<OpsAccountHealthProbe> {
+export async function runAccountHealthProbe(accountId: number, options: {
+  model_id?: string
+  mode?: string
+  prompt?: string
+} = {}): Promise<OpsAccountHealthProbe> {
   const payload: Record<string, any> = {}
-  if (modelId) {
-    payload.model_id = modelId
+  if (options.model_id) {
+    payload.model_id = options.model_id
+  }
+  if (options.mode) {
+    payload.mode = options.mode
+  }
+  if (options.prompt) {
+    payload.prompt = options.prompt
   }
   const { data } = await apiClient.post<OpsAccountHealthProbe>(`/admin/ops/account-health/${accountId}/probe`, payload)
   return data

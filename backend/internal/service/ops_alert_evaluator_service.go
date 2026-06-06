@@ -760,13 +760,15 @@ func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx conte
 		}
 		accountID := item.AccountID
 		modelID := settings.Probe.ModelID
+		mode := settings.Probe.Mode
+		prompt := settings.Probe.Prompt
 		runs++
-		go s.runAccountHealthRecoveryProbe(accountID, modelID, timeout)
+		go s.runAccountHealthRecoveryProbe(accountID, modelID, prompt, mode, timeout)
 	}
 	return runs
 }
 
-func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64, modelID string, timeout time.Duration) {
+func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64, modelID string, prompt string, mode string, timeout time.Duration) {
 	if s == nil || s.accountTestService == nil || accountID <= 0 {
 		return
 	}
@@ -775,7 +777,7 @@ func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64
 	}
 	probeCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	if _, err := s.accountTestService.RunAccountHealthProbe(probeCtx, accountID, modelID); err != nil {
+	if _, err := s.accountTestService.RunAccountHealthProbeWithOptions(probeCtx, accountID, modelID, prompt, mode); err != nil {
 		logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] account health probe failed (account=%d): %v", accountID, err)
 	}
 }

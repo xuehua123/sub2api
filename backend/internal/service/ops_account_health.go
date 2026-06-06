@@ -55,11 +55,13 @@ func defaultOpsAccountHealthSettings() OpsAccountHealthSettings {
 			CooldownMinutes:       30,
 		},
 		Probe: OpsAccountHealthProbeSettings{
-			Enabled:         false,
+			Enabled:         true,
 			IntervalMinutes: 30,
 			MaxPerRun:       2,
 			TimeoutSeconds:  20,
 			ModelID:         "",
+			Mode:            "default",
+			Prompt:          "",
 		},
 		Notification: OpsAccountHealthNotificationSettings{
 			EnterpriseWeChatEnabled:    false,
@@ -146,6 +148,16 @@ func normalizeOpsAccountHealthSettings(s *OpsAccountHealthSettings) {
 		s.Probe.TimeoutSeconds = 120
 	}
 	s.Probe.ModelID = strings.TrimSpace(s.Probe.ModelID)
+	s.Probe.Mode = strings.ToLower(strings.TrimSpace(s.Probe.Mode))
+	switch s.Probe.Mode {
+	case "", "default":
+		s.Probe.Mode = "default"
+	case "compact":
+		s.Probe.Mode = "compact"
+	default:
+		s.Probe.Mode = defaults.Probe.Mode
+	}
+	s.Probe.Prompt = strings.TrimSpace(s.Probe.Prompt)
 	s.Notification.EnterpriseWeChatWebhookURL = strings.TrimSpace(s.Notification.EnterpriseWeChatWebhookURL)
 	if s.RateLimitPerHour < 0 {
 		s.RateLimitPerHour = defaults.RateLimitPerHour
@@ -181,6 +193,8 @@ func isZeroOpsAccountHealthSettings(s OpsAccountHealthSettings) bool {
 		s.Probe.MaxPerRun == 0 &&
 		s.Probe.TimeoutSeconds == 0 &&
 		strings.TrimSpace(s.Probe.ModelID) == "" &&
+		strings.TrimSpace(s.Probe.Mode) == "" &&
+		strings.TrimSpace(s.Probe.Prompt) == "" &&
 		!s.Notification.EnterpriseWeChatEnabled &&
 		strings.TrimSpace(s.Notification.EnterpriseWeChatWebhookURL) == "" &&
 		!s.Notification.MentionAllOnImmediate &&
@@ -233,6 +247,11 @@ func validateOpsAccountHealthSettings(s OpsAccountHealthSettings) error {
 	}
 	if s.Probe.TimeoutSeconds <= 0 || s.Probe.TimeoutSeconds > 120 {
 		return fmt.Errorf("account_health.probe.timeout_seconds must be between 1 and 120")
+	}
+	switch strings.ToLower(strings.TrimSpace(s.Probe.Mode)) {
+	case "", "default", "compact":
+	default:
+		return fmt.Errorf("account_health.probe.mode must be default or compact")
 	}
 	if s.Notification.EnterpriseWeChatEnabled {
 		webhookURL := strings.TrimSpace(s.Notification.EnterpriseWeChatWebhookURL)

@@ -83,7 +83,7 @@
           </div>
         </div>
 
-        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-5">
+        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-6">
           <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
             <div class="flex items-center justify-between gap-3">
               <label class="text-sm font-medium text-gray-800 dark:text-gray-100">总开关</label>
@@ -175,9 +175,12 @@
             </div>
           </div>
 
-          <div class="rounded-lg border border-sky-200 p-3 dark:border-sky-900/50">
+          <div class="rounded-lg border border-sky-200 p-3 dark:border-sky-900/50 xl:col-span-2">
             <div class="flex items-center justify-between gap-3">
-              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">关闭账号探测</label>
+              <div>
+                <label class="text-sm font-medium text-gray-800 dark:text-gray-100">关闭账号自动探测</label>
+                <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">按频率自动探测关闭账号，手动探测也使用这里的请求方式</p>
+              </div>
               <input v-model="settingsForm.probe.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
             </div>
             <div class="mt-3 grid grid-cols-2 gap-2">
@@ -185,10 +188,26 @@
               <NumberField v-model="settingsForm.probe.max_per_run" label="每轮最多" />
               <NumberField v-model="settingsForm.probe.timeout_seconds" label="超时秒" />
               <label class="block min-w-0">
+                <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">请求模式</span>
+                <select v-model="settingsForm.probe.mode" class="input mt-1 h-8 text-sm">
+                  <option value="default">默认连接测试</option>
+                  <option value="compact">OpenAI compact</option>
+                </select>
+              </label>
+              <label class="block min-w-0">
                 <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">模型</span>
                 <input v-model.trim="settingsForm.probe.model_id" type="text" class="input mt-1 h-8 text-sm" placeholder="默认" />
               </label>
             </div>
+            <label class="mt-3 block min-w-0">
+              <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">探测 prompt</span>
+              <textarea
+                v-model.trim="settingsForm.probe.prompt"
+                rows="2"
+                class="input mt-1 text-sm"
+                placeholder="留空使用默认探测请求"
+              ></textarea>
+            </label>
           </div>
         </div>
       </section>
@@ -563,7 +582,11 @@ async function runProbe(item: OpsAccountHealthItem) {
   if (!item?.account_id || isProbing(item.account_id)) return
   setProbing(item.account_id, true)
   try {
-    await opsAPI.runAccountHealthProbe(item.account_id, settingsForm.value.probe.model_id || undefined)
+    await opsAPI.runAccountHealthProbe(item.account_id, {
+      model_id: settingsForm.value.probe.model_id || undefined,
+      mode: settingsForm.value.probe.mode || undefined,
+      prompt: settingsForm.value.probe.prompt || undefined
+    })
     appStore.showSuccess('账号探测已完成')
     await fetchData()
   } catch (err: any) {
@@ -628,11 +651,13 @@ function defaultAccountHealthSettings(): OpsAccountHealthSettings {
       cooldown_minutes: 30
     },
     probe: {
-      enabled: false,
+      enabled: true,
       interval_minutes: 30,
       max_per_run: 2,
       timeout_seconds: 20,
-      model_id: ''
+      model_id: '',
+      mode: 'default',
+      prompt: ''
     },
     notification: {
       enterprise_wechat_enabled: false,

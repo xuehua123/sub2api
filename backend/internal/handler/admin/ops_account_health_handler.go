@@ -14,6 +14,8 @@ import (
 
 type accountHealthProbeRequest struct {
 	ModelID string `json:"model_id"`
+	Mode    string `json:"mode"`
+	Prompt  string `json:"prompt"`
 }
 
 // GetAccountHealth returns account-level health windows and smart action hints.
@@ -117,11 +119,19 @@ func (h *OpsHandler) RunAccountHealthProbe(c *gin.Context) {
 		}
 	}
 	modelID := strings.TrimSpace(req.ModelID)
+	mode := strings.TrimSpace(req.Mode)
+	prompt := strings.TrimSpace(req.Prompt)
 
 	timeout := 20 * time.Second
 	if cfg, err := h.opsService.GetOpsAlertRuntimeSettings(c.Request.Context()); err == nil && cfg != nil {
 		if modelID == "" {
 			modelID = strings.TrimSpace(cfg.AccountHealth.Probe.ModelID)
+		}
+		if mode == "" {
+			mode = strings.TrimSpace(cfg.AccountHealth.Probe.Mode)
+		}
+		if prompt == "" {
+			prompt = strings.TrimSpace(cfg.AccountHealth.Probe.Prompt)
 		}
 		if cfg.AccountHealth.Probe.TimeoutSeconds > 0 {
 			timeout = time.Duration(cfg.AccountHealth.Probe.TimeoutSeconds) * time.Second
@@ -137,7 +147,7 @@ func (h *OpsHandler) RunAccountHealthProbe(c *gin.Context) {
 	probeCtx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 	defer cancel()
 
-	probe, err := h.accountTestService.RunAccountHealthProbe(probeCtx, accountID, modelID)
+	probe, err := h.accountTestService.RunAccountHealthProbeWithOptions(probeCtx, accountID, modelID, prompt, mode)
 	if err != nil {
 		response.Error(c, http.StatusBadGateway, err.Error())
 		return

@@ -150,6 +150,8 @@ type OpsAccountHealthProbeSettings struct {
 	MaxPerRun       int    `json:"max_per_run"`
 	TimeoutSeconds  int    `json:"timeout_seconds"`
 	ModelID         string `json:"model_id,omitempty"`
+	Mode            string `json:"mode,omitempty"`
+	Prompt          string `json:"prompt,omitempty"`
 }
 
 type OpsAccountHealthBurstSettings struct {
