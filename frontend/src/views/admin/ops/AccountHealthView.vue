@@ -283,7 +283,7 @@
                 <div class="mt-1 truncate text-3xl font-semibold text-gray-900 dark:text-white">
                   {{ latencyText(item) }}
                 </div>
-                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ probeText(item) || '近 10m 平均' }}</div>
+                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ latencyHint(item) }}</div>
               </div>
             </div>
 
@@ -864,6 +864,12 @@ function latencyText(item: OpsAccountHealthItem): string {
   if (item.probe?.avg_latency_ms) return `${Math.round(item.probe.avg_latency_ms)} ms`
   if (item.probe?.latency_ms) return `${item.probe.latency_ms} ms`
   return '暂无'
+}
+
+function latencyHint(item: OpsAccountHealthItem): string {
+  const stat = primaryStat(item)
+  if (stat && stat.request_count > 0) return `${stat.request_count} 次请求平均`
+  return probeText(item) || '等待主动探测'
 }
 
 function headlineHealthLabel(item: OpsAccountHealthItem): string {

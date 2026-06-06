@@ -13,6 +13,7 @@ import (
 const (
 	opsAccountHealthDefaultRecentLimit = 60
 	opsAccountHealthMaxRecentLimit     = 120
+	accountHealthProbePersistTimeout   = 5 * time.Second
 	opsEnterpriseWeChatWebhookMask     = "__configured__"
 	opsEnterpriseWeChatHost            = "qyapi.weixin.qq.com"
 	opsEnterpriseWeChatWebhookPath     = "/cgi-bin/webhook/send"
@@ -822,6 +823,13 @@ func accountHealthProbeFromAccount(account *Account) *OpsAccountHealthProbe {
 	}
 	applyAccountHealthProbeHistoryStats(probe, history)
 	return probe
+}
+
+func accountHealthProbePersistContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), accountHealthProbePersistTimeout)
 }
 
 func accountHealthProbeHistoryFromAccount(account *Account) []*OpsAccountHealthSample {

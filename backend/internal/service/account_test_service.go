@@ -1759,7 +1759,9 @@ func (s *AccountTestService) RunAccountHealthProbeWithOptions(ctx context.Contex
 	if probe.LatencyMs != nil {
 		updates[accountHealthProbeLatencyMsExtraKey] = *probe.LatencyMs
 	}
-	if updateErr := s.accountRepo.UpdateExtra(ctx, accountID, updates); updateErr != nil {
+	persistCtx, cancelPersist := accountHealthProbePersistContext(ctx)
+	defer cancelPersist()
+	if updateErr := s.accountRepo.UpdateExtra(persistCtx, accountID, updates); updateErr != nil {
 		return probe, updateErr
 	}
 	return probe, err

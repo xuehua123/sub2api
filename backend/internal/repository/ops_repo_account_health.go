@@ -84,15 +84,15 @@ WITH combined AS (
     o.account_id AS account_id,
     o.created_at AS created_at,
     true AS is_error,
-    (COALESCE(o.error_owner, '') = 'provider' AND NOT o.is_business_limited AND COALESCE(o.status_code, o.upstream_status_code, 0) NOT IN (429, 529)) AS is_upstream_error,
-    COALESCE(o.status_code, o.upstream_status_code) AS status_code,
+    (COALESCE(o.error_owner, '') = 'provider' AND NOT o.is_business_limited AND COALESCE(o.upstream_status_code, o.status_code, 0) NOT IN (429, 529)) AS is_upstream_error,
+    COALESCE(o.upstream_status_code, o.status_code) AS status_code,
     o.duration_ms AS duration_ms
   FROM ops_error_logs o
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
   WHERE o.created_at >= $5 AND o.created_at < $1
     AND o.account_id IS NOT NULL
-    AND COALESCE(o.status_code, o.upstream_status_code, 0) >= 400
+    AND COALESCE(o.upstream_status_code, o.status_code, 0) >= 400
     AND ($6 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $6)
     AND ($7::BIGINT <= 0 OR o.group_id = $7)
 ),
@@ -196,14 +196,14 @@ WITH combined AS (
     COALESCE(NULLIF(o.request_id, ''), NULLIF(o.client_request_id, ''), '') AS request_id,
     o.model AS model,
     o.duration_ms AS duration_ms,
-    COALESCE(o.status_code, o.upstream_status_code) AS status_code,
+    COALESCE(o.upstream_status_code, o.status_code) AS status_code,
     COALESCE(NULLIF(o.upstream_error_message, ''), NULLIF(o.error_message, ''), '') AS message
   FROM ops_error_logs o
   LEFT JOIN groups g ON g.id = o.group_id
   LEFT JOIN accounts a ON a.id = o.account_id
   WHERE o.created_at >= $2 AND o.created_at < $1
     AND o.account_id IS NOT NULL
-    AND COALESCE(o.status_code, o.upstream_status_code, 0) >= 400
+    AND COALESCE(o.upstream_status_code, o.status_code, 0) >= 400
     AND ($3 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $3)
     AND ($4::BIGINT <= 0 OR o.group_id = $4)
 ),

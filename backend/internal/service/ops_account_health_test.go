@@ -125,6 +125,21 @@ func TestAccountHealthProbeFromAccountSummarizesProbeHistory(t *testing.T) {
 	require.Len(t, probe.Recent, 3)
 }
 
+func TestAccountHealthProbePersistContextIgnoresParentCancellation(t *testing.T) {
+	t.Parallel()
+
+	parent, cancelParent := context.WithCancel(context.Background())
+	cancelParent()
+
+	persistCtx, cancelPersist := accountHealthProbePersistContext(parent)
+	defer cancelPersist()
+
+	require.NoError(t, persistCtx.Err())
+	deadline, ok := persistCtx.Deadline()
+	require.True(t, ok)
+	require.Greater(t, time.Until(deadline), time.Duration(0))
+}
+
 func TestUpdateOpsAlertRuntimeSettingsPreservesAccountHealth(t *testing.T) {
 	t.Parallel()
 
