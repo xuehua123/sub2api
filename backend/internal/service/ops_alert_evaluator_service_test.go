@@ -267,6 +267,20 @@ func TestShouldProbeAccountHealthRecoveryContinuesAfterCanOpen(t *testing.T) {
 	require.True(t, shouldProbeAccountHealthRecovery(item, settings))
 }
 
+func TestShouldProbeAccountHealthRecoverySkipsAccountDisabledAutoProbe(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	item := &OpsAccountHealthItem{
+		AccountID:         1,
+		IsOpened:          false,
+		ProbeAutoDisabled: true,
+		Recommendation:    OpsAccountHealthRecommendation{Action: OpsAccountHealthActionNeedsProbe},
+	}
+
+	require.False(t, shouldProbeAccountHealthRecovery(item, settings))
+}
+
 func TestBuildOpsAccountHealthDigestWeComTextIncludesSustainedWindows(t *testing.T) {
 	t.Parallel()
 

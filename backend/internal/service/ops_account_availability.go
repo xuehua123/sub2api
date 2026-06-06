@@ -132,6 +132,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 			IsOverloaded:        isOverloaded,
 			IsTempUnschedulable: isTempUnsched,
 			HasError:            hasError,
+			ProbeAutoDisabled:   accountHealthProbeAutoDisabledFromAccount(&acc),
 
 			ErrorMessage: acc.ErrorMessage,
 			HealthProbe:  accountHealthProbeFromAccount(&acc),

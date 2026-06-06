@@ -273,20 +273,44 @@
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                class="btn btn-secondary btn-sm shrink-0"
-                :disabled="isProbing(item.account_id)"
-                @click="runProbe(item)"
-              >
-                <Icon name="beaker" size="xs" :class="isProbing(item.account_id) ? 'animate-pulse' : ''" />
-                <span>{{ isProbing(item.account_id) ? '探测中' : '探测' }}</span>
-              </button>
+              <div class="flex shrink-0 items-center gap-2">
+                <label
+                  v-if="!item.is_opened"
+                  class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-2 text-xs font-semibold transition"
+                  :class="autoProbeToggleClass(item)"
+                  :title="autoProbeToggleTitle(item)"
+                >
+                  <input
+                    type="checkbox"
+                    class="sr-only"
+                    :checked="isAutoProbeEnabled(item)"
+                    :disabled="isTogglingAutoProbe(item.account_id)"
+                    @change="onAutoProbeChange(item, $event)"
+                  />
+                  <span class="relative h-4 w-7 rounded-full transition" :class="isAutoProbeEnabled(item) ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-600'">
+                    <span
+                      class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition"
+                      :class="isAutoProbeEnabled(item) ? 'left-3.5' : 'left-0.5'"
+                    ></span>
+                  </span>
+                  <span>{{ isAutoProbeEnabled(item) ? '自动探测' : '停探测' }}</span>
+                </label>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm shrink-0"
+                  :disabled="isProbing(item.account_id)"
+                  @click="runProbe(item)"
+                >
+                  <Icon name="beaker" size="xs" :class="isProbing(item.account_id) ? 'animate-pulse' : ''" />
+                  <span>{{ isProbing(item.account_id) ? '探测中' : '探测' }}</span>
+                </button>
+              </div>
             </div>
 
             <div class="mt-3 flex flex-wrap gap-2">
               <StatusBadge :text="item.is_opened ? '账号已打开' : '账号已关闭'" :kind="item.is_opened ? 'success' : 'muted'" />
               <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
+              <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="自动探测已关" kind="muted" />
               <StatusBadge v-if="!hasTraffic(item)" text="暂无流量" kind="muted" />
               <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
               <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
@@ -499,6 +523,7 @@ const groupIdInput = ref('')
 const settingsOpen = ref(false)
 const lastUpdated = ref<Date | null>(null)
 const probingAccounts = ref<Set<number>>(new Set())
+const togglingAutoProbeAccounts = ref<Set<number>>(new Set())
 const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
@@ -686,8 +711,34 @@ async function runProbe(item: OpsAccountHealthItem) {
   }
 }
 
+async function onAutoProbeChange(item: OpsAccountHealthItem, event: Event) {
+  const target = event.target as HTMLInputElement | null
+  const enabled = Boolean(target?.checked)
+  await updateAutoProbe(item, enabled)
+}
+
+async function updateAutoProbe(item: OpsAccountHealthItem, enabled: boolean) {
+  if (!item?.account_id || isTogglingAutoProbe(item.account_id)) return
+  setTogglingAutoProbe(item.account_id, true)
+  try {
+    const state = await opsAPI.updateAccountHealthProbeAuto(item.account_id, enabled)
+    item.probe_auto_disabled = state.probe_auto_disabled
+    appStore.showSuccess(state.probe_auto_disabled ? '已关闭该账号自动探测' : '已开启该账号自动探测')
+    await fetchData()
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '自动探测开关更新失败')
+    await fetchData()
+  } finally {
+    setTogglingAutoProbe(item.account_id, false)
+  }
+}
+
 function isProbing(accountID: number): boolean {
   return probingAccounts.value.has(accountID)
+}
+
+function isTogglingAutoProbe(accountID: number): boolean {
+  return togglingAutoProbeAccounts.value.has(accountID)
 }
 
 function setProbing(accountID: number, probing: boolean) {
@@ -698,6 +749,16 @@ function setProbing(accountID: number, probing: boolean) {
     next.delete(accountID)
   }
   probingAccounts.value = next
+}
+
+function setTogglingAutoProbe(accountID: number, toggling: boolean) {
+  const next = new Set(togglingAutoProbeAccounts.value)
+  if (toggling) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  togglingAutoProbeAccounts.value = next
 }
 
 function applySettingsToForm(settings: OpsAccountHealthSettings) {
@@ -793,6 +854,25 @@ function primaryStat(item: OpsAccountHealthItem): OpsAccountHealthWindowStats | 
 
 function hasTraffic(item: OpsAccountHealthItem): boolean {
   return windowOrder.some(window => (statFor(item, window)?.request_count ?? 0) > 0)
+}
+
+function isAutoProbeEnabled(item: OpsAccountHealthItem): boolean {
+  return !item.probe_auto_disabled
+}
+
+function autoProbeToggleTitle(item: OpsAccountHealthItem): string {
+  if (isTogglingAutoProbe(item.account_id)) return '正在更新自动探测开关'
+  return isAutoProbeEnabled(item) ? '关闭该账号的后台自动探测' : '开启该账号的后台自动探测'
+}
+
+function autoProbeToggleClass(item: OpsAccountHealthItem): string {
+  if (isTogglingAutoProbe(item.account_id)) {
+    return 'border-gray-200 bg-gray-50 text-gray-400 dark:border-dark-700 dark:bg-dark-700/50 dark:text-gray-500'
+  }
+  if (isAutoProbeEnabled(item)) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300'
+  }
+  return 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 dark:border-dark-700 dark:bg-dark-700/60 dark:text-gray-300'
 }
 
 function probeSamples(item: OpsAccountHealthItem): OpsAccountHealthSample[] {

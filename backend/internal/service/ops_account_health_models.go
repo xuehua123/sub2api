@@ -120,6 +120,7 @@ type OpsAccountHealthItem struct {
 	IsOverloaded        bool `json:"is_overloaded"`
 	IsTempUnschedulable bool `json:"is_temp_unschedulable"`
 	HasError            bool `json:"has_error"`
+	ProbeAutoDisabled   bool `json:"probe_auto_disabled"`
 
 	RateLimitResetAt       *time.Time `json:"rate_limit_reset_at,omitempty"`
 	RateLimitRemainingSec  *int64     `json:"rate_limit_remaining_sec,omitempty"`
@@ -141,6 +142,11 @@ type OpsAccountHealthResponse struct {
 	GeneratedAt time.Time                `json:"generated_at"`
 	Items       []*OpsAccountHealthItem  `json:"items"`
 	Settings    OpsAccountHealthSettings `json:"settings"`
+}
+
+type OpsAccountHealthProbeAutoState struct {
+	AccountID         int64 `json:"account_id"`
+	ProbeAutoDisabled bool  `json:"probe_auto_disabled"`
 }
 
 type OpsAccountHealthSettings struct {

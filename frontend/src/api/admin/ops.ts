@@ -394,6 +394,7 @@ export interface AccountAvailability {
   temp_unschedulable_until?: string
   has_error: boolean
   error_message?: string
+  probe_auto_disabled?: boolean
   health_probe?: OpsAccountHealthProbe | null
 }
 
@@ -464,6 +465,11 @@ export interface OpsAccountHealthItem extends AccountAvailability {
   first_token_windows?: Record<OpsAccountHealthWindow | '5m' | string, OpsAccountHealthFirstTokenStats> | null
   probe?: OpsAccountHealthProbe | null
   recommendation: OpsAccountHealthRecommendation
+}
+
+export interface OpsAccountHealthProbeAutoState {
+  account_id: number
+  probe_auto_disabled: boolean
 }
 
 export interface OpsAccountHealthBurstSettings {
@@ -571,6 +577,11 @@ export async function getAccountHealth(params: {
 
 export async function updateAccountHealthSettings(settings: OpsAccountHealthSettings): Promise<OpsAccountHealthSettings> {
   const { data } = await apiClient.patch<OpsAccountHealthSettings>('/admin/ops/account-health/settings', settings)
+  return data
+}
+
+export async function updateAccountHealthProbeAuto(accountId: number, enabled: boolean): Promise<OpsAccountHealthProbeAutoState> {
+  const { data } = await apiClient.patch<OpsAccountHealthProbeAutoState>(`/admin/ops/account-health/${accountId}/probe-auto`, { enabled })
   return data
 }
 
@@ -1475,6 +1486,7 @@ export const opsAPI = {
   getAccountAvailabilityStats,
   getAccountHealth,
   updateAccountHealthSettings,
+  updateAccountHealthProbeAuto,
   runAccountHealthProbe,
   getRealtimeTrafficSummary,
   subscribeQPS,

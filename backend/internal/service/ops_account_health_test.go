@@ -214,6 +214,39 @@ func TestAccountHealthProbeFromAccountSummarizesProbeHistory(t *testing.T) {
 	require.Len(t, probe.Recent, 3)
 }
 
+func TestAccountHealthProbeAutoDisabledFromAccount(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, accountHealthProbeAutoDisabledFromAccount(&Account{}))
+	require.False(t, accountHealthProbeAutoDisabledFromAccount(&Account{Extra: map[string]any{
+		accountHealthProbeAutoDisabledKey: false,
+	}}))
+	require.True(t, accountHealthProbeAutoDisabledFromAccount(&Account{Extra: map[string]any{
+		accountHealthProbeAutoDisabledKey: true,
+	}}))
+}
+
+func TestUpdateAccountHealthProbeAutoStoresAccountExtra(t *testing.T) {
+	t.Parallel()
+
+	repo := &accountHealthAutoProbeRepo{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{
+				9: {ID: 9, Extra: map[string]any{}},
+			},
+		},
+	}
+	svc := &OpsService{accountRepo: repo}
+
+	state, err := svc.UpdateAccountHealthProbeAuto(context.Background(), 9, false)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(9), state.AccountID)
+	require.True(t, state.ProbeAutoDisabled)
+	require.Equal(t, int64(9), repo.updateID)
+	require.Equal(t, true, repo.updates[accountHealthProbeAutoDisabledKey])
+}
+
 func TestAccountHealthProbePersistContextIgnoresParentCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -321,4 +354,16 @@ func accountHealthTestWindow(window string, requestCount, successCount, errorCou
 		ErrorCount:         errorCount,
 		UpstreamErrorCount: upstreamErrorCount,
 	}
+}
+
+type accountHealthAutoProbeRepo struct {
+	mockAccountRepoForGemini
+	updateID int64
+	updates  map[string]any
+}
+
+func (r *accountHealthAutoProbeRepo) UpdateExtra(ctx context.Context, id int64, updates map[string]any) error {
+	r.updateID = id
+	r.updates = updates
+	return nil
 }

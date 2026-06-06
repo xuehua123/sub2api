@@ -823,7 +823,7 @@ func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64
 }
 
 func shouldProbeAccountHealthRecovery(item *OpsAccountHealthItem, settings OpsAccountHealthSettings) bool {
-	if item == nil || item.AccountID <= 0 || item.IsOpened {
+	if item == nil || item.AccountID <= 0 || item.IsOpened || item.ProbeAutoDisabled {
 		return false
 	}
 	switch item.Recommendation.Action {

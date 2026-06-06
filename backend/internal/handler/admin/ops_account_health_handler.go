@@ -18,6 +18,10 @@ type accountHealthProbeRequest struct {
 	Prompt  string `json:"prompt"`
 }
 
+type accountHealthProbeAutoRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
 // GetAccountHealth returns account-level health windows and smart action hints.
 // GET /api/v1/admin/ops/account-health
 func (h *OpsHandler) GetAccountHealth(c *gin.Context) {
@@ -86,6 +90,39 @@ func (h *OpsHandler) UpdateAccountHealthSettings(c *gin.Context) {
 	}
 
 	response.Success(c, service.MaskOpsAccountHealthSettingsForResponse(updated))
+}
+
+// UpdateAccountHealthProbeAuto updates whether a single closed account may be
+// picked by the background active-probe scheduler.
+// PATCH /api/v1/admin/ops/account-health/:id/probe-auto
+func (h *OpsHandler) UpdateAccountHealthProbeAuto(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	accountID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account id")
+		return
+	}
+
+	var req accountHealthProbeAutoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	state, err := h.opsService.UpdateAccountHealthProbeAuto(c.Request.Context(), accountID, req.Enabled)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, state)
 }
 
 // RunAccountHealthProbe runs an immediate active probe for an account and persists

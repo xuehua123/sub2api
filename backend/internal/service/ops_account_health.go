@@ -24,6 +24,7 @@ const (
 	accountHealthProbeModelIDExtraKey   = "ops_health_probe_model_id"
 	accountHealthProbeErrorExtraKey     = "ops_health_probe_error"
 	accountHealthProbeHistoryExtraKey   = "ops_health_probe_history"
+	accountHealthProbeAutoDisabledKey   = "ops_health_probe_auto_disabled"
 )
 
 func defaultOpsAccountHealthSettings() OpsAccountHealthSettings {
@@ -389,6 +390,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			IsOverloaded:           availability.IsOverloaded,
 			IsTempUnschedulable:    availability.IsTempUnschedulable,
 			HasError:               availability.HasError,
+			ProbeAutoDisabled:      availability.ProbeAutoDisabled,
 			RateLimitResetAt:       availability.RateLimitResetAt,
 			RateLimitRemainingSec:  availability.RateLimitRemainingSec,
 			OverloadUntil:          availability.OverloadUntil,
@@ -411,6 +413,32 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 		GeneratedAt: now,
 		Items:       items,
 		Settings:    responseSettings,
+	}, nil
+}
+
+func (s *OpsService) UpdateAccountHealthProbeAuto(ctx context.Context, accountID int64, enabled bool) (*OpsAccountHealthProbeAutoState, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("account repository is not available")
+	}
+	if accountID <= 0 {
+		return nil, fmt.Errorf("account id must be positive")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, ErrAccountNotFound
+	}
+	disabled := !enabled
+	if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+		accountHealthProbeAutoDisabledKey: disabled,
+	}); err != nil {
+		return nil, err
+	}
+	return &OpsAccountHealthProbeAutoState{
+		AccountID:         accountID,
+		ProbeAutoDisabled: disabled,
 	}, nil
 }
 
@@ -834,6 +862,13 @@ func probeFailureReason(probe *OpsAccountHealthProbe) string {
 		return msg
 	}
 	return "active probe failed"
+}
+
+func accountHealthProbeAutoDisabledFromAccount(account *Account) bool {
+	if account == nil {
+		return false
+	}
+	return account.getExtraBool(accountHealthProbeAutoDisabledKey)
 }
 
 func accountHealthProbeFromAccount(account *Account) *OpsAccountHealthProbe {
