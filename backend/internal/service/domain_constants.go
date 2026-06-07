@@ -516,3 +516,7 @@ const (
 	ReferralWithdrawMethodWechat = consts.ReferralWithdrawMethodWechat
 	ReferralWithdrawMethodBank   = consts.ReferralWithdrawMethodBank
 )
+
+// SettingKeyAllowUserViewErrorRequests controls whether end users can view
+// their own failed requests on the usage page. Default false (opt-in).
+const SettingKeyAllowUserViewErrorRequests = "allow_user_view_error_requests"
