@@ -897,10 +897,10 @@ function formatDateTime(value: string): string {
   return date.toLocaleString()
 }
 
-function formatDuration(value: number): string {
-  if (!Number.isFinite(value) || value <= 0) return '-'
-  if (value < 1000) return `${Math.round(value)}ms`
-  return `${(value / 1000).toFixed(2)}s`
+function formatDuration(value: number | null | undefined): string {
+	if (value == null || !Number.isFinite(value) || value <= 0) return '-'
+	if (value < 1000) return `${Math.round(value)}ms`
+	return `${(value / 1000).toFixed(2)}s`
 }
 
 function canSuggestSimilar(): boolean {

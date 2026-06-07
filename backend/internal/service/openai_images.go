@@ -2034,7 +2034,7 @@ func downloadOpenAIImageAsDataURL(ctx context.Context, downloadURL string) (stri
 		}
 	}()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", newOpenAIImageStatusError(resp, "download image bytes failed")
+		return "", newOpenAIImageStatusError(resp, "download image bytes failed", openAIUpstreamErrorBodyReadLimit)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, openAIImageMaxDownloadBytes))

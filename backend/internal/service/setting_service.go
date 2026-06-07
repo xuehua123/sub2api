@@ -1305,67 +1305,6 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 	}, nil
 }
 
-// channelMonitorIntervalMin / channelMonitorIntervalMax bound the default interval.
-const (
-	channelMonitorIntervalMin      = 15
-	channelMonitorIntervalMax      = 3600
-	channelMonitorIntervalFallback = 60
-)
-
-func parseChannelMonitorInterval(raw string) int {
-	v, err := strconv.Atoi(strings.TrimSpace(raw))
-	if err != nil {
-		return channelMonitorIntervalFallback
-	}
-	return clampChannelMonitorInterval(v)
-}
-
-func clampChannelMonitorInterval(v int) int {
-	if v <= 0 {
-		return 0
-	}
-	if v < channelMonitorIntervalMin {
-		return channelMonitorIntervalMin
-	}
-	if v > channelMonitorIntervalMax {
-		return channelMonitorIntervalMax
-	}
-	return v
-}
-
-type ChannelMonitorRuntime struct {
-	Enabled                bool
-	DefaultIntervalSeconds int
-}
-
-func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMonitorRuntime {
-	vals, err := s.settingRepo.GetMultiple(ctx, []string{
-		SettingKeyChannelMonitorEnabled,
-		SettingKeyChannelMonitorDefaultIntervalSeconds,
-	})
-	if err != nil {
-		return ChannelMonitorRuntime{Enabled: true, DefaultIntervalSeconds: channelMonitorIntervalFallback}
-	}
-	return ChannelMonitorRuntime{
-		Enabled:                !isFalseSettingValue(vals[SettingKeyChannelMonitorEnabled]),
-		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
-	}
-}
-
-type AvailableChannelsRuntime struct {
-	Enabled bool
-}
-
-func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) AvailableChannelsRuntime {
-	vals, err := s.settingRepo.GetMultiple(ctx, []string{SettingKeyAvailableChannelsEnabled})
-	if err != nil {
-		return AvailableChannelsRuntime{Enabled: false}
-	}
-	return AvailableChannelsRuntime{
-		Enabled: vals[SettingKeyAvailableChannelsEnabled] == "true",
-	}
-}
-
 func DefaultWeChatConnectScopesForMode(mode string) string {
 	return defaultWeChatConnectScopeForMode(mode)
 }
