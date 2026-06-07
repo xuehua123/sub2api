@@ -32,6 +32,7 @@ const messages: Record<string, string> = {
   'usage.rate': 'Rate',
   'usage.original': 'Original',
   'usage.billed': 'Billed',
+  'usage.userBilled': 'User billed',
   'usage.allApiKeys': 'All API Keys',
   'usage.apiKeyFilter': 'API Key',
   'usage.model': 'Model',
@@ -137,7 +138,7 @@ describe('user UsageView tooltip', () => {
     }
   })
 
-  it('shows only billed cost in user cost tooltip', async () => {
+  it('shows cost breakdown without original cost in user cost tooltip', async () => {
     query.mockResolvedValue({
       items: [
         {
@@ -213,18 +214,20 @@ describe('user UsageView tooltip', () => {
     await nextTick()
 
     const text = wrapper.text()
-    expect(text).toContain('Cost')
-    expect(text).toContain('Actual Cost')
-    expect(text).toContain('Billed')
+    expect(text).toContain('Cost Breakdown')
+    expect(text).toContain('Input Cost')
+    expect(text).toContain('Output Cost')
+    expect(text).toContain('Input price')
+    expect(text).toContain('Output price')
+    expect(text).toContain('/ 1M tokens')
+    expect(text).toContain('Cache Read Cost')
+    expect(text).toContain('Service tier')
+    expect(text).toContain('Fast')
+    expect(text).toContain('Rate')
+    expect(text).toContain('1.00x')
+    expect(text).toContain('User billed')
     expect(text).toContain('$0.092883')
-    expect(text).not.toContain('Service tier')
-    expect(text).not.toContain('Fast')
-    expect(text).not.toContain('Rate')
-    expect(text).not.toContain('1.00x')
     expect(text).not.toContain('Original')
-    expect(text).not.toContain('Input price')
-    expect(text).not.toContain('Output price')
-    expect(text).not.toContain('/ 1M tokens')
   })
 
   it('exports csv with only billed cost', async () => {
