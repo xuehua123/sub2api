@@ -2765,8 +2765,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		!isCompactRequest &&
 		isOpenAIResponsesBasePath(c)
 	if forceAPIKeyCodexBufferedStream {
-		reqBody["stream"] = true
-		bodyModified = true
 		upstreamStream = true
 		markPatchSet("stream", true)
 	}
