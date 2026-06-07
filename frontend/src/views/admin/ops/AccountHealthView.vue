@@ -65,6 +65,57 @@
         </div>
       </section>
 
+      <section class="rounded-lg border border-gray-200 bg-white p-3 shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div class="flex min-w-0 flex-1 flex-col gap-3">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <label class="min-w-0 flex-1">
+                <span class="sr-only">搜索账号</span>
+                <input
+                  v-model.trim="searchQuery"
+                  type="text"
+                  class="input h-9"
+                  placeholder="搜索账号、ID、分组、建议、模型"
+                />
+              </label>
+              <div class="inline-flex h-9 w-fit rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-900">
+                <button
+                  type="button"
+                  class="rounded-md px-3 text-sm font-semibold transition"
+                  :class="viewMode === 'card' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+                  @click="viewMode = 'card'"
+                >
+                  卡片
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md px-3 text-sm font-semibold transition"
+                  :class="viewMode === 'list' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+                  @click="viewMode = 'list'"
+                >
+                  列表
+                </button>
+              </div>
+            </div>
+            <div class="flex gap-2 overflow-x-auto pb-1">
+              <button
+                v-for="filter in quickFilters"
+                :key="filter.key"
+                type="button"
+                class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition"
+                :class="quickFilter === filter.key ? 'border-sky-300 bg-sky-100 text-sky-700 dark:border-sky-800 dark:bg-sky-900/40 dark:text-sky-200' : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 dark:hover:text-white'"
+                @click="quickFilter = filter.key"
+              >
+                {{ filter.label }} {{ filter.count }}
+              </button>
+            </div>
+          </div>
+          <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
+            显示 {{ visibleItems.length }} / {{ items.length }}
+          </div>
+        </div>
+      </section>
+
       <section v-if="settingsOpen" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div class="flex items-center gap-2">
@@ -244,13 +295,98 @@
         运维监控未启用
       </section>
 
-      <section v-else-if="sortedItems.length === 0" class="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
+      <section v-else-if="visibleItems.length === 0" class="rounded-lg border border-gray-200 bg-white p-8 text-center text-sm text-gray-500 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400">
         暂无账号健康数据
       </section>
 
-      <section v-else class="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+      <section v-else-if="viewMode === 'list'" class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="hidden min-w-[1180px] grid-cols-[minmax(220px,1.4fr)_110px_110px_110px_110px_minmax(160px,1fr)_150px_150px_120px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 lg:grid">
+          <span>账号</span>
+          <span>1m</span>
+          <span>10m</span>
+          <span>30m</span>
+          <span>1h</span>
+          <span>最近60</span>
+          <span>模型</span>
+          <span>建议</span>
+          <span class="text-right">操作</span>
+        </div>
+        <div class="divide-y divide-gray-200 dark:divide-dark-700">
+          <article
+            v-for="item in visibleItems"
+            :key="item.account_id"
+            class="grid gap-3 px-3 py-3 lg:min-w-[1180px] lg:grid-cols-[minmax(220px,1.4fr)_110px_110px_110px_110px_minmax(160px,1fr)_150px_150px_120px] lg:items-center"
+          >
+            <div class="min-w-0">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold" :class="platformAvatarClass(item)">
+                  {{ platformInitial(item.platform) }}
+                </span>
+                <div class="min-w-0">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</span>
+                    <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
+                  </div>
+                  <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.platform || '-' }} · {{ item.group_name || '-' }}</div>
+                </div>
+              </div>
+              <div class="mt-2 flex flex-wrap gap-1.5">
+                <StatusBadge :text="item.is_opened ? '开' : '关'" :kind="item.is_opened ? 'success' : 'muted'" />
+                <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
+                <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="停探测" kind="muted" />
+              </div>
+            </div>
+            <div v-for="window in windowOrder.filter(w => w !== '5m')" :key="`${item.account_id}-${window}`" class="rounded-lg bg-gray-50 px-2 py-1.5 dark:bg-dark-700/60">
+              <div class="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                <span>{{ window }}</span>
+                <span>{{ windowCountText(item, window) }}</span>
+              </div>
+              <div class="mt-1 text-sm font-semibold" :class="windowMetricClass(item, window)">
+                {{ windowMetricText(item, window) }}
+              </div>
+              <div class="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                <div class="h-full rounded-full" :class="windowBarClass(item, window)" :style="{ width: `${windowBarPercent(item, window)}%` }"></div>
+              </div>
+            </div>
+            <div class="min-w-0">
+              <div class="grid grid-cols-[repeat(60,minmax(2px,1fr))] gap-0.5">
+                <span
+                  v-for="(sample, idx) in recentSamplesForDisplay(item)"
+                  :key="`${item.account_id}-list-${idx}-${sample?.created_at || 'empty'}`"
+                  class="h-4 rounded-sm"
+                  :class="sampleClass(sample)"
+                  :title="sampleTitle(sample)"
+                ></span>
+              </div>
+              <div class="mt-1 truncate text-[11px] text-gray-400">{{ recentTimelineTitle(item) }}</div>
+            </div>
+            <div class="min-w-0 text-xs text-gray-600 dark:text-gray-300">
+              <div class="truncate font-semibold">{{ probeModelEffective(item) }}</div>
+              <div class="truncate text-[11px] text-gray-400">{{ item.probe_model_id ? '账号独立模型' : '继承全局' }}</div>
+            </div>
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-1.5">
+                <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="severityClass(item.recommendation.severity)">
+                  {{ item.recommendation.severity || 'P3' }}
+                </span>
+                <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(item.recommendation.notify_mode)">
+                  {{ notifyLabel(item.recommendation.notify_mode) }}
+                </span>
+              </div>
+              <div class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">{{ actionLabel(item.recommendation.action) }}</div>
+              <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.recommendation.title }}</div>
+            </div>
+            <div class="flex justify-end gap-1.5">
+              <button type="button" class="btn btn-secondary btn-sm" @click="openDetail(item)">详情</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="goToAccount(item)">账号</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section v-else class="grid grid-cols-1 gap-3 xl:grid-cols-2 2xl:grid-cols-4">
         <article
-          v-for="item in sortedItems"
+          v-for="item in visibleItems"
           :key="item.account_id"
           class="overflow-hidden rounded-lg border bg-white shadow-sm dark:bg-dark-800"
           :class="accountBorderClass(item)"
@@ -273,7 +409,23 @@
                   </div>
                 </div>
               </div>
-              <div class="flex shrink-0 items-center gap-2">
+              <div class="flex max-w-[16rem] shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm shrink-0"
+                  @click="openDetail(item)"
+                >
+                  <Icon name="eye" size="xs" />
+                  <span>详情</span>
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm shrink-0"
+                  @click="goToAccount(item)"
+                >
+                  <Icon name="externalLink" size="xs" />
+                  <span>账号</span>
+                </button>
                 <label
                   v-if="!item.is_opened"
                   class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-2 text-xs font-semibold transition"
@@ -310,6 +462,7 @@
             <div class="mt-3 flex flex-wrap gap-2">
               <StatusBadge :text="item.is_opened ? '账号已打开' : '账号已关闭'" :kind="item.is_opened ? 'success' : 'muted'" />
               <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
+              <StatusBadge :text="probeModelText(item)" kind="muted" />
               <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="自动探测已关" kind="muted" />
               <StatusBadge v-if="!hasTraffic(item)" text="暂无流量" kind="muted" />
               <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
@@ -443,15 +596,213 @@
           </div>
         </article>
       </section>
+
+      <div
+        v-if="selectedAccount"
+        class="fixed inset-0 z-50 flex justify-end bg-slate-950/45 backdrop-blur-sm"
+        @click.self="closeDetail"
+      >
+        <aside class="h-full w-full max-w-3xl overflow-y-auto border-l border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900">
+          <div class="sticky top-0 z-10 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur dark:border-dark-700 dark:bg-dark-900/95">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm font-bold" :class="platformAvatarClass(selectedAccount)">
+                    {{ platformInitial(selectedAccount.platform) }}
+                  </span>
+                  <div class="min-w-0">
+                    <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white">{{ selectedAccount.account_name || `#${selectedAccount.account_id}` }}</h2>
+                    <p class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                      #{{ selectedAccount.account_id }} · {{ selectedAccount.platform || '-' }} · {{ selectedAccount.group_name || '-' }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn btn-secondary btn-sm" @click="closeDetail">
+                <Icon name="x" size="xs" />
+                <span>关闭</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-4 p-4">
+            <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(selectedAccount) }}</div>
+                <div class="mt-1 text-3xl font-semibold" :class="primaryMetricClass(selectedAccount)">{{ primaryMetricText(selectedAccount) }}</div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ primaryMetricHint(selectedAccount) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">延迟</div>
+                <div class="mt-1 text-3xl font-semibold text-gray-900 dark:text-white">{{ latencyText(selectedAccount) }}</div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ latencyHint(selectedAccount) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">首 Token · 5m</div>
+                <div class="mt-1 text-3xl font-semibold" :class="firstTokenMetricClass(selectedAccount)">{{ firstTokenMetricText(selectedAccount) }}</div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(selectedAccount) }}</div>
+              </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                <div class="min-w-0 flex-1">
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">账号探测模型</div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">生效：{{ probeModelEffective(selectedAccount) }}，未配置时继承全局 {{ settingsForm.probe.model_id || DEFAULT_PROBE_MODEL }}</div>
+                  <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <label class="min-w-0">
+                      <span class="block text-[11px] font-medium text-gray-500 dark:text-gray-400">从账号模型列表选择</span>
+                      <select
+                        class="input mt-1 h-9"
+                        :value="probeModelDraft(selectedAccount)"
+                        :disabled="isLoadingProbeModels(selectedAccount.account_id)"
+                        @focus="loadProbeModels(selectedAccount)"
+                        @change="onProbeModelDraftInput(selectedAccount, $event)"
+                      >
+                        <option value="">继承全局模型</option>
+                        <option v-for="option in probeModelOptions(selectedAccount)" :key="option.value" :value="option.value">
+                          {{ option.label }}
+                        </option>
+                      </select>
+                    </label>
+                    <label class="min-w-0">
+                      <span class="block text-[11px] font-medium text-gray-500 dark:text-gray-400">手动模型 ID</span>
+                      <input
+                        type="text"
+                        class="input mt-1 h-9"
+                        :value="probeModelDraft(selectedAccount)"
+                        placeholder="gpt-5.4-mini"
+                        @input="onProbeModelDraftInput(selectedAccount, $event)"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" :disabled="isLoadingProbeModels(selectedAccount.account_id)" @click="loadProbeModels(selectedAccount, true)">
+                    <Icon name="refresh" size="xs" :class="isLoadingProbeModels(selectedAccount.account_id) ? 'animate-spin' : ''" />
+                    <span>拉取模型</span>
+                  </button>
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="isSavingProbeModel(selectedAccount.account_id)" @click="saveProbeModel(selectedAccount)">
+                    <Icon name="check" size="xs" />
+                    <span>{{ isSavingProbeModel(selectedAccount.account_id) ? '保存中' : '保存模型' }}</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" :disabled="isProbing(selectedAccount.account_id)" @click="runProbe(selectedAccount)">
+                    <Icon name="beaker" size="xs" :class="isProbing(selectedAccount.account_id) ? 'animate-pulse' : ''" />
+                    <span>{{ isProbing(selectedAccount.account_id) ? '探测中' : '立即探测' }}</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" @click="goToAccount(selectedAccount)">
+                    <Icon name="externalLink" size="xs" />
+                    <span>账号管理</span>
+                  </button>
+                </div>
+              </div>
+              <div v-if="!selectedAccount.is_opened" class="mt-3 flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 dark:bg-dark-800">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">关闭账号自动探测</div>
+                  <div class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ isAutoProbeEnabled(selectedAccount) ? '后台会按规则探测这个关闭账号' : '这个关闭账号不会被后台自动探测' }}</div>
+                </div>
+                <label
+                  class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-2 text-xs font-semibold transition"
+                  :class="autoProbeToggleClass(selectedAccount)"
+                >
+                  <input
+                    type="checkbox"
+                    class="sr-only"
+                    :checked="isAutoProbeEnabled(selectedAccount)"
+                    :disabled="isTogglingAutoProbe(selectedAccount.account_id)"
+                    @change="onAutoProbeChange(selectedAccount, $event)"
+                  />
+                  <span class="relative h-4 w-7 rounded-full transition" :class="isAutoProbeEnabled(selectedAccount) ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-600'">
+                    <span class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition" :class="isAutoProbeEnabled(selectedAccount) ? 'left-3.5' : 'left-0.5'"></span>
+                  </span>
+                  <span>{{ isAutoProbeEnabled(selectedAccount) ? '自动探测' : '停探测' }}</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <div class="flex items-end justify-between gap-3">
+                <div>
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ headlineHealthLabel(selectedAccount) }}</div>
+                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ headlineHealthLeftMeta(selectedAccount) }}</div>
+                </div>
+                <div class="text-4xl font-semibold" :class="headlineHealthClass(selectedAccount)">{{ headlineHealthText(selectedAccount) }}</div>
+              </div>
+              <div class="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                <div class="h-full rounded-full transition-all" :class="headlineHealthBarClass(selectedAccount)" :style="{ width: `${headlineHealthPercent(selectedAccount)}%` }"></div>
+              </div>
+              <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-5">
+                <div v-for="window in windowOrder" :key="`detail-${window}`" class="rounded-lg border border-gray-200 p-2.5 dark:border-dark-700">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
+                    <span class="text-xs text-gray-400">{{ windowCountText(selectedAccount, window) }}</span>
+                  </div>
+                  <div class="mt-2 text-xl font-semibold" :class="windowMetricClass(selectedAccount, window)">{{ windowMetricText(selectedAccount, window) }}</div>
+                  <div v-if="selectedAccount.is_opened" class="mt-1 truncate text-[11px] font-medium" :class="windowFirstTokenClass(selectedAccount, window)">
+                    首 {{ windowFirstTokenText(selectedAccount, window) }}
+                  </div>
+                  <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100 dark:bg-dark-700">
+                    <div class="h-full rounded-full" :class="windowBarClass(selectedAccount, window)" :style="{ width: `${windowBarPercent(selectedAccount, window)}%` }"></div>
+                  </div>
+                  <div class="mt-2 flex justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>{{ windowLeftMeta(selectedAccount, window) }}</span>
+                    <span>{{ windowRightMeta(selectedAccount, window) }}</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <div class="flex items-center justify-between gap-3">
+                <div class="text-sm font-semibold text-gray-900 dark:text-white">{{ recentTimelineTitle(selectedAccount) }}</div>
+                <div class="text-xs text-gray-400">PAST -> NOW</div>
+              </div>
+              <div class="mt-3 grid grid-cols-[repeat(60,minmax(3px,1fr))] gap-1">
+                <span
+                  v-for="(sample, idx) in recentSamplesForDisplay(selectedAccount)"
+                  :key="`${selectedAccount.account_id}-detail-${idx}-${sample?.created_at || 'empty'}`"
+                  class="h-8 min-w-0 rounded-sm"
+                  :class="sampleClass(sample)"
+                  :title="sampleTitle(sample)"
+                ></span>
+              </div>
+            </section>
+
+            <section class="rounded-lg border p-3" :class="recommendationPanelClass(selectedAccount)">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="severityClass(selectedAccount.recommendation.severity)">
+                      {{ selectedAccount.recommendation.severity || 'P3' }}
+                    </span>
+                    <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(selectedAccount.recommendation.notify_mode)">
+                      {{ notifyLabel(selectedAccount.recommendation.notify_mode) }}
+                    </span>
+                    <span v-if="selectedAccount.probe?.checked_at" class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="probeStatusClass(selectedAccount)">
+                      {{ probeStatusLabel(selectedAccount) }}
+                    </span>
+                  </div>
+                  <h3 class="mt-3 text-lg font-semibold text-gray-900 dark:text-white">{{ selectedAccount.recommendation.title }}</h3>
+                  <p class="mt-2 break-words text-sm text-gray-600 dark:text-gray-300">{{ selectedAccount.recommendation.reason || '-' }}</p>
+                  <p v-if="probeText(selectedAccount)" class="mt-2 break-words text-xs text-gray-500 dark:text-gray-400">{{ probeText(selectedAccount) }}</p>
+                </div>
+                <Icon :name="recommendationIcon(selectedAccount)" size="lg" :class="recommendationIconClass(selectedAccount)" />
+              </div>
+            </section>
+          </div>
+        </aside>
+      </div>
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAdminSettingsStore } from '@/stores'
+import { adminAPI } from '@/api/admin'
 import {
   opsAPI,
   type OpsAccountHealthItem,
@@ -462,10 +813,32 @@ import {
   type OpsAccountHealthWindow,
   type OpsAccountHealthWindowStats
 } from '@/api/admin/ops'
+import type { ClaudeModel } from '@/types'
 
 const WEBHOOK_MASK = '__configured__'
+const DEFAULT_PROBE_MODEL = 'gpt-5.4-mini'
 
 type FirstTokenWindow = OpsAccountHealthWindow | '5m'
+type HealthViewMode = 'card' | 'list'
+type HealthQuickFilter =
+  | 'all'
+  | 'abnormal'
+  | 'opened'
+  | 'closed'
+  | 'available'
+  | 'unavailable'
+  | 'probing'
+  | 'probe_disabled'
+  | 'can_open'
+  | 'close_now'
+  | 'p1'
+  | 'p2'
+  | 'no_data'
+
+interface ProbeModelOption {
+  value: string
+  label: string
+}
 
 const NumberField = defineComponent({
   name: 'NumberField',
@@ -512,6 +885,8 @@ const StatusBadge = defineComponent({
 
 const appStore = useAppStore()
 const adminSettingsStore = useAdminSettingsStore()
+const route = useRoute()
+const router = useRouter()
 
 const response = ref<OpsAccountHealthResponse | null>(null)
 const loading = ref(false)
@@ -521,9 +896,17 @@ const errorMessage = ref('')
 const platformFilter = ref('')
 const groupIdInput = ref('')
 const settingsOpen = ref(false)
+const viewMode = ref<HealthViewMode>('card')
+const quickFilter = ref<HealthQuickFilter>('all')
+const searchQuery = ref('')
+const selectedAccountID = ref<number | null>(null)
 const lastUpdated = ref<Date | null>(null)
 const probingAccounts = ref<Set<number>>(new Set())
 const togglingAutoProbeAccounts = ref<Set<number>>(new Set())
+const loadingModelAccounts = ref<Set<number>>(new Set())
+const savingModelAccounts = ref<Set<number>>(new Set())
+const probeModelOptionsByAccount = ref<Record<number, ProbeModelOption[]>>({})
+const probeModelDraftByAccount = ref<Record<number, string>>({})
 const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
@@ -569,6 +952,29 @@ const sortedItems = computed(() => {
     return (aStat?.success_rate_percent ?? 101) - (bStat?.success_rate_percent ?? 101)
   })
 })
+
+const visibleItems = computed(() => sortedItems.value.filter(item => matchesQuickFilter(item) && matchesSearch(item)))
+
+const selectedAccount = computed(() => {
+  if (!selectedAccountID.value) return null
+  return items.value.find(item => item.account_id === selectedAccountID.value) || null
+})
+
+const quickFilters = computed<Array<{ key: HealthQuickFilter; label: string; count: number }>>(() => [
+  { key: 'all', label: '全部', count: items.value.length },
+  { key: 'abnormal', label: '异常优先', count: items.value.filter(isAbnormal).length },
+  { key: 'opened', label: '已打开', count: items.value.filter(item => item.is_opened).length },
+  { key: 'closed', label: '已关闭', count: items.value.filter(item => !item.is_opened).length },
+  { key: 'available', label: '可调度', count: items.value.filter(item => item.is_available).length },
+  { key: 'unavailable', label: '不可调度', count: items.value.filter(item => !item.is_available).length },
+  { key: 'probing', label: '正在探测', count: items.value.filter(item => !item.is_opened && isAutoProbeEnabled(item)).length },
+  { key: 'probe_disabled', label: '探测关闭', count: items.value.filter(item => !item.is_opened && item.probe_auto_disabled).length },
+  { key: 'can_open', label: '可恢复', count: items.value.filter(item => item.recommendation.action === 'can_open').length },
+  { key: 'close_now', label: '建议关闭', count: items.value.filter(item => item.recommendation.action === 'close_now').length },
+  { key: 'p1', label: 'P1', count: items.value.filter(item => item.recommendation.severity === 'P1').length },
+  { key: 'p2', label: 'P2', count: items.value.filter(item => item.recommendation.severity === 'P2').length },
+  { key: 'no_data', label: '无数据', count: items.value.filter(item => !hasTraffic(item) && probeSamples(item).length === 0).length }
+])
 
 const summaryCards = computed(() => {
   const total = items.value.length
@@ -622,6 +1028,65 @@ const probeRuleText = computed(() => {
   if (!rule.enabled) return '已关闭：关闭账号只靠手动探测或真实流量判断'
   return `关闭账号每 ${rule.interval_minutes}m 自动探测，每轮最多 ${rule.max_per_run} 个，单次超时 ${rule.timeout_seconds}s`
 })
+
+function matchesQuickFilter(item: OpsAccountHealthItem): boolean {
+  switch (quickFilter.value) {
+    case 'abnormal':
+      return isAbnormal(item)
+    case 'opened':
+      return item.is_opened
+    case 'closed':
+      return !item.is_opened
+    case 'available':
+      return item.is_available
+    case 'unavailable':
+      return !item.is_available
+    case 'probing':
+      return !item.is_opened && isAutoProbeEnabled(item)
+    case 'probe_disabled':
+      return !item.is_opened && Boolean(item.probe_auto_disabled)
+    case 'can_open':
+      return item.recommendation.action === 'can_open'
+    case 'close_now':
+      return item.recommendation.action === 'close_now'
+    case 'p1':
+      return item.recommendation.severity === 'P1'
+    case 'p2':
+      return item.recommendation.severity === 'P2'
+    case 'no_data':
+      return !hasTraffic(item) && probeSamples(item).length === 0
+    default:
+      return true
+  }
+}
+
+function matchesSearch(item: OpsAccountHealthItem): boolean {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return true
+  const haystack = [
+    String(item.account_id),
+    item.account_name,
+    item.platform,
+    item.group_name,
+    String(item.group_id),
+    item.recommendation?.title,
+    item.recommendation?.reason,
+    item.probe_model_id,
+    item.probe_model_effective
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return haystack.includes(query)
+}
+
+function isAbnormal(item: OpsAccountHealthItem): boolean {
+  return item.recommendation.severity === 'P1' ||
+    item.recommendation.severity === 'P2' ||
+    item.recommendation.action === 'close_now' ||
+    item.recommendation.action === 'can_open' ||
+    item.has_error
+}
 
 watch(
   () => response.value?.settings,
@@ -697,7 +1162,7 @@ async function runProbe(item: OpsAccountHealthItem) {
   setProbing(item.account_id, true)
   try {
     await opsAPI.runAccountHealthProbe(item.account_id, {
-      model_id: settingsForm.value.probe.model_id || undefined,
+      model_id: probeModelDraft(item) || item.probe_model_id || undefined,
       mode: settingsForm.value.probe.mode || undefined,
       prompt: settingsForm.value.probe.prompt || undefined
     })
@@ -733,12 +1198,111 @@ async function updateAutoProbe(item: OpsAccountHealthItem, enabled: boolean) {
   }
 }
 
+async function loadProbeModels(item: OpsAccountHealthItem, force = false) {
+  if (!item?.account_id) return
+  if (!force && probeModelOptionsByAccount.value[item.account_id]?.length) return
+  if (isLoadingProbeModels(item.account_id)) return
+
+  setLoadingProbeModels(item.account_id, true)
+  try {
+    const models = await adminAPI.accounts.getAvailableModels(item.account_id)
+    const options = normalizeProbeModelOptions(models)
+    const effective = probeModelEffective(item)
+    if (effective && !options.some(option => option.value === effective)) {
+      options.unshift({ value: effective, label: effective })
+    }
+    probeModelOptionsByAccount.value = {
+      ...probeModelOptionsByAccount.value,
+      [item.account_id]: options
+    }
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '模型列表加载失败')
+  } finally {
+    setLoadingProbeModels(item.account_id, false)
+  }
+}
+
+async function saveProbeModel(item: OpsAccountHealthItem) {
+  if (!item?.account_id || isSavingProbeModel(item.account_id)) return
+  setSavingProbeModel(item.account_id, true)
+  try {
+    const state = await opsAPI.updateAccountHealthProbeModel(item.account_id, probeModelDraft(item))
+    item.probe_model_id = state.probe_model_id || ''
+    item.probe_model_effective = state.probe_model_effective
+    setProbeModelDraft(item, item.probe_model_id || '')
+    appStore.showSuccess(item.probe_model_id ? '账号探测模型已保存' : '已改为继承全局探测模型')
+    await fetchData()
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '探测模型保存失败')
+  } finally {
+    setSavingProbeModel(item.account_id, false)
+  }
+}
+
+function normalizeProbeModelOptions(models: ClaudeModel[]): ProbeModelOption[] {
+  const seen = new Set<string>()
+  const options: ProbeModelOption[] = []
+  for (const model of models || []) {
+    const value = String(model?.id || '').trim()
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    options.push({ value, label: String(model.display_name || value) })
+  }
+  return options
+}
+
+function probeModelOptions(item: OpsAccountHealthItem): ProbeModelOption[] {
+  const options = probeModelOptionsByAccount.value[item.account_id] || []
+  const effective = probeModelEffective(item)
+  if (!effective || options.some(option => option.value === effective)) return options
+  return [{ value: effective, label: effective }, ...options]
+}
+
+function probeModelDraft(item: OpsAccountHealthItem): string {
+  if (!item?.account_id) return ''
+  if (Object.prototype.hasOwnProperty.call(probeModelDraftByAccount.value, item.account_id)) {
+    return probeModelDraftByAccount.value[item.account_id] || ''
+  }
+  return item.probe_model_id || ''
+}
+
+function setProbeModelDraft(item: OpsAccountHealthItem, value: string) {
+  if (!item?.account_id) return
+  probeModelDraftByAccount.value = {
+    ...probeModelDraftByAccount.value,
+    [item.account_id]: String(value || '').trim()
+  }
+}
+
+function onProbeModelDraftInput(item: OpsAccountHealthItem, event: Event) {
+  const target = event.target as HTMLInputElement | HTMLSelectElement | null
+  setProbeModelDraft(item, target?.value || '')
+}
+
+function probeModelEffective(item: OpsAccountHealthItem): string {
+  return String(item.probe_model_effective || item.probe_model_id || settingsForm.value.probe.model_id || DEFAULT_PROBE_MODEL).trim()
+}
+
+function probeModelText(item: OpsAccountHealthItem): string {
+  const effective = probeModelEffective(item)
+  if (!item.probe_model_id) return `${effective} · 继承`
+  return effective
+}
+
 function isProbing(accountID: number): boolean {
   return probingAccounts.value.has(accountID)
 }
 
 function isTogglingAutoProbe(accountID: number): boolean {
   return togglingAutoProbeAccounts.value.has(accountID)
+}
+
+function isLoadingProbeModels(accountID: number): boolean {
+  return loadingModelAccounts.value.has(accountID)
+}
+
+function isSavingProbeModel(accountID: number): boolean {
+  return savingModelAccounts.value.has(accountID)
 }
 
 function setProbing(accountID: number, probing: boolean) {
@@ -759,6 +1323,26 @@ function setTogglingAutoProbe(accountID: number, toggling: boolean) {
     next.delete(accountID)
   }
   togglingAutoProbeAccounts.value = next
+}
+
+function setLoadingProbeModels(accountID: number, loadingModels: boolean) {
+  const next = new Set(loadingModelAccounts.value)
+  if (loadingModels) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  loadingModelAccounts.value = next
+}
+
+function setSavingProbeModel(accountID: number, saving: boolean) {
+  const next = new Set(savingModelAccounts.value)
+  if (saving) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  savingModelAccounts.value = next
 }
 
 function applySettingsToForm(settings: OpsAccountHealthSettings) {
@@ -805,7 +1389,7 @@ function defaultAccountHealthSettings(): OpsAccountHealthSettings {
       interval_minutes: 30,
       max_per_run: 2,
       timeout_seconds: 20,
-      model_id: '',
+      model_id: DEFAULT_PROBE_MODEL,
       mode: 'default',
       prompt: ''
     },
@@ -821,7 +1405,7 @@ function defaultAccountHealthSettings(): OpsAccountHealthSettings {
 function cloneSettings(settings: OpsAccountHealthSettings): OpsAccountHealthSettings {
   const defaults = defaultAccountHealthSettings()
   const raw = JSON.parse(JSON.stringify(settings || defaults))
-  return {
+  const cloned = {
     ...defaults,
     ...raw,
     burst: { ...defaults.burst, ...(raw.burst || {}) },
@@ -830,6 +1414,10 @@ function cloneSettings(settings: OpsAccountHealthSettings): OpsAccountHealthSett
     probe: { ...defaults.probe, ...(raw.probe || {}) },
     notification: { ...defaults.notification, ...(raw.notification || {}) }
   }
+  if (!String(cloned.probe.model_id || '').trim()) {
+    cloned.probe.model_id = DEFAULT_PROBE_MODEL
+  }
+  return cloned
 }
 
 function statFor(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): OpsAccountHealthWindowStats | undefined {
@@ -1413,6 +2001,45 @@ function probeText(item: OpsAccountHealthItem): string {
   const error = probe.status === 'success' || !probe.error_message ? '' : ` ${probe.error_message}`
   return `探测${status} ${formatTime(probe.checked_at)}${model}${latency}${error}`
 }
+
+function accountIDFromRoute(): number | null {
+  const raw = route.query.account_id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function syncSelectedAccountFromRoute() {
+  const accountID = accountIDFromRoute()
+  if (accountID) {
+    selectedAccountID.value = accountID
+  }
+}
+
+function openDetail(item: OpsAccountHealthItem) {
+  selectedAccountID.value = item.account_id
+  router.replace({
+    path: route.path,
+    query: { ...route.query, account_id: String(item.account_id) }
+  }).catch(() => {})
+}
+
+function closeDetail() {
+  selectedAccountID.value = null
+  const nextQuery = { ...route.query }
+  delete nextQuery.account_id
+  router.replace({ path: route.path, query: nextQuery }).catch(() => {})
+}
+
+function goToAccount(item: OpsAccountHealthItem) {
+  router.push({ path: '/admin/accounts', query: { account_id: String(item.account_id) } }).catch(() => {})
+}
+
+watch(
+  () => route.query.account_id,
+  () => syncSelectedAccountFromRoute(),
+  { immediate: true }
+)
 
 onMounted(async () => {
   adminSettingsStore.fetch()

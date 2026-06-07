@@ -88,6 +88,8 @@ type AccountAvailability struct {
 	HasError            bool `json:"has_error"`
 	ProbeAutoDisabled   bool `json:"probe_auto_disabled"`
 
+	ProbeModelID string `json:"probe_model_id,omitempty"`
+
 	RateLimitResetAt       *time.Time `json:"rate_limit_reset_at"`
 	RateLimitRemainingSec  *int64     `json:"rate_limit_remaining_sec"`
 	OverloadUntil          *time.Time `json:"overload_until"`

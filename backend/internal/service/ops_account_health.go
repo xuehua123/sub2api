@@ -14,6 +14,7 @@ const (
 	opsAccountHealthDefaultRecentLimit = 60
 	opsAccountHealthMaxRecentLimit     = 120
 	accountHealthProbePersistTimeout   = 5 * time.Second
+	opsAccountHealthDefaultProbeModel  = "gpt-5.4-mini"
 	opsEnterpriseWeChatWebhookMask     = "__configured__"
 	opsEnterpriseWeChatHost            = "qyapi.weixin.qq.com"
 	opsEnterpriseWeChatWebhookPath     = "/cgi-bin/webhook/send"
@@ -22,6 +23,7 @@ const (
 	accountHealthProbeCheckedAtExtraKey = "ops_health_probe_checked_at"
 	accountHealthProbeLatencyMsExtraKey = "ops_health_probe_latency_ms"
 	accountHealthProbeModelIDExtraKey   = "ops_health_probe_model_id"
+	accountHealthProbeConfigModelIDKey  = "ops_health_probe_config_model_id"
 	accountHealthProbeErrorExtraKey     = "ops_health_probe_error"
 	accountHealthProbeHistoryExtraKey   = "ops_health_probe_history"
 	accountHealthProbeAutoDisabledKey   = "ops_health_probe_auto_disabled"
@@ -63,7 +65,7 @@ func defaultOpsAccountHealthSettings() OpsAccountHealthSettings {
 			IntervalMinutes: 30,
 			MaxPerRun:       2,
 			TimeoutSeconds:  20,
-			ModelID:         "",
+			ModelID:         opsAccountHealthDefaultProbeModel,
 			Mode:            "default",
 			Prompt:          "",
 		},
@@ -152,6 +154,9 @@ func normalizeOpsAccountHealthSettings(s *OpsAccountHealthSettings) {
 		s.Probe.TimeoutSeconds = 120
 	}
 	s.Probe.ModelID = strings.TrimSpace(s.Probe.ModelID)
+	if s.Probe.ModelID == "" {
+		s.Probe.ModelID = defaults.Probe.ModelID
+	}
 	s.Probe.Mode = strings.ToLower(strings.TrimSpace(s.Probe.Mode))
 	switch s.Probe.Mode {
 	case "", "default":
@@ -403,6 +408,8 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			FirstTokenWindows:      metrics.FirstTokenWindows,
 			Probe:                  availability.HealthProbe,
 		}
+		item.ProbeModelID = accountHealthProbeConfiguredModelIDFromAvailability(availability)
+		item.ProbeModelEffective = resolveOpsAccountHealthProbeModelID(item.ProbeModelID, settings.Probe.ModelID)
 		item.Recommendation = decideOpsAccountHealth(item, settings)
 		items = append(items, item)
 	}
@@ -440,6 +447,65 @@ func (s *OpsService) UpdateAccountHealthProbeAuto(ctx context.Context, accountID
 		AccountID:         accountID,
 		ProbeAutoDisabled: disabled,
 	}, nil
+}
+
+func (s *OpsService) UpdateAccountHealthProbeModel(ctx context.Context, accountID int64, modelID string) (*OpsAccountHealthProbeModelState, error) {
+	if s == nil || s.accountRepo == nil {
+		return nil, fmt.Errorf("account repository is not available")
+	}
+	if accountID <= 0 {
+		return nil, fmt.Errorf("account id must be positive")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil {
+		return nil, ErrAccountNotFound
+	}
+
+	modelID = strings.TrimSpace(modelID)
+	if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+		accountHealthProbeConfigModelIDKey: modelID,
+	}); err != nil {
+		return nil, err
+	}
+
+	globalModelID := ""
+	if cfg, err := s.GetOpsAlertRuntimeSettings(ctx); err == nil && cfg != nil {
+		globalModelID = cfg.AccountHealth.Probe.ModelID
+	}
+	return &OpsAccountHealthProbeModelState{
+		AccountID:           accountID,
+		ProbeModelID:        modelID,
+		ProbeModelEffective: resolveOpsAccountHealthProbeModelID(modelID, globalModelID),
+		GlobalProbeModelID:  resolveOpsAccountHealthProbeModelID("", globalModelID),
+		DefaultProbeModelID: opsAccountHealthDefaultProbeModel,
+		InheritsGlobalModel: modelID == "",
+		HasAccountOverride:  modelID != "",
+	}, nil
+}
+
+func (s *OpsService) ResolveAccountHealthProbeModelID(ctx context.Context, accountID int64, requestedModelID string) string {
+	requestedModelID = strings.TrimSpace(requestedModelID)
+	if requestedModelID != "" {
+		return requestedModelID
+	}
+
+	accountModelID := ""
+	if s != nil && s.accountRepo != nil && accountID > 0 {
+		if account, err := s.accountRepo.GetByID(ctx, accountID); err == nil && account != nil {
+			accountModelID = accountHealthProbeConfiguredModelIDFromAccount(account)
+		}
+	}
+
+	globalModelID := ""
+	if s != nil {
+		if cfg, err := s.GetOpsAlertRuntimeSettings(ctx); err == nil && cfg != nil {
+			globalModelID = cfg.AccountHealth.Probe.ModelID
+		}
+	}
+	return resolveOpsAccountHealthProbeModelID(accountModelID, globalModelID)
 }
 
 func defaultOpsAccountHealthWindows() map[string]*OpsAccountHealthWindowStats {
@@ -869,6 +935,30 @@ func accountHealthProbeAutoDisabledFromAccount(account *Account) bool {
 		return false
 	}
 	return account.getExtraBool(accountHealthProbeAutoDisabledKey)
+}
+
+func accountHealthProbeConfiguredModelIDFromAvailability(availability *AccountAvailability) string {
+	if availability == nil {
+		return ""
+	}
+	return strings.TrimSpace(availability.ProbeModelID)
+}
+
+func accountHealthProbeConfiguredModelIDFromAccount(account *Account) string {
+	if account == nil {
+		return ""
+	}
+	return strings.TrimSpace(account.getExtraString(accountHealthProbeConfigModelIDKey))
+}
+
+func resolveOpsAccountHealthProbeModelID(accountModelID string, globalModelID string) string {
+	if modelID := strings.TrimSpace(accountModelID); modelID != "" {
+		return modelID
+	}
+	if modelID := strings.TrimSpace(globalModelID); modelID != "" {
+		return modelID
+	}
+	return opsAccountHealthDefaultProbeModel
 }
 
 func accountHealthProbeFromAccount(account *Account) *OpsAccountHealthProbe {

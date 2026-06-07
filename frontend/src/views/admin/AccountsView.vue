@@ -287,6 +287,13 @@
               :error="todayStatsError"
             />
           </template>
+          <template #cell-account_health="{ row }">
+            <AccountHealthSummaryCell
+              :item="accountHealthByAccountId[String(row.id)] ?? null"
+              :loading="accountHealthLoading"
+              @open="openAccountHealth(row)"
+            />
+          </template>
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
@@ -396,11 +403,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
+import { opsAPI, type OpsAccountHealthItem } from '@/api/admin/ops'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -425,6 +434,7 @@ import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
@@ -436,6 +446,8 @@ import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, Admi
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
@@ -568,6 +580,13 @@ const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
 const todayStatsReqSeq = ref(0)
 const pendingTodayStatsRefresh = ref(false)
+const accountHealthByAccountId = ref<Record<string, OpsAccountHealthItem>>({})
+const accountHealthLoading = ref(false)
+const accountHealthError = ref<string | null>(null)
+const accountHealthReqSeq = ref(0)
+const pendingAccountHealthRefresh = ref(false)
+const accountHealthLastLoadedAt = ref(0)
+const ACCOUNT_HEALTH_REFRESH_MIN_MS = 30_000
 const usageManualRefreshToken = ref(0)
 
 const buildDefaultTodayStats = (): WindowStats => ({
@@ -618,6 +637,40 @@ const refreshTodayStatsBatch = async () => {
   } finally {
     if (reqSeq === todayStatsReqSeq.value) {
       todayStatsLoading.value = false
+    }
+  }
+}
+
+const refreshAccountHealthBatch = async (force = false) => {
+  if (hiddenColumns.has('account_health')) {
+    accountHealthLoading.value = false
+    accountHealthError.value = null
+    return
+  }
+  if (!force && accountHealthLastLoadedAt.value > 0 && Date.now() - accountHealthLastLoadedAt.value < ACCOUNT_HEALTH_REFRESH_MIN_MS) {
+    return
+  }
+
+  const reqSeq = ++accountHealthReqSeq.value
+  accountHealthLoading.value = true
+  accountHealthError.value = null
+
+  try {
+    const result = await opsAPI.getAccountHealth({ recent_limit: 60 })
+    if (reqSeq !== accountHealthReqSeq.value) return
+    const next: Record<string, OpsAccountHealthItem> = {}
+    for (const item of result.items || []) {
+      next[String(item.account_id)] = item
+    }
+    accountHealthByAccountId.value = next
+    accountHealthLastLoadedAt.value = Date.now()
+  } catch (error) {
+    if (reqSeq !== accountHealthReqSeq.value) return
+    accountHealthError.value = 'Failed'
+    console.error('Failed to load account health summary:', error)
+  } finally {
+    if (reqSeq === accountHealthReqSeq.value) {
+      accountHealthLoading.value = false
     }
   }
 }
@@ -726,6 +779,11 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account today stats after showing column:', error)
     })
   }
+  if (key === 'account_health' && wasHidden) {
+    refreshAccountHealthBatch(true).catch((error) => {
+      console.error('Failed to load account health after showing column:', error)
+    })
+  }
 }
 
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
@@ -796,6 +854,7 @@ const load = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
+  pendingAccountHealthRefresh.value = false
   if (isFirstLoad.value) {
     requestParams.lite = '1'
   }
@@ -805,20 +864,24 @@ const load = async () => {
     delete requestParams.lite
   }
   await refreshTodayStatsBatch()
+  await refreshAccountHealthBatch()
 }
 
 const reload = async () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
+  pendingAccountHealthRefresh.value = false
   await baseReload()
   await refreshTodayStatsBatch()
+  await refreshAccountHealthBatch()
 }
 
 const debouncedReload = () => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
+  pendingAccountHealthRefresh.value = true
   baseDebouncedReload()
 }
 
@@ -826,6 +889,7 @@ const handlePageChange = (page: number) => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
+  pendingAccountHealthRefresh.value = true
   baseHandlePageChange(page)
 }
 
@@ -833,6 +897,7 @@ const handlePageSizeChange = (size: number) => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
+  pendingAccountHealthRefresh.value = true
   baseHandlePageSizeChange(size)
 }
 
@@ -846,6 +911,7 @@ const handleSort = (key: string, order: AccountSortOrder) => {
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
+  pendingAccountHealthRefresh.value = true
   load()
 }
 
@@ -854,6 +920,12 @@ watch(loading, (isLoading, wasLoading) => {
     pendingTodayStatsRefresh.value = false
     refreshTodayStatsBatch().catch((error) => {
       console.error('Failed to refresh account today stats after table load:', error)
+    })
+  }
+  if (wasLoading && !isLoading && pendingAccountHealthRefresh.value) {
+    pendingAccountHealthRefresh.value = false
+    refreshAccountHealthBatch().catch((error) => {
+      console.error('Failed to refresh account health after table load:', error)
     })
   }
 })
@@ -971,6 +1043,7 @@ const refreshAccountsIncrementally = async () => {
     }
 
     await refreshTodayStatsBatch()
+    await refreshAccountHealthBatch()
   } catch (error) {
     console.error('Auto refresh failed:', error)
   } finally {
@@ -980,6 +1053,7 @@ const refreshAccountsIncrementally = async () => {
 
 const handleManualRefresh = async () => {
   await load()
+  await refreshAccountHealthBatch(true)
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
 }
@@ -1171,7 +1245,8 @@ const allColumns = computed(() => {
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
-    { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false }
+    { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false },
+    { key: 'account_health', label: '健康', sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
@@ -1457,6 +1532,26 @@ const buildAccountQueryFilters = () => ({
   sort_by: sortState.sort_by,
   sort_order: sortState.sort_order
 })
+
+const accountIDFromRoute = () => {
+  const raw = route.query.account_id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+const applyRouteAccountFocus = () => {
+  const accountID = accountIDFromRoute()
+  if (!accountID) return false
+  params.search = String(accountID)
+  pagination.page = 1
+  return true
+}
+
+const openAccountHealth = (account: Account) => {
+  router.push({ path: '/admin/ops/account-health', query: { account_id: String(account.id) } }).catch(() => {})
+}
+
 const accountMatchesCurrentFilters = (account: Account) => {
   const filters = buildAccountQueryFilters()
   if (filters.platform && account.platform !== filters.platform) return false
@@ -1701,6 +1796,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
+  applyRouteAccountFocus()
   load()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
@@ -1719,6 +1815,15 @@ onMounted(async () => {
     pauseAutoRefresh()
   }
 })
+
+watch(
+  () => route.query.account_id,
+  () => {
+    if (applyRouteAccountFocus()) {
+      load()
+    }
+  }
+)
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll, true)

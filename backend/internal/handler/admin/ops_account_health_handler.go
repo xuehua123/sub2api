@@ -22,6 +22,10 @@ type accountHealthProbeAutoRequest struct {
 	Enabled bool `json:"enabled"`
 }
 
+type accountHealthProbeModelRequest struct {
+	ModelID string `json:"model_id"`
+}
+
 // GetAccountHealth returns account-level health windows and smart action hints.
 // GET /api/v1/admin/ops/account-health
 func (h *OpsHandler) GetAccountHealth(c *gin.Context) {
@@ -125,6 +129,39 @@ func (h *OpsHandler) UpdateAccountHealthProbeAuto(c *gin.Context) {
 	response.Success(c, state)
 }
 
+// UpdateAccountHealthProbeModel updates the per-account active probe model.
+// Empty model_id means inheriting the global account-health probe model.
+// PATCH /api/v1/admin/ops/account-health/:id/probe-model
+func (h *OpsHandler) UpdateAccountHealthProbeModel(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	accountID, err := strconv.ParseInt(strings.TrimSpace(c.Param("id")), 10, 64)
+	if err != nil || accountID <= 0 {
+		response.BadRequest(c, "Invalid account id")
+		return
+	}
+
+	var req accountHealthProbeModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request body")
+		return
+	}
+
+	state, err := h.opsService.UpdateAccountHealthProbeModel(c.Request.Context(), accountID, req.ModelID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, state)
+}
+
 // RunAccountHealthProbe runs an immediate active probe for an account and persists
 // the probe result into the account's observational Extra fields.
 // POST /api/v1/admin/ops/account-health/:id/probe
@@ -155,15 +192,12 @@ func (h *OpsHandler) RunAccountHealthProbe(c *gin.Context) {
 			return
 		}
 	}
-	modelID := strings.TrimSpace(req.ModelID)
+	modelID := h.opsService.ResolveAccountHealthProbeModelID(c.Request.Context(), accountID, req.ModelID)
 	mode := strings.TrimSpace(req.Mode)
 	prompt := strings.TrimSpace(req.Prompt)
 
 	timeout := 20 * time.Second
 	if cfg, err := h.opsService.GetOpsAlertRuntimeSettings(c.Request.Context()); err == nil && cfg != nil {
-		if modelID == "" {
-			modelID = strings.TrimSpace(cfg.AccountHealth.Probe.ModelID)
-		}
 		if mode == "" {
 			mode = strings.TrimSpace(cfg.AccountHealth.Probe.Mode)
 		}

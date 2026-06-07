@@ -395,6 +395,8 @@ export interface AccountAvailability {
   has_error: boolean
   error_message?: string
   probe_auto_disabled?: boolean
+  probe_model_id?: string
+  probe_model_effective?: string
   health_probe?: OpsAccountHealthProbe | null
 }
 
@@ -470,6 +472,16 @@ export interface OpsAccountHealthItem extends AccountAvailability {
 export interface OpsAccountHealthProbeAutoState {
   account_id: number
   probe_auto_disabled: boolean
+}
+
+export interface OpsAccountHealthProbeModelState {
+  account_id: number
+  probe_model_id?: string
+  probe_model_effective: string
+  global_probe_model_id: string
+  default_probe_model_id: string
+  inherits_global_model: boolean
+  has_account_override: boolean
 }
 
 export interface OpsAccountHealthBurstSettings {
@@ -582,6 +594,11 @@ export async function updateAccountHealthSettings(settings: OpsAccountHealthSett
 
 export async function updateAccountHealthProbeAuto(accountId: number, enabled: boolean): Promise<OpsAccountHealthProbeAutoState> {
   const { data } = await apiClient.patch<OpsAccountHealthProbeAutoState>(`/admin/ops/account-health/${accountId}/probe-auto`, { enabled })
+  return data
+}
+
+export async function updateAccountHealthProbeModel(accountId: number, modelId: string): Promise<OpsAccountHealthProbeModelState> {
+  const { data } = await apiClient.patch<OpsAccountHealthProbeModelState>(`/admin/ops/account-health/${accountId}/probe-model`, { model_id: modelId })
   return data
 }
 
@@ -1487,6 +1504,7 @@ export const opsAPI = {
   getAccountHealth,
   updateAccountHealthSettings,
   updateAccountHealthProbeAuto,
+  updateAccountHealthProbeModel,
   runAccountHealthProbe,
   getRealtimeTrafficSummary,
   subscribeQPS,

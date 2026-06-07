@@ -133,6 +133,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 			IsTempUnschedulable: isTempUnsched,
 			HasError:            hasError,
 			ProbeAutoDisabled:   accountHealthProbeAutoDisabledFromAccount(&acc),
+			ProbeModelID:        accountHealthProbeConfiguredModelIDFromAccount(&acc),
 
 			ErrorMessage: acc.ErrorMessage,
 			HealthProbe:  accountHealthProbeFromAccount(&acc),

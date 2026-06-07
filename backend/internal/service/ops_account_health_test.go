@@ -247,6 +247,47 @@ func TestUpdateAccountHealthProbeAutoStoresAccountExtra(t *testing.T) {
 	require.Equal(t, true, repo.updates[accountHealthProbeAutoDisabledKey])
 }
 
+func TestUpdateAccountHealthProbeModelStoresAccountExtra(t *testing.T) {
+	t.Parallel()
+
+	repo := &accountHealthAutoProbeRepo{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{
+				9: {ID: 9, Extra: map[string]any{}},
+			},
+		},
+	}
+	svc := &OpsService{accountRepo: repo}
+
+	state, err := svc.UpdateAccountHealthProbeModel(context.Background(), 9, " gpt-5.4-mini ")
+
+	require.NoError(t, err)
+	require.Equal(t, int64(9), state.AccountID)
+	require.Equal(t, "gpt-5.4-mini", state.ProbeModelID)
+	require.Equal(t, "gpt-5.4-mini", state.ProbeModelEffective)
+	require.False(t, state.InheritsGlobalModel)
+	require.True(t, state.HasAccountOverride)
+	require.Equal(t, int64(9), repo.updateID)
+	require.Equal(t, "gpt-5.4-mini", repo.updates[accountHealthProbeConfigModelIDKey])
+}
+
+func TestResolveAccountHealthProbeModelIDOrder(t *testing.T) {
+	t.Parallel()
+
+	repo := &accountHealthAutoProbeRepo{
+		mockAccountRepoForGemini: mockAccountRepoForGemini{
+			accountsByID: map[int64]*Account{
+				9: {ID: 9, Extra: map[string]any{accountHealthProbeConfigModelIDKey: "account-model"}},
+			},
+		},
+	}
+	svc := &OpsService{accountRepo: repo}
+
+	require.Equal(t, "manual-model", svc.ResolveAccountHealthProbeModelID(context.Background(), 9, "manual-model"))
+	require.Equal(t, "account-model", svc.ResolveAccountHealthProbeModelID(context.Background(), 9, ""))
+	require.Equal(t, opsAccountHealthDefaultProbeModel, (&OpsService{}).ResolveAccountHealthProbeModelID(context.Background(), 0, ""))
+}
+
 func TestAccountHealthProbePersistContextIgnoresParentCancellation(t *testing.T) {
 	t.Parallel()
 

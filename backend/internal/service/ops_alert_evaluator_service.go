@@ -799,7 +799,7 @@ func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx conte
 			continue
 		}
 		accountID := item.AccountID
-		modelID := settings.Probe.ModelID
+		modelID := resolveOpsAccountHealthProbeModelID(item.ProbeModelEffective, settings.Probe.ModelID)
 		mode := settings.Probe.Mode
 		prompt := settings.Probe.Prompt
 		runs++

@@ -122,6 +122,9 @@ type OpsAccountHealthItem struct {
 	HasError            bool `json:"has_error"`
 	ProbeAutoDisabled   bool `json:"probe_auto_disabled"`
 
+	ProbeModelID        string `json:"probe_model_id,omitempty"`
+	ProbeModelEffective string `json:"probe_model_effective,omitempty"`
+
 	RateLimitResetAt       *time.Time `json:"rate_limit_reset_at,omitempty"`
 	RateLimitRemainingSec  *int64     `json:"rate_limit_remaining_sec,omitempty"`
 	OverloadUntil          *time.Time `json:"overload_until,omitempty"`
@@ -147,6 +150,16 @@ type OpsAccountHealthResponse struct {
 type OpsAccountHealthProbeAutoState struct {
 	AccountID         int64 `json:"account_id"`
 	ProbeAutoDisabled bool  `json:"probe_auto_disabled"`
+}
+
+type OpsAccountHealthProbeModelState struct {
+	AccountID           int64  `json:"account_id"`
+	ProbeModelID        string `json:"probe_model_id,omitempty"`
+	ProbeModelEffective string `json:"probe_model_effective"`
+	GlobalProbeModelID  string `json:"global_probe_model_id"`
+	DefaultProbeModelID string `json:"default_probe_model_id"`
+	InheritsGlobalModel bool   `json:"inherits_global_model"`
+	HasAccountOverride  bool   `json:"has_account_override"`
 }
 
 type OpsAccountHealthSettings struct {
