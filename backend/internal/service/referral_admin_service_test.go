@@ -27,6 +27,9 @@ func (s *adminSearchUserRepoStub) GetByID(_ context.Context, id int64) (*User, e
 	}
 	return nil, ErrUserNotFound
 }
+func (s *adminSearchUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return s.GetByID(ctx, id)
+}
 func (s *adminSearchUserRepoStub) GetByEmail(context.Context, string) (*User, error) {
 	panic("unexpected")
 }

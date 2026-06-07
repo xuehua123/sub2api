@@ -235,6 +235,9 @@ func (s *rewardUserRepoStub) Create(ctx context.Context, user *User) error {
 func (s *rewardUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
 	return s.users[id], nil
 }
+func (s *rewardUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return s.GetByID(ctx, id)
+}
 func (s *rewardUserRepoStub) GetByEmail(ctx context.Context, email string) (*User, error) {
 	panic("unexpected GetByEmail")
 }

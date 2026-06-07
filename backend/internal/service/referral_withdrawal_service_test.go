@@ -261,6 +261,10 @@ func (s *withdrawalUserRepoStub) GetByID(ctx context.Context, id int64) (*User, 
 	return &User{ID: id, ReferralEnabled: true}, nil
 }
 
+func (s *withdrawalUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*User, error) {
+	return s.GetByID(ctx, id)
+}
+
 func (s *withdrawalUserRepoStub) GetByEmail(ctx context.Context, email string) (*User, error) {
 	return nil, ErrUserNotFound
 }

@@ -73,6 +73,9 @@ func (s *rechargeOrderHandlerUserRepoStub) Create(ctx context.Context, user *ser
 func (s *rechargeOrderHandlerUserRepoStub) GetByID(ctx context.Context, id int64) (*service.User, error) {
 	return &service.User{ID: id, Balance: s.balances[id]}, nil
 }
+func (s *rechargeOrderHandlerUserRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
+	return s.GetByID(ctx, id)
+}
 func (s *rechargeOrderHandlerUserRepoStub) GetByEmail(ctx context.Context, email string) (*service.User, error) {
 	panic("unexpected GetByEmail")
 }
