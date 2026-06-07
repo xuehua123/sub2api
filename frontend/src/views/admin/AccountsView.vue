@@ -1543,6 +1543,11 @@ const accountIDFromRoute = () => {
 const applyRouteAccountFocus = () => {
   const accountID = accountIDFromRoute()
   if (!accountID) return false
+  params.platform = ''
+  params.type = ''
+  params.status = ''
+  params.group = ''
+  params.privacy_mode = ''
   params.search = String(accountID)
   pagination.page = 1
   return true
@@ -1592,8 +1597,29 @@ const accountMatchesCurrentFilters = (account: Account) => {
     }
   }
   const search = String(filters.search || '').trim().toLowerCase()
-  if (search && !account.name.toLowerCase().includes(search)) return false
+  if (search && !accountMatchesSearch(account, search)) return false
   return true
+}
+
+const accountMatchesSearch = (account: Account, search: string) => {
+  const id = String(account.id)
+  const normalizedIDSearch = search.startsWith('#') ? search.slice(1) : search
+  if (/^\d+$/.test(normalizedIDSearch) && id === normalizedIDSearch) {
+    return true
+  }
+
+  const groupNames = account.groups?.map(group => group.name).join(' ') || ''
+  const groupIDs = account.group_ids?.join(' ') || ''
+  return [
+    account.name,
+    id,
+    `#${id}`,
+    account.platform,
+    account.type,
+    account.status,
+    groupNames,
+    groupIDs
+  ].some(value => String(value || '').toLowerCase().includes(search))
 }
 const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Account => ({
   ...updatedAccount,

@@ -537,7 +537,13 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 		}
 	}
 	if search != "" {
-		q = q.Where(dbaccount.NameContainsFold(search))
+		searchPredicates := []dbpredicate.Account{
+			dbaccount.NameContainsFold(search),
+		}
+		if accountID, ok := parseAccountSearchID(search); ok {
+			searchPredicates = append(searchPredicates, dbaccount.IDEQ(accountID))
+		}
+		q = q.Where(dbaccount.Or(searchPredicates...))
 	}
 	if groupID == service.AccountListGroupUngrouped {
 		q = q.Where(dbaccount.Not(dbaccount.HasAccountGroups()))
@@ -581,6 +587,19 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 		return nil, nil, err
 	}
 	return outAccounts, paginationResultFromTotal(int64(total), params), nil
+}
+
+func parseAccountSearchID(search string) (int64, bool) {
+	value := strings.TrimSpace(search)
+	value = strings.TrimPrefix(value, "#")
+	if value == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }
 
 func accountListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {
