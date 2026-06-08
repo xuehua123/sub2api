@@ -59,6 +59,15 @@ func (u *httpUpstreamRecorder) DoWithTLS(req *http.Request, proxyURL string, acc
 	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
+func requireOpenAIUpstreamPolicyContext(t *testing.T, req *http.Request, wantProtocol string, wantGzipAllowed bool) {
+	t.Helper()
+	require.NotNil(t, req)
+	require.Equal(t, wantProtocol, OpenAIHTTPProtocolOverrideFromContext(req.Context()))
+	gotGzipAllowed, ok := OpsGzipUpstreamAllowedFromContext(req.Context())
+	require.True(t, ok)
+	require.Equal(t, wantGzipAllowed, gotGzipAllowed)
+}
+
 func TestOpenAIGatewayService_ResponsesUnknownModelDoesNotFallbackToGPT54(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

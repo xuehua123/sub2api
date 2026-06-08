@@ -86,6 +86,10 @@ func TestOpenAIWSHTTPBridgeRelaysSSEFramesAsWebSocketMessages(t *testing.T) {
 		Type:        AccountTypeAPIKey,
 		Concurrency: 1,
 		Status:      StatusActive,
+		Extra: map[string]any{
+			AccountExtraOpenAIHTTPProtocol:  OpenAIHTTPProtocolOverrideH1,
+			AccountExtraUpstreamGzipEnabled: false,
+		},
 	}
 	payload := []byte(`{"type":"response.create","generate":true,"model":"gpt-5","stream":true,"input":"hi"}`)
 
@@ -168,6 +172,7 @@ func TestOpenAIWSHTTPBridgeRelaysSSEFramesAsWebSocketMessages(t *testing.T) {
 
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, http.MethodPost, upstream.lastReq.Method)
+	requireOpenAIUpstreamPolicyContext(t, upstream.lastReq, OpenAIHTTPProtocolOverrideH1, false)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "type").Exists())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "generate").Exists())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream").Bool())

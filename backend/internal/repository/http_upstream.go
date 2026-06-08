@@ -177,9 +177,13 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	if req != nil {
 		profile = service.HTTPUpstreamProfileFromContext(req.Context())
 	}
+	protocolOverride := ""
+	if req != nil {
+		protocolOverride = service.OpenAIHTTPProtocolOverrideFromContext(req.Context())
+	}
 
 	// 获取或创建对应的客户端，并标记请求占用
-	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
+	entry, err := s.acquireClientWithProfileAndProtocol(proxyURL, accountID, accountConcurrency, profile, protocolOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +436,11 @@ func (s *httpUpstreamService) acquireClient(proxyURL string, accountID int64, ac
 
 // acquireClientWithProfile 获取或创建客户端，并按请求 profile 选择协议策略。
 func (s *httpUpstreamService) acquireClientWithProfile(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile) (*upstreamClientEntry, error) {
-	return s.getClientEntry(proxyURL, accountID, accountConcurrency, profile, true, true)
+	return s.acquireClientWithProfileAndProtocol(proxyURL, accountID, accountConcurrency, profile, "")
+}
+
+func (s *httpUpstreamService) acquireClientWithProfileAndProtocol(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, protocolOverride string) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithProtocol(proxyURL, accountID, accountConcurrency, profile, protocolOverride, true, true)
 }
 
 // getOrCreateClient 获取或创建客户端
@@ -458,6 +466,10 @@ func (s *httpUpstreamService) getOrCreateClient(proxyURL string, accountID int64
 // markInFlight=true 时会标记进行中请求，用于请求路径防止被淘汰
 // enforceLimit=true 时会限制客户端数量，超限且无法淘汰时返回错误
 func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithProtocol(proxyURL, accountID, accountConcurrency, profile, "", markInFlight, enforceLimit)
+}
+
+func (s *httpUpstreamService) getClientEntryWithProtocol(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, protocolOverride string, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
 	// 标准化代理 URL 并解析
@@ -466,7 +478,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 		return nil, err
 	}
 	// 根据请求 profile（例如 OpenAI）选择协议模式
-	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
+	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy, protocolOverride)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
 	// 构建缓存键（根据隔离策略不同）
@@ -796,9 +808,15 @@ func (s *httpUpstreamService) resolveOpenAIHTTP2Settings() openAIHTTP2Settings {
 	return settings
 }
 
-func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL) string {
+func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamProfile, proxyKey string, parsedProxy *url.URL, protocolOverride string) string {
 	if profile != service.HTTPUpstreamProfileOpenAI {
 		return upstreamProtocolModeDefault
+	}
+	switch protocolOverride {
+	case service.OpenAIHTTPProtocolOverrideH1:
+		return upstreamProtocolModeOpenAIH1
+	case service.OpenAIHTTPProtocolOverrideH2:
+		return upstreamProtocolModeOpenAIH2
 	}
 	settings := s.resolveOpenAIHTTP2Settings()
 	if !settings.enabled {

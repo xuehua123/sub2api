@@ -149,6 +149,33 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestOpenAIProtocolOverrideH1BeatsGlobalHTTP2Enabled() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true},
+	}
+	svc := s.newService()
+	entry, err := svc.getClientEntryWithProtocol("", 1, 1, service.HTTPUpstreamProfileOpenAI, service.OpenAIHTTPProtocolOverrideH1, false, false)
+	require.NoError(s.T(), err)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.False(s.T(), transport.ForceAttemptHTTP2)
+	require.NotNil(s.T(), transport.TLSNextProto, "HTTP/1 override should disable automatic H2 negotiation")
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH1, entry.protocolMode)
+}
+
+func (s *HTTPUpstreamSuite) TestOpenAIProtocolOverrideH2BeatsGlobalHTTP2Disabled() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: false},
+	}
+	svc := s.newService()
+	entry, err := svc.getClientEntryWithProtocol("", 1, 1, service.HTTPUpstreamProfileOpenAI, service.OpenAIHTTPProtocolOverrideH2, false, false)
+	require.NoError(s.T(), err)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.True(s.T(), transport.ForceAttemptHTTP2)
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH2, entry.protocolMode)
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIHeaderTimeoutChangeRebuildsClient() {
 	s.cfg.Gateway = config.GatewayConfig{
 		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{Enabled: true},

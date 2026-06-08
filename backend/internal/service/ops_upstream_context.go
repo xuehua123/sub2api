@@ -50,6 +50,7 @@ const (
 
 type opsHTTPTraceContextKey struct{}
 type opsGzipUpstreamAllowedContextKey struct{}
+type openAIHTTPProtocolOverrideContextKey struct{}
 
 // OpsHTTPTrace captures client-side net/http timing for an upstream request.
 // Durations are measured from the moment the gateway starts the upstream attempt.
@@ -111,8 +112,13 @@ func ContextWithOpsGzipUpstreamAllowed(ctx context.Context, allowed bool) contex
 	return context.WithValue(ctx, opsGzipUpstreamAllowedContextKey{}, allowed)
 }
 
+func ContextWithAccountUpstreamPolicy(ctx context.Context, account *Account) context.Context {
+	ctx = ContextWithOpsGzipUpstreamAllowed(ctx, account.IsUpstreamGzipEnabled())
+	return ContextWithOpenAIHTTPProtocolOverride(ctx, account.OpenAIHTTPProtocolOverride())
+}
+
 func ContextWithAccountUpstreamGzipPolicy(ctx context.Context, account *Account) context.Context {
-	return ContextWithOpsGzipUpstreamAllowed(ctx, account.IsUpstreamGzipEnabled())
+	return ContextWithAccountUpstreamPolicy(ctx, account)
 }
 
 func OpsGzipUpstreamAllowedFromContext(ctx context.Context) (bool, bool) {
@@ -121,6 +127,30 @@ func OpsGzipUpstreamAllowedFromContext(ctx context.Context) (bool, bool) {
 	}
 	allowed, ok := ctx.Value(opsGzipUpstreamAllowedContextKey{}).(bool)
 	return allowed, ok
+}
+
+func ContextWithOpenAIHTTPProtocolOverride(ctx context.Context, protocol string) context.Context {
+	if ctx == nil {
+		return ctx
+	}
+	protocol = strings.ToLower(strings.TrimSpace(protocol))
+	if protocol != OpenAIHTTPProtocolOverrideH1 && protocol != OpenAIHTTPProtocolOverrideH2 {
+		return ctx
+	}
+	return context.WithValue(ctx, openAIHTTPProtocolOverrideContextKey{}, protocol)
+}
+
+func OpenAIHTTPProtocolOverrideFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	protocol, _ := ctx.Value(openAIHTTPProtocolOverrideContextKey{}).(string)
+	switch protocol {
+	case OpenAIHTTPProtocolOverrideH1, OpenAIHTTPProtocolOverrideH2:
+		return protocol
+	default:
+		return ""
+	}
 }
 
 func (t *OpsHTTPTrace) MarkDNSStart() {

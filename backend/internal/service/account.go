@@ -69,6 +69,12 @@ type Account struct {
 }
 
 const AccountExtraUpstreamGzipEnabled = "upstream_gzip_enabled"
+const AccountExtraOpenAIHTTPProtocol = "openai_http_protocol"
+
+const (
+	OpenAIHTTPProtocolOverrideH1 = "h1"
+	OpenAIHTTPProtocolOverrideH2 = "h2"
+)
 
 type OpenAIEndpointCapability string
 
@@ -1084,6 +1090,21 @@ func (a *Account) IsUpstreamGzipEnabled() bool {
 		}
 	}
 	return !a.IsOpenAIOAuth()
+}
+
+func (a *Account) OpenAIHTTPProtocolOverride() string {
+	if a == nil || a.Extra == nil {
+		return ""
+	}
+	raw, _ := a.Extra[AccountExtraOpenAIHTTPProtocol].(string)
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "h1", "http1", "http1.1", "http/1.1", "openai_h1":
+		return OpenAIHTTPProtocolOverrideH1
+	case "h2", "http2", "http/2", "openai_h2":
+		return OpenAIHTTPProtocolOverrideH2
+	default:
+		return ""
+	}
 }
 
 func (a *Account) GetOpenAIBaseURL() string {
