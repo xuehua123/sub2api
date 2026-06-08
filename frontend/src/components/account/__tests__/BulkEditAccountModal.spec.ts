@@ -168,6 +168,25 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI 账号批量编辑可设置上游 HTTP 协议', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-openai-http-protocol-enabled').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-openai-http-protocol-select"]').setValue('h1')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_http_protocol: 'h1'
+      }
+    })
+  })
+
   it('OpenAI OAuth 批量编辑应提交 OAuth 专属 WS mode 字段', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],

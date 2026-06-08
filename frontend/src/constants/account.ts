@@ -14,6 +14,15 @@ export const QUOTA_RESET_MODE_ROLLING = 'rolling' as const
 export const QUOTA_RESET_MODE_FIXED = 'fixed' as const
 export type QuotaResetMode = typeof QUOTA_RESET_MODE_ROLLING | typeof QUOTA_RESET_MODE_FIXED
 
+/** OpenAI upstream HTTP protocol override values (must match backend account.go constants) */
+export const OPENAI_HTTP_PROTOCOL_DEFAULT = '' as const
+export const OPENAI_HTTP_PROTOCOL_H1 = 'h1' as const
+export const OPENAI_HTTP_PROTOCOL_H2 = 'h2' as const
+export type OpenAIHTTPProtocolOverride =
+  | typeof OPENAI_HTTP_PROTOCOL_DEFAULT
+  | typeof OPENAI_HTTP_PROTOCOL_H1
+  | typeof OPENAI_HTTP_PROTOCOL_H2
+
 /** Vertex AI location options for Service Account accounts */
 export const VERTEX_LOCATION_OPTIONS = [
   {

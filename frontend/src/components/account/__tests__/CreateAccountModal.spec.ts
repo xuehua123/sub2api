@@ -239,4 +239,27 @@ describe('CreateAccountModal', () => {
     expect(createAccountMock).toHaveBeenCalledTimes(1)
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.upstream_gzip_enabled).toBe(false)
   })
+
+  it('allows setting OpenAI HTTP protocol during account creation', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    getWebSearchEmulationConfigMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    getWebSearchEmulationConfigMock.mockResolvedValue({ enabled: false, providers: [] })
+    createAccountMock.mockResolvedValue({ id: 1 })
+
+    const wrapper = mountModal()
+    await flushPromises()
+
+    await wrapper.get('[data-tour="account-form-name"]').setValue('OpenAI Key')
+    await clickButtonContaining(wrapper, 'OpenAI')
+    await clickButtonContaining(wrapper, 'API Key')
+    await wrapper.get('[data-testid="create-openai-http-protocol-select"]').setValue('h1')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_http_protocol).toBe('h1')
+  })
 })

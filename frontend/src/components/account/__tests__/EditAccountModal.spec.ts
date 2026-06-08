@@ -498,6 +498,28 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.upstream_gzip_enabled).toBe(true)
   })
 
+  it('allows account-level OpenAI HTTP protocol override', async () => {
+    const account = buildAccount()
+    account.type = 'oauth'
+    account.credentials = {
+      access_token: 'access-token',
+      refresh_token: 'refresh-token'
+    }
+    account.extra = {}
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+
+    await wrapper.get('[data-testid="edit-openai-http-protocol-select"]').setValue('h1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_http_protocol).toBe('h1')
+  })
+
   it('allows saving apikey account when backend redacted api_key but credentials_status reports it exists', async () => {
     // 新前端 + 新后端：响应已脱敏，credentials 里没有 api_key，credentials_status.has_api_key=true
     const account = buildAccount()

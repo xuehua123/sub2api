@@ -79,6 +79,46 @@
         </div>
       </div>
 
+      <!-- OpenAI HTTP protocol -->
+      <div
+        v-if="allOpenAIHTTPProtocolCapable"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="mb-3 flex items-center justify-between">
+          <div class="flex-1 pr-4">
+            <label
+              id="bulk-edit-openai-http-protocol-label"
+              class="input-label mb-0"
+              for="bulk-edit-openai-http-protocol-enabled"
+            >
+              {{ t('admin.accounts.openaiHttpProtocol') }}
+            </label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.openaiHttpProtocolDesc') }}
+            </p>
+          </div>
+          <input
+            v-model="enableOpenAIHTTPProtocol"
+            id="bulk-edit-openai-http-protocol-enabled"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-http-protocol-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <div
+          id="bulk-edit-openai-http-protocol-body"
+          :class="!enableOpenAIHTTPProtocol && 'pointer-events-none opacity-50'"
+          role="group"
+          aria-labelledby="bulk-edit-openai-http-protocol-label"
+        >
+          <Select
+            v-model="openAIHTTPProtocol"
+            :options="openAIHTTPProtocolOptions"
+            data-testid="bulk-edit-openai-http-protocol-select"
+          />
+        </div>
+      </div>
+
       <!-- OpenAI passthrough -->
       <div
         v-if="allOpenAIPassthroughCapable"
@@ -1205,6 +1245,12 @@ import {
   resolveOpenAIWSModeConcurrencyHintKey
 } from '@/utils/openaiWsMode'
 import type { OpenAIWSMode } from '@/utils/openaiWsMode'
+import {
+  OPENAI_HTTP_PROTOCOL_DEFAULT,
+  OPENAI_HTTP_PROTOCOL_H1,
+  OPENAI_HTTP_PROTOCOL_H2,
+  type OpenAIHTTPProtocolOverride
+} from '@/constants/account'
 interface Props {
   show: boolean
   accountIds: number[]
@@ -1245,6 +1291,8 @@ const allOpenAIPassthroughCapable = computed(() => {
     targetSelectedTypes.value.every(t => t === 'oauth' || t === 'apikey')
   )
 })
+
+const allOpenAIHTTPProtocolCapable = computed(() => allOpenAIPassthroughCapable.value)
 
 const allOpenAIOAuth = computed(() => {
   return (
@@ -1308,6 +1356,7 @@ const enableRateMultiplier = ref(false)
 const enableStatus = ref(false)
 const enableGroups = ref(false)
 const enableUpstreamGzip = ref(false)
+const enableOpenAIHTTPProtocol = ref(false)
 const enableOpenAIPassthrough = ref(false)
 const enableOpenAIWSMode = ref(false)
 const enableOpenAIAPIKeyWSMode = ref(false)
@@ -1337,6 +1386,7 @@ const rateMultiplier = ref(1)
 const status = ref<'active' | 'inactive'>('active')
 const groupIds = ref<number[]>([])
 const upstreamGzipEnabled = ref(false)
+const openAIHTTPProtocol = ref<OpenAIHTTPProtocolOverride>(OPENAI_HTTP_PROTOCOL_DEFAULT)
 const openaiPassthroughEnabled = ref(false)
 const openaiOAuthResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
 const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OFF)
@@ -1386,6 +1436,11 @@ const openAICompactModeOptions = computed(() => [
   { value: 'auto', label: t('admin.accounts.openai.compactModeAuto') },
   { value: 'force_on', label: t('admin.accounts.openai.compactModeForceOn') },
   { value: 'force_off', label: t('admin.accounts.openai.compactModeForceOff') }
+])
+const openAIHTTPProtocolOptions = computed(() => [
+  { value: OPENAI_HTTP_PROTOCOL_DEFAULT, label: t('admin.accounts.openaiHttpProtocolDefault') },
+  { value: OPENAI_HTTP_PROTOCOL_H1, label: t('admin.accounts.openaiHttpProtocolH1') },
+  { value: OPENAI_HTTP_PROTOCOL_H2, label: t('admin.accounts.openaiHttpProtocolH2') }
 ])
 const openAIWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiOAuthResponsesWebSocketV2Mode.value)
@@ -1544,6 +1599,11 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
   if (enableUpstreamGzip.value) {
     const extra = ensureExtra()
     extra.upstream_gzip_enabled = upstreamGzipEnabled.value
+  }
+
+  if (enableOpenAIHTTPProtocol.value) {
+    const extra = ensureExtra()
+    extra.openai_http_protocol = openAIHTTPProtocol.value
   }
 
   if (enableModelRestriction.value && !isOpenAIModelRestrictionDisabled.value) {
@@ -1706,6 +1766,7 @@ const handleSubmit = async () => {
     enableStatus.value ||
     enableGroups.value ||
     enableUpstreamGzip.value ||
+    enableOpenAIHTTPProtocol.value ||
     enableOpenAIWSMode.value ||
     enableOpenAIAPIKeyWSMode.value ||
     enableCodexCLIOnly.value ||
@@ -1809,6 +1870,7 @@ watch(
       enableStatus.value = false
       enableGroups.value = false
       enableUpstreamGzip.value = false
+      enableOpenAIHTTPProtocol.value = false
       enableOpenAIPassthrough.value = false
       enableOpenAIWSMode.value = false
       enableOpenAIAPIKeyWSMode.value = false
@@ -1835,6 +1897,7 @@ watch(
       status.value = 'active'
       groupIds.value = []
       upstreamGzipEnabled.value = false
+      openAIHTTPProtocol.value = OPENAI_HTTP_PROTOCOL_DEFAULT
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       codexCLIOnlyEnabled.value = false

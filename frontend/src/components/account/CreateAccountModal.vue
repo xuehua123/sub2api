@@ -816,6 +816,20 @@
         </div>
       </div>
 
+      <!-- OpenAI HTTP protocol -->
+      <div v-if="form.platform === 'openai'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label" for="create-openai-http-protocol">
+          {{ t('admin.accounts.openaiHttpProtocol') }}
+        </label>
+        <Select
+          id="create-openai-http-protocol"
+          v-model="openAIHTTPProtocol"
+          :options="openAIHTTPProtocolOptions"
+          data-testid="create-openai-http-protocol-select"
+        />
+        <p class="input-hint">{{ t('admin.accounts.openaiHttpProtocolDesc') }}</p>
+      </div>
+
       <!-- Upstream config (only for Antigravity upstream type) -->
       <div v-if="form.platform === 'antigravity' && antigravityAccountType === 'upstream'" class="space-y-4">
         <div>
@@ -3283,7 +3297,13 @@ import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  OPENAI_HTTP_PROTOCOL_DEFAULT,
+  OPENAI_HTTP_PROTOCOL_H1,
+  OPENAI_HTTP_PROTOCOL_H2,
+  VERTEX_LOCATION_OPTIONS,
+  type OpenAIHTTPProtocolOverride
+} from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -3457,6 +3477,7 @@ const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(true)
 const upstreamGzipEnabled = ref(true)
 const upstreamGzipExplicit = ref(false)
+const openAIHTTPProtocol = ref<OpenAIHTTPProtocolOverride>(OPENAI_HTTP_PROTOCOL_DEFAULT)
 const openaiPassthroughEnabled = ref(false)
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAIResponsesMode = ref<OpenAIResponsesMode>('auto')
@@ -3758,6 +3779,11 @@ const upstreamGzipToggleTitle = computed(() =>
     ? t('admin.accounts.upstreamGzipEnabledTitle')
     : t('admin.accounts.upstreamGzipDisabledTitle')
 )
+const openAIHTTPProtocolOptions = computed(() => [
+  { value: OPENAI_HTTP_PROTOCOL_DEFAULT, label: t('admin.accounts.openaiHttpProtocolDefault') },
+  { value: OPENAI_HTTP_PROTOCOL_H1, label: t('admin.accounts.openaiHttpProtocolH1') },
+  { value: OPENAI_HTTP_PROTOCOL_H2, label: t('admin.accounts.openaiHttpProtocolH2') }
+])
 
 const toggleUpstreamGzip = () => {
   upstreamGzipEnabled.value = !upstreamGzipEnabled.value
@@ -3781,6 +3807,14 @@ const buildUpstreamGzipExtra = (
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+const applyOpenAIHTTPProtocolExtra = (extra: Record<string, unknown>) => {
+  if (openAIHTTPProtocol.value === OPENAI_HTTP_PROTOCOL_DEFAULT) {
+    delete extra.openai_http_protocol
+    return
+  }
+  extra.openai_http_protocol = openAIHTTPProtocol.value
 }
 
 // Helper to check if current type needs OAuth flow
@@ -3938,6 +3972,7 @@ watch(
     }
     if (newPlatform !== 'openai') {
       openaiPassthroughEnabled.value = false
+      openAIHTTPProtocol.value = OPENAI_HTTP_PROTOCOL_DEFAULT
       openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
       openaiOAuthResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
       openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
@@ -4340,6 +4375,7 @@ const resetForm = () => {
   upstreamGzipExplicit.value = false
   upstreamGzipEnabled.value = getDefaultUpstreamGzipEnabled(form.platform, form.type)
   openaiPassthroughEnabled.value = false
+  openAIHTTPProtocol.value = OPENAI_HTTP_PROTOCOL_DEFAULT
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
   openAIEndpointCapabilities.value = ['chat_completions', 'embeddings']
@@ -4419,6 +4455,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     delete extra.openai_passthrough
     delete extra.openai_oauth_passthrough
   }
+  applyOpenAIHTTPProtocolExtra(extra)
 
   if (accountCategory.value === 'oauth-based' && codexCLIOnlyEnabled.value) {
     extra.codex_cli_only = true

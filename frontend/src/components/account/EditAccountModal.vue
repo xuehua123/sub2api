@@ -68,6 +68,20 @@
         </div>
       </div>
 
+      <!-- OpenAI HTTP protocol -->
+      <div v-if="account.platform === 'openai'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <label class="input-label" for="edit-openai-http-protocol">
+          {{ t('admin.accounts.openaiHttpProtocol') }}
+        </label>
+        <Select
+          id="edit-openai-http-protocol"
+          v-model="openAIHTTPProtocol"
+          :options="openAIHTTPProtocolOptions"
+          data-testid="edit-openai-http-protocol-select"
+        />
+        <p class="input-hint">{{ t('admin.accounts.openaiHttpProtocolDesc') }}</p>
+      </div>
+
       <!-- API Key fields (only for apikey type) -->
       <div v-if="account.type === 'apikey'" class="space-y-4">
         <div>
@@ -2443,7 +2457,13 @@ import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import { applyInterceptWarmup } from '@/components/account/credentialsBuilder'
 import { formatDateTime, formatDateTimeLocalInput, parseDateTimeLocalInput } from '@/utils/format'
 import { createStableObjectKeyResolver } from '@/utils/stableObjectKey'
-import { VERTEX_LOCATION_OPTIONS } from '@/constants/account'
+import {
+  OPENAI_HTTP_PROTOCOL_DEFAULT,
+  OPENAI_HTTP_PROTOCOL_H1,
+  OPENAI_HTTP_PROTOCOL_H2,
+  VERTEX_LOCATION_OPTIONS,
+  type OpenAIHTTPProtocolOverride
+} from '@/constants/account'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -2580,6 +2600,7 @@ const interceptWarmupRequests = ref(false)
 const autoPauseOnExpired = ref(false)
 const upstreamGzipEnabled = ref(true)
 const upstreamGzipExplicit = ref(false)
+const openAIHTTPProtocol = ref<OpenAIHTTPProtocolOverride>(OPENAI_HTTP_PROTOCOL_DEFAULT)
 const autoPause5hThreshold = ref<number | null>(null)
 const autoPause7dThreshold = ref<number | null>(null)
 const autoPause5hDisabled = ref(false)
@@ -2702,6 +2723,11 @@ const upstreamGzipToggleTitle = computed(() =>
     ? t('admin.accounts.upstreamGzipEnabledTitle')
     : t('admin.accounts.upstreamGzipDisabledTitle')
 )
+const openAIHTTPProtocolOptions = computed(() => [
+  { value: OPENAI_HTTP_PROTOCOL_DEFAULT, label: t('admin.accounts.openaiHttpProtocolDefault') },
+  { value: OPENAI_HTTP_PROTOCOL_H1, label: t('admin.accounts.openaiHttpProtocolH1') },
+  { value: OPENAI_HTTP_PROTOCOL_H2, label: t('admin.accounts.openaiHttpProtocolH2') }
+])
 const codexImageGenerationBridgeOptions = computed<Array<{
   value: CodexImageGenerationBridgeMode
   label: string
@@ -2988,6 +3014,28 @@ const applyUpstreamGzipExtra = (updatePayload: Record<string, unknown>, account:
   }
 }
 
+const normalizeOpenAIHTTPProtocol = (value: unknown): OpenAIHTTPProtocolOverride => {
+  if (typeof value !== 'string') {
+    return OPENAI_HTTP_PROTOCOL_DEFAULT
+  }
+  const normalized = value.trim().toLowerCase()
+  if (normalized === OPENAI_HTTP_PROTOCOL_H1) {
+    return OPENAI_HTTP_PROTOCOL_H1
+  }
+  if (normalized === OPENAI_HTTP_PROTOCOL_H2) {
+    return OPENAI_HTTP_PROTOCOL_H2
+  }
+  return OPENAI_HTTP_PROTOCOL_DEFAULT
+}
+
+const applyOpenAIHTTPProtocolExtra = (extra: Record<string, unknown>) => {
+  if (openAIHTTPProtocol.value === OPENAI_HTTP_PROTOCOL_DEFAULT) {
+    delete extra.openai_http_protocol
+    return
+  }
+  extra.openai_http_protocol = openAIHTTPProtocol.value
+}
+
 const loadModelRestrictionFromMapping = (rawMapping?: Record<string, unknown>) => {
   const parsed = splitModelMappingObject(rawMapping)
   allowedModels.value = parsed.allowedModels
@@ -3037,6 +3085,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   const extra = newAccount.extra as Record<string, unknown> | undefined
   upstreamGzipExplicit.value = typeof extra?.upstream_gzip_enabled === 'boolean'
   upstreamGzipEnabled.value = getAccountUpstreamGzipEnabled(newAccount)
+  openAIHTTPProtocol.value = normalizeOpenAIHTTPProtocol(extra?.openai_http_protocol)
   mixedScheduling.value = extra?.mixed_scheduling === true
   allowOverages.value = extra?.allow_overages === true
   autoPause5hThreshold.value = typeof extra?.auto_pause_5h_threshold === 'number' ? extra.auto_pause_5h_threshold * 100 : null
@@ -4184,6 +4233,7 @@ const handleSubmit = async () => {
         delete newExtra.openai_passthrough
         delete newExtra.openai_oauth_passthrough
       }
+      applyOpenAIHTTPProtocolExtra(newExtra)
       if (openAICompactMode.value === 'auto') {
         delete newExtra.openai_compact_mode
       } else {
