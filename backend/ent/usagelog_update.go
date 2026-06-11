@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -266,6 +267,26 @@ func (_u *UsageLogUpdate) SetNillableSubscriptionID(v *int64) *UsageLogUpdate {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdate) ClearSubscriptionID() *UsageLogUpdate {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetEntitlementID sets the "entitlement_id" field.
+func (_u *UsageLogUpdate) SetEntitlementID(v int64) *UsageLogUpdate {
+	_u.mutation.SetEntitlementID(v)
+	return _u
+}
+
+// SetNillableEntitlementID sets the "entitlement_id" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableEntitlementID(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearEntitlementID clears the value of the "entitlement_id" field.
+func (_u *UsageLogUpdate) ClearEntitlementID() *UsageLogUpdate {
+	_u.mutation.ClearEntitlementID()
 	return _u
 }
 
@@ -904,6 +925,11 @@ func (_u *UsageLogUpdate) SetSubscription(v *UserSubscription) *UsageLogUpdate {
 	return _u.SetSubscriptionID(v.ID)
 }
 
+// SetEntitlement sets the "entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *UsageLogUpdate) SetEntitlement(v *SubscriptionEntitlement) *UsageLogUpdate {
+	return _u.SetEntitlementID(v.ID)
+}
+
 // Mutation returns the UsageLogMutation object of the builder.
 func (_u *UsageLogUpdate) Mutation() *UsageLogMutation {
 	return _u.mutation
@@ -936,6 +962,12 @@ func (_u *UsageLogUpdate) ClearGroup() *UsageLogUpdate {
 // ClearSubscription clears the "subscription" edge to the UserSubscription entity.
 func (_u *UsageLogUpdate) ClearSubscription() *UsageLogUpdate {
 	_u.mutation.ClearSubscription()
+	return _u
+}
+
+// ClearEntitlement clears the "entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *UsageLogUpdate) ClearEntitlement() *UsageLogUpdate {
+	_u.mutation.ClearEntitlement()
 	return _u
 }
 
@@ -1430,6 +1462,35 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.EntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.EntitlementTable,
+			Columns: []string{usagelog.EntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.EntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.EntitlementTable,
+			Columns: []string{usagelog.EntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{usagelog.Label}
@@ -1684,6 +1745,26 @@ func (_u *UsageLogUpdateOne) SetNillableSubscriptionID(v *int64) *UsageLogUpdate
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdateOne) ClearSubscriptionID() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetEntitlementID sets the "entitlement_id" field.
+func (_u *UsageLogUpdateOne) SetEntitlementID(v int64) *UsageLogUpdateOne {
+	_u.mutation.SetEntitlementID(v)
+	return _u
+}
+
+// SetNillableEntitlementID sets the "entitlement_id" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableEntitlementID(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearEntitlementID clears the value of the "entitlement_id" field.
+func (_u *UsageLogUpdateOne) ClearEntitlementID() *UsageLogUpdateOne {
+	_u.mutation.ClearEntitlementID()
 	return _u
 }
 
@@ -2322,6 +2403,11 @@ func (_u *UsageLogUpdateOne) SetSubscription(v *UserSubscription) *UsageLogUpdat
 	return _u.SetSubscriptionID(v.ID)
 }
 
+// SetEntitlement sets the "entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *UsageLogUpdateOne) SetEntitlement(v *SubscriptionEntitlement) *UsageLogUpdateOne {
+	return _u.SetEntitlementID(v.ID)
+}
+
 // Mutation returns the UsageLogMutation object of the builder.
 func (_u *UsageLogUpdateOne) Mutation() *UsageLogMutation {
 	return _u.mutation
@@ -2354,6 +2440,12 @@ func (_u *UsageLogUpdateOne) ClearGroup() *UsageLogUpdateOne {
 // ClearSubscription clears the "subscription" edge to the UserSubscription entity.
 func (_u *UsageLogUpdateOne) ClearSubscription() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscription()
+	return _u
+}
+
+// ClearEntitlement clears the "entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *UsageLogUpdateOne) ClearEntitlement() *UsageLogUpdateOne {
+	_u.mutation.ClearEntitlement()
 	return _u
 }
 
@@ -2871,6 +2963,35 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usersubscription.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.EntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.EntitlementTable,
+			Columns: []string{usagelog.EntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.EntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.EntitlementTable,
+			Columns: []string{usagelog.EntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

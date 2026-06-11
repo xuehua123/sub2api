@@ -140,6 +140,11 @@ func SubscriptionGroupID(v int64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldSubscriptionGroupID, v))
 }
 
+// SubscriptionEntitlementID applies equality check predicate on the "subscription_entitlement_id" field. It's identical to SubscriptionEntitlementIDEQ.
+func SubscriptionEntitlementID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
 // SubscriptionDays applies equality check predicate on the "subscription_days" field. It's identical to SubscriptionDaysEQ.
 func SubscriptionDays(v int) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldSubscriptionDays, v))
@@ -1238,6 +1243,36 @@ func SubscriptionGroupIDIsNil() predicate.PaymentOrder {
 // SubscriptionGroupIDNotNil applies the NotNil predicate on the "subscription_group_id" field.
 func SubscriptionGroupIDNotNil() predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldNotNull(FieldSubscriptionGroupID))
+}
+
+// SubscriptionEntitlementIDEQ applies the EQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDNEQ applies the NEQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDIn applies the In predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDNotIn applies the NotIn predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDIsNil applies the IsNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldSubscriptionEntitlementID))
+}
+
+// SubscriptionEntitlementIDNotNil applies the NotNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldSubscriptionEntitlementID))
 }
 
 // SubscriptionDaysEQ applies the EQ predicate on the "subscription_days" field.
@@ -2455,6 +2490,29 @@ func HasUser() predicate.PaymentOrder {
 func HasUserWith(preds ...predicate.User) predicate.PaymentOrder {
 	return predicate.PaymentOrder(func(s *sql.Selector) {
 		step := newUserStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSubscriptionEntitlement applies the HasEdge predicate on the "subscription_entitlement" edge.
+func HasSubscriptionEntitlement() predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubscriptionEntitlementWith applies the HasEdge predicate on the "subscription_entitlement" edge with a given conditions (other predicates).
+func HasSubscriptionEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.PaymentOrder {
+	return predicate.PaymentOrder(func(s *sql.Selector) {
+		step := newSubscriptionEntitlementStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

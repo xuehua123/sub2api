@@ -103,19 +103,31 @@ type GroupEdges struct {
 	RedeemCodes []*RedeemCode `json:"redeem_codes,omitempty"`
 	// Subscriptions holds the value of the subscriptions edge.
 	Subscriptions []*UserSubscription `json:"subscriptions,omitempty"`
+	// SubscriptionPlanExternalMappings holds the value of the subscription_plan_external_mappings edge.
+	SubscriptionPlanExternalMappings []*SubscriptionPlanExternalMapping `json:"subscription_plan_external_mappings,omitempty"`
+	// PrimarySubscriptionEntitlements holds the value of the primary_subscription_entitlements edge.
+	PrimarySubscriptionEntitlements []*SubscriptionEntitlement `json:"primary_subscription_entitlements,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
+	// SubscriptionPlans holds the value of the subscription_plans edge.
+	SubscriptionPlans []*SubscriptionPlan `json:"subscription_plans,omitempty"`
+	// SubscriptionEntitlements holds the value of the subscription_entitlements edge.
+	SubscriptionEntitlements []*SubscriptionEntitlement `json:"subscription_entitlements,omitempty"`
 	// Accounts holds the value of the accounts edge.
 	Accounts []*Account `json:"accounts,omitempty"`
 	// AllowedUsers holds the value of the allowed_users edge.
 	AllowedUsers []*User `json:"allowed_users,omitempty"`
+	// SubscriptionPlanGroups holds the value of the subscription_plan_groups edge.
+	SubscriptionPlanGroups []*SubscriptionPlanGroup `json:"subscription_plan_groups,omitempty"`
+	// SubscriptionEntitlementGroups holds the value of the subscription_entitlement_groups edge.
+	SubscriptionEntitlementGroups []*SubscriptionEntitlementGroup `json:"subscription_entitlement_groups,omitempty"`
 	// AccountGroups holds the value of the account_groups edge.
 	AccountGroups []*AccountGroup `json:"account_groups,omitempty"`
 	// UserAllowedGroups holds the value of the user_allowed_groups edge.
 	UserAllowedGroups []*UserAllowedGroup `json:"user_allowed_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [8]bool
+	loadedTypes [14]bool
 }
 
 // APIKeysOrErr returns the APIKeys value or an error if the edge
@@ -145,19 +157,55 @@ func (e GroupEdges) SubscriptionsOrErr() ([]*UserSubscription, error) {
 	return nil, &NotLoadedError{edge: "subscriptions"}
 }
 
+// SubscriptionPlanExternalMappingsOrErr returns the SubscriptionPlanExternalMappings value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) SubscriptionPlanExternalMappingsOrErr() ([]*SubscriptionPlanExternalMapping, error) {
+	if e.loadedTypes[3] {
+		return e.SubscriptionPlanExternalMappings, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_plan_external_mappings"}
+}
+
+// PrimarySubscriptionEntitlementsOrErr returns the PrimarySubscriptionEntitlements value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) PrimarySubscriptionEntitlementsOrErr() ([]*SubscriptionEntitlement, error) {
+	if e.loadedTypes[4] {
+		return e.PrimarySubscriptionEntitlements, nil
+	}
+	return nil, &NotLoadedError{edge: "primary_subscription_entitlements"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e GroupEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[5] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
 }
 
+// SubscriptionPlansOrErr returns the SubscriptionPlans value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) SubscriptionPlansOrErr() ([]*SubscriptionPlan, error) {
+	if e.loadedTypes[6] {
+		return e.SubscriptionPlans, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_plans"}
+}
+
+// SubscriptionEntitlementsOrErr returns the SubscriptionEntitlements value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) SubscriptionEntitlementsOrErr() ([]*SubscriptionEntitlement, error) {
+	if e.loadedTypes[7] {
+		return e.SubscriptionEntitlements, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_entitlements"}
+}
+
 // AccountsOrErr returns the Accounts value or an error if the edge
 // was not loaded in eager-loading.
 func (e GroupEdges) AccountsOrErr() ([]*Account, error) {
-	if e.loadedTypes[4] {
+	if e.loadedTypes[8] {
 		return e.Accounts, nil
 	}
 	return nil, &NotLoadedError{edge: "accounts"}
@@ -166,16 +214,34 @@ func (e GroupEdges) AccountsOrErr() ([]*Account, error) {
 // AllowedUsersOrErr returns the AllowedUsers value or an error if the edge
 // was not loaded in eager-loading.
 func (e GroupEdges) AllowedUsersOrErr() ([]*User, error) {
-	if e.loadedTypes[5] {
+	if e.loadedTypes[9] {
 		return e.AllowedUsers, nil
 	}
 	return nil, &NotLoadedError{edge: "allowed_users"}
 }
 
+// SubscriptionPlanGroupsOrErr returns the SubscriptionPlanGroups value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) SubscriptionPlanGroupsOrErr() ([]*SubscriptionPlanGroup, error) {
+	if e.loadedTypes[10] {
+		return e.SubscriptionPlanGroups, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_plan_groups"}
+}
+
+// SubscriptionEntitlementGroupsOrErr returns the SubscriptionEntitlementGroups value or an error if the edge
+// was not loaded in eager-loading.
+func (e GroupEdges) SubscriptionEntitlementGroupsOrErr() ([]*SubscriptionEntitlementGroup, error) {
+	if e.loadedTypes[11] {
+		return e.SubscriptionEntitlementGroups, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_entitlement_groups"}
+}
+
 // AccountGroupsOrErr returns the AccountGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e GroupEdges) AccountGroupsOrErr() ([]*AccountGroup, error) {
-	if e.loadedTypes[6] {
+	if e.loadedTypes[12] {
 		return e.AccountGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "account_groups"}
@@ -184,7 +250,7 @@ func (e GroupEdges) AccountGroupsOrErr() ([]*AccountGroup, error) {
 // UserAllowedGroupsOrErr returns the UserAllowedGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e GroupEdges) UserAllowedGroupsOrErr() ([]*UserAllowedGroup, error) {
-	if e.loadedTypes[7] {
+	if e.loadedTypes[13] {
 		return e.UserAllowedGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "user_allowed_groups"}
@@ -484,9 +550,29 @@ func (_m *Group) QuerySubscriptions() *UserSubscriptionQuery {
 	return NewGroupClient(_m.config).QuerySubscriptions(_m)
 }
 
+// QuerySubscriptionPlanExternalMappings queries the "subscription_plan_external_mappings" edge of the Group entity.
+func (_m *Group) QuerySubscriptionPlanExternalMappings() *SubscriptionPlanExternalMappingQuery {
+	return NewGroupClient(_m.config).QuerySubscriptionPlanExternalMappings(_m)
+}
+
+// QueryPrimarySubscriptionEntitlements queries the "primary_subscription_entitlements" edge of the Group entity.
+func (_m *Group) QueryPrimarySubscriptionEntitlements() *SubscriptionEntitlementQuery {
+	return NewGroupClient(_m.config).QueryPrimarySubscriptionEntitlements(_m)
+}
+
 // QueryUsageLogs queries the "usage_logs" edge of the Group entity.
 func (_m *Group) QueryUsageLogs() *UsageLogQuery {
 	return NewGroupClient(_m.config).QueryUsageLogs(_m)
+}
+
+// QuerySubscriptionPlans queries the "subscription_plans" edge of the Group entity.
+func (_m *Group) QuerySubscriptionPlans() *SubscriptionPlanQuery {
+	return NewGroupClient(_m.config).QuerySubscriptionPlans(_m)
+}
+
+// QuerySubscriptionEntitlements queries the "subscription_entitlements" edge of the Group entity.
+func (_m *Group) QuerySubscriptionEntitlements() *SubscriptionEntitlementQuery {
+	return NewGroupClient(_m.config).QuerySubscriptionEntitlements(_m)
 }
 
 // QueryAccounts queries the "accounts" edge of the Group entity.
@@ -497,6 +583,16 @@ func (_m *Group) QueryAccounts() *AccountQuery {
 // QueryAllowedUsers queries the "allowed_users" edge of the Group entity.
 func (_m *Group) QueryAllowedUsers() *UserQuery {
 	return NewGroupClient(_m.config).QueryAllowedUsers(_m)
+}
+
+// QuerySubscriptionPlanGroups queries the "subscription_plan_groups" edge of the Group entity.
+func (_m *Group) QuerySubscriptionPlanGroups() *SubscriptionPlanGroupQuery {
+	return NewGroupClient(_m.config).QuerySubscriptionPlanGroups(_m)
+}
+
+// QuerySubscriptionEntitlementGroups queries the "subscription_entitlement_groups" edge of the Group entity.
+func (_m *Group) QuerySubscriptionEntitlementGroups() *SubscriptionEntitlementGroupQuery {
+	return NewGroupClient(_m.config).QuerySubscriptionEntitlementGroups(_m)
 }
 
 // QueryAccountGroups queries the "account_groups" edge of the Group entity.

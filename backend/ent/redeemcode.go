@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -39,6 +40,8 @@ type RedeemCode struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 	// GroupID holds the value of the "group_id" field.
 	GroupID *int64 `json:"group_id,omitempty"`
+	// PlanID holds the value of the "plan_id" field.
+	PlanID *int64 `json:"plan_id,omitempty"`
 	// ValidityDays holds the value of the "validity_days" field.
 	ValidityDays int `json:"validity_days,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -53,9 +56,13 @@ type RedeemCodeEdges struct {
 	User *User `json:"user,omitempty"`
 	// Group holds the value of the group edge.
 	Group *Group `json:"group,omitempty"`
+	// Plan holds the value of the plan edge.
+	Plan *SubscriptionPlan `json:"plan,omitempty"`
+	// SourceSubscriptionEntitlements holds the value of the source_subscription_entitlements edge.
+	SourceSubscriptionEntitlements []*SubscriptionEntitlement `json:"source_subscription_entitlements,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [4]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -80,6 +87,26 @@ func (e RedeemCodeEdges) GroupOrErr() (*Group, error) {
 	return nil, &NotLoadedError{edge: "group"}
 }
 
+// PlanOrErr returns the Plan value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e RedeemCodeEdges) PlanOrErr() (*SubscriptionPlan, error) {
+	if e.Plan != nil {
+		return e.Plan, nil
+	} else if e.loadedTypes[2] {
+		return nil, &NotFoundError{label: subscriptionplan.Label}
+	}
+	return nil, &NotLoadedError{edge: "plan"}
+}
+
+// SourceSubscriptionEntitlementsOrErr returns the SourceSubscriptionEntitlements value or an error if the edge
+// was not loaded in eager-loading.
+func (e RedeemCodeEdges) SourceSubscriptionEntitlementsOrErr() ([]*SubscriptionEntitlement, error) {
+	if e.loadedTypes[3] {
+		return e.SourceSubscriptionEntitlements, nil
+	}
+	return nil, &NotLoadedError{edge: "source_subscription_entitlements"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*RedeemCode) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -87,7 +114,7 @@ func (*RedeemCode) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case redeemcode.FieldValue:
 			values[i] = new(sql.NullFloat64)
-		case redeemcode.FieldID, redeemcode.FieldUsedBy, redeemcode.FieldGroupID, redeemcode.FieldValidityDays:
+		case redeemcode.FieldID, redeemcode.FieldUsedBy, redeemcode.FieldGroupID, redeemcode.FieldPlanID, redeemcode.FieldValidityDays:
 			values[i] = new(sql.NullInt64)
 		case redeemcode.FieldCode, redeemcode.FieldType, redeemcode.FieldStatus, redeemcode.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -179,6 +206,13 @@ func (_m *RedeemCode) assignValues(columns []string, values []any) error {
 				_m.GroupID = new(int64)
 				*_m.GroupID = value.Int64
 			}
+		case redeemcode.FieldPlanID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field plan_id", values[i])
+			} else if value.Valid {
+				_m.PlanID = new(int64)
+				*_m.PlanID = value.Int64
+			}
 		case redeemcode.FieldValidityDays:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field validity_days", values[i])
@@ -206,6 +240,16 @@ func (_m *RedeemCode) QueryUser() *UserQuery {
 // QueryGroup queries the "group" edge of the RedeemCode entity.
 func (_m *RedeemCode) QueryGroup() *GroupQuery {
 	return NewRedeemCodeClient(_m.config).QueryGroup(_m)
+}
+
+// QueryPlan queries the "plan" edge of the RedeemCode entity.
+func (_m *RedeemCode) QueryPlan() *SubscriptionPlanQuery {
+	return NewRedeemCodeClient(_m.config).QueryPlan(_m)
+}
+
+// QuerySourceSubscriptionEntitlements queries the "source_subscription_entitlements" edge of the RedeemCode entity.
+func (_m *RedeemCode) QuerySourceSubscriptionEntitlements() *SubscriptionEntitlementQuery {
+	return NewRedeemCodeClient(_m.config).QuerySourceSubscriptionEntitlements(_m)
 }
 
 // Update returns a builder for updating this RedeemCode.
@@ -268,6 +312,11 @@ func (_m *RedeemCode) String() string {
 	builder.WriteString(", ")
 	if v := _m.GroupID; v != nil {
 		builder.WriteString("group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.PlanID; v != nil {
+		builder.WriteString("plan_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

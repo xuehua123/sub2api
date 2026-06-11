@@ -70,6 +70,9 @@ func (RedeemCode) Fields() []ent.Field {
 		field.Int64("group_id").
 			Optional().
 			Nillable(),
+		field.Int64("plan_id").
+			Optional().
+			Nillable(),
 		field.Int("validity_days").
 			Default(30),
 	}
@@ -85,6 +88,11 @@ func (RedeemCode) Edges() []ent.Edge {
 			Ref("redeem_codes").
 			Field("group_id").
 			Unique(),
+		edge.From("plan", SubscriptionPlan.Type).
+			Ref("redeem_codes").
+			Field("plan_id").
+			Unique(),
+		edge.To("source_subscription_entitlements", SubscriptionEntitlement.Type),
 	}
 }
 
@@ -94,6 +102,7 @@ func (RedeemCode) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("used_by"),
 		index.Fields("group_id"),
+		index.Fields("plan_id"),
 		index.Fields("expires_at"),
 	}
 }

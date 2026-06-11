@@ -82,8 +82,16 @@ type Tx struct {
 	SecuritySecret *SecuritySecretClient
 	// Setting is the client for interacting with the Setting builders.
 	Setting *SettingClient
+	// SubscriptionEntitlement is the client for interacting with the SubscriptionEntitlement builders.
+	SubscriptionEntitlement *SubscriptionEntitlementClient
+	// SubscriptionEntitlementGroup is the client for interacting with the SubscriptionEntitlementGroup builders.
+	SubscriptionEntitlementGroup *SubscriptionEntitlementGroupClient
 	// SubscriptionPlan is the client for interacting with the SubscriptionPlan builders.
 	SubscriptionPlan *SubscriptionPlanClient
+	// SubscriptionPlanExternalMapping is the client for interacting with the SubscriptionPlanExternalMapping builders.
+	SubscriptionPlanExternalMapping *SubscriptionPlanExternalMappingClient
+	// SubscriptionPlanGroup is the client for interacting with the SubscriptionPlanGroup builders.
+	SubscriptionPlanGroup *SubscriptionPlanGroupClient
 	// SupportIssue is the client for interacting with the SupportIssue builders.
 	SupportIssue *SupportIssueClient
 	// SupportIssueAttachment is the client for interacting with the SupportIssueAttachment builders.
@@ -277,7 +285,11 @@ func (tx *Tx) init() {
 	tx.ReferralRelationHistory = NewReferralRelationHistoryClient(tx.config)
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
+	tx.SubscriptionEntitlement = NewSubscriptionEntitlementClient(tx.config)
+	tx.SubscriptionEntitlementGroup = NewSubscriptionEntitlementGroupClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
+	tx.SubscriptionPlanExternalMapping = NewSubscriptionPlanExternalMappingClient(tx.config)
+	tx.SubscriptionPlanGroup = NewSubscriptionPlanGroupClient(tx.config)
 	tx.SupportIssue = NewSupportIssueClient(tx.config)
 	tx.SupportIssueAttachment = NewSupportIssueAttachmentClient(tx.config)
 	tx.SupportIssueComment = NewSupportIssueCommentClient(tx.config)

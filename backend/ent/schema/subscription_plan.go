@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
@@ -48,6 +49,27 @@ func (SubscriptionPlan) Fields() []ent.Field {
 		field.String("validity_unit").
 			MaxLen(10).
 			Default("day"),
+		field.String("access_scope").
+			MaxLen(32).
+			Default("explicit"),
+		field.JSON("allowed_platforms", []string{}).
+			Optional().
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),
+		field.Float("daily_limit_usd").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("weekly_limit_usd").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.Float("monthly_limit_usd").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}),
+		field.String("overage_policy").
+			MaxLen(32).
+			Default("block"),
 		field.String("features").
 			SchemaType(map[string]string{dialect.Postgres: "text"}).
 			Default(""),
@@ -69,9 +91,21 @@ func (SubscriptionPlan) Fields() []ent.Field {
 	}
 }
 
+func (SubscriptionPlan) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.To("groups", Group.Type).
+			Through("subscription_plan_groups", SubscriptionPlanGroup.Type),
+		edge.To("entitlements", SubscriptionEntitlement.Type),
+		edge.To("external_mappings", SubscriptionPlanExternalMapping.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)),
+		edge.To("redeem_codes", RedeemCode.Type),
+	}
+}
+
 func (SubscriptionPlan) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("group_id"),
 		index.Fields("for_sale"),
+		index.Fields("access_scope"),
 	}
 }

@@ -120,6 +120,11 @@ func SubscriptionID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldSubscriptionID, v))
 }
 
+// EntitlementID applies equality check predicate on the "entitlement_id" field. It's identical to EntitlementIDEQ.
+func EntitlementID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntitlementID, v))
+}
+
 // InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
 func InputTokens(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -938,6 +943,36 @@ func SubscriptionIDIsNil() predicate.UsageLog {
 // SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
 func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
+}
+
+// EntitlementIDEQ applies the EQ predicate on the "entitlement_id" field.
+func EntitlementIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntitlementID, v))
+}
+
+// EntitlementIDNEQ applies the NEQ predicate on the "entitlement_id" field.
+func EntitlementIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldEntitlementID, v))
+}
+
+// EntitlementIDIn applies the In predicate on the "entitlement_id" field.
+func EntitlementIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldEntitlementID, vs...))
+}
+
+// EntitlementIDNotIn applies the NotIn predicate on the "entitlement_id" field.
+func EntitlementIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldEntitlementID, vs...))
+}
+
+// EntitlementIDIsNil applies the IsNil predicate on the "entitlement_id" field.
+func EntitlementIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldEntitlementID))
+}
+
+// EntitlementIDNotNil applies the NotNil predicate on the "entitlement_id" field.
+func EntitlementIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldEntitlementID))
 }
 
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
@@ -2417,6 +2452,29 @@ func HasSubscription() predicate.UsageLog {
 func HasSubscriptionWith(preds ...predicate.UserSubscription) predicate.UsageLog {
 	return predicate.UsageLog(func(s *sql.Selector) {
 		step := newSubscriptionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasEntitlement applies the HasEdge predicate on the "entitlement" edge.
+func HasEntitlement() predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, EntitlementTable, EntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasEntitlementWith applies the HasEdge predicate on the "entitlement" edge with a given conditions (other predicates).
+func HasEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := newEntitlementStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

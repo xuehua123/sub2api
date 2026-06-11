@@ -221,6 +221,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		HideCcsImportButton:                    settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                settings.PurchaseSubscriptionURL,
+		SubscriptionEntitlementsV2Enabled:      settings.SubscriptionEntitlementsV2Enabled,
+		Sub2PaymentPageLegacyMappingEnabled:    settings.Sub2PaymentPageLegacyMappingEnabled,
 		TableDefaultPageSize:                   settings.TableDefaultPageSize,
 		TablePageSizeOptions:                   settings.TablePageSizeOptions,
 		CustomMenuItems:                        dto.ParseCustomMenuItems(settings.CustomMenuItems),
@@ -521,20 +523,22 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
-	SiteName                    string                `json:"site_name"`
-	SiteLogo                    string                `json:"site_logo"`
-	SiteSubtitle                string                `json:"site_subtitle"`
-	APIBaseURL                  string                `json:"api_base_url"`
-	ContactInfo                 string                `json:"contact_info"`
-	DocURL                      string                `json:"doc_url"`
-	HomeContent                 string                `json:"home_content"`
-	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
-	TableDefaultPageSize        int                   `json:"table_default_page_size"`
-	TablePageSizeOptions        []int                 `json:"table_page_size_options"`
-	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
-	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
+	SiteName                            string                `json:"site_name"`
+	SiteLogo                            string                `json:"site_logo"`
+	SiteSubtitle                        string                `json:"site_subtitle"`
+	APIBaseURL                          string                `json:"api_base_url"`
+	ContactInfo                         string                `json:"contact_info"`
+	DocURL                              string                `json:"doc_url"`
+	HomeContent                         string                `json:"home_content"`
+	HideCcsImportButton                 bool                  `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled         *bool                 `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL             *string               `json:"purchase_subscription_url"`
+	SubscriptionEntitlementsV2Enabled   *bool                 `json:"subscription_entitlements_v2_enabled"`
+	Sub2PaymentPageLegacyMappingEnabled *bool                 `json:"sub2_payment_page_legacy_mapping_enabled"`
+	TableDefaultPageSize                int                   `json:"table_default_page_size"`
+	TablePageSizeOptions                []int                 `json:"table_page_size_options"`
+	CustomMenuItems                     *[]dto.CustomMenuItem `json:"custom_menu_items"`
+	CustomEndpoints                     *[]dto.CustomEndpoint `json:"custom_endpoints"`
 
 	// 默认配置
 	DefaultConcurrency                        int                               `json:"default_concurrency"`
@@ -1712,16 +1716,28 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                    req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            purchaseEnabled,
 		PurchaseSubscriptionURL:                purchaseURL,
-		TableDefaultPageSize:                   req.TableDefaultPageSize,
-		TablePageSizeOptions:                   req.TablePageSizeOptions,
-		CustomMenuItems:                        customMenuJSON,
-		CustomEndpoints:                        customEndpointsJSON,
-		DefaultConcurrency:                     req.DefaultConcurrency,
-		DefaultBalance:                         req.DefaultBalance,
-		AffiliateRebateRate:                    affiliateRebateRate,
-		AffiliateRebateFreezeHours:             affiliateRebateFreezeHours,
-		AffiliateRebateDurationDays:            affiliateRebateDurationDays,
-		AffiliateRebatePerInviteeCap:           affiliateRebatePerInviteeCap,
+		SubscriptionEntitlementsV2Enabled: func() bool {
+			if req.SubscriptionEntitlementsV2Enabled != nil {
+				return *req.SubscriptionEntitlementsV2Enabled
+			}
+			return previousSettings.SubscriptionEntitlementsV2Enabled
+		}(),
+		Sub2PaymentPageLegacyMappingEnabled: func() bool {
+			if req.Sub2PaymentPageLegacyMappingEnabled != nil {
+				return *req.Sub2PaymentPageLegacyMappingEnabled
+			}
+			return previousSettings.Sub2PaymentPageLegacyMappingEnabled
+		}(),
+		TableDefaultPageSize:         req.TableDefaultPageSize,
+		TablePageSizeOptions:         req.TablePageSizeOptions,
+		CustomMenuItems:              customMenuJSON,
+		CustomEndpoints:              customEndpointsJSON,
+		DefaultConcurrency:           req.DefaultConcurrency,
+		DefaultBalance:               req.DefaultBalance,
+		AffiliateRebateRate:          affiliateRebateRate,
+		AffiliateRebateFreezeHours:   affiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:  affiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap: affiliateRebatePerInviteeCap,
 		AffiliateEnabled: func() bool {
 			if req.AffiliateEnabled != nil {
 				return *req.AffiliateEnabled
@@ -2285,6 +2301,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                updatedSettings.PurchaseSubscriptionURL,
+		SubscriptionEntitlementsV2Enabled:      updatedSettings.SubscriptionEntitlementsV2Enabled,
+		Sub2PaymentPageLegacyMappingEnabled:    updatedSettings.Sub2PaymentPageLegacyMappingEnabled,
 		TableDefaultPageSize:                   updatedSettings.TableDefaultPageSize,
 		TablePageSizeOptions:                   updatedSettings.TablePageSizeOptions,
 		CustomMenuItems:                        dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
@@ -2803,6 +2821,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.PurchaseSubscriptionURL != after.PurchaseSubscriptionURL {
 		changed = append(changed, "purchase_subscription_url")
+	}
+	if before.SubscriptionEntitlementsV2Enabled != after.SubscriptionEntitlementsV2Enabled {
+		changed = append(changed, "subscription_entitlements_v2_enabled")
+	}
+	if before.Sub2PaymentPageLegacyMappingEnabled != after.Sub2PaymentPageLegacyMappingEnabled {
+		changed = append(changed, "sub2_payment_page_legacy_mapping_enabled")
 	}
 	if before.TableDefaultPageSize != after.TableDefaultPageSize {
 		changed = append(changed, "table_default_page_size")

@@ -43,7 +43,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/referralrelationhistory"
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	"github.com/Wei-Shaw/sub2api/ent/supportissue"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueattachment"
 	"github.com/Wei-Shaw/sub2api/ent/supportissuecomment"
@@ -1034,6 +1038,60 @@ func (f TraverseSetting) Traverse(ctx context.Context, q ent.Query) error {
 	return fmt.Errorf("unexpected query type %T. expect *ent.SettingQuery", q)
 }
 
+// The SubscriptionEntitlementFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionEntitlementFunc func(context.Context, *ent.SubscriptionEntitlementQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionEntitlementFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionEntitlementQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementQuery", q)
+}
+
+// The TraverseSubscriptionEntitlement type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionEntitlement func(context.Context, *ent.SubscriptionEntitlementQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionEntitlement) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionEntitlement) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionEntitlementQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementQuery", q)
+}
+
+// The SubscriptionEntitlementGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionEntitlementGroupFunc func(context.Context, *ent.SubscriptionEntitlementGroupQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionEntitlementGroupFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionEntitlementGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementGroupQuery", q)
+}
+
+// The TraverseSubscriptionEntitlementGroup type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionEntitlementGroup func(context.Context, *ent.SubscriptionEntitlementGroupQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionEntitlementGroup) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionEntitlementGroup) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionEntitlementGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementGroupQuery", q)
+}
+
 // The SubscriptionPlanFunc type is an adapter to allow the use of ordinary function as a Querier.
 type SubscriptionPlanFunc func(context.Context, *ent.SubscriptionPlanQuery) (ent.Value, error)
 
@@ -1059,6 +1117,60 @@ func (f TraverseSubscriptionPlan) Traverse(ctx context.Context, q ent.Query) err
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanQuery", q)
+}
+
+// The SubscriptionPlanExternalMappingFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionPlanExternalMappingFunc func(context.Context, *ent.SubscriptionPlanExternalMappingQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionPlanExternalMappingFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionPlanExternalMappingQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanExternalMappingQuery", q)
+}
+
+// The TraverseSubscriptionPlanExternalMapping type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionPlanExternalMapping func(context.Context, *ent.SubscriptionPlanExternalMappingQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionPlanExternalMapping) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionPlanExternalMapping) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionPlanExternalMappingQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanExternalMappingQuery", q)
+}
+
+// The SubscriptionPlanGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionPlanGroupFunc func(context.Context, *ent.SubscriptionPlanGroupQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionPlanGroupFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionPlanGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanGroupQuery", q)
+}
+
+// The TraverseSubscriptionPlanGroup type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionPlanGroup func(context.Context, *ent.SubscriptionPlanGroupQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionPlanGroup) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionPlanGroup) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionPlanGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionPlanGroupQuery", q)
 }
 
 // The SupportIssueFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1510,8 +1622,16 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.SecuritySecretQuery, predicate.SecuritySecret, securitysecret.OrderOption]{typ: ent.TypeSecuritySecret, tq: q}, nil
 	case *ent.SettingQuery:
 		return &query[*ent.SettingQuery, predicate.Setting, setting.OrderOption]{typ: ent.TypeSetting, tq: q}, nil
+	case *ent.SubscriptionEntitlementQuery:
+		return &query[*ent.SubscriptionEntitlementQuery, predicate.SubscriptionEntitlement, subscriptionentitlement.OrderOption]{typ: ent.TypeSubscriptionEntitlement, tq: q}, nil
+	case *ent.SubscriptionEntitlementGroupQuery:
+		return &query[*ent.SubscriptionEntitlementGroupQuery, predicate.SubscriptionEntitlementGroup, subscriptionentitlementgroup.OrderOption]{typ: ent.TypeSubscriptionEntitlementGroup, tq: q}, nil
 	case *ent.SubscriptionPlanQuery:
 		return &query[*ent.SubscriptionPlanQuery, predicate.SubscriptionPlan, subscriptionplan.OrderOption]{typ: ent.TypeSubscriptionPlan, tq: q}, nil
+	case *ent.SubscriptionPlanExternalMappingQuery:
+		return &query[*ent.SubscriptionPlanExternalMappingQuery, predicate.SubscriptionPlanExternalMapping, subscriptionplanexternalmapping.OrderOption]{typ: ent.TypeSubscriptionPlanExternalMapping, tq: q}, nil
+	case *ent.SubscriptionPlanGroupQuery:
+		return &query[*ent.SubscriptionPlanGroupQuery, predicate.SubscriptionPlanGroup, subscriptionplangroup.OrderOption]{typ: ent.TypeSubscriptionPlanGroup, tq: q}, nil
 	case *ent.SupportIssueQuery:
 		return &query[*ent.SupportIssueQuery, predicate.SupportIssue, supportissue.OrderOption]{typ: ent.TypeSupportIssue, tq: q}, nil
 	case *ent.SupportIssueAttachmentQuery:

@@ -172,7 +172,16 @@ func (Group) Edges() []ent.Edge {
 		edge.To("api_keys", APIKey.Type),
 		edge.To("redeem_codes", RedeemCode.Type),
 		edge.To("subscriptions", UserSubscription.Type),
+		edge.To("subscription_plan_external_mappings", SubscriptionPlanExternalMapping.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("primary_subscription_entitlements", SubscriptionEntitlement.Type),
 		edge.To("usage_logs", UsageLog.Type),
+		edge.From("subscription_plans", SubscriptionPlan.Type).
+			Ref("groups").
+			Through("subscription_plan_groups", SubscriptionPlanGroup.Type),
+		edge.From("subscription_entitlements", SubscriptionEntitlement.Type).
+			Ref("groups").
+			Through("subscription_entitlement_groups", SubscriptionEntitlementGroup.Type),
 		edge.From("accounts", Account.Type).
 			Ref("groups").
 			Through("account_groups", AccountGroup.Type),

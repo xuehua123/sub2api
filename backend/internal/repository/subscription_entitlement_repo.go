@@ -1,0 +1,438 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	entgroup "github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+)
+
+type subscriptionEntitlementRepository struct {
+	client *dbent.Client
+}
+
+func NewSubscriptionEntitlementRepository(client *dbent.Client) service.SubscriptionEntitlementRepository {
+	return &subscriptionEntitlementRepository{client: client}
+}
+
+func (r *subscriptionEntitlementRepository) Create(ctx context.Context, ent *service.SubscriptionEntitlement, groupIDs []int64) error {
+	if ent == nil {
+		return service.ErrSubscriptionEntitlementNilInput
+	}
+
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		return r.createWithClient(txCtx, txClient, ent, groupIDs)
+	})
+}
+
+func (r *subscriptionEntitlementRepository) CreateTx(ctx context.Context, ent *service.SubscriptionEntitlement, groupIDs []int64) error {
+	return r.Create(ctx, ent, groupIDs)
+}
+
+func (r *subscriptionEntitlementRepository) GetByID(ctx context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	m, err := entitlementQueryWithGroups(client).
+		Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetBySourceID(ctx context.Context, sourceType string, sourceID int64) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	m, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.SourceTypeEQ(sourceType),
+			subscriptionentitlement.SourceIDEQ(sourceID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetBySourceExternalID(ctx context.Context, sourceType, sourceExternalID string) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	m, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.SourceTypeEQ(sourceType),
+			subscriptionentitlement.SourceExternalIDEQ(sourceExternalID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetBySourceRedeemCodeID(ctx context.Context, redeemCodeID int64) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	m, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.SourceRedeemCodeIDEQ(redeemCodeID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetActiveCoveringGroup(ctx context.Context, userID, groupID int64) ([]service.SubscriptionEntitlement, error) {
+	return r.ListActiveCoveringGroupForUser(ctx, userID, groupID)
+}
+
+func (r *subscriptionEntitlementRepository) ListActiveByUserID(ctx context.Context, userID int64) ([]service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	now := time.Now()
+	ms, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.UserIDEQ(userID),
+			subscriptionentitlement.StatusEQ(service.SubscriptionStatusActive),
+			subscriptionentitlement.StartsAtLTE(now),
+			subscriptionentitlement.ExpiresAtGT(now),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Order(dbent.Asc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return subscriptionEntitlementEntitiesToService(ms), nil
+}
+
+func (r *subscriptionEntitlementRepository) ListActiveCoveringGroupForUser(ctx context.Context, userID, groupID int64) ([]service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	now := time.Now()
+	ms, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.UserIDEQ(userID),
+			subscriptionentitlement.StatusEQ(service.SubscriptionStatusActive),
+			subscriptionentitlement.StartsAtLTE(now),
+			subscriptionentitlement.ExpiresAtGT(now),
+			subscriptionentitlement.DeletedAtIsNil(),
+			subscriptionentitlement.HasGroupsWith(entgroup.IDEQ(groupID)),
+		).
+		Order(dbent.Asc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return subscriptionEntitlementEntitiesToService(ms), nil
+}
+
+func (r *subscriptionEntitlementRepository) UpdateTerm(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.SubscriptionEntitlement.UpdateOneID(id).
+		SetStartsAt(startsAt).
+		SetExpiresAt(expiresAt).
+		SetNotes(notes)
+	if status != "" {
+		update.SetStatus(status)
+	}
+	_, err := update.Save(ctx)
+	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
+}
+
+func (r *subscriptionEntitlementRepository) ResetUsage(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error {
+	if !resetDaily && !resetWeekly && !resetMonthly {
+		return service.ErrSubscriptionEntitlementInvalidReset
+	}
+	if windowStart.IsZero() {
+		windowStart = time.Now()
+	}
+
+	client := clientFromContext(ctx, r.client)
+	update := client.SubscriptionEntitlement.UpdateOneID(id)
+	if resetDaily {
+		update.SetDailyUsageUsd(0).SetDailyWindowStart(windowStart)
+	}
+	if resetWeekly {
+		update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(windowStart)
+	}
+	if resetMonthly {
+		update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(windowStart)
+	}
+	_, err := update.Save(ctx)
+	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+}
+
+func (r *subscriptionEntitlementRepository) ApplyEntitlementUsage(ctx context.Context, id int64, costUSD float64, now time.Time) (*service.EntitlementUsageApplyResult, error) {
+	if costUSD < 0 {
+		return nil, service.ErrSubscriptionEntitlementInvalidUsage
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	const updateSQL = `
+		UPDATE subscription_entitlements
+		SET
+			daily_usage_usd = daily_usage_usd + $1,
+			weekly_usage_usd = weekly_usage_usd + $1,
+			monthly_usage_usd = monthly_usage_usd + $1,
+			updated_at = $3
+		WHERE id = $2
+			AND deleted_at IS NULL
+			AND status = 'active'
+			AND starts_at <= $3
+			AND expires_at > $3
+			AND (daily_limit_usd IS NULL OR daily_usage_usd + $1 <= daily_limit_usd)
+			AND (weekly_limit_usd IS NULL OR weekly_usage_usd + $1 <= weekly_limit_usd)
+			AND (monthly_limit_usd IS NULL OR monthly_usage_usd + $1 <= monthly_limit_usd)
+		RETURNING updated_at, daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
+			daily_window_start, weekly_window_start, monthly_window_start
+	`
+
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, updateSQL, costUSD, id, now)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	if rows.Next() {
+		result := &service.EntitlementUsageApplyResult{}
+		var dailyWindow, weeklyWindow, monthlyWindow sql.NullTime
+		if err := rows.Scan(
+			&result.UpdatedAt,
+			&result.DailyUsageUSD,
+			&result.WeeklyUsageUSD,
+			&result.MonthlyUsageUSD,
+			&dailyWindow,
+			&weeklyWindow,
+			&monthlyWindow,
+		); err != nil {
+			return nil, err
+		}
+		result.DailyWindowStart = nullableTimePtr(dailyWindow)
+		result.WeeklyWindowStart = nullableTimePtr(weeklyWindow)
+		result.MonthlyWindowStart = nullableTimePtr(monthlyWindow)
+		return result, rows.Err()
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	current, err := client.SubscriptionEntitlement.Query().
+		Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+		Only(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	if current.Status != service.SubscriptionStatusActive {
+		return nil, service.ErrSubscriptionEntitlementInactive
+	}
+	if now.Before(current.StartsAt) || !now.Before(current.ExpiresAt) {
+		return nil, service.ErrSubscriptionEntitlementExpired
+	}
+	return nil, service.ErrSubscriptionEntitlementQuotaExceeded
+}
+
+func (r *subscriptionEntitlementRepository) ReplaceGroups(ctx context.Context, id int64, groupIDs []int64) error {
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		exists, err := txClient.SubscriptionEntitlement.Query().
+			Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrSubscriptionEntitlementNotFound
+		}
+
+		if _, err := txClient.SubscriptionEntitlementGroup.Delete().
+			Where(subscriptionentitlementgroup.EntitlementIDEQ(id)).
+			Exec(txCtx); err != nil {
+			return err
+		}
+		return addSubscriptionEntitlementGroups(txCtx, txClient, id, groupIDs)
+	})
+}
+
+func (r *subscriptionEntitlementRepository) createWithClient(ctx context.Context, client *dbent.Client, ent *service.SubscriptionEntitlement, groupIDs []int64) error {
+	now := time.Now()
+	if ent.StartsAt.IsZero() {
+		ent.StartsAt = now
+	}
+	if ent.AssignedAt.IsZero() {
+		ent.AssignedAt = now
+	}
+	if ent.Status == "" {
+		ent.Status = service.SubscriptionStatusActive
+	}
+	if ent.SourceType == "" {
+		ent.SourceType = service.SubscriptionEntitlementSourceUnknown
+	}
+	if ent.OveragePolicy == "" {
+		ent.OveragePolicy = service.SubscriptionEntitlementOverageBlock
+	}
+	if ent.PlanSnapshot == nil {
+		ent.PlanSnapshot = map[string]any{}
+	}
+
+	create := client.SubscriptionEntitlement.Create().
+		SetUserID(ent.UserID).
+		SetNillablePlanID(ent.PlanID).
+		SetNillableLegacySubscriptionID(ent.LegacySubscriptionID).
+		SetNillablePrimaryGroupID(ent.PrimaryGroupID).
+		SetName(ent.Name).
+		SetSourceType(ent.SourceType).
+		SetStatus(ent.Status).
+		SetStartsAt(ent.StartsAt).
+		SetExpiresAt(ent.ExpiresAt).
+		SetNillableDailyWindowStart(ent.DailyWindowStart).
+		SetNillableWeeklyWindowStart(ent.WeeklyWindowStart).
+		SetNillableMonthlyWindowStart(ent.MonthlyWindowStart).
+		SetNillableDailyLimitUsd(ent.DailyLimitUSD).
+		SetNillableWeeklyLimitUsd(ent.WeeklyLimitUSD).
+		SetNillableMonthlyLimitUsd(ent.MonthlyLimitUSD).
+		SetDailyUsageUsd(ent.DailyUsageUSD).
+		SetWeeklyUsageUsd(ent.WeeklyUsageUSD).
+		SetMonthlyUsageUsd(ent.MonthlyUsageUSD).
+		SetOveragePolicy(ent.OveragePolicy).
+		SetPlanSnapshot(ent.PlanSnapshot).
+		SetNillableSourceID(ent.SourceID).
+		SetNillableSourceExternalID(ent.SourceExternalID).
+		SetNillableSourceRedeemCodeID(ent.SourceRedeemCodeID).
+		SetNillableAssignedBy(ent.AssignedBy).
+		SetAssignedAt(ent.AssignedAt).
+		SetNotes(ent.Notes)
+
+	created, err := create.Save(ctx)
+	if err != nil {
+		return translatePersistenceError(err, nil, service.ErrSubscriptionEntitlementAlreadyExists)
+	}
+	if err := addSubscriptionEntitlementGroups(ctx, client, created.ID, groupIDs); err != nil {
+		return translatePersistenceError(err, nil, service.ErrSubscriptionEntitlementAlreadyExists)
+	}
+	applySubscriptionEntitlementEntityToService(ent, created)
+	return nil
+}
+
+func (r *subscriptionEntitlementRepository) withTx(ctx context.Context, fn func(txCtx context.Context, txClient *dbent.Client) error) error {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return fn(ctx, tx.Client())
+	}
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin subscription entitlement transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := fn(txCtx, tx.Client()); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit subscription entitlement transaction: %w", err)
+	}
+	return nil
+}
+
+func entitlementQueryWithGroups(client *dbent.Client) *dbent.SubscriptionEntitlementQuery {
+	return client.SubscriptionEntitlement.Query().
+		WithGroups(func(q *dbent.GroupQuery) {
+			q.Order(dbent.Asc(entgroup.FieldID))
+		})
+}
+
+func addSubscriptionEntitlementGroups(ctx context.Context, client *dbent.Client, entitlementID int64, groupIDs []int64) error {
+	for i, groupID := range groupIDs {
+		if _, err := client.SubscriptionEntitlementGroup.Create().
+			SetEntitlementID(entitlementID).
+			SetGroupID(groupID).
+			SetSortOrder(i).
+			SetEnabled(true).
+			Save(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func subscriptionEntitlementEntityToService(m *dbent.SubscriptionEntitlement) *service.SubscriptionEntitlement {
+	if m == nil {
+		return nil
+	}
+	out := &service.SubscriptionEntitlement{
+		ID:                   m.ID,
+		UserID:               m.UserID,
+		PlanID:               m.PlanID,
+		LegacySubscriptionID: m.LegacySubscriptionID,
+		PrimaryGroupID:       m.PrimaryGroupID,
+		Name:                 m.Name,
+		SourceType:           m.SourceType,
+		Status:               m.Status,
+		StartsAt:             m.StartsAt,
+		ExpiresAt:            m.ExpiresAt,
+		DailyWindowStart:     m.DailyWindowStart,
+		WeeklyWindowStart:    m.WeeklyWindowStart,
+		MonthlyWindowStart:   m.MonthlyWindowStart,
+		DailyLimitUSD:        m.DailyLimitUsd,
+		WeeklyLimitUSD:       m.WeeklyLimitUsd,
+		MonthlyLimitUSD:      m.MonthlyLimitUsd,
+		DailyUsageUSD:        m.DailyUsageUsd,
+		WeeklyUsageUSD:       m.WeeklyUsageUsd,
+		MonthlyUsageUSD:      m.MonthlyUsageUsd,
+		OveragePolicy:        m.OveragePolicy,
+		PlanSnapshot:         m.PlanSnapshot,
+		SourceID:             m.SourceID,
+		SourceExternalID:     m.SourceExternalID,
+		SourceRedeemCodeID:   m.SourceRedeemCodeID,
+		AssignedBy:           m.AssignedBy,
+		AssignedAt:           m.AssignedAt,
+		Notes:                derefString(m.Notes),
+		CreatedAt:            m.CreatedAt,
+		UpdatedAt:            m.UpdatedAt,
+	}
+	if len(m.Edges.Groups) > 0 {
+		out.Groups = make([]service.Group, 0, len(m.Edges.Groups))
+		for _, g := range m.Edges.Groups {
+			if sg := groupEntityToService(g); sg != nil {
+				out.Groups = append(out.Groups, *sg)
+			}
+		}
+	}
+	return out
+}
+
+func subscriptionEntitlementEntitiesToService(models []*dbent.SubscriptionEntitlement) []service.SubscriptionEntitlement {
+	out := make([]service.SubscriptionEntitlement, 0, len(models))
+	for _, m := range models {
+		if ent := subscriptionEntitlementEntityToService(m); ent != nil {
+			out = append(out, *ent)
+		}
+	}
+	return out
+}
+
+func applySubscriptionEntitlementEntityToService(dst *service.SubscriptionEntitlement, src *dbent.SubscriptionEntitlement) {
+	if dst == nil || src == nil {
+		return
+	}
+	dst.ID = src.ID
+	dst.CreatedAt = src.CreatedAt
+	dst.UpdatedAt = src.UpdatedAt
+}
+
+func nullableTimePtr(v sql.NullTime) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	t := v.Time
+	return &t
+}

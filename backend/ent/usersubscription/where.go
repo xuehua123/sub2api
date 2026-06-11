@@ -939,6 +939,29 @@ func HasAssignedByUserWith(preds ...predicate.User) predicate.UserSubscription {
 	})
 }
 
+// HasLegacyEntitlement applies the HasEdge predicate on the "legacy_entitlement" edge.
+func HasLegacyEntitlement() predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, LegacyEntitlementTable, LegacyEntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasLegacyEntitlementWith applies the HasEdge predicate on the "legacy_entitlement" edge with a given conditions (other predicates).
+func HasLegacyEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.UserSubscription {
+	return predicate.UserSubscription(func(s *sql.Selector) {
+		step := newLegacyEntitlementStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUsageLogs applies the HasEdge predicate on the "usage_logs" edge.
 func HasUsageLogs() predicate.UserSubscription {
 	return predicate.UserSubscription(func(s *sql.Selector) {

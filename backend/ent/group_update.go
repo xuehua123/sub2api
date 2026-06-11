@@ -17,6 +17,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -696,6 +699,36 @@ func (_u *GroupUpdate) AddSubscriptions(v ...*UserSubscription) *GroupUpdate {
 	return _u.AddSubscriptionIDs(ids...)
 }
 
+// AddSubscriptionPlanExternalMappingIDs adds the "subscription_plan_external_mappings" edge to the SubscriptionPlanExternalMapping entity by IDs.
+func (_u *GroupUpdate) AddSubscriptionPlanExternalMappingIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddSubscriptionPlanExternalMappingIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionPlanExternalMappings adds the "subscription_plan_external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *GroupUpdate) AddSubscriptionPlanExternalMappings(v ...*SubscriptionPlanExternalMapping) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionPlanExternalMappingIDs(ids...)
+}
+
+// AddPrimarySubscriptionEntitlementIDs adds the "primary_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *GroupUpdate) AddPrimarySubscriptionEntitlementIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddPrimarySubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// AddPrimarySubscriptionEntitlements adds the "primary_subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdate) AddPrimarySubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPrimarySubscriptionEntitlementIDs(ids...)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *GroupUpdate) AddUsageLogIDs(ids ...int64) *GroupUpdate {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -709,6 +742,36 @@ func (_u *GroupUpdate) AddUsageLogs(v ...*UsageLog) *GroupUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.AddUsageLogIDs(ids...)
+}
+
+// AddSubscriptionPlanIDs adds the "subscription_plans" edge to the SubscriptionPlan entity by IDs.
+func (_u *GroupUpdate) AddSubscriptionPlanIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddSubscriptionPlanIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionPlans adds the "subscription_plans" edges to the SubscriptionPlan entity.
+func (_u *GroupUpdate) AddSubscriptionPlans(v ...*SubscriptionPlan) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionPlanIDs(ids...)
+}
+
+// AddSubscriptionEntitlementIDs adds the "subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *GroupUpdate) AddSubscriptionEntitlementIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.AddSubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionEntitlements adds the "subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdate) AddSubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionEntitlementIDs(ids...)
 }
 
 // AddAccountIDs adds the "accounts" edge to the Account entity by IDs.
@@ -809,6 +872,48 @@ func (_u *GroupUpdate) RemoveSubscriptions(v ...*UserSubscription) *GroupUpdate 
 	return _u.RemoveSubscriptionIDs(ids...)
 }
 
+// ClearSubscriptionPlanExternalMappings clears all "subscription_plan_external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *GroupUpdate) ClearSubscriptionPlanExternalMappings() *GroupUpdate {
+	_u.mutation.ClearSubscriptionPlanExternalMappings()
+	return _u
+}
+
+// RemoveSubscriptionPlanExternalMappingIDs removes the "subscription_plan_external_mappings" edge to SubscriptionPlanExternalMapping entities by IDs.
+func (_u *GroupUpdate) RemoveSubscriptionPlanExternalMappingIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveSubscriptionPlanExternalMappingIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionPlanExternalMappings removes "subscription_plan_external_mappings" edges to SubscriptionPlanExternalMapping entities.
+func (_u *GroupUpdate) RemoveSubscriptionPlanExternalMappings(v ...*SubscriptionPlanExternalMapping) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionPlanExternalMappingIDs(ids...)
+}
+
+// ClearPrimarySubscriptionEntitlements clears all "primary_subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdate) ClearPrimarySubscriptionEntitlements() *GroupUpdate {
+	_u.mutation.ClearPrimarySubscriptionEntitlements()
+	return _u
+}
+
+// RemovePrimarySubscriptionEntitlementIDs removes the "primary_subscription_entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *GroupUpdate) RemovePrimarySubscriptionEntitlementIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemovePrimarySubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// RemovePrimarySubscriptionEntitlements removes "primary_subscription_entitlements" edges to SubscriptionEntitlement entities.
+func (_u *GroupUpdate) RemovePrimarySubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePrimarySubscriptionEntitlementIDs(ids...)
+}
+
 // ClearUsageLogs clears all "usage_logs" edges to the UsageLog entity.
 func (_u *GroupUpdate) ClearUsageLogs() *GroupUpdate {
 	_u.mutation.ClearUsageLogs()
@@ -828,6 +933,48 @@ func (_u *GroupUpdate) RemoveUsageLogs(v ...*UsageLog) *GroupUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveUsageLogIDs(ids...)
+}
+
+// ClearSubscriptionPlans clears all "subscription_plans" edges to the SubscriptionPlan entity.
+func (_u *GroupUpdate) ClearSubscriptionPlans() *GroupUpdate {
+	_u.mutation.ClearSubscriptionPlans()
+	return _u
+}
+
+// RemoveSubscriptionPlanIDs removes the "subscription_plans" edge to SubscriptionPlan entities by IDs.
+func (_u *GroupUpdate) RemoveSubscriptionPlanIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveSubscriptionPlanIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionPlans removes "subscription_plans" edges to SubscriptionPlan entities.
+func (_u *GroupUpdate) RemoveSubscriptionPlans(v ...*SubscriptionPlan) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionPlanIDs(ids...)
+}
+
+// ClearSubscriptionEntitlements clears all "subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdate) ClearSubscriptionEntitlements() *GroupUpdate {
+	_u.mutation.ClearSubscriptionEntitlements()
+	return _u
+}
+
+// RemoveSubscriptionEntitlementIDs removes the "subscription_entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *GroupUpdate) RemoveSubscriptionEntitlementIDs(ids ...int64) *GroupUpdate {
+	_u.mutation.RemoveSubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionEntitlements removes "subscription_entitlements" edges to SubscriptionEntitlement entities.
+func (_u *GroupUpdate) RemoveSubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionEntitlementIDs(ids...)
 }
 
 // ClearAccounts clears all "accounts" edges to the Account entity.
@@ -1270,6 +1417,96 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.SubscriptionPlanExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionPlanExternalMappingsIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionPlanExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionPlanExternalMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.PrimarySubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPrimarySubscriptionEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.PrimarySubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PrimarySubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.UsageLogsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1313,6 +1550,120 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionPlansCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionPlansIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionPlansCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionPlansIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _u.mutation.AccountsCleared() {
@@ -2109,6 +2460,36 @@ func (_u *GroupUpdateOne) AddSubscriptions(v ...*UserSubscription) *GroupUpdateO
 	return _u.AddSubscriptionIDs(ids...)
 }
 
+// AddSubscriptionPlanExternalMappingIDs adds the "subscription_plan_external_mappings" edge to the SubscriptionPlanExternalMapping entity by IDs.
+func (_u *GroupUpdateOne) AddSubscriptionPlanExternalMappingIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddSubscriptionPlanExternalMappingIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionPlanExternalMappings adds the "subscription_plan_external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *GroupUpdateOne) AddSubscriptionPlanExternalMappings(v ...*SubscriptionPlanExternalMapping) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionPlanExternalMappingIDs(ids...)
+}
+
+// AddPrimarySubscriptionEntitlementIDs adds the "primary_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *GroupUpdateOne) AddPrimarySubscriptionEntitlementIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddPrimarySubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// AddPrimarySubscriptionEntitlements adds the "primary_subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdateOne) AddPrimarySubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddPrimarySubscriptionEntitlementIDs(ids...)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *GroupUpdateOne) AddUsageLogIDs(ids ...int64) *GroupUpdateOne {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -2122,6 +2503,36 @@ func (_u *GroupUpdateOne) AddUsageLogs(v ...*UsageLog) *GroupUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.AddUsageLogIDs(ids...)
+}
+
+// AddSubscriptionPlanIDs adds the "subscription_plans" edge to the SubscriptionPlan entity by IDs.
+func (_u *GroupUpdateOne) AddSubscriptionPlanIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddSubscriptionPlanIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionPlans adds the "subscription_plans" edges to the SubscriptionPlan entity.
+func (_u *GroupUpdateOne) AddSubscriptionPlans(v ...*SubscriptionPlan) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionPlanIDs(ids...)
+}
+
+// AddSubscriptionEntitlementIDs adds the "subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *GroupUpdateOne) AddSubscriptionEntitlementIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.AddSubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// AddSubscriptionEntitlements adds the "subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdateOne) AddSubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddSubscriptionEntitlementIDs(ids...)
 }
 
 // AddAccountIDs adds the "accounts" edge to the Account entity by IDs.
@@ -2222,6 +2633,48 @@ func (_u *GroupUpdateOne) RemoveSubscriptions(v ...*UserSubscription) *GroupUpda
 	return _u.RemoveSubscriptionIDs(ids...)
 }
 
+// ClearSubscriptionPlanExternalMappings clears all "subscription_plan_external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *GroupUpdateOne) ClearSubscriptionPlanExternalMappings() *GroupUpdateOne {
+	_u.mutation.ClearSubscriptionPlanExternalMappings()
+	return _u
+}
+
+// RemoveSubscriptionPlanExternalMappingIDs removes the "subscription_plan_external_mappings" edge to SubscriptionPlanExternalMapping entities by IDs.
+func (_u *GroupUpdateOne) RemoveSubscriptionPlanExternalMappingIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveSubscriptionPlanExternalMappingIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionPlanExternalMappings removes "subscription_plan_external_mappings" edges to SubscriptionPlanExternalMapping entities.
+func (_u *GroupUpdateOne) RemoveSubscriptionPlanExternalMappings(v ...*SubscriptionPlanExternalMapping) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionPlanExternalMappingIDs(ids...)
+}
+
+// ClearPrimarySubscriptionEntitlements clears all "primary_subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdateOne) ClearPrimarySubscriptionEntitlements() *GroupUpdateOne {
+	_u.mutation.ClearPrimarySubscriptionEntitlements()
+	return _u
+}
+
+// RemovePrimarySubscriptionEntitlementIDs removes the "primary_subscription_entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *GroupUpdateOne) RemovePrimarySubscriptionEntitlementIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemovePrimarySubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// RemovePrimarySubscriptionEntitlements removes "primary_subscription_entitlements" edges to SubscriptionEntitlement entities.
+func (_u *GroupUpdateOne) RemovePrimarySubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemovePrimarySubscriptionEntitlementIDs(ids...)
+}
+
 // ClearUsageLogs clears all "usage_logs" edges to the UsageLog entity.
 func (_u *GroupUpdateOne) ClearUsageLogs() *GroupUpdateOne {
 	_u.mutation.ClearUsageLogs()
@@ -2241,6 +2694,48 @@ func (_u *GroupUpdateOne) RemoveUsageLogs(v ...*UsageLog) *GroupUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveUsageLogIDs(ids...)
+}
+
+// ClearSubscriptionPlans clears all "subscription_plans" edges to the SubscriptionPlan entity.
+func (_u *GroupUpdateOne) ClearSubscriptionPlans() *GroupUpdateOne {
+	_u.mutation.ClearSubscriptionPlans()
+	return _u
+}
+
+// RemoveSubscriptionPlanIDs removes the "subscription_plans" edge to SubscriptionPlan entities by IDs.
+func (_u *GroupUpdateOne) RemoveSubscriptionPlanIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveSubscriptionPlanIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionPlans removes "subscription_plans" edges to SubscriptionPlan entities.
+func (_u *GroupUpdateOne) RemoveSubscriptionPlans(v ...*SubscriptionPlan) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionPlanIDs(ids...)
+}
+
+// ClearSubscriptionEntitlements clears all "subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *GroupUpdateOne) ClearSubscriptionEntitlements() *GroupUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlements()
+	return _u
+}
+
+// RemoveSubscriptionEntitlementIDs removes the "subscription_entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *GroupUpdateOne) RemoveSubscriptionEntitlementIDs(ids ...int64) *GroupUpdateOne {
+	_u.mutation.RemoveSubscriptionEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveSubscriptionEntitlements removes "subscription_entitlements" edges to SubscriptionEntitlement entities.
+func (_u *GroupUpdateOne) RemoveSubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveSubscriptionEntitlementIDs(ids...)
 }
 
 // ClearAccounts clears all "accounts" edges to the Account entity.
@@ -2713,6 +3208,96 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.SubscriptionPlanExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionPlanExternalMappingsIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionPlanExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionPlanExternalMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.PrimarySubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedPrimarySubscriptionEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.PrimarySubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.PrimarySubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.UsageLogsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -2756,6 +3341,120 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionPlansCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionPlansIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionPlansCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionPlansIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedSubscriptionEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.SubscriptionEntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _u.config, mutation: newSubscriptionEntitlementGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _u.mutation.AccountsCleared() {
