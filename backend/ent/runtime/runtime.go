@@ -41,6 +41,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
@@ -1949,6 +1950,36 @@ func init() {
 	subscriptionentitlementDescAssignedAt := subscriptionentitlementFields[24].Descriptor()
 	// subscriptionentitlement.DefaultAssignedAt holds the default value on creation for the assigned_at field.
 	subscriptionentitlement.DefaultAssignedAt = subscriptionentitlementDescAssignedAt.Default.(func() time.Time)
+	subscriptionentitlementfulfillmentFields := schema.SubscriptionEntitlementFulfillment{}.Fields()
+	_ = subscriptionentitlementfulfillmentFields
+	// subscriptionentitlementfulfillmentDescSourceType is the schema descriptor for source_type field.
+	subscriptionentitlementfulfillmentDescSourceType := subscriptionentitlementfulfillmentFields[3].Descriptor()
+	// subscriptionentitlementfulfillment.DefaultSourceType holds the default value on creation for the source_type field.
+	subscriptionentitlementfulfillment.DefaultSourceType = subscriptionentitlementfulfillmentDescSourceType.Default.(string)
+	// subscriptionentitlementfulfillment.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	subscriptionentitlementfulfillment.SourceTypeValidator = subscriptionentitlementfulfillmentDescSourceType.Validators[0].(func(string) error)
+	// subscriptionentitlementfulfillmentDescSourceExternalID is the schema descriptor for source_external_id field.
+	subscriptionentitlementfulfillmentDescSourceExternalID := subscriptionentitlementfulfillmentFields[5].Descriptor()
+	// subscriptionentitlementfulfillment.SourceExternalIDValidator is a validator for the "source_external_id" field. It is called by the builders before save.
+	subscriptionentitlementfulfillment.SourceExternalIDValidator = subscriptionentitlementfulfillmentDescSourceExternalID.Validators[0].(func(string) error)
+	// subscriptionentitlementfulfillmentDescValidityDays is the schema descriptor for validity_days field.
+	subscriptionentitlementfulfillmentDescValidityDays := subscriptionentitlementfulfillmentFields[7].Descriptor()
+	// subscriptionentitlementfulfillment.DefaultValidityDays holds the default value on creation for the validity_days field.
+	subscriptionentitlementfulfillment.DefaultValidityDays = subscriptionentitlementfulfillmentDescValidityDays.Default.(int)
+	// subscriptionentitlementfulfillmentDescAssignedAt is the schema descriptor for assigned_at field.
+	subscriptionentitlementfulfillmentDescAssignedAt := subscriptionentitlementfulfillmentFields[11].Descriptor()
+	// subscriptionentitlementfulfillment.DefaultAssignedAt holds the default value on creation for the assigned_at field.
+	subscriptionentitlementfulfillment.DefaultAssignedAt = subscriptionentitlementfulfillmentDescAssignedAt.Default.(func() time.Time)
+	// subscriptionentitlementfulfillmentDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionentitlementfulfillmentDescCreatedAt := subscriptionentitlementfulfillmentFields[13].Descriptor()
+	// subscriptionentitlementfulfillment.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionentitlementfulfillment.DefaultCreatedAt = subscriptionentitlementfulfillmentDescCreatedAt.Default.(func() time.Time)
+	// subscriptionentitlementfulfillmentDescUpdatedAt is the schema descriptor for updated_at field.
+	subscriptionentitlementfulfillmentDescUpdatedAt := subscriptionentitlementfulfillmentFields[14].Descriptor()
+	// subscriptionentitlementfulfillment.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	subscriptionentitlementfulfillment.DefaultUpdatedAt = subscriptionentitlementfulfillmentDescUpdatedAt.Default.(func() time.Time)
+	// subscriptionentitlementfulfillment.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	subscriptionentitlementfulfillment.UpdateDefaultUpdatedAt = subscriptionentitlementfulfillmentDescUpdatedAt.UpdateDefault.(func() time.Time)
 	subscriptionentitlementgroupFields := schema.SubscriptionEntitlementGroup{}.Fields()
 	_ = subscriptionentitlementgroupFields
 	// subscriptionentitlementgroupDescSortOrder is the schema descriptor for sort_order field.

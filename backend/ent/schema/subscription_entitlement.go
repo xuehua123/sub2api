@@ -159,6 +159,7 @@ func (SubscriptionEntitlement) Edges() []ent.Edge {
 		edge.To("api_keys", APIKey.Type),
 		edge.To("usage_logs", UsageLog.Type),
 		edge.To("payment_orders", PaymentOrder.Type),
+		edge.To("fulfillments", SubscriptionEntitlementFulfillment.Type),
 	}
 }
 

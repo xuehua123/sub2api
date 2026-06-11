@@ -1976,6 +1976,75 @@ var (
 			},
 		},
 	}
+	// SubscriptionEntitlementFulfillmentsColumns holds the columns for the "subscription_entitlement_fulfillments" table.
+	SubscriptionEntitlementFulfillmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_type", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_external_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "source_redeem_code_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "validity_days", Type: field.TypeInt, Default: 0},
+		{Name: "starts_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "expires_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "assigned_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "assigned_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "entitlement_id", Type: field.TypeInt64},
+	}
+	// SubscriptionEntitlementFulfillmentsTable holds the schema information for the "subscription_entitlement_fulfillments" table.
+	SubscriptionEntitlementFulfillmentsTable = &schema.Table{
+		Name:       "subscription_entitlement_fulfillments",
+		Columns:    SubscriptionEntitlementFulfillmentsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_entitlement_fulfillments_subscription_entitlements_fulfillments",
+				Columns:    []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[15]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionentitlementfulfillment_entitlement_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[15]},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_user_id_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[1], SubscriptionEntitlementFulfillmentsColumns[2]},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_redeem_code_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_redeem_code_id IS NOT NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_type_source_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[3], SubscriptionEntitlementFulfillmentsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_id IS NOT NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_type_source_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[3], SubscriptionEntitlementFulfillmentsColumns[5]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_external_id IS NOT NULL",
+				},
+			},
+		},
+	}
 	// SubscriptionEntitlementGroupsColumns holds the columns for the "subscription_entitlement_groups" table.
 	SubscriptionEntitlementGroupsColumns = []*schema.Column{
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
@@ -2994,6 +3063,7 @@ var (
 		SecuritySecretsTable,
 		SettingsTable,
 		SubscriptionEntitlementsTable,
+		SubscriptionEntitlementFulfillmentsTable,
 		SubscriptionEntitlementGroupsTable,
 		SubscriptionPlansTable,
 		SubscriptionPlanExternalMappingsTable,
@@ -3169,6 +3239,10 @@ func init() {
 	SubscriptionEntitlementsTable.ForeignKeys[5].RefTable = UserSubscriptionsTable
 	SubscriptionEntitlementsTable.Annotation = &entsql.Annotation{
 		Table: "subscription_entitlements",
+	}
+	SubscriptionEntitlementFulfillmentsTable.ForeignKeys[0].RefTable = SubscriptionEntitlementsTable
+	SubscriptionEntitlementFulfillmentsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_entitlement_fulfillments",
 	}
 	SubscriptionEntitlementGroupsTable.ForeignKeys[0].RefTable = SubscriptionEntitlementsTable
 	SubscriptionEntitlementGroupsTable.ForeignKeys[1].RefTable = GroupsTable

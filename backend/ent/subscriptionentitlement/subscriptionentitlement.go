@@ -93,6 +93,8 @@ const (
 	EdgeUsageLogs = "usage_logs"
 	// EdgePaymentOrders holds the string denoting the payment_orders edge name in mutations.
 	EdgePaymentOrders = "payment_orders"
+	// EdgeFulfillments holds the string denoting the fulfillments edge name in mutations.
+	EdgeFulfillments = "fulfillments"
 	// EdgeSubscriptionEntitlementGroups holds the string denoting the subscription_entitlement_groups edge name in mutations.
 	EdgeSubscriptionEntitlementGroups = "subscription_entitlement_groups"
 	// Table holds the table name of the subscriptionentitlement in the database.
@@ -165,6 +167,13 @@ const (
 	PaymentOrdersInverseTable = "payment_orders"
 	// PaymentOrdersColumn is the table column denoting the payment_orders relation/edge.
 	PaymentOrdersColumn = "subscription_entitlement_id"
+	// FulfillmentsTable is the table that holds the fulfillments relation/edge.
+	FulfillmentsTable = "subscription_entitlement_fulfillments"
+	// FulfillmentsInverseTable is the table name for the SubscriptionEntitlementFulfillment entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionentitlementfulfillment" package.
+	FulfillmentsInverseTable = "subscription_entitlement_fulfillments"
+	// FulfillmentsColumn is the table column denoting the fulfillments relation/edge.
+	FulfillmentsColumn = "entitlement_id"
 	// SubscriptionEntitlementGroupsTable is the table that holds the subscription_entitlement_groups relation/edge.
 	SubscriptionEntitlementGroupsTable = "subscription_entitlement_groups"
 	// SubscriptionEntitlementGroupsInverseTable is the table name for the SubscriptionEntitlementGroup entity.
@@ -512,6 +521,20 @@ func ByPaymentOrders(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByFulfillmentsCount orders the results by fulfillments count.
+func ByFulfillmentsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newFulfillmentsStep(), opts...)
+	}
+}
+
+// ByFulfillments orders the results by fulfillments terms.
+func ByFulfillments(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newFulfillmentsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // BySubscriptionEntitlementGroupsCount orders the results by subscription_entitlement_groups count.
 func BySubscriptionEntitlementGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -593,6 +616,13 @@ func newPaymentOrdersStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PaymentOrdersInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PaymentOrdersTable, PaymentOrdersColumn),
+	)
+}
+func newFulfillmentsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(FulfillmentsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, FulfillmentsTable, FulfillmentsColumn),
 	)
 }
 func newSubscriptionEntitlementGroupsStep() *sqlgraph.Step {

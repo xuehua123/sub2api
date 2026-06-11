@@ -44,6 +44,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
@@ -1065,6 +1066,33 @@ func (f TraverseSubscriptionEntitlement) Traverse(ctx context.Context, q ent.Que
 	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementQuery", q)
 }
 
+// The SubscriptionEntitlementFulfillmentFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionEntitlementFulfillmentFunc func(context.Context, *ent.SubscriptionEntitlementFulfillmentQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionEntitlementFulfillmentFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionEntitlementFulfillmentQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementFulfillmentQuery", q)
+}
+
+// The TraverseSubscriptionEntitlementFulfillment type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionEntitlementFulfillment func(context.Context, *ent.SubscriptionEntitlementFulfillmentQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionEntitlementFulfillment) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionEntitlementFulfillment) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionEntitlementFulfillmentQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementFulfillmentQuery", q)
+}
+
 // The SubscriptionEntitlementGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
 type SubscriptionEntitlementGroupFunc func(context.Context, *ent.SubscriptionEntitlementGroupQuery) (ent.Value, error)
 
@@ -1624,6 +1652,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.SettingQuery, predicate.Setting, setting.OrderOption]{typ: ent.TypeSetting, tq: q}, nil
 	case *ent.SubscriptionEntitlementQuery:
 		return &query[*ent.SubscriptionEntitlementQuery, predicate.SubscriptionEntitlement, subscriptionentitlement.OrderOption]{typ: ent.TypeSubscriptionEntitlement, tq: q}, nil
+	case *ent.SubscriptionEntitlementFulfillmentQuery:
+		return &query[*ent.SubscriptionEntitlementFulfillmentQuery, predicate.SubscriptionEntitlementFulfillment, subscriptionentitlementfulfillment.OrderOption]{typ: ent.TypeSubscriptionEntitlementFulfillment, tq: q}, nil
 	case *ent.SubscriptionEntitlementGroupQuery:
 		return &query[*ent.SubscriptionEntitlementGroupQuery, predicate.SubscriptionEntitlementGroup, subscriptionentitlementgroup.OrderOption]{typ: ent.TypeSubscriptionEntitlementGroup, tq: q}, nil
 	case *ent.SubscriptionPlanQuery:

@@ -89,6 +89,8 @@ func provideCleanup(
 	billingCache *service.BillingCacheService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	subscriptionService *service.SubscriptionService,
+	subscriptionEntitlementService *service.SubscriptionEntitlementService,
+	subscriptionPlanExternalMappingService *service.SubscriptionPlanExternalMappingService,
 	oauth *service.OAuthService,
 	openaiOAuth *service.OpenAIOAuthService,
 	geminiOAuth *service.GeminiOAuthService,

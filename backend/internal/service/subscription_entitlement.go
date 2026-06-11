@@ -11,7 +11,8 @@ const (
 	SubscriptionEntitlementSourcePaymentOrder = "payment_order"
 	SubscriptionEntitlementSourceRedeemCode   = "redeem_code"
 
-	SubscriptionEntitlementOverageBlock = "block"
+	SubscriptionEntitlementOverageBlock           = "block"
+	SubscriptionEntitlementOverageBalanceFallback = "balance_fallback"
 )
 
 var (
@@ -23,6 +24,9 @@ var (
 	ErrSubscriptionEntitlementInvalidReset  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_RESET", "at least one entitlement usage window must be reset")
 	ErrSubscriptionEntitlementInvalidUsage  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_USAGE", "entitlement usage cost must be non-negative")
 	ErrSubscriptionEntitlementQuotaExceeded = infraerrors.TooManyRequests("SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", "subscription entitlement quota exceeded")
+	ErrSubscriptionEntitlementPlanRequired  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_REQUIRED", "subscription plan is required")
+	ErrSubscriptionEntitlementPlanInvalid   = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_INVALID", "subscription plan cannot grant an entitlement")
+	ErrSubscriptionEntitlementPlanNotFound  = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_PLAN_NOT_FOUND", "subscription plan not found")
 )
 
 type SubscriptionEntitlement struct {
@@ -66,7 +70,79 @@ type SubscriptionEntitlement struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	Groups []Group
+	Groups      []Group
+	GroupGrants []SubscriptionEntitlementGroupGrant
+}
+
+type SubscriptionEntitlementGroupGrant struct {
+	GroupID   int64
+	SortOrder int
+	Enabled   bool
+	Group     *Group
+}
+
+type SubscriptionEntitlementSourceRef struct {
+	SourceType         string
+	SourceID           *int64
+	SourceExternalID   *string
+	SourceRedeemCodeID *int64
+	AssignedBy         *int64
+	AssignedAt         time.Time
+}
+
+type SubscriptionEntitlementFulfillment struct {
+	ID            int64
+	EntitlementID int64
+	UserID        int64
+	PlanID        *int64
+
+	SourceType         string
+	SourceID           *int64
+	SourceExternalID   *string
+	SourceRedeemCodeID *int64
+
+	ValidityDays int
+	StartsAt     time.Time
+	ExpiresAt    time.Time
+
+	AssignedBy *int64
+	AssignedAt time.Time
+	Notes      string
+
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+type SubscriptionEntitlementPlan struct {
+	ID           int64
+	GroupID      int64
+	Name         string
+	Description  string
+	Price        float64
+	ValidityDays int
+	ValidityUnit string
+	AccessScope  string
+
+	AllowedPlatforms []string
+
+	DailyLimitUSD   *float64
+	WeeklyLimitUSD  *float64
+	MonthlyLimitUSD *float64
+	OveragePolicy   string
+
+	Features    string
+	ProductName string
+	ForSale     bool
+	SortOrder   int
+
+	Groups []SubscriptionEntitlementPlanGroup
+}
+
+type SubscriptionEntitlementPlanGroup struct {
+	GroupID   int64
+	SortOrder int
+	Enabled   bool
+	Group     *Group
 }
 
 func (e *SubscriptionEntitlement) IsActive() bool {

@@ -1735,6 +1735,29 @@ func HasPaymentOrdersWith(preds ...predicate.PaymentOrder) predicate.Subscriptio
 	})
 }
 
+// HasFulfillments applies the HasEdge predicate on the "fulfillments" edge.
+func HasFulfillments() predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, FulfillmentsTable, FulfillmentsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasFulfillmentsWith applies the HasEdge predicate on the "fulfillments" edge with a given conditions (other predicates).
+func HasFulfillmentsWith(preds ...predicate.SubscriptionEntitlementFulfillment) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(func(s *sql.Selector) {
+		step := newFulfillmentsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasSubscriptionEntitlementGroups applies the HasEdge predicate on the "subscription_entitlement_groups" edge.
 func HasSubscriptionEntitlementGroups() predicate.SubscriptionEntitlement {
 	return predicate.SubscriptionEntitlement(func(s *sql.Selector) {

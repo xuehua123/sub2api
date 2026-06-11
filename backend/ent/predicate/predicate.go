@@ -111,6 +111,9 @@ type Setting func(*sql.Selector)
 // SubscriptionEntitlement is the predicate function for subscriptionentitlement builders.
 type SubscriptionEntitlement func(*sql.Selector)
 
+// SubscriptionEntitlementFulfillment is the predicate function for subscriptionentitlementfulfillment builders.
+type SubscriptionEntitlementFulfillment func(*sql.Selector)
+
 // SubscriptionEntitlementGroup is the predicate function for subscriptionentitlementgroup builders.
 type SubscriptionEntitlementGroup func(*sql.Selector)
 

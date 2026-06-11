@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -661,6 +662,21 @@ func (_u *SubscriptionEntitlementUpdate) AddPaymentOrders(v ...*PaymentOrder) *S
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
+func (_u *SubscriptionEntitlementUpdate) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.AddFulfillmentIDs(ids...)
+	return _u
+}
+
+// AddFulfillments adds the "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
+func (_u *SubscriptionEntitlementUpdate) AddFulfillments(v ...*SubscriptionEntitlementFulfillment) *SubscriptionEntitlementUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddFulfillmentIDs(ids...)
+}
+
 // Mutation returns the SubscriptionEntitlementMutation object of the builder.
 func (_u *SubscriptionEntitlementUpdate) Mutation() *SubscriptionEntitlementMutation {
 	return _u.mutation
@@ -784,6 +800,27 @@ func (_u *SubscriptionEntitlementUpdate) RemovePaymentOrders(v ...*PaymentOrder)
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePaymentOrderIDs(ids...)
+}
+
+// ClearFulfillments clears all "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
+func (_u *SubscriptionEntitlementUpdate) ClearFulfillments() *SubscriptionEntitlementUpdate {
+	_u.mutation.ClearFulfillments()
+	return _u
+}
+
+// RemoveFulfillmentIDs removes the "fulfillments" edge to SubscriptionEntitlementFulfillment entities by IDs.
+func (_u *SubscriptionEntitlementUpdate) RemoveFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.RemoveFulfillmentIDs(ids...)
+	return _u
+}
+
+// RemoveFulfillments removes "fulfillments" edges to SubscriptionEntitlementFulfillment entities.
+func (_u *SubscriptionEntitlementUpdate) RemoveFulfillments(v ...*SubscriptionEntitlementFulfillment) *SubscriptionEntitlementUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveFulfillmentIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1352,6 +1389,51 @@ func (_u *SubscriptionEntitlementUpdate) sqlSave(ctx context.Context) (_node int
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.FulfillmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedFulfillmentsIDs(); len(nodes) > 0 && !_u.mutation.FulfillmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.FulfillmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -2004,6 +2086,21 @@ func (_u *SubscriptionEntitlementUpdateOne) AddPaymentOrders(v ...*PaymentOrder)
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
+func (_u *SubscriptionEntitlementUpdateOne) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.AddFulfillmentIDs(ids...)
+	return _u
+}
+
+// AddFulfillments adds the "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
+func (_u *SubscriptionEntitlementUpdateOne) AddFulfillments(v ...*SubscriptionEntitlementFulfillment) *SubscriptionEntitlementUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddFulfillmentIDs(ids...)
+}
+
 // Mutation returns the SubscriptionEntitlementMutation object of the builder.
 func (_u *SubscriptionEntitlementUpdateOne) Mutation() *SubscriptionEntitlementMutation {
 	return _u.mutation
@@ -2127,6 +2224,27 @@ func (_u *SubscriptionEntitlementUpdateOne) RemovePaymentOrders(v ...*PaymentOrd
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePaymentOrderIDs(ids...)
+}
+
+// ClearFulfillments clears all "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
+func (_u *SubscriptionEntitlementUpdateOne) ClearFulfillments() *SubscriptionEntitlementUpdateOne {
+	_u.mutation.ClearFulfillments()
+	return _u
+}
+
+// RemoveFulfillmentIDs removes the "fulfillments" edge to SubscriptionEntitlementFulfillment entities by IDs.
+func (_u *SubscriptionEntitlementUpdateOne) RemoveFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.RemoveFulfillmentIDs(ids...)
+	return _u
+}
+
+// RemoveFulfillments removes "fulfillments" edges to SubscriptionEntitlementFulfillment entities.
+func (_u *SubscriptionEntitlementUpdateOne) RemoveFulfillments(v ...*SubscriptionEntitlementFulfillment) *SubscriptionEntitlementUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveFulfillmentIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionEntitlementUpdate builder.
@@ -2725,6 +2843,51 @@ func (_u *SubscriptionEntitlementUpdateOne) sqlSave(ctx context.Context) (_node 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.FulfillmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedFulfillmentsIDs(); len(nodes) > 0 && !_u.mutation.FulfillmentsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.FulfillmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

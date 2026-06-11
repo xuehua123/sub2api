@@ -70,6 +70,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		billingCacheSvc,
 		&service.UsageRecordWorkerPool{},
 		&service.SubscriptionService{},
+		nil, // subscriptionEntitlementService
+		nil, // subscriptionPlanExternalMappingService
 		oauthSvc,
 		openAIOAuthSvc,
 		geminiOAuthSvc,

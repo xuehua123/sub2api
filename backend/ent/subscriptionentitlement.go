@@ -109,11 +109,13 @@ type SubscriptionEntitlementEdges struct {
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// PaymentOrders holds the value of the payment_orders edge.
 	PaymentOrders []*PaymentOrder `json:"payment_orders,omitempty"`
+	// Fulfillments holds the value of the fulfillments edge.
+	Fulfillments []*SubscriptionEntitlementFulfillment `json:"fulfillments,omitempty"`
 	// SubscriptionEntitlementGroups holds the value of the subscription_entitlement_groups edge.
 	SubscriptionEntitlementGroups []*SubscriptionEntitlementGroup `json:"subscription_entitlement_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [11]bool
+	loadedTypes [12]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -218,10 +220,19 @@ func (e SubscriptionEntitlementEdges) PaymentOrdersOrErr() ([]*PaymentOrder, err
 	return nil, &NotLoadedError{edge: "payment_orders"}
 }
 
+// FulfillmentsOrErr returns the Fulfillments value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionEntitlementEdges) FulfillmentsOrErr() ([]*SubscriptionEntitlementFulfillment, error) {
+	if e.loadedTypes[10] {
+		return e.Fulfillments, nil
+	}
+	return nil, &NotLoadedError{edge: "fulfillments"}
+}
+
 // SubscriptionEntitlementGroupsOrErr returns the SubscriptionEntitlementGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e SubscriptionEntitlementEdges) SubscriptionEntitlementGroupsOrErr() ([]*SubscriptionEntitlementGroup, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[11] {
 		return e.SubscriptionEntitlementGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "subscription_entitlement_groups"}
@@ -515,6 +526,11 @@ func (_m *SubscriptionEntitlement) QueryUsageLogs() *UsageLogQuery {
 // QueryPaymentOrders queries the "payment_orders" edge of the SubscriptionEntitlement entity.
 func (_m *SubscriptionEntitlement) QueryPaymentOrders() *PaymentOrderQuery {
 	return NewSubscriptionEntitlementClient(_m.config).QueryPaymentOrders(_m)
+}
+
+// QueryFulfillments queries the "fulfillments" edge of the SubscriptionEntitlement entity.
+func (_m *SubscriptionEntitlement) QueryFulfillments() *SubscriptionEntitlementFulfillmentQuery {
+	return NewSubscriptionEntitlementClient(_m.config).QueryFulfillments(_m)
 }
 
 // QuerySubscriptionEntitlementGroups queries the "subscription_entitlement_groups" edge of the SubscriptionEntitlement entity.

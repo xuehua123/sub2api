@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -508,6 +509,21 @@ func (_c *SubscriptionEntitlementCreate) AddPaymentOrders(v ...*PaymentOrder) *S
 	return _c.AddPaymentOrderIDs(ids...)
 }
 
+// AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
+func (_c *SubscriptionEntitlementCreate) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementCreate {
+	_c.mutation.AddFulfillmentIDs(ids...)
+	return _c
+}
+
+// AddFulfillments adds the "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
+func (_c *SubscriptionEntitlementCreate) AddFulfillments(v ...*SubscriptionEntitlementFulfillment) *SubscriptionEntitlementCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddFulfillmentIDs(ids...)
+}
+
 // Mutation returns the SubscriptionEntitlementMutation object of the builder.
 func (_c *SubscriptionEntitlementCreate) Mutation() *SubscriptionEntitlementMutation {
 	return _c.mutation
@@ -948,6 +964,22 @@ func (_c *SubscriptionEntitlementCreate) createSpec() (*SubscriptionEntitlement,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.FulfillmentsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.FulfillmentsTable,
+			Columns: []string{subscriptionentitlement.FulfillmentsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlementfulfillment.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
