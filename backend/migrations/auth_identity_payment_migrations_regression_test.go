@@ -188,3 +188,15 @@ func TestMigration150AddsSubscriptionEntitlementsV2Additively(t *testing.T) {
 	require.NotContains(t, sql, "DROP TABLE")
 	require.NotContains(t, sql, "DROP COLUMN")
 }
+
+func TestMigration152AddsRedeemCodeSubscriptionEntitlementIDAdditively(t *testing.T) {
+	content, err := FS.ReadFile("152_redeem_codes_subscription_entitlement_id.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE redeem_codes")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS subscription_entitlement_id BIGINT REFERENCES subscription_entitlements(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_redeem_codes_subscription_entitlement_id")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}

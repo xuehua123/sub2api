@@ -36,6 +36,8 @@ const (
 	FieldGroupID = "group_id"
 	// FieldPlanID holds the string denoting the plan_id field in the database.
 	FieldPlanID = "plan_id"
+	// FieldSubscriptionEntitlementID holds the string denoting the subscription_entitlement_id field in the database.
+	FieldSubscriptionEntitlementID = "subscription_entitlement_id"
 	// FieldValidityDays holds the string denoting the validity_days field in the database.
 	FieldValidityDays = "validity_days"
 	// EdgeUser holds the string denoting the user edge name in mutations.
@@ -44,6 +46,8 @@ const (
 	EdgeGroup = "group"
 	// EdgePlan holds the string denoting the plan edge name in mutations.
 	EdgePlan = "plan"
+	// EdgeSubscriptionEntitlement holds the string denoting the subscription_entitlement edge name in mutations.
+	EdgeSubscriptionEntitlement = "subscription_entitlement"
 	// EdgeSourceSubscriptionEntitlements holds the string denoting the source_subscription_entitlements edge name in mutations.
 	EdgeSourceSubscriptionEntitlements = "source_subscription_entitlements"
 	// Table holds the table name of the redeemcode in the database.
@@ -69,6 +73,13 @@ const (
 	PlanInverseTable = "subscription_plans"
 	// PlanColumn is the table column denoting the plan relation/edge.
 	PlanColumn = "plan_id"
+	// SubscriptionEntitlementTable is the table that holds the subscription_entitlement relation/edge.
+	SubscriptionEntitlementTable = "redeem_codes"
+	// SubscriptionEntitlementInverseTable is the table name for the SubscriptionEntitlement entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionentitlement" package.
+	SubscriptionEntitlementInverseTable = "subscription_entitlements"
+	// SubscriptionEntitlementColumn is the table column denoting the subscription_entitlement relation/edge.
+	SubscriptionEntitlementColumn = "subscription_entitlement_id"
 	// SourceSubscriptionEntitlementsTable is the table that holds the source_subscription_entitlements relation/edge.
 	SourceSubscriptionEntitlementsTable = "subscription_entitlements"
 	// SourceSubscriptionEntitlementsInverseTable is the table name for the SubscriptionEntitlement entity.
@@ -92,6 +103,7 @@ var Columns = []string{
 	FieldExpiresAt,
 	FieldGroupID,
 	FieldPlanID,
+	FieldSubscriptionEntitlementID,
 	FieldValidityDays,
 }
 
@@ -187,6 +199,11 @@ func ByPlanID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlanID, opts...).ToFunc()
 }
 
+// BySubscriptionEntitlementID orders the results by the subscription_entitlement_id field.
+func BySubscriptionEntitlementID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionEntitlementID, opts...).ToFunc()
+}
+
 // ByValidityDays orders the results by the validity_days field.
 func ByValidityDays(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldValidityDays, opts...).ToFunc()
@@ -210,6 +227,13 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 func ByPlanField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
 		sqlgraph.OrderByNeighborTerms(s, newPlanStep(), sql.OrderByField(field, opts...))
+	}
+}
+
+// BySubscriptionEntitlementField orders the results by subscription_entitlement field.
+func BySubscriptionEntitlementField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubscriptionEntitlementStep(), sql.OrderByField(field, opts...))
 	}
 }
 
@@ -245,6 +269,13 @@ func newPlanStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PlanInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, PlanTable, PlanColumn),
+	)
+}
+func newSubscriptionEntitlementStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubscriptionEntitlementInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
 	)
 }
 func newSourceSubscriptionEntitlementsStep() *sqlgraph.Step {

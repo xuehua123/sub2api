@@ -215,6 +215,26 @@ func (_u *RedeemCodeUpdate) ClearPlanID() *RedeemCodeUpdate {
 	return _u
 }
 
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *RedeemCodeUpdate) SetSubscriptionEntitlementID(v int64) *RedeemCodeUpdate {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *RedeemCodeUpdate) SetNillableSubscriptionEntitlementID(v *int64) *RedeemCodeUpdate {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *RedeemCodeUpdate) ClearSubscriptionEntitlementID() *RedeemCodeUpdate {
+	_u.mutation.ClearSubscriptionEntitlementID()
+	return _u
+}
+
 // SetValidityDays sets the "validity_days" field.
 func (_u *RedeemCodeUpdate) SetValidityDays(v int) *RedeemCodeUpdate {
 	_u.mutation.ResetValidityDays()
@@ -265,6 +285,11 @@ func (_u *RedeemCodeUpdate) SetPlan(v *SubscriptionPlan) *RedeemCodeUpdate {
 	return _u.SetPlanID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *RedeemCodeUpdate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *RedeemCodeUpdate {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // AddSourceSubscriptionEntitlementIDs adds the "source_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
 func (_u *RedeemCodeUpdate) AddSourceSubscriptionEntitlementIDs(ids ...int64) *RedeemCodeUpdate {
 	_u.mutation.AddSourceSubscriptionEntitlementIDs(ids...)
@@ -300,6 +325,12 @@ func (_u *RedeemCodeUpdate) ClearGroup() *RedeemCodeUpdate {
 // ClearPlan clears the "plan" edge to the SubscriptionPlan entity.
 func (_u *RedeemCodeUpdate) ClearPlan() *RedeemCodeUpdate {
 	_u.mutation.ClearPlan()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *RedeemCodeUpdate) ClearSubscriptionEntitlement() *RedeemCodeUpdate {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -502,6 +533,35 @@ func (_u *RedeemCodeUpdate) sqlSave(ctx context.Context) (_node int, err error) 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   redeemcode.SubscriptionEntitlementTable,
+			Columns: []string{redeemcode.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   redeemcode.SubscriptionEntitlementTable,
+			Columns: []string{redeemcode.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -757,6 +817,26 @@ func (_u *RedeemCodeUpdateOne) ClearPlanID() *RedeemCodeUpdateOne {
 	return _u
 }
 
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *RedeemCodeUpdateOne) SetSubscriptionEntitlementID(v int64) *RedeemCodeUpdateOne {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *RedeemCodeUpdateOne) SetNillableSubscriptionEntitlementID(v *int64) *RedeemCodeUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *RedeemCodeUpdateOne) ClearSubscriptionEntitlementID() *RedeemCodeUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlementID()
+	return _u
+}
+
 // SetValidityDays sets the "validity_days" field.
 func (_u *RedeemCodeUpdateOne) SetValidityDays(v int) *RedeemCodeUpdateOne {
 	_u.mutation.ResetValidityDays()
@@ -807,6 +887,11 @@ func (_u *RedeemCodeUpdateOne) SetPlan(v *SubscriptionPlan) *RedeemCodeUpdateOne
 	return _u.SetPlanID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *RedeemCodeUpdateOne) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *RedeemCodeUpdateOne {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // AddSourceSubscriptionEntitlementIDs adds the "source_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
 func (_u *RedeemCodeUpdateOne) AddSourceSubscriptionEntitlementIDs(ids ...int64) *RedeemCodeUpdateOne {
 	_u.mutation.AddSourceSubscriptionEntitlementIDs(ids...)
@@ -842,6 +927,12 @@ func (_u *RedeemCodeUpdateOne) ClearGroup() *RedeemCodeUpdateOne {
 // ClearPlan clears the "plan" edge to the SubscriptionPlan entity.
 func (_u *RedeemCodeUpdateOne) ClearPlan() *RedeemCodeUpdateOne {
 	_u.mutation.ClearPlan()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *RedeemCodeUpdateOne) ClearSubscriptionEntitlement() *RedeemCodeUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -1074,6 +1165,35 @@ func (_u *RedeemCodeUpdateOne) sqlSave(ctx context.Context) (_node *RedeemCode, 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   redeemcode.SubscriptionEntitlementTable,
+			Columns: []string{redeemcode.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   redeemcode.SubscriptionEntitlementTable,
+			Columns: []string{redeemcode.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

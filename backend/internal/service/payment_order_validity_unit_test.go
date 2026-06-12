@@ -113,7 +113,7 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		Save(ctx)
 	require.NoError(t, err)
 
-	svc := &PaymentService{configService: &PaymentConfigService{entClient: client}}
+	svc := &PaymentService{entClient: client, configService: &PaymentConfigService{entClient: client}}
 	validPlan, access, err := svc.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
 	require.NoError(t, err)
 	require.Equal(t, plan.ID, validPlan.ID)

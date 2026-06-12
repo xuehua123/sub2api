@@ -1611,6 +1611,7 @@ var (
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "validity_days", Type: field.TypeInt, Default: 30},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "subscription_entitlement_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "used_by", Type: field.TypeInt64, Nullable: true},
 	}
@@ -1627,14 +1628,20 @@ var (
 				OnDelete:   schema.SetNull,
 			},
 			{
-				Symbol:     "redeem_codes_subscription_plans_redeem_codes",
+				Symbol:     "redeem_codes_subscription_entitlements_redeem_codes",
 				Columns:    []*schema.Column{RedeemCodesColumns[11]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "redeem_codes_subscription_plans_redeem_codes",
+				Columns:    []*schema.Column{RedeemCodesColumns[12]},
 				RefColumns: []*schema.Column{SubscriptionPlansColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "redeem_codes_users_redeem_codes",
-				Columns:    []*schema.Column{RedeemCodesColumns[12]},
+				Columns:    []*schema.Column{RedeemCodesColumns[13]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -1648,7 +1655,7 @@ var (
 			{
 				Name:    "redeemcode_used_by",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[12]},
+				Columns: []*schema.Column{RedeemCodesColumns[13]},
 			},
 			{
 				Name:    "redeemcode_group_id",
@@ -1657,6 +1664,11 @@ var (
 			},
 			{
 				Name:    "redeemcode_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemCodesColumns[12]},
+			},
+			{
+				Name:    "redeemcode_subscription_entitlement_id",
 				Unique:  false,
 				Columns: []*schema.Column{RedeemCodesColumns[11]},
 			},
@@ -3207,8 +3219,9 @@ func init() {
 		Table: "recharge_orders",
 	}
 	RedeemCodesTable.ForeignKeys[0].RefTable = GroupsTable
-	RedeemCodesTable.ForeignKeys[1].RefTable = SubscriptionPlansTable
-	RedeemCodesTable.ForeignKeys[2].RefTable = UsersTable
+	RedeemCodesTable.ForeignKeys[1].RefTable = SubscriptionEntitlementsTable
+	RedeemCodesTable.ForeignKeys[2].RefTable = SubscriptionPlansTable
+	RedeemCodesTable.ForeignKeys[3].RefTable = UsersTable
 	RedeemCodesTable.Annotation = &entsql.Annotation{
 		Table: "redeem_codes",
 	}

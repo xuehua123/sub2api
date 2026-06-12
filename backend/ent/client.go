@@ -5638,6 +5638,22 @@ func (c *RedeemCodeClient) QueryPlan(_m *RedeemCode) *SubscriptionPlanQuery {
 	return query
 }
 
+// QuerySubscriptionEntitlement queries the subscription_entitlement edge of a RedeemCode.
+func (c *RedeemCodeClient) QuerySubscriptionEntitlement(_m *RedeemCode) *SubscriptionEntitlementQuery {
+	query := (&SubscriptionEntitlementClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(redeemcode.Table, redeemcode.FieldID, id),
+			sqlgraph.To(subscriptionentitlement.Table, subscriptionentitlement.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, redeemcode.SubscriptionEntitlementTable, redeemcode.SubscriptionEntitlementColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QuerySourceSubscriptionEntitlements queries the source_subscription_entitlements edge of a RedeemCode.
 func (c *RedeemCodeClient) QuerySourceSubscriptionEntitlements(_m *RedeemCode) *SubscriptionEntitlementQuery {
 	query := (&SubscriptionEntitlementClient{config: c.config}).Query()
@@ -6669,6 +6685,22 @@ func (c *SubscriptionEntitlementClient) QueryPaymentOrders(_m *SubscriptionEntit
 			sqlgraph.From(subscriptionentitlement.Table, subscriptionentitlement.FieldID, id),
 			sqlgraph.To(paymentorder.Table, paymentorder.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, subscriptionentitlement.PaymentOrdersTable, subscriptionentitlement.PaymentOrdersColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRedeemCodes queries the redeem_codes edge of a SubscriptionEntitlement.
+func (c *SubscriptionEntitlementClient) QueryRedeemCodes(_m *SubscriptionEntitlement) *RedeemCodeQuery {
+	query := (&RedeemCodeClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscriptionentitlement.Table, subscriptionentitlement.FieldID, id),
+			sqlgraph.To(redeemcode.Table, redeemcode.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscriptionentitlement.RedeemCodesTable, subscriptionentitlement.RedeemCodesColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil

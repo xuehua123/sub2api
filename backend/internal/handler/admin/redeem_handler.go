@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +46,7 @@ type GenerateRedeemCodesRequest struct {
 	Type          string     `json:"type" binding:"required,oneof=balance concurrency subscription invitation"`
 	Value         float64    `json:"value"`
 	GroupID       *int64     `json:"group_id"`      // 订阅类型必填
+	PlanID        *int64     `json:"plan_id"`       // entitlement v2 subscription plan
 	ValidityDays  int        `json:"validity_days"` // 订阅类型使用，正数增加/负数退款扣减
 	ExpiresAt     *time.Time `json:"expires_at"`
 	ExpiresInDays *int       `json:"expires_in_days" binding:"omitempty,min=1,max=3650"`
@@ -58,6 +60,7 @@ type CreateAndRedeemCodeRequest struct {
 	Value         float64    `json:"value" binding:"required"`
 	UserID        int64      `json:"user_id" binding:"required,gt=0"`
 	GroupID       *int64     `json:"group_id"`      // subscription 类型必填
+	PlanID        *int64     `json:"plan_id"`       // entitlement v2 subscription plan
 	ValidityDays  int        `json:"validity_days"` // subscription 类型：正数增加，负数退款扣减
 	Notes         string     `json:"notes"`
 	ExpiresAt     *time.Time `json:"expires_at"`
@@ -155,6 +158,7 @@ func (h *RedeemHandler) Generate(c *gin.Context) {
 			Type:         req.Type,
 			Value:        req.Value,
 			GroupID:      req.GroupID,
+			PlanID:       req.PlanID,
 			ValidityDays: req.ValidityDays,
 			ExpiresAt:    expiresAt,
 		})
@@ -190,15 +194,18 @@ func (h *RedeemHandler) CreateAndRedeem(c *gin.Context) {
 		req.Type = "balance"
 	}
 
-	if req.Type == "subscription" {
-		if req.GroupID == nil {
-			response.BadRequest(c, "group_id is required for subscription type")
-			return
-		}
-		if req.ValidityDays == 0 {
-			response.BadRequest(c, "validity_days must not be zero for subscription type")
-			return
-		}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: c.GetHeader("Idempotency-Key"),
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	if err := validateCreateAndRedeemSubscriptionRequest(req, sourceCtx); err != nil {
+		response.ErrorFrom(c, err)
+		return
 	}
 
 	expiresAt, err := resolveRedeemCodeExpiresAt(req.ExpiresAt, req.ExpiresInDays)
@@ -210,7 +217,7 @@ func (h *RedeemHandler) CreateAndRedeem(c *gin.Context) {
 	executeAdminIdempotentJSON(c, "admin.redeem_codes.create_and_redeem", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
 		existing, err := h.redeemService.GetByCode(ctx, req.Code)
 		if err == nil {
-			return h.resolveCreateAndRedeemExisting(ctx, existing, req)
+			return h.resolveCreateAndRedeemExisting(ctx, existing, req, sourceCtx)
 		}
 		if !errors.Is(err, service.ErrRedeemCodeNotFound) {
 			return nil, err
@@ -223,6 +230,7 @@ func (h *RedeemHandler) CreateAndRedeem(c *gin.Context) {
 			Status:       service.StatusUnused,
 			Notes:        req.Notes,
 			GroupID:      req.GroupID,
+			PlanID:       req.PlanID,
 			ValidityDays: req.ValidityDays,
 			ExpiresAt:    expiresAt,
 		})
@@ -230,25 +238,32 @@ func (h *RedeemHandler) CreateAndRedeem(c *gin.Context) {
 			// Unique code race: if code now exists, use idempotent semantics by used_by.
 			existingAfterCreateErr, getErr := h.redeemService.GetByCode(ctx, req.Code)
 			if getErr == nil {
-				return h.resolveCreateAndRedeemExisting(ctx, existingAfterCreateErr, req)
+				return h.resolveCreateAndRedeemExisting(ctx, existingAfterCreateErr, req, sourceCtx)
 			}
 			return nil, createErr
 		}
 
-		redeemed, redeemErr := h.redeemService.Redeem(ctx, req.UserID, req.Code)
+		redeemed, redeemErr := h.redeemService.RedeemWithOptions(ctx, service.RedeemInput{
+			UserID: req.UserID,
+			Code:   req.Code,
+			Source: sourceCtx,
+		})
 		if redeemErr != nil {
 			return nil, redeemErr
 		}
-		if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req); rewardErr != nil {
+		if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req, sourceCtx); rewardErr != nil {
 			return nil, rewardErr
 		}
 		return gin.H{"redeem_code": dto.RedeemCodeFromServiceAdmin(redeemed)}, nil
 	})
 }
 
-func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, existing *service.RedeemCode, req CreateAndRedeemCodeRequest) (any, error) {
+func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, existing *service.RedeemCode, req CreateAndRedeemCodeRequest, sourceCtx service.RedeemSourceContext) (any, error) {
 	if existing == nil {
-		return nil, infraerrors.Conflict("REDEEM_CODE_CONFLICT", "redeem code conflict")
+		return nil, service.ErrRedeemCodeConflict
+	}
+	if err := validateCreateAndRedeemReplay(existing, req, sourceCtx); err != nil {
+		return nil, err
 	}
 
 	// If previous run created the code but crashed before redeem, redeem it now.
@@ -256,9 +271,13 @@ func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, exis
 		return nil, service.ErrRedeemCodeExpired
 	}
 	if existing.CanUse() {
-		redeemed, err := h.redeemService.Redeem(ctx, req.UserID, existing.Code)
+		redeemed, err := h.redeemService.RedeemWithOptions(ctx, service.RedeemInput{
+			UserID: req.UserID,
+			Code:   existing.Code,
+			Source: sourceCtx,
+		})
 		if err == nil {
-			if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req); rewardErr != nil {
+			if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req, sourceCtx); rewardErr != nil {
 				return nil, rewardErr
 			}
 			return gin.H{"redeem_code": dto.RedeemCodeFromServiceAdmin(redeemed)}, nil
@@ -273,7 +292,7 @@ func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, exis
 	}
 
 	if existing.UsedBy != nil && *existing.UsedBy == req.UserID {
-		if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req); rewardErr != nil {
+		if rewardErr := h.syncSub2ApiPayReferralReward(ctx, req, sourceCtx); rewardErr != nil {
 			return nil, rewardErr
 		}
 		return gin.H{"redeem_code": dto.RedeemCodeFromServiceAdmin(existing)}, nil
@@ -282,11 +301,85 @@ func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, exis
 	return nil, infraerrors.Conflict("REDEEM_CODE_CONFLICT", "redeem code already used by another user")
 }
 
-func (h *RedeemHandler) syncSub2ApiPayReferralReward(ctx context.Context, req CreateAndRedeemCodeRequest) error {
+func validateCreateAndRedeemSubscriptionRequest(req CreateAndRedeemCodeRequest, sourceCtx service.RedeemSourceContext) error {
+	if req.Type != service.RedeemTypeSubscription {
+		return nil
+	}
+	if sourceCtx.HasSub2PaymentPageSuffixMismatch() {
+		return service.ErrRedeemCodeConflict
+	}
+	if req.GroupID != nil && *req.GroupID <= 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "group_id must be greater than zero for subscription type")
+	}
+	if req.PlanID != nil && *req.PlanID <= 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "plan_id must be greater than zero for subscription type")
+	}
+	if req.PlanID != nil && req.GroupID != nil {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "plan_id and group_id cannot both be set for subscription type")
+	}
+	if req.PlanID != nil && req.ValidityDays < 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "plan subscription redeem code cannot reduce validity days")
+	}
+	if req.PlanID == nil && req.GroupID == nil {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "plan_id or group_id is required for subscription type")
+	}
+	if req.GroupID != nil && req.ValidityDays == 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "validity_days must not be zero for subscription group redeem")
+	}
+	if sourceCtx.IsSub2PaymentPageLegacy() && req.ValidityDays <= 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "validity_days must be positive for payment page subscription redeem")
+	}
+	return nil
+}
+
+func validateCreateAndRedeemReplay(existing *service.RedeemCode, req CreateAndRedeemCodeRequest, sourceCtx service.RedeemSourceContext) error {
+	if existing == nil {
+		return service.ErrRedeemCodeConflict
+	}
+	if sourceCtx.HasSub2PaymentPageSuffixMismatch() {
+		return service.ErrRedeemCodeConflict
+	}
+	if strings.TrimSpace(existing.Type) != strings.TrimSpace(req.Type) {
+		return service.ErrRedeemCodeConflict
+	}
+	if !redeemFloatEqual(existing.Value, req.Value) {
+		return service.ErrRedeemCodeConflict
+	}
+	if !sameInt64Ptr(existing.GroupID, req.GroupID) {
+		return service.ErrRedeemCodeConflict
+	}
+	if !sameCreateAndRedeemReplayPlanID(existing.PlanID, req.PlanID, sourceCtx) {
+		return service.ErrRedeemCodeConflict
+	}
+	if existing.ValidityDays != req.ValidityDays {
+		return service.ErrRedeemCodeConflict
+	}
+	return nil
+}
+
+func redeemFloatEqual(a, b float64) bool {
+	return math.Abs(a-b) <= 1e-9
+}
+
+func sameInt64Ptr(a, b *int64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
+func sameCreateAndRedeemReplayPlanID(existing, requested *int64, sourceCtx service.RedeemSourceContext) bool {
+	if sameInt64Ptr(existing, requested) {
+		return true
+	}
+	return sourceCtx.IsSub2PaymentPageLegacy() && requested == nil && existing != nil
+}
+
+func (h *RedeemHandler) syncSub2ApiPayReferralReward(ctx context.Context, req CreateAndRedeemCodeRequest, sourceCtx service.RedeemSourceContext) error {
 	if h.referralRewardService == nil {
 		return nil
 	}
-	input := buildSub2ApiPayReferralCreditInput(req, time.Now())
+	input := buildSub2ApiPayReferralCreditInput(req, sourceCtx, time.Now())
 	if input == nil {
 		return nil
 	}
@@ -294,15 +387,14 @@ func (h *RedeemHandler) syncSub2ApiPayReferralReward(ctx context.Context, req Cr
 	return err
 }
 
-func buildSub2ApiPayReferralCreditInput(req CreateAndRedeemCodeRequest, paidAt time.Time) *service.RechargeCreditInput {
+func buildSub2ApiPayReferralCreditInput(req CreateAndRedeemCodeRequest, sourceCtx service.RedeemSourceContext, paidAt time.Time) *service.RechargeCreditInput {
 	if req.Type != service.RedeemTypeBalance && req.Type != service.RedeemTypeSubscription {
 		return nil
 	}
 	if req.Value <= 0 {
 		return nil
 	}
-	externalOrderID, ok := sub2ApiPayExternalOrderID(req)
-	if !ok {
+	if !sourceCtx.IsSub2PaymentPageLegacy() {
 		return nil
 	}
 
@@ -310,7 +402,7 @@ func buildSub2ApiPayReferralCreditInput(req CreateAndRedeemCodeRequest, paidAt t
 		"source":            "sub2apipay_create_and_redeem",
 		"redeem_code":       req.Code,
 		"redeem_type":       req.Type,
-		"external_order_id": externalOrderID,
+		"external_order_id": sourceCtx.ExternalOrderID,
 	}
 	if req.GroupID != nil {
 		metadata["group_id"] = *req.GroupID
@@ -325,7 +417,7 @@ func buildSub2ApiPayReferralCreditInput(req CreateAndRedeemCodeRequest, paidAt t
 
 	return &service.RechargeCreditInput{
 		UserID:                req.UserID,
-		ExternalOrderID:       externalOrderID,
+		ExternalOrderID:       sourceCtx.ExternalOrderID,
 		Provider:              "sub2apipay",
 		Channel:               req.Type,
 		Currency:              "CNY",
@@ -333,34 +425,11 @@ func buildSub2ApiPayReferralCreditInput(req CreateAndRedeemCodeRequest, paidAt t
 		PaidAmount:            req.Value,
 		CreditedBalanceAmount: 0,
 		SkipBalanceCredit:     true,
-		IdempotencyKey:        "sub2apipay:" + externalOrderID + ":referral",
+		IdempotencyKey:        "sub2apipay:" + sourceCtx.ExternalOrderID + ":referral",
 		MetadataJSON:          string(metadataJSON),
 		Notes:                 strings.TrimSpace(req.Notes),
 		PaidAt:                &paidAt,
 	}
-}
-
-func sub2ApiPayExternalOrderID(req CreateAndRedeemCodeRequest) (string, bool) {
-	code := strings.TrimSpace(req.Code)
-	notes := strings.TrimSpace(req.Notes)
-	if !strings.HasPrefix(code, "s2p_") || !strings.Contains(strings.ToLower(notes), "sub2apipay") {
-		return "", false
-	}
-
-	lowerNotes := strings.ToLower(notes)
-	for _, marker := range []string{"sub2apipay subscription order:", "sub2apipay recharge order:"} {
-		if idx := strings.Index(lowerNotes, marker); idx >= 0 {
-			raw := strings.TrimSpace(notes[idx+len(marker):])
-			parts := strings.FieldsFunc(raw, func(r rune) bool {
-				return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ',' || r == ';'
-			})
-			if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
-				return strings.TrimSpace(parts[0]), true
-			}
-		}
-	}
-
-	return code, true
 }
 
 // Delete handles deleting a redeem code

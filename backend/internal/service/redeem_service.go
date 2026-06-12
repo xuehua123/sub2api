@@ -19,6 +19,7 @@ var (
 	ErrRedeemCodeNotFound  = infraerrors.NotFound("REDEEM_CODE_NOT_FOUND", "redeem code not found")
 	ErrRedeemCodeUsed      = infraerrors.Conflict("REDEEM_CODE_USED", "redeem code already used")
 	ErrRedeemCodeExpired   = infraerrors.Conflict("REDEEM_CODE_EXPIRED", "redeem code expired")
+	ErrRedeemCodeConflict  = infraerrors.Conflict("REDEEM_CODE_CONFLICT", "redeem code conflict")
 	ErrInsufficientBalance = infraerrors.BadRequest("INSUFFICIENT_BALANCE", "insufficient balance")
 	ErrRedeemRateLimited   = infraerrors.TooManyRequests("REDEEM_RATE_LIMITED", "too many failed attempts, please try again later")
 	ErrRedeemCodeLocked    = infraerrors.Conflict("REDEEM_CODE_LOCKED", "redeem code is being processed, please try again")
@@ -66,6 +67,16 @@ type RedeemCodeRepository interface {
 	ListByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams, codeType string) ([]RedeemCode, *pagination.PaginationResult, error)
 	// SumPositiveBalanceByUser returns the total recharged amount (sum of positive balance values) for a user.
 	SumPositiveBalanceByUser(ctx context.Context, userID int64) (float64, error)
+}
+
+type SubscriptionEntitlementsRuntimeProvider interface {
+	GetSubscriptionEntitlementsRuntime(ctx context.Context) SubscriptionEntitlementsRuntime
+}
+
+type RedeemInput struct {
+	UserID int64
+	Code   string
+	Source RedeemSourceContext
 }
 
 // GenerateCodesRequest 生成兑换码请求
@@ -133,14 +144,17 @@ type RedeemCodeBatchUpdateResult struct {
 
 // RedeemService 兑换码服务
 type RedeemService struct {
-	redeemRepo           RedeemCodeRepository
-	userRepo             UserRepository
-	subscriptionService  *SubscriptionService
-	cache                RedeemCache
-	billingCacheService  *BillingCacheService
-	entClient            *dbent.Client
-	authCacheInvalidator APIKeyAuthCacheInvalidator
-	affiliateService     *AffiliateService
+	redeemRepo                         RedeemCodeRepository
+	userRepo                           UserRepository
+	subscriptionService                *SubscriptionService
+	settingSvc                         SubscriptionEntitlementsRuntimeProvider
+	subscriptionEntitlementSvc         *SubscriptionEntitlementService
+	subscriptionPlanExternalMappingSvc *SubscriptionPlanExternalMappingService
+	cache                              RedeemCache
+	billingCacheService                *BillingCacheService
+	entClient                          *dbent.Client
+	authCacheInvalidator               APIKeyAuthCacheInvalidator
+	affiliateService                   *AffiliateService
 }
 
 // NewRedeemService 创建兑换码服务实例
@@ -164,6 +178,37 @@ func NewRedeemService(
 		authCacheInvalidator: authCacheInvalidator,
 		affiliateService:     affiliateService,
 	}
+}
+
+func ProvideRedeemService(
+	redeemRepo RedeemCodeRepository,
+	userRepo UserRepository,
+	subscriptionService *SubscriptionService,
+	cache RedeemCache,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	affiliateService *AffiliateService,
+	settingSvc *SettingService,
+	subscriptionEntitlementSvc *SubscriptionEntitlementService,
+	subscriptionPlanExternalMappingSvc *SubscriptionPlanExternalMappingService,
+) *RedeemService {
+	svc := NewRedeemService(redeemRepo, userRepo, subscriptionService, cache, billingCacheService, entClient, authCacheInvalidator, affiliateService)
+	svc.SetSubscriptionEntitlementDependencies(settingSvc, subscriptionEntitlementSvc, subscriptionPlanExternalMappingSvc)
+	return svc
+}
+
+func (s *RedeemService) SetSubscriptionEntitlementDependencies(
+	settingSvc SubscriptionEntitlementsRuntimeProvider,
+	subscriptionEntitlementSvc *SubscriptionEntitlementService,
+	subscriptionPlanExternalMappingSvc *SubscriptionPlanExternalMappingService,
+) {
+	if s == nil {
+		return
+	}
+	s.settingSvc = settingSvc
+	s.subscriptionEntitlementSvc = subscriptionEntitlementSvc
+	s.subscriptionPlanExternalMappingSvc = subscriptionPlanExternalMappingSvc
 }
 
 // GenerateRandomCode 生成随机兑换码
@@ -374,9 +419,15 @@ func (s *RedeemService) releaseRedeemLock(ctx context.Context, code string) {
 	_ = s.cache.ReleaseRedeemLock(ctx, code)
 }
 
-// Redeem 使用兑换码
+// Redeem uses a redeem code with no external source context.
 func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (*RedeemCode, error) {
-	// 检查限流
+	return s.RedeemWithOptions(ctx, RedeemInput{UserID: userID, Code: code})
+}
+
+// RedeemWithOptions uses a redeem code with caller-provided source context.
+func (s *RedeemService) RedeemWithOptions(ctx context.Context, input RedeemInput) (*RedeemCode, error) {
+	userID := input.UserID
+	code := strings.TrimSpace(input.Code)
 	if err := s.checkRedeemRateLimit(ctx, userID); err != nil {
 		return nil, err
 	}
@@ -407,9 +458,9 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		return nil, ErrRedeemCodeUsed
 	}
 
-	// 验证兑换码类型的前置条件
-	if redeemCode.Type == RedeemTypeSubscription && redeemCode.GroupID == nil {
-		return nil, infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: missing group_id")
+	runtime := s.subscriptionEntitlementsRuntime(ctx)
+	if err := s.validateRedeemCodeForUse(redeemCode, runtime); err != nil {
+		return nil, err
 	}
 
 	// 获取用户信息
@@ -460,26 +511,8 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		}
 
 	case RedeemTypeSubscription:
-		validityDays := redeemCode.ValidityDays
-		if validityDays < 0 {
-			// 负数天数：缩短订阅，减到 0 则取消订阅
-			if err := s.reduceOrCancelSubscription(txCtx, userID, *redeemCode.GroupID, -validityDays, redeemCode.Code); err != nil {
-				return nil, fmt.Errorf("reduce or cancel subscription: %w", err)
-			}
-		} else {
-			if validityDays == 0 {
-				validityDays = 30
-			}
-			_, _, err := s.subscriptionService.AssignOrExtendSubscription(txCtx, &AssignSubscriptionInput{
-				UserID:       userID,
-				GroupID:      *redeemCode.GroupID,
-				ValidityDays: validityDays,
-				AssignedBy:   0, // 系统分配
-				Notes:        fmt.Sprintf("通过兑换码 %s 兑换", redeemCode.Code),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("assign or extend subscription: %w", err)
-			}
+		if err := s.applySubscriptionRedeem(txCtx, redeemCode, userID, input.Source, runtime); err != nil {
+			return nil, err
 		}
 
 	default:
@@ -506,6 +539,150 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	}
 
 	return redeemCode, nil
+}
+
+func (s *RedeemService) subscriptionEntitlementsRuntime(ctx context.Context) SubscriptionEntitlementsRuntime {
+	if s == nil || s.settingSvc == nil {
+		return SubscriptionEntitlementsRuntime{}
+	}
+	return s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx)
+}
+
+func (s *RedeemService) validateRedeemCodeForUse(redeemCode *RedeemCode, runtime SubscriptionEntitlementsRuntime) error {
+	if redeemCode == nil || redeemCode.Type != RedeemTypeSubscription {
+		return nil
+	}
+	if redeemCode.GroupID != nil && *redeemCode.GroupID <= 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: invalid group_id")
+	}
+	if redeemCode.PlanID != nil && *redeemCode.PlanID <= 0 {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: invalid plan_id")
+	}
+	if runtime.Enabled && redeemCode.PlanID != nil && *redeemCode.PlanID > 0 {
+		if redeemCode.GroupID != nil {
+			return ErrRedeemCodeConflict
+		}
+		if redeemCode.ValidityDays < 0 {
+			return infraerrors.BadRequest("REDEEM_CODE_INVALID", "plan subscription redeem code cannot reduce validity days")
+		}
+		return nil
+	}
+	if redeemCode.GroupID == nil {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: missing group_id")
+	}
+	return nil
+}
+
+func (s *RedeemService) applySubscriptionRedeem(ctx context.Context, redeemCode *RedeemCode, userID int64, source RedeemSourceContext, runtime SubscriptionEntitlementsRuntime) error {
+	validityDays := redeemCode.ValidityDays
+	if validityDays < 0 {
+		if redeemCode.GroupID == nil {
+			return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: missing group_id")
+		}
+		if err := s.reduceOrCancelSubscription(ctx, userID, *redeemCode.GroupID, -validityDays, redeemCode.Code); err != nil {
+			return fmt.Errorf("reduce or cancel subscription: %w", err)
+		}
+		return nil
+	}
+
+	if runtime.Enabled {
+		planID, ok, err := s.resolveRedeemEntitlementPlan(ctx, redeemCode, source, runtime)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return s.assignRedeemEntitlement(ctx, redeemCode, userID, planID, source)
+		}
+	}
+
+	return s.applyLegacySubscriptionRedeem(ctx, redeemCode, userID, validityDays)
+}
+
+func (s *RedeemService) resolveRedeemEntitlementPlan(ctx context.Context, redeemCode *RedeemCode, source RedeemSourceContext, runtime SubscriptionEntitlementsRuntime) (int64, bool, error) {
+	if redeemCode.PlanID != nil && *redeemCode.PlanID > 0 {
+		return *redeemCode.PlanID, true, nil
+	}
+	if !runtime.LegacyCashierMappingEnabled || !source.IsSub2PaymentPageLegacy() {
+		return 0, false, nil
+	}
+	if s.subscriptionPlanExternalMappingSvc == nil {
+		return 0, false, infraerrors.InternalServer("SUBSCRIPTION_PLAN_EXTERNAL_MAPPING_SERVICE_MISSING", "subscription plan external mapping service is not configured")
+	}
+	mapping, err := s.subscriptionPlanExternalMappingSvc.FindSub2PaymentPageLegacyMapping(ctx, source.LegacyGroupID, source.LegacyValidityDays, source.LegacyValue)
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionPlanExternalMappingNotFound) {
+			return 0, false, nil
+		}
+		return 0, false, err
+	}
+	if mapping == nil || mapping.PlanID <= 0 {
+		return 0, false, nil
+	}
+	return mapping.PlanID, true, nil
+}
+
+func (s *RedeemService) assignRedeemEntitlement(ctx context.Context, redeemCode *RedeemCode, userID, planID int64, source RedeemSourceContext) error {
+	if s.subscriptionEntitlementSvc == nil {
+		return infraerrors.InternalServer("SUBSCRIPTION_ENTITLEMENT_SERVICE_MISSING", "subscription entitlement service is not configured")
+	}
+	redeemCodeID := redeemCode.ID
+	input := AssignEntitlementFromPlanInput{
+		UserID:             userID,
+		PlanID:             planID,
+		SourceRedeemCodeID: &redeemCodeID,
+		Notes:              fmt.Sprintf("redeem_code_id=%d code=%s", redeemCode.ID, redeemCode.Code),
+	}
+	if redeemCode.ValidityDays > 0 {
+		input.ValidityDaysOverride = redeemCode.ValidityDays
+	}
+	if source.IsSub2PaymentPageLegacy() {
+		input.SourceType = source.Source
+		externalID := source.ExternalOrderID
+		input.SourceExternalID = &externalID
+		input.Notes = fmt.Sprintf("sub2-payment-page order=%s redeem_code_id=%d code=%s", source.ExternalOrderID, redeemCode.ID, redeemCode.Code)
+	}
+
+	ent, _, err := s.subscriptionEntitlementSvc.AssignOrExtendFromPlanTx(ctx, input)
+	if err != nil {
+		return fmt.Errorf("assign subscription entitlement: %w", err)
+	}
+	if ent == nil || ent.ID <= 0 {
+		return fmt.Errorf("assign subscription entitlement: missing entitlement")
+	}
+
+	now := time.Now()
+	redeemCode.Status = StatusUsed
+	redeemCode.UsedBy = &userID
+	redeemCode.UsedAt = &now
+	redeemCode.PlanID = &planID
+	redeemCode.SubscriptionEntitlementID = &ent.ID
+	if err := s.redeemRepo.Update(ctx, redeemCode); err != nil {
+		return fmt.Errorf("update redeem entitlement: %w", err)
+	}
+	return nil
+}
+
+func (s *RedeemService) applyLegacySubscriptionRedeem(ctx context.Context, redeemCode *RedeemCode, userID int64, validityDays int) error {
+	if redeemCode.GroupID == nil {
+		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: missing group_id")
+	}
+	if s.subscriptionService == nil {
+		return infraerrors.InternalServer("SUBSCRIPTION_SERVICE_MISSING", "subscription service is not configured")
+	}
+	if validityDays == 0 {
+		validityDays = 30
+	}
+	_, _, err := s.subscriptionService.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{
+		UserID:       userID,
+		GroupID:      *redeemCode.GroupID,
+		ValidityDays: validityDays,
+		AssignedBy:   0,
+		Notes:        fmt.Sprintf("通过兑换码 %s 兑换", redeemCode.Code),
+	})
+	if err != nil {
+		return fmt.Errorf("assign or extend subscription: %w", err)
+	}
+	return nil
 }
 
 // invalidateRedeemCaches 失效兑换相关的缓存

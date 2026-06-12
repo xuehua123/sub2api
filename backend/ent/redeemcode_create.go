@@ -172,6 +172,20 @@ func (_c *RedeemCodeCreate) SetNillablePlanID(v *int64) *RedeemCodeCreate {
 	return _c
 }
 
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_c *RedeemCodeCreate) SetSubscriptionEntitlementID(v int64) *RedeemCodeCreate {
+	_c.mutation.SetSubscriptionEntitlementID(v)
+	return _c
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_c *RedeemCodeCreate) SetNillableSubscriptionEntitlementID(v *int64) *RedeemCodeCreate {
+	if v != nil {
+		_c.SetSubscriptionEntitlementID(*v)
+	}
+	return _c
+}
+
 // SetValidityDays sets the "validity_days" field.
 func (_c *RedeemCodeCreate) SetValidityDays(v int) *RedeemCodeCreate {
 	_c.mutation.SetValidityDays(v)
@@ -213,6 +227,11 @@ func (_c *RedeemCodeCreate) SetGroup(v *Group) *RedeemCodeCreate {
 // SetPlan sets the "plan" edge to the SubscriptionPlan entity.
 func (_c *RedeemCodeCreate) SetPlan(v *SubscriptionPlan) *RedeemCodeCreate {
 	return _c.SetPlanID(v.ID)
+}
+
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_c *RedeemCodeCreate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *RedeemCodeCreate {
+	return _c.SetSubscriptionEntitlementID(v.ID)
 }
 
 // AddSourceSubscriptionEntitlementIDs adds the "source_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
@@ -434,6 +453,23 @@ func (_c *RedeemCodeCreate) createSpec() (*RedeemCode, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.PlanID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   redeemcode.SubscriptionEntitlementTable,
+			Columns: []string{redeemcode.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SubscriptionEntitlementID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.SourceSubscriptionEntitlementsIDs(); len(nodes) > 0 {
@@ -663,6 +699,24 @@ func (u *RedeemCodeUpsert) UpdatePlanID() *RedeemCodeUpsert {
 // ClearPlanID clears the value of the "plan_id" field.
 func (u *RedeemCodeUpsert) ClearPlanID() *RedeemCodeUpsert {
 	u.SetNull(redeemcode.FieldPlanID)
+	return u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsert) SetSubscriptionEntitlementID(v int64) *RedeemCodeUpsert {
+	u.Set(redeemcode.FieldSubscriptionEntitlementID, v)
+	return u
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsert) UpdateSubscriptionEntitlementID() *RedeemCodeUpsert {
+	u.SetExcluded(redeemcode.FieldSubscriptionEntitlementID)
+	return u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsert) ClearSubscriptionEntitlementID() *RedeemCodeUpsert {
+	u.SetNull(redeemcode.FieldSubscriptionEntitlementID)
 	return u
 }
 
@@ -915,6 +969,27 @@ func (u *RedeemCodeUpsertOne) UpdatePlanID() *RedeemCodeUpsertOne {
 func (u *RedeemCodeUpsertOne) ClearPlanID() *RedeemCodeUpsertOne {
 	return u.Update(func(s *RedeemCodeUpsert) {
 		s.ClearPlanID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsertOne) SetSubscriptionEntitlementID(v int64) *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsertOne) UpdateSubscriptionEntitlementID() *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsertOne) ClearSubscriptionEntitlementID() *RedeemCodeUpsertOne {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.ClearSubscriptionEntitlementID()
 	})
 }
 
@@ -1336,6 +1411,27 @@ func (u *RedeemCodeUpsertBulk) UpdatePlanID() *RedeemCodeUpsertBulk {
 func (u *RedeemCodeUpsertBulk) ClearPlanID() *RedeemCodeUpsertBulk {
 	return u.Update(func(s *RedeemCodeUpsert) {
 		s.ClearPlanID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsertBulk) SetSubscriptionEntitlementID(v int64) *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *RedeemCodeUpsertBulk) UpdateSubscriptionEntitlementID() *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *RedeemCodeUpsertBulk) ClearSubscriptionEntitlementID() *RedeemCodeUpsertBulk {
+	return u.Update(func(s *RedeemCodeUpsert) {
+		s.ClearSubscriptionEntitlementID()
 	})
 }
 

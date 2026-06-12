@@ -662,6 +662,21 @@ func (_u *SubscriptionEntitlementUpdate) AddPaymentOrders(v ...*PaymentOrder) *S
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (_u *SubscriptionEntitlementUpdate) AddRedeemCodeIDs(ids ...int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.AddRedeemCodeIDs(ids...)
+	return _u
+}
+
+// AddRedeemCodes adds the "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionEntitlementUpdate) AddRedeemCodes(v ...*RedeemCode) *SubscriptionEntitlementUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRedeemCodeIDs(ids...)
+}
+
 // AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
 func (_u *SubscriptionEntitlementUpdate) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdate {
 	_u.mutation.AddFulfillmentIDs(ids...)
@@ -800,6 +815,27 @@ func (_u *SubscriptionEntitlementUpdate) RemovePaymentOrders(v ...*PaymentOrder)
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePaymentOrderIDs(ids...)
+}
+
+// ClearRedeemCodes clears all "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionEntitlementUpdate) ClearRedeemCodes() *SubscriptionEntitlementUpdate {
+	_u.mutation.ClearRedeemCodes()
+	return _u
+}
+
+// RemoveRedeemCodeIDs removes the "redeem_codes" edge to RedeemCode entities by IDs.
+func (_u *SubscriptionEntitlementUpdate) RemoveRedeemCodeIDs(ids ...int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.RemoveRedeemCodeIDs(ids...)
+	return _u
+}
+
+// RemoveRedeemCodes removes "redeem_codes" edges to RedeemCode entities.
+func (_u *SubscriptionEntitlementUpdate) RemoveRedeemCodes(v ...*RedeemCode) *SubscriptionEntitlementUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRedeemCodeIDs(ids...)
 }
 
 // ClearFulfillments clears all "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
@@ -1389,6 +1425,51 @@ func (_u *SubscriptionEntitlementUpdate) sqlSave(ctx context.Context) (_node int
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRedeemCodesIDs(); len(nodes) > 0 && !_u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RedeemCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -2086,6 +2167,21 @@ func (_u *SubscriptionEntitlementUpdateOne) AddPaymentOrders(v ...*PaymentOrder)
 	return _u.AddPaymentOrderIDs(ids...)
 }
 
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (_u *SubscriptionEntitlementUpdateOne) AddRedeemCodeIDs(ids ...int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.AddRedeemCodeIDs(ids...)
+	return _u
+}
+
+// AddRedeemCodes adds the "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionEntitlementUpdateOne) AddRedeemCodes(v ...*RedeemCode) *SubscriptionEntitlementUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRedeemCodeIDs(ids...)
+}
+
 // AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
 func (_u *SubscriptionEntitlementUpdateOne) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementUpdateOne {
 	_u.mutation.AddFulfillmentIDs(ids...)
@@ -2224,6 +2320,27 @@ func (_u *SubscriptionEntitlementUpdateOne) RemovePaymentOrders(v ...*PaymentOrd
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePaymentOrderIDs(ids...)
+}
+
+// ClearRedeemCodes clears all "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionEntitlementUpdateOne) ClearRedeemCodes() *SubscriptionEntitlementUpdateOne {
+	_u.mutation.ClearRedeemCodes()
+	return _u
+}
+
+// RemoveRedeemCodeIDs removes the "redeem_codes" edge to RedeemCode entities by IDs.
+func (_u *SubscriptionEntitlementUpdateOne) RemoveRedeemCodeIDs(ids ...int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.RemoveRedeemCodeIDs(ids...)
+	return _u
+}
+
+// RemoveRedeemCodes removes "redeem_codes" edges to RedeemCode entities.
+func (_u *SubscriptionEntitlementUpdateOne) RemoveRedeemCodes(v ...*RedeemCode) *SubscriptionEntitlementUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRedeemCodeIDs(ids...)
 }
 
 // ClearFulfillments clears all "fulfillments" edges to the SubscriptionEntitlementFulfillment entity.
@@ -2843,6 +2960,51 @@ func (_u *SubscriptionEntitlementUpdateOne) sqlSave(ctx context.Context) (_node 
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRedeemCodesIDs(); len(nodes) > 0 && !_u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RedeemCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

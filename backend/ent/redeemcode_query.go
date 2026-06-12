@@ -31,6 +31,7 @@ type RedeemCodeQuery struct {
 	withUser                           *UserQuery
 	withGroup                          *GroupQuery
 	withPlan                           *SubscriptionPlanQuery
+	withSubscriptionEntitlement        *SubscriptionEntitlementQuery
 	withSourceSubscriptionEntitlements *SubscriptionEntitlementQuery
 	modifiers                          []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
@@ -128,6 +129,28 @@ func (_q *RedeemCodeQuery) QueryPlan() *SubscriptionPlanQuery {
 			sqlgraph.From(redeemcode.Table, redeemcode.FieldID, selector),
 			sqlgraph.To(subscriptionplan.Table, subscriptionplan.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, redeemcode.PlanTable, redeemcode.PlanColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QuerySubscriptionEntitlement chains the current query on the "subscription_entitlement" edge.
+func (_q *RedeemCodeQuery) QuerySubscriptionEntitlement() *SubscriptionEntitlementQuery {
+	query := (&SubscriptionEntitlementClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(redeemcode.Table, redeemcode.FieldID, selector),
+			sqlgraph.To(subscriptionentitlement.Table, subscriptionentitlement.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, redeemcode.SubscriptionEntitlementTable, redeemcode.SubscriptionEntitlementColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -352,6 +375,7 @@ func (_q *RedeemCodeQuery) Clone() *RedeemCodeQuery {
 		withUser:                           _q.withUser.Clone(),
 		withGroup:                          _q.withGroup.Clone(),
 		withPlan:                           _q.withPlan.Clone(),
+		withSubscriptionEntitlement:        _q.withSubscriptionEntitlement.Clone(),
 		withSourceSubscriptionEntitlements: _q.withSourceSubscriptionEntitlements.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
@@ -389,6 +413,17 @@ func (_q *RedeemCodeQuery) WithPlan(opts ...func(*SubscriptionPlanQuery)) *Redee
 		opt(query)
 	}
 	_q.withPlan = query
+	return _q
+}
+
+// WithSubscriptionEntitlement tells the query-builder to eager-load the nodes that are connected to
+// the "subscription_entitlement" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *RedeemCodeQuery) WithSubscriptionEntitlement(opts ...func(*SubscriptionEntitlementQuery)) *RedeemCodeQuery {
+	query := (&SubscriptionEntitlementClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withSubscriptionEntitlement = query
 	return _q
 }
 
@@ -481,10 +516,11 @@ func (_q *RedeemCodeQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*R
 	var (
 		nodes       = []*RedeemCode{}
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			_q.withUser != nil,
 			_q.withGroup != nil,
 			_q.withPlan != nil,
+			_q.withSubscriptionEntitlement != nil,
 			_q.withSourceSubscriptionEntitlements != nil,
 		}
 	)
@@ -524,6 +560,12 @@ func (_q *RedeemCodeQuery) sqlAll(ctx context.Context, hooks ...queryHook) ([]*R
 	if query := _q.withPlan; query != nil {
 		if err := _q.loadPlan(ctx, query, nodes, nil,
 			func(n *RedeemCode, e *SubscriptionPlan) { n.Edges.Plan = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withSubscriptionEntitlement; query != nil {
+		if err := _q.loadSubscriptionEntitlement(ctx, query, nodes, nil,
+			func(n *RedeemCode, e *SubscriptionEntitlement) { n.Edges.SubscriptionEntitlement = e }); err != nil {
 			return nil, err
 		}
 	}
@@ -635,6 +677,38 @@ func (_q *RedeemCodeQuery) loadPlan(ctx context.Context, query *SubscriptionPlan
 	}
 	return nil
 }
+func (_q *RedeemCodeQuery) loadSubscriptionEntitlement(ctx context.Context, query *SubscriptionEntitlementQuery, nodes []*RedeemCode, init func(*RedeemCode), assign func(*RedeemCode, *SubscriptionEntitlement)) error {
+	ids := make([]int64, 0, len(nodes))
+	nodeids := make(map[int64][]*RedeemCode)
+	for i := range nodes {
+		if nodes[i].SubscriptionEntitlementID == nil {
+			continue
+		}
+		fk := *nodes[i].SubscriptionEntitlementID
+		if _, ok := nodeids[fk]; !ok {
+			ids = append(ids, fk)
+		}
+		nodeids[fk] = append(nodeids[fk], nodes[i])
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	query.Where(subscriptionentitlement.IDIn(ids...))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		nodes, ok := nodeids[n.ID]
+		if !ok {
+			return fmt.Errorf(`unexpected foreign-key "subscription_entitlement_id" returned %v`, n.ID)
+		}
+		for i := range nodes {
+			assign(nodes[i], n)
+		}
+	}
+	return nil
+}
 func (_q *RedeemCodeQuery) loadSourceSubscriptionEntitlements(ctx context.Context, query *SubscriptionEntitlementQuery, nodes []*RedeemCode, init func(*RedeemCode), assign func(*RedeemCode, *SubscriptionEntitlement)) error {
 	fks := make([]driver.Value, 0, len(nodes))
 	nodeids := make(map[int64]*RedeemCode)
@@ -705,6 +779,9 @@ func (_q *RedeemCodeQuery) querySpec() *sqlgraph.QuerySpec {
 		}
 		if _q.withPlan != nil {
 			_spec.Node.AddColumnOnce(redeemcode.FieldPlanID)
+		}
+		if _q.withSubscriptionEntitlement != nil {
+			_spec.Node.AddColumnOnce(redeemcode.FieldSubscriptionEntitlementID)
 		}
 	}
 	if ps := _q.predicates; len(ps) > 0 {

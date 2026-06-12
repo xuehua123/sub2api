@@ -419,6 +419,7 @@ type GenerateRedeemCodesInput struct {
 	Type         string
 	Value        float64
 	GroupID      *int64 // 订阅类型专用：关联的分组ID
+	PlanID       *int64 // 订阅权益 v2 套餐 ID
 	ValidityDays int    // 订阅类型专用：有效天数
 	ExpiresAt    *time.Time
 }
@@ -3244,18 +3245,32 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 		return nil, ErrRedeemCodeExpired
 	}
 
-	// 如果是订阅类型，验证必须有 GroupID
+	// 如果是订阅类型，验证必须有 PlanID 或 GroupID
 	if input.Type == RedeemTypeSubscription {
-		if input.GroupID == nil {
-			return nil, errors.New("group_id is required for subscription type")
+		if input.GroupID == nil && input.PlanID == nil {
+			return nil, errors.New("plan_id or group_id is required for subscription type")
+		}
+		if input.GroupID != nil && input.PlanID != nil {
+			return nil, errors.New("plan_id and group_id cannot both be set for subscription type")
+		}
+		if input.PlanID != nil && *input.PlanID <= 0 {
+			return nil, errors.New("plan_id must be greater than zero")
+		}
+		if input.PlanID != nil && input.ValidityDays < 0 {
+			return nil, errors.New("plan subscription redeem code cannot reduce validity days")
 		}
 		// 验证分组存在且为订阅类型
-		group, err := s.groupRepo.GetByID(ctx, *input.GroupID)
-		if err != nil {
-			return nil, fmt.Errorf("group not found: %w", err)
-		}
-		if !group.IsSubscriptionType() {
-			return nil, errors.New("group must be subscription type")
+		if input.GroupID != nil {
+			if *input.GroupID <= 0 {
+				return nil, errors.New("group_id must be greater than zero")
+			}
+			group, err := s.groupRepo.GetByID(ctx, *input.GroupID)
+			if err != nil {
+				return nil, fmt.Errorf("group not found: %w", err)
+			}
+			if !group.IsSubscriptionType() {
+				return nil, errors.New("group must be subscription type")
+			}
 		}
 	}
 
@@ -3275,8 +3290,9 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 		// 订阅类型专用字段
 		if input.Type == RedeemTypeSubscription {
 			code.GroupID = input.GroupID
+			code.PlanID = input.PlanID
 			code.ValidityDays = input.ValidityDays
-			if code.ValidityDays <= 0 {
+			if code.ValidityDays <= 0 && code.PlanID == nil {
 				code.ValidityDays = 30 // 默认30天
 			}
 		}

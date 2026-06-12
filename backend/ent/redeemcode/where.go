@@ -110,6 +110,11 @@ func PlanID(v int64) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldPlanID, v))
 }
 
+// SubscriptionEntitlementID applies equality check predicate on the "subscription_entitlement_id" field. It's identical to SubscriptionEntitlementIDEQ.
+func SubscriptionEntitlementID(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
 // ValidityDays applies equality check predicate on the "validity_days" field. It's identical to ValidityDaysEQ.
 func ValidityDays(v int) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldValidityDays, v))
@@ -655,6 +660,36 @@ func PlanIDNotNil() predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldNotNull(FieldPlanID))
 }
 
+// SubscriptionEntitlementIDEQ applies the EQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDEQ(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDNEQ applies the NEQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNEQ(v int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDIn applies the In predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIn(vs ...int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDNotIn applies the NotIn predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotIn(vs ...int64) predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNotIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDIsNil applies the IsNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIsNil() predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldIsNull(FieldSubscriptionEntitlementID))
+}
+
+// SubscriptionEntitlementIDNotNil applies the NotNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotNil() predicate.RedeemCode {
+	return predicate.RedeemCode(sql.FieldNotNull(FieldSubscriptionEntitlementID))
+}
+
 // ValidityDaysEQ applies the EQ predicate on the "validity_days" field.
 func ValidityDaysEQ(v int) predicate.RedeemCode {
 	return predicate.RedeemCode(sql.FieldEQ(FieldValidityDays, v))
@@ -756,6 +791,29 @@ func HasPlan() predicate.RedeemCode {
 func HasPlanWith(preds ...predicate.SubscriptionPlan) predicate.RedeemCode {
 	return predicate.RedeemCode(func(s *sql.Selector) {
 		step := newPlanStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSubscriptionEntitlement applies the HasEdge predicate on the "subscription_entitlement" edge.
+func HasSubscriptionEntitlement() predicate.RedeemCode {
+	return predicate.RedeemCode(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubscriptionEntitlementWith applies the HasEdge predicate on the "subscription_entitlement" edge with a given conditions (other predicates).
+func HasSubscriptionEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.RedeemCode {
+	return predicate.RedeemCode(func(s *sql.Selector) {
+		step := newSubscriptionEntitlementStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

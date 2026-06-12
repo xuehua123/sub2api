@@ -509,6 +509,21 @@ func (_c *SubscriptionEntitlementCreate) AddPaymentOrders(v ...*PaymentOrder) *S
 	return _c.AddPaymentOrderIDs(ids...)
 }
 
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (_c *SubscriptionEntitlementCreate) AddRedeemCodeIDs(ids ...int64) *SubscriptionEntitlementCreate {
+	_c.mutation.AddRedeemCodeIDs(ids...)
+	return _c
+}
+
+// AddRedeemCodes adds the "redeem_codes" edges to the RedeemCode entity.
+func (_c *SubscriptionEntitlementCreate) AddRedeemCodes(v ...*RedeemCode) *SubscriptionEntitlementCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddRedeemCodeIDs(ids...)
+}
+
 // AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by IDs.
 func (_c *SubscriptionEntitlementCreate) AddFulfillmentIDs(ids ...int64) *SubscriptionEntitlementCreate {
 	_c.mutation.AddFulfillmentIDs(ids...)
@@ -964,6 +979,22 @@ func (_c *SubscriptionEntitlementCreate) createSpec() (*SubscriptionEntitlement,
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(paymentorder.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.RedeemCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionentitlement.RedeemCodesTable,
+			Columns: []string{subscriptionentitlement.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

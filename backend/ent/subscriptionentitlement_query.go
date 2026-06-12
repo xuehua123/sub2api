@@ -44,6 +44,7 @@ type SubscriptionEntitlementQuery struct {
 	withAPIKeys                       *APIKeyQuery
 	withUsageLogs                     *UsageLogQuery
 	withPaymentOrders                 *PaymentOrderQuery
+	withRedeemCodes                   *RedeemCodeQuery
 	withFulfillments                  *SubscriptionEntitlementFulfillmentQuery
 	withSubscriptionEntitlementGroups *SubscriptionEntitlementGroupQuery
 	modifiers                         []func(*sql.Selector)
@@ -303,6 +304,28 @@ func (_q *SubscriptionEntitlementQuery) QueryPaymentOrders() *PaymentOrderQuery 
 	return query
 }
 
+// QueryRedeemCodes chains the current query on the "redeem_codes" edge.
+func (_q *SubscriptionEntitlementQuery) QueryRedeemCodes() *RedeemCodeQuery {
+	query := (&RedeemCodeClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(subscriptionentitlement.Table, subscriptionentitlement.FieldID, selector),
+			sqlgraph.To(redeemcode.Table, redeemcode.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, subscriptionentitlement.RedeemCodesTable, subscriptionentitlement.RedeemCodesColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
 // QueryFulfillments chains the current query on the "fulfillments" edge.
 func (_q *SubscriptionEntitlementQuery) QueryFulfillments() *SubscriptionEntitlementFulfillmentQuery {
 	query := (&SubscriptionEntitlementFulfillmentClient{config: _q.config}).Query()
@@ -549,6 +572,7 @@ func (_q *SubscriptionEntitlementQuery) Clone() *SubscriptionEntitlementQuery {
 		withAPIKeys:                       _q.withAPIKeys.Clone(),
 		withUsageLogs:                     _q.withUsageLogs.Clone(),
 		withPaymentOrders:                 _q.withPaymentOrders.Clone(),
+		withRedeemCodes:                   _q.withRedeemCodes.Clone(),
 		withFulfillments:                  _q.withFulfillments.Clone(),
 		withSubscriptionEntitlementGroups: _q.withSubscriptionEntitlementGroups.Clone(),
 		// clone intermediate query.
@@ -667,6 +691,17 @@ func (_q *SubscriptionEntitlementQuery) WithPaymentOrders(opts ...func(*PaymentO
 	return _q
 }
 
+// WithRedeemCodes tells the query-builder to eager-load the nodes that are connected to
+// the "redeem_codes" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *SubscriptionEntitlementQuery) WithRedeemCodes(opts ...func(*RedeemCodeQuery)) *SubscriptionEntitlementQuery {
+	query := (&RedeemCodeClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withRedeemCodes = query
+	return _q
+}
+
 // WithFulfillments tells the query-builder to eager-load the nodes that are connected to
 // the "fulfillments" edge. The optional arguments are used to configure the query builder of the edge.
 func (_q *SubscriptionEntitlementQuery) WithFulfillments(opts ...func(*SubscriptionEntitlementFulfillmentQuery)) *SubscriptionEntitlementQuery {
@@ -767,7 +802,7 @@ func (_q *SubscriptionEntitlementQuery) sqlAll(ctx context.Context, hooks ...que
 	var (
 		nodes       = []*SubscriptionEntitlement{}
 		_spec       = _q.querySpec()
-		loadedTypes = [12]bool{
+		loadedTypes = [13]bool{
 			_q.withUser != nil,
 			_q.withPlan != nil,
 			_q.withLegacySubscription != nil,
@@ -778,6 +813,7 @@ func (_q *SubscriptionEntitlementQuery) sqlAll(ctx context.Context, hooks ...que
 			_q.withAPIKeys != nil,
 			_q.withUsageLogs != nil,
 			_q.withPaymentOrders != nil,
+			_q.withRedeemCodes != nil,
 			_q.withFulfillments != nil,
 			_q.withSubscriptionEntitlementGroups != nil,
 		}
@@ -866,6 +902,13 @@ func (_q *SubscriptionEntitlementQuery) sqlAll(ctx context.Context, hooks ...que
 			func(n *SubscriptionEntitlement, e *PaymentOrder) {
 				n.Edges.PaymentOrders = append(n.Edges.PaymentOrders, e)
 			}); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withRedeemCodes; query != nil {
+		if err := _q.loadRedeemCodes(ctx, query, nodes,
+			func(n *SubscriptionEntitlement) { n.Edges.RedeemCodes = []*RedeemCode{} },
+			func(n *SubscriptionEntitlement, e *RedeemCode) { n.Edges.RedeemCodes = append(n.Edges.RedeemCodes, e) }); err != nil {
 			return nil, err
 		}
 	}
@@ -1223,6 +1266,39 @@ func (_q *SubscriptionEntitlementQuery) loadPaymentOrders(ctx context.Context, q
 	}
 	query.Where(predicate.PaymentOrder(func(s *sql.Selector) {
 		s.Where(sql.InValues(s.C(subscriptionentitlement.PaymentOrdersColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.SubscriptionEntitlementID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "subscription_entitlement_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "subscription_entitlement_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
+	}
+	return nil
+}
+func (_q *SubscriptionEntitlementQuery) loadRedeemCodes(ctx context.Context, query *RedeemCodeQuery, nodes []*SubscriptionEntitlement, init func(*SubscriptionEntitlement), assign func(*SubscriptionEntitlement, *RedeemCode)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*SubscriptionEntitlement)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(redeemcode.FieldSubscriptionEntitlementID)
+	}
+	query.Where(predicate.RedeemCode(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(subscriptionentitlement.RedeemCodesColumn), fks...))
 	}))
 	neighbors, err := query.All(ctx)
 	if err != nil {

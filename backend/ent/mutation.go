@@ -39802,6 +39802,8 @@ type RedeemCodeMutation struct {
 	clearedgroup                            bool
 	plan                                    *int64
 	clearedplan                             bool
+	subscription_entitlement                *int64
+	clearedsubscription_entitlement         bool
 	source_subscription_entitlements        map[int64]struct{}
 	removedsource_subscription_entitlements map[int64]struct{}
 	clearedsource_subscription_entitlements bool
@@ -40402,6 +40404,55 @@ func (m *RedeemCodeMutation) ResetPlanID() {
 	delete(m.clearedFields, redeemcode.FieldPlanID)
 }
 
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (m *RedeemCodeMutation) SetSubscriptionEntitlementID(i int64) {
+	m.subscription_entitlement = &i
+}
+
+// SubscriptionEntitlementID returns the value of the "subscription_entitlement_id" field in the mutation.
+func (m *RedeemCodeMutation) SubscriptionEntitlementID() (r int64, exists bool) {
+	v := m.subscription_entitlement
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionEntitlementID returns the old "subscription_entitlement_id" field's value of the RedeemCode entity.
+// If the RedeemCode object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *RedeemCodeMutation) OldSubscriptionEntitlementID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionEntitlementID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionEntitlementID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionEntitlementID: %w", err)
+	}
+	return oldValue.SubscriptionEntitlementID, nil
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (m *RedeemCodeMutation) ClearSubscriptionEntitlementID() {
+	m.subscription_entitlement = nil
+	m.clearedFields[redeemcode.FieldSubscriptionEntitlementID] = struct{}{}
+}
+
+// SubscriptionEntitlementIDCleared returns if the "subscription_entitlement_id" field was cleared in this mutation.
+func (m *RedeemCodeMutation) SubscriptionEntitlementIDCleared() bool {
+	_, ok := m.clearedFields[redeemcode.FieldSubscriptionEntitlementID]
+	return ok
+}
+
+// ResetSubscriptionEntitlementID resets all changes to the "subscription_entitlement_id" field.
+func (m *RedeemCodeMutation) ResetSubscriptionEntitlementID() {
+	m.subscription_entitlement = nil
+	delete(m.clearedFields, redeemcode.FieldSubscriptionEntitlementID)
+}
+
 // SetValidityDays sets the "validity_days" field.
 func (m *RedeemCodeMutation) SetValidityDays(i int) {
 	m.validity_days = &i
@@ -40552,6 +40603,33 @@ func (m *RedeemCodeMutation) ResetPlan() {
 	m.clearedplan = false
 }
 
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (m *RedeemCodeMutation) ClearSubscriptionEntitlement() {
+	m.clearedsubscription_entitlement = true
+	m.clearedFields[redeemcode.FieldSubscriptionEntitlementID] = struct{}{}
+}
+
+// SubscriptionEntitlementCleared reports if the "subscription_entitlement" edge to the SubscriptionEntitlement entity was cleared.
+func (m *RedeemCodeMutation) SubscriptionEntitlementCleared() bool {
+	return m.SubscriptionEntitlementIDCleared() || m.clearedsubscription_entitlement
+}
+
+// SubscriptionEntitlementIDs returns the "subscription_entitlement" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// SubscriptionEntitlementID instead. It exists only for internal usage by the builders.
+func (m *RedeemCodeMutation) SubscriptionEntitlementIDs() (ids []int64) {
+	if id := m.subscription_entitlement; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetSubscriptionEntitlement resets all changes to the "subscription_entitlement" edge.
+func (m *RedeemCodeMutation) ResetSubscriptionEntitlement() {
+	m.subscription_entitlement = nil
+	m.clearedsubscription_entitlement = false
+}
+
 // AddSourceSubscriptionEntitlementIDs adds the "source_subscription_entitlements" edge to the SubscriptionEntitlement entity by ids.
 func (m *RedeemCodeMutation) AddSourceSubscriptionEntitlementIDs(ids ...int64) {
 	if m.source_subscription_entitlements == nil {
@@ -40640,7 +40718,7 @@ func (m *RedeemCodeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *RedeemCodeMutation) Fields() []string {
-	fields := make([]string, 0, 12)
+	fields := make([]string, 0, 13)
 	if m.code != nil {
 		fields = append(fields, redeemcode.FieldCode)
 	}
@@ -40673,6 +40751,9 @@ func (m *RedeemCodeMutation) Fields() []string {
 	}
 	if m.plan != nil {
 		fields = append(fields, redeemcode.FieldPlanID)
+	}
+	if m.subscription_entitlement != nil {
+		fields = append(fields, redeemcode.FieldSubscriptionEntitlementID)
 	}
 	if m.validity_days != nil {
 		fields = append(fields, redeemcode.FieldValidityDays)
@@ -40707,6 +40788,8 @@ func (m *RedeemCodeMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case redeemcode.FieldPlanID:
 		return m.PlanID()
+	case redeemcode.FieldSubscriptionEntitlementID:
+		return m.SubscriptionEntitlementID()
 	case redeemcode.FieldValidityDays:
 		return m.ValidityDays()
 	}
@@ -40740,6 +40823,8 @@ func (m *RedeemCodeMutation) OldField(ctx context.Context, name string) (ent.Val
 		return m.OldGroupID(ctx)
 	case redeemcode.FieldPlanID:
 		return m.OldPlanID(ctx)
+	case redeemcode.FieldSubscriptionEntitlementID:
+		return m.OldSubscriptionEntitlementID(ctx)
 	case redeemcode.FieldValidityDays:
 		return m.OldValidityDays(ctx)
 	}
@@ -40828,6 +40913,13 @@ func (m *RedeemCodeMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetPlanID(v)
 		return nil
+	case redeemcode.FieldSubscriptionEntitlementID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionEntitlementID(v)
+		return nil
 	case redeemcode.FieldValidityDays:
 		v, ok := value.(int)
 		if !ok {
@@ -40910,6 +41002,9 @@ func (m *RedeemCodeMutation) ClearedFields() []string {
 	if m.FieldCleared(redeemcode.FieldPlanID) {
 		fields = append(fields, redeemcode.FieldPlanID)
 	}
+	if m.FieldCleared(redeemcode.FieldSubscriptionEntitlementID) {
+		fields = append(fields, redeemcode.FieldSubscriptionEntitlementID)
+	}
 	return fields
 }
 
@@ -40941,6 +41036,9 @@ func (m *RedeemCodeMutation) ClearField(name string) error {
 		return nil
 	case redeemcode.FieldPlanID:
 		m.ClearPlanID()
+		return nil
+	case redeemcode.FieldSubscriptionEntitlementID:
+		m.ClearSubscriptionEntitlementID()
 		return nil
 	}
 	return fmt.Errorf("unknown RedeemCode nullable field %s", name)
@@ -40983,6 +41081,9 @@ func (m *RedeemCodeMutation) ResetField(name string) error {
 	case redeemcode.FieldPlanID:
 		m.ResetPlanID()
 		return nil
+	case redeemcode.FieldSubscriptionEntitlementID:
+		m.ResetSubscriptionEntitlementID()
+		return nil
 	case redeemcode.FieldValidityDays:
 		m.ResetValidityDays()
 		return nil
@@ -40992,7 +41093,7 @@ func (m *RedeemCodeMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *RedeemCodeMutation) AddedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.user != nil {
 		edges = append(edges, redeemcode.EdgeUser)
 	}
@@ -41001,6 +41102,9 @@ func (m *RedeemCodeMutation) AddedEdges() []string {
 	}
 	if m.plan != nil {
 		edges = append(edges, redeemcode.EdgePlan)
+	}
+	if m.subscription_entitlement != nil {
+		edges = append(edges, redeemcode.EdgeSubscriptionEntitlement)
 	}
 	if m.source_subscription_entitlements != nil {
 		edges = append(edges, redeemcode.EdgeSourceSubscriptionEntitlements)
@@ -41024,6 +41128,10 @@ func (m *RedeemCodeMutation) AddedIDs(name string) []ent.Value {
 		if id := m.plan; id != nil {
 			return []ent.Value{*id}
 		}
+	case redeemcode.EdgeSubscriptionEntitlement:
+		if id := m.subscription_entitlement; id != nil {
+			return []ent.Value{*id}
+		}
 	case redeemcode.EdgeSourceSubscriptionEntitlements:
 		ids := make([]ent.Value, 0, len(m.source_subscription_entitlements))
 		for id := range m.source_subscription_entitlements {
@@ -41036,7 +41144,7 @@ func (m *RedeemCodeMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *RedeemCodeMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.removedsource_subscription_entitlements != nil {
 		edges = append(edges, redeemcode.EdgeSourceSubscriptionEntitlements)
 	}
@@ -41059,7 +41167,7 @@ func (m *RedeemCodeMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *RedeemCodeMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 4)
+	edges := make([]string, 0, 5)
 	if m.cleareduser {
 		edges = append(edges, redeemcode.EdgeUser)
 	}
@@ -41068,6 +41176,9 @@ func (m *RedeemCodeMutation) ClearedEdges() []string {
 	}
 	if m.clearedplan {
 		edges = append(edges, redeemcode.EdgePlan)
+	}
+	if m.clearedsubscription_entitlement {
+		edges = append(edges, redeemcode.EdgeSubscriptionEntitlement)
 	}
 	if m.clearedsource_subscription_entitlements {
 		edges = append(edges, redeemcode.EdgeSourceSubscriptionEntitlements)
@@ -41085,6 +41196,8 @@ func (m *RedeemCodeMutation) EdgeCleared(name string) bool {
 		return m.clearedgroup
 	case redeemcode.EdgePlan:
 		return m.clearedplan
+	case redeemcode.EdgeSubscriptionEntitlement:
+		return m.clearedsubscription_entitlement
 	case redeemcode.EdgeSourceSubscriptionEntitlements:
 		return m.clearedsource_subscription_entitlements
 	}
@@ -41104,6 +41217,9 @@ func (m *RedeemCodeMutation) ClearEdge(name string) error {
 	case redeemcode.EdgePlan:
 		m.ClearPlan()
 		return nil
+	case redeemcode.EdgeSubscriptionEntitlement:
+		m.ClearSubscriptionEntitlement()
+		return nil
 	}
 	return fmt.Errorf("unknown RedeemCode unique edge %s", name)
 }
@@ -41120,6 +41236,9 @@ func (m *RedeemCodeMutation) ResetEdge(name string) error {
 		return nil
 	case redeemcode.EdgePlan:
 		m.ResetPlan()
+		return nil
+	case redeemcode.EdgeSubscriptionEntitlement:
+		m.ResetSubscriptionEntitlement()
 		return nil
 	case redeemcode.EdgeSourceSubscriptionEntitlements:
 		m.ResetSourceSubscriptionEntitlements()
@@ -44751,6 +44870,9 @@ type SubscriptionEntitlementMutation struct {
 	payment_orders             map[int64]struct{}
 	removedpayment_orders      map[int64]struct{}
 	clearedpayment_orders      bool
+	redeem_codes               map[int64]struct{}
+	removedredeem_codes        map[int64]struct{}
+	clearedredeem_codes        bool
 	fulfillments               map[int64]struct{}
 	removedfulfillments        map[int64]struct{}
 	clearedfulfillments        bool
@@ -46644,6 +46766,60 @@ func (m *SubscriptionEntitlementMutation) ResetPaymentOrders() {
 	m.removedpayment_orders = nil
 }
 
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by ids.
+func (m *SubscriptionEntitlementMutation) AddRedeemCodeIDs(ids ...int64) {
+	if m.redeem_codes == nil {
+		m.redeem_codes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		m.redeem_codes[ids[i]] = struct{}{}
+	}
+}
+
+// ClearRedeemCodes clears the "redeem_codes" edge to the RedeemCode entity.
+func (m *SubscriptionEntitlementMutation) ClearRedeemCodes() {
+	m.clearedredeem_codes = true
+}
+
+// RedeemCodesCleared reports if the "redeem_codes" edge to the RedeemCode entity was cleared.
+func (m *SubscriptionEntitlementMutation) RedeemCodesCleared() bool {
+	return m.clearedredeem_codes
+}
+
+// RemoveRedeemCodeIDs removes the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (m *SubscriptionEntitlementMutation) RemoveRedeemCodeIDs(ids ...int64) {
+	if m.removedredeem_codes == nil {
+		m.removedredeem_codes = make(map[int64]struct{})
+	}
+	for i := range ids {
+		delete(m.redeem_codes, ids[i])
+		m.removedredeem_codes[ids[i]] = struct{}{}
+	}
+}
+
+// RemovedRedeemCodes returns the removed IDs of the "redeem_codes" edge to the RedeemCode entity.
+func (m *SubscriptionEntitlementMutation) RemovedRedeemCodesIDs() (ids []int64) {
+	for id := range m.removedredeem_codes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// RedeemCodesIDs returns the "redeem_codes" edge IDs in the mutation.
+func (m *SubscriptionEntitlementMutation) RedeemCodesIDs() (ids []int64) {
+	for id := range m.redeem_codes {
+		ids = append(ids, id)
+	}
+	return
+}
+
+// ResetRedeemCodes resets all changes to the "redeem_codes" edge.
+func (m *SubscriptionEntitlementMutation) ResetRedeemCodes() {
+	m.redeem_codes = nil
+	m.clearedredeem_codes = false
+	m.removedredeem_codes = nil
+}
+
 // AddFulfillmentIDs adds the "fulfillments" edge to the SubscriptionEntitlementFulfillment entity by ids.
 func (m *SubscriptionEntitlementMutation) AddFulfillmentIDs(ids ...int64) {
 	if m.fulfillments == nil {
@@ -47493,7 +47669,7 @@ func (m *SubscriptionEntitlementMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *SubscriptionEntitlementMutation) AddedEdges() []string {
-	edges := make([]string, 0, 11)
+	edges := make([]string, 0, 12)
 	if m.user != nil {
 		edges = append(edges, subscriptionentitlement.EdgeUser)
 	}
@@ -47523,6 +47699,9 @@ func (m *SubscriptionEntitlementMutation) AddedEdges() []string {
 	}
 	if m.payment_orders != nil {
 		edges = append(edges, subscriptionentitlement.EdgePaymentOrders)
+	}
+	if m.redeem_codes != nil {
+		edges = append(edges, subscriptionentitlement.EdgeRedeemCodes)
 	}
 	if m.fulfillments != nil {
 		edges = append(edges, subscriptionentitlement.EdgeFulfillments)
@@ -47582,6 +47761,12 @@ func (m *SubscriptionEntitlementMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case subscriptionentitlement.EdgeRedeemCodes:
+		ids := make([]ent.Value, 0, len(m.redeem_codes))
+		for id := range m.redeem_codes {
+			ids = append(ids, id)
+		}
+		return ids
 	case subscriptionentitlement.EdgeFulfillments:
 		ids := make([]ent.Value, 0, len(m.fulfillments))
 		for id := range m.fulfillments {
@@ -47594,7 +47779,7 @@ func (m *SubscriptionEntitlementMutation) AddedIDs(name string) []ent.Value {
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *SubscriptionEntitlementMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 11)
+	edges := make([]string, 0, 12)
 	if m.removedgroups != nil {
 		edges = append(edges, subscriptionentitlement.EdgeGroups)
 	}
@@ -47606,6 +47791,9 @@ func (m *SubscriptionEntitlementMutation) RemovedEdges() []string {
 	}
 	if m.removedpayment_orders != nil {
 		edges = append(edges, subscriptionentitlement.EdgePaymentOrders)
+	}
+	if m.removedredeem_codes != nil {
+		edges = append(edges, subscriptionentitlement.EdgeRedeemCodes)
 	}
 	if m.removedfulfillments != nil {
 		edges = append(edges, subscriptionentitlement.EdgeFulfillments)
@@ -47641,6 +47829,12 @@ func (m *SubscriptionEntitlementMutation) RemovedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case subscriptionentitlement.EdgeRedeemCodes:
+		ids := make([]ent.Value, 0, len(m.removedredeem_codes))
+		for id := range m.removedredeem_codes {
+			ids = append(ids, id)
+		}
+		return ids
 	case subscriptionentitlement.EdgeFulfillments:
 		ids := make([]ent.Value, 0, len(m.removedfulfillments))
 		for id := range m.removedfulfillments {
@@ -47653,7 +47847,7 @@ func (m *SubscriptionEntitlementMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *SubscriptionEntitlementMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 11)
+	edges := make([]string, 0, 12)
 	if m.cleareduser {
 		edges = append(edges, subscriptionentitlement.EdgeUser)
 	}
@@ -47683,6 +47877,9 @@ func (m *SubscriptionEntitlementMutation) ClearedEdges() []string {
 	}
 	if m.clearedpayment_orders {
 		edges = append(edges, subscriptionentitlement.EdgePaymentOrders)
+	}
+	if m.clearedredeem_codes {
+		edges = append(edges, subscriptionentitlement.EdgeRedeemCodes)
 	}
 	if m.clearedfulfillments {
 		edges = append(edges, subscriptionentitlement.EdgeFulfillments)
@@ -47714,6 +47911,8 @@ func (m *SubscriptionEntitlementMutation) EdgeCleared(name string) bool {
 		return m.clearedusage_logs
 	case subscriptionentitlement.EdgePaymentOrders:
 		return m.clearedpayment_orders
+	case subscriptionentitlement.EdgeRedeemCodes:
+		return m.clearedredeem_codes
 	case subscriptionentitlement.EdgeFulfillments:
 		return m.clearedfulfillments
 	}
@@ -47779,6 +47978,9 @@ func (m *SubscriptionEntitlementMutation) ResetEdge(name string) error {
 		return nil
 	case subscriptionentitlement.EdgePaymentOrders:
 		m.ResetPaymentOrders()
+		return nil
+	case subscriptionentitlement.EdgeRedeemCodes:
+		m.ResetRedeemCodes()
 		return nil
 	case subscriptionentitlement.EdgeFulfillments:
 		m.ResetFulfillments()

@@ -93,6 +93,8 @@ const (
 	EdgeUsageLogs = "usage_logs"
 	// EdgePaymentOrders holds the string denoting the payment_orders edge name in mutations.
 	EdgePaymentOrders = "payment_orders"
+	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
+	EdgeRedeemCodes = "redeem_codes"
 	// EdgeFulfillments holds the string denoting the fulfillments edge name in mutations.
 	EdgeFulfillments = "fulfillments"
 	// EdgeSubscriptionEntitlementGroups holds the string denoting the subscription_entitlement_groups edge name in mutations.
@@ -167,6 +169,13 @@ const (
 	PaymentOrdersInverseTable = "payment_orders"
 	// PaymentOrdersColumn is the table column denoting the payment_orders relation/edge.
 	PaymentOrdersColumn = "subscription_entitlement_id"
+	// RedeemCodesTable is the table that holds the redeem_codes relation/edge.
+	RedeemCodesTable = "redeem_codes"
+	// RedeemCodesInverseTable is the table name for the RedeemCode entity.
+	// It exists in this package in order to avoid circular dependency with the "redeemcode" package.
+	RedeemCodesInverseTable = "redeem_codes"
+	// RedeemCodesColumn is the table column denoting the redeem_codes relation/edge.
+	RedeemCodesColumn = "subscription_entitlement_id"
 	// FulfillmentsTable is the table that holds the fulfillments relation/edge.
 	FulfillmentsTable = "subscription_entitlement_fulfillments"
 	// FulfillmentsInverseTable is the table name for the SubscriptionEntitlementFulfillment entity.
@@ -521,6 +530,20 @@ func ByPaymentOrders(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByRedeemCodesCount orders the results by redeem_codes count.
+func ByRedeemCodesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newRedeemCodesStep(), opts...)
+	}
+}
+
+// ByRedeemCodes orders the results by redeem_codes terms.
+func ByRedeemCodes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRedeemCodesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByFulfillmentsCount orders the results by fulfillments count.
 func ByFulfillmentsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -616,6 +639,13 @@ func newPaymentOrdersStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(PaymentOrdersInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, PaymentOrdersTable, PaymentOrdersColumn),
+	)
+}
+func newRedeemCodesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RedeemCodesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, RedeemCodesTable, RedeemCodesColumn),
 	)
 }
 func newFulfillmentsStep() *sqlgraph.Step {

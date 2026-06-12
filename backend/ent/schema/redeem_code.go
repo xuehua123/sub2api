@@ -73,6 +73,9 @@ func (RedeemCode) Fields() []ent.Field {
 		field.Int64("plan_id").
 			Optional().
 			Nillable(),
+		field.Int64("subscription_entitlement_id").
+			Optional().
+			Nillable(),
 		field.Int("validity_days").
 			Default(30),
 	}
@@ -92,6 +95,11 @@ func (RedeemCode) Edges() []ent.Edge {
 			Ref("redeem_codes").
 			Field("plan_id").
 			Unique(),
+		edge.From("subscription_entitlement", SubscriptionEntitlement.Type).
+			Ref("redeem_codes").
+			Field("subscription_entitlement_id").
+			Unique().
+			Annotations(entsql.OnDelete(entsql.SetNull)),
 		edge.To("source_subscription_entitlements", SubscriptionEntitlement.Type),
 	}
 }
@@ -103,6 +111,7 @@ func (RedeemCode) Indexes() []ent.Index {
 		index.Fields("used_by"),
 		index.Fields("group_id"),
 		index.Fields("plan_id"),
+		index.Fields("subscription_entitlement_id"),
 		index.Fields("expires_at"),
 	}
 }

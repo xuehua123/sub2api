@@ -109,13 +109,15 @@ type SubscriptionEntitlementEdges struct {
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// PaymentOrders holds the value of the payment_orders edge.
 	PaymentOrders []*PaymentOrder `json:"payment_orders,omitempty"`
+	// RedeemCodes holds the value of the redeem_codes edge.
+	RedeemCodes []*RedeemCode `json:"redeem_codes,omitempty"`
 	// Fulfillments holds the value of the fulfillments edge.
 	Fulfillments []*SubscriptionEntitlementFulfillment `json:"fulfillments,omitempty"`
 	// SubscriptionEntitlementGroups holds the value of the subscription_entitlement_groups edge.
 	SubscriptionEntitlementGroups []*SubscriptionEntitlementGroup `json:"subscription_entitlement_groups,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [12]bool
+	loadedTypes [13]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -220,10 +222,19 @@ func (e SubscriptionEntitlementEdges) PaymentOrdersOrErr() ([]*PaymentOrder, err
 	return nil, &NotLoadedError{edge: "payment_orders"}
 }
 
+// RedeemCodesOrErr returns the RedeemCodes value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionEntitlementEdges) RedeemCodesOrErr() ([]*RedeemCode, error) {
+	if e.loadedTypes[10] {
+		return e.RedeemCodes, nil
+	}
+	return nil, &NotLoadedError{edge: "redeem_codes"}
+}
+
 // FulfillmentsOrErr returns the Fulfillments value or an error if the edge
 // was not loaded in eager-loading.
 func (e SubscriptionEntitlementEdges) FulfillmentsOrErr() ([]*SubscriptionEntitlementFulfillment, error) {
-	if e.loadedTypes[10] {
+	if e.loadedTypes[11] {
 		return e.Fulfillments, nil
 	}
 	return nil, &NotLoadedError{edge: "fulfillments"}
@@ -232,7 +243,7 @@ func (e SubscriptionEntitlementEdges) FulfillmentsOrErr() ([]*SubscriptionEntitl
 // SubscriptionEntitlementGroupsOrErr returns the SubscriptionEntitlementGroups value or an error if the edge
 // was not loaded in eager-loading.
 func (e SubscriptionEntitlementEdges) SubscriptionEntitlementGroupsOrErr() ([]*SubscriptionEntitlementGroup, error) {
-	if e.loadedTypes[11] {
+	if e.loadedTypes[12] {
 		return e.SubscriptionEntitlementGroups, nil
 	}
 	return nil, &NotLoadedError{edge: "subscription_entitlement_groups"}
@@ -526,6 +537,11 @@ func (_m *SubscriptionEntitlement) QueryUsageLogs() *UsageLogQuery {
 // QueryPaymentOrders queries the "payment_orders" edge of the SubscriptionEntitlement entity.
 func (_m *SubscriptionEntitlement) QueryPaymentOrders() *PaymentOrderQuery {
 	return NewSubscriptionEntitlementClient(_m.config).QueryPaymentOrders(_m)
+}
+
+// QueryRedeemCodes queries the "redeem_codes" edge of the SubscriptionEntitlement entity.
+func (_m *SubscriptionEntitlement) QueryRedeemCodes() *RedeemCodeQuery {
+	return NewSubscriptionEntitlementClient(_m.config).QueryRedeemCodes(_m)
 }
 
 // QueryFulfillments queries the "fulfillments" edge of the SubscriptionEntitlement entity.
