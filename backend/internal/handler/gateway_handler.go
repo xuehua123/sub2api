@@ -210,6 +210,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 获取订阅信息（可能为nil）- 提前获取用于后续检查
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	// 0. 检查wait队列是否已满
 	maxWait := service.CalculateMaxWait(subject.Concurrency)
@@ -525,20 +526,22 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					Result:                     result,
+					QuotaPlatform:              quotaPlatform,
+					APIKey:                     apiKey,
+					User:                       apiKey.User,
+					Account:                    account,
+					Subscription:               subscription,
+					Entitlement:                subscriptionEntitlement,
+					EntitlementBalanceFallback: entitlementBalanceFallback,
+					InboundEndpoint:            inboundEndpoint,
+					UpstreamEndpoint:           upstreamEndpoint,
+					UserAgent:                  userAgent,
+					IPAddress:                  clientIP,
+					RequestPayloadHash:         requestPayloadHash,
+					ForceCacheBilling:          forceCacheBilling,
+					APIKeyService:              h.apiKeyService,
+					ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
@@ -556,6 +559,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	currentAPIKey := apiKey
 	currentSubscription := subscription
+	currentEntitlement := subscriptionEntitlement
+	currentEntitlementBalanceFallback := entitlementBalanceFallback
 	var fallbackGroupID *int64
 	if apiKey.Group != nil {
 		fallbackGroupID = apiKey.Group.FallbackGroupIDOnInvalidRequest
@@ -849,6 +854,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						c.Request = c.Request.WithContext(ctx)
 						currentAPIKey = fallbackAPIKey
 						currentSubscription = nil
+						currentEntitlement = nil
+						currentEntitlementBalanceFallback = false
 						fallbackUsed = true
 						retryWithFallback = true
 						break
@@ -934,20 +941,22 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
 			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             currentAPIKey,
-					User:               currentAPIKey.User,
-					Account:            account,
-					Subscription:       currentSubscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+					Result:                     result,
+					QuotaPlatform:              quotaPlatform,
+					APIKey:                     currentAPIKey,
+					User:                       currentAPIKey.User,
+					Account:                    account,
+					Subscription:               currentSubscription,
+					Entitlement:                currentEntitlement,
+					EntitlementBalanceFallback: currentEntitlementBalanceFallback,
+					InboundEndpoint:            inboundEndpoint,
+					UpstreamEndpoint:           upstreamEndpoint,
+					UserAgent:                  userAgent,
+					IPAddress:                  clientIP,
+					RequestPayloadHash:         requestPayloadHash,
+					ForceCacheBilling:          forceCacheBilling,
+					APIKeyService:              h.apiKeyService,
+					ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.gateway.messages"),
@@ -2124,6 +2133,11 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		}
 	}()
 	task(ctx)
+}
+
+func subscriptionEntitlementUsageContext(c *gin.Context) (*service.SubscriptionEntitlement, bool) {
+	entitlement, _ := middleware2.GetSubscriptionEntitlementFromContext(c)
+	return entitlement, middleware2.GetSubscriptionEntitlementBalanceFallbackFromContext(c)
 }
 
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式

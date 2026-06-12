@@ -98,6 +98,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
@@ -289,17 +290,19 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-				Result:             result,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				Result:                     result,
+				APIKey:                     apiKey,
+				User:                       apiKey.User,
+				Account:                    account,
+				Subscription:               subscription,
+				Entitlement:                subscriptionEntitlement,
+				EntitlementBalanceFallback: entitlementBalanceFallback,
+				InboundEndpoint:            inboundEndpoint,
+				UpstreamEndpoint:           upstreamEndpoint,
+				UserAgent:                  userAgent,
+				IPAddress:                  clientIP,
+				APIKeyService:              h.apiKeyService,
+				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.openai_gateway.chat_completions"),

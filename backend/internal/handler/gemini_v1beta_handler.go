@@ -201,6 +201,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	// Get subscription (may be nil)
 	subscription, _ := middleware.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	// For Gemini native API, do not send Claude-style ping frames.
 	geminiConcurrency := NewConcurrencyHelper(h.concurrencyHelper.concurrencyService, SSEPingFormatNone, 0)
@@ -543,22 +544,24 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsageWithLongContext(ctx, &service.RecordUsageLongContextInput{
-				Result:                result,
-				QuotaPlatform:         quotaPlatform,
-				APIKey:                apiKey,
-				User:                  apiKey.User,
-				Account:               account,
-				Subscription:          subscription,
-				InboundEndpoint:       inboundEndpoint,
-				UpstreamEndpoint:      upstreamEndpoint,
-				UserAgent:             userAgent,
-				IPAddress:             clientIP,
-				RequestPayloadHash:    requestPayloadHash,
-				LongContextThreshold:  200000, // Gemini 200K 阈值
-				LongContextMultiplier: 2.0,    // 超出部分双倍计费
-				ForceCacheBilling:     forceCacheBilling,
-				APIKeyService:         h.apiKeyService,
-				ChannelUsageFields:    channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				Result:                     result,
+				QuotaPlatform:              quotaPlatform,
+				APIKey:                     apiKey,
+				User:                       apiKey.User,
+				Account:                    account,
+				Subscription:               subscription,
+				Entitlement:                subscriptionEntitlement,
+				EntitlementBalanceFallback: entitlementBalanceFallback,
+				InboundEndpoint:            inboundEndpoint,
+				UpstreamEndpoint:           upstreamEndpoint,
+				UserAgent:                  userAgent,
+				IPAddress:                  clientIP,
+				RequestPayloadHash:         requestPayloadHash,
+				LongContextThreshold:       200000, // Gemini 200K 阈值
+				LongContextMultiplier:      2.0,    // 超出部分双倍计费
+				ForceCacheBilling:          forceCacheBilling,
+				APIKeyService:              h.apiKeyService,
+				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
 					zap.String("component", "handler.gemini_v1beta.models"),

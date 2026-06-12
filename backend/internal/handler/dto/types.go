@@ -449,6 +449,7 @@ type UsageLog struct {
 
 	GroupID        *int64 `json:"group_id"`
 	SubscriptionID *int64 `json:"subscription_id"`
+	EntitlementID  *int64 `json:"entitlement_id,omitempty"`
 
 	InputTokens         int `json:"input_tokens"`
 	OutputTokens        int `json:"output_tokens"`

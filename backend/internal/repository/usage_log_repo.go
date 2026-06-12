@@ -30,7 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, first_sse_event_ms, first_client_flush_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, entitlement_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, first_sse_event_ms, first_client_flush_ms, user_agent, ip_address, image_count, image_size, image_input_size, image_output_size, image_size_source, image_size_breakdown, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
 
 // usageLogInsertArgTypes must stay in the same order as:
 //  1. prepareUsageLogInsert().args
@@ -49,6 +49,7 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // upstream_model
 	"bigint",      // group_id
 	"bigint",      // subscription_id
+	"bigint",      // entitlement_id
 	"integer",     // input_tokens
 	"integer",     // output_tokens
 	"integer",     // cache_creation_tokens
@@ -92,6 +93,18 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // billing_mode
 	"numeric",     // account_stats_cost
 	"timestamptz", // created_at
+}
+
+func usageLogInsertValuePlaceholders() string {
+	var b strings.Builder
+	for i := range usageLogInsertArgTypes {
+		if i > 0 {
+			_, _ = b.WriteString(", ")
+		}
+		_, _ = b.WriteString("$")
+		_, _ = b.WriteString(strconv.Itoa(i + 1))
+	}
+	return b.String()
 }
 
 const rawUsageLogModelColumn = "model"
@@ -368,6 +381,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -411,14 +425,7 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			billing_mode,
 			account_stats_cost,
 			created_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9,
-			$10, $11, $12, $13,
-			$14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52
-		)
+		) VALUES (` + usageLogInsertValuePlaceholders() + `)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
 	`
@@ -812,6 +819,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -895,6 +903,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				upstream_model,
 				group_id,
 				subscription_id,
+				entitlement_id,
 				input_tokens,
 				output_tokens,
 				cache_creation_tokens,
@@ -949,6 +958,7 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				upstream_model,
 				group_id,
 				subscription_id,
+				entitlement_id,
 				input_tokens,
 				output_tokens,
 				cache_creation_tokens,
@@ -1043,6 +1053,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -1123,6 +1134,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -1177,6 +1189,7 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -1239,6 +1252,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			upstream_model,
 			group_id,
 			subscription_id,
+			entitlement_id,
 			input_tokens,
 			output_tokens,
 			cache_creation_tokens,
@@ -1282,14 +1296,7 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			billing_mode,
 			account_stats_cost,
 			created_at
-		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7,
-			$8, $9,
-			$10, $11, $12, $13,
-			$14, $15, $16, $17,
-			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52
-		)
+		) VALUES (`+usageLogInsertValuePlaceholders()+`)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
 	return err
@@ -1310,6 +1317,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 
 	groupID := nullInt64(log.GroupID)
 	subscriptionID := nullInt64(log.SubscriptionID)
+	entitlementID := nullInt64(log.EntitlementID)
 	duration := nullInt(log.DurationMs)
 	firstToken := nullInt(log.FirstTokenMs)
 	firstSSEEvent := nullInt(log.FirstSSEEventMs)
@@ -1355,6 +1363,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			upstreamModel,
 			groupID,
 			subscriptionID,
+			entitlementID,
 			log.InputTokens,
 			log.OutputTokens,
 			log.CacheCreationTokens,
@@ -4281,6 +4290,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		upstreamModel         sql.NullString
 		groupID               sql.NullInt64
 		subscriptionID        sql.NullInt64
+		entitlementID         sql.NullInt64
 		inputTokens           int
 		outputTokens          int
 		cacheCreationTokens   int
@@ -4337,6 +4347,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&upstreamModel,
 		&groupID,
 		&subscriptionID,
+		&entitlementID,
 		&inputTokens,
 		&outputTokens,
 		&cacheCreationTokens,
@@ -4429,6 +4440,10 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	if subscriptionID.Valid {
 		value := subscriptionID.Int64
 		log.SubscriptionID = &value
+	}
+	if entitlementID.Valid {
+		value := entitlementID.Int64
+		log.EntitlementID = &value
 	}
 	if durationMs.Valid {
 		value := int(durationMs.Int64)

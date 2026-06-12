@@ -50,6 +50,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // upstream_model
 			sqlmock.AnyArg(), // group_id
 			sqlmock.AnyArg(), // subscription_id
+			sqlmock.AnyArg(), // entitlement_id
 			log.InputTokens,
 			log.OutputTokens,
 			log.CacheCreationTokens,
@@ -135,6 +136,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
 			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
 			log.InputTokens,
 			log.OutputTokens,
 			log.CacheCreationTokens,
@@ -202,6 +204,7 @@ func TestBuildUsageLogBestEffortInsertQuery_IncludesRequestedModelColumn(t *test
 
 	require.Contains(t, query, "INSERT INTO usage_logs (")
 	require.Contains(t, query, "\n\t\t\tmodel,\n\t\t\trequested_model,\n\t\t\tupstream_model,")
+	require.Contains(t, query, "\n\t\t\tgroup_id,\n\t\t\tsubscription_id,\n\t\t\tentitlement_id,")
 	require.Contains(t, query, "\n\t\t\trequest_id,\n\t\t\tmodel,\n\t\t\trequested_model,\n\t\t\tupstream_model,")
 	require.Len(t, args, len(prepared.args))
 	require.Equal(t, prepared.args[5], args[5])
@@ -263,13 +266,29 @@ func TestPrepareUsageLogInsert_PersistsImageSizeMetadata(t *testing.T) {
 		CreatedAt:          time.Date(2025, 1, 6, 12, 0, 0, 0, time.UTC),
 	})
 
-	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[36])
-	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[37])
-	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[38])
-	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[39])
-	breakdownJSON, ok := prepared.args[40].(string)
+	require.Equal(t, sql.NullString{String: imageSize, Valid: true}, prepared.args[37])
+	require.Equal(t, sql.NullString{String: inputSize, Valid: true}, prepared.args[38])
+	require.Equal(t, sql.NullString{String: outputSize, Valid: true}, prepared.args[39])
+	require.Equal(t, sql.NullString{String: source, Valid: true}, prepared.args[40])
+	breakdownJSON, ok := prepared.args[41].(string)
 	require.True(t, ok)
 	require.JSONEq(t, `{"1K":1,"4K":1}`, breakdownJSON)
+}
+
+func TestPrepareUsageLogInsert_PersistsEntitlementID(t *testing.T) {
+	entitlementID := int64(901)
+	prepared := prepareUsageLogInsert(&service.UsageLog{
+		UserID:        1,
+		APIKeyID:      2,
+		AccountID:     3,
+		RequestID:     "req-entitlement",
+		Model:         "gpt-5",
+		EntitlementID: &entitlementID,
+		CreatedAt:     time.Date(2025, 1, 7, 12, 0, 0, 0, time.UTC),
+	})
+
+	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	require.Equal(t, sql.NullInt64{Int64: entitlementID, Valid: true}, prepared.args[9])
 }
 
 func TestCoalesceTrimmedString(t *testing.T) {
@@ -615,6 +634,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullInt64{},
 			0, 0, 0, 0, 0, 0,
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.0, 0.0, 0.0, 0.0, 0.8, 0.8,
@@ -674,6 +694,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // upstream_model
 			sql.NullInt64{},   // group_id
 			sql.NullInt64{},   // subscription_id
+			sql.NullInt64{},   // entitlement_id
 			1,                 // input_tokens
 			2,                 // output_tokens
 			3,                 // cache_creation_tokens
@@ -739,6 +760,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullInt64{},
 			1, 2, 3, 4, 5, 6,
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
@@ -793,6 +815,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullInt64{},
 			sql.NullInt64{},
+			sql.NullInt64{Valid: true, Int64: 901},
 			1, 2, 3, 4, 5, 6,
 			0, 0.0, // image_output_tokens, image_output_cost
 			0.1, 0.2, 0.3, 0.4, 1.0, 0.9,
@@ -829,6 +852,8 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
 		require.Equal(t, "priority", *log.ServiceTier)
+		require.NotNil(t, log.EntitlementID)
+		require.Equal(t, int64(901), *log.EntitlementID)
 	})
 
 }

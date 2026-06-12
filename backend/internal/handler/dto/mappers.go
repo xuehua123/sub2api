@@ -599,6 +599,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		UpstreamEndpoint:      l.UpstreamEndpoint,
 		GroupID:               l.GroupID,
 		SubscriptionID:        l.SubscriptionID,
+		EntitlementID:         l.EntitlementID,
 		InputTokens:           l.InputTokens,
 		OutputTokens:          l.OutputTokens,
 		CacheCreationTokens:   l.CacheCreationTokens,

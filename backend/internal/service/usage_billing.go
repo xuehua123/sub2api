@@ -22,6 +22,7 @@ type UsageBillingCommand struct {
 	UserID              int64
 	AccountID           int64
 	SubscriptionID      *int64
+	EntitlementID       *int64
 	AccountType         string
 	Model               string
 	ServiceTier         string
@@ -34,11 +35,12 @@ type UsageBillingCommand struct {
 	ImageCount          int
 	MediaType           string
 
-	BalanceCost         float64
-	SubscriptionCost    float64
-	APIKeyQuotaCost     float64
-	APIKeyRateLimitCost float64
-	AccountQuotaCost    float64
+	BalanceCost                float64
+	SubscriptionCost           float64
+	EntitlementBalanceFallback bool
+	APIKeyQuotaCost            float64
+	APIKeyRateLimitCost        float64
+	AccountQuotaCost           float64
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -78,6 +80,9 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.APIKeyRateLimitCost,
 		c.AccountQuotaCost,
 	)
+	if c.EntitlementID != nil || c.EntitlementBalanceFallback {
+		raw += fmt.Sprintf("|ent:%d|fallback:%t", valueOrZero(c.EntitlementID), c.EntitlementBalanceFallback)
+	}
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
 	}
@@ -117,6 +122,7 @@ type UsageBillingApplyResult struct {
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
 	SubscriptionVersion  int64              // post-increment subscription updated_at in Unix microseconds (0 = no subscription increment)
+	EntitlementVersion   int64              // post-increment entitlement updated_at in Unix microseconds (0 = no entitlement increment)
 }
 
 type UsageBillingRepository interface {

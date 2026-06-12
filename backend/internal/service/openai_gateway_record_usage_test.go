@@ -1334,6 +1334,43 @@ func TestOpenAIGatewayServiceRecordUsage_SubscriptionBillingSetsSubscriptionFiel
 	require.Equal(t, 0, userRepo.deductCalls)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAndUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	entitlement := &SubscriptionEntitlement{ID: 902}
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_entitlement_billing",
+			Usage:     OpenAIUsage{InputTokens: 10, OutputTokens: 5},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 100, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1.0}},
+		User:                       &User{ID: 200},
+		Account:                    &Account{ID: 300},
+		Entitlement:                entitlement,
+		EntitlementBalanceFallback: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, BillingTypeSubscription, usageRepo.lastLog.BillingType)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, entitlement.ID, *usageRepo.lastLog.EntitlementID)
+	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
+	require.True(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+	require.Nil(t, billingRepo.lastCmd.SubscriptionID)
+	require.Equal(t, 0, subRepo.incrementCalls)
+	require.Equal(t, 0, userRepo.deductCalls)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_SimpleModeSkipsBillingAfterPersist(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}

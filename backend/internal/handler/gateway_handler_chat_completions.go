@@ -106,6 +106,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 
@@ -299,19 +300,21 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:             result,
-				QuotaPlatform:      quotaPlatform,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				RequestPayloadHash: requestPayloadHash,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+				Result:                     result,
+				QuotaPlatform:              quotaPlatform,
+				APIKey:                     apiKey,
+				User:                       apiKey.User,
+				Account:                    account,
+				Subscription:               subscription,
+				Entitlement:                subscriptionEntitlement,
+				EntitlementBalanceFallback: entitlementBalanceFallback,
+				InboundEndpoint:            inboundEndpoint,
+				UpstreamEndpoint:           upstreamEndpoint,
+				UserAgent:                  userAgent,
+				IPAddress:                  clientIP,
+				RequestPayloadHash:         requestPayloadHash,
+				APIKeyService:              h.apiKeyService,
+				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				reqLog.Error("gateway.cc.record_usage_failed",
 					zap.Int64("account_id", account.ID),
