@@ -7,36 +7,62 @@
           <input v-model="planForm.name" type="text" class="input" required />
         </div>
         <div>
-          <label class="input-label">{{ t('payment.admin.group') }} <span class="text-red-500">*</span></label>
-          <Select v-model="planForm.group_id" :options="groupOptions" :placeholder="t('payment.admin.selectGroup')" class="w-full">
-            <template #selected="{ option }">
-              <span v-if="option?.platform" :class="platformTextClass(String(option.platform))">{{ option.label }}</span>
-              <span v-else>{{ option?.label || t('payment.admin.selectGroup') }}</span>
-            </template>
-            <template #option="{ option, selected }">
-              <span class="flex-1 truncate text-left" :class="option.platform ? platformTextClass(String(option.platform)) : ''">{{ option.label }}</span>
-              <Icon v-if="selected" name="check" size="sm" class="text-primary-500" :stroke-width="2" />
-            </template>
-          </Select>
+          <label class="input-label">{{ t('payment.admin.accessScope') }} <span class="text-red-500">*</span></label>
+          <Select v-model="planForm.access_scope" :options="accessScopeOptions" class="w-full" />
         </div>
       </div>
 
-      <!-- Group Info Preview -->
-      <div v-if="selectedGroupInfo" class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
-        <div class="mb-2 flex items-center gap-2">
-          <GroupBadge :name="selectedGroupInfo.name" :platform="selectedGroupInfo.platform" :rate-multiplier="selectedGroupInfo.rate_multiplier" />
+      <div v-if="planForm.access_scope === 'explicit'" class="space-y-2">
+        <label class="input-label">{{ t('payment.admin.authorizedGroups') }} <span class="text-red-500">*</span></label>
+        <div class="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-dark-600 sm:grid-cols-2">
+          <label
+            v-for="group in subscriptionGroups"
+            :key="group.id"
+            class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-gray-50 dark:hover:bg-dark-700"
+          >
+            <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" :checked="planForm.group_ids.includes(group.id)" @change="toggleGroupID(group.id)" />
+            <GroupBadge :name="group.name" :platform="group.platform" :rate-multiplier="group.rate_multiplier" />
+          </label>
         </div>
-        <div class="grid grid-cols-2 gap-2 text-xs">
-          <div><span class="text-gray-500">{{ t('payment.admin.dailyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.daily_limit_usd != null ? '$' + selectedGroupInfo.daily_limit_usd : t('payment.admin.unlimited') }}</span></div>
-          <div><span class="text-gray-500">{{ t('payment.admin.weeklyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.weekly_limit_usd != null ? '$' + selectedGroupInfo.weekly_limit_usd : t('payment.admin.unlimited') }}</span></div>
-          <div><span class="text-gray-500">{{ t('payment.admin.monthlyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ selectedGroupInfo.monthly_limit_usd != null ? '$' + selectedGroupInfo.monthly_limit_usd : t('payment.admin.unlimited') }}</span></div>
+      </div>
+
+      <div v-else-if="planForm.access_scope === 'platform_subscription_groups'" class="space-y-2">
+        <label class="input-label">{{ t('payment.admin.allowedPlatforms') }} <span class="text-red-500">*</span></label>
+        <div class="flex flex-wrap gap-2">
+          <label
+            v-for="platform in platformOptions"
+            :key="platform"
+            class="flex cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-dark-600"
+            :class="planForm.allowed_platforms.includes(platform) ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'text-gray-700 dark:text-gray-300'"
+          >
+            <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" :checked="planForm.allowed_platforms.includes(platform)" @change="togglePlatform(platform)" />
+            <span :class="platformTextClass(platform)">{{ platform }}</span>
+          </label>
+        </div>
+      </div>
+
+      <div v-if="selectedGroupInfos.length > 0" class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
+        <div class="mb-2 flex flex-wrap items-center gap-2">
+          <GroupBadge
+            v-for="group in selectedGroupInfos.slice(0, 6)"
+            :key="group.id"
+            :name="group.name"
+            :platform="group.platform"
+            :rate-multiplier="group.rate_multiplier"
+          />
+          <span v-if="selectedGroupInfos.length > 6" class="text-xs text-gray-500 dark:text-gray-400">+{{ selectedGroupInfos.length - 6 }}</span>
+        </div>
+        <div class="grid grid-cols-3 gap-2 text-xs">
+          <div><span class="text-gray-500">{{ t('payment.admin.dailyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ displayPlanLimit(planForm.daily_limit_usd) }}</span></div>
+          <div><span class="text-gray-500">{{ t('payment.admin.weeklyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ displayPlanLimit(planForm.weekly_limit_usd) }}</span></div>
+          <div><span class="text-gray-500">{{ t('payment.admin.monthlyLimit') }}:</span> <span class="ml-1 font-medium text-gray-700 dark:text-gray-300">{{ displayPlanLimit(planForm.monthly_limit_usd) }}</span></div>
         </div>
       </div>
 
       <div><label class="input-label">{{ t('payment.admin.planDescription') }} <span class="text-red-500">*</span></label><textarea v-model="planForm.description" rows="2" class="input" required></textarea></div>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="input-label">{{ t('payment.admin.price') }} <span class="text-red-500">*</span></label><input v-model.number="planForm.price" type="number" step="0.01" min="0.01" class="input" required /></div>
-        <div><label class="input-label">{{ t('payment.admin.originalPrice') }}</label><input v-model.number="planForm.original_price" type="number" step="0.01" min="0" class="input" /></div>
+        <div><label class="input-label">{{ t('payment.admin.originalPrice') }}</label><input :value="nullableInputValue(planForm.original_price)" type="number" step="0.01" min="0" class="input" @input="planForm.original_price = parseNullableInput($event)" /></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div><label class="input-label">{{ t('payment.admin.validityDays') }} <span class="text-red-500">*</span></label><input v-model.number="planForm.validity_days" type="number" min="1" class="input" required /></div>
@@ -46,7 +72,13 @@
         {{ t('payment.admin.invalidValidityUnitHint', { unit: invalidValidityUnit }) }}
       </p>
       <div class="grid grid-cols-2 gap-4">
+        <div><label class="input-label">{{ t('payment.admin.overagePolicy') }}</label><Select v-model="planForm.overage_policy" :options="overagePolicyOptions" /></div>
         <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
+      </div>
+      <div class="grid grid-cols-3 gap-4">
+        <div><label class="input-label">{{ t('payment.admin.dailyLimit') }}</label><input :value="nullableInputValue(planForm.daily_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.daily_limit_usd = parseNullableInput($event)" /></div>
+        <div><label class="input-label">{{ t('payment.admin.weeklyLimit') }}</label><input :value="nullableInputValue(planForm.weekly_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.weekly_limit_usd = parseNullableInput($event)" /></div>
+        <div><label class="input-label">{{ t('payment.admin.monthlyLimit') }}</label><input :value="nullableInputValue(planForm.monthly_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.monthly_limit_usd = parseNullableInput($event)" /></div>
       </div>
       <div>
         <label class="input-label">{{ t('payment.admin.features') }}</label>
@@ -85,11 +117,10 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import type { SubscriptionPlan } from '@/types/payment'
+import type { CreateSubscriptionPlanRequest, PlanAccessScope, PlanOveragePolicy, SubscriptionPlan } from '@/types/payment'
 import type { AdminGroup } from '@/types'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
-import Icon from '@/components/icons/Icon.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import { platformTextClass } from '@/utils/platformColors'
 import { parsePlanValidityUnit } from '@/utils/subscriptionTime'
@@ -108,10 +139,59 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 
+interface PlanFormState {
+  name: string
+  description: string
+  price: number
+  original_price: number | null
+  validity_days: number
+  validity_unit: string
+  access_scope: PlanAccessScope
+  group_ids: number[]
+  allowed_platforms: string[]
+  daily_limit_usd: number | null
+  weekly_limit_usd: number | null
+  monthly_limit_usd: number | null
+  overage_policy: PlanOveragePolicy
+  sort_order: number
+  for_sale: boolean
+}
+
 const saving = ref(false)
-const planForm = reactive({ name: '', group_id: null as number | null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'day', sort_order: 0, for_sale: true })
+const planForm = reactive<PlanFormState>(defaultPlanForm())
 const planFeaturesText = ref('')
 const invalidValidityUnit = ref<string | null>(null)
+
+function defaultPlanForm(): PlanFormState {
+  return {
+    name: '',
+    description: '',
+    price: 0,
+    original_price: null,
+    validity_days: 30,
+    validity_unit: 'day',
+    access_scope: 'explicit',
+    group_ids: [],
+    allowed_platforms: [],
+    daily_limit_usd: null,
+    weekly_limit_usd: null,
+    monthly_limit_usd: null,
+    overage_policy: 'block',
+    sort_order: 0,
+    for_sale: true,
+  }
+}
+
+const accessScopeOptions = computed(() => [
+  { value: 'explicit', label: t('payment.admin.explicitGroups') },
+  { value: 'platform_subscription_groups', label: t('payment.admin.platformSubscriptionGroups') },
+  { value: 'all_subscription_groups', label: t('payment.admin.allSubscriptionGroups') },
+])
+
+const overagePolicyOptions = computed(() => [
+  { value: 'block', label: t('payment.admin.overageBlock') },
+  { value: 'balance_fallback', label: t('payment.admin.overageBalanceFallback') },
+])
 
 const validityUnitOptions = computed(() => {
   const options = [
@@ -135,19 +215,34 @@ const validityUnitOptions = computed(() => {
   return options
 })
 
-const groupOptions = computed(() =>
+const subscriptionGroups = computed(() =>
   props.groups
     .filter(g => g.subscription_type === 'subscription')
-    .map(g => ({
-      value: g.id,
-      label: `${g.name} — ${g.platform} (${g.rate_multiplier}x)`,
-      platform: g.platform,
-    })),
+    .slice()
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id),
 )
 
-const selectedGroupInfo = computed(() => {
-  if (!planForm.group_id) return null
-  return props.groups.find(g => g.id === planForm.group_id) || null
+const platformOptions = computed(() => {
+  const seen = new Set<string>()
+  const platforms: string[] = []
+  for (const group of subscriptionGroups.value) {
+    if (!group.platform || seen.has(group.platform)) continue
+    seen.add(group.platform)
+    platforms.push(group.platform)
+  }
+  return platforms
+})
+
+const selectedGroupInfos = computed(() => {
+  if (planForm.access_scope === 'all_subscription_groups') {
+    return subscriptionGroups.value
+  }
+  if (planForm.access_scope === 'platform_subscription_groups') {
+    const platforms = new Set(planForm.allowed_platforms)
+    return subscriptionGroups.value.filter(group => platforms.has(group.platform))
+  }
+  const selected = new Set(planForm.group_ids)
+  return subscriptionGroups.value.filter(group => selected.has(group.id))
 })
 
 // Reset form when dialog opens
@@ -158,20 +253,35 @@ watch(() => props.show, (visible) => {
     invalidValidityUnit.value = parsedValidityUnit ? null : (props.plan.validity_unit?.trim() || null)
     Object.assign(planForm, {
       name: props.plan.name,
-      group_id: props.plan.group_id,
       description: props.plan.description,
       price: props.plan.price,
-      original_price: props.plan.original_price || 0,
+      original_price: props.plan.original_price ?? null,
       validity_days: props.plan.validity_days,
       validity_unit: parsedValidityUnit ?? invalidValidityUnit.value ?? 'day',
+      access_scope: props.plan.access_scope ?? 'explicit',
+      group_ids: initialPlanGroupIDs(props.plan),
+      allowed_platforms: initialAllowedPlatforms(props.plan),
+      daily_limit_usd: props.plan.daily_limit_usd ?? null,
+      weekly_limit_usd: props.plan.weekly_limit_usd ?? null,
+      monthly_limit_usd: props.plan.monthly_limit_usd ?? null,
+      overage_policy: props.plan.overage_policy ?? 'block',
       sort_order: props.plan.sort_order || 0,
       for_sale: props.plan.for_sale,
     })
     planFeaturesText.value = (props.plan.features || []).join('\n')
   } else {
-    Object.assign(planForm, { name: '', group_id: null, description: '', price: 0, original_price: 0, validity_days: 30, validity_unit: 'day', sort_order: 0, for_sale: true })
+    Object.assign(planForm, defaultPlanForm())
     planFeaturesText.value = ''
     invalidValidityUnit.value = null
+  }
+})
+
+watch(() => planForm.access_scope, (scope) => {
+  if (scope !== 'explicit') {
+    planForm.group_ids = []
+  }
+  if (scope !== 'platform_subscription_groups') {
+    planForm.allowed_platforms = []
   }
 })
 
@@ -182,8 +292,60 @@ watch(() => planForm.validity_unit, (value) => {
   }
 })
 
+function initialPlanGroupIDs(plan: SubscriptionPlan): number[] {
+  if (plan.group_ids && plan.group_ids.length > 0) {
+    return [...plan.group_ids]
+  }
+  return plan.group_id ? [plan.group_id] : []
+}
+
+function initialAllowedPlatforms(plan: SubscriptionPlan): string[] {
+  if (plan.allowed_platforms && plan.allowed_platforms.length > 0) {
+    return [...plan.allowed_platforms]
+  }
+  if (plan.access_scope === 'platform_subscription_groups' && plan.groups) {
+    return Array.from(new Set(plan.groups.map(group => group.platform).filter(Boolean)))
+  }
+  return []
+}
+
+function toggleGroupID(groupID: number) {
+  if (planForm.group_ids.includes(groupID)) {
+    planForm.group_ids = planForm.group_ids.filter(id => id !== groupID)
+  } else {
+    planForm.group_ids = [...planForm.group_ids, groupID]
+  }
+}
+
+function togglePlatform(platform: string) {
+  if (planForm.allowed_platforms.includes(platform)) {
+    planForm.allowed_platforms = planForm.allowed_platforms.filter(item => item !== platform)
+  } else {
+    planForm.allowed_platforms = [...planForm.allowed_platforms, platform]
+  }
+}
+
+function nullableInputValue(value: number | null): string {
+  return value == null ? '' : String(value)
+}
+
+function parseNullableInput(event: Event): number | null {
+  const value = (event.target as HTMLInputElement).value.trim()
+  if (!value) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function displayPlanLimit(value: number | null): string {
+  return value != null ? `$${value}` : t('payment.admin.unlimited')
+}
+
+function normalizeLimit(value: number | null): number | null {
+  return value != null && Number.isFinite(value) ? value : null
+}
+
 /** Build request payload with snake_case keys matching backend JSON tags */
-function buildPlanPayload() {
+function buildPlanPayload(): CreateSubscriptionPlanRequest | null {
   const parsedValidityUnit = parsePlanValidityUnit(planForm.validity_unit)
   if (!parsedValidityUnit) {
     return null
@@ -191,21 +353,36 @@ function buildPlanPayload() {
   const features = planFeaturesText.value.split('\n').map(f => f.trim()).filter(Boolean).join('\n')
   return {
     name: planForm.name,
-    group_id: planForm.group_id,
     description: planForm.description,
     price: planForm.price,
-    original_price: planForm.original_price || 0,
+    original_price: planForm.original_price,
     validity_days: planForm.validity_days,
     validity_unit: parsedValidityUnit,
+    access_scope: planForm.access_scope,
+    group_ids: planForm.access_scope === 'explicit' ? [...planForm.group_ids] : [],
+    allowed_platforms: planForm.access_scope === 'platform_subscription_groups' ? [...planForm.allowed_platforms] : [],
+    daily_limit_usd: normalizeLimit(planForm.daily_limit_usd),
+    weekly_limit_usd: normalizeLimit(planForm.weekly_limit_usd),
+    monthly_limit_usd: normalizeLimit(planForm.monthly_limit_usd),
+    overage_policy: planForm.overage_policy,
     sort_order: planForm.sort_order,
     for_sale: planForm.for_sale,
     features,
   }
 }
 
+function hasInvalidLimit(): boolean {
+  return [planForm.daily_limit_usd, planForm.weekly_limit_usd, planForm.monthly_limit_usd]
+    .some(value => value != null && value <= 0)
+}
+
 async function handleSavePlan() {
-  if (!planForm.group_id) {
-    appStore.showError(t('payment.admin.groupRequired'))
+  if (planForm.access_scope === 'explicit' && planForm.group_ids.length === 0) {
+    appStore.showError(t('payment.admin.groupIdsRequired'))
+    return
+  }
+  if (planForm.access_scope === 'platform_subscription_groups' && planForm.allowed_platforms.length === 0) {
+    appStore.showError(t('payment.admin.platformsRequired'))
     return
   }
   if (!planForm.price || planForm.price <= 0) {
@@ -218,6 +395,10 @@ async function handleSavePlan() {
   }
   if (!parsePlanValidityUnit(planForm.validity_unit)) {
     appStore.showError(t('payment.admin.invalidValidityUnitMessage', { unit: planForm.validity_unit || '-' }))
+    return
+  }
+  if (hasInvalidLimit()) {
+    appStore.showError(t('payment.admin.limitRequired'))
     return
   }
   saving.value = true

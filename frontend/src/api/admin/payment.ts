@@ -9,7 +9,9 @@ import type {
   PaymentOrder,
   PaymentChannel,
   SubscriptionPlan,
-  ProviderInstance
+  ProviderInstance,
+  CreateSubscriptionPlanRequest,
+  UpdateSubscriptionPlanRequest
 } from '@/types/payment'
 import type { BasePaginationResponse } from '@/types'
 
@@ -138,12 +140,12 @@ export const adminPaymentAPI = {
   },
 
   /** Create a subscription plan */
-  createPlan(data: Record<string, unknown>) {
+  createPlan(data: CreateSubscriptionPlanRequest) {
     return apiClient.post<SubscriptionPlan>('/admin/payment/plans', data)
   },
 
   /** Update a subscription plan */
-  updatePlan(id: number, data: Record<string, unknown>) {
+  updatePlan(id: number, data: UpdateSubscriptionPlanRequest) {
     return apiClient.put<SubscriptionPlan>(`/admin/payment/plans/${id}`, data)
   },
 

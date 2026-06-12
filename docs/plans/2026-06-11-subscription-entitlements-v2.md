@@ -241,7 +241,59 @@ Source fields:
 - `source_external_id`: external order ID such as legacy cashier `out_trade_no`.
 - `source_redeem_code_id`: redeem code ID; required for redeem-code-based entitlement grants to prevent duplicate fulfillment.
 
-### 3.5 Create `subscription_entitlement_groups`
+### 3.5 Create `subscription_entitlement_fulfillments`
+
+The `subscription_entitlements.source_*` fields can only describe the current or most recent source for one entitlement. After a renewal, those single-row pointers may be overwritten by the new source. If an old payment callback, external order ID, or redeem code is replayed later, checking only the current entitlement row is not enough to know whether that older source was already fulfilled, so it can accidentally extend the entitlement again.
+
+Keep a history row for every grant or renewal event:
+
+```sql
+CREATE TABLE IF NOT EXISTS subscription_entitlement_fulfillments (
+    id                    BIGSERIAL PRIMARY KEY,
+    entitlement_id        BIGINT NOT NULL REFERENCES subscription_entitlements(id) ON DELETE CASCADE,
+    user_id               BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id               BIGINT REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    source_type           VARCHAR(32) NOT NULL DEFAULT 'unknown',
+    source_id             BIGINT,
+    source_external_id    VARCHAR(128),
+    source_redeem_code_id BIGINT REFERENCES redeem_codes(id) ON DELETE SET NULL,
+    validity_days         INTEGER NOT NULL DEFAULT 0,
+    starts_at             TIMESTAMPTZ NOT NULL,
+    expires_at            TIMESTAMPTZ NOT NULL,
+    assigned_by           BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    notes                 TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_entitlement
+    ON subscription_entitlement_fulfillments(entitlement_id);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_user_plan
+    ON subscription_entitlement_fulfillments(user_id, plan_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_redeem_unique
+    ON subscription_entitlement_fulfillments(source_redeem_code_id)
+    WHERE source_redeem_code_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_id_unique
+    ON subscription_entitlement_fulfillments(source_type, source_id)
+    WHERE source_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_external_unique
+    ON subscription_entitlement_fulfillments(source_type, source_external_id)
+    WHERE source_external_id IS NOT NULL;
+```
+
+Rules:
+
+- Creating or extending an entitlement must write the fulfillment event in the same database transaction; if either step fails, both must roll back.
+- Idempotency checks must query `subscription_entitlement_fulfillments` first. A hit returns the existing result and must not extend the entitlement again.
+- Future payment/redeem integration must prefer fulfillment history before falling back to legacy entitlement `source_*` fields.
+- Entitlement `source_*` fields are compatibility and latest-source snapshots, not the complete idempotency history.
+
+### 3.6 Create `subscription_entitlement_groups`
 
 ```sql
 CREATE TABLE IF NOT EXISTS subscription_entitlement_groups (
@@ -258,7 +310,7 @@ CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_groups_group_enabled
     ON subscription_entitlement_groups(group_id, enabled);
 ```
 
-### 3.6 Add Foreign Keys To Hot Tables
+### 3.7 Add Foreign Keys To Hot Tables
 
 ```sql
 ALTER TABLE api_keys

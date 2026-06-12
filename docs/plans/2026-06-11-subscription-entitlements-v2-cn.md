@@ -266,7 +266,58 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlements_source_external_
 - `source_external_id`：外部订单号，例如旧支付页 `out_trade_no`。用于支付页兼容履约幂等。
 - `source_redeem_code_id`：兑换码 ID。通过兑换码发放权益时必须写入，保证同一兑换码不会重复发放权益。
 
-### 3.5 新建 `subscription_entitlement_groups`
+### 3.5 新建 `subscription_entitlement_fulfillments`
+
+`subscription_entitlements.source_*` 只能描述这张权益当前或最近一次来源。续费发生后，单行 source 指针会被新来源覆盖；如果旧支付回调、旧外部订单号或旧兑换码再次 replay，仅依赖 entitlement 当前指针无法判断它是否已经被处理过，存在重复续期风险。
+
+因此必须保留每一次创建/续期事件的历史记录：
+
+```sql
+CREATE TABLE IF NOT EXISTS subscription_entitlement_fulfillments (
+    id                    BIGSERIAL PRIMARY KEY,
+    entitlement_id        BIGINT NOT NULL REFERENCES subscription_entitlements(id) ON DELETE CASCADE,
+    user_id               BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id               BIGINT REFERENCES subscription_plans(id) ON DELETE SET NULL,
+    source_type           VARCHAR(32) NOT NULL DEFAULT 'unknown',
+    source_id             BIGINT,
+    source_external_id    VARCHAR(128),
+    source_redeem_code_id BIGINT REFERENCES redeem_codes(id) ON DELETE SET NULL,
+    validity_days         INTEGER NOT NULL DEFAULT 0,
+    starts_at             TIMESTAMPTZ NOT NULL,
+    expires_at            TIMESTAMPTZ NOT NULL,
+    assigned_by           BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    assigned_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    notes                 TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_entitlement
+    ON subscription_entitlement_fulfillments(entitlement_id);
+
+CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_user_plan
+    ON subscription_entitlement_fulfillments(user_id, plan_id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_redeem_unique
+    ON subscription_entitlement_fulfillments(source_redeem_code_id)
+    WHERE source_redeem_code_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_id_unique
+    ON subscription_entitlement_fulfillments(source_type, source_id)
+    WHERE source_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlement_fulfillments_source_external_unique
+    ON subscription_entitlement_fulfillments(source_type, source_external_id)
+    WHERE source_external_id IS NOT NULL;
+```
+
+规则：
+- 创建或续期 entitlement 时，必须在同一数据库事务内写入 fulfillment event；任一步失败都要整体回滚。
+- 幂等检查必须优先查询 `subscription_entitlement_fulfillments`，命中后直接返回既有结果，不再次延长有效期。
+- 后续 payment/redeem 接入时，必须先查 fulfillment history，再考虑兼容旧 entitlement `source_*` 指针。
+- entitlement 上的 `source_*` 仅作为兼容和最近来源快照，不再作为完整幂等历史。
+
+### 3.6 新建 `subscription_entitlement_groups`
 
 该表表示“用户这张权益实际授权了哪些分组”。
 
@@ -285,7 +336,7 @@ CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_groups_group_enabled
     ON subscription_entitlement_groups(group_id, enabled);
 ```
 
-### 3.6 给热点表补充外键
+### 3.7 给热点表补充外键
 
 ```sql
 ALTER TABLE api_keys

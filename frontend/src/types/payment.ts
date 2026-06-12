@@ -22,6 +22,13 @@ export type PaymentType = 'alipay' | 'wxpay' | 'alipay_direct' | 'wxpay_direct' 
 
 export type OrderType = 'balance' | 'subscription'
 
+export type PlanAccessScope =
+  | 'explicit'
+  | 'platform_subscription_groups'
+  | 'all_subscription_groups'
+
+export type PlanOveragePolicy = 'block' | 'balance_fallback'
+
 // ==================== Configuration ====================
 
 export interface PaymentConfig {
@@ -101,9 +108,23 @@ export interface PaymentOrder {
 
 // ==================== Plans & Channels ====================
 
+export interface SubscriptionPlanGroupInfo {
+  id: number
+  platform: string
+  name: string
+  rate_multiplier: number
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
+  supported_model_scopes?: string[]
+  sort_order: number
+}
+
 export interface SubscriptionPlan {
   id: number
   group_id: number
+  group_ids?: number[]
+  groups?: SubscriptionPlanGroupInfo[]
   group_platform?: string
   group_name?: string
   rate_multiplier?: number
@@ -114,14 +135,42 @@ export interface SubscriptionPlan {
   name: string
   description: string
   price: number
-  original_price?: number
+  original_price?: number | null
   validity_days: number
   validity_unit: string
+  access_scope?: PlanAccessScope
+  allowed_platforms?: string[]
+  overage_policy?: PlanOveragePolicy
   /** Stored as JSON string in backend; API layer should parse before use */
   features: string[]
+  product_name?: string
+  for_sale: boolean
+  sort_order: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface CreateSubscriptionPlanRequest {
+  name: string
+  description: string
+  price: number
+  original_price?: number | null
+  validity_days: number
+  validity_unit: string
+  access_scope: PlanAccessScope
+  group_ids: number[]
+  allowed_platforms: string[]
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
+  overage_policy: PlanOveragePolicy
+  features: string
+  product_name?: string
   for_sale: boolean
   sort_order: number
 }
+
+export type UpdateSubscriptionPlanRequest = Partial<CreateSubscriptionPlanRequest>
 
 export interface PaymentChannel {
   id: number

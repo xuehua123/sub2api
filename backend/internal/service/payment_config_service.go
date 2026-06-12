@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -150,31 +151,66 @@ type UpdateProviderInstanceRequest struct {
 	AllowUserRefund *bool             `json:"allow_user_refund"`
 }
 type CreatePlanRequest struct {
-	GroupID       int64    `json:"group_id"`
-	Name          string   `json:"name"`
-	Description   string   `json:"description"`
-	Price         float64  `json:"price"`
-	OriginalPrice *float64 `json:"original_price"`
-	ValidityDays  int      `json:"validity_days"`
-	ValidityUnit  string   `json:"validity_unit"`
-	Features      string   `json:"features"`
-	ProductName   string   `json:"product_name"`
-	ForSale       bool     `json:"for_sale"`
-	SortOrder     int      `json:"sort_order"`
+	GroupID          int64    `json:"group_id"`
+	GroupIDs         []int64  `json:"group_ids"`
+	AccessScope      string   `json:"access_scope"`
+	AllowedPlatforms []string `json:"allowed_platforms"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Price            float64  `json:"price"`
+	OriginalPrice    *float64 `json:"original_price"`
+	ValidityDays     int      `json:"validity_days"`
+	ValidityUnit     string   `json:"validity_unit"`
+	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	OveragePolicy    string   `json:"overage_policy"`
+	Features         string   `json:"features"`
+	ProductName      string   `json:"product_name"`
+	ForSale          bool     `json:"for_sale"`
+	SortOrder        int      `json:"sort_order"`
 }
 
 type UpdatePlanRequest struct {
-	GroupID       *int64   `json:"group_id"`
-	Name          *string  `json:"name"`
-	Description   *string  `json:"description"`
-	Price         *float64 `json:"price"`
-	OriginalPrice *float64 `json:"original_price"`
-	ValidityDays  *int     `json:"validity_days"`
-	ValidityUnit  *string  `json:"validity_unit"`
-	Features      *string  `json:"features"`
-	ProductName   *string  `json:"product_name"`
-	ForSale       *bool    `json:"for_sale"`
-	SortOrder     *int     `json:"sort_order"`
+	GroupID          *int64          `json:"group_id"`
+	GroupIDs         []int64         `json:"group_ids"`
+	AccessScope      *string         `json:"access_scope"`
+	AllowedPlatforms []string        `json:"allowed_platforms"`
+	Name             *string         `json:"name"`
+	Description      *string         `json:"description"`
+	Price            *float64        `json:"price"`
+	OriginalPrice    OptionalFloat64 `json:"original_price"`
+	ValidityDays     *int            `json:"validity_days"`
+	ValidityUnit     *string         `json:"validity_unit"`
+	DailyLimitUSD    OptionalFloat64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD   OptionalFloat64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD  OptionalFloat64 `json:"monthly_limit_usd"`
+	OveragePolicy    *string         `json:"overage_policy"`
+	Features         *string         `json:"features"`
+	ProductName      *string         `json:"product_name"`
+	ForSale          *bool           `json:"for_sale"`
+	SortOrder        *int            `json:"sort_order"`
+}
+
+// OptionalFloat64 preserves PATCH semantics for nullable numeric fields:
+// omitted means unchanged, explicit null means clear to unlimited.
+type OptionalFloat64 struct {
+	Set   bool
+	Value *float64
+}
+
+func (o *OptionalFloat64) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if strings.TrimSpace(string(data)) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var v float64
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	o.Value = &v
+	return nil
 }
 
 // PaymentConfigService manages payment configuration and CRUD for
