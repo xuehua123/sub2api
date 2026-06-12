@@ -200,3 +200,17 @@ func TestMigration152AddsRedeemCodeSubscriptionEntitlementIDAdditively(t *testin
 	require.NotContains(t, sql, "DROP TABLE")
 	require.NotContains(t, sql, "DROP COLUMN")
 }
+
+func TestMigration153AddsUsageLogBillingSourceAdditively(t *testing.T) {
+	content, err := FS.ReadFile("153_usage_logs_billing_source.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE usage_logs")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS billing_source VARCHAR(50)")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_usage_logs_billing_source_created_at")
+	require.Contains(t, sql, "usage_logs_billing_source_check")
+	require.Contains(t, sql, "entitlement_balance_fallback")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}

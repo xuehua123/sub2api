@@ -611,6 +611,26 @@ func (_u *UsageLogUpdate) AddBillingType(v int8) *UsageLogUpdate {
 	return _u
 }
 
+// SetBillingSource sets the "billing_source" field.
+func (_u *UsageLogUpdate) SetBillingSource(v string) *UsageLogUpdate {
+	_u.mutation.SetBillingSource(v)
+	return _u
+}
+
+// SetNillableBillingSource sets the "billing_source" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableBillingSource(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetBillingSource(*v)
+	}
+	return _u
+}
+
+// ClearBillingSource clears the value of the "billing_source" field.
+func (_u *UsageLogUpdate) ClearBillingSource() *UsageLogUpdate {
+	_u.mutation.ClearBillingSource()
+	return _u
+}
+
 // SetStream sets the "stream" field.
 func (_u *UsageLogUpdate) SetStream(v bool) *UsageLogUpdate {
 	_u.mutation.SetStream(v)
@@ -1035,6 +1055,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BillingSource(); ok {
+		if err := usagelog.BillingSourceValidator(v); err != nil {
+			return &ValidationError{Name: "billing_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -1226,6 +1251,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.BillingSource(); ok {
+		_spec.SetField(usagelog.FieldBillingSource, field.TypeString, value)
+	}
+	if _u.mutation.BillingSourceCleared() {
+		_spec.ClearField(usagelog.FieldBillingSource, field.TypeString)
 	}
 	if value, ok := _u.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)
@@ -2089,6 +2120,26 @@ func (_u *UsageLogUpdateOne) AddBillingType(v int8) *UsageLogUpdateOne {
 	return _u
 }
 
+// SetBillingSource sets the "billing_source" field.
+func (_u *UsageLogUpdateOne) SetBillingSource(v string) *UsageLogUpdateOne {
+	_u.mutation.SetBillingSource(v)
+	return _u
+}
+
+// SetNillableBillingSource sets the "billing_source" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableBillingSource(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetBillingSource(*v)
+	}
+	return _u
+}
+
+// ClearBillingSource clears the value of the "billing_source" field.
+func (_u *UsageLogUpdateOne) ClearBillingSource() *UsageLogUpdateOne {
+	_u.mutation.ClearBillingSource()
+	return _u
+}
+
 // SetStream sets the "stream" field.
 func (_u *UsageLogUpdateOne) SetStream(v bool) *UsageLogUpdateOne {
 	_u.mutation.SetStream(v)
@@ -2526,6 +2577,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.BillingSource(); ok {
+		if err := usagelog.BillingSourceValidator(v); err != nil {
+			return &ValidationError{Name: "billing_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -2734,6 +2790,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if value, ok := _u.mutation.AddedBillingType(); ok {
 		_spec.AddField(usagelog.FieldBillingType, field.TypeInt8, value)
+	}
+	if value, ok := _u.mutation.BillingSource(); ok {
+		_spec.SetField(usagelog.FieldBillingSource, field.TypeString, value)
+	}
+	if _u.mutation.BillingSourceCleared() {
+		_spec.ClearField(usagelog.FieldBillingSource, field.TypeString)
 	}
 	if value, ok := _u.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)

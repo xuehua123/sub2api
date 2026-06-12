@@ -113,6 +113,10 @@ func (UsageLog) Fields() []ent.Field {
 		// 其他字段
 		field.Int8("billing_type").
 			Default(0),
+		field.String("billing_source").
+			MaxLen(50).
+			Optional().
+			Nillable(),
 		field.Bool("stream").
 			Default(false),
 		field.Int("duration_ms").
@@ -212,6 +216,7 @@ func (UsageLog) Indexes() []ent.Index {
 		index.Fields("group_id"),
 		index.Fields("subscription_id"),
 		index.Fields("entitlement_id"),
+		index.Fields("billing_source", "created_at"),
 		index.Fields("created_at"),
 		index.Fields("model"),
 		index.Fields("requested_model"),

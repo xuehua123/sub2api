@@ -6244,6 +6244,12 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if entitlement != nil && entitlement.ID > 0 {
 		usageLog.EntitlementID = &entitlement.ID
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSource(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		input.EntitlementBalanceFallback,
+	))
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
@@ -6260,8 +6266,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		return nil
 	}
 
-	billingErr := func() error {
-		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+	billingResult, billingErr := func() (*UsageBillingApplyResult, error) {
+		result, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 			Cost:                       cost,
 			User:                       user,
 			APIKey:                     apiKey,
@@ -6275,12 +6281,18 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			APIKeyService:              input.APIKeyService,
 			Platform:                   PlatformFromAPIKey(apiKey),
 		}, s.billingDeps(), s.usageBillingRepo)
-		return err
+		return result, err
 	}()
 
 	if billingErr != nil {
 		return billingErr
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSourceFromApplyResult(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		billingResult,
+	))
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil

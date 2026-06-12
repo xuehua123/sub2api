@@ -72,7 +72,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 	}
 
 	// Parse filters
-	var userID, apiKeyID, accountID, groupID int64
+	var userID, apiKeyID, accountID, groupID, entitlementID int64
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		id, err := strconv.ParseInt(userIDStr, 10, 64)
 		if err != nil {
@@ -107,6 +107,12 @@ func (h *UsageHandler) List(c *gin.Context) {
 			return
 		}
 		groupID = id
+	}
+	if id, ok, err := parsePositiveInt64Query(c, "entitlement_id"); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	} else if ok {
+		entitlementID = id
 	}
 
 	model := c.Query("model")
@@ -172,18 +178,19 @@ func (h *UsageHandler) List(c *gin.Context) {
 		SortOrder: c.DefaultQuery("sort_order", "desc"),
 	}
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
-		StartTime:   startTime,
-		EndTime:     endTime,
-		ExactTotal:  exactTotal,
+		UserID:        userID,
+		APIKeyID:      apiKeyID,
+		AccountID:     accountID,
+		GroupID:       groupID,
+		EntitlementID: entitlementID,
+		Model:         model,
+		RequestType:   requestType,
+		Stream:        stream,
+		BillingType:   billingType,
+		BillingMode:   billingMode,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		ExactTotal:    exactTotal,
 	}
 
 	records, result, err := h.usageService.ListWithFilters(c.Request.Context(), params, filters)
@@ -203,7 +210,7 @@ func (h *UsageHandler) List(c *gin.Context) {
 // GET /api/v1/admin/usage/stats
 func (h *UsageHandler) Stats(c *gin.Context) {
 	// Parse filters - same as List endpoint
-	var userID, apiKeyID, accountID, groupID int64
+	var userID, apiKeyID, accountID, groupID, entitlementID int64
 	if userIDStr := c.Query("user_id"); userIDStr != "" {
 		id, err := strconv.ParseInt(userIDStr, 10, 64)
 		if err != nil {
@@ -238,6 +245,12 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 			return
 		}
 		groupID = id
+	}
+	if id, ok, err := parsePositiveInt64Query(c, "entitlement_id"); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	} else if ok {
+		entitlementID = id
 	}
 
 	model := c.Query("model")
@@ -312,17 +325,18 @@ func (h *UsageHandler) Stats(c *gin.Context) {
 
 	// Build filters and call GetStatsWithFilters
 	filters := usagestats.UsageLogFilters{
-		UserID:      userID,
-		APIKeyID:    apiKeyID,
-		AccountID:   accountID,
-		GroupID:     groupID,
-		Model:       model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: billingType,
-		BillingMode: billingMode,
-		StartTime:   &startTime,
-		EndTime:     &endTime,
+		UserID:        userID,
+		APIKeyID:      apiKeyID,
+		AccountID:     accountID,
+		GroupID:       groupID,
+		EntitlementID: entitlementID,
+		Model:         model,
+		RequestType:   requestType,
+		Stream:        stream,
+		BillingType:   billingType,
+		BillingMode:   billingMode,
+		StartTime:     &startTime,
+		EndTime:       &endTime,
 	}
 
 	var stats *usagestats.UsageStats

@@ -1362,6 +1362,8 @@ func TestOpenAIGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCom
 	require.NotNil(t, usageRepo.lastLog.EntitlementID)
 	require.Equal(t, entitlement.ID, *usageRepo.lastLog.EntitlementID)
 	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementQuota, *usageRepo.lastLog.BillingSource)
 	require.NotNil(t, billingRepo.lastCmd)
 	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
 	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)

@@ -25,4 +25,8 @@ func TestUsageStatsCacheKey_StableAndDistinct(t *testing.T) {
 	withUser := base
 	withUser.UserID = 7
 	require.NotEqual(t, k1, usageStatsCacheKey(withUser), "different user must change key")
+
+	withEntitlement := base
+	withEntitlement.EntitlementID = 99
+	require.NotEqual(t, k1, usageStatsCacheKey(withEntitlement), "different entitlement must change key")
 }

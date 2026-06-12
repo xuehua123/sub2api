@@ -658,10 +658,15 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	if l == nil {
 		return nil
 	}
+	var billingSource *string
+	if source := l.EffectiveBillingSource(); source != "" {
+		billingSource = &source
+	}
 	return &AdminUsageLog{
 		UsageLog:              usageLogFromServiceUser(l),
 		UpstreamModel:         l.UpstreamModel,
 		ChannelID:             l.ChannelID,
+		BillingSource:         billingSource,
 		ModelMappingChain:     l.ModelMappingChain,
 		BillingTier:           l.BillingTier,
 		AccountRateMultiplier: l.AccountRateMultiplier,

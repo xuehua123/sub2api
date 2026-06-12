@@ -8567,15 +8567,15 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	return cmd
 }
 
-func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
+func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (*UsageBillingApplyResult, error) {
 	if p == nil || deps == nil {
-		return false, nil
+		return nil, nil
 	}
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
 		postUsageBilling(ctx, p, deps)
-		return true, nil
+		return nil, nil
 	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)
@@ -8583,12 +8583,12 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	if result == nil || !result.Applied {
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
-		return false, nil
+		return result, nil
 	}
 
 	if result.APIKeyQuotaExhausted {
@@ -8598,7 +8598,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)
-	return true, nil
+	return result, nil
 }
 
 func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
@@ -9023,7 +9023,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 	requestID := usageLog.RequestID
-	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+	billingResult, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
 		Cost:                       cost,
 		User:                       user,
 		APIKey:                     apiKey,
@@ -9041,6 +9041,12 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	if billingErr != nil {
 		return billingErr
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSourceFromApplyResult(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		billingResult,
+	))
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 
 	return nil
@@ -9242,6 +9248,12 @@ func (s *GatewayService) buildRecordUsageLog(
 		EntitlementID:         optionalEntitlementID(entitlement),
 		CreatedAt:             time.Now(),
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSource(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		input.EntitlementBalanceFallback,
+	))
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
 	}

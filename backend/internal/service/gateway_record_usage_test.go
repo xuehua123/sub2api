@@ -187,6 +187,8 @@ func TestGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAn
 	require.NotNil(t, usageRepo.lastLog.EntitlementID)
 	require.Equal(t, entitlement.ID, *usageRepo.lastLog.EntitlementID)
 	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementQuota, *usageRepo.lastLog.BillingSource)
 	require.NotNil(t, usageRepo.lastLog.GroupID)
 	require.Equal(t, int64(88), *usageRepo.lastLog.GroupID)
 }
@@ -335,6 +337,8 @@ func TestGatewayServiceRecordUsage_EntitlementFallbackSuccessWritesUsageLogAndQu
 	require.NotNil(t, usageRepo.lastLog.EntitlementID)
 	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
 	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementBalanceFallback, *usageRepo.lastLog.BillingSource)
 	require.Equal(t, 0, userRepo.deductCalls, "fallback balance deduction is owned by usage_billing_repo transaction")
 	require.Equal(t, 0, subRepo.incrementCalls)
 	require.Eventually(t, func() bool {
