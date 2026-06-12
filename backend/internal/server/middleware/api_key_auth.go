@@ -116,7 +116,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			AbortWithError(c, 401, "USER_INACTIVE", "User account is not active")
 			return
 		}
-		if abortIfAPIKeyGroupUnavailable(c, apiKey) {
+		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
+		groupUnavailableCode, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
+		currentGroupUnavailable := !groupAvailable
+		if currentGroupUnavailable && !(v2EntitlementsEnabled && isSubscriptionType) {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+			AbortWithError(c, 403, groupUnavailableCode, groupUnavailableMessage)
 			return
 		}
 		if abortIfAPIKeyGroupNotAllowed(c, apiKey) {
@@ -158,9 +164,57 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		}
 
 		var subscription *service.UserSubscription
-		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+		var entitlement *service.SubscriptionEntitlement
 
-		if isSubscriptionType && subscriptionService != nil {
+		if isSubscriptionType && v2EntitlementsEnabled {
+			if skipBilling {
+				if resolved, entErr := apiKeyService.ResolveEntitlementForAPIKeyAuth(
+					c.Request.Context(),
+					apiKey,
+					subscriptionSwitchRequestForContext(c),
+					currentGroupUnavailable,
+				); entErr == nil && resolved != nil {
+					entitlement = resolved.Entitlement
+					subscription = resolved.LegacySubscription
+					if resolved.Group != nil {
+						applyResolvedSubscriptionGroup(c, apiKey, resolved.Group, resolved.FromGroupID)
+					}
+				}
+			} else {
+				resolved, entErr := apiKeyService.ResolveEntitlementForAPIKeyAuth(
+					c.Request.Context(),
+					apiKey,
+					subscriptionSwitchRequestForContext(c),
+					currentGroupUnavailable,
+				)
+				if entErr != nil {
+					AbortWithError(c, subscriptionErrorStatus(entErr), subscriptionErrorCode(entErr), entErr.Error())
+					return
+				}
+				if resolved != nil && resolved.Entitlement != nil {
+					entitlement = resolved.Entitlement
+					subscription = resolved.LegacySubscription
+					if resolved.Switched {
+						swapped, err := apiKeyService.CompareAndSwapGroupIDWithEntitlement(c.Request.Context(), apiKey, resolved.FromGroupID, resolved.ToGroupID, resolved.Entitlement.ID)
+						if err != nil {
+							AbortWithError(c, 500, "SUBSCRIPTION_SWITCH_FAILED", err.Error())
+							return
+						}
+						if !swapped {
+							apiKeyService.InvalidateAuthCacheByKey(c.Request.Context(), apiKey.Key)
+							AbortWithError(c, 409, "SUBSCRIPTION_SWITCH_CONFLICT", "subscription group changed concurrently, please retry")
+							return
+						}
+					}
+					if resolved.Group != nil {
+						applyResolvedSubscriptionGroup(c, apiKey, resolved.Group, resolved.FromGroupID)
+					}
+					if resolved.UseBalanceFallback {
+						c.Set(string(ContextKeySubscriptionEntitlementBalanceFallback), true)
+					}
+				}
+			}
+		} else if isSubscriptionType && subscriptionService != nil {
 			if skipBilling {
 				sub, subErr := subscriptionService.GetActiveSubscription(
 					c.Request.Context(),
@@ -226,6 +280,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					maintenanceCopy := *subscription
 					subscriptionService.DoWindowMaintenance(&maintenanceCopy)
 				}
+			} else if entitlement != nil {
+				// Entitlement availability and quota were validated by APIKeyService.
+				// Actual entitlement usage deduction is intentionally left to Task 10.
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKey.User.Balance <= 0 {
@@ -239,6 +296,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		if subscription != nil {
 			c.Set(string(ContextKeySubscription), subscription)
+		}
+		if entitlement != nil {
+			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
 		}
 		c.Set(string(ContextKeyAPIKey), apiKey)
 		c.Set(string(ContextKeyUser), AuthSubject{
@@ -300,7 +360,8 @@ func subscriptionErrorStatus(err error) int {
 	}
 	if errors.Is(err, service.ErrDailyLimitExceeded) ||
 		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-		errors.Is(err, service.ErrMonthlyLimitExceeded) {
+		errors.Is(err, service.ErrMonthlyLimitExceeded) ||
+		errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
 		return 429
 	}
 	if errors.Is(err, service.ErrSubscriptionMaintenance) {
@@ -315,11 +376,21 @@ func subscriptionErrorCode(err error) string {
 	}
 	if errors.Is(err, service.ErrDailyLimitExceeded) ||
 		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-		errors.Is(err, service.ErrMonthlyLimitExceeded) {
+		errors.Is(err, service.ErrMonthlyLimitExceeded) ||
+		errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
 		return "USAGE_LIMIT_EXCEEDED"
 	}
 	if errors.Is(err, service.ErrSubscriptionNotFound) {
 		return "SUBSCRIPTION_NOT_FOUND"
+	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementNotFound) {
+		return "SUBSCRIPTION_ENTITLEMENT_NOT_FOUND"
+	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementExpired) {
+		return "SUBSCRIPTION_ENTITLEMENT_EXPIRED"
+	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementInactive) {
+		return "SUBSCRIPTION_ENTITLEMENT_INACTIVE"
 	}
 	if errors.Is(err, service.ErrSubscriptionMaintenance) {
 		return "SUBSCRIPTION_MAINTENANCE_FAILED"
@@ -368,6 +439,24 @@ func GetSubscriptionFromContext(c *gin.Context) (*service.UserSubscription, bool
 	}
 	subscription, ok := value.(*service.UserSubscription)
 	return subscription, ok
+}
+
+func GetSubscriptionEntitlementFromContext(c *gin.Context) (*service.SubscriptionEntitlement, bool) {
+	value, exists := c.Get(string(ContextKeySubscriptionEntitlement))
+	if !exists {
+		return nil, false
+	}
+	entitlement, ok := value.(*service.SubscriptionEntitlement)
+	return entitlement, ok
+}
+
+func GetSubscriptionEntitlementBalanceFallbackFromContext(c *gin.Context) bool {
+	value, exists := c.Get(string(ContextKeySubscriptionEntitlementBalanceFallback))
+	if !exists {
+		return false
+	}
+	enabled, _ := value.(bool)
+	return enabled
 }
 
 func setGroupContext(c *gin.Context, group *service.Group) {

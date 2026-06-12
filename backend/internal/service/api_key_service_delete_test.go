@@ -140,6 +140,10 @@ func (s *apiKeyRepoStub) CompareAndSwapGroupID(ctx context.Context, id int64, ol
 	panic("unexpected CompareAndSwapGroupID call")
 }
 
+func (s *apiKeyRepoStub) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	panic("unexpected CompareAndSwapGroupIDWithEntitlement call")
+}
+
 func (s *apiKeyRepoStub) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected CountByGroupID call")
 }

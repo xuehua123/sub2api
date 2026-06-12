@@ -22,6 +22,11 @@ const (
 	ContextKeyAPIKey ContextKey = "api_key"
 	// ContextKeySubscription 订阅上下文键
 	ContextKeySubscription ContextKey = "subscription"
+	// ContextKeySubscriptionEntitlement 套餐权益上下文键
+	ContextKeySubscriptionEntitlement ContextKey = "subscription_entitlement"
+	// ContextKeySubscriptionEntitlementBalanceFallback 套餐权益余额兜底策略上下文键。
+	// Task 9 只设置策略标记，实际余额扣减留给后续计费扣量任务处理。
+	ContextKeySubscriptionEntitlementBalanceFallback ContextKey = "subscription_entitlement_balance_fallback"
 	// ContextKeyForcePlatform 强制平台（用于 /antigravity 路由）
 	ContextKeyForcePlatform ContextKey = "force_platform"
 	// ContextKeyOpsFallbackAPIKey 运维错误日志专用回退键。

@@ -71,6 +71,21 @@ func (r *apiKeyBindingRepo) Update(_ context.Context, key *APIKey) error {
 	return nil
 }
 
+func (r *apiKeyBindingRepo) CompareAndSwapGroupIDWithEntitlement(_ context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	key, ok := r.keys[id]
+	if !ok {
+		return false, ErrAPIKeyNotFound
+	}
+	if key.GroupID == nil || *key.GroupID != oldGroupID || !sameInt64PtrValue(key.SubscriptionEntitlementID, expectedEntitlementID) {
+		return false, nil
+	}
+	cp := cloneAPIKeyForBindingTest(key)
+	cp.GroupID = cloneInt64PtrValue(newGroupID)
+	cp.SubscriptionEntitlementID = cloneInt64Ptr(newEntitlementID)
+	r.keys[id] = cp
+	return true, nil
+}
+
 func (r *apiKeyBindingRepo) ExistsByKey(context.Context, string) (bool, error) {
 	return false, nil
 }
@@ -299,6 +314,116 @@ func TestAPIKeyService_UpdateSubscriptionEntitlementBindings(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, apiRepo.updated)
 	})
+}
+
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthExplicitAndDefault(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true,
+		testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{20}),
+		testBindingEntitlement(2, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20}),
+	)
+	group := &Group{ID: 20, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription}
+	user := &User{ID: 1, Status: StatusActive}
+	explicitID := int64(1)
+
+	explicit, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                        10,
+		UserID:                    1,
+		User:                      user,
+		GroupID:                   cloneInt64PtrValue(20),
+		Group:                     group,
+		SubscriptionEntitlementID: &explicitID,
+		Status:                    StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, explicit)
+	require.Equal(t, int64(1), explicit.Entitlement.ID)
+
+	defaultResolved, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:      11,
+		UserID:  1,
+		User:    user,
+		GroupID: cloneInt64PtrValue(20),
+		Group:   group,
+		Status:  StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+	require.NoError(t, err)
+	require.NotNil(t, defaultResolved)
+	require.Equal(t, int64(2), defaultResolved.Entitlement.ID)
+}
+
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSwitchesOnlyWithinSameEntitlement(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	ent := testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{20, 30})
+	ent.GroupGrants[0].Group = &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, AllowMessagesDispatch: false, ClaudeCodeOnly: true}
+	ent.GroupGrants[1].Group = &Group{ID: 30, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, AllowMessagesDispatch: true}
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true, ent)
+	entitlementID := int64(1)
+
+	resolved, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                        10,
+		UserID:                    1,
+		User:                      &User{ID: 1, Status: StatusActive},
+		GroupID:                   cloneInt64PtrValue(20),
+		Group:                     ent.GroupGrants[0].Group,
+		SubscriptionEntitlementID: &entitlementID,
+		AutoSwitchGroupEnabled:    true,
+		Status:                    StatusAPIKeyActive,
+	}, NewSubscriptionSwitchRequestFromPath("/v1/messages"), false)
+
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	require.True(t, resolved.Switched)
+	require.Equal(t, int64(20), resolved.FromGroupID)
+	require.Equal(t, int64(30), resolved.ToGroupID)
+	require.Equal(t, int64(1), resolved.Entitlement.ID)
+}
+
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthQuotaExceededDoesNotUseAnotherEntitlement(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	limit := 5.0
+	exhausted := testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20})
+	exhausted.MonthlyWindowStart = cloneTimeValue(now.Add(-time.Hour))
+	exhausted.MonthlyLimitUSD = &limit
+	exhausted.MonthlyUsageUSD = 6
+	available := testBindingEntitlement(2, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{20, 30})
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true, exhausted, available)
+
+	_, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                     10,
+		UserID:                 1,
+		User:                   &User{ID: 1, Status: StatusActive},
+		GroupID:                cloneInt64PtrValue(20),
+		Group:                  &Group{ID: 20, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription},
+		AutoSwitchGroupEnabled: true,
+		Status:                 StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementQuotaExceeded)
+}
+
+func TestAPIKeyService_CompareAndSwapGroupIDWithEntitlement(t *testing.T) {
+	key := &APIKey{
+		ID:                        10,
+		Key:                       "sk-cas-entitlement",
+		GroupID:                   cloneInt64PtrValue(20),
+		SubscriptionEntitlementID: cloneInt64PtrValue(1),
+	}
+	repo := newAPIKeyBindingRepo(key)
+	svc := NewAPIKeyService(repo, nil, nil, nil, nil, nil, &config.Config{})
+
+	swapped, err := svc.CompareAndSwapGroupIDWithEntitlement(context.Background(), key, 20, 30, 1)
+	require.NoError(t, err)
+	require.True(t, swapped)
+	require.NotNil(t, key.GroupID)
+	require.Equal(t, int64(30), *key.GroupID)
+	require.NotNil(t, key.SubscriptionEntitlementID)
+	require.Equal(t, int64(1), *key.SubscriptionEntitlementID)
+
+	stale := &APIKey{ID: 10, Key: "sk-cas-entitlement", GroupID: cloneInt64PtrValue(30), SubscriptionEntitlementID: cloneInt64PtrValue(2)}
+	swapped, err = svc.CompareAndSwapGroupIDWithEntitlement(context.Background(), stale, 30, 20, 2)
+	require.NoError(t, err)
+	require.False(t, swapped)
 }
 
 func newAPIKeyEntitlementBindingFixture(t *testing.T, now time.Time, v2Enabled bool, entitlements ...*SubscriptionEntitlement) (*APIKeyService, *apiKeyBindingRepo, *apiKeyBindingUserSubRepo) {

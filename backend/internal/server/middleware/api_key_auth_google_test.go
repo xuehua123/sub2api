@@ -19,8 +19,9 @@ import (
 )
 
 type fakeAPIKeyRepo struct {
-	getByKey       func(ctx context.Context, key string) (*service.APIKey, error)
-	updateLastUsed func(ctx context.Context, id int64, usedAt time.Time) error
+	getByKey                         func(ctx context.Context, key string) (*service.APIKey, error)
+	updateLastUsed                   func(ctx context.Context, id int64, usedAt time.Time) error
+	compareAndSwapGroupIDEntitlement func(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error)
 }
 
 type fakeGoogleSubscriptionRepo struct {
@@ -111,6 +112,12 @@ func (f fakeAPIKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID,
 	return 0, errors.New("not implemented")
 }
 func (f fakeAPIKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	return true, nil
+}
+func (f fakeAPIKeyRepo) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	if f.compareAndSwapGroupIDEntitlement != nil {
+		return f.compareAndSwapGroupIDEntitlement(ctx, id, oldGroupID, newGroupID, expectedEntitlementID, newEntitlementID)
+	}
 	return true, nil
 }
 

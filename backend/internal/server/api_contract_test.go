@@ -852,6 +852,8 @@ func TestAPIContracts(t *testing.T) {
 					"lobehub_runtime_config_version": "",
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"subscription_entitlements_v2_enabled": false,
+					"sub2_payment_page_legacy_mapping_enabled": false,
 					"referral_enabled": false,
 					"referral_level1_enabled": true,
 					"referral_level1_rate": 0,
@@ -1094,6 +1096,8 @@ func TestAPIContracts(t *testing.T) {
 					"lobehub_runtime_config_version": "",
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"subscription_entitlements_v2_enabled": false,
+					"sub2_payment_page_legacy_mapping_enabled": false,
 					"table_default_page_size": 20,
 					"table_page_size_options": [10, 20, 50],
 					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
@@ -2558,6 +2562,35 @@ func (r *stubApiKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, ol
 	r.byID[id] = &clone
 	r.byKey[clone.Key] = &clone
 	return true, nil
+}
+
+func (r *stubApiKeyRepo) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	key, ok := r.byID[id]
+	if !ok {
+		return false, service.ErrAPIKeyNotFound
+	}
+	if key.GroupID == nil || *key.GroupID != oldGroupID || !sameAPIContractOptionalInt64(key.SubscriptionEntitlementID, expectedEntitlementID) {
+		return false, nil
+	}
+	clone := *key
+	gid := newGroupID
+	clone.GroupID = &gid
+	if newEntitlementID != nil {
+		entID := *newEntitlementID
+		clone.SubscriptionEntitlementID = &entID
+	} else {
+		clone.SubscriptionEntitlementID = nil
+	}
+	r.byID[id] = &clone
+	r.byKey[clone.Key] = &clone
+	return true, nil
+}
+
+func sameAPIContractOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {

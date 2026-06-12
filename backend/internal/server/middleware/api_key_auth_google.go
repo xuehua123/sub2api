@@ -60,9 +60,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			abortWithGoogleError(c, 401, "User account is not active")
 			return
 		}
-		if _, message, ok := validateAPIKeyGroupAvailable(apiKey); !ok {
+		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
+		_, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
+		currentGroupUnavailable := !groupAvailable
+		if currentGroupUnavailable && !(v2EntitlementsEnabled && isSubscriptionType) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
-			abortWithGoogleError(c, 403, message)
+			abortWithGoogleError(c, 403, groupUnavailableMessage)
 			return
 		}
 
@@ -90,8 +94,43 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
-		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
-		if isSubscriptionType && subscriptionService != nil {
+		var entitlement *service.SubscriptionEntitlement
+		if isSubscriptionType && v2EntitlementsEnabled {
+			resolved, err := apiKeyService.ResolveEntitlementForAPIKeyAuth(
+				c.Request.Context(),
+				apiKey,
+				subscriptionSwitchRequestForContext(c),
+				currentGroupUnavailable,
+			)
+			if err != nil {
+				abortWithGoogleError(c, subscriptionErrorStatus(err), err.Error())
+				return
+			}
+			if resolved != nil && resolved.Entitlement != nil {
+				entitlement = resolved.Entitlement
+				if resolved.Switched {
+					swapped, err := apiKeyService.CompareAndSwapGroupIDWithEntitlement(c.Request.Context(), apiKey, resolved.FromGroupID, resolved.ToGroupID, resolved.Entitlement.ID)
+					if err != nil {
+						abortWithGoogleError(c, 500, err.Error())
+						return
+					}
+					if !swapped {
+						apiKeyService.InvalidateAuthCacheByKey(c.Request.Context(), apiKey.Key)
+						abortWithGoogleError(c, 409, "Subscription group changed concurrently, please retry")
+						return
+					}
+				}
+				if resolved.Group != nil {
+					applyResolvedSubscriptionGroup(c, apiKey, resolved.Group, resolved.FromGroupID)
+				}
+				if resolved.LegacySubscription != nil {
+					c.Set(string(ContextKeySubscription), resolved.LegacySubscription)
+				}
+				if resolved.UseBalanceFallback {
+					c.Set(string(ContextKeySubscriptionEntitlementBalanceFallback), true)
+				}
+			}
+		} else if isSubscriptionType && subscriptionService != nil {
 			candidate, err := subscriptionService.ResolveUsableSubscriptionForAPIKeyWithRequest(
 				c.Request.Context(),
 				apiKey,
@@ -129,6 +168,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 		}
 
+		if entitlement != nil {
+			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
+		}
 		c.Set(string(ContextKeyAPIKey), apiKey)
 		c.Set(string(ContextKeyUser), AuthSubject{
 			UserID:      apiKey.User.ID,

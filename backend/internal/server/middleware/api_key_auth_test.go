@@ -1177,8 +1177,9 @@ func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService
 }
 
 type stubApiKeyRepo struct {
-	getByKey       func(ctx context.Context, key string) (*service.APIKey, error)
-	updateLastUsed func(ctx context.Context, id int64, usedAt time.Time) error
+	getByKey                         func(ctx context.Context, key string) (*service.APIKey, error)
+	updateLastUsed                   func(ctx context.Context, id int64, usedAt time.Time) error
+	compareAndSwapGroupIDEntitlement func(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error)
 }
 
 func (r *stubApiKeyRepo) Create(ctx context.Context, key *service.APIKey) error {
@@ -1249,6 +1250,13 @@ func (r *stubApiKeyRepo) UpdateGroupIDByUserAndGroup(ctx context.Context, userID
 }
 
 func (r *stubApiKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, oldGroupID, newGroupID int64) (bool, error) {
+	return true, nil
+}
+
+func (r *stubApiKeyRepo) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	if r.compareAndSwapGroupIDEntitlement != nil {
+		return r.compareAndSwapGroupIDEntitlement(ctx, id, oldGroupID, newGroupID, expectedEntitlementID, newEntitlementID)
+	}
 	return true, nil
 }
 

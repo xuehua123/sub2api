@@ -593,6 +593,28 @@ func (r *apiKeyRepository) CompareAndSwapGroupID(ctx context.Context, id int64, 
 	return affected > 0, nil
 }
 
+func (r *apiKeyRepository) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	update := client.APIKey.Update().
+		Where(apikey.IDEQ(id), apikey.GroupIDEQ(oldGroupID), apikey.DeletedAtIsNil()).
+		SetGroupID(newGroupID)
+	if expectedEntitlementID != nil {
+		update.Where(apikey.SubscriptionEntitlementIDEQ(*expectedEntitlementID))
+	} else {
+		update.Where(apikey.SubscriptionEntitlementIDIsNil())
+	}
+	if newEntitlementID != nil {
+		update.SetSubscriptionEntitlementID(*newEntitlementID)
+	} else {
+		update.ClearSubscriptionEntitlementID()
+	}
+	n, err := update.Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
