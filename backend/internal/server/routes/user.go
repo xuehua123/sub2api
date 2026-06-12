@@ -119,6 +119,14 @@ func RegisterUserRoutes(
 			subscriptions.POST("/:id/advance-monthly-cycle", h.Subscription.AdvanceMonthlyCycle)
 		}
 
+		// 用户套餐权益
+		entitlements := authenticated.Group("/entitlements")
+		{
+			entitlements.GET("", h.Entitlement.List)
+			entitlements.GET("/active", h.Entitlement.GetActive)
+			entitlements.GET("/:id/progress", h.Entitlement.GetProgress)
+		}
+
 		// 渠道监控（用户只读）
 		monitors := authenticated.Group("/channel-monitors")
 		{

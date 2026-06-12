@@ -49,6 +49,7 @@ type Handlers struct {
 	Usage            *UsageHandler
 	Redeem           *RedeemHandler
 	Subscription     *SubscriptionHandler
+	Entitlement      *EntitlementHandler
 	Announcement     *AnnouncementHandler
 	SupportIssue     *SupportIssueHandler
 	ChannelMonitor   *ChannelMonitorUserHandler

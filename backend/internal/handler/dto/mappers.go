@@ -2,6 +2,7 @@
 package dto
 
 import (
+	"sort"
 	"strconv"
 	"time"
 
@@ -735,6 +736,55 @@ func UserSubscriptionFromService(sub *service.UserSubscription) *UserSubscriptio
 	return &out
 }
 
+func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.Time) *UserEntitlement {
+	if ent == nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	dailyResetsAt, dailyResetsInSeconds := entitlementWindowReset(ent.DailyWindowStart, ent.ExpiresAt, 24*time.Hour, now, ent.HasOneTimeDailyQuota())
+	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(ent.WeeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
+	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(ent.MonthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
+	return &UserEntitlement{
+		ID:                     ent.ID,
+		PlanID:                 cloneInt64(ent.PlanID),
+		PlanName:               ent.Name,
+		Name:                   ent.Name,
+		Status:                 ent.Status,
+		StartsAt:               ent.StartsAt,
+		ExpiresAt:              ent.ExpiresAt,
+		Groups:                 userEntitlementGroups(ent),
+		DailyLimitUSD:          cloneFloat64(ent.DailyLimitUSD),
+		DailyUsageUSD:          ent.DailyUsageUSD,
+		DailyWindowStart:       cloneTime(ent.DailyWindowStart),
+		DailyResetsAt:          dailyResetsAt,
+		DailyResetsInSeconds:   dailyResetsInSeconds,
+		WeeklyLimitUSD:         cloneFloat64(ent.WeeklyLimitUSD),
+		WeeklyUsageUSD:         ent.WeeklyUsageUSD,
+		WeeklyWindowStart:      cloneTime(ent.WeeklyWindowStart),
+		WeeklyResetsAt:         weeklyResetsAt,
+		WeeklyResetsInSeconds:  weeklyResetsInSeconds,
+		MonthlyLimitUSD:        cloneFloat64(ent.MonthlyLimitUSD),
+		MonthlyUsageUSD:        ent.MonthlyUsageUSD,
+		MonthlyWindowStart:     cloneTime(ent.MonthlyWindowStart),
+		MonthlyResetsAt:        monthlyResetsAt,
+		MonthlyResetsInSeconds: monthlyResetsInSeconds,
+		OveragePolicy:          ent.OveragePolicy,
+		LegacySubscriptionID:   cloneInt64(ent.LegacySubscriptionID),
+	}
+}
+
+func UserEntitlementsFromService(in []service.SubscriptionEntitlement, now time.Time) []UserEntitlement {
+	out := make([]UserEntitlement, 0, len(in))
+	for i := range in {
+		if ent := UserEntitlementFromService(&in[i], now); ent != nil {
+			out = append(out, *ent)
+		}
+	}
+	return out
+}
+
 // UserSubscriptionFromServiceAdmin converts a service UserSubscription to DTO for admin users.
 // It includes assignment metadata and notes.
 func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserSubscription {
@@ -748,6 +798,83 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		Notes:            sub.Notes,
 		AssignedByUser:   UserFromServiceShallow(sub.AssignedByUser),
 	}
+}
+
+func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitlementGroup {
+	if ent == nil {
+		return []UserEntitlementGroup{}
+	}
+	if len(ent.GroupGrants) > 0 {
+		grants := append([]service.SubscriptionEntitlementGroupGrant(nil), ent.GroupGrants...)
+		sort.SliceStable(grants, func(i, j int) bool {
+			if grants[i].SortOrder != grants[j].SortOrder {
+				return grants[i].SortOrder < grants[j].SortOrder
+			}
+			return grants[i].GroupID < grants[j].GroupID
+		})
+		out := make([]UserEntitlementGroup, 0, len(grants))
+		for _, grant := range grants {
+			item := UserEntitlementGroup{ID: grant.GroupID}
+			if grant.Group != nil {
+				item.Name = grant.Group.Name
+				item.Platform = grant.Group.Platform
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+	groups := append([]service.Group(nil), ent.Groups...)
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].ID < groups[j].ID
+	})
+	out := make([]UserEntitlementGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, UserEntitlementGroup{
+			ID:       group.ID,
+			Name:     group.Name,
+			Platform: group.Platform,
+		})
+	}
+	return out
+}
+
+func entitlementWindowReset(windowStart *time.Time, expiresAt time.Time, cycle time.Duration, now time.Time, oneTimeDaily bool) (*time.Time, *int64) {
+	if windowStart == nil || cycle <= 0 {
+		return nil, nil
+	}
+	resetsAt := windowStart.Add(cycle)
+	if oneTimeDaily && !expiresAt.IsZero() && expiresAt.Before(resetsAt) {
+		resetsAt = expiresAt
+	}
+	resetsInSeconds := int64(resetsAt.Sub(now).Seconds())
+	if resetsInSeconds < 0 {
+		resetsInSeconds = 0
+	}
+	return cloneTime(&resetsAt), &resetsInSeconds
+}
+
+func cloneInt64(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneTime(v *time.Time) *time.Time {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscription {

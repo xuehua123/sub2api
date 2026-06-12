@@ -156,6 +156,21 @@ func (r *subscriptionEntitlementRepository) GetActiveCoveringGroup(ctx context.C
 	return r.ListActiveCoveringGroupForUser(ctx, userID, groupID)
 }
 
+func (r *subscriptionEntitlementRepository) ListByUserID(ctx context.Context, userID int64) ([]service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	ms, err := entitlementQueryWithGroups(client).
+		Where(
+			subscriptionentitlement.UserIDEQ(userID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Order(dbent.Desc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return subscriptionEntitlementEntitiesToService(ms), nil
+}
+
 func (r *subscriptionEntitlementRepository) ListByUserPlanID(ctx context.Context, userID, planID int64) ([]service.SubscriptionEntitlement, error) {
 	client := clientFromContext(ctx, r.client)
 	ms, err := entitlementQueryWithGroups(client).

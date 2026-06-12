@@ -601,6 +601,40 @@ type UserSubscription struct {
 	Group *Group `json:"group,omitempty"`
 }
 
+type UserEntitlementGroup struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Platform string `json:"platform"`
+}
+
+type UserEntitlement struct {
+	ID                     int64                  `json:"id"`
+	PlanID                 *int64                 `json:"plan_id"`
+	PlanName               string                 `json:"plan_name"`
+	Name                   string                 `json:"name"`
+	Status                 string                 `json:"status"`
+	StartsAt               time.Time              `json:"starts_at"`
+	ExpiresAt              time.Time              `json:"expires_at"`
+	Groups                 []UserEntitlementGroup `json:"groups"`
+	DailyLimitUSD          *float64               `json:"daily_limit_usd"`
+	DailyUsageUSD          float64                `json:"daily_usage_usd"`
+	DailyWindowStart       *time.Time             `json:"daily_window_start"`
+	DailyResetsAt          *time.Time             `json:"daily_resets_at"`
+	DailyResetsInSeconds   *int64                 `json:"daily_resets_in_seconds"`
+	WeeklyLimitUSD         *float64               `json:"weekly_limit_usd"`
+	WeeklyUsageUSD         float64                `json:"weekly_usage_usd"`
+	WeeklyWindowStart      *time.Time             `json:"weekly_window_start"`
+	WeeklyResetsAt         *time.Time             `json:"weekly_resets_at"`
+	WeeklyResetsInSeconds  *int64                 `json:"weekly_resets_in_seconds"`
+	MonthlyLimitUSD        *float64               `json:"monthly_limit_usd"`
+	MonthlyUsageUSD        float64                `json:"monthly_usage_usd"`
+	MonthlyWindowStart     *time.Time             `json:"monthly_window_start"`
+	MonthlyResetsAt        *time.Time             `json:"monthly_resets_at"`
+	MonthlyResetsInSeconds *int64                 `json:"monthly_resets_in_seconds"`
+	OveragePolicy          string                 `json:"overage_policy"`
+	LegacySubscriptionID   *int64                 `json:"legacy_subscription_id"`
+}
+
 // AdminUserSubscription 是管理员接口使用的订阅 DTO（包含分配信息/备注等字段）。
 // 注意：普通用户接口不得返回 assigned_by/assigned_at/notes/assigned_by_user 等管理员字段。
 type AdminUserSubscription struct {

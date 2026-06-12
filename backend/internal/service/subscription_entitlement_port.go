@@ -17,6 +17,7 @@ type SubscriptionEntitlementRepository interface {
 	GetFulfillmentBySourceExternalID(ctx context.Context, sourceType, sourceExternalID string) (*SubscriptionEntitlementFulfillment, error)
 	GetFulfillmentBySourceRedeemCodeID(ctx context.Context, redeemCodeID int64) (*SubscriptionEntitlementFulfillment, error)
 	GetActiveCoveringGroup(ctx context.Context, userID, groupID int64) ([]SubscriptionEntitlement, error)
+	ListByUserID(ctx context.Context, userID int64) ([]SubscriptionEntitlement, error)
 	ListByUserPlanID(ctx context.Context, userID, planID int64) ([]SubscriptionEntitlement, error)
 	ListActiveByUserID(ctx context.Context, userID int64) ([]SubscriptionEntitlement, error)
 	ListActiveCoveringGroupForUser(ctx context.Context, userID, groupID int64) ([]SubscriptionEntitlement, error)

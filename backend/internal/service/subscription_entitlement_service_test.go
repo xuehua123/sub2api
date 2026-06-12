@@ -187,6 +187,18 @@ func (r *fakeSubscriptionEntitlementRepo) GetActiveCoveringGroup(ctx context.Con
 	return r.ListActiveCoveringGroupForUser(ctx, userID, groupID)
 }
 
+func (r *fakeSubscriptionEntitlementRepo) ListByUserID(_ context.Context, userID int64) ([]SubscriptionEntitlement, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]SubscriptionEntitlement, 0)
+	for _, ent := range r.entitlements {
+		if ent.UserID == userID {
+			out = append(out, *cloneTestEntitlement(ent))
+		}
+	}
+	return out, nil
+}
+
 func (r *fakeSubscriptionEntitlementRepo) ListByUserPlanID(_ context.Context, userID, planID int64) ([]SubscriptionEntitlement, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
