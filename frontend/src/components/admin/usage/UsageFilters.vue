@@ -139,6 +139,21 @@
           <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="emitChange" />
         </div>
 
+        <!-- Entitlement Filter -->
+        <div class="w-full sm:w-auto sm:min-w-[180px]">
+          <label class="input-label">{{ t('admin.usage.entitlementId') }}</label>
+          <input
+            :value="entitlementIDInput"
+            type="text"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            class="input"
+            data-test="entitlement-id-filter"
+            :placeholder="t('admin.usage.entitlementIdPlaceholder')"
+            @input="onEntitlementIDInput"
+          />
+        </div>
+
         <!-- Group Filter -->
         <div class="w-full sm:w-auto sm:min-w-[200px]">
           <label class="input-label">{{ t('admin.usage.group') }}</label>
@@ -222,6 +237,7 @@ const accountKeyword = ref('')
 const accountResults = ref<SimpleAccount[]>([])
 const showAccountDropdown = ref(false)
 let accountSearchTimeout: ReturnType<typeof setTimeout> | null = null
+const entitlementIDInput = ref('')
 
 const modelOptions = computed<SelectOption[]>(() => [
   { value: null, label: t('admin.usage.allModels') },
@@ -250,6 +266,32 @@ const billingModeOptions = ref<SelectOption[]>([
 ])
 
 const emitChange = () => emit('change')
+
+const setEntitlementIDFilter = (value: number | undefined) => {
+  if (filters.value.entitlement_id === value) return
+  filters.value.entitlement_id = value
+  emitChange()
+}
+
+const onEntitlementIDInput = (event: Event) => {
+  const value = (event.target as HTMLInputElement).value
+  entitlementIDInput.value = value
+  const trimmed = value.trim()
+  if (!trimmed) {
+    setEntitlementIDFilter(undefined)
+    return
+  }
+  if (!/^[1-9]\d*$/.test(trimmed)) {
+    setEntitlementIDFilter(undefined)
+    return
+  }
+  const next = Number(trimmed)
+  if (!Number.isSafeInteger(next)) {
+    setEntitlementIDFilter(undefined)
+    return
+  }
+  setEntitlementIDFilter(next)
+}
 
 const debounceUserSearch = () => {
   if (userSearchTimeout) clearTimeout(userSearchTimeout)
@@ -421,6 +463,14 @@ watch(
       accountResults.value = []
     }
   }
+)
+
+watch(
+  () => filters.value.entitlement_id,
+  (entitlementID) => {
+    entitlementIDInput.value = entitlementID ? String(entitlementID) : ''
+  },
+  { immediate: true }
 )
 
 onMounted(async () => {

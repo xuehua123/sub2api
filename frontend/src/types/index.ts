@@ -1232,6 +1232,11 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2'
+export type UsageBillingSource =
+  | 'balance'
+  | 'legacy_subscription'
+  | 'entitlement_quota'
+  | 'entitlement_balance_fallback'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
@@ -1249,6 +1254,7 @@ export interface UsageLog {
 
   group_id: number | null
   subscription_id: number | null
+  entitlement_id?: number | null
 
   input_tokens: number
   output_tokens: number
@@ -1265,6 +1271,7 @@ export interface UsageLog {
   actual_cost: number
   rate_multiplier: number
   billing_type: number
+  billing_source?: UsageBillingSource | null
 
   request_type?: UsageRequestType
   stream: boolean
@@ -1699,6 +1706,7 @@ export interface UsageQueryParams {
   user_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string
   request_type?: UsageRequestType
   stream?: boolean

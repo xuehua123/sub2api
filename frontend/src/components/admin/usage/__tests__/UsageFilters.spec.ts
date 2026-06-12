@@ -30,6 +30,8 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeImage': 'Image',
   'admin.usage.group': 'Group',
   'admin.usage.allGroups': 'All Groups',
+  'admin.usage.entitlementId': 'Entitlement ID',
+  'admin.usage.entitlementIdPlaceholder': 'Exact entitlement ID',
   'common.refresh': 'Refresh',
   'common.reset': 'Reset',
   'admin.usage.cleanup.button': 'Cleanup',
@@ -67,7 +69,7 @@ vi.mock('@/api/admin', () => ({
 }))
 
 // Default props helper
-const defaultFilters = () => ({
+const defaultFilters = (): Record<string, any> => ({
   user_id: undefined,
   api_key_id: undefined,
   account_id: undefined,
@@ -76,6 +78,7 @@ const defaultFilters = () => ({
   billing_type: null,
   billing_mode: null,
   group_id: null,
+  entitlement_id: undefined,
   start_date: '',
   end_date: '',
 })
@@ -191,5 +194,28 @@ describe('UsageFilters — model options come from prop (no dup request)', () =>
 
     const opts = (wrapper.vm as any).modelOptions as Array<{ value: string | null; label: string }>
     expect(opts.map((o) => o.value)).toEqual([null, 'claude-3', 'gpt-4o'])
+  })
+})
+
+describe('UsageFilters — entitlement filter', () => {
+  it('sets entitlement_id for positive integers and emits change', async () => {
+    const wrapper = mountFilters()
+    const input = wrapper.find('[data-test="entitlement-id-filter"]')
+
+    await input.setValue('42')
+
+    expect(wrapper.props('modelValue').entitlement_id).toBe(42)
+    expect(wrapper.emitted('change')).toBeTruthy()
+  })
+
+  it('does not keep invalid entitlement_id values in filters', async () => {
+    const filters = defaultFilters()
+    filters.entitlement_id = 42
+    const wrapper = mountFilters(filters)
+    const input = wrapper.find('[data-test="entitlement-id-filter"]')
+
+    await input.setValue('not-a-number')
+
+    expect(wrapper.props('modelValue').entitlement_id).toBeUndefined()
   })
 })
