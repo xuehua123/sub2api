@@ -16,6 +16,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/assert"
@@ -300,6 +301,13 @@ func createPaymentRefundTestUser(t *testing.T, ctx context.Context, client *dben
 		Save(ctx)
 	require.NoError(t, err)
 	return user
+}
+
+func newPaymentEntitlementsSettingService(enabled bool) *SettingService {
+	repo := newMockSettingRepo()
+	_ = repo.Set(context.Background(), SettingKeySubscriptionEntitlementsV2Enabled, strconv.FormatBool(enabled))
+	_ = repo.Set(context.Background(), SettingKeySub2PaymentPageLegacyMappingEnabled, "false")
+	return NewSettingService(repo, &config.Config{})
 }
 
 func createPaymentOrderForRefundTest(t *testing.T, ctx context.Context, client *dbent.Client, user *dbent.User, amount float64, payAmount float64, refundAmount float64, status string, outTradeNo string, paymentTradeNo string) *dbent.PaymentOrder {
@@ -695,6 +703,234 @@ func TestExecuteSubscriptionFulfillment_RetryDoesNotExtendAlreadyAssignedSubscri
 	sub, err := client.UserSubscription.Query().Only(ctx)
 	require.NoError(t, err)
 	require.WithinDuration(t, expiresAt, sub.ExpiresAt, time.Second)
+}
+
+func TestExecuteSubscriptionFulfillment_V2FlagDisabledKeepsLegacyPlanOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+	groupID := int64(711)
+	planID := int64(811)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.90).
+		SetPayAmount(9.90).
+		SetRechargeCode("sub-legacy-flag-off").
+		SetOutTradeNo("subscription_legacy_flag_off_order").
+		SetPaymentType(payment.TypeAlipayDirect).
+		SetPaymentTradeNo("trade-sub-legacy-flag-off").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetPlanID(planID).
+		SetSubscriptionGroupID(groupID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	groupRepo := &paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}}
+	subRepo := newSubscriptionUserSubRepoStub()
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{
+		plans: map[int64]*SubscriptionEntitlementPlan{
+			planID: testEntitlementPlan(planID, []int64{groupID, 712}, nil),
+		},
+	})
+	entSvc.SetNowFunc(func() time.Time { return now })
+	service := &PaymentService{
+		entClient:                  client,
+		groupRepo:                  groupRepo,
+		subscriptionSvc:            NewSubscriptionService(groupRepo, subRepo, nil, nil, nil),
+		subscriptionEntitlementSvc: entSvc,
+		settingSvc:                 newPaymentEntitlementsSettingService(false),
+	}
+
+	err = service.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+	require.Nil(t, updatedOrder.SubscriptionEntitlementID)
+	require.Equal(t, 1, subRepo.createCalls)
+	require.Equal(t, 0, entRepo.createCount)
+	require.Equal(t, 0, entRepo.updateTermCount)
+	require.Equal(t, 0, entRepo.eventCount)
+	require.Empty(t, entRepo.fulfillments)
+}
+
+func TestExecuteSubscriptionFulfillment_V2AssignsEntitlementWithPlanGroups(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+	planID := int64(7101)
+	groupIDs := []int64{8101, 8102}
+
+	_, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("placeholder entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now).
+		SetExpiresAt(now.AddDate(0, 0, 30)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-v2-create").
+		SetOutTradeNo("subscription_v2_create_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_v2_create").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetPlanID(planID).
+		SetSubscriptionGroupID(groupIDs[0]).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{
+		plans: map[int64]*SubscriptionEntitlementPlan{
+			planID: testEntitlementPlan(planID, groupIDs, nil),
+		},
+	})
+	entSvc.SetNowFunc(func() time.Time { return now })
+	service := &PaymentService{
+		entClient:                  client,
+		subscriptionEntitlementSvc: entSvc,
+		settingSvc:                 newPaymentEntitlementsSettingService(true),
+	}
+
+	err = service.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+	require.NotNil(t, updatedOrder.SubscriptionEntitlementID)
+	require.Equal(t, int64(1), *updatedOrder.SubscriptionEntitlementID)
+	require.Len(t, entRepo.createGroups, 1)
+	require.Equal(t, groupIDs, entRepo.createGroups[0])
+	require.Len(t, entRepo.fulfillments, 1)
+	for _, fulfillment := range entRepo.fulfillments {
+		require.NotNil(t, fulfillment.SourceID)
+		require.Equal(t, order.ID, *fulfillment.SourceID)
+		require.NotNil(t, fulfillment.SourceExternalID)
+		require.Equal(t, order.OutTradeNo, *fulfillment.SourceExternalID)
+	}
+}
+
+func TestExecuteSubscriptionFulfillment_V2RenewalReusesEntitlementAndPreservesUsage(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+	planID := int64(7102)
+	groupIDs := []int64{8201, 8202}
+
+	_, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("placeholder entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now).
+		SetExpiresAt(now.AddDate(0, 0, 30)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{
+		plans: map[int64]*SubscriptionEntitlementPlan{
+			planID: testEntitlementPlan(planID, groupIDs, nil),
+		},
+	})
+	entSvc.SetNowFunc(func() time.Time { return now })
+	service := &PaymentService{
+		entClient:                  client,
+		subscriptionEntitlementSvc: entSvc,
+		settingSvc:                 newPaymentEntitlementsSettingService(true),
+	}
+
+	firstOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-v2-renew-first").
+		SetOutTradeNo("subscription_v2_renew_first").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_v2_renew_first").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetPlanID(planID).
+		SetSubscriptionGroupID(groupIDs[0]).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, service.ExecuteSubscriptionFulfillment(ctx, firstOrder.ID))
+
+	entRepo.entitlements[1].MonthlyUsageUSD = 12.5
+	firstExpiry := entRepo.entitlements[1].ExpiresAt
+	secondOrder, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-v2-renew-second").
+		SetOutTradeNo("subscription_v2_renew_second").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_v2_renew_second").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusPaid).
+		SetPlanID(planID).
+		SetSubscriptionGroupID(groupIDs[0]).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, service.ExecuteSubscriptionFulfillment(ctx, secondOrder.ID))
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, secondOrder.ID)
+	require.NoError(t, err)
+	require.NotNil(t, updatedOrder.SubscriptionEntitlementID)
+	require.Equal(t, int64(1), *updatedOrder.SubscriptionEntitlementID)
+	ent := entRepo.entitlements[1]
+	require.Equal(t, 12.5, ent.MonthlyUsageUSD)
+	require.True(t, ent.ExpiresAt.After(firstExpiry))
+	require.Len(t, entRepo.fulfillments, 2)
 }
 
 func TestRetryFailedSubscriptionReferralRewards_ReplaysCompletedSubscription(t *testing.T) {
@@ -1147,6 +1383,86 @@ func TestHandlePaymentNotification_PartialSubscriptionRefundDeductsProportionalD
 
 	logs := requireAuditActionsForOrder(t, ctx, client, order.ID, "EXTERNAL_REFUND_SYNCED")
 	require.Contains(t, logs[0].Detail, `"refundAmountTotal":45`)
+}
+
+func TestHandlePaymentNotification_V2SubscriptionRefundDeductsEntitlementDays(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+	placeholder, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("webhook refund entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-24 * time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+	entitlementID := placeholder.ID
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-v2-refund-webhook").
+		SetOutTradeNo("subscription_v2_refund_webhook_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_subscription_v2_refund_webhook").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetPlanID(9901).
+		SetSubscriptionEntitlementID(entitlementID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	originalExpiry := now.Add(30 * 24 * time.Hour)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+		ID:        entitlementID,
+		UserID:    user.ID,
+		PlanID:    int64ValuePtr(9901),
+		Name:      "webhook refund entitlement",
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+	}
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{})
+	entSvc.SetNowFunc(func() time.Time { return now })
+
+	service := &PaymentService{
+		entClient:                  client,
+		subscriptionEntitlementSvc: entSvc,
+	}
+
+	err = service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         45,
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, updatedOrder.Status)
+	require.Equal(t, 45.0, updatedOrder.RefundAmount)
+
+	ent, err := entRepo.GetByID(ctx, entitlementID)
+	require.NoError(t, err)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), ent.ExpiresAt, time.Second)
+	require.Equal(t, 1, entRepo.updateTermCount)
 }
 
 func TestGetWebhookProvider_RejectsAmbiguousProviderInstancesWithoutOrderHint(t *testing.T) {

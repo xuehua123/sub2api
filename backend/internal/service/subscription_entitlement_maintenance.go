@@ -166,3 +166,94 @@ func (s *SubscriptionEntitlementService) ApplyEntitlementUsage(ctx context.Conte
 	}
 	return s.entitlementRepo.ApplyEntitlementUsage(ctx, entitlementID, costUSD, now)
 }
+
+func (s *SubscriptionEntitlementService) GetRefundSnapshot(ctx context.Context, entitlementID int64, now time.Time) (*SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementRepo == nil || entitlementID <= 0 {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if now.IsZero() {
+		now = s.inputNow(time.Time{})
+	}
+	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if !entitlementActiveAt(ent, now) {
+		return nil, ErrSubscriptionEntitlementExpired
+	}
+	return cloneSubscriptionEntitlementForRefund(ent), nil
+}
+
+func (s *SubscriptionEntitlementService) ShortenForRefund(ctx context.Context, entitlementID int64, days int, now time.Time) (bool, error) {
+	if s == nil || s.entitlementRepo == nil || entitlementID <= 0 {
+		return false, ErrSubscriptionEntitlementNotFound
+	}
+	if days <= 0 {
+		return false, nil
+	}
+	if days > MaxValidityDays {
+		days = MaxValidityDays
+	}
+	if now.IsZero() {
+		now = s.inputNow(time.Time{})
+	}
+	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return false, err
+	}
+	if !entitlementActiveAt(ent, now) {
+		return false, ErrSubscriptionEntitlementExpired
+	}
+
+	expiresAt := ent.ExpiresAt.AddDate(0, 0, -days)
+	status := SubscriptionStatusActive
+	revoked := false
+	if !expiresAt.After(now) {
+		expiresAt = now
+		status = SubscriptionStatusExpired
+		revoked = true
+	}
+	if err := s.entitlementRepo.UpdateTerm(ctx, entitlementID, ent.StartsAt, expiresAt, status, ent.Notes); err != nil {
+		return false, err
+	}
+	return revoked, nil
+}
+
+func (s *SubscriptionEntitlementService) RestoreRefundSnapshot(ctx context.Context, snapshot *SubscriptionEntitlement) error {
+	if s == nil || s.entitlementRepo == nil || snapshot == nil || snapshot.ID <= 0 {
+		return ErrSubscriptionEntitlementNotFound
+	}
+	return s.entitlementRepo.UpdateTerm(ctx, snapshot.ID, snapshot.StartsAt, snapshot.ExpiresAt, snapshot.Status, snapshot.Notes)
+}
+
+func cloneSubscriptionEntitlementForRefund(ent *SubscriptionEntitlement) *SubscriptionEntitlement {
+	if ent == nil {
+		return nil
+	}
+	cp := *ent
+	cp.PlanID = cloneInt64Ptr(ent.PlanID)
+	cp.LegacySubscriptionID = cloneInt64Ptr(ent.LegacySubscriptionID)
+	cp.PrimaryGroupID = cloneInt64Ptr(ent.PrimaryGroupID)
+	cp.DailyWindowStart = cloneEntitlementTimePtr(ent.DailyWindowStart)
+	cp.WeeklyWindowStart = cloneEntitlementTimePtr(ent.WeeklyWindowStart)
+	cp.MonthlyWindowStart = cloneEntitlementTimePtr(ent.MonthlyWindowStart)
+	cp.DailyLimitUSD = cloneFloat64Ptr(ent.DailyLimitUSD)
+	cp.WeeklyLimitUSD = cloneFloat64Ptr(ent.WeeklyLimitUSD)
+	cp.MonthlyLimitUSD = cloneFloat64Ptr(ent.MonthlyLimitUSD)
+	cp.PlanSnapshot = copyMap(ent.PlanSnapshot)
+	cp.SourceID = cloneInt64Ptr(ent.SourceID)
+	cp.SourceExternalID = cloneStringPtr(ent.SourceExternalID)
+	cp.SourceRedeemCodeID = cloneInt64Ptr(ent.SourceRedeemCodeID)
+	cp.AssignedBy = cloneInt64Ptr(ent.AssignedBy)
+	cp.Groups = append([]Group(nil), ent.Groups...)
+	cp.GroupGrants = append([]SubscriptionEntitlementGroupGrant(nil), ent.GroupGrants...)
+	return &cp
+}
+
+func cloneEntitlementTimePtr(v *time.Time) *time.Time {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}

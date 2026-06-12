@@ -148,6 +148,15 @@ type SubscriptionPlanResponse struct {
 	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
+// SubscriptionPlanOrderAccess is the runtime view used when creating payment
+// orders. GroupID remains a legacy anchor; GroupIDs carries the effective v2
+// authorization set resolved from the plan access scope.
+type SubscriptionPlanOrderAccess struct {
+	PrimaryGroupID int64
+	GroupIDs       []int64
+	Groups         []PlanGroupInfo
+}
+
 // GetGroupPlatformMap returns a map of group_id → platform for the given plans.
 func (s *PaymentConfigService) GetGroupPlatformMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]string {
 	info := s.GetGroupInfoMap(ctx, plans)
@@ -403,6 +412,40 @@ func (s *PaymentConfigService) GetPlanResponse(ctx context.Context, id int64) (*
 		return nil, err
 	}
 	return s.buildPlanResponse(ctx, plan)
+}
+
+// ResolvePlanOrderAccess resolves the groups that a subscription plan grants at
+// order creation time. The first group is used only as the legacy
+// payment_orders.subscription_group_id anchor.
+func (s *PaymentConfigService) ResolvePlanOrderAccess(ctx context.Context, plan *dbent.SubscriptionPlan) (*SubscriptionPlanOrderAccess, error) {
+	if plan == nil {
+		return nil, infraerrors.NotFound("PLAN_NOT_FOUND", "subscription plan not found")
+	}
+	scope := normalizePlanAccessScopeForResponse(plan.AccessScope)
+	var (
+		groupIDs         []int64
+		groupIDsExplicit bool
+		err              error
+	)
+	if scope == PlanAccessScopeExplicit {
+		groupIDsExplicit = true
+		groupIDs, err = s.listPersistedPlanGroupIDs(ctx, plan.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(groupIDs) == 0 && plan.GroupID > 0 {
+			groupIDs = []int64{plan.GroupID}
+		}
+	}
+	access, err := s.resolvePlanAccess(ctx, scope, groupIDs, groupIDsExplicit, nonNilStrings(plan.AllowedPlatforms))
+	if err != nil {
+		return nil, err
+	}
+	return &SubscriptionPlanOrderAccess{
+		PrimaryGroupID: access.PrimaryGroupID,
+		GroupIDs:       groupIDsFromEntGroups(access.EffectiveGroups),
+		Groups:         planGroupInfosFromEnt(access.EffectiveGroups),
+	}, nil
 }
 
 type resolvedPlanAccess struct {

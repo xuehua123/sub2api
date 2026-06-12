@@ -34,7 +34,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
 	}
-	plan, err := s.validateOrderInput(ctx, req, cfg)
+	plan, planAccess, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +98,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, planAccess, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -112,42 +112,39 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	return resp, nil
 }
 
-func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, error) {
+func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, *SubscriptionPlanOrderAccess, error) {
 	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceDisabled {
-		return nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
+		return nil, nil, infraerrors.Forbidden("BALANCE_PAYMENT_DISABLED", "balance recharge has been disabled")
 	}
 	if req.OrderType == payment.OrderTypeSubscription {
 		return s.validateSubOrder(ctx, req)
 	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
-		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
+		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
 	}
 	if (cfg.MinAmount > 0 && req.Amount < cfg.MinAmount) || (cfg.MaxAmount > 0 && req.Amount > cfg.MaxAmount) {
-		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
+		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount out of range").
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
-func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRequest) (*dbent.SubscriptionPlan, error) {
+func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRequest) (*dbent.SubscriptionPlan, *SubscriptionPlanOrderAccess, error) {
 	if req.PlanID == 0 {
-		return nil, infraerrors.BadRequest("INVALID_INPUT", "subscription order requires a plan")
+		return nil, nil, infraerrors.BadRequest("INVALID_INPUT", "subscription order requires a plan")
 	}
 	plan, err := s.configService.GetPlan(ctx, req.PlanID)
 	if err != nil || !plan.ForSale || !isSupportedValidityUnit(plan.ValidityUnit) {
-		return nil, infraerrors.NotFound("PLAN_NOT_AVAILABLE", "plan not found or not for sale")
+		return nil, nil, infraerrors.NotFound("PLAN_NOT_AVAILABLE", "plan not found or not for sale")
 	}
-	group, err := s.groupRepo.GetByID(ctx, plan.GroupID)
-	if err != nil || group.Status != payment.EntityStatusActive {
-		return nil, infraerrors.NotFound("GROUP_NOT_FOUND", "subscription group is no longer available")
+	access, err := s.configService.ResolvePlanOrderAccess(ctx, plan)
+	if err != nil {
+		return nil, nil, err
 	}
-	if !group.IsSubscriptionType() {
-		return nil, infraerrors.BadRequest("GROUP_TYPE_MISMATCH", "group is not a subscription type")
-	}
-	return plan, nil
+	return plan, access, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, planAccess *SubscriptionPlanOrderAccess, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -205,7 +202,11 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		b.SetProviderSnapshot(providerSnapshot)
 	}
 	if plan != nil {
-		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
+		primaryGroupID := plan.GroupID
+		if planAccess != nil && planAccess.PrimaryGroupID > 0 {
+			primaryGroupID = planAccess.PrimaryGroupID
+		}
+		b.SetPlanID(plan.ID).SetSubscriptionGroupID(primaryGroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
 	}
 	order, err := b.Save(ctx)
 	if err != nil {

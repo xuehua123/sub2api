@@ -134,6 +134,9 @@ type RefundPlan struct {
 	SubscriptionID       int64
 	SubscriptionSnapshot *UserSubscription
 	SubRevoked           bool
+	EntitlementID        int64
+	EntitlementSnapshot  *SubscriptionEntitlement
+	EntitlementRevoked   bool
 }
 
 type RefundResult struct {
@@ -178,21 +181,23 @@ type TopUserStat struct {
 // --- Service ---
 
 type PaymentService struct {
-	providerMu               sync.Mutex
-	providersLoaded          bool
-	entClient                *dbent.Client
-	registry                 *payment.Registry
-	loadBalancer             payment.LoadBalancer
-	redeemService            *RedeemService
-	subscriptionSvc          *SubscriptionService
-	configService            *PaymentConfigService
-	userRepo                 UserRepository
-	groupRepo                GroupRepository
-	resumeService            *PaymentResumeService
-	referralRewardSvc        *ReferralRewardService
-	referralRefundSvc        *ReferralRefundService
-	affiliateService         *AffiliateService
-	notificationEmailService *NotificationEmailService
+	providerMu                 sync.Mutex
+	providersLoaded            bool
+	entClient                  *dbent.Client
+	registry                   *payment.Registry
+	loadBalancer               payment.LoadBalancer
+	redeemService              *RedeemService
+	subscriptionSvc            *SubscriptionService
+	subscriptionEntitlementSvc *SubscriptionEntitlementService
+	settingSvc                 *SettingService
+	configService              *PaymentConfigService
+	userRepo                   UserRepository
+	groupRepo                  GroupRepository
+	resumeService              *PaymentResumeService
+	referralRewardSvc          *ReferralRewardService
+	referralRefundSvc          *ReferralRefundService
+	affiliateService           *AffiliateService
+	notificationEmailService   *NotificationEmailService
 }
 
 func NewPaymentService(
@@ -201,6 +206,8 @@ func NewPaymentService(
 	loadBalancer payment.LoadBalancer,
 	redeemService *RedeemService,
 	subscriptionSvc *SubscriptionService,
+	subscriptionEntitlementSvc *SubscriptionEntitlementService,
+	settingSvc *SettingService,
 	configService *PaymentConfigService,
 	userRepo UserRepository,
 	groupRepo GroupRepository,
@@ -209,18 +216,20 @@ func NewPaymentService(
 	affiliateService *AffiliateService,
 ) *PaymentService {
 	svc := &PaymentService{
-		entClient:         entClient,
-		registry:          registry,
-		loadBalancer:      newVisibleMethodLoadBalancer(loadBalancer, configService),
-		redeemService:     redeemService,
-		subscriptionSvc:   subscriptionSvc,
-		configService:     configService,
-		userRepo:          userRepo,
-		groupRepo:         groupRepo,
-		resumeService:     psNewPaymentResumeService(configService),
-		referralRewardSvc: referralRewardSvc,
-		referralRefundSvc: referralRefundSvc,
-		affiliateService:  affiliateService,
+		entClient:                  entClient,
+		registry:                   registry,
+		loadBalancer:               newVisibleMethodLoadBalancer(loadBalancer, configService),
+		redeemService:              redeemService,
+		subscriptionSvc:            subscriptionSvc,
+		subscriptionEntitlementSvc: subscriptionEntitlementSvc,
+		settingSvc:                 settingSvc,
+		configService:              configService,
+		userRepo:                   userRepo,
+		groupRepo:                  groupRepo,
+		resumeService:              psNewPaymentResumeService(configService),
+		referralRewardSvc:          referralRewardSvc,
+		referralRefundSvc:          referralRefundSvc,
+		affiliateService:           affiliateService,
 	}
 	return svc
 }
