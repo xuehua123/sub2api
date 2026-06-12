@@ -2036,6 +2036,10 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		msg := pkgerrors.Message(err)
 		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", msg, 0
 	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
+		msg := pkgerrors.Message(err)
+		return http.StatusTooManyRequests, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", msg, 0
+	}
 	if errors.Is(err, service.ErrSubscriptionNotFound) {
 		msg := pkgerrors.Message(err)
 		return http.StatusForbidden, "SUBSCRIPTION_NOT_FOUND", msg, 0

@@ -8606,12 +8606,12 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 		return
 	}
 
-	if p.IsSubscriptionBill && p.Subscription != nil {
+	if usageBillingAppliedBalanceDeduction(p, result) {
+		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
+	} else if p.IsSubscriptionBill && p.Subscription != nil {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsageWithVersion(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost, result.SubscriptionVersion)
 		}
-	} else if !p.IsSubscriptionBill && p.Cost.ActualCost > 0 && p.User != nil {
-		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
 	}
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
@@ -8669,11 +8669,12 @@ func notifyBalanceLow(p *postUsageBillingParams, deps *billingDeps, result *Usag
 			slog.Error("panic in notifyBalanceLow", "recover", r)
 		}
 	}()
-	if p.IsSubscriptionBill || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
+	if !usageBillingAppliedBalanceDeduction(p, result) || deps.balanceNotifyService == nil {
 		slog.Debug("notifyBalanceLow: skipped",
-			"is_subscription", p.IsSubscriptionBill,
-			"actual_cost", p.Cost.ActualCost,
-			"user_nil", p.User == nil,
+			"is_subscription", p != nil && p.IsSubscriptionBill,
+			"actual_cost", usageBillingActualCost(p),
+			"user_nil", p == nil || p.User == nil,
+			"balance_deduction", usageBillingAppliedBalanceDeduction(p, result),
 			"service_nil", deps.balanceNotifyService == nil,
 		)
 		return
@@ -8699,6 +8700,23 @@ func resolveOldBalance(p *postUsageBillingParams, result *UsageBillingApplyResul
 	}
 	// Legacy fallback: snapshot balance from request context
 	return p.User.Balance
+}
+
+func usageBillingAppliedBalanceDeduction(p *postUsageBillingParams, result *UsageBillingApplyResult) bool {
+	if p == nil || p.Cost == nil || p.Cost.ActualCost <= 0 || p.User == nil {
+		return false
+	}
+	if !p.IsSubscriptionBill {
+		return true
+	}
+	return result != nil && result.NewBalance != nil
+}
+
+func usageBillingActualCost(p *postUsageBillingParams) float64 {
+	if p == nil || p.Cost == nil {
+		return 0
+	}
+	return p.Cost.ActualCost
 }
 
 // notifyAccountQuota sends account quota threshold notification after increment.

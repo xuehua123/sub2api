@@ -55,6 +55,14 @@ func newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo UsageLogReposi
 	return svc
 }
 
+func newGatewayFinalizeBillingCacheForTest(t *testing.T) (*BillingCacheService, *billingCacheWorkerStub) {
+	t.Helper()
+	cache := &billingCacheWorkerStub{}
+	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, &config.Config{}, nil)
+	t.Cleanup(svc.Stop)
+	return svc, cache
+}
+
 type openAIRecordUsageBestEffortLogRepoStub struct {
 	UsageLogRepository
 
@@ -181,6 +189,33 @@ func TestGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAn
 	require.Equal(t, int64(88), *usageRepo.lastLog.GroupID)
 }
 
+func TestGatewayServiceRecordUsage_BillingErrorDoesNotWriteUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrSubscriptionEntitlementQuotaExceeded}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_entitlement_billing_error",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey:      &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:        &User{ID: 601},
+		Account:     &Account{ID: 701},
+		Entitlement: &SubscriptionEntitlement{ID: 901},
+	})
+
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementQuotaExceeded)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, usageRepo.calls)
+	require.Nil(t, usageRepo.lastLog)
+}
+
 func TestGatewayServiceRecordUsage_EntitlementOnlyFallbackDoesNotLegacyBill(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -247,6 +282,108 @@ func TestGatewayServiceRecordUsage_EntitlementOnlyApplyDoesNotUpdateLegacySubscr
 	require.Equal(t, int64(0), atomic.LoadInt64(&cache.balanceUpdates))
 	require.Equal(t, 0, subRepo.incrementCalls)
 	require.Equal(t, 0, userRepo.deductCalls)
+}
+
+func TestFinalizePostUsageBilling_EntitlementBalanceFallbackQueuesBalanceCache(t *testing.T) {
+	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
+	newBalance := 98.0
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:                       &CostBreakdown{ActualCost: 2},
+		User:                       &User{ID: 601},
+		APIKey:                     &APIKey{ID: 501, GroupID: i64p(88)},
+		Account:                    &Account{ID: 701},
+		Entitlement:                &SubscriptionEntitlement{ID: 912},
+		EntitlementBalanceFallback: true,
+		IsSubscriptionBill:         true,
+	}, &billingDeps{
+		billingCacheService: billingCache,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{Applied: true, NewBalance: &newBalance})
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt64(&cache.balanceUpdates) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(0), atomic.LoadInt64(&cache.subscriptionUpdates))
+}
+
+func TestFinalizePostUsageBilling_EntitlementQuotaDoesNotQueueBalanceOrLegacySubscriptionCache(t *testing.T) {
+	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:               &CostBreakdown{ActualCost: 2},
+		User:               &User{ID: 601},
+		APIKey:             &APIKey{ID: 501, GroupID: i64p(88)},
+		Account:            &Account{ID: 701},
+		Entitlement:        &SubscriptionEntitlement{ID: 912},
+		IsSubscriptionBill: true,
+	}, &billingDeps{
+		billingCacheService: billingCache,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123})
+
+	require.Never(t, func() bool {
+		return atomic.LoadInt64(&cache.balanceUpdates) > 0 || atomic.LoadInt64(&cache.subscriptionUpdates) > 0
+	}, 100*time.Millisecond, 10*time.Millisecond)
+}
+
+func TestFinalizePostUsageBilling_LegacySubscriptionQueuesSubscriptionCache(t *testing.T) {
+	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:               &CostBreakdown{ActualCost: 2},
+		User:               &User{ID: 601},
+		APIKey:             &APIKey{ID: 501, GroupID: i64p(88)},
+		Account:            &Account{ID: 701},
+		Subscription:       &UserSubscription{ID: 913},
+		IsSubscriptionBill: true,
+	}, &billingDeps{
+		billingCacheService: billingCache,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{Applied: true, SubscriptionVersion: 123})
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt64(&cache.subscriptionUpdates) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(0), atomic.LoadInt64(&cache.balanceUpdates))
+}
+
+func TestFinalizePostUsageBilling_LegacyBalanceQueuesBalanceCache(t *testing.T) {
+	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
+	newBalance := 98.0
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:    &CostBreakdown{ActualCost: 2},
+		User:    &User{ID: 601},
+		APIKey:  &APIKey{ID: 501},
+		Account: &Account{ID: 701},
+	}, &billingDeps{
+		billingCacheService: billingCache,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{Applied: true, NewBalance: &newBalance})
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt64(&cache.balanceUpdates) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(0), atomic.LoadInt64(&cache.subscriptionUpdates))
+}
+
+func TestUsageBillingAppliedBalanceDeductionRecognizesEntitlementFallback(t *testing.T) {
+	newBalance := 8.0
+	p := &postUsageBillingParams{
+		Cost:               &CostBreakdown{ActualCost: 2},
+		User:               &User{ID: 601, Balance: 20},
+		IsSubscriptionBill: true,
+	}
+	result := &UsageBillingApplyResult{Applied: true, NewBalance: &newBalance}
+
+	require.True(t, usageBillingAppliedBalanceDeduction(p, result))
+	require.Equal(t, 10.0, resolveOldBalance(p, result))
+	require.False(t, usageBillingAppliedBalanceDeduction(&postUsageBillingParams{
+		Cost:               &CostBreakdown{ActualCost: 2},
+		User:               &User{ID: 601},
+		IsSubscriptionBill: true,
+	}, &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}))
+	require.True(t, usageBillingAppliedBalanceDeduction(&postUsageBillingParams{
+		Cost: &CostBreakdown{ActualCost: 2},
+		User: &User{ID: 601},
+	}, nil))
 }
 
 func TestGatewayServiceRecordUsage_LegacySubscriptionFallbackStillIncrementsUsage(t *testing.T) {

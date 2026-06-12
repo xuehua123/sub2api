@@ -62,6 +62,14 @@ func TestBillingErrorDetails_SubscriptionUsageLimitsMapToUsageLimitExceeded(t *t
 	}
 }
 
+func TestBillingErrorDetails_SubscriptionEntitlementQuotaExceededMapsToTooManyRequests(t *testing.T) {
+	status, code, msg, retryAfter := billingErrorDetails(service.ErrSubscriptionEntitlementQuotaExceeded)
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.Equal(t, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", code)
+	require.NotEmpty(t, msg)
+	require.Equal(t, 0, retryAfter)
+}
+
 func TestBillingErrorDetails_SubscriptionErrorsKeepSubscriptionCodes(t *testing.T) {
 	tests := []struct {
 		name       string
