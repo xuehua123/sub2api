@@ -510,6 +510,75 @@ func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackDeductsBalance(t 
 	require.InDelta(t, 98, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
 }
 
+func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackCountsAPIKeyAndAccountQuota(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-ent-fallback-quota-user-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Balance:      100,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-ent-fallback-quota-" + uuid.NewString(),
+		Name:   "billing-ent-fallback-quota",
+		Quota:  10,
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-ent-fallback-quota-account-" + uuid.NewString(),
+		Type: service.AccountTypeAPIKey,
+		Extra: map[string]any{
+			"quota_limit": 10.0,
+		},
+	})
+	limit := 5.0
+	now := time.Now().UTC()
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:             user.ID,
+		Name:               "usage billing entitlement fallback quota",
+		StartsAt:           now.Add(-time.Hour),
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: ptrUsageBillingTime(now.Add(-time.Hour)),
+		MonthlyLimitUSD:    &limit,
+		MonthlyUsageUSD:    5,
+		OveragePolicy:      service.SubscriptionEntitlementOverageBalanceFallback,
+	})
+
+	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:                  uuid.NewString(),
+		APIKeyID:                   apiKey.ID,
+		UserID:                     user.ID,
+		AccountID:                  account.ID,
+		AccountType:                service.AccountTypeAPIKey,
+		EntitlementID:              &entitlement.ID,
+		SubscriptionCost:           2,
+		APIKeyQuotaCost:            2,
+		AccountQuotaCost:           3,
+		EntitlementBalanceFallback: true,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Zero(t, result.EntitlementVersion)
+	require.NotNil(t, result.NewBalance)
+	require.InDelta(t, 98, *result.NewBalance, 0.000001)
+	require.NotNil(t, result.QuotaState)
+	require.InDelta(t, 3, result.QuotaState.TotalUsed, 0.000001)
+
+	_, _, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	require.InDelta(t, 5, monthly, 0.000001, "fallback must not increase entitlement usage")
+	require.InDelta(t, 98, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
+
+	var apiKeyQuotaUsed float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT quota_used FROM api_keys WHERE id = $1", apiKey.ID).Scan(&apiKeyQuotaUsed))
+	require.InDelta(t, 2, apiKeyQuotaUsed, 0.000001)
+
+	var accountQuotaUsed float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COALESCE((extra->>'quota_used')::numeric, 0) FROM accounts WHERE id = $1", account.ID).Scan(&accountQuotaUsed))
+	require.InDelta(t, 3, accountQuotaUsed, 0.000001)
+}
+
 func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackFailureRollsBack(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

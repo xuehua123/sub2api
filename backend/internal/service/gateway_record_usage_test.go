@@ -180,6 +180,8 @@ func TestGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAn
 	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
 	require.True(t, billingRepo.lastCmd.EntitlementBalanceFallback)
 	require.Nil(t, billingRepo.lastCmd.SubscriptionID)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost, "entitlement billing command must not carry legacy balance cost")
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
 	require.NotNil(t, usageRepo.lastLog)
 	require.Equal(t, BillingTypeSubscription, usageRepo.lastLog.BillingType)
 	require.NotNil(t, usageRepo.lastLog.EntitlementID)
@@ -187,6 +189,63 @@ func TestGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAn
 	require.Nil(t, usageRepo.lastLog.SubscriptionID)
 	require.NotNil(t, usageRepo.lastLog.GroupID)
 	require.Equal(t, int64(88), *usageRepo.lastLog.GroupID)
+}
+
+func TestGatewayServiceRecordUsage_LegacyBillingCommandShapeUnchanged(t *testing.T) {
+	t.Run("balance", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{}
+		billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+		svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+		err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+			Result: &ForwardResult{
+				RequestID: "gateway_legacy_balance_command_shape",
+				Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+				Model:     "claude-sonnet-4",
+				Duration:  time.Second,
+			},
+			APIKey:  &APIKey{ID: 501, Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 1}},
+			User:    &User{ID: 601},
+			Account: &Account{ID: 701},
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, billingRepo.lastCmd)
+		require.Nil(t, billingRepo.lastCmd.EntitlementID)
+		require.False(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+		require.Nil(t, billingRepo.lastCmd.SubscriptionID)
+		require.Greater(t, billingRepo.lastCmd.BalanceCost, 0.0)
+		require.Zero(t, billingRepo.lastCmd.SubscriptionCost)
+	})
+
+	t.Run("legacy_subscription", func(t *testing.T) {
+		usageRepo := &openAIRecordUsageLogRepoStub{}
+		billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, SubscriptionVersion: 123}}
+		svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+		subscription := &UserSubscription{ID: 913}
+
+		err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+			Result: &ForwardResult{
+				RequestID: "gateway_legacy_subscription_command_shape",
+				Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+				Model:     "claude-sonnet-4",
+				Duration:  time.Second,
+			},
+			APIKey:       &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+			User:         &User{ID: 601},
+			Account:      &Account{ID: 701},
+			Subscription: subscription,
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, billingRepo.lastCmd)
+		require.Nil(t, billingRepo.lastCmd.EntitlementID)
+		require.False(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+		require.NotNil(t, billingRepo.lastCmd.SubscriptionID)
+		require.Equal(t, subscription.ID, *billingRepo.lastCmd.SubscriptionID)
+		require.Zero(t, billingRepo.lastCmd.BalanceCost)
+		require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	})
 }
 
 func TestGatewayServiceRecordUsage_BillingErrorDoesNotWriteUsageLog(t *testing.T) {
@@ -214,6 +273,208 @@ func TestGatewayServiceRecordUsage_BillingErrorDoesNotWriteUsageLog(t *testing.T
 	require.Equal(t, 1, billingRepo.calls)
 	require.Equal(t, 0, usageRepo.calls)
 	require.Nil(t, usageRepo.lastLog)
+}
+
+func TestGatewayServiceRecordUsage_EntitlementFingerprintConflictDoesNotWriteUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrUsageBillingRequestConflict}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_entitlement_fingerprint_conflict",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:                       &User{ID: 601},
+		Account:                    &Account{ID: 701},
+		Entitlement:                &SubscriptionEntitlement{ID: 901},
+		EntitlementBalanceFallback: true,
+	})
+
+	require.ErrorIs(t, err, ErrUsageBillingRequestConflict)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, usageRepo.calls)
+	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
+}
+
+func TestGatewayServiceRecordUsage_EntitlementFallbackSuccessWritesUsageLogAndQueuesBalanceCache(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	newBalance := 98.0
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, NewBalance: &newBalance}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	cacheSvc, cache := newGatewayFinalizeBillingCacheForTest(t)
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
+	svc.billingCacheService = cacheSvc
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_entitlement_fallback_success",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:                       &User{ID: 601},
+		Account:                    &Account{ID: 701},
+		Entitlement:                &SubscriptionEntitlement{ID: 901},
+		EntitlementBalanceFallback: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.Equal(t, 0, userRepo.deductCalls, "fallback balance deduction is owned by usage_billing_repo transaction")
+	require.Equal(t, 0, subRepo.incrementCalls)
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt64(&cache.balanceUpdates) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(0), atomic.LoadInt64(&cache.subscriptionUpdates))
+}
+
+func TestGatewayServiceRecordUsage_EntitlementFallbackInsufficientBalanceDoesNotWriteUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrInsufficientBalance}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_entitlement_fallback_insufficient_balance",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:                       &User{ID: 601},
+		Account:                    &Account{ID: 701},
+		Entitlement:                &SubscriptionEntitlement{ID: 901},
+		EntitlementBalanceFallback: true,
+	})
+
+	require.ErrorIs(t, err, ErrInsufficientBalance)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, usageRepo.calls)
+	require.Nil(t, usageRepo.lastLog)
+}
+
+func TestGatewayServiceRecordUsage_EntitlementStreamingPartialDisconnectStillBillsUsage(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	firstSSEEventMs := 80
+	firstClientFlushMs := 95
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID:          "gateway_entitlement_stream_partial_disconnect",
+			Usage:              ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:              "claude-sonnet-4",
+			Stream:             true,
+			ClientDisconnect:   true,
+			Duration:           time.Second,
+			FirstSSEEventMs:    &firstSSEEventMs,
+			FirstClientFlushMs: &firstClientFlushMs,
+		},
+		APIKey:      &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:        &User{ID: 601},
+		Account:     &Account{ID: 701},
+		Entitlement: &SubscriptionEntitlement{ID: 901},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, int64(901), *billingRepo.lastCmd.EntitlementID)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog)
+	require.True(t, usageRepo.lastLog.Stream)
+	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
+	require.Equal(t, firstSSEEventMs, *usageRepo.lastLog.FirstSSEEventMs)
+	require.NotNil(t, usageRepo.lastLog.FirstClientFlushMs)
+	require.Equal(t, firstClientFlushMs, *usageRepo.lastLog.FirstClientFlushMs)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+}
+
+func TestGatewayServiceRecordUsageWithLongContext_GeminiEntitlementAttributionSmoke(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{
+		Result: &ForwardResult{
+			RequestID: "gemini_entitlement_long_context_smoke",
+			Usage:     ClaudeUsage{InputTokens: 210000, OutputTokens: 1000},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:                &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, Platform: PlatformGemini, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:                  &User{ID: 601},
+		Account:               &Account{ID: 701, Type: AccountTypeAPIKey},
+		Entitlement:           &SubscriptionEntitlement{ID: 901},
+		QuotaPlatform:         PlatformGemini,
+		LongContextThreshold:  200000,
+		LongContextMultiplier: 2,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, int64(901), *billingRepo.lastCmd.EntitlementID)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.NotNil(t, usageRepo.lastLog.GroupID)
+	require.Equal(t, int64(88), *usageRepo.lastLog.GroupID)
+	require.Greater(t, usageRepo.lastLog.ActualCost, 0.0)
+}
+
+func TestGatewayServiceRecordUsage_AntigravityEntitlementAttributionSmoke(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "antigravity_entitlement_smoke",
+			Usage:     ClaudeUsage{InputTokens: 10, OutputTokens: 6},
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:        &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, Platform: PlatformAntigravity, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:          &User{ID: 601},
+		Account:       &Account{ID: 701, Type: AccountTypeAPIKey},
+		Entitlement:   &SubscriptionEntitlement{ID: 901},
+		QuotaPlatform: PlatformAntigravity,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, int64(901), *billingRepo.lastCmd.EntitlementID)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.NotNil(t, usageRepo.lastLog.GroupID)
+	require.Equal(t, int64(88), *usageRepo.lastLog.GroupID)
 }
 
 func TestGatewayServiceRecordUsage_EntitlementOnlyFallbackDoesNotLegacyBill(t *testing.T) {
@@ -304,6 +565,29 @@ func TestFinalizePostUsageBilling_EntitlementBalanceFallbackQueuesBalanceCache(t
 		return atomic.LoadInt64(&cache.balanceUpdates) > 0
 	}, 2*time.Second, 10*time.Millisecond)
 	require.Equal(t, int64(0), atomic.LoadInt64(&cache.subscriptionUpdates))
+}
+
+func TestFinalizePostUsageBilling_EntitlementBalanceFallbackDoesNotCountUserPlatformQuota(t *testing.T) {
+	billingCache, _ := newGatewayFinalizeBillingCacheForTest(t)
+	newBalance := 98.0
+
+	require.NotPanics(t, func() {
+		finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+			Cost:                       &CostBreakdown{ActualCost: 2},
+			User:                       &User{ID: 601},
+			APIKey:                     &APIKey{ID: 501, GroupID: i64p(88)},
+			Account:                    &Account{ID: 701},
+			Entitlement:                &SubscriptionEntitlement{ID: 912},
+			EntitlementBalanceFallback: true,
+			IsSubscriptionBill:         true,
+			Platform:                   PlatformAnthropic,
+		}, &billingDeps{
+			billingCacheService:   billingCache,
+			deferredService:       &DeferredService{},
+			userPlatformQuotaRepo: &userPlatformQuotaRepoStub{},
+			cfg:                   &config.Config{},
+		}, &UsageBillingApplyResult{Applied: true, NewBalance: &newBalance})
+	}, "fallback is real balance billing for cache/notifications, but remains subscription-mode for user platform quota")
 }
 
 func TestFinalizePostUsageBilling_EntitlementQuotaDoesNotQueueBalanceOrLegacySubscriptionCache(t *testing.T) {
