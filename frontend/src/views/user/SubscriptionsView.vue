@@ -9,7 +9,7 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="subscriptions.length === 0" class="card p-12 text-center">
+      <div v-else-if="!hasAnySubscriptionDisplay" class="card p-12 text-center">
         <div
           class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
         >
@@ -24,6 +24,122 @@
       </div>
 
       <template v-else>
+        <section v-if="displayEntitlements.length > 0" class="space-y-4" data-testid="entitlement-section">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t('userSubscriptions.entitlements.title') }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
+                {{ t('userSubscriptions.entitlements.sharedQuota') }}
+              </p>
+            </div>
+          </div>
+
+          <div class="grid gap-6 lg:grid-cols-2">
+            <article
+              v-for="entitlement in displayEntitlements"
+              :key="entitlement.id"
+              class="overflow-hidden rounded-2xl border border-indigo-100 bg-white dark:border-indigo-900/50 dark:bg-dark-800"
+              data-testid="entitlement-card"
+            >
+              <div class="border-b border-gray-100 p-4 dark:border-dark-700">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="font-semibold text-gray-900 dark:text-white">
+                        {{ entitlement.plan_name || entitlement.name || `Entitlement #${entitlement.id}` }}
+                      </h3>
+                      <span
+                        :class="[
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          entitlementStatusClass(entitlement)
+                        ]"
+                      >
+                        {{ entitlementStatusLabel(entitlement) }}
+                      </span>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                      {{ t('userSubscriptions.entitlements.validity', {
+                        start: formatDateTime(entitlement.starts_at),
+                        end: formatDateTime(entitlement.expires_at)
+                      }) }}
+                    </p>
+                    <p
+                      v-if="entitlement.legacy_subscription_id"
+                      class="mt-1 text-xs text-gray-500 dark:text-dark-400"
+                    >
+                      {{ t('userSubscriptions.entitlements.legacyCompatible', {
+                        id: entitlement.legacy_subscription_id
+                      }) }}
+                    </p>
+                  </div>
+                  <div class="text-right text-xs text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.id', { id: entitlement.id }) }}
+                  </div>
+                </div>
+
+                <div class="mt-4">
+                  <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.authorizedGroups') }}
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <span
+                      v-for="group in entitlement.groups"
+                      :key="group.id"
+                      :class="[
+                        'rounded-md border px-2 py-1 text-xs font-medium',
+                        platformBadgeClass(group.platform || '')
+                      ]"
+                    >
+                      {{ group.name || `Group #${group.id}` }}
+                      <span class="ml-1 opacity-70">{{ platformLabel(group.platform || '') }}</span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-3 p-4">
+                <div
+                  v-for="window in entitlementUsageWindows(entitlement)"
+                  :key="window.key"
+                  class="rounded-xl border border-gray-100 p-3 dark:border-dark-700"
+                  :data-testid="`entitlement-${window.key}-quota`"
+                >
+                  <div class="mb-2 flex items-center justify-between gap-3">
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                      {{ window.label }}
+                    </span>
+                    <span class="text-sm text-gray-500 dark:text-dark-400">
+                      {{ formatEntitlementUsage(window.used, window.limit) }}
+                    </span>
+                  </div>
+                  <div class="relative h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                    <div
+                      class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                      :class="getProgressBarClass(window.used, window.limit)"
+                      :style="{ width: getProgressWidth(window.used, window.limit) }"
+                    ></div>
+                  </div>
+                  <p class="mt-2 text-xs text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.nextReset') }}:
+                    {{ formatEntitlementReset(window.resetsAt, window.resetsInSeconds) }}
+                  </p>
+                </div>
+
+                <div class="flex items-center justify-between rounded-xl bg-gray-50 px-3 py-2 text-sm dark:bg-dark-900">
+                  <span class="text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.overagePolicy') }}
+                  </span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200">
+                    {{ entitlementOveragePolicyLabel(entitlement.overage_policy) }}
+                  </span>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <div
           v-if="switchPreferences.length > 1"
           class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
@@ -343,12 +459,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
-import type { SubscriptionGroupPreference, UserSubscription } from '@/types'
+import type { SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
@@ -375,6 +491,7 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
+const entitlements = ref<UserEntitlement[]>([])
 const loading = ref(true)
 const switchPreferences = ref<SubscriptionGroupPreference[]>([])
 const savingPreferences = ref(false)
@@ -382,6 +499,18 @@ const advancingSubscriptionId = ref<number | null>(null)
 const draggedPreferenceGroupID = ref<number | null>(null)
 const monthlyCycleAdvanceThreshold = 0.9
 const monthlyCycleDurationMs = 30 * 24 * 60 * 60 * 1000
+
+const hasAnySubscriptionDisplay = computed(() => (
+  subscriptions.value.length > 0 || entitlements.value.length > 0
+))
+
+const displayEntitlements = computed(() => {
+  return [...entitlements.value].sort((a, b) => {
+    const statusDiff = entitlementStatusRank(a) - entitlementStatusRank(b)
+    if (statusDiff !== 0) return statusDiff
+    return new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
+  })
+})
 
 async function loadSubscriptions() {
   try {
@@ -397,6 +526,13 @@ async function loadSubscriptions() {
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
+  }
+
+  try {
+    entitlements.value = await subscriptionsAPI.getEntitlements()
+  } catch (error) {
+    entitlements.value = []
+    console.warn('Failed to load entitlements:', error)
   }
 }
 
@@ -537,6 +673,109 @@ function formatResetTime(windowStart: string | null, windowHours: number, starts
   const parts = getRemainingDurationParts(end)
 
   return parts ? formatDurationParts(parts) : t('userSubscriptions.windowNotActive')
+}
+
+type EntitlementWindowKey = 'daily' | 'weekly' | 'monthly'
+
+interface EntitlementUsageWindow {
+  key: EntitlementWindowKey
+  label: string
+  used: number
+  limit: number | null
+  resetsAt: string | null
+  resetsInSeconds: number | null
+}
+
+function entitlementStatusRank(entitlement: UserEntitlement): number {
+  const statusKey = entitlementStatusKey(entitlement)
+  if (statusKey === 'active') return 0
+  if (statusKey === 'future') return 1
+  if (statusKey === 'expired') return 2
+  return 3
+}
+
+function entitlementStatusKey(entitlement: UserEntitlement): string {
+  if (entitlement.status === 'active') {
+    const startsAt = new Date(entitlement.starts_at)
+    const expiresAt = new Date(entitlement.expires_at)
+    const now = new Date()
+    if (isValidDate(startsAt) && startsAt.getTime() > now.getTime()) return 'future'
+    if (isValidDate(expiresAt) && expiresAt.getTime() <= now.getTime()) return 'expired'
+    return 'active'
+  }
+  return entitlement.status || 'unknown'
+}
+
+function entitlementStatusLabel(entitlement: UserEntitlement): string {
+  return t(`userSubscriptions.entitlements.status.${entitlementStatusKey(entitlement)}`)
+}
+
+function entitlementStatusClass(entitlement: UserEntitlement): string {
+  const statusKey = entitlementStatusKey(entitlement)
+  if (statusKey === 'active') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+  if (statusKey === 'future') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+  if (statusKey === 'expired') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400'
+  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+}
+
+function entitlementUsageWindows(entitlement: UserEntitlement): EntitlementUsageWindow[] {
+  return [
+    {
+      key: 'daily',
+      label: t('userSubscriptions.entitlements.dailyQuota'),
+      used: entitlement.daily_usage_usd || 0,
+      limit: entitlement.daily_limit_usd,
+      resetsAt: entitlement.daily_resets_at,
+      resetsInSeconds: entitlement.daily_resets_in_seconds
+    },
+    {
+      key: 'weekly',
+      label: t('userSubscriptions.entitlements.weeklyQuota'),
+      used: entitlement.weekly_usage_usd || 0,
+      limit: entitlement.weekly_limit_usd,
+      resetsAt: entitlement.weekly_resets_at,
+      resetsInSeconds: entitlement.weekly_resets_in_seconds
+    },
+    {
+      key: 'monthly',
+      label: t('userSubscriptions.entitlements.monthlyQuota'),
+      used: entitlement.monthly_usage_usd || 0,
+      limit: entitlement.monthly_limit_usd,
+      resetsAt: entitlement.monthly_resets_at,
+      resetsInSeconds: entitlement.monthly_resets_in_seconds
+    }
+  ]
+}
+
+function formatEntitlementUsage(used: number, limit: number | null | undefined): string {
+  const usedValue = `$${(used || 0).toFixed(2)}`
+  if (limit == null) {
+    return `${usedValue} / ${t('userSubscriptions.entitlements.unlimitedQuota')}`
+  }
+  return `${usedValue} / $${limit.toFixed(2)}`
+}
+
+function formatEntitlementReset(resetsAt: string | null, resetsInSeconds: number | null): string {
+  if (typeof resetsInSeconds === 'number') {
+    if (resetsInSeconds <= 0) {
+      return t('userSubscriptions.entitlements.resetNow')
+    }
+    return formatPreciseDuration(resetsInSeconds)
+  }
+  if (resetsAt) {
+    return formatDateTime(resetsAt)
+  }
+  return t('userSubscriptions.windowNotActive')
+}
+
+function entitlementOveragePolicyLabel(policy: string): string {
+  if (policy === 'balance_fallback') {
+    return t('userSubscriptions.entitlements.overage.balanceFallback')
+  }
+  if (policy === 'block') {
+    return t('userSubscriptions.entitlements.overage.block')
+  }
+  return policy || '-'
 }
 
 function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {

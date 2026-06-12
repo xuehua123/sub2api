@@ -7,6 +7,7 @@ import { apiClient } from './client'
 import type {
   AdvanceMonthlyCycleResult,
   SubscriptionGroupPreference,
+  UserEntitlement,
   SubscriptionProgress,
   UserSubscription
 } from '@/types'
@@ -41,6 +42,30 @@ export async function getMySubscriptions(): Promise<UserSubscription[]> {
  */
 export async function getActiveSubscriptions(): Promise<UserSubscription[]> {
   const response = await apiClient.get<UserSubscription[]>('/subscriptions/active')
+  return response.data
+}
+
+/**
+ * Get current user's entitlement v2 records.
+ */
+export async function getEntitlements(): Promise<UserEntitlement[]> {
+  const response = await apiClient.get<UserEntitlement[]>('/entitlements')
+  return response.data
+}
+
+/**
+ * Get current user's active entitlement v2 records.
+ */
+export async function getActiveEntitlements(): Promise<UserEntitlement[]> {
+  const response = await apiClient.get<UserEntitlement[]>('/entitlements/active')
+  return response.data
+}
+
+/**
+ * Get progress for a specific entitlement v2 record.
+ */
+export async function getEntitlementProgress(entitlementId: number): Promise<UserEntitlement> {
+  const response = await apiClient.get<UserEntitlement>(`/entitlements/${entitlementId}/progress`)
   return response.data
 }
 
@@ -98,6 +123,9 @@ export async function advanceMonthlyCycle(
 export default {
   getMySubscriptions,
   getActiveSubscriptions,
+  getEntitlements,
+  getActiveEntitlements,
+  getEntitlementProgress,
   getSubscriptionsProgress,
   getSubscriptionSummary,
   getSubscriptionProgress,

@@ -7362,6 +7362,33 @@ export default {
     noActiveSubscriptions: '暂无有效订阅',
     noActiveSubscriptionsDesc: '您没有任何有效订阅。请联系管理员获取订阅。',
     failedToLoad: '加载订阅失败',
+    entitlements: {
+      title: '套餐权益',
+      id: '权益 #{id}',
+      sharedQuota: '授权分组共享同一组套餐额度',
+      authorizedGroups: '授权分组',
+      validity: '{start} - {end}',
+      legacyCompatible: '兼容旧订阅 #{id}',
+      dailyQuota: '每日额度',
+      weeklyQuota: '每周额度',
+      monthlyQuota: '每月额度',
+      nextReset: '下次重置',
+      resetNow: '现在可用',
+      unlimitedQuota: '无限额度',
+      overagePolicy: '超额策略',
+      overage: {
+        block: '额度用尽后阻止',
+        balanceFallback: '权益超额余额兜底'
+      },
+      status: {
+        active: '有效',
+        future: '未开始',
+        expired: '已过期',
+        revoked: '已撤销',
+        suspended: '已暂停',
+        unknown: '未知'
+      }
+    },
     status: {
       active: '有效',
       expired: '已过期',

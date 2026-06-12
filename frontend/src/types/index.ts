@@ -1611,6 +1611,40 @@ export interface UserSubscription {
   group?: Group
 }
 
+export interface UserEntitlementGroup {
+  id: number
+  name: string
+  platform: GroupPlatform | string
+}
+
+export interface UserEntitlement {
+  id: number
+  plan_id: number | null
+  plan_name: string
+  name: string
+  status: string
+  starts_at: string
+  expires_at: string
+  groups: UserEntitlementGroup[]
+  daily_limit_usd: number | null
+  daily_usage_usd: number
+  daily_window_start: string | null
+  daily_resets_at: string | null
+  daily_resets_in_seconds: number | null
+  weekly_limit_usd: number | null
+  weekly_usage_usd: number
+  weekly_window_start: string | null
+  weekly_resets_at: string | null
+  weekly_resets_in_seconds: number | null
+  monthly_limit_usd: number | null
+  monthly_usage_usd: number
+  monthly_window_start: string | null
+  monthly_resets_at: string | null
+  monthly_resets_in_seconds: number | null
+  overage_policy: 'block' | 'balance_fallback' | string
+  legacy_subscription_id: number | null
+}
+
 export interface SubscriptionProgress {
   subscription_id: number
   daily: {

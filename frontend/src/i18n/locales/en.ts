@@ -7209,6 +7209,33 @@ export default {
     noActiveSubscriptionsDesc:
       "You don't have any active subscriptions. Contact administrator to get one.",
     failedToLoad: 'Failed to load subscriptions',
+    entitlements: {
+      title: 'Plan Entitlements',
+      id: 'Entitlement #{id}',
+      sharedQuota: 'Shared quota across all authorized groups',
+      authorizedGroups: 'Authorized groups',
+      validity: '{start} - {end}',
+      legacyCompatible: 'Legacy subscription #{id}',
+      dailyQuota: 'Daily quota',
+      weeklyQuota: 'Weekly quota',
+      monthlyQuota: 'Monthly quota',
+      nextReset: 'Next reset',
+      resetNow: 'Available now',
+      unlimitedQuota: 'Unlimited',
+      overagePolicy: 'Overage policy',
+      overage: {
+        block: 'Block at quota',
+        balanceFallback: 'Entitlement Overage Balance Fallback'
+      },
+      status: {
+        active: 'Active',
+        future: 'Scheduled',
+        expired: 'Expired',
+        revoked: 'Revoked',
+        suspended: 'Suspended',
+        unknown: 'Unknown'
+      }
+    },
     status: {
       active: 'Active',
       expired: 'Expired',
