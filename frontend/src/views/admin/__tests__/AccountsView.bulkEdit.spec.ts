@@ -37,6 +37,12 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
+vi.mock('@/api/admin/ops', () => ({
+  opsAPI: {
+    getAccountHealth: vi.fn().mockResolvedValue({ items: [] })
+  }
+}))
+
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
     showError: vi.fn(),
@@ -48,6 +54,15 @@ vi.mock('@/stores/app', () => ({
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     token: 'test-token'
+  })
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    query: {}
+  }),
+  useRouter: () => ({
+    push: vi.fn(() => Promise.resolve())
   })
 }))
 
