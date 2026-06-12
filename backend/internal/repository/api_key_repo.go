@@ -54,6 +54,7 @@ func (r *apiKeyRepository) createWithClient(ctx context.Context, client *dbent.C
 		SetStatus(key.Status).
 		SetAutoSwitchGroupEnabled(key.AutoSwitchGroupEnabled).
 		SetNillableGroupID(key.GroupID).
+		SetNillableSubscriptionEntitlementID(key.SubscriptionEntitlementID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
@@ -75,6 +76,7 @@ func (r *apiKeyRepository) createWithClient(ctx context.Context, client *dbent.C
 func populateCreatedAPIKey(key *service.APIKey, created *dbent.APIKey) {
 	key.ID = created.ID
 	key.AutoSwitchGroupEnabled = created.AutoSwitchGroupEnabled
+	key.SubscriptionEntitlementID = created.SubscriptionEntitlementID
 	key.LastUsedAt = created.LastUsedAt
 	key.CreatedAt = created.CreatedAt
 	key.UpdatedAt = created.UpdatedAt
@@ -140,6 +142,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldID,
 			apikey.FieldUserID,
 			apikey.FieldGroupID,
+			apikey.FieldSubscriptionEntitlementID,
 			apikey.FieldAutoSwitchGroupEnabled,
 			apikey.FieldName,
 			apikey.FieldStatus,
@@ -246,6 +249,11 @@ func (r *apiKeyRepository) updateWithClient(ctx context.Context, client *dbent.C
 		builder.SetGroupID(*key.GroupID)
 	} else {
 		builder.ClearGroupID()
+	}
+	if key.SubscriptionEntitlementID != nil {
+		builder.SetSubscriptionEntitlementID(*key.SubscriptionEntitlementID)
+	} else {
+		builder.ClearSubscriptionEntitlementID()
 	}
 
 	// Expiration time
@@ -732,30 +740,31 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:                     m.ID,
-		UserID:                 m.UserID,
-		Key:                    m.Key,
-		Name:                   m.Name,
-		Status:                 m.Status,
-		AutoSwitchGroupEnabled: m.AutoSwitchGroupEnabled,
-		IPWhitelist:            m.IPWhitelist,
-		IPBlacklist:            m.IPBlacklist,
-		LastUsedAt:             m.LastUsedAt,
-		CreatedAt:              m.CreatedAt,
-		UpdatedAt:              m.UpdatedAt,
-		GroupID:                m.GroupID,
-		Quota:                  m.Quota,
-		QuotaUsed:              m.QuotaUsed,
-		ExpiresAt:              m.ExpiresAt,
-		RateLimit5h:            m.RateLimit5h,
-		RateLimit1d:            m.RateLimit1d,
-		RateLimit7d:            m.RateLimit7d,
-		Usage5h:                m.Usage5h,
-		Usage1d:                m.Usage1d,
-		Usage7d:                m.Usage7d,
-		Window5hStart:          m.Window5hStart,
-		Window1dStart:          m.Window1dStart,
-		Window7dStart:          m.Window7dStart,
+		ID:                        m.ID,
+		UserID:                    m.UserID,
+		Key:                       m.Key,
+		Name:                      m.Name,
+		Status:                    m.Status,
+		AutoSwitchGroupEnabled:    m.AutoSwitchGroupEnabled,
+		IPWhitelist:               m.IPWhitelist,
+		IPBlacklist:               m.IPBlacklist,
+		LastUsedAt:                m.LastUsedAt,
+		CreatedAt:                 m.CreatedAt,
+		UpdatedAt:                 m.UpdatedAt,
+		GroupID:                   m.GroupID,
+		SubscriptionEntitlementID: m.SubscriptionEntitlementID,
+		Quota:                     m.Quota,
+		QuotaUsed:                 m.QuotaUsed,
+		ExpiresAt:                 m.ExpiresAt,
+		RateLimit5h:               m.RateLimit5h,
+		RateLimit1d:               m.RateLimit1d,
+		RateLimit7d:               m.RateLimit7d,
+		Usage5h:                   m.Usage5h,
+		Usage1d:                   m.Usage1d,
+		Usage7d:                   m.Usage7d,
+		Window5hStart:             m.Window5hStart,
+		Window1dStart:             m.Window1dStart,
+		Window7dStart:             m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

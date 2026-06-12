@@ -30,13 +30,14 @@ func NewAPIKeyHandler(apiKeyService *service.APIKeyService) *APIKeyHandler {
 
 // CreateAPIKeyRequest represents the create API key request payload
 type CreateAPIKeyRequest struct {
-	Name          string   `json:"name" binding:"required"`
-	GroupID       *int64   `json:"group_id"`        // nullable
-	CustomKey     *string  `json:"custom_key"`      // 可选的自定义key
-	IPWhitelist   []string `json:"ip_whitelist"`    // IP 白名单
-	IPBlacklist   []string `json:"ip_blacklist"`    // IP 黑名单
-	Quota         *float64 `json:"quota"`           // 配额限制 (USD)
-	ExpiresInDays *int     `json:"expires_in_days"` // 过期天数
+	Name                      string   `json:"name" binding:"required"`
+	GroupID                   *int64   `json:"group_id"` // nullable
+	SubscriptionEntitlementID *int64   `json:"subscription_entitlement_id"`
+	CustomKey                 *string  `json:"custom_key"`      // 可选的自定义key
+	IPWhitelist               []string `json:"ip_whitelist"`    // IP 白名单
+	IPBlacklist               []string `json:"ip_blacklist"`    // IP 黑名单
+	Quota                     *float64 `json:"quota"`           // 配额限制 (USD)
+	ExpiresInDays             *int     `json:"expires_in_days"` // 过期天数
 
 	// Rate limit fields (0 = unlimited)
 	RateLimit5h *float64 `json:"rate_limit_5h"`
@@ -48,14 +49,15 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest represents the update API key request payload
 type UpdateAPIKeyRequest struct {
-	Name        string   `json:"name"`
-	GroupID     *int64   `json:"group_id"`
-	Status      string   `json:"status" binding:"omitempty,oneof=active inactive"`
-	IPWhitelist []string `json:"ip_whitelist"` // IP 白名单
-	IPBlacklist []string `json:"ip_blacklist"` // IP 黑名单
-	Quota       *float64 `json:"quota"`        // 配额限制 (USD), 0=无限制
-	ExpiresAt   *string  `json:"expires_at"`   // 过期时间 (ISO 8601)
-	ResetQuota  *bool    `json:"reset_quota"`  // 重置已用配额
+	Name                      string                 `json:"name"`
+	GroupID                   dto.NullableInt64Field `json:"group_id"`
+	SubscriptionEntitlementID dto.NullableInt64Field `json:"subscription_entitlement_id"`
+	Status                    string                 `json:"status" binding:"omitempty,oneof=active inactive"`
+	IPWhitelist               []string               `json:"ip_whitelist"` // IP 白名单
+	IPBlacklist               []string               `json:"ip_blacklist"` // IP 黑名单
+	Quota                     *float64               `json:"quota"`        // 配额限制 (USD), 0=无限制
+	ExpiresAt                 *string                `json:"expires_at"`   // 过期时间 (ISO 8601)
+	ResetQuota                *bool                  `json:"reset_quota"`  // 重置已用配额
 
 	// Rate limit fields (nil = no change, 0 = unlimited)
 	RateLimit5h         *float64 `json:"rate_limit_5h"`
@@ -64,6 +66,20 @@ type UpdateAPIKeyRequest struct {
 	ResetRateLimitUsage *bool    `json:"reset_rate_limit_usage"` // 重置限速用量
 
 	AutoSwitchGroupEnabled *bool `json:"auto_switch_group_enabled"`
+}
+
+type AvailableGroupEntitlementDTO struct {
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	PlanID         *int64    `json:"plan_id,omitempty"`
+	PrimaryGroupID *int64    `json:"primary_group_id,omitempty"`
+	StartsAt       time.Time `json:"starts_at"`
+	ExpiresAt      time.Time `json:"expires_at"`
+}
+
+type AvailableGroupDTO struct {
+	dto.Group
+	Entitlements []AvailableGroupEntitlementDTO `json:"entitlements,omitempty"`
 }
 
 // List handles listing user's API keys with pagination
@@ -158,13 +174,14 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 	}
 
 	svcReq := service.CreateAPIKeyRequest{
-		Name:                   req.Name,
-		GroupID:                req.GroupID,
-		CustomKey:              req.CustomKey,
-		IPWhitelist:            req.IPWhitelist,
-		IPBlacklist:            req.IPBlacklist,
-		ExpiresInDays:          req.ExpiresInDays,
-		AutoSwitchGroupEnabled: req.AutoSwitchGroupEnabled,
+		Name:                      req.Name,
+		GroupID:                   req.GroupID,
+		SubscriptionEntitlementID: req.SubscriptionEntitlementID,
+		CustomKey:                 req.CustomKey,
+		IPWhitelist:               req.IPWhitelist,
+		IPBlacklist:               req.IPBlacklist,
+		ExpiresInDays:             req.ExpiresInDays,
+		AutoSwitchGroupEnabled:    req.AutoSwitchGroupEnabled,
 	}
 	if req.Quota != nil {
 		svcReq.Quota = *req.Quota
@@ -223,7 +240,17 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 	if req.Name != "" {
 		svcReq.Name = &req.Name
 	}
-	svcReq.GroupID = req.GroupID
+	if req.GroupID.Set {
+		if req.GroupID.Value == nil {
+			svcReq.ClearGroup = true
+		} else {
+			svcReq.GroupID = req.GroupID.Value
+		}
+	}
+	if req.SubscriptionEntitlementID.Set {
+		svcReq.SubscriptionEntitlementIDSet = true
+		svcReq.SubscriptionEntitlementID = req.SubscriptionEntitlementID.Value
+	}
 	if req.Status != "" {
 		svcReq.Status = &req.Status
 	}
@@ -285,15 +312,30 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 		return
 	}
 
-	groups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	groups, err := h.apiKeyService.GetAvailableGroupsWithEntitlements(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	out := make([]dto.Group, 0, len(groups))
+	out := make([]AvailableGroupDTO, 0, len(groups))
 	for i := range groups {
-		out = append(out, *dto.GroupFromService(&groups[i]))
+		groupDTO := dto.GroupFromService(&groups[i].Group)
+		item := AvailableGroupDTO{Group: *groupDTO}
+		if len(groups[i].Entitlements) > 0 {
+			item.Entitlements = make([]AvailableGroupEntitlementDTO, 0, len(groups[i].Entitlements))
+			for _, ent := range groups[i].Entitlements {
+				item.Entitlements = append(item.Entitlements, AvailableGroupEntitlementDTO{
+					ID:             ent.ID,
+					Name:           ent.Name,
+					PlanID:         ent.PlanID,
+					PrimaryGroupID: ent.PrimaryGroupID,
+					StartsAt:       ent.StartsAt,
+					ExpiresAt:      ent.ExpiresAt,
+				})
+			}
+		}
+		out = append(out, item)
 	}
 	response.Success(c, out)
 }

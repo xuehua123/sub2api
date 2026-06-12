@@ -67,6 +67,90 @@ func (s *SubscriptionEntitlementService) Resolve(ctx context.Context, input Reso
 	return nil, ErrGroupNotAllowed
 }
 
+func (s *SubscriptionEntitlementService) ValidateBindingForGroup(ctx context.Context, userID, groupID, entitlementID int64, now time.Time) (*EntitlementResolution, error) {
+	if s == nil || s.entitlementRepo == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if userID <= 0 || groupID <= 0 || entitlementID <= 0 {
+		return nil, ErrGroupNotAllowed
+	}
+	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if ent.UserID != userID {
+		return nil, ErrGroupNotAllowed
+	}
+	return s.resolveBindingCandidate(ent, groupID, s.inputNow(now), "explicit_entitlement")
+}
+
+func (s *SubscriptionEntitlementService) ResolveBindingForGroup(ctx context.Context, userID, groupID int64, now time.Time) (*EntitlementResolution, error) {
+	if s == nil || s.entitlementRepo == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if userID <= 0 || groupID <= 0 {
+		return nil, ErrGroupNotAllowed
+	}
+	candidates, err := s.entitlementRepo.ListActiveCoveringGroupForUser(ctx, userID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if len(candidates) == 0 {
+		return nil, ErrGroupNotAllowed
+	}
+	sortEntitlementCandidatesForGroup(candidates, groupID)
+	resolutionNow := s.inputNow(now)
+	for i := range candidates {
+		ent := candidates[i]
+		resolution, err := s.resolveBindingCandidate(&ent, groupID, resolutionNow, "default_entitlement")
+		if err == nil {
+			return resolution, nil
+		}
+	}
+	return nil, ErrGroupNotAllowed
+}
+
+func (s *SubscriptionEntitlementService) ListActiveBindingsByUser(ctx context.Context, userID int64, now time.Time) ([]SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementRepo == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if userID <= 0 {
+		return nil, ErrGroupNotAllowed
+	}
+	candidates, err := s.entitlementRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	bindingNow := s.inputNow(now)
+	out := make([]SubscriptionEntitlement, 0, len(candidates))
+	for i := range candidates {
+		ent := candidates[i]
+		if validateEntitlementAvailabilityAt(&ent, bindingNow) == nil {
+			out = append(out, ent)
+		}
+	}
+	return out, nil
+}
+
+func (s *SubscriptionEntitlementService) resolveBindingCandidate(ent *SubscriptionEntitlement, groupID int64, now time.Time, reason string) (*EntitlementResolution, error) {
+	if ent == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if ent.UserID <= 0 || !entitlementCoversGroup(ent, groupID) {
+		return nil, ErrGroupNotAllowed
+	}
+	if err := validateEntitlementAvailabilityAt(ent, now); err != nil {
+		return nil, err
+	}
+	return &EntitlementResolution{
+		Entitlement: ent,
+		Group:       entitlementResolutionGroup(ent, groupID),
+		FromGroupID: groupID,
+		ToGroupID:   groupID,
+		Reason:      reason,
+	}, nil
+}
+
 func (s *SubscriptionEntitlementService) resolveCandidate(ctx context.Context, ent *SubscriptionEntitlement, groupID int64, additionalCostUSD float64, now time.Time, reason string) (*EntitlementResolution, error) {
 	if ent == nil {
 		return nil, ErrSubscriptionEntitlementNotFound
