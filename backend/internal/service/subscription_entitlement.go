@@ -59,6 +59,12 @@ type SubscriptionEntitlement struct {
 	OveragePolicy string
 	PlanSnapshot  map[string]any
 
+	PurchasePrice    *float64
+	PurchaseCurrency string
+	QuotaUSD         *float64
+	QuotaPeriod      string
+	UnitCostPerUSD   *float64
+
 	SourceID           *int64
 	SourceExternalID   *string
 	SourceRedeemCodeID *int64

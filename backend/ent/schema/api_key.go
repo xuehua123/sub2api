@@ -47,6 +47,10 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("subscription_entitlement_id").
 			Optional().
 			Nillable(),
+		field.String("access_source").
+			MaxLen(32).
+			Default("balance").
+			Comment("API key access source: balance or entitlement"),
 		field.Bool("auto_switch_group_enabled").
 			Default(true).
 			Comment("Automatically switch to another usable subscription group when the current subscription quota is exhausted"),
@@ -149,6 +153,7 @@ func (APIKey) Indexes() []ent.Index {
 		index.Fields("user_id"),
 		index.Fields("group_id"),
 		index.Fields("subscription_entitlement_id"),
+		index.Fields("access_source"),
 		index.Fields("status"),
 		index.Fields("deleted_at"),
 		index.Fields("last_used_at"),

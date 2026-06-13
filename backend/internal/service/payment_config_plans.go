@@ -689,7 +689,7 @@ func (s *PaymentConfigService) loadGroupsByID(ctx context.Context, ids []int64, 
 		return nil, err
 	}
 	for _, g := range groups {
-		if requireActiveSubscription && (g.Status != StatusActive || g.SubscriptionType != SubscriptionTypeSubscription) {
+		if requireActiveSubscription && (g.Status != StatusActive || !g.SubscriptionEnabled) {
 			continue
 		}
 		out[g.ID] = g
@@ -701,7 +701,8 @@ func (s *PaymentConfigService) loadSubscriptionGroupsByPlatforms(ctx context.Con
 	return s.entClient.Group.Query().
 		Where(
 			group.StatusEQ(StatusActive),
-			group.SubscriptionTypeEQ(SubscriptionTypeSubscription),
+			group.SubscriptionEnabledEQ(true),
+			group.PlanAutoGrantEnabledEQ(true),
 			group.PlatformIn(platforms...),
 		).
 		Order(group.BySortOrder(), group.ByID()).
@@ -712,7 +713,8 @@ func (s *PaymentConfigService) loadAllSubscriptionGroups(ctx context.Context) ([
 	return s.entClient.Group.Query().
 		Where(
 			group.StatusEQ(StatusActive),
-			group.SubscriptionTypeEQ(SubscriptionTypeSubscription),
+			group.SubscriptionEnabledEQ(true),
+			group.PlanAutoGrantEnabledEQ(true),
 		).
 		Order(group.BySortOrder(), group.ByID()).
 		All(ctx)

@@ -105,6 +105,21 @@ func SubscriptionType(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSubscriptionType, v))
 }
 
+// BalanceEnabled applies equality check predicate on the "balance_enabled" field. It's identical to BalanceEnabledEQ.
+func BalanceEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBalanceEnabled, v))
+}
+
+// SubscriptionEnabled applies equality check predicate on the "subscription_enabled" field. It's identical to SubscriptionEnabledEQ.
+func SubscriptionEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSubscriptionEnabled, v))
+}
+
+// PlanAutoGrantEnabled applies equality check predicate on the "plan_auto_grant_enabled" field. It's identical to PlanAutoGrantEnabledEQ.
+func PlanAutoGrantEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPlanAutoGrantEnabled, v))
+}
+
 // DailyLimitUsd applies equality check predicate on the "daily_limit_usd" field. It's identical to DailyLimitUsdEQ.
 func DailyLimitUsd(v float64) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDailyLimitUsd, v))
@@ -723,6 +738,36 @@ func SubscriptionTypeEqualFold(v string) predicate.Group {
 // SubscriptionTypeContainsFold applies the ContainsFold predicate on the "subscription_type" field.
 func SubscriptionTypeContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldSubscriptionType, v))
+}
+
+// BalanceEnabledEQ applies the EQ predicate on the "balance_enabled" field.
+func BalanceEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldBalanceEnabled, v))
+}
+
+// BalanceEnabledNEQ applies the NEQ predicate on the "balance_enabled" field.
+func BalanceEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldBalanceEnabled, v))
+}
+
+// SubscriptionEnabledEQ applies the EQ predicate on the "subscription_enabled" field.
+func SubscriptionEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldSubscriptionEnabled, v))
+}
+
+// SubscriptionEnabledNEQ applies the NEQ predicate on the "subscription_enabled" field.
+func SubscriptionEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldSubscriptionEnabled, v))
+}
+
+// PlanAutoGrantEnabledEQ applies the EQ predicate on the "plan_auto_grant_enabled" field.
+func PlanAutoGrantEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldPlanAutoGrantEnabled, v))
+}
+
+// PlanAutoGrantEnabledNEQ applies the NEQ predicate on the "plan_auto_grant_enabled" field.
+func PlanAutoGrantEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldPlanAutoGrantEnabled, v))
 }
 
 // DailyLimitUsdEQ applies the EQ predicate on the "daily_limit_usd" field.

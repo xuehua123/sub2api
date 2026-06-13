@@ -330,6 +330,8 @@ func createPaymentConfigPlanTestGroup(t *testing.T, client *dbent.Client, name, 
 		SetPlatform(platform).
 		SetStatus(StatusActive).
 		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetRateMultiplier(1).
 		SetSortOrder(sortOrder).
 		Save(context.Background())

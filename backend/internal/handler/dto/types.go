@@ -57,6 +57,7 @@ type APIKey struct {
 	Name                      string     `json:"name"`
 	GroupID                   *int64     `json:"group_id"`
 	SubscriptionEntitlementID *int64     `json:"subscription_entitlement_id,omitempty"`
+	AccessSource              string     `json:"access_source"`
 	AutoSwitchGroupEnabled    bool       `json:"auto_switch_group_enabled"`
 	Status                    string     `json:"status"`
 	IPWhitelist               []string   `json:"ip_whitelist"`
@@ -95,10 +96,13 @@ type Group struct {
 	IsExclusive    bool    `json:"is_exclusive"`
 	Status         string  `json:"status"`
 
-	SubscriptionType string   `json:"subscription_type"`
-	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	SubscriptionType     string   `json:"subscription_type"`
+	BalanceEnabled       bool     `json:"balance_enabled"`
+	SubscriptionEnabled  bool     `json:"subscription_enabled"`
+	PlanAutoGrantEnabled bool     `json:"plan_auto_grant_enabled"`
+	DailyLimitUSD        *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD       *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD      *float64 `json:"monthly_limit_usd"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool     `json:"allow_image_generation"`

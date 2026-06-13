@@ -108,6 +108,12 @@ const (
 	SubscriptionStatusSuspended = domain.SubscriptionStatusSuspended
 )
 
+// API key access source constants.
+const (
+	APIKeyAccessSourceBalance     = "balance"
+	APIKeyAccessSourceEntitlement = "entitlement"
+)
+
 // LinuxDoConnectSyntheticEmailDomain 是 LinuxDo Connect 用户的合成邮箱后缀（RFC 保留域名）。
 const LinuxDoConnectSyntheticEmailDomain = "@linuxdo-connect.invalid"
 

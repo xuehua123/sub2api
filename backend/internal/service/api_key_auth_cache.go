@@ -9,6 +9,7 @@ type APIKeyAuthSnapshot struct {
 	UserID                    int64                    `json:"user_id"`
 	GroupID                   *int64                   `json:"group_id,omitempty"`
 	SubscriptionEntitlementID *int64                   `json:"subscription_entitlement_id,omitempty"`
+	AccessSource              string                   `json:"access_source"`
 	Name                      string                   `json:"name"`
 	AutoSwitchGroupEnabled    bool                     `json:"auto_switch_group_enabled"`
 	Status                    string                   `json:"status"`
@@ -64,6 +65,9 @@ type APIKeyAuthGroupSnapshot struct {
 	IsExclusive                     bool     `json:"is_exclusive"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`
+	BalanceEnabled                  bool     `json:"balance_enabled"`
+	SubscriptionEnabled             bool     `json:"subscription_enabled"`
+	PlanAutoGrantEnabled            bool     `json:"plan_auto_grant_enabled"`
 	RateMultiplier                  float64  `json:"rate_multiplier"`
 	DailyLimitUSD                   *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                  *float64 `json:"weekly_limit_usd,omitempty"`

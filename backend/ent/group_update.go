@@ -176,6 +176,48 @@ func (_u *GroupUpdate) SetNillableSubscriptionType(v *string) *GroupUpdate {
 	return _u
 }
 
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (_u *GroupUpdate) SetBalanceEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetBalanceEnabled(v)
+	return _u
+}
+
+// SetNillableBalanceEnabled sets the "balance_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableBalanceEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetBalanceEnabled(*v)
+	}
+	return _u
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (_u *GroupUpdate) SetSubscriptionEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetSubscriptionEnabled(v)
+	return _u
+}
+
+// SetNillableSubscriptionEnabled sets the "subscription_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableSubscriptionEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetSubscriptionEnabled(*v)
+	}
+	return _u
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (_u *GroupUpdate) SetPlanAutoGrantEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetPlanAutoGrantEnabled(v)
+	return _u
+}
+
+// SetNillablePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillablePlanAutoGrantEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetPlanAutoGrantEnabled(*v)
+	}
+	return _u
+}
+
 // SetDailyLimitUsd sets the "daily_limit_usd" field.
 func (_u *GroupUpdate) SetDailyLimitUsd(v float64) *GroupUpdate {
 	_u.mutation.ResetDailyLimitUsd()
@@ -1139,6 +1181,15 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.BalanceEnabled(); ok {
+		_spec.SetField(group.FieldBalanceEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SubscriptionEnabled(); ok {
+		_spec.SetField(group.FieldSubscriptionEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PlanAutoGrantEnabled(); ok {
+		_spec.SetField(group.FieldPlanAutoGrantEnabled, field.TypeBool, value)
+	}
 	if value, ok := _u.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)
 	}
@@ -1933,6 +1984,48 @@ func (_u *GroupUpdateOne) SetSubscriptionType(v string) *GroupUpdateOne {
 func (_u *GroupUpdateOne) SetNillableSubscriptionType(v *string) *GroupUpdateOne {
 	if v != nil {
 		_u.SetSubscriptionType(*v)
+	}
+	return _u
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (_u *GroupUpdateOne) SetBalanceEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetBalanceEnabled(v)
+	return _u
+}
+
+// SetNillableBalanceEnabled sets the "balance_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableBalanceEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetBalanceEnabled(*v)
+	}
+	return _u
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (_u *GroupUpdateOne) SetSubscriptionEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetSubscriptionEnabled(v)
+	return _u
+}
+
+// SetNillableSubscriptionEnabled sets the "subscription_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableSubscriptionEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionEnabled(*v)
+	}
+	return _u
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (_u *GroupUpdateOne) SetPlanAutoGrantEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetPlanAutoGrantEnabled(v)
+	return _u
+}
+
+// SetNillablePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillablePlanAutoGrantEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetPlanAutoGrantEnabled(*v)
 	}
 	return _u
 }
@@ -2929,6 +3022,15 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.BalanceEnabled(); ok {
+		_spec.SetField(group.FieldBalanceEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.SubscriptionEnabled(); ok {
+		_spec.SetField(group.FieldSubscriptionEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PlanAutoGrantEnabled(); ok {
+		_spec.SetField(group.FieldPlanAutoGrantEnabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)

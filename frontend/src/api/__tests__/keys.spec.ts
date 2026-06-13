@@ -22,6 +22,7 @@ describe('keys api', () => {
     await keysAPI.createWithPayload({
       name: 'subscription key',
       group_id: 20,
+      access_source: 'entitlement',
       subscription_entitlement_id: 101,
       auto_switch_group_enabled: true,
     })
@@ -29,7 +30,26 @@ describe('keys api', () => {
     expect(post).toHaveBeenCalledWith('/keys', {
       name: 'subscription key',
       group_id: 20,
+      access_source: 'entitlement',
       subscription_entitlement_id: 101,
+      auto_switch_group_enabled: true,
+    })
+  })
+
+  it('creates API keys with explicit balance access source', async () => {
+    await keysAPI.createWithPayload({
+      name: 'balance key',
+      group_id: 10,
+      access_source: 'balance',
+      subscription_entitlement_id: null,
+      auto_switch_group_enabled: true,
+    })
+
+    expect(post).toHaveBeenCalledWith('/keys', {
+      name: 'balance key',
+      group_id: 10,
+      access_source: 'balance',
+      subscription_entitlement_id: null,
       auto_switch_group_enabled: true,
     })
   })

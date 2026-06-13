@@ -95,6 +95,11 @@ func SubscriptionEntitlementID(v int64) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
 }
 
+// AccessSource applies equality check predicate on the "access_source" field. It's identical to AccessSourceEQ.
+func AccessSource(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAccessSource, v))
+}
+
 // AutoSwitchGroupEnabled applies equality check predicate on the "auto_switch_group_enabled" field. It's identical to AutoSwitchGroupEnabledEQ.
 func AutoSwitchGroupEnabled(v bool) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldAutoSwitchGroupEnabled, v))
@@ -508,6 +513,71 @@ func SubscriptionEntitlementIDIsNil() predicate.APIKey {
 // SubscriptionEntitlementIDNotNil applies the NotNil predicate on the "subscription_entitlement_id" field.
 func SubscriptionEntitlementIDNotNil() predicate.APIKey {
 	return predicate.APIKey(sql.FieldNotNull(FieldSubscriptionEntitlementID))
+}
+
+// AccessSourceEQ applies the EQ predicate on the "access_source" field.
+func AccessSourceEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAccessSource, v))
+}
+
+// AccessSourceNEQ applies the NEQ predicate on the "access_source" field.
+func AccessSourceNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldAccessSource, v))
+}
+
+// AccessSourceIn applies the In predicate on the "access_source" field.
+func AccessSourceIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldAccessSource, vs...))
+}
+
+// AccessSourceNotIn applies the NotIn predicate on the "access_source" field.
+func AccessSourceNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldAccessSource, vs...))
+}
+
+// AccessSourceGT applies the GT predicate on the "access_source" field.
+func AccessSourceGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldAccessSource, v))
+}
+
+// AccessSourceGTE applies the GTE predicate on the "access_source" field.
+func AccessSourceGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldAccessSource, v))
+}
+
+// AccessSourceLT applies the LT predicate on the "access_source" field.
+func AccessSourceLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldAccessSource, v))
+}
+
+// AccessSourceLTE applies the LTE predicate on the "access_source" field.
+func AccessSourceLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldAccessSource, v))
+}
+
+// AccessSourceContains applies the Contains predicate on the "access_source" field.
+func AccessSourceContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldAccessSource, v))
+}
+
+// AccessSourceHasPrefix applies the HasPrefix predicate on the "access_source" field.
+func AccessSourceHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldAccessSource, v))
+}
+
+// AccessSourceHasSuffix applies the HasSuffix predicate on the "access_source" field.
+func AccessSourceHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldAccessSource, v))
+}
+
+// AccessSourceEqualFold applies the EqualFold predicate on the "access_source" field.
+func AccessSourceEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldAccessSource, v))
+}
+
+// AccessSourceContainsFold applies the ContainsFold predicate on the "access_source" field.
+func AccessSourceContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldAccessSource, v))
 }
 
 // AutoSwitchGroupEnabledEQ applies the EQ predicate on the "auto_switch_group_enabled" field.

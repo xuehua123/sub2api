@@ -164,6 +164,48 @@ func (_c *GroupCreate) SetNillableSubscriptionType(v *string) *GroupCreate {
 	return _c
 }
 
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (_c *GroupCreate) SetBalanceEnabled(v bool) *GroupCreate {
+	_c.mutation.SetBalanceEnabled(v)
+	return _c
+}
+
+// SetNillableBalanceEnabled sets the "balance_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableBalanceEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetBalanceEnabled(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (_c *GroupCreate) SetSubscriptionEnabled(v bool) *GroupCreate {
+	_c.mutation.SetSubscriptionEnabled(v)
+	return _c
+}
+
+// SetNillableSubscriptionEnabled sets the "subscription_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSubscriptionEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetSubscriptionEnabled(*v)
+	}
+	return _c
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (_c *GroupCreate) SetPlanAutoGrantEnabled(v bool) *GroupCreate {
+	_c.mutation.SetPlanAutoGrantEnabled(v)
+	return _c
+}
+
+// SetNillablePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillablePlanAutoGrantEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetPlanAutoGrantEnabled(*v)
+	}
+	return _c
+}
+
 // SetDailyLimitUsd sets the "daily_limit_usd" field.
 func (_c *GroupCreate) SetDailyLimitUsd(v float64) *GroupCreate {
 	_c.mutation.SetDailyLimitUsd(v)
@@ -719,6 +761,18 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
 	}
+	if _, ok := _c.mutation.BalanceEnabled(); !ok {
+		v := group.DefaultBalanceEnabled
+		_c.mutation.SetBalanceEnabled(v)
+	}
+	if _, ok := _c.mutation.SubscriptionEnabled(); !ok {
+		v := group.DefaultSubscriptionEnabled
+		_c.mutation.SetSubscriptionEnabled(v)
+	}
+	if _, ok := _c.mutation.PlanAutoGrantEnabled(); !ok {
+		v := group.DefaultPlanAutoGrantEnabled
+		_c.mutation.SetPlanAutoGrantEnabled(v)
+	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		v := group.DefaultDefaultValidityDays
 		_c.mutation.SetDefaultValidityDays(v)
@@ -831,6 +885,15 @@ func (_c *GroupCreate) check() error {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.BalanceEnabled(); !ok {
+		return &ValidationError{Name: "balance_enabled", err: errors.New(`ent: missing required field "Group.balance_enabled"`)}
+	}
+	if _, ok := _c.mutation.SubscriptionEnabled(); !ok {
+		return &ValidationError{Name: "subscription_enabled", err: errors.New(`ent: missing required field "Group.subscription_enabled"`)}
+	}
+	if _, ok := _c.mutation.PlanAutoGrantEnabled(); !ok {
+		return &ValidationError{Name: "plan_auto_grant_enabled", err: errors.New(`ent: missing required field "Group.plan_auto_grant_enabled"`)}
 	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		return &ValidationError{Name: "default_validity_days", err: errors.New(`ent: missing required field "Group.default_validity_days"`)}
@@ -951,6 +1014,18 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
 		_node.SubscriptionType = value
+	}
+	if value, ok := _c.mutation.BalanceEnabled(); ok {
+		_spec.SetField(group.FieldBalanceEnabled, field.TypeBool, value)
+		_node.BalanceEnabled = value
+	}
+	if value, ok := _c.mutation.SubscriptionEnabled(); ok {
+		_spec.SetField(group.FieldSubscriptionEnabled, field.TypeBool, value)
+		_node.SubscriptionEnabled = value
+	}
+	if value, ok := _c.mutation.PlanAutoGrantEnabled(); ok {
+		_spec.SetField(group.FieldPlanAutoGrantEnabled, field.TypeBool, value)
+		_node.PlanAutoGrantEnabled = value
 	}
 	if value, ok := _c.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)
@@ -1403,6 +1478,42 @@ func (u *GroupUpsert) SetSubscriptionType(v string) *GroupUpsert {
 // UpdateSubscriptionType sets the "subscription_type" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateSubscriptionType() *GroupUpsert {
 	u.SetExcluded(group.FieldSubscriptionType)
+	return u
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsert) SetBalanceEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldBalanceEnabled, v)
+	return u
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateBalanceEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldBalanceEnabled)
+	return u
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsert) SetSubscriptionEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldSubscriptionEnabled, v)
+	return u
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSubscriptionEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldSubscriptionEnabled)
+	return u
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsert) SetPlanAutoGrantEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldPlanAutoGrantEnabled, v)
+	return u
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdatePlanAutoGrantEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldPlanAutoGrantEnabled)
 	return u
 }
 
@@ -2021,6 +2132,48 @@ func (u *GroupUpsertOne) SetSubscriptionType(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateSubscriptionType() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsertOne) SetBalanceEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceEnabled(v)
+	})
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateBalanceEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceEnabled()
+	})
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsertOne) SetSubscriptionEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSubscriptionEnabled(v)
+	})
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSubscriptionEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSubscriptionEnabled()
+	})
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsertOne) SetPlanAutoGrantEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPlanAutoGrantEnabled(v)
+	})
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdatePlanAutoGrantEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePlanAutoGrantEnabled()
 	})
 }
 
@@ -2876,6 +3029,48 @@ func (u *GroupUpsertBulk) SetSubscriptionType(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateSubscriptionType() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsertBulk) SetBalanceEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceEnabled(v)
+	})
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateBalanceEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceEnabled()
+	})
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsertBulk) SetSubscriptionEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSubscriptionEnabled(v)
+	})
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSubscriptionEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSubscriptionEnabled()
+	})
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsertBulk) SetPlanAutoGrantEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPlanAutoGrantEnabled(v)
+	})
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdatePlanAutoGrantEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePlanAutoGrantEnabled()
 	})
 }
 

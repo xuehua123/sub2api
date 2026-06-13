@@ -125,6 +125,8 @@ func createAdminPaymentPlanTestGroup(t *testing.T, client *dbent.Client, name, p
 		SetPlatform(platform).
 		SetStatus(service.StatusActive).
 		SetSubscriptionType(service.SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetRateMultiplier(1).
 		SetSortOrder(sortOrder).
 		Save(context.Background())

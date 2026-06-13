@@ -1058,11 +1058,13 @@ func (s *PaymentService) doSubV2(ctx context.Context, o *dbent.PaymentOrder) err
 	}
 
 	input := AssignEntitlementFromPlanInput{
-		UserID:     o.UserID,
-		PlanID:     *o.PlanID,
-		OrderID:    o.ID,
-		SourceType: SubscriptionEntitlementSourcePaymentOrder,
-		Notes:      subscriptionAssignmentMarker(o.ID),
+		UserID:           o.UserID,
+		PlanID:           *o.PlanID,
+		OrderID:          o.ID,
+		SourceType:       SubscriptionEntitlementSourcePaymentOrder,
+		Notes:            subscriptionAssignmentMarker(o.ID),
+		PurchasePrice:    &o.PayAmount,
+		PurchaseCurrency: PaymentOrderCurrency(o),
 	}
 	if o.SubscriptionDays != nil && *o.SubscriptionDays > 0 {
 		input.ValidityDaysOverride = *o.SubscriptionDays

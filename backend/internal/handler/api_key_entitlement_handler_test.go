@@ -89,6 +89,11 @@ func TestAPIKeyHandler_GetAvailableGroupsEntitlementAware(t *testing.T) {
 	require.Len(t, entitlements, 1)
 	entitlement := entitlements[0].(map[string]any)
 	require.Equal(t, float64(fx.entitlementID), entitlement["id"])
+	require.Equal(t, 29.9, entitlement["purchase_price"])
+	require.Equal(t, "CNY", entitlement["purchase_currency"])
+	require.Equal(t, 10.0, entitlement["quota_usd"])
+	require.Equal(t, "monthly", entitlement["quota_period"])
+	require.InDelta(t, 2.99, entitlement["unit_cost_per_usd"], 0.000001)
 }
 
 func TestAPIKeyHandler_GetAvailableGroupsV2OffKeepsLegacyShape(t *testing.T) {
@@ -155,7 +160,8 @@ func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHand
 	groupRepo := repository.NewGroupRepository(client, db)
 	userSubRepo := repository.NewUserSubscriptionRepository(client)
 	entitlementRepo := repository.NewSubscriptionEntitlementRepository(client)
-	entitlementSvc := service.NewSubscriptionEntitlementService(entitlementRepo, nil)
+	entitlementPlanRepo := repository.NewSubscriptionEntitlementPlanRepository(client)
+	entitlementSvc := service.NewSubscriptionEntitlementService(entitlementRepo, entitlementPlanRepo)
 	now := time.Now().UTC()
 	entitlementSvc.SetNowFunc(func() time.Time { return now })
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, nil, nil, &config.Config{})
@@ -190,13 +196,25 @@ func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHand
 
 func mustCreateHandlerEntitlement(t *testing.T, client *dbent.Client, userID, groupID int64, now time.Time, name string) int64 {
 	t.Helper()
+	monthlyLimit := 10.0
+	entitlementMonthlyLimit := 0.05
+	plan, err := client.SubscriptionPlan.Create().
+		SetGroupID(groupID).
+		SetName(name + " plan").
+		SetPrice(29.9).
+		SetValidityDays(30).
+		SetMonthlyLimitUsd(monthlyLimit).
+		Save(context.Background())
+	require.NoError(t, err)
 	entitlementRepo := repository.NewSubscriptionEntitlementRepository(client)
 	ent := &service.SubscriptionEntitlement{
-		UserID:    userID,
-		Name:      name,
-		Status:    service.SubscriptionStatusActive,
-		StartsAt:  now.Add(-48 * time.Hour),
-		ExpiresAt: now.Add(48 * time.Hour),
+		UserID:          userID,
+		PlanID:          &plan.ID,
+		Name:            name,
+		Status:          service.SubscriptionStatusActive,
+		StartsAt:        now.Add(-48 * time.Hour),
+		ExpiresAt:       now.Add(48 * time.Hour),
+		MonthlyLimitUSD: &entitlementMonthlyLimit,
 	}
 	require.NoError(t, entitlementRepo.Create(context.Background(), ent, []int64{groupID}))
 	return ent.ID

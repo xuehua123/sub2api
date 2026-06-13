@@ -239,6 +239,28 @@ func TestMigration154ClearsInvalidAPIKeyEntitlementBindingsConservatively(t *tes
 	require.NotContains(t, sql, "DROP COLUMN")
 }
 
+func TestMigration155AddsAccessSourceAndGroupCapabilitiesAdditively(t *testing.T) {
+	content, err := FS.ReadFile("155_access_source_group_capabilities.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS access_source VARCHAR(32) NOT NULL DEFAULT 'balance'")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS balance_enabled BOOLEAN NOT NULL DEFAULT TRUE")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS subscription_enabled BOOLEAN NOT NULL DEFAULT FALSE")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS plan_auto_grant_enabled BOOLEAN NOT NULL DEFAULT FALSE")
+	require.Contains(t, sql, "WHEN subscription_entitlement_id IS NOT NULL THEN 'entitlement'")
+	require.Contains(t, sql, "ELSE 'balance'")
+	require.Contains(t, sql, "subscription_type = 'standard'")
+	require.Contains(t, sql, "subscription_type = 'subscription'")
+	require.Contains(t, sql, "COALESCE(is_exclusive, FALSE) = FALSE")
+	require.Contains(t, sql, "status = 'active'")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_api_keys_access_source")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_groups_subscription_capabilities")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+	require.NotContains(t, sql, "SET subscription_entitlement_id")
+}
+
 func TestSubscriptionEntitlementsV2PreflightRunbookCoversSwitchAuditQueries(t *testing.T) {
 	path := filepath.Join("..", "..", "docs", "plans", "subscription-entitlements-v2-preflight-sql.md")
 	content, err := os.ReadFile(path)

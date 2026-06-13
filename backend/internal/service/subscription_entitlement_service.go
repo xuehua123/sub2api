@@ -29,6 +29,8 @@ type AssignEntitlementFromPlanInput struct {
 	AssignedBy           int64
 	AssignedAt           time.Time
 	Notes                string
+	PurchasePrice        *float64
+	PurchaseCurrency     string
 
 	Now time.Time
 }
@@ -93,6 +95,7 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 	}
 
 	ent := newEntitlementFromPlan(plan, input.UserID, groupIDs[0], validityDays, input.Notes, source, now)
+	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency)
 	fulfillment := newEntitlementFulfillment(ent, validityDays, source)
 	if err := s.entitlementRepo.CreateWithFulfillment(ctx, ent, groupIDs, fulfillment); err != nil {
 		if errors.Is(err, ErrSubscriptionEntitlementAlreadyExists) {
@@ -506,6 +509,8 @@ func entitlementPlanSnapshot(plan *SubscriptionEntitlementPlan) map[string]any {
 	return map[string]any{
 		"plan_id":           plan.ID,
 		"name":              plan.Name,
+		"price":             plan.Price,
+		"currency":          "CNY",
 		"validity_days":     plan.ValidityDays,
 		"validity_unit":     normalizeValidityUnit(plan.ValidityUnit),
 		"access_scope":      plan.AccessScope,
@@ -514,6 +519,16 @@ func entitlementPlanSnapshot(plan *SubscriptionEntitlementPlan) map[string]any {
 		"weekly_limit_usd":  floatPtrSnapshot(plan.WeeklyLimitUSD),
 		"monthly_limit_usd": floatPtrSnapshot(plan.MonthlyLimitUSD),
 		"overage_policy":    normalizeEntitlementOveragePolicy(plan.OveragePolicy),
+	}
+}
+
+func applyEntitlementPurchaseSnapshot(snapshot map[string]any, purchasePrice *float64, purchaseCurrency string) {
+	if snapshot == nil || purchasePrice == nil || *purchasePrice <= 0 {
+		return
+	}
+	snapshot["purchase_price"] = *purchasePrice
+	if currency := strings.ToUpper(strings.TrimSpace(purchaseCurrency)); currency != "" {
+		snapshot["purchase_currency"] = currency
 	}
 }
 

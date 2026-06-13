@@ -126,6 +126,7 @@ func (s *SubscriptionEntitlementService) ListActiveBindingsByUser(ctx context.Co
 	for i := range candidates {
 		ent := candidates[i]
 		if validateEntitlementAvailabilityAt(&ent, bindingNow) == nil {
+			s.attachEntitlementEconomics(ctx, &ent)
 			out = append(out, ent)
 		}
 	}

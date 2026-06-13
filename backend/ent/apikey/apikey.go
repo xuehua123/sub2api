@@ -31,6 +31,8 @@ const (
 	FieldGroupID = "group_id"
 	// FieldSubscriptionEntitlementID holds the string denoting the subscription_entitlement_id field in the database.
 	FieldSubscriptionEntitlementID = "subscription_entitlement_id"
+	// FieldAccessSource holds the string denoting the access_source field in the database.
+	FieldAccessSource = "access_source"
 	// FieldAutoSwitchGroupEnabled holds the string denoting the auto_switch_group_enabled field in the database.
 	FieldAutoSwitchGroupEnabled = "auto_switch_group_enabled"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -116,6 +118,7 @@ var Columns = []string{
 	FieldName,
 	FieldGroupID,
 	FieldSubscriptionEntitlementID,
+	FieldAccessSource,
 	FieldAutoSwitchGroupEnabled,
 	FieldStatus,
 	FieldLastUsedAt,
@@ -163,6 +166,10 @@ var (
 	KeyValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultAccessSource holds the default value on creation for the "access_source" field.
+	DefaultAccessSource string
+	// AccessSourceValidator is a validator for the "access_source" field. It is called by the builders before save.
+	AccessSourceValidator func(string) error
 	// DefaultAutoSwitchGroupEnabled holds the default value on creation for the "auto_switch_group_enabled" field.
 	DefaultAutoSwitchGroupEnabled bool
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -233,6 +240,11 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 // BySubscriptionEntitlementID orders the results by the subscription_entitlement_id field.
 func BySubscriptionEntitlementID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionEntitlementID, opts...).ToFunc()
+}
+
+// ByAccessSource orders the results by the access_source field.
+func ByAccessSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccessSource, opts...).ToFunc()
 }
 
 // ByAutoSwitchGroupEnabled orders the results by the auto_switch_group_enabled field.

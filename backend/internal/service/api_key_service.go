@@ -21,13 +21,14 @@ import (
 )
 
 var (
-	ErrAPIKeyNotFound     = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
-	ErrGroupNotAllowed    = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
-	ErrAPIKeyExists       = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
-	ErrAPIKeyTooShort     = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
-	ErrAPIKeyInvalidChars = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
-	ErrAPIKeyRateLimited  = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
-	ErrInvalidIPPattern   = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
+	ErrAPIKeyNotFound      = infraerrors.NotFound("API_KEY_NOT_FOUND", "api key not found")
+	ErrGroupNotAllowed     = infraerrors.Forbidden("GROUP_NOT_ALLOWED", "user is not allowed to bind this group")
+	ErrAPIKeyExists        = infraerrors.Conflict("API_KEY_EXISTS", "api key already exists")
+	ErrAPIKeyTooShort      = infraerrors.BadRequest("API_KEY_TOO_SHORT", "api key must be at least 16 characters")
+	ErrAPIKeyInvalidChars  = infraerrors.BadRequest("API_KEY_INVALID_CHARS", "api key can only contain letters, numbers, underscores, and hyphens")
+	ErrAPIKeyRateLimited   = infraerrors.TooManyRequests("API_KEY_RATE_LIMITED", "too many failed attempts, please try again later")
+	ErrInvalidIPPattern    = infraerrors.BadRequest("INVALID_IP_PATTERN", "invalid IP or CIDR pattern")
+	ErrInvalidAccessSource = infraerrors.BadRequest("INVALID_ACCESS_SOURCE", "access_source must be balance or entitlement")
 	// ErrAPIKeyExpired        = infraerrors.Forbidden("API_KEY_EXPIRED", "api key has expired")
 	ErrAPIKeyExpired = infraerrors.Forbidden("API_KEY_EXPIRED", "api key 已过期")
 	// ErrAPIKeyQuotaExhausted = infraerrors.TooManyRequests("API_KEY_QUOTA_EXHAUSTED", "api key quota exhausted")
@@ -157,6 +158,7 @@ type CreateAPIKeyRequest struct {
 	Name                      string   `json:"name"`
 	GroupID                   *int64   `json:"group_id"`
 	SubscriptionEntitlementID *int64   `json:"subscription_entitlement_id"`
+	AccessSource              *string  `json:"access_source"`
 	CustomKey                 *string  `json:"custom_key"`   // 可选的自定义key
 	IPWhitelist               []string `json:"ip_whitelist"` // IP 白名单
 	IPBlacklist               []string `json:"ip_blacklist"` // IP 黑名单
@@ -180,6 +182,7 @@ type UpdateAPIKeyRequest struct {
 	ClearGroup                   bool     `json:"-"`
 	SubscriptionEntitlementID    *int64   `json:"subscription_entitlement_id"`
 	SubscriptionEntitlementIDSet bool     `json:"-"`
+	AccessSource                 *string  `json:"access_source"`
 	Status                       *string  `json:"status"`
 	IPWhitelist                  []string `json:"ip_whitelist"` // IP 白名单（空数组清空）
 	IPBlacklist                  []string `json:"ip_blacklist"` // IP 黑名单（空数组清空）
@@ -344,7 +347,7 @@ func (s *APIKeyService) incrementAPIKeyErrorCount(ctx context.Context, userID in
 // 对于标准类型分组：使用原有的 AllowedGroups 和 IsExclusive 逻辑
 func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group *Group) bool {
 	// 订阅类型分组：需要有效订阅
-	if group.IsSubscriptionType() {
+	if group.SupportsSubscriptionAccess() {
 		if s.subscriptionEntitlementsRuntime(ctx).Enabled {
 			return s.subscriptionEntitlementSvc != nil
 		}
@@ -359,6 +362,73 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 }
 
 // Create 创建API Key
+func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, user *User, group *Group, accessSource string, explicitEntitlementID *int64, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
+	if !runtime.Enabled {
+		return s.resolveCreateSubscriptionEntitlementID(ctx, user, group, explicitEntitlementID, runtime)
+	}
+	switch accessSource {
+	case APIKeyAccessSourceBalance:
+		if err := validateAPIKeyAccessSourceBinding(accessSource, explicitEntitlementID); err != nil {
+			return nil, err
+		}
+		if group != nil {
+			if !group.SupportsBalanceAccess() || !user.CanBindGroup(group.ID, group.IsExclusive) {
+				return nil, ErrGroupNotAllowed
+			}
+		}
+		return nil, nil
+	case APIKeyAccessSourceEntitlement:
+		if err := validateAPIKeyAccessSourceBinding(accessSource, explicitEntitlementID); err != nil {
+			return nil, err
+		}
+		if group == nil || !group.SupportsSubscriptionAccess() || !runtime.Enabled {
+			return nil, ErrGroupNotAllowed
+		}
+		return s.resolveSubscriptionEntitlementForGroup(ctx, user.ID, group.ID, explicitEntitlementID)
+	default:
+		return nil, ErrInvalidAccessSource
+	}
+}
+
+func (s *APIKeyService) resolveUpdateAccessSourceBinding(ctx context.Context, user *User, group *Group, accessSource string, currentEntitlementID *int64, explicitEntitlementID *int64, explicitEntitlementSet bool, groupChanged bool, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
+	if !runtime.Enabled {
+		return s.resolveUpdateSubscriptionEntitlementID(ctx, user, group, currentEntitlementID, explicitEntitlementID, explicitEntitlementSet, groupChanged, runtime)
+	}
+	switch accessSource {
+	case APIKeyAccessSourceBalance:
+		if explicitEntitlementSet && explicitEntitlementID != nil {
+			return nil, ErrInvalidAccessSource
+		}
+		if group != nil {
+			if !group.SupportsBalanceAccess() || !user.CanBindGroup(group.ID, group.IsExclusive) {
+				return nil, ErrGroupNotAllowed
+			}
+		}
+		return nil, nil
+	case APIKeyAccessSourceEntitlement:
+		if group == nil || !group.SupportsSubscriptionAccess() || !runtime.Enabled {
+			return nil, ErrGroupNotAllowed
+		}
+		if explicitEntitlementSet {
+			if explicitEntitlementID == nil {
+				return nil, ErrInvalidAccessSource
+			}
+			return s.resolveSubscriptionEntitlementForGroup(ctx, user.ID, group.ID, explicitEntitlementID)
+		}
+		if currentEntitlementID != nil {
+			if entID, err := s.resolveSubscriptionEntitlementForGroup(ctx, user.ID, group.ID, currentEntitlementID); err == nil {
+				return entID, nil
+			}
+		}
+		if groupChanged {
+			return s.resolveSubscriptionEntitlementForGroup(ctx, user.ID, group.ID, nil)
+		}
+		return nil, ErrInvalidAccessSource
+	default:
+		return nil, ErrInvalidAccessSource
+	}
+}
+
 func (s *APIKeyService) resolveCreateSubscriptionEntitlementID(ctx context.Context, user *User, group *Group, explicitEntitlementID *int64, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
 	if group == nil {
 		if runtime.Enabled && explicitEntitlementID != nil {
@@ -366,7 +436,7 @@ func (s *APIKeyService) resolveCreateSubscriptionEntitlementID(ctx context.Conte
 		}
 		return nil, nil
 	}
-	if !group.IsSubscriptionType() {
+	if !group.SupportsSubscriptionAccess() {
 		if !user.CanBindGroup(group.ID, group.IsExclusive) {
 			return nil, ErrGroupNotAllowed
 		}
@@ -388,7 +458,7 @@ func (s *APIKeyService) resolveUpdateSubscriptionEntitlementID(ctx context.Conte
 		}
 		return nil, nil
 	}
-	if !group.IsSubscriptionType() {
+	if !group.SupportsSubscriptionAccess() {
 		if !user.CanBindGroup(group.ID, group.IsExclusive) {
 			return nil, ErrGroupNotAllowed
 		}
@@ -450,6 +520,38 @@ func sameInt64PtrValue(a, b *int64) bool {
 	return *a == *b
 }
 
+func normalizeAPIKeyAccessSource(input *string, entitlementID *int64) (string, error) {
+	if input == nil {
+		if entitlementID != nil {
+			return APIKeyAccessSourceEntitlement, nil
+		}
+		return APIKeyAccessSourceBalance, nil
+	}
+	source := strings.ToLower(strings.TrimSpace(*input))
+	switch source {
+	case APIKeyAccessSourceBalance, APIKeyAccessSourceEntitlement:
+		return source, nil
+	default:
+		return "", ErrInvalidAccessSource
+	}
+}
+
+func validateAPIKeyAccessSourceBinding(accessSource string, entitlementID *int64) error {
+	switch accessSource {
+	case APIKeyAccessSourceBalance:
+		if entitlementID != nil {
+			return ErrInvalidAccessSource
+		}
+	case APIKeyAccessSourceEntitlement:
+		if entitlementID == nil {
+			return ErrInvalidAccessSource
+		}
+	default:
+		return ErrInvalidAccessSource
+	}
+	return nil
+}
+
 func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIKeyRequest) (*APIKey, error) {
 	// 验证用户存在
 	user, err := s.userRepo.GetByID(ctx, userID)
@@ -468,6 +570,16 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	if len(req.IPBlacklist) > 0 {
 		if invalid := ip.ValidateIPPatterns(req.IPBlacklist); len(invalid) > 0 {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidIPPattern, invalid)
+		}
+	}
+
+	accessSource, err := normalizeAPIKeyAccessSource(req.AccessSource, req.SubscriptionEntitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if req.AccessSource != nil {
+		if err := validateAPIKeyAccessSourceBinding(accessSource, req.SubscriptionEntitlementID); err != nil {
+			return nil, err
 		}
 	}
 
@@ -494,7 +606,16 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	} else if runtime.Enabled && req.SubscriptionEntitlementID != nil {
 		return nil, ErrGroupNotAllowed
 	}
-	subscriptionEntitlementID, err := s.resolveCreateSubscriptionEntitlementID(ctx, user, group, req.SubscriptionEntitlementID, runtime)
+	accessSource, err = normalizeAPIKeyAccessSource(req.AccessSource, req.SubscriptionEntitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if req.AccessSource != nil {
+		if err := validateAPIKeyAccessSourceBinding(accessSource, req.SubscriptionEntitlementID); err != nil {
+			return nil, err
+		}
+	}
+	subscriptionEntitlementID, err := s.resolveCreateAccessSourceBinding(ctx, user, group, accessSource, req.SubscriptionEntitlementID, runtime)
 	if err != nil {
 		return nil, err
 	}
@@ -545,6 +666,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		Name:                      html.EscapeString(req.Name),
 		GroupID:                   req.GroupID,
 		SubscriptionEntitlementID: subscriptionEntitlementID,
+		AccessSource:              accessSource,
 		AutoSwitchGroupEnabled:    autoSwitchGroupEnabled,
 		Status:                    StatusActive,
 		IPWhitelist:               req.IPWhitelist,
@@ -686,6 +808,29 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 	previousGroupID := cloneInt64Ptr(apiKey.GroupID)
 	previousEntitlementID := cloneInt64Ptr(apiKey.SubscriptionEntitlementID)
+	accessSource := apiKey.AccessSource
+	if accessSource == "" {
+		accessSource, err = normalizeAPIKeyAccessSource(nil, apiKey.SubscriptionEntitlementID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if req.AccessSource != nil {
+		accessSource, err = normalizeAPIKeyAccessSource(req.AccessSource, nil)
+		if err != nil {
+			return nil, err
+		}
+		if accessSource == APIKeyAccessSourceBalance && req.SubscriptionEntitlementIDSet && req.SubscriptionEntitlementID != nil {
+			return nil, ErrInvalidAccessSource
+		}
+		if accessSource == APIKeyAccessSourceEntitlement && (!req.SubscriptionEntitlementIDSet || req.SubscriptionEntitlementID == nil) {
+			return nil, ErrInvalidAccessSource
+		}
+	}
+	if accessSource == APIKeyAccessSourceBalance {
+		req.SubscriptionEntitlementIDSet = true
+		req.SubscriptionEntitlementID = nil
+	}
 
 	// 验证 IP 白名单格式
 	if len(req.IPWhitelist) > 0 {
@@ -731,7 +876,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 
 	runtime := s.subscriptionEntitlementsRuntime(ctx)
-	shouldResolveBinding := req.ClearGroup || req.GroupID != nil || (runtime.Enabled && req.SubscriptionEntitlementIDSet)
+	shouldResolveBinding := req.ClearGroup || req.GroupID != nil || req.AccessSource != nil || (runtime.Enabled && req.SubscriptionEntitlementIDSet)
 	if shouldResolveBinding {
 		user, err := s.userRepo.GetByID(ctx, userID)
 		if err != nil {
@@ -745,13 +890,21 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 			}
 			apiKey.Group = group
 		}
+		if req.AccessSource == nil {
+			if group == nil || (group.SupportsBalanceAccess() && !group.SupportsSubscriptionAccess()) {
+				accessSource = APIKeyAccessSourceBalance
+				req.SubscriptionEntitlementIDSet = true
+				req.SubscriptionEntitlementID = nil
+			}
+		}
 		groupChanged := req.ClearGroup || !sameInt64PtrValue(previousGroupID, apiKey.GroupID)
-		entitlementID, err := s.resolveUpdateSubscriptionEntitlementID(ctx, user, group, previousEntitlementID, req.SubscriptionEntitlementID, req.SubscriptionEntitlementIDSet, groupChanged, runtime)
+		entitlementID, err := s.resolveUpdateAccessSourceBinding(ctx, user, group, accessSource, previousEntitlementID, req.SubscriptionEntitlementID, req.SubscriptionEntitlementIDSet, groupChanged, runtime)
 		if err != nil {
 			return nil, err
 		}
 		apiKey.SubscriptionEntitlementID = entitlementID
 	}
+	apiKey.AccessSource = accessSource
 
 	if req.Status != nil {
 		apiKey.Status = *req.Status
@@ -1034,12 +1187,17 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 		groupIDs := entitlementCoveredGroupIDs(&ent)
 		for _, groupID := range groupIDs {
 			out[groupID] = append(out[groupID], AvailableAPIKeyGroupEntitlement{
-				ID:             ent.ID,
-				Name:           ent.Name,
-				PlanID:         cloneInt64Ptr(ent.PlanID),
-				PrimaryGroupID: cloneInt64Ptr(ent.PrimaryGroupID),
-				StartsAt:       ent.StartsAt,
-				ExpiresAt:      ent.ExpiresAt,
+				ID:               ent.ID,
+				Name:             ent.Name,
+				PlanID:           cloneInt64Ptr(ent.PlanID),
+				PrimaryGroupID:   cloneInt64Ptr(ent.PrimaryGroupID),
+				StartsAt:         ent.StartsAt,
+				ExpiresAt:        ent.ExpiresAt,
+				PurchasePrice:    cloneFloat64Ptr(ent.PurchasePrice),
+				PurchaseCurrency: ent.PurchaseCurrency,
+				QuotaUSD:         cloneFloat64Ptr(ent.QuotaUSD),
+				QuotaPeriod:      ent.QuotaPeriod,
+				UnitCostPerUSD:   cloneFloat64Ptr(ent.UnitCostPerUSD),
 			})
 		}
 	}

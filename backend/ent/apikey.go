@@ -37,6 +37,8 @@ type APIKey struct {
 	GroupID *int64 `json:"group_id,omitempty"`
 	// SubscriptionEntitlementID holds the value of the "subscription_entitlement_id" field.
 	SubscriptionEntitlementID *int64 `json:"subscription_entitlement_id,omitempty"`
+	// API key access source: balance or entitlement
+	AccessSource string `json:"access_source,omitempty"`
 	// Automatically switch to another usable subscription group when the current subscription quota is exhausted
 	AutoSwitchGroupEnabled bool `json:"auto_switch_group_enabled,omitempty"`
 	// Status holds the value of the "status" field.
@@ -147,7 +149,7 @@ func (*APIKey) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case apikey.FieldID, apikey.FieldUserID, apikey.FieldGroupID, apikey.FieldSubscriptionEntitlementID:
 			values[i] = new(sql.NullInt64)
-		case apikey.FieldKey, apikey.FieldName, apikey.FieldStatus:
+		case apikey.FieldKey, apikey.FieldName, apikey.FieldAccessSource, apikey.FieldStatus:
 			values[i] = new(sql.NullString)
 		case apikey.FieldCreatedAt, apikey.FieldUpdatedAt, apikey.FieldDeletedAt, apikey.FieldLastUsedAt, apikey.FieldExpiresAt, apikey.FieldWindow5hStart, apikey.FieldWindow1dStart, apikey.FieldWindow7dStart:
 			values[i] = new(sql.NullTime)
@@ -222,6 +224,12 @@ func (_m *APIKey) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SubscriptionEntitlementID = new(int64)
 				*_m.SubscriptionEntitlementID = value.Int64
+			}
+		case apikey.FieldAccessSource:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field access_source", values[i])
+			} else if value.Valid {
+				_m.AccessSource = value.String
 			}
 		case apikey.FieldAutoSwitchGroupEnabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -419,6 +427,9 @@ func (_m *APIKey) String() string {
 		builder.WriteString("subscription_entitlement_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
+	builder.WriteString(", ")
+	builder.WriteString("access_source=")
+	builder.WriteString(_m.AccessSource)
 	builder.WriteString(", ")
 	builder.WriteString("auto_switch_group_enabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AutoSwitchGroupEnabled))

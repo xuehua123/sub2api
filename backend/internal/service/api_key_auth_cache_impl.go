@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 13 // v13: includes subscription entitlement binding ID
+const apiKeyAuthSnapshotVersion = 14 // v14: includes access source and group capability flags
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -211,6 +211,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		UserID:                    apiKey.UserID,
 		GroupID:                   apiKey.GroupID,
 		SubscriptionEntitlementID: apiKey.SubscriptionEntitlementID,
+		AccessSource:              apiKey.AccessSource,
 		Name:                      apiKey.Name,
 		AutoSwitchGroupEnabled:    apiKey.AutoSwitchGroupEnabled,
 		Status:                    apiKey.Status,
@@ -256,6 +257,9 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			IsExclusive:                     apiKey.Group.IsExclusive,
 			Status:                          apiKey.Group.Status,
 			SubscriptionType:                apiKey.Group.SubscriptionType,
+			BalanceEnabled:                  apiKey.Group.BalanceEnabled,
+			SubscriptionEnabled:             apiKey.Group.SubscriptionEnabled,
+			PlanAutoGrantEnabled:            apiKey.Group.PlanAutoGrantEnabled,
 			RateMultiplier:                  apiKey.Group.RateMultiplier,
 			DailyLimitUSD:                   apiKey.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  apiKey.Group.WeeklyLimitUSD,
@@ -292,6 +296,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		UserID:                    snapshot.UserID,
 		GroupID:                   snapshot.GroupID,
 		SubscriptionEntitlementID: snapshot.SubscriptionEntitlementID,
+		AccessSource:              snapshot.AccessSource,
 		Key:                       key,
 		Name:                      snapshot.Name,
 		AutoSwitchGroupEnabled:    snapshot.AutoSwitchGroupEnabled,
@@ -331,6 +336,9 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Status:                          snapshot.Group.Status,
 			Hydrated:                        true,
 			SubscriptionType:                snapshot.Group.SubscriptionType,
+			BalanceEnabled:                  snapshot.Group.BalanceEnabled,
+			SubscriptionEnabled:             snapshot.Group.SubscriptionEnabled,
+			PlanAutoGrantEnabled:            snapshot.Group.PlanAutoGrantEnabled,
 			RateMultiplier:                  snapshot.Group.RateMultiplier,
 			DailyLimitUSD:                   snapshot.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  snapshot.Group.WeeklyLimitUSD,

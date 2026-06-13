@@ -28,6 +28,9 @@ describe('user groups api', () => {
         is_exclusive: false,
         status: 'active',
         subscription_type: 'subscription',
+        balance_enabled: false,
+        subscription_enabled: true,
+        plan_auto_grant_enabled: true,
         daily_limit_usd: null,
         weekly_limit_usd: null,
         monthly_limit_usd: null,
@@ -62,5 +65,10 @@ describe('user groups api', () => {
 
     expect(get).toHaveBeenCalledWith('/groups/available')
     expect(result[0].entitlements).toEqual(groups[0].entitlements)
+    expect(result[0]).toMatchObject({
+      balance_enabled: false,
+      subscription_enabled: true,
+      plan_auto_grant_enabled: true,
+    })
   })
 })

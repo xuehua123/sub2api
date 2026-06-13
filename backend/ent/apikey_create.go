@@ -114,6 +114,20 @@ func (_c *APIKeyCreate) SetNillableSubscriptionEntitlementID(v *int64) *APIKeyCr
 	return _c
 }
 
+// SetAccessSource sets the "access_source" field.
+func (_c *APIKeyCreate) SetAccessSource(v string) *APIKeyCreate {
+	_c.mutation.SetAccessSource(v)
+	return _c
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableAccessSource(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetAccessSource(*v)
+	}
+	return _c
+}
+
 // SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
 func (_c *APIKeyCreate) SetAutoSwitchGroupEnabled(v bool) *APIKeyCreate {
 	_c.mutation.SetAutoSwitchGroupEnabled(v)
@@ -417,6 +431,10 @@ func (_c *APIKeyCreate) defaults() error {
 		v := apikey.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
 	}
+	if _, ok := _c.mutation.AccessSource(); !ok {
+		v := apikey.DefaultAccessSource
+		_c.mutation.SetAccessSource(v)
+	}
 	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
 		v := apikey.DefaultAutoSwitchGroupEnabled
 		_c.mutation.SetAutoSwitchGroupEnabled(v)
@@ -485,6 +503,14 @@ func (_c *APIKeyCreate) check() error {
 	if v, ok := _c.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.AccessSource(); !ok {
+		return &ValidationError{Name: "access_source", err: errors.New(`ent: missing required field "APIKey.access_source"`)}
+	}
+	if v, ok := _c.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
@@ -571,6 +597,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
+		_node.AccessSource = value
 	}
 	if value, ok := _c.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
@@ -858,6 +888,18 @@ func (u *APIKeyUpsert) UpdateSubscriptionEntitlementID() *APIKeyUpsert {
 // ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
 func (u *APIKeyUpsert) ClearSubscriptionEntitlementID() *APIKeyUpsert {
 	u.SetNull(apikey.FieldSubscriptionEntitlementID)
+	return u
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsert) SetAccessSource(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldAccessSource, v)
+	return u
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateAccessSource() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldAccessSource)
 	return u
 }
 
@@ -1316,6 +1358,20 @@ func (u *APIKeyUpsertOne) UpdateSubscriptionEntitlementID() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearSubscriptionEntitlementID() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearSubscriptionEntitlementID()
+	})
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsertOne) SetAccessSource(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAccessSource(v)
+	})
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateAccessSource() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAccessSource()
 	})
 }
 
@@ -1989,6 +2045,20 @@ func (u *APIKeyUpsertBulk) UpdateSubscriptionEntitlementID() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearSubscriptionEntitlementID() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearSubscriptionEntitlementID()
+	})
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsertBulk) SetAccessSource(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAccessSource(v)
+	})
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateAccessSource() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAccessSource()
 	})
 }
 

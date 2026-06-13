@@ -146,6 +146,7 @@ type APIKeyMutation struct {
 	deleted_at                      *time.Time
 	key                             *string
 	name                            *string
+	access_source                   *string
 	auto_switch_group_enabled       *bool
 	status                          *string
 	last_used_at                    *time.Time
@@ -611,6 +612,42 @@ func (m *APIKeyMutation) SubscriptionEntitlementIDCleared() bool {
 func (m *APIKeyMutation) ResetSubscriptionEntitlementID() {
 	m.subscription_entitlement = nil
 	delete(m.clearedFields, apikey.FieldSubscriptionEntitlementID)
+}
+
+// SetAccessSource sets the "access_source" field.
+func (m *APIKeyMutation) SetAccessSource(s string) {
+	m.access_source = &s
+}
+
+// AccessSource returns the value of the "access_source" field in the mutation.
+func (m *APIKeyMutation) AccessSource() (r string, exists bool) {
+	v := m.access_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAccessSource returns the old "access_source" field's value of the APIKey entity.
+// If the APIKey object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *APIKeyMutation) OldAccessSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAccessSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAccessSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAccessSource: %w", err)
+	}
+	return oldValue.AccessSource, nil
+}
+
+// ResetAccessSource resets all changes to the "access_source" field.
+func (m *APIKeyMutation) ResetAccessSource() {
+	m.access_source = nil
 }
 
 // SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
@@ -1677,7 +1714,7 @@ func (m *APIKeyMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *APIKeyMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 26)
 	if m.created_at != nil {
 		fields = append(fields, apikey.FieldCreatedAt)
 	}
@@ -1701,6 +1738,9 @@ func (m *APIKeyMutation) Fields() []string {
 	}
 	if m.subscription_entitlement != nil {
 		fields = append(fields, apikey.FieldSubscriptionEntitlementID)
+	}
+	if m.access_source != nil {
+		fields = append(fields, apikey.FieldAccessSource)
 	}
 	if m.auto_switch_group_enabled != nil {
 		fields = append(fields, apikey.FieldAutoSwitchGroupEnabled)
@@ -1777,6 +1817,8 @@ func (m *APIKeyMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case apikey.FieldSubscriptionEntitlementID:
 		return m.SubscriptionEntitlementID()
+	case apikey.FieldAccessSource:
+		return m.AccessSource()
 	case apikey.FieldAutoSwitchGroupEnabled:
 		return m.AutoSwitchGroupEnabled()
 	case apikey.FieldStatus:
@@ -1836,6 +1878,8 @@ func (m *APIKeyMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldGroupID(ctx)
 	case apikey.FieldSubscriptionEntitlementID:
 		return m.OldSubscriptionEntitlementID(ctx)
+	case apikey.FieldAccessSource:
+		return m.OldAccessSource(ctx)
 	case apikey.FieldAutoSwitchGroupEnabled:
 		return m.OldAutoSwitchGroupEnabled(ctx)
 	case apikey.FieldStatus:
@@ -1934,6 +1978,13 @@ func (m *APIKeyMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSubscriptionEntitlementID(v)
+		return nil
+	case apikey.FieldAccessSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAccessSource(v)
 		return nil
 	case apikey.FieldAutoSwitchGroupEnabled:
 		v, ok := value.(bool)
@@ -2288,6 +2339,9 @@ func (m *APIKeyMutation) ResetField(name string) error {
 		return nil
 	case apikey.FieldSubscriptionEntitlementID:
 		m.ResetSubscriptionEntitlementID()
+		return nil
+	case apikey.FieldAccessSource:
+		m.ResetAccessSource()
 		return nil
 	case apikey.FieldAutoSwitchGroupEnabled:
 		m.ResetAutoSwitchGroupEnabled()
@@ -22954,6 +23008,9 @@ type GroupMutation struct {
 	status                                     *string
 	platform                                   *string
 	subscription_type                          *string
+	balance_enabled                            *bool
+	subscription_enabled                       *bool
+	plan_auto_grant_enabled                    *bool
 	daily_limit_usd                            *float64
 	adddaily_limit_usd                         *float64
 	weekly_limit_usd                           *float64
@@ -23530,6 +23587,114 @@ func (m *GroupMutation) OldSubscriptionType(ctx context.Context) (v string, err 
 // ResetSubscriptionType resets all changes to the "subscription_type" field.
 func (m *GroupMutation) ResetSubscriptionType() {
 	m.subscription_type = nil
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (m *GroupMutation) SetBalanceEnabled(b bool) {
+	m.balance_enabled = &b
+}
+
+// BalanceEnabled returns the value of the "balance_enabled" field in the mutation.
+func (m *GroupMutation) BalanceEnabled() (r bool, exists bool) {
+	v := m.balance_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldBalanceEnabled returns the old "balance_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldBalanceEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldBalanceEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldBalanceEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldBalanceEnabled: %w", err)
+	}
+	return oldValue.BalanceEnabled, nil
+}
+
+// ResetBalanceEnabled resets all changes to the "balance_enabled" field.
+func (m *GroupMutation) ResetBalanceEnabled() {
+	m.balance_enabled = nil
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (m *GroupMutation) SetSubscriptionEnabled(b bool) {
+	m.subscription_enabled = &b
+}
+
+// SubscriptionEnabled returns the value of the "subscription_enabled" field in the mutation.
+func (m *GroupMutation) SubscriptionEnabled() (r bool, exists bool) {
+	v := m.subscription_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSubscriptionEnabled returns the old "subscription_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldSubscriptionEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSubscriptionEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSubscriptionEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSubscriptionEnabled: %w", err)
+	}
+	return oldValue.SubscriptionEnabled, nil
+}
+
+// ResetSubscriptionEnabled resets all changes to the "subscription_enabled" field.
+func (m *GroupMutation) ResetSubscriptionEnabled() {
+	m.subscription_enabled = nil
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (m *GroupMutation) SetPlanAutoGrantEnabled(b bool) {
+	m.plan_auto_grant_enabled = &b
+}
+
+// PlanAutoGrantEnabled returns the value of the "plan_auto_grant_enabled" field in the mutation.
+func (m *GroupMutation) PlanAutoGrantEnabled() (r bool, exists bool) {
+	v := m.plan_auto_grant_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPlanAutoGrantEnabled returns the old "plan_auto_grant_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldPlanAutoGrantEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPlanAutoGrantEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPlanAutoGrantEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPlanAutoGrantEnabled: %w", err)
+	}
+	return oldValue.PlanAutoGrantEnabled, nil
+}
+
+// ResetPlanAutoGrantEnabled resets all changes to the "plan_auto_grant_enabled" field.
+func (m *GroupMutation) ResetPlanAutoGrantEnabled() {
+	m.plan_auto_grant_enabled = nil
 }
 
 // SetDailyLimitUsd sets the "daily_limit_usd" field.
@@ -25386,7 +25551,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 35)
+	fields := make([]string, 0, 38)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -25416,6 +25581,15 @@ func (m *GroupMutation) Fields() []string {
 	}
 	if m.subscription_type != nil {
 		fields = append(fields, group.FieldSubscriptionType)
+	}
+	if m.balance_enabled != nil {
+		fields = append(fields, group.FieldBalanceEnabled)
+	}
+	if m.subscription_enabled != nil {
+		fields = append(fields, group.FieldSubscriptionEnabled)
+	}
+	if m.plan_auto_grant_enabled != nil {
+		fields = append(fields, group.FieldPlanAutoGrantEnabled)
 	}
 	if m.daily_limit_usd != nil {
 		fields = append(fields, group.FieldDailyLimitUsd)
@@ -25520,6 +25694,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.Platform()
 	case group.FieldSubscriptionType:
 		return m.SubscriptionType()
+	case group.FieldBalanceEnabled:
+		return m.BalanceEnabled()
+	case group.FieldSubscriptionEnabled:
+		return m.SubscriptionEnabled()
+	case group.FieldPlanAutoGrantEnabled:
+		return m.PlanAutoGrantEnabled()
 	case group.FieldDailyLimitUsd:
 		return m.DailyLimitUsd()
 	case group.FieldWeeklyLimitUsd:
@@ -25599,6 +25779,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldPlatform(ctx)
 	case group.FieldSubscriptionType:
 		return m.OldSubscriptionType(ctx)
+	case group.FieldBalanceEnabled:
+		return m.OldBalanceEnabled(ctx)
+	case group.FieldSubscriptionEnabled:
+		return m.OldSubscriptionEnabled(ctx)
+	case group.FieldPlanAutoGrantEnabled:
+		return m.OldPlanAutoGrantEnabled(ctx)
 	case group.FieldDailyLimitUsd:
 		return m.OldDailyLimitUsd(ctx)
 	case group.FieldWeeklyLimitUsd:
@@ -25727,6 +25913,27 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSubscriptionType(v)
+		return nil
+	case group.FieldBalanceEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetBalanceEnabled(v)
+		return nil
+	case group.FieldSubscriptionEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSubscriptionEnabled(v)
+		return nil
+	case group.FieldPlanAutoGrantEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPlanAutoGrantEnabled(v)
 		return nil
 	case group.FieldDailyLimitUsd:
 		v, ok := value.(float64)
@@ -26209,6 +26416,15 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldSubscriptionType:
 		m.ResetSubscriptionType()
+		return nil
+	case group.FieldBalanceEnabled:
+		m.ResetBalanceEnabled()
+		return nil
+	case group.FieldSubscriptionEnabled:
+		m.ResetSubscriptionEnabled()
+		return nil
+	case group.FieldPlanAutoGrantEnabled:
+		m.ResetPlanAutoGrantEnabled()
 		return nil
 	case group.FieldDailyLimitUsd:
 		m.ResetDailyLimitUsd()

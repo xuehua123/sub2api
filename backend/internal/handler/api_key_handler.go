@@ -33,6 +33,7 @@ type CreateAPIKeyRequest struct {
 	Name                      string   `json:"name" binding:"required"`
 	GroupID                   *int64   `json:"group_id"` // nullable
 	SubscriptionEntitlementID *int64   `json:"subscription_entitlement_id"`
+	AccessSource              *string  `json:"access_source"`
 	CustomKey                 *string  `json:"custom_key"`      // 可选的自定义key
 	IPWhitelist               []string `json:"ip_whitelist"`    // IP 白名单
 	IPBlacklist               []string `json:"ip_blacklist"`    // IP 黑名单
@@ -52,6 +53,7 @@ type UpdateAPIKeyRequest struct {
 	Name                      string                 `json:"name"`
 	GroupID                   dto.NullableInt64Field `json:"group_id"`
 	SubscriptionEntitlementID dto.NullableInt64Field `json:"subscription_entitlement_id"`
+	AccessSource              *string                `json:"access_source"`
 	Status                    string                 `json:"status" binding:"omitempty,oneof=active inactive"`
 	IPWhitelist               []string               `json:"ip_whitelist"` // IP 白名单
 	IPBlacklist               []string               `json:"ip_blacklist"` // IP 黑名单
@@ -69,12 +71,17 @@ type UpdateAPIKeyRequest struct {
 }
 
 type AvailableGroupEntitlementDTO struct {
-	ID             int64     `json:"id"`
-	Name           string    `json:"name"`
-	PlanID         *int64    `json:"plan_id,omitempty"`
-	PrimaryGroupID *int64    `json:"primary_group_id,omitempty"`
-	StartsAt       time.Time `json:"starts_at"`
-	ExpiresAt      time.Time `json:"expires_at"`
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	PlanID           *int64    `json:"plan_id,omitempty"`
+	PrimaryGroupID   *int64    `json:"primary_group_id,omitempty"`
+	StartsAt         time.Time `json:"starts_at"`
+	ExpiresAt        time.Time `json:"expires_at"`
+	PurchasePrice    *float64  `json:"purchase_price,omitempty"`
+	PurchaseCurrency string    `json:"purchase_currency,omitempty"`
+	QuotaUSD         *float64  `json:"quota_usd,omitempty"`
+	QuotaPeriod      string    `json:"quota_period,omitempty"`
+	UnitCostPerUSD   *float64  `json:"unit_cost_per_usd,omitempty"`
 }
 
 type AvailableGroupDTO struct {
@@ -177,6 +184,7 @@ func (h *APIKeyHandler) Create(c *gin.Context) {
 		Name:                      req.Name,
 		GroupID:                   req.GroupID,
 		SubscriptionEntitlementID: req.SubscriptionEntitlementID,
+		AccessSource:              req.AccessSource,
 		CustomKey:                 req.CustomKey,
 		IPWhitelist:               req.IPWhitelist,
 		IPBlacklist:               req.IPBlacklist,
@@ -236,6 +244,7 @@ func (h *APIKeyHandler) Update(c *gin.Context) {
 		RateLimit7d:            req.RateLimit7d,
 		ResetRateLimitUsage:    req.ResetRateLimitUsage,
 		AutoSwitchGroupEnabled: req.AutoSwitchGroupEnabled,
+		AccessSource:           req.AccessSource,
 	}
 	if req.Name != "" {
 		svcReq.Name = &req.Name
@@ -326,12 +335,17 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 			item.Entitlements = make([]AvailableGroupEntitlementDTO, 0, len(groups[i].Entitlements))
 			for _, ent := range groups[i].Entitlements {
 				item.Entitlements = append(item.Entitlements, AvailableGroupEntitlementDTO{
-					ID:             ent.ID,
-					Name:           ent.Name,
-					PlanID:         ent.PlanID,
-					PrimaryGroupID: ent.PrimaryGroupID,
-					StartsAt:       ent.StartsAt,
-					ExpiresAt:      ent.ExpiresAt,
+					ID:               ent.ID,
+					Name:             ent.Name,
+					PlanID:           ent.PlanID,
+					PrimaryGroupID:   ent.PrimaryGroupID,
+					StartsAt:         ent.StartsAt,
+					ExpiresAt:        ent.ExpiresAt,
+					PurchasePrice:    ent.PurchasePrice,
+					PurchaseCurrency: ent.PurchaseCurrency,
+					QuotaUSD:         ent.QuotaUSD,
+					QuotaPeriod:      ent.QuotaPeriod,
+					UnitCostPerUSD:   ent.UnitCostPerUSD,
 				})
 			}
 		}

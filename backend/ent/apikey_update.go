@@ -141,6 +141,20 @@ func (_u *APIKeyUpdate) ClearSubscriptionEntitlementID() *APIKeyUpdate {
 	return _u
 }
 
+// SetAccessSource sets the "access_source" field.
+func (_u *APIKeyUpdate) SetAccessSource(v string) *APIKeyUpdate {
+	_u.mutation.SetAccessSource(v)
+	return _u
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableAccessSource(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetAccessSource(*v)
+	}
+	return _u
+}
+
 // SetAutoSwitchGroupEnabled sets the "auto_switch_group_enabled" field.
 func (_u *APIKeyUpdate) SetAutoSwitchGroupEnabled(v bool) *APIKeyUpdate {
 	_u.mutation.SetAutoSwitchGroupEnabled(v)
@@ -601,6 +615,11 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -638,6 +657,9 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
@@ -1002,6 +1024,20 @@ func (_u *APIKeyUpdateOne) SetNillableSubscriptionEntitlementID(v *int64) *APIKe
 // ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
 func (_u *APIKeyUpdateOne) ClearSubscriptionEntitlementID() *APIKeyUpdateOne {
 	_u.mutation.ClearSubscriptionEntitlementID()
+	return _u
+}
+
+// SetAccessSource sets the "access_source" field.
+func (_u *APIKeyUpdateOne) SetAccessSource(v string) *APIKeyUpdateOne {
+	_u.mutation.SetAccessSource(v)
+	return _u
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableAccessSource(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetAccessSource(*v)
+	}
 	return _u
 }
 
@@ -1478,6 +1514,11 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -1532,6 +1573,9 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)

@@ -81,6 +81,14 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 	if k == nil {
 		return nil
 	}
+	accessSource := k.AccessSource
+	if accessSource == "" {
+		if k.SubscriptionEntitlementID != nil {
+			accessSource = service.APIKeyAccessSourceEntitlement
+		} else {
+			accessSource = service.APIKeyAccessSourceBalance
+		}
+	}
 	out := &APIKey{
 		ID:                        k.ID,
 		UserID:                    k.UserID,
@@ -88,6 +96,7 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 		Name:                      k.Name,
 		GroupID:                   k.GroupID,
 		SubscriptionEntitlementID: k.SubscriptionEntitlementID,
+		AccessSource:              accessSource,
 		AutoSwitchGroupEnabled:    k.AutoSwitchGroupEnabled,
 		Status:                    k.Status,
 		IPWhitelist:               k.IPWhitelist,
@@ -180,6 +189,9 @@ func groupFromServiceBase(g *service.Group) Group {
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,
 		SubscriptionType:                g.SubscriptionType,
+		BalanceEnabled:                  g.BalanceEnabled,
+		SubscriptionEnabled:             g.SubscriptionEnabled,
+		PlanAutoGrantEnabled:            g.PlanAutoGrantEnabled,
 		DailyLimitUSD:                   g.DailyLimitUSD,
 		WeeklyLimitUSD:                  g.WeeklyLimitUSD,
 		MonthlyLimitUSD:                 g.MonthlyLimitUSD,

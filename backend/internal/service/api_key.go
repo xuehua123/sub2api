@@ -34,6 +34,7 @@ type APIKey struct {
 	Name                      string
 	GroupID                   *int64
 	SubscriptionEntitlementID *int64
+	AccessSource              string
 	AutoSwitchGroupEnabled    bool
 	Status                    string
 	IPWhitelist               []string
@@ -150,10 +151,15 @@ type AvailableAPIKeyGroup struct {
 }
 
 type AvailableAPIKeyGroupEntitlement struct {
-	ID             int64
-	Name           string
-	PlanID         *int64
-	PrimaryGroupID *int64
-	StartsAt       time.Time
-	ExpiresAt      time.Time
+	ID               int64
+	Name             string
+	PlanID           *int64
+	PrimaryGroupID   *int64
+	StartsAt         time.Time
+	ExpiresAt        time.Time
+	PurchasePrice    *float64
+	PurchaseCurrency string
+	QuotaUSD         *float64
+	QuotaPeriod      string
+	UnitCostPerUSD   *float64
 }

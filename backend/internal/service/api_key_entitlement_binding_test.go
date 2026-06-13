@@ -177,7 +177,7 @@ func TestAPIKeyService_CreateSubscriptionEntitlementExplicit(t *testing.T) {
 	require.Equal(t, int64(1), *apiRepo.created.SubscriptionEntitlementID)
 }
 
-func TestAPIKeyService_CreateSubscriptionEntitlementDefaultResolve(t *testing.T) {
+func TestAPIKeyService_CreateSubscriptionEntitlementInfersSourceFromLegacyEntitlementID(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true,
 		testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(72*time.Hour), SubscriptionStatusActive, []int64{20}),
@@ -185,14 +185,34 @@ func TestAPIKeyService_CreateSubscriptionEntitlementDefaultResolve(t *testing.T)
 	)
 
 	key, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{
-		Name:      "default",
-		GroupID:   cloneInt64PtrValue(20),
-		CustomKey: stringPtrForAPIKeyBindingTest("sk-api-key-binding-default"),
+		Name:                      "legacy-entitlement-id",
+		GroupID:                   cloneInt64PtrValue(20),
+		SubscriptionEntitlementID: cloneInt64PtrValue(1),
+		CustomKey:                 stringPtrForAPIKeyBindingTest("sk-api-key-binding-legacy-ent-id"),
 	})
 
 	require.NoError(t, err)
+	require.Equal(t, APIKeyAccessSourceEntitlement, key.AccessSource)
 	require.NotNil(t, key.SubscriptionEntitlementID)
-	require.Equal(t, int64(2), *key.SubscriptionEntitlementID)
+	require.Equal(t, int64(1), *key.SubscriptionEntitlementID)
+}
+
+func TestAPIKeyService_CreateEntitlementSourceRequiresEntitlementID(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	svc, apiRepo, _ := newAPIKeyEntitlementBindingFixture(t, now, true,
+		testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(72*time.Hour), SubscriptionStatusActive, []int64{20}),
+	)
+	source := APIKeyAccessSourceEntitlement
+
+	_, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{
+		Name:         "missing-entitlement",
+		GroupID:      cloneInt64PtrValue(20),
+		AccessSource: &source,
+		CustomKey:    stringPtrForAPIKeyBindingTest("sk-api-key-binding-missing-ent-id"),
+	})
+
+	require.ErrorIs(t, err, ErrInvalidAccessSource)
+	require.Nil(t, apiRepo.created)
 }
 
 func TestAPIKeyService_CreateSubscriptionEntitlementRejectsInvalidExplicitBinding(t *testing.T) {
@@ -253,6 +273,69 @@ func TestAPIKeyService_CreateSubscriptionEntitlementFlagOffKeepsLegacy(t *testin
 	require.NoError(t, err)
 	require.Nil(t, key.SubscriptionEntitlementID)
 	require.GreaterOrEqual(t, userSubRepo.calls, 1)
+}
+
+func TestAPIKeyService_ExplicitEntitlementSourceRequiresEntitlementIDWhenFlagOff(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	source := APIKeyAccessSourceEntitlement
+
+	t.Run("create", func(t *testing.T) {
+		svc, apiRepo, _ := newAPIKeyEntitlementBindingFixture(t, now, false)
+
+		_, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{
+			Name:         "missing entitlement id",
+			GroupID:      cloneInt64PtrValue(20),
+			AccessSource: &source,
+			CustomKey:    stringPtrForAPIKeyBindingTest("sk-api-key-binding-source-create"),
+		})
+
+		require.ErrorIs(t, err, ErrInvalidAccessSource)
+		require.Nil(t, apiRepo.created)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		existing := &APIKey{ID: 14, UserID: 1, Key: "sk-existing-5", Name: "existing", GroupID: cloneInt64PtrValue(20), Status: StatusActive}
+		svc, apiRepo, _ := newAPIKeyEntitlementBindingFixtureWithKeys(t, now, false, []*APIKey{existing})
+
+		_, err := svc.Update(context.Background(), 14, 1, UpdateAPIKeyRequest{AccessSource: &source})
+
+		require.ErrorIs(t, err, ErrInvalidAccessSource)
+		require.Nil(t, apiRepo.updated)
+	})
+}
+
+func TestAPIKeyService_ExplicitBalanceSourceRejectsEntitlementID(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	source := APIKeyAccessSourceBalance
+
+	t.Run("create", func(t *testing.T) {
+		svc, apiRepo, _ := newAPIKeyEntitlementBindingFixture(t, now, true)
+
+		_, err := svc.Create(context.Background(), 1, CreateAPIKeyRequest{
+			Name:                      "balance with entitlement",
+			GroupID:                   cloneInt64PtrValue(10),
+			AccessSource:              &source,
+			SubscriptionEntitlementID: cloneInt64PtrValue(1),
+			CustomKey:                 stringPtrForAPIKeyBindingTest("sk-api-key-binding-balance-create"),
+		})
+
+		require.ErrorIs(t, err, ErrInvalidAccessSource)
+		require.Nil(t, apiRepo.created)
+	})
+
+	t.Run("update", func(t *testing.T) {
+		existing := &APIKey{ID: 15, UserID: 1, Key: "sk-existing-6", Name: "existing", GroupID: cloneInt64PtrValue(10), Status: StatusActive, AccessSource: APIKeyAccessSourceBalance}
+		svc, apiRepo, _ := newAPIKeyEntitlementBindingFixtureWithKeys(t, now, true, []*APIKey{existing})
+
+		_, err := svc.Update(context.Background(), 15, 1, UpdateAPIKeyRequest{
+			AccessSource:                 &source,
+			SubscriptionEntitlementID:    cloneInt64PtrValue(1),
+			SubscriptionEntitlementIDSet: true,
+		})
+
+		require.ErrorIs(t, err, ErrInvalidAccessSource)
+		require.Nil(t, apiRepo.updated)
+	})
 }
 
 func TestAPIKeyService_UpdateSubscriptionEntitlementBindings(t *testing.T) {
@@ -439,9 +522,9 @@ func newAPIKeyEntitlementBindingFixtureWithKeys(t *testing.T, now time.Time, v2E
 		1: {ID: 1, Email: "user@test.local", Status: StatusActive},
 	}}
 	groupRepo := &apiKeyBindingGroupRepo{groups: map[int64]*Group{
-		10: {ID: 10, Name: "standard", Status: StatusActive, SubscriptionType: SubscriptionTypeStandard},
-		20: {ID: 20, Name: "subscription-a", Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription},
-		30: {ID: 30, Name: "subscription-b", Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription},
+		10: {ID: 10, Name: "standard", Status: StatusActive, SubscriptionType: SubscriptionTypeStandard, BalanceEnabled: true},
+		20: {ID: 20, Name: "subscription-a", Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: true, PlanAutoGrantEnabled: true},
+		30: {ID: 30, Name: "subscription-b", Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: true, PlanAutoGrantEnabled: true},
 	}}
 	entRepo := newFakeSubscriptionEntitlementRepo(now)
 	for _, ent := range entitlements {

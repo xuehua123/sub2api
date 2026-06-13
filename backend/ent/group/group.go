@@ -36,6 +36,12 @@ const (
 	FieldPlatform = "platform"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
+	// FieldBalanceEnabled holds the string denoting the balance_enabled field in the database.
+	FieldBalanceEnabled = "balance_enabled"
+	// FieldSubscriptionEnabled holds the string denoting the subscription_enabled field in the database.
+	FieldSubscriptionEnabled = "subscription_enabled"
+	// FieldPlanAutoGrantEnabled holds the string denoting the plan_auto_grant_enabled field in the database.
+	FieldPlanAutoGrantEnabled = "plan_auto_grant_enabled"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
 	FieldDailyLimitUsd = "daily_limit_usd"
 	// FieldWeeklyLimitUsd holds the string denoting the weekly_limit_usd field in the database.
@@ -221,6 +227,9 @@ var Columns = []string{
 	FieldStatus,
 	FieldPlatform,
 	FieldSubscriptionType,
+	FieldBalanceEnabled,
+	FieldSubscriptionEnabled,
+	FieldPlanAutoGrantEnabled,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
 	FieldMonthlyLimitUsd,
@@ -305,6 +314,12 @@ var (
 	DefaultSubscriptionType string
 	// SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
 	SubscriptionTypeValidator func(string) error
+	// DefaultBalanceEnabled holds the default value on creation for the "balance_enabled" field.
+	DefaultBalanceEnabled bool
+	// DefaultSubscriptionEnabled holds the default value on creation for the "subscription_enabled" field.
+	DefaultSubscriptionEnabled bool
+	// DefaultPlanAutoGrantEnabled holds the default value on creation for the "plan_auto_grant_enabled" field.
+	DefaultPlanAutoGrantEnabled bool
 	// DefaultDefaultValidityDays holds the default value on creation for the "default_validity_days" field.
 	DefaultDefaultValidityDays int
 	// DefaultAllowImageGeneration holds the default value on creation for the "allow_image_generation" field.
@@ -397,6 +412,21 @@ func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 // BySubscriptionType orders the results by the subscription_type field.
 func BySubscriptionType(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionType, opts...).ToFunc()
+}
+
+// ByBalanceEnabled orders the results by the balance_enabled field.
+func ByBalanceEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldBalanceEnabled, opts...).ToFunc()
+}
+
+// BySubscriptionEnabled orders the results by the subscription_enabled field.
+func BySubscriptionEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionEnabled, opts...).ToFunc()
+}
+
+// ByPlanAutoGrantEnabled orders the results by the plan_auto_grant_enabled field.
+func ByPlanAutoGrantEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPlanAutoGrantEnabled, opts...).ToFunc()
 }
 
 // ByDailyLimitUsd orders the results by the daily_limit_usd field.

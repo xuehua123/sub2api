@@ -529,6 +529,9 @@ export interface Group {
   is_exclusive: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd: number | null
   weekly_limit_usd: number | null
   monthly_limit_usd: number | null
@@ -560,6 +563,11 @@ export interface AvailableGroupEntitlement {
   primary_group_id?: number | null
   starts_at: string
   expires_at: string
+  purchase_price?: number | null
+  purchase_currency?: string | null
+  quota_usd?: number | null
+  quota_period?: 'daily' | 'weekly' | 'monthly' | string | null
+  unit_cost_per_usd?: number | null
 }
 
 export interface AvailableGroup extends Group {
@@ -603,6 +611,7 @@ export interface ApiKey {
   name: string
   group_id: number | null
   subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement' | string
   auto_switch_group_enabled: boolean
   status: 'active' | 'inactive' | 'quota_exhausted' | 'expired'
   ip_whitelist: string[]
@@ -632,6 +641,7 @@ export interface CreateApiKeyRequest {
   name: string
   group_id?: number | null
   subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement'
   auto_switch_group_enabled?: boolean
   custom_key?: string // Optional custom API Key
   ip_whitelist?: string[]
@@ -647,6 +657,7 @@ export interface UpdateApiKeyRequest {
   name?: string
   group_id?: number | null
   subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement'
   auto_switch_group_enabled?: boolean
   status?: 'active' | 'inactive'
   ip_whitelist?: string[]

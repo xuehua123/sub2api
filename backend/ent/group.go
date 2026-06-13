@@ -39,6 +39,12 @@ type Group struct {
 	Platform string `json:"platform,omitempty"`
 	// SubscriptionType holds the value of the "subscription_type" field.
 	SubscriptionType string `json:"subscription_type,omitempty"`
+	// Whether this group can be used by the virtual balance access source
+	BalanceEnabled bool `json:"balance_enabled,omitempty"`
+	// Whether this group can be granted by subscription entitlements
+	SubscriptionEnabled bool `json:"subscription_enabled,omitempty"`
+	// Whether wildcard/platform subscription plan scopes can automatically include this group
+	PlanAutoGrantEnabled bool `json:"plan_auto_grant_enabled,omitempty"`
 	// DailyLimitUsd holds the value of the "daily_limit_usd" field.
 	DailyLimitUsd *float64 `json:"daily_limit_usd,omitempty"`
 	// WeeklyLimitUsd holds the value of the "weekly_limit_usd" field.
@@ -263,7 +269,7 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig:
 			values[i] = new([]byte)
-		case group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
+		case group.FieldIsExclusive, group.FieldBalanceEnabled, group.FieldSubscriptionEnabled, group.FieldPlanAutoGrantEnabled, group.FieldAllowImageGeneration, group.FieldImageRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
 			values[i] = new(sql.NullBool)
 		case group.FieldRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k:
 			values[i] = new(sql.NullFloat64)
@@ -355,6 +361,24 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field subscription_type", values[i])
 			} else if value.Valid {
 				_m.SubscriptionType = value.String
+			}
+		case group.FieldBalanceEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field balance_enabled", values[i])
+			} else if value.Valid {
+				_m.BalanceEnabled = value.Bool
+			}
+		case group.FieldSubscriptionEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_enabled", values[i])
+			} else if value.Valid {
+				_m.SubscriptionEnabled = value.Bool
+			}
+		case group.FieldPlanAutoGrantEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field plan_auto_grant_enabled", values[i])
+			} else if value.Valid {
+				_m.PlanAutoGrantEnabled = value.Bool
 			}
 		case group.FieldDailyLimitUsd:
 			if value, ok := values[i].(*sql.NullFloat64); !ok {
@@ -661,6 +685,15 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("subscription_type=")
 	builder.WriteString(_m.SubscriptionType)
+	builder.WriteString(", ")
+	builder.WriteString("balance_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.BalanceEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("subscription_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SubscriptionEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("plan_auto_grant_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.PlanAutoGrantEnabled))
 	builder.WriteString(", ")
 	if v := _m.DailyLimitUsd; v != nil {
 		builder.WriteString("daily_limit_usd=")
