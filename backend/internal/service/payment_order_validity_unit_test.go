@@ -68,6 +68,8 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		SetName("legacy-plan-anchor").
 		SetStatus(payment.EntityStatusActive).
 		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetSortOrder(30).
 		Save(ctx)
 	require.NoError(t, err)
@@ -75,6 +77,8 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		SetName("effective-plan-anchor-a").
 		SetStatus(payment.EntityStatusActive).
 		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetSortOrder(10).
 		Save(ctx)
 	require.NoError(t, err)
@@ -82,6 +86,8 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		SetName("effective-plan-anchor-b").
 		SetStatus(payment.EntityStatusActive).
 		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetSortOrder(20).
 		Save(ctx)
 	require.NoError(t, err)
