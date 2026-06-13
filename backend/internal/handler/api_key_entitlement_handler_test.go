@@ -156,7 +156,7 @@ func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHand
 	userSubRepo := repository.NewUserSubscriptionRepository(client)
 	entitlementRepo := repository.NewSubscriptionEntitlementRepository(client)
 	entitlementSvc := service.NewSubscriptionEntitlementService(entitlementRepo, nil)
-	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	now := time.Now().UTC()
 	entitlementSvc.SetNowFunc(func() time.Time { return now })
 	apiKeySvc := service.NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, nil, nil, &config.Config{})
 	apiKeySvc.SetSubscriptionEntitlementDependencies(

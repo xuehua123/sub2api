@@ -76,6 +76,15 @@ func (r *middlewareEntitlementRepo) GetFulfillmentBySourceRedeemCodeID(context.C
 func (r *middlewareEntitlementRepo) GetActiveCoveringGroup(ctx context.Context, userID, groupID int64) ([]service.SubscriptionEntitlement, error) {
 	return r.ListActiveCoveringGroupForUser(ctx, userID, groupID)
 }
+func (r *middlewareEntitlementRepo) ListByUserID(_ context.Context, userID int64) ([]service.SubscriptionEntitlement, error) {
+	out := make([]service.SubscriptionEntitlement, 0)
+	for _, ent := range r.entitlements {
+		if ent.UserID == userID {
+			out = append(out, *cloneMiddlewareEntitlement(ent))
+		}
+	}
+	return out, nil
+}
 func (r *middlewareEntitlementRepo) ListByUserPlanID(context.Context, int64, int64) ([]service.SubscriptionEntitlement, error) {
 	return nil, nil
 }
