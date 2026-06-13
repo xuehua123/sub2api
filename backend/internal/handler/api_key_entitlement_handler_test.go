@@ -81,6 +81,10 @@ func TestAPIKeyHandler_GetAvailableGroupsEntitlementAware(t *testing.T) {
 	data := decodeResponseDataSlice(t, resp)
 
 	standard := findGroupResponse(t, data, fx.standardID)
+	standardSources, ok := standard["access_sources"].([]any)
+	require.True(t, ok)
+	require.Len(t, standardSources, 1)
+	require.Equal(t, service.APIKeyAccessSourceBalance, standardSources[0].(map[string]any)["type"])
 	require.NotContains(t, standard, "entitlements")
 
 	subscription := findGroupResponse(t, data, fx.subscriptionID)
@@ -94,6 +98,33 @@ func TestAPIKeyHandler_GetAvailableGroupsEntitlementAware(t *testing.T) {
 	require.Equal(t, 10.0, entitlement["quota_usd"])
 	require.Equal(t, "monthly", entitlement["quota_period"])
 	require.InDelta(t, 2.99, entitlement["unit_cost_per_usd"], 0.000001)
+	require.Equal(t, service.SubscriptionEntitlementOverageBlock, entitlement["overage_policy"])
+
+	sources, ok := subscription["access_sources"].([]any)
+	require.True(t, ok)
+	require.Len(t, sources, 1)
+	source := sources[0].(map[string]any)
+	require.Equal(t, service.APIKeyAccessSourceEntitlement, source["type"])
+	require.Equal(t, float64(fx.entitlementID), source["entitlement_id"])
+	require.Equal(t, service.SubscriptionEntitlementOverageBlock, source["overage_policy"])
+	require.NotContains(t, source, "disabled")
+	require.NotContains(t, source, "unavailable_reason")
+}
+
+func TestAPIKeyHandler_GetAvailableGroupsReturnsAllEntitlementSources(t *testing.T) {
+	fx := newAPIKeyHandlerEntitlementFixture(t, true)
+	secondEntitlementID := mustCreateHandlerEntitlement(t, fx.client, fx.userID, fx.subscriptionID, fx.now, "handler entitlement 2")
+
+	resp := performJSONRequest(fx.router, http.MethodGet, "/groups/available", nil)
+	require.Equal(t, http.StatusOK, resp.Code)
+	data := decodeResponseDataSlice(t, resp)
+
+	subscription := findGroupResponse(t, data, fx.subscriptionID)
+	sources, ok := subscription["access_sources"].([]any)
+	require.True(t, ok)
+	require.Len(t, sources, 2)
+	require.Equal(t, float64(fx.entitlementID), sources[0].(map[string]any)["entitlement_id"])
+	require.Equal(t, float64(secondEntitlementID), sources[1].(map[string]any)["entitlement_id"])
 }
 
 func TestAPIKeyHandler_GetAvailableGroupsV2OffKeepsLegacyShape(t *testing.T) {
@@ -113,6 +144,93 @@ func TestAPIKeyHandler_GetAvailableGroupsV2OffKeepsLegacyShape(t *testing.T) {
 
 	subscription := findGroupResponse(t, data, fx.subscriptionID)
 	require.NotContains(t, subscription, "entitlements")
+	require.NotContains(t, subscription, "access_sources")
+}
+
+func TestAPIKeyHandler_GetAvailableGroupsDoesNotExposeUnavailableBalanceSource(t *testing.T) {
+	fx := newAPIKeyHandlerEntitlementFixture(t, true)
+	ctx := context.Background()
+
+	balanceDisabled, err := fx.client.Group.Create().
+		SetName("handler-balance-disabled").
+		SetPlatform(service.PlatformOpenAI).
+		SetStatus(service.StatusActive).
+		SetSubscriptionType(service.SubscriptionTypeStandard).
+		SetBalanceEnabled(false).
+		SetSubscriptionEnabled(false).
+		SetPlanAutoGrantEnabled(false).
+		SetRateMultiplier(1).
+		Save(ctx)
+	require.NoError(t, err)
+
+	exclusive, err := fx.client.Group.Create().
+		SetName("handler-exclusive-standard").
+		SetPlatform(service.PlatformOpenAI).
+		SetStatus(service.StatusActive).
+		SetSubscriptionType(service.SubscriptionTypeStandard).
+		SetBalanceEnabled(true).
+		SetSubscriptionEnabled(false).
+		SetPlanAutoGrantEnabled(false).
+		SetIsExclusive(true).
+		SetRateMultiplier(1).
+		Save(ctx)
+	require.NoError(t, err)
+
+	resp := performJSONRequest(fx.router, http.MethodGet, "/groups/available", nil)
+	require.Equal(t, http.StatusOK, resp.Code)
+	data := decodeResponseDataSlice(t, resp)
+
+	requireNoGroupResponse(t, data, balanceDisabled.ID)
+	requireNoGroupResponse(t, data, exclusive.ID)
+}
+
+func TestAPIKeyHandler_CreateAccessSourceMatchesAvailableSources(t *testing.T) {
+	fx := newAPIKeyHandlerEntitlementFixture(t, true)
+	ctx := context.Background()
+
+	balanceResp := performJSONRequest(fx.router, http.MethodPost, "/keys", map[string]any{
+		"name":          "balance cannot use subscription only group",
+		"group_id":      fx.subscriptionID,
+		"access_source": "balance",
+		"custom_key":    "sk-handler-balance-source-mismatch",
+	})
+	require.Equal(t, http.StatusForbidden, balanceResp.Code)
+
+	explicitOnlyGroup, err := fx.client.Group.Create().
+		SetName("handler-explicit-entitlement-only").
+		SetPlatform(service.PlatformOpenAI).
+		SetStatus(service.StatusActive).
+		SetSubscriptionType(service.SubscriptionTypeStandard).
+		SetBalanceEnabled(false).
+		SetSubscriptionEnabled(false).
+		SetPlanAutoGrantEnabled(false).
+		SetIsExclusive(true).
+		SetRateMultiplier(1).
+		Save(ctx)
+	require.NoError(t, err)
+	explicitEntitlementID := mustCreateHandlerEntitlement(t, fx.client, fx.userID, explicitOnlyGroup.ID, fx.now, "handler explicit grant")
+
+	availableResp := performJSONRequest(fx.router, http.MethodGet, "/groups/available", nil)
+	require.Equal(t, http.StatusOK, availableResp.Code)
+	data := decodeResponseDataSlice(t, availableResp)
+	explicitGroupResponse := findGroupResponse(t, data, explicitOnlyGroup.ID)
+	sources, ok := explicitGroupResponse["access_sources"].([]any)
+	require.True(t, ok)
+	require.Len(t, sources, 1)
+	require.Equal(t, service.APIKeyAccessSourceEntitlement, sources[0].(map[string]any)["type"])
+	require.Equal(t, float64(explicitEntitlementID), sources[0].(map[string]any)["entitlement_id"])
+
+	entitlementResp := performJSONRequest(fx.router, http.MethodPost, "/keys", map[string]any{
+		"name":                        "explicit entitlement source",
+		"group_id":                    explicitOnlyGroup.ID,
+		"access_source":               "entitlement",
+		"subscription_entitlement_id": explicitEntitlementID,
+		"custom_key":                  "sk-handler-explicit-source-grant",
+	})
+	require.Equal(t, http.StatusOK, entitlementResp.Code)
+	created := decodeResponseData(t, entitlementResp)
+	require.Equal(t, service.APIKeyAccessSourceEntitlement, created["access_source"])
+	require.Equal(t, float64(explicitEntitlementID), created["subscription_entitlement_id"])
 }
 
 func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHandlerEntitlementFixture {
@@ -142,6 +260,9 @@ func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHand
 		SetPlatform(service.PlatformOpenAI).
 		SetStatus(service.StatusActive).
 		SetSubscriptionType(service.SubscriptionTypeStandard).
+		SetBalanceEnabled(true).
+		SetSubscriptionEnabled(false).
+		SetPlanAutoGrantEnabled(false).
 		SetRateMultiplier(1).
 		Save(ctx)
 	require.NoError(t, err)
@@ -151,6 +272,9 @@ func newAPIKeyHandlerEntitlementFixture(t *testing.T, v2Enabled bool) apiKeyHand
 		SetPlatform(service.PlatformOpenAI).
 		SetStatus(service.StatusActive).
 		SetSubscriptionType(service.SubscriptionTypeSubscription).
+		SetBalanceEnabled(false).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
 		SetRateMultiplier(1).
 		Save(ctx)
 	require.NoError(t, err)
@@ -215,6 +339,7 @@ func mustCreateHandlerEntitlement(t *testing.T, client *dbent.Client, userID, gr
 		StartsAt:        now.Add(-48 * time.Hour),
 		ExpiresAt:       now.Add(48 * time.Hour),
 		MonthlyLimitUSD: &entitlementMonthlyLimit,
+		OveragePolicy:   service.SubscriptionEntitlementOverageBlock,
 	}
 	require.NoError(t, entitlementRepo.Create(context.Background(), ent, []int64{groupID}))
 	return ent.ID
@@ -261,4 +386,15 @@ func findGroupResponse(t *testing.T, groups []any, id int64) map[string]any {
 	}
 	t.Fatalf("group %d not found in response", id)
 	return nil
+}
+
+func requireNoGroupResponse(t *testing.T, groups []any, id int64) {
+	t.Helper()
+	for _, item := range groups {
+		group, ok := item.(map[string]any)
+		require.True(t, ok)
+		if group["id"] == float64(id) {
+			t.Fatalf("group %d unexpectedly found in response", id)
+		}
+	}
 }

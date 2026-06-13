@@ -55,6 +55,18 @@ describe('user groups api', () => {
             primary_group_id: 20,
             starts_at: '2026-06-01T00:00:00Z',
             expires_at: '2026-07-01T00:00:00Z',
+            overage_policy: 'block',
+          },
+        ],
+        access_sources: [
+          {
+            type: 'entitlement',
+            label: 'Team Pro',
+            name: 'Team Pro',
+            entitlement_id: 101,
+            plan_id: 7,
+            overage_policy: 'block',
+            expires_at: '2026-07-01T00:00:00Z',
           },
         ],
       },
@@ -65,6 +77,7 @@ describe('user groups api', () => {
 
     expect(get).toHaveBeenCalledWith('/groups/available')
     expect(result[0].entitlements).toEqual(groups[0].entitlements)
+    expect(result[0].access_sources).toEqual(groups[0].access_sources)
     expect(result[0]).toMatchObject({
       balance_enabled: false,
       subscription_enabled: true,

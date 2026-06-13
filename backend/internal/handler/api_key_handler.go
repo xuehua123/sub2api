@@ -82,11 +82,25 @@ type AvailableGroupEntitlementDTO struct {
 	QuotaUSD         *float64  `json:"quota_usd,omitempty"`
 	QuotaPeriod      string    `json:"quota_period,omitempty"`
 	UnitCostPerUSD   *float64  `json:"unit_cost_per_usd,omitempty"`
+	OveragePolicy    string    `json:"overage_policy,omitempty"`
+}
+
+type AvailableGroupAccessSourceDTO struct {
+	Type              string     `json:"type"`
+	Label             string     `json:"label,omitempty"`
+	Name              string     `json:"name,omitempty"`
+	EntitlementID     *int64     `json:"entitlement_id,omitempty"`
+	PlanID            *int64     `json:"plan_id,omitempty"`
+	OveragePolicy     string     `json:"overage_policy,omitempty"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
+	Disabled          bool       `json:"disabled,omitempty"`
+	UnavailableReason string     `json:"unavailable_reason,omitempty"`
 }
 
 type AvailableGroupDTO struct {
 	dto.Group
-	Entitlements []AvailableGroupEntitlementDTO `json:"entitlements,omitempty"`
+	Entitlements  []AvailableGroupEntitlementDTO  `json:"entitlements,omitempty"`
+	AccessSources []AvailableGroupAccessSourceDTO `json:"access_sources,omitempty"`
 }
 
 // List handles listing user's API keys with pagination
@@ -346,6 +360,23 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 					QuotaUSD:         ent.QuotaUSD,
 					QuotaPeriod:      ent.QuotaPeriod,
 					UnitCostPerUSD:   ent.UnitCostPerUSD,
+					OveragePolicy:    ent.OveragePolicy,
+				})
+			}
+		}
+		if len(groups[i].AccessSources) > 0 {
+			item.AccessSources = make([]AvailableGroupAccessSourceDTO, 0, len(groups[i].AccessSources))
+			for _, source := range groups[i].AccessSources {
+				item.AccessSources = append(item.AccessSources, AvailableGroupAccessSourceDTO{
+					Type:              source.Type,
+					Label:             source.Label,
+					Name:              source.Name,
+					EntitlementID:     source.EntitlementID,
+					PlanID:            source.PlanID,
+					OveragePolicy:     source.OveragePolicy,
+					ExpiresAt:         source.ExpiresAt,
+					Disabled:          source.Disabled,
+					UnavailableReason: source.UnavailableReason,
 				})
 			}
 		}

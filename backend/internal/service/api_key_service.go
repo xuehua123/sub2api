@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"html"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -372,7 +373,7 @@ func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, us
 			return nil, err
 		}
 		if group != nil {
-			if !group.SupportsBalanceAccess() || !user.CanBindGroup(group.ID, group.IsExclusive) {
+			if !canUserUseBalanceAccessSource(user, group) {
 				return nil, ErrGroupNotAllowed
 			}
 		}
@@ -381,7 +382,7 @@ func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, us
 		if err := validateAPIKeyAccessSourceBinding(accessSource, explicitEntitlementID); err != nil {
 			return nil, err
 		}
-		if group == nil || !group.SupportsSubscriptionAccess() || !runtime.Enabled {
+		if group == nil || !runtime.Enabled {
 			return nil, ErrGroupNotAllowed
 		}
 		return s.resolveSubscriptionEntitlementForGroup(ctx, user.ID, group.ID, explicitEntitlementID)
@@ -400,13 +401,13 @@ func (s *APIKeyService) resolveUpdateAccessSourceBinding(ctx context.Context, us
 			return nil, ErrInvalidAccessSource
 		}
 		if group != nil {
-			if !group.SupportsBalanceAccess() || !user.CanBindGroup(group.ID, group.IsExclusive) {
+			if !canUserUseBalanceAccessSource(user, group) {
 				return nil, ErrGroupNotAllowed
 			}
 		}
 		return nil, nil
 	case APIKeyAccessSourceEntitlement:
-		if group == nil || !group.SupportsSubscriptionAccess() || !runtime.Enabled {
+		if group == nil || !runtime.Enabled {
 			return nil, ErrGroupNotAllowed
 		}
 		if explicitEntitlementSet {
@@ -583,27 +584,34 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 	}
 
-	// 验证分组权限（如果指定了分组）
-	if req.GroupID != nil {
-		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
-		if err != nil {
-			return nil, fmt.Errorf("get group: %w", err)
-		}
-
-		// 检查用户是否可以绑定该分组
-		if !s.canUserBindGroup(ctx, user, group) {
-			return nil, ErrGroupNotAllowed
-		}
-	}
-
-	var group *Group
 	runtime := s.subscriptionEntitlementsRuntime(ctx)
+	var group *Group
+
+	// 验证分组权限（如果指定了分组）
 	if req.GroupID != nil {
 		group, err = s.groupRepo.GetByID(ctx, *req.GroupID)
 		if err != nil {
 			return nil, fmt.Errorf("get group: %w", err)
 		}
-	} else if runtime.Enabled && req.SubscriptionEntitlementID != nil {
+
+		// 检查用户是否可以绑定该分组
+		if runtime.Enabled {
+			switch accessSource {
+			case APIKeyAccessSourceBalance:
+				if !canUserUseBalanceAccessSource(user, group) {
+					return nil, ErrGroupNotAllowed
+				}
+			case APIKeyAccessSourceEntitlement:
+				// Entitlement coverage is validated by resolveCreateAccessSourceBinding below.
+			default:
+				return nil, ErrInvalidAccessSource
+			}
+		} else if !s.canUserBindGroup(ctx, user, group) {
+			return nil, ErrGroupNotAllowed
+		}
+	}
+
+	if req.GroupID == nil && runtime.Enabled && req.SubscriptionEntitlementID != nil {
 		return nil, ErrGroupNotAllowed
 	}
 	accessSource, err = normalizeAPIKeyAccessSource(req.AccessSource, req.SubscriptionEntitlementID)
@@ -851,6 +859,8 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		apiKey.Name = html.EscapeString(*req.Name)
 	}
 
+	runtime := s.subscriptionEntitlementsRuntime(ctx)
+
 	if req.GroupID != nil {
 		// 验证分组权限
 		user, err := s.userRepo.GetByID(ctx, userID)
@@ -863,7 +873,13 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 			return nil, fmt.Errorf("get group: %w", err)
 		}
 
-		if !s.canUserBindGroup(ctx, user, group) {
+		if runtime.Enabled && accessSource == APIKeyAccessSourceBalance {
+			if !canUserUseBalanceAccessSource(user, group) {
+				return nil, ErrGroupNotAllowed
+			}
+		} else if runtime.Enabled && accessSource == APIKeyAccessSourceEntitlement {
+			// Entitlement coverage is validated by resolveUpdateAccessSourceBinding below.
+		} else if !s.canUserBindGroup(ctx, user, group) {
 			return nil, ErrGroupNotAllowed
 		}
 
@@ -875,7 +891,6 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		apiKey.Group = nil
 	}
 
-	runtime := s.subscriptionEntitlementsRuntime(ctx)
 	shouldResolveBinding := req.ClearGroup || req.GroupID != nil || req.AccessSource != nil || (runtime.Enabled && req.SubscriptionEntitlementIDSet)
 	if shouldResolveBinding {
 		user, err := s.userRepo.GetByID(ctx, userID)
@@ -1159,14 +1174,19 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 
 	availableGroups := make([]AvailableAPIKeyGroup, 0)
 	for _, group := range allGroups {
-		if group.IsSubscriptionType() {
-			if runtime.Enabled {
-				entitlements := entitlementsByGroupID[group.ID]
-				if len(entitlements) > 0 {
-					availableGroups = append(availableGroups, AvailableAPIKeyGroup{Group: group, Entitlements: entitlements})
-				}
-				continue
+		if runtime.Enabled {
+			entitlements := entitlementsByGroupID[group.ID]
+			accessSources := buildAvailableGroupAccessSources(user, &group, entitlements)
+			if len(accessSources) > 0 {
+				availableGroups = append(availableGroups, AvailableAPIKeyGroup{
+					Group:         group,
+					Entitlements:  entitlements,
+					AccessSources: accessSources,
+				})
 			}
+			continue
+		}
+		if group.IsSubscriptionType() {
 			if subscribedGroupIDs[group.ID] {
 				availableGroups = append(availableGroups, AvailableAPIKeyGroup{Group: group})
 			}
@@ -1178,6 +1198,41 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 	}
 
 	return availableGroups, nil
+}
+
+func canUserUseBalanceAccessSource(user *User, group *Group) bool {
+	if user == nil || group == nil {
+		return false
+	}
+	return group.IsActive() && group.BalanceEnabled && user.CanBindGroup(group.ID, group.IsExclusive)
+}
+
+func buildAvailableGroupAccessSources(user *User, group *Group, entitlements []AvailableAPIKeyGroupEntitlement) []AvailableAPIKeyGroupAccessSource {
+	if group == nil {
+		return nil
+	}
+	sources := make([]AvailableAPIKeyGroupAccessSource, 0, 1+len(entitlements))
+	if canUserUseBalanceAccessSource(user, group) {
+		sources = append(sources, AvailableAPIKeyGroupAccessSource{
+			Type:  APIKeyAccessSourceBalance,
+			Label: "Balance access",
+			Name:  "Balance access",
+		})
+	}
+	for _, entitlement := range entitlements {
+		entitlementID := entitlement.ID
+		expiresAt := entitlement.ExpiresAt
+		sources = append(sources, AvailableAPIKeyGroupAccessSource{
+			Type:          APIKeyAccessSourceEntitlement,
+			Label:         entitlement.Name,
+			Name:          entitlement.Name,
+			EntitlementID: &entitlementID,
+			PlanID:        cloneInt64Ptr(entitlement.PlanID),
+			OveragePolicy: entitlement.OveragePolicy,
+			ExpiresAt:     &expiresAt,
+		})
+	}
+	return sources
 }
 
 func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map[int64][]AvailableAPIKeyGroupEntitlement {
@@ -1198,8 +1253,14 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 				QuotaUSD:         cloneFloat64Ptr(ent.QuotaUSD),
 				QuotaPeriod:      ent.QuotaPeriod,
 				UnitCostPerUSD:   cloneFloat64Ptr(ent.UnitCostPerUSD),
+				OveragePolicy:    ent.OveragePolicy,
 			})
 		}
+	}
+	for groupID := range out {
+		sort.SliceStable(out[groupID], func(i, j int) bool {
+			return out[groupID][i].ID < out[groupID][j].ID
+		})
 	}
 	return out
 }

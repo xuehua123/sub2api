@@ -568,10 +568,24 @@ export interface AvailableGroupEntitlement {
   quota_usd?: number | null
   quota_period?: 'daily' | 'weekly' | 'monthly' | string | null
   unit_cost_per_usd?: number | null
+  overage_policy?: string | null
+}
+
+export interface AvailableGroupAccessSource {
+  type: 'balance' | 'entitlement' | string
+  label?: string | null
+  name?: string | null
+  entitlement_id?: number | null
+  plan_id?: number | null
+  overage_policy?: string | null
+  expires_at?: string | null
+  disabled?: boolean
+  unavailable_reason?: string | null
 }
 
 export interface AvailableGroup extends Group {
   entitlements?: AvailableGroupEntitlement[]
+  access_sources?: AvailableGroupAccessSource[]
 }
 
 export interface AdminGroup extends Group {

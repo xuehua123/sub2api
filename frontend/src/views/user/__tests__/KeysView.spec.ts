@@ -137,6 +137,9 @@ function baseGroup(overrides: Partial<AvailableGroup>): AvailableGroup {
     require_privacy_set: false,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
+    access_sources: [
+      { type: 'balance', label: 'Balance access', name: 'Balance access' },
+    ],
     ...overrides,
   }
 }
@@ -165,6 +168,16 @@ function subscriptionGroup(
       quota_usd: 10,
       quota_period: 'monthly',
       unit_cost_per_usd: 2.99,
+      overage_policy: 'block',
+    })),
+    access_sources: entitlementIDs.map((id) => ({
+      type: 'entitlement',
+      label: `Plan ${id}`,
+      name: `Plan ${id}`,
+      entitlement_id: id,
+      plan_id: id + 1000,
+      overage_policy: 'block',
+      expires_at: '2026-07-01T00:00:00Z',
     })),
     ...overrides,
   })
@@ -336,6 +349,41 @@ describe('KeysView entitlement group binding', () => {
     }))
   })
 
+  it('uses access_sources when legacy entitlements metadata is absent', async () => {
+    const wrapper = await mountView([
+      subscriptionGroup([301], {
+        entitlements: undefined,
+        access_sources: [
+          {
+            type: 'entitlement',
+            label: 'Source-only Plan',
+            name: 'Source-only Plan',
+            entitlement_id: 301,
+            plan_id: 1301,
+            overage_policy: 'balance_fallback',
+            expires_at: '2026-07-01T00:00:00Z',
+          },
+        ],
+      }),
+    ])
+    const vm = setupState(wrapper)
+
+    vm.handleCreateAction()
+    vm.selectAccessSource('entitlement')
+    vm.formData.name = 'Source-aware key'
+    vm.formData.group_id = 20
+    await nextTick()
+
+    expect(vm.formData.subscription_entitlement_id).toBe(301)
+
+    await vm.handleSubmit()
+    expect(apiMocks.createWithPayload).toHaveBeenCalledWith(expect.objectContaining({
+      group_id: 20,
+      access_source: 'entitlement',
+      subscription_entitlement_id: 301,
+    }))
+  })
+
   it('requires explicit selection when multiple entitlements cover the group', async () => {
     const wrapper = await mountView([subscriptionGroup([201, 202])])
     const vm = setupState(wrapper)
@@ -365,7 +413,14 @@ describe('KeysView entitlement group binding', () => {
   it('does not send entitlement id for standard groups or legacy groups without metadata', async () => {
     const wrapper = await mountView([
       baseGroup({ id: 10, name: 'Standard' }),
-      baseGroup({ id: 20, name: 'Legacy Sub', subscription_type: 'subscription' }),
+      baseGroup({
+        id: 20,
+        name: 'Legacy Sub',
+        subscription_type: 'subscription',
+        balance_enabled: undefined,
+        subscription_enabled: undefined,
+        access_sources: undefined,
+      }),
     ])
     const vm = setupState(wrapper)
 

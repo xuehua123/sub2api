@@ -1299,7 +1299,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, AvailableGroup, AvailableGroupEntitlement, CreateApiKeyRequest, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
+	import type { ApiKey, AvailableGroup, AvailableGroupAccessSource, AvailableGroupEntitlement, CreateApiKeyRequest, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1328,6 +1328,7 @@ interface GroupOption {
   planAutoGrantEnabled?: boolean
   platform: GroupPlatform
   entitlements: AvailableGroupEntitlement[]
+  accessSources: AvailableGroupAccessSource[]
 }
 
 type AccessSource = 'balance' | 'entitlement'
@@ -1509,7 +1510,8 @@ const groupOptions = computed(() =>
     subscriptionEnabled: group.subscription_enabled,
     planAutoGrantEnabled: group.plan_auto_grant_enabled,
     platform: group.platform,
-    entitlements: group.entitlements ?? []
+    entitlements: group.entitlements ?? [],
+    accessSources: group.access_sources ?? []
   }))
 )
 
@@ -1517,10 +1519,54 @@ const selectedGroupOption = computed(() =>
   groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
 )
 
+function activeAccessSourcesForGroup(option: GroupOption, type?: AccessSource): AvailableGroupAccessSource[] {
+  const sources = option.accessSources.filter((source) => {
+    if (source.disabled) return false
+    if (type && source.type !== type) return false
+    return source.type === 'balance' || source.type === 'entitlement'
+  })
+  return sources as AvailableGroupAccessSource[]
+}
+
+function entitlementAccessSourcesForGroup(option: GroupOption): AvailableGroupAccessSource[] {
+  return activeAccessSourcesForGroup(option, 'entitlement').filter((source) => Number(source.entitlement_id) > 0)
+}
+
+function accessSourceHasStructuredSources(option: GroupOption): boolean {
+  return option.accessSources.length > 0
+}
+
+function entitlementFromAccessSource(source: AvailableGroupAccessSource): AvailableGroupEntitlement | null {
+  const id = Number(source.entitlement_id)
+  if (!Number.isFinite(id) || id <= 0) return null
+  return {
+    id,
+    name: source.name || source.label || t('keys.entitlementFallbackName', { id }),
+    plan_id: source.plan_id ?? null,
+    starts_at: '',
+    expires_at: source.expires_at ?? '',
+    overage_policy: source.overage_policy ?? null,
+  }
+}
+
+function entitlementsForGroupOption(option: GroupOption): AvailableGroupEntitlement[] {
+  const byID = new Map<number, AvailableGroupEntitlement>()
+  for (const entitlement of option.entitlements) {
+    byID.set(entitlement.id, entitlement)
+  }
+  for (const source of entitlementAccessSourcesForGroup(option)) {
+    const entitlement = entitlementFromAccessSource(source)
+    if (entitlement && !byID.has(entitlement.id)) {
+      byID.set(entitlement.id, entitlement)
+    }
+  }
+  return Array.from(byID.values()).sort((a, b) => a.id - b.id)
+}
+
 const availableEntitlements = computed(() => {
   const byID = new Map<number, AvailableGroupEntitlement>()
   for (const option of groupOptions.value) {
-    for (const entitlement of option.entitlements) {
+    for (const entitlement of entitlementsForGroupOption(option)) {
       if (!byID.has(entitlement.id)) {
         byID.set(entitlement.id, entitlement)
       }
@@ -1549,11 +1595,17 @@ function rowAccessSource(key: ApiKey): AccessSource {
 }
 
 function groupSupportsBalanceSource(option: GroupOption): boolean {
+  if (accessSourceHasStructuredSources(option)) {
+    return activeAccessSourcesForGroup(option, 'balance').length > 0
+  }
   if (option.balanceEnabled !== undefined) return option.balanceEnabled
   return option.subscriptionType !== 'subscription' || option.entitlements.length === 0
 }
 
 function groupSupportsEntitlementSource(option: GroupOption): boolean {
+  if (accessSourceHasStructuredSources(option)) {
+    return entitlementAccessSourcesForGroup(option).length > 0
+  }
   if (option.subscriptionEnabled !== undefined) return option.subscriptionEnabled && option.entitlements.length > 0
   return option.subscriptionType === 'subscription' && option.entitlements.length > 0
 }
@@ -1567,7 +1619,7 @@ const formGroupOptions = computed(() => {
   if (!entitlementID) return groupOptions.value.filter(groupSupportsEntitlementSource)
   return groupOptions.value.filter((option) => {
     if (!groupSupportsEntitlementSource(option)) return false
-    return option.entitlements.some((entitlement) => entitlement.id === entitlementID)
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
   })
 })
 
@@ -1577,7 +1629,7 @@ const requiresEntitlementSelection = computed(() => {
     group &&
     formData.value.access_source === 'entitlement' &&
     groupSupportsEntitlementSource(group) &&
-    group.entitlements.length > 0 &&
+    entitlementsForGroupOption(group).length > 0 &&
     !formData.value.subscription_entitlement_id
   )
 })
@@ -1705,10 +1757,11 @@ function entitlementForGroupOption(
   entitlementID: number | null | undefined
 ): AvailableGroupEntitlement | null {
   if (!option || !groupSupportsEntitlementSource(option)) return null
+  const entitlements = entitlementsForGroupOption(option)
   if (entitlementID) {
-    return option.entitlements.find((entitlement) => entitlement.id === entitlementID) ?? entitlementByID(entitlementID)
+    return entitlements.find((entitlement) => entitlement.id === entitlementID) ?? entitlementByID(entitlementID)
   }
-  if (option.entitlements.length === 1) return option.entitlements[0]
+  if (entitlements.length === 1) return entitlements[0]
   return null
 }
 
@@ -1765,21 +1818,22 @@ function entitlementLabelByID(id: number | null | undefined): string {
 function entitlementGroupOptions(entitlementID: number): GroupOption[] {
   return groupOptions.value.filter((option) => {
     if (!groupSupportsEntitlementSource(option)) return false
-    return option.entitlements.some((entitlement) => entitlement.id === entitlementID)
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
   })
 }
 
 function entitlementCountText(option: GroupOption): string {
-  if (option.entitlements.length <= 0) return ''
-  if (option.entitlements.length === 1) return t('keys.entitlementSingleAvailable')
-  return t('keys.entitlementMultipleAvailable', { count: option.entitlements.length })
+  const entitlements = entitlementsForGroupOption(option)
+  if (entitlements.length <= 0) return ''
+  if (entitlements.length === 1) return t('keys.entitlementSingleAvailable')
+  return t('keys.entitlementMultipleAvailable', { count: entitlements.length })
 }
 
 function groupEntitlementScopeText(option: GroupOption, entitlementID: number | null | undefined): string {
   if (formData.value.access_source === 'balance') {
     return t('keys.accessSourceBalanceShort')
   }
-  if (entitlementID && option.entitlements.some((entitlement) => entitlement.id === entitlementID)) {
+  if (entitlementID && entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)) {
     return t('keys.entitlementCurrentCardIncludesGroup')
   }
   return entitlementCountText(option)
@@ -1818,7 +1872,7 @@ function reconcileFormEntitlementSelection() {
     return
   }
 
-  const entitlements = group.entitlements
+  const entitlements = entitlementsForGroupOption(group)
   if (entitlements.length === 0) {
     formData.value.subscription_entitlement_id = null
     return
@@ -1875,7 +1929,7 @@ const quickSwitchGroupOptions = computed(() => {
   if (!entitlementID) return []
   return groupOptions.value.filter((option) => {
     if (!groupSupportsEntitlementSource(option)) return false
-    return option.entitlements.some((entitlement) => entitlement.id === entitlementID)
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
   })
 })
 const filteredGroupOptions = computed(() => {
@@ -2149,11 +2203,12 @@ function entitlementIDForGroupOption(option: GroupOption | null, key?: ApiKey): 
   if (!key || rowAccessSource(key) === 'balance') return null
   if (!groupSupportsEntitlementSource(option)) return null
   const currentEntitlementID = key?.subscription_entitlement_id
-  if (currentEntitlementID && option.entitlements.some((entitlement) => entitlement.id === currentEntitlementID)) {
+  const entitlements = entitlementsForGroupOption(option)
+  if (currentEntitlementID && entitlements.some((entitlement) => entitlement.id === currentEntitlementID)) {
     return currentEntitlementID
   }
-  if (option.entitlements.length === 1) return option.entitlements[0].id
-  if (option.entitlements.length > 1) return undefined
+  if (entitlements.length === 1) return entitlements[0].id
+  if (entitlements.length > 1) return undefined
   return undefined
 }
 
@@ -2163,7 +2218,7 @@ function subscriptionEntitlementPayloadForForm(includeClear: boolean): number | 
   if (formData.value.group_id === null) return includeClear ? null : undefined
   if (!option) return undefined
   if (!groupSupportsEntitlementSource(option)) return includeClear ? null : undefined
-  if (option.entitlements.length > 0) return formData.value.subscription_entitlement_id
+  if (entitlementsForGroupOption(option).length > 0) return formData.value.subscription_entitlement_id
   return undefined
 }
 
@@ -2186,7 +2241,7 @@ const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
   }
 
   const entitlementID = entitlementIDForGroupOption(option, key)
-  if (entitlementID === undefined && option?.entitlements.length) {
+  if (entitlementID === undefined && option && entitlementsForGroupOption(option).length > 0) {
     editKey(key)
     formData.value.access_source = 'entitlement'
     formData.value.group_id = newGroupId

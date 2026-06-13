@@ -146,8 +146,9 @@ type APIKeyListFilters struct {
 }
 
 type AvailableAPIKeyGroup struct {
-	Group        Group
-	Entitlements []AvailableAPIKeyGroupEntitlement
+	Group         Group
+	Entitlements  []AvailableAPIKeyGroupEntitlement
+	AccessSources []AvailableAPIKeyGroupAccessSource
 }
 
 type AvailableAPIKeyGroupEntitlement struct {
@@ -162,4 +163,17 @@ type AvailableAPIKeyGroupEntitlement struct {
 	QuotaUSD         *float64
 	QuotaPeriod      string
 	UnitCostPerUSD   *float64
+	OveragePolicy    string
+}
+
+type AvailableAPIKeyGroupAccessSource struct {
+	Type              string
+	Label             string
+	Name              string
+	EntitlementID     *int64
+	PlanID            *int64
+	OveragePolicy     string
+	ExpiresAt         *time.Time
+	Disabled          bool
+	UnavailableReason string
 }
