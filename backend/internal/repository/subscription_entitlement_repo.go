@@ -216,7 +216,10 @@ func (r *subscriptionEntitlementRepository) ListActiveCoveringGroupForUser(ctx c
 			subscriptionentitlement.StartsAtLTE(now),
 			subscriptionentitlement.ExpiresAtGT(now),
 			subscriptionentitlement.DeletedAtIsNil(),
-			subscriptionentitlement.HasGroupsWith(entgroup.IDEQ(groupID)),
+			subscriptionentitlement.HasSubscriptionEntitlementGroupsWith(
+				subscriptionentitlementgroup.GroupIDEQ(groupID),
+				subscriptionentitlementgroup.EnabledEQ(true),
+			),
 		).
 		Order(dbent.Asc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
 		All(ctx)

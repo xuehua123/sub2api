@@ -46,6 +46,27 @@ func TestSubscriptionEntitlementResolver_GroupNotCoveredReturnsGroupNotAllowed(t
 	require.ErrorIs(t, err, ErrGroupNotAllowed)
 }
 
+func TestSubscriptionEntitlementResolver_DisabledGrantDoesNotFallBackToGroupsEdge(t *testing.T) {
+	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	ent := testActiveEntitlement(1, 42, []int64{101}, now, now.AddDate(0, 0, 30))
+	ent.GroupGrants[0].Enabled = false
+	repo.entitlements[1] = ent
+	explicitID := int64(1)
+
+	_, err := svc.Resolve(context.Background(), ResolveSubscriptionEntitlementInput{
+		UserID:        42,
+		GroupID:       101,
+		EntitlementID: &explicitID,
+		Now:           now,
+	})
+	require.ErrorIs(t, err, ErrGroupNotAllowed)
+
+	_, err = svc.ResolveForGroup(context.Background(), 42, 101, 0)
+	require.ErrorIs(t, err, ErrGroupNotAllowed)
+}
+
 func TestSubscriptionEntitlementResolver_SharedMonthlyUsageExhaustedAcrossGroups(t *testing.T) {
 	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	monthlyLimit := 5.0

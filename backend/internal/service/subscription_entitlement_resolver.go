@@ -212,6 +212,9 @@ func entitlementCoversGroup(ent *SubscriptionEntitlement, groupID int64) bool {
 			return true
 		}
 	}
+	if len(ent.GroupGrants) > 0 {
+		return false
+	}
 	for _, group := range ent.Groups {
 		if group.ID == groupID {
 			return true
@@ -240,6 +243,9 @@ func entitlementResolutionGroup(ent *SubscriptionEntitlement, groupID int64) *Gr
 		if grant.Enabled && grant.GroupID == groupID && grant.Group != nil {
 			return grant.Group
 		}
+	}
+	if len(ent.GroupGrants) > 0 {
+		return &Group{ID: groupID}
 	}
 	for i := range ent.Groups {
 		if ent.Groups[i].ID == groupID {

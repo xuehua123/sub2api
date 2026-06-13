@@ -1,6 +1,8 @@
 package migrations
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -213,4 +215,46 @@ func TestMigration153AddsUsageLogBillingSourceAdditively(t *testing.T) {
 	require.Contains(t, sql, "entitlement_balance_fallback")
 	require.NotContains(t, sql, "DROP TABLE")
 	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration154ClearsInvalidAPIKeyEntitlementBindingsConservatively(t *testing.T) {
+	content, err := FS.ReadFile("154_api_key_entitlement_binding_preflight.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE api_keys ak")
+	require.Contains(t, sql, "SET subscription_entitlement_id = NULL")
+	require.Contains(t, sql, "ak.subscription_entitlement_id IS NOT NULL")
+	require.Contains(t, sql, "AND NOT EXISTS")
+	require.Contains(t, sql, "se.id = ak.subscription_entitlement_id")
+	require.Contains(t, sql, "se.deleted_at IS NULL")
+	require.Contains(t, sql, "se.user_id = ak.user_id")
+	require.Contains(t, sql, "se.status = 'active'")
+	require.Contains(t, sql, "se.starts_at <= NOW()")
+	require.Contains(t, sql, "se.expires_at > NOW()")
+	require.Contains(t, sql, "seg.group_id = ak.group_id")
+	require.Contains(t, sql, "seg.enabled = TRUE")
+	require.NotContains(t, sql, "SET subscription_entitlement_id = se.id")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestSubscriptionEntitlementsV2PreflightRunbookCoversSwitchAuditQueries(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "plans", "subscription-entitlements-v2-preflight-sql.md")
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	doc := string(content)
+	require.Contains(t, doc, "invalid_api_key_entitlement_bindings")
+	require.Contains(t, doc, "owner_mismatch")
+	require.Contains(t, doc, "future_start")
+	require.Contains(t, doc, "expired")
+	require.Contains(t, doc, "group_not_covered")
+	require.Contains(t, doc, "HAVING COUNT(*) > 1")
+	require.Contains(t, doc, "entitlement_only_records")
+	require.Contains(t, doc, "billing_source")
+	require.Contains(t, doc, "entitlement_balance_fallback")
+	require.Contains(t, doc, "subscription_entitlements_v2_enabled=false")
+	require.Contains(t, doc, "sub2_payment_page_legacy_mapping_enabled=false")
+	require.Contains(t, doc, "Do not delete entitlement schema or history")
 }
