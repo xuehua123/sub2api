@@ -1342,3 +1342,45 @@ func (s *BillingCacheService) HasUserPlatformQuotaLimit(ctx context.Context, use
 	}
 	return entry.DailyLimitUSD != nil || entry.WeeklyLimitUSD != nil || entry.MonthlyLimitUSD != nil
 }
+
+// CheckBillingEligibilityWithEntitlement checks request eligibility for legacy
+// balance/subscription requests and entitlement-scoped requests.
+func (s *BillingCacheService) CheckBillingEligibilityWithEntitlement(ctx context.Context, user *User, apiKey *APIKey, group *Group, subscription *UserSubscription, entitlement *SubscriptionEntitlement, platform string) error {
+	if s.cfg.RunMode == config.RunModeSimple {
+		return nil
+	}
+	if s.circuitBreaker != nil && !s.circuitBreaker.Allow() {
+		return ErrBillingServiceUnavailable
+	}
+
+	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
+	isEntitlementMode := entitlement != nil
+
+	if isSubscriptionMode {
+		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
+			return err
+		}
+	} else if !isEntitlementMode {
+		if err := s.checkBalanceEligibility(ctx, user.ID); err != nil {
+			return err
+		}
+	}
+
+	if !isSubscriptionMode && !isEntitlementMode {
+		if err := s.checkUserPlatformQuotaEligibility(ctx, user.ID, platform); err != nil {
+			return err
+		}
+	}
+
+	if apiKey != nil && apiKey.HasRateLimits() {
+		if err := s.checkAPIKeyRateLimits(ctx, apiKey); err != nil {
+			return err
+		}
+	}
+
+	if err := s.checkRPM(ctx, user, group); err != nil {
+		return err
+	}
+
+	return nil
+}

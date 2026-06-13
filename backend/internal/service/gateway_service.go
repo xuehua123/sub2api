@@ -8980,7 +8980,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
-	isSubscriptionBilling := apiKey.Group != nil && apiKey.Group.IsSubscriptionType() && (subscription != nil || entitlement != nil)
+	isSubscriptionBilling := subscription != nil || entitlement != nil
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription

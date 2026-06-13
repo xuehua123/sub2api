@@ -141,6 +141,73 @@ func TestAPIKeyAuthEntitlementV2StandardGroupUsesBalance(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAPIKeyAuthEntitlementV2BalanceSourceOnDualModeGroupSkipsEntitlement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	group := middlewareSubscriptionGroup(20)
+	group.BalanceEnabled = true
+	group.SubscriptionEnabled = true
+	apiKey := middlewareAPIKey("balance-dual-mode-key", group, nil, 1)
+	apiKey.AccessSource = service.APIKeyAccessSourceBalance
+	ent := middlewareEntitlement(100, 1, now, []service.Group{group})
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
+	router := newEntitlementAuthRouter(apiKeyService, func(c *gin.Context) {
+		_, entitlementOK := GetSubscriptionEntitlementFromContext(c)
+		require.False(t, entitlementOK)
+		_, subscriptionOK := GetSubscriptionFromContext(c)
+		require.False(t, subscriptionOK)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPIKeyAuthEntitlementV2EntitlementSourceRequiresEntitlementID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	group := middlewareSubscriptionGroup(20)
+	apiKey := middlewareAPIKey("missing-entitlement-id-key", group, nil, 1)
+	apiKey.AccessSource = service.APIKeyAccessSourceEntitlement
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, nil)
+	router := newEntitlementAuthRouter(apiKeyService, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
+func TestAPIKeyAuthEntitlementV2BalanceSourceIgnoresStaleEntitlementID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	group := middlewareSubscriptionGroup(20)
+	group.BalanceEnabled = true
+	group.SubscriptionEnabled = true
+	entID := int64(100)
+	apiKey := middlewareAPIKey("balance-stale-entitlement-key", group, &entID, 1)
+	apiKey.AccessSource = service.APIKeyAccessSourceBalance
+	ent := middlewareEntitlement(100, 1, now, []service.Group{group})
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
+	router := newEntitlementAuthRouter(apiKeyService, func(c *gin.Context) {
+		_, entitlementOK := GetSubscriptionEntitlementFromContext(c)
+		require.False(t, entitlementOK)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
 func TestAPIKeyAuthEntitlementV2ExplicitSetsEntitlementContext(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	entID := int64(100)
@@ -164,7 +231,7 @@ func TestAPIKeyAuthEntitlementV2ExplicitSetsEntitlementContext(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestAPIKeyAuthEntitlementV2DefaultResolve(t *testing.T) {
+func TestAPIKeyAuthEntitlementV2DoesNotDefaultResolveWithoutBinding(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	apiKey := middlewareAPIKey("default-entitlement-key", middlewareSubscriptionGroup(20), nil, 0)
 	entA := middlewareEntitlement(100, 1, now, []service.Group{middlewareSubscriptionGroup(20)})
@@ -172,19 +239,14 @@ func TestAPIKeyAuthEntitlementV2DefaultResolve(t *testing.T) {
 	entB := middlewareEntitlement(101, 1, now, []service.Group{middlewareSubscriptionGroup(20)})
 	entB.ExpiresAt = now.Add(24 * time.Hour)
 	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, entA, entB)
-	router := newEntitlementAuthRouter(apiKeyService, func(c *gin.Context) {
-		entitlement, ok := GetSubscriptionEntitlementFromContext(c)
-		require.True(t, ok)
-		require.Equal(t, int64(101), entitlement.ID)
-		c.JSON(http.StatusOK, gin.H{"ok": true})
-	})
+	router := newEntitlementAuthRouter(apiKeyService, nil)
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
 	req.Header.Set("x-api-key", apiKey.Key)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestAPIKeyAuthEntitlementV2RejectsInvalidExplicitEntitlement(t *testing.T) {
@@ -335,6 +397,52 @@ func TestAPIKeyAuthWithSubscriptionGoogleEntitlementV2(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAPIKeyAuthWithSubscriptionGoogleBalanceSourceSkipsEntitlement(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	group := middlewareSubscriptionGroup(20)
+	group.BalanceEnabled = true
+	group.SubscriptionEnabled = true
+	apiKey := middlewareAPIKey("google-balance-dual-mode-key", group, nil, 1)
+	apiKey.AccessSource = service.APIKeyAccessSourceBalance
+	ent := middlewareEntitlement(100, 1, now, []service.Group{group})
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
+
+	router := gin.New()
+	router.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, &config.Config{RunMode: config.RunModeStandard}))
+	router.GET("/v1beta/models", func(c *gin.Context) {
+		_, ok := GetSubscriptionEntitlementFromContext(c)
+		require.False(t, ok)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1beta/models", nil)
+	req.Header.Set("x-goog-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPIKeyAuthWithSubscriptionGoogleEntitlementSourceRequiresID(t *testing.T) {
+	group := middlewareSubscriptionGroup(20)
+	apiKey := middlewareAPIKey("google-missing-entitlement-id-key", group, nil, 1)
+	apiKey.AccessSource = service.APIKeyAccessSourceEntitlement
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, nil)
+
+	router := gin.New()
+	router.Use(APIKeyAuthWithSubscriptionGoogle(apiKeyService, nil, &config.Config{RunMode: config.RunModeStandard}))
+	router.GET("/v1beta/models", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1beta/models", nil)
+	req.Header.Set("x-goog-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
 func newEntitlementAuthRouter(apiKeyService *service.APIKeyService, handler gin.HandlerFunc) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, &config.Config{RunMode: config.RunModeStandard})))
@@ -381,11 +489,11 @@ func middlewareAPIKey(key string, group service.Group, entitlementID *int64, bal
 }
 
 func middlewareStandardGroup(id int64) service.Group {
-	return service.Group{ID: id, Name: "standard", Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard}
+	return service.Group{ID: id, Name: "standard", Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeStandard, BalanceEnabled: true}
 }
 
 func middlewareSubscriptionGroup(id int64) service.Group {
-	return service.Group{ID: id, Name: "subscription", Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeSubscription, AllowMessagesDispatch: true}
+	return service.Group{ID: id, Name: "subscription", Platform: service.PlatformOpenAI, Status: service.StatusActive, SubscriptionType: service.SubscriptionTypeSubscription, SubscriptionEnabled: true, AllowMessagesDispatch: true}
 }
 
 func middlewareEntitlement(id, userID int64, now time.Time, groups []service.Group) *service.SubscriptionEntitlement {

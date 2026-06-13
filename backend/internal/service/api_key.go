@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -67,6 +68,25 @@ type APIKey struct {
 
 func (k *APIKey) IsActive() bool {
 	return k.Status == StatusActive
+}
+
+func (k *APIKey) EffectiveAccessSource() string {
+	if k == nil {
+		return APIKeyAccessSourceBalance
+	}
+	switch strings.ToLower(strings.TrimSpace(k.AccessSource)) {
+	case APIKeyAccessSourceBalance:
+		return APIKeyAccessSourceBalance
+	case APIKeyAccessSourceEntitlement:
+		return APIKeyAccessSourceEntitlement
+	case "":
+		if k.SubscriptionEntitlementID != nil {
+			return APIKeyAccessSourceEntitlement
+		}
+		return APIKeyAccessSourceBalance
+	default:
+		return ""
+	}
 }
 
 // HasRateLimits returns true if any rate limit window is configured

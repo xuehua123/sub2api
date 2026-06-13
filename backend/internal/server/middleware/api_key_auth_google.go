@@ -62,11 +62,26 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
+		accessSource := apiKey.EffectiveAccessSource()
+		useEntitlementAccess := v2EntitlementsEnabled && accessSource == service.APIKeyAccessSourceEntitlement
+		if v2EntitlementsEnabled && accessSource == "" {
+			abortWithGoogleError(c, 403, "Invalid API key access source")
+			return
+		}
+		if useEntitlementAccess && apiKey.SubscriptionEntitlementID == nil {
+			abortWithGoogleError(c, 403, "Subscription entitlement is required for entitlement access source")
+			return
+		}
 		_, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
 		currentGroupUnavailable := !groupAvailable
-		if currentGroupUnavailable && (!v2EntitlementsEnabled || !isSubscriptionType) {
+		if currentGroupUnavailable && !useEntitlementAccess {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			abortWithGoogleError(c, 403, groupUnavailableMessage)
+			return
+		}
+		if v2EntitlementsEnabled && !validateAPIKeyGroupAllowed(apiKey, v2EntitlementsEnabled, accessSource) {
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
+			abortWithGoogleError(c, 403, "API key group is not allowed")
 			return
 		}
 
@@ -95,7 +110,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 
 		var entitlement *service.SubscriptionEntitlement
-		if isSubscriptionType && v2EntitlementsEnabled {
+		if useEntitlementAccess {
 			resolved, err := apiKeyService.ResolveEntitlementForAPIKeyAuth(
 				c.Request.Context(),
 				apiKey,
@@ -130,7 +145,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					c.Set(string(ContextKeySubscriptionEntitlementBalanceFallback), true)
 				}
 			}
-		} else if isSubscriptionType && subscriptionService != nil {
+		} else if !v2EntitlementsEnabled && isSubscriptionType && subscriptionService != nil {
 			candidate, err := subscriptionService.ResolveUsableSubscriptionForAPIKeyWithRequest(
 				c.Request.Context(),
 				apiKey,

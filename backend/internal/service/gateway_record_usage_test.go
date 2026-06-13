@@ -167,7 +167,7 @@ func TestGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAn
 			Model:    "claude-sonnet-4",
 			Duration: time.Second,
 		},
-		APIKey:                     &APIKey{ID: 501, Quota: 100, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		APIKey:                     &APIKey{ID: 501, Quota: 100, AccessSource: APIKeyAccessSourceEntitlement, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 1}},
 		User:                       &User{ID: 601},
 		Account:                    &Account{ID: 701},
 		Entitlement:                entitlement,

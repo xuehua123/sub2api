@@ -118,14 +118,24 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		}
 		isSubscriptionType := apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
 		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
+		accessSource := apiKey.EffectiveAccessSource()
+		useEntitlementAccess := v2EntitlementsEnabled && accessSource == service.APIKeyAccessSourceEntitlement
+		if v2EntitlementsEnabled && accessSource == "" {
+			AbortWithError(c, 403, "INVALID_ACCESS_SOURCE", "invalid API key access source")
+			return
+		}
+		if useEntitlementAccess && apiKey.SubscriptionEntitlementID == nil {
+			AbortWithError(c, 403, "SUBSCRIPTION_ENTITLEMENT_REQUIRED", "subscription entitlement is required for entitlement access source")
+			return
+		}
 		groupUnavailableCode, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
 		currentGroupUnavailable := !groupAvailable
-		if currentGroupUnavailable && (!v2EntitlementsEnabled || !isSubscriptionType) {
+		if currentGroupUnavailable && !useEntitlementAccess {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			AbortWithError(c, 403, groupUnavailableCode, groupUnavailableMessage)
 			return
 		}
-		if abortIfAPIKeyGroupNotAllowed(c, apiKey) {
+		if abortIfAPIKeyGroupNotAllowed(c, apiKey, v2EntitlementsEnabled, accessSource) {
 			return
 		}
 
@@ -166,7 +176,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		var subscription *service.UserSubscription
 		var entitlement *service.SubscriptionEntitlement
 
-		if isSubscriptionType && v2EntitlementsEnabled {
+		if useEntitlementAccess {
 			if skipBilling {
 				if resolved, entErr := apiKeyService.ResolveEntitlementForAPIKeyAuth(
 					c.Request.Context(),
@@ -214,7 +224,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					}
 				}
 			}
-		} else if isSubscriptionType && subscriptionService != nil {
+		} else if !v2EntitlementsEnabled && isSubscriptionType && subscriptionService != nil {
 			if skipBilling {
 				sub, subErr := subscriptionService.GetActiveSubscription(
 					c.Request.Context(),
@@ -470,8 +480,8 @@ func setGroupContext(c *gin.Context, group *service.Group) {
 	c.Request = c.Request.WithContext(ctx)
 }
 
-func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
-	if validateAPIKeyGroupAllowed(apiKey) {
+func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey, v2EntitlementsEnabled bool, accessSource string) bool {
+	if validateAPIKeyGroupAllowed(apiKey, v2EntitlementsEnabled, accessSource) {
 		return false
 	}
 	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
@@ -479,11 +489,21 @@ func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {
 	return true
 }
 
-func validateAPIKeyGroupAllowed(apiKey *service.APIKey) bool {
+func validateAPIKeyGroupAllowed(apiKey *service.APIKey, v2EntitlementsEnabled bool, accessSource string) bool {
 	if apiKey == nil || apiKey.GroupID == nil || apiKey.User == nil || apiKey.Group == nil {
 		return true
 	}
 	group := apiKey.Group
+	if v2EntitlementsEnabled {
+		switch accessSource {
+		case service.APIKeyAccessSourceBalance:
+			return group.IsActive() && group.BalanceEnabled && apiKey.User.CanBindGroup(group.ID, group.IsExclusive)
+		case service.APIKeyAccessSourceEntitlement:
+			return true
+		default:
+			return false
+		}
+	}
 	if group.IsSubscriptionType() {
 		return true
 	}
