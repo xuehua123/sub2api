@@ -6,6 +6,11 @@
 import { apiClient } from './client'
 import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest, PaginatedResponse } from '@/types'
 
+export async function createWithPayload(payload: CreateApiKeyRequest): Promise<ApiKey> {
+  const { data } = await apiClient.post<ApiKey>('/keys', payload)
+  return data
+}
+
 /**
  * List all API keys for current user
  * @param page - Page number (default: 1)
@@ -100,8 +105,7 @@ export async function create(
     payload.auto_switch_group_enabled = autoSwitchGroupEnabled
   }
 
-  const { data } = await apiClient.post<ApiKey>('/keys', payload)
-  return data
+  return createWithPayload(payload)
 }
 
 /**
@@ -139,6 +143,7 @@ export const keysAPI = {
   list,
   getById,
   create,
+  createWithPayload,
   update,
   delete: deleteKey,
   toggleStatus

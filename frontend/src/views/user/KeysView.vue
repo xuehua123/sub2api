@@ -436,17 +436,77 @@
               <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
             </template>
             <template #option="{ option, selected }">
-              <GroupOptionItem
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :description="(option as unknown as GroupOption).description"
-                :selected="selected"
-              />
+              <div class="w-full">
+                <GroupOptionItem
+                  :name="(option as unknown as GroupOption).label"
+                  :platform="(option as unknown as GroupOption).platform"
+                  :subscription-type="(option as unknown as GroupOption).subscriptionType"
+                  :rate-multiplier="(option as unknown as GroupOption).rate"
+                  :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                  :description="(option as unknown as GroupOption).description"
+                  :selected="selected"
+                />
+                <div
+                  v-if="entitlementCountText(option as unknown as GroupOption)"
+                  class="mt-1 text-left text-xs text-primary-600 dark:text-primary-400"
+                >
+                  {{ entitlementCountText(option as unknown as GroupOption) }}
+                </div>
+              </div>
             </template>
           </Select>
+        </div>
+
+        <div
+          v-if="selectedGroupEntitlements.length > 0"
+          class="rounded-lg border border-primary-100 bg-primary-50/60 p-3 dark:border-primary-900/40 dark:bg-primary-900/10"
+          data-testid="entitlement-selector"
+        >
+          <label class="input-label mb-1">{{ t('keys.entitlementLabel') }}</label>
+          <Select
+            v-if="selectedGroupEntitlements.length > 1"
+            v-model="formData.subscription_entitlement_id"
+            :options="entitlementOptions"
+            :placeholder="t('keys.entitlementSelectPlaceholder')"
+            data-testid="entitlement-select"
+          >
+            <template #selected="{ option }">
+              <span v-if="option" class="text-sm text-gray-900 dark:text-white">
+                {{ entitlementOptionLabel(option) }}
+              </span>
+              <span v-else class="text-gray-400">{{ t('keys.entitlementSelectPlaceholder') }}</span>
+            </template>
+            <template #option="{ option, selected }">
+              <div class="flex w-full items-start justify-between gap-3">
+                <div class="min-w-0 text-left">
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                    {{ entitlementOptionLabel(option) }}
+                  </div>
+                  <div
+                    v-if="entitlementOptionDescription(option)"
+                    class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                  >
+                    {{ entitlementOptionDescription(option) }}
+                  </div>
+                </div>
+                <Icon
+                  v-if="selected"
+                  name="check"
+                  size="sm"
+                  class="shrink-0 text-primary-500"
+                />
+              </div>
+            </template>
+          </Select>
+          <div v-else class="text-sm text-gray-700 dark:text-gray-300" data-testid="entitlement-auto-selected">
+            {{ t('keys.entitlementAutoSelected') }}:
+            <span class="font-medium text-gray-900 dark:text-white">
+              {{ formatEntitlementSummary(selectedGroupEntitlements[0]) }}
+            </span>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ selectedGroupEntitlements.length > 1 ? t('keys.entitlementMultipleHint') : t('keys.entitlementSingleHint') }}
+          </p>
         </div>
 
         <div class="flex items-center justify-between rounded-lg border border-gray-200 p-3 dark:border-dark-700">
@@ -1055,18 +1115,26 @@
             ]"
             :title="option.description || undefined"
           >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :description="option.description"
-              :selected="
-                selectedKeyForGroup?.group_id === option.value ||
-                (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
+            <div class="w-full">
+              <GroupOptionItem
+                :name="option.label"
+                :platform="option.platform"
+                :subscription-type="option.subscriptionType"
+                :rate-multiplier="option.rate"
+                :user-rate-multiplier="option.userRate"
+                :description="option.description"
+                :selected="
+                  selectedKeyForGroup?.group_id === option.value ||
+                  (!selectedKeyForGroup?.group_id && option.value === null)
+                "
+              />
+              <div
+                v-if="entitlementCountText(option)"
+                class="mt-1 text-left text-xs text-primary-600 dark:text-primary-400"
+              >
+                {{ entitlementCountText(option) }}
+              </div>
+            </div>
           </button>
           <!-- Empty state when search has no results -->
           <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
@@ -1079,7 +1147,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
 	import { useRoute, useRouter } from 'vue-router'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
@@ -1105,7 +1173,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
+	import type { ApiKey, AvailableGroup, AvailableGroupEntitlement, CreateApiKeyRequest, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1130,6 +1198,7 @@ interface GroupOption {
   userRate: number | null
   subscriptionType: SubscriptionType
   platform: GroupPlatform
+  entitlements: AvailableGroupEntitlement[]
 }
 
 const appStore = useAppStore()
@@ -1150,7 +1219,7 @@ const columns = computed<Column[]>(() => [
 ])
 
 const apiKeys = ref<ApiKey[]>([])
-const groups = ref<Group[]>([])
+const groups = ref<AvailableGroup[]>([])
 const loading = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
@@ -1209,6 +1278,7 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 const formData = ref({
   name: '',
   group_id: null as number | null,
+  subscription_entitlement_id: null as number | null,
   auto_switch_group_enabled: true,
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
@@ -1295,8 +1365,103 @@ const groupOptions = computed(() =>
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
     subscriptionType: group.subscription_type,
-    platform: group.platform
+    platform: group.platform,
+    entitlements: group.entitlements ?? []
   }))
+)
+
+const selectedGroupOption = computed(() =>
+  groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
+)
+
+const selectedGroupEntitlements = computed(() =>
+  selectedGroupOption.value?.entitlements ?? []
+)
+
+const entitlementOptions = computed(() =>
+  selectedGroupEntitlements.value.map((entitlement) => ({
+    value: entitlement.id,
+    label: formatEntitlementLabel(entitlement),
+    description: formatEntitlementDescription(entitlement),
+    entitlement
+  }))
+)
+
+const requiresEntitlementSelection = computed(() => selectedGroupEntitlements.value.length > 1)
+
+function entitlementOptionLabel(option: unknown): string {
+  if (typeof option === 'object' && option !== null && 'label' in option) {
+    return String((option as { label?: unknown }).label ?? '')
+  }
+  return ''
+}
+
+function entitlementOptionDescription(option: unknown): string {
+  if (typeof option === 'object' && option !== null && 'description' in option) {
+    return String((option as { description?: unknown }).description ?? '')
+  }
+  return ''
+}
+
+function formatEntitlementLabel(entitlement: AvailableGroupEntitlement): string {
+  const name = entitlement.name?.trim() || t('keys.entitlementFallbackName', { id: entitlement.id })
+  return `${name} #${entitlement.id}`
+}
+
+function formatEntitlementDescription(entitlement: AvailableGroupEntitlement): string {
+  const parts: string[] = []
+  if (entitlement.plan_id) {
+    parts.push(t('keys.entitlementPlan', { id: entitlement.plan_id }))
+  }
+  if (entitlement.expires_at) {
+    parts.push(t('keys.entitlementExpires', { date: formatDateTime(entitlement.expires_at) }))
+  }
+  return parts.join(' · ')
+}
+
+function formatEntitlementSummary(entitlement: AvailableGroupEntitlement): string {
+  const description = formatEntitlementDescription(entitlement)
+  return description ? `${formatEntitlementLabel(entitlement)} · ${description}` : formatEntitlementLabel(entitlement)
+}
+
+function entitlementCountText(option: GroupOption): string {
+  if (option.entitlements.length <= 0) return ''
+  if (option.entitlements.length === 1) return t('keys.entitlementSingleAvailable')
+  return t('keys.entitlementMultipleAvailable', { count: option.entitlements.length })
+}
+
+function reconcileFormEntitlementSelection() {
+  if (formData.value.group_id === null) {
+    formData.value.subscription_entitlement_id = null
+    return
+  }
+  if (groups.value.length === 0) return
+
+  const group = selectedGroupOption.value
+  if (!group || group.subscriptionType !== 'subscription') {
+    formData.value.subscription_entitlement_id = null
+    return
+  }
+
+  const entitlements = group.entitlements
+  if (entitlements.length === 1) {
+    formData.value.subscription_entitlement_id = entitlements[0].id
+    return
+  }
+  if (entitlements.length > 1) {
+    const currentID = formData.value.subscription_entitlement_id
+    if (!currentID || !entitlements.some((entitlement) => entitlement.id === currentID)) {
+      formData.value.subscription_entitlement_id = null
+    }
+    return
+  }
+
+  formData.value.subscription_entitlement_id = null
+}
+
+watch(
+  () => [formData.value.group_id, groups.value] as const,
+  () => reconcileFormEntitlementSelection()
 )
 
 // Group dropdown search
@@ -1499,6 +1664,7 @@ const editKey = (key: ApiKey) => {
   formData.value = {
     name: key.name,
     group_id: key.group_id,
+    subscription_entitlement_id: key.subscription_entitlement_id ?? null,
     auto_switch_group_enabled: key.auto_switch_group_enabled !== false,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
@@ -1516,6 +1682,7 @@ const editKey = (key: ApiKey) => {
     expiration_preset: 'custom',
     expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : ''
   }
+  reconcileFormEntitlementSelection()
   showEditModal.value = true
 }
 
@@ -1563,13 +1730,47 @@ const openGroupSelector = (key: ApiKey) => {
   }
 }
 
+function entitlementIDForGroupOption(option: GroupOption | null): number | null | undefined {
+  if (!option) return null
+  if (option.subscriptionType !== 'subscription') return null
+  if (option.entitlements.length === 1) return option.entitlements[0].id
+  if (option.entitlements.length > 1) return undefined
+  return undefined
+}
+
+function subscriptionEntitlementPayloadForForm(includeClear: boolean): number | null | undefined {
+  const option = selectedGroupOption.value
+  if (formData.value.group_id === null) return includeClear ? null : undefined
+  if (!option) return undefined
+  if (option.subscriptionType !== 'subscription') return includeClear ? null : undefined
+  if (option.entitlements.length > 0) return formData.value.subscription_entitlement_id
+  return undefined
+}
+
 const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
   groupSelectorKeyId.value = null
   dropdownPosition.value = null
   if (key.group_id === newGroupId) return
 
+  const option = groupOptions.value.find((item) => item.value === newGroupId) ?? null
+  const entitlementID = entitlementIDForGroupOption(option)
+  if (entitlementID === undefined && option?.entitlements.length) {
+    editKey(key)
+    formData.value.group_id = newGroupId
+    formData.value.subscription_entitlement_id = null
+    appStore.showInfo(t('keys.entitlementSelectionRequired'))
+    return
+  }
+
+  const payload: { group_id: number | null; subscription_entitlement_id?: number | null } = {
+    group_id: newGroupId
+  }
+  if (entitlementID !== undefined) {
+    payload.subscription_entitlement_id = entitlementID
+  }
+
   try {
-    await keysAPI.update(key.id, { group_id: newGroupId })
+    await keysAPI.update(key.id, payload)
     appStore.showSuccess(t('keys.groupChangedSuccess'))
     loadApiKeys()
   } catch (error) {
@@ -1595,6 +1796,10 @@ const handleSubmit = async () => {
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
+    return
+  }
+  if (requiresEntitlementSelection.value && !formData.value.subscription_entitlement_id) {
+    appStore.showError(t('keys.entitlementRequired'))
     return
   }
 
@@ -1648,7 +1853,8 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (showEditModal.value && selectedKey.value) {
-      await keysAPI.update(selectedKey.value.id, {
+      const entitlementPatch = subscriptionEntitlementPayloadForForm(true)
+      const updatePayload: UpdateApiKeyRequest = {
         name: formData.value.name,
         group_id: formData.value.group_id,
         auto_switch_group_enabled: formData.value.auto_switch_group_enabled,
@@ -1660,21 +1866,32 @@ const handleSubmit = async () => {
         rate_limit_5h: rateLimitData.rate_limit_5h,
         rate_limit_1d: rateLimitData.rate_limit_1d,
         rate_limit_7d: rateLimitData.rate_limit_7d,
-      })
+      }
+      if (entitlementPatch !== undefined) {
+        updatePayload.subscription_entitlement_id = entitlementPatch
+      }
+      await keysAPI.update(selectedKey.value.id, updatePayload)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
-        formData.value.name,
-        formData.value.group_id,
-        customKey,
-        ipWhitelist,
-        ipBlacklist,
-        quota,
-        expiresInDays,
-        rateLimitData,
-        formData.value.auto_switch_group_enabled
-      )
+      const createPayload: CreateApiKeyRequest = {
+        name: formData.value.name,
+        group_id: formData.value.group_id,
+        auto_switch_group_enabled: formData.value.auto_switch_group_enabled,
+        ...(customKey ? { custom_key: customKey } : {})
+      }
+      if (ipWhitelist.length > 0) createPayload.ip_whitelist = ipWhitelist
+      if (ipBlacklist.length > 0) createPayload.ip_blacklist = ipBlacklist
+      if (quota > 0) createPayload.quota = quota
+      if (expiresInDays !== undefined && expiresInDays > 0) createPayload.expires_in_days = expiresInDays
+      if (rateLimitData.rate_limit_5h > 0) createPayload.rate_limit_5h = rateLimitData.rate_limit_5h
+      if (rateLimitData.rate_limit_1d > 0) createPayload.rate_limit_1d = rateLimitData.rate_limit_1d
+      if (rateLimitData.rate_limit_7d > 0) createPayload.rate_limit_7d = rateLimitData.rate_limit_7d
+      const entitlementPatch = subscriptionEntitlementPayloadForForm(false)
+      if (entitlementPatch !== undefined) {
+        createPayload.subscription_entitlement_id = entitlementPatch
+      }
+      await keysAPI.createWithPayload(createPayload)
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
@@ -1727,6 +1944,7 @@ const closeModals = () => {
   formData.value = {
     name: '',
     group_id: null,
+    subscription_entitlement_id: null,
     auto_switch_group_enabled: true,
     status: 'active',
     use_custom_key: false,

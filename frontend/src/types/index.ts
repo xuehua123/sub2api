@@ -553,6 +553,19 @@ export interface Group {
   updated_at: string
 }
 
+export interface AvailableGroupEntitlement {
+  id: number
+  name: string
+  plan_id?: number | null
+  primary_group_id?: number | null
+  starts_at: string
+  expires_at: string
+}
+
+export interface AvailableGroup extends Group {
+  entitlements?: AvailableGroupEntitlement[]
+}
+
 export interface AdminGroup extends Group {
   // 模型路由配置（仅管理员可见，内部信息）
   model_routing: Record<string, number[]> | null
