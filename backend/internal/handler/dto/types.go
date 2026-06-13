@@ -601,6 +601,34 @@ type UserSubscription struct {
 	Group *Group `json:"group,omitempty"`
 }
 
+type UserSubscriptionAlias struct {
+	ID      int64 `json:"id"`
+	UserID  int64 `json:"user_id"`
+	GroupID int64 `json:"group_id"`
+
+	StartsAt  time.Time `json:"starts_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Status    string    `json:"status"`
+
+	DailyWindowStart   *time.Time `json:"daily_window_start"`
+	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
+	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
+
+	DailyUsageUSD   float64 `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Group *Group `json:"group,omitempty"`
+
+	EntitlementID int64                  `json:"entitlement_id"`
+	PlanID        *int64                 `json:"plan_id"`
+	Groups        []UserEntitlementGroup `json:"groups"`
+	OveragePolicy string                 `json:"overage_policy"`
+}
+
 type UserEntitlementGroup struct {
 	ID       int64  `json:"id"`
 	Name     string `json:"name"`

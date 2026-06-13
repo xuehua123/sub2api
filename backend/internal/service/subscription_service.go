@@ -56,6 +56,8 @@ type SubscriptionService struct {
 	userSubRepo         UserSubscriptionRepository
 	billingCacheService *BillingCacheService
 	entClient           *dbent.Client
+	settingSvc          SubscriptionEntitlementsRuntimeProvider
+	entitlementSvc      *SubscriptionEntitlementService
 
 	// L1 缓存：加速中间件热路径的订阅查询
 	subCacheL1     *ristretto.Cache
@@ -112,6 +114,54 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
 	return svc
+}
+
+func (s *SubscriptionService) SetSubscriptionEntitlementAliasDependencies(settingSvc SubscriptionEntitlementsRuntimeProvider, entitlementSvc *SubscriptionEntitlementService) {
+	if s == nil {
+		return
+	}
+	s.settingSvc = settingSvc
+	s.entitlementSvc = entitlementSvc
+}
+
+func (s *SubscriptionService) ShouldUseSubscriptionEntitlementAliases(ctx context.Context) bool {
+	if s == nil || s.settingSvc == nil || s.entitlementSvc == nil {
+		return false
+	}
+	return s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled
+}
+
+func (s *SubscriptionService) ListUserSubscriptionEntitlementAliases(ctx context.Context, userID int64) ([]SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementSvc == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	entitlements, err := s.entitlementSvc.ListUserEntitlements(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return filterSubscriptionAliasEntitlements(entitlements), nil
+}
+
+func (s *SubscriptionService) ListActiveUserSubscriptionEntitlementAliases(ctx context.Context, userID int64, now time.Time) ([]SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementSvc == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	entitlements, err := s.entitlementSvc.ListActiveUserEntitlements(ctx, userID, now)
+	if err != nil {
+		return nil, err
+	}
+	return filterSubscriptionAliasEntitlements(entitlements), nil
+}
+
+func filterSubscriptionAliasEntitlements(entitlements []SubscriptionEntitlement) []SubscriptionEntitlement {
+	out := make([]SubscriptionEntitlement, 0, len(entitlements))
+	for i := range entitlements {
+		if entitlements[i].LegacySubscriptionID == nil {
+			continue
+		}
+		out = append(out, entitlements[i])
+	}
+	return out
 }
 
 func (s *SubscriptionService) initMaintenanceQueue(cfg *config.Config) {

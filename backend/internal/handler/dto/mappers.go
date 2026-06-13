@@ -736,6 +736,47 @@ func UserSubscriptionFromService(sub *service.UserSubscription) *UserSubscriptio
 	return &out
 }
 
+func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) *UserSubscriptionAlias {
+	if ent == nil || ent.LegacySubscriptionID == nil {
+		return nil
+	}
+	groupID, group := entitlementAliasPrimaryGroup(ent)
+	if groupID <= 0 {
+		return nil
+	}
+	return &UserSubscriptionAlias{
+		ID:                 *ent.LegacySubscriptionID,
+		UserID:             ent.UserID,
+		GroupID:            groupID,
+		StartsAt:           ent.StartsAt,
+		ExpiresAt:          ent.ExpiresAt,
+		Status:             ent.Status,
+		DailyWindowStart:   cloneTime(ent.DailyWindowStart),
+		WeeklyWindowStart:  cloneTime(ent.WeeklyWindowStart),
+		MonthlyWindowStart: cloneTime(ent.MonthlyWindowStart),
+		DailyUsageUSD:      ent.DailyUsageUSD,
+		WeeklyUsageUSD:     ent.WeeklyUsageUSD,
+		MonthlyUsageUSD:    ent.MonthlyUsageUSD,
+		CreatedAt:          ent.CreatedAt,
+		UpdatedAt:          ent.UpdatedAt,
+		Group:              GroupFromServiceShallow(group),
+		EntitlementID:      ent.ID,
+		PlanID:             cloneInt64(ent.PlanID),
+		Groups:             userEntitlementGroups(ent),
+		OveragePolicy:      ent.OveragePolicy,
+	}
+}
+
+func UserSubscriptionAliasesFromEntitlements(in []service.SubscriptionEntitlement) []UserSubscriptionAlias {
+	out := make([]UserSubscriptionAlias, 0, len(in))
+	for i := range in {
+		if alias := UserSubscriptionAliasFromEntitlement(&in[i]); alias != nil {
+			out = append(out, *alias)
+		}
+	}
+	return out
+}
+
 func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.Time) *UserEntitlement {
 	if ent == nil {
 		return nil
@@ -814,6 +855,9 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 		})
 		out := make([]UserEntitlementGroup, 0, len(grants))
 		for _, grant := range grants {
+			if !grant.Enabled {
+				continue
+			}
 			item := UserEntitlementGroup{ID: grant.GroupID}
 			if grant.Group != nil {
 				item.Name = grant.Group.Name
@@ -833,6 +877,67 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 			ID:       group.ID,
 			Name:     group.Name,
 			Platform: group.Platform,
+		})
+	}
+	return out
+}
+
+func entitlementAliasPrimaryGroup(ent *service.SubscriptionEntitlement) (int64, *service.Group) {
+	if ent == nil {
+		return 0, nil
+	}
+	candidates := entitlementAliasGroupCandidates(ent)
+	if ent.PrimaryGroupID != nil {
+		for i := range candidates {
+			if candidates[i].id == *ent.PrimaryGroupID {
+				return candidates[i].id, candidates[i].group
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+	return candidates[0].id, candidates[0].group
+}
+
+type entitlementAliasGroupCandidate struct {
+	id    int64
+	group *service.Group
+}
+
+func entitlementAliasGroupCandidates(ent *service.SubscriptionEntitlement) []entitlementAliasGroupCandidate {
+	if ent == nil {
+		return nil
+	}
+	if len(ent.GroupGrants) > 0 {
+		grants := append([]service.SubscriptionEntitlementGroupGrant(nil), ent.GroupGrants...)
+		sort.SliceStable(grants, func(i, j int) bool {
+			if grants[i].SortOrder != grants[j].SortOrder {
+				return grants[i].SortOrder < grants[j].SortOrder
+			}
+			return grants[i].GroupID < grants[j].GroupID
+		})
+		out := make([]entitlementAliasGroupCandidate, 0, len(grants))
+		for i := range grants {
+			if !grants[i].Enabled {
+				continue
+			}
+			out = append(out, entitlementAliasGroupCandidate{
+				id:    grants[i].GroupID,
+				group: grants[i].Group,
+			})
+		}
+		return out
+	}
+	groups := append([]service.Group(nil), ent.Groups...)
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].ID < groups[j].ID
+	})
+	out := make([]entitlementAliasGroupCandidate, 0, len(groups))
+	for i := range groups {
+		out = append(out, entitlementAliasGroupCandidate{
+			id:    groups[i].ID,
+			group: &groups[i],
 		})
 	}
 	return out

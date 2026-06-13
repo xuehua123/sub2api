@@ -484,6 +484,23 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo)
 }
 
+// ProvideSubscriptionService wires SubscriptionService with optional entitlement
+// alias dependencies. The service still falls back to legacy behavior unless the
+// runtime flag is enabled.
+func ProvideSubscriptionService(
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	cfg *config.Config,
+	settingService *SettingService,
+	subscriptionEntitlementService *SubscriptionEntitlementService,
+) *SubscriptionService {
+	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
+	svc.SetSubscriptionEntitlementAliasDependencies(settingService, subscriptionEntitlementService)
+	return svc
+}
+
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
 func ProvideAPIKeyService(
 	apiKeyRepo APIKeyRepository,
@@ -594,7 +611,7 @@ var ProviderSet = wire.NewSet(
 	NewNotificationEmailService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
-	NewSubscriptionService,
+	ProvideSubscriptionService,
 	NewSubscriptionEntitlementService,
 	NewSubscriptionPlanExternalMappingService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),

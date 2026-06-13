@@ -73,6 +73,16 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 		return
 	}
 
+	if h.subscriptionService.ShouldUseSubscriptionEntitlementAliases(c.Request.Context()) {
+		entitlements, err := h.subscriptionService.ListUserSubscriptionEntitlementAliases(c.Request.Context(), subject.UserID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
+		return
+	}
+
 	subscriptions, err := h.subscriptionService.ListUserSubscriptions(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -92,6 +102,16 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not found in context")
+		return
+	}
+
+	if h.subscriptionService.ShouldUseSubscriptionEntitlementAliases(c.Request.Context()) {
+		entitlements, err := h.subscriptionService.ListActiveUserSubscriptionEntitlementAliases(c.Request.Context(), subject.UserID, time.Now())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
 		return
 	}
 
