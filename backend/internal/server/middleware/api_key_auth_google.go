@@ -64,7 +64,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
 		_, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
 		currentGroupUnavailable := !groupAvailable
-		if currentGroupUnavailable && !(v2EntitlementsEnabled && isSubscriptionType) {
+		if currentGroupUnavailable && (!v2EntitlementsEnabled || !isSubscriptionType) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			abortWithGoogleError(c, 403, groupUnavailableMessage)
 			return

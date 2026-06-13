@@ -283,7 +283,7 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 	if entitlementIDStr := strings.TrimSpace(c.Query("entitlement_id")); entitlementIDStr != "" {
 		id, err := strconv.ParseInt(entitlementIDStr, 10, 64)
 		if err != nil || id <= 0 {
-			return nil, errors.New("Invalid entitlement_id")
+			return nil, errors.New("invalid entitlement_id")
 		}
 		filters.EntitlementID = id
 	}

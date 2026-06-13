@@ -120,7 +120,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		v2EntitlementsEnabled := apiKeyService.IsSubscriptionEntitlementsV2Enabled(c.Request.Context())
 		groupUnavailableCode, groupUnavailableMessage, groupAvailable := validateAPIKeyGroupAvailable(apiKey)
 		currentGroupUnavailable := !groupAvailable
-		if currentGroupUnavailable && !(v2EntitlementsEnabled && isSubscriptionType) {
+		if currentGroupUnavailable && (!v2EntitlementsEnabled || !isSubscriptionType) {
 			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
 			AbortWithError(c, 403, groupUnavailableCode, groupUnavailableMessage)
 			return
@@ -468,16 +468,6 @@ func setGroupContext(c *gin.Context, group *service.Group) {
 	}
 	ctx := context.WithValue(c.Request.Context(), ctxkey.Group, group)
 	c.Request = c.Request.WithContext(ctx)
-}
-
-func abortIfAPIKeyGroupUnavailable(c *gin.Context, apiKey *service.APIKey) bool {
-	code, message, ok := validateAPIKeyGroupAvailable(apiKey)
-	if ok {
-		return false
-	}
-	service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonAPIKeyGroupUnavailable)
-	AbortWithError(c, 403, code, message)
-	return true
 }
 
 func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey) bool {

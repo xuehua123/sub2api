@@ -15,7 +15,7 @@ func parsePositiveInt64Query(c *gin.Context, name string) (int64, bool, error) {
 	}
 	value, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || value <= 0 {
-		return 0, false, fmt.Errorf("Invalid %s", name)
+		return 0, false, fmt.Errorf("invalid %s", name)
 	}
 	return value, true, nil
 }
