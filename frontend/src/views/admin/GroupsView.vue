@@ -115,25 +115,35 @@
           </template>
 
           <template #cell-billing_type="{ row }">
-            <div class="space-y-1">
-              <!-- Type Badge -->
-              <span
-                :class="[
-                  'inline-block rounded-full px-2 py-0.5 text-xs font-medium',
-                  row.subscription_type === 'subscription'
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400'
-                    : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
-                ]"
-              >
-                {{
-                  row.subscription_type === "subscription"
-                    ? t("admin.groups.subscription.subscription")
-                    : t("admin.groups.subscription.standard")
-                }}
-              </span>
-              <!-- Subscription Limits - compact single line -->
+            <div class="space-y-1.5">
+              <div class="flex max-w-48 flex-wrap gap-1">
+                <span
+                  v-if="isGroupBalanceEnabled(row)"
+                  class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                >
+                  {{ t("admin.groups.capabilities.balanceEnabled") }}
+                </span>
+                <span
+                  v-if="isGroupSubscriptionEnabled(row)"
+                  class="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+                >
+                  {{ t("admin.groups.capabilities.subscriptionEnabled") }}
+                </span>
+                <span
+                  v-if="row.plan_auto_grant_enabled"
+                  class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700 dark:bg-sky-900/30 dark:text-sky-300"
+                >
+                  {{ t("admin.groups.capabilities.planAutoGrantEnabledShort") }}
+                </span>
+                <span
+                  v-if="!isGroupBalanceEnabled(row) && !isGroupSubscriptionEnabled(row)"
+                  class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                >
+                  {{ t("admin.groups.capabilities.noAccessSources") }}
+                </span>
+              </div>
               <div
-                v-if="row.subscription_type === 'subscription'"
+                v-if="isGroupSubscriptionEnabled(row)"
                 class="text-xs text-gray-500 dark:text-gray-400"
               >
                 <template
@@ -509,10 +519,7 @@
           />
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
         </div>
-        <div
-          v-if="createForm.subscription_type !== 'subscription'"
-          data-tour="group-form-exclusive"
-        >
+        <div data-tour="group-form-exclusive">
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t("admin.groups.form.exclusive") }}
@@ -559,7 +566,10 @@
           <div class="flex items-center gap-3">
             <button
               type="button"
-              @click="createForm.is_exclusive = !createForm.is_exclusive"
+              @click="
+                createForm.is_exclusive = !createForm.is_exclusive;
+                normalizeGroupCapabilities(createForm);
+              "
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 createForm.is_exclusive
@@ -584,25 +594,110 @@
           </div>
         </div>
 
-        <!-- Subscription Configuration -->
+        <!-- Access source capabilities -->
         <div class="mt-4 border-t pt-4">
-          <div>
+          <div class="mb-4">
             <label class="input-label">{{
-              t("admin.groups.subscription.type")
+              t("admin.groups.capabilities.title")
             }}</label>
-            <Select
-              v-model="createForm.subscription_type"
-              :options="subscriptionTypeOptions"
-            />
             <p class="input-hint">
-              {{ t("admin.groups.subscription.typeHint") }}
+              {{ t("admin.groups.capabilities.hint") }}
             </p>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.balanceEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.capabilities.balanceEnabledHint") }}
+                </p>
+              </div>
+              <button
+                type="button"
+                @click="toggleGroupCapability(createForm, 'balance_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  createForm.balance_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    createForm.balance_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
+            <div class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.subscriptionEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.capabilities.subscriptionEnabledHint") }}
+                </p>
+              </div>
+              <button
+                type="button"
+                @click="toggleGroupCapability(createForm, 'subscription_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  createForm.subscription_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    createForm.subscription_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
+            <div
+              :class="[
+                'flex items-start justify-between gap-3 rounded-lg border p-3',
+                canEnablePlanAutoGrant(createForm)
+                  ? 'border-gray-200 dark:border-dark-600'
+                  : 'border-gray-200 bg-gray-50/70 dark:border-dark-600 dark:bg-dark-800/40',
+              ]"
+            >
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.planAutoGrantEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    canEnablePlanAutoGrant(createForm)
+                      ? t("admin.groups.capabilities.planAutoGrantEnabledHint")
+                      : t("admin.groups.capabilities.planAutoGrantDisabledHint")
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                :disabled="!canEnablePlanAutoGrant(createForm)"
+                @click="toggleGroupCapability(createForm, 'plan_auto_grant_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                  createForm.plan_auto_grant_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    createForm.plan_auto_grant_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
           </div>
 
           <!-- Subscription limits (only show when subscription type is selected) -->
           <div
-            v-if="createForm.subscription_type === 'subscription'"
-            class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
+            v-if="createForm.subscription_enabled"
+            class="mt-4 space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
             <div>
               <label class="input-label">{{
@@ -1379,7 +1474,8 @@
         <div
           v-if="
             ['anthropic', 'antigravity'].includes(createForm.platform) &&
-            createForm.subscription_type !== 'subscription'
+            createForm.balance_enabled &&
+            !createForm.subscription_enabled
           "
           class="border-t pt-4"
         >
@@ -1795,7 +1891,7 @@
           />
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
         </div>
-        <div v-if="editForm.subscription_type !== 'subscription'">
+        <div>
           <div class="mb-1.5 flex items-center gap-1">
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ t("admin.groups.form.exclusive") }}
@@ -1842,7 +1938,10 @@
           <div class="flex items-center gap-3">
             <button
               type="button"
-              @click="editForm.is_exclusive = !editForm.is_exclusive"
+              @click="
+                editForm.is_exclusive = !editForm.is_exclusive;
+                normalizeGroupCapabilities(editForm);
+              "
               :class="[
                 'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
                 editForm.is_exclusive
@@ -1871,26 +1970,110 @@
           <Select v-model="editForm.status" :options="editStatusOptions" />
         </div>
 
-        <!-- Subscription Configuration -->
+        <!-- Access source capabilities -->
         <div class="mt-4 border-t pt-4">
-          <div>
+          <div class="mb-4">
             <label class="input-label">{{
-              t("admin.groups.subscription.type")
+              t("admin.groups.capabilities.title")
             }}</label>
-            <Select
-              v-model="editForm.subscription_type"
-              :options="subscriptionTypeOptions"
-              :disabled="true"
-            />
             <p class="input-hint">
-              {{ t("admin.groups.subscription.typeNotEditable") }}
+              {{ t("admin.groups.capabilities.hint") }}
             </p>
+          </div>
+          <div class="space-y-3">
+            <div class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.balanceEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.capabilities.balanceEnabledHint") }}
+                </p>
+              </div>
+              <button
+                type="button"
+                @click="toggleGroupCapability(editForm, 'balance_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  editForm.balance_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    editForm.balance_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
+            <div class="flex items-start justify-between gap-3 rounded-lg border border-gray-200 p-3 dark:border-dark-600">
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.subscriptionEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{ t("admin.groups.capabilities.subscriptionEnabledHint") }}
+                </p>
+              </div>
+              <button
+                type="button"
+                @click="toggleGroupCapability(editForm, 'subscription_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                  editForm.subscription_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    editForm.subscription_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
+            <div
+              :class="[
+                'flex items-start justify-between gap-3 rounded-lg border p-3',
+                canEnablePlanAutoGrant(editForm)
+                  ? 'border-gray-200 dark:border-dark-600'
+                  : 'border-gray-200 bg-gray-50/70 dark:border-dark-600 dark:bg-dark-800/40',
+              ]"
+            >
+              <div>
+                <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {{ t("admin.groups.capabilities.planAutoGrantEnabled") }}
+                </p>
+                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {{
+                    canEnablePlanAutoGrant(editForm)
+                      ? t("admin.groups.capabilities.planAutoGrantEnabledHint")
+                      : t("admin.groups.capabilities.planAutoGrantDisabledHint")
+                  }}
+                </p>
+              </div>
+              <button
+                type="button"
+                :disabled="!canEnablePlanAutoGrant(editForm)"
+                @click="toggleGroupCapability(editForm, 'plan_auto_grant_enabled')"
+                :class="[
+                  'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+                  editForm.plan_auto_grant_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+                ]"
+              >
+                <span
+                  :class="[
+                    'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                    editForm.plan_auto_grant_enabled ? 'translate-x-6' : 'translate-x-1',
+                  ]"
+                />
+              </button>
+            </div>
           </div>
 
           <!-- Subscription limits (only show when subscription type is selected) -->
           <div
-            v-if="editForm.subscription_type === 'subscription'"
-            class="space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
+            v-if="editForm.subscription_enabled"
+            class="mt-4 space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
           >
             <div>
               <label class="input-label">{{
@@ -2663,7 +2846,8 @@
         <div
           v-if="
             ['anthropic', 'antigravity'].includes(editForm.platform) &&
-            editForm.subscription_type !== 'subscription'
+            editForm.balance_enabled &&
+            !editForm.subscription_enabled
           "
           class="border-t pt-4"
         >
@@ -3092,7 +3276,7 @@ const columns = computed<Column[]>(() => [
   },
   {
     key: "billing_type",
-    label: t("admin.groups.columns.billingType"),
+    label: t("admin.groups.columns.accessSources"),
     sortable: true,
   },
   {
@@ -3119,6 +3303,53 @@ const columns = computed<Column[]>(() => [
   { key: "status", label: t("admin.groups.columns.status"), sortable: true },
   { key: "actions", label: t("admin.groups.columns.actions"), sortable: false },
 ]);
+
+type GroupCapabilityForm = {
+  balance_enabled: boolean;
+  subscription_enabled: boolean;
+  plan_auto_grant_enabled: boolean;
+  subscription_type: SubscriptionType;
+  is_exclusive: boolean;
+  status?: "active" | "inactive";
+  fallback_group_id_on_invalid_request?: number | null;
+};
+
+const deriveSubscriptionTypeFromCapabilities = (
+  form: Pick<GroupCapabilityForm, "subscription_enabled">,
+): SubscriptionType => (form.subscription_enabled ? "subscription" : "standard");
+
+const canEnablePlanAutoGrant = (form: GroupCapabilityForm) =>
+  form.subscription_enabled &&
+  !form.is_exclusive &&
+  (form.status ?? "active") === "active";
+
+const normalizeGroupCapabilities = (form: GroupCapabilityForm) => {
+  form.subscription_type = deriveSubscriptionTypeFromCapabilities(form);
+  if (!canEnablePlanAutoGrant(form)) {
+    form.plan_auto_grant_enabled = false;
+  }
+  if (form.subscription_enabled || !form.balance_enabled) {
+    form.fallback_group_id_on_invalid_request = null;
+  }
+};
+
+const isGroupBalanceEnabled = (group: AdminGroup) =>
+  group.balance_enabled ?? group.subscription_type !== "subscription";
+
+const isGroupSubscriptionEnabled = (group: AdminGroup) =>
+  group.subscription_enabled ?? group.subscription_type === "subscription";
+
+const toggleGroupCapability = (
+  form: GroupCapabilityForm,
+  field: "balance_enabled" | "subscription_enabled" | "plan_auto_grant_enabled",
+) => {
+  if (field === "plan_auto_grant_enabled" && !canEnablePlanAutoGrant(form)) {
+    form.plan_auto_grant_enabled = false;
+    return;
+  }
+  form[field] = !form[field];
+  normalizeGroupCapabilities(form);
+};
 
 // Filter options
 const statusOptions = computed(() => [
@@ -3153,10 +3384,6 @@ const editStatusOptions = computed(() => [
   { value: "inactive", label: t("admin.accounts.status.inactive") },
 ]);
 
-const subscriptionTypeOptions = computed(() => [
-  { value: "standard", label: t("admin.groups.subscription.standard") },
-  { value: "subscription", label: t("admin.groups.subscription.subscription") },
-]);
 
 // 降级分组选项（创建时）- 仅包含 anthropic 平台且未启用 claude_code_only 的分组
 const fallbackGroupOptions = computed(() => {
@@ -3203,7 +3430,8 @@ const invalidRequestFallbackOptions = computed(() => {
     (g) =>
       g.platform === "anthropic" &&
       g.status === "active" &&
-      g.subscription_type !== "subscription" &&
+      isGroupBalanceEnabled(g) &&
+      !isGroupSubscriptionEnabled(g) &&
       g.fallback_group_id_on_invalid_request === null,
   );
   eligibleGroups.forEach((g) => {
@@ -3222,7 +3450,8 @@ const invalidRequestFallbackOptionsForEdit = computed(() => {
     (g) =>
       g.platform === "anthropic" &&
       g.status === "active" &&
-      g.subscription_type !== "subscription" &&
+      isGroupBalanceEnabled(g) &&
+      !isGroupSubscriptionEnabled(g) &&
       g.fallback_group_id_on_invalid_request === null &&
       g.id !== currentId,
   );
@@ -3330,6 +3559,9 @@ const createForm = reactive({
   rate_multiplier: 1.0,
   is_exclusive: false,
   subscription_type: "standard" as SubscriptionType,
+  balance_enabled: true,
+  subscription_enabled: false,
+  plan_auto_grant_enabled: false,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
@@ -3661,6 +3893,9 @@ const editForm = reactive({
   is_exclusive: false,
   status: "active" as "active" | "inactive",
   subscription_type: "standard" as SubscriptionType,
+  balance_enabled: true,
+  subscription_enabled: false,
+  plan_auto_grant_enabled: false,
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
@@ -3913,6 +4148,9 @@ const closeCreateModal = () => {
   createForm.rate_multiplier = 1.0;
   createForm.is_exclusive = false;
   createForm.subscription_type = "standard";
+  createForm.balance_enabled = true;
+  createForm.subscription_enabled = false;
+  createForm.plan_auto_grant_enabled = false;
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
@@ -3970,6 +4208,7 @@ const handleCreateGroup = async () => {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
+  normalizeGroupCapabilities(createForm);
   submitting.value = true;
   try {
     // 构建请求数据，包含模型路由配置
@@ -4039,6 +4278,12 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.is_exclusive = group.is_exclusive;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
+  editForm.balance_enabled =
+    group.balance_enabled ?? group.subscription_type !== "subscription";
+  editForm.subscription_enabled =
+    group.subscription_enabled ?? group.subscription_type === "subscription";
+  editForm.plan_auto_grant_enabled = group.plan_auto_grant_enabled ?? false;
+  normalizeGroupCapabilities(editForm);
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
@@ -4102,6 +4347,7 @@ const handleUpdateGroup = async () => {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
+  normalizeGroupCapabilities(editForm);
 
   submitting.value = true;
   try {
@@ -4220,17 +4466,6 @@ const confirmDelete = async () => {
   }
 };
 
-// 监听 subscription_type 变化，订阅模式时 is_exclusive 默认为 true
-watch(
-  () => createForm.subscription_type,
-  (newVal) => {
-    if (newVal === "subscription") {
-      createForm.is_exclusive = true;
-      createForm.fallback_group_id_on_invalid_request = null;
-    }
-  },
-);
-
 watch(
   () => createForm.platform,
   (newVal) => {
@@ -4246,6 +4481,13 @@ watch(
     }
     resetModelsListState(createModelsListState);
     loadModelsListCandidates("create", 0, newVal);
+  },
+);
+
+watch(
+  () => editForm.status,
+  () => {
+    normalizeGroupCapabilities(editForm);
   },
 );
 

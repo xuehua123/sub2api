@@ -692,6 +692,9 @@ export interface CreateGroupRequest {
   rate_multiplier?: number
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -727,6 +730,9 @@ export interface UpdateGroupRequest {
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null

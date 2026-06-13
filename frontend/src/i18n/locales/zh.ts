@@ -2573,6 +2573,7 @@ export default {
         usage: '用量',
         status: '状态',
         actions: '操作',
+        accessSources: '可用权益来源',
         billingType: '计费类型',
         userName: '用户名',
         userEmail: '邮箱',
@@ -2706,6 +2707,19 @@ export default {
         defaultValidityDays: '默认有效期（天）',
         validityHint: '分配给用户时订阅的有效天数',
         noLimit: '无限制'
+      },
+      capabilities: {
+        title: '可用权益来源',
+        hint: '选择 API Key 可以通过哪些权益来源使用此分组，旧计费类型会自动兼容生成。',
+        balanceEnabled: '余额权益可用',
+        balanceEnabledHint: '选择余额权益的 API Key 可以使用此分组，并从用户余额扣费。',
+        subscriptionEnabled: '套餐权益可用',
+        subscriptionEnabledHint: '套餐权益可以显式授权此分组。',
+        planAutoGrantEnabled: '允许套餐自动授权',
+        planAutoGrantEnabledShort: '自动授权',
+        planAutoGrantEnabledHint: 'all/platform 套餐范围可以自动纳入此分组。',
+        planAutoGrantDisabledHint: '需要启用套餐权益、分组为公开且状态为 active。',
+        noAccessSources: '未开放权益来源'
       },
       imagePricing: {
         title: '图片生成计费',

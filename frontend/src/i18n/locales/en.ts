@@ -2520,6 +2520,7 @@ export default {
         usage: 'Usage',
         status: 'Status',
         actions: 'Actions',
+        accessSources: 'Access Sources',
         billingType: 'Billing Type',
         userName: 'Username',
         userEmail: 'Email',
@@ -2623,6 +2624,19 @@ export default {
         defaultValidityDays: 'Default Validity (Days)',
         validityHint: 'Number of days the subscription is valid when assigned to a user',
         noLimit: 'No limit'
+      },
+      capabilities: {
+        title: 'Available Access Sources',
+        hint: 'Choose how API keys may use this group. The legacy billing type is derived for compatibility.',
+        balanceEnabled: 'Balance Access',
+        balanceEnabledHint: 'API keys using the balance access source can select this group and pay from user balance.',
+        subscriptionEnabled: 'Entitlement Access',
+        subscriptionEnabledHint: 'Subscription entitlements may explicitly grant this group.',
+        planAutoGrantEnabled: 'Allow Plan Auto Grant',
+        planAutoGrantEnabledShort: 'Auto Grant',
+        planAutoGrantEnabledHint: 'All/platform subscription plan scopes may automatically include this group.',
+        planAutoGrantDisabledHint: 'Requires entitlement access, active status, and a public group.',
+        noAccessSources: 'No access source'
       },
       imagePricing: {
         title: 'Image Generation Pricing',
