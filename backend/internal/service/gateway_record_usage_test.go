@@ -1035,6 +1035,46 @@ func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) 
 	require.Equal(t, 0, usageRepo.calls)
 }
 
+func TestGatewayServiceRecordUsage_EntitlementDoesNotForgeLegacySubscriptionID(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	groupID := int64(42)
+	legacySubscriptionID := int64(77)
+	entitlementID := int64(9001)
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_entitlement_legacy_pair",
+			Usage: ClaudeUsage{
+				InputTokens:  10,
+				OutputTokens: 6,
+			},
+			Model:    "claude-sonnet-4",
+			Duration: time.Second,
+		},
+		APIKey: &APIKey{ID: 509, GroupID: &groupID},
+		User:   &User{ID: 609},
+		Account: &Account{
+			ID: 709,
+		},
+		Subscription: &UserSubscription{ID: legacySubscriptionID, UserID: 609, GroupID: groupID},
+		Entitlement: &SubscriptionEntitlement{
+			ID:                   entitlementID,
+			UserID:               609,
+			LegacySubscriptionID: &legacySubscriptionID,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, legacySubscriptionID, *usageRepo.lastLog.SubscriptionID)
+	require.Equal(t, entitlementID, *usageRepo.lastLog.EntitlementID)
+	require.NotEqual(t, *usageRepo.lastLog.EntitlementID, *usageRepo.lastLog.SubscriptionID)
+}
+
 func TestGatewayServiceRecordUsage_ReasoningEffortPersisted(t *testing.T) {
 	usageRepo := &openAIRecordUsageBestEffortLogRepoStub{}
 	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})

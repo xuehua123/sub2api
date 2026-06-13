@@ -80,6 +80,8 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		h.chatCompletionsErrorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 		return
 	}
+	deferredResponse := beginDeferredGatewayResponse(c, !reqStream)
+	defer deferredResponse.Flush()
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
 	setOpsRequestContext(c, reqModel, reqStream)
@@ -298,30 +300,45 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-				Result:                     result,
-				QuotaPlatform:              quotaPlatform,
-				APIKey:                     apiKey,
-				User:                       apiKey.User,
-				Account:                    account,
-				Subscription:               subscription,
-				Entitlement:                subscriptionEntitlement,
-				EntitlementBalanceFallback: entitlementBalanceFallback,
-				InboundEndpoint:            inboundEndpoint,
-				UpstreamEndpoint:           upstreamEndpoint,
-				UserAgent:                  userAgent,
-				IPAddress:                  clientIP,
-				RequestPayloadHash:         requestPayloadHash,
-				APIKeyService:              h.apiKeyService,
-				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-			}); err != nil {
-				reqLog.Error("gateway.cc.record_usage_failed",
-					zap.Int64("account_id", account.ID),
-					zap.Error(err),
-				)
+		usageInput := &service.RecordUsageInput{
+			Result:                     result,
+			QuotaPlatform:              quotaPlatform,
+			APIKey:                     apiKey,
+			User:                       apiKey.User,
+			Account:                    account,
+			Subscription:               subscription,
+			Entitlement:                subscriptionEntitlement,
+			EntitlementBalanceFallback: entitlementBalanceFallback,
+			InboundEndpoint:            inboundEndpoint,
+			UpstreamEndpoint:           upstreamEndpoint,
+			UserAgent:                  userAgent,
+			IPAddress:                  clientIP,
+			RequestPayloadHash:         requestPayloadHash,
+			APIKeyService:              h.apiKeyService,
+			ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+		}
+		if reqStream {
+			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+				if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
+					reqLog.Error("gateway.cc.record_usage_failed",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+					)
+				}
+			})
+		} else if err := runUsageRecordTaskSync(c.Request.Context(), gatewayUsageRecordTask(h.gatewayService, usageInput)); err != nil {
+			deferredResponse.Discard()
+			status, code, message, retryAfter := billingErrorDetails(err)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
 			}
-		})
+			h.chatCompletionsErrorResponse(c, status, code, message)
+			reqLog.Error("gateway.cc.record_usage_failed",
+				zap.Int64("account_id", account.ID),
+				zap.Error(err),
+			)
+			return
+		}
 		return
 	}
 }

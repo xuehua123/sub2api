@@ -2,11 +2,14 @@ package handler
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -75,6 +78,46 @@ func TestGatewayHandlerSubmitUsageRecordTask_WithoutPool_TaskPanicRecovered(t *t
 		called.Store(true)
 	})
 	require.True(t, called.Load(), "panic 后后续任务应仍可执行")
+}
+
+func TestDeferredGatewayResponse_DiscardedBillingErrorReturns429(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	deferred := beginDeferredGatewayResponse(c, true)
+	defer deferred.Flush()
+	c.Data(http.StatusOK, "application/json", []byte(`{"ok":true}`))
+
+	err := runUsageRecordTaskSync(context.Background(), func(context.Context) error {
+		return service.ErrSubscriptionEntitlementQuotaExceeded
+	})
+	require.ErrorIs(t, err, service.ErrSubscriptionEntitlementQuotaExceeded)
+
+	deferred.Discard()
+	status, code, message, _ := billingErrorDetails(err)
+	(&GatewayHandler{}).handleStreamingAwareError(c, status, code, message, false)
+
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.NotContains(t, rec.Body.String(), `"ok":true`)
+	require.Contains(t, rec.Body.String(), code)
+}
+
+func TestDeferredGatewayResponse_FlushesSuccessfulUpstreamResponse(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	deferred := beginDeferredGatewayResponse(c, true)
+	c.Header("X-Upstream-Request-ID", "upstream-123")
+	c.Data(http.StatusOK, "application/json", []byte(`{"ok":true}`))
+	deferred.Flush()
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "upstream-123", rec.Header().Get("X-Upstream-Request-ID"))
+	require.JSONEq(t, `{"ok":true}`, rec.Body.String())
 }
 
 func TestOpenAIGatewayHandlerSubmitUsageRecordTask_WithPool(t *testing.T) {
