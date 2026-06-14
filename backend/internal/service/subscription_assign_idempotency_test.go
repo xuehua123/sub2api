@@ -355,7 +355,9 @@ func TestAssignSubscriptionV2OffWithPlanIDKeepsLegacyOnly(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotZero(t, sub.ID)
-	require.Equal(t, 1, svc.userSubRepo.(*subscriptionUserSubRepoStub).createCalls)
+	subRepo, ok := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	require.True(t, ok)
+	require.Equal(t, 1, subRepo.createCalls)
 	require.Zero(t, entRepo.createCount)
 	require.Zero(t, entRepo.eventCount)
 }

@@ -10,14 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type subscriptionAliasRuntimeProviderStub struct {
-	runtime SubscriptionEntitlementsRuntime
-}
-
-func (s subscriptionAliasRuntimeProviderStub) GetSubscriptionEntitlementsRuntime(context.Context) SubscriptionEntitlementsRuntime {
-	return s.runtime
-}
-
 func TestSubscriptionService_EntitlementAliasRuntimeDefaultsLegacy(t *testing.T) {
 	svc := NewSubscriptionService(nil, nil, nil, nil, nil)
 
