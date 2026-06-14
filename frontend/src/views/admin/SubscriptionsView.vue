@@ -171,7 +171,7 @@
       <template #table>
         <DataTable
           :columns="columns"
-          :data="subscriptions"
+          :data="displaySubscriptions"
           :loading="loading"
           :server-side-sort="true"
           default-sort-key="created_at"
@@ -221,22 +221,22 @@
           <template #cell-usage="{ row }">
             <div class="min-w-[280px] space-y-2">
               <!-- Daily Usage -->
-              <div v-if="row.group?.daily_limit_usd" class="usage-row">
+              <div v-if="getSubscriptionLimit(row, 'daily') !== null" class="usage-row">
                 <div class="flex items-center gap-2">
                   <span class="usage-label">{{ t('admin.subscriptions.daily') }}</span>
                   <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
                     <div
                       class="h-1.5 rounded-full transition-all"
-                      :class="getProgressClass(row.daily_usage_usd, row.group?.daily_limit_usd)"
+                      :class="getProgressClass(row.daily_usage_usd, getSubscriptionLimit(row, 'daily'))"
                       :style="{
-                        width: getProgressWidth(row.daily_usage_usd, row.group?.daily_limit_usd)
+                        width: getProgressWidth(row.daily_usage_usd, getSubscriptionLimit(row, 'daily'))
                       }"
                     ></div>
                   </div>
                   <span class="usage-amount">
                     ${{ row.daily_usage_usd?.toFixed(2) || '0.00' }}
                     <span class="text-gray-400">/</span>
-                    ${{ row.group?.daily_limit_usd?.toFixed(2) }}
+                    ${{ getSubscriptionLimit(row, 'daily')?.toFixed(2) }}
                   </span>
                 </div>
                 <div class="reset-info">
@@ -258,22 +258,22 @@
               </div>
 
               <!-- Weekly Usage -->
-              <div v-if="row.group?.weekly_limit_usd" class="usage-row">
+              <div v-if="getSubscriptionLimit(row, 'weekly') !== null" class="usage-row">
                 <div class="flex items-center gap-2">
                   <span class="usage-label">{{ t('admin.subscriptions.weekly') }}</span>
                   <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
                     <div
                       class="h-1.5 rounded-full transition-all"
-                      :class="getProgressClass(row.weekly_usage_usd, row.group?.weekly_limit_usd)"
+                      :class="getProgressClass(row.weekly_usage_usd, getSubscriptionLimit(row, 'weekly'))"
                       :style="{
-                        width: getProgressWidth(row.weekly_usage_usd, row.group?.weekly_limit_usd)
+                        width: getProgressWidth(row.weekly_usage_usd, getSubscriptionLimit(row, 'weekly'))
                       }"
                     ></div>
                   </div>
                   <span class="usage-amount">
                     ${{ row.weekly_usage_usd?.toFixed(2) || '0.00' }}
                     <span class="text-gray-400">/</span>
-                    ${{ row.group?.weekly_limit_usd?.toFixed(2) }}
+                    ${{ getSubscriptionLimit(row, 'weekly')?.toFixed(2) }}
                   </span>
                 </div>
                 <div class="reset-info">
@@ -295,22 +295,22 @@
               </div>
 
               <!-- Monthly Usage -->
-              <div v-if="row.group?.monthly_limit_usd" class="usage-row">
+              <div v-if="getSubscriptionLimit(row, 'monthly') !== null" class="usage-row">
                 <div class="flex items-center gap-2">
                   <span class="usage-label">{{ t('admin.subscriptions.monthly') }}</span>
                   <div class="h-1.5 flex-1 rounded-full bg-gray-200 dark:bg-dark-600">
                     <div
                       class="h-1.5 rounded-full transition-all"
-                      :class="getProgressClass(row.monthly_usage_usd, row.group?.monthly_limit_usd)"
+                      :class="getProgressClass(row.monthly_usage_usd, getSubscriptionLimit(row, 'monthly'))"
                       :style="{
-                        width: getProgressWidth(row.monthly_usage_usd, row.group?.monthly_limit_usd)
+                        width: getProgressWidth(row.monthly_usage_usd, getSubscriptionLimit(row, 'monthly'))
                       }"
                     ></div>
                   </div>
                   <span class="usage-amount">
                     ${{ row.monthly_usage_usd?.toFixed(2) || '0.00' }}
                     <span class="text-gray-400">/</span>
-                    ${{ row.group?.monthly_limit_usd?.toFixed(2) }}
+                    ${{ getSubscriptionLimit(row, 'monthly')?.toFixed(2) }}
                   </span>
                 </div>
                 <div class="reset-info">
@@ -334,9 +334,9 @@
               <!-- No Limits - Unlimited badge -->
               <div
                 v-if="
-                  !row.group?.daily_limit_usd &&
-                  !row.group?.weekly_limit_usd &&
-                  !row.group?.monthly_limit_usd
+                  getSubscriptionLimit(row, 'daily') === null &&
+                  getSubscriptionLimit(row, 'weekly') === null &&
+                  getSubscriptionLimit(row, 'monthly') === null
                 "
                 class="flex items-center gap-2 rounded-lg bg-gradient-to-r from-emerald-50 to-teal-50 px-3 py-2 dark:from-emerald-900/20 dark:to-teal-900/20"
               >
@@ -929,6 +929,8 @@ const subscriptionPlans = ref<SubscriptionPlan[]>([])
 const loading = ref(false)
 let abortController: AbortController | null = null
 
+type SubscriptionQuotaPeriod = 'daily' | 'weekly' | 'monthly'
+
 // Toolbar user filter (fuzzy search -> select user_id)
 const filterUserKeyword = ref('')
 const filterUserResults = ref<SimpleUser[]>([])
@@ -1046,14 +1048,108 @@ const getPlanPrimaryGroupID = (plan: SubscriptionPlan | null | undefined): numbe
   return getPlanGroupIDs(plan)[0] || null
 }
 
-const resolveSubscriptionPlan = (subscription: UserSubscription): SubscriptionPlan | null => {
+const listMatchingPlansForSubscription = (subscription: UserSubscription): SubscriptionPlan[] => {
   if (subscription.plan_id) {
     const exactPlan = planByID.value.get(subscription.plan_id)
-    if (exactPlan) return exactPlan
+    return exactPlan ? [exactPlan] : []
   }
 
-  const fallbackPlans = plansByGroupID.value.get(subscription.group_id) || []
-  return fallbackPlans.length === 1 ? fallbackPlans[0] : null
+  return plansByGroupID.value.get(subscription.group_id) || []
+}
+
+const resolveSubscriptionPlan = (subscription: UserSubscription): SubscriptionPlan | null => {
+  const matchingPlans = listMatchingPlansForSubscription(subscription)
+  return matchingPlans.length === 1 ? matchingPlans[0] : null
+}
+
+const pickPreferredPlanRow = (
+  rows: UserSubscription[],
+  plan: SubscriptionPlan
+): UserSubscription => {
+  const primaryGroupID = getPlanPrimaryGroupID(plan)
+  return [...rows].sort((left, right) => {
+    const leftPrimary = left.group_id === primaryGroupID ? 1 : 0
+    const rightPrimary = right.group_id === primaryGroupID ? 1 : 0
+    if (leftPrimary !== rightPrimary) return rightPrimary - leftPrimary
+
+    const leftExpires = Date.parse(left.expires_at || '') || 0
+    const rightExpires = Date.parse(right.expires_at || '') || 0
+    if (leftExpires !== rightExpires) return rightExpires - leftExpires
+
+    return right.id - left.id
+  })[0]
+}
+
+const displaySubscriptions = computed(() => {
+  if (subscriptions.value.length <= 1) return subscriptions.value
+
+  const rowsByUser = new Map<number, UserSubscription[]>()
+  subscriptions.value.forEach((subscription) => {
+    const existing = rowsByUser.get(subscription.user_id) || []
+    existing.push(subscription)
+    rowsByUser.set(subscription.user_id, existing)
+  })
+
+  const visibleIDs = new Set<number>()
+
+  rowsByUser.forEach((userRows) => {
+    const planBuckets = new Map<number, { plan: SubscriptionPlan; rows: UserSubscription[] }>()
+    const unresolvedRows: UserSubscription[] = []
+
+    userRows.forEach((subscription) => {
+      const plan = resolveSubscriptionPlan(subscription)
+      if (!plan) {
+        unresolvedRows.push(subscription)
+        return
+      }
+
+      const bucket = planBuckets.get(plan.id)
+      if (bucket) {
+        bucket.rows.push(subscription)
+        return
+      }
+
+      planBuckets.set(plan.id, { plan, rows: [subscription] })
+    })
+
+    const keptPlanRows = [...planBuckets.values()].map(({ plan, rows }) => {
+      const preferred = pickPreferredPlanRow(rows, plan)
+      visibleIDs.add(preferred.id)
+      return { plan, subscription: preferred }
+    })
+
+    unresolvedRows.forEach((subscription) => {
+      const coveredByPlanRow = keptPlanRows.some(({ plan }) =>
+        getPlanGroupIDs(plan).includes(subscription.group_id)
+      )
+      if (!coveredByPlanRow) {
+        visibleIDs.add(subscription.id)
+      }
+    })
+  })
+
+  return subscriptions.value.filter((subscription) => visibleIDs.has(subscription.id))
+})
+
+const getSubscriptionLimit = (
+  subscription: UserSubscription,
+  period: SubscriptionQuotaPeriod
+): number | null => {
+  const plan = resolveSubscriptionPlan(subscription)
+  const planLimit = period === 'daily'
+    ? plan?.daily_limit_usd
+    : period === 'weekly'
+      ? plan?.weekly_limit_usd
+      : plan?.monthly_limit_usd
+  if (typeof planLimit === 'number') return planLimit
+
+  const groupLimit = period === 'daily'
+    ? subscription.group?.daily_limit_usd
+    : period === 'weekly'
+      ? subscription.group?.weekly_limit_usd
+      : subscription.group?.monthly_limit_usd
+
+  return typeof groupLimit === 'number' ? groupLimit : null
 }
 
 const formatPlanValidity = (days: number | null | undefined): string => {
