@@ -207,8 +207,6 @@ WITH legacy_plan_candidates AS (
         g.daily_limit_usd,
         g.weekly_limit_usd,
         g.monthly_limit_usd,
-        COALESCE(existing_plan.plan_count, 0) AS existing_plan_count,
-        COALESCE(existing_plan.plan_ids, ARRAY[]::BIGINT[]) AS existing_plan_ids,
         CASE
             WHEN lower(g.platform) IN ('openai', 'codex')
                  OR g.name ~* '(openai|codex|gpt)'
