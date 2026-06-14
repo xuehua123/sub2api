@@ -43,13 +43,19 @@ SET
     subscription_entitlement_id = s.old_subscription_entitlement_id,
     updated_at = NOW()
 FROM api_key_legacy_backfill_snapshots s
-LEFT JOIN subscription_entitlements se ON se.id = ak.subscription_entitlement_id
 WHERE ak.id = s.api_key_id
-  AND s.mapping_version = $1
   AND (
-      se.source_type = $2
-      OR ak.group_id IN (
+      ak.group_id IN (
           SELECT runtime_group_id FROM subscription_legacy_backfill_mappings WHERE mapping_version = $1
+      )
+      OR ak.subscription_entitlement_id IN (
+          SELECT se2.id
+          FROM subscription_entitlements se2
+          JOIN user_subscriptions us2 ON us2.id = se2.legacy_subscription_id
+          JOIN subscription_legacy_backfill_mappings m2 ON m2.legacy_group_id = us2.group_id
+          WHERE m2.mapping_version = $1
+            AND se2.source_type = $2
+            AND se2.deleted_at IS NULL
       )
   )`
 
@@ -89,11 +95,17 @@ type summary struct {
 	UpdatedEntitlementGrants      int64             `json:"updated_entitlement_grants,omitempty"`
 	UpsertedFulfillments          int64             `json:"upserted_fulfillments,omitempty"`
 	SnapshottedAPIKeys            int64             `json:"snapshotted_api_keys,omitempty"`
+	CapturedAPIKeys               int64             `json:"captured_api_keys,omitempty"`
+	ReusedExistingSnapshots       int64             `json:"reused_existing_snapshots,omitempty"`
+	CoveredAPIKeys                int64             `json:"covered_api_keys,omitempty"`
+	MissingSnapshotAPIKeys        int64             `json:"missing_snapshot_api_keys,omitempty"`
 	UpdatedAPIKeys                int64             `json:"updated_api_keys,omitempty"`
 	RolledBackAPIKeys             int64             `json:"rolled_back_api_keys,omitempty"`
 	Reconciliation                map[string]int64  `json:"reconciliation,omitempty"`
 	ReviewReasons                 map[string]int64  `json:"review_reasons,omitempty"`
 	AmbiguousAPIKeyDetails        []ambiguousAPIKey `json:"ambiguous_api_key_details,omitempty"`
+	SnapshotAPIKeyDetails         []snapshotAPIKey  `json:"snapshot_api_key_details,omitempty"`
+	MissingSnapshotAPIKeyDetails  []snapshotAPIKey  `json:"missing_snapshot_api_key_details,omitempty"`
 	Warnings                      []string          `json:"warnings,omitempty"`
 	PostWriteReconciliationSQL    []string          `json:"post_write_reconciliation_sql,omitempty"`
 }
@@ -107,6 +119,22 @@ type ambiguousAPIKey struct {
 	ProposedRuntimeGroupID   *int64  `json:"proposed_runtime_group_id,omitempty"`
 	ProposedRuntimeGroupKey  string  `json:"proposed_runtime_group_key"`
 	ExistingMappingVersion   string  `json:"existing_mapping_version,omitempty"`
+}
+
+type snapshotAPIKey struct {
+	APIKeyID               int64  `json:"api_key_id"`
+	UserID                 int64  `json:"user_id"`
+	OldGroupID             int64  `json:"old_group_id"`
+	Status                 string `json:"status"`
+	SnapshotMappingVersion string `json:"snapshot_mapping_version,omitempty"`
+}
+
+type snapshotCoverage struct {
+	Captured int64
+	Reused   int64
+	Covered  int64
+	Missing  int64
+	Details  []snapshotAPIKey
 }
 
 type legacyGroup struct {
@@ -159,6 +187,12 @@ func runCLI(args []string, stdout, stderr io.Writer) int {
 
 	sum, err := execute(ctx, cfg)
 	if err != nil {
+		if cfg.OutputDir != "" {
+			_ = writeEvidence(cfg.OutputDir, sum)
+		}
+		if len(sum.MissingSnapshotAPIKeyDetails) > 0 {
+			writeSummary(stdout, sum)
+		}
 		fmt.Fprintf(stderr, "error: %v\n", err)
 		return 1
 	}
@@ -295,8 +329,8 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 			return sum, err
 		}
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
-			n, err := snapshotEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
-			sum.SnapshottedAPIKeys = n
+			coverage, err := snapshotEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
+			applySnapshotCoverage(&sum, coverage)
 			return err
 		}); err != nil {
 			return sum, err
@@ -314,6 +348,16 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 		}
 	case modeApply:
 		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
+			return sum, err
+		}
+		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
+			coverage, err := snapshotEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
+			applySnapshotCoverage(&sum, coverage)
+			if err != nil {
+				return err
+			}
+			return ensureSnapshotCoverage(coverage)
+		}); err != nil {
 			return sum, err
 		}
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
@@ -703,12 +747,6 @@ func applyBackfill(ctx context.Context, tx *sql.Tx, cfg config) (summary, error)
 		return sum, err
 	}
 	sum.UpsertedFulfillments = n
-
-	n, err = snapshotEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
-	if err != nil {
-		return sum, err
-	}
-	sum.SnapshottedAPIKeys = n
 
 	n, err = migrateEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
 	if err != nil {
@@ -1108,8 +1146,8 @@ SET
 	return res.RowsAffected()
 }
 
-func snapshotEligibleAPIKeys(ctx context.Context, tx *sql.Tx, version string) (int64, error) {
-	res, err := tx.ExecContext(ctx, `
+func snapshotEligibleAPIKeys(ctx context.Context, tx *sql.Tx, version string) (snapshotCoverage, error) {
+	rows, err := tx.QueryContext(ctx, `
 WITH eligible AS (
     SELECT
         ak.id AS api_key_id,
@@ -1133,11 +1171,96 @@ SELECT
     api_key_id, user_id, old_group_id, old_access_source,
     old_subscription_entitlement_id, old_updated_at, $1, NOW()
 FROM eligible
-ON CONFLICT (api_key_id) DO NOTHING`, version)
+ON CONFLICT (api_key_id) DO NOTHING
+RETURNING api_key_id`, version)
 	if err != nil {
-		return 0, err
+		return snapshotCoverage{}, err
 	}
-	return res.RowsAffected()
+	capturedIDs := map[int64]struct{}{}
+	for rows.Next() {
+		var apiKeyID int64
+		if err := rows.Scan(&apiKeyID); err != nil {
+			_ = rows.Close()
+			return snapshotCoverage{}, err
+		}
+		capturedIDs[apiKeyID] = struct{}{}
+	}
+	if err := rows.Close(); err != nil {
+		return snapshotCoverage{}, err
+	}
+	if err := rows.Err(); err != nil {
+		return snapshotCoverage{}, err
+	}
+	return collectSnapshotCoverage(ctx, tx, capturedIDs)
+}
+
+func collectSnapshotCoverage(ctx context.Context, tx *sql.Tx, capturedIDs map[int64]struct{}) (snapshotCoverage, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT
+    ak.id AS api_key_id,
+    ak.user_id,
+    ak.group_id AS old_group_id,
+    s.mapping_version
+FROM api_keys ak
+JOIN groups g ON g.id = ak.group_id
+LEFT JOIN api_key_legacy_backfill_snapshots s ON s.api_key_id = ak.id
+WHERE ak.deleted_at IS NULL
+  AND ak.status = 'active'
+  AND g.deleted_at IS NULL
+  AND g.subscription_type = 'subscription'
+ORDER BY ak.id`)
+	if err != nil {
+		return snapshotCoverage{}, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	coverage := snapshotCoverage{Captured: int64(len(capturedIDs))}
+	for rows.Next() {
+		var detail snapshotAPIKey
+		var snapshotVersion sql.NullString
+		if err := rows.Scan(&detail.APIKeyID, &detail.UserID, &detail.OldGroupID, &snapshotVersion); err != nil {
+			return snapshotCoverage{}, err
+		}
+		if snapshotVersion.Valid {
+			detail.SnapshotMappingVersion = snapshotVersion.String
+			if _, ok := capturedIDs[detail.APIKeyID]; ok {
+				detail.Status = "newly_captured"
+			} else {
+				detail.Status = "reused_existing_snapshot"
+				coverage.Reused++
+			}
+			coverage.Covered++
+		} else {
+			detail.Status = "missing_snapshot"
+			coverage.Missing++
+		}
+		coverage.Details = append(coverage.Details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		return snapshotCoverage{}, err
+	}
+	return coverage, nil
+}
+
+func ensureSnapshotCoverage(coverage snapshotCoverage) error {
+	if coverage.Missing > 0 {
+		return fmt.Errorf("refusing apply because %d api keys lack snapshot coverage", coverage.Missing)
+	}
+	return nil
+}
+
+func applySnapshotCoverage(sum *summary, coverage snapshotCoverage) {
+	sum.SnapshottedAPIKeys += coverage.Captured
+	sum.CapturedAPIKeys += coverage.Captured
+	sum.ReusedExistingSnapshots += coverage.Reused
+	sum.CoveredAPIKeys += coverage.Covered
+	sum.MissingSnapshotAPIKeys += coverage.Missing
+	sum.SnapshotAPIKeyDetails = append(sum.SnapshotAPIKeyDetails, coverage.Details...)
+	for _, detail := range coverage.Details {
+		if detail.Status == "missing_snapshot" {
+			sum.MissingSnapshotAPIKeyDetails = append(sum.MissingSnapshotAPIKeyDetails, detail)
+		}
+	}
 }
 
 func migrateEligibleAPIKeys(ctx context.Context, tx *sql.Tx, version string) (int64, error) {
@@ -1230,7 +1353,7 @@ WHERE m.mapping_version = $1
 SELECT COUNT(*)
 FROM api_keys ak
 JOIN subscription_legacy_backfill_mappings m ON m.runtime_group_id = ak.group_id
-LEFT JOIN api_key_legacy_backfill_snapshots s ON s.api_key_id = ak.id AND s.mapping_version = m.mapping_version
+LEFT JOIN api_key_legacy_backfill_snapshots s ON s.api_key_id = ak.id
 WHERE m.mapping_version = $1
   AND ak.deleted_at IS NULL
   AND s.api_key_id IS NULL`,
@@ -1260,8 +1383,14 @@ func mergeApplySummary(dst *summary, src summary) {
 	dst.UpdatedEntitlementGrants += src.UpdatedEntitlementGrants
 	dst.UpsertedFulfillments += src.UpsertedFulfillments
 	dst.SnapshottedAPIKeys += src.SnapshottedAPIKeys
+	dst.CapturedAPIKeys += src.CapturedAPIKeys
+	dst.ReusedExistingSnapshots += src.ReusedExistingSnapshots
+	dst.CoveredAPIKeys += src.CoveredAPIKeys
+	dst.MissingSnapshotAPIKeys += src.MissingSnapshotAPIKeys
 	dst.UpdatedAPIKeys += src.UpdatedAPIKeys
 	dst.RolledBackAPIKeys += src.RolledBackAPIKeys
+	dst.SnapshotAPIKeyDetails = append(dst.SnapshotAPIKeyDetails, src.SnapshotAPIKeyDetails...)
+	dst.MissingSnapshotAPIKeyDetails = append(dst.MissingSnapshotAPIKeyDetails, src.MissingSnapshotAPIKeyDetails...)
 }
 
 func runtimeGroupKey(group legacyGroup) string {

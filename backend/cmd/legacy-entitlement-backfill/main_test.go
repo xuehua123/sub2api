@@ -211,16 +211,22 @@ func TestSnapshotBeforeApplyWritesEligibleLegacySubscriptionKeys(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
-	mock.ExpectExec("INSERT INTO api_key_legacy_backfill_snapshots").
+	mock.ExpectQuery("INSERT INTO api_key_legacy_backfill_snapshots").
 		WithArgs("test-version").
-		WillReturnResult(sqlmock.NewResult(0, 2))
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id"}).
+			AddRow(int64(101)).
+			AddRow(int64(102)))
+	mock.ExpectQuery("SELECT\\s+ak\\.id AS api_key_id").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "user_id", "old_group_id", "mapping_version"}).
+			AddRow(int64(101), int64(201), int64(301), "test-version").
+			AddRow(int64(102), int64(202), int64(302), "test-version"))
 	mock.ExpectCommit()
 
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	count, err := snapshotEligibleAPIKeys(context.Background(), tx, "test-version")
+	coverage, err := snapshotEligibleAPIKeys(context.Background(), tx, "test-version")
 	if err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("snapshot before apply failed: %v", err)
@@ -228,11 +234,97 @@ func TestSnapshotBeforeApplyWritesEligibleLegacySubscriptionKeys(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("expected 2 snapshotted keys, got %d", count)
+	if coverage.Captured != 2 || coverage.Reused != 0 || coverage.Covered != 2 || coverage.Missing != 0 {
+		t.Fatalf("unexpected coverage: %+v", coverage)
+	}
+	if len(coverage.Details) != 2 || coverage.Details[0].Status != "newly_captured" || coverage.Details[1].Status != "newly_captured" {
+		t.Fatalf("expected newly captured details, got %+v", coverage.Details)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestSnapshotReusesExistingCoverageFromDifferentMappingVersion(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO api_key_legacy_backfill_snapshots").
+		WithArgs("new-version").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id"}))
+	mock.ExpectQuery("SELECT\\s+ak\\.id AS api_key_id").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "user_id", "old_group_id", "mapping_version"}).
+			AddRow(int64(101), int64(201), int64(301), "old-version"))
+	mock.ExpectCommit()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverage, err := snapshotEligibleAPIKeys(context.Background(), tx, "new-version")
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("snapshot reuse failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if coverage.Captured != 0 || coverage.Reused != 1 || coverage.Covered != 1 || coverage.Missing != 0 {
+		t.Fatalf("unexpected coverage: %+v", coverage)
+	}
+	if len(coverage.Details) != 1 {
+		t.Fatalf("expected one detail, got %+v", coverage.Details)
+	}
+	detail := coverage.Details[0]
+	if detail.Status != "reused_existing_snapshot" || detail.SnapshotMappingVersion != "old-version" {
+		t.Fatalf("expected reused old snapshot detail, got %+v", detail)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnsureSnapshotCoverageAllowsExistingCoverageAndRejectsMissing(t *testing.T) {
+	if err := ensureSnapshotCoverage(snapshotCoverage{Covered: 1, Reused: 1}); err != nil {
+		t.Fatalf("existing snapshot coverage should allow apply, got %v", err)
+	}
+	err := ensureSnapshotCoverage(snapshotCoverage{
+		Covered: 1,
+		Missing: 1,
+		Details: []snapshotAPIKey{{
+			APIKeyID:   11,
+			UserID:     22,
+			OldGroupID: 33,
+			Status:     "missing_snapshot",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "lack snapshot coverage") {
+		t.Fatalf("expected missing snapshot coverage error, got %v", err)
+	}
+}
+
+func TestApplySnapshotCoverageRecordsRedactedMissingDetails(t *testing.T) {
+	var sum summary
+	applySnapshotCoverage(&sum, snapshotCoverage{
+		Captured: 1,
+		Reused:   1,
+		Covered:  2,
+		Missing:  1,
+		Details: []snapshotAPIKey{
+			{APIKeyID: 10, UserID: 20, OldGroupID: 30, Status: "newly_captured", SnapshotMappingVersion: "new-version"},
+			{APIKeyID: 11, UserID: 21, OldGroupID: 31, Status: "reused_existing_snapshot", SnapshotMappingVersion: "old-version"},
+			{APIKeyID: 12, UserID: 22, OldGroupID: 32, Status: "missing_snapshot"},
+		},
+	})
+	if sum.CapturedAPIKeys != 1 || sum.ReusedExistingSnapshots != 1 || sum.CoveredAPIKeys != 2 || sum.MissingSnapshotAPIKeys != 1 {
+		t.Fatalf("unexpected summary counts: %+v", sum)
+	}
+	if len(sum.MissingSnapshotAPIKeyDetails) != 1 || sum.MissingSnapshotAPIKeyDetails[0].APIKeyID != 12 {
+		t.Fatalf("expected missing snapshot detail, got %+v", sum.MissingSnapshotAPIKeyDetails)
 	}
 }
 
@@ -285,6 +377,9 @@ func TestRollbackSQLOnlyRestoresAPIKeys(t *testing.T) {
 	upper := strings.ToUpper(rollbackAPIKeysSQL)
 	if !strings.Contains(upper, "UPDATE API_KEYS") {
 		t.Fatalf("rollback SQL should update api_keys: %s", rollbackAPIKeysSQL)
+	}
+	if strings.Contains(upper, "S.MAPPING_VERSION") {
+		t.Fatalf("rollback SQL must reuse snapshots across mapping versions: %s", rollbackAPIKeysSQL)
 	}
 	for _, forbidden := range []string{
 		"DELETE FROM SUBSCRIPTION_ENTITLEMENTS",
