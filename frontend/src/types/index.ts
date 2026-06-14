@@ -1752,6 +1752,7 @@ export interface AdvanceEntitlementMonthlyCycleResult {
 export interface AssignSubscriptionRequest {
   user_id: number
   group_id: number
+  plan_id?: number
   validity_days?: number
 }
 

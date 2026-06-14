@@ -221,7 +221,9 @@
               <span class="w-6 text-xs font-semibold text-gray-400">#{{ index + 1 }}</span>
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
-                  {{ subscriptionByGroupID(pref.group_id)?.group?.name || `Group #${pref.group_id}` }}
+                  {{ subscriptionByGroupID(pref.group_id)
+                    ? subscriptionDisplayName(subscriptionByGroupID(pref.group_id)!, subscriptionPlans)
+                    : `Group #${pref.group_id}` }}
                 </div>
                 <div class="flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-dark-400">
                   <span>{{ platformLabel(subscriptionByGroupID(pref.group_id)?.group?.platform || '') }}</span>
@@ -287,7 +289,7 @@
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="font-semibold text-gray-900 dark:text-white">
-                    {{ subscription.group?.name || `Group #${subscription.group_id}` }}
+                    {{ subscriptionDisplayName(subscription, subscriptionPlans) }}
                   </h3>
                   <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
@@ -528,7 +530,9 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
+import { paymentAPI } from '@/api/payment'
 import type { SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
+import type { SubscriptionPlan } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -540,6 +544,7 @@ import {
   formatRemainingDurationCompact,
   getRemainingHours,
 } from '@/utils/subscriptionTime'
+import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -557,6 +562,7 @@ const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const entitlements = ref<UserEntitlement[]>([])
+const subscriptionPlans = ref<SubscriptionPlan[]>([])
 const loading = ref(true)
 const switchPreferences = ref<SubscriptionGroupPreference[]>([])
 const savingPreferences = ref(false)
@@ -584,9 +590,6 @@ const displayEntitlements = computed(() => {
 })
 
 const displayLegacySubscriptions = computed(() => {
-  if (displayEntitlements.value.length > 0) {
-    return []
-  }
   return subscriptions.value
 })
 
@@ -603,6 +606,7 @@ async function loadSubscriptions() {
     })
     const subs = await subscriptionsAPI.getMySubscriptions()
     subscriptions.value = subs
+    void loadSubscriptionPlansForSubscriptions(subs)
 
     if (subs.length > 0) {
       loading.value = false
@@ -622,6 +626,20 @@ async function loadSubscriptions() {
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadSubscriptionPlansForSubscriptions(records: UserSubscription[]) {
+  if (!records.some((subscription) => subscription.plan_id)) {
+    subscriptionPlans.value = []
+    return
+  }
+
+  try {
+    const response = await paymentAPI.getPlans()
+    subscriptionPlans.value = normalizeSubscriptionPlans(response.data || [])
+  } catch (error) {
+    console.warn('Failed to load subscription plans:', error)
   }
 }
 
@@ -932,7 +950,7 @@ function confirmDeleteSubscription(subscription: UserSubscription) {
   deleteTarget.value = {
     type: 'subscription',
     id: subscription.id,
-    name: subscription.group?.name || `Group #${subscription.group_id}`
+    name: subscriptionDisplayName(subscription, subscriptionPlans.value)
   }
 }
 
@@ -1178,7 +1196,7 @@ function formatPreciseDuration(totalSeconds: number): string {
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {
   if (!canAdvanceMonthlyCycle(subscription)) return
-  const groupName = subscription.group?.name || `Group #${subscription.group_id}`
+  const groupName = subscriptionDisplayName(subscription, subscriptionPlans.value)
   const deductedSeconds = estimateDeductedSeconds(subscription)
   const limit = subscription.group?.monthly_limit_usd || 0
   const used = subscription.monthly_usage_usd || 0
