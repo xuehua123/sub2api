@@ -277,8 +277,28 @@ describe('SubscriptionsView entitlement v2 section', () => {
 
     const wrapper = await mountView()
 
-    expect(wrapper.get('[data-testid="entitlement-monthly-quota"]').text()).toContain('16d 12h')
+    expect(wrapper.get('[data-testid="entitlement-monthly-quota"]').text()).toContain('2026')
     expect(wrapper.get('[data-testid="entitlement-monthly-quota"]').text()).not.toContain('Awaiting first use')
+  })
+
+  it('hides legacy alias cards that are already represented by entitlement cards', async () => {
+    getMySubscriptions.mockResolvedValue([{
+      ...legacySubscription,
+      id: 88,
+      entitlement_id: 22,
+      group: {
+        ...legacySubscription.group,
+        name: 'Legacy Alias Group',
+      },
+    }])
+    getEntitlements.mockResolvedValue([entitlement])
+
+    const wrapper = await mountView()
+
+    expect(wrapper.findAll('[data-testid="entitlement-card"]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('Shared Pro')
+    expect(wrapper.text()).toContain('Legacy subscription #88')
+    expect(wrapper.text()).not.toContain('Legacy Alias Group')
   })
 
   it('shows entitlement balance fallback policy clearly', async () => {

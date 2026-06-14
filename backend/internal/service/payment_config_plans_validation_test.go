@@ -5,8 +5,10 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	"github.com/stretchr/testify/require"
 )
@@ -304,6 +306,65 @@ func TestPaymentConfigPlanOverageAndNullableLimitUpdate(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Nil(t, updated.DailyLimitUSD)
+}
+
+func TestPaymentConfigUpdatePlanSyncsActiveEntitlementLimits(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+	group := createPaymentConfigPlanTestGroup(t, client, "anthropic-sub", PlatformAnthropic, 0)
+
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "Template",
+		GroupIDs:     []int64{group.ID},
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+	})
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("plan-sync@example.test").
+		SetPasswordHash("hash").
+		Save(ctx)
+	require.NoError(t, err)
+	now := time.Now()
+	ent, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(created.ID).
+		SetPrimaryGroupID(group.ID).
+		SetName(created.Name).
+		SetSourceType(SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetDailyWindowStart(now.Add(-time.Hour)).
+		SetWeeklyWindowStart(now.Add(-time.Hour)).
+		SetMonthlyWindowStart(now.Add(-time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{"price": created.Price}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	monthly := 1000.0
+	overagePolicy := SubscriptionEntitlementOverageBalanceFallback
+	updated, err := svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{
+		Name:            pcPlanStrPtr("Template Updated"),
+		MonthlyLimitUSD: OptionalFloat64{Set: true, Value: &monthly},
+		OveragePolicy:   &overagePolicy,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated.MonthlyLimitUSD)
+	require.Equal(t, monthly, *updated.MonthlyLimitUSD)
+
+	got, err := client.SubscriptionEntitlement.Query().
+		Where(subscriptionentitlement.IDEQ(ent.ID)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Template Updated", got.Name)
+	require.NotNil(t, got.MonthlyLimitUsd)
+	require.Equal(t, monthly, *got.MonthlyLimitUsd)
+	require.Equal(t, SubscriptionEntitlementOverageBalanceFallback, got.OveragePolicy)
 }
 
 func TestPaymentConfigUpdatePlanRejectsLimitPeriodLongerThanValidity(t *testing.T) {

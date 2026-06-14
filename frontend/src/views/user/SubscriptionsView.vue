@@ -590,7 +590,16 @@ const displayEntitlements = computed(() => {
 })
 
 const displayLegacySubscriptions = computed(() => {
-  return subscriptions.value
+  const visibleEntitlementIDs = new Set(entitlements.value.map((entitlement) => entitlement.id))
+  const legacySubscriptionIDsCoveredByEntitlements = new Set(
+    entitlements.value
+      .map((entitlement) => entitlement.legacy_subscription_id)
+      .filter((id): id is number => typeof id === 'number' && id > 0)
+  )
+  return subscriptions.value.filter((subscription) => (
+    !(subscription.entitlement_id && visibleEntitlementIDs.has(subscription.entitlement_id)) &&
+    !legacySubscriptionIDsCoveredByEntitlements.has(subscription.id)
+  ))
 })
 
 const hasAnySubscriptionDisplay = computed(() => (
@@ -880,14 +889,14 @@ function formatEntitlementReset(window: EntitlementUsageWindow, entitlement: Use
   if (window.limit == null || window.limit <= 0) {
     return t('userSubscriptions.windowNotActive')
   }
+  if (window.resetsAt) {
+    return formatDateTime(window.resetsAt)
+  }
   if (typeof window.resetsInSeconds === 'number') {
     if (window.resetsInSeconds <= 0) {
       return t('userSubscriptions.entitlements.resetNow')
     }
     return formatPreciseDuration(window.resetsInSeconds)
-  }
-  if (window.resetsAt) {
-    return formatDateTime(window.resetsAt)
   }
   const fallbackResetAt = getCycleResetAt(window.windowStart, entitlement.starts_at, window.cycleHours)
   if (fallbackResetAt) {
@@ -895,7 +904,7 @@ function formatEntitlementReset(window: EntitlementUsageWindow, entitlement: Use
     if (seconds <= 0) {
       return t('userSubscriptions.entitlements.resetNow')
     }
-    return formatPreciseDuration(seconds)
+    return formatDateTime(fallbackResetAt)
   }
   return t('userSubscriptions.windowNotActive')
 }

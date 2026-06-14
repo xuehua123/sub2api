@@ -10,6 +10,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -395,13 +396,17 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 	if req.SortOrder != nil {
 		u.SetSortOrder(*req.SortOrder)
 	}
-	if _, err := u.Save(ctx); err != nil {
+	updatedPlan, err := u.Save(ctx)
+	if err != nil {
 		return nil, err
 	}
 	if groupIDsExplicit {
 		if err := replacePlanGroupsTx(ctx, tx, id, access.PersistGroupIDs); err != nil {
 			return nil, err
 		}
+	}
+	if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, updatedPlan, overagePolicy); err != nil {
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -816,6 +821,56 @@ func applyPlanLimitPatch(u *dbent.SubscriptionPlanUpdateOne, daily, weekly, mont
 		} else {
 			u.SetMonthlyLimitUsd(*monthly.Value)
 		}
+	}
+}
+
+func syncActiveEntitlementsForPlanUpdate(ctx context.Context, tx *dbent.Tx, plan *dbent.SubscriptionPlan, overagePolicy string) error {
+	if plan == nil {
+		return nil
+	}
+	now := time.Now()
+	update := tx.SubscriptionEntitlement.Update().
+		Where(
+			subscriptionentitlement.PlanIDEQ(plan.ID),
+			subscriptionentitlement.DeletedAtIsNil(),
+			subscriptionentitlement.StatusEQ(SubscriptionStatusActive),
+			subscriptionentitlement.ExpiresAtGT(now),
+		).
+		SetName(subscriptionPlanEntitlementName(plan)).
+		SetOveragePolicy(normalizeEntitlementOveragePolicy(overagePolicy)).
+		SetUpdatedAt(now)
+	applyEntitlementPlanLimitSync(update, plan.DailyLimitUsd, plan.WeeklyLimitUsd, plan.MonthlyLimitUsd)
+	if _, err := update.Save(ctx); err != nil {
+		return fmt.Errorf("sync active entitlements for plan update: %w", err)
+	}
+	return nil
+}
+
+func subscriptionPlanEntitlementName(plan *dbent.SubscriptionPlan) string {
+	if plan == nil {
+		return ""
+	}
+	if name := strings.TrimSpace(plan.Name); name != "" {
+		return name
+	}
+	return strings.TrimSpace(plan.ProductName)
+}
+
+func applyEntitlementPlanLimitSync(u *dbent.SubscriptionEntitlementUpdate, daily, weekly, monthly *float64) {
+	if daily == nil {
+		u.ClearDailyLimitUsd()
+	} else {
+		u.SetDailyLimitUsd(*daily)
+	}
+	if weekly == nil {
+		u.ClearWeeklyLimitUsd()
+	} else {
+		u.SetWeeklyLimitUsd(*weekly)
+	}
+	if monthly == nil {
+		u.ClearMonthlyLimitUsd()
+	} else {
+		u.SetMonthlyLimitUsd(*monthly)
 	}
 }
 
