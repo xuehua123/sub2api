@@ -261,6 +261,47 @@ func TestMigration155AddsAccessSourceAndGroupCapabilitiesAdditively(t *testing.T
 	require.NotContains(t, sql, "SET subscription_entitlement_id")
 }
 
+func TestMigration156AddsEntitlementCycleResetLogsAdditively(t *testing.T) {
+	content, err := FS.ReadFile("156_subscription_entitlement_cycle_reset_logs.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_entitlement_cycle_reset_logs")
+	require.Contains(t, sql, "id                                  BIGSERIAL PRIMARY KEY")
+	require.Contains(t, sql, "user_id                             BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "entitlement_id                      BIGINT NOT NULL REFERENCES subscription_entitlements(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "plan_id                             BIGINT REFERENCES subscription_plans(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "previous_expires_at                 TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "new_expires_at                      TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "previous_monthly_usage_usd          DECIMAL(20, 10) NOT NULL DEFAULT 0")
+	require.Contains(t, sql, "previous_monthly_window_start       TIMESTAMPTZ")
+	require.Contains(t, sql, "new_monthly_window_start            TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "deducted_days                       INTEGER NOT NULL")
+	require.Contains(t, sql, "deducted_seconds                    BIGINT NOT NULL")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_cycle_reset_logs_user_created")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_cycle_reset_logs_entitlement_created")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+	require.NotContains(t, sql, "INSERT INTO subscription_cycle_reset_logs")
+}
+
+func TestMigration157BackfillsActiveEntitlementWindowsFromStartsAt(t *testing.T) {
+	content, err := FS.ReadFile("157_backfill_entitlement_window_starts.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "daily_limit_usd IS NOT NULL AND daily_limit_usd > 0")
+	require.Contains(t, sql, "weekly_limit_usd IS NOT NULL AND weekly_limit_usd > 0")
+	require.Contains(t, sql, "monthly_limit_usd IS NOT NULL AND monthly_limit_usd > 0")
+	require.Contains(t, sql, "COALESCE(daily_window_start, starts_at)")
+	require.Contains(t, sql, "COALESCE(weekly_window_start, starts_at)")
+	require.Contains(t, sql, "COALESCE(monthly_window_start, starts_at)")
+	require.Contains(t, sql, "status = 'active'")
+	require.Contains(t, sql, "deleted_at IS NULL")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
 func TestSubscriptionEntitlementsV2PreflightRunbookCoversSwitchAuditQueries(t *testing.T) {
 	path := filepath.Join("..", "..", "docs", "plans", "subscription-entitlements-v2-preflight-sql.md")
 	content, err := os.ReadFile(path)

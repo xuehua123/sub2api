@@ -634,9 +634,10 @@ type UserSubscriptionAlias struct {
 }
 
 type UserEntitlementGroup struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Platform string `json:"platform"`
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	Platform       string  `json:"platform"`
+	RateMultiplier float64 `json:"rate_multiplier"`
 }
 
 type UserEntitlement struct {
@@ -665,6 +666,11 @@ type UserEntitlement struct {
 	MonthlyResetsInSeconds *int64                 `json:"monthly_resets_in_seconds"`
 	OveragePolicy          string                 `json:"overage_policy"`
 	LegacySubscriptionID   *int64                 `json:"legacy_subscription_id"`
+	PurchasePrice          *float64               `json:"purchase_price"`
+	PurchaseCurrency       string                 `json:"purchase_currency"`
+	QuotaUSD               *float64               `json:"quota_usd"`
+	QuotaPeriod            string                 `json:"quota_period"`
+	UnitCostPerUSD         *float64               `json:"unit_cost_per_usd"`
 }
 
 // AdminUserSubscription 是管理员接口使用的订阅 DTO（包含分配信息/备注等字段）。

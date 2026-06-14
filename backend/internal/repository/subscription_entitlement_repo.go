@@ -284,6 +284,94 @@ func (r *subscriptionEntitlementRepository) ResetUsage(ctx context.Context, id i
 	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
 }
 
+func (r *subscriptionEntitlementRepository) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
+	return r.withTx(ctx, func(txCtx context.Context, _ *dbent.Client) error {
+		return fn(txCtx)
+	})
+}
+
+func (r *subscriptionEntitlementRepository) LockEntitlementMonthlyCycle(ctx context.Context, userID, entitlementID int64) (*service.SubscriptionEntitlementMonthlyCycleSnapshot, error) {
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+		SELECT id, user_id, plan_id, status, starts_at, expires_at,
+			monthly_limit_usd, monthly_usage_usd, monthly_window_start
+		FROM subscription_entitlements
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+		FOR UPDATE
+	`, entitlementID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+
+	var planID sql.NullInt64
+	var monthlyLimit sql.NullFloat64
+	var monthlyWindowStart sql.NullTime
+	out := &service.SubscriptionEntitlementMonthlyCycleSnapshot{}
+	if err := rows.Scan(
+		&out.ID,
+		&out.UserID,
+		&planID,
+		&out.Status,
+		&out.StartsAt,
+		&out.ExpiresAt,
+		&monthlyLimit,
+		&out.MonthlyUsageUSD,
+		&monthlyWindowStart,
+	); err != nil {
+		return nil, err
+	}
+	if planID.Valid {
+		out.PlanID = &planID.Int64
+	}
+	if monthlyLimit.Valid {
+		out.MonthlyLimitUSD = &monthlyLimit.Float64
+	}
+	out.MonthlyWindowStart = nullableTimePtr(monthlyWindowStart)
+	return out, rows.Err()
+}
+
+func (r *subscriptionEntitlementRepository) UpdateEntitlementMonthlyCycle(ctx context.Context, update service.SubscriptionEntitlementMonthlyCycleUpdate) error {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+		UPDATE subscription_entitlements
+		SET monthly_usage_usd = 0,
+			monthly_window_start = $1,
+			expires_at = $2,
+			updated_at = $3
+		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
+	`, update.NewMonthlyWindowStart, update.NewExpiresAt, update.UpdatedAt, update.EntitlementID, update.UserID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	return nil
+}
+
+func (r *subscriptionEntitlementRepository) InsertEntitlementCycleResetLog(ctx context.Context, log service.SubscriptionEntitlementCycleResetLog) error {
+	client := clientFromContext(ctx, r.client)
+	_, err := client.ExecContext(ctx, `
+		INSERT INTO subscription_entitlement_cycle_reset_logs (
+			user_id, entitlement_id, plan_id, previous_expires_at, new_expires_at,
+			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,
+			deducted_days, deducted_seconds, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds)
+	return err
+}
+
 func (r *subscriptionEntitlementRepository) ApplyEntitlementUsage(ctx context.Context, id int64, costUSD float64, now time.Time) (*service.EntitlementUsageApplyResult, error) {
 	if costUSD < 0 {
 		return nil, service.ErrSubscriptionEntitlementInvalidUsage
@@ -667,4 +755,11 @@ func nullableTimePtr(v sql.NullTime) *time.Time {
 	}
 	t := v.Time
 	return &t
+}
+
+func nullableTimePtrArg(v *time.Time) any {
+	if v == nil {
+		return nil
+	}
+	return *v
 }

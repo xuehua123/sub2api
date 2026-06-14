@@ -796,9 +796,12 @@ func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.T
 	if now.IsZero() {
 		now = time.Now()
 	}
-	dailyResetsAt, dailyResetsInSeconds := entitlementWindowReset(ent.DailyWindowStart, ent.ExpiresAt, 24*time.Hour, now, ent.HasOneTimeDailyQuota())
-	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(ent.WeeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
-	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(ent.MonthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
+	dailyWindowStart := entitlementQuotaWindowStart(ent.DailyWindowStart, ent.StartsAt, ent.DailyLimitUSD)
+	weeklyWindowStart := entitlementQuotaWindowStart(ent.WeeklyWindowStart, ent.StartsAt, ent.WeeklyLimitUSD)
+	monthlyWindowStart := entitlementQuotaWindowStart(ent.MonthlyWindowStart, ent.StartsAt, ent.MonthlyLimitUSD)
+	dailyResetsAt, dailyResetsInSeconds := entitlementWindowReset(dailyWindowStart, ent.ExpiresAt, 24*time.Hour, now, ent.HasOneTimeDailyQuota())
+	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(weeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
+	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(monthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
 	return &UserEntitlement{
 		ID:                     ent.ID,
 		PlanID:                 cloneInt64(ent.PlanID),
@@ -810,21 +813,26 @@ func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.T
 		Groups:                 userEntitlementGroups(ent),
 		DailyLimitUSD:          cloneFloat64(ent.DailyLimitUSD),
 		DailyUsageUSD:          ent.DailyUsageUSD,
-		DailyWindowStart:       cloneTime(ent.DailyWindowStart),
+		DailyWindowStart:       cloneTime(dailyWindowStart),
 		DailyResetsAt:          dailyResetsAt,
 		DailyResetsInSeconds:   dailyResetsInSeconds,
 		WeeklyLimitUSD:         cloneFloat64(ent.WeeklyLimitUSD),
 		WeeklyUsageUSD:         ent.WeeklyUsageUSD,
-		WeeklyWindowStart:      cloneTime(ent.WeeklyWindowStart),
+		WeeklyWindowStart:      cloneTime(weeklyWindowStart),
 		WeeklyResetsAt:         weeklyResetsAt,
 		WeeklyResetsInSeconds:  weeklyResetsInSeconds,
 		MonthlyLimitUSD:        cloneFloat64(ent.MonthlyLimitUSD),
 		MonthlyUsageUSD:        ent.MonthlyUsageUSD,
-		MonthlyWindowStart:     cloneTime(ent.MonthlyWindowStart),
+		MonthlyWindowStart:     cloneTime(monthlyWindowStart),
 		MonthlyResetsAt:        monthlyResetsAt,
 		MonthlyResetsInSeconds: monthlyResetsInSeconds,
 		OveragePolicy:          ent.OveragePolicy,
 		LegacySubscriptionID:   cloneInt64(ent.LegacySubscriptionID),
+		PurchasePrice:          cloneFloat64(ent.PurchasePrice),
+		PurchaseCurrency:       ent.PurchaseCurrency,
+		QuotaUSD:               cloneFloat64(ent.QuotaUSD),
+		QuotaPeriod:            ent.QuotaPeriod,
+		UnitCostPerUSD:         cloneFloat64(ent.UnitCostPerUSD),
 	}
 }
 
@@ -874,6 +882,10 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 			if grant.Group != nil {
 				item.Name = grant.Group.Name
 				item.Platform = grant.Group.Platform
+				item.RateMultiplier = grant.Group.RateMultiplier
+			}
+			if item.RateMultiplier <= 0 {
+				item.RateMultiplier = 1
 			}
 			out = append(out, item)
 		}
@@ -886,12 +898,20 @@ func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitleme
 	out := make([]UserEntitlementGroup, 0, len(groups))
 	for _, group := range groups {
 		out = append(out, UserEntitlementGroup{
-			ID:       group.ID,
-			Name:     group.Name,
-			Platform: group.Platform,
+			ID:             group.ID,
+			Name:           group.Name,
+			Platform:       group.Platform,
+			RateMultiplier: normalizedGroupRate(group.RateMultiplier),
 		})
 	}
 	return out
+}
+
+func normalizedGroupRate(rate float64) float64 {
+	if rate <= 0 {
+		return 1
+	}
+	return rate
 }
 
 func entitlementAliasPrimaryGroup(ent *service.SubscriptionEntitlement) (int64, *service.Group) {
@@ -968,6 +988,19 @@ func entitlementWindowReset(windowStart *time.Time, expiresAt time.Time, cycle t
 		resetsInSeconds = 0
 	}
 	return cloneTime(&resetsAt), &resetsInSeconds
+}
+
+func entitlementQuotaWindowStart(windowStart *time.Time, startsAt time.Time, limit *float64) *time.Time {
+	if limit == nil || *limit <= 0 {
+		return nil
+	}
+	if windowStart != nil {
+		return windowStart
+	}
+	if startsAt.IsZero() {
+		return nil
+	}
+	return cloneTime(&startsAt)
 }
 
 func cloneInt64(v *int64) *int64 {

@@ -238,6 +238,7 @@ func newEntitlementHandlerFixture(t *testing.T) entitlementHandlerFixture {
 	router.GET("/entitlements", h.List)
 	router.GET("/entitlements/active", h.GetActive)
 	router.GET("/entitlements/:id/progress", h.GetProgress)
+	router.POST("/entitlements/:id/advance-monthly-cycle", h.AdvanceMonthlyCycle)
 
 	return entitlementHandlerFixture{
 		router: router,
@@ -318,4 +319,293 @@ func decodeEntitlementObject(t *testing.T, body []byte) map[string]any {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+type handlerAdvanceEntitlementRepo struct {
+	ent *service.SubscriptionEntitlement
+
+	lockedUserID int64
+	updateCalls  []service.SubscriptionEntitlementMonthlyCycleUpdate
+	resetLogs    []service.SubscriptionEntitlementCycleResetLog
+}
+
+func (r *handlerAdvanceEntitlementRepo) Create(context.Context, *service.SubscriptionEntitlement, []int64) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) CreateTx(context.Context, *service.SubscriptionEntitlement, []int64) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) CreateWithFulfillment(context.Context, *service.SubscriptionEntitlement, []int64, *service.SubscriptionEntitlementFulfillment) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetByID(_ context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	if r.ent == nil || r.ent.ID != id {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	return cloneHandlerEntitlement(r.ent), nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetBySourceID(context.Context, string, int64) (*service.SubscriptionEntitlement, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetBySourceExternalID(context.Context, string, string) (*service.SubscriptionEntitlement, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetBySourceRedeemCodeID(context.Context, int64) (*service.SubscriptionEntitlement, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetFulfillmentBySourceID(context.Context, string, int64) (*service.SubscriptionEntitlementFulfillment, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetFulfillmentBySourceExternalID(context.Context, string, string) (*service.SubscriptionEntitlementFulfillment, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetFulfillmentBySourceRedeemCodeID(context.Context, int64) (*service.SubscriptionEntitlementFulfillment, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetActiveCoveringGroup(context.Context, int64, int64) ([]service.SubscriptionEntitlement, error) {
+	return nil, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) ListByUserID(context.Context, int64) ([]service.SubscriptionEntitlement, error) {
+	return nil, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) ListByUserPlanID(context.Context, int64, int64) ([]service.SubscriptionEntitlement, error) {
+	return nil, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) ListActiveByUserID(context.Context, int64) ([]service.SubscriptionEntitlement, error) {
+	return nil, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) ListActiveCoveringGroupForUser(context.Context, int64, int64) ([]service.SubscriptionEntitlement, error) {
+	return nil, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) UpdateTerm(context.Context, int64, time.Time, time.Time, string, string) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) UpdateTermAndSource(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ApplyEntitlementUsage(context.Context, int64, float64, time.Time) (*service.EntitlementUsageApplyResult, error) {
+	return nil, service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ReplaceGroups(context.Context, int64, []int64) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func (r *handlerAdvanceEntitlementRepo) LockEntitlementMonthlyCycle(_ context.Context, userID, entitlementID int64) (*service.SubscriptionEntitlementMonthlyCycleSnapshot, error) {
+	r.lockedUserID = userID
+	if r.ent == nil || r.ent.ID != entitlementID || r.ent.UserID != userID {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	return &service.SubscriptionEntitlementMonthlyCycleSnapshot{
+		ID:                 r.ent.ID,
+		UserID:             r.ent.UserID,
+		PlanID:             cloneHandlerInt64Ptr(r.ent.PlanID),
+		Status:             r.ent.Status,
+		StartsAt:           r.ent.StartsAt,
+		ExpiresAt:          r.ent.ExpiresAt,
+		MonthlyLimitUSD:    cloneHandlerFloat64Ptr(r.ent.MonthlyLimitUSD),
+		MonthlyUsageUSD:    r.ent.MonthlyUsageUSD,
+		MonthlyWindowStart: cloneHandlerTimePtr(r.ent.MonthlyWindowStart),
+	}, nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) UpdateEntitlementMonthlyCycle(_ context.Context, update service.SubscriptionEntitlementMonthlyCycleUpdate) error {
+	if r.ent == nil || r.ent.ID != update.EntitlementID || r.ent.UserID != update.UserID {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	r.ent.MonthlyUsageUSD = 0
+	r.ent.MonthlyWindowStart = cloneHandlerTimeValue(update.NewMonthlyWindowStart)
+	r.ent.ExpiresAt = update.NewExpiresAt
+	r.ent.UpdatedAt = update.UpdatedAt
+	r.updateCalls = append(r.updateCalls, update)
+	return nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) InsertEntitlementCycleResetLog(_ context.Context, log service.SubscriptionEntitlementCycleResetLog) error {
+	r.resetLogs = append(r.resetLogs, log)
+	return nil
+}
+
+func TestEntitlementHandler_AdvanceMonthlyCycleUsesSubjectOwnerAndPublicDTO(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	userID := int64(42)
+	entitlementID := int64(22)
+	planID := int64(5)
+	monthlyLimit := 100.0
+	startsAt := now.Add(-10 * 24 * time.Hour)
+	expiresAt := startsAt.Add(120 * 24 * time.Hour)
+	repo := &handlerAdvanceEntitlementRepo{ent: &service.SubscriptionEntitlement{
+		ID:                 entitlementID,
+		UserID:             userID,
+		PlanID:             &planID,
+		Name:               "Shared Pro",
+		Status:             service.SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          expiresAt,
+		MonthlyLimitUSD:    &monthlyLimit,
+		MonthlyUsageUSD:    95,
+		MonthlyWindowStart: &startsAt,
+		Groups: []service.Group{{
+			ID:               101,
+			Name:             "OpenAI Pro",
+			Platform:         service.PlatformOpenAI,
+			RateMultiplier:   1,
+			Status:           service.StatusActive,
+			SubscriptionType: service.SubscriptionTypeSubscription,
+		}},
+	}}
+	svc := service.NewSubscriptionEntitlementService(repo, nil)
+	svc.SetNowFunc(func() time.Time { return now })
+	h := NewEntitlementHandler(svc)
+	h.SetNowFunc(func() time.Time { return now })
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: userID, Concurrency: 5})
+		c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+		c.Next()
+	})
+	router.POST("/entitlements/:id/advance-monthly-cycle", h.AdvanceMonthlyCycle)
+
+	resp := performJSONRequest(router, http.MethodPost, "/entitlements/22/advance-monthly-cycle", nil)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	require.NotContains(t, resp.Body.String(), `"subscription"`)
+	require.Equal(t, userID, repo.lockedUserID)
+	require.Len(t, repo.updateCalls, 1)
+	require.Len(t, repo.resetLogs, 1)
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(resp.Body.Bytes(), &envelope))
+	require.Contains(t, envelope.Data, "entitlement")
+	require.Equal(t, float64(95), envelope.Data["previous_monthly_usage_usd"])
+	entitlement, ok := envelope.Data["entitlement"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(entitlementID), entitlement["id"])
+	require.Equal(t, float64(0), entitlement["monthly_usage_usd"])
+	require.NotContains(t, entitlement, "source_id")
+	require.NotContains(t, entitlement, "notes")
+}
+
+func TestEntitlementHandler_AdvanceMonthlyCycleCrossUserReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	monthlyLimit := 100.0
+	startsAt := now.Add(-10 * 24 * time.Hour)
+	repo := &handlerAdvanceEntitlementRepo{ent: &service.SubscriptionEntitlement{
+		ID:                 22,
+		UserID:             99,
+		Status:             service.SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          startsAt.Add(120 * 24 * time.Hour),
+		MonthlyLimitUSD:    &monthlyLimit,
+		MonthlyUsageUSD:    95,
+		MonthlyWindowStart: &startsAt,
+	}}
+	svc := service.NewSubscriptionEntitlementService(repo, nil)
+	svc.SetNowFunc(func() time.Time { return now })
+	h := NewEntitlementHandler(svc)
+	h.SetNowFunc(func() time.Time { return now })
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42, Concurrency: 5})
+		c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+		c.Next()
+	})
+	router.POST("/entitlements/:id/advance-monthly-cycle", h.AdvanceMonthlyCycle)
+
+	resp := performJSONRequest(router, http.MethodPost, "/entitlements/22/advance-monthly-cycle", nil)
+
+	require.Equal(t, http.StatusNotFound, resp.Code)
+	require.Empty(t, repo.updateCalls)
+	require.Empty(t, repo.resetLogs)
+}
+
+func cloneHandlerEntitlement(ent *service.SubscriptionEntitlement) *service.SubscriptionEntitlement {
+	if ent == nil {
+		return nil
+	}
+	cp := *ent
+	cp.PlanID = cloneHandlerInt64Ptr(ent.PlanID)
+	cp.LegacySubscriptionID = cloneHandlerInt64Ptr(ent.LegacySubscriptionID)
+	cp.PrimaryGroupID = cloneHandlerInt64Ptr(ent.PrimaryGroupID)
+	cp.DailyWindowStart = cloneHandlerTimePtr(ent.DailyWindowStart)
+	cp.WeeklyWindowStart = cloneHandlerTimePtr(ent.WeeklyWindowStart)
+	cp.MonthlyWindowStart = cloneHandlerTimePtr(ent.MonthlyWindowStart)
+	cp.DailyLimitUSD = cloneHandlerFloat64Ptr(ent.DailyLimitUSD)
+	cp.WeeklyLimitUSD = cloneHandlerFloat64Ptr(ent.WeeklyLimitUSD)
+	cp.MonthlyLimitUSD = cloneHandlerFloat64Ptr(ent.MonthlyLimitUSD)
+	cp.SourceID = cloneHandlerInt64Ptr(ent.SourceID)
+	cp.SourceExternalID = cloneHandlerStringPtr(ent.SourceExternalID)
+	cp.SourceRedeemCodeID = cloneHandlerInt64Ptr(ent.SourceRedeemCodeID)
+	cp.AssignedBy = cloneHandlerInt64Ptr(ent.AssignedBy)
+	cp.Groups = append([]service.Group(nil), ent.Groups...)
+	return &cp
+}
+
+func cloneHandlerInt64Ptr(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneHandlerFloat64Ptr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneHandlerStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneHandlerTimePtr(v *time.Time) *time.Time {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneHandlerTimeValue(v time.Time) *time.Time {
+	out := v
+	return &out
 }

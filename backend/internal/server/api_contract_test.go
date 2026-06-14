@@ -47,6 +47,16 @@ func TestAPIContracts(t *testing.T) {
 		wantJSON   string
 	}{
 		{
+			name:       "POST /api/v1/entitlements/:id/advance-monthly-cycle validates id",
+			method:     http.MethodPost,
+			path:       "/api/v1/entitlements/bad/advance-monthly-cycle",
+			wantStatus: http.StatusBadRequest,
+			wantJSON: `{
+				"code": 400,
+				"message": "Invalid entitlement ID"
+			}`,
+		},
+		{
 			name:       "GET /api/v1/auth/me",
 			method:     http.MethodGet,
 			path:       "/api/v1/auth/me",
@@ -1600,6 +1610,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 
 	subscriptionService := service.NewSubscriptionService(groupRepo, userSubRepo, nil, entClient, cfg)
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
+	entitlementService := service.NewSubscriptionEntitlementService(nil, nil)
+	entitlementHandler := handler.NewEntitlementHandler(entitlementService)
 
 	redeemService := service.NewRedeemService(redeemRepo, userRepo, subscriptionService, nil, nil, nil, nil, nil)
 	redeemHandler := handler.NewRedeemHandler(redeemService)
@@ -1655,6 +1667,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Subs.GET("/subscriptions", subscriptionHandler.List)
 	v1Subs.GET("/subscriptions/active", subscriptionHandler.GetActive)
 	v1Subs.POST("/subscriptions/:id/advance-monthly-cycle", subscriptionHandler.AdvanceMonthlyCycle)
+	v1Subs.POST("/entitlements/:id/advance-monthly-cycle", entitlementHandler.AdvanceMonthlyCycle)
 
 	v1Redeem := v1.Group("")
 	v1Redeem.Use(jwtAuth)

@@ -657,6 +657,20 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 	return nil
 }
 
+func (s *SubscriptionService) RevokeUserSubscription(ctx context.Context, userID, subscriptionID int64) error {
+	if userID <= 0 || subscriptionID <= 0 {
+		return ErrSubscriptionNotFound
+	}
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	if sub.UserID != userID {
+		return ErrSubscriptionNotFound
+	}
+	return s.RevokeSubscription(ctx, subscriptionID)
+}
+
 // ExtendSubscription 调整订阅时长（正数延长，负数缩短）
 func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscriptionID int64, days int) (*UserSubscription, error) {
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
@@ -1404,32 +1418,11 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		_ = tx.Rollback()
 		return nil, ErrSubscriptionExpired
 	}
-	var resetAt time.Time
+	var previousWindowStartPtr *time.Time
 	if previousWindowStart.Valid {
-		effectiveStart := effectiveWindowStartAt(&previousWindowStart.Time, previousStartsAt, monthlyCycleDuration, now)
-		if effectiveStart != nil {
-			resetAt = effectiveStart.Add(monthlyCycleDuration)
-		}
+		previousWindowStartPtr = &previousWindowStart.Time
 	}
-	if resetAt.IsZero() {
-		if alignedStart, ok := alignedCycleStart(previousStartsAt, monthlyCycleDuration, now); ok {
-			resetAt = alignedStart.Add(monthlyCycleDuration)
-		} else {
-			resetAt = now.Add(monthlyCycleDuration)
-		}
-	} else if !resetAt.After(now) {
-		resetAt = advanceWindowStart(resetAt, monthlyCycleDuration, now)
-	}
-	if resetAt.IsZero() {
-		resetAt = now.Add(monthlyCycleDuration)
-	}
-	if !resetAt.After(now) {
-		if previousWindowStart.Valid {
-			resetAt = advanceWindowStart(previousWindowStart.Time, monthlyCycleDuration, now).Add(monthlyCycleDuration)
-		} else {
-			resetAt = now.Add(monthlyCycleDuration)
-		}
-	}
+	resetAt := monthlyCycleResetAt(previousWindowStartPtr, previousStartsAt, now)
 	if !resetAt.After(now) {
 		_ = tx.Rollback()
 		return nil, ErrMonthlyCycleNotExhausted
@@ -1521,6 +1514,36 @@ func canAdvanceMonthlyCycleByValidity(startsAt, expiresAt, resetAt time.Time) bo
 		return false
 	}
 	return !expiresAt.Before(resetAt.Add(monthlyCycleDuration))
+}
+
+func monthlyCycleResetAt(windowStart *time.Time, startsAt, now time.Time) time.Time {
+	var resetAt time.Time
+	if windowStart != nil {
+		effectiveStart := effectiveWindowStartAt(windowStart, startsAt, monthlyCycleDuration, now)
+		if effectiveStart != nil {
+			resetAt = effectiveStart.Add(monthlyCycleDuration)
+		}
+	}
+	if resetAt.IsZero() {
+		if alignedStart, ok := alignedCycleStart(startsAt, monthlyCycleDuration, now); ok {
+			resetAt = alignedStart.Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
+	} else if !resetAt.After(now) {
+		resetAt = advanceWindowStart(resetAt, monthlyCycleDuration, now)
+	}
+	if resetAt.IsZero() {
+		resetAt = now.Add(monthlyCycleDuration)
+	}
+	if !resetAt.After(now) {
+		if windowStart != nil {
+			resetAt = advanceWindowStart(*windowStart, monthlyCycleDuration, now).Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
+	}
+	return resetAt
 }
 
 func ceilDurationSeconds(d time.Duration) int64 {

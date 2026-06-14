@@ -117,6 +117,7 @@ func RegisterUserRoutes(
 			subscriptions.GET("/progress", h.Subscription.GetProgress)
 			subscriptions.GET("/summary", h.Subscription.GetSummary)
 			subscriptions.POST("/:id/advance-monthly-cycle", h.Subscription.AdvanceMonthlyCycle)
+			subscriptions.DELETE("/:id", h.Subscription.Delete)
 		}
 
 		// 用户套餐权益
@@ -125,6 +126,8 @@ func RegisterUserRoutes(
 			entitlements.GET("", h.Entitlement.List)
 			entitlements.GET("/active", h.Entitlement.GetActive)
 			entitlements.GET("/:id/progress", h.Entitlement.GetProgress)
+			entitlements.POST("/:id/advance-monthly-cycle", h.Entitlement.AdvanceMonthlyCycle)
+			entitlements.DELETE("/:id", h.Entitlement.Delete)
 		}
 
 		// 渠道监控（用户只读）

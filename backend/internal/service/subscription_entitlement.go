@@ -177,3 +177,49 @@ type EntitlementUsageApplyResult struct {
 	WeeklyWindowStart  *time.Time
 	MonthlyWindowStart *time.Time
 }
+
+type AdvanceEntitlementMonthlyCycleResult struct {
+	Entitlement           *SubscriptionEntitlement `json:"entitlement"`
+	PreviousExpiresAt     time.Time                `json:"previous_expires_at"`
+	NewExpiresAt          time.Time                `json:"new_expires_at"`
+	DeductedDays          int                      `json:"deducted_days"`
+	DeductedSeconds       int64                    `json:"deducted_seconds"`
+	PreviousMonthlyUsage  float64                  `json:"previous_monthly_usage_usd"`
+	NewMonthlyWindowStart time.Time                `json:"new_monthly_window_start"`
+}
+
+type SubscriptionEntitlementMonthlyCycleSnapshot struct {
+	ID     int64
+	UserID int64
+	PlanID *int64
+
+	Status    string
+	StartsAt  time.Time
+	ExpiresAt time.Time
+
+	MonthlyLimitUSD    *float64
+	MonthlyUsageUSD    float64
+	MonthlyWindowStart *time.Time
+}
+
+type SubscriptionEntitlementMonthlyCycleUpdate struct {
+	EntitlementID         int64
+	UserID                int64
+	NewExpiresAt          time.Time
+	NewMonthlyWindowStart time.Time
+	UpdatedAt             time.Time
+}
+
+type SubscriptionEntitlementCycleResetLog struct {
+	UserID        int64
+	EntitlementID int64
+	PlanID        *int64
+
+	PreviousExpiresAt          time.Time
+	NewExpiresAt               time.Time
+	PreviousMonthlyUsageUSD    float64
+	PreviousMonthlyWindowStart *time.Time
+	NewMonthlyWindowStart      time.Time
+	DeductedDays               int
+	DeductedSeconds            int64
+}
