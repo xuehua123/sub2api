@@ -336,7 +336,7 @@ key_candidates AS (
             WHEN ak.status <> 'active' THEN 'skip_inactive_key'
             WHEN ak.group_id IS NULL THEN 'ambiguous_no_group'
             WHEN gi.old_group_id IS NULL THEN 'ambiguous_missing_group'
-            WHEN gi.group_deleted_at IS NOT NULL THEN 'ambiguous_deleted_group'
+            WHEN gi.deleted_at IS NOT NULL THEN 'ambiguous_deleted_group'
             WHEN gi.group_status <> 'active' THEN 'ambiguous_inactive_group'
             WHEN gi.old_group_name ~* '(test|测试|negative|负向|deprecated|停用)' THEN 'ambiguous_test_or_negative_group'
             WHEN gi.subscription_type = 'subscription' AND s.legacy_subscription_id IS NULL THEN 'ambiguous_no_active_subscription'
