@@ -7691,6 +7691,7 @@ export default {
       quota: 'Quota',
       unlimited: 'Unlimited',
       models: 'Models',
+      allIncluded: 'All included',
       validity: 'Validity',
       unitCost: 'Effective cost',
       unitCostValue: '{amount}/$1',

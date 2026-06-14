@@ -7870,6 +7870,7 @@ export default {
       quota: '配额',
       unlimited: '无限制',
       models: '模型',
+      allIncluded: '全部包含',
       validity: '有效期',
       unitCost: '折算',
       unitCostValue: '{amount}/刀',

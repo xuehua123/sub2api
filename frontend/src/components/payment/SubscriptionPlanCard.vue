@@ -165,8 +165,16 @@ const includedGroups = computed<SubscriptionPlanGroupInfo[]>(() => {
   return []
 })
 
+const usesBroadGroupCoverage = computed(() =>
+  props.plan.access_scope === 'all_subscription_groups' ||
+  props.plan.access_scope === 'platform_subscription_groups' ||
+  includedGroups.value.length > 1
+)
 const primaryGroup = computed(() => includedGroups.value[0])
-const platform = computed(() => primaryGroup.value?.platform || props.plan.group_platform || '')
+const platform = computed(() => {
+  if (usesBroadGroupCoverage.value) return ''
+  return primaryGroup.value?.platform || props.plan.group_platform || ''
+})
 const planGroupIDs = computed(() => new Set(includedGroups.value.map(group => group.id)))
 const isRenewal = computed(() =>
   props.activeSubscriptions?.some(sub => sub.status === 'active' && planGroupIDs.value.has(sub.group_id)) ?? false
@@ -179,7 +187,9 @@ const textClass = computed(() => platformTextClass(platform.value))
 const iconClass = computed(() => platformIconClass(platform.value))
 const btnClass = computed(() => platformButtonClass(platform.value))
 const discountClass = computed(() => platformDiscountClass(platform.value))
-const pLabel = computed(() => platformLabel(platform.value))
+const pLabel = computed(() => (
+  usesBroadGroupCoverage.value ? t('payment.planCard.allIncluded') : platformLabel(platform.value)
+))
 
 const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''
