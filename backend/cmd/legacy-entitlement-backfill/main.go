@@ -46,15 +46,15 @@ FROM api_key_legacy_backfill_snapshots s
 WHERE ak.id = s.api_key_id
   AND (
       ak.group_id IN (
-          SELECT runtime_group_id FROM subscription_legacy_backfill_mappings WHERE mapping_version = $1
+          SELECT runtime_group_id FROM subscription_legacy_backfill_mappings WHERE mapping_version = $1::text
       )
       OR ak.subscription_entitlement_id IN (
           SELECT se2.id
           FROM subscription_entitlements se2
           JOIN user_subscriptions us2 ON us2.id = se2.legacy_subscription_id
           JOIN subscription_legacy_backfill_mappings m2 ON m2.legacy_group_id = us2.group_id
-          WHERE m2.mapping_version = $1
-            AND se2.source_type = $2
+          WHERE m2.mapping_version = $1::text
+            AND se2.source_type = $2::text
             AND se2.deleted_at IS NULL
       )
   )`
@@ -439,7 +439,7 @@ JOIN subscription_entitlements se ON se.id = ul.entitlement_id
 JOIN user_subscriptions us ON us.id = se.legacy_subscription_id
 JOIN subscription_legacy_backfill_mappings m
   ON m.legacy_group_id = us.group_id
- AND m.mapping_version = $1
+ AND m.mapping_version = $1::text
 WHERE ul.entitlement_id IS NOT NULL
   AND se.deleted_at IS NULL
   AND us.deleted_at IS NULL
@@ -463,6 +463,13 @@ func withTx(ctx context.Context, db *sql.DB, readOnly bool, fn func(*sql.Tx) err
 		return err
 	}
 	return tx.Commit()
+}
+
+func opError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func collectReadOnlySummary(ctx context.Context, db *sql.DB, sum *summary) error {
@@ -704,7 +711,7 @@ func applyBackfill(ctx context.Context, tx *sql.Tx, cfg config) (summary, error)
 	}
 	groups, err := loadLegacyGroups(ctx, tx)
 	if err != nil {
-		return sum, err
+		return sum, opError("load legacy groups", err)
 	}
 	for _, group := range groups {
 		if group.SchedulableAccounts == 0 && !cfg.AllowNoAccountPools {
@@ -712,13 +719,13 @@ func applyBackfill(ctx context.Context, tx *sql.Tx, cfg config) (summary, error)
 		}
 		m, createdRuntime, createdPlan, createdMapping, err := ensureMapping(ctx, tx, cfg.MappingVersion, group)
 		if err != nil {
-			return sum, err
+			return sum, opError(fmt.Sprintf("ensure mapping for legacy_group_id %d", group.ID), err)
 		}
 		if err := copyAccountPool(ctx, tx, group.ID, m.RuntimeGroupID); err != nil {
-			return sum, err
+			return sum, opError(fmt.Sprintf("copy account pool for legacy_group_id %d", group.ID), err)
 		}
 		if err := ensurePlanGrant(ctx, tx, m.PlanID, m.RuntimeGroupID); err != nil {
-			return sum, err
+			return sum, opError(fmt.Sprintf("ensure plan grant for legacy_group_id %d", group.ID), err)
 		}
 		if createdRuntime {
 			sum.CreatedRuntimeGroups++
@@ -732,25 +739,25 @@ func applyBackfill(ctx context.Context, tx *sql.Tx, cfg config) (summary, error)
 	}
 	n, err := upsertBackfillEntitlements(ctx, tx, cfg.MappingVersion)
 	if err != nil {
-		return sum, err
+		return sum, opError("upsert entitlement", err)
 	}
 	sum.UpdatedEntitlements = n
 
 	n, err = replaceBackfillEntitlementGrants(ctx, tx, cfg.MappingVersion)
 	if err != nil {
-		return sum, err
+		return sum, opError("replace entitlement grants", err)
 	}
 	sum.UpdatedEntitlementGrants = n
 
 	n, err = upsertBackfillFulfillments(ctx, tx, cfg.MappingVersion)
 	if err != nil {
-		return sum, err
+		return sum, opError("upsert fulfillment", err)
 	}
 	sum.UpsertedFulfillments = n
 
 	n, err = migrateEligibleAPIKeys(ctx, tx, cfg.MappingVersion)
 	if err != nil {
-		return sum, err
+		return sum, opError("update api keys", err)
 	}
 	sum.UpdatedAPIKeys = n
 	return sum, nil
@@ -843,20 +850,20 @@ func ensureMapping(ctx context.Context, tx *sql.Tx, version string, group legacy
 	runtimeKey := runtimeGroupKey(group)
 	runtimeGroupID, createdRuntime, err := ensureRuntimeGroup(ctx, tx, group, runtimeKey)
 	if err != nil {
-		return mapping{}, false, false, false, err
+		return mapping{}, false, false, false, opError("ensure runtime group", err)
 	}
 	planID, createdPlan, err := ensureLegacyPlan(ctx, tx, group, runtimeGroupID)
 	if err != nil {
-		return mapping{}, false, false, false, err
+		return mapping{}, false, false, false, opError("ensure plan", err)
 	}
 	_, err = tx.ExecContext(ctx, `
 INSERT INTO subscription_legacy_backfill_mappings (
     legacy_group_id, plan_id, runtime_group_id, runtime_group_key, mapping_version, created_at, updated_at
-) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+) VALUES ($1::bigint, $2::bigint, $3::bigint, $4::text, $5::text, NOW(), NOW())
 ON CONFLICT (legacy_group_id) DO NOTHING`,
 		group.ID, planID, runtimeGroupID, runtimeKey, version)
 	if err != nil {
-		return mapping{}, false, false, false, err
+		return mapping{}, false, false, false, opError("ensure mapping row", err)
 	}
 	return mapping{
 		LegacyGroupID:   group.ID,
@@ -872,7 +879,7 @@ func getMapping(ctx context.Context, tx *sql.Tx, legacyGroupID int64) (mapping, 
 	err := tx.QueryRowContext(ctx, `
 SELECT legacy_group_id, plan_id, runtime_group_id, runtime_group_key, mapping_version
 FROM subscription_legacy_backfill_mappings
-WHERE legacy_group_id = $1`, legacyGroupID).
+WHERE legacy_group_id = $1::bigint`, legacyGroupID).
 		Scan(&m.LegacyGroupID, &m.PlanID, &m.RuntimeGroupID, &m.RuntimeGroupKey, &m.MappingVersion)
 	m.Existed = err == nil
 	return m, err
@@ -883,7 +890,7 @@ func ensureRuntimeGroup(ctx context.Context, tx *sql.Tx, group legacyGroup, runt
 	err := tx.QueryRowContext(ctx, `
 SELECT runtime_group_id
 FROM subscription_legacy_backfill_mappings
-WHERE runtime_group_key = $1
+WHERE runtime_group_key = $1::text
 ORDER BY legacy_group_id
 LIMIT 1`, runtimeKey).Scan(&id)
 	if err == nil {
@@ -896,7 +903,7 @@ LIMIT 1`, runtimeKey).Scan(&id)
 	name := fmt.Sprintf("Legacy Runtime %s", runtimeKey)
 	err = tx.QueryRowContext(ctx, `
 SELECT id FROM groups
-WHERE name = $1 AND deleted_at IS NULL
+WHERE name = $1::text AND deleted_at IS NULL
 LIMIT 1`, name).Scan(&id)
 	if err == nil {
 		return id, false, nil
@@ -912,9 +919,9 @@ INSERT INTO groups (
     subscription_type, balance_enabled, subscription_enabled, plan_auto_grant_enabled,
     sort_order, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, $4, FALSE, 'active',
+    $1::text, $2::text, $3::text, $4::numeric, FALSE, 'active',
     'subscription', FALSE, TRUE, FALSE,
-    $5, NOW(), NOW()
+    $5::integer, NOW(), NOW()
 ) RETURNING id`, name, description, group.Platform, group.RateMultiplier, group.SortOrder).Scan(&id)
 	if err != nil {
 		return 0, false, err
@@ -927,7 +934,7 @@ func ensureLegacyPlan(ctx context.Context, tx *sql.Tx, group legacyGroup, runtim
 	var id int64
 	err := tx.QueryRowContext(ctx, `
 SELECT id FROM subscription_plans
-WHERE name = $1
+WHERE name = $1::text
 LIMIT 1`, name).Scan(&id)
 	if err == nil {
 		return id, false, nil
@@ -947,10 +954,10 @@ INSERT INTO subscription_plans (
     daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
     overage_policy, features, product_name, for_sale, sort_order, created_at, updated_at
 ) VALUES (
-    $1, $2, $3, 0, $4, 'day',
+    $1::bigint, $2::text, $3::text, 0, $4::integer, 'day',
     'explicit', '[]'::jsonb,
-    $5, $6, $7,
-    'block', '', '', FALSE, $8, NOW(), NOW()
+    $5::numeric, $6::numeric, $7::numeric,
+    'block', '', '', FALSE, $8::integer, NOW(), NOW()
 ) RETURNING id`,
 		runtimeGroupID,
 		name,
@@ -970,9 +977,9 @@ INSERT INTO subscription_plans (
 func copyAccountPool(ctx context.Context, tx *sql.Tx, legacyGroupID, runtimeGroupID int64) error {
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO account_groups (account_id, group_id, priority, created_at)
-SELECT account_id, $2, MIN(priority), NOW()
+SELECT account_id, $2::bigint, MIN(priority), NOW()
 FROM account_groups
-WHERE group_id = $1
+WHERE group_id = $1::bigint
 GROUP BY account_id
 ON CONFLICT (account_id, group_id) DO NOTHING`, legacyGroupID, runtimeGroupID)
 	return err
@@ -981,7 +988,7 @@ ON CONFLICT (account_id, group_id) DO NOTHING`, legacyGroupID, runtimeGroupID)
 func ensurePlanGrant(ctx context.Context, tx *sql.Tx, planID, runtimeGroupID int64) error {
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO subscription_plan_groups (plan_id, group_id, sort_order, enabled, created_at, updated_at)
-VALUES ($1, $2, 0, TRUE, NOW(), NOW())
+VALUES ($1::bigint, $2::bigint, 0, TRUE, NOW(), NOW())
 ON CONFLICT (plan_id, group_id) DO UPDATE
 SET enabled = TRUE, updated_at = NOW()`, planID, runtimeGroupID)
 	return err
@@ -1020,7 +1027,7 @@ WITH legacy_rows AS (
     WHERE us.deleted_at IS NULL
       AND us.status = 'active'
       AND us.expires_at > NOW()
-      AND m.mapping_version = $1
+      AND m.mapping_version = $1::text
 )
 INSERT INTO subscription_entitlements (
     user_id, plan_id, legacy_subscription_id, primary_group_id, name, source_type, source_id,
@@ -1032,7 +1039,7 @@ INSERT INTO subscription_entitlements (
 )
 SELECT
     user_id, plan_id, legacy_subscription_id, runtime_group_id, entitlement_name,
-    $2, legacy_subscription_id,
+    $2::text, legacy_subscription_id,
     status, starts_at, expires_at,
     daily_window_start, weekly_window_start, monthly_window_start,
     daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
@@ -1042,7 +1049,7 @@ SELECT
         'legacy_group_id', legacy_group_id,
         'runtime_group_id', runtime_group_id,
         'mapping_version', mapping_version,
-        'source', $2
+        'source', $2::text
     ),
     assigned_by, assigned_at, created_at, updated_at
 FROM legacy_rows
@@ -1083,9 +1090,9 @@ DELETE FROM subscription_entitlement_groups seg
 USING subscription_entitlements se
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
 WHERE seg.entitlement_id = se.id
-  AND se.source_type = $2
+  AND se.source_type = $2::text
   AND se.legacy_subscription_id IS NOT NULL
-  AND m.mapping_version = $1`, version, sourceLegacyBackfill); err != nil {
+  AND m.mapping_version = $1::text`, version, sourceLegacyBackfill); err != nil {
 		return 0, err
 	}
 	res, err := tx.ExecContext(ctx, `
@@ -1093,9 +1100,9 @@ INSERT INTO subscription_entitlement_groups (entitlement_id, group_id, sort_orde
 SELECT se.id, m.runtime_group_id, 0, TRUE, NOW(), NOW()
 FROM subscription_entitlements se
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
-WHERE se.source_type = $2
+WHERE se.source_type = $2::text
   AND se.legacy_subscription_id IS NOT NULL
-  AND m.mapping_version = $1
+  AND m.mapping_version = $1::text
 ON CONFLICT (entitlement_id, group_id) DO UPDATE
 SET enabled = TRUE, updated_at = NOW()`, version, sourceLegacyBackfill)
 	if err != nil {
@@ -1114,7 +1121,7 @@ SELECT
     se.id,
     se.user_id,
     se.plan_id,
-    $2,
+    $2::text,
     se.legacy_subscription_id,
     GREATEST(0, CEIL(EXTRACT(EPOCH FROM (se.expires_at - se.starts_at)) / 86400.0)::INTEGER),
     se.starts_at,
@@ -1126,9 +1133,9 @@ SELECT
     NOW()
 FROM subscription_entitlements se
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
-WHERE se.source_type = $2
+WHERE se.source_type = $2::text
   AND se.legacy_subscription_id IS NOT NULL
-  AND m.mapping_version = $1
+  AND m.mapping_version = $1::text
 ON CONFLICT (source_type, source_id) WHERE source_id IS NOT NULL DO UPDATE
 SET
     entitlement_id = EXCLUDED.entitlement_id,
@@ -1169,7 +1176,7 @@ INSERT INTO api_key_legacy_backfill_snapshots (
 )
 SELECT
     api_key_id, user_id, old_group_id, old_access_source,
-    old_subscription_entitlement_id, old_updated_at, $1, NOW()
+    old_subscription_entitlement_id, old_updated_at, $1::text, NOW()
 FROM eligible
 ON CONFLICT (api_key_id) DO NOTHING
 RETURNING api_key_id`, version)
@@ -1283,8 +1290,8 @@ WITH eligible AS (
       AND us.status = 'active'
       AND us.expires_at > NOW()
       AND se.deleted_at IS NULL
-      AND se.source_type = $2
-      AND m.mapping_version = $1
+      AND se.source_type = $2::text
+      AND m.mapping_version = $1::text
       AND (
           SELECT COUNT(*)
           FROM user_subscriptions us2
@@ -1325,7 +1332,7 @@ SELECT COUNT(*)
 FROM subscription_entitlements se
 JOIN user_subscriptions us ON us.id = se.legacy_subscription_id
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
-WHERE m.mapping_version = $1
+WHERE m.mapping_version = $1::text
   AND se.deleted_at IS NULL
   AND (
       se.expires_at <> us.expires_at
@@ -1338,15 +1345,15 @@ SELECT COUNT(*)
 FROM subscription_entitlements se
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
 LEFT JOIN subscription_entitlement_groups seg ON seg.entitlement_id = se.id AND seg.group_id = m.runtime_group_id AND seg.enabled = TRUE
-WHERE m.mapping_version = $1
+WHERE m.mapping_version = $1::text
   AND se.deleted_at IS NULL
   AND seg.entitlement_id IS NULL`,
 		"missing_backfill_fulfillment": `
 SELECT COUNT(*)
 FROM subscription_entitlements se
 JOIN subscription_legacy_backfill_mappings m ON m.plan_id = se.plan_id AND m.runtime_group_id = se.primary_group_id
-LEFT JOIN subscription_entitlement_fulfillments sef ON sef.source_type = $2 AND sef.source_id = se.legacy_subscription_id
-WHERE m.mapping_version = $1
+LEFT JOIN subscription_entitlement_fulfillments sef ON sef.source_type = $2::text AND sef.source_id = se.legacy_subscription_id
+WHERE m.mapping_version = $1::text
   AND se.deleted_at IS NULL
   AND sef.id IS NULL`,
 		"api_keys_without_snapshot_on_runtime_group": `
@@ -1354,7 +1361,7 @@ SELECT COUNT(*)
 FROM api_keys ak
 JOIN subscription_legacy_backfill_mappings m ON m.runtime_group_id = ak.group_id
 LEFT JOIN api_key_legacy_backfill_snapshots s ON s.api_key_id = ak.id
-WHERE m.mapping_version = $1
+WHERE m.mapping_version = $1::text
   AND ak.deleted_at IS NULL
   AND s.api_key_id IS NULL`,
 	}
