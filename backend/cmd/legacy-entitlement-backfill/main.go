@@ -268,7 +268,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 	if err != nil {
 		return sum, err
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	if err := db.PingContext(ctx); err != nil {
 		return sum, err
 	}
@@ -365,7 +365,7 @@ WHERE key IN ('subscription_entitlements_v2_enabled', 'sub2_payment_page_legacy_
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	values := map[string]string{}
 	for rows.Next() {
@@ -527,7 +527,7 @@ SELECT reason, COUNT(*) FROM reasons GROUP BY reason ORDER BY reason`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	reasons := map[string]int64{}
 	for rows.Next() {
 		var reason string
@@ -591,7 +591,7 @@ ORDER BY ak.id`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var details []ambiguousAPIKey
 	for rows.Next() {
@@ -752,7 +752,7 @@ ORDER BY g.id`)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []legacyGroup
 	for rows.Next() {
@@ -1355,7 +1355,7 @@ func writeJSONFile(path string, value any) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)

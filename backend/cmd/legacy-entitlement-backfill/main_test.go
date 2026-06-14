@@ -121,7 +121,7 @@ func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 
 			mock.ExpectQuery("SELECT key, value").
 				WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
@@ -144,7 +144,7 @@ func TestApplyRejectsWhenEntitlementUsageAlreadyExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mock.ExpectQuery("SELECT key, value").
 		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
@@ -167,7 +167,7 @@ func TestDryRunAndReconcileDoNotUseWriteProtection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	for _, mode := range []string{modeDryRun, modeReconcile} {
 		if err := ensureWritePreconditions(context.Background(), db, mode); err != nil {
@@ -246,7 +246,7 @@ func TestEnsureMappingRejectsVersionMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT legacy_group_id, plan_id, runtime_group_id, runtime_group_key, mapping_version").
@@ -275,7 +275,7 @@ func TestApplyBackfillRejectsActiveButUnschedulableAccountPool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT\\s+g\\.id,").
