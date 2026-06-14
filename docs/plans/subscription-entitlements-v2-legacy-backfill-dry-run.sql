@@ -219,11 +219,6 @@ WITH legacy_plan_candidates AS (
             ELSE 'manual_platform_review'
         END || ':' || g.rate_multiplier::TEXT AS proposed_runtime_group_key
     FROM groups g
-    LEFT JOIN (
-        SELECT group_id, COUNT(*) AS plan_count, ARRAY_AGG(id ORDER BY id) AS plan_ids
-        FROM subscription_plans
-        GROUP BY group_id
-    ) existing_plan ON existing_plan.group_id = g.id
     WHERE g.deleted_at IS NULL
       AND g.subscription_type = 'subscription'
 )
@@ -235,13 +230,7 @@ SELECT
     daily_limit_usd,
     weekly_limit_usd,
     monthly_limit_usd,
-    existing_plan_count,
-    existing_plan_ids,
-    CASE
-        WHEN existing_plan_count = 1 THEN 'reuse_existing_plan_after_review'
-        WHEN existing_plan_count = 0 THEN 'create_internal_backfill_plan'
-        ELSE 'ambiguous_multiple_existing_plans'
-    END AS plan_action
+    'create_or_reuse_internal_backfill_plan_after_mapping_review' AS plan_action
 FROM legacy_plan_candidates
 ORDER BY proposed_runtime_group_key, old_group_id;
 
