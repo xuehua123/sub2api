@@ -49,6 +49,9 @@ func validatePlanRequired(req CreatePlanRequest) error {
 	if err := validatePlanLimit("monthly", req.MonthlyLimitUSD); err != nil {
 		return err
 	}
+	if err := validatePlanLimitPeriods(req.ValidityDays, req.ValidityUnit, req.WeeklyLimitUSD, req.MonthlyLimitUSD); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -99,6 +102,17 @@ func validatePlanLimit(label string, value *float64) error {
 	}
 	if math.IsNaN(*value) || math.IsInf(*value, 0) || *value <= 0 {
 		return infraerrors.BadRequest("PLAN_LIMIT_INVALID", label+" limit must be greater than 0")
+	}
+	return nil
+}
+
+func validatePlanLimitPeriods(validityDays int, validityUnit string, weeklyLimit, monthlyLimit *float64) error {
+	effectiveDays := psComputeValidityDays(validityDays, validityUnit)
+	if weeklyLimit != nil && effectiveDays < 7 {
+		return infraerrors.BadRequest("PLAN_LIMIT_PERIOD_INVALID", "weekly limit requires plan validity of at least 7 days")
+	}
+	if monthlyLimit != nil && effectiveDays < 30 {
+		return infraerrors.BadRequest("PLAN_LIMIT_PERIOD_INVALID", "monthly limit requires plan validity of at least 30 days")
 	}
 	return nil
 }
@@ -212,6 +226,14 @@ func (s *PaymentConfigService) ListPlansForSale(ctx context.Context) ([]*dbent.S
 	return filtered, nil
 }
 
+func (s *PaymentConfigService) ListPlanResponsesForSale(ctx context.Context) ([]SubscriptionPlanResponse, error) {
+	plans, err := s.ListPlansForSale(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.buildPlanResponses(ctx, plans)
+}
+
 func (s *PaymentConfigService) CreatePlan(ctx context.Context, req CreatePlanRequest) (*SubscriptionPlanResponse, error) {
 	if err := validatePlanRequired(req); err != nil {
 		return nil, err
@@ -316,6 +338,9 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 	if req.ValidityUnit != nil {
 		normalized := normalizeValidityUnit(*req.ValidityUnit)
 		req.ValidityUnit = &normalized
+	}
+	if err := validateEffectivePlanLimitPeriods(existing, req); err != nil {
+		return nil, err
 	}
 
 	tx, err := s.entClient.Tx(ctx)
@@ -514,6 +539,29 @@ func (s *PaymentConfigService) resolvePlanAccess(ctx context.Context, scope stri
 	default:
 		return nil, infraerrors.BadRequest("PLAN_ACCESS_SCOPE_INVALID", "invalid access scope")
 	}
+}
+
+func validateEffectivePlanLimitPeriods(existing *dbent.SubscriptionPlan, req UpdatePlanRequest) error {
+	if existing == nil {
+		return nil
+	}
+	validityDays := existing.ValidityDays
+	if req.ValidityDays != nil {
+		validityDays = *req.ValidityDays
+	}
+	validityUnit := existing.ValidityUnit
+	if req.ValidityUnit != nil {
+		validityUnit = *req.ValidityUnit
+	}
+	weeklyLimit := existing.WeeklyLimitUsd
+	if req.WeeklyLimitUSD.Set {
+		weeklyLimit = req.WeeklyLimitUSD.Value
+	}
+	monthlyLimit := existing.MonthlyLimitUsd
+	if req.MonthlyLimitUSD.Set {
+		monthlyLimit = req.MonthlyLimitUSD.Value
+	}
+	return validatePlanLimitPeriods(validityDays, validityUnit, weeklyLimit, monthlyLimit)
 }
 
 func normalizePlanAccessScopeWithDefault(value string) (string, error) {

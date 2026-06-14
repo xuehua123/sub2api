@@ -13,7 +13,17 @@
       </div>
 
       <div v-if="planForm.access_scope === 'explicit'" class="space-y-2">
-        <label class="input-label">{{ t('payment.admin.authorizedGroups') }} <span class="text-red-500">*</span></label>
+        <div class="flex items-center justify-between gap-3">
+          <label class="input-label mb-0">{{ t('payment.admin.authorizedGroups') }} <span class="text-red-500">*</span></label>
+          <button
+            type="button"
+            class="rounded-md px-2 py-1 text-xs font-medium text-primary-600 transition-colors hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
+            :disabled="subscriptionGroups.length === 0"
+            @click="toggleAllSubscriptionGroups"
+          >
+            {{ allSubscriptionGroupsSelected ? t('payment.admin.clearAuthorizedGroups') : t('common.selectAll') }}
+          </button>
+        </div>
         <div class="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-2 dark:border-dark-600 sm:grid-cols-2">
           <label
             v-for="group in subscriptionGroups"
@@ -80,6 +90,9 @@
         <div><label class="input-label">{{ t('payment.admin.weeklyLimit') }}</label><input :value="nullableInputValue(planForm.weekly_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.weekly_limit_usd = parseNullableInput($event)" /></div>
         <div><label class="input-label">{{ t('payment.admin.monthlyLimit') }}</label><input :value="nullableInputValue(planForm.monthly_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.monthly_limit_usd = parseNullableInput($event)" /></div>
       </div>
+      <p v-if="limitPeriodError" class="text-xs text-amber-600 dark:text-amber-400">
+        {{ limitPeriodError }}
+      </p>
       <div>
         <label class="input-label">{{ t('payment.admin.features') }}</label>
         <textarea v-model="planFeaturesText" rows="3" class="input" :placeholder="t('payment.admin.featuresPlaceholder')"></textarea>
@@ -222,6 +235,11 @@ const subscriptionGroups = computed(() =>
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id),
 )
 
+const allSubscriptionGroupsSelected = computed(() => (
+  subscriptionGroups.value.length > 0 &&
+  subscriptionGroups.value.every(group => planForm.group_ids.includes(group.id))
+))
+
 const platformOptions = computed(() => {
   const seen = new Set<string>()
   const platforms: string[] = []
@@ -243,6 +261,18 @@ const selectedGroupInfos = computed(() => {
   }
   const selected = new Set(planForm.group_ids)
   return subscriptionGroups.value.filter(group => selected.has(group.id))
+})
+
+const effectiveValidityDays = computed(() => planValidityDays(planForm.validity_days, planForm.validity_unit))
+
+const limitPeriodError = computed(() => {
+  if (planForm.weekly_limit_usd != null && effectiveValidityDays.value < 7) {
+    return t('payment.admin.weeklyLimitPeriodInvalid', { days: effectiveValidityDays.value })
+  }
+  if (planForm.monthly_limit_usd != null && effectiveValidityDays.value < 30) {
+    return t('payment.admin.monthlyLimitPeriodInvalid', { days: effectiveValidityDays.value })
+  }
+  return ''
 })
 
 // Reset form when dialog opens
@@ -317,6 +347,14 @@ function toggleGroupID(groupID: number) {
   }
 }
 
+function toggleAllSubscriptionGroups() {
+  if (allSubscriptionGroupsSelected.value) {
+    planForm.group_ids = []
+    return
+  }
+  planForm.group_ids = subscriptionGroups.value.map(group => group.id)
+}
+
 function togglePlatform(platform: string) {
   if (planForm.allowed_platforms.includes(platform)) {
     planForm.allowed_platforms = planForm.allowed_platforms.filter(item => item !== platform)
@@ -342,6 +380,20 @@ function displayPlanLimit(value: number | null): string {
 
 function normalizeLimit(value: number | null): number | null {
   return value != null && Number.isFinite(value) ? value : null
+}
+
+function planValidityDays(days: number, unit: string): number {
+  const value = Number.isFinite(days) && days > 0 ? days : 0
+  switch (parsePlanValidityUnit(unit)) {
+    case 'week':
+      return value * 7
+    case 'month':
+      return value * 30
+    case 'year':
+      return value * 365
+    default:
+      return value
+  }
 }
 
 /** Build request payload with snake_case keys matching backend JSON tags */
@@ -399,6 +451,10 @@ async function handleSavePlan() {
   }
   if (hasInvalidLimit()) {
     appStore.showError(t('payment.admin.limitRequired'))
+    return
+  }
+  if (limitPeriodError.value) {
+    appStore.showError(limitPeriodError.value)
     return
   }
   saving.value = true

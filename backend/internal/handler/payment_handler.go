@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 type paymentConfigReader interface {
 	GetPaymentConfig(ctx context.Context) (*service.PaymentConfig, error)
 	ListPlansForSale(ctx context.Context) ([]*dbent.SubscriptionPlan, error)
+	ListPlanResponsesForSale(ctx context.Context) ([]service.SubscriptionPlanResponse, error)
 	GetGroupPlatformMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]string
 	GetGroupInfoMap(ctx context.Context, plans []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo
 	GetAvailableMethodLimits(ctx context.Context) (*service.MethodLimitsResponse, error)
@@ -122,25 +124,39 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		return
 	}
 
-	// Fetch plans with group info
-	plans, err := h.configService.ListPlansForSale(ctx)
+	// Fetch plans with full v2 group authorization info.
+	plans, err := h.configService.ListPlanResponsesForSale(ctx)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
-	groupInfo := h.configService.GetGroupInfoMap(ctx, plans)
 	planList := make([]checkoutPlan, 0, len(plans))
 	for _, p := range plans {
-		gi := groupInfo[p.GroupID]
 		planList = append(planList, checkoutPlan{
-			ID: int64(p.ID), GroupID: p.GroupID,
-			GroupPlatform: gi.Platform, GroupName: gi.Name,
-			RateMultiplier: gi.RateMultiplier, DailyLimitUSD: gi.DailyLimitUSD,
-			WeeklyLimitUSD: gi.WeeklyLimitUSD, MonthlyLimitUSD: gi.MonthlyLimitUSD,
-			ModelScopes: gi.ModelScopes,
-			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
-			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
-			ProductName: p.ProductName,
+			ID:               p.ID,
+			GroupID:          p.GroupID,
+			GroupIDs:         p.GroupIDs,
+			Groups:           p.Groups,
+			GroupPlatform:    p.GroupPlatform,
+			GroupName:        p.GroupName,
+			RateMultiplier:   p.RateMultiplier,
+			ModelScopes:      p.ModelScopes,
+			Name:             p.Name,
+			Description:      p.Description,
+			Price:            p.Price,
+			OriginalPrice:    p.OriginalPrice,
+			ValidityDays:     p.ValidityDays,
+			ValidityUnit:     p.ValidityUnit,
+			AccessScope:      p.AccessScope,
+			AllowedPlatforms: p.AllowedPlatforms,
+			DailyLimitUSD:    p.DailyLimitUSD,
+			WeeklyLimitUSD:   p.WeeklyLimitUSD,
+			MonthlyLimitUSD:  p.MonthlyLimitUSD,
+			OveragePolicy:    p.OveragePolicy,
+			Features:         parseFeatures(p.Features),
+			ProductName:      p.ProductName,
+			ForSale:          p.ForSale,
+			SortOrder:        p.SortOrder,
 		})
 	}
 
@@ -174,29 +190,49 @@ type checkoutInfoResponse struct {
 }
 
 type checkoutPlan struct {
-	ID              int64    `json:"id"`
-	GroupID         int64    `json:"group_id"`
-	GroupPlatform   string   `json:"group_platform"`
-	GroupName       string   `json:"group_name"`
-	RateMultiplier  float64  `json:"rate_multiplier"`
-	DailyLimitUSD   *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD  *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD *float64 `json:"monthly_limit_usd"`
-	ModelScopes     []string `json:"supported_model_scopes"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	Price           float64  `json:"price"`
-	OriginalPrice   *float64 `json:"original_price,omitempty"`
-	ValidityDays    int      `json:"validity_days"`
-	ValidityUnit    string   `json:"validity_unit"`
-	Features        []string `json:"features"`
-	ProductName     string   `json:"product_name"`
+	ID               int64                   `json:"id"`
+	GroupID          int64                   `json:"group_id"`
+	GroupIDs         []int64                 `json:"group_ids"`
+	Groups           []service.PlanGroupInfo `json:"groups"`
+	GroupPlatform    string                  `json:"group_platform"`
+	GroupName        string                  `json:"group_name"`
+	RateMultiplier   float64                 `json:"rate_multiplier"`
+	DailyLimitUSD    *float64                `json:"daily_limit_usd"`
+	WeeklyLimitUSD   *float64                `json:"weekly_limit_usd"`
+	MonthlyLimitUSD  *float64                `json:"monthly_limit_usd"`
+	ModelScopes      []string                `json:"supported_model_scopes"`
+	Name             string                  `json:"name"`
+	Description      string                  `json:"description"`
+	Price            float64                 `json:"price"`
+	OriginalPrice    *float64                `json:"original_price,omitempty"`
+	ValidityDays     int                     `json:"validity_days"`
+	ValidityUnit     string                  `json:"validity_unit"`
+	AccessScope      string                  `json:"access_scope"`
+	AllowedPlatforms []string                `json:"allowed_platforms"`
+	OveragePolicy    string                  `json:"overage_policy"`
+	Features         []string                `json:"features"`
+	ProductName      string                  `json:"product_name"`
+	ForSale          bool                    `json:"for_sale"`
+	SortOrder        int                     `json:"sort_order"`
 }
 
 // parseFeatures splits a newline-separated features string into a string slice.
 func parseFeatures(raw string) []string {
-	if raw == "" {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "[]" {
 		return []string{}
+	}
+	if strings.HasPrefix(raw, "[") {
+		var items []string
+		if err := json.Unmarshal([]byte(raw), &items); err == nil {
+			out := make([]string, 0, len(items))
+			for _, item := range items {
+				if s := strings.TrimSpace(item); s != "" {
+					out = append(out, s)
+				}
+			}
+			return out
+		}
 	}
 	var out []string
 	for _, line := range strings.Split(raw, "\n") {

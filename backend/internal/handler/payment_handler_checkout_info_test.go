@@ -18,7 +18,8 @@ import (
 )
 
 type checkoutInfoConfigServiceStub struct {
-	plansErr error
+	plansErr      error
+	planResponses []service.SubscriptionPlanResponse
 }
 
 func (s *checkoutInfoConfigServiceStub) GetPaymentConfig(_ context.Context) (*service.PaymentConfig, error) {
@@ -39,6 +40,10 @@ func (s *checkoutInfoConfigServiceStub) GetAvailableMethodLimits(_ context.Conte
 
 func (s *checkoutInfoConfigServiceStub) ListPlansForSale(_ context.Context) ([]*dbent.SubscriptionPlan, error) {
 	return nil, s.plansErr
+}
+
+func (s *checkoutInfoConfigServiceStub) ListPlanResponsesForSale(_ context.Context) ([]service.SubscriptionPlanResponse, error) {
+	return s.planResponses, s.plansErr
 }
 
 func (s *checkoutInfoConfigServiceStub) GetGroupInfoMap(_ context.Context, _ []*dbent.SubscriptionPlan) map[int64]service.PlanGroupInfo {
@@ -74,3 +79,60 @@ func TestGetCheckoutInfoReturnsErrorWhenListPlansForSaleFails(t *testing.T) {
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
 	require.Equal(t, http.StatusInternalServerError, resp.Code)
 }
+
+func TestGetCheckoutInfoReturnsFullPlanGroups(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	h := NewPaymentHandler(nil, &checkoutInfoConfigServiceStub{
+		planResponses: []service.SubscriptionPlanResponse{
+			{
+				ID:              7,
+				GroupID:         10,
+				GroupIDs:        []int64{10, 11},
+				Groups:          []service.PlanGroupInfo{{ID: 10, Name: "A", Platform: service.PlatformOpenAI, RateMultiplier: 1}, {ID: 11, Name: "B", Platform: service.PlatformAnthropic, RateMultiplier: 2}},
+				GroupPlatform:   service.PlatformOpenAI,
+				GroupName:       "A",
+				RateMultiplier:  1,
+				Name:            "Pro",
+				Description:     "full description",
+				Price:           10,
+				ValidityDays:    30,
+				ValidityUnit:    "day",
+				MonthlyLimitUSD: ptrFloat(100),
+				OveragePolicy:   service.SubscriptionEntitlementOverageBlock,
+				Features:        "[]",
+				ForSale:         true,
+			},
+		},
+	}, nil)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/payment/checkout-info", nil)
+
+	h.GetCheckoutInfo(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Data struct {
+			Plans []struct {
+				GroupIDs []int64 `json:"group_ids"`
+				Groups   []struct {
+					ID   int64  `json:"id"`
+					Name string `json:"name"`
+				} `json:"groups"`
+				Features []string `json:"features"`
+			} `json:"plans"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Len(t, resp.Data.Plans, 1)
+	require.Equal(t, []int64{10, 11}, resp.Data.Plans[0].GroupIDs)
+	require.Len(t, resp.Data.Plans[0].Groups, 2)
+	require.Equal(t, "B", resp.Data.Plans[0].Groups[1].Name)
+	require.Empty(t, resp.Data.Plans[0].Features)
+}
+
+func ptrFloat(value float64) *float64 { return &value }

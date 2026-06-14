@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { get } = vi.hoisted(() => ({
+const { get, post } = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
 }))
 
 vi.mock('@/api/client', () => ({
   apiClient: {
     get,
+    post,
   },
 }))
 
@@ -16,6 +18,8 @@ describe('subscriptions api', () => {
   beforeEach(() => {
     get.mockReset()
     get.mockResolvedValue({ data: [] })
+    post.mockReset()
+    post.mockResolvedValue({ data: {} })
   })
 
   it('requests user entitlement v2 list', async () => {
@@ -36,5 +40,11 @@ describe('subscriptions api', () => {
     await subscriptionsAPI.getEntitlementProgress(12)
 
     expect(get).toHaveBeenCalledWith('/entitlements/12/progress')
+  })
+
+  it('requests entitlement monthly cycle advance by id', async () => {
+    await subscriptionsAPI.advanceEntitlementMonthlyCycle(22)
+
+    expect(post).toHaveBeenCalledWith('/entitlements/22/advance-monthly-cycle')
   })
 })

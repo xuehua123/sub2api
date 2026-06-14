@@ -143,7 +143,7 @@
                 </span>
               </div>
               <div
-                v-if="isGroupSubscriptionEnabled(row)"
+                v-if="false"
                 class="text-xs text-gray-500 dark:text-gray-400"
               >
                 <template
@@ -694,51 +694,6 @@
             </div>
           </div>
 
-          <!-- Subscription limits (only show when subscription type is selected) -->
-          <div
-            v-if="createForm.subscription_enabled"
-            class="mt-4 space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
-          >
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.dailyLimit")
-              }}</label>
-              <input
-                v-model.number="createForm.daily_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.weeklyLimit")
-              }}</label>
-              <input
-                v-model.number="createForm.weekly_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.monthlyLimit")
-              }}</label>
-              <input
-                v-model.number="createForm.monthly_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-          </div>
         </div>
 
         <div class="border-t pt-4">
@@ -2070,51 +2025,6 @@
             </div>
           </div>
 
-          <!-- Subscription limits (only show when subscription type is selected) -->
-          <div
-            v-if="editForm.subscription_enabled"
-            class="mt-4 space-y-4 border-l-2 border-primary-200 pl-4 dark:border-primary-800"
-          >
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.dailyLimit")
-              }}</label>
-              <input
-                v-model.number="editForm.daily_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.weeklyLimit")
-              }}</label>
-              <input
-                v-model.number="editForm.weekly_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-            <div>
-              <label class="input-label">{{
-                t("admin.groups.subscription.monthlyLimit")
-              }}</label>
-              <input
-                v-model.number="editForm.monthly_limit_usd"
-                type="number"
-                step="0.01"
-                min="0"
-                class="input"
-                :placeholder="t('admin.groups.subscription.noLimit')"
-              />
-            </div>
-          </div>
         </div>
 
         <div class="border-t pt-4">

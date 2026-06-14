@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import SubscriptionsView from '../SubscriptionsView.vue'
 
@@ -10,6 +10,7 @@ const getGroupPreferences = vi.hoisted(() => vi.fn())
 const getEntitlements = vi.hoisted(() => vi.fn())
 const saveGroupPreferences = vi.hoisted(() => vi.fn())
 const advanceMonthlyCycle = vi.hoisted(() => vi.fn())
+const advanceEntitlementMonthlyCycle = vi.hoisted(() => vi.fn())
 
 const messages: Record<string, string> = {
   'userSubscriptions.entitlements.title': 'Plan Entitlements',
@@ -27,6 +28,8 @@ const messages: Record<string, string> = {
   'userSubscriptions.entitlements.overage.block': 'Block at quota',
   'userSubscriptions.entitlements.overage.balanceFallback': 'Entitlement Overage Balance Fallback',
   'userSubscriptions.entitlements.overagePolicy': 'Overage policy',
+  'userSubscriptions.entitlements.groupUnitCost': 'about {amount}',
+  'userSubscriptions.entitlements.priceUnavailable': 'Price unavailable',
   'userSubscriptions.entitlements.status.active': 'Active',
   'userSubscriptions.entitlements.status.future': 'Scheduled',
   'userSubscriptions.entitlements.status.expired': 'Expired',
@@ -38,6 +41,32 @@ const messages: Record<string, string> = {
   'userSubscriptions.daily': 'Daily',
   'userSubscriptions.resetIn': 'Resets in {time}',
   'userSubscriptions.status.active': 'Active',
+  'userSubscriptions.monthly': 'Monthly',
+  'userSubscriptions.advanceMonthlyCycle': 'Use next cycle now',
+  'userSubscriptions.advanceMonthlyUnavailableAlias': 'Use entitlement card',
+  'userSubscriptions.advanceMonthlyUnavailableInactive': 'Only active subscriptions can advance',
+  'userSubscriptions.advanceMonthlyUnavailableNoExpiration': 'No expiration',
+  'userSubscriptions.advanceMonthlyUnavailableNoMonthlyLimit': 'No monthly limit',
+  'userSubscriptions.advanceMonthlyUnavailableWindow': 'Window unavailable',
+  'userSubscriptions.advanceMonthlyUnavailableValidity': 'Validity unavailable',
+  'userSubscriptions.advanceMonthlyThresholdHint': 'Available when remaining is {percent}%',
+  'userSubscriptions.advanceMonthlyAvailableHint': 'Available now {duration}',
+  'userSubscriptions.advanceMonthlyConfirm': 'Advance {group} for {duration}?',
+  'userSubscriptions.advanceMonthlySuccess': 'Advanced {duration}',
+  'userSubscriptions.advanceMonthlyFailed': 'Advance failed',
+  'userSubscriptions.advanceEntitlementMonthlyCycle': 'Use next month card now',
+  'userSubscriptions.advanceEntitlementMonthlyThresholdHint': 'Monthly card available when remaining is {percent}%',
+  'userSubscriptions.advanceEntitlementMonthlyAvailableHint': 'Entitlement available now {duration}',
+  'userSubscriptions.advanceEntitlementMonthlyUnavailableInactive': 'Only active entitlements can advance',
+  'userSubscriptions.advanceEntitlementMonthlyUnavailableNoExpiration': 'No entitlement expiration',
+  'userSubscriptions.advanceEntitlementMonthlyUnavailableNoMonthlyLimit': 'No entitlement monthly limit',
+  'userSubscriptions.advanceEntitlementMonthlyUnavailableWindow': 'Entitlement window unavailable',
+  'userSubscriptions.advanceEntitlementMonthlyUnavailableValidity': 'Entitlement validity unavailable',
+  'userSubscriptions.advanceEntitlementMonthlyConfirm': 'Advance entitlement {entitlement} for {duration}?',
+  'userSubscriptions.advanceEntitlementMonthlySuccess': 'Entitlement advanced {duration}',
+  'userSubscriptions.advanceEntitlementMonthlyFailed': 'Entitlement advance failed',
+  'common.processing': 'Processing',
+  'common.delete': 'Delete',
   'payment.renewNow': 'Renew now',
 }
 
@@ -82,6 +111,7 @@ vi.mock('@/api/subscriptions', () => ({
     getEntitlements,
     saveGroupPreferences,
     advanceMonthlyCycle,
+    advanceEntitlementMonthlyCycle,
   },
 }))
 
@@ -157,6 +187,11 @@ const entitlement = {
   monthly_resets_in_seconds: 7200,
   overage_policy: 'balance_fallback',
   legacy_subscription_id: 88,
+  purchase_price: 129.9,
+  purchase_currency: 'CNY',
+  quota_usd: 1800,
+  quota_period: 'monthly',
+  unit_cost_per_usd: 0.0722,
 }
 
 async function mountView() {
@@ -175,6 +210,8 @@ async function mountView() {
 
 describe('SubscriptionsView entitlement v2 section', () => {
   beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-06-14T12:00:00Z'))
     routerPush.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -183,6 +220,13 @@ describe('SubscriptionsView entitlement v2 section', () => {
     getEntitlements.mockReset().mockResolvedValue([])
     saveGroupPreferences.mockReset().mockResolvedValue([])
     advanceMonthlyCycle.mockReset()
+    advanceEntitlementMonthlyCycle.mockReset().mockResolvedValue({ deducted_seconds: 3600 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('keeps legacy subscription display when no entitlements are returned', async () => {
@@ -209,6 +253,34 @@ describe('SubscriptionsView entitlement v2 section', () => {
     expect(wrapper.text()).toContain('$7.00 / Unlimited')
   })
 
+  it('uses entitlement start time for reset display when monthly window has not been persisted', async () => {
+    getEntitlements.mockResolvedValue([{
+      ...entitlement,
+      starts_at: '2026-06-01T00:00:00Z',
+      expires_at: '2026-07-01T00:00:00Z',
+      daily_limit_usd: null,
+      daily_usage_usd: 0,
+      daily_window_start: null,
+      daily_resets_at: null,
+      daily_resets_in_seconds: null,
+      weekly_limit_usd: null,
+      weekly_usage_usd: 0,
+      weekly_window_start: null,
+      weekly_resets_at: null,
+      weekly_resets_in_seconds: null,
+      monthly_limit_usd: 1800,
+      monthly_usage_usd: 0,
+      monthly_window_start: null,
+      monthly_resets_at: null,
+      monthly_resets_in_seconds: null,
+    }])
+
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-testid="entitlement-monthly-quota"]').text()).toContain('16d 12h')
+    expect(wrapper.get('[data-testid="entitlement-monthly-quota"]').text()).not.toContain('Awaiting first use')
+  })
+
   it('shows entitlement balance fallback policy clearly', async () => {
     getEntitlements.mockResolvedValue([entitlement])
 
@@ -216,6 +288,87 @@ describe('SubscriptionsView entitlement v2 section', () => {
 
     expect(wrapper.text()).toContain('Entitlement Overage Balance Fallback')
     expect(wrapper.text()).toContain('Legacy subscription #88')
+  })
+
+  it('shows enabled monthly advance button when entitlement usage reaches threshold', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, monthly_usage_usd: 95 }])
+
+    const wrapper = await mountView()
+    const button = wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]')
+
+    expect(button.text()).toContain('Use next month card now')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Entitlement available now')
+  })
+
+  it('disables entitlement monthly advance button and shows reason below threshold', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, monthly_usage_usd: 50 }])
+
+    const wrapper = await mountView()
+    const button = wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]')
+
+    expect(button.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-testid="entitlement-advance-monthly-hint"]').text()).toContain('Monthly card available')
+  })
+
+  it('calls entitlement advance endpoint and reloads after success', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, monthly_usage_usd: 95 }])
+
+    const wrapper = await mountView()
+    await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
+    await flushPromises()
+
+    expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22)
+    expect(advanceMonthlyCycle).not.toHaveBeenCalled()
+    expect(getMySubscriptions).toHaveBeenCalledTimes(2)
+    expect(getEntitlements).toHaveBeenCalledTimes(2)
+    expect(showSuccess).toHaveBeenCalled()
+  })
+
+  it('keeps the legacy subscription monthly advance button working', async () => {
+    getMySubscriptions.mockResolvedValue([{
+      ...legacySubscription,
+      expires_at: '2026-10-01T00:00:00Z',
+      monthly_usage_usd: 9.5,
+      monthly_window_start: '2026-06-01T00:00:00Z',
+      group: {
+        ...legacySubscription.group,
+        monthly_limit_usd: 10,
+      },
+    }])
+    advanceMonthlyCycle.mockResolvedValue({ deducted_seconds: 3600 })
+
+    const wrapper = await mountView()
+    const legacyButton = wrapper.findAll('button').find((button) => button.text().includes('Use next cycle now'))
+    expect(legacyButton).toBeTruthy()
+    await legacyButton!.trigger('click')
+    await flushPromises()
+
+    expect(advanceMonthlyCycle).toHaveBeenCalledWith(1)
+    expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
+  })
+
+  it('does not call legacy advance for alias subscriptions with entitlement_id', async () => {
+    getMySubscriptions.mockResolvedValue([{
+      ...legacySubscription,
+      entitlement_id: 22,
+      expires_at: '2026-10-01T00:00:00Z',
+      monthly_usage_usd: 9.5,
+      monthly_window_start: '2026-06-01T00:00:00Z',
+      group: {
+        ...legacySubscription.group,
+        monthly_limit_usd: 10,
+      },
+    }])
+
+    const wrapper = await mountView()
+    const legacyButton = wrapper.findAll('button').find((button) => button.text().includes('Use next cycle now'))
+    expect(legacyButton).toBeTruthy()
+    expect(legacyButton!.attributes('disabled')).toBeDefined()
+    await legacyButton!.trigger('click')
+
+    expect(advanceMonthlyCycle).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Use entitlement card')
   })
 
   it('keeps legacy subscriptions visible when entitlement loading fails', async () => {

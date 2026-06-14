@@ -5,6 +5,7 @@
 
 import { apiClient } from './client'
 import type {
+  AdvanceEntitlementMonthlyCycleResult,
   AdvanceMonthlyCycleResult,
   SubscriptionGroupPreference,
   UserEntitlement,
@@ -69,6 +70,10 @@ export async function getEntitlementProgress(entitlementId: number): Promise<Use
   return response.data
 }
 
+export async function deleteEntitlement(entitlementId: number): Promise<void> {
+  await apiClient.delete(`/entitlements/${entitlementId}`)
+}
+
 /**
  * Get progress for all user's active subscriptions
  */
@@ -97,6 +102,10 @@ export async function getSubscriptionProgress(
   return response.data
 }
 
+export async function deleteSubscription(subscriptionId: number): Promise<void> {
+  await apiClient.delete(`/subscriptions/${subscriptionId}`)
+}
+
 export async function getGroupPreferences(): Promise<SubscriptionGroupPreference[]> {
   const response = await apiClient.get<SubscriptionGroupPreference[]>('/subscriptions/group-preferences')
   return response.data
@@ -120,16 +129,28 @@ export async function advanceMonthlyCycle(
   return response.data
 }
 
+export async function advanceEntitlementMonthlyCycle(
+  entitlementId: number
+): Promise<AdvanceEntitlementMonthlyCycleResult> {
+  const response = await apiClient.post<AdvanceEntitlementMonthlyCycleResult>(
+    `/entitlements/${entitlementId}/advance-monthly-cycle`
+  )
+  return response.data
+}
+
 export default {
   getMySubscriptions,
   getActiveSubscriptions,
   getEntitlements,
   getActiveEntitlements,
   getEntitlementProgress,
+  deleteEntitlement,
   getSubscriptionsProgress,
   getSubscriptionSummary,
   getSubscriptionProgress,
+  deleteSubscription,
   getGroupPreferences,
   saveGroupPreferences,
-  advanceMonthlyCycle
+  advanceMonthlyCycle,
+  advanceEntitlementMonthlyCycle
 }

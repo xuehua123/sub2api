@@ -1663,6 +1663,7 @@ export interface UserEntitlementGroup {
   id: number
   name: string
   platform: GroupPlatform | string
+  rate_multiplier: number
 }
 
 export interface UserEntitlement {
@@ -1691,6 +1692,11 @@ export interface UserEntitlement {
   monthly_resets_in_seconds: number | null
   overage_policy: 'block' | 'balance_fallback' | string
   legacy_subscription_id: number | null
+  purchase_price: number | null
+  purchase_currency: string
+  quota_usd: number | null
+  quota_period: 'daily' | 'weekly' | 'monthly' | string
+  unit_cost_per_usd: number | null
 }
 
 export interface SubscriptionProgress {
@@ -1725,6 +1731,16 @@ export interface SubscriptionGroupPreference {
 
 export interface AdvanceMonthlyCycleResult {
   subscription: UserSubscription
+  previous_expires_at: string
+  new_expires_at: string
+  deducted_days: number
+  deducted_seconds: number
+  previous_monthly_usage_usd: number
+  new_monthly_window_start: string
+}
+
+export interface AdvanceEntitlementMonthlyCycleResult {
+  entitlement: UserEntitlement
   previous_expires_at: string
   new_expires_at: string
   deducted_days: number

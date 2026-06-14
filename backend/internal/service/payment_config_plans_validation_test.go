@@ -35,6 +35,18 @@ func TestPaymentConfigPlanValidation(t *testing.T) {
 		{name: "negative original price", mutate: func(req *CreatePlanRequest) { v := -1.0; req.OriginalPrice = &v }, wantErr: "original price"},
 		{name: "zero original price", mutate: func(req *CreatePlanRequest) { v := 0.0; req.OriginalPrice = &v }},
 		{name: "zero limit", mutate: func(req *CreatePlanRequest) { v := 0.0; req.DailyLimitUSD = &v }, wantErr: "limit"},
+		{name: "weekly limit shorter than week", mutate: func(req *CreatePlanRequest) {
+			v := 100.0
+			req.ValidityDays = 1
+			req.ValidityUnit = "day"
+			req.WeeklyLimitUSD = &v
+		}, wantErr: "7 days"},
+		{name: "monthly limit shorter than month", mutate: func(req *CreatePlanRequest) {
+			v := 100.0
+			req.ValidityDays = 7
+			req.ValidityUnit = "day"
+			req.MonthlyLimitUSD = &v
+		}, wantErr: "30 days"},
 	}
 
 	for _, tt := range tests {
@@ -292,6 +304,35 @@ func TestPaymentConfigPlanOverageAndNullableLimitUpdate(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Nil(t, updated.DailyLimitUSD)
+}
+
+func TestPaymentConfigUpdatePlanRejectsLimitPeriodLongerThanValidity(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+	group := createPaymentConfigPlanTestGroup(t, client, "anthropic-sub", PlatformAnthropic, 0)
+	weekly := 100.0
+
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:           "Weekly Plan",
+		GroupIDs:       []int64{group.ID},
+		Price:          9.99,
+		ValidityDays:   7,
+		ValidityUnit:   "day",
+		WeeklyLimitUSD: &weekly,
+	})
+	require.NoError(t, err)
+
+	oneDay := 1
+	_, err = svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{ValidityDays: &oneDay})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "7 days")
+
+	_, err = svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{
+		ValidityDays:   &oneDay,
+		WeeklyLimitUSD: OptionalFloat64{Set: true, Value: nil},
+	})
+	require.NoError(t, err)
 }
 
 func TestPaymentConfigUpdatePlanClearsOriginalPrice(t *testing.T) {

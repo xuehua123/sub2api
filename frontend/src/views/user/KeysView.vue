@@ -484,7 +484,7 @@
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               type="button"
-              class="flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors"
+              class="order-2 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors"
               :class="formData.access_source === 'balance'
                 ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
                 : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
@@ -501,7 +501,7 @@
             </button>
             <button
               type="button"
-              class="flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              class="order-1 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               :class="formData.access_source === 'entitlement'
                 ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
                 : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
@@ -628,30 +628,6 @@
           <p v-if="formData.subscription_entitlement_id" class="input-hint">
             {{ t('keys.currentGroupFilteredHint') }}
           </p>
-        </div>
-
-        <div class="flex items-center justify-between rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-          <div>
-            <label class="input-label mb-0">{{ t('keys.autoSwitchGroup') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-              {{ t('keys.autoSwitchGroupHint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="formData.auto_switch_group_enabled = !formData.auto_switch_group_enabled"
-            :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-              formData.auto_switch_group_enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                formData.auto_switch_group_enabled ? 'translate-x-4' : 'translate-x-0'
-              ]"
-            />
-          </button>
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -1420,7 +1396,7 @@ const formData = ref({
   access_source: 'balance' as AccessSource,
   group_id: null as number | null,
   subscription_entitlement_id: null as number | null,
-  auto_switch_group_enabled: true,
+  auto_switch_group_enabled: false,
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
   custom_key: '',
@@ -2073,6 +2049,13 @@ async function closeCreateQuery() {
 }
 
 const handleCreateAction = () => {
+  if (availableEntitlements.value.length > 0) {
+    formData.value.access_source = 'entitlement'
+    formData.value.subscription_entitlement_id = availableEntitlements.value.length === 1
+      ? availableEntitlements.value[0].id
+      : null
+    reconcileFormEntitlementSelection()
+  }
   showCreateModal.value = true
 }
 
@@ -2133,7 +2116,7 @@ const editKey = (key: ApiKey) => {
     access_source: rowAccessSource(key),
     group_id: key.group_id,
     subscription_entitlement_id: key.subscription_entitlement_id ?? null,
-    auto_switch_group_enabled: key.auto_switch_group_enabled !== false,
+    auto_switch_group_enabled: false,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
     custom_key: '',
@@ -2441,7 +2424,7 @@ const closeModals = () => {
     access_source: 'balance',
     group_id: null,
     subscription_entitlement_id: null,
-    auto_switch_group_enabled: true,
+    auto_switch_group_enabled: false,
     status: 'active',
     use_custom_key: false,
     custom_key: '',
