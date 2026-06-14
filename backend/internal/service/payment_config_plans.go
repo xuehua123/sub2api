@@ -9,6 +9,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -746,26 +747,32 @@ func (s *PaymentConfigService) loadGroupsByID(ctx context.Context, ids []int64, 
 }
 
 func (s *PaymentConfigService) loadSubscriptionGroupsByPlatforms(ctx context.Context, platforms []string) ([]*dbent.Group, error) {
+	predicates := subscriptionPlanAutoGrantGroupPredicates()
+	predicates = append(predicates, group.PlatformIn(platforms...))
 	return s.entClient.Group.Query().
-		Where(
-			group.StatusEQ(StatusActive),
-			group.SubscriptionEnabledEQ(true),
-			group.PlanAutoGrantEnabledEQ(true),
-			group.PlatformIn(platforms...),
-		).
+		Where(predicates...).
 		Order(group.BySortOrder(), group.ByID()).
 		All(ctx)
 }
 
 func (s *PaymentConfigService) loadAllSubscriptionGroups(ctx context.Context) ([]*dbent.Group, error) {
 	return s.entClient.Group.Query().
-		Where(
-			group.StatusEQ(StatusActive),
-			group.SubscriptionEnabledEQ(true),
-			group.PlanAutoGrantEnabledEQ(true),
-		).
+		Where(subscriptionPlanAutoGrantGroupPredicates()...).
 		Order(group.BySortOrder(), group.ByID()).
 		All(ctx)
+}
+
+func subscriptionPlanAutoGrantGroupPredicates() []predicate.Group {
+	return []predicate.Group{
+		group.StatusEQ(StatusActive),
+		group.SubscriptionEnabledEQ(true),
+		group.PlanAutoGrantEnabledEQ(true),
+		group.IsExclusiveEQ(false),
+		group.Not(group.NameContainsFold("test")),
+		group.Not(group.NameContainsFold("private")),
+		group.Not(group.NameContains("测试")),
+		group.Not(group.NameContains("专属")),
+	}
 }
 
 func replacePlanGroupsTx(ctx context.Context, tx *dbent.Tx, planID int64, groupIDs []int64) error {

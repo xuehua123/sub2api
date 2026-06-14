@@ -545,6 +545,9 @@ func updateSubscriptionEntitlementTermAndSourceWithClient(ctx context.Context, c
 	if source.SourceRedeemCodeID != nil {
 		update.SetSourceRedeemCodeID(*source.SourceRedeemCodeID)
 	}
+	if source.LegacySubscriptionID != nil {
+		update.SetLegacySubscriptionID(*source.LegacySubscriptionID)
+	}
 	if source.AssignedBy != nil {
 		update.SetAssignedBy(*source.AssignedBy)
 	}

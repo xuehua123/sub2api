@@ -10,6 +10,7 @@ const (
 	SubscriptionEntitlementSourceUnknown      = "unknown"
 	SubscriptionEntitlementSourcePaymentOrder = "payment_order"
 	SubscriptionEntitlementSourceRedeemCode   = "redeem_code"
+	SubscriptionEntitlementSourceAdminAssign  = "admin_subscription_assign"
 
 	SubscriptionEntitlementOverageBlock           = "block"
 	SubscriptionEntitlementOverageBalanceFallback = "balance_fallback"
@@ -88,12 +89,13 @@ type SubscriptionEntitlementGroupGrant struct {
 }
 
 type SubscriptionEntitlementSourceRef struct {
-	SourceType         string
-	SourceID           *int64
-	SourceExternalID   *string
-	SourceRedeemCodeID *int64
-	AssignedBy         *int64
-	AssignedAt         time.Time
+	SourceType           string
+	SourceID             *int64
+	SourceExternalID     *string
+	SourceRedeemCodeID   *int64
+	LegacySubscriptionID *int64
+	AssignedBy           *int64
+	AssignedAt           time.Time
 }
 
 type SubscriptionEntitlementFulfillment struct {

@@ -42,6 +42,7 @@ func NewSubscriptionHandler(subscriptionService *service.SubscriptionService) *S
 type AssignSubscriptionRequest struct {
 	UserID       int64  `json:"user_id" binding:"required"`
 	GroupID      int64  `json:"group_id" binding:"required"`
+	PlanID       int64  `json:"plan_id" binding:"omitempty"`
 	ValidityDays int    `json:"validity_days" binding:"omitempty,max=36500"` // max 100 years
 	Notes        string `json:"notes"`
 }
@@ -147,6 +148,7 @@ func (h *SubscriptionHandler) Assign(c *gin.Context) {
 	subscription, err := h.subscriptionService.AssignSubscription(c.Request.Context(), &service.AssignSubscriptionInput{
 		UserID:       req.UserID,
 		GroupID:      req.GroupID,
+		PlanID:       req.PlanID,
 		ValidityDays: req.ValidityDays,
 		AssignedBy:   adminID,
 		Notes:        req.Notes,

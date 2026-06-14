@@ -15,8 +15,9 @@ type SubscriptionEntitlementService struct {
 }
 
 type AssignEntitlementFromPlanInput struct {
-	UserID int64
-	PlanID int64
+	UserID               int64
+	PlanID               int64
+	LegacySubscriptionID *int64
 
 	OrderID int64
 
@@ -94,7 +95,7 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 		return ent, true, err
 	}
 
-	ent := newEntitlementFromPlan(plan, input.UserID, groupIDs[0], validityDays, input.Notes, source, now)
+	ent := newEntitlementFromPlan(plan, input.UserID, groupIDs[0], validityDays, input.Notes, source, now, input.LegacySubscriptionID)
 	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency)
 	fulfillment := newEntitlementFulfillment(ent, validityDays, source)
 	if err := s.entitlementRepo.CreateWithFulfillment(ctx, ent, groupIDs, fulfillment); err != nil {
@@ -310,16 +311,17 @@ func entitlementSourceFromAssignInput(input AssignEntitlementFromPlanInput, now 
 		assignedAt = now
 	}
 	return SubscriptionEntitlementSourceRef{
-		SourceType:         sourceType,
-		SourceID:           sourceID,
-		SourceExternalID:   externalID,
-		SourceRedeemCodeID: cloneInt64Ptr(input.SourceRedeemCodeID),
-		AssignedBy:         assignedBy,
-		AssignedAt:         assignedAt,
+		SourceType:           sourceType,
+		SourceID:             sourceID,
+		SourceExternalID:     externalID,
+		SourceRedeemCodeID:   cloneInt64Ptr(input.SourceRedeemCodeID),
+		LegacySubscriptionID: cloneInt64Ptr(input.LegacySubscriptionID),
+		AssignedBy:           assignedBy,
+		AssignedAt:           assignedAt,
 	}
 }
 
-func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID, primaryGroupID int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time) *SubscriptionEntitlement {
+func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID, primaryGroupID int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time, legacySubscriptionID *int64) *SubscriptionEntitlement {
 	planID := plan.ID
 	windowStart := now
 	name := plan.Name
@@ -327,30 +329,31 @@ func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID, primaryGr
 		name = plan.ProductName
 	}
 	ent := &SubscriptionEntitlement{
-		UserID:             userID,
-		PlanID:             &planID,
-		PrimaryGroupID:     &primaryGroupID,
-		Name:               name,
-		SourceType:         source.SourceType,
-		Status:             SubscriptionStatusActive,
-		StartsAt:           now,
-		ExpiresAt:          addEntitlementValidityDays(now, validityDays),
-		DailyWindowStart:   &windowStart,
-		WeeklyWindowStart:  &windowStart,
-		MonthlyWindowStart: &windowStart,
-		DailyLimitUSD:      cloneFloat64Ptr(plan.DailyLimitUSD),
-		WeeklyLimitUSD:     cloneFloat64Ptr(plan.WeeklyLimitUSD),
-		MonthlyLimitUSD:    cloneFloat64Ptr(plan.MonthlyLimitUSD),
-		OveragePolicy:      normalizeEntitlementOveragePolicy(plan.OveragePolicy),
-		PlanSnapshot:       entitlementPlanSnapshot(plan),
-		SourceID:           cloneInt64Ptr(source.SourceID),
-		SourceExternalID:   cloneStringPtr(source.SourceExternalID),
-		SourceRedeemCodeID: cloneInt64Ptr(source.SourceRedeemCodeID),
-		AssignedBy:         cloneInt64Ptr(source.AssignedBy),
-		AssignedAt:         source.AssignedAt,
-		Notes:              notes,
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		UserID:               userID,
+		PlanID:               &planID,
+		LegacySubscriptionID: cloneInt64Ptr(legacySubscriptionID),
+		PrimaryGroupID:       &primaryGroupID,
+		Name:                 name,
+		SourceType:           source.SourceType,
+		Status:               SubscriptionStatusActive,
+		StartsAt:             now,
+		ExpiresAt:            addEntitlementValidityDays(now, validityDays),
+		DailyWindowStart:     &windowStart,
+		WeeklyWindowStart:    &windowStart,
+		MonthlyWindowStart:   &windowStart,
+		DailyLimitUSD:        cloneFloat64Ptr(plan.DailyLimitUSD),
+		WeeklyLimitUSD:       cloneFloat64Ptr(plan.WeeklyLimitUSD),
+		MonthlyLimitUSD:      cloneFloat64Ptr(plan.MonthlyLimitUSD),
+		OveragePolicy:        normalizeEntitlementOveragePolicy(plan.OveragePolicy),
+		PlanSnapshot:         entitlementPlanSnapshot(plan),
+		SourceID:             cloneInt64Ptr(source.SourceID),
+		SourceExternalID:     cloneStringPtr(source.SourceExternalID),
+		SourceRedeemCodeID:   cloneInt64Ptr(source.SourceRedeemCodeID),
+		AssignedBy:           cloneInt64Ptr(source.AssignedBy),
+		AssignedAt:           source.AssignedAt,
+		Notes:                notes,
+		CreatedAt:            now,
+		UpdatedAt:            now,
 	}
 	return ent
 }
@@ -416,7 +419,7 @@ func entitlementPlanGroupIDs(plan *SubscriptionEntitlementPlan) ([]int64, error)
 			continue
 		}
 		if grant.Group != nil {
-			if !grant.Group.IsActive() || !grant.Group.IsSubscriptionType() {
+			if !grant.Group.IsActive() || !grant.Group.SupportsSubscriptionAccess() {
 				continue
 			}
 		}

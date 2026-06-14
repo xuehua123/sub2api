@@ -337,6 +337,147 @@ func TestAssignSubscriptionKeepsWorkingWhenIdempotencyStoreUnavailable(t *testin
 	require.Equal(t, 1, subRepo.createCalls, "semantic idempotent endpoint should not depend on idempotency store availability")
 }
 
+func TestAssignSubscriptionV2OffWithPlanIDKeepsLegacyOnly(t *testing.T) {
+	entRepo := newFakeSubscriptionEntitlementRepo(time.Now())
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		77: testEntitlementPlan(77, []int64{1, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(false, entRepo, planRepo)
+
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3001,
+		GroupID:      1,
+		PlanID:       77,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.NoError(t, err)
+	require.NotZero(t, sub.ID)
+	require.Equal(t, 1, svc.userSubRepo.(*subscriptionUserSubRepoStub).createCalls)
+	require.Zero(t, entRepo.createCount)
+	require.Zero(t, entRepo.eventCount)
+}
+
+func TestAssignSubscriptionV2PlanCreatesEntitlementWithLegacySubscriptionID(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		77: testEntitlementPlan(77, []int64{1, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3002,
+		GroupID:      1,
+		PlanID:       77,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.NoError(t, err)
+	require.NotZero(t, sub.ID)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Equal(t, 1, entRepo.eventCount)
+	require.Len(t, entRepo.entitlements, 1)
+	var ent *SubscriptionEntitlement
+	for _, candidate := range entRepo.entitlements {
+		ent = candidate
+	}
+	require.NotNil(t, ent)
+	require.NotNil(t, ent.LegacySubscriptionID)
+	require.Equal(t, sub.ID, *ent.LegacySubscriptionID)
+	require.Equal(t, []int64{1, 2}, entitlementGroupIDs(ent))
+	require.NotNil(t, ent.SourceExternalID)
+	require.Equal(t, adminAssignEntitlementSourceExternalID(sub.ID, 77), *ent.SourceExternalID)
+}
+
+func TestAssignSubscriptionV2PlanReplayDoesNotDuplicateEntitlement(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		77: testEntitlementPlan(77, []int64{1, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+	input := &AssignSubscriptionInput{
+		UserID:       3003,
+		GroupID:      1,
+		PlanID:       77,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	}
+
+	first, err := svc.AssignSubscription(context.Background(), input)
+	require.NoError(t, err)
+	second, err := svc.AssignSubscription(context.Background(), input)
+	require.NoError(t, err)
+
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Equal(t, 1, entRepo.eventCount)
+	require.Len(t, entRepo.entitlements, 1)
+}
+
+func TestAssignSubscriptionV2PlanReusesExistingEntitlementAndBackfillsLegacyID(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planID := int64(77)
+	require.NoError(t, entRepo.Create(context.Background(), &SubscriptionEntitlement{
+		UserID:    3004,
+		PlanID:    &planID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(24 * time.Hour),
+		Name:      "existing",
+	}, []int64{1, 2}))
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		77: testEntitlementPlan(77, []int64{1, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3004,
+		GroupID:      1,
+		PlanID:       77,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, entRepo.createCount, "only the seeded entitlement should exist")
+	require.Equal(t, 1, entRepo.updateTermCount)
+	require.Equal(t, 1, entRepo.eventCount)
+	require.Len(t, entRepo.entitlements, 1)
+	ent, err := entRepo.GetByID(context.Background(), 1)
+	require.NoError(t, err)
+	require.NotNil(t, ent.LegacySubscriptionID)
+	require.Equal(t, sub.ID, *ent.LegacySubscriptionID)
+	require.NotNil(t, ent.SourceExternalID)
+	require.Equal(t, adminAssignEntitlementSourceExternalID(sub.ID, 77), *ent.SourceExternalID)
+}
+
+func newAssignSubscriptionEntitlementTestService(enabled bool, entRepo *fakeSubscriptionEntitlementRepo, planRepo *fakeSubscriptionEntitlementPlanRepo) *SubscriptionService {
+	groupRepo := &subscriptionGroupRepoStub{
+		group: &Group{
+			ID:                  1,
+			Status:              StatusActive,
+			SubscriptionType:    SubscriptionTypeSubscription,
+			SubscriptionEnabled: true,
+		},
+	}
+	subRepo := newSubscriptionUserSubRepoStub()
+	entSvc := NewSubscriptionEntitlementService(entRepo, planRepo)
+	svc := NewSubscriptionService(groupRepo, subRepo, nil, nil, nil)
+	svc.SetSubscriptionEntitlementAliasDependencies(subscriptionAliasRuntimeProviderStub{
+		runtime: SubscriptionEntitlementsRuntime{Enabled: enabled},
+	}, entSvc)
+	return svc
+}
+
 func TestNormalizeAssignValidityDays(t *testing.T) {
 	require.Equal(t, 30, normalizeAssignValidityDays(0))
 	require.Equal(t, 30, normalizeAssignValidityDays(-5))

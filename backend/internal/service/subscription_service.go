@@ -257,6 +257,7 @@ func (s *SubscriptionService) waitSubCacheInvalidation() {
 type AssignSubscriptionInput struct {
 	UserID       int64
 	GroupID      int64
+	PlanID       int64
 	ValidityDays int
 	AssignedBy   int64
 	Notes        string
@@ -264,11 +265,34 @@ type AssignSubscriptionInput struct {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if s.shouldAssignPlanEntitlementAlias(ctx, input) {
+		var sub *UserSubscription
+		err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+			var innerErr error
+			sub, _, innerErr = s.assignSubscriptionWithReuse(txCtx, input)
+			if innerErr != nil {
+				return innerErr
+			}
+			return s.assignPlanEntitlementAlias(txCtx, input, sub)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return sub, nil
+	}
+
 	sub, _, err := s.assignSubscriptionWithReuse(ctx, input)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.assignPlanEntitlementAlias(ctx, input, sub); err != nil {
+		return nil, err
+	}
 	return sub, nil
+}
+
+func (s *SubscriptionService) shouldAssignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput) bool {
+	return s != nil && input != nil && input.PlanID > 0 && s.ShouldUseSubscriptionEntitlementAliases(ctx)
 }
 
 // AssignOrExtendSubscription 分配或续期订阅（用于兑换码等场景）
@@ -361,6 +385,32 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 	return sub, false, nil // false 表示是新建
 }
 
+func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput, sub *UserSubscription) error {
+	if s == nil || input == nil || sub == nil || input.PlanID <= 0 || !s.ShouldUseSubscriptionEntitlementAliases(ctx) {
+		return nil
+	}
+	sourceExternalID := adminAssignEntitlementSourceExternalID(sub.ID, input.PlanID)
+	legacySubscriptionID := sub.ID
+	_, _, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
+		UserID:               input.UserID,
+		PlanID:               input.PlanID,
+		LegacySubscriptionID: &legacySubscriptionID,
+		SourceType:           SubscriptionEntitlementSourceAdminAssign,
+		SourceExternalID:     &sourceExternalID,
+		ValidityDaysOverride: input.ValidityDays,
+		AssignedBy:           input.AssignedBy,
+		Notes:                input.Notes,
+	})
+	if err != nil {
+		return fmt.Errorf("assign subscription entitlement alias: %w", err)
+	}
+	return nil
+}
+
+func adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID int64) string {
+	return fmt.Sprintf("%s:%d:plan:%d", SubscriptionEntitlementSourceAdminAssign, legacySubscriptionID, planID)
+}
+
 func (s *SubscriptionService) updateExistingSubscriptionTerm(
 	ctx context.Context,
 	existingSub *UserSubscription,
@@ -403,6 +453,9 @@ func (s *SubscriptionService) updateExistingSubscriptionTerm(
 
 func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn func(context.Context) error) error {
 	if s.entClient == nil {
+		return fn(ctx)
+	}
+	if dbent.TxFromContext(ctx) != nil {
 		return fn(ctx)
 	}
 

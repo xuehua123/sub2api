@@ -262,6 +262,9 @@ func (r *fakeSubscriptionEntitlementRepo) UpdateTermAndSource(_ context.Context,
 	if source.SourceRedeemCodeID != nil {
 		ent.SourceRedeemCodeID = cloneInt64Ptr(source.SourceRedeemCodeID)
 	}
+	if source.LegacySubscriptionID != nil {
+		ent.LegacySubscriptionID = cloneInt64Ptr(source.LegacySubscriptionID)
+	}
 	if source.AssignedBy != nil {
 		ent.AssignedBy = cloneInt64Ptr(source.AssignedBy)
 	}
@@ -299,6 +302,9 @@ func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Contex
 	}
 	if source.SourceRedeemCodeID != nil {
 		ent.SourceRedeemCodeID = cloneInt64Ptr(source.SourceRedeemCodeID)
+	}
+	if source.LegacySubscriptionID != nil {
+		ent.LegacySubscriptionID = cloneInt64Ptr(source.LegacySubscriptionID)
 	}
 	if source.AssignedBy != nil {
 		ent.AssignedBy = cloneInt64Ptr(source.AssignedBy)
@@ -663,9 +669,10 @@ func testEntitlementPlan(id int64, groupIDs []int64, monthlyLimit *float64) *Sub
 			SortOrder: i,
 			Enabled:   true,
 			Group: &Group{
-				ID:               groupID,
-				Status:           StatusActive,
-				SubscriptionType: SubscriptionTypeSubscription,
+				ID:                  groupID,
+				Status:              StatusActive,
+				SubscriptionType:    SubscriptionTypeSubscription,
+				SubscriptionEnabled: true,
 			},
 		})
 	}
@@ -690,9 +697,10 @@ func testGroupGrants(groupIDs []int64) []SubscriptionEntitlementGroupGrant {
 			SortOrder: i,
 			Enabled:   true,
 			Group: &Group{
-				ID:               groupID,
-				Status:           StatusActive,
-				SubscriptionType: SubscriptionTypeSubscription,
+				ID:                  groupID,
+				Status:              StatusActive,
+				SubscriptionType:    SubscriptionTypeSubscription,
+				SubscriptionEnabled: true,
 			},
 		})
 	}
@@ -703,9 +711,10 @@ func testGroups(groupIDs []int64) []Group {
 	groups := make([]Group, 0, len(groupIDs))
 	for _, groupID := range groupIDs {
 		groups = append(groups, Group{
-			ID:               groupID,
-			Status:           StatusActive,
-			SubscriptionType: SubscriptionTypeSubscription,
+			ID:                  groupID,
+			Status:              StatusActive,
+			SubscriptionType:    SubscriptionTypeSubscription,
+			SubscriptionEnabled: true,
 		})
 	}
 	return groups

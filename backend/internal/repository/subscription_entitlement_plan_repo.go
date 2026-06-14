@@ -4,6 +4,8 @@ import (
 	"context"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	entgroup "github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	entsubscriptionplan "github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -58,6 +60,13 @@ func subscriptionPlanEntityToEntitlementPlan(ctx context.Context, client *dbent.
 		SortOrder:        plan.SortOrder,
 	}
 
+	switch plan.AccessScope {
+	case service.PlanAccessScopeAllSubscriptionGroups:
+		out.Groups = append(out.Groups, subscriptionEntitlementPlanGroupsFromEnt(loadEntitlementPlanAutoGrantGroups(ctx, client, nil))...)
+	case service.PlanAccessScopePlatformSubscriptionGroups:
+		out.Groups = append(out.Groups, subscriptionEntitlementPlanGroupsFromEnt(loadEntitlementPlanAutoGrantGroups(ctx, client, plan.AllowedPlatforms))...)
+	}
+
 	for _, grant := range plan.Edges.SubscriptionPlanGroups {
 		if grant == nil || !grant.Enabled {
 			continue
@@ -87,5 +96,52 @@ func subscriptionPlanEntityToEntitlementPlan(ctx context.Context, client *dbent.
 		}
 	}
 
+	return out
+}
+
+func loadEntitlementPlanAutoGrantGroups(ctx context.Context, client *dbent.Client, platforms []string) []*dbent.Group {
+	if client == nil {
+		return nil
+	}
+	query := client.Group.Query().
+		Where(subscriptionEntitlementPlanAutoGrantGroupPredicates()...).
+		Order(entgroup.BySortOrder(), entgroup.ByID())
+	if len(platforms) > 0 {
+		query.Where(entgroup.PlatformIn(platforms...))
+	}
+	groups, err := query.All(ctx)
+	if err != nil {
+		return nil
+	}
+	return groups
+}
+
+func subscriptionEntitlementPlanAutoGrantGroupPredicates() []predicate.Group {
+	return []predicate.Group{
+		entgroup.StatusEQ(service.StatusActive),
+		entgroup.SubscriptionEnabledEQ(true),
+		entgroup.PlanAutoGrantEnabledEQ(true),
+		entgroup.IsExclusiveEQ(false),
+		entgroup.DeletedAtIsNil(),
+		entgroup.Not(entgroup.NameContainsFold("test")),
+		entgroup.Not(entgroup.NameContainsFold("private")),
+		entgroup.Not(entgroup.NameContains("测试")),
+		entgroup.Not(entgroup.NameContains("专属")),
+	}
+}
+
+func subscriptionEntitlementPlanGroupsFromEnt(groups []*dbent.Group) []service.SubscriptionEntitlementPlanGroup {
+	out := make([]service.SubscriptionEntitlementPlanGroup, 0, len(groups))
+	for _, group := range groups {
+		if group == nil {
+			continue
+		}
+		out = append(out, service.SubscriptionEntitlementPlanGroup{
+			GroupID:   group.ID,
+			SortOrder: group.SortOrder,
+			Enabled:   true,
+			Group:     groupEntityToService(group),
+		})
+	}
 	return out
 }
