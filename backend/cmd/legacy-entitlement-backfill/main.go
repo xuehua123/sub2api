@@ -291,7 +291,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 		}
 		return sum, nil
 	case modeSnapshot:
-		if err := ensureWritePreconditions(ctx, db, cfg.Mode); err != nil {
+		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
 			return sum, err
 		}
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
@@ -302,7 +302,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 			return sum, err
 		}
 	case modeRollback:
-		if err := ensureWritePreconditions(ctx, db, cfg.Mode); err != nil {
+		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
 			return sum, err
 		}
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
@@ -313,7 +313,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 			return sum, err
 		}
 	case modeApply:
-		if err := ensureWritePreconditions(ctx, db, cfg.Mode); err != nil {
+		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
 			return sum, err
 		}
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
@@ -342,7 +342,7 @@ func writeModeRequiresGate(mode string) bool {
 	}
 }
 
-func ensureWritePreconditions(ctx context.Context, db *sql.DB, mode string) error {
+func ensureWritePreconditions(ctx context.Context, db *sql.DB, mode, mappingVersion string) error {
 	if !writeModeRequiresGate(mode) {
 		return nil
 	}
@@ -350,7 +350,7 @@ func ensureWritePreconditions(ctx context.Context, db *sql.DB, mode string) erro
 		return err
 	}
 	if mode == modeApply {
-		if err := ensureNoExistingEntitlementUsage(ctx, db); err != nil {
+		if err := ensureNoExistingTargetEntitlementUsage(ctx, db, mappingVersion); err != nil {
 			return err
 		}
 	}
@@ -386,16 +386,25 @@ WHERE key IN ('subscription_entitlements_v2_enabled', 'sub2_payment_page_legacy_
 	return nil
 }
 
-func ensureNoExistingEntitlementUsage(ctx context.Context, db *sql.DB) error {
+func ensureNoExistingTargetEntitlementUsage(ctx context.Context, db *sql.DB, mappingVersion string) error {
 	var count int64
 	if err := db.QueryRowContext(ctx, `
 SELECT COUNT(*)
-FROM usage_logs
-WHERE entitlement_id IS NOT NULL`).Scan(&count); err != nil {
+FROM usage_logs ul
+JOIN subscription_entitlements se ON se.id = ul.entitlement_id
+JOIN user_subscriptions us ON us.id = se.legacy_subscription_id
+JOIN subscription_legacy_backfill_mappings m
+  ON m.legacy_group_id = us.group_id
+ AND m.mapping_version = $1
+WHERE ul.entitlement_id IS NOT NULL
+  AND se.deleted_at IS NULL
+  AND us.deleted_at IS NULL
+  AND us.status = 'active'
+  AND us.expires_at > NOW()`, mappingVersion).Scan(&count); err != nil {
 		return err
 	}
 	if count > 0 {
-		return fmt.Errorf("refusing apply because %d usage_logs rows already reference entitlements; run reconciliation/manual review before backfill", count)
+		return fmt.Errorf("refusing apply because %d usage_logs rows already reference entitlements targeted by mapping_version %q; run reconciliation/manual review before backfill", count, mappingVersion)
 	}
 	return nil
 }
@@ -1111,27 +1120,10 @@ WITH eligible AS (
         ak.updated_at AS old_updated_at
     FROM api_keys ak
     JOIN groups g ON g.id = ak.group_id
-    JOIN user_subscriptions us ON us.user_id = ak.user_id AND us.group_id = ak.group_id
-    JOIN subscription_entitlements se ON se.legacy_subscription_id = us.id
-    JOIN subscription_legacy_backfill_mappings m ON m.legacy_group_id = us.group_id
     WHERE ak.deleted_at IS NULL
       AND ak.status = 'active'
+      AND g.deleted_at IS NULL
       AND g.subscription_type = 'subscription'
-      AND us.deleted_at IS NULL
-      AND us.status = 'active'
-      AND us.expires_at > NOW()
-      AND se.deleted_at IS NULL
-      AND se.source_type = $2
-      AND m.mapping_version = $1
-      AND (
-          SELECT COUNT(*)
-          FROM user_subscriptions us2
-          WHERE us2.user_id = ak.user_id
-            AND us2.group_id = ak.group_id
-            AND us2.deleted_at IS NULL
-            AND us2.status = 'active'
-            AND us2.expires_at > NOW()
-      ) = 1
 )
 INSERT INTO api_key_legacy_backfill_snapshots (
     api_key_id, user_id, old_group_id, old_access_source,
@@ -1141,7 +1133,7 @@ SELECT
     api_key_id, user_id, old_group_id, old_access_source,
     old_subscription_entitlement_id, old_updated_at, $1, NOW()
 FROM eligible
-ON CONFLICT (api_key_id) DO NOTHING`, version, sourceLegacyBackfill)
+ON CONFLICT (api_key_id) DO NOTHING`, version)
 	if err != nil {
 		return 0, err
 	}

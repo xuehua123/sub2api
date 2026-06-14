@@ -128,7 +128,7 @@ func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
 					AddRow("subscription_entitlements_v2_enabled", "true").
 					AddRow("sub2_payment_page_legacy_mapping_enabled", "false"))
 
-			err = ensureWritePreconditions(context.Background(), db, mode)
+			err = ensureWritePreconditions(context.Background(), db, mode, "test-version")
 			if err == nil || !strings.Contains(err.Error(), "subscription_entitlements_v2_enabled") {
 				t.Fatalf("expected flag gate error, got %v", err)
 			}
@@ -139,7 +139,7 @@ func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsWhenEntitlementUsageAlreadyExists(t *testing.T) {
+func TestApplyRejectsWhenTargetedEntitlementUsageAlreadyExists(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -151,11 +151,35 @@ func TestApplyRejectsWhenEntitlementUsageAlreadyExists(t *testing.T) {
 			AddRow("subscription_entitlements_v2_enabled", "false").
 			AddRow("sub2_payment_page_legacy_mapping_enabled", "false"))
 	mock.ExpectQuery("SELECT COUNT\\(\\*\\)").
+		WithArgs("test-version").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(3)))
 
-	err = ensureWritePreconditions(context.Background(), db, modeApply)
-	if err == nil || !strings.Contains(err.Error(), "usage_logs rows already reference entitlements") {
+	err = ensureWritePreconditions(context.Background(), db, modeApply, "test-version")
+	if err == nil || !strings.Contains(err.Error(), `targeted by mapping_version "test-version"`) {
 		t.Fatalf("expected existing entitlement usage error, got %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplyAllowsUnrelatedEntitlementUsage(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectQuery("SELECT key, value").
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
+			AddRow("subscription_entitlements_v2_enabled", "false").
+			AddRow("sub2_payment_page_legacy_mapping_enabled", "false"))
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+
+	if err := ensureWritePreconditions(context.Background(), db, modeApply, "test-version"); err != nil {
+		t.Fatalf("unrelated entitlement usage should not block apply, got %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -170,9 +194,42 @@ func TestDryRunAndReconcileDoNotUseWriteProtection(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	for _, mode := range []string{modeDryRun, modeReconcile} {
-		if err := ensureWritePreconditions(context.Background(), db, mode); err != nil {
+		if err := ensureWritePreconditions(context.Background(), db, mode, "test-version"); err != nil {
 			t.Fatalf("%s should not require write protection, got %v", mode, err)
 		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSnapshotBeforeApplyWritesEligibleLegacySubscriptionKeys(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO api_key_legacy_backfill_snapshots").
+		WithArgs("test-version").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectCommit()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count, err := snapshotEligibleAPIKeys(context.Background(), tx, "test-version")
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("snapshot before apply failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 snapshotted keys, got %d", count)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
