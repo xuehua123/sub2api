@@ -1086,9 +1086,8 @@ export default {
     currentCardGroupBadge: '当前卡内分组',
     switchCardShort: '切换卡',
     rateMultiplierBadge: '倍率 {rate}',
-    actualDeductionHint: '每 $1 API 约 {amount}/刀',
-    cardUnitCostHint: '套餐基准 {amount}/刀',
-    actualRmbCostHint: '每 $1 API 约 {amount}/刀',
+    actualDeductionHint: '{rate}倍率后实际价格{amount}/刀',
+    actualRmbCostHint: '{rate}倍率后实际价格{amount}/刀',
     priceUnavailable: '价格待同步',
     quotaPeriod: {
       daily: '日额度',

@@ -116,13 +116,8 @@
               <div class="mt-1 w-full truncate text-sm font-semibold text-gray-900 dark:text-white">
                 {{ entitlementLabelByID(row.subscription_entitlement_id) }}
               </div>
-              <div
-                class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
-              >
-                <span class="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
-                  {{ entitlementUnitCostTextByID(row.subscription_entitlement_id) }}
-                </span>
-                <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+              <div class="mt-1 flex w-full justify-end text-xs">
+                <span class="font-medium text-primary-600 dark:text-primary-400">
                   {{ t('keys.switchCardShort') }}
                 </span>
               </div>
@@ -1700,18 +1695,6 @@ function entitlementQuotaPeriodTextByID(id: number | null | undefined): string {
   return entitlementQuotaPeriodText(entitlementByID(id))
 }
 
-function entitlementUnitCostText(entitlement: AvailableGroupEntitlement | null | undefined): string {
-  const unitCost = entitlementUnitCost(entitlement)
-  if (unitCost === null) return t('keys.priceUnavailable')
-  return t('keys.cardUnitCostHint', {
-    amount: formatMoneyAmount(unitCost, entitlement?.purchase_currency),
-  })
-}
-
-function entitlementUnitCostTextByID(id: number | null | undefined): string {
-  return entitlementUnitCostText(entitlementByID(id))
-}
-
 function entitlementActualCostText(
   entitlement: AvailableGroupEntitlement | null | undefined,
   rate: number
@@ -1720,6 +1703,7 @@ function entitlementActualCostText(
   if (unitCost === null) return t('keys.priceUnavailable')
   const multiplier = positiveNumber(rate) ?? 1
   return t('keys.actualRmbCostHint', {
+    rate: formatRateMultiplier(multiplier),
     amount: formatMoneyAmount(unitCost * multiplier, entitlement?.purchase_currency),
   })
 }
@@ -1760,10 +1744,6 @@ function formatEntitlementLabel(entitlement: AvailableGroupEntitlement): string 
 function formatEntitlementDescription(entitlement: AvailableGroupEntitlement): string {
   const parts: string[] = []
   const groupCount = entitlementGroupOptions(entitlement.id).length
-  const unitCost = entitlementUnitCost(entitlement)
-  if (unitCost !== null) {
-    parts.push(t('keys.cardUnitCostHint', { amount: formatMoneyAmount(unitCost, entitlement.purchase_currency) }))
-  }
   if (entitlement.plan_id) {
     parts.push(t('keys.entitlementPlan', { id: entitlement.plan_id }))
   }

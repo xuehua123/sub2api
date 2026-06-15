@@ -39,6 +39,7 @@ vi.mock('vue-i18n', async () => {
     ...actual,
     useI18n: () => ({
       t: (key: string, params?: Record<string, unknown>) => {
+        if (params && 'amount' in params && 'rate' in params) return `${key}:${String(params.rate)}:${String(params.amount)}`
         if (params && 'amount' in params) return `${key}:${String(params.amount)}`
         return key
       },
@@ -276,13 +277,12 @@ describe('KeysView entitlement group binding', () => {
     ]))
   })
 
-  it('formats plan-card unit cost and current group actual RMB cost', async () => {
+  it('formats current group actual RMB cost with the effective rate', async () => {
     const wrapper = await mountView([subscriptionGroup([101], { rate_multiplier: 3 })])
     const vm = setupState(wrapper)
 
     expect(vm.entitlementQuotaPeriodTextByID(101)).toBe('keys.quotaPeriod.monthly')
-    expect(vm.entitlementUnitCostTextByID(101)).toBe('keys.cardUnitCostHint:¥2.99')
-    expect(vm.entitlementActualCostTextByID(101, 3)).toBe('keys.actualRmbCostHint:¥8.97')
+    expect(vm.entitlementActualCostTextByID(101, 3)).toBe('keys.actualRmbCostHint:3x:¥8.97')
   })
 
   it('filters selectable groups by the selected entitlement first', async () => {

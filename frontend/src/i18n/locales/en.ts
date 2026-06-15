@@ -1087,9 +1087,8 @@ export default {
     currentCardGroupBadge: 'Current card group',
     switchCardShort: 'Change card',
     rateMultiplierBadge: 'Rate {rate}',
-    actualDeductionHint: 'About {amount} per $1 API',
-    cardUnitCostHint: 'Card base {amount}/$1',
-    actualRmbCostHint: 'About {amount} per $1 API',
+    actualDeductionHint: '{rate} actual price {amount}/$1',
+    actualRmbCostHint: '{rate} actual price {amount}/$1',
     priceUnavailable: 'Price pending sync',
     quotaPeriod: {
       daily: 'Daily quota',
