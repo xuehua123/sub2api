@@ -44,6 +44,7 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 				StartsAt:  now.Add(-time.Hour),
 				ExpiresAt: now.Add(24 * time.Hour),
 				Status:    service.SubscriptionStatusActive,
+				Notes:     "internal legacy note",
 			},
 			{
 				ID:        101,
@@ -52,6 +53,7 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 				StartsAt:  now.Add(-time.Hour),
 				ExpiresAt: now.Add(24 * time.Hour),
 				Status:    service.SubscriptionStatusActive,
+				Notes:     "internal linked note",
 				EntitlementLink: &service.UserSubscriptionEntitlementLink{
 					EntitlementID:  5001,
 					PlanID:         &planID,
@@ -86,7 +88,17 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 	require.Contains(t, body, `"entitlement_status":"active"`)
 	require.Contains(t, body, `"entitlement_primary_group_id":901`)
 	require.Contains(t, body, `"entitlement_overage_policy":"balance_fallback"`)
-	for _, forbidden := range []string{"source_external_id", "plan_snapshot", "fulfillment", "source_redeem_code_id"} {
+	for _, forbidden := range []string{
+		"notes",
+		"internal legacy note",
+		"internal linked note",
+		"source_external_id",
+		"source_id",
+		"source_type",
+		"source_redeem_code_id",
+		"plan_snapshot",
+		"fulfillment",
+	} {
 		require.NotContains(t, strings.ToLower(body), forbidden)
 	}
 }

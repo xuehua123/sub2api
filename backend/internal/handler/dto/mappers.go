@@ -847,7 +847,7 @@ func UserEntitlementsFromService(in []service.SubscriptionEntitlement, now time.
 }
 
 // UserSubscriptionFromServiceAdmin converts a service UserSubscription to DTO for admin users.
-// It includes assignment metadata and notes.
+// It includes safe assignment metadata and entitlement linkage.
 func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserSubscription {
 	if sub == nil {
 		return nil
@@ -856,7 +856,6 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		UserSubscription:          userSubscriptionFromServiceBase(sub),
 		AssignedBy:                sub.AssignedBy,
 		AssignedAt:                sub.AssignedAt,
-		Notes:                     sub.Notes,
 		AssignedByUser:            UserFromServiceShallow(sub.AssignedByUser),
 		EntitlementID:             adminSubscriptionEntitlementID(sub.EntitlementLink),
 		PlanID:                    cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
