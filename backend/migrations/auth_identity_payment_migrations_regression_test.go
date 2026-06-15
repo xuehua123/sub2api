@@ -187,6 +187,8 @@ func TestMigration150AddsSubscriptionEntitlementsV2Additively(t *testing.T) {
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS entitlement_id BIGINT REFERENCES subscription_entitlements(id) ON DELETE SET NULL")
 	require.Contains(t, sql, "ON CONFLICT (legacy_subscription_id) DO NOTHING")
 	require.Contains(t, sql, "ON CONFLICT (entitlement_id, group_id) DO NOTHING")
+	require.Contains(t, sql, "Historical usage_logs entitlement attribution is intentionally not backfilled")
+	require.NotContains(t, sql, "UPDATE usage_logs")
 	require.NotContains(t, sql, "DROP TABLE")
 	require.NotContains(t, sql, "DROP COLUMN")
 }

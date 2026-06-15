@@ -14,7 +14,7 @@ import (
 )
 
 func TestValidateConfigRequiresExecuteForWriteModes(t *testing.T) {
-	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeUsageLogs, modeRollback} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := config{
 				Mode:             mode,
@@ -33,7 +33,7 @@ func TestValidateConfigRequiresExecuteForWriteModes(t *testing.T) {
 }
 
 func TestValidateConfigRequiresProductionConfirmationForWriteModes(t *testing.T) {
-	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeUsageLogs, modeRollback} {
 		t.Run(mode, func(t *testing.T) {
 			cfg := config{
 				Mode:             mode,
@@ -123,7 +123,7 @@ func TestNullableFloat(t *testing.T) {
 }
 
 func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
-	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeUsageLogs, modeRollback} {
 		t.Run(mode, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			if err != nil {
@@ -208,6 +208,34 @@ func TestApplyAllowsUnrelatedEntitlementUsage(t *testing.T) {
 
 	if err := ensureWritePreconditions(context.Background(), db, modeApply, "test-version"); err != nil {
 		t.Fatalf("unrelated entitlement usage should not block apply, got %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackfillUsageLogsRunsLimitedBatches(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(25)))
+	mock.ExpectExec("WITH target AS").
+		WithArgs(10).
+		WillReturnResult(sqlmock.NewResult(0, 10))
+
+	sum, err := backfillUsageLogs(context.Background(), db, config{
+		UsageBatchSize:  10,
+		UsageMaxBatches: 1,
+	})
+	if err != nil {
+		t.Fatalf("backfill usage logs failed: %v", err)
+	}
+	if sum.Candidates != 25 || sum.Updated != 10 || sum.Batches != 1 || !sum.Incomplete {
+		t.Fatalf("unexpected usage log summary: %#v", sum)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

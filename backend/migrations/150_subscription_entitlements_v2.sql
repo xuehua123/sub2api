@@ -203,8 +203,8 @@ WHERE ak.user_id = se.user_id
   AND ak.subscription_entitlement_id IS NULL
   AND se.deleted_at IS NULL;
 
-UPDATE usage_logs ul
-SET entitlement_id = se.id
-FROM subscription_entitlements se
-WHERE ul.subscription_id = se.legacy_subscription_id
-  AND ul.entitlement_id IS NULL;
+-- Historical usage_logs entitlement attribution is intentionally not backfilled
+-- during application startup. Large production installations can have millions
+-- of usage rows, and doing that UPDATE here blocks the server from becoming
+-- healthy during deploy. Run the legacy-entitlement-backfill tool's
+-- backfill-usage-logs mode after deployment while both v2 flags remain off.

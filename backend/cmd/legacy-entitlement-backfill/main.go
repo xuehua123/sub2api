@@ -27,6 +27,7 @@ const (
 	modeRollback      = "rollback"
 	modeReconcile     = "reconcile"
 	modeResumeAPIKeys = "resume-api-keys"
+	modeUsageLogs     = "backfill-usage-logs"
 
 	envLocal      = "local"
 	envStaging    = "staging"
@@ -70,6 +71,9 @@ type config struct {
 	Execute             bool
 	ConfirmProduction   string
 	StatementTimeout    time.Duration
+	UsageBatchSize      int
+	UsageMaxBatches     int
+	UsageSleep          time.Duration
 	PrintReconcileSQL   bool
 	AllowNoAccountPools bool
 }
@@ -104,6 +108,11 @@ type summary struct {
 	CandidateAPIKeys              int64             `json:"candidate_api_keys,omitempty"`
 	SkippedAPIKeys                int64             `json:"skipped_api_keys,omitempty"`
 	RolledBackAPIKeys             int64             `json:"rolled_back_api_keys,omitempty"`
+	UsageLogBackfillCandidates    int64             `json:"usage_log_backfill_candidates,omitempty"`
+	UpdatedUsageLogs              int64             `json:"updated_usage_logs,omitempty"`
+	UsageLogBackfillBatches       int64             `json:"usage_log_backfill_batches,omitempty"`
+	UsageLogBatchSize             int               `json:"usage_log_batch_size,omitempty"`
+	UsageLogBackfillIncomplete    bool              `json:"usage_log_backfill_incomplete,omitempty"`
 	Reconciliation                map[string]int64  `json:"reconciliation,omitempty"`
 	ReviewReasons                 map[string]int64  `json:"review_reasons,omitempty"`
 	AmbiguousAPIKeyDetails        []ambiguousAPIKey `json:"ambiguous_api_key_details,omitempty"`
@@ -141,6 +150,13 @@ type snapshotCoverage struct {
 	Details  []snapshotAPIKey
 }
 
+type usageLogBackfillSummary struct {
+	Candidates int64
+	Updated    int64
+	Batches    int64
+	Incomplete bool
+}
+
 type legacyGroup struct {
 	ID                  int64
 	Name                string
@@ -166,6 +182,14 @@ type mapping struct {
 	RuntimeGroupKey string
 	MappingVersion  string
 	Existed         bool
+}
+
+type queryer interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
 }
 
 func main() {
@@ -220,7 +244,7 @@ func parseConfig(args []string, output io.Writer) (config, bool, error) {
 	}
 	fs := flag.NewFlagSet("legacy-entitlement-backfill", flag.ContinueOnError)
 	fs.SetOutput(output)
-	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "Mode: dry-run, apply, snapshot, resume-api-keys, rollback, reconcile")
+	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "Mode: dry-run, apply, snapshot, resume-api-keys, backfill-usage-logs, rollback, reconcile")
 	fs.StringVar(&cfg.Env, "env", cfg.Env, "Target environment label: local, staging, production")
 	fs.StringVar(&cfg.DatabaseURL, "database-url", "", "PostgreSQL URL. Prefer DATABASE_URL env var; value is never printed")
 	fs.StringVar(&cfg.DatabaseURLEnv, "database-url-env", cfg.DatabaseURLEnv, "Environment variable that contains PostgreSQL URL")
@@ -229,6 +253,9 @@ func parseConfig(args []string, output io.Writer) (config, bool, error) {
 	fs.BoolVar(&cfg.Execute, "execute", false, "Required for write modes: apply, snapshot, rollback")
 	fs.StringVar(&cfg.ConfirmProduction, "confirm-production", "", "Required exact confirmation string for production write modes")
 	fs.DurationVar(&cfg.StatementTimeout, "timeout", cfg.StatementTimeout, "Maximum runtime for DB operations")
+	fs.IntVar(&cfg.UsageBatchSize, "usage-batch-size", 10000, "Rows to update per backfill-usage-logs batch")
+	fs.IntVar(&cfg.UsageMaxBatches, "usage-max-batches", 0, "Maximum backfill-usage-logs batches to run; 0 means unlimited")
+	fs.DurationVar(&cfg.UsageSleep, "usage-sleep", 0, "Optional sleep between backfill-usage-logs batches")
 	fs.BoolVar(&cfg.PrintReconcileSQL, "print-reconcile-sql", false, "Include post-write reconciliation SQL snippets in output")
 	fs.BoolVar(&cfg.AllowNoAccountPools, "allow-no-account-pools", false, "Allow apply even when a legacy subscription group has no active schedulable accounts")
 	if err := fs.Parse(args); err != nil {
@@ -246,7 +273,7 @@ func parseConfig(args []string, output io.Writer) (config, bool, error) {
 func validateConfig(cfg config) error {
 	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch cfg.Mode {
-	case modeDryRun, modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback, modeReconcile:
+	case modeDryRun, modeApply, modeSnapshot, modeResumeAPIKeys, modeUsageLogs, modeRollback, modeReconcile:
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
@@ -267,7 +294,16 @@ func validateConfig(cfg config) error {
 	if cfg.StatementTimeout <= 0 {
 		return errors.New("timeout must be positive")
 	}
-	writeMode := cfg.Mode == modeApply || cfg.Mode == modeSnapshot || cfg.Mode == modeResumeAPIKeys || cfg.Mode == modeRollback
+	if cfg.UsageBatchSize < 0 {
+		return errors.New("usage-batch-size must be zero or positive")
+	}
+	if cfg.UsageMaxBatches < 0 {
+		return errors.New("usage-max-batches must be zero or positive")
+	}
+	if cfg.UsageSleep < 0 {
+		return errors.New("usage-sleep must be zero or positive")
+	}
+	writeMode := cfg.Mode == modeApply || cfg.Mode == modeSnapshot || cfg.Mode == modeResumeAPIKeys || cfg.Mode == modeUsageLogs || cfg.Mode == modeRollback
 	if writeMode && !cfg.Execute {
 		return fmt.Errorf("%s mode requires -execute", cfg.Mode)
 	}
@@ -286,6 +322,9 @@ func validateConfig(cfg config) error {
 }
 
 func execute(ctx context.Context, cfg config) (summary, error) {
+	if cfg.UsageBatchSize == 0 {
+		cfg.UsageBatchSize = 10000
+	}
 	sum := summary{
 		Mode:                       cfg.Mode,
 		Env:                        cfg.Env,
@@ -367,6 +406,19 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 		}); err != nil {
 			return sum, err
 		}
+	case modeUsageLogs:
+		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
+			return sum, err
+		}
+		usageSummary, err := backfillUsageLogs(ctx, db, cfg)
+		if err != nil {
+			return sum, err
+		}
+		sum.UsageLogBackfillCandidates = usageSummary.Candidates
+		sum.UpdatedUsageLogs = usageSummary.Updated
+		sum.UsageLogBackfillBatches = usageSummary.Batches
+		sum.UsageLogBatchSize = cfg.UsageBatchSize
+		sum.UsageLogBackfillIncomplete = usageSummary.Incomplete
 	case modeApply:
 		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
 			return sum, err
@@ -400,7 +452,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 
 func writeModeRequiresGate(mode string) bool {
 	switch mode {
-	case modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback:
+	case modeApply, modeSnapshot, modeResumeAPIKeys, modeUsageLogs, modeRollback:
 		return true
 	default:
 		return false
@@ -472,6 +524,80 @@ WHERE ul.entitlement_id IS NOT NULL
 		return fmt.Errorf("refusing apply because %d usage_logs rows already reference entitlements targeted by mapping_version %q; run reconciliation/manual review before backfill", count, mappingVersion)
 	}
 	return nil
+}
+
+func countUsageLogBackfillCandidates(ctx context.Context, db queryer) (int64, error) {
+	var count int64
+	if err := db.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM usage_logs ul
+JOIN subscription_entitlements se
+  ON se.legacy_subscription_id = ul.subscription_id
+ AND se.deleted_at IS NULL
+WHERE ul.subscription_id IS NOT NULL
+  AND ul.entitlement_id IS NULL`).Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func backfillUsageLogs(ctx context.Context, db *sql.DB, cfg config) (usageLogBackfillSummary, error) {
+	var result usageLogBackfillSummary
+	candidates, err := countUsageLogBackfillCandidates(ctx, db)
+	if err != nil {
+		return result, err
+	}
+	result.Candidates = candidates
+	for {
+		if cfg.UsageMaxBatches > 0 && int(result.Batches) >= cfg.UsageMaxBatches {
+			result.Incomplete = true
+			return result, nil
+		}
+		updated, err := backfillUsageLogBatch(ctx, db, cfg.UsageBatchSize)
+		if err != nil {
+			return result, err
+		}
+		if updated == 0 {
+			return result, nil
+		}
+		result.Updated += updated
+		result.Batches++
+		if cfg.UsageSleep > 0 {
+			select {
+			case <-ctx.Done():
+				return result, ctx.Err()
+			case <-time.After(cfg.UsageSleep):
+			}
+		}
+	}
+}
+
+func backfillUsageLogBatch(ctx context.Context, db execer, batchSize int) (int64, error) {
+	res, err := db.ExecContext(ctx, `
+WITH target AS (
+    SELECT ul.id, se.id AS entitlement_id
+    FROM usage_logs ul
+    JOIN subscription_entitlements se
+      ON se.legacy_subscription_id = ul.subscription_id
+     AND se.deleted_at IS NULL
+    WHERE ul.subscription_id IS NOT NULL
+      AND ul.entitlement_id IS NULL
+    ORDER BY ul.id
+    LIMIT $1
+    FOR UPDATE OF ul SKIP LOCKED
+)
+UPDATE usage_logs ul
+SET entitlement_id = target.entitlement_id
+FROM target
+WHERE ul.id = target.id`, batchSize)
+	if err != nil {
+		return 0, err
+	}
+	updated, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return updated, nil
 }
 
 func withTx(ctx context.Context, db *sql.DB, readOnly bool, fn func(*sql.Tx) error) error {
