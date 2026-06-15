@@ -64,6 +64,25 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 					OveragePolicy:  service.SubscriptionEntitlementOverageBalanceFallback,
 				},
 			},
+			{
+				ID:              -5002,
+				UserID:          33,
+				GroupID:         10,
+				StartsAt:        now.Add(-time.Hour),
+				ExpiresAt:       now.Add(48 * time.Hour),
+				Status:          service.SubscriptionStatusActive,
+				Notes:           "internal entitlement-only note",
+				EntitlementOnly: true,
+				EntitlementLink: &service.UserSubscriptionEntitlementLink{
+					EntitlementID:  5002,
+					PlanID:         &planID,
+					PlanName:       &planName,
+					Status:         service.SubscriptionStatusActive,
+					ExpiresAt:      now.Add(48 * time.Hour),
+					PrimaryGroupID: &primaryGroupID,
+					OveragePolicy:  service.SubscriptionEntitlementOverageBlock,
+				},
+			},
 		},
 	}
 	svc := service.NewSubscriptionService(nil, repo, nil, nil, &config.Config{})
@@ -88,10 +107,15 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 	require.Contains(t, body, `"entitlement_status":"active"`)
 	require.Contains(t, body, `"entitlement_primary_group_id":901`)
 	require.Contains(t, body, `"entitlement_overage_policy":"balance_fallback"`)
+	require.Contains(t, body, `"id":-5002`)
+	require.Contains(t, body, `"entitlement_only":true`)
+	require.Contains(t, body, `"entitlement_id":5002`)
+	require.Contains(t, body, `"entitlement_overage_policy":"block"`)
 	for _, forbidden := range []string{
 		"notes",
 		"internal legacy note",
 		"internal linked note",
+		"internal entitlement-only note",
 		"source_external_id",
 		"source_id",
 		"source_type",

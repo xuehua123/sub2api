@@ -9,6 +9,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/suite"
@@ -301,6 +302,78 @@ func (s *UserSubscriptionRepoSuite) TestListByUserID_LoadsLinkedEntitlementSumma
 	s.Require().Nil(subs[0].EntitlementLink.PlanID)
 	s.Require().Nil(subs[0].EntitlementLink.PlanName)
 	s.Require().Nil(subs[2].EntitlementLink)
+}
+
+func (s *UserSubscriptionRepoSuite) TestListByUserID_IncludesEntitlementOnlySubscriptions() {
+	user := s.mustCreateUser("listby-entitlement-only@test.com", service.RoleUser)
+	primaryGroup := s.mustCreateGroup("g-list-entitlement-only-primary")
+	extraGroup := s.mustCreateGroup("g-list-entitlement-only-extra")
+	now := time.Now().UTC()
+
+	plan, err := s.client.SubscriptionPlan.Create().
+		SetGroupID(primaryGroup.ID).
+		SetName("Native V2 Plan").
+		SetPrice(49.9).
+		SetValidityDays(30).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	entitlement, err := s.client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(plan.ID).
+		SetPrimaryGroupID(primaryGroup.ID).
+		SetName("native v2 entitlement").
+		SetSourceType(service.SubscriptionEntitlementSourcePaymentOrder).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetOveragePolicy(service.SubscriptionEntitlementOverageBlock).
+		SetMonthlyLimitUsd(600).
+		Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.SubscriptionEntitlementGroup.Create().
+		SetEntitlementID(entitlement.ID).
+		SetGroupID(primaryGroup.ID).
+		SetSortOrder(0).
+		SetEnabled(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.SubscriptionEntitlementGroup.Create().
+		SetEntitlementID(entitlement.ID).
+		SetGroupID(extraGroup.ID).
+		SetSortOrder(1).
+		SetEnabled(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	subs, err := s.repo.ListByUserID(s.ctx, user.ID)
+	s.Require().NoError(err, "ListByUserID")
+	s.Require().Len(subs, 1)
+	s.Require().True(subs[0].EntitlementOnly)
+	s.Require().Equal(-entitlement.ID, subs[0].ID)
+	s.Require().Equal(user.ID, subs[0].UserID)
+	s.Require().Equal(primaryGroup.ID, subs[0].GroupID)
+	s.Require().NotNil(subs[0].Group)
+	s.Require().Equal(primaryGroup.ID, subs[0].Group.ID)
+	s.Require().NotNil(subs[0].EntitlementLink)
+	s.Require().Equal(entitlement.ID, subs[0].EntitlementLink.EntitlementID)
+	s.Require().NotNil(subs[0].EntitlementLink.PlanID)
+	s.Require().Equal(plan.ID, *subs[0].EntitlementLink.PlanID)
+	s.Require().NotNil(subs[0].EntitlementLink.PlanName)
+	s.Require().Equal("Native V2 Plan", *subs[0].EntitlementLink.PlanName)
+
+	filtered, page, err := s.repo.List(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, &user.ID, nil, service.SubscriptionStatusActive, "", usersubscription.FieldCreatedAt, "desc")
+	s.Require().NoError(err, "List with user filter")
+	s.Require().Len(filtered, 1)
+	s.Require().Equal(int64(1), page.Total)
+	s.Require().True(filtered[0].EntitlementOnly)
+
+	byGroup, groupPage, err := s.repo.ListByGroupID(s.ctx, extraGroup.ID, pagination.PaginationParams{Page: 1, PageSize: 10})
+	s.Require().NoError(err, "ListByGroupID")
+	s.Require().Len(byGroup, 1)
+	s.Require().Equal(int64(1), groupPage.Total)
+	s.Require().True(byGroup[0].EntitlementOnly)
+	s.Require().Equal(extraGroup.ID, byGroup[0].GroupID)
 }
 
 func (s *UserSubscriptionRepoSuite) TestListActiveByUserID() {

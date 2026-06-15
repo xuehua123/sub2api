@@ -30,6 +30,7 @@ type UserSubscription struct {
 	Group          *Group
 	AssignedByUser *User
 
+	EntitlementOnly bool
 	EntitlementLink *UserSubscriptionEntitlementLink
 }
 

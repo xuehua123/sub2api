@@ -3367,6 +3367,7 @@ export default {
       planGroupCount: '{count} groups',
       unmatchedPlan: 'No matching plan',
       legacyGroup: 'Legacy group subscription',
+      entitlementOnly: 'Entitlement',
       adjustingFor: 'Adjusting plan for',
       currentExpiration: 'Current expiration',
       adjustDaysPlaceholder: 'Positive to extend, negative to shorten',

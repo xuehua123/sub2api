@@ -385,7 +385,7 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
+            <div v-if="isLegacySubscriptionRow(row)" class="flex items-center gap-1">
               <button
                 v-if="row.status === 'active' || row.status === 'expired'"
                 @click="handleExtend(row)"
@@ -412,6 +412,12 @@
                 <span class="text-xs">{{ t('admin.subscriptions.revoke') }}</span>
               </button>
             </div>
+            <span
+              v-else
+              class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+            >
+              {{ t('admin.subscriptions.entitlementOnly') }}
+            </span>
           </template>
 
           <template #empty>
@@ -1164,6 +1170,10 @@ const getStatusFilter = (): SubscriptionStatusFilter | undefined => {
   return filters.status === 'active' || filters.status === 'expired' || filters.status === 'revoked'
     ? filters.status
     : undefined
+}
+
+const isLegacySubscriptionRow = (subscription: UserSubscription): boolean => {
+  return !subscription.entitlement_only && subscription.id > 0
 }
 
 const applyFilters = () => {

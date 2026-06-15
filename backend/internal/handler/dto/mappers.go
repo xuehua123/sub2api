@@ -857,6 +857,7 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		AssignedBy:                sub.AssignedBy,
 		AssignedAt:                sub.AssignedAt,
 		AssignedByUser:            UserFromServiceShallow(sub.AssignedByUser),
+		EntitlementOnly:           sub.EntitlementOnly,
 		EntitlementID:             adminSubscriptionEntitlementID(sub.EntitlementLink),
 		PlanID:                    cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
 		PlanName:                  cloneString(adminSubscriptionPlanName(sub.EntitlementLink)),
@@ -1109,6 +1110,10 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		UpdatedAt:          sub.UpdatedAt,
 		User:               UserFromServiceShallow(sub.User),
 		Group:              GroupFromServiceShallow(sub.Group),
+		EntitlementOnly:    sub.EntitlementOnly,
+		EntitlementID:      adminSubscriptionEntitlementID(sub.EntitlementLink),
+		PlanID:             cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
+		PlanName:           cloneString(adminSubscriptionPlanName(sub.EntitlementLink)),
 	}
 }
 

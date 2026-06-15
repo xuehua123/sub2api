@@ -301,6 +301,54 @@ func (s *UserRepoSuite) TestListWithFilters_LoadsActiveSubscriptions() {
 	s.Require().Equal(groupActive.ID, users[0].Subscriptions[0].Group.ID, "group ID mismatch")
 }
 
+func (s *UserRepoSuite) TestListWithFilters_LoadsActiveEntitlementOnlySubscriptions() {
+	user := s.mustCreateUser(&service.User{Email: "entitlement-only-user@test.com", Status: service.StatusActive})
+	primaryGroup := s.mustCreateGroup("g-user-entitlement-only-primary")
+	now := time.Now().UTC()
+
+	plan, err := s.client.SubscriptionPlan.Create().
+		SetGroupID(primaryGroup.ID).
+		SetName("Native Payment Plan").
+		SetPrice(49.9).
+		SetValidityDays(30).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	entitlement, err := s.client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(plan.ID).
+		SetPrimaryGroupID(primaryGroup.ID).
+		SetName("native entitlement").
+		SetSourceType(service.SubscriptionEntitlementSourcePaymentOrder).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetOveragePolicy(service.SubscriptionEntitlementOverageBlock).
+		Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.SubscriptionEntitlementGroup.Create().
+		SetEntitlementID(entitlement.ID).
+		SetGroupID(primaryGroup.ID).
+		SetSortOrder(0).
+		SetEnabled(true).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	users, _, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, service.UserListFilters{Search: "entitlement-only-user@"})
+	s.Require().NoError(err, "ListWithFilters")
+	s.Require().Len(users, 1)
+	s.Require().Len(users[0].Subscriptions, 1)
+	sub := users[0].Subscriptions[0]
+	s.Require().True(sub.EntitlementOnly)
+	s.Require().Equal(-entitlement.ID, sub.ID)
+	s.Require().NotNil(sub.Group)
+	s.Require().Equal(primaryGroup.ID, sub.Group.ID)
+	s.Require().NotNil(sub.EntitlementLink)
+	s.Require().Equal(entitlement.ID, sub.EntitlementLink.EntitlementID)
+	s.Require().NotNil(sub.EntitlementLink.PlanName)
+	s.Require().Equal("Native Payment Plan", *sub.EntitlementLink.PlanName)
+}
+
 func (s *UserRepoSuite) TestListWithFilters_CombinedFilters() {
 	s.mustCreateUser(&service.User{
 		Email:    "a@example.com",

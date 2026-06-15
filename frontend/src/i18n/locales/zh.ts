@@ -3444,6 +3444,7 @@ export default {
       planGroupCount: '覆盖 {count} 个分组',
       unmatchedPlan: '未匹配套餐',
       legacyGroup: '旧分组订阅',
+      entitlementOnly: '权益套餐',
       adjustingFor: '为以下用户调整套餐',
       currentExpiration: '当前到期时间',
       adjustDaysPlaceholder: '正数延长，负数缩短',

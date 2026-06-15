@@ -540,6 +540,18 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 				u.Subscriptions = append(u.Subscriptions, *userSubscriptionEntityToService(subs[i]))
 			}
 		}
+		entitlementOnlySubs, err := listEntitlementOnlyAdminSubscriptions(ctx, r.client, entitlementOnlyAdminSubscriptionFilter{
+			UserIDs: userIDs,
+			Status:  service.SubscriptionStatusActive,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		for i := range entitlementOnlySubs {
+			if u, ok := userMap[entitlementOnlySubs[i].UserID]; ok {
+				u.Subscriptions = append(u.Subscriptions, entitlementOnlySubs[i])
+			}
+		}
 	}
 
 	allowedGroupsByUser, err := r.loadAllowedGroups(ctx, userIDs)

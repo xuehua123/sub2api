@@ -378,7 +378,7 @@
               <GroupBadge
                 v-for="sub in row.subscriptions"
                 :key="sub.id"
-                :name="sub.group?.name || ''"
+                :name="getSubscriptionBadgeName(sub)"
                 :platform="sub.group?.platform"
                 :subscription-type="sub.group?.subscription_type"
                 :rate-multiplier="sub.group?.rate_multiplier"
@@ -778,7 +778,7 @@ import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
-import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
+import type { AdminUser, AdminGroup, UserAttributeDefinition, UserSubscription } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { PlatformQuotaItem } from '@/api/admin/users'
 import type { Column } from '@/components/common/types'
@@ -1486,6 +1486,13 @@ const getDaysRemaining = (expiresAt: string): number => {
   const expires = new Date(expiresAt)
   const diffMs = expires.getTime() - now.getTime()
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24))
+}
+
+const getSubscriptionBadgeName = (subscription: UserSubscription): string => {
+  if (subscription.entitlement_only && subscription.plan_name) {
+    return subscription.plan_name
+  }
+  return subscription.group?.name || subscription.plan_name || ''
 }
 
 const loadAttributeDefinitions = async () => {

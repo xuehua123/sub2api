@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -153,6 +155,14 @@ func (r *userSubscriptionRepository) ListByUserID(ctx context.Context, userID in
 	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
 		return nil, err
 	}
+	entitlementOnly, err := listEntitlementOnlyAdminSubscriptions(ctx, client, entitlementOnlyAdminSubscriptionFilter{
+		UserIDs: []int64{userID},
+	})
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, entitlementOnly...)
+	sortUserSubscriptionsForAdmin(out, usersubscription.FieldCreatedAt, "desc")
 	return out, nil
 }
 
@@ -196,6 +206,18 @@ func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID 
 	out := userSubscriptionEntitiesToService(subs)
 	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
 		return nil, nil, err
+	}
+	entitlementOnly, err := listEntitlementOnlyAdminSubscriptions(ctx, client, entitlementOnlyAdminSubscriptionFilter{
+		GroupID: &groupID,
+		Status:  service.SubscriptionStatusActive,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	out = append(out, entitlementOnly...)
+	sortUserSubscriptionsForAdmin(out, usersubscription.FieldCreatedAt, "desc")
+	if paginationResult := paginationResultFromTotal(int64(total+len(entitlementOnly)), params); paginationResult != nil {
+		return out, paginationResult, nil
 	}
 	return out, paginationResultFromTotal(int64(total), params), nil
 }
@@ -278,7 +300,205 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
 		return nil, nil, err
 	}
+	if userID != nil || groupID != nil {
+		entitlementOnly, err := listEntitlementOnlyAdminSubscriptions(ctx, client, entitlementOnlyAdminSubscriptionFilter{
+			UserID:   userID,
+			GroupID:  groupID,
+			Status:   status,
+			Platform: platform,
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		out = append(out, entitlementOnly...)
+		sortUserSubscriptionsForAdmin(out, field, sortOrder)
+		total += len(entitlementOnly)
+	}
 	return out, paginationResultFromTotal(int64(total), params), nil
+}
+
+type entitlementOnlyAdminSubscriptionFilter struct {
+	UserIDs  []int64
+	UserID   *int64
+	GroupID  *int64
+	Status   string
+	Platform string
+}
+
+func listEntitlementOnlyAdminSubscriptions(ctx context.Context, client *dbent.Client, filter entitlementOnlyAdminSubscriptionFilter) ([]service.UserSubscription, error) {
+	q := client.SubscriptionEntitlement.Query().
+		Where(
+			subscriptionentitlement.DeletedAtIsNil(),
+			subscriptionentitlement.LegacySubscriptionIDIsNil(),
+		).
+		WithUser().
+		WithPlan().
+		WithPrimaryGroup().
+		WithAssignedByUser().
+		WithSubscriptionEntitlementGroups(func(gq *dbent.SubscriptionEntitlementGroupQuery) {
+			gq.Where(subscriptionentitlementgroup.EnabledEQ(true)).
+				WithGroup()
+		})
+
+	if len(filter.UserIDs) > 0 {
+		q = q.Where(subscriptionentitlement.UserIDIn(filter.UserIDs...))
+	}
+	if filter.UserID != nil {
+		q = q.Where(subscriptionentitlement.UserIDEQ(*filter.UserID))
+	}
+	if filter.GroupID != nil {
+		q = q.Where(subscriptionentitlement.HasSubscriptionEntitlementGroupsWith(
+			subscriptionentitlementgroup.GroupIDEQ(*filter.GroupID),
+			subscriptionentitlementgroup.EnabledEQ(true),
+		))
+	}
+	if filter.Platform != "" {
+		q = q.Where(subscriptionentitlement.HasSubscriptionEntitlementGroupsWith(
+			subscriptionentitlementgroup.EnabledEQ(true),
+			subscriptionentitlementgroup.HasGroupWith(group.PlatformEQ(filter.Platform)),
+		))
+	}
+	now := time.Now()
+	switch filter.Status {
+	case service.SubscriptionStatusActive:
+		q = q.Where(
+			subscriptionentitlement.StatusEQ(service.SubscriptionStatusActive),
+			subscriptionentitlement.ExpiresAtGT(now),
+		)
+	case service.SubscriptionStatusExpired:
+		q = q.Where(
+			subscriptionentitlement.Or(
+				subscriptionentitlement.StatusEQ(service.SubscriptionStatusExpired),
+				subscriptionentitlement.And(
+					subscriptionentitlement.StatusEQ(service.SubscriptionStatusActive),
+					subscriptionentitlement.ExpiresAtLTE(now),
+				),
+			),
+		)
+	case "":
+	default:
+		q = q.Where(subscriptionentitlement.StatusEQ(filter.Status))
+	}
+
+	entitlements, err := q.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]service.UserSubscription, 0, len(entitlements))
+	for i := range entitlements {
+		if sub := entitlementOnlyAdminSubscriptionFromEntity(entitlements[i], filter.GroupID); sub != nil {
+			out = append(out, *sub)
+		}
+	}
+	return out, nil
+}
+
+func entitlementOnlyAdminSubscriptionFromEntity(ent *dbent.SubscriptionEntitlement, preferredGroupID *int64) *service.UserSubscription {
+	if ent == nil {
+		return nil
+	}
+	groupID, groupEnt := entitlementAdminDisplayGroup(ent, preferredGroupID)
+	if groupID <= 0 {
+		return nil
+	}
+	sub := &service.UserSubscription{
+		ID:                 -ent.ID,
+		UserID:             ent.UserID,
+		GroupID:            groupID,
+		StartsAt:           ent.StartsAt,
+		ExpiresAt:          ent.ExpiresAt,
+		Status:             ent.Status,
+		DailyWindowStart:   cloneTimePtr(ent.DailyWindowStart),
+		WeeklyWindowStart:  cloneTimePtr(ent.WeeklyWindowStart),
+		MonthlyWindowStart: cloneTimePtr(ent.MonthlyWindowStart),
+		DailyUsageUSD:      ent.DailyUsageUsd,
+		WeeklyUsageUSD:     ent.WeeklyUsageUsd,
+		MonthlyUsageUSD:    ent.MonthlyUsageUsd,
+		AssignedBy:         cloneInt64Ptr(ent.AssignedBy),
+		AssignedAt:         ent.AssignedAt,
+		CreatedAt:          ent.CreatedAt,
+		UpdatedAt:          ent.UpdatedAt,
+		User:               userEntityToService(ent.Edges.User),
+		Group:              groupEntityToService(groupEnt),
+		AssignedByUser:     userEntityToService(ent.Edges.AssignedByUser),
+		EntitlementOnly:    true,
+		EntitlementLink:    adminSubscriptionEntitlementLinkFromEntity(ent),
+	}
+	if sub.Group == nil && ent.Edges.PrimaryGroup != nil {
+		sub.Group = groupEntityToService(ent.Edges.PrimaryGroup)
+	}
+	if sub.EntitlementLink != nil && sub.EntitlementLink.PrimaryGroupID == nil {
+		sub.EntitlementLink.PrimaryGroupID = cloneInt64Ptr(ent.PrimaryGroupID)
+	}
+	return sub
+}
+
+func entitlementAdminDisplayGroup(ent *dbent.SubscriptionEntitlement, preferredGroupID *int64) (int64, *dbent.Group) {
+	if ent == nil {
+		return 0, nil
+	}
+	if preferredGroupID != nil {
+		for _, grant := range ent.Edges.SubscriptionEntitlementGroups {
+			if grant != nil && grant.Enabled && grant.GroupID == *preferredGroupID {
+				return grant.GroupID, grant.Edges.Group
+			}
+		}
+	}
+	if ent.PrimaryGroupID != nil {
+		if ent.Edges.PrimaryGroup != nil {
+			return *ent.PrimaryGroupID, ent.Edges.PrimaryGroup
+		}
+		for _, grant := range ent.Edges.SubscriptionEntitlementGroups {
+			if grant != nil && grant.Enabled && grant.GroupID == *ent.PrimaryGroupID {
+				return grant.GroupID, grant.Edges.Group
+			}
+		}
+		return *ent.PrimaryGroupID, nil
+	}
+	var best *dbent.SubscriptionEntitlementGroup
+	for _, grant := range ent.Edges.SubscriptionEntitlementGroups {
+		if grant == nil || !grant.Enabled {
+			continue
+		}
+		if best == nil || grant.SortOrder < best.SortOrder || (grant.SortOrder == best.SortOrder && grant.GroupID < best.GroupID) {
+			best = grant
+		}
+	}
+	if best != nil {
+		return best.GroupID, best.Edges.Group
+	}
+	return 0, nil
+}
+
+func sortUserSubscriptionsForAdmin(subs []service.UserSubscription, field, sortOrder string) {
+	if len(subs) < 2 {
+		return
+	}
+	desc := sortOrder != "asc"
+	switch field {
+	case usersubscription.FieldExpiresAt:
+		sort.SliceStable(subs, func(i, j int) bool {
+			if desc {
+				return subs[i].ExpiresAt.After(subs[j].ExpiresAt)
+			}
+			return subs[i].ExpiresAt.Before(subs[j].ExpiresAt)
+		})
+	case usersubscription.FieldStatus:
+		sort.SliceStable(subs, func(i, j int) bool {
+			if desc {
+				return subs[i].Status > subs[j].Status
+			}
+			return subs[i].Status < subs[j].Status
+		})
+	default:
+		sort.SliceStable(subs, func(i, j int) bool {
+			if desc {
+				return subs[i].CreatedAt.After(subs[j].CreatedAt)
+			}
+			return subs[i].CreatedAt.Before(subs[j].CreatedAt)
+		})
+	}
 }
 
 func attachUserSubscriptionEntitlementLinks(ctx context.Context, client *dbent.Client, subs []service.UserSubscription) error {
@@ -375,6 +595,14 @@ func cloneInt64Ptr(v *int64) *int64 {
 }
 
 func cloneStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneTimePtr(v *time.Time) *time.Time {
 	if v == nil {
 		return nil
 	}

@@ -1653,8 +1653,10 @@ export interface UserSubscription {
   expires_at: string | null
   user?: User
   group?: Group
+  entitlement_only?: boolean
   entitlement_id?: number
   plan_id?: number | null
+  plan_name?: string | null
   groups?: UserEntitlementGroup[]
   overage_policy?: 'block' | 'balance_fallback' | string
 }

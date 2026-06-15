@@ -603,6 +603,11 @@ type UserSubscription struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
+
+	EntitlementOnly bool    `json:"entitlement_only,omitempty"`
+	EntitlementID   *int64  `json:"entitlement_id,omitempty"`
+	PlanID          *int64  `json:"plan_id,omitempty"`
+	PlanName        *string `json:"plan_name,omitempty"`
 }
 
 type UserSubscriptionAlias struct {
@@ -683,6 +688,7 @@ type AdminUserSubscription struct {
 
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
 
+	EntitlementOnly           bool       `json:"entitlement_only"`
 	EntitlementID             *int64     `json:"entitlement_id"`
 	PlanID                    *int64     `json:"plan_id"`
 	PlanName                  *string    `json:"plan_name"`
