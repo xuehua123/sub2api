@@ -69,11 +69,18 @@ func UserFromServiceAdmin(u *service.User) *AdminUser {
 	if base == nil {
 		return nil
 	}
+	base.Subscriptions = nil
+	subscriptions := make([]AdminUserSubscription, 0, len(u.Subscriptions))
+	for i := range u.Subscriptions {
+		s := u.Subscriptions[i]
+		subscriptions = append(subscriptions, *UserSubscriptionFromServiceAdmin(&s))
+	}
 	return &AdminUser{
-		User:       *base,
-		Notes:      u.Notes,
-		LastUsedAt: u.LastUsedAt,
-		GroupRates: u.GroupRates,
+		User:          *base,
+		Notes:         u.Notes,
+		LastUsedAt:    u.LastUsedAt,
+		Subscriptions: subscriptions,
+		GroupRates:    u.GroupRates,
 	}
 }
 
@@ -1110,10 +1117,6 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		UpdatedAt:          sub.UpdatedAt,
 		User:               UserFromServiceShallow(sub.User),
 		Group:              GroupFromServiceShallow(sub.Group),
-		EntitlementOnly:    sub.EntitlementOnly,
-		EntitlementID:      adminSubscriptionEntitlementID(sub.EntitlementLink),
-		PlanID:             cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
-		PlanName:           cloneString(adminSubscriptionPlanName(sub.EntitlementLink)),
 	}
 }
 

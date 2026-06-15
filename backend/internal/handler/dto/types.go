@@ -45,6 +45,9 @@ type AdminUser struct {
 
 	Notes      string     `json:"notes"`
 	LastUsedAt *time.Time `json:"last_used_at"`
+	// Admin subscriptions use a separate DTO so V2 entitlement-only rows can
+	// expose safe plan links without changing public user subscription shape.
+	Subscriptions []AdminUserSubscription `json:"subscriptions,omitempty"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier
 	GroupRates map[int64]float64 `json:"group_rates,omitempty"`
@@ -603,11 +606,6 @@ type UserSubscription struct {
 
 	User  *User  `json:"user,omitempty"`
 	Group *Group `json:"group,omitempty"`
-
-	EntitlementOnly bool    `json:"entitlement_only,omitempty"`
-	EntitlementID   *int64  `json:"entitlement_id,omitempty"`
-	PlanID          *int64  `json:"plan_id,omitempty"`
-	PlanName        *string `json:"plan_name,omitempty"`
 }
 
 type UserSubscriptionAlias struct {
