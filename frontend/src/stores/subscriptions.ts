@@ -6,7 +6,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import subscriptionsAPI from '@/api/subscriptions'
-import type { UserSubscription } from '@/types'
+import type { UserEntitlement, UserSubscription } from '@/types'
 
 // Cache TTL: 60 seconds
 const CACHE_TTL_MS = 60_000
@@ -17,18 +17,24 @@ let requestGeneration = 0
 export const useSubscriptionStore = defineStore('subscriptions', () => {
   // State
   const activeSubscriptions = ref<UserSubscription[]>([])
+  const entitlements = ref<UserEntitlement[]>([])
   const loading = ref(false)
+  const entitlementsLoading = ref(false)
   const loaded = ref(false)
+  const entitlementsLoaded = ref(false)
   const lastFetchedAt = ref<number | null>(null)
+  const entitlementsLastFetchedAt = ref<number | null>(null)
 
   // In-flight request deduplication
   let activePromise: Promise<UserSubscription[]> | null = null
+  let entitlementPromise: Promise<UserEntitlement[]> | null = null
 
   // Auto-refresh interval
   let pollerInterval: ReturnType<typeof setInterval> | null = null
 
   // Computed
   const hasActiveSubscriptions = computed(() => activeSubscriptions.value.length > 0)
+  const hasEntitlements = computed(() => entitlements.value.length > 0)
 
   /**
    * Fetch active subscriptions with caching and deduplication
@@ -83,6 +89,51 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
   }
 
   /**
+   * Fetch entitlement v2 records without changing legacy subscription state.
+   * @param force - Force refresh even if cache is valid
+   */
+  async function fetchEntitlements(force = false): Promise<UserEntitlement[]> {
+    const now = Date.now()
+
+    if (
+      !force &&
+      entitlementsLoaded.value &&
+      entitlementsLastFetchedAt.value &&
+      now - entitlementsLastFetchedAt.value < CACHE_TTL_MS
+    ) {
+      return entitlements.value
+    }
+
+    if (entitlementPromise && !force) {
+      return entitlementPromise
+    }
+
+    entitlementsLoading.value = true
+    const requestPromise = subscriptionsAPI
+      .getEntitlements()
+      .then((data) => {
+        entitlements.value = data
+        entitlementsLoaded.value = true
+        entitlementsLastFetchedAt.value = Date.now()
+        return data
+      })
+      .catch((error) => {
+        console.error('Failed to fetch entitlements:', error)
+        throw error
+      })
+      .finally(() => {
+        if (entitlementPromise === requestPromise) {
+          entitlementsLoading.value = false
+          entitlementPromise = null
+        }
+      })
+
+    entitlementPromise = requestPromise
+
+    return entitlementPromise
+  }
+
+  /**
    * Start auto-refresh polling 
    */
   function startPolling() {
@@ -111,9 +162,13 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
   function clear() {
     requestGeneration++
     activePromise = null
+    entitlementPromise = null
     activeSubscriptions.value = []
+    entitlements.value = []
     loaded.value = false
+    entitlementsLoaded.value = false
     lastFetchedAt.value = null
+    entitlementsLastFetchedAt.value = null
     stopPolling()
   }
 
@@ -122,16 +177,21 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
    */
   function invalidateCache() {
     lastFetchedAt.value = null
+    entitlementsLastFetchedAt.value = null
   }
 
   return {
     // State
     activeSubscriptions,
+    entitlements,
     loading,
+    entitlementsLoading,
     hasActiveSubscriptions,
+    hasEntitlements,
 
     // Actions
     fetchActiveSubscriptions,
+    fetchEntitlements,
     startPolling,
     stopPolling,
     clear,

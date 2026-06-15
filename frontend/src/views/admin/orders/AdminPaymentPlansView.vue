@@ -12,19 +12,26 @@
       <!-- Plans Table -->
       <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
         <template #cell-name="{ value, row }">
-          <span class="text-sm font-medium" :class="getPlanNameClass(row.group_id)">{{ value }}</span>
+          <span class="text-sm font-medium" :class="getPlanNameClass(row)">{{ value }}</span>
         </template>
-        <template #cell-group_id="{ value }">
-          <span v-if="isGroupMissing(value)" class="text-sm">
-            <span class="text-gray-400">#{{ value }}</span>
+        <template #cell-access_scope="{ value }">
+          <span class="text-sm text-gray-700 dark:text-gray-300">{{ getAccessScopeLabel(value) }}</span>
+        </template>
+        <template #cell-groups="{ row }">
+          <div v-if="row.groups && row.groups.length > 0" class="flex flex-wrap items-center gap-1">
+            <GroupBadge
+              v-for="group in row.groups.slice(0, 3)"
+              :key="group.id"
+              :name="group.name"
+              :platform="group.platform"
+              :rate-multiplier="group.rate_multiplier"
+            />
+            <span v-if="row.groups.length > 3" class="text-xs text-gray-500 dark:text-gray-400">+{{ row.groups.length - 3 }}</span>
+          </div>
+          <span v-else-if="row.group_ids && row.group_ids.length > 0" class="text-sm">
+            <span class="text-gray-400">#{{ row.group_ids.join(', #') }}</span>
             <span class="ml-1 badge badge-danger">{{ t('payment.admin.groupMissing') }}</span>
           </span>
-          <GroupBadge
-            v-else-if="getGroup(value)"
-            :name="getGroup(value)!.name"
-            :platform="getGroup(value)!.platform"
-            :rate-multiplier="getGroup(value)!.rate_multiplier"
-          />
           <span v-else class="text-sm text-gray-400">-</span>
         </template>
         <template #cell-price="{ value, row }">
@@ -109,12 +116,10 @@ function getGroup(id: number): AdminGroup | undefined {
   return groups.value.find(g => g.id === id)
 }
 
-function isGroupMissing(id: number): boolean {
-  return id > 0 && !groups.value.find(g => g.id === id)
-}
-
-function getPlanNameClass(groupId: number): string {
-  const group = getGroup(groupId)
+function getPlanNameClass(plan: SubscriptionPlan): string {
+  const firstGroup = plan.groups?.[0]
+  if (firstGroup?.platform) return platformTextClass(firstGroup.platform)
+  const group = getGroup(plan.group_id)
   return group ? platformTextClass(group.platform) : 'text-gray-900 dark:text-white'
 }
 
@@ -149,7 +154,8 @@ const deletingPlanId = ref<number | null>(null)
 const planColumns = computed((): Column[] => [
   { key: 'id', label: 'ID' },
   { key: 'name', label: t('payment.admin.planName') },
-  { key: 'group_id', label: t('payment.admin.group') },
+  { key: 'access_scope', label: t('payment.admin.accessScope') },
+  { key: 'groups', label: t('payment.admin.authorizedGroups') },
   { key: 'price', label: t('payment.admin.price') },
   { key: 'validity_days', label: t('payment.admin.validityDays') },
   { key: 'for_sale', label: t('payment.admin.forSale') },
@@ -164,6 +170,11 @@ async function loadPlans() {
     // Backend returns features as newline-separated string; parse to array
     plans.value = (res.data || []).map((p: Omit<SubscriptionPlan, 'features'> & { features: string | string[] }) => ({
       ...p,
+      access_scope: p.access_scope || 'explicit',
+      group_ids: p.group_ids && p.group_ids.length > 0 ? p.group_ids : (p.group_id ? [p.group_id] : []),
+      groups: p.groups || [],
+      allowed_platforms: p.allowed_platforms || [],
+      overage_policy: p.overage_policy || 'block',
       features: typeof p.features === 'string'
         ? p.features.split('\n').map((f: string) => f.trim()).filter(Boolean)
         : (p.features || []),
@@ -176,6 +187,17 @@ async function loadPlans() {
 function openPlanEdit(plan: SubscriptionPlan | null) {
   editingPlan.value = plan
   showPlanDialog.value = true
+}
+
+function getAccessScopeLabel(scope: string | null | undefined): string {
+  switch (scope) {
+    case 'platform_subscription_groups':
+      return t('payment.admin.platformSubscriptionGroups')
+    case 'all_subscription_groups':
+      return t('payment.admin.allSubscriptionGroups')
+    default:
+      return t('payment.admin.explicitGroups')
+  }
 }
 
 

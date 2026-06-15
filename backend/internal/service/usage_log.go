@@ -11,6 +11,48 @@ const (
 	BillingTypeSubscription int8 = 1 // 订阅套餐
 )
 
+const (
+	BillingSourceBalance                    = "balance"
+	BillingSourceLegacySubscription         = "legacy_subscription"
+	BillingSourceEntitlementQuota           = "entitlement_quota"
+	BillingSourceEntitlementBalanceFallback = "entitlement_balance_fallback"
+)
+
+func IsValidUsageBillingSource(source string) bool {
+	switch source {
+	case BillingSourceBalance,
+		BillingSourceLegacySubscription,
+		BillingSourceEntitlementQuota,
+		BillingSourceEntitlementBalanceFallback:
+		return true
+	default:
+		return false
+	}
+}
+
+func ResolveUsageBillingSource(billingType int8, subscriptionID, entitlementID *int64, entitlementBalanceFallback bool) string {
+	if entitlementID != nil {
+		if entitlementBalanceFallback {
+			return BillingSourceEntitlementBalanceFallback
+		}
+		return BillingSourceEntitlementQuota
+	}
+	if billingType == BillingTypeSubscription || subscriptionID != nil {
+		return BillingSourceLegacySubscription
+	}
+	return BillingSourceBalance
+}
+
+func ResolveUsageBillingSourceFromApplyResult(billingType int8, subscriptionID, entitlementID *int64, result *UsageBillingApplyResult) string {
+	if entitlementID != nil {
+		if result != nil && result.NewBalance != nil {
+			return BillingSourceEntitlementBalanceFallback
+		}
+		return BillingSourceEntitlementQuota
+	}
+	return ResolveUsageBillingSource(billingType, subscriptionID, entitlementID, false)
+}
+
 type RequestType int16
 
 const (
@@ -125,6 +167,7 @@ type UsageLog struct {
 
 	GroupID        *int64
 	SubscriptionID *int64
+	EntitlementID  *int64
 
 	InputTokens         int
 	OutputTokens        int
@@ -149,12 +192,13 @@ type UsageLog struct {
 	// AccountStatsCost 账号统计定价预计算费用（nil = 使用默认公式 total_cost × account_rate_multiplier）
 	AccountStatsCost *float64
 
-	BillingType  int8
-	RequestType  RequestType
-	Stream       bool
-	OpenAIWSMode bool
-	DurationMs   *int
-	FirstTokenMs *int
+	BillingType   int8
+	BillingSource *string
+	RequestType   RequestType
+	Stream        bool
+	OpenAIWSMode  bool
+	DurationMs    *int
+	FirstTokenMs  *int
 	// FirstSSEEventMs records the time until the first upstream SSE event reaches sub2api.
 	FirstSSEEventMs *int
 	// FirstClientFlushMs records the time until sub2api first flushes bytes to the downstream client.
@@ -211,4 +255,32 @@ func (u *UsageLog) SyncRequestTypeAndLegacyFields() {
 	requestType := u.EffectiveRequestType()
 	u.RequestType = requestType
 	u.Stream, u.OpenAIWSMode = ApplyLegacyRequestFields(requestType, u.Stream, u.OpenAIWSMode)
+}
+
+func (u *UsageLog) EffectiveBillingSource() string {
+	if u == nil {
+		return ""
+	}
+	if u.BillingSource != nil {
+		source := strings.TrimSpace(*u.BillingSource)
+		if IsValidUsageBillingSource(source) {
+			return source
+		}
+	}
+	if u.EntitlementID != nil {
+		return ""
+	}
+	return ResolveUsageBillingSource(u.BillingType, u.SubscriptionID, nil, false)
+}
+
+func (u *UsageLog) SetBillingSource(source string) {
+	if u == nil {
+		return
+	}
+	source = strings.TrimSpace(source)
+	if !IsValidUsageBillingSource(source) {
+		u.BillingSource = nil
+		return
+	}
+	u.BillingSource = &source
 }

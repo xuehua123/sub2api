@@ -33,12 +33,24 @@ func newAPIKeyRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *apiKeyR
 	return &apiKeyRepository{client: client, sql: sqlq}
 }
 
+func normalizeAPIKeyAccessSourceForPersistence(key *service.APIKey) {
+	if key == nil || key.AccessSource != "" {
+		return
+	}
+	if key.SubscriptionEntitlementID != nil {
+		key.AccessSource = service.APIKeyAccessSourceEntitlement
+		return
+	}
+	key.AccessSource = service.APIKeyAccessSourceBalance
+}
+
 func (r *apiKeyRepository) activeQuery() *dbent.APIKeyQuery {
 	// 默认过滤已软删除记录，避免删除后仍被查询到。
 	return r.client.APIKey.Query().Where(apikey.DeletedAtIsNil())
 }
 
 func (r *apiKeyRepository) Create(ctx context.Context, key *service.APIKey) error {
+	normalizeAPIKeyAccessSourceForPersistence(key)
 	created, err := r.createWithClient(ctx, clientFromContext(ctx, r.client), key)
 	if err == nil {
 		populateCreatedAPIKey(key, created)
@@ -52,8 +64,10 @@ func (r *apiKeyRepository) createWithClient(ctx context.Context, client *dbent.C
 		SetKey(key.Key).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetAccessSource(key.AccessSource).
 		SetAutoSwitchGroupEnabled(key.AutoSwitchGroupEnabled).
 		SetNillableGroupID(key.GroupID).
+		SetNillableSubscriptionEntitlementID(key.SubscriptionEntitlementID).
 		SetNillableLastUsedAt(key.LastUsedAt).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
@@ -75,6 +89,8 @@ func (r *apiKeyRepository) createWithClient(ctx context.Context, client *dbent.C
 func populateCreatedAPIKey(key *service.APIKey, created *dbent.APIKey) {
 	key.ID = created.ID
 	key.AutoSwitchGroupEnabled = created.AutoSwitchGroupEnabled
+	key.SubscriptionEntitlementID = created.SubscriptionEntitlementID
+	key.AccessSource = created.AccessSource
 	key.LastUsedAt = created.LastUsedAt
 	key.CreatedAt = created.CreatedAt
 	key.UpdatedAt = created.UpdatedAt
@@ -140,6 +156,8 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 			apikey.FieldID,
 			apikey.FieldUserID,
 			apikey.FieldGroupID,
+			apikey.FieldSubscriptionEntitlementID,
+			apikey.FieldAccessSource,
 			apikey.FieldAutoSwitchGroupEnabled,
 			apikey.FieldName,
 			apikey.FieldStatus,
@@ -183,6 +201,9 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldIsExclusive,
 				group.FieldStatus,
 				group.FieldSubscriptionType,
+				group.FieldBalanceEnabled,
+				group.FieldSubscriptionEnabled,
+				group.FieldPlanAutoGrantEnabled,
 				group.FieldRateMultiplier,
 				group.FieldDailyLimitUsd,
 				group.FieldWeeklyLimitUsd,
@@ -218,6 +239,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
+	normalizeAPIKeyAccessSourceForPersistence(key)
 	return r.updateWithClient(ctx, clientFromContext(ctx, r.client), key)
 }
 
@@ -232,6 +254,7 @@ func (r *apiKeyRepository) updateWithClient(ctx context.Context, client *dbent.C
 		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil()).
 		SetName(key.Name).
 		SetStatus(key.Status).
+		SetAccessSource(key.AccessSource).
 		SetAutoSwitchGroupEnabled(key.AutoSwitchGroupEnabled).
 		SetQuota(key.Quota).
 		SetQuotaUsed(key.QuotaUsed).
@@ -246,6 +269,11 @@ func (r *apiKeyRepository) updateWithClient(ctx context.Context, client *dbent.C
 		builder.SetGroupID(*key.GroupID)
 	} else {
 		builder.ClearGroupID()
+	}
+	if key.SubscriptionEntitlementID != nil {
+		builder.SetSubscriptionEntitlementID(*key.SubscriptionEntitlementID)
+	} else {
+		builder.ClearSubscriptionEntitlementID()
 	}
 
 	// Expiration time
@@ -585,6 +613,28 @@ func (r *apiKeyRepository) CompareAndSwapGroupID(ctx context.Context, id int64, 
 	return affected > 0, nil
 }
 
+func (r *apiKeyRepository) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	client := clientFromContext(ctx, r.client)
+	update := client.APIKey.Update().
+		Where(apikey.IDEQ(id), apikey.GroupIDEQ(oldGroupID), apikey.DeletedAtIsNil()).
+		SetGroupID(newGroupID)
+	if expectedEntitlementID != nil {
+		update.Where(apikey.SubscriptionEntitlementIDEQ(*expectedEntitlementID))
+	} else {
+		update.Where(apikey.SubscriptionEntitlementIDIsNil())
+	}
+	if newEntitlementID != nil {
+		update.SetSubscriptionEntitlementID(*newEntitlementID)
+	} else {
+		update.ClearSubscriptionEntitlementID()
+	}
+	n, err := update.Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // CountByGroupID 获取分组的 API Key 数量
 func (r *apiKeyRepository) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	count, err := r.activeQuery().Where(apikey.GroupIDEQ(groupID)).Count(ctx)
@@ -732,30 +782,32 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		return nil
 	}
 	out := &service.APIKey{
-		ID:                     m.ID,
-		UserID:                 m.UserID,
-		Key:                    m.Key,
-		Name:                   m.Name,
-		Status:                 m.Status,
-		AutoSwitchGroupEnabled: m.AutoSwitchGroupEnabled,
-		IPWhitelist:            m.IPWhitelist,
-		IPBlacklist:            m.IPBlacklist,
-		LastUsedAt:             m.LastUsedAt,
-		CreatedAt:              m.CreatedAt,
-		UpdatedAt:              m.UpdatedAt,
-		GroupID:                m.GroupID,
-		Quota:                  m.Quota,
-		QuotaUsed:              m.QuotaUsed,
-		ExpiresAt:              m.ExpiresAt,
-		RateLimit5h:            m.RateLimit5h,
-		RateLimit1d:            m.RateLimit1d,
-		RateLimit7d:            m.RateLimit7d,
-		Usage5h:                m.Usage5h,
-		Usage1d:                m.Usage1d,
-		Usage7d:                m.Usage7d,
-		Window5hStart:          m.Window5hStart,
-		Window1dStart:          m.Window1dStart,
-		Window7dStart:          m.Window7dStart,
+		ID:                        m.ID,
+		UserID:                    m.UserID,
+		Key:                       m.Key,
+		Name:                      m.Name,
+		Status:                    m.Status,
+		AutoSwitchGroupEnabled:    m.AutoSwitchGroupEnabled,
+		IPWhitelist:               m.IPWhitelist,
+		IPBlacklist:               m.IPBlacklist,
+		LastUsedAt:                m.LastUsedAt,
+		CreatedAt:                 m.CreatedAt,
+		UpdatedAt:                 m.UpdatedAt,
+		GroupID:                   m.GroupID,
+		SubscriptionEntitlementID: m.SubscriptionEntitlementID,
+		AccessSource:              m.AccessSource,
+		Quota:                     m.Quota,
+		QuotaUsed:                 m.QuotaUsed,
+		ExpiresAt:                 m.ExpiresAt,
+		RateLimit5h:               m.RateLimit5h,
+		RateLimit1d:               m.RateLimit1d,
+		RateLimit7d:               m.RateLimit7d,
+		Usage5h:                   m.Usage5h,
+		Usage1d:                   m.Usage1d,
+		Usage7d:                   m.Usage7d,
+		Window5hStart:             m.Window5hStart,
+		Window1dStart:             m.Window1dStart,
+		Window7dStart:             m.Window7dStart,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)
@@ -826,6 +878,9 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		Status:                          g.Status,
 		Hydrated:                        true,
 		SubscriptionType:                g.SubscriptionType,
+		BalanceEnabled:                  g.BalanceEnabled,
+		SubscriptionEnabled:             g.SubscriptionEnabled,
+		PlanAutoGrantEnabled:            g.PlanAutoGrantEnabled,
 		DailyLimitUSD:                   g.DailyLimitUsd,
 		WeeklyLimitUSD:                  g.WeeklyLimitUsd,
 		MonthlyLimitUSD:                 g.MonthlyLimitUsd,

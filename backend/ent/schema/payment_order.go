@@ -84,6 +84,9 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Int64("subscription_group_id").
 			Optional().
 			Nillable(),
+		field.Int64("subscription_entitlement_id").
+			Optional().
+			Nillable(),
 		field.Int("subscription_days").
 			Optional().
 			Nillable(),
@@ -180,6 +183,10 @@ func (PaymentOrder) Edges() []ent.Edge {
 			Field("user_id").
 			Unique().
 			Required(),
+		edge.From("subscription_entitlement", SubscriptionEntitlement.Type).
+			Ref("payment_orders").
+			Field("subscription_entitlement_id").
+			Unique(),
 	}
 }
 
@@ -195,5 +202,6 @@ func (PaymentOrder) Indexes() []ent.Index {
 		index.Fields("paid_at"),
 		index.Fields("payment_type", "paid_at"),
 		index.Fields("order_type"),
+		index.Fields("subscription_entitlement_id"),
 	}
 }

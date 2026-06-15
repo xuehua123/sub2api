@@ -107,7 +107,21 @@ func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *s
 }
 
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
-	if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
+	if cmd.SubscriptionCost > 0 && cmd.EntitlementID != nil {
+		entitlementVersion, usedFallback, err := applyUsageBillingEntitlement(ctx, tx, cmd.UserID, *cmd.EntitlementID, cmd.SubscriptionCost, cmd.EntitlementBalanceFallback)
+		if err != nil {
+			return err
+		}
+		if usedFallback {
+			newBalance, err := deductUsageBillingBalanceStrict(ctx, tx, cmd.UserID, cmd.SubscriptionCost)
+			if err != nil {
+				return err
+			}
+			result.NewBalance = &newBalance
+		} else {
+			result.EntitlementVersion = entitlementVersion
+		}
+	} else if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
 		updatedAt, err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost)
 		if err != nil {
 			return err
@@ -189,6 +203,316 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 		return 0, err
 	}
 	return newBalance, nil
+}
+
+type usageBillingEntitlementState struct {
+	ID                 int64
+	UserID             int64
+	Status             string
+	StartsAt           time.Time
+	ExpiresAt          time.Time
+	DailyWindowStart   sql.NullTime
+	WeeklyWindowStart  sql.NullTime
+	MonthlyWindowStart sql.NullTime
+	DailyLimitUSD      sql.NullFloat64
+	WeeklyLimitUSD     sql.NullFloat64
+	MonthlyLimitUSD    sql.NullFloat64
+	DailyUsageUSD      float64
+	WeeklyUsageUSD     float64
+	MonthlyUsageUSD    float64
+	OveragePolicy      string
+}
+
+func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entitlementID int64, costUSD float64, allowBalanceFallback bool) (int64, bool, error) {
+	if costUSD < 0 {
+		return 0, false, service.ErrSubscriptionEntitlementInvalidUsage
+	}
+
+	state, err := lockUsageBillingEntitlement(ctx, tx, entitlementID)
+	if err != nil {
+		return 0, false, err
+	}
+	now := time.Now().UTC()
+	if state.UserID != userID {
+		return 0, false, service.ErrSubscriptionEntitlementNotFound
+	}
+	if state.Status != service.SubscriptionStatusActive {
+		return 0, false, service.ErrSubscriptionEntitlementInactive
+	}
+	if now.Before(state.StartsAt) || !now.Before(state.ExpiresAt) {
+		return 0, false, service.ErrSubscriptionEntitlementExpired
+	}
+
+	usage := usageBillingEntitlementWindowUsage{
+		dailyWindowStart:   nullTimePtr(state.DailyWindowStart),
+		weeklyWindowStart:  nullTimePtr(state.WeeklyWindowStart),
+		monthlyWindowStart: nullTimePtr(state.MonthlyWindowStart),
+		dailyUsageUSD:      state.DailyUsageUSD,
+		weeklyUsageUSD:     state.WeeklyUsageUSD,
+		monthlyUsageUSD:    state.MonthlyUsageUSD,
+	}
+	usage.activateAndReset(state.StartsAt, state.ExpiresAt, now)
+
+	if usageBillingLimitExceeded(usage.dailyUsageUSD, state.DailyLimitUSD, costUSD) ||
+		usageBillingLimitExceeded(usage.weeklyUsageUSD, state.WeeklyLimitUSD, costUSD) ||
+		usageBillingLimitExceeded(usage.monthlyUsageUSD, state.MonthlyLimitUSD, costUSD) {
+		if allowBalanceFallback && state.OveragePolicy == service.SubscriptionEntitlementOverageBalanceFallback {
+			return 0, true, nil
+		}
+		return 0, false, service.ErrSubscriptionEntitlementQuotaExceeded
+	}
+
+	usage.dailyUsageUSD += costUSD
+	usage.weeklyUsageUSD += costUSD
+	usage.monthlyUsageUSD += costUSD
+
+	var updatedAt time.Time
+	err = tx.QueryRowContext(ctx, `
+		UPDATE subscription_entitlements
+		SET daily_window_start = $1,
+			weekly_window_start = $2,
+			monthly_window_start = $3,
+			daily_usage_usd = $4,
+			weekly_usage_usd = $5,
+			monthly_usage_usd = $6,
+			updated_at = NOW()
+		WHERE id = $7 AND deleted_at IS NULL
+		RETURNING updated_at
+	`,
+		timePtrArg(usage.dailyWindowStart),
+		timePtrArg(usage.weeklyWindowStart),
+		timePtrArg(usage.monthlyWindowStart),
+		usage.dailyUsageUSD,
+		usage.weeklyUsageUSD,
+		usage.monthlyUsageUSD,
+		entitlementID,
+	).Scan(&updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, service.ErrSubscriptionEntitlementNotFound
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return updatedAt.UnixMicro(), false, nil
+}
+
+func lockUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, entitlementID int64) (*usageBillingEntitlementState, error) {
+	var state usageBillingEntitlementState
+	err := tx.QueryRowContext(ctx, `
+		SELECT id, user_id, status, starts_at, expires_at,
+			daily_window_start, weekly_window_start, monthly_window_start,
+			daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
+			daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
+			overage_policy
+		FROM subscription_entitlements
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE
+	`, entitlementID).Scan(
+		&state.ID,
+		&state.UserID,
+		&state.Status,
+		&state.StartsAt,
+		&state.ExpiresAt,
+		&state.DailyWindowStart,
+		&state.WeeklyWindowStart,
+		&state.MonthlyWindowStart,
+		&state.DailyLimitUSD,
+		&state.WeeklyLimitUSD,
+		&state.MonthlyLimitUSD,
+		&state.DailyUsageUSD,
+		&state.WeeklyUsageUSD,
+		&state.MonthlyUsageUSD,
+		&state.OveragePolicy,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &state, nil
+}
+
+type usageBillingEntitlementWindowUsage struct {
+	dailyWindowStart   *time.Time
+	weeklyWindowStart  *time.Time
+	monthlyWindowStart *time.Time
+	dailyUsageUSD      float64
+	weeklyUsageUSD     float64
+	monthlyUsageUSD    float64
+}
+
+func (u *usageBillingEntitlementWindowUsage) activateAndReset(startsAt, expiresAt, now time.Time) {
+	if u.dailyWindowStart == nil && u.weeklyWindowStart == nil && u.monthlyWindowStart == nil {
+		windowStart := startsAt
+		if windowStart.IsZero() {
+			windowStart = now
+		}
+		u.dailyWindowStart = &windowStart
+		u.weeklyWindowStart = &windowStart
+		u.monthlyWindowStart = &windowStart
+		u.dailyUsageUSD = 0
+		u.weeklyUsageUSD = 0
+		u.monthlyUsageUSD = 0
+	}
+	if u.dailyWindowStart != nil &&
+		!usageBillingOneTimeDailyQuota(startsAt, expiresAt) &&
+		usageBillingNeedsWindowResetAt(u.dailyWindowStart, startsAt, 24*time.Hour, now) {
+		windowStart := usageBillingResolvedWindowResetStart(u.dailyWindowStart, startsAt, 24*time.Hour, now)
+		u.dailyWindowStart = &windowStart
+		u.dailyUsageUSD = 0
+	}
+	if usageBillingNeedsWindowResetAt(u.weeklyWindowStart, startsAt, 7*24*time.Hour, now) {
+		windowStart := usageBillingResolvedWindowResetStart(u.weeklyWindowStart, startsAt, 7*24*time.Hour, now)
+		u.weeklyWindowStart = &windowStart
+		u.weeklyUsageUSD = 0
+	}
+	if usageBillingNeedsWindowResetAt(u.monthlyWindowStart, startsAt, 30*24*time.Hour, now) {
+		windowStart := usageBillingResolvedWindowResetStart(u.monthlyWindowStart, startsAt, 30*24*time.Hour, now)
+		u.monthlyWindowStart = &windowStart
+		u.monthlyUsageUSD = 0
+	}
+}
+
+func usageBillingLimitExceeded(current float64, limit sql.NullFloat64, additional float64) bool {
+	return limit.Valid && limit.Float64 > 0 && current+additional > limit.Float64
+}
+
+func nullTimePtr(v sql.NullTime) *time.Time {
+	if !v.Valid {
+		return nil
+	}
+	out := v.Time
+	return &out
+}
+
+func timePtrArg(v *time.Time) any {
+	if v == nil {
+		return nil
+	}
+	return *v
+}
+
+func deductUsageBillingBalanceStrict(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, error) {
+	var newBalance float64
+	err := tx.QueryRowContext(ctx, `
+		UPDATE users
+		SET balance = balance - $1,
+			updated_at = NOW()
+		WHERE id = $2
+			AND deleted_at IS NULL
+			AND balance >= $1
+		RETURNING balance
+	`, amount, userID).Scan(&newBalance)
+	if err == nil {
+		return newBalance, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return 0, err
+	}
+
+	var currentBalance float64
+	checkErr := tx.QueryRowContext(ctx, `
+		SELECT balance
+		FROM users
+		WHERE id = $1 AND deleted_at IS NULL
+	`, userID).Scan(&currentBalance)
+	if errors.Is(checkErr, sql.ErrNoRows) {
+		return 0, service.ErrUserNotFound
+	}
+	if checkErr != nil {
+		return 0, checkErr
+	}
+	return 0, service.ErrInsufficientBalance
+}
+
+func usageBillingNeedsWindowResetAt(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) bool {
+	if windowStart == nil {
+		return false
+	}
+	start := usageBillingEffectiveWindowStartAt(windowStart, startsAt, cycle, now)
+	if start == nil {
+		return false
+	}
+	if !start.After(*windowStart) {
+		return false
+	}
+	return start.Sub(*windowStart) >= cycle
+}
+
+func usageBillingResolvedWindowResetStart(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) time.Time {
+	start := usageBillingEffectiveWindowStartAt(windowStart, startsAt, cycle, now)
+	if start == nil {
+		return now
+	}
+	return *start
+}
+
+func usageBillingEffectiveWindowStartAt(windowStart *time.Time, startsAt time.Time, cycle time.Duration, now time.Time) *time.Time {
+	if windowStart == nil {
+		return nil
+	}
+	windowBased := usageBillingAdvanceWindowStart(*windowStart, cycle, now)
+	if windowStart.After(now) {
+		return &windowBased
+	}
+	if aligned, ok := usageBillingAlignedCycleStart(startsAt, cycle, now); ok {
+		if usageBillingIsLegacyWindowAnchor(*windowStart, startsAt, cycle) || usageBillingIsAlignedWindowAnchor(*windowStart, startsAt, cycle) {
+			return &aligned
+		}
+	}
+	return &windowBased
+}
+
+func usageBillingAdvanceWindowStart(windowStart time.Time, cycle time.Duration, now time.Time) time.Time {
+	if cycle <= 0 {
+		return windowStart
+	}
+	start := windowStart
+	for !start.Add(cycle).After(now) {
+		start = start.Add(cycle)
+	}
+	return start
+}
+
+func usageBillingAlignedCycleStart(startsAt time.Time, cycle time.Duration, now time.Time) (time.Time, bool) {
+	if startsAt.IsZero() || cycle <= 0 {
+		return time.Time{}, false
+	}
+	if now.Before(startsAt) {
+		return startsAt, true
+	}
+	elapsed := now.Sub(startsAt)
+	steps := elapsed / cycle
+	return startsAt.Add(steps * cycle), true
+}
+
+func usageBillingIsAlignedWindowAnchor(windowStart, startsAt time.Time, cycle time.Duration) bool {
+	if cycle <= 0 || windowStart.IsZero() || startsAt.IsZero() || windowStart.Before(startsAt) {
+		return false
+	}
+	return windowStart.Sub(startsAt)%cycle == 0
+}
+
+func usageBillingIsLegacyWindowAnchor(windowStart, startsAt time.Time, cycle time.Duration) bool {
+	if !usageBillingIsStartOfDay(windowStart) || startsAt.IsZero() || windowStart.IsZero() || cycle <= 0 {
+		return false
+	}
+	if windowStart.Before(startsAt) {
+		return true
+	}
+	return !usageBillingIsAlignedWindowAnchor(windowStart, startsAt, cycle)
+}
+
+func usageBillingIsStartOfDay(t time.Time) bool {
+	return t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0
+}
+
+func usageBillingOneTimeDailyQuota(startsAt, expiresAt time.Time) bool {
+	if startsAt.IsZero() || expiresAt.IsZero() {
+		return false
+	}
+	return !expiresAt.After(startsAt.AddDate(0, 0, 1))
 }
 
 func incrementUsageBillingAPIKeyQuota(ctx context.Context, tx *sql.Tx, apiKeyID int64, amount float64) (bool, error) {

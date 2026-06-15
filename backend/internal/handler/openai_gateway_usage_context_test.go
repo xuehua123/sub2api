@@ -2,9 +2,13 @@ package handler
 
 import (
 	"context"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
+	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,4 +42,18 @@ func TestOpenAISubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {
 
 	require.Equal(t, "openai-client-request-123", gotClientRequestID)
 	require.Equal(t, "openai-request-456", gotRequestID)
+}
+
+func TestSubscriptionEntitlementUsageContextReadsMiddlewareResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	entitlement := &service.SubscriptionEntitlement{ID: 123}
+	c.Set(string(middleware2.ContextKeySubscriptionEntitlement), entitlement)
+	c.Set(string(middleware2.ContextKeySubscriptionEntitlementBalanceFallback), true)
+
+	got, fallback := subscriptionEntitlementUsageContext(c)
+
+	require.Same(t, entitlement, got)
+	require.True(t, fallback)
 }

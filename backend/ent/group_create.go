@@ -15,6 +15,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -157,6 +160,48 @@ func (_c *GroupCreate) SetSubscriptionType(v string) *GroupCreate {
 func (_c *GroupCreate) SetNillableSubscriptionType(v *string) *GroupCreate {
 	if v != nil {
 		_c.SetSubscriptionType(*v)
+	}
+	return _c
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (_c *GroupCreate) SetBalanceEnabled(v bool) *GroupCreate {
+	_c.mutation.SetBalanceEnabled(v)
+	return _c
+}
+
+// SetNillableBalanceEnabled sets the "balance_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableBalanceEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetBalanceEnabled(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (_c *GroupCreate) SetSubscriptionEnabled(v bool) *GroupCreate {
+	_c.mutation.SetSubscriptionEnabled(v)
+	return _c
+}
+
+// SetNillableSubscriptionEnabled sets the "subscription_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableSubscriptionEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetSubscriptionEnabled(*v)
+	}
+	return _c
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (_c *GroupCreate) SetPlanAutoGrantEnabled(v bool) *GroupCreate {
+	_c.mutation.SetPlanAutoGrantEnabled(v)
+	return _c
+}
+
+// SetNillablePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillablePlanAutoGrantEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetPlanAutoGrantEnabled(*v)
 	}
 	return _c
 }
@@ -540,6 +585,36 @@ func (_c *GroupCreate) AddSubscriptions(v ...*UserSubscription) *GroupCreate {
 	return _c.AddSubscriptionIDs(ids...)
 }
 
+// AddSubscriptionPlanExternalMappingIDs adds the "subscription_plan_external_mappings" edge to the SubscriptionPlanExternalMapping entity by IDs.
+func (_c *GroupCreate) AddSubscriptionPlanExternalMappingIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddSubscriptionPlanExternalMappingIDs(ids...)
+	return _c
+}
+
+// AddSubscriptionPlanExternalMappings adds the "subscription_plan_external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_c *GroupCreate) AddSubscriptionPlanExternalMappings(v ...*SubscriptionPlanExternalMapping) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSubscriptionPlanExternalMappingIDs(ids...)
+}
+
+// AddPrimarySubscriptionEntitlementIDs adds the "primary_subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_c *GroupCreate) AddPrimarySubscriptionEntitlementIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddPrimarySubscriptionEntitlementIDs(ids...)
+	return _c
+}
+
+// AddPrimarySubscriptionEntitlements adds the "primary_subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_c *GroupCreate) AddPrimarySubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddPrimarySubscriptionEntitlementIDs(ids...)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_c *GroupCreate) AddUsageLogIDs(ids ...int64) *GroupCreate {
 	_c.mutation.AddUsageLogIDs(ids...)
@@ -553,6 +628,36 @@ func (_c *GroupCreate) AddUsageLogs(v ...*UsageLog) *GroupCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddUsageLogIDs(ids...)
+}
+
+// AddSubscriptionPlanIDs adds the "subscription_plans" edge to the SubscriptionPlan entity by IDs.
+func (_c *GroupCreate) AddSubscriptionPlanIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddSubscriptionPlanIDs(ids...)
+	return _c
+}
+
+// AddSubscriptionPlans adds the "subscription_plans" edges to the SubscriptionPlan entity.
+func (_c *GroupCreate) AddSubscriptionPlans(v ...*SubscriptionPlan) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSubscriptionPlanIDs(ids...)
+}
+
+// AddSubscriptionEntitlementIDs adds the "subscription_entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_c *GroupCreate) AddSubscriptionEntitlementIDs(ids ...int64) *GroupCreate {
+	_c.mutation.AddSubscriptionEntitlementIDs(ids...)
+	return _c
+}
+
+// AddSubscriptionEntitlements adds the "subscription_entitlements" edges to the SubscriptionEntitlement entity.
+func (_c *GroupCreate) AddSubscriptionEntitlements(v ...*SubscriptionEntitlement) *GroupCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddSubscriptionEntitlementIDs(ids...)
 }
 
 // AddAccountIDs adds the "accounts" edge to the Account entity by IDs.
@@ -655,6 +760,18 @@ func (_c *GroupCreate) defaults() error {
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
+	}
+	if _, ok := _c.mutation.BalanceEnabled(); !ok {
+		v := group.DefaultBalanceEnabled
+		_c.mutation.SetBalanceEnabled(v)
+	}
+	if _, ok := _c.mutation.SubscriptionEnabled(); !ok {
+		v := group.DefaultSubscriptionEnabled
+		_c.mutation.SetSubscriptionEnabled(v)
+	}
+	if _, ok := _c.mutation.PlanAutoGrantEnabled(); !ok {
+		v := group.DefaultPlanAutoGrantEnabled
+		_c.mutation.SetPlanAutoGrantEnabled(v)
 	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		v := group.DefaultDefaultValidityDays
@@ -768,6 +885,15 @@ func (_c *GroupCreate) check() error {
 		if err := group.SubscriptionTypeValidator(v); err != nil {
 			return &ValidationError{Name: "subscription_type", err: fmt.Errorf(`ent: validator failed for field "Group.subscription_type": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.BalanceEnabled(); !ok {
+		return &ValidationError{Name: "balance_enabled", err: errors.New(`ent: missing required field "Group.balance_enabled"`)}
+	}
+	if _, ok := _c.mutation.SubscriptionEnabled(); !ok {
+		return &ValidationError{Name: "subscription_enabled", err: errors.New(`ent: missing required field "Group.subscription_enabled"`)}
+	}
+	if _, ok := _c.mutation.PlanAutoGrantEnabled(); !ok {
+		return &ValidationError{Name: "plan_auto_grant_enabled", err: errors.New(`ent: missing required field "Group.plan_auto_grant_enabled"`)}
 	}
 	if _, ok := _c.mutation.DefaultValidityDays(); !ok {
 		return &ValidationError{Name: "default_validity_days", err: errors.New(`ent: missing required field "Group.default_validity_days"`)}
@@ -888,6 +1014,18 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
 		_node.SubscriptionType = value
+	}
+	if value, ok := _c.mutation.BalanceEnabled(); ok {
+		_spec.SetField(group.FieldBalanceEnabled, field.TypeBool, value)
+		_node.BalanceEnabled = value
+	}
+	if value, ok := _c.mutation.SubscriptionEnabled(); ok {
+		_spec.SetField(group.FieldSubscriptionEnabled, field.TypeBool, value)
+		_node.SubscriptionEnabled = value
+	}
+	if value, ok := _c.mutation.PlanAutoGrantEnabled(); ok {
+		_spec.SetField(group.FieldPlanAutoGrantEnabled, field.TypeBool, value)
+		_node.PlanAutoGrantEnabled = value
 	}
 	if value, ok := _c.mutation.DailyLimitUsd(); ok {
 		_spec.SetField(group.FieldDailyLimitUsd, field.TypeFloat64, value)
@@ -1037,6 +1175,38 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.SubscriptionPlanExternalMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.SubscriptionPlanExternalMappingsTable,
+			Columns: []string{group.SubscriptionPlanExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.PrimarySubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   group.PrimarySubscriptionEntitlementsTable,
+			Columns: []string{group.PrimarySubscriptionEntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	if nodes := _c.mutation.UsageLogsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -1051,6 +1221,46 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 		for _, k := range nodes {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SubscriptionPlansIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionPlansTable,
+			Columns: group.SubscriptionPlansPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplan.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _c.config, mutation: newSubscriptionPlanGroupMutation(_c.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SubscriptionEntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: true,
+			Table:   group.SubscriptionEntitlementsTable,
+			Columns: group.SubscriptionEntitlementsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionEntitlementGroupCreate{config: _c.config, mutation: newSubscriptionEntitlementGroupMutation(_c.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.AccountsIDs(); len(nodes) > 0 {
@@ -1268,6 +1478,42 @@ func (u *GroupUpsert) SetSubscriptionType(v string) *GroupUpsert {
 // UpdateSubscriptionType sets the "subscription_type" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateSubscriptionType() *GroupUpsert {
 	u.SetExcluded(group.FieldSubscriptionType)
+	return u
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsert) SetBalanceEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldBalanceEnabled, v)
+	return u
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateBalanceEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldBalanceEnabled)
+	return u
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsert) SetSubscriptionEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldSubscriptionEnabled, v)
+	return u
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateSubscriptionEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldSubscriptionEnabled)
+	return u
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsert) SetPlanAutoGrantEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldPlanAutoGrantEnabled, v)
+	return u
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdatePlanAutoGrantEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldPlanAutoGrantEnabled)
 	return u
 }
 
@@ -1886,6 +2132,48 @@ func (u *GroupUpsertOne) SetSubscriptionType(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdateSubscriptionType() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsertOne) SetBalanceEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceEnabled(v)
+	})
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateBalanceEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceEnabled()
+	})
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsertOne) SetSubscriptionEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSubscriptionEnabled(v)
+	})
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateSubscriptionEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSubscriptionEnabled()
+	})
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsertOne) SetPlanAutoGrantEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPlanAutoGrantEnabled(v)
+	})
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdatePlanAutoGrantEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePlanAutoGrantEnabled()
 	})
 }
 
@@ -2741,6 +3029,48 @@ func (u *GroupUpsertBulk) SetSubscriptionType(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdateSubscriptionType() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateSubscriptionType()
+	})
+}
+
+// SetBalanceEnabled sets the "balance_enabled" field.
+func (u *GroupUpsertBulk) SetBalanceEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetBalanceEnabled(v)
+	})
+}
+
+// UpdateBalanceEnabled sets the "balance_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateBalanceEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateBalanceEnabled()
+	})
+}
+
+// SetSubscriptionEnabled sets the "subscription_enabled" field.
+func (u *GroupUpsertBulk) SetSubscriptionEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetSubscriptionEnabled(v)
+	})
+}
+
+// UpdateSubscriptionEnabled sets the "subscription_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateSubscriptionEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateSubscriptionEnabled()
+	})
+}
+
+// SetPlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field.
+func (u *GroupUpsertBulk) SetPlanAutoGrantEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetPlanAutoGrantEnabled(v)
+	})
+}
+
+// UpdatePlanAutoGrantEnabled sets the "plan_auto_grant_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdatePlanAutoGrantEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdatePlanAutoGrantEnabled()
 	})
 }
 

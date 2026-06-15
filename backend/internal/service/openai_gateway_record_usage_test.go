@@ -1334,6 +1334,116 @@ func TestOpenAIGatewayServiceRecordUsage_SubscriptionBillingSetsSubscriptionFiel
 	require.Equal(t, 0, userRepo.deductCalls)
 }
 
+func TestOpenAIGatewayServiceRecordUsage_EntitlementAttributionReachesBillingCommandAndUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	entitlement := &SubscriptionEntitlement{ID: 902}
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_entitlement_billing",
+			Usage:     OpenAIUsage{InputTokens: 10, OutputTokens: 5},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 100, AccessSource: APIKeyAccessSourceEntitlement, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 1.0}},
+		User:                       &User{ID: 200},
+		Account:                    &Account{ID: 300},
+		Entitlement:                entitlement,
+		EntitlementBalanceFallback: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, BillingTypeSubscription, usageRepo.lastLog.BillingType)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, entitlement.ID, *usageRepo.lastLog.EntitlementID)
+	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementQuota, *usageRepo.lastLog.BillingSource)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
+	require.True(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+	require.Nil(t, billingRepo.lastCmd.SubscriptionID)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost, "entitlement billing command must not carry legacy balance cost")
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.Equal(t, 0, subRepo.incrementCalls)
+	require.Equal(t, 0, userRepo.deductCalls)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_EntitlementFingerprintConflictDoesNotWriteUsageLog(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrUsageBillingRequestConflict}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_entitlement_fingerprint_conflict",
+			Usage:     OpenAIUsage{InputTokens: 10, OutputTokens: 5},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:                     &APIKey{ID: 100, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1.0}},
+		User:                       &User{ID: 200},
+		Account:                    &Account{ID: 300},
+		Entitlement:                &SubscriptionEntitlement{ID: 902},
+		EntitlementBalanceFallback: true,
+	})
+
+	require.ErrorIs(t, err, ErrUsageBillingRequestConflict)
+	require.Equal(t, 1, billingRepo.calls)
+	require.Equal(t, 0, usageRepo.calls)
+	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 0, subRepo.incrementCalls)
+	require.Equal(t, 0, userRepo.deductCalls)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_EntitlementStreamingPartialDisconnectStillBillsUsage(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{}, nil)
+	firstSSEEventMs := 80
+	firstClientFlushMs := 95
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:          "resp_entitlement_stream_partial_disconnect",
+			Usage:              OpenAIUsage{InputTokens: 10, OutputTokens: 5},
+			Model:              "gpt-5.1",
+			Stream:             true,
+			ClientDisconnect:   true,
+			Duration:           time.Second,
+			FirstSSEEventMs:    &firstSSEEventMs,
+			FirstClientFlushMs: &firstClientFlushMs,
+		},
+		APIKey:      &APIKey{ID: 100, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1.0}},
+		User:        &User{ID: 200},
+		Account:     &Account{ID: 300},
+		Entitlement: &SubscriptionEntitlement{ID: 902},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, billingRepo.calls)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, int64(902), *billingRepo.lastCmd.EntitlementID)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog)
+	require.True(t, usageRepo.lastLog.Stream)
+	require.NotNil(t, usageRepo.lastLog.FirstSSEEventMs)
+	require.Equal(t, firstSSEEventMs, *usageRepo.lastLog.FirstSSEEventMs)
+	require.NotNil(t, usageRepo.lastLog.FirstClientFlushMs)
+	require.Equal(t, firstClientFlushMs, *usageRepo.lastLog.FirstClientFlushMs)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(902), *usageRepo.lastLog.EntitlementID)
+}
+
 func TestOpenAIGatewayServiceRecordUsage_SimpleModeSkipsBillingAfterPersist(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
 	userRepo := &openAIRecordUsageUserRepoStub{}

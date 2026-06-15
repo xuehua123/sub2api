@@ -58,6 +58,15 @@ func (Group) Fields() []ent.Field {
 		field.String("subscription_type").
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),
+		field.Bool("balance_enabled").
+			Default(true).
+			Comment("Whether this group can be used by the virtual balance access source"),
+		field.Bool("subscription_enabled").
+			Default(false).
+			Comment("Whether this group can be granted by subscription entitlements"),
+		field.Bool("plan_auto_grant_enabled").
+			Default(false).
+			Comment("Whether wildcard/platform subscription plan scopes can automatically include this group"),
 		field.Float("daily_limit_usd").
 			Optional().
 			Nillable().
@@ -172,7 +181,16 @@ func (Group) Edges() []ent.Edge {
 		edge.To("api_keys", APIKey.Type),
 		edge.To("redeem_codes", RedeemCode.Type),
 		edge.To("subscriptions", UserSubscription.Type),
+		edge.To("subscription_plan_external_mappings", SubscriptionPlanExternalMapping.Type).
+			Annotations(entsql.OnDelete(entsql.Restrict)),
+		edge.To("primary_subscription_entitlements", SubscriptionEntitlement.Type),
 		edge.To("usage_logs", UsageLog.Type),
+		edge.From("subscription_plans", SubscriptionPlan.Type).
+			Ref("groups").
+			Through("subscription_plan_groups", SubscriptionPlanGroup.Type),
+		edge.From("subscription_entitlements", SubscriptionEntitlement.Type).
+			Ref("groups").
+			Through("subscription_entitlement_groups", SubscriptionEntitlementGroup.Type),
 		edge.From("accounts", Account.Type).
 			Ref("groups").
 			Through("account_groups", AccountGroup.Type),
@@ -190,6 +208,9 @@ func (Group) Indexes() []ent.Index {
 		index.Fields("status"),
 		index.Fields("platform"),
 		index.Fields("subscription_type"),
+		index.Fields("balance_enabled"),
+		index.Fields("subscription_enabled"),
+		index.Fields("plan_auto_grant_enabled"),
 		index.Fields("is_exclusive"),
 		index.Fields("deleted_at"),
 		index.Fields("sort_order"),

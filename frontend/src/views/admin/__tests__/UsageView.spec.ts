@@ -3,7 +3,21 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import UsageView from '../UsageView.vue'
 
-const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs } = vi.hoisted(() => {
+const {
+  list,
+  getStats,
+  getSnapshotV2,
+  getById,
+  getModelStats,
+  listErrorLogs,
+  adminUsageList,
+  saveAsMock,
+  aoaToSheetMock,
+  sheetAddAoaMock,
+  bookNewMock,
+  bookAppendSheetMock,
+  writeMock,
+} = vi.hoisted(() => {
   vi.stubGlobal('localStorage', {
     getItem: vi.fn(() => null),
     setItem: vi.fn(),
@@ -17,6 +31,13 @@ const { list, getStats, getSnapshotV2, getById, getModelStats, listErrorLogs } =
     getById: vi.fn(),
     getModelStats: vi.fn(),
     listErrorLogs: vi.fn(),
+    adminUsageList: vi.fn(),
+    saveAsMock: vi.fn(),
+    aoaToSheetMock: vi.fn(() => ({ sheet: true })),
+    sheetAddAoaMock: vi.fn(),
+    bookNewMock: vi.fn(() => ({ book: true })),
+    bookAppendSheetMock: vi.fn(),
+    writeMock: vi.fn(() => new ArrayBuffer(8)),
   }
 })
 
@@ -25,6 +46,9 @@ const messages: Record<string, string> = {
   'admin.dashboard.day': 'Day',
   'admin.dashboard.hour': 'Hour',
   'admin.usage.failedToLoadUser': 'Failed to load user',
+  'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
+  'admin.usage.billingSource.label': 'Billing Source',
+  'admin.usage.entitlementId': 'Entitlement ID',
 }
 
 const formatLocalDate = (date: Date): string => {
@@ -52,8 +76,22 @@ vi.mock('@/api/admin', () => ({
 
 vi.mock('@/api/admin/usage', () => ({
   adminUsageAPI: {
-    list: vi.fn(),
+    list: adminUsageList,
   },
+}))
+
+vi.mock('file-saver', () => ({
+  saveAs: saveAsMock,
+}))
+
+vi.mock('xlsx', () => ({
+  utils: {
+    aoa_to_sheet: aoaToSheetMock,
+    sheet_add_aoa: sheetAddAoaMock,
+    book_new: bookNewMock,
+    book_append_sheet: bookAppendSheetMock,
+  },
+  write: writeMock,
 }))
 
 vi.mock('@/api/admin/ops', () => ({
@@ -90,7 +128,17 @@ vi.mock('vue-router', () => ({
 }))
 
 const AppLayoutStub = { template: '<div><slot /></div>' }
-const UsageFiltersStub = { template: '<div><slot name="after-reset" /></div>' }
+const UsageFiltersStub = {
+  props: ['modelValue'],
+  emits: ['change', 'export'],
+  template: `
+    <div>
+      <slot name="after-reset" />
+      <button data-test="apply-entitlement-filter" @click="modelValue.entitlement_id = 321; $emit('change')">filter</button>
+      <button data-test="export-usage" @click="$emit('export')">export</button>
+    </div>
+  `,
+}
 const UsageTableStub = {
   emits: ['userClick'],
   template: '<div data-test="usage-table"><button class="user-click" @click="$emit(\'userClick\', 2)">user</button></div>',
@@ -292,6 +340,142 @@ describe('admin UsageView handleUserClick', () => {
     await flushPromises()
 
     expect(getById).toHaveBeenCalledWith(2, true)
+  })
+})
+
+describe('admin UsageView entitlement usage observability', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    list.mockReset()
+    getStats.mockReset()
+    getSnapshotV2.mockReset()
+    getModelStats.mockReset()
+    adminUsageList.mockReset()
+    saveAsMock.mockClear()
+    aoaToSheetMock.mockClear()
+    sheetAddAoaMock.mockClear()
+    bookNewMock.mockClear()
+    bookAppendSheetMock.mockClear()
+    writeMock.mockClear()
+
+    list.mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockResolvedValue({
+      total_requests: 0,
+      total_input_tokens: 0,
+      total_output_tokens: 0,
+      total_cache_tokens: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      total_actual_cost: 0,
+      average_duration_ms: 0,
+    })
+    getSnapshotV2.mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockResolvedValue({ models: [] })
+    adminUsageList.mockResolvedValue({ items: [], total: 0, pages: 0 })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const mountUsageView = () => mount(UsageView, {
+    global: {
+      stubs: {
+        AppLayout: AppLayoutStub,
+        UsageStatsCards: true,
+        UsageFilters: UsageFiltersStub,
+        UsageTable: true,
+        UsageExportProgress: true,
+        UsageCleanupDialog: true,
+        UserBalanceHistoryModal: true,
+        AuditLogModal: true,
+        Pagination: true,
+        Select: true,
+        DateRangePicker: true,
+        Icon: true,
+        TokenUsageTrend: true,
+        ModelDistributionChart: true,
+        GroupDistributionChart: true,
+        EndpointDistributionChart: true,
+      },
+    },
+  })
+
+  it('forwards entitlement_id from filters to admin usage list and stats APIs', async () => {
+    const wrapper = mountUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    list.mockClear()
+    getStats.mockClear()
+
+    await wrapper.find('[data-test="apply-entitlement-filter"]').trigger('click')
+    await flushPromises()
+
+    expect(list).toHaveBeenCalledWith(
+      expect.objectContaining({ entitlement_id: 321 }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ entitlement_id: 321 }))
+  })
+
+  it('exports entitlement_id and billing_source labels', async () => {
+    const wrapper = mountUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    adminUsageList.mockResolvedValueOnce({
+      total: 1,
+      pages: 1,
+      items: [
+        {
+          created_at: '2026-06-12T00:00:00Z',
+          user: { email: 'admin@example.com' },
+          api_key: { name: 'key-a' },
+          account: { name: 'account-a' },
+          model: 'gpt-5',
+          upstream_model: null,
+          reasoning_effort: null,
+          group: { name: 'sub-group' },
+          entitlement_id: 99,
+          billing_source: 'entitlement_balance_fallback',
+          inbound_endpoint: '/v1/chat/completions',
+          upstream_endpoint: '/chat/completions',
+          request_type: 'sync',
+          input_tokens: 10,
+          output_tokens: 20,
+          cache_read_tokens: 0,
+          cache_creation_tokens: 0,
+          input_cost: 0.001,
+          output_cost: 0.002,
+          cache_read_cost: 0,
+          cache_creation_cost: 0,
+          rate_multiplier: 1,
+          account_rate_multiplier: 1,
+          total_cost: 0.003,
+          actual_cost: 0.003,
+          first_client_flush_ms: null,
+          first_sse_event_ms: null,
+          first_token_ms: null,
+          duration_ms: 120,
+          request_id: 'req-export-entitlement',
+          user_agent: 'vitest',
+          ip_address: '127.0.0.1',
+        },
+      ],
+    })
+
+    await wrapper.find('[data-test="export-usage"]').trigger('click')
+    await flushPromises()
+
+    const headers = aoaToSheetMock.mock.calls[0][0][0]
+    expect(headers).toContain('Entitlement ID')
+    expect(headers).toContain('Billing Source')
+
+    const exportedRows = sheetAddAoaMock.mock.calls[0][1]
+    expect(exportedRows[0]).toContain(99)
+    expect(exportedRows[0]).toContain('Entitlement Overage Balance Fallback')
+    expect(saveAsMock).toHaveBeenCalled()
   })
 })
 

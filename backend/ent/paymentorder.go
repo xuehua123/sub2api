@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -53,6 +54,8 @@ type PaymentOrder struct {
 	PlanID *int64 `json:"plan_id,omitempty"`
 	// SubscriptionGroupID holds the value of the "subscription_group_id" field.
 	SubscriptionGroupID *int64 `json:"subscription_group_id,omitempty"`
+	// SubscriptionEntitlementID holds the value of the "subscription_entitlement_id" field.
+	SubscriptionEntitlementID *int64 `json:"subscription_entitlement_id,omitempty"`
 	// SubscriptionDays holds the value of the "subscription_days" field.
 	SubscriptionDays *int `json:"subscription_days,omitempty"`
 	// ProviderInstanceID holds the value of the "provider_instance_id" field.
@@ -107,9 +110,11 @@ type PaymentOrder struct {
 type PaymentOrderEdges struct {
 	// User holds the value of the user edge.
 	User *User `json:"user,omitempty"`
+	// SubscriptionEntitlement holds the value of the subscription_entitlement edge.
+	SubscriptionEntitlement *SubscriptionEntitlement `json:"subscription_entitlement,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [1]bool
+	loadedTypes [2]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -123,6 +128,17 @@ func (e PaymentOrderEdges) UserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "user"}
 }
 
+// SubscriptionEntitlementOrErr returns the SubscriptionEntitlement value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e PaymentOrderEdges) SubscriptionEntitlementOrErr() (*SubscriptionEntitlement, error) {
+	if e.SubscriptionEntitlement != nil {
+		return e.SubscriptionEntitlement, nil
+	} else if e.loadedTypes[1] {
+		return nil, &NotFoundError{label: subscriptionentitlement.Label}
+	}
+	return nil, &NotLoadedError{edge: "subscription_entitlement"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
@@ -134,7 +150,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
 			values[i] = new(sql.NullFloat64)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionEntitlementID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
 		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
@@ -268,6 +284,13 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SubscriptionGroupID = new(int64)
 				*_m.SubscriptionGroupID = value.Int64
+			}
+		case paymentorder.FieldSubscriptionEntitlementID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field subscription_entitlement_id", values[i])
+			} else if value.Valid {
+				_m.SubscriptionEntitlementID = new(int64)
+				*_m.SubscriptionEntitlementID = value.Int64
 			}
 		case paymentorder.FieldSubscriptionDays:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -434,6 +457,11 @@ func (_m *PaymentOrder) QueryUser() *UserQuery {
 	return NewPaymentOrderClient(_m.config).QueryUser(_m)
 }
 
+// QuerySubscriptionEntitlement queries the "subscription_entitlement" edge of the PaymentOrder entity.
+func (_m *PaymentOrder) QuerySubscriptionEntitlement() *SubscriptionEntitlementQuery {
+	return NewPaymentOrderClient(_m.config).QuerySubscriptionEntitlement(_m)
+}
+
 // Update returns a builder for updating this PaymentOrder.
 // Note that you need to call PaymentOrder.Unwrap() before calling this method if this PaymentOrder
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -517,6 +545,11 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	if v := _m.SubscriptionGroupID; v != nil {
 		builder.WriteString("subscription_group_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.SubscriptionEntitlementID; v != nil {
+		builder.WriteString("subscription_entitlement_id=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

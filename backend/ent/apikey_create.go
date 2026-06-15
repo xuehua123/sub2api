@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
@@ -95,6 +96,34 @@ func (_c *APIKeyCreate) SetGroupID(v int64) *APIKeyCreate {
 func (_c *APIKeyCreate) SetNillableGroupID(v *int64) *APIKeyCreate {
 	if v != nil {
 		_c.SetGroupID(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_c *APIKeyCreate) SetSubscriptionEntitlementID(v int64) *APIKeyCreate {
+	_c.mutation.SetSubscriptionEntitlementID(v)
+	return _c
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableSubscriptionEntitlementID(v *int64) *APIKeyCreate {
+	if v != nil {
+		_c.SetSubscriptionEntitlementID(*v)
+	}
+	return _c
+}
+
+// SetAccessSource sets the "access_source" field.
+func (_c *APIKeyCreate) SetAccessSource(v string) *APIKeyCreate {
+	_c.mutation.SetAccessSource(v)
+	return _c
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_c *APIKeyCreate) SetNillableAccessSource(v *string) *APIKeyCreate {
+	if v != nil {
+		_c.SetAccessSource(*v)
 	}
 	return _c
 }
@@ -331,6 +360,11 @@ func (_c *APIKeyCreate) SetGroup(v *Group) *APIKeyCreate {
 	return _c.SetGroupID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_c *APIKeyCreate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *APIKeyCreate {
+	return _c.SetSubscriptionEntitlementID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_c *APIKeyCreate) AddUsageLogIDs(ids ...int64) *APIKeyCreate {
 	_c.mutation.AddUsageLogIDs(ids...)
@@ -396,6 +430,10 @@ func (_c *APIKeyCreate) defaults() error {
 		}
 		v := apikey.DefaultUpdatedAt()
 		_c.mutation.SetUpdatedAt(v)
+	}
+	if _, ok := _c.mutation.AccessSource(); !ok {
+		v := apikey.DefaultAccessSource
+		_c.mutation.SetAccessSource(v)
 	}
 	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
 		v := apikey.DefaultAutoSwitchGroupEnabled
@@ -465,6 +503,14 @@ func (_c *APIKeyCreate) check() error {
 	if v, ok := _c.mutation.Name(); ok {
 		if err := apikey.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.AccessSource(); !ok {
+		return &ValidationError{Name: "access_source", err: errors.New(`ent: missing required field "APIKey.access_source"`)}
+	}
+	if v, ok := _c.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.AutoSwitchGroupEnabled(); !ok {
@@ -551,6 +597,10 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
 		_node.Name = value
+	}
+	if value, ok := _c.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
+		_node.AccessSource = value
 	}
 	if value, ok := _c.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
@@ -652,6 +702,23 @@ func (_c *APIKeyCreate) createSpec() (*APIKey, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.GroupID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.SubscriptionEntitlementTable,
+			Columns: []string{apikey.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SubscriptionEntitlementID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	if nodes := _c.mutation.UsageLogsIDs(); len(nodes) > 0 {
@@ -803,6 +870,36 @@ func (u *APIKeyUpsert) UpdateGroupID() *APIKeyUpsert {
 // ClearGroupID clears the value of the "group_id" field.
 func (u *APIKeyUpsert) ClearGroupID() *APIKeyUpsert {
 	u.SetNull(apikey.FieldGroupID)
+	return u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *APIKeyUpsert) SetSubscriptionEntitlementID(v int64) *APIKeyUpsert {
+	u.Set(apikey.FieldSubscriptionEntitlementID, v)
+	return u
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateSubscriptionEntitlementID() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldSubscriptionEntitlementID)
+	return u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *APIKeyUpsert) ClearSubscriptionEntitlementID() *APIKeyUpsert {
+	u.SetNull(apikey.FieldSubscriptionEntitlementID)
+	return u
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsert) SetAccessSource(v string) *APIKeyUpsert {
+	u.Set(apikey.FieldAccessSource, v)
+	return u
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsert) UpdateAccessSource() *APIKeyUpsert {
+	u.SetExcluded(apikey.FieldAccessSource)
 	return u
 }
 
@@ -1240,6 +1337,41 @@ func (u *APIKeyUpsertOne) UpdateGroupID() *APIKeyUpsertOne {
 func (u *APIKeyUpsertOne) ClearGroupID() *APIKeyUpsertOne {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *APIKeyUpsertOne) SetSubscriptionEntitlementID(v int64) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateSubscriptionEntitlementID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *APIKeyUpsertOne) ClearSubscriptionEntitlementID() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearSubscriptionEntitlementID()
+	})
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsertOne) SetAccessSource(v string) *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAccessSource(v)
+	})
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsertOne) UpdateAccessSource() *APIKeyUpsertOne {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAccessSource()
 	})
 }
 
@@ -1892,6 +2024,41 @@ func (u *APIKeyUpsertBulk) UpdateGroupID() *APIKeyUpsertBulk {
 func (u *APIKeyUpsertBulk) ClearGroupID() *APIKeyUpsertBulk {
 	return u.Update(func(s *APIKeyUpsert) {
 		s.ClearGroupID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *APIKeyUpsertBulk) SetSubscriptionEntitlementID(v int64) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateSubscriptionEntitlementID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *APIKeyUpsertBulk) ClearSubscriptionEntitlementID() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.ClearSubscriptionEntitlementID()
+	})
+}
+
+// SetAccessSource sets the "access_source" field.
+func (u *APIKeyUpsertBulk) SetAccessSource(v string) *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.SetAccessSource(v)
+	})
+}
+
+// UpdateAccessSource sets the "access_source" field to the value that was provided on create.
+func (u *APIKeyUpsertBulk) UpdateAccessSource() *APIKeyUpsertBulk {
+	return u.Update(func(s *APIKeyUpsert) {
+		s.UpdateAccessSource()
 	})
 }
 

@@ -46,7 +46,7 @@
           >
             <div class="mb-2 flex items-center justify-between">
               <span class="text-sm font-medium text-gray-900 dark:text-white">
-                {{ subscription.group?.name || `Group #${subscription.group_id}` }}
+                {{ subscriptionDisplayName(subscription, subscriptionPlans) }}
               </span>
               <span
                 v-if="subscription.expires_at"
@@ -182,8 +182,11 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { useSubscriptionStore } from '@/stores'
+import { paymentAPI } from '@/api/payment'
 import type { UserSubscription } from '@/types'
+import type { SubscriptionPlan } from '@/types/payment'
 import { formatRemainingDurationCompact, getRemainingHours } from '@/utils/subscriptionTime'
+import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
 
 const { t } = useI18n()
 
@@ -191,6 +194,7 @@ const subscriptionStore = useSubscriptionStore()
 
 const containerRef = ref<HTMLElement | null>(null)
 const tooltipOpen = ref(false)
+const subscriptionPlans = ref<SubscriptionPlan[]>([])
 
 // Use store data instead of local state
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
@@ -277,6 +281,20 @@ function closeTooltip() {
   tooltipOpen.value = false
 }
 
+async function loadSubscriptionPlansForSubscriptions(records: UserSubscription[]) {
+  if (!records.some((subscription) => subscription.plan_id)) {
+    subscriptionPlans.value = []
+    return
+  }
+
+  try {
+    const response = await paymentAPI.getPlans()
+    subscriptionPlans.value = normalizeSubscriptionPlans(response.data || [])
+  } catch (error) {
+    console.error('Failed to load subscription plans in SubscriptionProgressMini:', error)
+  }
+}
+
 function handleClickOutside(event: MouseEvent) {
   if (containerRef.value && !containerRef.value.contains(event.target as Node)) {
     closeTooltip()
@@ -287,9 +305,11 @@ onMounted(() => {
   document.addEventListener('click', handleClickOutside)
   // Trigger initial fetch if not already loaded
   // The actual data loading is handled by App.vue globally
-  subscriptionStore.fetchActiveSubscriptions().catch((error) => {
-    console.error('Failed to load subscriptions in SubscriptionProgressMini:', error)
-  })
+  subscriptionStore.fetchActiveSubscriptions()
+    .then(loadSubscriptionPlansForSubscriptions)
+    .catch((error) => {
+      console.error('Failed to load subscriptions in SubscriptionProgressMini:', error)
+    })
 })
 
 onBeforeUnmount(() => {

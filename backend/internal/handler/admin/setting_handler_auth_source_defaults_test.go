@@ -252,6 +252,57 @@ func TestSettingHandler_UpdateSettings_PersistsPaymentVisibleMethodsAndAdvancedS
 	require.Equal(t, true, data["openai_advanced_scheduler_enabled"])
 }
 
+func TestSettingHandler_SettingsSubscriptionEntitlementFlagsDefaultAndUpdate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil, nil)
+
+	getRec := httptest.NewRecorder()
+	getCtx, _ := gin.CreateTestContext(getRec)
+	getCtx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+
+	handler.GetSettings(getCtx)
+
+	require.Equal(t, http.StatusOK, getRec.Code)
+	var getResp response.Response
+	require.NoError(t, json.Unmarshal(getRec.Body.Bytes(), &getResp))
+	getData, ok := getResp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, false, getData["subscription_entitlements_v2_enabled"])
+	require.Equal(t, false, getData["sub2_payment_page_legacy_mapping_enabled"])
+
+	body := map[string]any{
+		"promo_code_enabled":                       true,
+		"subscription_entitlements_v2_enabled":     true,
+		"sub2_payment_page_legacy_mapping_enabled": true,
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	updateRec := httptest.NewRecorder()
+	updateCtx, _ := gin.CreateTestContext(updateRec)
+	updateCtx.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	updateCtx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(updateCtx)
+
+	require.Equal(t, http.StatusOK, updateRec.Code)
+	require.Equal(t, "true", repo.values[service.SettingKeySubscriptionEntitlementsV2Enabled])
+	require.Equal(t, "true", repo.values[service.SettingKeySub2PaymentPageLegacyMappingEnabled])
+
+	var updateResp response.Response
+	require.NoError(t, json.Unmarshal(updateRec.Body.Bytes(), &updateResp))
+	updateData, ok := updateResp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, updateData["subscription_entitlements_v2_enabled"])
+	require.Equal(t, true, updateData["sub2_payment_page_legacy_mapping_enabled"])
+}
+
 func TestSettingHandler_UpdateSettings_PreservesLegacyBlankPaymentVisibleMethodSource(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{

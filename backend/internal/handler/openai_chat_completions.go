@@ -79,6 +79,8 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", invalidStreamFieldTypeMessage)
 		return
 	}
+	deferredResponse := beginDeferredGatewayResponse(c, !reqStream)
+	defer deferredResponse.Flush()
 
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
 
@@ -98,6 +100,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
@@ -110,7 +113,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai_chat_completions.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -287,30 +290,51 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		inboundEndpoint := GetInboundEndpoint(c)
 		upstreamEndpoint := resolveRawCCUpstreamEndpoint(c, account)
 
-		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
-			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-				Result:             result,
-				APIKey:             apiKey,
-				User:               apiKey.User,
-				Account:            account,
-				Subscription:       subscription,
-				InboundEndpoint:    inboundEndpoint,
-				UpstreamEndpoint:   upstreamEndpoint,
-				UserAgent:          userAgent,
-				IPAddress:          clientIP,
-				APIKeyService:      h.apiKeyService,
-				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-			}); err != nil {
-				logger.L().With(
-					zap.String("component", "handler.openai_gateway.chat_completions"),
-					zap.Int64("user_id", subject.UserID),
-					zap.Int64("api_key_id", apiKey.ID),
-					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", reqModel),
-					zap.Int64("account_id", account.ID),
-				).Error("openai_chat_completions.record_usage_failed", zap.Error(err))
+		usageInput := &service.OpenAIRecordUsageInput{
+			Result:                     result,
+			APIKey:                     apiKey,
+			User:                       apiKey.User,
+			Account:                    account,
+			Subscription:               subscription,
+			Entitlement:                subscriptionEntitlement,
+			EntitlementBalanceFallback: entitlementBalanceFallback,
+			InboundEndpoint:            inboundEndpoint,
+			UpstreamEndpoint:           upstreamEndpoint,
+			UserAgent:                  userAgent,
+			IPAddress:                  clientIP,
+			APIKeyService:              h.apiKeyService,
+			ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+		}
+		recordUsage := func(ctx context.Context) error {
+			return h.gatewayService.RecordUsage(ctx, usageInput)
+		}
+		logRecordUsageFailed := func(err error) {
+			logger.L().With(
+				zap.String("component", "handler.openai_gateway.chat_completions"),
+				zap.Int64("user_id", subject.UserID),
+				zap.Int64("api_key_id", apiKey.ID),
+				zap.Any("group_id", apiKey.GroupID),
+				zap.String("model", reqModel),
+				zap.Int64("account_id", account.ID),
+			).Error("openai_chat_completions.record_usage_failed", zap.Error(err))
+		}
+
+		if reqStream {
+			h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+				if err := recordUsage(ctx); err != nil {
+					logRecordUsageFailed(err)
+				}
+			})
+		} else if err := runUsageRecordTaskSync(c.Request.Context(), recordUsage); err != nil {
+			deferredResponse.Discard()
+			status, code, message, retryAfter := billingErrorDetails(err)
+			if retryAfter > 0 {
+				c.Header("Retry-After", strconv.Itoa(retryAfter))
 			}
-		})
+			h.handleStreamingAwareError(c, status, code, message, streamStarted)
+			logRecordUsageFailed(err)
+			return
+		}
 		reqLog.Debug("openai_chat_completions.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),

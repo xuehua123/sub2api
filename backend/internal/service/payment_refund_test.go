@@ -255,6 +255,101 @@ func TestExecuteRefund_PartialSubscriptionRefundDeductsProportionalDays(t *testi
 	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), updatedSub.ExpiresAt, time.Second)
 }
 
+func TestExecuteRefund_DeductsSubscriptionEntitlementDays(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-entitlement-refund").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	placeholder, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("manual refund entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-24 * time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-entitlement-refund").
+		SetOutTradeNo("subscription_entitlement_refund_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetPlanID(9902).
+		SetSubscriptionEntitlementID(placeholder.ID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeStripe).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       1,
+			"provider_instance_id": instID,
+			"provider_key":         payment.TypeStripe,
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	originalExpiry := now.Add(30 * 24 * time.Hour)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[placeholder.ID] = &SubscriptionEntitlement{
+		ID:        placeholder.ID,
+		UserID:    user.ID,
+		PlanID:    int64ValuePtr(9902),
+		Name:      "manual refund entitlement",
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+	}
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{})
+	entSvc.SetNowFunc(func() time.Time { return now })
+
+	service := &PaymentService{
+		entClient:                  client,
+		subscriptionEntitlementSvc: entSvc,
+	}
+
+	plan, earlyResult, err := service.PrepareRefund(ctx, order.ID, 45, "partial entitlement refund", false, true)
+	require.NoError(t, err)
+	require.Nil(t, earlyResult)
+	require.NotNil(t, plan)
+	require.Equal(t, 15, plan.SubDaysToDeduct)
+	require.Equal(t, placeholder.ID, plan.EntitlementID)
+
+	result, err := service.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 15, result.SubDaysDeducted)
+
+	ent, err := entRepo.GetByID(ctx, placeholder.ID)
+	require.NoError(t, err)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), ent.ExpiresAt, time.Second)
+}
+
 func TestExecuteRefund_FailedGatewayRefundRestoresRevokedSubscription(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentServiceEntClient(t)
@@ -347,6 +442,113 @@ func TestExecuteRefund_FailedGatewayRefundRestoresRevokedSubscription(t *testing
 	require.NoError(t, err)
 	require.Equal(t, SubscriptionStatusActive, restoredSub.Status)
 	require.WithinDuration(t, originalExpiry, restoredSub.ExpiresAt, time.Second)
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, updatedOrder.Status)
+}
+
+func TestExecuteRefund_FailedGatewayRefundRestoresSubscriptionEntitlement(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-entitlement-refund").
+		SetConfig(encryptWebhookProviderConfig(t, map[string]string{
+			"appId":      "runtime-alipay-app",
+			"privateKey": "runtime-private-key",
+		})).
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	placeholder, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("rollback entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-24 * time.Hour)).
+		SetExpiresAt(now.Add(12 * time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("sub-entitlement-rollback").
+		SetOutTradeNo("subscription_entitlement_rollback_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade_subscription_entitlement_rollback").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusCompleted).
+		SetPlanID(9903).
+		SetSubscriptionEntitlementID(placeholder.ID).
+		SetSubscriptionDays(30).
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeAlipay).
+		SetProviderSnapshot(map[string]any{
+			"schema_version":       2,
+			"provider_instance_id": instID,
+			"provider_key":         payment.TypeAlipay,
+			"merchant_app_id":      "expected-alipay-app",
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	originalExpiry := now.Add(12 * time.Hour)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[placeholder.ID] = &SubscriptionEntitlement{
+		ID:        placeholder.ID,
+		UserID:    user.ID,
+		PlanID:    int64ValuePtr(9903),
+		Name:      "rollback entitlement",
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+		Notes:     "restore target",
+	}
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{})
+	entSvc.SetNowFunc(func() time.Time { return now })
+
+	service := &PaymentService{
+		entClient:                  client,
+		loadBalancer:               newWebhookProviderTestLoadBalancer(client),
+		subscriptionEntitlementSvc: entSvc,
+	}
+
+	plan, earlyResult, err := service.PrepareRefund(ctx, order.ID, 45, "partial entitlement refund", false, true)
+	require.NoError(t, err)
+	require.Nil(t, earlyResult)
+	require.NotNil(t, plan)
+	require.Equal(t, 15, plan.SubDaysToDeduct)
+	require.Equal(t, placeholder.ID, plan.EntitlementID)
+
+	result, err := service.ExecuteRefund(ctx, plan)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.Success)
+	require.Contains(t, result.Warning, "gateway failed")
+
+	ent, err := entRepo.GetByID(ctx, placeholder.ID)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionStatusActive, ent.Status)
+	require.WithinDuration(t, originalExpiry, ent.ExpiresAt, time.Second)
+	require.Equal(t, "restore target", ent.Notes)
 
 	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)

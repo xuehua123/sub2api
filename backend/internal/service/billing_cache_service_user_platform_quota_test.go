@@ -499,7 +499,8 @@ func TestIncrementUserPlatformQuotaUsage_GuardsAgainstEmpty(t *testing.T) {
 // fakeZeroQuotaCache 模拟 cache 命中且 daily limit=0（quota 耗尽）。
 type fakeZeroQuotaCache struct {
 	BillingCache
-	called bool
+	called        bool
+	balanceCalled bool
 }
 
 func (f *fakeZeroQuotaCache) GetUserPlatformQuotaCache(_ context.Context, _ int64, _ string) (*UserPlatformQuotaCacheEntry, bool, error) {
@@ -538,6 +539,11 @@ func (f *fakeZeroQuotaCache) GetSubscriptionCache(_ context.Context, _ int64, _ 
 
 func (f *fakeZeroQuotaCache) GetUserBalanceCache(_ context.Context, _ int64) (float64, bool, error) {
 	return 100.0, true, nil
+}
+
+func (f *fakeZeroQuotaCache) GetUserBalance(_ context.Context, _ int64) (float64, error) {
+	f.balanceCalled = true
+	return 100.0, nil
 }
 
 // TestCheckUserPlatformQuotaEligibility_StandardMode_BlocksWhenLimitZero 验证：
@@ -591,6 +597,67 @@ func TestCheckBillingEligibility_SubscriptionMode_BypassesPlatformQuota(t *testi
 	// GetUserPlatformQuotaCache 不应被调用
 	if fake.called {
 		t.Error("GetUserPlatformQuotaCache must NOT be called in subscription mode (C-NEW-2)")
+	}
+}
+
+// TestCheckBillingEligibilityWithEntitlement_BypassesBalanceAndPlatformQuota verifies
+// entitlement requests are not blocked by balance or user×platform quota prechecks.
+func TestCheckBillingEligibilityWithEntitlement_BypassesBalanceAndPlatformQuota(t *testing.T) {
+	fake := &fakeZeroQuotaCache{}
+	cfg := &config.Config{}
+	cfg.Billing.UserPlatformQuotaCacheTTLSeconds = 60
+	s := &BillingCacheService{
+		cache:                 fake,
+		cfg:                   cfg,
+		userPlatformQuotaRepo: &fakeQuotaRepo{},
+	}
+
+	group := &Group{
+		ID:               10,
+		SubscriptionType: "standard",
+		Status:           "active",
+	}
+	entitlement := &SubscriptionEntitlement{ID: 7, UserID: 42}
+	user := &User{ID: 42}
+
+	err := s.CheckBillingEligibilityWithEntitlement(context.Background(), user, nil, group, nil, entitlement, "anthropic")
+	if err != nil {
+		t.Fatalf("entitlement mode should bypass balance/platform prechecks, got: %v", err)
+	}
+	if fake.balanceCalled {
+		t.Error("entitlement mode must not check user balance")
+	}
+	if fake.called {
+		t.Error("entitlement mode must not check user×platform quota")
+	}
+}
+
+func TestCheckBillingEligibilityWithEntitlement_BalanceModeStillChecksBalanceAndPlatformQuota(t *testing.T) {
+	fake := &fakeZeroQuotaCache{}
+	cfg := &config.Config{}
+	cfg.Billing.UserPlatformQuotaCacheTTLSeconds = 60
+	s := &BillingCacheService{
+		cache:                 fake,
+		cfg:                   cfg,
+		userPlatformQuotaRepo: &fakeQuotaRepo{},
+	}
+
+	group := &Group{
+		ID:               10,
+		SubscriptionType: "standard",
+		Status:           "active",
+	}
+	user := &User{ID: 42}
+
+	err := s.CheckBillingEligibilityWithEntitlement(context.Background(), user, nil, group, nil, nil, "anthropic")
+	if !errors.Is(err, ErrUserPlatformDailyQuotaExhausted) {
+		t.Fatalf("balance mode should still enforce user×platform quota, got: %v", err)
+	}
+	if !fake.balanceCalled {
+		t.Error("balance mode should check user balance")
+	}
+	if !fake.called {
+		t.Error("balance mode should check user×platform quota")
 	}
 }
 
@@ -769,9 +836,9 @@ func TestHasUserPlatformQuotaLimit(t *testing.T) {
 	daily := 5.0
 
 	tests := []struct {
-		name    string
-		setup   func() *BillingCacheService
-		want    bool
+		name  string
+		setup func() *BillingCacheService
+		want  bool
 	}{
 		{
 			name: "has_limit",

@@ -120,6 +120,11 @@ func SubscriptionID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldSubscriptionID, v))
 }
 
+// EntitlementID applies equality check predicate on the "entitlement_id" field. It's identical to EntitlementIDEQ.
+func EntitlementID(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntitlementID, v))
+}
+
 // InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
 func InputTokens(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -193,6 +198,11 @@ func AccountRateMultiplier(v float64) predicate.UsageLog {
 // BillingType applies equality check predicate on the "billing_type" field. It's identical to BillingTypeEQ.
 func BillingType(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldBillingType, v))
+}
+
+// BillingSource applies equality check predicate on the "billing_source" field. It's identical to BillingSourceEQ.
+func BillingSource(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingSource, v))
 }
 
 // Stream applies equality check predicate on the "stream" field. It's identical to StreamEQ.
@@ -940,6 +950,36 @@ func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
 }
 
+// EntitlementIDEQ applies the EQ predicate on the "entitlement_id" field.
+func EntitlementIDEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldEntitlementID, v))
+}
+
+// EntitlementIDNEQ applies the NEQ predicate on the "entitlement_id" field.
+func EntitlementIDNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldEntitlementID, v))
+}
+
+// EntitlementIDIn applies the In predicate on the "entitlement_id" field.
+func EntitlementIDIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldEntitlementID, vs...))
+}
+
+// EntitlementIDNotIn applies the NotIn predicate on the "entitlement_id" field.
+func EntitlementIDNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldEntitlementID, vs...))
+}
+
+// EntitlementIDIsNil applies the IsNil predicate on the "entitlement_id" field.
+func EntitlementIDIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldEntitlementID))
+}
+
+// EntitlementIDNotNil applies the NotNil predicate on the "entitlement_id" field.
+func EntitlementIDNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldEntitlementID))
+}
+
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.
 func InputTokensEQ(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -1548,6 +1588,81 @@ func BillingTypeLT(v int8) predicate.UsageLog {
 // BillingTypeLTE applies the LTE predicate on the "billing_type" field.
 func BillingTypeLTE(v int8) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldLTE(FieldBillingType, v))
+}
+
+// BillingSourceEQ applies the EQ predicate on the "billing_source" field.
+func BillingSourceEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldBillingSource, v))
+}
+
+// BillingSourceNEQ applies the NEQ predicate on the "billing_source" field.
+func BillingSourceNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldBillingSource, v))
+}
+
+// BillingSourceIn applies the In predicate on the "billing_source" field.
+func BillingSourceIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldBillingSource, vs...))
+}
+
+// BillingSourceNotIn applies the NotIn predicate on the "billing_source" field.
+func BillingSourceNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldBillingSource, vs...))
+}
+
+// BillingSourceGT applies the GT predicate on the "billing_source" field.
+func BillingSourceGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldBillingSource, v))
+}
+
+// BillingSourceGTE applies the GTE predicate on the "billing_source" field.
+func BillingSourceGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldBillingSource, v))
+}
+
+// BillingSourceLT applies the LT predicate on the "billing_source" field.
+func BillingSourceLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldBillingSource, v))
+}
+
+// BillingSourceLTE applies the LTE predicate on the "billing_source" field.
+func BillingSourceLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldBillingSource, v))
+}
+
+// BillingSourceContains applies the Contains predicate on the "billing_source" field.
+func BillingSourceContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldBillingSource, v))
+}
+
+// BillingSourceHasPrefix applies the HasPrefix predicate on the "billing_source" field.
+func BillingSourceHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldBillingSource, v))
+}
+
+// BillingSourceHasSuffix applies the HasSuffix predicate on the "billing_source" field.
+func BillingSourceHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldBillingSource, v))
+}
+
+// BillingSourceIsNil applies the IsNil predicate on the "billing_source" field.
+func BillingSourceIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldBillingSource))
+}
+
+// BillingSourceNotNil applies the NotNil predicate on the "billing_source" field.
+func BillingSourceNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldBillingSource))
+}
+
+// BillingSourceEqualFold applies the EqualFold predicate on the "billing_source" field.
+func BillingSourceEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldBillingSource, v))
+}
+
+// BillingSourceContainsFold applies the ContainsFold predicate on the "billing_source" field.
+func BillingSourceContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldBillingSource, v))
 }
 
 // StreamEQ applies the EQ predicate on the "stream" field.
@@ -2417,6 +2532,29 @@ func HasSubscription() predicate.UsageLog {
 func HasSubscriptionWith(preds ...predicate.UserSubscription) predicate.UsageLog {
 	return predicate.UsageLog(func(s *sql.Selector) {
 		step := newSubscriptionStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasEntitlement applies the HasEdge predicate on the "entitlement" edge.
+func HasEntitlement() predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, EntitlementTable, EntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasEntitlementWith applies the HasEdge predicate on the "entitlement" edge with a given conditions (other predicates).
+func HasEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.UsageLog {
+	return predicate.UsageLog(func(s *sql.Selector) {
+		step := newEntitlementStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

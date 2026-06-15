@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -31,6 +32,18 @@ type SubscriptionPlan struct {
 	ValidityDays int `json:"validity_days,omitempty"`
 	// ValidityUnit holds the value of the "validity_unit" field.
 	ValidityUnit string `json:"validity_unit,omitempty"`
+	// AccessScope holds the value of the "access_scope" field.
+	AccessScope string `json:"access_scope,omitempty"`
+	// AllowedPlatforms holds the value of the "allowed_platforms" field.
+	AllowedPlatforms []string `json:"allowed_platforms,omitempty"`
+	// DailyLimitUsd holds the value of the "daily_limit_usd" field.
+	DailyLimitUsd *float64 `json:"daily_limit_usd,omitempty"`
+	// WeeklyLimitUsd holds the value of the "weekly_limit_usd" field.
+	WeeklyLimitUsd *float64 `json:"weekly_limit_usd,omitempty"`
+	// MonthlyLimitUsd holds the value of the "monthly_limit_usd" field.
+	MonthlyLimitUsd *float64 `json:"monthly_limit_usd,omitempty"`
+	// OveragePolicy holds the value of the "overage_policy" field.
+	OveragePolicy string `json:"overage_policy,omitempty"`
 	// Features holds the value of the "features" field.
 	Features string `json:"features,omitempty"`
 	// ProductName holds the value of the "product_name" field.
@@ -42,8 +55,73 @@ type SubscriptionPlan struct {
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
-	UpdatedAt    time.Time `json:"updated_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+	// Edges holds the relations/edges for other nodes in the graph.
+	// The values are being populated by the SubscriptionPlanQuery when eager-loading is set.
+	Edges        SubscriptionPlanEdges `json:"edges"`
 	selectValues sql.SelectValues
+}
+
+// SubscriptionPlanEdges holds the relations/edges for other nodes in the graph.
+type SubscriptionPlanEdges struct {
+	// Groups holds the value of the groups edge.
+	Groups []*Group `json:"groups,omitempty"`
+	// Entitlements holds the value of the entitlements edge.
+	Entitlements []*SubscriptionEntitlement `json:"entitlements,omitempty"`
+	// ExternalMappings holds the value of the external_mappings edge.
+	ExternalMappings []*SubscriptionPlanExternalMapping `json:"external_mappings,omitempty"`
+	// RedeemCodes holds the value of the redeem_codes edge.
+	RedeemCodes []*RedeemCode `json:"redeem_codes,omitempty"`
+	// SubscriptionPlanGroups holds the value of the subscription_plan_groups edge.
+	SubscriptionPlanGroups []*SubscriptionPlanGroup `json:"subscription_plan_groups,omitempty"`
+	// loadedTypes holds the information for reporting if a
+	// type was loaded (or requested) in eager-loading or not.
+	loadedTypes [5]bool
+}
+
+// GroupsOrErr returns the Groups value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionPlanEdges) GroupsOrErr() ([]*Group, error) {
+	if e.loadedTypes[0] {
+		return e.Groups, nil
+	}
+	return nil, &NotLoadedError{edge: "groups"}
+}
+
+// EntitlementsOrErr returns the Entitlements value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionPlanEdges) EntitlementsOrErr() ([]*SubscriptionEntitlement, error) {
+	if e.loadedTypes[1] {
+		return e.Entitlements, nil
+	}
+	return nil, &NotLoadedError{edge: "entitlements"}
+}
+
+// ExternalMappingsOrErr returns the ExternalMappings value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionPlanEdges) ExternalMappingsOrErr() ([]*SubscriptionPlanExternalMapping, error) {
+	if e.loadedTypes[2] {
+		return e.ExternalMappings, nil
+	}
+	return nil, &NotLoadedError{edge: "external_mappings"}
+}
+
+// RedeemCodesOrErr returns the RedeemCodes value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionPlanEdges) RedeemCodesOrErr() ([]*RedeemCode, error) {
+	if e.loadedTypes[3] {
+		return e.RedeemCodes, nil
+	}
+	return nil, &NotLoadedError{edge: "redeem_codes"}
+}
+
+// SubscriptionPlanGroupsOrErr returns the SubscriptionPlanGroups value or an error if the edge
+// was not loaded in eager-loading.
+func (e SubscriptionPlanEdges) SubscriptionPlanGroupsOrErr() ([]*SubscriptionPlanGroup, error) {
+	if e.loadedTypes[4] {
+		return e.SubscriptionPlanGroups, nil
+	}
+	return nil, &NotLoadedError{edge: "subscription_plan_groups"}
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -51,13 +129,15 @@ func (*SubscriptionPlan) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case subscriptionplan.FieldAllowedPlatforms:
+			values[i] = new([]byte)
 		case subscriptionplan.FieldForSale:
 			values[i] = new(sql.NullBool)
-		case subscriptionplan.FieldPrice, subscriptionplan.FieldOriginalPrice:
+		case subscriptionplan.FieldPrice, subscriptionplan.FieldOriginalPrice, subscriptionplan.FieldDailyLimitUsd, subscriptionplan.FieldWeeklyLimitUsd, subscriptionplan.FieldMonthlyLimitUsd:
 			values[i] = new(sql.NullFloat64)
 		case subscriptionplan.FieldID, subscriptionplan.FieldGroupID, subscriptionplan.FieldValidityDays, subscriptionplan.FieldSortOrder:
 			values[i] = new(sql.NullInt64)
-		case subscriptionplan.FieldName, subscriptionplan.FieldDescription, subscriptionplan.FieldValidityUnit, subscriptionplan.FieldFeatures, subscriptionplan.FieldProductName:
+		case subscriptionplan.FieldName, subscriptionplan.FieldDescription, subscriptionplan.FieldValidityUnit, subscriptionplan.FieldAccessScope, subscriptionplan.FieldOveragePolicy, subscriptionplan.FieldFeatures, subscriptionplan.FieldProductName:
 			values[i] = new(sql.NullString)
 		case subscriptionplan.FieldCreatedAt, subscriptionplan.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
@@ -125,6 +205,47 @@ func (_m *SubscriptionPlan) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ValidityUnit = value.String
 			}
+		case subscriptionplan.FieldAccessScope:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field access_scope", values[i])
+			} else if value.Valid {
+				_m.AccessScope = value.String
+			}
+		case subscriptionplan.FieldAllowedPlatforms:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field allowed_platforms", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.AllowedPlatforms); err != nil {
+					return fmt.Errorf("unmarshal field allowed_platforms: %w", err)
+				}
+			}
+		case subscriptionplan.FieldDailyLimitUsd:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field daily_limit_usd", values[i])
+			} else if value.Valid {
+				_m.DailyLimitUsd = new(float64)
+				*_m.DailyLimitUsd = value.Float64
+			}
+		case subscriptionplan.FieldWeeklyLimitUsd:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field weekly_limit_usd", values[i])
+			} else if value.Valid {
+				_m.WeeklyLimitUsd = new(float64)
+				*_m.WeeklyLimitUsd = value.Float64
+			}
+		case subscriptionplan.FieldMonthlyLimitUsd:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field monthly_limit_usd", values[i])
+			} else if value.Valid {
+				_m.MonthlyLimitUsd = new(float64)
+				*_m.MonthlyLimitUsd = value.Float64
+			}
+		case subscriptionplan.FieldOveragePolicy:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field overage_policy", values[i])
+			} else if value.Valid {
+				_m.OveragePolicy = value.String
+			}
 		case subscriptionplan.FieldFeatures:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field features", values[i])
@@ -174,6 +295,31 @@ func (_m *SubscriptionPlan) Value(name string) (ent.Value, error) {
 	return _m.selectValues.Get(name)
 }
 
+// QueryGroups queries the "groups" edge of the SubscriptionPlan entity.
+func (_m *SubscriptionPlan) QueryGroups() *GroupQuery {
+	return NewSubscriptionPlanClient(_m.config).QueryGroups(_m)
+}
+
+// QueryEntitlements queries the "entitlements" edge of the SubscriptionPlan entity.
+func (_m *SubscriptionPlan) QueryEntitlements() *SubscriptionEntitlementQuery {
+	return NewSubscriptionPlanClient(_m.config).QueryEntitlements(_m)
+}
+
+// QueryExternalMappings queries the "external_mappings" edge of the SubscriptionPlan entity.
+func (_m *SubscriptionPlan) QueryExternalMappings() *SubscriptionPlanExternalMappingQuery {
+	return NewSubscriptionPlanClient(_m.config).QueryExternalMappings(_m)
+}
+
+// QueryRedeemCodes queries the "redeem_codes" edge of the SubscriptionPlan entity.
+func (_m *SubscriptionPlan) QueryRedeemCodes() *RedeemCodeQuery {
+	return NewSubscriptionPlanClient(_m.config).QueryRedeemCodes(_m)
+}
+
+// QuerySubscriptionPlanGroups queries the "subscription_plan_groups" edge of the SubscriptionPlan entity.
+func (_m *SubscriptionPlan) QuerySubscriptionPlanGroups() *SubscriptionPlanGroupQuery {
+	return NewSubscriptionPlanClient(_m.config).QuerySubscriptionPlanGroups(_m)
+}
+
 // Update returns a builder for updating this SubscriptionPlan.
 // Note that you need to call SubscriptionPlan.Unwrap() before calling this method if this SubscriptionPlan
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -219,6 +365,30 @@ func (_m *SubscriptionPlan) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("validity_unit=")
 	builder.WriteString(_m.ValidityUnit)
+	builder.WriteString(", ")
+	builder.WriteString("access_scope=")
+	builder.WriteString(_m.AccessScope)
+	builder.WriteString(", ")
+	builder.WriteString("allowed_platforms=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AllowedPlatforms))
+	builder.WriteString(", ")
+	if v := _m.DailyLimitUsd; v != nil {
+		builder.WriteString("daily_limit_usd=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.WeeklyLimitUsd; v != nil {
+		builder.WriteString("weekly_limit_usd=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonthlyLimitUsd; v != nil {
+		builder.WriteString("monthly_limit_usd=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("overage_policy=")
+	builder.WriteString(_m.OveragePolicy)
 	builder.WriteString(", ")
 	builder.WriteString("features=")
 	builder.WriteString(_m.Features)

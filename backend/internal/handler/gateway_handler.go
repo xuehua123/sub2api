@@ -202,6 +202,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// Track if we've started streaming (for error handling)
 	streamStarted := false
+	deferredResponse := beginDeferredGatewayResponse(c, !reqStream)
+	defer deferredResponse.Flush()
 
 	// 绑定错误透传服务，允许 service 层在非 failover 错误场景复用规则。
 	if h.errorPassthroughService != nil {
@@ -210,6 +212,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 	// 获取订阅信息（可能为nil）- 提前获取用于后续检查
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
 
 	// 0. 检查wait队列是否已满
 	maxWait := service.CalculateMaxWait(subject.Concurrency)
@@ -252,7 +255,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	}
 
 	// 2. 【新增】Wait后二次检查余额/订阅
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("gateway.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -523,39 +526,62 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             apiKey,
-					User:               apiKey.User,
-					Account:            account,
-					Subscription:       subscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-				}); err != nil {
-					logger.L().With(
-						zap.String("component", "handler.gateway.messages"),
-						zap.Int64("user_id", subject.UserID),
-						zap.Int64("api_key_id", apiKey.ID),
-						zap.Any("group_id", apiKey.GroupID),
-						zap.String("model", reqModel),
-						zap.Int64("account_id", account.ID),
-					).Error("gateway.record_usage_failed", zap.Error(err))
+			usageInput := &service.RecordUsageInput{
+				Result:                     result,
+				QuotaPlatform:              quotaPlatform,
+				APIKey:                     apiKey,
+				User:                       apiKey.User,
+				Account:                    account,
+				Subscription:               subscription,
+				Entitlement:                subscriptionEntitlement,
+				EntitlementBalanceFallback: entitlementBalanceFallback,
+				InboundEndpoint:            inboundEndpoint,
+				UpstreamEndpoint:           upstreamEndpoint,
+				UserAgent:                  userAgent,
+				IPAddress:                  clientIP,
+				RequestPayloadHash:         requestPayloadHash,
+				ForceCacheBilling:          forceCacheBilling,
+				APIKeyService:              h.apiKeyService,
+				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			}
+			if reqStream {
+				h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+					if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
+						logger.L().With(
+							zap.String("component", "handler.gateway.messages"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", apiKey.ID),
+							zap.Any("group_id", apiKey.GroupID),
+							zap.String("model", reqModel),
+							zap.Int64("account_id", account.ID),
+						).Error("gateway.record_usage_failed", zap.Error(err))
+					}
+				})
+			} else if err := runUsageRecordTaskSync(c.Request.Context(), gatewayUsageRecordTask(h.gatewayService, usageInput)); err != nil {
+				deferredResponse.Discard()
+				status, code, message, retryAfter := billingErrorDetails(err)
+				if retryAfter > 0 {
+					c.Header("Retry-After", strconv.Itoa(retryAfter))
 				}
-			})
+				h.handleStreamingAwareError(c, status, code, message, streamStarted)
+				logger.L().With(
+					zap.String("component", "handler.gateway.messages"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", apiKey.ID),
+					zap.Any("group_id", apiKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("gateway.record_usage_failed", zap.Error(err))
+				return
+			}
 			return
 		}
 	}
 
 	currentAPIKey := apiKey
 	currentSubscription := subscription
+	currentEntitlement := subscriptionEntitlement
+	currentEntitlementBalanceFallback := entitlementBalanceFallback
 	var fallbackGroupID *int64
 	if apiKey.Group != nil {
 		fallbackGroupID = apiKey.Group.FallbackGroupIDOnInvalidRequest
@@ -849,6 +875,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						c.Request = c.Request.WithContext(ctx)
 						currentAPIKey = fallbackAPIKey
 						currentSubscription = nil
+						currentEntitlement = nil
+						currentEntitlementBalanceFallback = false
 						fallbackUsed = true
 						retryWithFallback = true
 						break
@@ -932,33 +960,54 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 			forceCacheBilling := fs.ForceCacheBilling
 			quotaPlatform := service.QuotaPlatform(c.Request.Context(), currentAPIKey)
-			h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
-				if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
-					Result:             result,
-					QuotaPlatform:      quotaPlatform,
-					APIKey:             currentAPIKey,
-					User:               currentAPIKey.User,
-					Account:            account,
-					Subscription:       currentSubscription,
-					InboundEndpoint:    inboundEndpoint,
-					UpstreamEndpoint:   upstreamEndpoint,
-					UserAgent:          userAgent,
-					IPAddress:          clientIP,
-					RequestPayloadHash: requestPayloadHash,
-					ForceCacheBilling:  forceCacheBilling,
-					APIKeyService:      h.apiKeyService,
-					ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
-				}); err != nil {
-					logger.L().With(
-						zap.String("component", "handler.gateway.messages"),
-						zap.Int64("user_id", subject.UserID),
-						zap.Int64("api_key_id", currentAPIKey.ID),
-						zap.Any("group_id", currentAPIKey.GroupID),
-						zap.String("model", reqModel),
-						zap.Int64("account_id", account.ID),
-					).Error("gateway.record_usage_failed", zap.Error(err))
+			usageInput := &service.RecordUsageInput{
+				Result:                     result,
+				QuotaPlatform:              quotaPlatform,
+				APIKey:                     currentAPIKey,
+				User:                       currentAPIKey.User,
+				Account:                    account,
+				Subscription:               currentSubscription,
+				Entitlement:                currentEntitlement,
+				EntitlementBalanceFallback: currentEntitlementBalanceFallback,
+				InboundEndpoint:            inboundEndpoint,
+				UpstreamEndpoint:           upstreamEndpoint,
+				UserAgent:                  userAgent,
+				IPAddress:                  clientIP,
+				RequestPayloadHash:         requestPayloadHash,
+				ForceCacheBilling:          forceCacheBilling,
+				APIKeyService:              h.apiKeyService,
+				ChannelUsageFields:         channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
+			}
+			if reqStream {
+				h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+					if err := h.gatewayService.RecordUsage(ctx, usageInput); err != nil {
+						logger.L().With(
+							zap.String("component", "handler.gateway.messages"),
+							zap.Int64("user_id", subject.UserID),
+							zap.Int64("api_key_id", currentAPIKey.ID),
+							zap.Any("group_id", currentAPIKey.GroupID),
+							zap.String("model", reqModel),
+							zap.Int64("account_id", account.ID),
+						).Error("gateway.record_usage_failed", zap.Error(err))
+					}
+				})
+			} else if err := runUsageRecordTaskSync(c.Request.Context(), gatewayUsageRecordTask(h.gatewayService, usageInput)); err != nil {
+				deferredResponse.Discard()
+				status, code, message, retryAfter := billingErrorDetails(err)
+				if retryAfter > 0 {
+					c.Header("Retry-After", strconv.Itoa(retryAfter))
 				}
-			})
+				h.handleStreamingAwareError(c, status, code, message, streamStarted)
+				logger.L().With(
+					zap.String("component", "handler.gateway.messages"),
+					zap.Int64("user_id", subject.UserID),
+					zap.Int64("api_key_id", currentAPIKey.ID),
+					zap.Any("group_id", currentAPIKey.GroupID),
+					zap.String("model", reqModel),
+					zap.Int64("account_id", account.ID),
+				).Error("gateway.record_usage_failed", zap.Error(err))
+				return
+			}
 			return
 		}
 		if !retryWithFallback {
@@ -1732,10 +1781,11 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 
 	// 获取订阅信息（可能为nil）
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
+	subscriptionEntitlement, _ := subscriptionEntitlementUsageContext(c)
 
 	// 校验 billing eligibility（订阅/余额）
 	// 【注意】不计算并发，但需要校验订阅/余额
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
@@ -2027,6 +2077,10 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		msg := pkgerrors.Message(err)
 		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", msg, 0
 	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
+		msg := pkgerrors.Message(err)
+		return http.StatusTooManyRequests, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", msg, 0
+	}
 	if errors.Is(err, service.ErrSubscriptionNotFound) {
 		msg := pkgerrors.Message(err)
 		return http.StatusForbidden, "SUBSCRIPTION_NOT_FOUND", msg, 0
@@ -2124,6 +2178,11 @@ func (h *GatewayHandler) submitUsageRecordTask(parent context.Context, task serv
 		}
 	}()
 	task(ctx)
+}
+
+func subscriptionEntitlementUsageContext(c *gin.Context) (*service.SubscriptionEntitlement, bool) {
+	entitlement, _ := middleware2.GetSubscriptionEntitlementFromContext(c)
+	return entitlement, middleware2.GetSubscriptionEntitlementBalanceFallbackFromContext(c)
 }
 
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式

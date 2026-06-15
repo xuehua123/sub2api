@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -193,6 +194,20 @@ func (_c *PaymentOrderCreate) SetSubscriptionGroupID(v int64) *PaymentOrderCreat
 func (_c *PaymentOrderCreate) SetNillableSubscriptionGroupID(v *int64) *PaymentOrderCreate {
 	if v != nil {
 		_c.SetSubscriptionGroupID(*v)
+	}
+	return _c
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_c *PaymentOrderCreate) SetSubscriptionEntitlementID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetSubscriptionEntitlementID(v)
+	return _c
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableSubscriptionEntitlementID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetSubscriptionEntitlementID(*v)
 	}
 	return _c
 }
@@ -476,6 +491,11 @@ func (_c *PaymentOrderCreate) SetNillableUpdatedAt(v *time.Time) *PaymentOrderCr
 // SetUser sets the "user" edge to the User entity.
 func (_c *PaymentOrderCreate) SetUser(v *User) *PaymentOrderCreate {
 	return _c.SetUserID(v.ID)
+}
+
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_c *PaymentOrderCreate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *PaymentOrderCreate {
+	return _c.SetSubscriptionEntitlementID(v.ID)
 }
 
 // Mutation returns the PaymentOrderMutation object of the builder.
@@ -870,6 +890,23 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 		_node.UserID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.SubscriptionEntitlementTable,
+			Columns: []string{paymentorder.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.SubscriptionEntitlementID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec
 }
 
@@ -1189,6 +1226,24 @@ func (u *PaymentOrderUpsert) AddSubscriptionGroupID(v int64) *PaymentOrderUpsert
 // ClearSubscriptionGroupID clears the value of the "subscription_group_id" field.
 func (u *PaymentOrderUpsert) ClearSubscriptionGroupID() *PaymentOrderUpsert {
 	u.SetNull(paymentorder.FieldSubscriptionGroupID)
+	return u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsert) SetSubscriptionEntitlementID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldSubscriptionEntitlementID, v)
+	return u
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateSubscriptionEntitlementID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldSubscriptionEntitlementID)
+	return u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsert) ClearSubscriptionEntitlementID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldSubscriptionEntitlementID)
 	return u
 }
 
@@ -1897,6 +1952,27 @@ func (u *PaymentOrderUpsertOne) UpdateSubscriptionGroupID() *PaymentOrderUpsertO
 func (u *PaymentOrderUpsertOne) ClearSubscriptionGroupID() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionGroupID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsertOne) SetSubscriptionEntitlementID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateSubscriptionEntitlementID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsertOne) ClearSubscriptionEntitlementID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionEntitlementID()
 	})
 }
 
@@ -2829,6 +2905,27 @@ func (u *PaymentOrderUpsertBulk) UpdateSubscriptionGroupID() *PaymentOrderUpsert
 func (u *PaymentOrderUpsertBulk) ClearSubscriptionGroupID() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.ClearSubscriptionGroupID()
+	})
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsertBulk) SetSubscriptionEntitlementID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetSubscriptionEntitlementID(v)
+	})
+}
+
+// UpdateSubscriptionEntitlementID sets the "subscription_entitlement_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateSubscriptionEntitlementID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateSubscriptionEntitlementID()
+	})
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (u *PaymentOrderUpsertBulk) ClearSubscriptionEntitlementID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearSubscriptionEntitlementID()
 	})
 }
 

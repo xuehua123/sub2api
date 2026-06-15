@@ -17,6 +17,7 @@ var (
 		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "key", Type: field.TypeString, Unique: true, Size: 128},
 		{Name: "name", Type: field.TypeString, Size: 100},
+		{Name: "access_source", Type: field.TypeString, Size: 32, Default: "balance"},
 		{Name: "auto_switch_group_enabled", Type: field.TypeBool, Default: true},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "last_used_at", Type: field.TypeTime, Nullable: true},
@@ -35,6 +36,7 @@ var (
 		{Name: "window_1d_start", Type: field.TypeTime, Nullable: true},
 		{Name: "window_7d_start", Type: field.TypeTime, Nullable: true},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "subscription_entitlement_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
 	}
 	// APIKeysTable holds the schema information for the "api_keys" table.
@@ -45,13 +47,19 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "api_keys_groups_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[23]},
+				Columns:    []*schema.Column{APIKeysColumns[24]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
+				Symbol:     "api_keys_subscription_entitlements_api_keys",
+				Columns:    []*schema.Column{APIKeysColumns[25]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
 				Symbol:     "api_keys_users_api_keys",
-				Columns:    []*schema.Column{APIKeysColumns[24]},
+				Columns:    []*schema.Column{APIKeysColumns[26]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -60,17 +68,27 @@ var (
 			{
 				Name:    "apikey_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[24]},
+				Columns: []*schema.Column{APIKeysColumns[26]},
 			},
 			{
 				Name:    "apikey_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[23]},
+				Columns: []*schema.Column{APIKeysColumns[24]},
+			},
+			{
+				Name:    "apikey_subscription_entitlement_id",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[25]},
+			},
+			{
+				Name:    "apikey_access_source",
+				Unique:  false,
+				Columns: []*schema.Column{APIKeysColumns[6]},
 			},
 			{
 				Name:    "apikey_status",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[7]},
+				Columns: []*schema.Column{APIKeysColumns[8]},
 			},
 			{
 				Name:    "apikey_deleted_at",
@@ -80,17 +98,17 @@ var (
 			{
 				Name:    "apikey_last_used_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[8]},
+				Columns: []*schema.Column{APIKeysColumns[9]},
 			},
 			{
 				Name:    "apikey_quota_quota_used",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[11], APIKeysColumns[12]},
+				Columns: []*schema.Column{APIKeysColumns[12], APIKeysColumns[13]},
 			},
 			{
 				Name:    "apikey_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{APIKeysColumns[13]},
+				Columns: []*schema.Column{APIKeysColumns[14]},
 			},
 		},
 	}
@@ -1003,6 +1021,9 @@ var (
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "platform", Type: field.TypeString, Size: 50, Default: "anthropic"},
 		{Name: "subscription_type", Type: field.TypeString, Size: 20, Default: "standard"},
+		{Name: "balance_enabled", Type: field.TypeBool, Default: true},
+		{Name: "subscription_enabled", Type: field.TypeBool, Default: false},
+		{Name: "plan_auto_grant_enabled", Type: field.TypeBool, Default: false},
 		{Name: "daily_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
 		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
@@ -1051,6 +1072,21 @@ var (
 				Columns: []*schema.Column{GroupsColumns[10]},
 			},
 			{
+				Name:    "group_balance_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{GroupsColumns[11]},
+			},
+			{
+				Name:    "group_subscription_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{GroupsColumns[12]},
+			},
+			{
+				Name:    "group_plan_auto_grant_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{GroupsColumns[13]},
+			},
+			{
 				Name:    "group_is_exclusive",
 				Unique:  false,
 				Columns: []*schema.Column{GroupsColumns[7]},
@@ -1063,7 +1099,7 @@ var (
 			{
 				Name:    "group_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{GroupsColumns[28]},
+				Columns: []*schema.Column{GroupsColumns[31]},
 			},
 		},
 	}
@@ -1211,6 +1247,7 @@ var (
 		{Name: "src_url", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "subscription_entitlement_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
 	}
 	// PaymentOrdersTable holds the schema information for the "payment_orders" table.
@@ -1220,8 +1257,14 @@ var (
 		PrimaryKey: []*schema.Column{PaymentOrdersColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "payment_orders_users_payment_orders",
+				Symbol:     "payment_orders_subscription_entitlements_payment_orders",
 				Columns:    []*schema.Column{PaymentOrdersColumns[39]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "payment_orders_users_payment_orders",
+				Columns:    []*schema.Column{PaymentOrdersColumns[40]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1238,7 +1281,7 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[39]},
+				Columns: []*schema.Column{PaymentOrdersColumns[40]},
 			},
 			{
 				Name:    "paymentorder_status",
@@ -1269,6 +1312,11 @@ var (
 				Name:    "paymentorder_order_type",
 				Unique:  false,
 				Columns: []*schema.Column{PaymentOrdersColumns[14]},
+			},
+			{
+				Name:    "paymentorder_subscription_entitlement_id",
+				Unique:  false,
+				Columns: []*schema.Column{PaymentOrdersColumns[39]},
 			},
 		},
 	}
@@ -1587,6 +1635,8 @@ var (
 		{Name: "expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "validity_days", Type: field.TypeInt, Default: 30},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "subscription_entitlement_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "used_by", Type: field.TypeInt64, Nullable: true},
 	}
 	// RedeemCodesTable holds the schema information for the "redeem_codes" table.
@@ -1602,8 +1652,20 @@ var (
 				OnDelete:   schema.SetNull,
 			},
 			{
-				Symbol:     "redeem_codes_users_redeem_codes",
+				Symbol:     "redeem_codes_subscription_entitlements_redeem_codes",
 				Columns:    []*schema.Column{RedeemCodesColumns[11]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "redeem_codes_subscription_plans_redeem_codes",
+				Columns:    []*schema.Column{RedeemCodesColumns[12]},
+				RefColumns: []*schema.Column{SubscriptionPlansColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "redeem_codes_users_redeem_codes",
+				Columns:    []*schema.Column{RedeemCodesColumns[13]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -1617,12 +1679,22 @@ var (
 			{
 				Name:    "redeemcode_used_by",
 				Unique:  false,
-				Columns: []*schema.Column{RedeemCodesColumns[11]},
+				Columns: []*schema.Column{RedeemCodesColumns[13]},
 			},
 			{
 				Name:    "redeemcode_group_id",
 				Unique:  false,
 				Columns: []*schema.Column{RedeemCodesColumns[10]},
+			},
+			{
+				Name:    "redeemcode_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemCodesColumns[12]},
+			},
+			{
+				Name:    "redeemcode_subscription_entitlement_id",
+				Unique:  false,
+				Columns: []*schema.Column{RedeemCodesColumns[11]},
 			},
 			{
 				Name:    "redeemcode_expires_at",
@@ -1801,6 +1873,250 @@ var (
 		Columns:    SettingsColumns,
 		PrimaryKey: []*schema.Column{SettingsColumns[0]},
 	}
+	// SubscriptionEntitlementsColumns holds the columns for the "subscription_entitlements" table.
+	SubscriptionEntitlementsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "name", Type: field.TypeString, Size: 120, Default: ""},
+		{Name: "source_type", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
+		{Name: "starts_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "expires_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "daily_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "weekly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "monthly_window_start", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "daily_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "daily_usage_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "weekly_usage_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "monthly_usage_usd", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,10)"}},
+		{Name: "overage_policy", Type: field.TypeString, Size: 32, Default: "block"},
+		{Name: "plan_snapshot", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_external_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "assigned_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "primary_group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_redeem_code_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "assigned_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "legacy_subscription_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// SubscriptionEntitlementsTable holds the schema information for the "subscription_entitlements" table.
+	SubscriptionEntitlementsTable = &schema.Table{
+		Name:       "subscription_entitlements",
+		Columns:    SubscriptionEntitlementsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_entitlements_groups_primary_subscription_entitlements",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[24]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "subscription_entitlements_redeem_codes_source_subscription_entitlements",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[25]},
+				RefColumns: []*schema.Column{RedeemCodesColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "subscription_entitlements_subscription_plans_entitlements",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[26]},
+				RefColumns: []*schema.Column{SubscriptionPlansColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "subscription_entitlements_users_subscription_entitlements",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[27]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "subscription_entitlements_users_assigned_subscription_entitlements",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[28]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "subscription_entitlements_user_subscriptions_legacy_entitlement",
+				Columns:    []*schema.Column{SubscriptionEntitlementsColumns[29]},
+				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionentitlement_user_id_status_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[27], SubscriptionEntitlementsColumns[6], SubscriptionEntitlementsColumns[8]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlement_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[26]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlement_source_redeem_code_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[25]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_redeem_code_id IS NOT NULL AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlement_source_type_source_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[5], SubscriptionEntitlementsColumns[20]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_id IS NOT NULL AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlement_source_type_source_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[5], SubscriptionEntitlementsColumns[21]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_external_id IS NOT NULL AND deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlement_legacy_subscription_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[29]},
+			},
+			{
+				Name:    "subscriptionentitlement_user_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[27]},
+			},
+			{
+				Name:    "subscriptionentitlement_status",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[6]},
+			},
+			{
+				Name:    "subscriptionentitlement_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementsColumns[8]},
+			},
+		},
+	}
+	// SubscriptionEntitlementFulfillmentsColumns holds the columns for the "subscription_entitlement_fulfillments" table.
+	SubscriptionEntitlementFulfillmentsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "user_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_type", Type: field.TypeString, Size: 32, Default: "unknown"},
+		{Name: "source_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "source_external_id", Type: field.TypeString, Nullable: true, Size: 128},
+		{Name: "source_redeem_code_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "validity_days", Type: field.TypeInt, Default: 0},
+		{Name: "starts_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "expires_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "assigned_by", Type: field.TypeInt64, Nullable: true},
+		{Name: "assigned_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "entitlement_id", Type: field.TypeInt64},
+	}
+	// SubscriptionEntitlementFulfillmentsTable holds the schema information for the "subscription_entitlement_fulfillments" table.
+	SubscriptionEntitlementFulfillmentsTable = &schema.Table{
+		Name:       "subscription_entitlement_fulfillments",
+		Columns:    SubscriptionEntitlementFulfillmentsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_entitlement_fulfillments_subscription_entitlements_fulfillments",
+				Columns:    []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[15]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.NoAction,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionentitlementfulfillment_entitlement_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[15]},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_user_id_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[1], SubscriptionEntitlementFulfillmentsColumns[2]},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_redeem_code_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_redeem_code_id IS NOT NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_type_source_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[3], SubscriptionEntitlementFulfillmentsColumns[4]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_id IS NOT NULL",
+				},
+			},
+			{
+				Name:    "subscriptionentitlementfulfillment_source_type_source_external_id",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionEntitlementFulfillmentsColumns[3], SubscriptionEntitlementFulfillmentsColumns[5]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "source_external_id IS NOT NULL",
+				},
+			},
+		},
+	}
+	// SubscriptionEntitlementGroupsColumns holds the columns for the "subscription_entitlement_groups" table.
+	SubscriptionEntitlementGroupsColumns = []*schema.Column{
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "entitlement_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+	}
+	// SubscriptionEntitlementGroupsTable holds the schema information for the "subscription_entitlement_groups" table.
+	SubscriptionEntitlementGroupsTable = &schema.Table{
+		Name:       "subscription_entitlement_groups",
+		Columns:    SubscriptionEntitlementGroupsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionEntitlementGroupsColumns[4], SubscriptionEntitlementGroupsColumns[5]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_entitlement_groups_subscription_entitlements_entitlement",
+				Columns:    []*schema.Column{SubscriptionEntitlementGroupsColumns[4]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "subscription_entitlement_groups_groups_group",
+				Columns:    []*schema.Column{SubscriptionEntitlementGroupsColumns[5]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionentitlementgroup_group_id_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionEntitlementGroupsColumns[5], SubscriptionEntitlementGroupsColumns[1]},
+			},
+		},
+	}
 	// SubscriptionPlansColumns holds the columns for the "subscription_plans" table.
 	SubscriptionPlansColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeInt64, Increment: true},
@@ -1811,6 +2127,12 @@ var (
 		{Name: "original_price", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "validity_days", Type: field.TypeInt, Default: 30},
 		{Name: "validity_unit", Type: field.TypeString, Size: 10, Default: "day"},
+		{Name: "access_scope", Type: field.TypeString, Size: 32, Default: "explicit"},
+		{Name: "allowed_platforms", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
+		{Name: "daily_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "weekly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "monthly_limit_usd", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "overage_policy", Type: field.TypeString, Size: 32, Default: "block"},
 		{Name: "features", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "product_name", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "for_sale", Type: field.TypeBool, Default: true},
@@ -1832,7 +2154,108 @@ var (
 			{
 				Name:    "subscriptionplan_for_sale",
 				Unique:  false,
-				Columns: []*schema.Column{SubscriptionPlansColumns[10]},
+				Columns: []*schema.Column{SubscriptionPlansColumns[16]},
+			},
+			{
+				Name:    "subscriptionplan_access_scope",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlansColumns[8]},
+			},
+		},
+	}
+	// SubscriptionPlanExternalMappingsColumns holds the columns for the "subscription_plan_external_mappings" table.
+	SubscriptionPlanExternalMappingsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "source", Type: field.TypeString, Size: 64, Default: "sub2-payment-page"},
+		{Name: "legacy_validity_days", Type: field.TypeInt},
+		{Name: "legacy_value", Type: field.TypeFloat64, SchemaType: map[string]string{"postgres": "decimal(20,8)"}},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "priority", Type: field.TypeInt, Default: 0},
+		{Name: "notes", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "deleted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "legacy_group_id", Type: field.TypeInt64},
+		{Name: "plan_id", Type: field.TypeInt64},
+	}
+	// SubscriptionPlanExternalMappingsTable holds the schema information for the "subscription_plan_external_mappings" table.
+	SubscriptionPlanExternalMappingsTable = &schema.Table{
+		Name:       "subscription_plan_external_mappings",
+		Columns:    SubscriptionPlanExternalMappingsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionPlanExternalMappingsColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_plan_external_mappings_groups_subscription_plan_external_mappings",
+				Columns:    []*schema.Column{SubscriptionPlanExternalMappingsColumns[10]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Restrict,
+			},
+			{
+				Symbol:     "subscription_plan_external_mappings_subscription_plans_external_mappings",
+				Columns:    []*schema.Column{SubscriptionPlanExternalMappingsColumns[11]},
+				RefColumns: []*schema.Column{SubscriptionPlansColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionplanexternalmapping_source_legacy_group_id_legacy_validity_days_legacy_value",
+				Unique:  true,
+				Columns: []*schema.Column{SubscriptionPlanExternalMappingsColumns[1], SubscriptionPlanExternalMappingsColumns[10], SubscriptionPlanExternalMappingsColumns[2], SubscriptionPlanExternalMappingsColumns[3]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "deleted_at IS NULL",
+				},
+			},
+			{
+				Name:    "subscriptionplanexternalmapping_plan_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlanExternalMappingsColumns[11]},
+			},
+			{
+				Name:    "subscriptionplanexternalmapping_legacy_group_id",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlanExternalMappingsColumns[10]},
+			},
+			{
+				Name:    "subscriptionplanexternalmapping_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlanExternalMappingsColumns[4]},
+			},
+		},
+	}
+	// SubscriptionPlanGroupsColumns holds the columns for the "subscription_plan_groups" table.
+	SubscriptionPlanGroupsColumns = []*schema.Column{
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "plan_id", Type: field.TypeInt64},
+		{Name: "group_id", Type: field.TypeInt64},
+	}
+	// SubscriptionPlanGroupsTable holds the schema information for the "subscription_plan_groups" table.
+	SubscriptionPlanGroupsTable = &schema.Table{
+		Name:       "subscription_plan_groups",
+		Columns:    SubscriptionPlanGroupsColumns,
+		PrimaryKey: []*schema.Column{SubscriptionPlanGroupsColumns[4], SubscriptionPlanGroupsColumns[5]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "subscription_plan_groups_subscription_plans_plan",
+				Columns:    []*schema.Column{SubscriptionPlanGroupsColumns[4]},
+				RefColumns: []*schema.Column{SubscriptionPlansColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "subscription_plan_groups_groups_group",
+				Columns:    []*schema.Column{SubscriptionPlanGroupsColumns[5]},
+				RefColumns: []*schema.Column{GroupsColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "subscriptionplangroup_group_id_enabled",
+				Unique:  false,
+				Columns: []*schema.Column{SubscriptionPlanGroupsColumns[5], SubscriptionPlanGroupsColumns[1]},
 			},
 		},
 	}
@@ -2204,6 +2627,7 @@ var (
 		{Name: "rate_multiplier", Type: field.TypeFloat64, Default: 1, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "account_rate_multiplier", Type: field.TypeFloat64, Nullable: true, SchemaType: map[string]string{"postgres": "decimal(10,4)"}},
 		{Name: "billing_type", Type: field.TypeInt8, Default: 0},
+		{Name: "billing_source", Type: field.TypeString, Nullable: true, Size: 50},
 		{Name: "stream", Type: field.TypeBool, Default: false},
 		{Name: "duration_ms", Type: field.TypeInt, Nullable: true},
 		{Name: "first_token_ms", Type: field.TypeInt, Nullable: true},
@@ -2222,6 +2646,7 @@ var (
 		{Name: "api_key_id", Type: field.TypeInt64},
 		{Name: "account_id", Type: field.TypeInt64},
 		{Name: "group_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "entitlement_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "user_id", Type: field.TypeInt64},
 		{Name: "subscription_id", Type: field.TypeInt64, Nullable: true},
 	}
@@ -2233,31 +2658,37 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[39]},
+				Columns:    []*schema.Column{UsageLogsColumns[40]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[40]},
+				Columns:    []*schema.Column{UsageLogsColumns[41]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[41]},
+				Columns:    []*schema.Column{UsageLogsColumns[42]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
+				Symbol:     "usage_logs_subscription_entitlements_usage_logs",
+				Columns:    []*schema.Column{UsageLogsColumns[43]},
+				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[42]},
+				Columns:    []*schema.Column{UsageLogsColumns[44]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[43]},
+				Columns:    []*schema.Column{UsageLogsColumns[45]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -2266,32 +2697,42 @@ var (
 			{
 				Name:    "usagelog_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[42]},
+				Columns: []*schema.Column{UsageLogsColumns[44]},
 			},
 			{
 				Name:    "usagelog_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[39]},
+				Columns: []*schema.Column{UsageLogsColumns[40]},
 			},
 			{
 				Name:    "usagelog_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[40]},
+				Columns: []*schema.Column{UsageLogsColumns[41]},
 			},
 			{
 				Name:    "usagelog_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[41]},
+				Columns: []*schema.Column{UsageLogsColumns[42]},
 			},
 			{
 				Name:    "usagelog_subscription_id",
 				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[45]},
+			},
+			{
+				Name:    "usagelog_entitlement_id",
+				Unique:  false,
 				Columns: []*schema.Column{UsageLogsColumns[43]},
+			},
+			{
+				Name:    "usagelog_billing_source_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UsageLogsColumns[24], UsageLogsColumns[39]},
 			},
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[38]},
+				Columns: []*schema.Column{UsageLogsColumns[39]},
 			},
 			{
 				Name:    "usagelog_model",
@@ -2311,17 +2752,17 @@ var (
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[42], UsageLogsColumns[38]},
+				Columns: []*schema.Column{UsageLogsColumns[44], UsageLogsColumns[39]},
 			},
 			{
 				Name:    "usagelog_api_key_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[39], UsageLogsColumns[38]},
+				Columns: []*schema.Column{UsageLogsColumns[40], UsageLogsColumns[39]},
 			},
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[41], UsageLogsColumns[38]},
+				Columns: []*schema.Column{UsageLogsColumns[42], UsageLogsColumns[39]},
 			},
 		},
 	}
@@ -2663,7 +3104,12 @@ var (
 		ReferralRelationHistoriesTable,
 		SecuritySecretsTable,
 		SettingsTable,
+		SubscriptionEntitlementsTable,
+		SubscriptionEntitlementFulfillmentsTable,
+		SubscriptionEntitlementGroupsTable,
 		SubscriptionPlansTable,
+		SubscriptionPlanExternalMappingsTable,
+		SubscriptionPlanGroupsTable,
 		SupportIssuesTable,
 		SupportIssueAttachmentsTable,
 		SupportIssueCommentsTable,
@@ -2683,7 +3129,8 @@ var (
 
 func init() {
 	APIKeysTable.ForeignKeys[0].RefTable = GroupsTable
-	APIKeysTable.ForeignKeys[1].RefTable = UsersTable
+	APIKeysTable.ForeignKeys[1].RefTable = SubscriptionEntitlementsTable
+	APIKeysTable.ForeignKeys[2].RefTable = UsersTable
 	APIKeysTable.Annotation = &entsql.Annotation{
 		Table: "api_keys",
 	}
@@ -2773,7 +3220,8 @@ func init() {
 	PaymentAuditLogsTable.Annotation = &entsql.Annotation{
 		Table: "payment_audit_logs",
 	}
-	PaymentOrdersTable.ForeignKeys[0].RefTable = UsersTable
+	PaymentOrdersTable.ForeignKeys[0].RefTable = SubscriptionEntitlementsTable
+	PaymentOrdersTable.ForeignKeys[1].RefTable = UsersTable
 	PaymentOrdersTable.Annotation = &entsql.Annotation{
 		Table: "payment_orders",
 	}
@@ -2801,7 +3249,9 @@ func init() {
 		Table: "recharge_orders",
 	}
 	RedeemCodesTable.ForeignKeys[0].RefTable = GroupsTable
-	RedeemCodesTable.ForeignKeys[1].RefTable = UsersTable
+	RedeemCodesTable.ForeignKeys[1].RefTable = SubscriptionEntitlementsTable
+	RedeemCodesTable.ForeignKeys[2].RefTable = SubscriptionPlansTable
+	RedeemCodesTable.ForeignKeys[3].RefTable = UsersTable
 	RedeemCodesTable.Annotation = &entsql.Annotation{
 		Table: "redeem_codes",
 	}
@@ -2824,8 +3274,36 @@ func init() {
 	SettingsTable.Annotation = &entsql.Annotation{
 		Table: "settings",
 	}
+	SubscriptionEntitlementsTable.ForeignKeys[0].RefTable = GroupsTable
+	SubscriptionEntitlementsTable.ForeignKeys[1].RefTable = RedeemCodesTable
+	SubscriptionEntitlementsTable.ForeignKeys[2].RefTable = SubscriptionPlansTable
+	SubscriptionEntitlementsTable.ForeignKeys[3].RefTable = UsersTable
+	SubscriptionEntitlementsTable.ForeignKeys[4].RefTable = UsersTable
+	SubscriptionEntitlementsTable.ForeignKeys[5].RefTable = UserSubscriptionsTable
+	SubscriptionEntitlementsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_entitlements",
+	}
+	SubscriptionEntitlementFulfillmentsTable.ForeignKeys[0].RefTable = SubscriptionEntitlementsTable
+	SubscriptionEntitlementFulfillmentsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_entitlement_fulfillments",
+	}
+	SubscriptionEntitlementGroupsTable.ForeignKeys[0].RefTable = SubscriptionEntitlementsTable
+	SubscriptionEntitlementGroupsTable.ForeignKeys[1].RefTable = GroupsTable
+	SubscriptionEntitlementGroupsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_entitlement_groups",
+	}
 	SubscriptionPlansTable.Annotation = &entsql.Annotation{
 		Table: "subscription_plans",
+	}
+	SubscriptionPlanExternalMappingsTable.ForeignKeys[0].RefTable = GroupsTable
+	SubscriptionPlanExternalMappingsTable.ForeignKeys[1].RefTable = SubscriptionPlansTable
+	SubscriptionPlanExternalMappingsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_plan_external_mappings",
+	}
+	SubscriptionPlanGroupsTable.ForeignKeys[0].RefTable = SubscriptionPlansTable
+	SubscriptionPlanGroupsTable.ForeignKeys[1].RefTable = GroupsTable
+	SubscriptionPlanGroupsTable.Annotation = &entsql.Annotation{
+		Table: "subscription_plan_groups",
 	}
 	SupportIssuesTable.Annotation = &entsql.Annotation{
 		Table: "support_issues",
@@ -2855,8 +3333,9 @@ func init() {
 	UsageLogsTable.ForeignKeys[0].RefTable = APIKeysTable
 	UsageLogsTable.ForeignKeys[1].RefTable = AccountsTable
 	UsageLogsTable.ForeignKeys[2].RefTable = GroupsTable
-	UsageLogsTable.ForeignKeys[3].RefTable = UsersTable
-	UsageLogsTable.ForeignKeys[4].RefTable = UserSubscriptionsTable
+	UsageLogsTable.ForeignKeys[3].RefTable = SubscriptionEntitlementsTable
+	UsageLogsTable.ForeignKeys[4].RefTable = UsersTable
+	UsageLogsTable.ForeignKeys[5].RefTable = UserSubscriptionsTable
 	UsageLogsTable.Annotation = &entsql.Annotation{
 		Table: "usage_logs",
 	}

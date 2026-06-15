@@ -1,0 +1,93 @@
+//go:build unit
+
+package repository
+
+import (
+	"context"
+	"testing"
+	"time"
+
+	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
+)
+
+func TestSubscriptionEntitlementRepository_ListByUserID_SQLite(t *testing.T) {
+	_, client := newAPIKeyRepoSQLite(t)
+	repo := &subscriptionEntitlementRepository{client: client}
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "ent-list-user@test.com")
+	otherUser := mustCreateAPIKeyRepoUser(t, ctx, client, "ent-list-other@test.com")
+	groupA := mustCreateSubscriptionEntitlementRepoGroup(t, ctx, client, "ent-list-a", service.PlatformOpenAI)
+	groupB := mustCreateSubscriptionEntitlementRepoGroup(t, ctx, client, "ent-list-b", service.PlatformGemini)
+
+	older := &service.SubscriptionEntitlement{
+		UserID:     user.ID,
+		Name:       "older entitlement",
+		Status:     service.SubscriptionStatusActive,
+		StartsAt:   now.Add(-48 * time.Hour),
+		ExpiresAt:  now.Add(24 * time.Hour),
+		SourceType: service.SubscriptionEntitlementSourcePaymentOrder,
+	}
+	require.NoError(t, repo.Create(ctx, older, []int64{groupB.ID, groupA.ID}))
+
+	newer := &service.SubscriptionEntitlement{
+		UserID:     user.ID,
+		Name:       "newer entitlement",
+		Status:     service.SubscriptionStatusExpired,
+		StartsAt:   now.Add(-72 * time.Hour),
+		ExpiresAt:  now.Add(48 * time.Hour),
+		SourceType: service.SubscriptionEntitlementSourceRedeemCode,
+	}
+	require.NoError(t, repo.Create(ctx, newer, []int64{groupA.ID}))
+
+	other := &service.SubscriptionEntitlement{
+		UserID:    otherUser.ID,
+		Name:      "other user entitlement",
+		Status:    service.SubscriptionStatusActive,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(72 * time.Hour),
+	}
+	require.NoError(t, repo.Create(ctx, other, []int64{groupA.ID}))
+
+	deleted := &service.SubscriptionEntitlement{
+		UserID:    user.ID,
+		Name:      "deleted entitlement",
+		Status:    service.SubscriptionStatusActive,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(96 * time.Hour),
+	}
+	require.NoError(t, repo.Create(ctx, deleted, []int64{groupA.ID}))
+	_, err := client.SubscriptionEntitlement.UpdateOneID(deleted.ID).SetDeletedAt(now).Save(ctx)
+	require.NoError(t, err)
+
+	got, err := repo.ListByUserID(ctx, user.ID)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	require.Equal(t, newer.ID, got[0].ID, "list should sort by expires_at desc")
+	require.Equal(t, older.ID, got[1].ID)
+	require.Equal(t, []int64{groupB.ID, groupA.ID}, subscriptionEntitlementGrantGroupIDs(got[1].GroupGrants))
+}
+
+func mustCreateSubscriptionEntitlementRepoGroup(t *testing.T, ctx context.Context, client *dbent.Client, name, platform string) *dbent.Group {
+	t.Helper()
+	group, err := client.Group.Create().
+		SetName(name).
+		SetPlatform(platform).
+		SetStatus(service.StatusActive).
+		SetSubscriptionType(service.SubscriptionTypeSubscription).
+		SetRateMultiplier(1).
+		Save(ctx)
+	require.NoError(t, err)
+	return group
+}
+
+func subscriptionEntitlementGrantGroupIDs(grants []service.SubscriptionEntitlementGroupGrant) []int64 {
+	ids := make([]int64, 0, len(grants))
+	for _, grant := range grants {
+		ids = append(ids, grant.GroupID)
+	}
+	return ids
+}

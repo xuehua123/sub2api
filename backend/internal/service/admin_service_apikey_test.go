@@ -203,6 +203,9 @@ func (s *apiKeyRepoStubForGroupUpdate) UpdateGroupIDByUserAndGroup(context.Conte
 func (s *apiKeyRepoStubForGroupUpdate) CompareAndSwapGroupID(context.Context, int64, int64, int64) (bool, error) {
 	panic("unexpected")
 }
+func (s *apiKeyRepoStubForGroupUpdate) CompareAndSwapGroupIDWithEntitlement(context.Context, int64, int64, int64, *int64, *int64) (bool, error) {
+	panic("unexpected")
+}
 
 // groupRepoStubForGroupUpdate implements GroupRepository for AdminUpdateAPIKeyGroupID tests.
 type groupRepoStubForGroupUpdate struct {

@@ -1,6 +1,8 @@
 package migrations
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -154,4 +156,183 @@ func TestMigration135AllowsGitHubAndGoogleAuthProviders(t *testing.T) {
 	require.Contains(t, sql, "pending_auth_sessions_provider_type_check")
 	require.Contains(t, sql, "'github'")
 	require.Contains(t, sql, "'google'")
+}
+
+func TestMigration150AddsSubscriptionEntitlementsV2Additively(t *testing.T) {
+	content, err := FS.ReadFile("150_subscription_entitlements_v2.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS access_scope VARCHAR(32) NOT NULL DEFAULT 'explicit'")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS allowed_platforms JSONB NOT NULL DEFAULT '[]'::jsonb")
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_plan_groups")
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_plan_external_mappings")
+	require.Contains(t, sql, "legacy_value         DECIMAL(20, 8) NOT NULL")
+	require.Contains(t, sql, "ON subscription_plan_external_mappings(source, legacy_group_id, legacy_validity_days, legacy_value)")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS plan_id BIGINT REFERENCES subscription_plans(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_entitlements")
+	require.Contains(t, sql, "source_id             BIGINT")
+	require.Contains(t, sql, "source_external_id    VARCHAR(128)")
+	require.Contains(t, sql, "source_redeem_code_id BIGINT REFERENCES redeem_codes(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlements_legacy_subscription_id_unique")
+	require.Contains(t, sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlements_source_id_unique")
+	require.Contains(t, sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscription_entitlements_source_external_unique")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlements_user_id")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlements_status")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlements_expires_at")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_plan_external_mappings_legacy_group_id")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_plan_external_mappings_enabled")
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_entitlement_groups")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS subscription_entitlement_id BIGINT REFERENCES subscription_entitlements(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS entitlement_id BIGINT REFERENCES subscription_entitlements(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "ON CONFLICT (legacy_subscription_id) DO NOTHING")
+	require.Contains(t, sql, "ON CONFLICT (entitlement_id, group_id) DO NOTHING")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration149aNormalizesLegacyImageUsageRowsBeforeEntitlementBackfill(t *testing.T) {
+	content, err := FS.ReadFile("149a_backfill_usage_log_image_billing_size.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE usage_logs")
+	require.Contains(t, sql, "image_size = 'mixed'")
+	require.Contains(t, sql, "image_size_source = 'legacy'")
+	require.Contains(t, sql, "COALESCE(image_count, 0) > 0")
+	require.Contains(t, sql, "image_size NOT IN ('1K', '2K', '4K', 'mixed')")
+	require.NotContains(t, sql, "DELETE FROM")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration152AddsRedeemCodeSubscriptionEntitlementIDAdditively(t *testing.T) {
+	content, err := FS.ReadFile("152_redeem_codes_subscription_entitlement_id.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE redeem_codes")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS subscription_entitlement_id BIGINT REFERENCES subscription_entitlements(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_redeem_codes_subscription_entitlement_id")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration153AddsUsageLogBillingSourceAdditively(t *testing.T) {
+	content, err := FS.ReadFile("153_usage_logs_billing_source.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE usage_logs")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS billing_source VARCHAR(50)")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_usage_logs_billing_source_created_at")
+	require.Contains(t, sql, "usage_logs_billing_source_check")
+	require.Contains(t, sql, "entitlement_balance_fallback")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration154ClearsInvalidAPIKeyEntitlementBindingsConservatively(t *testing.T) {
+	content, err := FS.ReadFile("154_api_key_entitlement_binding_preflight.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE api_keys ak")
+	require.Contains(t, sql, "SET subscription_entitlement_id = NULL")
+	require.Contains(t, sql, "ak.subscription_entitlement_id IS NOT NULL")
+	require.Contains(t, sql, "AND NOT EXISTS")
+	require.Contains(t, sql, "se.id = ak.subscription_entitlement_id")
+	require.Contains(t, sql, "se.deleted_at IS NULL")
+	require.Contains(t, sql, "se.user_id = ak.user_id")
+	require.Contains(t, sql, "se.status = 'active'")
+	require.Contains(t, sql, "se.starts_at <= NOW()")
+	require.Contains(t, sql, "se.expires_at > NOW()")
+	require.Contains(t, sql, "seg.group_id = ak.group_id")
+	require.Contains(t, sql, "seg.enabled = TRUE")
+	require.NotContains(t, sql, "SET subscription_entitlement_id = se.id")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestMigration155AddsAccessSourceAndGroupCapabilitiesAdditively(t *testing.T) {
+	content, err := FS.ReadFile("155_access_source_group_capabilities.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS access_source VARCHAR(32) NOT NULL DEFAULT 'balance'")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS balance_enabled BOOLEAN NOT NULL DEFAULT TRUE")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS subscription_enabled BOOLEAN NOT NULL DEFAULT FALSE")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS plan_auto_grant_enabled BOOLEAN NOT NULL DEFAULT FALSE")
+	require.Contains(t, sql, "WHEN subscription_entitlement_id IS NOT NULL THEN 'entitlement'")
+	require.Contains(t, sql, "ELSE 'balance'")
+	require.Contains(t, sql, "subscription_type = 'standard'")
+	require.Contains(t, sql, "subscription_type = 'subscription'")
+	require.Contains(t, sql, "COALESCE(is_exclusive, FALSE) = FALSE")
+	require.Contains(t, sql, "status = 'active'")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_api_keys_access_source")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_groups_subscription_capabilities")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+	require.NotContains(t, sql, "SET subscription_entitlement_id")
+}
+
+func TestMigration156AddsEntitlementCycleResetLogsAdditively(t *testing.T) {
+	content, err := FS.ReadFile("156_subscription_entitlement_cycle_reset_logs.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "CREATE TABLE IF NOT EXISTS subscription_entitlement_cycle_reset_logs")
+	require.Contains(t, sql, "id                                  BIGSERIAL PRIMARY KEY")
+	require.Contains(t, sql, "user_id                             BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "entitlement_id                      BIGINT NOT NULL REFERENCES subscription_entitlements(id) ON DELETE CASCADE")
+	require.Contains(t, sql, "plan_id                             BIGINT REFERENCES subscription_plans(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "previous_expires_at                 TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "new_expires_at                      TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "previous_monthly_usage_usd          DECIMAL(20, 10) NOT NULL DEFAULT 0")
+	require.Contains(t, sql, "previous_monthly_window_start       TIMESTAMPTZ")
+	require.Contains(t, sql, "new_monthly_window_start            TIMESTAMPTZ NOT NULL")
+	require.Contains(t, sql, "deducted_days                       INTEGER NOT NULL")
+	require.Contains(t, sql, "deducted_seconds                    BIGINT NOT NULL")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_cycle_reset_logs_user_created")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_cycle_reset_logs_entitlement_created")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+	require.NotContains(t, sql, "INSERT INTO subscription_cycle_reset_logs")
+}
+
+func TestMigration157BackfillsActiveEntitlementWindowsFromStartsAt(t *testing.T) {
+	content, err := FS.ReadFile("157_backfill_entitlement_window_starts.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "daily_limit_usd IS NOT NULL AND daily_limit_usd > 0")
+	require.Contains(t, sql, "weekly_limit_usd IS NOT NULL AND weekly_limit_usd > 0")
+	require.Contains(t, sql, "monthly_limit_usd IS NOT NULL AND monthly_limit_usd > 0")
+	require.Contains(t, sql, "COALESCE(daily_window_start, starts_at)")
+	require.Contains(t, sql, "COALESCE(weekly_window_start, starts_at)")
+	require.Contains(t, sql, "COALESCE(monthly_window_start, starts_at)")
+	require.Contains(t, sql, "status = 'active'")
+	require.Contains(t, sql, "deleted_at IS NULL")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
+func TestSubscriptionEntitlementsV2PreflightRunbookCoversSwitchAuditQueries(t *testing.T) {
+	path := filepath.Join("..", "..", "docs", "plans", "subscription-entitlements-v2-preflight-sql.md")
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+
+	doc := string(content)
+	require.Contains(t, doc, "invalid_api_key_entitlement_bindings")
+	require.Contains(t, doc, "owner_mismatch")
+	require.Contains(t, doc, "future_start")
+	require.Contains(t, doc, "expired")
+	require.Contains(t, doc, "group_not_covered")
+	require.Contains(t, doc, "HAVING COUNT(*) > 1")
+	require.Contains(t, doc, "entitlement_only_records")
+	require.Contains(t, doc, "billing_source")
+	require.Contains(t, doc, "entitlement_balance_fallback")
+	require.Contains(t, doc, "subscription_entitlements_v2_enabled=false")
+	require.Contains(t, doc, "sub2_payment_page_legacy_mapping_enabled=false")
+	require.Contains(t, doc, "Do not delete entitlement schema or history")
 }

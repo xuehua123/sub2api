@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
 
@@ -335,6 +336,26 @@ func (_u *PaymentOrderUpdate) AddSubscriptionGroupID(v int64) *PaymentOrderUpdat
 // ClearSubscriptionGroupID clears the value of the "subscription_group_id" field.
 func (_u *PaymentOrderUpdate) ClearSubscriptionGroupID() *PaymentOrderUpdate {
 	_u.mutation.ClearSubscriptionGroupID()
+	return _u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *PaymentOrderUpdate) SetSubscriptionEntitlementID(v int64) *PaymentOrderUpdate {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableSubscriptionEntitlementID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *PaymentOrderUpdate) ClearSubscriptionEntitlementID() *PaymentOrderUpdate {
+	_u.mutation.ClearSubscriptionEntitlementID()
 	return _u
 }
 
@@ -719,6 +740,11 @@ func (_u *PaymentOrderUpdate) SetUser(v *User) *PaymentOrderUpdate {
 	return _u.SetUserID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *PaymentOrderUpdate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *PaymentOrderUpdate {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -727,6 +753,12 @@ func (_u *PaymentOrderUpdate) Mutation() *PaymentOrderMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *PaymentOrderUpdate) ClearUser() *PaymentOrderUpdate {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *PaymentOrderUpdate) ClearSubscriptionEntitlement() *PaymentOrderUpdate {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -1072,6 +1104,35 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.SubscriptionEntitlementTable,
+			Columns: []string{paymentorder.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.SubscriptionEntitlementTable,
+			Columns: []string{paymentorder.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{paymentorder.Label}
@@ -1398,6 +1459,26 @@ func (_u *PaymentOrderUpdateOne) AddSubscriptionGroupID(v int64) *PaymentOrderUp
 // ClearSubscriptionGroupID clears the value of the "subscription_group_id" field.
 func (_u *PaymentOrderUpdateOne) ClearSubscriptionGroupID() *PaymentOrderUpdateOne {
 	_u.mutation.ClearSubscriptionGroupID()
+	return _u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *PaymentOrderUpdateOne) SetSubscriptionEntitlementID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableSubscriptionEntitlementID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *PaymentOrderUpdateOne) ClearSubscriptionEntitlementID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlementID()
 	return _u
 }
 
@@ -1782,6 +1863,11 @@ func (_u *PaymentOrderUpdateOne) SetUser(v *User) *PaymentOrderUpdateOne {
 	return _u.SetUserID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *PaymentOrderUpdateOne) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *PaymentOrderUpdateOne {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // Mutation returns the PaymentOrderMutation object of the builder.
 func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 	return _u.mutation
@@ -1790,6 +1876,12 @@ func (_u *PaymentOrderUpdateOne) Mutation() *PaymentOrderMutation {
 // ClearUser clears the "user" edge to the User entity.
 func (_u *PaymentOrderUpdateOne) ClearUser() *PaymentOrderUpdateOne {
 	_u.mutation.ClearUser()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *PaymentOrderUpdateOne) ClearSubscriptionEntitlement() *PaymentOrderUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -2158,6 +2250,35 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.SubscriptionEntitlementTable,
+			Columns: []string{paymentorder.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   paymentorder.SubscriptionEntitlementTable,
+			Columns: []string{paymentorder.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

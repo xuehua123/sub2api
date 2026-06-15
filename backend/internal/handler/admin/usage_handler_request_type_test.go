@@ -18,13 +18,14 @@ type adminUsageRepoCapture struct {
 	listParams   pagination.PaginationParams
 	listFilters  usagestats.UsageLogFilters
 	statsFilters usagestats.UsageLogFilters
+	listRecords  []service.UsageLog
 }
 
 func (s *adminUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
 	s.listParams = params
 	s.listFilters = filters
-	return []service.UsageLog{}, &pagination.PaginationResult{
-		Total:    0,
+	return s.listRecords, &pagination.PaginationResult{
+		Total:    int64(len(s.listRecords)),
 		Page:     params.Page,
 		PageSize: params.PageSize,
 		Pages:    0,
@@ -105,6 +106,56 @@ func TestAdminUsageListInvalidExactTotal(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestAdminUsageListEntitlementIDFilter(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage?entitlement_id=123", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(123), repo.listFilters.EntitlementID)
+}
+
+func TestAdminUsageListReturnsBillingSource(t *testing.T) {
+	entitlementID := int64(901)
+	billingSource := service.BillingSourceEntitlementQuota
+	repo := &adminUsageRepoCapture{
+		listRecords: []service.UsageLog{{
+			ID:            77,
+			UserID:        10,
+			APIKeyID:      20,
+			AccountID:     30,
+			RequestID:     "req-billing-source",
+			Model:         "claude-3",
+			BillingType:   service.BillingTypeSubscription,
+			BillingSource: &billingSource,
+			EntitlementID: &entitlementID,
+		}},
+	}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"billing_source":"entitlement_quota"`)
+	require.Contains(t, rec.Body.String(), `"entitlement_id":901`)
+}
+
+func TestAdminUsageListInvalidEntitlementID(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage?entitlement_id=bad", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestAdminUsageStatsRequestTypePriority(t *testing.T) {
 	repo := &adminUsageRepoCapture{}
 	router := newAdminUsageRequestTypeTestRouter(repo)
@@ -135,6 +186,29 @@ func TestAdminUsageStatsInvalidStream(t *testing.T) {
 	router := newAdminUsageRequestTypeTestRouter(repo)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/usage/stats?stream=oops", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestAdminUsageStatsEntitlementIDFilter(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage/stats?entitlement_id=456", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(456), repo.statsFilters.EntitlementID)
+}
+
+func TestAdminUsageStatsInvalidEntitlementID(t *testing.T) {
+	repo := &adminUsageRepoCapture{}
+	router := newAdminUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/usage/stats?entitlement_id=0", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

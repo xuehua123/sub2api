@@ -1502,6 +1502,52 @@ func HasAssignedSubscriptionsWith(preds ...predicate.UserSubscription) predicate
 	})
 }
 
+// HasSubscriptionEntitlements applies the HasEdge predicate on the "subscription_entitlements" edge.
+func HasSubscriptionEntitlements() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, SubscriptionEntitlementsTable, SubscriptionEntitlementsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubscriptionEntitlementsWith applies the HasEdge predicate on the "subscription_entitlements" edge with a given conditions (other predicates).
+func HasSubscriptionEntitlementsWith(preds ...predicate.SubscriptionEntitlement) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newSubscriptionEntitlementsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasAssignedSubscriptionEntitlements applies the HasEdge predicate on the "assigned_subscription_entitlements" edge.
+func HasAssignedSubscriptionEntitlements() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, AssignedSubscriptionEntitlementsTable, AssignedSubscriptionEntitlementsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasAssignedSubscriptionEntitlementsWith applies the HasEdge predicate on the "assigned_subscription_entitlements" edge with a given conditions (other predicates).
+func HasAssignedSubscriptionEntitlementsWith(preds ...predicate.SubscriptionEntitlement) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newAssignedSubscriptionEntitlementsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasAnnouncementReads applies the HasEdge predicate on the "announcement_reads" edge.
 func HasAnnouncementReads() predicate.User {
 	return predicate.User(func(s *sql.Selector) {

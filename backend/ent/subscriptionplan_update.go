@@ -10,9 +10,14 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionplanexternalmapping"
 )
 
 // SubscriptionPlanUpdate is the builder for updating SubscriptionPlan entities.
@@ -160,6 +165,133 @@ func (_u *SubscriptionPlanUpdate) SetNillableValidityUnit(v *string) *Subscripti
 	return _u
 }
 
+// SetAccessScope sets the "access_scope" field.
+func (_u *SubscriptionPlanUpdate) SetAccessScope(v string) *SubscriptionPlanUpdate {
+	_u.mutation.SetAccessScope(v)
+	return _u
+}
+
+// SetNillableAccessScope sets the "access_scope" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableAccessScope(v *string) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetAccessScope(*v)
+	}
+	return _u
+}
+
+// SetAllowedPlatforms sets the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdate) SetAllowedPlatforms(v []string) *SubscriptionPlanUpdate {
+	_u.mutation.SetAllowedPlatforms(v)
+	return _u
+}
+
+// AppendAllowedPlatforms appends value to the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdate) AppendAllowedPlatforms(v []string) *SubscriptionPlanUpdate {
+	_u.mutation.AppendAllowedPlatforms(v)
+	return _u
+}
+
+// ClearAllowedPlatforms clears the value of the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdate) ClearAllowedPlatforms() *SubscriptionPlanUpdate {
+	_u.mutation.ClearAllowedPlatforms()
+	return _u
+}
+
+// SetDailyLimitUsd sets the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) SetDailyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.ResetDailyLimitUsd()
+	_u.mutation.SetDailyLimitUsd(v)
+	return _u
+}
+
+// SetNillableDailyLimitUsd sets the "daily_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableDailyLimitUsd(v *float64) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetDailyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddDailyLimitUsd adds value to the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) AddDailyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.AddDailyLimitUsd(v)
+	return _u
+}
+
+// ClearDailyLimitUsd clears the value of the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) ClearDailyLimitUsd() *SubscriptionPlanUpdate {
+	_u.mutation.ClearDailyLimitUsd()
+	return _u
+}
+
+// SetWeeklyLimitUsd sets the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) SetWeeklyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.ResetWeeklyLimitUsd()
+	_u.mutation.SetWeeklyLimitUsd(v)
+	return _u
+}
+
+// SetNillableWeeklyLimitUsd sets the "weekly_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableWeeklyLimitUsd(v *float64) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetWeeklyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddWeeklyLimitUsd adds value to the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) AddWeeklyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.AddWeeklyLimitUsd(v)
+	return _u
+}
+
+// ClearWeeklyLimitUsd clears the value of the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) ClearWeeklyLimitUsd() *SubscriptionPlanUpdate {
+	_u.mutation.ClearWeeklyLimitUsd()
+	return _u
+}
+
+// SetMonthlyLimitUsd sets the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) SetMonthlyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.ResetMonthlyLimitUsd()
+	_u.mutation.SetMonthlyLimitUsd(v)
+	return _u
+}
+
+// SetNillableMonthlyLimitUsd sets the "monthly_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableMonthlyLimitUsd(v *float64) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetMonthlyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddMonthlyLimitUsd adds value to the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) AddMonthlyLimitUsd(v float64) *SubscriptionPlanUpdate {
+	_u.mutation.AddMonthlyLimitUsd(v)
+	return _u
+}
+
+// ClearMonthlyLimitUsd clears the value of the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdate) ClearMonthlyLimitUsd() *SubscriptionPlanUpdate {
+	_u.mutation.ClearMonthlyLimitUsd()
+	return _u
+}
+
+// SetOveragePolicy sets the "overage_policy" field.
+func (_u *SubscriptionPlanUpdate) SetOveragePolicy(v string) *SubscriptionPlanUpdate {
+	_u.mutation.SetOveragePolicy(v)
+	return _u
+}
+
+// SetNillableOveragePolicy sets the "overage_policy" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdate) SetNillableOveragePolicy(v *string) *SubscriptionPlanUpdate {
+	if v != nil {
+		_u.SetOveragePolicy(*v)
+	}
+	return _u
+}
+
 // SetFeatures sets the "features" field.
 func (_u *SubscriptionPlanUpdate) SetFeatures(v string) *SubscriptionPlanUpdate {
 	_u.mutation.SetFeatures(v)
@@ -229,9 +361,153 @@ func (_u *SubscriptionPlanUpdate) SetUpdatedAt(v time.Time) *SubscriptionPlanUpd
 	return _u
 }
 
+// AddGroupIDs adds the "groups" edge to the Group entity by IDs.
+func (_u *SubscriptionPlanUpdate) AddGroupIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.AddGroupIDs(ids...)
+	return _u
+}
+
+// AddGroups adds the "groups" edges to the Group entity.
+func (_u *SubscriptionPlanUpdate) AddGroups(v ...*Group) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddGroupIDs(ids...)
+}
+
+// AddEntitlementIDs adds the "entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *SubscriptionPlanUpdate) AddEntitlementIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.AddEntitlementIDs(ids...)
+	return _u
+}
+
+// AddEntitlements adds the "entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *SubscriptionPlanUpdate) AddEntitlements(v ...*SubscriptionEntitlement) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddEntitlementIDs(ids...)
+}
+
+// AddExternalMappingIDs adds the "external_mappings" edge to the SubscriptionPlanExternalMapping entity by IDs.
+func (_u *SubscriptionPlanUpdate) AddExternalMappingIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.AddExternalMappingIDs(ids...)
+	return _u
+}
+
+// AddExternalMappings adds the "external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *SubscriptionPlanUpdate) AddExternalMappings(v ...*SubscriptionPlanExternalMapping) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalMappingIDs(ids...)
+}
+
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (_u *SubscriptionPlanUpdate) AddRedeemCodeIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.AddRedeemCodeIDs(ids...)
+	return _u
+}
+
+// AddRedeemCodes adds the "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionPlanUpdate) AddRedeemCodes(v ...*RedeemCode) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRedeemCodeIDs(ids...)
+}
+
 // Mutation returns the SubscriptionPlanMutation object of the builder.
 func (_u *SubscriptionPlanUpdate) Mutation() *SubscriptionPlanMutation {
 	return _u.mutation
+}
+
+// ClearGroups clears all "groups" edges to the Group entity.
+func (_u *SubscriptionPlanUpdate) ClearGroups() *SubscriptionPlanUpdate {
+	_u.mutation.ClearGroups()
+	return _u
+}
+
+// RemoveGroupIDs removes the "groups" edge to Group entities by IDs.
+func (_u *SubscriptionPlanUpdate) RemoveGroupIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.RemoveGroupIDs(ids...)
+	return _u
+}
+
+// RemoveGroups removes "groups" edges to Group entities.
+func (_u *SubscriptionPlanUpdate) RemoveGroups(v ...*Group) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveGroupIDs(ids...)
+}
+
+// ClearEntitlements clears all "entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *SubscriptionPlanUpdate) ClearEntitlements() *SubscriptionPlanUpdate {
+	_u.mutation.ClearEntitlements()
+	return _u
+}
+
+// RemoveEntitlementIDs removes the "entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *SubscriptionPlanUpdate) RemoveEntitlementIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.RemoveEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveEntitlements removes "entitlements" edges to SubscriptionEntitlement entities.
+func (_u *SubscriptionPlanUpdate) RemoveEntitlements(v ...*SubscriptionEntitlement) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveEntitlementIDs(ids...)
+}
+
+// ClearExternalMappings clears all "external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *SubscriptionPlanUpdate) ClearExternalMappings() *SubscriptionPlanUpdate {
+	_u.mutation.ClearExternalMappings()
+	return _u
+}
+
+// RemoveExternalMappingIDs removes the "external_mappings" edge to SubscriptionPlanExternalMapping entities by IDs.
+func (_u *SubscriptionPlanUpdate) RemoveExternalMappingIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.RemoveExternalMappingIDs(ids...)
+	return _u
+}
+
+// RemoveExternalMappings removes "external_mappings" edges to SubscriptionPlanExternalMapping entities.
+func (_u *SubscriptionPlanUpdate) RemoveExternalMappings(v ...*SubscriptionPlanExternalMapping) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalMappingIDs(ids...)
+}
+
+// ClearRedeemCodes clears all "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionPlanUpdate) ClearRedeemCodes() *SubscriptionPlanUpdate {
+	_u.mutation.ClearRedeemCodes()
+	return _u
+}
+
+// RemoveRedeemCodeIDs removes the "redeem_codes" edge to RedeemCode entities by IDs.
+func (_u *SubscriptionPlanUpdate) RemoveRedeemCodeIDs(ids ...int64) *SubscriptionPlanUpdate {
+	_u.mutation.RemoveRedeemCodeIDs(ids...)
+	return _u
+}
+
+// RemoveRedeemCodes removes "redeem_codes" edges to RedeemCode entities.
+func (_u *SubscriptionPlanUpdate) RemoveRedeemCodes(v ...*RedeemCode) *SubscriptionPlanUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRedeemCodeIDs(ids...)
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -280,6 +556,16 @@ func (_u *SubscriptionPlanUpdate) check() error {
 	if v, ok := _u.mutation.ValidityUnit(); ok {
 		if err := subscriptionplan.ValidityUnitValidator(v); err != nil {
 			return &ValidationError{Name: "validity_unit", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.validity_unit": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AccessScope(); ok {
+		if err := subscriptionplan.AccessScopeValidator(v); err != nil {
+			return &ValidationError{Name: "access_scope", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.access_scope": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.OveragePolicy(); ok {
+		if err := subscriptionplan.OveragePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "overage_policy", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.overage_policy": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.ProductName(); ok {
@@ -338,6 +624,50 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	if value, ok := _u.mutation.ValidityUnit(); ok {
 		_spec.SetField(subscriptionplan.FieldValidityUnit, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.AccessScope(); ok {
+		_spec.SetField(subscriptionplan.FieldAccessScope, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AllowedPlatforms(); ok {
+		_spec.SetField(subscriptionplan.FieldAllowedPlatforms, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedPlatforms(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscriptionplan.FieldAllowedPlatforms, value)
+		})
+	}
+	if _u.mutation.AllowedPlatformsCleared() {
+		_spec.ClearField(subscriptionplan.FieldAllowedPlatforms, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DailyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDailyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.DailyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.WeeklyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWeeklyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.WeeklyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.MonthlyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedMonthlyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.MonthlyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.OveragePolicy(); ok {
+		_spec.SetField(subscriptionplan.FieldOveragePolicy, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.Features(); ok {
 		_spec.SetField(subscriptionplan.FieldFeatures, field.TypeString, value)
 	}
@@ -355,6 +685,198 @@ func (_u *SubscriptionPlanUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(subscriptionplan.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.GroupsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedGroupsIDs(); len(nodes) > 0 && !_u.mutation.GroupsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.GroupsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.EntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.EntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.EntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalMappingsIDs(); len(nodes) > 0 && !_u.mutation.ExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRedeemCodesIDs(); len(nodes) > 0 && !_u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RedeemCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -508,6 +1030,133 @@ func (_u *SubscriptionPlanUpdateOne) SetNillableValidityUnit(v *string) *Subscri
 	return _u
 }
 
+// SetAccessScope sets the "access_scope" field.
+func (_u *SubscriptionPlanUpdateOne) SetAccessScope(v string) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetAccessScope(v)
+	return _u
+}
+
+// SetNillableAccessScope sets the "access_scope" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableAccessScope(v *string) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetAccessScope(*v)
+	}
+	return _u
+}
+
+// SetAllowedPlatforms sets the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdateOne) SetAllowedPlatforms(v []string) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetAllowedPlatforms(v)
+	return _u
+}
+
+// AppendAllowedPlatforms appends value to the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdateOne) AppendAllowedPlatforms(v []string) *SubscriptionPlanUpdateOne {
+	_u.mutation.AppendAllowedPlatforms(v)
+	return _u
+}
+
+// ClearAllowedPlatforms clears the value of the "allowed_platforms" field.
+func (_u *SubscriptionPlanUpdateOne) ClearAllowedPlatforms() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearAllowedPlatforms()
+	return _u
+}
+
+// SetDailyLimitUsd sets the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) SetDailyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.ResetDailyLimitUsd()
+	_u.mutation.SetDailyLimitUsd(v)
+	return _u
+}
+
+// SetNillableDailyLimitUsd sets the "daily_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableDailyLimitUsd(v *float64) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetDailyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddDailyLimitUsd adds value to the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) AddDailyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddDailyLimitUsd(v)
+	return _u
+}
+
+// ClearDailyLimitUsd clears the value of the "daily_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) ClearDailyLimitUsd() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearDailyLimitUsd()
+	return _u
+}
+
+// SetWeeklyLimitUsd sets the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) SetWeeklyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.ResetWeeklyLimitUsd()
+	_u.mutation.SetWeeklyLimitUsd(v)
+	return _u
+}
+
+// SetNillableWeeklyLimitUsd sets the "weekly_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableWeeklyLimitUsd(v *float64) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetWeeklyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddWeeklyLimitUsd adds value to the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) AddWeeklyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddWeeklyLimitUsd(v)
+	return _u
+}
+
+// ClearWeeklyLimitUsd clears the value of the "weekly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) ClearWeeklyLimitUsd() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearWeeklyLimitUsd()
+	return _u
+}
+
+// SetMonthlyLimitUsd sets the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) SetMonthlyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.ResetMonthlyLimitUsd()
+	_u.mutation.SetMonthlyLimitUsd(v)
+	return _u
+}
+
+// SetNillableMonthlyLimitUsd sets the "monthly_limit_usd" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableMonthlyLimitUsd(v *float64) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetMonthlyLimitUsd(*v)
+	}
+	return _u
+}
+
+// AddMonthlyLimitUsd adds value to the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) AddMonthlyLimitUsd(v float64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddMonthlyLimitUsd(v)
+	return _u
+}
+
+// ClearMonthlyLimitUsd clears the value of the "monthly_limit_usd" field.
+func (_u *SubscriptionPlanUpdateOne) ClearMonthlyLimitUsd() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearMonthlyLimitUsd()
+	return _u
+}
+
+// SetOveragePolicy sets the "overage_policy" field.
+func (_u *SubscriptionPlanUpdateOne) SetOveragePolicy(v string) *SubscriptionPlanUpdateOne {
+	_u.mutation.SetOveragePolicy(v)
+	return _u
+}
+
+// SetNillableOveragePolicy sets the "overage_policy" field if the given value is not nil.
+func (_u *SubscriptionPlanUpdateOne) SetNillableOveragePolicy(v *string) *SubscriptionPlanUpdateOne {
+	if v != nil {
+		_u.SetOveragePolicy(*v)
+	}
+	return _u
+}
+
 // SetFeatures sets the "features" field.
 func (_u *SubscriptionPlanUpdateOne) SetFeatures(v string) *SubscriptionPlanUpdateOne {
 	_u.mutation.SetFeatures(v)
@@ -577,9 +1226,153 @@ func (_u *SubscriptionPlanUpdateOne) SetUpdatedAt(v time.Time) *SubscriptionPlan
 	return _u
 }
 
+// AddGroupIDs adds the "groups" edge to the Group entity by IDs.
+func (_u *SubscriptionPlanUpdateOne) AddGroupIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddGroupIDs(ids...)
+	return _u
+}
+
+// AddGroups adds the "groups" edges to the Group entity.
+func (_u *SubscriptionPlanUpdateOne) AddGroups(v ...*Group) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddGroupIDs(ids...)
+}
+
+// AddEntitlementIDs adds the "entitlements" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *SubscriptionPlanUpdateOne) AddEntitlementIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddEntitlementIDs(ids...)
+	return _u
+}
+
+// AddEntitlements adds the "entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *SubscriptionPlanUpdateOne) AddEntitlements(v ...*SubscriptionEntitlement) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddEntitlementIDs(ids...)
+}
+
+// AddExternalMappingIDs adds the "external_mappings" edge to the SubscriptionPlanExternalMapping entity by IDs.
+func (_u *SubscriptionPlanUpdateOne) AddExternalMappingIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddExternalMappingIDs(ids...)
+	return _u
+}
+
+// AddExternalMappings adds the "external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *SubscriptionPlanUpdateOne) AddExternalMappings(v ...*SubscriptionPlanExternalMapping) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddExternalMappingIDs(ids...)
+}
+
+// AddRedeemCodeIDs adds the "redeem_codes" edge to the RedeemCode entity by IDs.
+func (_u *SubscriptionPlanUpdateOne) AddRedeemCodeIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.AddRedeemCodeIDs(ids...)
+	return _u
+}
+
+// AddRedeemCodes adds the "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionPlanUpdateOne) AddRedeemCodes(v ...*RedeemCode) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddRedeemCodeIDs(ids...)
+}
+
 // Mutation returns the SubscriptionPlanMutation object of the builder.
 func (_u *SubscriptionPlanUpdateOne) Mutation() *SubscriptionPlanMutation {
 	return _u.mutation
+}
+
+// ClearGroups clears all "groups" edges to the Group entity.
+func (_u *SubscriptionPlanUpdateOne) ClearGroups() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearGroups()
+	return _u
+}
+
+// RemoveGroupIDs removes the "groups" edge to Group entities by IDs.
+func (_u *SubscriptionPlanUpdateOne) RemoveGroupIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.RemoveGroupIDs(ids...)
+	return _u
+}
+
+// RemoveGroups removes "groups" edges to Group entities.
+func (_u *SubscriptionPlanUpdateOne) RemoveGroups(v ...*Group) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveGroupIDs(ids...)
+}
+
+// ClearEntitlements clears all "entitlements" edges to the SubscriptionEntitlement entity.
+func (_u *SubscriptionPlanUpdateOne) ClearEntitlements() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearEntitlements()
+	return _u
+}
+
+// RemoveEntitlementIDs removes the "entitlements" edge to SubscriptionEntitlement entities by IDs.
+func (_u *SubscriptionPlanUpdateOne) RemoveEntitlementIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.RemoveEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveEntitlements removes "entitlements" edges to SubscriptionEntitlement entities.
+func (_u *SubscriptionPlanUpdateOne) RemoveEntitlements(v ...*SubscriptionEntitlement) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveEntitlementIDs(ids...)
+}
+
+// ClearExternalMappings clears all "external_mappings" edges to the SubscriptionPlanExternalMapping entity.
+func (_u *SubscriptionPlanUpdateOne) ClearExternalMappings() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearExternalMappings()
+	return _u
+}
+
+// RemoveExternalMappingIDs removes the "external_mappings" edge to SubscriptionPlanExternalMapping entities by IDs.
+func (_u *SubscriptionPlanUpdateOne) RemoveExternalMappingIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.RemoveExternalMappingIDs(ids...)
+	return _u
+}
+
+// RemoveExternalMappings removes "external_mappings" edges to SubscriptionPlanExternalMapping entities.
+func (_u *SubscriptionPlanUpdateOne) RemoveExternalMappings(v ...*SubscriptionPlanExternalMapping) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveExternalMappingIDs(ids...)
+}
+
+// ClearRedeemCodes clears all "redeem_codes" edges to the RedeemCode entity.
+func (_u *SubscriptionPlanUpdateOne) ClearRedeemCodes() *SubscriptionPlanUpdateOne {
+	_u.mutation.ClearRedeemCodes()
+	return _u
+}
+
+// RemoveRedeemCodeIDs removes the "redeem_codes" edge to RedeemCode entities by IDs.
+func (_u *SubscriptionPlanUpdateOne) RemoveRedeemCodeIDs(ids ...int64) *SubscriptionPlanUpdateOne {
+	_u.mutation.RemoveRedeemCodeIDs(ids...)
+	return _u
+}
+
+// RemoveRedeemCodes removes "redeem_codes" edges to RedeemCode entities.
+func (_u *SubscriptionPlanUpdateOne) RemoveRedeemCodes(v ...*RedeemCode) *SubscriptionPlanUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveRedeemCodeIDs(ids...)
 }
 
 // Where appends a list predicates to the SubscriptionPlanUpdate builder.
@@ -641,6 +1434,16 @@ func (_u *SubscriptionPlanUpdateOne) check() error {
 	if v, ok := _u.mutation.ValidityUnit(); ok {
 		if err := subscriptionplan.ValidityUnitValidator(v); err != nil {
 			return &ValidationError{Name: "validity_unit", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.validity_unit": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AccessScope(); ok {
+		if err := subscriptionplan.AccessScopeValidator(v); err != nil {
+			return &ValidationError{Name: "access_scope", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.access_scope": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.OveragePolicy(); ok {
+		if err := subscriptionplan.OveragePolicyValidator(v); err != nil {
+			return &ValidationError{Name: "overage_policy", err: fmt.Errorf(`ent: validator failed for field "SubscriptionPlan.overage_policy": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.ProductName(); ok {
@@ -716,6 +1519,50 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	if value, ok := _u.mutation.ValidityUnit(); ok {
 		_spec.SetField(subscriptionplan.FieldValidityUnit, field.TypeString, value)
 	}
+	if value, ok := _u.mutation.AccessScope(); ok {
+		_spec.SetField(subscriptionplan.FieldAccessScope, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AllowedPlatforms(); ok {
+		_spec.SetField(subscriptionplan.FieldAllowedPlatforms, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedAllowedPlatforms(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, subscriptionplan.FieldAllowedPlatforms, value)
+		})
+	}
+	if _u.mutation.AllowedPlatformsCleared() {
+		_spec.ClearField(subscriptionplan.FieldAllowedPlatforms, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.DailyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedDailyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.DailyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldDailyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.WeeklyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWeeklyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.WeeklyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldWeeklyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.MonthlyLimitUsd(); ok {
+		_spec.SetField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedMonthlyLimitUsd(); ok {
+		_spec.AddField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64, value)
+	}
+	if _u.mutation.MonthlyLimitUsdCleared() {
+		_spec.ClearField(subscriptionplan.FieldMonthlyLimitUsd, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.OveragePolicy(); ok {
+		_spec.SetField(subscriptionplan.FieldOveragePolicy, field.TypeString, value)
+	}
 	if value, ok := _u.mutation.Features(); ok {
 		_spec.SetField(subscriptionplan.FieldFeatures, field.TypeString, value)
 	}
@@ -733,6 +1580,198 @@ func (_u *SubscriptionPlanUpdateOne) sqlSave(ctx context.Context) (_node *Subscr
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(subscriptionplan.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if _u.mutation.GroupsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedGroupsIDs(); len(nodes) > 0 && !_u.mutation.GroupsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.GroupsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2M,
+			Inverse: false,
+			Table:   subscriptionplan.GroupsTable,
+			Columns: subscriptionplan.GroupsPrimaryKey,
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		createE := &SubscriptionPlanGroupCreate{config: _u.config, mutation: newSubscriptionPlanGroupMutation(_u.config, OpCreate)}
+		createE.defaults()
+		_, specE := createE.createSpec()
+		edge.Target.Fields = specE.Fields
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.EntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedEntitlementsIDs(); len(nodes) > 0 && !_u.mutation.EntitlementsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.EntitlementsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.EntitlementsTable,
+			Columns: []string{subscriptionplan.EntitlementsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedExternalMappingsIDs(); len(nodes) > 0 && !_u.mutation.ExternalMappingsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ExternalMappingsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.ExternalMappingsTable,
+			Columns: []string{subscriptionplan.ExternalMappingsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionplanexternalmapping.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedRedeemCodesIDs(); len(nodes) > 0 && !_u.mutation.RedeemCodesCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RedeemCodesIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   subscriptionplan.RedeemCodesTable,
+			Columns: []string{subscriptionplan.RedeemCodesColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(redeemcode.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
 	_node = &SubscriptionPlan{config: _u.config}
 	_spec.Assign = _node.assignValues

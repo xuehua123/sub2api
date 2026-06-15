@@ -47,6 +47,16 @@ func TestAPIContracts(t *testing.T) {
 		wantJSON   string
 	}{
 		{
+			name:       "POST /api/v1/entitlements/:id/advance-monthly-cycle validates id",
+			method:     http.MethodPost,
+			path:       "/api/v1/entitlements/bad/advance-monthly-cycle",
+			wantStatus: http.StatusBadRequest,
+			wantJSON: `{
+				"code": 400,
+				"message": "Invalid entitlement ID"
+			}`,
+		},
+		{
 			name:       "GET /api/v1/auth/me",
 			method:     http.MethodGet,
 			path:       "/api/v1/auth/me",
@@ -237,6 +247,7 @@ func TestAPIContracts(t *testing.T) {
 					"key": "sk_custom_1234567890",
 					"name": "Key One",
 					"group_id": null,
+					"access_source": "balance",
 					"auto_switch_group_enabled": true,
 					"status": "active",
 					"ip_whitelist": null,
@@ -288,6 +299,7 @@ func TestAPIContracts(t *testing.T) {
 							"key": "sk_custom_1234567890",
 							"name": "Key One",
 							"group_id": null,
+							"access_source": "balance",
 							"auto_switch_group_enabled": true,
 							"status": "active",
 							"ip_whitelist": null,
@@ -323,15 +335,18 @@ func TestAPIContracts(t *testing.T) {
 				// 普通用户可见的分组列表不应包含内部字段（如 model_routing/account_count）。
 				deps.groupRepo.SetActive([]service.Group{
 					{
-						ID:                  10,
-						Name:                "Group One",
-						Description:         "desc",
-						Platform:            service.PlatformAnthropic,
-						RateMultiplier:      1.5,
-						IsExclusive:         false,
-						Status:              service.StatusActive,
-						SubscriptionType:    service.SubscriptionTypeStandard,
-						ModelRoutingEnabled: true,
+						ID:                   10,
+						Name:                 "Group One",
+						Description:          "desc",
+						Platform:             service.PlatformAnthropic,
+						RateMultiplier:       1.5,
+						IsExclusive:          false,
+						Status:               service.StatusActive,
+						SubscriptionType:     service.SubscriptionTypeStandard,
+						BalanceEnabled:       true,
+						SubscriptionEnabled:  false,
+						PlanAutoGrantEnabled: false,
+						ModelRoutingEnabled:  true,
 						ModelRouting: map[string][]int64{
 							"claude-3-*": []int64{101, 102},
 						},
@@ -358,6 +373,9 @@ func TestAPIContracts(t *testing.T) {
 						"is_exclusive": false,
 						"status": "active",
 						"subscription_type": "standard",
+						"balance_enabled": true,
+						"subscription_enabled": false,
+						"plan_auto_grant_enabled": false,
 						"daily_limit_usd": null,
 						"weekly_limit_usd": null,
 						"monthly_limit_usd": null,
@@ -413,6 +431,55 @@ func TestAPIContracts(t *testing.T) {
 				"data": [
 					{
 						"id": 501,
+						"user_id": 1,
+						"group_id": 10,
+						"starts_at": "2025-01-02T03:04:05Z",
+						"expires_at": "2099-01-02T03:04:05Z",
+						"status": "active",
+						"daily_window_start": null,
+						"weekly_window_start": null,
+						"monthly_window_start": null,
+						"daily_usage_usd": 1.23,
+						"weekly_usage_usd": 2.34,
+						"monthly_usage_usd": 3.45,
+						"created_at": "2025-01-02T03:04:05Z",
+						"updated_at": "2025-01-02T03:04:05Z"
+					}
+				]
+			}`,
+		},
+		{
+			name: "GET /api/v1/subscriptions/active",
+			setup: func(t *testing.T, deps *contractDeps) {
+				t.Helper()
+				deps.userSubRepo.SetActiveByUserID(1, []service.UserSubscription{
+					{
+						ID:              502,
+						UserID:          1,
+						GroupID:         10,
+						StartsAt:        deps.now,
+						ExpiresAt:       time.Date(2099, 1, 2, 3, 4, 5, 0, time.UTC),
+						Status:          service.SubscriptionStatusActive,
+						DailyUsageUSD:   1.23,
+						WeeklyUsageUSD:  2.34,
+						MonthlyUsageUSD: 3.45,
+						AssignedBy:      ptr(int64(999)),
+						AssignedAt:      deps.now,
+						Notes:           "admin-note",
+						CreatedAt:       deps.now,
+						UpdatedAt:       deps.now,
+					},
+				})
+			},
+			method:     http.MethodGet,
+			path:       "/api/v1/subscriptions/active",
+			wantStatus: http.StatusOK,
+			wantJSON: `{
+				"code": 0,
+				"message": "success",
+				"data": [
+					{
+						"id": 502,
 						"user_id": 1,
 						"group_id": 10,
 						"starts_at": "2025-01-02T03:04:05Z",
@@ -852,6 +919,8 @@ func TestAPIContracts(t *testing.T) {
 					"lobehub_runtime_config_version": "",
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"subscription_entitlements_v2_enabled": false,
+					"sub2_payment_page_legacy_mapping_enabled": false,
 					"referral_enabled": false,
 					"referral_level1_enabled": true,
 					"referral_level1_rate": 0,
@@ -1094,6 +1163,8 @@ func TestAPIContracts(t *testing.T) {
 					"lobehub_runtime_config_version": "",
 					"purchase_subscription_enabled": false,
 					"purchase_subscription_url": "",
+					"subscription_entitlements_v2_enabled": false,
+					"sub2_payment_page_legacy_mapping_enabled": false,
 					"table_default_page_size": 20,
 					"table_page_size_options": [10, 20, 50],
 					"default_platform_quotas": {"anthropic":{"daily":null,"weekly":null,"monthly":null},"antigravity":{"daily":null,"weekly":null,"monthly":null},"gemini":{"daily":null,"weekly":null,"monthly":null},"openai":{"daily":null,"weekly":null,"monthly":null}},
@@ -1539,6 +1610,8 @@ func newContractDeps(t *testing.T) *contractDeps {
 
 	subscriptionService := service.NewSubscriptionService(groupRepo, userSubRepo, nil, entClient, cfg)
 	subscriptionHandler := handler.NewSubscriptionHandler(subscriptionService)
+	entitlementService := service.NewSubscriptionEntitlementService(nil, nil)
+	entitlementHandler := handler.NewEntitlementHandler(entitlementService)
 
 	redeemService := service.NewRedeemService(redeemRepo, userRepo, subscriptionService, nil, nil, nil, nil, nil)
 	redeemHandler := handler.NewRedeemHandler(redeemService)
@@ -1592,7 +1665,9 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Subs := v1.Group("")
 	v1Subs.Use(jwtAuth)
 	v1Subs.GET("/subscriptions", subscriptionHandler.List)
+	v1Subs.GET("/subscriptions/active", subscriptionHandler.GetActive)
 	v1Subs.POST("/subscriptions/:id/advance-monthly-cycle", subscriptionHandler.AdvanceMonthlyCycle)
+	v1Subs.POST("/entitlements/:id/advance-monthly-cycle", entitlementHandler.AdvanceMonthlyCycle)
 
 	v1Redeem := v1.Group("")
 	v1Redeem.Use(jwtAuth)
@@ -2560,6 +2635,35 @@ func (r *stubApiKeyRepo) CompareAndSwapGroupID(ctx context.Context, id int64, ol
 	return true, nil
 }
 
+func (r *stubApiKeyRepo) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	key, ok := r.byID[id]
+	if !ok {
+		return false, service.ErrAPIKeyNotFound
+	}
+	if key.GroupID == nil || *key.GroupID != oldGroupID || !sameAPIContractOptionalInt64(key.SubscriptionEntitlementID, expectedEntitlementID) {
+		return false, nil
+	}
+	clone := *key
+	gid := newGroupID
+	clone.GroupID = &gid
+	if newEntitlementID != nil {
+		entID := *newEntitlementID
+		clone.SubscriptionEntitlementID = &entID
+	} else {
+		clone.SubscriptionEntitlementID = nil
+	}
+	r.byID[id] = &clone
+	r.byKey[clone.Key] = &clone
+	return true, nil
+}
+
+func sameAPIContractOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
 func (r *stubApiKeyRepo) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, errors.New("not implemented")
 }
@@ -2668,23 +2772,23 @@ func (r *stubUsageLogRepo) GetDashboardStats(ctx context.Context) (*usagestats.D
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
+func (r *stubUsageLogRepo) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID, entitlementID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.TrendDataPoint, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ModelStat, error) {
+func (r *stubUsageLogRepo) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID, entitlementID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ModelStat, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.EndpointStat, error) {
+func (r *stubUsageLogRepo) GetEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID, entitlementID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.EndpointStat, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetUpstreamEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.EndpointStat, error) {
+func (r *stubUsageLogRepo) GetUpstreamEndpointStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID, entitlementID int64, model string, requestType *int16, stream *bool, billingType *int8) ([]usagestats.EndpointStat, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (r *stubUsageLogRepo) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.GroupStat, error) {
+func (r *stubUsageLogRepo) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID, entitlementID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.GroupStat, error) {
 	return nil, errors.New("not implemented")
 }
 

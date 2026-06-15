@@ -5,12 +5,14 @@ package repository
 import (
 	"context"
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -236,6 +238,55 @@ func (s *RedeemCodeRepoSuite) TestUpdate() {
 	got, err := s.repo.GetByID(s.ctx, code.ID)
 	s.Require().NoError(err)
 	s.Require().Equal(float64(50), got.Value)
+}
+
+func TestRedeemCodeRepositoryUpdateUsesTxContextAfterUse(t *testing.T) {
+	client := testEntClient(t)
+	repo := NewRedeemCodeRepository(client).(*redeemCodeRepository)
+	ctx := context.Background()
+
+	user, err := client.User.Create().
+		SetEmail(uniqueTestValue(t, "redeem-update-tx-user") + "@test.local").
+		SetPasswordHash("test-password-hash").
+		Save(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.User.DeleteOneID(user.ID).Exec(context.Background()) })
+
+	code, err := client.RedeemCode.Create().
+		SetCode("RUTX-" + strconv.FormatInt(time.Now().UnixNano(), 36)).
+		SetType(service.RedeemTypeSubscription).
+		SetStatus(service.StatusUnused).
+		SetValue(1).
+		SetNotes("").
+		SetValidityDays(7).
+		Save(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = client.RedeemCode.DeleteOneID(code.ID).Exec(context.Background()) })
+
+	tx, err := client.Tx(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback() }()
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	txCtx := dbent.NewTxContext(timeoutCtx, tx)
+
+	require.NoError(t, repo.Use(txCtx, code.ID, user.ID))
+
+	usedAt := time.Now()
+	update := &service.RedeemCode{
+		ID:           code.ID,
+		Code:         code.Code,
+		Type:         service.RedeemTypeSubscription,
+		Value:        1,
+		Status:       service.StatusUsed,
+		UsedBy:       &user.ID,
+		UsedAt:       &usedAt,
+		Notes:        "set entitlement in same tx",
+		ValidityDays: 7,
+	}
+
+	require.NoError(t, repo.Update(txCtx, update))
 }
 
 func (s *RedeemCodeRepoSuite) TestBatchUpdate_PartialFieldsAndClear() {

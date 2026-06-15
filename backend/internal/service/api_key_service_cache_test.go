@@ -91,6 +91,10 @@ func (s *authRepoStub) CompareAndSwapGroupID(ctx context.Context, id int64, oldG
 	panic("unexpected CompareAndSwapGroupID call")
 }
 
+func (s *authRepoStub) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, id int64, oldGroupID, newGroupID int64, expectedEntitlementID, newEntitlementID *int64) (bool, error) {
+	panic("unexpected CompareAndSwapGroupIDWithEntitlement call")
+}
+
 func (s *authRepoStub) CountByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected CountByGroupID call")
 }

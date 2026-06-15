@@ -90,6 +90,16 @@ func GroupID(v int64) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldGroupID, v))
 }
 
+// SubscriptionEntitlementID applies equality check predicate on the "subscription_entitlement_id" field. It's identical to SubscriptionEntitlementIDEQ.
+func SubscriptionEntitlementID(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// AccessSource applies equality check predicate on the "access_source" field. It's identical to AccessSourceEQ.
+func AccessSource(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAccessSource, v))
+}
+
 // AutoSwitchGroupEnabled applies equality check predicate on the "auto_switch_group_enabled" field. It's identical to AutoSwitchGroupEnabledEQ.
 func AutoSwitchGroupEnabled(v bool) predicate.APIKey {
 	return predicate.APIKey(sql.FieldEQ(FieldAutoSwitchGroupEnabled, v))
@@ -473,6 +483,101 @@ func GroupIDIsNil() predicate.APIKey {
 // GroupIDNotNil applies the NotNil predicate on the "group_id" field.
 func GroupIDNotNil() predicate.APIKey {
 	return predicate.APIKey(sql.FieldNotNull(FieldGroupID))
+}
+
+// SubscriptionEntitlementIDEQ applies the EQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDNEQ applies the NEQ predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNEQ(v int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldSubscriptionEntitlementID, v))
+}
+
+// SubscriptionEntitlementIDIn applies the In predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDNotIn applies the NotIn predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotIn(vs ...int64) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldSubscriptionEntitlementID, vs...))
+}
+
+// SubscriptionEntitlementIDIsNil applies the IsNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDIsNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldIsNull(FieldSubscriptionEntitlementID))
+}
+
+// SubscriptionEntitlementIDNotNil applies the NotNil predicate on the "subscription_entitlement_id" field.
+func SubscriptionEntitlementIDNotNil() predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotNull(FieldSubscriptionEntitlementID))
+}
+
+// AccessSourceEQ applies the EQ predicate on the "access_source" field.
+func AccessSourceEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEQ(FieldAccessSource, v))
+}
+
+// AccessSourceNEQ applies the NEQ predicate on the "access_source" field.
+func AccessSourceNEQ(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNEQ(FieldAccessSource, v))
+}
+
+// AccessSourceIn applies the In predicate on the "access_source" field.
+func AccessSourceIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldIn(FieldAccessSource, vs...))
+}
+
+// AccessSourceNotIn applies the NotIn predicate on the "access_source" field.
+func AccessSourceNotIn(vs ...string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldNotIn(FieldAccessSource, vs...))
+}
+
+// AccessSourceGT applies the GT predicate on the "access_source" field.
+func AccessSourceGT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGT(FieldAccessSource, v))
+}
+
+// AccessSourceGTE applies the GTE predicate on the "access_source" field.
+func AccessSourceGTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldGTE(FieldAccessSource, v))
+}
+
+// AccessSourceLT applies the LT predicate on the "access_source" field.
+func AccessSourceLT(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLT(FieldAccessSource, v))
+}
+
+// AccessSourceLTE applies the LTE predicate on the "access_source" field.
+func AccessSourceLTE(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldLTE(FieldAccessSource, v))
+}
+
+// AccessSourceContains applies the Contains predicate on the "access_source" field.
+func AccessSourceContains(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContains(FieldAccessSource, v))
+}
+
+// AccessSourceHasPrefix applies the HasPrefix predicate on the "access_source" field.
+func AccessSourceHasPrefix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasPrefix(FieldAccessSource, v))
+}
+
+// AccessSourceHasSuffix applies the HasSuffix predicate on the "access_source" field.
+func AccessSourceHasSuffix(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldHasSuffix(FieldAccessSource, v))
+}
+
+// AccessSourceEqualFold applies the EqualFold predicate on the "access_source" field.
+func AccessSourceEqualFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldEqualFold(FieldAccessSource, v))
+}
+
+// AccessSourceContainsFold applies the ContainsFold predicate on the "access_source" field.
+func AccessSourceContainsFold(v string) predicate.APIKey {
+	return predicate.APIKey(sql.FieldContainsFold(FieldAccessSource, v))
 }
 
 // AutoSwitchGroupEnabledEQ applies the EQ predicate on the "auto_switch_group_enabled" field.
@@ -1178,6 +1283,29 @@ func HasGroup() predicate.APIKey {
 func HasGroupWith(preds ...predicate.Group) predicate.APIKey {
 	return predicate.APIKey(func(s *sql.Selector) {
 		step := newGroupStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasSubscriptionEntitlement applies the HasEdge predicate on the "subscription_entitlement" edge.
+func HasSubscriptionEntitlement() predicate.APIKey {
+	return predicate.APIKey(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasSubscriptionEntitlementWith applies the HasEdge predicate on the "subscription_entitlement" edge with a given conditions (other predicates).
+func HasSubscriptionEntitlementWith(preds ...predicate.SubscriptionEntitlement) predicate.APIKey {
+	return predicate.APIKey(func(s *sql.Selector) {
+		step := newSubscriptionEntitlementStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
@@ -28,15 +29,17 @@ func IsWindowExpired(windowStart *time.Time, duration time.Duration) bool {
 }
 
 type APIKey struct {
-	ID                     int64
-	UserID                 int64
-	Key                    string
-	Name                   string
-	GroupID                *int64
-	AutoSwitchGroupEnabled bool
-	Status                 string
-	IPWhitelist            []string
-	IPBlacklist            []string
+	ID                        int64
+	UserID                    int64
+	Key                       string
+	Name                      string
+	GroupID                   *int64
+	SubscriptionEntitlementID *int64
+	AccessSource              string
+	AutoSwitchGroupEnabled    bool
+	Status                    string
+	IPWhitelist               []string
+	IPBlacklist               []string
 	// 预编译的 IP 规则，用于认证热路径避免重复 ParseIP/ParseCIDR。
 	CompiledIPWhitelist *ip.CompiledIPRules `json:"-"`
 	CompiledIPBlacklist *ip.CompiledIPRules `json:"-"`
@@ -65,6 +68,25 @@ type APIKey struct {
 
 func (k *APIKey) IsActive() bool {
 	return k.Status == StatusActive
+}
+
+func (k *APIKey) EffectiveAccessSource() string {
+	if k == nil {
+		return APIKeyAccessSourceBalance
+	}
+	switch strings.ToLower(strings.TrimSpace(k.AccessSource)) {
+	case APIKeyAccessSourceBalance:
+		return APIKeyAccessSourceBalance
+	case APIKeyAccessSourceEntitlement:
+		return APIKeyAccessSourceEntitlement
+	case "":
+		if k.SubscriptionEntitlementID != nil {
+			return APIKeyAccessSourceEntitlement
+		}
+		return APIKeyAccessSourceBalance
+	default:
+		return ""
+	}
 }
 
 // HasRateLimits returns true if any rate limit window is configured
@@ -141,4 +163,37 @@ type APIKeyListFilters struct {
 	Search  string
 	Status  string
 	GroupID *int64 // nil=不筛选, 0=无分组, >0=指定分组
+}
+
+type AvailableAPIKeyGroup struct {
+	Group         Group
+	Entitlements  []AvailableAPIKeyGroupEntitlement
+	AccessSources []AvailableAPIKeyGroupAccessSource
+}
+
+type AvailableAPIKeyGroupEntitlement struct {
+	ID               int64
+	Name             string
+	PlanID           *int64
+	PrimaryGroupID   *int64
+	StartsAt         time.Time
+	ExpiresAt        time.Time
+	PurchasePrice    *float64
+	PurchaseCurrency string
+	QuotaUSD         *float64
+	QuotaPeriod      string
+	UnitCostPerUSD   *float64
+	OveragePolicy    string
+}
+
+type AvailableAPIKeyGroupAccessSource struct {
+	Type              string
+	Label             string
+	Name              string
+	EntitlementID     *int64
+	PlanID            *int64
+	OveragePolicy     string
+	ExpiresAt         *time.Time
+	Disabled          bool
+	UnavailableReason string
 }

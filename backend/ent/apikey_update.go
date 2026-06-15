@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 )
@@ -117,6 +118,40 @@ func (_u *APIKeyUpdate) SetNillableGroupID(v *int64) *APIKeyUpdate {
 // ClearGroupID clears the value of the "group_id" field.
 func (_u *APIKeyUpdate) ClearGroupID() *APIKeyUpdate {
 	_u.mutation.ClearGroupID()
+	return _u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *APIKeyUpdate) SetSubscriptionEntitlementID(v int64) *APIKeyUpdate {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableSubscriptionEntitlementID(v *int64) *APIKeyUpdate {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *APIKeyUpdate) ClearSubscriptionEntitlementID() *APIKeyUpdate {
+	_u.mutation.ClearSubscriptionEntitlementID()
+	return _u
+}
+
+// SetAccessSource sets the "access_source" field.
+func (_u *APIKeyUpdate) SetAccessSource(v string) *APIKeyUpdate {
+	_u.mutation.SetAccessSource(v)
+	return _u
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_u *APIKeyUpdate) SetNillableAccessSource(v *string) *APIKeyUpdate {
+	if v != nil {
+		_u.SetAccessSource(*v)
+	}
 	return _u
 }
 
@@ -462,6 +497,11 @@ func (_u *APIKeyUpdate) SetGroup(v *Group) *APIKeyUpdate {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *APIKeyUpdate) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *APIKeyUpdate {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *APIKeyUpdate) AddUsageLogIDs(ids ...int64) *APIKeyUpdate {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -491,6 +531,12 @@ func (_u *APIKeyUpdate) ClearUser() *APIKeyUpdate {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *APIKeyUpdate) ClearGroup() *APIKeyUpdate {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *APIKeyUpdate) ClearSubscriptionEntitlement() *APIKeyUpdate {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -569,6 +615,11 @@ func (_u *APIKeyUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -606,6 +657,9 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
@@ -771,6 +825,35 @@ func (_u *APIKeyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.SubscriptionEntitlementTable,
+			Columns: []string{apikey.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.SubscriptionEntitlementTable,
+			Columns: []string{apikey.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _u.mutation.UsageLogsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
@@ -921,6 +1004,40 @@ func (_u *APIKeyUpdateOne) SetNillableGroupID(v *int64) *APIKeyUpdateOne {
 // ClearGroupID clears the value of the "group_id" field.
 func (_u *APIKeyUpdateOne) ClearGroupID() *APIKeyUpdateOne {
 	_u.mutation.ClearGroupID()
+	return _u
+}
+
+// SetSubscriptionEntitlementID sets the "subscription_entitlement_id" field.
+func (_u *APIKeyUpdateOne) SetSubscriptionEntitlementID(v int64) *APIKeyUpdateOne {
+	_u.mutation.SetSubscriptionEntitlementID(v)
+	return _u
+}
+
+// SetNillableSubscriptionEntitlementID sets the "subscription_entitlement_id" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableSubscriptionEntitlementID(v *int64) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetSubscriptionEntitlementID(*v)
+	}
+	return _u
+}
+
+// ClearSubscriptionEntitlementID clears the value of the "subscription_entitlement_id" field.
+func (_u *APIKeyUpdateOne) ClearSubscriptionEntitlementID() *APIKeyUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlementID()
+	return _u
+}
+
+// SetAccessSource sets the "access_source" field.
+func (_u *APIKeyUpdateOne) SetAccessSource(v string) *APIKeyUpdateOne {
+	_u.mutation.SetAccessSource(v)
+	return _u
+}
+
+// SetNillableAccessSource sets the "access_source" field if the given value is not nil.
+func (_u *APIKeyUpdateOne) SetNillableAccessSource(v *string) *APIKeyUpdateOne {
+	if v != nil {
+		_u.SetAccessSource(*v)
+	}
 	return _u
 }
 
@@ -1266,6 +1383,11 @@ func (_u *APIKeyUpdateOne) SetGroup(v *Group) *APIKeyUpdateOne {
 	return _u.SetGroupID(v.ID)
 }
 
+// SetSubscriptionEntitlement sets the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *APIKeyUpdateOne) SetSubscriptionEntitlement(v *SubscriptionEntitlement) *APIKeyUpdateOne {
+	return _u.SetSubscriptionEntitlementID(v.ID)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *APIKeyUpdateOne) AddUsageLogIDs(ids ...int64) *APIKeyUpdateOne {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -1295,6 +1417,12 @@ func (_u *APIKeyUpdateOne) ClearUser() *APIKeyUpdateOne {
 // ClearGroup clears the "group" edge to the Group entity.
 func (_u *APIKeyUpdateOne) ClearGroup() *APIKeyUpdateOne {
 	_u.mutation.ClearGroup()
+	return _u
+}
+
+// ClearSubscriptionEntitlement clears the "subscription_entitlement" edge to the SubscriptionEntitlement entity.
+func (_u *APIKeyUpdateOne) ClearSubscriptionEntitlement() *APIKeyUpdateOne {
+	_u.mutation.ClearSubscriptionEntitlement()
 	return _u
 }
 
@@ -1386,6 +1514,11 @@ func (_u *APIKeyUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`ent: validator failed for field "APIKey.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.AccessSource(); ok {
+		if err := apikey.AccessSourceValidator(v); err != nil {
+			return &ValidationError{Name: "access_source", err: fmt.Errorf(`ent: validator failed for field "APIKey.access_source": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := apikey.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "APIKey.status": %w`, err)}
@@ -1440,6 +1573,9 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(apikey.FieldName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AccessSource(); ok {
+		_spec.SetField(apikey.FieldAccessSource, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.AutoSwitchGroupEnabled(); ok {
 		_spec.SetField(apikey.FieldAutoSwitchGroupEnabled, field.TypeBool, value)
@@ -1598,6 +1734,35 @@ func (_u *APIKeyUpdateOne) sqlSave(ctx context.Context) (_node *APIKey, err erro
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(group.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.SubscriptionEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.SubscriptionEntitlementTable,
+			Columns: []string{apikey.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.SubscriptionEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   apikey.SubscriptionEntitlementTable,
+			Columns: []string{apikey.SubscriptionEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

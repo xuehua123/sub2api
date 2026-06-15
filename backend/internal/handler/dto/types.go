@@ -51,21 +51,23 @@ type AdminUser struct {
 }
 
 type APIKey struct {
-	ID                     int64      `json:"id"`
-	UserID                 int64      `json:"user_id"`
-	Key                    string     `json:"key"`
-	Name                   string     `json:"name"`
-	GroupID                *int64     `json:"group_id"`
-	AutoSwitchGroupEnabled bool       `json:"auto_switch_group_enabled"`
-	Status                 string     `json:"status"`
-	IPWhitelist            []string   `json:"ip_whitelist"`
-	IPBlacklist            []string   `json:"ip_blacklist"`
-	LastUsedAt             *time.Time `json:"last_used_at"`
-	Quota                  float64    `json:"quota"`      // Quota limit in USD (0 = unlimited)
-	QuotaUsed              float64    `json:"quota_used"` // Used quota amount in USD
-	ExpiresAt              *time.Time `json:"expires_at"` // Expiration time (nil = never expires)
-	CreatedAt              time.Time  `json:"created_at"`
-	UpdatedAt              time.Time  `json:"updated_at"`
+	ID                        int64      `json:"id"`
+	UserID                    int64      `json:"user_id"`
+	Key                       string     `json:"key"`
+	Name                      string     `json:"name"`
+	GroupID                   *int64     `json:"group_id"`
+	SubscriptionEntitlementID *int64     `json:"subscription_entitlement_id,omitempty"`
+	AccessSource              string     `json:"access_source"`
+	AutoSwitchGroupEnabled    bool       `json:"auto_switch_group_enabled"`
+	Status                    string     `json:"status"`
+	IPWhitelist               []string   `json:"ip_whitelist"`
+	IPBlacklist               []string   `json:"ip_blacklist"`
+	LastUsedAt                *time.Time `json:"last_used_at"`
+	Quota                     float64    `json:"quota"`      // Quota limit in USD (0 = unlimited)
+	QuotaUsed                 float64    `json:"quota_used"` // Used quota amount in USD
+	ExpiresAt                 *time.Time `json:"expires_at"` // Expiration time (nil = never expires)
+	CreatedAt                 time.Time  `json:"created_at"`
+	UpdatedAt                 time.Time  `json:"updated_at"`
 
 	// Rate limit fields
 	RateLimit5h   float64    `json:"rate_limit_5h"`
@@ -94,10 +96,13 @@ type Group struct {
 	IsExclusive    bool    `json:"is_exclusive"`
 	Status         string  `json:"status"`
 
-	SubscriptionType string   `json:"subscription_type"`
-	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	SubscriptionType     string   `json:"subscription_type"`
+	BalanceEnabled       bool     `json:"balance_enabled"`
+	SubscriptionEnabled  bool     `json:"subscription_enabled"`
+	PlanAutoGrantEnabled bool     `json:"plan_auto_grant_enabled"`
+	DailyLimitUSD        *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD       *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD      *float64 `json:"monthly_limit_usd"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool     `json:"allow_image_generation"`
@@ -354,8 +359,10 @@ type RedeemCode struct {
 	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 
-	GroupID      *int64 `json:"group_id"`
-	ValidityDays int    `json:"validity_days"`
+	GroupID                   *int64 `json:"group_id"`
+	PlanID                    *int64 `json:"plan_id,omitempty"`
+	SubscriptionEntitlementID *int64 `json:"subscription_entitlement_id,omitempty"`
+	ValidityDays              int    `json:"validity_days"`
 
 	// Notes is only populated for admin_balance/admin_concurrency types
 	// so users can see why they were charged or credited
@@ -446,6 +453,7 @@ type UsageLog struct {
 
 	GroupID        *int64 `json:"group_id"`
 	SubscriptionID *int64 `json:"subscription_id"`
+	EntitlementID  *int64 `json:"entitlement_id,omitempty"`
 
 	InputTokens         int `json:"input_tokens"`
 	OutputTokens        int `json:"output_tokens"`
@@ -512,7 +520,8 @@ type AdminUsageLog struct {
 	UpstreamModel *string `json:"upstream_model,omitempty"`
 
 	// ChannelID 渠道 ID
-	ChannelID *int64 `json:"channel_id,omitempty"`
+	ChannelID     *int64  `json:"channel_id,omitempty"`
+	BillingSource *string `json:"billing_source,omitempty"`
 	// ModelMappingChain 模型映射链，如 "a→b→c"
 	ModelMappingChain *string `json:"model_mapping_chain,omitempty"`
 	// BillingTier 计费层级标签（per_request/image 模式）
@@ -596,16 +605,91 @@ type UserSubscription struct {
 	Group *Group `json:"group,omitempty"`
 }
 
-// AdminUserSubscription 是管理员接口使用的订阅 DTO（包含分配信息/备注等字段）。
-// 注意：普通用户接口不得返回 assigned_by/assigned_at/notes/assigned_by_user 等管理员字段。
+type UserSubscriptionAlias struct {
+	ID      int64 `json:"id"`
+	UserID  int64 `json:"user_id"`
+	GroupID int64 `json:"group_id"`
+
+	StartsAt  time.Time `json:"starts_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	Status    string    `json:"status"`
+
+	DailyWindowStart   *time.Time `json:"daily_window_start"`
+	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
+	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
+
+	DailyUsageUSD   float64 `json:"daily_usage_usd"`
+	WeeklyUsageUSD  float64 `json:"weekly_usage_usd"`
+	MonthlyUsageUSD float64 `json:"monthly_usage_usd"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	Group *Group `json:"group,omitempty"`
+
+	EntitlementID int64                  `json:"entitlement_id"`
+	PlanID        *int64                 `json:"plan_id"`
+	Groups        []UserEntitlementGroup `json:"groups"`
+	OveragePolicy string                 `json:"overage_policy"`
+}
+
+type UserEntitlementGroup struct {
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	Platform       string  `json:"platform"`
+	RateMultiplier float64 `json:"rate_multiplier"`
+}
+
+type UserEntitlement struct {
+	ID                     int64                  `json:"id"`
+	PlanID                 *int64                 `json:"plan_id"`
+	PlanName               string                 `json:"plan_name"`
+	Name                   string                 `json:"name"`
+	Status                 string                 `json:"status"`
+	StartsAt               time.Time              `json:"starts_at"`
+	ExpiresAt              time.Time              `json:"expires_at"`
+	Groups                 []UserEntitlementGroup `json:"groups"`
+	DailyLimitUSD          *float64               `json:"daily_limit_usd"`
+	DailyUsageUSD          float64                `json:"daily_usage_usd"`
+	DailyWindowStart       *time.Time             `json:"daily_window_start"`
+	DailyResetsAt          *time.Time             `json:"daily_resets_at"`
+	DailyResetsInSeconds   *int64                 `json:"daily_resets_in_seconds"`
+	WeeklyLimitUSD         *float64               `json:"weekly_limit_usd"`
+	WeeklyUsageUSD         float64                `json:"weekly_usage_usd"`
+	WeeklyWindowStart      *time.Time             `json:"weekly_window_start"`
+	WeeklyResetsAt         *time.Time             `json:"weekly_resets_at"`
+	WeeklyResetsInSeconds  *int64                 `json:"weekly_resets_in_seconds"`
+	MonthlyLimitUSD        *float64               `json:"monthly_limit_usd"`
+	MonthlyUsageUSD        float64                `json:"monthly_usage_usd"`
+	MonthlyWindowStart     *time.Time             `json:"monthly_window_start"`
+	MonthlyResetsAt        *time.Time             `json:"monthly_resets_at"`
+	MonthlyResetsInSeconds *int64                 `json:"monthly_resets_in_seconds"`
+	OveragePolicy          string                 `json:"overage_policy"`
+	LegacySubscriptionID   *int64                 `json:"legacy_subscription_id"`
+	PurchasePrice          *float64               `json:"purchase_price"`
+	PurchaseCurrency       string                 `json:"purchase_currency"`
+	QuotaUSD               *float64               `json:"quota_usd"`
+	QuotaPeriod            string                 `json:"quota_period"`
+	UnitCostPerUSD         *float64               `json:"unit_cost_per_usd"`
+}
+
+// AdminUserSubscription 是管理员接口使用的订阅 DTO（包含安全的分配和权益关联字段）。
+// 注意：普通用户接口不得返回 assigned_by/assigned_at/assigned_by_user 等管理员字段。
 type AdminUserSubscription struct {
 	UserSubscription
 
 	AssignedBy *int64    `json:"assigned_by"`
 	AssignedAt time.Time `json:"assigned_at"`
-	Notes      string    `json:"notes"`
 
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
+
+	EntitlementID             *int64     `json:"entitlement_id"`
+	PlanID                    *int64     `json:"plan_id"`
+	PlanName                  *string    `json:"plan_name"`
+	EntitlementStatus         *string    `json:"entitlement_status"`
+	EntitlementExpiresAt      *time.Time `json:"entitlement_expires_at"`
+	EntitlementPrimaryGroupID *int64     `json:"entitlement_primary_group_id"`
+	EntitlementOveragePolicy  *string    `json:"entitlement_overage_policy"`
 }
 
 type BulkAssignResult struct {

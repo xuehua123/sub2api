@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
+    <div class="mx-auto w-full max-w-[1760px] space-y-5">
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -9,7 +9,7 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="subscriptions.length === 0" class="card p-12 text-center">
+      <div v-else-if="!hasAnySubscriptionDisplay" class="card p-12 text-center">
         <div
           class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
         >
@@ -24,8 +24,171 @@
       </div>
 
       <template v-else>
+        <section v-if="displayEntitlements.length > 0" class="space-y-3" data-testid="entitlement-section">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t('userSubscriptions.entitlements.title') }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
+                {{ t('userSubscriptions.entitlements.sharedQuota') }}
+              </p>
+            </div>
+          </div>
+
+          <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <article
+              v-for="entitlement in displayEntitlements"
+              :key="entitlement.id"
+              class="overflow-hidden rounded-xl border border-indigo-100 bg-white shadow-sm dark:border-indigo-900/50 dark:bg-dark-800"
+              data-testid="entitlement-card"
+            >
+              <div class="border-b border-gray-100 p-3.5 dark:border-dark-700">
+                <div class="flex flex-wrap items-start justify-between gap-3">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <h3 class="text-base font-semibold text-gray-900 dark:text-white">
+                        {{ entitlement.plan_name || entitlement.name || `Entitlement #${entitlement.id}` }}
+                      </h3>
+                      <span
+                        :class="[
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          entitlementStatusClass(entitlement)
+                        ]"
+                      >
+                        {{ entitlementStatusLabel(entitlement) }}
+                      </span>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                      {{ t('userSubscriptions.entitlements.validity', {
+                        start: formatDateTime(entitlement.starts_at),
+                        end: formatDateTime(entitlement.expires_at)
+                      }) }}
+                    </p>
+                    <p
+                      v-if="entitlement.legacy_subscription_id"
+                      class="mt-1 text-xs text-gray-500 dark:text-dark-400"
+                    >
+                      {{ t('userSubscriptions.entitlements.legacyCompatible', {
+                        id: entitlement.legacy_subscription_id
+                      }) }}
+                    </p>
+                  </div>
+                  <div class="flex flex-col items-end gap-1.5 text-right text-xs text-gray-500 dark:text-dark-400">
+                    <span>{{ t('userSubscriptions.entitlements.id', { id: entitlement.id }) }}</span>
+                    <button
+                      type="button"
+                      class="rounded-md px-2 py-1 font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                      @click="confirmDeleteEntitlement(entitlement)"
+                    >
+                      {{ t('common.delete') }}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.authorizedGroups') }}
+                  </div>
+                  <div class="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                    <div
+                      v-for="group in entitlement.groups"
+                      :key="group.id"
+                      :class="[
+                        'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
+                        platformBadgeClass(group.platform || '')
+                      ]"
+                    >
+                      <div class="min-w-0">
+                        <div class="truncate font-semibold">{{ group.name || `Group #${group.id}` }}</div>
+                        <div class="mt-0.5 truncate text-[10px] opacity-75">{{ platformLabel(group.platform || '') }}</div>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-1.5 text-right">
+                        <span class="rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-bold dark:bg-white/10">
+                          x{{ formatRateMultiplier(group.rate_multiplier) }}
+                        </span>
+                        <span class="w-[74px] truncate text-[10px] font-semibold">
+                          {{ entitlementGroupEstimatedCost(entitlement, group) }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-2.5 p-3.5">
+                <div
+                  :class="[
+                    'grid gap-2',
+                    visibleEntitlementUsageWindows(entitlement).length > 1 ? 'sm:grid-cols-2 2xl:grid-cols-3' : 'grid-cols-1'
+                  ]"
+                >
+                  <div
+                    v-for="window in visibleEntitlementUsageWindows(entitlement)"
+                    :key="window.key"
+                    class="rounded-lg border border-gray-100 p-2.5 dark:border-dark-700"
+                    :data-testid="`entitlement-${window.key}-quota`"
+                  >
+                    <div class="mb-1.5 flex items-center justify-between gap-2">
+                      <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
+                        {{ window.label }}
+                      </span>
+                      <span class="text-xs text-gray-500 dark:text-dark-400">
+                        {{ formatEntitlementUsage(window.used, window.limit) }}
+                      </span>
+                    </div>
+                    <div class="relative h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                      <div
+                        class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
+                        :class="getProgressBarClass(window.used, window.limit)"
+                        :style="{ width: getProgressWidth(window.used, window.limit) }"
+                      ></div>
+                    </div>
+                    <p class="mt-1.5 truncate text-[10px] text-gray-500 dark:text-dark-400">
+                      {{ t('userSubscriptions.entitlements.nextReset') }}:
+                      {{ formatEntitlementReset(window, entitlement) }}
+                    </p>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-dark-900">
+                  <span class="text-gray-500 dark:text-dark-400">
+                    {{ t('userSubscriptions.entitlements.overagePolicy') }}
+                  </span>
+                  <span class="font-medium text-gray-800 dark:text-gray-200">
+                    {{ entitlementOveragePolicyLabel(entitlement.overage_policy) }}
+                  </span>
+                </div>
+
+                <div class="rounded-lg border border-gray-100 bg-gray-50/70 p-2.5 dark:border-dark-700 dark:bg-dark-900/70">
+                  <button
+                    type="button"
+                    data-testid="entitlement-advance-monthly-cycle"
+                    class="flex w-full items-center justify-center rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400 dark:border-primary-900/60 dark:bg-primary-900/20 dark:text-primary-200 dark:hover:bg-primary-900/30 dark:disabled:border-dark-700 dark:disabled:bg-dark-800 dark:disabled:text-dark-500"
+                    :disabled="advancingEntitlementId === entitlement.id || !canAdvanceEntitlementMonthlyCycle(entitlement)"
+                    :title="advanceEntitlementMonthlyCycleHint(entitlement)"
+                    @click="advanceEntitlementMonthlyCycle(entitlement)"
+                  >
+                    {{
+                      advancingEntitlementId === entitlement.id
+                        ? t('common.processing')
+                        : t('userSubscriptions.advanceEntitlementMonthlyCycle')
+                    }}
+                  </button>
+                  <p
+                    class="mt-1.5 text-[10px] leading-snug text-gray-500 dark:text-dark-400"
+                    data-testid="entitlement-advance-monthly-hint"
+                  >
+                    {{ advanceEntitlementMonthlyCycleHint(entitlement) }}
+                  </p>
+                </div>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <div
-          v-if="switchPreferences.length > 1"
+          v-if="switchPreferences.length > 1 && displayEntitlements.length === 0"
           class="rounded-2xl border border-gray-200 bg-white p-4 dark:border-dark-700 dark:bg-dark-800"
         >
           <div class="mb-3 flex items-center justify-between gap-3">
@@ -58,7 +221,9 @@
               <span class="w-6 text-xs font-semibold text-gray-400">#{{ index + 1 }}</span>
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
-                  {{ subscriptionByGroupID(pref.group_id)?.group?.name || `Group #${pref.group_id}` }}
+                  {{ subscriptionByGroupID(pref.group_id)
+                    ? subscriptionDisplayName(subscriptionByGroupID(pref.group_id)!, subscriptionPlans)
+                    : `Group #${pref.group_id}` }}
                 </div>
                 <div class="flex flex-wrap items-center gap-1 text-xs text-gray-500 dark:text-dark-400">
                   <span>{{ platformLabel(subscriptionByGroupID(pref.group_id)?.group?.platform || '') }}</span>
@@ -108,11 +273,11 @@
         </div>
 
         <!-- Subscriptions Grid -->
-        <div class="grid gap-6 lg:grid-cols-2">
+        <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <div
-            v-for="subscription in subscriptions"
+            v-for="subscription in displayLegacySubscriptions"
             :key="subscription.id"
-            class="overflow-hidden rounded-2xl border bg-white dark:bg-dark-800"
+            class="overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-dark-800"
             :class="platformBorderClass(subscription.group?.platform || '')"
           >
           <!-- Header -->
@@ -124,7 +289,7 @@
               <div>
                 <div class="flex items-center gap-2">
                   <h3 class="font-semibold text-gray-900 dark:text-white">
-                    {{ subscription.group?.name || `Group #${subscription.group_id}` }}
+                    {{ subscriptionDisplayName(subscription, subscriptionPlans) }}
                   </h3>
                   <span :class="['rounded-md border px-2 py-0.5 text-[11px] font-medium', platformBadgeClass(subscription.group?.platform || '')]">
                     {{ platformLabel(subscription.group?.platform || '') }}
@@ -160,6 +325,13 @@
                 @click="router.push({ path: '/purchase', query: { tab: 'subscription', group: String(subscription.group_id) } })"
               >
                 {{ t('payment.renewNow') }}
+              </button>
+              <button
+                type="button"
+                class="rounded-lg px-3 py-1.5 text-xs font-semibold text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
+                @click="confirmDeleteSubscription(subscription)"
+              >
+                {{ t('common.delete') }}
               </button>
             </div>
           </div>
@@ -339,19 +511,32 @@
         </div>
       </template>
     </div>
+    <ConfirmDialog
+      :show="deleteTarget !== null"
+      :title="t('userSubscriptions.deleteTitle')"
+      :message="deleteTarget ? t('userSubscriptions.deleteConfirm', { name: deleteTarget.name }) : ''"
+      :confirm-text="deletingSubscription ? t('common.processing') : t('common.delete')"
+      :cancel-text="t('common.cancel')"
+      danger
+      @confirm="deleteSelectedSubscription"
+      @cancel="cancelDeleteSubscription"
+    />
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import subscriptionsAPI from '@/api/subscriptions'
-import type { SubscriptionGroupPreference, UserSubscription } from '@/types'
+import { paymentAPI } from '@/api/payment'
+import type { SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
+import type { SubscriptionPlan } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
+import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatDateTime } from '@/utils/format'
+import { formatCurrency, formatDateTime } from '@/utils/format'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
 import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
 import {
@@ -359,6 +544,7 @@ import {
   formatRemainingDurationCompact,
   getRemainingHours,
 } from '@/utils/subscriptionTime'
+import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -375,28 +561,94 @@ const router = useRouter()
 const appStore = useAppStore()
 
 const subscriptions = ref<UserSubscription[]>([])
+const entitlements = ref<UserEntitlement[]>([])
+const subscriptionPlans = ref<SubscriptionPlan[]>([])
 const loading = ref(true)
 const switchPreferences = ref<SubscriptionGroupPreference[]>([])
 const savingPreferences = ref(false)
 const advancingSubscriptionId = ref<number | null>(null)
+const advancingEntitlementId = ref<number | null>(null)
 const draggedPreferenceGroupID = ref<number | null>(null)
+const deletingSubscription = ref(false)
 const monthlyCycleAdvanceThreshold = 0.9
 const monthlyCycleDurationMs = 30 * 24 * 60 * 60 * 1000
+
+type DeleteSubscriptionTarget = {
+  type: 'entitlement' | 'subscription'
+  id: number
+  name: string
+}
+
+const deleteTarget = ref<DeleteSubscriptionTarget | null>(null)
+
+const displayEntitlements = computed(() => {
+  return [...entitlements.value].sort((a, b) => {
+    const statusDiff = entitlementStatusRank(a) - entitlementStatusRank(b)
+    if (statusDiff !== 0) return statusDiff
+    return new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
+  })
+})
+
+const displayLegacySubscriptions = computed(() => {
+  const visibleEntitlementIDs = new Set(entitlements.value.map((entitlement) => entitlement.id))
+  const legacySubscriptionIDsCoveredByEntitlements = new Set(
+    entitlements.value
+      .map((entitlement) => entitlement.legacy_subscription_id)
+      .filter((id): id is number => typeof id === 'number' && id > 0)
+  )
+  return subscriptions.value.filter((subscription) => (
+    !(subscription.entitlement_id && visibleEntitlementIDs.has(subscription.entitlement_id)) &&
+    !legacySubscriptionIDsCoveredByEntitlements.has(subscription.id)
+  ))
+})
+
+const hasAnySubscriptionDisplay = computed(() => (
+  displayLegacySubscriptions.value.length > 0 || displayEntitlements.value.length > 0
+))
 
 async function loadSubscriptions() {
   try {
     loading.value = true
-    const [subs, prefs] = await Promise.all([
-      subscriptionsAPI.getMySubscriptions(),
-      subscriptionsAPI.getGroupPreferences()
-    ])
+    const entitlementRecordsPromise = subscriptionsAPI.getEntitlements().catch((error) => {
+      console.warn('Failed to load entitlements:', error)
+      return [] as UserEntitlement[]
+    })
+    const subs = await subscriptionsAPI.getMySubscriptions()
     subscriptions.value = subs
-    switchPreferences.value = buildSwitchPreferences(subs, prefs)
+    void loadSubscriptionPlansForSubscriptions(subs)
+
+    if (subs.length > 0) {
+      loading.value = false
+    }
+
+    const entitlementRecords = await entitlementRecordsPromise
+    entitlements.value = entitlementRecords
+
+    if (entitlementRecords.length > 0) {
+      switchPreferences.value = []
+    } else {
+      const prefs = await subscriptionsAPI.getGroupPreferences()
+      switchPreferences.value = buildSwitchPreferences(subs, prefs)
+    }
   } catch (error) {
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
     loading.value = false
+  }
+}
+
+async function loadSubscriptionPlansForSubscriptions(records: UserSubscription[]) {
+  if (!records.some((subscription) => subscription.plan_id)) {
+    subscriptionPlans.value = []
+    return
+  }
+
+  try {
+    const response = await paymentAPI.getPlans()
+    subscriptionPlans.value = normalizeSubscriptionPlans(response.data || [])
+  } catch (error) {
+    console.warn('Failed to load subscription plans:', error)
   }
 }
 
@@ -539,7 +791,207 @@ function formatResetTime(windowStart: string | null, windowHours: number, starts
   return parts ? formatDurationParts(parts) : t('userSubscriptions.windowNotActive')
 }
 
+type EntitlementWindowKey = 'daily' | 'weekly' | 'monthly'
+
+interface EntitlementUsageWindow {
+  key: EntitlementWindowKey
+  label: string
+  used: number
+  limit: number | null
+  windowStart: string | null
+  cycleHours: number
+  resetsAt: string | null
+  resetsInSeconds: number | null
+}
+
+function entitlementStatusRank(entitlement: UserEntitlement): number {
+  const statusKey = entitlementStatusKey(entitlement)
+  if (statusKey === 'active') return 0
+  if (statusKey === 'future') return 1
+  if (statusKey === 'expired') return 2
+  return 3
+}
+
+function entitlementStatusKey(entitlement: UserEntitlement): string {
+  if (entitlement.status === 'active') {
+    const startsAt = new Date(entitlement.starts_at)
+    const expiresAt = new Date(entitlement.expires_at)
+    const now = new Date()
+    if (isValidDate(startsAt) && startsAt.getTime() > now.getTime()) return 'future'
+    if (isValidDate(expiresAt) && expiresAt.getTime() <= now.getTime()) return 'expired'
+    return 'active'
+  }
+  return entitlement.status || 'unknown'
+}
+
+function entitlementStatusLabel(entitlement: UserEntitlement): string {
+  return t(`userSubscriptions.entitlements.status.${entitlementStatusKey(entitlement)}`)
+}
+
+function entitlementStatusClass(entitlement: UserEntitlement): string {
+  const statusKey = entitlementStatusKey(entitlement)
+  if (statusKey === 'active') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+  if (statusKey === 'future') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+  if (statusKey === 'expired') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-400'
+  return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+}
+
+function entitlementUsageWindows(entitlement: UserEntitlement): EntitlementUsageWindow[] {
+  return [
+    {
+      key: 'daily',
+      label: t('userSubscriptions.entitlements.dailyQuota'),
+      used: entitlement.daily_usage_usd || 0,
+      limit: entitlement.daily_limit_usd,
+      windowStart: entitlement.daily_window_start,
+      cycleHours: 24,
+      resetsAt: entitlement.daily_resets_at,
+      resetsInSeconds: entitlement.daily_resets_in_seconds
+    },
+    {
+      key: 'weekly',
+      label: t('userSubscriptions.entitlements.weeklyQuota'),
+      used: entitlement.weekly_usage_usd || 0,
+      limit: entitlement.weekly_limit_usd,
+      windowStart: entitlement.weekly_window_start,
+      cycleHours: 168,
+      resetsAt: entitlement.weekly_resets_at,
+      resetsInSeconds: entitlement.weekly_resets_in_seconds
+    },
+    {
+      key: 'monthly',
+      label: t('userSubscriptions.entitlements.monthlyQuota'),
+      used: entitlement.monthly_usage_usd || 0,
+      limit: entitlement.monthly_limit_usd,
+      windowStart: entitlement.monthly_window_start,
+      cycleHours: 720,
+      resetsAt: entitlement.monthly_resets_at,
+      resetsInSeconds: entitlement.monthly_resets_in_seconds
+    }
+  ]
+}
+
+function visibleEntitlementUsageWindows(entitlement: UserEntitlement): EntitlementUsageWindow[] {
+  const windows = entitlementUsageWindows(entitlement)
+  const meaningfulWindows = windows.filter((window) => window.limit != null || window.used > 0)
+  return meaningfulWindows.length > 0 ? meaningfulWindows : windows.slice(0, 1)
+}
+
+function formatEntitlementUsage(used: number, limit: number | null | undefined): string {
+  const usedValue = `$${(used || 0).toFixed(2)}`
+  if (limit == null) {
+    return `${usedValue} / ${t('userSubscriptions.entitlements.unlimitedQuota')}`
+  }
+  return `${usedValue} / $${limit.toFixed(2)}`
+}
+
+function formatEntitlementReset(window: EntitlementUsageWindow, entitlement: UserEntitlement): string {
+  if (window.limit == null || window.limit <= 0) {
+    return t('userSubscriptions.windowNotActive')
+  }
+  if (window.resetsAt) {
+    return formatDateTime(window.resetsAt)
+  }
+  if (typeof window.resetsInSeconds === 'number') {
+    if (window.resetsInSeconds <= 0) {
+      return t('userSubscriptions.entitlements.resetNow')
+    }
+    return formatPreciseDuration(window.resetsInSeconds)
+  }
+  const fallbackResetAt = getCycleResetAt(window.windowStart, entitlement.starts_at, window.cycleHours)
+  if (fallbackResetAt) {
+    const seconds = Math.ceil((fallbackResetAt.getTime() - Date.now()) / 1000)
+    if (seconds <= 0) {
+      return t('userSubscriptions.entitlements.resetNow')
+    }
+    return formatDateTime(fallbackResetAt)
+  }
+  return t('userSubscriptions.windowNotActive')
+}
+
+function entitlementOveragePolicyLabel(policy: string): string {
+  if (policy === 'balance_fallback') {
+    return t('userSubscriptions.entitlements.overage.balanceFallback')
+  }
+  if (policy === 'block') {
+    return t('userSubscriptions.entitlements.overage.block')
+  }
+  return policy || '-'
+}
+
+function formatRateMultiplier(rate: number | null | undefined): string {
+  const normalized = rate && rate > 0 ? rate : 1
+  return Number(normalized.toPrecision(10)).toString()
+}
+
+function entitlementCurrency(entitlement: UserEntitlement): string {
+  const currency = (entitlement.purchase_currency || 'CNY').trim().toUpperCase()
+  return currency === 'RMB' ? 'CNY' : currency
+}
+
+function entitlementGroupEstimatedCost(
+  entitlement: UserEntitlement,
+  group: UserEntitlement['groups'][number]
+): string {
+  const unitCost = entitlement.unit_cost_per_usd
+  if (!unitCost || unitCost <= 0) {
+    return t('userSubscriptions.entitlements.priceUnavailable')
+  }
+  const rate = group.rate_multiplier && group.rate_multiplier > 0 ? group.rate_multiplier : 1
+  return t('userSubscriptions.entitlements.groupUnitCost', {
+    amount: formatCurrency(unitCost * rate, entitlementCurrency(entitlement))
+  })
+}
+
+function entitlementDisplayName(entitlement: UserEntitlement): string {
+  return entitlement.plan_name || entitlement.name || `Entitlement #${entitlement.id}`
+}
+
+function confirmDeleteEntitlement(entitlement: UserEntitlement) {
+  deleteTarget.value = {
+    type: 'entitlement',
+    id: entitlement.id,
+    name: entitlementDisplayName(entitlement)
+  }
+}
+
+function confirmDeleteSubscription(subscription: UserSubscription) {
+  deleteTarget.value = {
+    type: 'subscription',
+    id: subscription.id,
+    name: subscriptionDisplayName(subscription, subscriptionPlans.value)
+  }
+}
+
+function cancelDeleteSubscription() {
+  if (deletingSubscription.value) return
+  deleteTarget.value = null
+}
+
+async function deleteSelectedSubscription() {
+  const target = deleteTarget.value
+  if (!target || deletingSubscription.value) return
+  try {
+    deletingSubscription.value = true
+    if (target.type === 'entitlement') {
+      await subscriptionsAPI.deleteEntitlement(target.id)
+    } else {
+      await subscriptionsAPI.deleteSubscription(target.id)
+    }
+    appStore.showSuccess(t('userSubscriptions.deleteSuccess'))
+    deleteTarget.value = null
+    await loadSubscriptions()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.deleteFailed'))
+  } finally {
+    deletingSubscription.value = false
+  }
+}
+
 function canAdvanceMonthlyCycle(subscription: UserSubscription): boolean {
+  if (subscription.entitlement_id) {
+    return false
+  }
   const limit = subscription.group?.monthly_limit_usd
   if (
     subscription.status !== 'active' ||
@@ -574,6 +1026,9 @@ function hasReachedMonthlyCycleAdvanceThreshold(subscription: UserSubscription):
 }
 
 function advanceMonthlyCycleHint(subscription: UserSubscription): string {
+  if (subscription.entitlement_id) {
+    return t('userSubscriptions.advanceMonthlyUnavailableAlias')
+  }
   const limit = subscription.group?.monthly_limit_usd
   if (subscription.status !== 'active') {
     return t('userSubscriptions.advanceMonthlyUnavailableInactive')
@@ -605,6 +1060,96 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
     return t('userSubscriptions.advanceMonthlyUnavailableValidity')
   }
   return t('userSubscriptions.advanceMonthlyAvailableHint', { duration: formatPreciseDuration(deductedSeconds) })
+}
+
+function canAdvanceEntitlementMonthlyCycle(entitlement: UserEntitlement): boolean {
+  const limit = entitlement.monthly_limit_usd
+  if (
+    entitlementStatusKey(entitlement) !== 'active' ||
+    !entitlement.expires_at ||
+    !limit ||
+    limit <= 0 ||
+    !hasReachedEntitlementMonthlyCycleAdvanceThreshold(entitlement)
+  ) {
+    return false
+  }
+
+  const now = new Date()
+  const resetAt = getEntitlementMonthlyResetAt(entitlement, now)
+  const expiresAt = new Date(entitlement.expires_at)
+  if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
+    return false
+  }
+  if (!hasFullNextEntitlementMonthlyCycle(entitlement, resetAt, expiresAt)) {
+    return false
+  }
+
+  const deductedSeconds = estimateEntitlementDeductedSeconds(entitlement, now)
+  const newExpiresAt = new Date(expiresAt)
+  newExpiresAt.setSeconds(newExpiresAt.getSeconds() - deductedSeconds)
+  return newExpiresAt.getTime() > now.getTime()
+}
+
+function hasReachedEntitlementMonthlyCycleAdvanceThreshold(entitlement: UserEntitlement): boolean {
+  const limit = entitlement.monthly_limit_usd
+  if (!limit || limit <= 0) return false
+  return (entitlement.monthly_usage_usd || 0) >= limit * monthlyCycleAdvanceThreshold
+}
+
+function advanceEntitlementMonthlyCycleHint(entitlement: UserEntitlement): string {
+  const limit = entitlement.monthly_limit_usd
+  if (entitlementStatusKey(entitlement) !== 'active') {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableInactive')
+  }
+  if (!entitlement.expires_at) {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableNoExpiration')
+  }
+  if (!limit || limit <= 0) {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableNoMonthlyLimit')
+  }
+  if (!hasReachedEntitlementMonthlyCycleAdvanceThreshold(entitlement)) {
+    return t('userSubscriptions.advanceEntitlementMonthlyThresholdHint', {
+      percent: Math.round((1 - monthlyCycleAdvanceThreshold) * 100)
+    })
+  }
+  const now = new Date()
+  const resetAt = getEntitlementMonthlyResetAt(entitlement, now)
+  const expiresAt = new Date(entitlement.expires_at)
+  if (!isValidDate(resetAt) || !isValidDate(expiresAt) || resetAt.getTime() <= now.getTime()) {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableWindow')
+  }
+  if (!hasFullNextEntitlementMonthlyCycle(entitlement, resetAt, expiresAt)) {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableValidity')
+  }
+  const deductedSeconds = estimateEntitlementDeductedSeconds(entitlement, now)
+  const newExpiresAt = new Date(expiresAt)
+  newExpiresAt.setSeconds(newExpiresAt.getSeconds() - deductedSeconds)
+  if (newExpiresAt.getTime() <= now.getTime()) {
+    return t('userSubscriptions.advanceEntitlementMonthlyUnavailableValidity')
+  }
+  return t('userSubscriptions.advanceEntitlementMonthlyAvailableHint', { duration: formatPreciseDuration(deductedSeconds) })
+}
+
+function getEntitlementMonthlyResetAt(entitlement: UserEntitlement, now = new Date()): Date {
+  return getCycleResetAt(entitlement.monthly_window_start, entitlement.starts_at, 720, now)
+    || new Date(now.getTime() + monthlyCycleDurationMs)
+}
+
+function hasFullNextEntitlementMonthlyCycle(
+  entitlement: UserEntitlement,
+  resetAt: Date,
+  expiresAt: Date
+): boolean {
+  const startsAt = new Date(entitlement.starts_at)
+  if (!isValidDate(startsAt)) return false
+  if (expiresAt.getTime() <= startsAt.getTime() + monthlyCycleDurationMs) return false
+  return expiresAt.getTime() >= resetAt.getTime() + monthlyCycleDurationMs
+}
+
+function estimateEntitlementDeductedSeconds(entitlement: UserEntitlement, now = new Date()): number {
+  const resetAt = getEntitlementMonthlyResetAt(entitlement, now)
+  const diff = resetAt.getTime() - now.getTime()
+  return Math.max(Math.ceil(diff / 1000), 1)
 }
 
 function getMonthlyResetAt(subscription: UserSubscription, now = new Date()): Date {
@@ -660,7 +1205,7 @@ function formatPreciseDuration(totalSeconds: number): string {
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {
   if (!canAdvanceMonthlyCycle(subscription)) return
-  const groupName = subscription.group?.name || `Group #${subscription.group_id}`
+  const groupName = subscriptionDisplayName(subscription, subscriptionPlans.value)
   const deductedSeconds = estimateDeductedSeconds(subscription)
   const limit = subscription.group?.monthly_limit_usd || 0
   const used = subscription.monthly_usage_usd || 0
@@ -685,6 +1230,36 @@ async function advanceMonthlyCycle(subscription: UserSubscription) {
     appStore.showError(error.response?.data?.detail || t('userSubscriptions.advanceMonthlyFailed'))
   } finally {
     advancingSubscriptionId.value = null
+  }
+}
+
+async function advanceEntitlementMonthlyCycle(entitlement: UserEntitlement) {
+  if (!canAdvanceEntitlementMonthlyCycle(entitlement)) return
+  const entitlementName = entitlementDisplayName(entitlement)
+  const deductedSeconds = estimateEntitlementDeductedSeconds(entitlement)
+  const limit = entitlement.monthly_limit_usd || 0
+  const used = entitlement.monthly_usage_usd || 0
+  const remaining = Math.max(limit - used, 0)
+  if (!window.confirm(t('userSubscriptions.advanceEntitlementMonthlyConfirm', {
+    entitlement: entitlementName,
+    duration: formatPreciseDuration(deductedSeconds),
+    used: used.toFixed(2),
+    limit: limit.toFixed(2),
+    remaining: remaining.toFixed(2)
+  }))) {
+    return
+  }
+  try {
+    advancingEntitlementId.value = entitlement.id
+    const result = await subscriptionsAPI.advanceEntitlementMonthlyCycle(entitlement.id)
+    appStore.showSuccess(
+      t('userSubscriptions.advanceEntitlementMonthlySuccess', { duration: formatPreciseDuration(result.deducted_seconds) })
+    )
+    await loadSubscriptions()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.advanceEntitlementMonthlyFailed'))
+  } finally {
+    advancingEntitlementId.value = null
   }
 }
 

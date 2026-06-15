@@ -56,6 +56,8 @@ type SubscriptionService struct {
 	userSubRepo         UserSubscriptionRepository
 	billingCacheService *BillingCacheService
 	entClient           *dbent.Client
+	settingSvc          SubscriptionEntitlementsRuntimeProvider
+	entitlementSvc      *SubscriptionEntitlementService
 
 	// L1 缓存：加速中间件热路径的订阅查询
 	subCacheL1     *ristretto.Cache
@@ -112,6 +114,54 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
 	return svc
+}
+
+func (s *SubscriptionService) SetSubscriptionEntitlementAliasDependencies(settingSvc SubscriptionEntitlementsRuntimeProvider, entitlementSvc *SubscriptionEntitlementService) {
+	if s == nil {
+		return
+	}
+	s.settingSvc = settingSvc
+	s.entitlementSvc = entitlementSvc
+}
+
+func (s *SubscriptionService) ShouldUseSubscriptionEntitlementAliases(ctx context.Context) bool {
+	if s == nil || s.settingSvc == nil || s.entitlementSvc == nil {
+		return false
+	}
+	return s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled
+}
+
+func (s *SubscriptionService) ListUserSubscriptionEntitlementAliases(ctx context.Context, userID int64) ([]SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementSvc == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	entitlements, err := s.entitlementSvc.ListUserEntitlements(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return filterSubscriptionAliasEntitlements(entitlements), nil
+}
+
+func (s *SubscriptionService) ListActiveUserSubscriptionEntitlementAliases(ctx context.Context, userID int64, now time.Time) ([]SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementSvc == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	entitlements, err := s.entitlementSvc.ListActiveUserEntitlements(ctx, userID, now)
+	if err != nil {
+		return nil, err
+	}
+	return filterSubscriptionAliasEntitlements(entitlements), nil
+}
+
+func filterSubscriptionAliasEntitlements(entitlements []SubscriptionEntitlement) []SubscriptionEntitlement {
+	out := make([]SubscriptionEntitlement, 0, len(entitlements))
+	for i := range entitlements {
+		if entitlements[i].LegacySubscriptionID == nil {
+			continue
+		}
+		out = append(out, entitlements[i])
+	}
+	return out
 }
 
 func (s *SubscriptionService) initMaintenanceQueue(cfg *config.Config) {
@@ -207,6 +257,7 @@ func (s *SubscriptionService) waitSubCacheInvalidation() {
 type AssignSubscriptionInput struct {
 	UserID       int64
 	GroupID      int64
+	PlanID       int64
 	ValidityDays int
 	AssignedBy   int64
 	Notes        string
@@ -214,11 +265,34 @@ type AssignSubscriptionInput struct {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if s.shouldAssignPlanEntitlementAlias(ctx, input) {
+		var sub *UserSubscription
+		err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+			var innerErr error
+			sub, _, innerErr = s.assignSubscriptionWithReuse(txCtx, input)
+			if innerErr != nil {
+				return innerErr
+			}
+			return s.assignPlanEntitlementAlias(txCtx, input, sub)
+		})
+		if err != nil {
+			return nil, err
+		}
+		return sub, nil
+	}
+
 	sub, _, err := s.assignSubscriptionWithReuse(ctx, input)
 	if err != nil {
 		return nil, err
 	}
+	if err := s.assignPlanEntitlementAlias(ctx, input, sub); err != nil {
+		return nil, err
+	}
 	return sub, nil
+}
+
+func (s *SubscriptionService) shouldAssignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput) bool {
+	return s != nil && input != nil && input.PlanID > 0 && s.ShouldUseSubscriptionEntitlementAliases(ctx)
 }
 
 // AssignOrExtendSubscription 分配或续期订阅（用于兑换码等场景）
@@ -311,6 +385,32 @@ func (s *SubscriptionService) AssignOrExtendSubscription(ctx context.Context, in
 	return sub, false, nil // false 表示是新建
 }
 
+func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput, sub *UserSubscription) error {
+	if s == nil || input == nil || sub == nil || input.PlanID <= 0 || !s.ShouldUseSubscriptionEntitlementAliases(ctx) {
+		return nil
+	}
+	sourceExternalID := adminAssignEntitlementSourceExternalID(sub.ID, input.PlanID)
+	legacySubscriptionID := sub.ID
+	_, _, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
+		UserID:               input.UserID,
+		PlanID:               input.PlanID,
+		LegacySubscriptionID: &legacySubscriptionID,
+		SourceType:           SubscriptionEntitlementSourceAdminAssign,
+		SourceExternalID:     &sourceExternalID,
+		ValidityDaysOverride: input.ValidityDays,
+		AssignedBy:           input.AssignedBy,
+		Notes:                input.Notes,
+	})
+	if err != nil {
+		return fmt.Errorf("assign subscription entitlement alias: %w", err)
+	}
+	return nil
+}
+
+func adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID int64) string {
+	return fmt.Sprintf("%s:%d:plan:%d", SubscriptionEntitlementSourceAdminAssign, legacySubscriptionID, planID)
+}
+
 func (s *SubscriptionService) updateExistingSubscriptionTerm(
 	ctx context.Context,
 	existingSub *UserSubscription,
@@ -353,6 +453,9 @@ func (s *SubscriptionService) updateExistingSubscriptionTerm(
 
 func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn func(context.Context) error) error {
 	if s.entClient == nil {
+		return fn(ctx)
+	}
+	if dbent.TxFromContext(ctx) != nil {
 		return fn(ctx)
 	}
 
@@ -605,6 +708,20 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 	}
 
 	return nil
+}
+
+func (s *SubscriptionService) RevokeUserSubscription(ctx context.Context, userID, subscriptionID int64) error {
+	if userID <= 0 || subscriptionID <= 0 {
+		return ErrSubscriptionNotFound
+	}
+	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return err
+	}
+	if sub.UserID != userID {
+		return ErrSubscriptionNotFound
+	}
+	return s.RevokeSubscription(ctx, subscriptionID)
 }
 
 // ExtendSubscription 调整订阅时长（正数延长，负数缩短）
@@ -1354,32 +1471,11 @@ func (s *SubscriptionService) AdvanceMonthlyCycle(ctx context.Context, userID, s
 		_ = tx.Rollback()
 		return nil, ErrSubscriptionExpired
 	}
-	var resetAt time.Time
+	var previousWindowStartPtr *time.Time
 	if previousWindowStart.Valid {
-		effectiveStart := effectiveWindowStartAt(&previousWindowStart.Time, previousStartsAt, monthlyCycleDuration, now)
-		if effectiveStart != nil {
-			resetAt = effectiveStart.Add(monthlyCycleDuration)
-		}
+		previousWindowStartPtr = &previousWindowStart.Time
 	}
-	if resetAt.IsZero() {
-		if alignedStart, ok := alignedCycleStart(previousStartsAt, monthlyCycleDuration, now); ok {
-			resetAt = alignedStart.Add(monthlyCycleDuration)
-		} else {
-			resetAt = now.Add(monthlyCycleDuration)
-		}
-	} else if !resetAt.After(now) {
-		resetAt = advanceWindowStart(resetAt, monthlyCycleDuration, now)
-	}
-	if resetAt.IsZero() {
-		resetAt = now.Add(monthlyCycleDuration)
-	}
-	if !resetAt.After(now) {
-		if previousWindowStart.Valid {
-			resetAt = advanceWindowStart(previousWindowStart.Time, monthlyCycleDuration, now).Add(monthlyCycleDuration)
-		} else {
-			resetAt = now.Add(monthlyCycleDuration)
-		}
-	}
+	resetAt := monthlyCycleResetAt(previousWindowStartPtr, previousStartsAt, now)
 	if !resetAt.After(now) {
 		_ = tx.Rollback()
 		return nil, ErrMonthlyCycleNotExhausted
@@ -1471,6 +1567,36 @@ func canAdvanceMonthlyCycleByValidity(startsAt, expiresAt, resetAt time.Time) bo
 		return false
 	}
 	return !expiresAt.Before(resetAt.Add(monthlyCycleDuration))
+}
+
+func monthlyCycleResetAt(windowStart *time.Time, startsAt, now time.Time) time.Time {
+	var resetAt time.Time
+	if windowStart != nil {
+		effectiveStart := effectiveWindowStartAt(windowStart, startsAt, monthlyCycleDuration, now)
+		if effectiveStart != nil {
+			resetAt = effectiveStart.Add(monthlyCycleDuration)
+		}
+	}
+	if resetAt.IsZero() {
+		if alignedStart, ok := alignedCycleStart(startsAt, monthlyCycleDuration, now); ok {
+			resetAt = alignedStart.Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
+	} else if !resetAt.After(now) {
+		resetAt = advanceWindowStart(resetAt, monthlyCycleDuration, now)
+	}
+	if resetAt.IsZero() {
+		resetAt = now.Add(monthlyCycleDuration)
+	}
+	if !resetAt.After(now) {
+		if windowStart != nil {
+			resetAt = advanceWindowStart(*windowStart, monthlyCycleDuration, now).Add(monthlyCycleDuration)
+		} else {
+			resetAt = now.Add(monthlyCycleDuration)
+		}
+	}
+	return resetAt
 }
 
 func ceilDurationSeconds(d time.Duration) int64 {

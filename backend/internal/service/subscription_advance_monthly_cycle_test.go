@@ -127,7 +127,7 @@ func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
 	previousUsage := 9.5
 	previousStartsAt := time.Date(2026, 5, 1, 15, 30, 0, 0, time.UTC)
 	manualWindowStart := time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC)
-	previousExpiresAt := manualWindowStart.Add(60 * 24 * time.Hour)
+	previousExpiresAt := manualWindowStart.Add(90 * 24 * time.Hour)
 	previousUpdatedAt := manualWindowStart.Add(-time.Hour)
 	group := &Group{
 		ID:              groupID,
@@ -186,7 +186,8 @@ func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
 	require.False(t, result.NewMonthlyWindowStart.Before(before.Add(-time.Second)))
 	require.False(t, result.NewMonthlyWindowStart.After(after.Add(time.Second)))
 	require.Zero(t, result.NewMonthlyWindowStart.Nanosecond())
-	require.True(t, manualWindowStart.Add(monthlyCycleDuration).Equal(result.NewMonthlyWindowStart.Add(time.Duration(result.DeductedSeconds)*time.Second)))
+	expectedResetAt := advanceWindowStart(manualWindowStart, monthlyCycleDuration, before).Add(monthlyCycleDuration)
+	require.True(t, expectedResetAt.Equal(result.NewMonthlyWindowStart.Add(time.Duration(result.DeductedSeconds)*time.Second)))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

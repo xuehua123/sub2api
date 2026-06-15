@@ -484,6 +484,23 @@ func ProvideBillingCacheService(
 	return NewBillingCacheService(cache, userRepo, subRepo, apiKeyRepo, rpmCache, rateRepo, cfg, userPlatformQuotaRepo)
 }
 
+// ProvideSubscriptionService wires SubscriptionService with optional entitlement
+// alias dependencies. The service still falls back to legacy behavior unless the
+// runtime flag is enabled.
+func ProvideSubscriptionService(
+	groupRepo GroupRepository,
+	userSubRepo UserSubscriptionRepository,
+	billingCacheService *BillingCacheService,
+	entClient *dbent.Client,
+	cfg *config.Config,
+	settingService *SettingService,
+	subscriptionEntitlementService *SubscriptionEntitlementService,
+) *SubscriptionService {
+	svc := NewSubscriptionService(groupRepo, userSubRepo, billingCacheService, entClient, cfg)
+	svc.SetSubscriptionEntitlementAliasDependencies(settingService, subscriptionEntitlementService)
+	return svc
+}
+
 // ProvideAPIKeyService wires APIKeyService and connects rate-limit cache invalidation.
 func ProvideAPIKeyService(
 	apiKeyRepo APIKeyRepository,
@@ -494,9 +511,12 @@ func ProvideAPIKeyService(
 	cache APIKeyCache,
 	cfg *config.Config,
 	billingCacheService *BillingCacheService,
+	settingService *SettingService,
+	subscriptionEntitlementService *SubscriptionEntitlementService,
 ) *APIKeyService {
 	svc := NewAPIKeyService(apiKeyRepo, userRepo, groupRepo, userSubRepo, userGroupRateRepo, cache, cfg)
 	svc.SetRateLimitCacheInvalidator(billingCacheService)
+	svc.SetSubscriptionEntitlementDependencies(settingService, subscriptionEntitlementService)
 	return svc
 }
 
@@ -547,7 +567,7 @@ var ProviderSet = wire.NewSet(
 	NewGroupService,
 	NewAccountService,
 	NewProxyService,
-	NewRedeemService,
+	ProvideRedeemService,
 	NewPromoService,
 	NewUsageService,
 	NewDashboardService,
@@ -591,7 +611,9 @@ var ProviderSet = wire.NewSet(
 	NewNotificationEmailService,
 	ProvideEmailQueueService,
 	NewTurnstileService,
-	NewSubscriptionService,
+	ProvideSubscriptionService,
+	NewSubscriptionEntitlementService,
+	NewSubscriptionPlanExternalMappingService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
@@ -670,8 +692,8 @@ func ProvideBalanceNotifyService(emailService *EmailService, settingRepo Setting
 }
 
 // ProvidePaymentService creates PaymentService and attaches referral and notification delivery collaborators.
-func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, referralRewardSvc *ReferralRewardService, referralRefundSvc *ReferralRefundService, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
-	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo, referralRewardSvc, referralRefundSvc, affiliateService)
+func ProvidePaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, subscriptionEntitlementSvc *SubscriptionEntitlementService, settingSvc *SettingService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository, referralRewardSvc *ReferralRewardService, referralRefundSvc *ReferralRefundService, affiliateService *AffiliateService, notificationEmailService *NotificationEmailService) *PaymentService {
+	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, subscriptionEntitlementSvc, settingSvc, configService, userRepo, groupRepo, referralRewardSvc, referralRefundSvc, affiliateService)
 	svc.SetNotificationEmailService(notificationEmailService)
 	return svc
 }

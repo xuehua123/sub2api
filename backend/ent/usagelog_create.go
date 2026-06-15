@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -165,6 +166,20 @@ func (_c *UsageLogCreate) SetSubscriptionID(v int64) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableSubscriptionID(v *int64) *UsageLogCreate {
 	if v != nil {
 		_c.SetSubscriptionID(*v)
+	}
+	return _c
+}
+
+// SetEntitlementID sets the "entitlement_id" field.
+func (_c *UsageLogCreate) SetEntitlementID(v int64) *UsageLogCreate {
+	_c.mutation.SetEntitlementID(v)
+	return _c
+}
+
+// SetNillableEntitlementID sets the "entitlement_id" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableEntitlementID(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetEntitlementID(*v)
 	}
 	return _c
 }
@@ -375,6 +390,20 @@ func (_c *UsageLogCreate) SetBillingType(v int8) *UsageLogCreate {
 func (_c *UsageLogCreate) SetNillableBillingType(v *int8) *UsageLogCreate {
 	if v != nil {
 		_c.SetBillingType(*v)
+	}
+	return _c
+}
+
+// SetBillingSource sets the "billing_source" field.
+func (_c *UsageLogCreate) SetBillingSource(v string) *UsageLogCreate {
+	_c.mutation.SetBillingSource(v)
+	return _c
+}
+
+// SetNillableBillingSource sets the "billing_source" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableBillingSource(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetBillingSource(*v)
 	}
 	return _c
 }
@@ -606,6 +635,11 @@ func (_c *UsageLogCreate) SetSubscription(v *UserSubscription) *UsageLogCreate {
 	return _c.SetSubscriptionID(v.ID)
 }
 
+// SetEntitlement sets the "entitlement" edge to the SubscriptionEntitlement entity.
+func (_c *UsageLogCreate) SetEntitlement(v *SubscriptionEntitlement) *UsageLogCreate {
+	return _c.SetEntitlementID(v.ID)
+}
+
 // Mutation returns the UsageLogMutation object of the builder.
 func (_c *UsageLogCreate) Mutation() *UsageLogMutation {
 	return _c.mutation
@@ -809,6 +843,11 @@ func (_c *UsageLogCreate) check() error {
 	if _, ok := _c.mutation.BillingType(); !ok {
 		return &ValidationError{Name: "billing_type", err: errors.New(`ent: missing required field "UsageLog.billing_type"`)}
 	}
+	if v, ok := _c.mutation.BillingSource(); ok {
+		if err := usagelog.BillingSourceValidator(v); err != nil {
+			return &ValidationError{Name: "billing_source", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_source": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.Stream(); !ok {
 		return &ValidationError{Name: "stream", err: errors.New(`ent: missing required field "UsageLog.stream"`)}
 	}
@@ -979,6 +1018,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 		_spec.SetField(usagelog.FieldBillingType, field.TypeInt8, value)
 		_node.BillingType = value
 	}
+	if value, ok := _c.mutation.BillingSource(); ok {
+		_spec.SetField(usagelog.FieldBillingSource, field.TypeString, value)
+		_node.BillingSource = &value
+	}
 	if value, ok := _c.mutation.Stream(); ok {
 		_spec.SetField(usagelog.FieldStream, field.TypeBool, value)
 		_node.Stream = value
@@ -1122,6 +1165,23 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.SubscriptionID = &nodes[0]
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.EntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.M2O,
+			Inverse: true,
+			Table:   usagelog.EntitlementTable,
+			Columns: []string{usagelog.EntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_node.EntitlementID = &nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec
@@ -1383,6 +1443,24 @@ func (u *UsageLogUpsert) UpdateSubscriptionID() *UsageLogUpsert {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (u *UsageLogUpsert) ClearSubscriptionID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldSubscriptionID)
+	return u
+}
+
+// SetEntitlementID sets the "entitlement_id" field.
+func (u *UsageLogUpsert) SetEntitlementID(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldEntitlementID, v)
+	return u
+}
+
+// UpdateEntitlementID sets the "entitlement_id" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateEntitlementID() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldEntitlementID)
+	return u
+}
+
+// ClearEntitlementID clears the value of the "entitlement_id" field.
+func (u *UsageLogUpsert) ClearEntitlementID() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldEntitlementID)
 	return u
 }
 
@@ -1659,6 +1737,24 @@ func (u *UsageLogUpsert) UpdateBillingType() *UsageLogUpsert {
 // AddBillingType adds v to the "billing_type" field.
 func (u *UsageLogUpsert) AddBillingType(v int8) *UsageLogUpsert {
 	u.Add(usagelog.FieldBillingType, v)
+	return u
+}
+
+// SetBillingSource sets the "billing_source" field.
+func (u *UsageLogUpsert) SetBillingSource(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldBillingSource, v)
+	return u
+}
+
+// UpdateBillingSource sets the "billing_source" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateBillingSource() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldBillingSource)
+	return u
+}
+
+// ClearBillingSource clears the value of the "billing_source" field.
+func (u *UsageLogUpsert) ClearBillingSource() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldBillingSource)
 	return u
 }
 
@@ -2216,6 +2312,27 @@ func (u *UsageLogUpsertOne) ClearSubscriptionID() *UsageLogUpsertOne {
 	})
 }
 
+// SetEntitlementID sets the "entitlement_id" field.
+func (u *UsageLogUpsertOne) SetEntitlementID(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEntitlementID(v)
+	})
+}
+
+// UpdateEntitlementID sets the "entitlement_id" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateEntitlementID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEntitlementID()
+	})
+}
+
+// ClearEntitlementID clears the value of the "entitlement_id" field.
+func (u *UsageLogUpsertOne) ClearEntitlementID() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEntitlementID()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertOne) SetInputTokens(v int) *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -2535,6 +2652,27 @@ func (u *UsageLogUpsertOne) AddBillingType(v int8) *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) UpdateBillingType() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetBillingSource sets the "billing_source" field.
+func (u *UsageLogUpsertOne) SetBillingSource(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingSource(v)
+	})
+}
+
+// UpdateBillingSource sets the "billing_source" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateBillingSource() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingSource()
+	})
+}
+
+// ClearBillingSource clears the value of the "billing_source" field.
+func (u *UsageLogUpsertOne) ClearBillingSource() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingSource()
 	})
 }
 
@@ -3302,6 +3440,27 @@ func (u *UsageLogUpsertBulk) ClearSubscriptionID() *UsageLogUpsertBulk {
 	})
 }
 
+// SetEntitlementID sets the "entitlement_id" field.
+func (u *UsageLogUpsertBulk) SetEntitlementID(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetEntitlementID(v)
+	})
+}
+
+// UpdateEntitlementID sets the "entitlement_id" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateEntitlementID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateEntitlementID()
+	})
+}
+
+// ClearEntitlementID clears the value of the "entitlement_id" field.
+func (u *UsageLogUpsertBulk) ClearEntitlementID() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearEntitlementID()
+	})
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (u *UsageLogUpsertBulk) SetInputTokens(v int) *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
@@ -3621,6 +3780,27 @@ func (u *UsageLogUpsertBulk) AddBillingType(v int8) *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) UpdateBillingType() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.UpdateBillingType()
+	})
+}
+
+// SetBillingSource sets the "billing_source" field.
+func (u *UsageLogUpsertBulk) SetBillingSource(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetBillingSource(v)
+	})
+}
+
+// UpdateBillingSource sets the "billing_source" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateBillingSource() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateBillingSource()
+	})
+}
+
+// ClearBillingSource clears the value of the "billing_source" field.
+func (u *UsageLogUpsertBulk) ClearBillingSource() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearBillingSource()
 	})
 }
 

@@ -37,14 +37,15 @@ type dashboardSnapshotV2Response struct {
 }
 
 type dashboardSnapshotV2Filters struct {
-	UserID      int64
-	APIKeyID    int64
-	AccountID   int64
-	GroupID     int64
-	Model       string
-	RequestType *int16
-	Stream      *bool
-	BillingType *int8
+	UserID        int64
+	APIKeyID      int64
+	AccountID     int64
+	GroupID       int64
+	EntitlementID int64
+	Model         string
+	RequestType   *int16
+	Stream        *bool
+	BillingType   *int8
 }
 
 type dashboardSnapshotV2CacheKey struct {
@@ -55,6 +56,7 @@ type dashboardSnapshotV2CacheKey struct {
 	APIKeyID          int64  `json:"api_key_id"`
 	AccountID         int64  `json:"account_id"`
 	GroupID           int64  `json:"group_id"`
+	EntitlementID     int64  `json:"entitlement_id"`
 	Model             string `json:"model"`
 	RequestType       *int16 `json:"request_type"`
 	Stream            *bool  `json:"stream"`
@@ -100,6 +102,7 @@ func (h *DashboardHandler) GetSnapshotV2(c *gin.Context) {
 		APIKeyID:          filters.APIKeyID,
 		AccountID:         filters.AccountID,
 		GroupID:           filters.GroupID,
+		EntitlementID:     filters.EntitlementID,
 		Model:             filters.Model,
 		RequestType:       filters.RequestType,
 		Stream:            filters.Stream,
@@ -180,6 +183,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.APIKeyID,
 			filters.AccountID,
 			filters.GroupID,
+			filters.EntitlementID,
 			filters.Model,
 			filters.RequestType,
 			filters.Stream,
@@ -200,6 +204,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.APIKeyID,
 			filters.AccountID,
 			filters.GroupID,
+			filters.EntitlementID,
 			usagestats.ModelSourceRequested,
 			filters.RequestType,
 			filters.Stream,
@@ -220,6 +225,7 @@ func (h *DashboardHandler) buildSnapshotV2Response(
 			filters.APIKeyID,
 			filters.AccountID,
 			filters.GroupID,
+			filters.EntitlementID,
 			filters.RequestType,
 			filters.Stream,
 			filters.BillingType,
@@ -273,6 +279,13 @@ func parseDashboardSnapshotV2Filters(c *gin.Context) (*dashboardSnapshotV2Filter
 			return nil, err
 		}
 		filters.GroupID = id
+	}
+	if entitlementIDStr := strings.TrimSpace(c.Query("entitlement_id")); entitlementIDStr != "" {
+		id, err := strconv.ParseInt(entitlementIDStr, 10, 64)
+		if err != nil || id <= 0 {
+			return nil, errors.New("invalid entitlement_id")
+		}
+		filters.EntitlementID = id
 	}
 
 	if requestTypeStr := strings.TrimSpace(c.Query("request_type")); requestTypeStr != "" {

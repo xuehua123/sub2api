@@ -6034,17 +6034,19 @@ func (s *OpenAIGatewayService) replaceModelInResponseBody(body []byte, fromModel
 
 // OpenAIRecordUsageInput input for recording usage
 type OpenAIRecordUsageInput struct {
-	Result             *OpenAIForwardResult
-	APIKey             *APIKey
-	User               *User
-	Account            *Account
-	Subscription       *UserSubscription
-	InboundEndpoint    string
-	UpstreamEndpoint   string
-	UserAgent          string // 请求的 User-Agent
-	IPAddress          string // 请求的客户端 IP 地址
-	RequestPayloadHash string
-	APIKeyService      APIKeyQuotaUpdater
+	Result                     *OpenAIForwardResult
+	APIKey                     *APIKey
+	User                       *User
+	Account                    *Account
+	Subscription               *UserSubscription
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	InboundEndpoint            string
+	UpstreamEndpoint           string
+	UserAgent                  string // 请求的 User-Agent
+	IPAddress                  string // 请求的客户端 IP 地址
+	RequestPayloadHash         string
+	APIKeyService              APIKeyQuotaUpdater
 	ChannelUsageFields
 }
 
@@ -6065,6 +6067,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
+	entitlement := input.Entitlement
 	ApplyOpenAIImageBillingResolution(result)
 
 	// 计算实际的新输入token（减去缓存读取的token）
@@ -6139,7 +6142,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	// Determine billing type
-	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	isSubscriptionBilling := subscription != nil || entitlement != nil
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
@@ -6238,6 +6241,15 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	if subscription != nil {
 		usageLog.SubscriptionID = &subscription.ID
 	}
+	if entitlement != nil && entitlement.ID > 0 {
+		usageLog.EntitlementID = &entitlement.ID
+	}
+	usageLog.SetBillingSource(ResolveUsageBillingSource(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		input.EntitlementBalanceFallback,
+	))
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
@@ -6254,25 +6266,33 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		return nil
 	}
 
-	billingErr := func() error {
-		_, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
-			Cost:                  cost,
-			User:                  user,
-			APIKey:                apiKey,
-			Account:               account,
-			Subscription:          subscription,
-			RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
-			IsSubscriptionBill:    isSubscriptionBilling,
-			AccountRateMultiplier: accountRateMultiplier,
-			APIKeyService:         input.APIKeyService,
-			Platform:              PlatformFromAPIKey(apiKey),
+	billingResult, billingErr := func() (*UsageBillingApplyResult, error) {
+		result, err := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+			Cost:                       cost,
+			User:                       user,
+			APIKey:                     apiKey,
+			Account:                    account,
+			Subscription:               subscription,
+			Entitlement:                entitlement,
+			EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+			RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
+			IsSubscriptionBill:         isSubscriptionBilling,
+			AccountRateMultiplier:      accountRateMultiplier,
+			APIKeyService:              input.APIKeyService,
+			Platform:                   PlatformFromAPIKey(apiKey),
 		}, s.billingDeps(), s.usageBillingRepo)
-		return err
+		return result, err
 	}()
 
 	if billingErr != nil {
 		return billingErr
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSourceFromApplyResult(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		billingResult,
+	))
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.openai_gateway")
 
 	return nil

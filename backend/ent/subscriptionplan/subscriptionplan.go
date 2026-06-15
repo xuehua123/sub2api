@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"entgo.io/ent/dialect/sql"
+	"entgo.io/ent/dialect/sql/sqlgraph"
 )
 
 const (
@@ -27,6 +28,18 @@ const (
 	FieldValidityDays = "validity_days"
 	// FieldValidityUnit holds the string denoting the validity_unit field in the database.
 	FieldValidityUnit = "validity_unit"
+	// FieldAccessScope holds the string denoting the access_scope field in the database.
+	FieldAccessScope = "access_scope"
+	// FieldAllowedPlatforms holds the string denoting the allowed_platforms field in the database.
+	FieldAllowedPlatforms = "allowed_platforms"
+	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
+	FieldDailyLimitUsd = "daily_limit_usd"
+	// FieldWeeklyLimitUsd holds the string denoting the weekly_limit_usd field in the database.
+	FieldWeeklyLimitUsd = "weekly_limit_usd"
+	// FieldMonthlyLimitUsd holds the string denoting the monthly_limit_usd field in the database.
+	FieldMonthlyLimitUsd = "monthly_limit_usd"
+	// FieldOveragePolicy holds the string denoting the overage_policy field in the database.
+	FieldOveragePolicy = "overage_policy"
 	// FieldFeatures holds the string denoting the features field in the database.
 	FieldFeatures = "features"
 	// FieldProductName holds the string denoting the product_name field in the database.
@@ -39,8 +52,51 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
+	// EdgeGroups holds the string denoting the groups edge name in mutations.
+	EdgeGroups = "groups"
+	// EdgeEntitlements holds the string denoting the entitlements edge name in mutations.
+	EdgeEntitlements = "entitlements"
+	// EdgeExternalMappings holds the string denoting the external_mappings edge name in mutations.
+	EdgeExternalMappings = "external_mappings"
+	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
+	EdgeRedeemCodes = "redeem_codes"
+	// EdgeSubscriptionPlanGroups holds the string denoting the subscription_plan_groups edge name in mutations.
+	EdgeSubscriptionPlanGroups = "subscription_plan_groups"
 	// Table holds the table name of the subscriptionplan in the database.
 	Table = "subscription_plans"
+	// GroupsTable is the table that holds the groups relation/edge. The primary key declared below.
+	GroupsTable = "subscription_plan_groups"
+	// GroupsInverseTable is the table name for the Group entity.
+	// It exists in this package in order to avoid circular dependency with the "group" package.
+	GroupsInverseTable = "groups"
+	// EntitlementsTable is the table that holds the entitlements relation/edge.
+	EntitlementsTable = "subscription_entitlements"
+	// EntitlementsInverseTable is the table name for the SubscriptionEntitlement entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionentitlement" package.
+	EntitlementsInverseTable = "subscription_entitlements"
+	// EntitlementsColumn is the table column denoting the entitlements relation/edge.
+	EntitlementsColumn = "plan_id"
+	// ExternalMappingsTable is the table that holds the external_mappings relation/edge.
+	ExternalMappingsTable = "subscription_plan_external_mappings"
+	// ExternalMappingsInverseTable is the table name for the SubscriptionPlanExternalMapping entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionplanexternalmapping" package.
+	ExternalMappingsInverseTable = "subscription_plan_external_mappings"
+	// ExternalMappingsColumn is the table column denoting the external_mappings relation/edge.
+	ExternalMappingsColumn = "plan_id"
+	// RedeemCodesTable is the table that holds the redeem_codes relation/edge.
+	RedeemCodesTable = "redeem_codes"
+	// RedeemCodesInverseTable is the table name for the RedeemCode entity.
+	// It exists in this package in order to avoid circular dependency with the "redeemcode" package.
+	RedeemCodesInverseTable = "redeem_codes"
+	// RedeemCodesColumn is the table column denoting the redeem_codes relation/edge.
+	RedeemCodesColumn = "plan_id"
+	// SubscriptionPlanGroupsTable is the table that holds the subscription_plan_groups relation/edge.
+	SubscriptionPlanGroupsTable = "subscription_plan_groups"
+	// SubscriptionPlanGroupsInverseTable is the table name for the SubscriptionPlanGroup entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionplangroup" package.
+	SubscriptionPlanGroupsInverseTable = "subscription_plan_groups"
+	// SubscriptionPlanGroupsColumn is the table column denoting the subscription_plan_groups relation/edge.
+	SubscriptionPlanGroupsColumn = "plan_id"
 )
 
 // Columns holds all SQL columns for subscriptionplan fields.
@@ -53,6 +109,12 @@ var Columns = []string{
 	FieldOriginalPrice,
 	FieldValidityDays,
 	FieldValidityUnit,
+	FieldAccessScope,
+	FieldAllowedPlatforms,
+	FieldDailyLimitUsd,
+	FieldWeeklyLimitUsd,
+	FieldMonthlyLimitUsd,
+	FieldOveragePolicy,
 	FieldFeatures,
 	FieldProductName,
 	FieldForSale,
@@ -60,6 +122,12 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 }
+
+var (
+	// GroupsPrimaryKey and GroupsColumn2 are the table columns denoting the
+	// primary key for the groups relation (M2M).
+	GroupsPrimaryKey = []string{"plan_id", "group_id"}
+)
 
 // ValidColumn reports if the column name is valid (part of the table columns).
 func ValidColumn(column string) bool {
@@ -82,6 +150,14 @@ var (
 	DefaultValidityUnit string
 	// ValidityUnitValidator is a validator for the "validity_unit" field. It is called by the builders before save.
 	ValidityUnitValidator func(string) error
+	// DefaultAccessScope holds the default value on creation for the "access_scope" field.
+	DefaultAccessScope string
+	// AccessScopeValidator is a validator for the "access_scope" field. It is called by the builders before save.
+	AccessScopeValidator func(string) error
+	// DefaultOveragePolicy holds the default value on creation for the "overage_policy" field.
+	DefaultOveragePolicy string
+	// OveragePolicyValidator is a validator for the "overage_policy" field. It is called by the builders before save.
+	OveragePolicyValidator func(string) error
 	// DefaultFeatures holds the default value on creation for the "features" field.
 	DefaultFeatures string
 	// DefaultProductName holds the default value on creation for the "product_name" field.
@@ -143,6 +219,31 @@ func ByValidityUnit(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldValidityUnit, opts...).ToFunc()
 }
 
+// ByAccessScope orders the results by the access_scope field.
+func ByAccessScope(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccessScope, opts...).ToFunc()
+}
+
+// ByDailyLimitUsd orders the results by the daily_limit_usd field.
+func ByDailyLimitUsd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDailyLimitUsd, opts...).ToFunc()
+}
+
+// ByWeeklyLimitUsd orders the results by the weekly_limit_usd field.
+func ByWeeklyLimitUsd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWeeklyLimitUsd, opts...).ToFunc()
+}
+
+// ByMonthlyLimitUsd orders the results by the monthly_limit_usd field.
+func ByMonthlyLimitUsd(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonthlyLimitUsd, opts...).ToFunc()
+}
+
+// ByOveragePolicy orders the results by the overage_policy field.
+func ByOveragePolicy(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOveragePolicy, opts...).ToFunc()
+}
+
 // ByFeatures orders the results by the features field.
 func ByFeatures(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFeatures, opts...).ToFunc()
@@ -171,4 +272,109 @@ func ByCreatedAt(opts ...sql.OrderTermOption) OrderOption {
 // ByUpdatedAt orders the results by the updated_at field.
 func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
+}
+
+// ByGroupsCount orders the results by groups count.
+func ByGroupsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newGroupsStep(), opts...)
+	}
+}
+
+// ByGroups orders the results by groups terms.
+func ByGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByEntitlementsCount orders the results by entitlements count.
+func ByEntitlementsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newEntitlementsStep(), opts...)
+	}
+}
+
+// ByEntitlements orders the results by entitlements terms.
+func ByEntitlements(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newEntitlementsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByExternalMappingsCount orders the results by external_mappings count.
+func ByExternalMappingsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newExternalMappingsStep(), opts...)
+	}
+}
+
+// ByExternalMappings orders the results by external_mappings terms.
+func ByExternalMappings(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newExternalMappingsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// ByRedeemCodesCount orders the results by redeem_codes count.
+func ByRedeemCodesCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newRedeemCodesStep(), opts...)
+	}
+}
+
+// ByRedeemCodes orders the results by redeem_codes terms.
+func ByRedeemCodes(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newRedeemCodesStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
+// BySubscriptionPlanGroupsCount orders the results by subscription_plan_groups count.
+func BySubscriptionPlanGroupsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newSubscriptionPlanGroupsStep(), opts...)
+	}
+}
+
+// BySubscriptionPlanGroups orders the results by subscription_plan_groups terms.
+func BySubscriptionPlanGroups(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubscriptionPlanGroupsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+func newGroupsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(GroupsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2M, false, GroupsTable, GroupsPrimaryKey...),
+	)
+}
+func newEntitlementsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(EntitlementsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, EntitlementsTable, EntitlementsColumn),
+	)
+}
+func newExternalMappingsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(ExternalMappingsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, ExternalMappingsTable, ExternalMappingsColumn),
+	)
+}
+func newRedeemCodesStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(RedeemCodesInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, false, RedeemCodesTable, RedeemCodesColumn),
+	)
+}
+func newSubscriptionPlanGroupsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubscriptionPlanGroupsInverseTable, SubscriptionPlanGroupsColumn),
+		sqlgraph.Edge(sqlgraph.O2M, true, SubscriptionPlanGroupsTable, SubscriptionPlanGroupsColumn),
+	)
 }

@@ -15,20 +15,23 @@ import (
 
 type dashboardUsageRepoCapture struct {
 	service.UsageLogRepository
-	trendRequestType *int16
-	trendStream      *bool
-	modelRequestType *int16
-	modelStream      *bool
-	rankingLimit     int
-	ranking          []usagestats.UserSpendingRankingItem
-	rankingTotal     float64
+	trendRequestType   *int16
+	trendStream        *bool
+	trendEntitlementID int64
+	modelRequestType   *int16
+	modelStream        *bool
+	modelEntitlementID int64
+	groupEntitlementID int64
+	rankingLimit       int
+	ranking            []usagestats.UserSpendingRankingItem
+	rankingTotal       float64
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
-	userID, apiKeyID, accountID, groupID int64,
+	userID, apiKeyID, accountID, groupID, entitlementID int64,
 	model string,
 	requestType *int16,
 	stream *bool,
@@ -36,20 +39,34 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 ) ([]usagestats.TrendDataPoint, error) {
 	s.trendRequestType = requestType
 	s.trendStream = stream
+	s.trendEntitlementID = entitlementID
 	return []usagestats.TrendDataPoint{}, nil
 }
 
 func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
 	ctx context.Context,
 	startTime, endTime time.Time,
-	userID, apiKeyID, accountID, groupID int64,
+	userID, apiKeyID, accountID, groupID, entitlementID int64,
 	requestType *int16,
 	stream *bool,
 	billingType *int8,
 ) ([]usagestats.ModelStat, error) {
 	s.modelRequestType = requestType
 	s.modelStream = stream
+	s.modelEntitlementID = entitlementID
 	return []usagestats.ModelStat{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetGroupStatsWithFilters(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	userID, apiKeyID, accountID, groupID, entitlementID int64,
+	requestType *int16,
+	stream *bool,
+	billingType *int8,
+) ([]usagestats.GroupStat, error) {
+	s.groupEntitlementID = entitlementID
+	return []usagestats.GroupStat{}, nil
 }
 
 func (s *dashboardUsageRepoCapture) GetUserSpendingRanking(
@@ -73,6 +90,7 @@ func newDashboardRequestTypeTestRouter(repo *dashboardUsageRepoCapture) *gin.Eng
 	router := gin.New()
 	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
 	router.GET("/admin/dashboard/models", handler.GetModelStats)
+	router.GET("/admin/dashboard/groups", handler.GetGroupStats)
 	router.GET("/admin/dashboard/users-ranking", handler.GetUserSpendingRanking)
 	return router
 }
@@ -107,6 +125,29 @@ func TestDashboardTrendInvalidStream(t *testing.T) {
 	router := newDashboardRequestTypeTestRouter(repo)
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?stream=bad", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestDashboardTrendEntitlementIDFilter(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?entitlement_id=987", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(987), repo.trendEntitlementID)
+}
+
+func TestDashboardTrendInvalidEntitlementID(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?entitlement_id=bad", nil)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -169,6 +210,30 @@ func TestDashboardModelStatsValidModelSource(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestDashboardModelStatsEntitlementIDFilter(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/models?entitlement_id=654", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(654), repo.modelEntitlementID)
+}
+
+func TestDashboardGroupStatsEntitlementIDFilter(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard/groups?entitlement_id=765", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(765), repo.groupEntitlementID)
 }
 
 func TestDashboardUsersRankingLimitAndCache(t *testing.T) {

@@ -29,6 +29,10 @@ const (
 	FieldName = "name"
 	// FieldGroupID holds the string denoting the group_id field in the database.
 	FieldGroupID = "group_id"
+	// FieldSubscriptionEntitlementID holds the string denoting the subscription_entitlement_id field in the database.
+	FieldSubscriptionEntitlementID = "subscription_entitlement_id"
+	// FieldAccessSource holds the string denoting the access_source field in the database.
+	FieldAccessSource = "access_source"
 	// FieldAutoSwitchGroupEnabled holds the string denoting the auto_switch_group_enabled field in the database.
 	FieldAutoSwitchGroupEnabled = "auto_switch_group_enabled"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -67,6 +71,8 @@ const (
 	EdgeUser = "user"
 	// EdgeGroup holds the string denoting the group edge name in mutations.
 	EdgeGroup = "group"
+	// EdgeSubscriptionEntitlement holds the string denoting the subscription_entitlement edge name in mutations.
+	EdgeSubscriptionEntitlement = "subscription_entitlement"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
 	// Table holds the table name of the apikey in the database.
@@ -85,6 +91,13 @@ const (
 	GroupInverseTable = "groups"
 	// GroupColumn is the table column denoting the group relation/edge.
 	GroupColumn = "group_id"
+	// SubscriptionEntitlementTable is the table that holds the subscription_entitlement relation/edge.
+	SubscriptionEntitlementTable = "api_keys"
+	// SubscriptionEntitlementInverseTable is the table name for the SubscriptionEntitlement entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionentitlement" package.
+	SubscriptionEntitlementInverseTable = "subscription_entitlements"
+	// SubscriptionEntitlementColumn is the table column denoting the subscription_entitlement relation/edge.
+	SubscriptionEntitlementColumn = "subscription_entitlement_id"
 	// UsageLogsTable is the table that holds the usage_logs relation/edge.
 	UsageLogsTable = "usage_logs"
 	// UsageLogsInverseTable is the table name for the UsageLog entity.
@@ -104,6 +117,8 @@ var Columns = []string{
 	FieldKey,
 	FieldName,
 	FieldGroupID,
+	FieldSubscriptionEntitlementID,
+	FieldAccessSource,
 	FieldAutoSwitchGroupEnabled,
 	FieldStatus,
 	FieldLastUsedAt,
@@ -151,6 +166,10 @@ var (
 	KeyValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
+	// DefaultAccessSource holds the default value on creation for the "access_source" field.
+	DefaultAccessSource string
+	// AccessSourceValidator is a validator for the "access_source" field. It is called by the builders before save.
+	AccessSourceValidator func(string) error
 	// DefaultAutoSwitchGroupEnabled holds the default value on creation for the "auto_switch_group_enabled" field.
 	DefaultAutoSwitchGroupEnabled bool
 	// DefaultStatus holds the default value on creation for the "status" field.
@@ -216,6 +235,16 @@ func ByName(opts ...sql.OrderTermOption) OrderOption {
 // ByGroupID orders the results by the group_id field.
 func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldGroupID, opts...).ToFunc()
+}
+
+// BySubscriptionEntitlementID orders the results by the subscription_entitlement_id field.
+func BySubscriptionEntitlementID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionEntitlementID, opts...).ToFunc()
+}
+
+// ByAccessSource orders the results by the access_source field.
+func ByAccessSource(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAccessSource, opts...).ToFunc()
 }
 
 // ByAutoSwitchGroupEnabled orders the results by the auto_switch_group_enabled field.
@@ -307,6 +336,13 @@ func ByGroupField(field string, opts ...sql.OrderTermOption) OrderOption {
 	}
 }
 
+// BySubscriptionEntitlementField orders the results by subscription_entitlement field.
+func BySubscriptionEntitlementField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubscriptionEntitlementStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByUsageLogsCount orders the results by usage_logs count.
 func ByUsageLogsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -332,6 +368,13 @@ func newGroupStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, GroupTable, GroupColumn),
+	)
+}
+func newSubscriptionEntitlementStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubscriptionEntitlementInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
 	)
 }
 func newUsageLogsStep() *sqlgraph.Step {

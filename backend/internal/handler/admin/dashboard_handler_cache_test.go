@@ -24,7 +24,7 @@ func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithFilters(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
-	userID, apiKeyID, accountID, groupID int64,
+	userID, apiKeyID, accountID, groupID, entitlementID int64,
 	model string,
 	requestType *int16,
 	stream *bool,
@@ -38,6 +38,35 @@ func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithFilters(
 		Cost:        3,
 		ActualCost:  4,
 	}}, nil
+}
+
+func TestDashboardHandler_GetUsageTrend_CacheKeyIncludesEntitlementID(t *testing.T) {
+	t.Cleanup(resetDashboardReadCachesForTest)
+	resetDashboardReadCachesForTest()
+
+	gin.SetMode(gin.TestMode)
+	repo := &dashboardUsageRepoCacheProbe{}
+	dashboardSvc := service.NewDashboardService(repo, nil, nil, nil)
+	handler := NewDashboardHandler(dashboardSvc, nil)
+	router := gin.New()
+	router.GET("/admin/dashboard/trend", handler.GetUsageTrend)
+
+	req1 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1", nil)
+	rec1 := httptest.NewRecorder()
+	router.ServeHTTP(rec1, req1)
+	require.Equal(t, http.StatusOK, rec1.Code)
+
+	req2 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=2", nil)
+	rec2 := httptest.NewRecorder()
+	router.ServeHTTP(rec2, req2)
+	require.Equal(t, http.StatusOK, rec2.Code)
+
+	req3 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1", nil)
+	rec3 := httptest.NewRecorder()
+	router.ServeHTTP(rec3, req3)
+	require.Equal(t, http.StatusOK, rec3.Code)
+	require.Equal(t, "hit", rec3.Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(2), repo.trendCalls.Load())
 }
 
 func (r *dashboardUsageRepoCacheProbe) GetUserUsageTrend(

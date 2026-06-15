@@ -67,11 +67,13 @@ type UserSubscriptionEdges struct {
 	Group *Group `json:"group,omitempty"`
 	// AssignedByUser holds the value of the assigned_by_user edge.
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
+	// LegacyEntitlement holds the value of the legacy_entitlement edge.
+	LegacyEntitlement []*SubscriptionEntitlement `json:"legacy_entitlement,omitempty"`
 	// UsageLogs holds the value of the usage_logs edge.
 	UsageLogs []*UsageLog `json:"usage_logs,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [4]bool
+	loadedTypes [5]bool
 }
 
 // UserOrErr returns the User value or an error if the edge
@@ -107,10 +109,19 @@ func (e UserSubscriptionEdges) AssignedByUserOrErr() (*User, error) {
 	return nil, &NotLoadedError{edge: "assigned_by_user"}
 }
 
+// LegacyEntitlementOrErr returns the LegacyEntitlement value or an error if the edge
+// was not loaded in eager-loading.
+func (e UserSubscriptionEdges) LegacyEntitlementOrErr() ([]*SubscriptionEntitlement, error) {
+	if e.loadedTypes[3] {
+		return e.LegacyEntitlement, nil
+	}
+	return nil, &NotLoadedError{edge: "legacy_entitlement"}
+}
+
 // UsageLogsOrErr returns the UsageLogs value or an error if the edge
 // was not loaded in eager-loading.
 func (e UserSubscriptionEdges) UsageLogsOrErr() ([]*UsageLog, error) {
-	if e.loadedTypes[3] {
+	if e.loadedTypes[4] {
 		return e.UsageLogs, nil
 	}
 	return nil, &NotLoadedError{edge: "usage_logs"}
@@ -284,6 +295,11 @@ func (_m *UserSubscription) QueryGroup() *GroupQuery {
 // QueryAssignedByUser queries the "assigned_by_user" edge of the UserSubscription entity.
 func (_m *UserSubscription) QueryAssignedByUser() *UserQuery {
 	return NewUserSubscriptionClient(_m.config).QueryAssignedByUser(_m)
+}
+
+// QueryLegacyEntitlement queries the "legacy_entitlement" edge of the UserSubscription entity.
+func (_m *UserSubscription) QueryLegacyEntitlement() *SubscriptionEntitlementQuery {
+	return NewUserSubscriptionClient(_m.config).QueryLegacyEntitlement(_m)
 }
 
 // QueryUsageLogs queries the "usage_logs" edge of the UserSubscription entity.

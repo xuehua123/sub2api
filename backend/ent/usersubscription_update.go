@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -333,6 +334,21 @@ func (_u *UserSubscriptionUpdate) SetAssignedByUser(v *User) *UserSubscriptionUp
 	return _u.SetAssignedByUserID(v.ID)
 }
 
+// AddLegacyEntitlementIDs adds the "legacy_entitlement" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *UserSubscriptionUpdate) AddLegacyEntitlementIDs(ids ...int64) *UserSubscriptionUpdate {
+	_u.mutation.AddLegacyEntitlementIDs(ids...)
+	return _u
+}
+
+// AddLegacyEntitlement adds the "legacy_entitlement" edges to the SubscriptionEntitlement entity.
+func (_u *UserSubscriptionUpdate) AddLegacyEntitlement(v ...*SubscriptionEntitlement) *UserSubscriptionUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddLegacyEntitlementIDs(ids...)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *UserSubscriptionUpdate) AddUsageLogIDs(ids ...int64) *UserSubscriptionUpdate {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -369,6 +385,27 @@ func (_u *UserSubscriptionUpdate) ClearGroup() *UserSubscriptionUpdate {
 func (_u *UserSubscriptionUpdate) ClearAssignedByUser() *UserSubscriptionUpdate {
 	_u.mutation.ClearAssignedByUser()
 	return _u
+}
+
+// ClearLegacyEntitlement clears all "legacy_entitlement" edges to the SubscriptionEntitlement entity.
+func (_u *UserSubscriptionUpdate) ClearLegacyEntitlement() *UserSubscriptionUpdate {
+	_u.mutation.ClearLegacyEntitlement()
+	return _u
+}
+
+// RemoveLegacyEntitlementIDs removes the "legacy_entitlement" edge to SubscriptionEntitlement entities by IDs.
+func (_u *UserSubscriptionUpdate) RemoveLegacyEntitlementIDs(ids ...int64) *UserSubscriptionUpdate {
+	_u.mutation.RemoveLegacyEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveLegacyEntitlement removes "legacy_entitlement" edges to SubscriptionEntitlement entities.
+func (_u *UserSubscriptionUpdate) RemoveLegacyEntitlement(v ...*SubscriptionEntitlement) *UserSubscriptionUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveLegacyEntitlementIDs(ids...)
 }
 
 // ClearUsageLogs clears all "usage_logs" edges to the UsageLog entity.
@@ -605,6 +642,51 @@ func (_u *UserSubscriptionUpdate) sqlSave(ctx context.Context) (_node int, err e
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.LegacyEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedLegacyEntitlementIDs(); len(nodes) > 0 && !_u.mutation.LegacyEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.LegacyEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -979,6 +1061,21 @@ func (_u *UserSubscriptionUpdateOne) SetAssignedByUser(v *User) *UserSubscriptio
 	return _u.SetAssignedByUserID(v.ID)
 }
 
+// AddLegacyEntitlementIDs adds the "legacy_entitlement" edge to the SubscriptionEntitlement entity by IDs.
+func (_u *UserSubscriptionUpdateOne) AddLegacyEntitlementIDs(ids ...int64) *UserSubscriptionUpdateOne {
+	_u.mutation.AddLegacyEntitlementIDs(ids...)
+	return _u
+}
+
+// AddLegacyEntitlement adds the "legacy_entitlement" edges to the SubscriptionEntitlement entity.
+func (_u *UserSubscriptionUpdateOne) AddLegacyEntitlement(v ...*SubscriptionEntitlement) *UserSubscriptionUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddLegacyEntitlementIDs(ids...)
+}
+
 // AddUsageLogIDs adds the "usage_logs" edge to the UsageLog entity by IDs.
 func (_u *UserSubscriptionUpdateOne) AddUsageLogIDs(ids ...int64) *UserSubscriptionUpdateOne {
 	_u.mutation.AddUsageLogIDs(ids...)
@@ -1015,6 +1112,27 @@ func (_u *UserSubscriptionUpdateOne) ClearGroup() *UserSubscriptionUpdateOne {
 func (_u *UserSubscriptionUpdateOne) ClearAssignedByUser() *UserSubscriptionUpdateOne {
 	_u.mutation.ClearAssignedByUser()
 	return _u
+}
+
+// ClearLegacyEntitlement clears all "legacy_entitlement" edges to the SubscriptionEntitlement entity.
+func (_u *UserSubscriptionUpdateOne) ClearLegacyEntitlement() *UserSubscriptionUpdateOne {
+	_u.mutation.ClearLegacyEntitlement()
+	return _u
+}
+
+// RemoveLegacyEntitlementIDs removes the "legacy_entitlement" edge to SubscriptionEntitlement entities by IDs.
+func (_u *UserSubscriptionUpdateOne) RemoveLegacyEntitlementIDs(ids ...int64) *UserSubscriptionUpdateOne {
+	_u.mutation.RemoveLegacyEntitlementIDs(ids...)
+	return _u
+}
+
+// RemoveLegacyEntitlement removes "legacy_entitlement" edges to SubscriptionEntitlement entities.
+func (_u *UserSubscriptionUpdateOne) RemoveLegacyEntitlement(v ...*SubscriptionEntitlement) *UserSubscriptionUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveLegacyEntitlementIDs(ids...)
 }
 
 // ClearUsageLogs clears all "usage_logs" edges to the UsageLog entity.
@@ -1281,6 +1399,51 @@ func (_u *UserSubscriptionUpdateOne) sqlSave(ctx context.Context) (_node *UserSu
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(user.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.LegacyEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedLegacyEntitlementIDs(); len(nodes) > 0 && !_u.mutation.LegacyEntitlementCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.LegacyEntitlementIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: false,
+			Table:   usersubscription.LegacyEntitlementTable,
+			Columns: []string{usersubscription.LegacyEntitlementColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionentitlement.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

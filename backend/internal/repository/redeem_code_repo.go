@@ -34,6 +34,8 @@ func (r *redeemCodeRepository) Create(ctx context.Context, code *service.RedeemC
 		SetNillableUsedBy(code.UsedBy).
 		SetNillableUsedAt(code.UsedAt).
 		SetNillableGroupID(code.GroupID).
+		SetNillablePlanID(code.PlanID).
+		SetNillableSubscriptionEntitlementID(code.SubscriptionEntitlementID).
 		Save(ctx)
 	if err == nil {
 		code.ID = created.ID
@@ -60,7 +62,9 @@ func (r *redeemCodeRepository) CreateBatch(ctx context.Context, codes []service.
 			SetNillableExpiresAt(c.ExpiresAt).
 			SetNillableUsedBy(c.UsedBy).
 			SetNillableUsedAt(c.UsedAt).
-			SetNillableGroupID(c.GroupID)
+			SetNillableGroupID(c.GroupID).
+			SetNillablePlanID(c.PlanID).
+			SetNillableSubscriptionEntitlementID(c.SubscriptionEntitlementID)
 		builders = append(builders, b)
 	}
 
@@ -196,7 +200,8 @@ func redeemCodeListOrder(params pagination.PaginationParams) []func(*entsql.Sele
 }
 
 func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemCode) error {
-	up := r.client.RedeemCode.UpdateOneID(code.ID).
+	client := clientFromContext(ctx, r.client)
+	up := client.RedeemCode.UpdateOneID(code.ID).
 		SetCode(code.Code).
 		SetType(code.Type).
 		SetValue(code.Value).
@@ -218,6 +223,16 @@ func (r *redeemCodeRepository) Update(ctx context.Context, code *service.RedeemC
 		up.SetGroupID(*code.GroupID)
 	} else {
 		up.ClearGroupID()
+	}
+	if code.PlanID != nil {
+		up.SetPlanID(*code.PlanID)
+	} else {
+		up.ClearPlanID()
+	}
+	if code.SubscriptionEntitlementID != nil {
+		up.SetSubscriptionEntitlementID(*code.SubscriptionEntitlementID)
+	} else {
+		up.ClearSubscriptionEntitlementID()
 	}
 	if code.ExpiresAt != nil {
 		up.SetExpiresAt(*code.ExpiresAt)
@@ -413,18 +428,20 @@ func redeemCodeEntityToService(m *dbent.RedeemCode) *service.RedeemCode {
 		return nil
 	}
 	out := &service.RedeemCode{
-		ID:           m.ID,
-		Code:         m.Code,
-		Type:         m.Type,
-		Value:        m.Value,
-		Status:       m.Status,
-		UsedBy:       m.UsedBy,
-		UsedAt:       m.UsedAt,
-		Notes:        derefString(m.Notes),
-		CreatedAt:    m.CreatedAt,
-		ExpiresAt:    m.ExpiresAt,
-		GroupID:      m.GroupID,
-		ValidityDays: m.ValidityDays,
+		ID:                        m.ID,
+		Code:                      m.Code,
+		Type:                      m.Type,
+		Value:                     m.Value,
+		Status:                    m.Status,
+		UsedBy:                    m.UsedBy,
+		UsedAt:                    m.UsedAt,
+		Notes:                     derefString(m.Notes),
+		CreatedAt:                 m.CreatedAt,
+		ExpiresAt:                 m.ExpiresAt,
+		GroupID:                   m.GroupID,
+		PlanID:                    m.PlanID,
+		SubscriptionEntitlementID: m.SubscriptionEntitlementID,
+		ValidityDays:              m.ValidityDays,
 	}
 	if m.Edges.User != nil {
 		out.User = userEntityToService(m.Edges.User)

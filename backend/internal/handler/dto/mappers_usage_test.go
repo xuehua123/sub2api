@@ -28,6 +28,59 @@ func TestUsageLogFromService_IncludesOpenAIWSMode(t *testing.T) {
 	require.False(t, UsageLogFromServiceAdmin(httpLog).OpenAIWSMode)
 }
 
+func TestUsageLogFromService_IncludesEntitlementID(t *testing.T) {
+	t.Parallel()
+
+	entitlementID := int64(901)
+	log := &service.UsageLog{
+		RequestID:     "req_entitlement",
+		Model:         "gpt-5.3-codex",
+		EntitlementID: &entitlementID,
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.NotNil(t, userDTO.EntitlementID)
+	require.Equal(t, entitlementID, *userDTO.EntitlementID)
+	require.NotNil(t, adminDTO.EntitlementID)
+	require.Equal(t, entitlementID, *adminDTO.EntitlementID)
+}
+
+func TestUsageLogFromService_IncludesBillingSource(t *testing.T) {
+	t.Parallel()
+
+	entitlementID := int64(901)
+	fallback := service.BillingSourceEntitlementBalanceFallback
+	log := &service.UsageLog{
+		RequestID:     "req_entitlement_fallback",
+		Model:         "gpt-5.3-codex",
+		BillingType:   service.BillingTypeSubscription,
+		BillingSource: &fallback,
+		EntitlementID: &entitlementID,
+	}
+
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.NotNil(t, adminDTO.BillingSource)
+	require.Equal(t, service.BillingSourceEntitlementBalanceFallback, *adminDTO.BillingSource)
+}
+
+func TestUsageLogFromService_DoesNotInferHistoricalEntitlementBillingSource(t *testing.T) {
+	t.Parallel()
+
+	entitlementID := int64(902)
+	log := &service.UsageLog{
+		RequestID:     "req_historical_entitlement",
+		Model:         "gpt-5.3-codex",
+		BillingType:   service.BillingTypeSubscription,
+		EntitlementID: &entitlementID,
+	}
+
+	adminDTO := UsageLogFromServiceAdmin(log)
+	require.Nil(t, adminDTO.BillingSource)
+}
+
 func TestUsageLogFromService_PrefersRequestTypeForLegacyFields(t *testing.T) {
 	t.Parallel()
 

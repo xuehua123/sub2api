@@ -5,8 +5,10 @@
 
 import { apiClient } from './client'
 import type {
+  AdvanceEntitlementMonthlyCycleResult,
   AdvanceMonthlyCycleResult,
   SubscriptionGroupPreference,
+  UserEntitlement,
   SubscriptionProgress,
   UserSubscription
 } from '@/types'
@@ -45,6 +47,34 @@ export async function getActiveSubscriptions(): Promise<UserSubscription[]> {
 }
 
 /**
+ * Get current user's entitlement v2 records.
+ */
+export async function getEntitlements(): Promise<UserEntitlement[]> {
+  const response = await apiClient.get<UserEntitlement[]>('/entitlements')
+  return response.data
+}
+
+/**
+ * Get current user's active entitlement v2 records.
+ */
+export async function getActiveEntitlements(): Promise<UserEntitlement[]> {
+  const response = await apiClient.get<UserEntitlement[]>('/entitlements/active')
+  return response.data
+}
+
+/**
+ * Get progress for a specific entitlement v2 record.
+ */
+export async function getEntitlementProgress(entitlementId: number): Promise<UserEntitlement> {
+  const response = await apiClient.get<UserEntitlement>(`/entitlements/${entitlementId}/progress`)
+  return response.data
+}
+
+export async function deleteEntitlement(entitlementId: number): Promise<void> {
+  await apiClient.delete(`/entitlements/${entitlementId}`)
+}
+
+/**
  * Get progress for all user's active subscriptions
  */
 export async function getSubscriptionsProgress(): Promise<SubscriptionProgress[]> {
@@ -72,6 +102,10 @@ export async function getSubscriptionProgress(
   return response.data
 }
 
+export async function deleteSubscription(subscriptionId: number): Promise<void> {
+  await apiClient.delete(`/subscriptions/${subscriptionId}`)
+}
+
 export async function getGroupPreferences(): Promise<SubscriptionGroupPreference[]> {
   const response = await apiClient.get<SubscriptionGroupPreference[]>('/subscriptions/group-preferences')
   return response.data
@@ -95,13 +129,28 @@ export async function advanceMonthlyCycle(
   return response.data
 }
 
+export async function advanceEntitlementMonthlyCycle(
+  entitlementId: number
+): Promise<AdvanceEntitlementMonthlyCycleResult> {
+  const response = await apiClient.post<AdvanceEntitlementMonthlyCycleResult>(
+    `/entitlements/${entitlementId}/advance-monthly-cycle`
+  )
+  return response.data
+}
+
 export default {
   getMySubscriptions,
   getActiveSubscriptions,
+  getEntitlements,
+  getActiveEntitlements,
+  getEntitlementProgress,
+  deleteEntitlement,
   getSubscriptionsProgress,
   getSubscriptionSummary,
   getSubscriptionProgress,
+  deleteSubscription,
   getGroupPreferences,
   saveGroupPreferences,
-  advanceMonthlyCycle
+  advanceMonthlyCycle,
+  advanceEntitlementMonthlyCycle
 }

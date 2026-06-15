@@ -145,16 +145,25 @@ func TestCreateAndRedeem_BalanceIgnoresSubscriptionFields(t *testing.T) {
 func TestBuildSub2ApiPayReferralCreditInput_Subscription(t *testing.T) {
 	groupID := int64(12)
 	paidAt := time.Date(2026, 4, 27, 5, 19, 40, 0, time.UTC)
-
-	input := buildSub2ApiPayReferralCreditInput(CreateAndRedeemCodeRequest{
-		Code:         "s2p_cmogqzd8p00r701p8wz32c113df6",
+	req := CreateAndRedeemCodeRequest{
+		Code:         "auto_cmogqzd8p00r701p8wz3l9tgc",
 		Type:         service.RedeemTypeSubscription,
 		Value:        68,
 		UserID:       486,
 		GroupID:      &groupID,
 		ValidityDays: 31,
-		Notes:        "sub2apipay subscription order:cmogqzd8p00r701p8wz3l9tgc",
-	}, paidAt)
+		Notes:        "sub2apipay subscription order:untrusted-note-value",
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "s2p_cmogqzd8p00r701p8wz3l9tgc",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	input := buildSub2ApiPayReferralCreditInput(req, sourceCtx, paidAt)
 
 	require.NotNil(t, input)
 	assert.Equal(t, int64(486), input.UserID)
@@ -177,9 +186,168 @@ func TestBuildSub2ApiPayReferralCreditInput_IgnoresManualRedeem(t *testing.T) {
 		Value:  68,
 		UserID: 486,
 		Notes:  "manual gift",
-	}, time.Now())
+	}, service.RedeemSourceContext{}, time.Now())
 
 	assert.Nil(t, input)
+}
+
+func TestBuildSub2ApiPayReferralCreditInput_IgnoresNotesOnly(t *testing.T) {
+	groupID := int64(12)
+	req := CreateAndRedeemCodeRequest{
+		Code:         "manual-code",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+		Notes:        "sub2apipay subscription order:cmogqzd8p00r701p8wz3l9tgc",
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	input := buildSub2ApiPayReferralCreditInput(req, sourceCtx, time.Now())
+
+	assert.Nil(t, input)
+}
+
+func TestValidateCreateAndRedeemReplayRequiresExactFields(t *testing.T) {
+	groupID := int64(12)
+	existing := &service.RedeemCode{
+		Code:         "auto_order_replay",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		Status:       service.StatusUsed,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+	}
+	req := CreateAndRedeemCodeRequest{
+		Code:         existing.Code,
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "s2p_order_replay",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	require.NoError(t, validateCreateAndRedeemReplay(existing, req, sourceCtx))
+
+	req.Value = 69
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, sourceCtx), service.ErrRedeemCodeConflict)
+	req.Value = 68
+	req.ValidityDays = 30
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, sourceCtx), service.ErrRedeemCodeConflict)
+	req.ValidityDays = 31
+	otherGroupID := int64(13)
+	req.GroupID = &otherGroupID
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, sourceCtx), service.ErrRedeemCodeConflict)
+	req.GroupID = &groupID
+	req.Type = service.RedeemTypeBalance
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, sourceCtx), service.ErrRedeemCodeConflict)
+}
+
+func TestValidateCreateAndRedeemReplayAllowsMappedPlanIDForPaymentPageReplay(t *testing.T) {
+	groupID := int64(12)
+	planID := int64(99)
+	existing := &service.RedeemCode{
+		Code:         "auto_order_replay",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		Status:       service.StatusUsed,
+		GroupID:      &groupID,
+		PlanID:       &planID,
+		ValidityDays: 31,
+	}
+	req := CreateAndRedeemCodeRequest{
+		Code:         existing.Code,
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "s2p_order_replay",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	require.NoError(t, validateCreateAndRedeemReplay(existing, req, sourceCtx))
+
+	untrustedSource := service.RedeemSourceContext{}
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, untrustedSource), service.ErrRedeemCodeConflict)
+
+	otherPlanID := int64(100)
+	req.PlanID = &otherPlanID
+	require.ErrorIs(t, validateCreateAndRedeemReplay(existing, req, sourceCtx), service.ErrRedeemCodeConflict)
+}
+
+func TestValidateCreateAndRedeemReplayRejectsSourceSuffixMismatch(t *testing.T) {
+	groupID := int64(12)
+	req := CreateAndRedeemCodeRequest{
+		Code:         "auto_order_code",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "s2p_other_order",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	err := validateCreateAndRedeemReplay(&service.RedeemCode{
+		Code:         req.Code,
+		Type:         req.Type,
+		Value:        req.Value,
+		GroupID:      req.GroupID,
+		ValidityDays: req.ValidityDays,
+	}, req, sourceCtx)
+
+	require.ErrorIs(t, err, service.ErrRedeemCodeConflict)
+}
+
+func TestValidateCreateAndRedeemSubscriptionRequestRejectsInitialSourceSuffixMismatch(t *testing.T) {
+	groupID := int64(12)
+	req := CreateAndRedeemCodeRequest{
+		Code:         "auto_order_code",
+		Type:         service.RedeemTypeSubscription,
+		Value:        68,
+		UserID:       486,
+		GroupID:      &groupID,
+		ValidityDays: 31,
+	}
+	sourceCtx := service.DetectRedeemSourceContext(service.RedeemSourceDetectionInput{
+		IdempotencyKey: "s2p_other_order",
+		Code:           req.Code,
+		Type:           req.Type,
+		GroupID:        req.GroupID,
+		ValidityDays:   req.ValidityDays,
+		Value:          req.Value,
+	})
+
+	require.ErrorIs(t, validateCreateAndRedeemSubscriptionRequest(req, sourceCtx), service.ErrRedeemCodeConflict)
 }
 
 func TestResolveRedeemCodeExpiresAt_FromDays(t *testing.T) {

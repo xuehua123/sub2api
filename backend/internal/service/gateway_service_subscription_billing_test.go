@@ -83,3 +83,39 @@ func TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier(t *testing.T
 		})
 	}
 }
+
+func TestBuildUsageBillingCommand_EntitlementUsesSubscriptionCostWithoutLegacySubscription(t *testing.T) {
+	t.Parallel()
+
+	groupID := int64(7)
+	entitlementID := int64(91)
+	p := &postUsageBillingParams{
+		Cost:                       &CostBreakdown{TotalCost: 1.0, ActualCost: 2.0},
+		User:                       &User{ID: 1},
+		APIKey:                     &APIKey{ID: 2, GroupID: &groupID},
+		Account:                    &Account{ID: 3},
+		Entitlement:                &SubscriptionEntitlement{ID: entitlementID},
+		EntitlementBalanceFallback: true,
+		IsSubscriptionBill:         true,
+	}
+
+	cmd := buildUsageBillingCommand("req-entitlement", nil, p)
+	if cmd == nil {
+		t.Fatal("buildUsageBillingCommand returned nil")
+	}
+	if cmd.SubscriptionID != nil {
+		t.Fatalf("SubscriptionID = %v, want nil", *cmd.SubscriptionID)
+	}
+	if cmd.EntitlementID == nil || *cmd.EntitlementID != entitlementID {
+		t.Fatalf("EntitlementID = %v, want %d", cmd.EntitlementID, entitlementID)
+	}
+	if cmd.SubscriptionCost != 2.0 {
+		t.Fatalf("SubscriptionCost = %v, want 2", cmd.SubscriptionCost)
+	}
+	if cmd.BalanceCost != 0 {
+		t.Fatalf("BalanceCost = %v, want 0", cmd.BalanceCost)
+	}
+	if !cmd.EntitlementBalanceFallback {
+		t.Fatal("EntitlementBalanceFallback = false, want true")
+	}
+}

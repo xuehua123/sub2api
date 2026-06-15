@@ -250,8 +250,22 @@ func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float
 func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, p *RefundPlan, force bool) *RefundResult {
 	if o.OrderType == payment.OrderTypeSubscription {
 		p.DeductionType = payment.DeductionTypeSubscription
-		if o.SubscriptionGroupID != nil && o.SubscriptionDays != nil {
-			p.SubDaysToDeduct = subscriptionDaysRefundDelta(o, p.RefundAmount)
+		p.SubDaysToDeduct = subscriptionDaysRefundDelta(o, p.RefundAmount)
+		if p.SubDaysToDeduct <= 0 {
+			return nil
+		}
+		if o.SubscriptionEntitlementID != nil && *o.SubscriptionEntitlementID > 0 && s.subscriptionEntitlementSvc != nil {
+			snapshot, err := s.subscriptionEntitlementSvc.GetRefundSnapshot(ctx, *o.SubscriptionEntitlementID, time.Now())
+			if err == nil && snapshot != nil {
+				p.EntitlementID = snapshot.ID
+				p.EntitlementSnapshot = snapshot
+				return nil
+			}
+			if err != nil && !errors.Is(err, ErrSubscriptionEntitlementNotFound) && !errors.Is(err, ErrSubscriptionEntitlementExpired) && !force {
+				return &RefundResult{Success: false, Warning: "cannot fetch active entitlement for deduction, use force", RequireForce: true}
+			}
+		}
+		if o.SubscriptionGroupID != nil {
 			if p.SubDaysToDeduct > 0 {
 				sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
 				if err == nil && sub != nil {
@@ -262,6 +276,12 @@ func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, 
 					return &RefundResult{Success: false, Warning: "cannot find active subscription for deduction, use force", RequireForce: true}
 				}
 			}
+		}
+		if p.SubscriptionID > 0 {
+			return nil
+		}
+		if !force {
+			return &RefundResult{Success: false, Warning: "cannot find active subscription entitlement for deduction, use force", RequireForce: true}
 		}
 		return nil
 	}
@@ -320,6 +340,23 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 			}
 		} else {
 			slog.Warn("skipping subscription deduction on retry (previous rollback failed)", "orderID", p.OrderID)
+			p.SubDaysToDeduct = 0
+		}
+	}
+	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.EntitlementID > 0 {
+		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
+			if s.subscriptionEntitlementSvc == nil {
+				s.restoreStatus(ctx, p)
+				return nil, fmt.Errorf("deduct subscription entitlement days: entitlement service is not configured")
+			}
+			revoked, err := s.subscriptionEntitlementSvc.ShortenForRefund(ctx, p.EntitlementID, p.SubDaysToDeduct, time.Now())
+			if err != nil {
+				s.restoreStatus(ctx, p)
+				return nil, fmt.Errorf("deduct subscription entitlement days: %w", err)
+			}
+			p.EntitlementRevoked = revoked
+		} else {
+			slog.Warn("skipping subscription entitlement deduction on retry (previous rollback failed)", "orderID", p.OrderID)
 			p.SubDaysToDeduct = 0
 		}
 	}
@@ -523,6 +560,18 @@ func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr
 		if _, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, p.SubDaysToDeduct); err != nil {
 			slog.Error("[CRITICAL] subscription rollback failed", "orderID", p.OrderID, "subID", p.SubscriptionID, "days", p.SubDaysToDeduct, "error", err)
 			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "subDaysDeducted": p.SubDaysToDeduct})
+			return false
+		}
+	}
+	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.EntitlementID > 0 {
+		if s.subscriptionEntitlementSvc == nil || p.EntitlementSnapshot == nil {
+			slog.Error("[CRITICAL] subscription entitlement restore failed", "orderID", p.OrderID, "entitlementID", p.EntitlementID, "error", "missing entitlement snapshot")
+			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": "missing entitlement snapshot", "entitlementID": p.EntitlementID, "subDaysDeducted": p.SubDaysToDeduct})
+			return false
+		}
+		if err := s.subscriptionEntitlementSvc.RestoreRefundSnapshot(ctx, p.EntitlementSnapshot); err != nil {
+			slog.Error("[CRITICAL] subscription entitlement rollback failed", "orderID", p.OrderID, "entitlementID", p.EntitlementID, "days", p.SubDaysToDeduct, "error", err)
+			s.writeAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED", "admin", map[string]any{"gatewayError": psErrMsg(gErr), "rollbackError": psErrMsg(err), "entitlementID": p.EntitlementID, "subDaysDeducted": p.SubDaysToDeduct})
 			return false
 		}
 	}

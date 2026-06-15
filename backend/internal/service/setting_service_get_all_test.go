@@ -27,7 +27,13 @@ func (s *settingGetAllRepoStub) Set(ctx context.Context, key, value string) erro
 }
 
 func (s *settingGetAllRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
-	panic("unexpected GetMultiple call")
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
 }
 
 func (s *settingGetAllRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
@@ -116,4 +122,39 @@ func TestSettingService_GetAllSettings_ParsesLobeHubEnabledModels(t *testing.T) 
 	settings, err := svc.GetAllSettings(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, []string{"gpt-5.4-mini", "gpt-image-2"}, settings.LobeHubEnabledModels)
+}
+
+func TestSettingService_GetAllSettings_SubscriptionEntitlementFlagsDefaultFalse(t *testing.T) {
+	repo := &settingGetAllRepoStub{
+		values: map[string]string{},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.False(t, settings.SubscriptionEntitlementsV2Enabled)
+	require.False(t, settings.Sub2PaymentPageLegacyMappingEnabled)
+
+	runtime := svc.GetSubscriptionEntitlementsRuntime(context.Background())
+	require.False(t, runtime.Enabled)
+	require.False(t, runtime.LegacyCashierMappingEnabled)
+}
+
+func TestSettingService_GetAllSettings_SubscriptionEntitlementFlagsParseTrue(t *testing.T) {
+	repo := &settingGetAllRepoStub{
+		values: map[string]string{
+			SettingKeySubscriptionEntitlementsV2Enabled:   "true",
+			SettingKeySub2PaymentPageLegacyMappingEnabled: "true",
+		},
+	}
+	svc := NewSettingService(repo, &config.Config{})
+
+	settings, err := svc.GetAllSettings(context.Background())
+	require.NoError(t, err)
+	require.True(t, settings.SubscriptionEntitlementsV2Enabled)
+	require.True(t, settings.Sub2PaymentPageLegacyMappingEnabled)
+
+	runtime := svc.GetSubscriptionEntitlementsRuntime(context.Background())
+	require.True(t, runtime.Enabled)
+	require.True(t, runtime.LegacyCashierMappingEnabled)
 }

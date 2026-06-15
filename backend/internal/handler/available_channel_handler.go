@@ -127,14 +127,14 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	userGroups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
+	userGroups, err := h.apiKeyService.GetAvailableGroupsWithEntitlements(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	allowedGroupIDs := make(map[int64]struct{}, len(userGroups))
 	for i := range userGroups {
-		allowedGroupIDs[userGroups[i].ID] = struct{}{}
+		allowedGroupIDs[userGroups[i].Group.ID] = struct{}{}
 	}
 
 	channels, err := h.channelService.ListAvailable(c.Request.Context())

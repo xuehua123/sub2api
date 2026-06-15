@@ -2,6 +2,7 @@
 package dto
 
 import (
+	"sort"
 	"strconv"
 	"time"
 
@@ -80,33 +81,43 @@ func APIKeyFromService(k *service.APIKey) *APIKey {
 	if k == nil {
 		return nil
 	}
+	accessSource := k.AccessSource
+	if accessSource == "" {
+		if k.SubscriptionEntitlementID != nil {
+			accessSource = service.APIKeyAccessSourceEntitlement
+		} else {
+			accessSource = service.APIKeyAccessSourceBalance
+		}
+	}
 	out := &APIKey{
-		ID:                     k.ID,
-		UserID:                 k.UserID,
-		Key:                    k.Key,
-		Name:                   k.Name,
-		GroupID:                k.GroupID,
-		AutoSwitchGroupEnabled: k.AutoSwitchGroupEnabled,
-		Status:                 k.Status,
-		IPWhitelist:            k.IPWhitelist,
-		IPBlacklist:            k.IPBlacklist,
-		LastUsedAt:             k.LastUsedAt,
-		Quota:                  k.Quota,
-		QuotaUsed:              k.QuotaUsed,
-		ExpiresAt:              k.ExpiresAt,
-		CreatedAt:              k.CreatedAt,
-		UpdatedAt:              k.UpdatedAt,
-		RateLimit5h:            k.RateLimit5h,
-		RateLimit1d:            k.RateLimit1d,
-		RateLimit7d:            k.RateLimit7d,
-		Usage5h:                k.EffectiveUsage5h(),
-		Usage1d:                k.EffectiveUsage1d(),
-		Usage7d:                k.EffectiveUsage7d(),
-		Window5hStart:          k.Window5hStart,
-		Window1dStart:          k.Window1dStart,
-		Window7dStart:          k.Window7dStart,
-		User:                   UserFromServiceShallow(k.User),
-		Group:                  GroupFromServiceShallow(k.Group),
+		ID:                        k.ID,
+		UserID:                    k.UserID,
+		Key:                       k.Key,
+		Name:                      k.Name,
+		GroupID:                   k.GroupID,
+		SubscriptionEntitlementID: k.SubscriptionEntitlementID,
+		AccessSource:              accessSource,
+		AutoSwitchGroupEnabled:    k.AutoSwitchGroupEnabled,
+		Status:                    k.Status,
+		IPWhitelist:               k.IPWhitelist,
+		IPBlacklist:               k.IPBlacklist,
+		LastUsedAt:                k.LastUsedAt,
+		Quota:                     k.Quota,
+		QuotaUsed:                 k.QuotaUsed,
+		ExpiresAt:                 k.ExpiresAt,
+		CreatedAt:                 k.CreatedAt,
+		UpdatedAt:                 k.UpdatedAt,
+		RateLimit5h:               k.RateLimit5h,
+		RateLimit1d:               k.RateLimit1d,
+		RateLimit7d:               k.RateLimit7d,
+		Usage5h:                   k.EffectiveUsage5h(),
+		Usage1d:                   k.EffectiveUsage1d(),
+		Usage7d:                   k.EffectiveUsage7d(),
+		Window5hStart:             k.Window5hStart,
+		Window1dStart:             k.Window1dStart,
+		Window7dStart:             k.Window7dStart,
+		User:                      UserFromServiceShallow(k.User),
+		Group:                     GroupFromServiceShallow(k.Group),
 	}
 	if k.Window5hStart != nil && !service.IsWindowExpired(k.Window5hStart, service.RateLimitWindow5h) {
 		t := k.Window5hStart.Add(service.RateLimitWindow5h)
@@ -178,6 +189,9 @@ func groupFromServiceBase(g *service.Group) Group {
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,
 		SubscriptionType:                g.SubscriptionType,
+		BalanceEnabled:                  g.BalanceEnabled,
+		SubscriptionEnabled:             g.SubscriptionEnabled,
+		PlanAutoGrantEnabled:            g.PlanAutoGrantEnabled,
 		DailyLimitUSD:                   g.DailyLimitUSD,
 		WeeklyLimitUSD:                  g.WeeklyLimitUSD,
 		MonthlyLimitUSD:                 g.MonthlyLimitUSD,
@@ -536,19 +550,21 @@ func RedeemCodeFromServiceAdmin(rc *service.RedeemCode) *AdminRedeemCode {
 
 func redeemCodeFromServiceBase(rc *service.RedeemCode) RedeemCode {
 	out := RedeemCode{
-		ID:           rc.ID,
-		Code:         rc.Code,
-		Type:         rc.Type,
-		Value:        rc.Value,
-		Status:       rc.Status,
-		UsedBy:       rc.UsedBy,
-		UsedAt:       rc.UsedAt,
-		CreatedAt:    rc.CreatedAt,
-		ExpiresAt:    rc.ExpiresAt,
-		GroupID:      rc.GroupID,
-		ValidityDays: rc.ValidityDays,
-		User:         UserFromServiceShallow(rc.User),
-		Group:        GroupFromServiceShallow(rc.Group),
+		ID:                        rc.ID,
+		Code:                      rc.Code,
+		Type:                      rc.Type,
+		Value:                     rc.Value,
+		Status:                    rc.Status,
+		UsedBy:                    rc.UsedBy,
+		UsedAt:                    rc.UsedAt,
+		CreatedAt:                 rc.CreatedAt,
+		ExpiresAt:                 rc.ExpiresAt,
+		GroupID:                   rc.GroupID,
+		PlanID:                    rc.PlanID,
+		SubscriptionEntitlementID: rc.SubscriptionEntitlementID,
+		ValidityDays:              rc.ValidityDays,
+		User:                      UserFromServiceShallow(rc.User),
+		Group:                     GroupFromServiceShallow(rc.Group),
 	}
 	if rc.IsExpired() {
 		out.Status = service.StatusExpired
@@ -596,6 +612,7 @@ func usageLogFromServiceUser(l *service.UsageLog) UsageLog {
 		UpstreamEndpoint:      l.UpstreamEndpoint,
 		GroupID:               l.GroupID,
 		SubscriptionID:        l.SubscriptionID,
+		EntitlementID:         l.EntitlementID,
 		InputTokens:           l.InputTokens,
 		OutputTokens:          l.OutputTokens,
 		CacheCreationTokens:   l.CacheCreationTokens,
@@ -654,10 +671,15 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	if l == nil {
 		return nil
 	}
+	var billingSource *string
+	if source := l.EffectiveBillingSource(); source != "" {
+		billingSource = &source
+	}
 	return &AdminUsageLog{
 		UsageLog:              usageLogFromServiceUser(l),
 		UpstreamModel:         l.UpstreamModel,
 		ChannelID:             l.ChannelID,
+		BillingSource:         billingSource,
 		ModelMappingChain:     l.ModelMappingChain,
 		BillingTier:           l.BillingTier,
 		AccountRateMultiplier: l.AccountRateMultiplier,
@@ -726,19 +748,347 @@ func UserSubscriptionFromService(sub *service.UserSubscription) *UserSubscriptio
 	return &out
 }
 
+func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) *UserSubscriptionAlias {
+	if ent == nil || ent.LegacySubscriptionID == nil {
+		return nil
+	}
+	groupID, group := entitlementAliasPrimaryGroup(ent)
+	if groupID <= 0 {
+		return nil
+	}
+	return &UserSubscriptionAlias{
+		ID:                 *ent.LegacySubscriptionID,
+		UserID:             ent.UserID,
+		GroupID:            groupID,
+		StartsAt:           ent.StartsAt,
+		ExpiresAt:          ent.ExpiresAt,
+		Status:             ent.Status,
+		DailyWindowStart:   cloneTime(ent.DailyWindowStart),
+		WeeklyWindowStart:  cloneTime(ent.WeeklyWindowStart),
+		MonthlyWindowStart: cloneTime(ent.MonthlyWindowStart),
+		DailyUsageUSD:      ent.DailyUsageUSD,
+		WeeklyUsageUSD:     ent.WeeklyUsageUSD,
+		MonthlyUsageUSD:    ent.MonthlyUsageUSD,
+		CreatedAt:          ent.CreatedAt,
+		UpdatedAt:          ent.UpdatedAt,
+		Group:              GroupFromServiceShallow(group),
+		EntitlementID:      ent.ID,
+		PlanID:             cloneInt64(ent.PlanID),
+		Groups:             userEntitlementGroups(ent),
+		OveragePolicy:      ent.OveragePolicy,
+	}
+}
+
+func UserSubscriptionAliasesFromEntitlements(in []service.SubscriptionEntitlement) []UserSubscriptionAlias {
+	out := make([]UserSubscriptionAlias, 0, len(in))
+	for i := range in {
+		if alias := UserSubscriptionAliasFromEntitlement(&in[i]); alias != nil {
+			out = append(out, *alias)
+		}
+	}
+	return out
+}
+
+func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.Time) *UserEntitlement {
+	if ent == nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	dailyWindowStart := entitlementQuotaWindowStart(ent.DailyWindowStart, ent.StartsAt, ent.DailyLimitUSD)
+	weeklyWindowStart := entitlementQuotaWindowStart(ent.WeeklyWindowStart, ent.StartsAt, ent.WeeklyLimitUSD)
+	monthlyWindowStart := entitlementQuotaWindowStart(ent.MonthlyWindowStart, ent.StartsAt, ent.MonthlyLimitUSD)
+	dailyResetsAt, dailyResetsInSeconds := entitlementWindowReset(dailyWindowStart, ent.ExpiresAt, 24*time.Hour, now, ent.HasOneTimeDailyQuota())
+	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(weeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
+	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(monthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
+	return &UserEntitlement{
+		ID:                     ent.ID,
+		PlanID:                 cloneInt64(ent.PlanID),
+		PlanName:               ent.Name,
+		Name:                   ent.Name,
+		Status:                 ent.Status,
+		StartsAt:               ent.StartsAt,
+		ExpiresAt:              ent.ExpiresAt,
+		Groups:                 userEntitlementGroups(ent),
+		DailyLimitUSD:          cloneFloat64(ent.DailyLimitUSD),
+		DailyUsageUSD:          ent.DailyUsageUSD,
+		DailyWindowStart:       cloneTime(dailyWindowStart),
+		DailyResetsAt:          dailyResetsAt,
+		DailyResetsInSeconds:   dailyResetsInSeconds,
+		WeeklyLimitUSD:         cloneFloat64(ent.WeeklyLimitUSD),
+		WeeklyUsageUSD:         ent.WeeklyUsageUSD,
+		WeeklyWindowStart:      cloneTime(weeklyWindowStart),
+		WeeklyResetsAt:         weeklyResetsAt,
+		WeeklyResetsInSeconds:  weeklyResetsInSeconds,
+		MonthlyLimitUSD:        cloneFloat64(ent.MonthlyLimitUSD),
+		MonthlyUsageUSD:        ent.MonthlyUsageUSD,
+		MonthlyWindowStart:     cloneTime(monthlyWindowStart),
+		MonthlyResetsAt:        monthlyResetsAt,
+		MonthlyResetsInSeconds: monthlyResetsInSeconds,
+		OveragePolicy:          ent.OveragePolicy,
+		LegacySubscriptionID:   cloneInt64(ent.LegacySubscriptionID),
+		PurchasePrice:          cloneFloat64(ent.PurchasePrice),
+		PurchaseCurrency:       ent.PurchaseCurrency,
+		QuotaUSD:               cloneFloat64(ent.QuotaUSD),
+		QuotaPeriod:            ent.QuotaPeriod,
+		UnitCostPerUSD:         cloneFloat64(ent.UnitCostPerUSD),
+	}
+}
+
+func UserEntitlementsFromService(in []service.SubscriptionEntitlement, now time.Time) []UserEntitlement {
+	out := make([]UserEntitlement, 0, len(in))
+	for i := range in {
+		if ent := UserEntitlementFromService(&in[i], now); ent != nil {
+			out = append(out, *ent)
+		}
+	}
+	return out
+}
+
 // UserSubscriptionFromServiceAdmin converts a service UserSubscription to DTO for admin users.
-// It includes assignment metadata and notes.
+// It includes safe assignment metadata and entitlement linkage.
 func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserSubscription {
 	if sub == nil {
 		return nil
 	}
 	return &AdminUserSubscription{
-		UserSubscription: userSubscriptionFromServiceBase(sub),
-		AssignedBy:       sub.AssignedBy,
-		AssignedAt:       sub.AssignedAt,
-		Notes:            sub.Notes,
-		AssignedByUser:   UserFromServiceShallow(sub.AssignedByUser),
+		UserSubscription:          userSubscriptionFromServiceBase(sub),
+		AssignedBy:                sub.AssignedBy,
+		AssignedAt:                sub.AssignedAt,
+		AssignedByUser:            UserFromServiceShallow(sub.AssignedByUser),
+		EntitlementID:             adminSubscriptionEntitlementID(sub.EntitlementLink),
+		PlanID:                    cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
+		PlanName:                  cloneString(adminSubscriptionPlanName(sub.EntitlementLink)),
+		EntitlementStatus:         cloneString(adminSubscriptionEntitlementStatus(sub.EntitlementLink)),
+		EntitlementExpiresAt:      cloneTime(adminSubscriptionEntitlementExpiresAt(sub.EntitlementLink)),
+		EntitlementPrimaryGroupID: cloneInt64(adminSubscriptionEntitlementPrimaryGroupID(sub.EntitlementLink)),
+		EntitlementOveragePolicy:  cloneString(adminSubscriptionEntitlementOveragePolicy(sub.EntitlementLink)),
 	}
+}
+
+func adminSubscriptionEntitlementID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil || link.EntitlementID <= 0 {
+		return nil
+	}
+	id := link.EntitlementID
+	return &id
+}
+
+func adminSubscriptionPlanID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil {
+		return nil
+	}
+	return link.PlanID
+}
+
+func adminSubscriptionPlanName(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil {
+		return nil
+	}
+	return link.PlanName
+}
+
+func adminSubscriptionEntitlementStatus(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil || link.Status == "" {
+		return nil
+	}
+	return &link.Status
+}
+
+func adminSubscriptionEntitlementExpiresAt(link *service.UserSubscriptionEntitlementLink) *time.Time {
+	if link == nil || link.ExpiresAt.IsZero() {
+		return nil
+	}
+	return &link.ExpiresAt
+}
+
+func adminSubscriptionEntitlementPrimaryGroupID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil {
+		return nil
+	}
+	return link.PrimaryGroupID
+}
+
+func adminSubscriptionEntitlementOveragePolicy(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil || link.OveragePolicy == "" {
+		return nil
+	}
+	return &link.OveragePolicy
+}
+
+func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitlementGroup {
+	if ent == nil {
+		return []UserEntitlementGroup{}
+	}
+	if len(ent.GroupGrants) > 0 {
+		grants := append([]service.SubscriptionEntitlementGroupGrant(nil), ent.GroupGrants...)
+		sort.SliceStable(grants, func(i, j int) bool {
+			if grants[i].SortOrder != grants[j].SortOrder {
+				return grants[i].SortOrder < grants[j].SortOrder
+			}
+			return grants[i].GroupID < grants[j].GroupID
+		})
+		out := make([]UserEntitlementGroup, 0, len(grants))
+		for _, grant := range grants {
+			if !grant.Enabled {
+				continue
+			}
+			item := UserEntitlementGroup{ID: grant.GroupID}
+			if grant.Group != nil {
+				item.Name = grant.Group.Name
+				item.Platform = grant.Group.Platform
+				item.RateMultiplier = grant.Group.RateMultiplier
+			}
+			if item.RateMultiplier <= 0 {
+				item.RateMultiplier = 1
+			}
+			out = append(out, item)
+		}
+		return out
+	}
+	groups := append([]service.Group(nil), ent.Groups...)
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].ID < groups[j].ID
+	})
+	out := make([]UserEntitlementGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, UserEntitlementGroup{
+			ID:             group.ID,
+			Name:           group.Name,
+			Platform:       group.Platform,
+			RateMultiplier: normalizedGroupRate(group.RateMultiplier),
+		})
+	}
+	return out
+}
+
+func normalizedGroupRate(rate float64) float64 {
+	if rate <= 0 {
+		return 1
+	}
+	return rate
+}
+
+func entitlementAliasPrimaryGroup(ent *service.SubscriptionEntitlement) (int64, *service.Group) {
+	if ent == nil {
+		return 0, nil
+	}
+	candidates := entitlementAliasGroupCandidates(ent)
+	if ent.PrimaryGroupID != nil {
+		for i := range candidates {
+			if candidates[i].id == *ent.PrimaryGroupID {
+				return candidates[i].id, candidates[i].group
+			}
+		}
+	}
+	if len(candidates) == 0 {
+		return 0, nil
+	}
+	return candidates[0].id, candidates[0].group
+}
+
+type entitlementAliasGroupCandidate struct {
+	id    int64
+	group *service.Group
+}
+
+func entitlementAliasGroupCandidates(ent *service.SubscriptionEntitlement) []entitlementAliasGroupCandidate {
+	if ent == nil {
+		return nil
+	}
+	if len(ent.GroupGrants) > 0 {
+		grants := append([]service.SubscriptionEntitlementGroupGrant(nil), ent.GroupGrants...)
+		sort.SliceStable(grants, func(i, j int) bool {
+			if grants[i].SortOrder != grants[j].SortOrder {
+				return grants[i].SortOrder < grants[j].SortOrder
+			}
+			return grants[i].GroupID < grants[j].GroupID
+		})
+		out := make([]entitlementAliasGroupCandidate, 0, len(grants))
+		for i := range grants {
+			if !grants[i].Enabled {
+				continue
+			}
+			out = append(out, entitlementAliasGroupCandidate{
+				id:    grants[i].GroupID,
+				group: grants[i].Group,
+			})
+		}
+		return out
+	}
+	groups := append([]service.Group(nil), ent.Groups...)
+	sort.SliceStable(groups, func(i, j int) bool {
+		return groups[i].ID < groups[j].ID
+	})
+	out := make([]entitlementAliasGroupCandidate, 0, len(groups))
+	for i := range groups {
+		out = append(out, entitlementAliasGroupCandidate{
+			id:    groups[i].ID,
+			group: &groups[i],
+		})
+	}
+	return out
+}
+
+func entitlementWindowReset(windowStart *time.Time, expiresAt time.Time, cycle time.Duration, now time.Time, oneTimeDaily bool) (*time.Time, *int64) {
+	if windowStart == nil || cycle <= 0 {
+		return nil, nil
+	}
+	resetsAt := windowStart.Add(cycle)
+	if oneTimeDaily && !expiresAt.IsZero() && expiresAt.Before(resetsAt) {
+		resetsAt = expiresAt
+	}
+	resetsInSeconds := int64(resetsAt.Sub(now).Seconds())
+	if resetsInSeconds < 0 {
+		resetsInSeconds = 0
+	}
+	return cloneTime(&resetsAt), &resetsInSeconds
+}
+
+func entitlementQuotaWindowStart(windowStart *time.Time, startsAt time.Time, limit *float64) *time.Time {
+	if limit == nil || *limit <= 0 {
+		return nil
+	}
+	if windowStart != nil {
+		return windowStart
+	}
+	if startsAt.IsZero() {
+		return nil
+	}
+	return cloneTime(&startsAt)
+}
+
+func cloneInt64(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneString(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneTime(v *time.Time) *time.Time {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscription {

@@ -351,10 +351,10 @@ func subscriptionDaysRefundDelta(o *dbent.PaymentOrder, refundAmountTotal float6
 }
 
 func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o *dbent.PaymentOrder, refundAmountTotal float64) error {
-	if s.subscriptionSvc == nil || o == nil || o.OrderType != payment.OrderTypeSubscription {
+	if s == nil || o == nil || o.OrderType != payment.OrderTypeSubscription {
 		return nil
 	}
-	if o.SubscriptionGroupID == nil || o.SubscriptionDays == nil || *o.SubscriptionDays <= 0 {
+	if o.SubscriptionDays == nil || *o.SubscriptionDays <= 0 {
 		return nil
 	}
 	deltaDays := subscriptionDaysRefundDelta(o, refundAmountTotal)
@@ -362,6 +362,19 @@ func (s *PaymentService) syncExternalSubscriptionReversal(ctx context.Context, o
 		return nil
 	}
 
+	if o.SubscriptionEntitlementID != nil && *o.SubscriptionEntitlementID > 0 && s.subscriptionEntitlementSvc != nil {
+		if _, err := s.subscriptionEntitlementSvc.ShortenForRefund(ctx, *o.SubscriptionEntitlementID, deltaDays, time.Now()); err != nil {
+			if !errors.Is(err, ErrSubscriptionEntitlementNotFound) && !errors.Is(err, ErrSubscriptionEntitlementExpired) {
+				return err
+			}
+		} else {
+			return nil
+		}
+	}
+
+	if s.subscriptionSvc == nil || o.SubscriptionGroupID == nil {
+		return nil
+	}
 	sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
 	if err != nil {
 		if errors.Is(err, ErrSubscriptionNotFound) {
@@ -1002,7 +1015,7 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 	if o.Status != OrderStatusPaid && o.Status != OrderStatusFailed {
 		return infraerrors.BadRequest("INVALID_STATUS", "order cannot fulfill in status "+o.Status)
 	}
-	if o.SubscriptionGroupID == nil || o.SubscriptionDays == nil {
+	if !s.shouldUseSubscriptionEntitlementV2(ctx, o) && (o.SubscriptionGroupID == nil || o.SubscriptionDays == nil) {
 		return infraerrors.BadRequest("INVALID_STATUS", "missing subscription info")
 	}
 	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(oid), paymentorder.StatusIn(OrderStatusPaid, OrderStatusFailed)).SetStatus(OrderStatusRecharging).Save(ctx)
@@ -1020,6 +1033,107 @@ func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid
 }
 
 func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s.shouldUseSubscriptionEntitlementV2(ctx, o) {
+		return s.doSubV2(ctx, o)
+	}
+	return s.doSubLegacy(ctx, o)
+}
+
+func (s *PaymentService) shouldUseSubscriptionEntitlementV2(ctx context.Context, o *dbent.PaymentOrder) bool {
+	if s == nil || o == nil || o.PlanID == nil {
+		return false
+	}
+	if s.settingSvc == nil {
+		return false
+	}
+	return s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled
+}
+
+func (s *PaymentService) doSubV2(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s.subscriptionEntitlementSvc == nil {
+		return infraerrors.InternalServer("SUBSCRIPTION_ENTITLEMENT_SERVICE_MISSING", "subscription entitlement service is not configured")
+	}
+	if o == nil || o.PlanID == nil {
+		return infraerrors.BadRequest("INVALID_STATUS", "missing subscription plan")
+	}
+
+	input := AssignEntitlementFromPlanInput{
+		UserID:           o.UserID,
+		PlanID:           *o.PlanID,
+		OrderID:          o.ID,
+		SourceType:       SubscriptionEntitlementSourcePaymentOrder,
+		Notes:            subscriptionAssignmentMarker(o.ID),
+		PurchasePrice:    &o.PayAmount,
+		PurchaseCurrency: PaymentOrderCurrency(o),
+	}
+	if o.SubscriptionDays != nil && *o.SubscriptionDays > 0 {
+		input.ValidityDaysOverride = *o.SubscriptionDays
+	}
+	if o.PaidAt != nil {
+		input.AssignedAt = *o.PaidAt
+	}
+	if outTradeNo := strings.TrimSpace(o.OutTradeNo); outTradeNo != "" {
+		input.SourceExternalID = &outTradeNo
+	}
+
+	var (
+		ent    *SubscriptionEntitlement
+		reused bool
+	)
+	apply := func(txCtx context.Context) error {
+		var err error
+		ent, reused, err = s.subscriptionEntitlementSvc.AssignOrExtendFromPlanTx(txCtx, input)
+		if err != nil {
+			return fmt.Errorf("assign subscription entitlement: %w", err)
+		}
+		if ent == nil || ent.ID <= 0 {
+			return fmt.Errorf("assign subscription entitlement: missing entitlement")
+		}
+
+		update := s.currentClient(txCtx).PaymentOrder.UpdateOneID(o.ID).
+			SetSubscriptionEntitlementID(ent.ID)
+		if o.SubscriptionGroupID == nil && ent.PrimaryGroupID != nil {
+			update.SetSubscriptionGroupID(*ent.PrimaryGroupID)
+		}
+		if _, err := update.Save(txCtx); err != nil {
+			return fmt.Errorf("set subscription entitlement id: %w", err)
+		}
+		s.writeAuditLog(txCtx, o.ID, paymentAuditActionSubscriptionAssigned, "system", map[string]any{
+			"entitlementID": ent.ID,
+			"planID":        *o.PlanID,
+			"sourceType":    SubscriptionEntitlementSourcePaymentOrder,
+			"sourceID":      o.ID,
+			"reused":        reused,
+		})
+		return nil
+	}
+
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		if err := apply(ctx); err != nil {
+			return err
+		}
+	} else {
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return fmt.Errorf("begin subscription entitlement transaction: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := apply(dbent.NewTxContext(ctx, tx)); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit subscription entitlement transaction: %w", err)
+		}
+	}
+
+	o.SubscriptionEntitlementID = &ent.ID
+	if o.SubscriptionGroupID == nil && ent.PrimaryGroupID != nil {
+		o.SubscriptionGroupID = ent.PrimaryGroupID
+	}
+	return s.markCompleted(ctx, o, paymentAuditActionSubscriptionSuccess)
+}
+
+func (s *PaymentService) doSubLegacy(ctx context.Context, o *dbent.PaymentOrder) error {
 	gid := *o.SubscriptionGroupID
 	days := *o.SubscriptionDays
 	g, err := s.groupRepo.GetByID(ctx, gid)

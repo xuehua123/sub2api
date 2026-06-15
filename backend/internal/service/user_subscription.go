@@ -29,6 +29,18 @@ type UserSubscription struct {
 	User           *User
 	Group          *Group
 	AssignedByUser *User
+
+	EntitlementLink *UserSubscriptionEntitlementLink
+}
+
+type UserSubscriptionEntitlementLink struct {
+	EntitlementID  int64
+	PlanID         *int64
+	PlanName       *string
+	Status         string
+	ExpiresAt      time.Time
+	PrimaryGroupID *int64
+	OveragePolicy  string
 }
 
 func (s *UserSubscription) IsActive() bool {

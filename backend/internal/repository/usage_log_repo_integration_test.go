@@ -87,6 +87,103 @@ func (s *UsageLogRepoSuite) TestCreate() {
 	s.Require().NotZero(log.ID)
 }
 
+func (s *UsageLogRepoSuite) TestEntitlementIDFilterAndBillingSourceRoundTrip() {
+	user := mustCreateUser(s.T(), s.client, &service.User{Email: "usage-entitlement-filter@test.com"})
+	apiKey := mustCreateApiKey(s.T(), s.client, &service.APIKey{UserID: user.ID, Key: "sk-usage-ent-filter", Name: "k"})
+	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-usage-ent-filter"})
+	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "ent-filter-group"})
+
+	quotaEnt := mustCreateUsageBillingEntitlement(s.T(), s.client, &service.SubscriptionEntitlement{UserID: user.ID})
+	fallbackEnt := mustCreateUsageBillingEntitlement(s.T(), s.client, &service.SubscriptionEntitlement{UserID: user.ID})
+	createdAt := time.Now().UTC().Add(-time.Minute)
+	groupID := group.ID
+
+	quotaLog := &service.UsageLog{
+		UserID:        user.ID,
+		APIKeyID:      apiKey.ID,
+		AccountID:     account.ID,
+		RequestID:     uuid.NewString(),
+		Model:         "claude-3",
+		GroupID:       &groupID,
+		EntitlementID: &quotaEnt.ID,
+		InputTokens:   10,
+		OutputTokens:  20,
+		TotalCost:     1.2,
+		ActualCost:    1.2,
+		BillingType:   service.BillingTypeSubscription,
+		CreatedAt:     createdAt,
+	}
+	quotaLog.SetBillingSource(service.BillingSourceEntitlementQuota)
+	_, err := s.repo.Create(s.ctx, quotaLog)
+	s.Require().NoError(err)
+
+	fallbackLog := &service.UsageLog{
+		UserID:        user.ID,
+		APIKeyID:      apiKey.ID,
+		AccountID:     account.ID,
+		RequestID:     uuid.NewString(),
+		Model:         "claude-3",
+		GroupID:       &groupID,
+		EntitlementID: &fallbackEnt.ID,
+		InputTokens:   30,
+		OutputTokens:  40,
+		TotalCost:     2.4,
+		ActualCost:    2.4,
+		BillingType:   service.BillingTypeSubscription,
+		CreatedAt:     createdAt,
+	}
+	fallbackLog.SetBillingSource(service.BillingSourceEntitlementBalanceFallback)
+	_, err = s.repo.Create(s.ctx, fallbackLog)
+	s.Require().NoError(err)
+
+	readBack, err := s.repo.GetByID(s.ctx, fallbackLog.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(readBack.BillingSource)
+	s.Require().Equal(service.BillingSourceEntitlementBalanceFallback, *readBack.BillingSource)
+
+	startTime := createdAt.Add(-time.Hour)
+	endTime := createdAt.Add(time.Hour)
+	filters := usagestats.UsageLogFilters{
+		EntitlementID: quotaEnt.ID,
+		StartTime:     &startTime,
+		EndTime:       &endTime,
+		ExactTotal:    true,
+	}
+	logs, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, filters)
+	s.Require().NoError(err)
+	s.Require().Len(logs, 1)
+	s.Require().Equal(quotaLog.ID, logs[0].ID)
+	s.Require().Equal(int64(1), page.Total)
+	s.Require().NotNil(logs[0].BillingSource)
+	s.Require().Equal(service.BillingSourceEntitlementQuota, *logs[0].BillingSource)
+
+	stats, err := s.repo.GetStatsWithFilters(s.ctx, filters)
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), stats.TotalRequests)
+	s.Require().Equal(float64(1.2), stats.TotalActualCost)
+
+	trend, err := s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", 0, 0, 0, 0, quotaEnt.ID, "", nil, nil, nil)
+	s.Require().NoError(err)
+	s.Require().Len(trend, 1)
+	s.Require().Equal(int64(1), trend[0].Requests)
+
+	models, err := s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, 0, 0, 0, 0, quotaEnt.ID, nil, nil, nil)
+	s.Require().NoError(err)
+	s.Require().Len(models, 1)
+	s.Require().Equal(int64(1), models[0].Requests)
+
+	groups, err := s.repo.GetGroupStatsWithFilters(s.ctx, startTime, endTime, 0, 0, 0, 0, fallbackEnt.ID, nil, nil, nil)
+	s.Require().NoError(err)
+	s.Require().Len(groups, 1)
+	s.Require().Equal(int64(1), groups[0].Requests)
+
+	users, err := s.repo.GetUserBreakdownStats(s.ctx, startTime, endTime, usagestats.UserBreakdownDimension{EntitlementID: fallbackEnt.ID}, 10)
+	s.Require().NoError(err)
+	s.Require().Len(users, 1)
+	s.Require().Equal(user.ID, users[0].UserID)
+	s.Require().Equal(int64(1), users[0].Requests)
+}
+
 func TestUsageLogRepositoryCreate_BatchPathConcurrent(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
@@ -1369,17 +1466,17 @@ func (s *UsageLogRepoSuite) TestGetUsageTrendWithFilters() {
 	endTime := base.Add(48 * time.Hour)
 
 	// Test with user filter
-	trend, err := s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", user.ID, 0, 0, 0, "", nil, nil, nil)
+	trend, err := s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", user.ID, 0, 0, 0, 0, "", nil, nil, nil)
 	s.Require().NoError(err, "GetUsageTrendWithFilters user filter")
 	s.Require().Len(trend, 2)
 
 	// Test with apiKey filter
-	trend, err = s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", 0, apiKey.ID, 0, 0, "", nil, nil, nil)
+	trend, err = s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", 0, apiKey.ID, 0, 0, 0, "", nil, nil, nil)
 	s.Require().NoError(err, "GetUsageTrendWithFilters apiKey filter")
 	s.Require().Len(trend, 2)
 
 	// Test with both filters
-	trend, err = s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", user.ID, apiKey.ID, 0, 0, "", nil, nil, nil)
+	trend, err = s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "day", user.ID, apiKey.ID, 0, 0, 0, "", nil, nil, nil)
 	s.Require().NoError(err, "GetUsageTrendWithFilters both filters")
 	s.Require().Len(trend, 2)
 }
@@ -1396,7 +1493,7 @@ func (s *UsageLogRepoSuite) TestGetUsageTrendWithFilters_HourlyGranularity() {
 	startTime := base.Add(-1 * time.Hour)
 	endTime := base.Add(3 * time.Hour)
 
-	trend, err := s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "hour", user.ID, 0, 0, 0, "", nil, nil, nil)
+	trend, err := s.repo.GetUsageTrendWithFilters(s.ctx, startTime, endTime, "hour", user.ID, 0, 0, 0, 0, "", nil, nil, nil)
 	s.Require().NoError(err, "GetUsageTrendWithFilters hourly")
 	s.Require().Len(trend, 2)
 }
@@ -1442,17 +1539,17 @@ func (s *UsageLogRepoSuite) TestGetModelStatsWithFilters() {
 	endTime := base.Add(2 * time.Hour)
 
 	// Test with user filter
-	stats, err := s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, user.ID, 0, 0, 0, nil, nil, nil)
+	stats, err := s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, user.ID, 0, 0, 0, 0, nil, nil, nil)
 	s.Require().NoError(err, "GetModelStatsWithFilters user filter")
 	s.Require().Len(stats, 2)
 
 	// Test with apiKey filter
-	stats, err = s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, 0, apiKey.ID, 0, 0, nil, nil, nil)
+	stats, err = s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, 0, apiKey.ID, 0, 0, 0, nil, nil, nil)
 	s.Require().NoError(err, "GetModelStatsWithFilters apiKey filter")
 	s.Require().Len(stats, 2)
 
 	// Test with account filter
-	stats, err = s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, 0, 0, account.ID, 0, nil, nil, nil)
+	stats, err = s.repo.GetModelStatsWithFilters(s.ctx, startTime, endTime, 0, 0, account.ID, 0, 0, nil, nil, nil)
 	s.Require().NoError(err, "GetModelStatsWithFilters account filter")
 	s.Require().Len(stats, 2)
 }

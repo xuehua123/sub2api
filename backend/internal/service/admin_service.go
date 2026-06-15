@@ -193,15 +193,18 @@ type AdminBoundAuthIdentityChannel struct {
 }
 
 type CreateGroupInput struct {
-	Name             string
-	Description      string
-	Platform         string
-	RateMultiplier   float64
-	IsExclusive      bool
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                 string
+	Description          string
+	Platform             string
+	RateMultiplier       float64
+	IsExclusive          bool
+	SubscriptionType     string // standard/subscription
+	BalanceEnabled       *bool
+	SubscriptionEnabled  *bool
+	PlanAutoGrantEnabled *bool
+	DailyLimitUSD        *float64 // 日限额 (USD)
+	WeeklyLimitUSD       *float64 // 周限额 (USD)
+	MonthlyLimitUSD      *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool
 	ImageRateIndependent bool
@@ -233,16 +236,19 @@ type CreateGroupInput struct {
 }
 
 type UpdateGroupInput struct {
-	Name             string
-	Description      *string
-	Platform         string
-	RateMultiplier   *float64 // 使用指针以支持设置为0
-	IsExclusive      *bool
-	Status           string
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                 string
+	Description          *string
+	Platform             string
+	RateMultiplier       *float64 // 使用指针以支持设置为0
+	IsExclusive          *bool
+	Status               string
+	SubscriptionType     string // standard/subscription
+	BalanceEnabled       *bool
+	SubscriptionEnabled  *bool
+	PlanAutoGrantEnabled *bool
+	DailyLimitUSD        *float64 // 日限额 (USD)
+	WeeklyLimitUSD       *float64 // 周限额 (USD)
+	MonthlyLimitUSD      *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration *bool
 	ImageRateIndependent *bool
@@ -419,6 +425,7 @@ type GenerateRedeemCodesInput struct {
 	Type         string
 	Value        float64
 	GroupID      *int64 // 订阅类型专用：关联的分组ID
+	PlanID       *int64 // 订阅权益 v2 套餐 ID
 	ValidityDays int    // 订阅类型专用：有效天数
 	ExpiresAt    *time.Time
 }
@@ -1784,6 +1791,26 @@ func defaultModelsListCandidateIDs(platform string) []string {
 	}
 }
 
+func resolveGroupCapabilities(subscriptionType string, isExclusive bool, status string, balanceInput, subscriptionInput, planAutoGrantInput *bool) (bool, bool, bool) {
+	balanceEnabled := subscriptionType == SubscriptionTypeStandard
+	subscriptionEnabled := subscriptionType == SubscriptionTypeSubscription
+	if balanceInput != nil {
+		balanceEnabled = *balanceInput
+	}
+	if subscriptionInput != nil {
+		subscriptionEnabled = *subscriptionInput
+	}
+
+	planAutoGrantEnabled := subscriptionEnabled && !isExclusive && status == StatusActive
+	if planAutoGrantInput != nil {
+		planAutoGrantEnabled = *planAutoGrantInput
+	}
+	if !subscriptionEnabled || isExclusive || status != StatusActive {
+		planAutoGrantEnabled = false
+	}
+	return balanceEnabled, subscriptionEnabled, planAutoGrantEnabled
+}
+
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
 	if input.RateMultiplier <= 0 {
 		return nil, errors.New("rate_multiplier must be > 0")
@@ -1798,6 +1825,14 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if subscriptionType == "" {
 		subscriptionType = SubscriptionTypeStandard
 	}
+	balanceEnabled, subscriptionEnabled, planAutoGrantEnabled := resolveGroupCapabilities(
+		subscriptionType,
+		input.IsExclusive,
+		StatusActive,
+		input.BalanceEnabled,
+		input.SubscriptionEnabled,
+		input.PlanAutoGrantEnabled,
+	)
 
 	// 限额字段：nil/负数 表示"无限制"，0 表示"不允许用量"，正数表示具体限额
 	dailyLimit := normalizeLimit(input.DailyLimitUSD)
@@ -1879,6 +1914,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
 		SubscriptionType:                subscriptionType,
+		BalanceEnabled:                  balanceEnabled,
+		SubscriptionEnabled:             subscriptionEnabled,
+		PlanAutoGrantEnabled:            planAutoGrantEnabled,
 		DailyLimitUSD:                   dailyLimit,
 		WeeklyLimitUSD:                  weeklyLimit,
 		MonthlyLimitUSD:                 monthlyLimit,
@@ -2056,6 +2094,14 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.SubscriptionType != "" {
 		group.SubscriptionType = input.SubscriptionType
 	}
+	group.BalanceEnabled, group.SubscriptionEnabled, group.PlanAutoGrantEnabled = resolveGroupCapabilities(
+		group.SubscriptionType,
+		group.IsExclusive,
+		group.Status,
+		input.BalanceEnabled,
+		input.SubscriptionEnabled,
+		input.PlanAutoGrantEnabled,
+	)
 	// 限额字段：nil/负数 表示"无限制"，0 表示"不允许用量"，正数表示具体限额
 	// 前端始终发送这三个字段，无需 nil 守卫
 	group.DailyLimitUSD = normalizeLimit(input.DailyLimitUSD)
@@ -3244,18 +3290,32 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 		return nil, ErrRedeemCodeExpired
 	}
 
-	// 如果是订阅类型，验证必须有 GroupID
+	// 如果是订阅类型，验证必须有 PlanID 或 GroupID
 	if input.Type == RedeemTypeSubscription {
-		if input.GroupID == nil {
-			return nil, errors.New("group_id is required for subscription type")
+		if input.GroupID == nil && input.PlanID == nil {
+			return nil, errors.New("plan_id or group_id is required for subscription type")
+		}
+		if input.GroupID != nil && input.PlanID != nil {
+			return nil, errors.New("plan_id and group_id cannot both be set for subscription type")
+		}
+		if input.PlanID != nil && *input.PlanID <= 0 {
+			return nil, errors.New("plan_id must be greater than zero")
+		}
+		if input.PlanID != nil && input.ValidityDays < 0 {
+			return nil, errors.New("plan subscription redeem code cannot reduce validity days")
 		}
 		// 验证分组存在且为订阅类型
-		group, err := s.groupRepo.GetByID(ctx, *input.GroupID)
-		if err != nil {
-			return nil, fmt.Errorf("group not found: %w", err)
-		}
-		if !group.IsSubscriptionType() {
-			return nil, errors.New("group must be subscription type")
+		if input.GroupID != nil {
+			if *input.GroupID <= 0 {
+				return nil, errors.New("group_id must be greater than zero")
+			}
+			group, err := s.groupRepo.GetByID(ctx, *input.GroupID)
+			if err != nil {
+				return nil, fmt.Errorf("group not found: %w", err)
+			}
+			if !group.IsSubscriptionType() {
+				return nil, errors.New("group must be subscription type")
+			}
 		}
 	}
 
@@ -3275,8 +3335,9 @@ func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *Gener
 		// 订阅类型专用字段
 		if input.Type == RedeemTypeSubscription {
 			code.GroupID = input.GroupID
+			code.PlanID = input.PlanID
 			code.ValidityDays = input.ValidityDays
-			if code.ValidityDays <= 0 {
+			if code.ValidityDays <= 0 && code.PlanID == nil {
 				code.ValidityDays = 30 // 默认30天
 			}
 		}

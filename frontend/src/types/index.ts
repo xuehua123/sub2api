@@ -529,6 +529,9 @@ export interface Group {
   is_exclusive: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd: number | null
   weekly_limit_usd: number | null
   monthly_limit_usd: number | null
@@ -551,6 +554,38 @@ export interface Group {
   require_privacy_set: boolean
   created_at: string
   updated_at: string
+}
+
+export interface AvailableGroupEntitlement {
+  id: number
+  name: string
+  plan_id?: number | null
+  primary_group_id?: number | null
+  starts_at: string
+  expires_at: string
+  purchase_price?: number | null
+  purchase_currency?: string | null
+  quota_usd?: number | null
+  quota_period?: 'daily' | 'weekly' | 'monthly' | string | null
+  unit_cost_per_usd?: number | null
+  overage_policy?: string | null
+}
+
+export interface AvailableGroupAccessSource {
+  type: 'balance' | 'entitlement' | string
+  label?: string | null
+  name?: string | null
+  entitlement_id?: number | null
+  plan_id?: number | null
+  overage_policy?: string | null
+  expires_at?: string | null
+  disabled?: boolean
+  unavailable_reason?: string | null
+}
+
+export interface AvailableGroup extends Group {
+  entitlements?: AvailableGroupEntitlement[]
+  access_sources?: AvailableGroupAccessSource[]
 }
 
 export interface AdminGroup extends Group {
@@ -589,6 +624,8 @@ export interface ApiKey {
   key: string
   name: string
   group_id: number | null
+  subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement' | string
   auto_switch_group_enabled: boolean
   status: 'active' | 'inactive' | 'quota_exhausted' | 'expired'
   ip_whitelist: string[]
@@ -617,6 +654,8 @@ export interface ApiKey {
 export interface CreateApiKeyRequest {
   name: string
   group_id?: number | null
+  subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement'
   auto_switch_group_enabled?: boolean
   custom_key?: string // Optional custom API Key
   ip_whitelist?: string[]
@@ -631,6 +670,8 @@ export interface CreateApiKeyRequest {
 export interface UpdateApiKeyRequest {
   name?: string
   group_id?: number | null
+  subscription_entitlement_id?: number | null
+  access_source?: 'balance' | 'entitlement'
   auto_switch_group_enabled?: boolean
   status?: 'active' | 'inactive'
   ip_whitelist?: string[]
@@ -651,6 +692,9 @@ export interface CreateGroupRequest {
   rate_multiplier?: number
   is_exclusive?: boolean
   subscription_type?: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -686,6 +730,9 @@ export interface UpdateGroupRequest {
   is_exclusive?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
+  balance_enabled?: boolean
+  subscription_enabled?: boolean
+  plan_auto_grant_enabled?: boolean
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
@@ -1229,6 +1276,11 @@ export interface CodexSessionImportResult {
 
 export type RedeemCodeType = 'balance' | 'concurrency' | 'subscription' | 'invitation'
 export type UsageRequestType = 'unknown' | 'sync' | 'stream' | 'ws_v2'
+export type UsageBillingSource =
+  | 'balance'
+  | 'legacy_subscription'
+  | 'entitlement_quota'
+  | 'entitlement_balance_fallback'
 export type ImageSizeSource = 'output' | 'input' | 'default' | 'legacy'
 export type ImageSizeBreakdown = Record<string, number>
 
@@ -1246,6 +1298,7 @@ export interface UsageLog {
 
   group_id: number | null
   subscription_id: number | null
+  entitlement_id?: number | null
 
   input_tokens: number
   output_tokens: number
@@ -1262,6 +1315,7 @@ export interface UsageLog {
   actual_cost: number
   rate_multiplier: number
   billing_type: number
+  billing_source?: UsageBillingSource | null
 
   request_type?: UsageRequestType
   stream: boolean
@@ -1599,6 +1653,50 @@ export interface UserSubscription {
   expires_at: string | null
   user?: User
   group?: Group
+  entitlement_id?: number
+  plan_id?: number | null
+  groups?: UserEntitlementGroup[]
+  overage_policy?: 'block' | 'balance_fallback' | string
+}
+
+export interface UserEntitlementGroup {
+  id: number
+  name: string
+  platform: GroupPlatform | string
+  rate_multiplier: number
+}
+
+export interface UserEntitlement {
+  id: number
+  plan_id: number | null
+  plan_name: string
+  name: string
+  status: string
+  starts_at: string
+  expires_at: string
+  groups: UserEntitlementGroup[]
+  daily_limit_usd: number | null
+  daily_usage_usd: number
+  daily_window_start: string | null
+  daily_resets_at: string | null
+  daily_resets_in_seconds: number | null
+  weekly_limit_usd: number | null
+  weekly_usage_usd: number
+  weekly_window_start: string | null
+  weekly_resets_at: string | null
+  weekly_resets_in_seconds: number | null
+  monthly_limit_usd: number | null
+  monthly_usage_usd: number
+  monthly_window_start: string | null
+  monthly_resets_at: string | null
+  monthly_resets_in_seconds: number | null
+  overage_policy: 'block' | 'balance_fallback' | string
+  legacy_subscription_id: number | null
+  purchase_price: number | null
+  purchase_currency: string
+  quota_usd: number | null
+  quota_period: 'daily' | 'weekly' | 'monthly' | string
+  unit_cost_per_usd: number | null
 }
 
 export interface SubscriptionProgress {
@@ -1641,9 +1739,20 @@ export interface AdvanceMonthlyCycleResult {
   new_monthly_window_start: string
 }
 
+export interface AdvanceEntitlementMonthlyCycleResult {
+  entitlement: UserEntitlement
+  previous_expires_at: string
+  new_expires_at: string
+  deducted_days: number
+  deducted_seconds: number
+  previous_monthly_usage_usd: number
+  new_monthly_window_start: string
+}
+
 export interface AssignSubscriptionRequest {
   user_id: number
   group_id: number
+  plan_id?: number
   validity_days?: number
 }
 
@@ -1696,6 +1805,7 @@ export interface UsageQueryParams {
   user_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string
   request_type?: UsageRequestType
   stream?: boolean

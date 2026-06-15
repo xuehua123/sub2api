@@ -31,7 +31,7 @@ func (s *dailyUsageRepoStub) GetUsageTrendWithFilters(
 	ctx context.Context,
 	startTime, endTime time.Time,
 	granularity string,
-	userID, apiKeyID, accountID, groupID int64,
+	userID, apiKeyID, accountID, groupID, entitlementID int64,
 	model string,
 	requestType *int16,
 	stream *bool,

@@ -43,6 +43,10 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'admin.usage.billingSource.balance': 'Balance',
+  'admin.usage.billingSource.legacy_subscription': 'Legacy Subscription',
+  'admin.usage.billingSource.entitlement_quota': 'Entitlement Quota',
+  'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
 }
 
 vi.mock('vue-i18n', async () => {
@@ -61,7 +65,9 @@ const DataTableStub = {
     <div>
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-entitlement_id" :row="row" :value="row.entitlement_id" />
         <slot name="cell-billing_mode" :row="row" />
+        <slot name="cell-billing_source" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
       </div>
@@ -200,6 +206,82 @@ describe('admin UsageTable tooltip', () => {
     expect(text).toContain('claude-sonnet-4-20250514')
   })
 
+  it('renders entitlement id and billing source labels for entitlement usage', () => {
+    const row = {
+      request_id: 'req-admin-entitlement-1',
+      model: 'claude-3',
+      entitlement_id: 88,
+      billing_source: 'entitlement_balance_fallback',
+      actual_cost: 0,
+      total_cost: 0,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0,
+      output_cost: 0,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 1,
+      output_tokens: 1,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('#88')
+    expect(text).toContain('Entitlement Overage Balance Fallback')
+  })
+
+  it('renders legacy usage without entitlement fields as placeholders', () => {
+    const row = {
+      request_id: 'req-admin-legacy-1',
+      model: 'claude-3',
+      actual_cost: 0,
+      total_cost: 0,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0,
+      output_cost: 0,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 1,
+      output_tokens: 1,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).not.toContain('Entitlement Quota')
+    expect(text).toContain('-')
+  })
+
   it.each([
     {
       name: 'defaulted row',
@@ -331,7 +413,9 @@ const DataTableStubWithUser = {
       <div v-for="row in data" :key="row.request_id">
         <slot name="cell-user" :row="row" />
         <slot name="cell-model" :row="row" :value="row.model" />
+        <slot name="cell-entitlement_id" :row="row" :value="row.entitlement_id" />
         <slot name="cell-billing_mode" :row="row" />
+        <slot name="cell-billing_source" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
       </div>

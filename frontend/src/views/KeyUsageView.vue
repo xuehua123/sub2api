@@ -533,6 +533,10 @@ const RING_GRADIENTS = [
 
 const ringAnimated = ref(false)
 const displayPcts = ref<number[]>([])
+let ringAnimationFrameID: number | null = null
+let ringTickFrameID: number | null = null
+let ringAnimationTimer: ReturnType<typeof setTimeout> | null = null
+let isUnmounted = false
 
 const ringTrackColor = computed(() => isDark.value ? '#222222' : '#F0F0EE')
 
@@ -551,13 +555,49 @@ function getRingOffset(ring: RingItem): number {
   return CIRCUMFERENCE - (Math.min(ring.pct, 100) / 100) * CIRCUMFERENCE
 }
 
+function scheduleRingFrame(callback: (time: number) => void): number {
+  if (typeof window.requestAnimationFrame === 'function') {
+    return window.requestAnimationFrame(callback)
+  }
+  return window.setTimeout(() => callback(performance.now()), 16)
+}
+
+function cancelRingFrame(id: number) {
+  if (typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(id)
+    return
+  }
+  window.clearTimeout(id)
+}
+
+function clearRingAnimationHandles() {
+  if (ringAnimationFrameID !== null) {
+    cancelRingFrame(ringAnimationFrameID)
+    ringAnimationFrameID = null
+  }
+  if (ringTickFrameID !== null) {
+    cancelRingFrame(ringTickFrameID)
+    ringTickFrameID = null
+  }
+  if (ringAnimationTimer !== null) {
+    clearTimeout(ringAnimationTimer)
+    ringAnimationTimer = null
+  }
+}
+
 function triggerRingAnimation(items: RingItem[]) {
+  clearRingAnimationHandles()
   ringAnimated.value = false
   displayPcts.value = items.map(() => 0)
 
   nextTick(() => {
-    requestAnimationFrame(() => {
-      setTimeout(() => {
+    if (isUnmounted) return
+    ringAnimationFrameID = scheduleRingFrame(() => {
+      ringAnimationFrameID = null
+      if (isUnmounted) return
+      ringAnimationTimer = setTimeout(() => {
+        ringAnimationTimer = null
+        if (isUnmounted) return
         ringAnimated.value = true
 
         // Animate percentage numbers
@@ -566,13 +606,15 @@ function triggerRingAnimation(items: RingItem[]) {
         const targets = items.map(item => item.isBalance ? 0 : item.pct)
 
         function tick() {
+          if (isUnmounted) return
+          ringTickFrameID = null
           const elapsed = performance.now() - startTime
           const p = Math.min(elapsed / duration, 1)
           const ease = 1 - Math.pow(1 - p, 3)
           displayPcts.value = targets.map(target => Math.round(ease * target))
-          if (p < 1) requestAnimationFrame(tick)
+          if (p < 1) ringTickFrameID = scheduleRingFrame(tick)
         }
-        requestAnimationFrame(tick)
+        ringTickFrameID = scheduleRingFrame(tick)
       }, 50)
     })
   })
@@ -925,6 +967,7 @@ function formatResetTime(resetAt: string | null | undefined): string {
 }
 
 onMounted(() => {
+  isUnmounted = false
   initTheme()
   if (!appStore.publicSettingsLoaded) {
     appStore.fetchPublicSettings()
@@ -933,6 +976,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  isUnmounted = true
+  clearRingAnimationHandles()
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>

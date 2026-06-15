@@ -44,6 +44,13 @@ func (APIKey) Fields() []ent.Field {
 		field.Int64("group_id").
 			Optional().
 			Nillable(),
+		field.Int64("subscription_entitlement_id").
+			Optional().
+			Nillable(),
+		field.String("access_source").
+			MaxLen(32).
+			Default("balance").
+			Comment("API key access source: balance or entitlement"),
 		field.Bool("auto_switch_group_enabled").
 			Default(true).
 			Comment("Automatically switch to another usable subscription group when the current subscription quota is exhausted"),
@@ -132,6 +139,10 @@ func (APIKey) Edges() []ent.Edge {
 			Ref("api_keys").
 			Field("group_id").
 			Unique(),
+		edge.From("subscription_entitlement", SubscriptionEntitlement.Type).
+			Ref("api_keys").
+			Field("subscription_entitlement_id").
+			Unique(),
 		edge.To("usage_logs", UsageLog.Type),
 	}
 }
@@ -141,6 +152,8 @@ func (APIKey) Indexes() []ent.Index {
 		// key 字段已在 Fields() 中声明 Unique()，无需重复索引
 		index.Fields("user_id"),
 		index.Fields("group_id"),
+		index.Fields("subscription_entitlement_id"),
+		index.Fields("access_source"),
 		index.Fields("status"),
 		index.Fields("deleted_at"),
 		index.Fields("last_used_at"),

@@ -73,6 +73,16 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 		return
 	}
 
+	if h.subscriptionService.ShouldUseSubscriptionEntitlementAliases(c.Request.Context()) {
+		entitlements, err := h.subscriptionService.ListUserSubscriptionEntitlementAliases(c.Request.Context(), subject.UserID)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
+		return
+	}
+
 	subscriptions, err := h.subscriptionService.ListUserSubscriptions(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -92,6 +102,16 @@ func (h *SubscriptionHandler) GetActive(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not found in context")
+		return
+	}
+
+	if h.subscriptionService.ShouldUseSubscriptionEntitlementAliases(c.Request.Context()) {
+		entitlements, err := h.subscriptionService.ListActiveUserSubscriptionEntitlementAliases(c.Request.Context(), subject.UserID, time.Now())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Success(c, dto.UserSubscriptionAliasesFromEntitlements(entitlements))
 		return
 	}
 
@@ -169,6 +189,24 @@ func (h *SubscriptionHandler) AdvanceMonthlyCycle(c *gin.Context) {
 		return
 	}
 	response.Success(c, advanceMonthlyCycleResponseFromService(result))
+}
+
+func (h *SubscriptionHandler) Delete(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || subscriptionID <= 0 {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+	if err := h.subscriptionService.RevokeUserSubscription(c.Request.Context(), subject.UserID, subscriptionID); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"success": true})
 }
 
 func advanceMonthlyCycleResponseFromService(result *service.AdvanceMonthlyCycleResult) *AdvanceMonthlyCycleResponse {

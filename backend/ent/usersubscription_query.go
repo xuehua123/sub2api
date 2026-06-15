@@ -15,6 +15,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -23,15 +24,16 @@ import (
 // UserSubscriptionQuery is the builder for querying UserSubscription entities.
 type UserSubscriptionQuery struct {
 	config
-	ctx                *QueryContext
-	order              []usersubscription.OrderOption
-	inters             []Interceptor
-	predicates         []predicate.UserSubscription
-	withUser           *UserQuery
-	withGroup          *GroupQuery
-	withAssignedByUser *UserQuery
-	withUsageLogs      *UsageLogQuery
-	modifiers          []func(*sql.Selector)
+	ctx                   *QueryContext
+	order                 []usersubscription.OrderOption
+	inters                []Interceptor
+	predicates            []predicate.UserSubscription
+	withUser              *UserQuery
+	withGroup             *GroupQuery
+	withAssignedByUser    *UserQuery
+	withLegacyEntitlement *SubscriptionEntitlementQuery
+	withUsageLogs         *UsageLogQuery
+	modifiers             []func(*sql.Selector)
 	// intermediate query (i.e. traversal path).
 	sql  *sql.Selector
 	path func(context.Context) (*sql.Selector, error)
@@ -127,6 +129,28 @@ func (_q *UserSubscriptionQuery) QueryAssignedByUser() *UserQuery {
 			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
 			sqlgraph.To(user.Table, user.FieldID),
 			sqlgraph.Edge(sqlgraph.M2O, true, usersubscription.AssignedByUserTable, usersubscription.AssignedByUserColumn),
+		)
+		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
+		return fromU, nil
+	}
+	return query
+}
+
+// QueryLegacyEntitlement chains the current query on the "legacy_entitlement" edge.
+func (_q *UserSubscriptionQuery) QueryLegacyEntitlement() *SubscriptionEntitlementQuery {
+	query := (&SubscriptionEntitlementClient{config: _q.config}).Query()
+	query.path = func(ctx context.Context) (fromU *sql.Selector, err error) {
+		if err := _q.prepareQuery(ctx); err != nil {
+			return nil, err
+		}
+		selector := _q.sqlQuery(ctx)
+		if err := selector.Err(); err != nil {
+			return nil, err
+		}
+		step := sqlgraph.NewStep(
+			sqlgraph.From(usersubscription.Table, usersubscription.FieldID, selector),
+			sqlgraph.To(subscriptionentitlement.Table, subscriptionentitlement.FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, false, usersubscription.LegacyEntitlementTable, usersubscription.LegacyEntitlementColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil
@@ -343,15 +367,16 @@ func (_q *UserSubscriptionQuery) Clone() *UserSubscriptionQuery {
 		return nil
 	}
 	return &UserSubscriptionQuery{
-		config:             _q.config,
-		ctx:                _q.ctx.Clone(),
-		order:              append([]usersubscription.OrderOption{}, _q.order...),
-		inters:             append([]Interceptor{}, _q.inters...),
-		predicates:         append([]predicate.UserSubscription{}, _q.predicates...),
-		withUser:           _q.withUser.Clone(),
-		withGroup:          _q.withGroup.Clone(),
-		withAssignedByUser: _q.withAssignedByUser.Clone(),
-		withUsageLogs:      _q.withUsageLogs.Clone(),
+		config:                _q.config,
+		ctx:                   _q.ctx.Clone(),
+		order:                 append([]usersubscription.OrderOption{}, _q.order...),
+		inters:                append([]Interceptor{}, _q.inters...),
+		predicates:            append([]predicate.UserSubscription{}, _q.predicates...),
+		withUser:              _q.withUser.Clone(),
+		withGroup:             _q.withGroup.Clone(),
+		withAssignedByUser:    _q.withAssignedByUser.Clone(),
+		withLegacyEntitlement: _q.withLegacyEntitlement.Clone(),
+		withUsageLogs:         _q.withUsageLogs.Clone(),
 		// clone intermediate query.
 		sql:  _q.sql.Clone(),
 		path: _q.path,
@@ -388,6 +413,17 @@ func (_q *UserSubscriptionQuery) WithAssignedByUser(opts ...func(*UserQuery)) *U
 		opt(query)
 	}
 	_q.withAssignedByUser = query
+	return _q
+}
+
+// WithLegacyEntitlement tells the query-builder to eager-load the nodes that are connected to
+// the "legacy_entitlement" edge. The optional arguments are used to configure the query builder of the edge.
+func (_q *UserSubscriptionQuery) WithLegacyEntitlement(opts ...func(*SubscriptionEntitlementQuery)) *UserSubscriptionQuery {
+	query := (&SubscriptionEntitlementClient{config: _q.config}).Query()
+	for _, opt := range opts {
+		opt(query)
+	}
+	_q.withLegacyEntitlement = query
 	return _q
 }
 
@@ -480,10 +516,11 @@ func (_q *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook)
 	var (
 		nodes       = []*UserSubscription{}
 		_spec       = _q.querySpec()
-		loadedTypes = [4]bool{
+		loadedTypes = [5]bool{
 			_q.withUser != nil,
 			_q.withGroup != nil,
 			_q.withAssignedByUser != nil,
+			_q.withLegacyEntitlement != nil,
 			_q.withUsageLogs != nil,
 		}
 	)
@@ -523,6 +560,15 @@ func (_q *UserSubscriptionQuery) sqlAll(ctx context.Context, hooks ...queryHook)
 	if query := _q.withAssignedByUser; query != nil {
 		if err := _q.loadAssignedByUser(ctx, query, nodes, nil,
 			func(n *UserSubscription, e *User) { n.Edges.AssignedByUser = e }); err != nil {
+			return nil, err
+		}
+	}
+	if query := _q.withLegacyEntitlement; query != nil {
+		if err := _q.loadLegacyEntitlement(ctx, query, nodes,
+			func(n *UserSubscription) { n.Edges.LegacyEntitlement = []*SubscriptionEntitlement{} },
+			func(n *UserSubscription, e *SubscriptionEntitlement) {
+				n.Edges.LegacyEntitlement = append(n.Edges.LegacyEntitlement, e)
+			}); err != nil {
 			return nil, err
 		}
 	}
@@ -623,6 +669,39 @@ func (_q *UserSubscriptionQuery) loadAssignedByUser(ctx context.Context, query *
 		for i := range nodes {
 			assign(nodes[i], n)
 		}
+	}
+	return nil
+}
+func (_q *UserSubscriptionQuery) loadLegacyEntitlement(ctx context.Context, query *SubscriptionEntitlementQuery, nodes []*UserSubscription, init func(*UserSubscription), assign func(*UserSubscription, *SubscriptionEntitlement)) error {
+	fks := make([]driver.Value, 0, len(nodes))
+	nodeids := make(map[int64]*UserSubscription)
+	for i := range nodes {
+		fks = append(fks, nodes[i].ID)
+		nodeids[nodes[i].ID] = nodes[i]
+		if init != nil {
+			init(nodes[i])
+		}
+	}
+	if len(query.ctx.Fields) > 0 {
+		query.ctx.AppendFieldOnce(subscriptionentitlement.FieldLegacySubscriptionID)
+	}
+	query.Where(predicate.SubscriptionEntitlement(func(s *sql.Selector) {
+		s.Where(sql.InValues(s.C(usersubscription.LegacyEntitlementColumn), fks...))
+	}))
+	neighbors, err := query.All(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range neighbors {
+		fk := n.LegacySubscriptionID
+		if fk == nil {
+			return fmt.Errorf(`foreign-key "legacy_subscription_id" is nil for node %v`, n.ID)
+		}
+		node, ok := nodeids[*fk]
+		if !ok {
+			return fmt.Errorf(`unexpected referenced foreign-key "legacy_subscription_id" returned %v for node %v`, *fk, n.ID)
+		}
+		assign(node, n)
 	}
 	return nil
 }

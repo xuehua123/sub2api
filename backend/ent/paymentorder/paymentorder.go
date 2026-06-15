@@ -48,6 +48,8 @@ const (
 	FieldPlanID = "plan_id"
 	// FieldSubscriptionGroupID holds the string denoting the subscription_group_id field in the database.
 	FieldSubscriptionGroupID = "subscription_group_id"
+	// FieldSubscriptionEntitlementID holds the string denoting the subscription_entitlement_id field in the database.
+	FieldSubscriptionEntitlementID = "subscription_entitlement_id"
 	// FieldSubscriptionDays holds the string denoting the subscription_days field in the database.
 	FieldSubscriptionDays = "subscription_days"
 	// FieldProviderInstanceID holds the string denoting the provider_instance_id field in the database.
@@ -94,6 +96,8 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// EdgeUser holds the string denoting the user edge name in mutations.
 	EdgeUser = "user"
+	// EdgeSubscriptionEntitlement holds the string denoting the subscription_entitlement edge name in mutations.
+	EdgeSubscriptionEntitlement = "subscription_entitlement"
 	// Table holds the table name of the paymentorder in the database.
 	Table = "payment_orders"
 	// UserTable is the table that holds the user relation/edge.
@@ -103,6 +107,13 @@ const (
 	UserInverseTable = "users"
 	// UserColumn is the table column denoting the user relation/edge.
 	UserColumn = "user_id"
+	// SubscriptionEntitlementTable is the table that holds the subscription_entitlement relation/edge.
+	SubscriptionEntitlementTable = "payment_orders"
+	// SubscriptionEntitlementInverseTable is the table name for the SubscriptionEntitlement entity.
+	// It exists in this package in order to avoid circular dependency with the "subscriptionentitlement" package.
+	SubscriptionEntitlementInverseTable = "subscription_entitlements"
+	// SubscriptionEntitlementColumn is the table column denoting the subscription_entitlement relation/edge.
+	SubscriptionEntitlementColumn = "subscription_entitlement_id"
 )
 
 // Columns holds all SQL columns for paymentorder fields.
@@ -125,6 +136,7 @@ var Columns = []string{
 	FieldOrderType,
 	FieldPlanID,
 	FieldSubscriptionGroupID,
+	FieldSubscriptionEntitlementID,
 	FieldSubscriptionDays,
 	FieldProviderInstanceID,
 	FieldProviderKey,
@@ -299,6 +311,11 @@ func BySubscriptionGroupID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionGroupID, opts...).ToFunc()
 }
 
+// BySubscriptionEntitlementID orders the results by the subscription_entitlement_id field.
+func BySubscriptionEntitlementID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldSubscriptionEntitlementID, opts...).ToFunc()
+}
+
 // BySubscriptionDays orders the results by the subscription_days field.
 func BySubscriptionDays(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionDays, opts...).ToFunc()
@@ -410,10 +427,24 @@ func ByUserField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newUserStep(), sql.OrderByField(field, opts...))
 	}
 }
+
+// BySubscriptionEntitlementField orders the results by subscription_entitlement field.
+func BySubscriptionEntitlementField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newSubscriptionEntitlementStep(), sql.OrderByField(field, opts...))
+	}
+}
 func newUserStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UserInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, UserTable, UserColumn),
+	)
+}
+func newSubscriptionEntitlementStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(SubscriptionEntitlementInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.M2O, true, SubscriptionEntitlementTable, SubscriptionEntitlementColumn),
 	)
 }

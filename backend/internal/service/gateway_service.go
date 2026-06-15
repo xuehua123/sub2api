@@ -8318,19 +8318,21 @@ func (s *GatewayService) getUserGroupRateMultiplier(ctx context.Context, userID,
 // RecordUsageInput 记录使用量的输入参数。
 // 异步 worker 只接收计费所需快照，不能持有 ParsedRequest/RequestBodyRef 这类大请求体引用。
 type RecordUsageInput struct {
-	Result             *ForwardResult
-	APIKey             *APIKey
-	User               *User
-	Account            *Account
-	Subscription       *UserSubscription  // 可选：订阅信息
-	InboundEndpoint    string             // 入站端点（客户端请求路径）
-	UpstreamEndpoint   string             // 上游端点（标准化后的上游路径）
-	UserAgent          string             // 请求的 User-Agent
-	IPAddress          string             // 请求的客户端 IP 地址
-	RequestPayloadHash string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
-	ForceCacheBilling  bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
-	APIKeyService      APIKeyQuotaUpdater // 可选：用于更新API Key配额
-	QuotaPlatform      string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
+	Result                     *ForwardResult
+	APIKey                     *APIKey
+	User                       *User
+	Account                    *Account
+	Subscription               *UserSubscription // 可选：订阅信息
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	InboundEndpoint            string             // 入站端点（客户端请求路径）
+	UpstreamEndpoint           string             // 上游端点（标准化后的上游路径）
+	UserAgent                  string             // 请求的 User-Agent
+	IPAddress                  string             // 请求的客户端 IP 地址
+	RequestPayloadHash         string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
+	ForceCacheBilling          bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
+	APIKeyService              APIKeyQuotaUpdater // 可选：用于更新API Key配额
+	QuotaPlatform              string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -8351,16 +8353,18 @@ type usageLogBestEffortWriter interface {
 
 // postUsageBillingParams 统一扣费所需的参数
 type postUsageBillingParams struct {
-	Cost                  *CostBreakdown
-	User                  *User
-	APIKey                *APIKey
-	Account               *Account
-	Subscription          *UserSubscription
-	RequestPayloadHash    string
-	IsSubscriptionBill    bool
-	AccountRateMultiplier float64
-	APIKeyService         APIKeyQuotaUpdater
-	Platform              string // 来自 APIKey 关联 Group 的平台标识
+	Cost                       *CostBreakdown
+	User                       *User
+	APIKey                     *APIKey
+	Account                    *Account
+	Subscription               *UserSubscription
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	RequestPayloadHash         string
+	IsSubscriptionBill         bool
+	AccountRateMultiplier      float64
+	APIKeyService              APIKeyQuotaUpdater
+	Platform                   string // 来自 APIKey 关联 Group 的平台标识
 }
 
 // PlatformFromAPIKey 从 APIKey 关联的 Group 推导 platform 名称。
@@ -8411,7 +8415,7 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	if p.IsSubscriptionBill {
 		// Subscription usage tracked by ActualCost so group rate multiplier
 		// consumes the quota at the expected speed.
-		if cost.ActualCost > 0 {
+		if p.Subscription != nil && cost.ActualCost > 0 {
 			if err := deps.userSubRepo.IncrementUsage(billingCtx, p.Subscription.ID, cost.ActualCost); err != nil {
 				slog.Error("increment subscription usage failed", "subscription_id", p.Subscription.ID, "error", err)
 			}
@@ -8523,13 +8527,26 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		if usageLog.SubscriptionID != nil {
 			cmd.SubscriptionID = usageLog.SubscriptionID
 		}
+		if usageLog.EntitlementID != nil {
+			cmd.EntitlementID = usageLog.EntitlementID
+		}
+	}
+	if p.Entitlement != nil && p.Entitlement.ID > 0 {
+		entitlementID := p.Entitlement.ID
+		cmd.EntitlementID = &entitlementID
+		cmd.EntitlementBalanceFallback = p.EntitlementBalanceFallback
 	}
 
 	// Record subscription / balance cost using ActualCost so the group (and any
 	// user-specific) rate multiplier consumes subscription quota at the expected
 	// speed. TotalCost remains the raw (pre-multiplier) value; downstream guards
 	// on "> 0" still correctly skip free subscriptions (RateMultiplier == 0).
-	if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
+	if p.IsSubscriptionBill && p.Entitlement != nil && p.Cost.TotalCost > 0 {
+		entitlementID := p.Entitlement.ID
+		cmd.EntitlementID = &entitlementID
+		cmd.EntitlementBalanceFallback = p.EntitlementBalanceFallback
+		cmd.SubscriptionCost = p.Cost.ActualCost
+	} else if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
 		cmd.SubscriptionID = &p.Subscription.ID
 		cmd.SubscriptionCost = p.Cost.ActualCost
 	} else if p.Cost.ActualCost > 0 {
@@ -8550,15 +8567,15 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 	return cmd
 }
 
-func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (bool, error) {
+func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog, p *postUsageBillingParams, deps *billingDeps, repo UsageBillingRepository) (*UsageBillingApplyResult, error) {
 	if p == nil || deps == nil {
-		return false, nil
+		return nil, nil
 	}
 
 	cmd := buildUsageBillingCommand(requestID, usageLog, p)
 	if cmd == nil || cmd.RequestID == "" || repo == nil {
 		postUsageBilling(ctx, p, deps)
-		return true, nil
+		return nil, nil
 	}
 
 	billingCtx, cancel := detachedBillingContext(ctx)
@@ -8566,12 +8583,12 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 
 	result, err := repo.Apply(billingCtx, cmd)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	if result == nil || !result.Applied {
 		deps.deferredService.ScheduleLastUsedUpdate(p.Account.ID)
-		return false, nil
+		return result, nil
 	}
 
 	if result.APIKeyQuotaExhausted {
@@ -8581,7 +8598,7 @@ func applyUsageBilling(ctx context.Context, requestID string, usageLog *UsageLog
 	}
 
 	finalizePostUsageBilling(billingCtx, p, deps, result)
-	return true, nil
+	return result, nil
 }
 
 func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *billingDeps, result *UsageBillingApplyResult) {
@@ -8589,12 +8606,12 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 		return
 	}
 
-	if p.IsSubscriptionBill {
+	if usageBillingAppliedBalanceDeduction(p, result) {
+		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
+	} else if p.IsSubscriptionBill && p.Subscription != nil {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsageWithVersion(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost, result.SubscriptionVersion)
 		}
-	} else if p.Cost.ActualCost > 0 && p.User != nil {
-		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
 	}
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {
@@ -8652,11 +8669,12 @@ func notifyBalanceLow(p *postUsageBillingParams, deps *billingDeps, result *Usag
 			slog.Error("panic in notifyBalanceLow", "recover", r)
 		}
 	}()
-	if p.IsSubscriptionBill || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
+	if !usageBillingAppliedBalanceDeduction(p, result) || deps.balanceNotifyService == nil {
 		slog.Debug("notifyBalanceLow: skipped",
-			"is_subscription", p.IsSubscriptionBill,
-			"actual_cost", p.Cost.ActualCost,
-			"user_nil", p.User == nil,
+			"is_subscription", p != nil && p.IsSubscriptionBill,
+			"actual_cost", usageBillingActualCost(p),
+			"user_nil", p == nil || p.User == nil,
+			"balance_deduction", usageBillingAppliedBalanceDeduction(p, result),
 			"service_nil", deps.balanceNotifyService == nil,
 		)
 		return
@@ -8682,6 +8700,23 @@ func resolveOldBalance(p *postUsageBillingParams, result *UsageBillingApplyResul
 	}
 	// Legacy fallback: snapshot balance from request context
 	return p.User.Balance
+}
+
+func usageBillingAppliedBalanceDeduction(p *postUsageBillingParams, result *UsageBillingApplyResult) bool {
+	if p == nil || p.Cost == nil || p.Cost.ActualCost <= 0 || p.User == nil {
+		return false
+	}
+	if !p.IsSubscriptionBill {
+		return true
+	}
+	return result != nil && result.NewBalance != nil
+}
+
+func usageBillingActualCost(p *postUsageBillingParams) float64 {
+	if p == nil || p.Cost == nil {
+		return 0
+	}
+	return p.Cost.ActualCost
 }
 
 // notifyAccountQuota sends account quota threshold notification after increment.
@@ -8800,40 +8835,44 @@ type recordUsageOpts struct {
 // RecordUsage 记录使用量并扣费（或更新订阅用量）
 func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInput) error {
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
-		Result:             input.Result,
-		APIKey:             input.APIKey,
-		User:               input.User,
-		Account:            input.Account,
-		Subscription:       input.Subscription,
-		InboundEndpoint:    input.InboundEndpoint,
-		UpstreamEndpoint:   input.UpstreamEndpoint,
-		UserAgent:          input.UserAgent,
-		IPAddress:          input.IPAddress,
-		RequestPayloadHash: input.RequestPayloadHash,
-		ForceCacheBilling:  input.ForceCacheBilling,
-		APIKeyService:      input.APIKeyService,
-		QuotaPlatform:      input.QuotaPlatform,
-		ChannelUsageFields: input.ChannelUsageFields,
+		Result:                     input.Result,
+		APIKey:                     input.APIKey,
+		User:                       input.User,
+		Account:                    input.Account,
+		Subscription:               input.Subscription,
+		Entitlement:                input.Entitlement,
+		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		InboundEndpoint:            input.InboundEndpoint,
+		UpstreamEndpoint:           input.UpstreamEndpoint,
+		UserAgent:                  input.UserAgent,
+		IPAddress:                  input.IPAddress,
+		RequestPayloadHash:         input.RequestPayloadHash,
+		ForceCacheBilling:          input.ForceCacheBilling,
+		APIKeyService:              input.APIKeyService,
+		QuotaPlatform:              input.QuotaPlatform,
+		ChannelUsageFields:         input.ChannelUsageFields,
 	}, &recordUsageOpts{})
 }
 
 // RecordUsageLongContextInput 记录使用量的输入参数（支持长上下文双倍计费）
 type RecordUsageLongContextInput struct {
-	Result                *ForwardResult
-	APIKey                *APIKey
-	User                  *User
-	Account               *Account
-	Subscription          *UserSubscription  // 可选：订阅信息
-	InboundEndpoint       string             // 入站端点（客户端请求路径）
-	UpstreamEndpoint      string             // 上游端点（标准化后的上游路径）
-	UserAgent             string             // 请求的 User-Agent
-	IPAddress             string             // 请求的客户端 IP 地址
-	RequestPayloadHash    string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
-	LongContextThreshold  int                // 长上下文阈值（如 200000）
-	LongContextMultiplier float64            // 超出阈值部分的倍率（如 2.0）
-	ForceCacheBilling     bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
-	APIKeyService         APIKeyQuotaUpdater // API Key 配额服务（可选）
-	QuotaPlatform         string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
+	Result                     *ForwardResult
+	APIKey                     *APIKey
+	User                       *User
+	Account                    *Account
+	Subscription               *UserSubscription // 可选：订阅信息
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	InboundEndpoint            string             // 入站端点（客户端请求路径）
+	UpstreamEndpoint           string             // 上游端点（标准化后的上游路径）
+	UserAgent                  string             // 请求的 User-Agent
+	IPAddress                  string             // 请求的客户端 IP 地址
+	RequestPayloadHash         string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
+	LongContextThreshold       int                // 长上下文阈值（如 200000）
+	LongContextMultiplier      float64            // 超出阈值部分的倍率（如 2.0）
+	ForceCacheBilling          bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
+	APIKeyService              APIKeyQuotaUpdater // API Key 配额服务（可选）
+	QuotaPlatform              string             // user×platform 配额计量平台：handler 在请求 ctx 内经 QuotaPlatform() 算定后传入（后扣运行在 worker 池 background ctx 上，取不到 ForcePlatform）
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -8841,20 +8880,22 @@ type RecordUsageLongContextInput struct {
 // RecordUsageWithLongContext 记录使用量并扣费，支持长上下文双倍计费（用于 Gemini）
 func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *RecordUsageLongContextInput) error {
 	return s.recordUsageCore(ctx, &recordUsageCoreInput{
-		Result:             input.Result,
-		APIKey:             input.APIKey,
-		User:               input.User,
-		Account:            input.Account,
-		Subscription:       input.Subscription,
-		InboundEndpoint:    input.InboundEndpoint,
-		UpstreamEndpoint:   input.UpstreamEndpoint,
-		UserAgent:          input.UserAgent,
-		IPAddress:          input.IPAddress,
-		RequestPayloadHash: input.RequestPayloadHash,
-		ForceCacheBilling:  input.ForceCacheBilling,
-		APIKeyService:      input.APIKeyService,
-		QuotaPlatform:      input.QuotaPlatform,
-		ChannelUsageFields: input.ChannelUsageFields,
+		Result:                     input.Result,
+		APIKey:                     input.APIKey,
+		User:                       input.User,
+		Account:                    input.Account,
+		Subscription:               input.Subscription,
+		Entitlement:                input.Entitlement,
+		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		InboundEndpoint:            input.InboundEndpoint,
+		UpstreamEndpoint:           input.UpstreamEndpoint,
+		UserAgent:                  input.UserAgent,
+		IPAddress:                  input.IPAddress,
+		RequestPayloadHash:         input.RequestPayloadHash,
+		ForceCacheBilling:          input.ForceCacheBilling,
+		APIKeyService:              input.APIKeyService,
+		QuotaPlatform:              input.QuotaPlatform,
+		ChannelUsageFields:         input.ChannelUsageFields,
 	}, &recordUsageOpts{
 		LongContextThreshold:  input.LongContextThreshold,
 		LongContextMultiplier: input.LongContextMultiplier,
@@ -8863,19 +8904,21 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 
 // recordUsageCoreInput 是 recordUsageCore 的公共输入字段，从两种输入结构体中提取。
 type recordUsageCoreInput struct {
-	Result             *ForwardResult
-	APIKey             *APIKey
-	User               *User
-	Account            *Account
-	Subscription       *UserSubscription
-	InboundEndpoint    string
-	UpstreamEndpoint   string
-	UserAgent          string
-	IPAddress          string
-	RequestPayloadHash string
-	ForceCacheBilling  bool
-	APIKeyService      APIKeyQuotaUpdater
-	QuotaPlatform      string
+	Result                     *ForwardResult
+	APIKey                     *APIKey
+	User                       *User
+	Account                    *Account
+	Subscription               *UserSubscription
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	InboundEndpoint            string
+	UpstreamEndpoint           string
+	UserAgent                  string
+	IPAddress                  string
+	RequestPayloadHash         string
+	ForceCacheBilling          bool
+	APIKeyService              APIKeyQuotaUpdater
+	QuotaPlatform              string
 	ChannelUsageFields
 }
 
@@ -8887,6 +8930,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	user := input.User
 	account := input.Account
 	subscription := input.Subscription
+	entitlement := input.Entitlement
 	ApplyForwardImageBillingResolution(result)
 
 	// 强制缓存计费：将 input_tokens 转为 cache_read_input_tokens
@@ -8936,7 +8980,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
-	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
+	isSubscriptionBilling := subscription != nil || entitlement != nil
 	billingType := BillingTypeBalance
 	if isSubscriptionBilling {
 		billingType = BillingTypeSubscription
@@ -8944,7 +8988,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 
 	// 创建使用日志
 	accountRateMultiplier := account.BillingRateMultiplier()
-	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
+	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription, entitlement,
 		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
@@ -8979,22 +9023,30 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		quotaPlatform = PlatformFromAPIKey(apiKey)
 	}
 	requestID := usageLog.RequestID
-	_, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
-		Cost:                  cost,
-		User:                  user,
-		APIKey:                apiKey,
-		Account:               account,
-		Subscription:          subscription,
-		RequestPayloadHash:    resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
-		IsSubscriptionBill:    isSubscriptionBilling,
-		AccountRateMultiplier: accountRateMultiplier,
-		APIKeyService:         input.APIKeyService,
-		Platform:              quotaPlatform,
+	billingResult, billingErr := applyUsageBilling(ctx, requestID, usageLog, &postUsageBillingParams{
+		Cost:                       cost,
+		User:                       user,
+		APIKey:                     apiKey,
+		Account:                    account,
+		Subscription:               subscription,
+		Entitlement:                entitlement,
+		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
+		IsSubscriptionBill:         isSubscriptionBilling,
+		AccountRateMultiplier:      accountRateMultiplier,
+		APIKeyService:              input.APIKeyService,
+		Platform:                   quotaPlatform,
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {
 		return billingErr
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSourceFromApplyResult(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		billingResult,
+	))
 	writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
 
 	return nil
@@ -9141,6 +9193,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	user *User,
 	account *Account,
 	subscription *UserSubscription,
+	entitlement *SubscriptionEntitlement,
 	requestedModel string,
 	multiplier float64,
 	imageMultiplier float64,
@@ -9192,8 +9245,15 @@ func (s *GatewayService) buildRecordUsageLog(
 		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
 		GroupID:               apiKey.GroupID,
 		SubscriptionID:        optionalSubscriptionID(subscription),
+		EntitlementID:         optionalEntitlementID(entitlement),
 		CreatedAt:             time.Now(),
 	}
+	usageLog.SetBillingSource(ResolveUsageBillingSource(
+		billingType,
+		usageLog.SubscriptionID,
+		usageLog.EntitlementID,
+		input.EntitlementBalanceFallback,
+	))
 	if result.ImageCount > 0 && (cost == nil || cost.BillingMode != string(BillingModeToken)) {
 		usageLog.RateMultiplier = imageMultiplier
 	}
@@ -9227,6 +9287,13 @@ func resolveBillingMode(result *ForwardResult, cost *CostBreakdown) *string {
 func optionalSubscriptionID(subscription *UserSubscription) *int64 {
 	if subscription != nil {
 		return &subscription.ID
+	}
+	return nil
+}
+
+func optionalEntitlementID(entitlement *SubscriptionEntitlement) *int64 {
+	if entitlement != nil && entitlement.ID > 0 {
+		return &entitlement.ID
 	}
 	return nil
 }

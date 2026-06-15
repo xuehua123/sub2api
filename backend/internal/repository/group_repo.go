@@ -36,7 +36,26 @@ func newGroupRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *groupRep
 	return &groupRepository{client: client, sql: sqlq}
 }
 
+func normalizeGroupAccessCapabilities(groupIn *service.Group) {
+	if groupIn == nil {
+		return
+	}
+	if !groupIn.BalanceEnabled && !groupIn.SubscriptionEnabled && !groupIn.PlanAutoGrantEnabled {
+		switch groupIn.SubscriptionType {
+		case service.SubscriptionTypeSubscription:
+			groupIn.SubscriptionEnabled = true
+			groupIn.PlanAutoGrantEnabled = groupIn.Status == service.StatusActive && !groupIn.IsExclusive
+		default:
+			groupIn.BalanceEnabled = true
+		}
+	}
+	if !groupIn.SubscriptionEnabled || groupIn.IsExclusive || groupIn.Status != service.StatusActive {
+		groupIn.PlanAutoGrantEnabled = false
+	}
+}
+
 func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) error {
+	normalizeGroupAccessCapabilities(groupIn)
 	builder := r.client.Group.Create().
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
@@ -46,6 +65,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetIsExclusive(groupIn.IsExclusive).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
+		SetBalanceEnabled(groupIn.BalanceEnabled).
+		SetSubscriptionEnabled(groupIn.SubscriptionEnabled).
+		SetPlanAutoGrantEnabled(groupIn.PlanAutoGrantEnabled).
 		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
 		SetNillableWeeklyLimitUsd(groupIn.WeeklyLimitUSD).
 		SetNillableMonthlyLimitUsd(groupIn.MonthlyLimitUSD).
@@ -116,6 +138,7 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
+	normalizeGroupAccessCapabilities(groupIn)
 	builder := r.client.Group.UpdateOneID(groupIn.ID).
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
@@ -124,6 +147,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetIsExclusive(groupIn.IsExclusive).
 		SetStatus(groupIn.Status).
 		SetSubscriptionType(groupIn.SubscriptionType).
+		SetBalanceEnabled(groupIn.BalanceEnabled).
+		SetSubscriptionEnabled(groupIn.SubscriptionEnabled).
+		SetPlanAutoGrantEnabled(groupIn.PlanAutoGrantEnabled).
 		SetNillableDailyLimitUsd(groupIn.DailyLimitUSD).
 		SetNillableWeeklyLimitUsd(groupIn.WeeklyLimitUSD).
 		SetNillableMonthlyLimitUsd(groupIn.MonthlyLimitUSD).

@@ -97,39 +97,104 @@
             </div>
           </template>
 
+          <template #cell-entitlement="{ row }">
+            <button
+              v-if="rowAccessSource(row) === 'entitlement' && row.subscription_entitlement_id"
+              type="button"
+              class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] cursor-pointer flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left transition-colors duration-200 hover:border-primary-200 hover:bg-primary-50/60 dark:hover:border-primary-900/60 dark:hover:bg-primary-950/20"
+              :title="t('keys.clickToChangeEntitlement')"
+              @click="editKey(row)"
+            >
+              <div class="flex w-full items-center gap-2">
+                <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:text-primary-300 dark:ring-primary-800/70">
+                  {{ t('keys.planCardBadge') }}
+                </span>
+                <span class="ml-auto text-[11px] font-medium text-gray-500 dark:text-gray-400">
+                  {{ entitlementQuotaPeriodTextByID(row.subscription_entitlement_id) }}
+                </span>
+              </div>
+              <div class="mt-1 w-full truncate text-sm font-semibold text-gray-900 dark:text-white">
+                {{ entitlementLabelByID(row.subscription_entitlement_id) }}
+              </div>
+              <div
+                class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
+              >
+                <span class="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
+                  {{ entitlementUnitCostTextByID(row.subscription_entitlement_id) }}
+                </span>
+                <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                  {{ t('keys.switchCardShort') }}
+                </span>
+              </div>
+            </button>
+            <button
+              v-else
+              type="button"
+              class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] flex-col items-start rounded-md border border-dashed border-gray-300 px-2 py-1.5 text-left transition-colors hover:border-primary-300 hover:bg-primary-50/60 dark:border-dark-600 dark:hover:border-primary-800 dark:hover:bg-primary-950/20"
+              :title="t('keys.clickToChangeEntitlement')"
+              @click="editKey(row)"
+            >
+              <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-gray-200 dark:text-gray-300 dark:ring-dark-600">
+                {{ t('keys.accessSourceBalanceShort') }}
+              </span>
+              <span class="mt-1 text-sm font-medium text-gray-500 dark:text-dark-300">
+                {{ t('keys.accessSourceBalance') }}
+              </span>
+              <div class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs">
+                <span class="min-w-0 truncate text-gray-500 dark:text-dark-300">
+                  {{ t('keys.balanceDeductionHint') }}
+                </span>
+                <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                  {{ t('keys.switchAccessSourceShort') }}
+                </span>
+              </div>
+            </button>
+          </template>
+
           <template #cell-group="{ row }">
             <div class="group/dropdown relative">
               <button
                 :ref="(el) => setGroupButtonRef(row.id, el)"
                 @click="openGroupSelector(row)"
-                class="-mx-2 -my-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1 transition-all duration-200 hover:bg-gray-100 dark:hover:bg-dark-700"
+                class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] cursor-pointer flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left transition-colors duration-200 hover:border-primary-200 hover:bg-primary-50/60 dark:hover:border-primary-900/60 dark:hover:bg-primary-950/20"
                 :title="t('keys.clickToChangeGroup')"
               >
-                <GroupBadge
-                  v-if="row.group"
-                  :name="row.group.name"
-                  :platform="row.group.platform"
-                  :subscription-type="row.group.subscription_type"
-                  :rate-multiplier="row.group.rate_multiplier"
-                  :user-rate-multiplier="userGroupRates[row.group.id]"
-                />
-                <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
-                  t('keys.noGroup')
-                }}</span>
-                <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('keys.selectGroup') }}</span>
-                <svg
-                  class="h-3.5 w-3.5 text-gray-400 opacity-60 transition-opacity group-hover/dropdown:opacity-100"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M8.25 15L12 18.75 15.75 15m-7.5-6L12 5.25 15.75 9"
+                <div class="flex w-full items-center gap-2">
+                  <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200 dark:text-amber-300 dark:ring-amber-800/70">
+                    {{ t('keys.currentCardGroupBadge') }}
+                  </span>
+                  <span
+                    v-if="row.group"
+                    class="ml-auto text-[11px] font-medium text-gray-500 dark:text-gray-400"
+                  >
+                    {{ t('keys.rateMultiplierBadge', { rate: formatRateMultiplier(effectiveGroupRate(row.group.id, row.group.rate_multiplier)) }) }}
+                  </span>
+                </div>
+                <div class="mt-1 flex max-w-full items-center gap-2">
+                  <GroupBadge
+                    v-if="row.group"
+                    :name="row.group.name"
+                    :platform="row.group.platform"
+                    :subscription-type="row.group.subscription_type"
+                    :rate-multiplier="row.group.rate_multiplier"
+                    :user-rate-multiplier="userGroupRates[row.group.id]"
+                    :show-rate="false"
                   />
-                </svg>
+                  <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
+                    t('keys.noGroup')
+                  }}</span>
+                </div>
+                <div
+                  v-if="row.group"
+                  class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
+                >
+                  <span class="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
+                    {{ entitlementActualCostTextByID(row.subscription_entitlement_id, effectiveGroupRate(row.group.id, row.group.rate_multiplier)) }}
+                  </span>
+                  <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                    {{ t('keys.changeGroup') }}
+                  </span>
+                </div>
               </button>
             </div>
           </template>
@@ -414,11 +479,105 @@
           />
         </div>
 
+        <div class="space-y-2" data-testid="access-source-selector">
+          <label class="input-label">{{ t('keys.accessSourceLabel') }}</label>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              class="order-2 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors"
+              :class="formData.access_source === 'balance'
+                ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
+                : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
+              data-testid="access-source-balance"
+              @click="selectAccessSource('balance')"
+            >
+              <Icon name="dollar" size="sm" class="mt-0.5 shrink-0" />
+              <span class="min-w-0">
+                <span class="block text-sm font-medium">{{ t('keys.accessSourceBalance') }}</span>
+                <span class="mt-0.5 block text-xs text-gray-500 dark:text-dark-400">
+                  {{ t('keys.accessSourceBalanceHint') }}
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              class="order-1 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+              :class="formData.access_source === 'entitlement'
+                ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
+                : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
+              :disabled="availableEntitlements.length === 0"
+              data-testid="access-source-entitlement"
+              @click="selectAccessSource('entitlement')"
+            >
+              <Icon name="badge" size="sm" class="mt-0.5 shrink-0" />
+              <span class="min-w-0">
+                <span class="block text-sm font-medium">{{ t('keys.accessSourceEntitlement') }}</span>
+                <span class="mt-0.5 block text-xs text-gray-500 dark:text-dark-400">
+                  {{ availableEntitlements.length > 0 ? t('keys.accessSourceEntitlementHint') : t('keys.accessSourceNoEntitlementHint') }}
+                </span>
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="formData.access_source === 'entitlement' && entitlementOptions.length > 0"
+          class="rounded-lg border border-primary-100 bg-primary-50/60 p-3 dark:border-primary-900/40 dark:bg-primary-900/10"
+          data-testid="entitlement-selector"
+        >
+          <label class="input-label mb-1">{{ t('keys.entitlementLabel') }}</label>
+          <Select
+            v-if="entitlementOptions.length > 1"
+            v-model="formData.subscription_entitlement_id"
+            :options="entitlementOptions"
+            :placeholder="t('keys.entitlementSelectPlaceholder')"
+            :searchable="true"
+            data-testid="entitlement-select"
+          >
+            <template #selected="{ option }">
+              <span v-if="option" class="text-sm text-gray-900 dark:text-white">
+                {{ entitlementOptionLabel(option) }}
+              </span>
+              <span v-else class="text-gray-400">{{ t('keys.entitlementSelectPlaceholder') }}</span>
+            </template>
+            <template #option="{ option, selected }">
+              <div class="flex w-full items-start justify-between gap-3">
+                <div class="min-w-0 text-left">
+                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
+                    {{ entitlementOptionLabel(option) }}
+                  </div>
+                  <div
+                    v-if="entitlementOptionDescription(option)"
+                    class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
+                  >
+                    {{ entitlementOptionDescription(option) }}
+                  </div>
+                </div>
+                <Icon
+                  v-if="selected"
+                  name="check"
+                  size="sm"
+                  class="shrink-0 text-primary-500"
+                />
+              </div>
+            </template>
+          </Select>
+          <div v-else class="text-sm text-gray-700 dark:text-gray-300" data-testid="entitlement-auto-selected">
+            {{ t('keys.entitlementAutoSelected') }}:
+            <span class="font-medium text-gray-900 dark:text-white">
+              {{ formatEntitlementSummary(entitlementOptions[0].entitlement) }}
+            </span>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ formData.subscription_entitlement_id ? t('keys.entitlementSelectedHint') : t('keys.entitlementChooseFirstHint') }}
+          </p>
+        </div>
+
         <div>
-          <label class="input-label">{{ t('keys.groupLabel') }}</label>
+          <label class="input-label">{{ t('keys.currentGroupLabel') }}</label>
           <Select
             v-model="formData.group_id"
-            :options="groupOptions"
+            :options="formGroupOptions"
             :placeholder="t('keys.selectGroup')"
             :searchable="true"
             :search-placeholder="t('keys.searchGroup')"
@@ -432,45 +591,43 @@
                 :subscription-type="(option as unknown as GroupOption).subscriptionType"
                 :rate-multiplier="(option as unknown as GroupOption).rate"
                 :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                :always-show-rate="true"
               />
               <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
             </template>
             <template #option="{ option, selected }">
-              <GroupOptionItem
-                :name="(option as unknown as GroupOption).label"
-                :platform="(option as unknown as GroupOption).platform"
-                :subscription-type="(option as unknown as GroupOption).subscriptionType"
-                :rate-multiplier="(option as unknown as GroupOption).rate"
-                :user-rate-multiplier="(option as unknown as GroupOption).userRate"
-                :description="(option as unknown as GroupOption).description"
-                :selected="selected"
-              />
+              <div class="w-full">
+                <GroupOptionItem
+                  :name="(option as unknown as GroupOption).label"
+                  :platform="(option as unknown as GroupOption).platform"
+                  :subscription-type="(option as unknown as GroupOption).subscriptionType"
+                  :rate-multiplier="(option as unknown as GroupOption).rate"
+                  :user-rate-multiplier="(option as unknown as GroupOption).userRate"
+                  :description="(option as unknown as GroupOption).description"
+                  :selected="selected"
+                />
+                <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left text-xs">
+                  <span
+                    v-if="groupEntitlementScopeText(option as unknown as GroupOption, formData.subscription_entitlement_id)"
+                    class="text-primary-600 dark:text-primary-400"
+                  >
+                    {{ groupEntitlementScopeText(option as unknown as GroupOption, formData.subscription_entitlement_id) }}
+                  </span>
+                  <span class="font-medium text-gray-600 dark:text-gray-300">
+                    {{ groupOptionActualCostText(option as unknown as GroupOption, formData.subscription_entitlement_id) }}
+                  </span>
+                </div>
+              </div>
             </template>
           </Select>
-        </div>
-
-        <div class="flex items-center justify-between rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-          <div>
-            <label class="input-label mb-0">{{ t('keys.autoSwitchGroup') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-              {{ t('keys.autoSwitchGroupHint') }}
-            </p>
-          </div>
-          <button
-            type="button"
-            @click="formData.auto_switch_group_enabled = !formData.auto_switch_group_enabled"
-            :class="[
-              'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none',
-              formData.auto_switch_group_enabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
-            ]"
-          >
-            <span
-              :class="[
-                'pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
-                formData.auto_switch_group_enabled ? 'translate-x-4' : 'translate-x-0'
-              ]"
-            />
-          </button>
+          <p v-if="selectedGroupOption" class="input-hint">
+            {{ groupOptionActualCostText(selectedGroupOption, formData.subscription_entitlement_id) }}
+            ·
+            {{ t('keys.currentGroupRateHint', { rate: formatRateMultiplier(effectiveGroupOptionRate(selectedGroupOption)) }) }}
+          </p>
+          <p v-if="formData.subscription_entitlement_id" class="input-hint">
+            {{ t('keys.currentGroupFilteredHint') }}
+          </p>
         </div>
 
         <!-- Custom Key Section (only for create) -->
@@ -1055,18 +1212,31 @@
             ]"
             :title="option.description || undefined"
           >
-            <GroupOptionItem
-              :name="option.label"
-              :platform="option.platform"
-              :subscription-type="option.subscriptionType"
-              :rate-multiplier="option.rate"
-              :user-rate-multiplier="option.userRate"
-              :description="option.description"
-              :selected="
-                selectedKeyForGroup?.group_id === option.value ||
-                (!selectedKeyForGroup?.group_id && option.value === null)
-              "
-            />
+            <div class="w-full">
+              <GroupOptionItem
+                :name="option.label"
+                :platform="option.platform"
+                :subscription-type="option.subscriptionType"
+                :rate-multiplier="option.rate"
+                :user-rate-multiplier="option.userRate"
+                :description="option.description"
+                :selected="
+                  selectedKeyForGroup?.group_id === option.value ||
+                  (!selectedKeyForGroup?.group_id && option.value === null)
+                "
+              />
+              <div
+                v-if="groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id)"
+                class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left text-xs"
+              >
+                <span class="text-primary-600 dark:text-primary-400">
+                  {{ groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id) }}
+                </span>
+                <span class="font-medium text-gray-600 dark:text-gray-300">
+                  {{ groupOptionActualCostText(option, selectedKeyForGroup?.subscription_entitlement_id) }}
+                </span>
+              </div>
+            </div>
           </button>
           <!-- Empty state when search has no results -->
           <div v-if="filteredGroupOptions.length === 0" class="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
@@ -1079,7 +1249,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, computed, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, computed, onMounted, onUnmounted, watch, type ComponentPublicInstance } from 'vue'
 	import { useRoute, useRouter } from 'vue-router'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
@@ -1105,7 +1275,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 	import EndpointPopover from '@/components/keys/EndpointPopover.vue'
 	import GroupBadge from '@/components/common/GroupBadge.vue'
 	import GroupOptionItem from '@/components/common/GroupOptionItem.vue'
-	import type { ApiKey, Group, PublicSettings, SubscriptionType, GroupPlatform } from '@/types'
+	import type { ApiKey, AvailableGroup, AvailableGroupAccessSource, AvailableGroupEntitlement, CreateApiKeyRequest, PublicSettings, SubscriptionType, GroupPlatform, UpdateApiKeyRequest } from '@/types'
 import type { Column } from '@/components/common/types'
 import type { BatchApiKeyUsageStats } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
@@ -1129,7 +1299,21 @@ interface GroupOption {
   rate: number
   userRate: number | null
   subscriptionType: SubscriptionType
+  balanceEnabled?: boolean
+  subscriptionEnabled?: boolean
+  planAutoGrantEnabled?: boolean
   platform: GroupPlatform
+  entitlements: AvailableGroupEntitlement[]
+  accessSources: AvailableGroupAccessSource[]
+}
+
+type AccessSource = 'balance' | 'entitlement'
+
+interface EntitlementSelectOption extends Record<string, unknown> {
+  value: number
+  label: string
+  description: string
+  entitlement: AvailableGroupEntitlement
 }
 
 const appStore = useAppStore()
@@ -1139,7 +1323,8 @@ const { copyToClipboard: clipboardCopy } = useClipboard()
 const columns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
   { key: 'key', label: t('keys.apiKey'), sortable: false },
-  { key: 'group', label: t('keys.group'), sortable: false },
+  { key: 'entitlement', label: t('keys.accessSourceColumn'), sortable: false },
+  { key: 'group', label: t('keys.currentGroupLabel'), sortable: false },
   { key: 'usage', label: t('keys.usage'), sortable: false },
   { key: 'rate_limit', label: t('keys.rateLimitColumn'), sortable: false },
   { key: 'expires_at', label: t('keys.expiresAt'), sortable: true },
@@ -1150,7 +1335,7 @@ const columns = computed<Column[]>(() => [
 ])
 
 const apiKeys = ref<ApiKey[]>([])
-const groups = ref<Group[]>([])
+const groups = ref<AvailableGroup[]>([])
 const loading = ref(false)
 const submitting = ref(false)
 const now = ref(new Date())
@@ -1208,8 +1393,10 @@ const setGroupButtonRef = (keyId: number, el: Element | ComponentPublicInstance 
 
 const formData = ref({
   name: '',
+  access_source: 'balance' as AccessSource,
   group_id: null as number | null,
-  auto_switch_group_enabled: true,
+  subscription_entitlement_id: null as number | null,
+  auto_switch_group_enabled: false,
   status: 'active' as 'active' | 'inactive',
   use_custom_key: false,
   custom_key: '',
@@ -1295,16 +1482,437 @@ const groupOptions = computed(() =>
     rate: group.rate_multiplier,
     userRate: userGroupRates.value[group.id] ?? null,
     subscriptionType: group.subscription_type,
-    platform: group.platform
+    balanceEnabled: group.balance_enabled,
+    subscriptionEnabled: group.subscription_enabled,
+    planAutoGrantEnabled: group.plan_auto_grant_enabled,
+    platform: group.platform,
+    entitlements: group.entitlements ?? [],
+    accessSources: group.access_sources ?? []
   }))
 )
 
+const selectedGroupOption = computed(() =>
+  groupOptions.value.find((option) => option.value === formData.value.group_id) ?? null
+)
+
+function activeAccessSourcesForGroup(option: GroupOption, type?: AccessSource): AvailableGroupAccessSource[] {
+  const sources = option.accessSources.filter((source) => {
+    if (source.disabled) return false
+    if (type && source.type !== type) return false
+    return source.type === 'balance' || source.type === 'entitlement'
+  })
+  return sources as AvailableGroupAccessSource[]
+}
+
+function entitlementAccessSourcesForGroup(option: GroupOption): AvailableGroupAccessSource[] {
+  return activeAccessSourcesForGroup(option, 'entitlement').filter((source) => Number(source.entitlement_id) > 0)
+}
+
+function accessSourceHasStructuredSources(option: GroupOption): boolean {
+  return option.accessSources.length > 0
+}
+
+function entitlementFromAccessSource(source: AvailableGroupAccessSource): AvailableGroupEntitlement | null {
+  const id = Number(source.entitlement_id)
+  if (!Number.isFinite(id) || id <= 0) return null
+  return {
+    id,
+    name: source.name || source.label || t('keys.entitlementFallbackName', { id }),
+    plan_id: source.plan_id ?? null,
+    starts_at: '',
+    expires_at: source.expires_at ?? '',
+    overage_policy: source.overage_policy ?? null,
+  }
+}
+
+function entitlementsForGroupOption(option: GroupOption): AvailableGroupEntitlement[] {
+  const byID = new Map<number, AvailableGroupEntitlement>()
+  for (const entitlement of option.entitlements) {
+    byID.set(entitlement.id, entitlement)
+  }
+  for (const source of entitlementAccessSourcesForGroup(option)) {
+    const entitlement = entitlementFromAccessSource(source)
+    if (entitlement && !byID.has(entitlement.id)) {
+      byID.set(entitlement.id, entitlement)
+    }
+  }
+  return Array.from(byID.values()).sort((a, b) => a.id - b.id)
+}
+
+const availableEntitlements = computed(() => {
+  const byID = new Map<number, AvailableGroupEntitlement>()
+  for (const option of groupOptions.value) {
+    for (const entitlement of entitlementsForGroupOption(option)) {
+      if (!byID.has(entitlement.id)) {
+        byID.set(entitlement.id, entitlement)
+      }
+    }
+  }
+  return Array.from(byID.values()).sort((a, b) => a.id - b.id)
+})
+
+const entitlementOptions = computed<EntitlementSelectOption[]>(() =>
+  availableEntitlements.value.map((entitlement) => ({
+    value: entitlement.id,
+    label: formatEntitlementLabel(entitlement),
+    description: formatEntitlementDescription(entitlement),
+    entitlement
+  }))
+)
+
+function normalizeAccessSource(source?: string | null, entitlementID?: number | null): AccessSource {
+  if (source === 'entitlement') return 'entitlement'
+  if (source === 'balance') return 'balance'
+  return entitlementID ? 'entitlement' : 'balance'
+}
+
+function rowAccessSource(key: ApiKey): AccessSource {
+  return normalizeAccessSource(key.access_source, key.subscription_entitlement_id)
+}
+
+function groupSupportsBalanceSource(option: GroupOption): boolean {
+  if (accessSourceHasStructuredSources(option)) {
+    return activeAccessSourcesForGroup(option, 'balance').length > 0
+  }
+  if (option.balanceEnabled !== undefined) return option.balanceEnabled
+  return option.subscriptionType !== 'subscription' || option.entitlements.length === 0
+}
+
+function groupSupportsEntitlementSource(option: GroupOption): boolean {
+  if (accessSourceHasStructuredSources(option)) {
+    return entitlementAccessSourcesForGroup(option).length > 0
+  }
+  if (option.subscriptionEnabled !== undefined) return option.subscriptionEnabled && option.entitlements.length > 0
+  return option.subscriptionType === 'subscription' && option.entitlements.length > 0
+}
+
+const formGroupOptions = computed(() => {
+  if (formData.value.access_source === 'balance') {
+    return groupOptions.value.filter(groupSupportsBalanceSource)
+  }
+
+  const entitlementID = formData.value.subscription_entitlement_id
+  if (!entitlementID) return groupOptions.value.filter(groupSupportsEntitlementSource)
+  return groupOptions.value.filter((option) => {
+    if (!groupSupportsEntitlementSource(option)) return false
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
+  })
+})
+
+const requiresEntitlementSelection = computed(() => {
+  const group = selectedGroupOption.value
+  return Boolean(
+    group &&
+    formData.value.access_source === 'entitlement' &&
+    groupSupportsEntitlementSource(group) &&
+    entitlementsForGroupOption(group).length > 0 &&
+    !formData.value.subscription_entitlement_id
+  )
+})
+
+function entitlementOptionLabel(option: unknown): string {
+  if (typeof option === 'object' && option !== null && 'label' in option) {
+    return String((option as { label?: unknown }).label ?? '')
+  }
+  return ''
+}
+
+function entitlementOptionDescription(option: unknown): string {
+  if (typeof option === 'object' && option !== null && 'description' in option) {
+    return String((option as { description?: unknown }).description ?? '')
+  }
+  return ''
+}
+
+function effectiveGroupRate(groupID: number, defaultRate: number): number {
+  return userGroupRates.value[groupID] ?? defaultRate
+}
+
+function effectiveGroupOptionRate(option: GroupOption): number {
+  return option.userRate ?? option.rate
+}
+
+function formatRateMultiplier(rate: number): string {
+  return `${Number(rate.toFixed(3))}x`
+}
+
+function positiveNumber(value: unknown): number | null {
+  const numberValue = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : null
+}
+
+function normalizeCurrencyCode(currency: string | null | undefined): string {
+  return currency?.trim().toUpperCase() || 'CNY'
+}
+
+function currencySymbol(currency: string | null | undefined): string {
+  const code = normalizeCurrencyCode(currency)
+  switch (code) {
+    case 'CNY':
+    case 'RMB':
+      return '\u00A5'
+    case 'USD':
+      return '$'
+    case 'EUR':
+      return '\u20AC'
+    case 'GBP':
+      return '\u00A3'
+    case 'JPY':
+      return '\u00A5'
+    default:
+      return `${code} `
+  }
+}
+
+function formatMoneyAmount(value: number, currency: string | null | undefined): string {
+  const fractionDigits = Math.abs(value) >= 1 ? 2 : 4
+  return `${currencySymbol(currency)}${new Intl.NumberFormat('zh-CN', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)}`
+}
+
+function entitlementUnitCost(entitlement: AvailableGroupEntitlement | null | undefined): number | null {
+  if (!entitlement) return null
+  const provided = positiveNumber(entitlement.unit_cost_per_usd)
+  if (provided !== null) return provided
+
+  const purchasePrice = positiveNumber(entitlement.purchase_price)
+  const quotaUSD = positiveNumber(entitlement.quota_usd)
+  if (purchasePrice === null || quotaUSD === null) return null
+  return purchasePrice / quotaUSD
+}
+
+function entitlementQuotaPeriodText(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  switch (entitlement?.quota_period) {
+    case 'daily':
+      return t('keys.quotaPeriod.daily')
+    case 'weekly':
+      return t('keys.quotaPeriod.weekly')
+    case 'monthly':
+      return t('keys.quotaPeriod.monthly')
+    default:
+      return t('keys.quotaPeriod.default')
+  }
+}
+
+function entitlementQuotaPeriodTextByID(id: number | null | undefined): string {
+  return entitlementQuotaPeriodText(entitlementByID(id))
+}
+
+function entitlementUnitCostText(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  const unitCost = entitlementUnitCost(entitlement)
+  if (unitCost === null) return t('keys.priceUnavailable')
+  return t('keys.cardUnitCostHint', {
+    amount: formatMoneyAmount(unitCost, entitlement?.purchase_currency),
+  })
+}
+
+function entitlementUnitCostTextByID(id: number | null | undefined): string {
+  return entitlementUnitCostText(entitlementByID(id))
+}
+
+function entitlementActualCostText(
+  entitlement: AvailableGroupEntitlement | null | undefined,
+  rate: number
+): string {
+  const unitCost = entitlementUnitCost(entitlement)
+  if (unitCost === null) return t('keys.priceUnavailable')
+  const multiplier = positiveNumber(rate) ?? 1
+  return t('keys.actualRmbCostHint', {
+    amount: formatMoneyAmount(unitCost * multiplier, entitlement?.purchase_currency),
+  })
+}
+
+function entitlementActualCostTextByID(id: number | null | undefined, rate: number): string {
+  return entitlementActualCostText(entitlementByID(id), rate)
+}
+
+function entitlementForGroupOption(
+  option: GroupOption | null,
+  entitlementID: number | null | undefined
+): AvailableGroupEntitlement | null {
+  if (!option || !groupSupportsEntitlementSource(option)) return null
+  const entitlements = entitlementsForGroupOption(option)
+  if (entitlementID) {
+    return entitlements.find((entitlement) => entitlement.id === entitlementID) ?? entitlementByID(entitlementID)
+  }
+  if (entitlements.length === 1) return entitlements[0]
+  return null
+}
+
+function groupOptionActualCostText(option: GroupOption | null, entitlementID: number | null | undefined): string {
+  return entitlementActualCostText(
+    entitlementForGroupOption(option, entitlementID),
+    option ? effectiveGroupOptionRate(option) : 1
+  )
+}
+
+function normalizeEntitlementCardName(name: string): string {
+  return name.replace(/^(?:\u5957\u9910\u6743\u76ca|\u6743\u76ca)[-\uFF0D\s]*/u, '').trim()
+}
+
+function formatEntitlementLabel(entitlement: AvailableGroupEntitlement): string {
+  const name = normalizeEntitlementCardName(entitlement.name?.trim() || '')
+  return name || t('keys.entitlementFallbackName', { id: entitlement.id })
+}
+
+function formatEntitlementDescription(entitlement: AvailableGroupEntitlement): string {
+  const parts: string[] = []
+  const groupCount = entitlementGroupOptions(entitlement.id).length
+  const unitCost = entitlementUnitCost(entitlement)
+  if (unitCost !== null) {
+    parts.push(t('keys.cardUnitCostHint', { amount: formatMoneyAmount(unitCost, entitlement.purchase_currency) }))
+  }
+  if (entitlement.plan_id) {
+    parts.push(t('keys.entitlementPlan', { id: entitlement.plan_id }))
+  }
+  if (groupCount > 0) {
+    parts.push(t('keys.entitlementIncludedGroups', { count: groupCount }))
+  }
+  if (entitlement.expires_at) {
+    parts.push(t('keys.entitlementExpires', { date: formatDateTime(entitlement.expires_at) }))
+  }
+  return parts.join(' / ')
+}
+
+function formatEntitlementSummary(entitlement: AvailableGroupEntitlement): string {
+  const description = formatEntitlementDescription(entitlement)
+  return description ? `${formatEntitlementLabel(entitlement)} / ${description}` : formatEntitlementLabel(entitlement)
+}
+
+function entitlementByID(id: number | null | undefined): AvailableGroupEntitlement | null {
+  if (!id) return null
+  return availableEntitlements.value.find((entitlement) => entitlement.id === id) ?? null
+}
+
+function entitlementLabelByID(id: number | null | undefined): string {
+  const entitlement = entitlementByID(id)
+  return entitlement ? formatEntitlementLabel(entitlement) : t('keys.entitlementFallbackName', { id })
+}
+
+function entitlementGroupOptions(entitlementID: number): GroupOption[] {
+  return groupOptions.value.filter((option) => {
+    if (!groupSupportsEntitlementSource(option)) return false
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
+  })
+}
+
+function entitlementCountText(option: GroupOption): string {
+  const entitlements = entitlementsForGroupOption(option)
+  if (entitlements.length <= 0) return ''
+  if (entitlements.length === 1) return t('keys.entitlementSingleAvailable')
+  return t('keys.entitlementMultipleAvailable', { count: entitlements.length })
+}
+
+function groupEntitlementScopeText(option: GroupOption, entitlementID: number | null | undefined): string {
+  if (formData.value.access_source === 'balance') {
+    return t('keys.accessSourceBalanceShort')
+  }
+  if (entitlementID && entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)) {
+    return t('keys.entitlementCurrentCardIncludesGroup')
+  }
+  return entitlementCountText(option)
+}
+
+function reconcileFormEntitlementSelection() {
+  if (groups.value.length === 0) return
+
+  const selectedEntitlementID = formData.value.subscription_entitlement_id
+  const group = selectedGroupOption.value
+
+  if (formData.value.access_source === 'balance') {
+    formData.value.subscription_entitlement_id = null
+    if (group && !groupSupportsBalanceSource(group)) {
+      formData.value.group_id = null
+    }
+    return
+  }
+
+  if (
+    formData.value.group_id === null &&
+    !selectedEntitlementID &&
+    formGroupOptions.value.length > 0 &&
+    availableEntitlements.value.length === 1
+  ) {
+    formData.value.subscription_entitlement_id = availableEntitlements.value[0].id
+  }
+
+  if (formData.value.group_id === null) {
+    return
+  }
+
+  if (!group || !groupSupportsEntitlementSource(group)) {
+    formData.value.subscription_entitlement_id = null
+    formData.value.group_id = null
+    return
+  }
+
+  const entitlements = entitlementsForGroupOption(group)
+  if (entitlements.length === 0) {
+    formData.value.subscription_entitlement_id = null
+    return
+  }
+
+  if (selectedEntitlementID && entitlements.some((entitlement) => entitlement.id === selectedEntitlementID)) {
+    return
+  }
+
+  if (selectedEntitlementID) {
+    formData.value.group_id = null
+    return
+  }
+
+  if (entitlements.length === 1) {
+    formData.value.subscription_entitlement_id = entitlements[0].id
+  }
+}
+
+watch(
+  () => [formData.value.access_source, formData.value.group_id, formData.value.subscription_entitlement_id, groups.value] as const,
+  () => reconcileFormEntitlementSelection()
+)
+
+function selectAccessSource(source: AccessSource) {
+  if (formData.value.access_source === source) return
+
+  formData.value.access_source = source
+  if (source === 'balance') {
+    formData.value.subscription_entitlement_id = null
+    const group = selectedGroupOption.value
+    if (group && !groupSupportsBalanceSource(group)) {
+      formData.value.group_id = null
+    }
+  } else {
+    const group = selectedGroupOption.value
+    if (group && !groupSupportsEntitlementSource(group)) {
+      formData.value.group_id = null
+    }
+  }
+  reconcileFormEntitlementSelection()
+}
+
 // Group dropdown search
 const groupSearchQuery = ref('')
+const quickSwitchGroupOptions = computed(() => {
+  const selectedKey = selectedKeyForGroup.value
+  if (!selectedKey) return groupOptions.value
+  if (rowAccessSource(selectedKey) === 'balance') {
+    return groupOptions.value.filter(groupSupportsBalanceSource)
+  }
+
+  const entitlementID = selectedKey.subscription_entitlement_id
+  if (!entitlementID) return []
+  return groupOptions.value.filter((option) => {
+    if (!groupSupportsEntitlementSource(option)) return false
+    return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
+  })
+})
 const filteredGroupOptions = computed(() => {
   const query = groupSearchQuery.value.trim().toLowerCase()
-  if (!query) return groupOptions.value
-  return groupOptions.value.filter((opt) => {
+  const options = quickSwitchGroupOptions.value
+  if (!query) return options
+  return options.filter((opt) => {
     return opt.label.toLowerCase().includes(query) ||
       (opt.description && opt.description.toLowerCase().includes(query))
   })
@@ -1441,6 +2049,13 @@ async function closeCreateQuery() {
 }
 
 const handleCreateAction = () => {
+  if (availableEntitlements.value.length > 0) {
+    formData.value.access_source = 'entitlement'
+    formData.value.subscription_entitlement_id = availableEntitlements.value.length === 1
+      ? availableEntitlements.value[0].id
+      : null
+    reconcileFormEntitlementSelection()
+  }
   showCreateModal.value = true
 }
 
@@ -1498,8 +2113,10 @@ const editKey = (key: ApiKey) => {
   const hasExpiration = !!key.expires_at
   formData.value = {
     name: key.name,
+    access_source: rowAccessSource(key),
     group_id: key.group_id,
-    auto_switch_group_enabled: key.auto_switch_group_enabled !== false,
+    subscription_entitlement_id: key.subscription_entitlement_id ?? null,
+    auto_switch_group_enabled: false,
     status: key.status === 'quota_exhausted' || key.status === 'expired' ? 'inactive' : key.status,
     use_custom_key: false,
     custom_key: '',
@@ -1516,6 +2133,7 @@ const editKey = (key: ApiKey) => {
     expiration_preset: 'custom',
     expiration_date: key.expires_at ? formatDateTimeLocal(key.expires_at) : ''
   }
+  reconcileFormEntitlementSelection()
   showEditModal.value = true
 }
 
@@ -1563,13 +2181,68 @@ const openGroupSelector = (key: ApiKey) => {
   }
 }
 
+function entitlementIDForGroupOption(option: GroupOption | null, key?: ApiKey): number | null | undefined {
+  if (!option) return null
+  if (!key || rowAccessSource(key) === 'balance') return null
+  if (!groupSupportsEntitlementSource(option)) return null
+  const currentEntitlementID = key?.subscription_entitlement_id
+  const entitlements = entitlementsForGroupOption(option)
+  if (currentEntitlementID && entitlements.some((entitlement) => entitlement.id === currentEntitlementID)) {
+    return currentEntitlementID
+  }
+  if (entitlements.length === 1) return entitlements[0].id
+  if (entitlements.length > 1) return undefined
+  return undefined
+}
+
+function subscriptionEntitlementPayloadForForm(includeClear: boolean): number | null | undefined {
+  if (formData.value.access_source === 'balance') return includeClear ? null : null
+  const option = selectedGroupOption.value
+  if (formData.value.group_id === null) return includeClear ? null : undefined
+  if (!option) return undefined
+  if (!groupSupportsEntitlementSource(option)) return includeClear ? null : undefined
+  if (entitlementsForGroupOption(option).length > 0) return formData.value.subscription_entitlement_id
+  return undefined
+}
+
 const changeGroup = async (key: ApiKey, newGroupId: number | null) => {
   groupSelectorKeyId.value = null
   dropdownPosition.value = null
   if (key.group_id === newGroupId) return
 
+  const option = groupOptions.value.find((item) => item.value === newGroupId) ?? null
+  const accessSource = rowAccessSource(key)
+  if (option && accessSource === 'balance' && !groupSupportsBalanceSource(option)) {
+    appStore.showInfo(t('keys.accessSourceSwitchRequired'))
+    editKey(key)
+    return
+  }
+  if (option && accessSource === 'entitlement' && !groupSupportsEntitlementSource(option)) {
+    appStore.showInfo(t('keys.accessSourceSwitchRequired'))
+    editKey(key)
+    return
+  }
+
+  const entitlementID = entitlementIDForGroupOption(option, key)
+  if (entitlementID === undefined && option && entitlementsForGroupOption(option).length > 0) {
+    editKey(key)
+    formData.value.access_source = 'entitlement'
+    formData.value.group_id = newGroupId
+    formData.value.subscription_entitlement_id = null
+    appStore.showInfo(t('keys.entitlementSelectionRequired'))
+    return
+  }
+
+  const payload: { group_id: number | null; access_source?: AccessSource; subscription_entitlement_id?: number | null } = {
+    group_id: newGroupId
+  }
+  payload.access_source = accessSource
+  if (entitlementID !== undefined) {
+    payload.subscription_entitlement_id = entitlementID
+  }
+
   try {
-    await keysAPI.update(key.id, { group_id: newGroupId })
+    await keysAPI.update(key.id, payload)
     appStore.showSuccess(t('keys.groupChangedSuccess'))
     loadApiKeys()
   } catch (error) {
@@ -1595,6 +2268,14 @@ const handleSubmit = async () => {
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
+    return
+  }
+  if (requiresEntitlementSelection.value && !formData.value.subscription_entitlement_id) {
+    appStore.showError(t('keys.entitlementRequired'))
+    return
+  }
+  if (formData.value.access_source === 'entitlement' && !formData.value.subscription_entitlement_id) {
+    appStore.showError(t('keys.entitlementRequired'))
     return
   }
 
@@ -1648,9 +2329,11 @@ const handleSubmit = async () => {
   submitting.value = true
   try {
     if (showEditModal.value && selectedKey.value) {
-      await keysAPI.update(selectedKey.value.id, {
+      const entitlementPatch = subscriptionEntitlementPayloadForForm(true)
+      const updatePayload: UpdateApiKeyRequest = {
         name: formData.value.name,
         group_id: formData.value.group_id,
+        access_source: formData.value.access_source,
         auto_switch_group_enabled: formData.value.auto_switch_group_enabled,
         status: formData.value.status,
         ip_whitelist: ipWhitelist,
@@ -1660,21 +2343,33 @@ const handleSubmit = async () => {
         rate_limit_5h: rateLimitData.rate_limit_5h,
         rate_limit_1d: rateLimitData.rate_limit_1d,
         rate_limit_7d: rateLimitData.rate_limit_7d,
-      })
+      }
+      if (entitlementPatch !== undefined) {
+        updatePayload.subscription_entitlement_id = entitlementPatch
+      }
+      await keysAPI.update(selectedKey.value.id, updatePayload)
       appStore.showSuccess(t('keys.keyUpdatedSuccess'))
     } else {
       const customKey = formData.value.use_custom_key ? formData.value.custom_key : undefined
-      await keysAPI.create(
-        formData.value.name,
-        formData.value.group_id,
-        customKey,
-        ipWhitelist,
-        ipBlacklist,
-        quota,
-        expiresInDays,
-        rateLimitData,
-        formData.value.auto_switch_group_enabled
-      )
+      const createPayload: CreateApiKeyRequest = {
+        name: formData.value.name,
+        group_id: formData.value.group_id,
+        access_source: formData.value.access_source,
+        auto_switch_group_enabled: formData.value.auto_switch_group_enabled,
+        ...(customKey ? { custom_key: customKey } : {})
+      }
+      if (ipWhitelist.length > 0) createPayload.ip_whitelist = ipWhitelist
+      if (ipBlacklist.length > 0) createPayload.ip_blacklist = ipBlacklist
+      if (quota > 0) createPayload.quota = quota
+      if (expiresInDays !== undefined && expiresInDays > 0) createPayload.expires_in_days = expiresInDays
+      if (rateLimitData.rate_limit_5h > 0) createPayload.rate_limit_5h = rateLimitData.rate_limit_5h
+      if (rateLimitData.rate_limit_1d > 0) createPayload.rate_limit_1d = rateLimitData.rate_limit_1d
+      if (rateLimitData.rate_limit_7d > 0) createPayload.rate_limit_7d = rateLimitData.rate_limit_7d
+      const entitlementPatch = subscriptionEntitlementPayloadForForm(false)
+      if (entitlementPatch !== undefined) {
+        createPayload.subscription_entitlement_id = entitlementPatch
+      }
+      await keysAPI.createWithPayload(createPayload)
       appStore.showSuccess(t('keys.keyCreatedSuccess'))
       // Only advance tour if active, on submit step, and creation succeeded
       if (onboardingStore.isCurrentStep('[data-tour="key-form-submit"]')) {
@@ -1726,8 +2421,10 @@ const closeModals = () => {
   selectedKey.value = null
   formData.value = {
     name: '',
+    access_source: 'balance',
     group_id: null,
-    auto_switch_group_enabled: true,
+    subscription_entitlement_id: null,
+    auto_switch_group_enabled: false,
     status: 'active',
     use_custom_key: false,
     custom_key: '',

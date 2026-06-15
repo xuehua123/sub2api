@@ -20,11 +20,14 @@ type Group struct {
 	Status         string
 	Hydrated       bool // indicates the group was loaded from a trusted repository source
 
-	SubscriptionType    string
-	DailyLimitUSD       *float64
-	WeeklyLimitUSD      *float64
-	MonthlyLimitUSD     *float64
-	DefaultValidityDays int
+	SubscriptionType     string
+	BalanceEnabled       bool
+	SubscriptionEnabled  bool
+	PlanAutoGrantEnabled bool
+	DailyLimitUSD        *float64
+	WeeklyLimitUSD       *float64
+	MonthlyLimitUSD      *float64
+	DefaultValidityDays  int
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
 	AllowImageGeneration bool
@@ -83,6 +86,27 @@ func (g *Group) IsActive() bool {
 
 func (g *Group) IsSubscriptionType() bool {
 	return g.SubscriptionType == SubscriptionTypeSubscription
+}
+
+func (g *Group) SupportsBalanceAccess() bool {
+	if g == nil {
+		return false
+	}
+	return g.BalanceEnabled || (!g.SubscriptionEnabled && g.SubscriptionType == SubscriptionTypeStandard)
+}
+
+func (g *Group) SupportsSubscriptionAccess() bool {
+	if g == nil {
+		return false
+	}
+	return g.SubscriptionEnabled || g.SubscriptionType == SubscriptionTypeSubscription
+}
+
+func (g *Group) AllowsPlanAutoGrant() bool {
+	if g == nil {
+		return false
+	}
+	return g.PlanAutoGrantEnabled && g.SupportsSubscriptionAccess() && !g.IsExclusive && g.IsActive()
 }
 
 func (g *Group) HasDailyLimit() bool {
