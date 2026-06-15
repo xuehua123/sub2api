@@ -92,6 +92,12 @@ type AvailableGroupAccessSourceDTO struct {
 	Name              string     `json:"name,omitempty"`
 	EntitlementID     *int64     `json:"entitlement_id,omitempty"`
 	PlanID            *int64     `json:"plan_id,omitempty"`
+	PurchasePrice     *float64   `json:"purchase_price,omitempty"`
+	PurchaseCurrency  string     `json:"purchase_currency,omitempty"`
+	QuotaUSD          *float64   `json:"quota_usd,omitempty"`
+	QuotaUsedUSD      float64    `json:"quota_used_usd"`
+	QuotaPeriod       string     `json:"quota_period,omitempty"`
+	UnitCostPerUSD    *float64   `json:"unit_cost_per_usd,omitempty"`
 	OveragePolicy     string     `json:"overage_policy,omitempty"`
 	ExpiresAt         *time.Time `json:"expires_at,omitempty"`
 	Disabled          bool       `json:"disabled,omitempty"`
@@ -375,6 +381,12 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 					Name:              source.Name,
 					EntitlementID:     source.EntitlementID,
 					PlanID:            source.PlanID,
+					PurchasePrice:     source.PurchasePrice,
+					PurchaseCurrency:  source.PurchaseCurrency,
+					QuotaUSD:          source.QuotaUSD,
+					QuotaUsedUSD:      source.QuotaUsedUSD,
+					QuotaPeriod:       source.QuotaPeriod,
+					UnitCostPerUSD:    source.UnitCostPerUSD,
 					OveragePolicy:     source.OveragePolicy,
 					ExpiresAt:         source.ExpiresAt,
 					Disabled:          source.Disabled,

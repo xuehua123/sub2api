@@ -578,6 +578,12 @@ export interface AvailableGroupAccessSource {
   name?: string | null
   entitlement_id?: number | null
   plan_id?: number | null
+  purchase_price?: number | null
+  purchase_currency?: string | null
+  quota_usd?: number | null
+  quota_used_usd?: number | null
+  quota_period?: 'daily' | 'weekly' | 'monthly' | string | null
+  unit_cost_per_usd?: number | null
   overage_policy?: string | null
   expires_at?: string | null
   disabled?: boolean
@@ -1646,6 +1652,9 @@ export interface UserSubscription {
   daily_usage_usd: number
   weekly_usage_usd: number
   monthly_usage_usd: number
+  daily_limit_usd?: number | null
+  weekly_limit_usd?: number | null
+  monthly_limit_usd?: number | null
   daily_window_start: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null

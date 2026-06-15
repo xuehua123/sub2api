@@ -193,6 +193,12 @@ type AvailableAPIKeyGroupAccessSource struct {
 	Name              string
 	EntitlementID     *int64
 	PlanID            *int64
+	PurchasePrice     *float64
+	PurchaseCurrency  string
+	QuotaUSD          *float64
+	QuotaUsedUSD      float64
+	QuotaPeriod       string
+	UnitCostPerUSD    *float64
 	OveragePolicy     string
 	ExpiresAt         *time.Time
 	Disabled          bool

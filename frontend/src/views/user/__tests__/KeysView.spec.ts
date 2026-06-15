@@ -179,6 +179,12 @@ function subscriptionGroup(
       name: `Plan ${id}`,
       entitlement_id: id,
       plan_id: id + 1000,
+      purchase_price: 29.9,
+      purchase_currency: 'CNY',
+      quota_usd: 10,
+      quota_used_usd: 2.5,
+      quota_period: 'monthly',
+      unit_cost_per_usd: 2.99,
       overage_policy: 'block',
       expires_at: '2026-07-01T00:00:00Z',
     })),
@@ -285,6 +291,24 @@ describe('KeysView entitlement group binding', () => {
 
     expect(vm.entitlementQuotaPeriodTextByID(101)).toBe('keys.quotaPeriod.monthly')
     expect(vm.entitlementActualCostTextByID(101, 3)).toBe('keys.actualRmbCostHint:3x:¥8.97')
+    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaRemaining:$7.50:$10.00')
+    expect(vm.entitlementQuotaProgressWidthByID(101)).toBe('25%')
+  })
+
+  it('uses entitlement quota metadata from access source fallback', async () => {
+    const wrapper = await mountView([
+      subscriptionGroup([101], {
+        entitlements: [],
+      }),
+    ], [
+      keyFixture({
+        group_id: 20,
+        access_source: 'entitlement',
+        subscription_entitlement_id: 101,
+      }),
+    ])
+    const vm = setupState(wrapper)
+
     expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaRemaining:$7.50:$10.00')
     expect(vm.entitlementQuotaProgressWidthByID(101)).toBe('25%')
   })

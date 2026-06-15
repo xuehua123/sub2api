@@ -107,9 +107,49 @@ func TestAPIKeyHandler_GetAvailableGroupsEntitlementAware(t *testing.T) {
 	source := sources[0].(map[string]any)
 	require.Equal(t, service.APIKeyAccessSourceEntitlement, source["type"])
 	require.Equal(t, float64(fx.entitlementID), source["entitlement_id"])
+	require.Equal(t, 10.0, source["quota_usd"])
+	require.Equal(t, 2.5, source["quota_used_usd"])
+	require.Equal(t, "monthly", source["quota_period"])
 	require.Equal(t, service.SubscriptionEntitlementOverageBlock, source["overage_policy"])
 	require.NotContains(t, source, "disabled")
 	require.NotContains(t, source, "unavailable_reason")
+}
+
+func TestAPIKeyHandler_GetAvailableGroupsUsesLegacyAliasUsageWhenHigher(t *testing.T) {
+	fx := newAPIKeyHandlerEntitlementFixture(t, true)
+	ctx := context.Background()
+	windowStart := fx.now.Add(-24 * time.Hour)
+
+	legacy, err := fx.client.UserSubscription.Create().
+		SetUserID(fx.userID).
+		SetGroupID(fx.subscriptionID).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(fx.now.Add(-48 * time.Hour)).
+		SetExpiresAt(fx.now.Add(48 * time.Hour)).
+		SetMonthlyWindowStart(windowStart).
+		SetMonthlyUsageUsd(4.25).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = fx.client.SubscriptionEntitlement.UpdateOneID(fx.entitlementID).
+		SetLegacySubscriptionID(legacy.ID).
+		SetMonthlyUsageUsd(1.5).
+		Save(ctx)
+	require.NoError(t, err)
+
+	resp := performJSONRequest(fx.router, http.MethodGet, "/groups/available", nil)
+	require.Equal(t, http.StatusOK, resp.Code)
+	data := decodeResponseDataSlice(t, resp)
+
+	subscription := findGroupResponse(t, data, fx.subscriptionID)
+	entitlements, ok := subscription["entitlements"].([]any)
+	require.True(t, ok)
+	require.Len(t, entitlements, 1)
+	require.Equal(t, 4.25, entitlements[0].(map[string]any)["quota_used_usd"])
+
+	sources, ok := subscription["access_sources"].([]any)
+	require.True(t, ok)
+	require.Len(t, sources, 1)
+	require.Equal(t, 4.25, sources[0].(map[string]any)["quota_used_usd"])
 }
 
 func TestAPIKeyHandler_GetAvailableGroupsReturnsAllEntitlementSources(t *testing.T) {

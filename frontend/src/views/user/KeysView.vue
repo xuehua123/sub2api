@@ -1608,6 +1608,12 @@ function entitlementFromAccessSource(source: AvailableGroupAccessSource): Availa
     plan_id: source.plan_id ?? null,
     starts_at: '',
     expires_at: source.expires_at ?? '',
+    purchase_price: source.purchase_price ?? null,
+    purchase_currency: source.purchase_currency ?? null,
+    quota_usd: source.quota_usd ?? null,
+    quota_used_usd: source.quota_used_usd ?? null,
+    quota_period: source.quota_period ?? null,
+    unit_cost_per_usd: source.unit_cost_per_usd ?? null,
     overage_policy: source.overage_policy ?? null,
   }
 }

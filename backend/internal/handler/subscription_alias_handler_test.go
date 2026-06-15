@@ -91,6 +91,9 @@ func TestSubscriptionHandler_V2OnListReturnsLegacyLinkedEntitlementAliases(t *te
 		DailyWindowStart:     &windowStart,
 		WeeklyWindowStart:    &windowStart,
 		MonthlyWindowStart:   &windowStart,
+		DailyLimitUSD:        ptr(10.0),
+		WeeklyLimitUSD:       ptr(20.0),
+		MonthlyLimitUSD:      ptr(30.0),
 		DailyUsageUSD:        1.25,
 		WeeklyUsageUSD:       2.5,
 		MonthlyUsageUSD:      9.75,
@@ -125,6 +128,9 @@ func TestSubscriptionHandler_V2OnListReturnsLegacyLinkedEntitlementAliases(t *te
 	require.Equal(t, float64(entitlementID), got["entitlement_id"])
 	require.Equal(t, float64(fx.planID), got["plan_id"])
 	require.Equal(t, service.SubscriptionEntitlementOverageBalanceFallback, got["overage_policy"])
+	require.Equal(t, 10.0, got["daily_limit_usd"])
+	require.Equal(t, 20.0, got["weekly_limit_usd"])
+	require.Equal(t, 30.0, got["monthly_limit_usd"])
 	require.Equal(t, 1.25, got["daily_usage_usd"])
 	require.Equal(t, 2.5, got["weekly_usage_usd"])
 	require.Equal(t, 9.75, got["monthly_usage_usd"])
@@ -181,6 +187,41 @@ func TestSubscriptionHandler_V2OnActiveFiltersEntitlementWindowAndStatus(t *test
 	rows := decodeSubscriptionAliasSlice(t, resp.Body.Bytes())
 	require.Len(t, rows, 1)
 	require.Equal(t, float64(activeID), rows[0]["entitlement_id"])
+}
+
+func TestSubscriptionHandler_V2OnActiveAliasesUseLegacyUsageWhenHigher(t *testing.T) {
+	fx := newSubscriptionAliasFixture(t, true)
+	legacyID := mustCreateAliasLegacySubscription(t, fx.client, fx.userID, fx.groupA, fx.now, service.SubscriptionStatusActive)
+	windowStart := fx.now.Add(-30 * time.Minute)
+	mustCreateEntitlementForHandler(t, fx.repo, service.SubscriptionEntitlement{
+		UserID:               fx.userID,
+		LegacySubscriptionID: &legacyID,
+		Name:                 "legacy usage alias",
+		Status:               service.SubscriptionStatusActive,
+		StartsAt:             fx.now.Add(-time.Hour),
+		ExpiresAt:            fx.now.Add(24 * time.Hour),
+		DailyWindowStart:     &windowStart,
+		WeeklyWindowStart:    &windowStart,
+		MonthlyWindowStart:   &windowStart,
+		DailyLimitUSD:        ptr(10.0),
+		WeeklyLimitUSD:       ptr(20.0),
+		MonthlyLimitUSD:      ptr(30.0),
+		DailyUsageUSD:        0.1,
+		WeeklyUsageUSD:       0.2,
+		MonthlyUsageUSD:      0.3,
+	}, []int64{fx.groupA})
+
+	resp := performJSONRequest(fx.router, http.MethodGet, "/subscriptions/active", nil)
+
+	require.Equal(t, http.StatusOK, resp.Code)
+	rows := decodeSubscriptionAliasSlice(t, resp.Body.Bytes())
+	require.Len(t, rows, 1)
+	require.Equal(t, 10.0, rows[0]["daily_limit_usd"])
+	require.Equal(t, 20.0, rows[0]["weekly_limit_usd"])
+	require.Equal(t, 30.0, rows[0]["monthly_limit_usd"])
+	require.Equal(t, 0.5, rows[0]["daily_usage_usd"])
+	require.Equal(t, 1.5, rows[0]["weekly_usage_usd"])
+	require.Equal(t, 2.5, rows[0]["monthly_usage_usd"])
 }
 
 func TestSubscriptionHandler_V2OnPrimaryGroupSelection(t *testing.T) {

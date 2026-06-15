@@ -1160,7 +1160,15 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 			if err != nil {
 				return nil, fmt.Errorf("list active entitlement bindings: %w", err)
 			}
-			entitlementsByGroupID = buildAvailableEntitlementGroups(activeEntitlements)
+			var legacySubscriptionsByID map[int64]*UserSubscription
+			if hasLegacySubscriptionEntitlements(activeEntitlements) && s.userSubRepo != nil {
+				activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+				if err != nil {
+					return nil, fmt.Errorf("list active legacy subscriptions: %w", err)
+				}
+				legacySubscriptionsByID = mapLegacySubscriptionsByID(activeSubscriptions)
+			}
+			entitlementsByGroupID = buildAvailableEntitlementGroups(activeEntitlements, legacySubscriptionsByID)
 		}
 	} else {
 		activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
@@ -1223,19 +1231,25 @@ func buildAvailableGroupAccessSources(user *User, group *Group, entitlements []A
 		entitlementID := entitlement.ID
 		expiresAt := entitlement.ExpiresAt
 		sources = append(sources, AvailableAPIKeyGroupAccessSource{
-			Type:          APIKeyAccessSourceEntitlement,
-			Label:         entitlement.Name,
-			Name:          entitlement.Name,
-			EntitlementID: &entitlementID,
-			PlanID:        cloneInt64Ptr(entitlement.PlanID),
-			OveragePolicy: entitlement.OveragePolicy,
-			ExpiresAt:     &expiresAt,
+			Type:             APIKeyAccessSourceEntitlement,
+			Label:            entitlement.Name,
+			Name:             entitlement.Name,
+			EntitlementID:    &entitlementID,
+			PlanID:           cloneInt64Ptr(entitlement.PlanID),
+			PurchasePrice:    cloneFloat64Ptr(entitlement.PurchasePrice),
+			PurchaseCurrency: entitlement.PurchaseCurrency,
+			QuotaUSD:         cloneFloat64Ptr(entitlement.QuotaUSD),
+			QuotaUsedUSD:     entitlement.QuotaUsedUSD,
+			QuotaPeriod:      entitlement.QuotaPeriod,
+			UnitCostPerUSD:   cloneFloat64Ptr(entitlement.UnitCostPerUSD),
+			OveragePolicy:    entitlement.OveragePolicy,
+			ExpiresAt:        &expiresAt,
 		})
 	}
 	return sources
 }
 
-func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map[int64][]AvailableAPIKeyGroupEntitlement {
+func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement, legacySubscriptionsByID map[int64]*UserSubscription) map[int64][]AvailableAPIKeyGroupEntitlement {
 	out := make(map[int64][]AvailableAPIKeyGroupEntitlement)
 	now := time.Now()
 	for i := range entitlements {
@@ -1252,7 +1266,7 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 				PurchasePrice:    cloneFloat64Ptr(ent.PurchasePrice),
 				PurchaseCurrency: ent.PurchaseCurrency,
 				QuotaUSD:         cloneFloat64Ptr(ent.QuotaUSD),
-				QuotaUsedUSD:     entitlementCurrentPeriodUsageUSD(&ent, now),
+				QuotaUsedUSD:     entitlementDisplayPeriodUsageUSD(&ent, legacySubscriptionsByID, now),
 				QuotaPeriod:      ent.QuotaPeriod,
 				UnitCostPerUSD:   cloneFloat64Ptr(ent.UnitCostPerUSD),
 				OveragePolicy:    ent.OveragePolicy,
@@ -1265,6 +1279,40 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 		})
 	}
 	return out
+}
+
+func hasLegacySubscriptionEntitlements(entitlements []SubscriptionEntitlement) bool {
+	for i := range entitlements {
+		if entitlements[i].LegacySubscriptionID != nil && *entitlements[i].LegacySubscriptionID > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func mapLegacySubscriptionsByID(subscriptions []UserSubscription) map[int64]*UserSubscription {
+	out := make(map[int64]*UserSubscription, len(subscriptions))
+	for i := range subscriptions {
+		if subscriptions[i].ID <= 0 {
+			continue
+		}
+		out[subscriptions[i].ID] = &subscriptions[i]
+	}
+	return out
+}
+
+func entitlementDisplayPeriodUsageUSD(ent *SubscriptionEntitlement, legacySubscriptionsByID map[int64]*UserSubscription, now time.Time) float64 {
+	used := entitlementCurrentPeriodUsageUSD(ent, now)
+	if ent == nil || ent.LegacySubscriptionID == nil || *ent.LegacySubscriptionID <= 0 || len(legacySubscriptionsByID) == 0 {
+		return used
+	}
+	if legacySub := legacySubscriptionsByID[*ent.LegacySubscriptionID]; legacySub != nil {
+		legacyUsed := legacySubscriptionCurrentPeriodUsageUSD(legacySub, ent.QuotaPeriod, now)
+		if legacyUsed > used {
+			return legacyUsed
+		}
+	}
+	return used
 }
 
 func entitlementCurrentPeriodUsageUSD(ent *SubscriptionEntitlement, now time.Time) float64 {
@@ -1292,6 +1340,38 @@ func entitlementCurrentPeriodUsageUSD(ent *SubscriptionEntitlement, now time.Tim
 			return 0
 		}
 		used = ent.MonthlyUsageUSD
+	}
+	if used < 0 {
+		return 0
+	}
+	return used
+}
+
+func legacySubscriptionCurrentPeriodUsageUSD(sub *UserSubscription, quotaPeriod string, now time.Time) float64 {
+	if sub == nil {
+		return 0
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	var used float64
+	switch quotaPeriod {
+	case "daily":
+		if sub.DailyWindowStart != nil && !sub.HasOneTimeDailyQuota() && needsWindowResetAt(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now) {
+			return 0
+		}
+		used = sub.DailyUsageUSD
+	case "weekly":
+		if needsWindowResetAt(sub.WeeklyWindowStart, sub.StartsAt, 7*24*time.Hour, now) {
+			return 0
+		}
+		used = sub.WeeklyUsageUSD
+	default:
+		if needsWindowResetAt(sub.MonthlyWindowStart, sub.StartsAt, monthlyCycleDuration, now) {
+			return 0
+		}
+		used = sub.MonthlyUsageUSD
 	}
 	if used < 0 {
 		return 0

@@ -139,7 +139,7 @@ func (s *SubscriptionService) ListUserSubscriptionEntitlementAliases(ctx context
 	if err != nil {
 		return nil, err
 	}
-	return filterSubscriptionAliasEntitlements(entitlements), nil
+	return s.mergeLegacySubscriptionAliasUsage(ctx, userID, filterSubscriptionAliasEntitlements(entitlements), time.Now())
 }
 
 func (s *SubscriptionService) ListActiveUserSubscriptionEntitlementAliases(ctx context.Context, userID int64, now time.Time) ([]SubscriptionEntitlement, error) {
@@ -150,7 +150,7 @@ func (s *SubscriptionService) ListActiveUserSubscriptionEntitlementAliases(ctx c
 	if err != nil {
 		return nil, err
 	}
-	return filterSubscriptionAliasEntitlements(entitlements), nil
+	return s.mergeLegacySubscriptionAliasUsage(ctx, userID, filterSubscriptionAliasEntitlements(entitlements), now)
 }
 
 func filterSubscriptionAliasEntitlements(entitlements []SubscriptionEntitlement) []SubscriptionEntitlement {
@@ -162,6 +162,41 @@ func filterSubscriptionAliasEntitlements(entitlements []SubscriptionEntitlement)
 		out = append(out, entitlements[i])
 	}
 	return out
+}
+
+func (s *SubscriptionService) mergeLegacySubscriptionAliasUsage(ctx context.Context, userID int64, aliases []SubscriptionEntitlement, now time.Time) ([]SubscriptionEntitlement, error) {
+	if len(aliases) == 0 || s == nil || s.userSubRepo == nil || !hasLegacySubscriptionEntitlements(aliases) {
+		return aliases, nil
+	}
+	activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	legacySubscriptionsByID := mapLegacySubscriptionsByID(activeSubscriptions)
+	for i := range aliases {
+		mergeLegacySubscriptionUsageIntoEntitlement(&aliases[i], legacySubscriptionsByID, now)
+	}
+	return aliases, nil
+}
+
+func mergeLegacySubscriptionUsageIntoEntitlement(ent *SubscriptionEntitlement, legacySubscriptionsByID map[int64]*UserSubscription, now time.Time) {
+	if ent == nil || ent.LegacySubscriptionID == nil || *ent.LegacySubscriptionID <= 0 || len(legacySubscriptionsByID) == 0 {
+		return
+	}
+	legacySub := legacySubscriptionsByID[*ent.LegacySubscriptionID]
+	if legacySub == nil {
+		return
+	}
+	ent.DailyUsageUSD = maxFloat64(ent.DailyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "daily", now))
+	ent.WeeklyUsageUSD = maxFloat64(ent.WeeklyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "weekly", now))
+	ent.MonthlyUsageUSD = maxFloat64(ent.MonthlyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "monthly", now))
+}
+
+func maxFloat64(left, right float64) float64 {
+	if right > left {
+		return right
+	}
+	return left
 }
 
 func (s *SubscriptionService) initMaintenanceQueue(cfg *config.Config) {
