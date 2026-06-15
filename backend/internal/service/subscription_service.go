@@ -686,6 +686,10 @@ func normalizeAssignValidityDays(days int) int {
 
 // RevokeSubscription 撤销订阅
 func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscriptionID int64) error {
+	if entitlementID, ok := syntheticEntitlementIDFromSubscriptionID(subscriptionID); ok {
+		return s.adminRevokeEntitlement(ctx, entitlementID)
+	}
+
 	// 先获取订阅信息用于失效缓存
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
 	if err != nil {
@@ -726,6 +730,10 @@ func (s *SubscriptionService) RevokeUserSubscription(ctx context.Context, userID
 
 // ExtendSubscription 调整订阅时长（正数延长，负数缩短）
 func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscriptionID int64, days int) (*UserSubscription, error) {
+	if entitlementID, ok := syntheticEntitlementIDFromSubscriptionID(subscriptionID); ok {
+		return s.adminAdjustEntitlement(ctx, entitlementID, days)
+	}
+
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
 	if err != nil {
 		return nil, ErrSubscriptionNotFound
@@ -1760,6 +1768,10 @@ func (s *SubscriptionService) ensureWindowMaintenance(ctx context.Context, sub *
 
 // AdminResetQuota manually resets the daily, weekly, and/or monthly usage windows.
 func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionID int64, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error) {
+	if entitlementID, ok := syntheticEntitlementIDFromSubscriptionID(subscriptionID); ok {
+		return s.adminResetEntitlementQuota(ctx, entitlementID, resetDaily, resetWeekly, resetMonthly)
+	}
+
 	if !resetDaily && !resetWeekly && !resetMonthly {
 		return nil, ErrInvalidInput
 	}
