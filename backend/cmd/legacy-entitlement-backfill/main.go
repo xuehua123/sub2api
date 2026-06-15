@@ -21,11 +21,12 @@ import (
 )
 
 const (
-	modeDryRun    = "dry-run"
-	modeApply     = "apply"
-	modeSnapshot  = "snapshot"
-	modeRollback  = "rollback"
-	modeReconcile = "reconcile"
+	modeDryRun        = "dry-run"
+	modeApply         = "apply"
+	modeSnapshot      = "snapshot"
+	modeRollback      = "rollback"
+	modeReconcile     = "reconcile"
+	modeResumeAPIKeys = "resume-api-keys"
 
 	envLocal      = "local"
 	envStaging    = "staging"
@@ -100,12 +101,15 @@ type summary struct {
 	CoveredAPIKeys                int64             `json:"covered_api_keys,omitempty"`
 	MissingSnapshotAPIKeys        int64             `json:"missing_snapshot_api_keys,omitempty"`
 	UpdatedAPIKeys                int64             `json:"updated_api_keys,omitempty"`
+	CandidateAPIKeys              int64             `json:"candidate_api_keys,omitempty"`
+	SkippedAPIKeys                int64             `json:"skipped_api_keys,omitempty"`
 	RolledBackAPIKeys             int64             `json:"rolled_back_api_keys,omitempty"`
 	Reconciliation                map[string]int64  `json:"reconciliation,omitempty"`
 	ReviewReasons                 map[string]int64  `json:"review_reasons,omitempty"`
 	AmbiguousAPIKeyDetails        []ambiguousAPIKey `json:"ambiguous_api_key_details,omitempty"`
 	SnapshotAPIKeyDetails         []snapshotAPIKey  `json:"snapshot_api_key_details,omitempty"`
 	MissingSnapshotAPIKeyDetails  []snapshotAPIKey  `json:"missing_snapshot_api_key_details,omitempty"`
+	RestartRequired               bool              `json:"restart_required,omitempty"`
 	Warnings                      []string          `json:"warnings,omitempty"`
 	PostWriteReconciliationSQL    []string          `json:"post_write_reconciliation_sql,omitempty"`
 }
@@ -216,7 +220,7 @@ func parseConfig(args []string, output io.Writer) (config, bool, error) {
 	}
 	fs := flag.NewFlagSet("legacy-entitlement-backfill", flag.ContinueOnError)
 	fs.SetOutput(output)
-	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "Mode: dry-run, apply, snapshot, rollback, reconcile")
+	fs.StringVar(&cfg.Mode, "mode", cfg.Mode, "Mode: dry-run, apply, snapshot, resume-api-keys, rollback, reconcile")
 	fs.StringVar(&cfg.Env, "env", cfg.Env, "Target environment label: local, staging, production")
 	fs.StringVar(&cfg.DatabaseURL, "database-url", "", "PostgreSQL URL. Prefer DATABASE_URL env var; value is never printed")
 	fs.StringVar(&cfg.DatabaseURLEnv, "database-url-env", cfg.DatabaseURLEnv, "Environment variable that contains PostgreSQL URL")
@@ -242,7 +246,7 @@ func parseConfig(args []string, output io.Writer) (config, bool, error) {
 func validateConfig(cfg config) error {
 	cfg.Mode = strings.ToLower(strings.TrimSpace(cfg.Mode))
 	switch cfg.Mode {
-	case modeDryRun, modeApply, modeSnapshot, modeRollback, modeReconcile:
+	case modeDryRun, modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback, modeReconcile:
 	default:
 		return fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}
@@ -263,7 +267,7 @@ func validateConfig(cfg config) error {
 	if cfg.StatementTimeout <= 0 {
 		return errors.New("timeout must be positive")
 	}
-	writeMode := cfg.Mode == modeApply || cfg.Mode == modeSnapshot || cfg.Mode == modeRollback
+	writeMode := cfg.Mode == modeApply || cfg.Mode == modeSnapshot || cfg.Mode == modeResumeAPIKeys || cfg.Mode == modeRollback
 	if writeMode && !cfg.Execute {
 		return fmt.Errorf("%s mode requires -execute", cfg.Mode)
 	}
@@ -342,7 +346,24 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
 			n, err := rollbackAPIKeys(ctx, tx, cfg.MappingVersion)
 			sum.RolledBackAPIKeys = n
+			if n > 0 {
+				markAPIKeyRestartRequired(&sum)
+			}
 			return err
+		}); err != nil {
+			return sum, err
+		}
+	case modeResumeAPIKeys:
+		if err := ensureWritePreconditions(ctx, db, cfg.Mode, cfg.MappingVersion); err != nil {
+			return sum, err
+		}
+		if err := withTx(ctx, db, false, func(tx *sql.Tx) error {
+			resumeSum, err := resumeAPIKeys(ctx, tx, cfg.MappingVersion)
+			if err != nil {
+				return err
+			}
+			mergeApplySummary(&sum, resumeSum)
+			return nil
 		}); err != nil {
 			return sum, err
 		}
@@ -379,7 +400,7 @@ func execute(ctx context.Context, cfg config) (summary, error) {
 
 func writeModeRequiresGate(mode string) bool {
 	switch mode {
-	case modeApply, modeSnapshot, modeRollback:
+	case modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback:
 		return true
 	default:
 		return false
@@ -1272,25 +1293,177 @@ func applySnapshotCoverage(sum *summary, coverage snapshotCoverage) {
 
 func migrateEligibleAPIKeys(ctx context.Context, tx *sql.Tx, version string) (int64, error) {
 	res, err := tx.ExecContext(ctx, `
-WITH eligible AS (
+WITH source_candidates AS (
     SELECT
         ak.id AS api_key_id,
+        ak.user_id,
         ak.group_id AS old_group_id,
-        se.id AS entitlement_id,
+        us.id AS legacy_subscription_id,
         m.runtime_group_id
     FROM api_keys ak
     JOIN groups g ON g.id = ak.group_id
     JOIN user_subscriptions us ON us.user_id = ak.user_id AND us.group_id = ak.group_id
-    JOIN subscription_entitlements se ON se.legacy_subscription_id = us.id
     JOIN subscription_legacy_backfill_mappings m ON m.legacy_group_id = us.group_id
     WHERE ak.deleted_at IS NULL
       AND ak.status = 'active'
+      AND g.deleted_at IS NULL
       AND g.subscription_type = 'subscription'
       AND us.deleted_at IS NULL
       AND us.status = 'active'
       AND us.expires_at > NOW()
-      AND se.deleted_at IS NULL
-      AND se.source_type = $2::text
+      AND m.mapping_version = $1::text
+      AND (
+          SELECT COUNT(*)
+          FROM user_subscriptions us2
+          WHERE us2.user_id = ak.user_id
+            AND us2.group_id = ak.group_id
+            AND us2.deleted_at IS NULL
+            AND us2.status = 'active'
+            AND us2.expires_at > NOW()
+      ) = 1
+),
+valid_targets AS (
+    SELECT
+        sc.api_key_id,
+        sc.old_group_id,
+        MIN(se.id) AS entitlement_id,
+        sc.runtime_group_id
+    FROM source_candidates sc
+    JOIN subscription_entitlements se
+      ON se.legacy_subscription_id = sc.legacy_subscription_id
+     AND se.user_id = sc.user_id
+     AND se.deleted_at IS NULL
+     AND se.source_type = $2::text
+    JOIN subscription_entitlement_groups seg
+      ON seg.entitlement_id = se.id
+     AND seg.group_id = sc.runtime_group_id
+     AND seg.enabled = TRUE
+    GROUP BY sc.api_key_id, sc.old_group_id, sc.runtime_group_id
+    HAVING COUNT(DISTINCT se.id) = 1
+)
+UPDATE api_keys ak
+SET
+    group_id = valid_targets.runtime_group_id,
+    access_source = 'entitlement',
+    subscription_entitlement_id = valid_targets.entitlement_id,
+    updated_at = NOW()
+FROM valid_targets
+WHERE ak.id = valid_targets.api_key_id
+  AND ak.group_id = valid_targets.old_group_id`, version, sourceLegacyBackfill)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+func resumeAPIKeys(ctx context.Context, tx *sql.Tx, version string) (summary, error) {
+	sum := summary{
+		ReviewReasons:  map[string]int64{},
+		Reconciliation: map[string]int64{},
+	}
+	if err := ensureMappingVersionExists(ctx, tx, version); err != nil {
+		return sum, opError("check mapping version", err)
+	}
+	if err := ensureResumeRuntimeGroupsHaveSchedulableAccounts(ctx, tx, version); err != nil {
+		return sum, opError("check runtime group account pools", err)
+	}
+	candidates, err := countResumeAPIKeyCandidates(ctx, tx, version)
+	if err != nil {
+		return sum, opError("count resume api key candidates", err)
+	}
+	sum.CandidateAPIKeys = candidates
+
+	coverage, err := collectResumeSnapshotCoverage(ctx, tx, version)
+	applySnapshotCoverage(&sum, coverage)
+	if err != nil {
+		return sum, opError("check resume snapshot coverage", err)
+	}
+	if err := ensureSnapshotCoverage(coverage); err != nil {
+		return sum, err
+	}
+	if err := ensureResumeEntitlementTargetsValid(ctx, tx, version); err != nil {
+		return sum, opError("check resume entitlement targets", err)
+	}
+	updated, err := migrateEligibleAPIKeys(ctx, tx, version)
+	if err != nil {
+		return sum, opError("resume api keys", err)
+	}
+	sum.UpdatedAPIKeys = updated
+	if candidates > updated {
+		sum.SkippedAPIKeys = candidates - updated
+	}
+	if updated > 0 {
+		markAPIKeyRestartRequired(&sum)
+	}
+	return sum, nil
+}
+
+func ensureMappingVersionExists(ctx context.Context, tx *sql.Tx, version string) error {
+	var count int64
+	if err := tx.QueryRowContext(ctx, `
+SELECT COUNT(*)
+FROM subscription_legacy_backfill_mappings
+WHERE mapping_version = $1::text`, version).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		return fmt.Errorf("mapping_version %q has no subscription_legacy_backfill_mappings rows", version)
+	}
+	return nil
+}
+
+func ensureResumeRuntimeGroupsHaveSchedulableAccounts(ctx context.Context, tx *sql.Tx, version string) error {
+	var count int64
+	if err := tx.QueryRowContext(ctx, `
+WITH runtime_groups AS (
+    SELECT DISTINCT runtime_group_id
+    FROM subscription_legacy_backfill_mappings
+    WHERE mapping_version = $1::text
+),
+runtime_pools AS (
+    SELECT
+        rg.runtime_group_id,
+        COUNT(DISTINCT a.id) FILTER (
+            WHERE a.status = 'active'
+              AND a.deleted_at IS NULL
+              AND a.schedulable = TRUE
+              AND (a.temp_unschedulable_until IS NULL OR a.temp_unschedulable_until <= NOW())
+              AND (a.expires_at IS NULL OR a.expires_at > NOW() OR a.auto_pause_on_expired = FALSE)
+              AND (a.overload_until IS NULL OR a.overload_until <= NOW())
+              AND (a.rate_limit_reset_at IS NULL OR a.rate_limit_reset_at <= NOW())
+        ) AS schedulable_accounts
+    FROM runtime_groups rg
+    LEFT JOIN account_groups ag ON ag.group_id = rg.runtime_group_id
+    LEFT JOIN accounts a ON a.id = ag.account_id AND a.deleted_at IS NULL
+    GROUP BY rg.runtime_group_id
+)
+SELECT COUNT(*)
+FROM runtime_pools
+WHERE schedulable_accounts = 0`, version).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("refusing resume-api-keys because %d mapped runtime groups have no active schedulable account pool", count)
+	}
+	return nil
+}
+
+func countResumeAPIKeyCandidates(ctx context.Context, tx *sql.Tx, version string) (int64, error) {
+	var count int64
+	err := tx.QueryRowContext(ctx, `
+WITH source_candidates AS (
+    SELECT ak.id AS api_key_id
+    FROM api_keys ak
+    JOIN groups g ON g.id = ak.group_id
+    JOIN user_subscriptions us ON us.user_id = ak.user_id AND us.group_id = ak.group_id
+    JOIN subscription_legacy_backfill_mappings m ON m.legacy_group_id = us.group_id
+    WHERE ak.deleted_at IS NULL
+      AND ak.status = 'active'
+      AND g.deleted_at IS NULL
+      AND g.subscription_type = 'subscription'
+      AND us.deleted_at IS NULL
+      AND us.status = 'active'
+      AND us.expires_at > NOW()
       AND m.mapping_version = $1::text
       AND (
           SELECT COUNT(*)
@@ -1302,19 +1475,147 @@ WITH eligible AS (
             AND us2.expires_at > NOW()
       ) = 1
 )
-UPDATE api_keys ak
-SET
-    group_id = eligible.runtime_group_id,
-    access_source = 'entitlement',
-    subscription_entitlement_id = eligible.entitlement_id,
-    updated_at = NOW()
-FROM eligible
-WHERE ak.id = eligible.api_key_id
-  AND ak.group_id = eligible.old_group_id`, version, sourceLegacyBackfill)
+SELECT COUNT(*) FROM source_candidates`, version).Scan(&count)
+	return count, err
+}
+
+func collectResumeSnapshotCoverage(ctx context.Context, tx *sql.Tx, version string) (snapshotCoverage, error) {
+	rows, err := tx.QueryContext(ctx, `
+WITH source_candidates AS (
+    SELECT
+        ak.id AS api_key_id,
+        ak.user_id,
+        ak.group_id AS old_group_id
+    FROM api_keys ak
+    JOIN groups g ON g.id = ak.group_id
+    JOIN user_subscriptions us ON us.user_id = ak.user_id AND us.group_id = ak.group_id
+    JOIN subscription_legacy_backfill_mappings m ON m.legacy_group_id = us.group_id
+    WHERE ak.deleted_at IS NULL
+      AND ak.status = 'active'
+      AND g.deleted_at IS NULL
+      AND g.subscription_type = 'subscription'
+      AND us.deleted_at IS NULL
+      AND us.status = 'active'
+      AND us.expires_at > NOW()
+      AND m.mapping_version = $1::text
+      AND (
+          SELECT COUNT(*)
+          FROM user_subscriptions us2
+          WHERE us2.user_id = ak.user_id
+            AND us2.group_id = ak.group_id
+            AND us2.deleted_at IS NULL
+            AND us2.status = 'active'
+            AND us2.expires_at > NOW()
+      ) = 1
+)
+SELECT
+    sc.api_key_id,
+    sc.user_id,
+    sc.old_group_id,
+    s.mapping_version
+FROM source_candidates sc
+LEFT JOIN api_key_legacy_backfill_snapshots s ON s.api_key_id = sc.api_key_id
+ORDER BY sc.api_key_id`, version)
 	if err != nil {
-		return 0, err
+		return snapshotCoverage{}, err
 	}
-	return res.RowsAffected()
+	defer func() { _ = rows.Close() }()
+
+	var coverage snapshotCoverage
+	for rows.Next() {
+		var detail snapshotAPIKey
+		var snapshotVersion sql.NullString
+		if err := rows.Scan(&detail.APIKeyID, &detail.UserID, &detail.OldGroupID, &snapshotVersion); err != nil {
+			return snapshotCoverage{}, err
+		}
+		if snapshotVersion.Valid {
+			detail.Status = "reused_existing_snapshot"
+			detail.SnapshotMappingVersion = snapshotVersion.String
+			coverage.Reused++
+			coverage.Covered++
+		} else {
+			detail.Status = "missing_snapshot"
+			coverage.Missing++
+		}
+		coverage.Details = append(coverage.Details, detail)
+	}
+	if err := rows.Err(); err != nil {
+		return snapshotCoverage{}, err
+	}
+	return coverage, nil
+}
+
+func ensureResumeEntitlementTargetsValid(ctx context.Context, tx *sql.Tx, version string) error {
+	var count int64
+	if err := tx.QueryRowContext(ctx, `
+WITH source_candidates AS (
+    SELECT
+        ak.id AS api_key_id,
+        ak.user_id,
+        us.id AS legacy_subscription_id,
+        m.runtime_group_id
+    FROM api_keys ak
+    JOIN groups g ON g.id = ak.group_id
+    JOIN user_subscriptions us ON us.user_id = ak.user_id AND us.group_id = ak.group_id
+    JOIN subscription_legacy_backfill_mappings m ON m.legacy_group_id = us.group_id
+    WHERE ak.deleted_at IS NULL
+      AND ak.status = 'active'
+      AND g.deleted_at IS NULL
+      AND g.subscription_type = 'subscription'
+      AND us.deleted_at IS NULL
+      AND us.status = 'active'
+      AND us.expires_at > NOW()
+      AND m.mapping_version = $1::text
+      AND (
+          SELECT COUNT(*)
+          FROM user_subscriptions us2
+          WHERE us2.user_id = ak.user_id
+            AND us2.group_id = ak.group_id
+            AND us2.deleted_at IS NULL
+            AND us2.status = 'active'
+            AND us2.expires_at > NOW()
+      ) = 1
+),
+target_counts AS (
+    SELECT
+        sc.api_key_id,
+        COUNT(DISTINCT se.id) AS entitlement_count,
+        COUNT(DISTINCT seg.entitlement_id) AS grant_count
+    FROM source_candidates sc
+    LEFT JOIN subscription_entitlements se
+      ON se.legacy_subscription_id = sc.legacy_subscription_id
+     AND se.user_id = sc.user_id
+     AND se.deleted_at IS NULL
+     AND se.source_type = $2::text
+    LEFT JOIN subscription_entitlement_groups seg
+      ON seg.entitlement_id = se.id
+     AND seg.group_id = sc.runtime_group_id
+     AND seg.enabled = TRUE
+    GROUP BY sc.api_key_id
+)
+SELECT COUNT(*)
+FROM target_counts
+WHERE entitlement_count <> 1 OR grant_count <> 1`, version, sourceLegacyBackfill).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("refusing resume-api-keys because %d candidate api keys do not have exactly one valid legacy entitlement covering the mapped runtime group", count)
+	}
+	return nil
+}
+
+func markAPIKeyRestartRequired(sum *summary) {
+	if sum == nil {
+		return
+	}
+	sum.RestartRequired = true
+	const warning = "api key auth cache may contain pre-backfill group or entitlement bindings; restart API services before accepting traffic"
+	for _, existing := range sum.Warnings {
+		if existing == warning {
+			return
+		}
+	}
+	sum.Warnings = append(sum.Warnings, warning)
 }
 
 func rollbackAPIKeys(ctx context.Context, tx *sql.Tx, version string) (int64, error) {
@@ -1395,7 +1696,24 @@ func mergeApplySummary(dst *summary, src summary) {
 	dst.CoveredAPIKeys += src.CoveredAPIKeys
 	dst.MissingSnapshotAPIKeys += src.MissingSnapshotAPIKeys
 	dst.UpdatedAPIKeys += src.UpdatedAPIKeys
+	dst.CandidateAPIKeys += src.CandidateAPIKeys
+	dst.SkippedAPIKeys += src.SkippedAPIKeys
 	dst.RolledBackAPIKeys += src.RolledBackAPIKeys
+	if src.RestartRequired {
+		dst.RestartRequired = true
+	}
+	for _, warning := range src.Warnings {
+		found := false
+		for _, existing := range dst.Warnings {
+			if existing == warning {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst.Warnings = append(dst.Warnings, warning)
+		}
+	}
 	dst.SnapshotAPIKeyDetails = append(dst.SnapshotAPIKeyDetails, src.SnapshotAPIKeyDetails...)
 	dst.MissingSnapshotAPIKeyDetails = append(dst.MissingSnapshotAPIKeyDetails, src.MissingSnapshotAPIKeyDetails...)
 }

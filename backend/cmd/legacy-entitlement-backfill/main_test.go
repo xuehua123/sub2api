@@ -14,38 +14,46 @@ import (
 )
 
 func TestValidateConfigRequiresExecuteForWriteModes(t *testing.T) {
-	cfg := config{
-		Mode:             modeApply,
-		Env:              envStaging,
-		DatabaseURL:      "postgres://user:secret@127.0.0.1/db?sslmode=disable",
-		MappingVersion:   "test-version",
-		StatementTimeout: time.Minute,
-	}
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := config{
+				Mode:             mode,
+				Env:              envStaging,
+				DatabaseURL:      "postgres://user:secret@127.0.0.1/db?sslmode=disable",
+				MappingVersion:   "test-version",
+				StatementTimeout: time.Minute,
+			}
 
-	err := validateConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), "requires -execute") {
-		t.Fatalf("expected execute error, got %v", err)
+			err := validateConfig(cfg)
+			if err == nil || !strings.Contains(err.Error(), "requires -execute") {
+				t.Fatalf("expected execute error, got %v", err)
+			}
+		})
 	}
 }
 
 func TestValidateConfigRequiresProductionConfirmationForWriteModes(t *testing.T) {
-	cfg := config{
-		Mode:             modeApply,
-		Env:              envProduction,
-		DatabaseURL:      "postgres://user:secret@127.0.0.1/db?sslmode=disable",
-		MappingVersion:   "test-version",
-		Execute:          true,
-		StatementTimeout: time.Minute,
-	}
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := config{
+				Mode:             mode,
+				Env:              envProduction,
+				DatabaseURL:      "postgres://user:secret@127.0.0.1/db?sslmode=disable",
+				MappingVersion:   "test-version",
+				Execute:          true,
+				StatementTimeout: time.Minute,
+			}
 
-	err := validateConfig(cfg)
-	if err == nil || !strings.Contains(err.Error(), "confirm-production") {
-		t.Fatalf("expected production confirmation error, got %v", err)
-	}
+			err := validateConfig(cfg)
+			if err == nil || !strings.Contains(err.Error(), "confirm-production") {
+				t.Fatalf("expected production confirmation error, got %v", err)
+			}
 
-	cfg.ConfirmProduction = confirmProduction
-	if err := validateConfig(cfg); err != nil {
-		t.Fatalf("expected valid production write config after confirmation, got %v", err)
+			cfg.ConfirmProduction = confirmProduction
+			if err := validateConfig(cfg); err != nil {
+				t.Fatalf("expected valid production write config after confirmation, got %v", err)
+			}
+		})
 	}
 }
 
@@ -115,7 +123,7 @@ func TestNullableFloat(t *testing.T) {
 }
 
 func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
-	for _, mode := range []string{modeApply, modeSnapshot, modeRollback} {
+	for _, mode := range []string{modeApply, modeSnapshot, modeResumeAPIKeys, modeRollback} {
 		t.Run(mode, func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			if err != nil {
@@ -136,6 +144,26 @@ func TestWritePreconditionsRejectWriteModesWhenFlagsAreNotFalse(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestResumeAPIKeysWritePreconditionsDoNotUseApplyUsageGuard(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectQuery("SELECT key, value").
+		WillReturnRows(sqlmock.NewRows([]string{"key", "value"}).
+			AddRow("subscription_entitlements_v2_enabled", "false").
+			AddRow("sub2_payment_page_legacy_mapping_enabled", "false"))
+
+	if err := ensureWritePreconditions(context.Background(), db, modeResumeAPIKeys, "test-version"); err != nil {
+		t.Fatalf("resume-api-keys should pass flag-only write preconditions, got %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -325,6 +353,192 @@ func TestApplySnapshotCoverageRecordsRedactedMissingDetails(t *testing.T) {
 	}
 	if len(sum.MissingSnapshotAPIKeyDetails) != 1 || sum.MissingSnapshotAPIKeyDetails[0].APIKeyID != 12 {
 		t.Fatalf("expected missing snapshot detail, got %+v", sum.MissingSnapshotAPIKeyDetails)
+	}
+}
+
+func TestMergeApplySummaryPreservesResumeFieldsAndWarnings(t *testing.T) {
+	dst := summary{Warnings: []string{"existing"}}
+	src := summary{
+		CandidateAPIKeys: 3,
+		UpdatedAPIKeys:   2,
+		SkippedAPIKeys:   1,
+		RestartRequired:  true,
+		Warnings:         []string{"existing", "restart required"},
+	}
+
+	mergeApplySummary(&dst, src)
+
+	if dst.CandidateAPIKeys != 3 || dst.UpdatedAPIKeys != 2 || dst.SkippedAPIKeys != 1 {
+		t.Fatalf("resume counters were not merged: %+v", dst)
+	}
+	if !dst.RestartRequired {
+		t.Fatalf("restart_required was not merged: %+v", dst)
+	}
+	if len(dst.Warnings) != 2 {
+		t.Fatalf("warnings should be deduped and merged, got %+v", dst.Warnings)
+	}
+}
+
+func TestResumeAPIKeysUpdatesCoveredKeysAndRequiresRestart(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)\\s+FROM subscription_legacy_backfill_mappings").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH runtime_groups AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "user_id", "old_group_id", "mapping_version"}).
+			AddRow(int64(101), int64(201), int64(301), "old-version"))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version", sourceLegacyBackfill).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectExec("WITH source_candidates AS").
+		WithArgs("test-version", sourceLegacyBackfill).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, err := resumeAPIKeys(context.Background(), tx, "test-version")
+	if err != nil {
+		_ = tx.Rollback()
+		t.Fatalf("resume-api-keys failed: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+
+	if sum.CandidateAPIKeys != 1 || sum.UpdatedAPIKeys != 1 || sum.SkippedAPIKeys != 0 {
+		t.Fatalf("unexpected resume counters: %+v", sum)
+	}
+	if sum.ReusedExistingSnapshots != 1 || sum.CoveredAPIKeys != 1 || sum.MissingSnapshotAPIKeys != 0 {
+		t.Fatalf("unexpected snapshot coverage: %+v", sum)
+	}
+	if !sum.RestartRequired || len(sum.Warnings) == 0 {
+		t.Fatalf("resume should flag API key cache restart requirement: %+v", sum)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResumeAPIKeysRejectsMissingSnapshotCoverage(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)\\s+FROM subscription_legacy_backfill_mappings").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH runtime_groups AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "user_id", "old_group_id", "mapping_version"}).
+			AddRow(int64(101), int64(201), int64(301), nil))
+	mock.ExpectRollback()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resumeAPIKeys(context.Background(), tx, "test-version")
+	if err == nil || !strings.Contains(err.Error(), "lack snapshot coverage") {
+		_ = tx.Rollback()
+		t.Fatalf("expected missing snapshot coverage error, got %v", err)
+	}
+	_ = tx.Rollback()
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResumeAPIKeysRejectsInvalidEntitlementTarget(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)\\s+FROM subscription_legacy_backfill_mappings").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH runtime_groups AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version").
+		WillReturnRows(sqlmock.NewRows([]string{"api_key_id", "user_id", "old_group_id", "mapping_version"}).
+			AddRow(int64(101), int64(201), int64(301), "old-version"))
+	mock.ExpectQuery("WITH source_candidates AS").
+		WithArgs("test-version", sourceLegacyBackfill).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(1)))
+	mock.ExpectRollback()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resumeAPIKeys(context.Background(), tx, "test-version")
+	if err == nil || !strings.Contains(err.Error(), "do not have exactly one valid legacy entitlement") {
+		_ = tx.Rollback()
+		t.Fatalf("expected invalid entitlement target error, got %v", err)
+	}
+	_ = tx.Rollback()
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestResumeAPIKeysRejectsMissingMappingVersion(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COUNT\\(\\*\\)\\s+FROM subscription_legacy_backfill_mappings").
+		WithArgs("missing-version").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(int64(0)))
+	mock.ExpectRollback()
+
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = resumeAPIKeys(context.Background(), tx, "missing-version")
+	if err == nil || !strings.Contains(err.Error(), "has no subscription_legacy_backfill_mappings rows") {
+		_ = tx.Rollback()
+		t.Fatalf("expected missing mapping version error, got %v", err)
+	}
+	_ = tx.Rollback()
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
