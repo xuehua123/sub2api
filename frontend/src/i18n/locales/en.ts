@@ -1090,6 +1090,9 @@ export default {
     actualDeductionHint: '{rate} actual price {amount}/$1',
     actualRmbCostHint: '{rate} actual price {amount}/$1',
     priceUnavailable: 'Price pending sync',
+    entitlementQuotaRemaining: 'Remaining {remaining} / {total}',
+    entitlementQuotaCompact: '{remaining} / {total} left',
+    entitlementQuotaUnavailable: 'Quota pending sync',
     quotaPeriod: {
       daily: 'Daily quota',
       weekly: 'Weekly quota',

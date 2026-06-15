@@ -96,6 +96,7 @@ func TestAPIKeyHandler_GetAvailableGroupsEntitlementAware(t *testing.T) {
 	require.Equal(t, 29.9, entitlement["purchase_price"])
 	require.Equal(t, "CNY", entitlement["purchase_currency"])
 	require.Equal(t, 10.0, entitlement["quota_usd"])
+	require.Equal(t, 2.5, entitlement["quota_used_usd"])
 	require.Equal(t, "monthly", entitlement["quota_period"])
 	require.InDelta(t, 2.99, entitlement["unit_cost_per_usd"], 0.000001)
 	require.Equal(t, service.SubscriptionEntitlementOverageBlock, entitlement["overage_policy"])
@@ -339,6 +340,7 @@ func mustCreateHandlerEntitlement(t *testing.T, client *dbent.Client, userID, gr
 		StartsAt:        now.Add(-48 * time.Hour),
 		ExpiresAt:       now.Add(48 * time.Hour),
 		MonthlyLimitUSD: &entitlementMonthlyLimit,
+		MonthlyUsageUSD: 2.5,
 		OveragePolicy:   service.SubscriptionEntitlementOverageBlock,
 	}
 	require.NoError(t, entitlementRepo.Create(context.Background(), ent, []int64{groupID}))

@@ -1237,6 +1237,7 @@ func buildAvailableGroupAccessSources(user *User, group *Group, entitlements []A
 
 func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map[int64][]AvailableAPIKeyGroupEntitlement {
 	out := make(map[int64][]AvailableAPIKeyGroupEntitlement)
+	now := time.Now()
 	for i := range entitlements {
 		ent := entitlements[i]
 		groupIDs := entitlementCoveredGroupIDs(&ent)
@@ -1251,6 +1252,7 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 				PurchasePrice:    cloneFloat64Ptr(ent.PurchasePrice),
 				PurchaseCurrency: ent.PurchaseCurrency,
 				QuotaUSD:         cloneFloat64Ptr(ent.QuotaUSD),
+				QuotaUsedUSD:     entitlementCurrentPeriodUsageUSD(&ent, now),
 				QuotaPeriod:      ent.QuotaPeriod,
 				UnitCostPerUSD:   cloneFloat64Ptr(ent.UnitCostPerUSD),
 				OveragePolicy:    ent.OveragePolicy,
@@ -1263,6 +1265,38 @@ func buildAvailableEntitlementGroups(entitlements []SubscriptionEntitlement) map
 		})
 	}
 	return out
+}
+
+func entitlementCurrentPeriodUsageUSD(ent *SubscriptionEntitlement, now time.Time) float64 {
+	if ent == nil {
+		return 0
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	var used float64
+	switch ent.QuotaPeriod {
+	case "daily":
+		if ent.NeedsDailyResetAt(now) {
+			return 0
+		}
+		used = ent.DailyUsageUSD
+	case "weekly":
+		if ent.NeedsWeeklyResetAt(now) {
+			return 0
+		}
+		used = ent.WeeklyUsageUSD
+	default:
+		if ent.NeedsMonthlyResetAt(now) {
+			return 0
+		}
+		used = ent.MonthlyUsageUSD
+	}
+	if used < 0 {
+		return 0
+	}
+	return used
 }
 
 func entitlementCoveredGroupIDs(ent *SubscriptionEntitlement) []int64 {

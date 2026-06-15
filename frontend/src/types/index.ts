@@ -566,6 +566,7 @@ export interface AvailableGroupEntitlement {
   purchase_price?: number | null
   purchase_currency?: string | null
   quota_usd?: number | null
+  quota_used_usd?: number | null
   quota_period?: 'daily' | 'weekly' | 'monthly' | string | null
   unit_cost_per_usd?: number | null
   overage_policy?: string | null

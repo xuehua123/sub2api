@@ -80,6 +80,7 @@ type AvailableGroupEntitlementDTO struct {
 	PurchasePrice    *float64  `json:"purchase_price,omitempty"`
 	PurchaseCurrency string    `json:"purchase_currency,omitempty"`
 	QuotaUSD         *float64  `json:"quota_usd,omitempty"`
+	QuotaUsedUSD     float64   `json:"quota_used_usd"`
 	QuotaPeriod      string    `json:"quota_period,omitempty"`
 	UnitCostPerUSD   *float64  `json:"unit_cost_per_usd,omitempty"`
 	OveragePolicy    string    `json:"overage_policy,omitempty"`
@@ -358,6 +359,7 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 					PurchasePrice:    ent.PurchasePrice,
 					PurchaseCurrency: ent.PurchaseCurrency,
 					QuotaUSD:         ent.QuotaUSD,
+					QuotaUsedUSD:     ent.QuotaUsedUSD,
 					QuotaPeriod:      ent.QuotaPeriod,
 					UnitCostPerUSD:   ent.UnitCostPerUSD,
 					OveragePolicy:    ent.OveragePolicy,

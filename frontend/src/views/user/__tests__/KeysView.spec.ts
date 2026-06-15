@@ -41,6 +41,7 @@ vi.mock('vue-i18n', async () => {
       t: (key: string, params?: Record<string, unknown>) => {
         if (params && 'amount' in params && 'rate' in params) return `${key}:${String(params.rate)}:${String(params.amount)}`
         if (params && 'amount' in params) return `${key}:${String(params.amount)}`
+        if (params && 'remaining' in params && 'total' in params) return `${key}:${String(params.remaining)}:${String(params.total)}`
         return key
       },
     }),
@@ -167,6 +168,7 @@ function subscriptionGroup(
       purchase_price: 29.9,
       purchase_currency: 'CNY',
       quota_usd: 10,
+      quota_used_usd: 2.5,
       quota_period: 'monthly',
       unit_cost_per_usd: 2.99,
       overage_policy: 'block',
@@ -283,6 +285,8 @@ describe('KeysView entitlement group binding', () => {
 
     expect(vm.entitlementQuotaPeriodTextByID(101)).toBe('keys.quotaPeriod.monthly')
     expect(vm.entitlementActualCostTextByID(101, 3)).toBe('keys.actualRmbCostHint:3x:¥8.97')
+    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaRemaining:$7.50:$10.00')
+    expect(vm.entitlementQuotaProgressWidthByID(101)).toBe('25%')
   })
 
   it('filters selectable groups by the selected entitlement first', async () => {

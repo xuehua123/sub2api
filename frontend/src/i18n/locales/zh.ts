@@ -1089,6 +1089,9 @@ export default {
     actualDeductionHint: '{rate}倍率后实际价格{amount}/刀',
     actualRmbCostHint: '{rate}倍率后实际价格{amount}/刀',
     priceUnavailable: '价格待同步',
+    entitlementQuotaRemaining: '剩余 {remaining} / {total}',
+    entitlementQuotaCompact: '剩余 {remaining} / {total}',
+    entitlementQuotaUnavailable: '额度待同步',
     quotaPeriod: {
       daily: '日额度',
       weekly: '周额度',

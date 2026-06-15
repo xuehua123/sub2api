@@ -116,10 +116,29 @@
               <div class="mt-1 w-full truncate text-sm font-semibold text-gray-900 dark:text-white">
                 {{ entitlementLabelByID(row.subscription_entitlement_id) }}
               </div>
-              <div class="mt-1 flex w-full justify-end text-xs">
-                <span class="font-medium text-primary-600 dark:text-primary-400">
-                  {{ t('keys.switchCardShort') }}
-                </span>
+              <div class="mt-1.5 w-full">
+                <div class="flex min-w-0 items-center justify-between gap-2 text-xs">
+                  <span
+                    :class="[
+                      'min-w-0 truncate font-semibold',
+                      entitlementQuotaTextClassByID(row.subscription_entitlement_id)
+                    ]"
+                  >
+                    {{ entitlementQuotaRemainingTextByID(row.subscription_entitlement_id) }}
+                  </span>
+                  <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                    {{ t('keys.switchCardShort') }}
+                  </span>
+                </div>
+                <div
+                  v-if="entitlementHasQuotaByID(row.subscription_entitlement_id)"
+                  class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"
+                >
+                  <div
+                    :class="['h-full rounded-full transition-all', entitlementQuotaBarClassByID(row.subscription_entitlement_id)]"
+                    :style="{ width: entitlementQuotaProgressWidthByID(row.subscription_entitlement_id) }"
+                  />
+                </div>
               </div>
             </button>
             <button
@@ -530,38 +549,111 @@
             data-testid="entitlement-select"
           >
             <template #selected="{ option }">
-              <span v-if="option" class="text-sm text-gray-900 dark:text-white">
-                {{ entitlementOptionLabel(option) }}
+              <span v-if="option" class="flex min-w-0 items-center justify-between gap-2">
+                <span class="min-w-0 truncate text-sm font-medium text-gray-900 dark:text-white">
+                  {{ entitlementOptionLabel(option) }}
+                </span>
+                <span
+                  :class="[
+                    'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold',
+                    entitlementOptionQuotaPillClass(option)
+                  ]"
+                >
+                  {{ entitlementOptionQuotaCompactText(option) }}
+                </span>
               </span>
               <span v-else class="text-gray-400">{{ t('keys.entitlementSelectPlaceholder') }}</span>
             </template>
             <template #option="{ option, selected }">
-              <div class="flex w-full items-start justify-between gap-3">
-                <div class="min-w-0 text-left">
-                  <div class="truncate text-sm font-medium text-gray-900 dark:text-white">
-                    {{ entitlementOptionLabel(option) }}
+              <div class="w-full">
+                <div class="flex w-full items-start justify-between gap-3">
+                  <div class="min-w-0 flex-1 text-left">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:ring-primary-800/70">
+                        <Icon name="badge" size="xs" />
+                        {{ t('keys.planCardBadge') }}
+                      </span>
+                      <span class="min-w-0 truncate text-sm font-semibold text-gray-900 dark:text-white">
+                        {{ entitlementOptionLabel(option) }}
+                      </span>
+                    </div>
+                    <div
+                      v-if="entitlementOptionDescription(option)"
+                      class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                    >
+                      {{ entitlementOptionDescription(option) }}
+                    </div>
                   </div>
-                  <div
-                    v-if="entitlementOptionDescription(option)"
-                    class="mt-0.5 text-xs text-gray-500 dark:text-gray-400"
-                  >
-                    {{ entitlementOptionDescription(option) }}
+                  <div class="flex shrink-0 items-center gap-2 pt-0.5">
+                    <span
+                      :class="[
+                        'inline-flex items-center whitespace-nowrap rounded-full px-3 py-1 text-xs font-semibold',
+                        entitlementOptionQuotaPillClass(option)
+                      ]"
+                    >
+                      {{ entitlementOptionQuotaCompactText(option) }}
+                    </span>
+                    <Icon
+                      v-if="selected"
+                      name="check"
+                      size="sm"
+                      class="shrink-0 text-primary-500"
+                    />
                   </div>
                 </div>
-                <Icon
-                  v-if="selected"
-                  name="check"
-                  size="sm"
-                  class="shrink-0 text-primary-500"
-                />
+                <div
+                  v-if="entitlementOptionHasQuota(option)"
+                  class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"
+                >
+                  <div
+                    :class="['h-full rounded-full transition-all', entitlementOptionQuotaBarClass(option)]"
+                    :style="{ width: entitlementOptionQuotaProgressWidth(option) }"
+                  />
+                </div>
               </div>
             </template>
           </Select>
-          <div v-else class="text-sm text-gray-700 dark:text-gray-300" data-testid="entitlement-auto-selected">
-            {{ t('keys.entitlementAutoSelected') }}:
-            <span class="font-medium text-gray-900 dark:text-white">
-              {{ formatEntitlementSummary(entitlementOptions[0].entitlement) }}
-            </span>
+          <div
+            v-else
+            class="rounded-lg border border-primary-100 bg-white/70 p-3 text-sm text-gray-700 dark:border-primary-900/40 dark:bg-dark-800/70 dark:text-gray-300"
+            data-testid="entitlement-auto-selected"
+          >
+            <div class="flex min-w-0 items-start justify-between gap-3">
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="inline-flex shrink-0 items-center gap-1 rounded-md bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700 ring-1 ring-primary-200 dark:bg-primary-900/20 dark:text-primary-300 dark:ring-primary-800/70">
+                    <Icon name="badge" size="xs" />
+                    {{ t('keys.entitlementAutoSelected') }}
+                  </span>
+                  <span class="min-w-0 truncate font-semibold text-gray-900 dark:text-white">
+                    {{ formatEntitlementLabel(entitlementOptions[0].entitlement) }}
+                  </span>
+                </div>
+                <div
+                  v-if="formatEntitlementDescription(entitlementOptions[0].entitlement)"
+                  class="mt-1 text-xs text-gray-500 dark:text-gray-400"
+                >
+                  {{ formatEntitlementDescription(entitlementOptions[0].entitlement) }}
+                </div>
+              </div>
+              <span
+                :class="[
+                  'shrink-0 rounded-full px-3 py-1 text-xs font-semibold',
+                  entitlementQuotaPillClass(entitlementOptions[0].entitlement)
+                ]"
+              >
+                {{ entitlementQuotaCompactText(entitlementOptions[0].entitlement) }}
+              </span>
+            </div>
+            <div
+              v-if="entitlementHasQuota(entitlementOptions[0].entitlement)"
+              class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-700"
+            >
+              <div
+                :class="['h-full rounded-full transition-all', entitlementQuotaBarClass(entitlementOptions[0].entitlement)]"
+                :style="{ width: entitlementQuotaProgressWidth(entitlementOptions[0].entitlement) }"
+              />
+            </div>
           </div>
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
             {{ formData.subscription_entitlement_id ? t('keys.entitlementSelectedHint') : t('keys.entitlementChooseFirstHint') }}
@@ -1667,6 +1759,157 @@ function formatMoneyAmount(value: number, currency: string | null | undefined): 
   }).format(value)}`
 }
 
+function formatQuotaUSD(value: number): string {
+  const absolute = Math.abs(value)
+  const fractionDigits = absolute >= 100 ? 0 : 2
+  return `$${new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  }).format(value)}`
+}
+
+function entitlementQuotaTotal(entitlement: AvailableGroupEntitlement | null | undefined): number | null {
+  return positiveNumber(entitlement?.quota_usd)
+}
+
+function entitlementQuotaUsed(entitlement: AvailableGroupEntitlement | null | undefined): number {
+  const used = Number(entitlement?.quota_used_usd ?? 0)
+  return Number.isFinite(used) && used > 0 ? used : 0
+}
+
+function entitlementQuotaRemaining(entitlement: AvailableGroupEntitlement | null | undefined): number | null {
+  const total = entitlementQuotaTotal(entitlement)
+  if (total === null) return null
+  return Math.max(total - entitlementQuotaUsed(entitlement), 0)
+}
+
+function entitlementQuotaUsedPercent(entitlement: AvailableGroupEntitlement | null | undefined): number {
+  const total = entitlementQuotaTotal(entitlement)
+  if (total === null || total <= 0) return 0
+  return Math.min(Math.max((entitlementQuotaUsed(entitlement) / total) * 100, 0), 100)
+}
+
+function entitlementHasQuota(entitlement: AvailableGroupEntitlement | null | undefined): boolean {
+  return entitlementQuotaTotal(entitlement) !== null
+}
+
+function entitlementQuotaProgressWidth(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  return `${entitlementQuotaUsedPercent(entitlement)}%`
+}
+
+function entitlementQuotaRemainingText(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  const total = entitlementQuotaTotal(entitlement)
+  const remaining = entitlementQuotaRemaining(entitlement)
+  if (total === null || remaining === null) return t('keys.entitlementQuotaUnavailable')
+  return t('keys.entitlementQuotaRemaining', {
+    remaining: formatQuotaUSD(remaining),
+    total: formatQuotaUSD(total),
+  })
+}
+
+function entitlementQuotaCompactText(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  const total = entitlementQuotaTotal(entitlement)
+  const remaining = entitlementQuotaRemaining(entitlement)
+  if (total === null || remaining === null) return t('keys.entitlementQuotaUnavailable')
+  return t('keys.entitlementQuotaCompact', {
+    remaining: formatQuotaUSD(remaining),
+    total: formatQuotaUSD(total),
+  })
+}
+
+function entitlementQuotaTone(entitlement: AvailableGroupEntitlement | null | undefined): 'normal' | 'warning' | 'danger' | 'unknown' {
+  const total = entitlementQuotaTotal(entitlement)
+  if (total === null) return 'unknown'
+  const percent = entitlementQuotaUsedPercent(entitlement)
+  if (percent >= 100) return 'danger'
+  if (percent >= 80) return 'warning'
+  return 'normal'
+}
+
+function entitlementQuotaTextClass(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  switch (entitlementQuotaTone(entitlement)) {
+    case 'danger':
+      return 'text-red-600 dark:text-red-400'
+    case 'warning':
+      return 'text-amber-600 dark:text-amber-400'
+    case 'unknown':
+      return 'text-gray-500 dark:text-gray-400'
+    default:
+      return 'text-primary-700 dark:text-primary-300'
+  }
+}
+
+function entitlementQuotaPillClass(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  switch (entitlementQuotaTone(entitlement)) {
+    case 'danger':
+      return 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
+    case 'warning':
+      return 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+    case 'unknown':
+      return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
+    default:
+      return 'bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300'
+  }
+}
+
+function entitlementQuotaBarClass(entitlement: AvailableGroupEntitlement | null | undefined): string {
+  switch (entitlementQuotaTone(entitlement)) {
+    case 'danger':
+      return 'bg-red-500'
+    case 'warning':
+      return 'bg-amber-500'
+    default:
+      return 'bg-primary-500'
+  }
+}
+
+function entitlementQuotaRemainingTextByID(id: number | null | undefined): string {
+  return entitlementQuotaRemainingText(entitlementByID(id))
+}
+
+function entitlementQuotaTextClassByID(id: number | null | undefined): string {
+  return entitlementQuotaTextClass(entitlementByID(id))
+}
+
+function entitlementHasQuotaByID(id: number | null | undefined): boolean {
+  return entitlementHasQuota(entitlementByID(id))
+}
+
+function entitlementQuotaProgressWidthByID(id: number | null | undefined): string {
+  return entitlementQuotaProgressWidth(entitlementByID(id))
+}
+
+function entitlementQuotaBarClassByID(id: number | null | undefined): string {
+  return entitlementQuotaBarClass(entitlementByID(id))
+}
+
+function entitlementFromSelectOption(option: unknown): AvailableGroupEntitlement | null {
+  if (typeof option === 'object' && option !== null && 'entitlement' in option) {
+    return (option as { entitlement?: AvailableGroupEntitlement }).entitlement ?? null
+  }
+  return null
+}
+
+function entitlementOptionQuotaCompactText(option: unknown): string {
+  return entitlementQuotaCompactText(entitlementFromSelectOption(option))
+}
+
+function entitlementOptionQuotaPillClass(option: unknown): string {
+  return entitlementQuotaPillClass(entitlementFromSelectOption(option))
+}
+
+function entitlementOptionHasQuota(option: unknown): boolean {
+  return entitlementHasQuota(entitlementFromSelectOption(option))
+}
+
+function entitlementOptionQuotaProgressWidth(option: unknown): string {
+  return entitlementQuotaProgressWidth(entitlementFromSelectOption(option))
+}
+
+function entitlementOptionQuotaBarClass(option: unknown): string {
+  return entitlementQuotaBarClass(entitlementFromSelectOption(option))
+}
+
 function entitlementUnitCost(entitlement: AvailableGroupEntitlement | null | undefined): number | null {
   if (!entitlement) return null
   const provided = positiveNumber(entitlement.unit_cost_per_usd)
@@ -1754,11 +1997,6 @@ function formatEntitlementDescription(entitlement: AvailableGroupEntitlement): s
     parts.push(t('keys.entitlementExpires', { date: formatDateTime(entitlement.expires_at) }))
   }
   return parts.join(' / ')
-}
-
-function formatEntitlementSummary(entitlement: AvailableGroupEntitlement): string {
-  const description = formatEntitlementDescription(entitlement)
-  return description ? `${formatEntitlementLabel(entitlement)} / ${description}` : formatEntitlementLabel(entitlement)
 }
 
 function entitlementByID(id: number | null | undefined): AvailableGroupEntitlement | null {
