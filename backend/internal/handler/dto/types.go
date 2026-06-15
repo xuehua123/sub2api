@@ -683,6 +683,14 @@ type AdminUserSubscription struct {
 	Notes      string    `json:"notes"`
 
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
+
+	EntitlementID             *int64     `json:"entitlement_id"`
+	PlanID                    *int64     `json:"plan_id"`
+	PlanName                  *string    `json:"plan_name"`
+	EntitlementStatus         *string    `json:"entitlement_status"`
+	EntitlementExpiresAt      *time.Time `json:"entitlement_expires_at"`
+	EntitlementPrimaryGroupID *int64     `json:"entitlement_primary_group_id"`
+	EntitlementOveragePolicy  *string    `json:"entitlement_overage_policy"`
 }
 
 type BulkAssignResult struct {

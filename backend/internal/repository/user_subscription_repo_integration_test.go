@@ -225,6 +225,84 @@ func (s *UserSubscriptionRepoSuite) TestListByUserID() {
 	}
 }
 
+func (s *UserSubscriptionRepoSuite) TestListByUserID_LoadsLinkedEntitlementSummary() {
+	user := s.mustCreateUser("listby-entitlement@test.com", service.RoleUser)
+	legacyGroup := s.mustCreateGroup("g-list-entitlement-legacy")
+	linkedGroup := s.mustCreateGroup("g-list-entitlement-linked")
+	missingPlanGroup := s.mustCreateGroup("g-list-entitlement-missing-plan")
+	now := time.Now().UTC()
+
+	legacyOnly := s.mustCreateSubscription(user.ID, legacyGroup.ID, func(c *dbent.UserSubscriptionCreate) {
+		c.SetCreatedAt(now.Add(-2 * time.Hour)).
+			SetUpdatedAt(now.Add(-2 * time.Hour))
+	})
+	linked := s.mustCreateSubscription(user.ID, linkedGroup.ID, func(c *dbent.UserSubscriptionCreate) {
+		c.SetCreatedAt(now.Add(-1 * time.Hour)).
+			SetUpdatedAt(now.Add(-1 * time.Hour))
+	})
+	missingPlan := s.mustCreateSubscription(user.ID, missingPlanGroup.ID, func(c *dbent.UserSubscriptionCreate) {
+		c.SetCreatedAt(now).
+			SetUpdatedAt(now)
+	})
+
+	plan, err := s.client.SubscriptionPlan.Create().
+		SetGroupID(linkedGroup.ID).
+		SetName("Backfilled Pro").
+		SetPrice(12.34).
+		SetValidityDays(30).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	linkedEnt, err := s.client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(plan.ID).
+		SetLegacySubscriptionID(linked.ID).
+		SetPrimaryGroupID(linkedGroup.ID).
+		SetName("linked entitlement").
+		SetSourceType(service.SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetOveragePolicy(service.SubscriptionEntitlementOverageBalanceFallback).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	missingPlanEnt, err := s.client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetLegacySubscriptionID(missingPlan.ID).
+		SetPrimaryGroupID(missingPlanGroup.ID).
+		SetName("missing plan entitlement").
+		SetSourceType(service.SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetOveragePolicy(service.SubscriptionEntitlementOverageBlock).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	subs, err := s.repo.ListByUserID(s.ctx, user.ID)
+	s.Require().NoError(err, "ListByUserID")
+	s.Require().Len(subs, 3)
+	s.Require().Equal([]int64{missingPlan.ID, linked.ID, legacyOnly.ID}, []int64{subs[0].ID, subs[1].ID, subs[2].ID}, "created_at sorting should be unchanged")
+
+	s.Require().NotNil(subs[1].EntitlementLink)
+	s.Require().Equal(linkedEnt.ID, subs[1].EntitlementLink.EntitlementID)
+	s.Require().NotNil(subs[1].EntitlementLink.PlanID)
+	s.Require().Equal(plan.ID, *subs[1].EntitlementLink.PlanID)
+	s.Require().NotNil(subs[1].EntitlementLink.PlanName)
+	s.Require().Equal("Backfilled Pro", *subs[1].EntitlementLink.PlanName)
+	s.Require().Equal(service.SubscriptionStatusActive, subs[1].EntitlementLink.Status)
+	s.Require().Equal(service.SubscriptionEntitlementOverageBalanceFallback, subs[1].EntitlementLink.OveragePolicy)
+	s.Require().NotNil(subs[1].EntitlementLink.PrimaryGroupID)
+	s.Require().Equal(linkedGroup.ID, *subs[1].EntitlementLink.PrimaryGroupID)
+
+	s.Require().NotNil(subs[0].EntitlementLink)
+	s.Require().Equal(missingPlanEnt.ID, subs[0].EntitlementLink.EntitlementID)
+	s.Require().Nil(subs[0].EntitlementLink.PlanID)
+	s.Require().Nil(subs[0].EntitlementLink.PlanName)
+	s.Require().Nil(subs[2].EntitlementLink)
+}
+
 func (s *UserSubscriptionRepoSuite) TestListActiveByUserID() {
 	user := s.mustCreateUser("listactive@test.com", service.RoleUser)
 	g1 := s.mustCreateGroup("g-act1")

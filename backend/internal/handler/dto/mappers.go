@@ -853,12 +853,69 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		return nil
 	}
 	return &AdminUserSubscription{
-		UserSubscription: userSubscriptionFromServiceBase(sub),
-		AssignedBy:       sub.AssignedBy,
-		AssignedAt:       sub.AssignedAt,
-		Notes:            sub.Notes,
-		AssignedByUser:   UserFromServiceShallow(sub.AssignedByUser),
+		UserSubscription:          userSubscriptionFromServiceBase(sub),
+		AssignedBy:                sub.AssignedBy,
+		AssignedAt:                sub.AssignedAt,
+		Notes:                     sub.Notes,
+		AssignedByUser:            UserFromServiceShallow(sub.AssignedByUser),
+		EntitlementID:             adminSubscriptionEntitlementID(sub.EntitlementLink),
+		PlanID:                    cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
+		PlanName:                  cloneString(adminSubscriptionPlanName(sub.EntitlementLink)),
+		EntitlementStatus:         cloneString(adminSubscriptionEntitlementStatus(sub.EntitlementLink)),
+		EntitlementExpiresAt:      cloneTime(adminSubscriptionEntitlementExpiresAt(sub.EntitlementLink)),
+		EntitlementPrimaryGroupID: cloneInt64(adminSubscriptionEntitlementPrimaryGroupID(sub.EntitlementLink)),
+		EntitlementOveragePolicy:  cloneString(adminSubscriptionEntitlementOveragePolicy(sub.EntitlementLink)),
 	}
+}
+
+func adminSubscriptionEntitlementID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil || link.EntitlementID <= 0 {
+		return nil
+	}
+	id := link.EntitlementID
+	return &id
+}
+
+func adminSubscriptionPlanID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil {
+		return nil
+	}
+	return link.PlanID
+}
+
+func adminSubscriptionPlanName(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil {
+		return nil
+	}
+	return link.PlanName
+}
+
+func adminSubscriptionEntitlementStatus(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil || link.Status == "" {
+		return nil
+	}
+	return &link.Status
+}
+
+func adminSubscriptionEntitlementExpiresAt(link *service.UserSubscriptionEntitlementLink) *time.Time {
+	if link == nil || link.ExpiresAt.IsZero() {
+		return nil
+	}
+	return &link.ExpiresAt
+}
+
+func adminSubscriptionEntitlementPrimaryGroupID(link *service.UserSubscriptionEntitlementLink) *int64 {
+	if link == nil {
+		return nil
+	}
+	return link.PrimaryGroupID
+}
+
+func adminSubscriptionEntitlementOveragePolicy(link *service.UserSubscriptionEntitlementLink) *string {
+	if link == nil || link.OveragePolicy == "" {
+		return nil
+	}
+	return &link.OveragePolicy
 }
 
 func userEntitlementGroups(ent *service.SubscriptionEntitlement) []UserEntitlementGroup {
@@ -1012,6 +1069,14 @@ func cloneInt64(v *int64) *int64 {
 }
 
 func cloneFloat64(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneString(v *string) *string {
 	if v == nil {
 		return nil
 	}

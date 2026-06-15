@@ -6,6 +6,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -148,7 +149,11 @@ func (r *userSubscriptionRepository) ListByUserID(ctx context.Context, userID in
 	if err != nil {
 		return nil, err
 	}
-	return userSubscriptionEntitiesToService(subs), nil
+	out := userSubscriptionEntitiesToService(subs)
+	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *userSubscriptionRepository) ListActiveByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
@@ -188,7 +193,11 @@ func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID 
 		return nil, nil, err
 	}
 
-	return userSubscriptionEntitiesToService(subs), paginationResultFromTotal(int64(total), params), nil
+	out := userSubscriptionEntitiesToService(subs)
+	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
+		return nil, nil, err
+	}
+	return out, paginationResultFromTotal(int64(total), params), nil
 }
 
 func (r *userSubscriptionRepository) List(ctx context.Context, params pagination.PaginationParams, userID, groupID *int64, status, platform, sortBy, sortOrder string) ([]service.UserSubscription, *pagination.PaginationResult, error) {
@@ -265,7 +274,112 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 		return nil, nil, err
 	}
 
-	return userSubscriptionEntitiesToService(subs), paginationResultFromTotal(int64(total), params), nil
+	out := userSubscriptionEntitiesToService(subs)
+	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
+		return nil, nil, err
+	}
+	return out, paginationResultFromTotal(int64(total), params), nil
+}
+
+func attachUserSubscriptionEntitlementLinks(ctx context.Context, client *dbent.Client, subs []service.UserSubscription) error {
+	if len(subs) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(subs))
+	seen := make(map[int64]struct{}, len(subs))
+	for i := range subs {
+		if subs[i].ID <= 0 {
+			continue
+		}
+		if _, ok := seen[subs[i].ID]; ok {
+			continue
+		}
+		seen[subs[i].ID] = struct{}{}
+		ids = append(ids, subs[i].ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+
+	entitlements, err := client.SubscriptionEntitlement.Query().
+		Where(
+			subscriptionentitlement.DeletedAtIsNil(),
+			subscriptionentitlement.LegacySubscriptionIDIn(ids...),
+		).
+		WithPlan().
+		All(ctx)
+	if err != nil {
+		return err
+	}
+
+	selected := make(map[int64]*dbent.SubscriptionEntitlement)
+	for i := range entitlements {
+		ent := entitlements[i]
+		if ent.LegacySubscriptionID == nil {
+			continue
+		}
+		current := selected[*ent.LegacySubscriptionID]
+		if current == nil || preferAdminSubscriptionEntitlementLink(ent, current) {
+			selected[*ent.LegacySubscriptionID] = ent
+		}
+	}
+
+	for i := range subs {
+		subs[i].EntitlementLink = adminSubscriptionEntitlementLinkFromEntity(selected[subs[i].ID])
+	}
+	return nil
+}
+
+func preferAdminSubscriptionEntitlementLink(candidate, current *dbent.SubscriptionEntitlement) bool {
+	if candidate == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	candidateActive := candidate.Status == service.SubscriptionStatusActive
+	currentActive := current.Status == service.SubscriptionStatusActive
+	if candidateActive != currentActive {
+		return candidateActive
+	}
+	if !candidate.UpdatedAt.Equal(current.UpdatedAt) {
+		return candidate.UpdatedAt.After(current.UpdatedAt)
+	}
+	return candidate.ID > current.ID
+}
+
+func adminSubscriptionEntitlementLinkFromEntity(ent *dbent.SubscriptionEntitlement) *service.UserSubscriptionEntitlementLink {
+	if ent == nil {
+		return nil
+	}
+	link := &service.UserSubscriptionEntitlementLink{
+		EntitlementID:  ent.ID,
+		PlanID:         cloneInt64Ptr(ent.PlanID),
+		Status:         ent.Status,
+		ExpiresAt:      ent.ExpiresAt,
+		PrimaryGroupID: cloneInt64Ptr(ent.PrimaryGroupID),
+		OveragePolicy:  ent.OveragePolicy,
+	}
+	if ent.Edges.Plan != nil {
+		link.PlanName = cloneStringPtr(&ent.Edges.Plan.Name)
+	}
+	return link
+}
+
+func cloneInt64Ptr(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 func (r *userSubscriptionRepository) ExistsByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (bool, error) {
