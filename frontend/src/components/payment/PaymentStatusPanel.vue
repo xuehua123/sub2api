@@ -219,7 +219,8 @@ function formatGatewayAmount(value: number): string {
 }
 
 function isSuccessStatus(status: string | null | undefined): boolean {
-  return status === 'COMPLETED' || status === 'PAID' || status === 'RECHARGING'
+  const normalized = String(status || '').trim().toUpperCase()
+  return normalized === 'COMPLETED' || normalized === 'PAID' || normalized === 'RECHARGING'
 }
 
 function reopenPopup() {
@@ -247,7 +248,7 @@ async function renderQR() {
 }
 
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
-  if (!isWxpay.value) return order
+  if (!isWxpay.value && !isAlipay.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
   if (!outTradeNo) return order
   const normalizedStatus = String(order.status || '').trim().toUpperCase()
@@ -272,15 +273,16 @@ async function pollStatus() {
   let order = await paymentStore.pollOrderStatus(props.orderId)
   if (!order) return
   order = await tryRecoverPendingOrder(order)
-  if (isSuccessStatus(order.status)) {
+  const normalizedStatus = String(order.status || '').trim().toUpperCase()
+  if (isSuccessStatus(normalizedStatus)) {
     cleanup()
     paidOrder.value = order
     setOutcome('success')
     emit('success')
-  } else if (order.status === 'CANCELLED') {
+  } else if (normalizedStatus === 'CANCELLED') {
     cleanup()
     setOutcome('cancelled')
-  } else if (order.status === 'EXPIRED' || order.status === 'FAILED') {
+  } else if (normalizedStatus === 'EXPIRED' || normalizedStatus === 'FAILED') {
     cleanup()
     setOutcome('expired')
   }

@@ -1,8 +1,8 @@
 <template>
   <div
     :class="[
-      'group relative flex min-h-[500px] flex-col overflow-hidden rounded-xl border bg-white transition-all dark:bg-dark-800',
-      'shadow-sm hover:-translate-y-0.5 hover:shadow-xl',
+      'group relative flex min-h-[500px] flex-col overflow-hidden rounded-xl border bg-white transition-all dark:bg-gradient-to-br dark:from-dark-800 dark:via-dark-800 dark:to-slate-950',
+      'shadow-sm hover:-translate-y-0.5 hover:shadow-xl dark:shadow-black/20',
       borderClass,
     ]"
   >
@@ -23,10 +23,10 @@
             {{ plan.description }}
           </p>
         </div>
-        <div class="shrink-0 text-right">
+        <div class="shrink-0 rounded-2xl bg-gray-50/80 px-3 py-2 text-right shadow-sm ring-1 ring-gray-100 dark:bg-dark-900/60 dark:ring-white/5">
           <div class="flex items-baseline justify-end gap-1">
             <span class="text-sm font-semibold text-gray-400 dark:text-dark-400">¥</span>
-            <span :class="['text-3xl font-black leading-none', textClass]">{{ formatAmount(plan.price) }}</span>
+            <span :class="['text-4xl font-black leading-none tracking-normal drop-shadow-sm', textClass]">{{ formatAmount(plan.price) }}</span>
           </div>
           <div class="mt-0.5 text-[11px] text-gray-400 dark:text-dark-400">/ {{ validitySuffix }}</div>
           <div v-if="plan.original_price" class="mt-1 flex items-center justify-end gap-1.5">
@@ -39,21 +39,21 @@
       </div>
 
       <div class="grid grid-cols-3 gap-2">
-        <div class="rounded-lg bg-gray-50 p-2.5 dark:bg-dark-700/60">
+        <div class="rounded-lg border border-gray-100 bg-white/80 p-2.5 shadow-sm dark:border-white/5 dark:bg-dark-700/70">
           <div class="text-[11px] font-medium text-gray-400 dark:text-dark-400">{{ t('payment.planCard.validity') }}</div>
           <div class="mt-1 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{{ validitySuffix }}</div>
         </div>
-        <div class="rounded-lg bg-gray-50 p-2.5 dark:bg-dark-700/60">
+        <div class="rounded-lg border border-cyan-200 bg-cyan-50 p-2.5 shadow-sm dark:border-cyan-400/20 dark:bg-cyan-500/10">
           <div class="text-[11px] font-medium text-gray-400 dark:text-dark-400">{{ quotaMetricLabel }}</div>
-          <div class="mt-1 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{{ quotaMetricValue }}</div>
+          <div class="mt-1 truncate text-sm font-bold text-cyan-700 dark:text-cyan-200">{{ quotaMetricValue }}</div>
         </div>
-        <div class="rounded-lg bg-gray-50 p-2.5 dark:bg-dark-700/60">
+        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 shadow-sm dark:border-emerald-400/25 dark:bg-emerald-500/10">
           <div class="text-[11px] font-medium text-gray-400 dark:text-dark-400">{{ t('payment.planCard.unitCost') }}</div>
-          <div class="mt-1 truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{{ unitCostText }}</div>
+          <div class="mt-1 truncate text-sm font-bold text-emerald-700 dark:text-emerald-200">{{ unitCostText }}</div>
         </div>
       </div>
 
-      <div class="rounded-xl border border-gray-100 p-3 dark:border-dark-700/80">
+      <div class="rounded-xl border border-gray-100 bg-gray-50/40 p-3 dark:border-dark-700/80 dark:bg-dark-900/30">
         <div class="mb-2 flex items-center justify-between gap-2">
           <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-300">
             {{ t('payment.planCard.authorizedGroups') }}
@@ -66,7 +66,7 @@
           <div
             v-for="group in includedGroups"
             :key="group.id"
-            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg bg-gray-50 px-2.5 py-1.5 dark:bg-dark-900/60"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-gray-100 bg-white px-2.5 py-1.5 shadow-sm dark:border-white/5 dark:bg-dark-900/80"
           >
             <div class="min-w-0">
               <div class="truncate text-xs font-semibold text-gray-800 dark:text-gray-100">
@@ -77,10 +77,10 @@
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1.5 text-right">
-              <span :class="['rounded px-1.5 py-0.5 text-[10px] font-bold', badgeLightClass]">
+              <span class="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-200">
                 {{ rateText(group.rate_multiplier) }}
               </span>
-              <span class="w-[76px] truncate text-[10px] font-semibold text-gray-700 dark:text-gray-200">
+              <span class="w-[82px] truncate text-[10px] font-bold text-emerald-700 dark:text-emerald-200">
                 {{ groupUnitCostText(group.rate_multiplier) }}
               </span>
             </div>
