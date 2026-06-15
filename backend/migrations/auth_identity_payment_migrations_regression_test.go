@@ -191,6 +191,21 @@ func TestMigration150AddsSubscriptionEntitlementsV2Additively(t *testing.T) {
 	require.NotContains(t, sql, "DROP COLUMN")
 }
 
+func TestMigration149aNormalizesLegacyImageUsageRowsBeforeEntitlementBackfill(t *testing.T) {
+	content, err := FS.ReadFile("149a_backfill_usage_log_image_billing_size.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "UPDATE usage_logs")
+	require.Contains(t, sql, "image_size = 'mixed'")
+	require.Contains(t, sql, "image_size_source = 'legacy'")
+	require.Contains(t, sql, "COALESCE(image_count, 0) > 0")
+	require.Contains(t, sql, "image_size NOT IN ('1K', '2K', '4K', 'mixed')")
+	require.NotContains(t, sql, "DELETE FROM")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
 func TestMigration152AddsRedeemCodeSubscriptionEntitlementIDAdditively(t *testing.T) {
 	content, err := FS.ReadFile("152_redeem_codes_subscription_entitlement_id.sql")
 	require.NoError(t, err)
