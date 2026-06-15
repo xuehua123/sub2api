@@ -42,6 +42,7 @@ vi.mock('vue-i18n', async () => {
         if (params && 'amount' in params && 'rate' in params) return `${key}:${String(params.rate)}:${String(params.amount)}`
         if (params && 'amount' in params) return `${key}:${String(params.amount)}`
         if (params && 'remaining' in params && 'total' in params) return `${key}:${String(params.remaining)}:${String(params.total)}`
+        if (params && 'total' in params) return `${key}:${String(params.total)}`
         return key
       },
     }),
@@ -291,8 +292,7 @@ describe('KeysView entitlement group binding', () => {
 
     expect(vm.entitlementQuotaPeriodTextByID(101)).toBe('keys.quotaPeriod.monthly')
     expect(vm.entitlementActualCostTextByID(101, 3)).toBe('keys.actualRmbCostHint:3x:¥8.97')
-    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaRemaining:$7.50:$10.00')
-    expect(vm.entitlementQuotaProgressWidthByID(101)).toBe('25%')
+    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaTotal:$10.00')
   })
 
   it('uses entitlement quota metadata from access source fallback', async () => {
@@ -309,8 +309,7 @@ describe('KeysView entitlement group binding', () => {
     ])
     const vm = setupState(wrapper)
 
-    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaRemaining:$7.50:$10.00')
-    expect(vm.entitlementQuotaProgressWidthByID(101)).toBe('25%')
+    expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaTotal:$10.00')
   })
 
   it('filters selectable groups by the selected entitlement first', async () => {

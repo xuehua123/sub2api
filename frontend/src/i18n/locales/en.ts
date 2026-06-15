@@ -1092,6 +1092,7 @@ export default {
     priceUnavailable: 'Price pending sync',
     entitlementQuotaRemaining: 'Remaining {remaining} / {total}',
     entitlementQuotaCompact: '{remaining} / {total} left',
+    entitlementQuotaTotal: 'Total quota {total}',
     entitlementQuotaUnavailable: 'Quota pending sync',
     quotaPeriod: {
       daily: 'Daily quota',

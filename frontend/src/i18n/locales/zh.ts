@@ -1091,6 +1091,7 @@ export default {
     priceUnavailable: '价格待同步',
     entitlementQuotaRemaining: '剩余 {remaining} / {total}',
     entitlementQuotaCompact: '剩余 {remaining} / {total}',
+    entitlementQuotaTotal: '总额度 {total}',
     entitlementQuotaUnavailable: '额度待同步',
     quotaPeriod: {
       daily: '日额度',
