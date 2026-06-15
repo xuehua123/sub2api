@@ -990,7 +990,7 @@ const extendForm = reactive({
 
 const planFilterOptions = computed(() => [
   { value: '', label: t('admin.subscriptions.allPlans') },
-  ...subscriptionPlans.value.map((plan) => ({
+  ...saleSubscriptionPlans.value.map((plan) => ({
     value: plan.id.toString(),
     label: getPlanDisplayName(plan)
   }))
@@ -1005,7 +1005,7 @@ const platformFilterOptions = computed(() => [
 ])
 
 const subscriptionPlanOptions = computed<PlanOption[]>(() =>
-  subscriptionPlans.value.map((plan) => {
+  saleSubscriptionPlans.value.map((plan) => {
     const groupIds = getPlanGroupIDs(plan)
     return {
       value: plan.id,
@@ -1016,6 +1016,10 @@ const subscriptionPlanOptions = computed<PlanOption[]>(() =>
       disabled: groupIds.length === 0
     }
   })
+)
+
+const saleSubscriptionPlans = computed(() =>
+  subscriptionPlans.value.filter((plan) => plan.for_sale)
 )
 
 const planByID = computed(() => {

@@ -3,6 +3,14 @@
     <div class="space-y-4">
       <!-- Actions -->
       <div class="flex items-center justify-end gap-2">
+        <label class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
+          <input
+            v-model="showHiddenPlans"
+            type="checkbox"
+            class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span>{{ t('payment.admin.showHiddenPlans') }}</span>
+        </label>
         <button @click="loadPlans" :disabled="plansLoading" class="btn btn-secondary" :title="t('common.refresh')">
           <Icon name="refresh" size="md" :class="plansLoading ? 'animate-spin' : ''" />
         </button>
@@ -10,7 +18,7 @@
       </div>
 
       <!-- Plans Table -->
-      <DataTable :columns="planColumns" :data="plans" :loading="plansLoading">
+      <DataTable :columns="planColumns" :data="visiblePlans" :loading="plansLoading">
         <template #cell-name="{ value, row }">
           <span class="text-sm font-medium" :class="getPlanNameClass(row)">{{ value }}</span>
         </template>
@@ -74,7 +82,7 @@
     </div>
 
     <!-- Plan Edit Dialog -->
-    <PlanEditDialog :show="showPlanDialog" :plan="editingPlan" :groups="groups" @close="showPlanDialog = false" @saved="loadPlans" />
+    <PlanEditDialog :show="showPlanDialog" :plan="editingPlan" :groups="visibleGroupsForPlanEdit" @close="showPlanDialog = false" @saved="loadPlans" />
 
     <ConfirmDialog :show="showDeletePlanDialog" :title="t('payment.admin.deletePlan')" :message="t('payment.admin.deletePlanConfirm')" :confirm-text="t('common.delete')" danger @confirm="handleDeletePlan" @cancel="showDeletePlanDialog = false" />
   </AppLayout>
@@ -146,10 +154,22 @@ function getValidityUnitLabel(unit: string | null | undefined): string {
 
 const plansLoading = ref(false)
 const plans = ref<SubscriptionPlan[]>([])
+const showHiddenPlans = ref(false)
 const showPlanDialog = ref(false)
 const showDeletePlanDialog = ref(false)
 const editingPlan = ref<SubscriptionPlan | null>(null)
 const deletingPlanId = ref<number | null>(null)
+
+const visiblePlans = computed(() =>
+  showHiddenPlans.value ? plans.value : plans.value.filter(plan => plan.for_sale)
+)
+
+const visibleGroupsForPlanEdit = computed(() =>
+  groups.value.filter(group =>
+    group.status === 'active' &&
+    (group.subscription_enabled ?? group.subscription_type === 'subscription')
+  )
+)
 
 const planColumns = computed((): Column[] => [
   { key: 'id', label: 'ID' },

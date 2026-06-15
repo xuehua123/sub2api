@@ -230,7 +230,10 @@ const validityUnitOptions = computed(() => {
 
 const subscriptionGroups = computed(() =>
   props.groups
-    .filter(g => g.subscription_type === 'subscription')
+    .filter(g =>
+      g.status === 'active' &&
+      (g.subscription_enabled ?? g.subscription_type === 'subscription')
+    )
     .slice()
     .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id),
 )

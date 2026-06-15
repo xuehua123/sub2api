@@ -42,6 +42,17 @@
               class="w-44"
               @change="loadGroups"
             />
+            <label
+              class="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300"
+            >
+              <input
+                v-model="showHistoricalGroups"
+                type="checkbox"
+                class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                @change="handleHistoryToggle"
+              />
+              <span>{{ t("admin.groups.showHistoricalGroups") }}</span>
+            </label>
           </div>
 
           <!-- Right: actions -->
@@ -3417,6 +3428,7 @@ const capacityMap = ref<
   >
 >(new Map());
 const searchQuery = ref("");
+const showHistoricalGroups = ref(false);
 const filters = reactive({
   platform: "",
   status: "",
@@ -3911,6 +3923,14 @@ const deleteConfirmMessage = computed(() => {
   return t("admin.groups.deleteConfirm", { name: deletingGroup.value.name });
 });
 
+const isDefaultVisibleGroup = (group: AdminGroup): boolean =>
+  group.status === "active" &&
+  (
+    isGroupBalanceEnabled(group) ||
+    isGroupSubscriptionEnabled(group) ||
+    Boolean(group.plan_auto_grant_enabled)
+  );
+
 const loadGroups = async () => {
   if (abortController) {
     abortController.abort();
@@ -3920,9 +3940,11 @@ const loadGroups = async () => {
   const { signal } = currentController;
   loading.value = true;
   try {
+    const requestedPage = showHistoricalGroups.value ? pagination.page : 1;
+    const requestedPageSize = showHistoricalGroups.value ? pagination.page_size : 1000;
     const response = await adminAPI.groups.list(
-      pagination.page,
-      pagination.page_size,
+      requestedPage,
+      requestedPageSize,
       {
         platform: (filters.platform as GroupPlatform) || undefined,
         status: filters.status as any,
@@ -3936,9 +3958,17 @@ const loadGroups = async () => {
       { signal },
     );
     if (signal.aborted) return;
-    groups.value = response.items;
-    pagination.total = response.total;
-    pagination.pages = response.pages;
+    if (showHistoricalGroups.value) {
+      groups.value = response.items;
+      pagination.total = response.total;
+      pagination.pages = response.pages;
+    } else {
+      const visibleItems = response.items.filter(isDefaultVisibleGroup);
+      const start = (pagination.page - 1) * pagination.page_size;
+      groups.value = visibleItems.slice(start, start + pagination.page_size);
+      pagination.total = visibleItems.length;
+      pagination.pages = Math.ceil(visibleItems.length / pagination.page_size);
+    }
     loadUsageSummary();
     loadCapacitySummary();
   } catch (error: any) {
@@ -3956,6 +3986,11 @@ const loadGroups = async () => {
       loading.value = false;
     }
   }
+};
+
+const handleHistoryToggle = () => {
+  pagination.page = 1;
+  loadGroups();
 };
 
 const formatCost = (cost: number): string => {
