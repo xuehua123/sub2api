@@ -97,8 +97,16 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
-		// For index.html or SPA routes, serve with injected settings
-		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
+		if cleanPath == "index.html" {
+			s.serveIndexHTML(c)
+			return
+		}
+
+		if !s.fileExists(cleanPath) {
+			if isFrontendAssetPath(cleanPath) {
+				serveMissingFrontendAsset(c)
+				return
+			}
 			s.serveIndexHTML(c)
 			return
 		}
@@ -277,6 +285,11 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 			return
 		}
 
+		if isFrontendAssetPath(cleanPath) {
+			serveMissingFrontendAsset(c)
+			return
+		}
+
 		serveIndexHTML(c, distFS)
 	}
 }
@@ -308,6 +321,26 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		trimmed == "/responses" ||
 		strings.HasPrefix(trimmed, "/responses/") ||
 		strings.HasPrefix(trimmed, "/images/")
+}
+
+func isFrontendAssetPath(cleanPath string) bool {
+	normalized := strings.TrimPrefix(strings.TrimSpace(cleanPath), "/")
+	if strings.HasPrefix(normalized, "assets/") {
+		return true
+	}
+
+	switch normalized {
+	case "favicon.ico", "logo.png", "manifest.webmanifest", "robots.txt":
+		return true
+	default:
+		return false
+	}
+}
+
+func serveMissingFrontendAsset(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.String(http.StatusNotFound, "Frontend asset not found")
+	c.Abort()
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {
