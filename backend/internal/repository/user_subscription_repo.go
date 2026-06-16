@@ -573,12 +573,21 @@ func adminSubscriptionEntitlementLinkFromEntity(ent *dbent.SubscriptionEntitleme
 		return nil
 	}
 	link := &service.UserSubscriptionEntitlementLink{
-		EntitlementID:  ent.ID,
-		PlanID:         cloneInt64Ptr(ent.PlanID),
-		Status:         ent.Status,
-		ExpiresAt:      ent.ExpiresAt,
-		PrimaryGroupID: cloneInt64Ptr(ent.PrimaryGroupID),
-		OveragePolicy:  ent.OveragePolicy,
+		EntitlementID:      ent.ID,
+		PlanID:             cloneInt64Ptr(ent.PlanID),
+		Status:             ent.Status,
+		ExpiresAt:          ent.ExpiresAt,
+		DailyWindowStart:   cloneTimePtr(ent.DailyWindowStart),
+		WeeklyWindowStart:  cloneTimePtr(ent.WeeklyWindowStart),
+		MonthlyWindowStart: cloneTimePtr(ent.MonthlyWindowStart),
+		DailyLimitUSD:      cloneFloat64Ptr(ent.DailyLimitUsd),
+		WeeklyLimitUSD:     cloneFloat64Ptr(ent.WeeklyLimitUsd),
+		MonthlyLimitUSD:    cloneFloat64Ptr(ent.MonthlyLimitUsd),
+		DailyUsageUSD:      ent.DailyUsageUsd,
+		WeeklyUsageUSD:     ent.WeeklyUsageUsd,
+		MonthlyUsageUSD:    ent.MonthlyUsageUsd,
+		PrimaryGroupID:     cloneInt64Ptr(ent.PrimaryGroupID),
+		OveragePolicy:      ent.OveragePolicy,
 	}
 	if ent.Edges.Plan != nil {
 		link.PlanName = cloneStringPtr(&ent.Edges.Plan.Name)
@@ -595,6 +604,14 @@ func cloneInt64Ptr(v *int64) *int64 {
 }
 
 func cloneStringPtr(v *string) *string {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64Ptr(v *float64) *float64 {
 	if v == nil {
 		return nil
 	}

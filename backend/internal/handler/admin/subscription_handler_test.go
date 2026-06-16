@@ -35,6 +35,10 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 	planID := int64(7001)
 	planName := "Backfilled Pro"
 	primaryGroupID := int64(901)
+	dailyLimit := 5.0
+	monthlyLimit := 5000.0
+	dailyWindow := now.Add(-30 * time.Minute)
+	monthlyWindow := now.Add(-2 * time.Hour)
 	repo := &adminSubscriptionListUserRepo{
 		subs: []service.UserSubscription{
 			{
@@ -55,13 +59,20 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 				Status:    service.SubscriptionStatusActive,
 				Notes:     "internal linked note",
 				EntitlementLink: &service.UserSubscriptionEntitlementLink{
-					EntitlementID:  5001,
-					PlanID:         &planID,
-					PlanName:       &planName,
-					Status:         service.SubscriptionStatusActive,
-					ExpiresAt:      now.Add(24 * time.Hour),
-					PrimaryGroupID: &primaryGroupID,
-					OveragePolicy:  service.SubscriptionEntitlementOverageBalanceFallback,
+					EntitlementID:      5001,
+					PlanID:             &planID,
+					PlanName:           &planName,
+					Status:             service.SubscriptionStatusActive,
+					ExpiresAt:          now.Add(24 * time.Hour),
+					DailyWindowStart:   &dailyWindow,
+					MonthlyWindowStart: &monthlyWindow,
+					DailyLimitUSD:      &dailyLimit,
+					MonthlyLimitUSD:    &monthlyLimit,
+					DailyUsageUSD:      1.25,
+					WeeklyUsageUSD:     12.5,
+					MonthlyUsageUSD:    125,
+					PrimaryGroupID:     &primaryGroupID,
+					OveragePolicy:      service.SubscriptionEntitlementOverageBalanceFallback,
 				},
 			},
 			{
@@ -107,6 +118,11 @@ func TestSubscriptionHandlerListByUserReturnsEntitlementLinkFields(t *testing.T)
 	require.Contains(t, body, `"entitlement_status":"active"`)
 	require.Contains(t, body, `"entitlement_primary_group_id":901`)
 	require.Contains(t, body, `"entitlement_overage_policy":"balance_fallback"`)
+	require.Contains(t, body, `"daily_usage_usd":1.25`)
+	require.Contains(t, body, `"weekly_usage_usd":12.5`)
+	require.Contains(t, body, `"monthly_usage_usd":125`)
+	require.Contains(t, body, `"daily_limit_usd":5`)
+	require.Contains(t, body, `"monthly_limit_usd":5000`)
 	require.Contains(t, body, `"id":-5002`)
 	require.Contains(t, body, `"entitlement_only":true`)
 	require.Contains(t, body, `"entitlement_id":5002`)

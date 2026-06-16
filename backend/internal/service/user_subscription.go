@@ -35,11 +35,24 @@ type UserSubscription struct {
 }
 
 type UserSubscriptionEntitlementLink struct {
-	EntitlementID  int64
-	PlanID         *int64
-	PlanName       *string
-	Status         string
-	ExpiresAt      time.Time
+	EntitlementID int64
+	PlanID        *int64
+	PlanName      *string
+	Status        string
+	ExpiresAt     time.Time
+
+	DailyWindowStart   *time.Time
+	WeeklyWindowStart  *time.Time
+	MonthlyWindowStart *time.Time
+
+	DailyLimitUSD   *float64
+	WeeklyLimitUSD  *float64
+	MonthlyLimitUSD *float64
+
+	DailyUsageUSD   float64
+	WeeklyUsageUSD  float64
+	MonthlyUsageUSD float64
+
 	PrimaryGroupID *int64
 	OveragePolicy  string
 }

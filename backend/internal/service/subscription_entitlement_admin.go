@@ -161,13 +161,22 @@ func adminSubscriptionFromEntitlement(ent *SubscriptionEntitlement) *UserSubscri
 		UpdatedAt:          ent.UpdatedAt,
 		EntitlementOnly:    ent.LegacySubscriptionID == nil,
 		EntitlementLink: &UserSubscriptionEntitlementLink{
-			EntitlementID:  ent.ID,
-			PlanID:         cloneInt64PtrForAdminEntitlement(ent.PlanID),
-			PlanName:       cloneStringPtr(&ent.Name),
-			Status:         ent.Status,
-			ExpiresAt:      ent.ExpiresAt,
-			PrimaryGroupID: cloneInt64PtrForAdminEntitlement(ent.PrimaryGroupID),
-			OveragePolicy:  ent.OveragePolicy,
+			EntitlementID:      ent.ID,
+			PlanID:             cloneInt64PtrForAdminEntitlement(ent.PlanID),
+			PlanName:           cloneStringPtr(&ent.Name),
+			Status:             ent.Status,
+			ExpiresAt:          ent.ExpiresAt,
+			DailyWindowStart:   cloneTimePtrForAdminEntitlement(ent.DailyWindowStart),
+			WeeklyWindowStart:  cloneTimePtrForAdminEntitlement(ent.WeeklyWindowStart),
+			MonthlyWindowStart: cloneTimePtrForAdminEntitlement(ent.MonthlyWindowStart),
+			DailyLimitUSD:      cloneFloat64PtrForAdminEntitlement(ent.DailyLimitUSD),
+			WeeklyLimitUSD:     cloneFloat64PtrForAdminEntitlement(ent.WeeklyLimitUSD),
+			MonthlyLimitUSD:    cloneFloat64PtrForAdminEntitlement(ent.MonthlyLimitUSD),
+			DailyUsageUSD:      ent.DailyUsageUSD,
+			WeeklyUsageUSD:     ent.WeeklyUsageUSD,
+			MonthlyUsageUSD:    ent.MonthlyUsageUSD,
+			PrimaryGroupID:     cloneInt64PtrForAdminEntitlement(ent.PrimaryGroupID),
+			OveragePolicy:      ent.OveragePolicy,
 		},
 	}
 	if group := entitlementAdminGroup(ent); group != nil {
@@ -222,6 +231,14 @@ func entitlementAdminGroup(ent *SubscriptionEntitlement) *Group {
 }
 
 func cloneInt64PtrForAdminEntitlement(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64PtrForAdminEntitlement(v *float64) *float64 {
 	if v == nil {
 		return nil
 	}

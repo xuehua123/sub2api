@@ -26,6 +26,8 @@ func TestSubscriptionServiceListUserSubscriptionsPreservesEntitlementLink(t *tes
 	planID := int64(88)
 	planName := "Backfilled Plan"
 	primaryGroupID := int64(77)
+	monthlyLimit := 600.0
+	monthlyWindow := now.Add(-2 * time.Hour)
 	repo := &subscriptionEntitlementLinkRepoStub{
 		subs: []UserSubscription{
 			{
@@ -44,13 +46,16 @@ func TestSubscriptionServiceListUserSubscriptionsPreservesEntitlementLink(t *tes
 				ExpiresAt: now.Add(time.Hour),
 				Status:    SubscriptionStatusActive,
 				EntitlementLink: &UserSubscriptionEntitlementLink{
-					EntitlementID:  99,
-					PlanID:         &planID,
-					PlanName:       &planName,
-					Status:         SubscriptionStatusActive,
-					ExpiresAt:      now.Add(2 * time.Hour),
-					PrimaryGroupID: &primaryGroupID,
-					OveragePolicy:  SubscriptionEntitlementOverageBlock,
+					EntitlementID:      99,
+					PlanID:             &planID,
+					PlanName:           &planName,
+					Status:             SubscriptionStatusActive,
+					ExpiresAt:          now.Add(2 * time.Hour),
+					MonthlyWindowStart: &monthlyWindow,
+					MonthlyLimitUSD:    &monthlyLimit,
+					MonthlyUsageUSD:    42,
+					PrimaryGroupID:     &primaryGroupID,
+					OveragePolicy:      SubscriptionEntitlementOverageBlock,
 				},
 			},
 		},
@@ -66,6 +71,9 @@ func TestSubscriptionServiceListUserSubscriptionsPreservesEntitlementLink(t *tes
 	require.Equal(t, int64(99), got[1].EntitlementLink.EntitlementID)
 	require.Equal(t, planID, *got[1].EntitlementLink.PlanID)
 	require.Equal(t, planName, *got[1].EntitlementLink.PlanName)
+	require.Equal(t, monthlyLimit, *got[1].EntitlementLink.MonthlyLimitUSD)
+	require.Equal(t, 42.0, got[1].EntitlementLink.MonthlyUsageUSD)
+	require.Equal(t, monthlyWindow, *got[1].EntitlementLink.MonthlyWindowStart)
 }
 
 var _ UserSubscriptionRepository = (*subscriptionEntitlementLinkRepoStub)(nil)

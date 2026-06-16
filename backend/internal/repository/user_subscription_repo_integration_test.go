@@ -254,6 +254,10 @@ func (s *UserSubscriptionRepoSuite) TestListByUserID_LoadsLinkedEntitlementSumma
 		Save(s.ctx)
 	s.Require().NoError(err)
 
+	dailyLimit := 5.0
+	monthlyLimit := 5000.0
+	dailyWindow := now.Add(-2 * time.Hour)
+	monthlyWindow := now.Add(-3 * time.Hour)
 	linkedEnt, err := s.client.SubscriptionEntitlement.Create().
 		SetUserID(user.ID).
 		SetPlanID(plan.ID).
@@ -264,6 +268,13 @@ func (s *UserSubscriptionRepoSuite) TestListByUserID_LoadsLinkedEntitlementSumma
 		SetStatus(service.SubscriptionStatusActive).
 		SetStartsAt(now.Add(-time.Hour)).
 		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetDailyWindowStart(dailyWindow).
+		SetMonthlyWindowStart(monthlyWindow).
+		SetDailyLimitUsd(dailyLimit).
+		SetMonthlyLimitUsd(monthlyLimit).
+		SetDailyUsageUsd(1.25).
+		SetWeeklyUsageUsd(12.5).
+		SetMonthlyUsageUsd(125).
 		SetOveragePolicy(service.SubscriptionEntitlementOverageBalanceFallback).
 		Save(s.ctx)
 	s.Require().NoError(err)
@@ -296,6 +307,18 @@ func (s *UserSubscriptionRepoSuite) TestListByUserID_LoadsLinkedEntitlementSumma
 	s.Require().Equal(service.SubscriptionEntitlementOverageBalanceFallback, subs[1].EntitlementLink.OveragePolicy)
 	s.Require().NotNil(subs[1].EntitlementLink.PrimaryGroupID)
 	s.Require().Equal(linkedGroup.ID, *subs[1].EntitlementLink.PrimaryGroupID)
+	s.Require().NotNil(subs[1].EntitlementLink.DailyLimitUSD)
+	s.Require().Equal(dailyLimit, *subs[1].EntitlementLink.DailyLimitUSD)
+	s.Require().Nil(subs[1].EntitlementLink.WeeklyLimitUSD)
+	s.Require().NotNil(subs[1].EntitlementLink.MonthlyLimitUSD)
+	s.Require().Equal(monthlyLimit, *subs[1].EntitlementLink.MonthlyLimitUSD)
+	s.Require().Equal(1.25, subs[1].EntitlementLink.DailyUsageUSD)
+	s.Require().Equal(12.5, subs[1].EntitlementLink.WeeklyUsageUSD)
+	s.Require().Equal(125.0, subs[1].EntitlementLink.MonthlyUsageUSD)
+	s.Require().NotNil(subs[1].EntitlementLink.DailyWindowStart)
+	s.Require().WithinDuration(dailyWindow, *subs[1].EntitlementLink.DailyWindowStart, time.Second)
+	s.Require().NotNil(subs[1].EntitlementLink.MonthlyWindowStart)
+	s.Require().WithinDuration(monthlyWindow, *subs[1].EntitlementLink.MonthlyWindowStart, time.Second)
 
 	s.Require().NotNil(subs[0].EntitlementLink)
 	s.Require().Equal(missingPlanEnt.ID, subs[0].EntitlementLink.EntitlementID)

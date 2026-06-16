@@ -691,6 +691,10 @@ type AdminUserSubscription struct {
 
 	AssignedByUser *User `json:"assigned_by_user,omitempty"`
 
+	DailyLimitUSD   *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD  *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD *float64 `json:"monthly_limit_usd"`
+
 	EntitlementOnly           bool       `json:"entitlement_only"`
 	EntitlementID             *int64     `json:"entitlement_id"`
 	PlanID                    *int64     `json:"plan_id"`

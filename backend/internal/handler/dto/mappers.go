@@ -863,11 +863,18 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 	if sub == nil {
 		return nil
 	}
+	base := userSubscriptionFromServiceBase(sub)
+	if sub.EntitlementLink != nil {
+		applyAdminEntitlementQuota(&base, sub.EntitlementLink)
+	}
 	return &AdminUserSubscription{
-		UserSubscription:          userSubscriptionFromServiceBase(sub),
+		UserSubscription:          base,
 		AssignedBy:                sub.AssignedBy,
 		AssignedAt:                sub.AssignedAt,
 		AssignedByUser:            UserFromServiceShallow(sub.AssignedByUser),
+		DailyLimitUSD:             cloneFloat64(adminSubscriptionEntitlementDailyLimitUSD(sub.EntitlementLink)),
+		WeeklyLimitUSD:            cloneFloat64(adminSubscriptionEntitlementWeeklyLimitUSD(sub.EntitlementLink)),
+		MonthlyLimitUSD:           cloneFloat64(adminSubscriptionEntitlementMonthlyLimitUSD(sub.EntitlementLink)),
 		EntitlementOnly:           sub.EntitlementOnly,
 		EntitlementID:             adminSubscriptionEntitlementID(sub.EntitlementLink),
 		PlanID:                    cloneInt64(adminSubscriptionPlanID(sub.EntitlementLink)),
@@ -877,6 +884,18 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		EntitlementPrimaryGroupID: cloneInt64(adminSubscriptionEntitlementPrimaryGroupID(sub.EntitlementLink)),
 		EntitlementOveragePolicy:  cloneString(adminSubscriptionEntitlementOveragePolicy(sub.EntitlementLink)),
 	}
+}
+
+func applyAdminEntitlementQuota(out *UserSubscription, link *service.UserSubscriptionEntitlementLink) {
+	if out == nil || link == nil {
+		return
+	}
+	out.DailyWindowStart = cloneTime(link.DailyWindowStart)
+	out.WeeklyWindowStart = cloneTime(link.WeeklyWindowStart)
+	out.MonthlyWindowStart = cloneTime(link.MonthlyWindowStart)
+	out.DailyUsageUSD = link.DailyUsageUSD
+	out.WeeklyUsageUSD = link.WeeklyUsageUSD
+	out.MonthlyUsageUSD = link.MonthlyUsageUSD
 }
 
 func adminSubscriptionEntitlementID(link *service.UserSubscriptionEntitlementLink) *int64 {
@@ -920,6 +939,27 @@ func adminSubscriptionEntitlementPrimaryGroupID(link *service.UserSubscriptionEn
 		return nil
 	}
 	return link.PrimaryGroupID
+}
+
+func adminSubscriptionEntitlementDailyLimitUSD(link *service.UserSubscriptionEntitlementLink) *float64 {
+	if link == nil {
+		return nil
+	}
+	return link.DailyLimitUSD
+}
+
+func adminSubscriptionEntitlementWeeklyLimitUSD(link *service.UserSubscriptionEntitlementLink) *float64 {
+	if link == nil {
+		return nil
+	}
+	return link.WeeklyLimitUSD
+}
+
+func adminSubscriptionEntitlementMonthlyLimitUSD(link *service.UserSubscriptionEntitlementLink) *float64 {
+	if link == nil {
+		return nil
+	}
+	return link.MonthlyLimitUSD
 }
 
 func adminSubscriptionEntitlementOveragePolicy(link *service.UserSubscriptionEntitlementLink) *string {
