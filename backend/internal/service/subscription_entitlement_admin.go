@@ -69,6 +69,14 @@ func (s *SubscriptionService) adminAdjustEntitlement(ctx context.Context, entitl
 }
 
 func (s *SubscriptionService) adminResetEntitlementQuota(ctx context.Context, entitlementID int64, resetDaily, resetWeekly, resetMonthly bool) (*UserSubscription, error) {
+	refreshed, err := s.resetEntitlementQuotaUsage(ctx, entitlementID, resetDaily, resetWeekly, resetMonthly)
+	if err != nil {
+		return nil, err
+	}
+	return adminSubscriptionFromEntitlement(refreshed), nil
+}
+
+func (s *SubscriptionService) resetEntitlementQuotaUsage(ctx context.Context, entitlementID int64, resetDaily, resetWeekly, resetMonthly bool) (*SubscriptionEntitlement, error) {
 	entitlementSvc, err := s.adminEntitlementService()
 	if err != nil {
 		return nil, err
@@ -85,7 +93,7 @@ func (s *SubscriptionService) adminResetEntitlementQuota(ctx context.Context, en
 		return nil, err
 	}
 	s.invalidateEntitlementLegacyAlias(refreshed)
-	return adminSubscriptionFromEntitlement(refreshed), nil
+	return refreshed, nil
 }
 
 func (s *SubscriptionService) adminRevokeEntitlement(ctx context.Context, entitlementID int64) error {

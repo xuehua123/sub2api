@@ -1814,6 +1814,12 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 	if err != nil {
 		return nil, err
 	}
+	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
+		if _, err := s.resetEntitlementQuotaUsage(ctx, sub.EntitlementLink.EntitlementID, resetDaily, resetWeekly, resetMonthly); err != nil {
+			return nil, err
+		}
+		return s.userSubRepo.GetByID(ctx, subscriptionID)
+	}
 	if s.billingCacheService != nil {
 		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))

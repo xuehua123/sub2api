@@ -80,6 +80,55 @@ func TestAdminResetQuota_ResetBoth(t *testing.T) {
 	require.False(t, stub.resetMonthlyCalled, "不应调用 ResetMonthlyUsage")
 }
 
+func TestAdminResetQuota_LinkedEntitlementResetsEntitlementUsage(t *testing.T) {
+	now := time.Now().UTC()
+	entitlementID := int64(92)
+	groupID := int64(28)
+	stub := &resetQuotaUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:      11,
+			UserID:  10,
+			GroupID: 20,
+			EntitlementLink: &UserSubscriptionEntitlementLink{
+				EntitlementID: entitlementID,
+			},
+		},
+	}
+	entitlementRepo := newFakeSubscriptionEntitlementRepo(now)
+	entitlementRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+		ID:              entitlementID,
+		UserID:          10,
+		PrimaryGroupID:  &groupID,
+		Name:            "Linked Plan",
+		Status:          SubscriptionStatusActive,
+		StartsAt:        now.Add(-time.Hour),
+		ExpiresAt:       now.Add(24 * time.Hour),
+		DailyUsageUSD:   1.1,
+		WeeklyUsageUSD:  2.2,
+		MonthlyUsageUSD: 3.3,
+		GroupGrants:     testGroupGrants([]int64{groupID}),
+	}
+	svc := newResetQuotaSvc(stub)
+	svc.entitlementSvc = NewSubscriptionEntitlementService(entitlementRepo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
+
+	result, err := svc.AdminResetQuota(context.Background(), 11, true, true, true)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, int64(11), result.ID)
+	require.False(t, stub.resetDailyCalled, "linked V2 entitlement rows must not reset legacy daily usage")
+	require.False(t, stub.resetWeeklyCalled, "linked V2 entitlement rows must not reset legacy weekly usage")
+	require.False(t, stub.resetMonthlyCalled, "linked V2 entitlement rows must not reset legacy monthly usage")
+	require.Len(t, entitlementRepo.resetCalls, 1)
+	require.Equal(t, entitlementID, entitlementRepo.resetCalls[0].id)
+	require.True(t, entitlementRepo.resetCalls[0].resetDaily)
+	require.True(t, entitlementRepo.resetCalls[0].resetWeekly)
+	require.True(t, entitlementRepo.resetCalls[0].resetMonthly)
+	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].DailyUsageUSD)
+	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].WeeklyUsageUSD)
+	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].MonthlyUsageUSD)
+}
+
 func TestAdminResetQuota_ResetDailyOnly(t *testing.T) {
 	stub := &resetQuotaUserSubRepoStub{
 		sub: &UserSubscription{ID: 2, UserID: 10, GroupID: 20},
