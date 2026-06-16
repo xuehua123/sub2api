@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, shallowMount } from '@vue/test-utils'
+import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
 
@@ -19,6 +19,9 @@ const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
 const getCheckoutInfo = vi.hoisted(() => vi.fn())
 const bridgeInvoke = vi.hoisted(() => vi.fn())
+const subscriptionState = vi.hoisted(() => ({
+  activeSubscriptions: [] as any[],
+}))
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -61,7 +64,7 @@ vi.mock('@/stores/payment', () => ({
 
 vi.mock('@/stores/subscriptions', () => ({
   useSubscriptionStore: () => ({
-    activeSubscriptions: [],
+    activeSubscriptions: subscriptionState.activeSubscriptions,
     fetchActiveSubscriptions,
   }),
 }))
@@ -198,6 +201,7 @@ describe('PaymentView WeChat JSAPI flow', () => {
     showWarning.mockReset()
     getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture())
     bridgeInvoke.mockReset()
+    subscriptionState.activeSubscriptions = []
     window.localStorage.clear()
     ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = {
       invoke: bridgeInvoke,
@@ -414,5 +418,110 @@ describe('PaymentView WeChat JSAPI flow', () => {
     expect(showWarning).toHaveBeenCalledWith('payment.errors.mobilePaymentFallbackToQr')
     expect(showError).not.toHaveBeenCalled()
     expect(window.localStorage.getItem(PAYMENT_RECOVERY_STORAGE_KEY)).toContain('weixin://wxpay/bizpayurl?pr=fallback-native')
+  })
+})
+
+describe('PaymentView active subscription summary', () => {
+  beforeEach(() => {
+    routeState.path = '/purchase'
+    routeState.query = {}
+    routerReplace.mockReset().mockResolvedValue(undefined)
+    routerPush.mockReset().mockResolvedValue(undefined)
+    routerResolve.mockClear()
+    createOrder.mockReset()
+    refreshUser.mockReset()
+    fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    showError.mockReset()
+    showInfo.mockReset()
+    showWarning.mockReset()
+    bridgeInvoke.mockReset()
+    window.localStorage.clear()
+    ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = {
+      invoke: bridgeInvoke,
+    }
+  })
+
+  it('shows entitlement plan name and quota instead of legacy group fallback', async () => {
+    getCheckoutInfo.mockResolvedValue({
+      data: {
+        ...checkoutInfoFixture().data,
+        plans: [
+          {
+            id: 3,
+            group_id: 33,
+            name: '畅享月卡',
+            description: '',
+            price: 168,
+            original_price: 0,
+            validity_days: 30,
+            validity_unit: 'day',
+            rate_multiplier: 1,
+            daily_limit_usd: null,
+            weekly_limit_usd: null,
+            monthly_limit_usd: 2400,
+            features: [],
+            group_platform: 'openai',
+            sort_order: 1,
+            for_sale: true,
+            group_name: 'OpenAI 主分组',
+          },
+        ],
+      },
+    })
+    subscriptionState.activeSubscriptions = [
+      {
+        id: 2841,
+        user_id: 627,
+        group_id: 12,
+        status: 'active',
+        starts_at: '2026-06-16T00:35:51+08:00',
+        expires_at: '2026-07-16T00:35:51+08:00',
+        daily_usage_usd: 0,
+        weekly_usage_usd: 0,
+        monthly_usage_usd: 58.64,
+        daily_limit_usd: null,
+        weekly_limit_usd: null,
+        monthly_limit_usd: 2400,
+        daily_window_start: null,
+        weekly_window_start: null,
+        monthly_window_start: null,
+        created_at: '2026-06-16T00:35:51+08:00',
+        updated_at: '2026-06-16T00:35:51+08:00',
+        entitlement_id: 2264,
+        plan_id: 3,
+        plan_name: '畅享月卡',
+        groups: [
+          { id: 33, name: 'OpenAI 主分组', platform: 'openai', rate_multiplier: 1.5 },
+        ],
+        group: {
+          id: 12,
+          name: 'plus pro分组',
+          platform: 'openai',
+          subscription_type: 'subscription',
+          status: 'active',
+          rate_multiplier: 1.5,
+          daily_limit_usd: null,
+          weekly_limit_usd: null,
+          monthly_limit_usd: null,
+        },
+      },
+    ]
+
+    const wrapper = mount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          'app-layout': { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('畅享月卡')
+    expect(wrapper.text()).toContain('额度: $2,400 / 月')
+    expect(wrapper.text()).not.toContain('plus pro分组')
+    expect(wrapper.text()).not.toContain('额度: 无限制')
   })
 })

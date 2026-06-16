@@ -662,18 +662,18 @@
                 :key="sub.id"
                 class="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/5 dark:bg-[#090f1d]/40"
               >
-                <div :class="['h-8 w-1 shrink-0 rounded-full', platformAccentBarClass(sub.group?.platform || '')]" />
+                <div :class="['h-8 w-1 shrink-0 rounded-full', platformAccentBarClass(activeSubscriptionPlatform(sub))]" />
                 <div class="min-w-0 flex-1 space-y-0.5">
                   <div class="flex items-center gap-2">
                     <span class="truncate text-xs font-bold text-slate-950 dark:text-white">
-                      {{ sub.group?.name || t('payment.groupFallback', { id: sub.group_id }) }}
+                      {{ activeSubscriptionDisplayName(sub) }}
                     </span>
-                    <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(sub.group?.platform || '')]">
-                      {{ platformLabel(sub.group?.platform || '') }}
+                    <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(activeSubscriptionPlatform(sub))]">
+                      {{ platformLabel(activeSubscriptionPlatform(sub)) }}
                     </span>
                   </div>
                   <div class="flex flex-wrap gap-x-3 text-[10px] text-slate-500 dark:text-slate-400">
-                    <span v-if="sub.group?.daily_limit_usd == null && sub.group?.weekly_limit_usd == null && sub.group?.monthly_limit_usd == null">额度: 无限制</span>
+                    <span>{{ activeSubscriptionQuotaText(sub) }}</span>
                     <span v-if="sub.expires_at">{{ formatSubscriptionRemaining(sub.expires_at) }}</span>
                     <span v-else>无到期时间</span>
                   </div>
@@ -748,11 +748,13 @@ import {
   writePaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 import { platformAccentBarClass, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
+import { subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
+import type { UserSubscription } from '@/types'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError, paymentMethodI18nKey } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
 import { formatRemainingDurationCompact, normalizePlanValidityUnit } from '@/utils/subscriptionTime'
@@ -776,6 +778,50 @@ const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions
 
 function formatSubscriptionRemaining(expiresAt: string): string {
   return formatRemainingDurationCompact(expiresAt) || t('userSubscriptions.status.expired')
+}
+
+function positiveSubscriptionLimit(value: number | null | undefined): number | null {
+  return typeof value === 'number' && value > 0 ? value : null
+}
+
+function activeSubscriptionPlatform(subscription: UserSubscription): string {
+  return subscription.groups?.[0]?.platform || subscription.group?.platform || ''
+}
+
+function activeSubscriptionDisplayName(subscription: UserSubscription): string {
+  return subscriptionDisplayName(subscription, subscriptionPlans.value)
+}
+
+function activeSubscriptionQuotaMetric(subscription: UserSubscription): QuotaMetric {
+  const monthlyLimit = positiveSubscriptionLimit(subscription.monthly_limit_usd)
+  if (monthlyLimit) return { key: 'monthly', value: monthlyLimit }
+
+  const weeklyLimit = positiveSubscriptionLimit(subscription.weekly_limit_usd)
+  if (weeklyLimit) return { key: 'weekly', value: weeklyLimit }
+
+  const dailyLimit = positiveSubscriptionLimit(subscription.daily_limit_usd)
+  if (dailyLimit) return { key: 'daily', value: dailyLimit }
+
+  if (subscription.entitlement_id != null || subscription.plan_id != null) return null
+
+  const legacyMonthlyLimit = positiveSubscriptionLimit(subscription.group?.monthly_limit_usd)
+  if (legacyMonthlyLimit) return { key: 'monthly', value: legacyMonthlyLimit }
+
+  const legacyWeeklyLimit = positiveSubscriptionLimit(subscription.group?.weekly_limit_usd)
+  if (legacyWeeklyLimit) return { key: 'weekly', value: legacyWeeklyLimit }
+
+  const legacyDailyLimit = positiveSubscriptionLimit(subscription.group?.daily_limit_usd)
+  if (legacyDailyLimit) return { key: 'daily', value: legacyDailyLimit }
+
+  return null
+}
+
+function activeSubscriptionQuotaText(subscription: UserSubscription): string {
+  const quota = activeSubscriptionQuotaMetric(subscription)
+  if (!quota) return '额度: 无限制'
+
+  const suffix = quota.key === 'monthly' ? '月' : quota.key === 'weekly' ? '周' : '天'
+  return `额度: $${formatPlainNumber(quota.value)} / ${suffix}`
 }
 
 const loading = ref(true)
