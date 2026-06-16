@@ -125,6 +125,57 @@ func (s *UserSubscriptionRepoSuite) TestGetByID_WithPreloads() {
 	s.Require().Equal(admin.ID, got.AssignedByUser.ID)
 }
 
+func (s *UserSubscriptionRepoSuite) TestGetByID_LoadsLinkedEntitlementSummary() {
+	user := s.mustCreateUser("getbyid-entitlement@test.com", service.RoleUser)
+	legacyGroup := s.mustCreateGroup("g-getbyid-entitlement-legacy")
+	now := time.Now().UTC()
+
+	legacySub := s.mustCreateSubscription(user.ID, legacyGroup.ID, func(c *dbent.UserSubscriptionCreate) {
+		c.SetCreatedAt(now.Add(-time.Hour)).
+			SetUpdatedAt(now.Add(-time.Hour))
+	})
+	plan, err := s.client.SubscriptionPlan.Create().
+		SetGroupID(legacyGroup.ID).
+		SetName("GetByID Linked Plan").
+		SetPrice(29.9).
+		SetValidityDays(30).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	monthlyLimit := 600.0
+	monthlyWindow := now.Add(-2 * time.Hour)
+	ent, err := s.client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(plan.ID).
+		SetLegacySubscriptionID(legacySub.ID).
+		SetPrimaryGroupID(legacyGroup.ID).
+		SetName("linked getbyid entitlement").
+		SetSourceType(service.SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(service.SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(24 * time.Hour)).
+		SetMonthlyWindowStart(monthlyWindow).
+		SetMonthlyLimitUsd(monthlyLimit).
+		SetMonthlyUsageUsd(123.45).
+		SetOveragePolicy(service.SubscriptionEntitlementOverageBlock).
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	got, err := s.repo.GetByID(s.ctx, legacySub.ID)
+	s.Require().NoError(err, "GetByID")
+	s.Require().NotNil(got.EntitlementLink)
+	s.Require().Equal(ent.ID, got.EntitlementLink.EntitlementID)
+	s.Require().NotNil(got.EntitlementLink.PlanID)
+	s.Require().Equal(plan.ID, *got.EntitlementLink.PlanID)
+	s.Require().NotNil(got.EntitlementLink.PlanName)
+	s.Require().Equal("GetByID Linked Plan", *got.EntitlementLink.PlanName)
+	s.Require().NotNil(got.EntitlementLink.MonthlyLimitUSD)
+	s.Require().Equal(monthlyLimit, *got.EntitlementLink.MonthlyLimitUSD)
+	s.Require().Equal(123.45, got.EntitlementLink.MonthlyUsageUSD)
+	s.Require().NotNil(got.EntitlementLink.MonthlyWindowStart)
+	s.Require().WithinDuration(monthlyWindow, *got.EntitlementLink.MonthlyWindowStart, time.Second)
+}
+
 func (s *UserSubscriptionRepoSuite) TestGetByID_NotFound() {
 	_, err := s.repo.GetByID(s.ctx, 999999)
 	s.Require().Error(err, "expected error for non-existent ID")
