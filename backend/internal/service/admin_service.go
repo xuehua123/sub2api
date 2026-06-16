@@ -1944,6 +1944,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if err := s.groupRepo.Create(ctx, group); err != nil {
 		return nil, err
 	}
+	if err := syncDynamicPlanAutoGrantScopesForGroupChange(ctx, s.entClient, nil, group); err != nil {
+		return nil, err
+	}
 
 	// require_oauth_only: 过滤掉 apikey 类型账号
 	if group.RequireOAuthOnly && (group.Platform == PlatformOpenAI || group.Platform == PlatformAntigravity || group.Platform == PlatformAnthropic || group.Platform == PlatformGemini) && len(accountIDsToCopy) > 0 {
@@ -2068,6 +2071,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		return nil, err
 	}
 
+	beforeGroup := *group
 	if input.Name != "" {
 		group.Name = input.Name
 	}
@@ -2202,6 +2206,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	sanitizeGroupMessagesDispatchFields(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
+		return nil, err
+	}
+	if err := syncDynamicPlanAutoGrantScopesForGroupChange(ctx, s.entClient, &beforeGroup, group); err != nil {
 		return nil, err
 	}
 

@@ -9,6 +9,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	"github.com/stretchr/testify/require"
 )
@@ -365,6 +366,218 @@ func TestPaymentConfigUpdatePlanSyncsActiveEntitlementLimits(t *testing.T) {
 	require.NotNil(t, got.MonthlyLimitUsd)
 	require.Equal(t, monthly, *got.MonthlyLimitUsd)
 	require.Equal(t, SubscriptionEntitlementOverageBalanceFallback, got.OveragePolicy)
+}
+
+func TestPaymentConfigUpdatePlanSyncsActiveEntitlementGroups(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+	oldGroup := createPaymentConfigPlanTestGroup(t, client, "old-sub", PlatformOpenAI, 0)
+	newGroup := createPaymentConfigPlanTestGroup(t, client, "new-sub", PlatformOpenAI, 1)
+
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "Group Sync",
+		GroupIDs:     []int64{oldGroup.ID},
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+	})
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("plan-group-sync@example.test").
+		SetPasswordHash("hash").
+		Save(ctx)
+	require.NoError(t, err)
+	now := time.Now()
+	activeEnt, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(created.ID).
+		SetPrimaryGroupID(oldGroup.ID).
+		SetName(created.Name).
+		SetSourceType(SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetDailyWindowStart(now.Add(-time.Hour)).
+		SetWeeklyWindowStart(now.Add(-time.Hour)).
+		SetMonthlyWindowStart(now.Add(-time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{"price": created.Price}).
+		Save(ctx)
+	require.NoError(t, err)
+	expiredEnt, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(created.ID).
+		SetPrimaryGroupID(oldGroup.ID).
+		SetName(created.Name).
+		SetSourceType(SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-60 * 24 * time.Hour)).
+		SetExpiresAt(now.Add(-24 * time.Hour)).
+		SetDailyWindowStart(now.Add(-60 * 24 * time.Hour)).
+		SetWeeklyWindowStart(now.Add(-60 * 24 * time.Hour)).
+		SetMonthlyWindowStart(now.Add(-60 * 24 * time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{"price": created.Price}).
+		Save(ctx)
+	require.NoError(t, err)
+	for _, entitlementID := range []int64{activeEnt.ID, expiredEnt.ID} {
+		_, err = client.SubscriptionEntitlementGroup.Create().
+			SetEntitlementID(entitlementID).
+			SetGroupID(oldGroup.ID).
+			SetSortOrder(0).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	updated, err := svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{GroupIDs: []int64{newGroup.ID}})
+	require.NoError(t, err)
+	require.Equal(t, []int64{newGroup.ID}, updated.GroupIDs)
+
+	activeGroups, err := client.SubscriptionEntitlementGroup.Query().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
+		Order(subscriptionentitlementgroup.BySortOrder()).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, activeGroups, 1)
+	require.Equal(t, newGroup.ID, activeGroups[0].GroupID)
+
+	refreshedActiveEnt, err := client.SubscriptionEntitlement.Get(ctx, activeEnt.ID)
+	require.NoError(t, err)
+	require.NotNil(t, refreshedActiveEnt.PrimaryGroupID)
+	require.Equal(t, newGroup.ID, *refreshedActiveEnt.PrimaryGroupID)
+
+	expiredGroups, err := client.SubscriptionEntitlementGroup.Query().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(expiredEnt.ID)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, expiredGroups, 1)
+	require.Equal(t, oldGroup.ID, expiredGroups[0].GroupID)
+}
+
+func TestPlanAutoGrantSyncPlatformsForGroupChangeRules(t *testing.T) {
+	activeAuto := &Group{
+		Platform:             PlatformOpenAI,
+		Status:               StatusActive,
+		SubscriptionEnabled:  true,
+		PlanAutoGrantEnabled: true,
+	}
+	activeManual := &Group{
+		Platform:             PlatformOpenAI,
+		Status:               StatusActive,
+		SubscriptionEnabled:  true,
+		PlanAutoGrantEnabled: false,
+	}
+	disabled := *activeAuto
+	disabled.Status = StatusDisabled
+
+	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeManual, activeAuto))
+	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeAuto, activeAuto), "saving an already auto-granted group should re-sync current dynamic scopes")
+	require.Empty(t, planAutoGrantSyncPlatformsForGroupChange(activeAuto, activeManual), "unchecking auto-grant must not remove existing entitlement scopes")
+	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeAuto, &disabled), "disabling the group should remove it from dynamic scopes")
+}
+
+func TestDynamicPlanAutoGrantGroupSyncAddsNewGroupToActiveEntitlements(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	oldGroup := createPaymentConfigPlanTestGroup(t, client, "old-auto-openai", PlatformOpenAI, 0)
+
+	svc := &PaymentConfigService{entClient: client}
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "Dynamic All",
+		AccessScope:  PlanAccessScopeAllSubscriptionGroups,
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+	})
+	require.NoError(t, err)
+	_, err = client.SubscriptionPlan.UpdateOneID(created.ID).
+		SetForSale(false).
+		Save(ctx)
+	require.NoError(t, err)
+
+	user, err := client.User.Create().
+		SetEmail("dynamic-auto-grant@example.test").
+		SetPasswordHash("hash").
+		Save(ctx)
+	require.NoError(t, err)
+	now := time.Now()
+	activeEnt, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetPlanID(created.ID).
+		SetPrimaryGroupID(oldGroup.ID).
+		SetName(created.Name).
+		SetSourceType(SubscriptionEntitlementSourceAdminAssign).
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetDailyWindowStart(now.Add(-time.Hour)).
+		SetWeeklyWindowStart(now.Add(-time.Hour)).
+		SetMonthlyWindowStart(now.Add(-time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{"price": created.Price}).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.SubscriptionEntitlementGroup.Create().
+		SetEntitlementID(activeEnt.ID).
+		SetGroupID(oldGroup.ID).
+		SetSortOrder(0).
+		SetEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	serviceGroup := func(g *dbent.Group, status string) *Group {
+		return &Group{
+			ID:                   g.ID,
+			Platform:             g.Platform,
+			Status:               status,
+			SubscriptionEnabled:  g.SubscriptionEnabled,
+			PlanAutoGrantEnabled: g.PlanAutoGrantEnabled,
+			IsExclusive:          g.IsExclusive,
+		}
+	}
+	newGroup := createPaymentConfigPlanTestGroup(t, client, "new-auto-openai", PlatformOpenAI, 1)
+	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, nil, serviceGroup(newGroup, StatusActive)))
+
+	activeGroups, err := client.SubscriptionEntitlementGroup.Query().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
+		Order(subscriptionentitlementgroup.BySortOrder()).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, activeGroups, 2)
+	require.Equal(t, oldGroup.ID, activeGroups[0].GroupID)
+	require.Equal(t, newGroup.ID, activeGroups[1].GroupID)
+
+	_, err = client.Group.UpdateOneID(newGroup.ID).
+		SetStatus(StatusDisabled).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), serviceGroup(newGroup, StatusDisabled)))
+
+	activeGroups, err = client.SubscriptionEntitlementGroup.Query().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
+		Order(subscriptionentitlementgroup.BySortOrder()).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, activeGroups, 1)
+	require.Equal(t, oldGroup.ID, activeGroups[0].GroupID)
+
+	_, err = client.Group.UpdateOneID(oldGroup.ID).
+		SetStatus(StatusDisabled).
+		Save(ctx)
+	require.NoError(t, err)
+	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(oldGroup, StatusActive), serviceGroup(oldGroup, StatusDisabled)))
+
+	activeGroups, err = client.SubscriptionEntitlementGroup.Query().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Empty(t, activeGroups)
+	refreshedActiveEnt, err := client.SubscriptionEntitlement.Get(ctx, activeEnt.ID)
+	require.NoError(t, err)
+	require.Nil(t, refreshedActiveEnt.PrimaryGroupID)
 }
 
 func TestPaymentConfigUpdatePlanRejectsLimitPeriodLongerThanValidity(t *testing.T) {

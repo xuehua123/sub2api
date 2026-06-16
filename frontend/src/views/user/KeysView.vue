@@ -194,7 +194,7 @@
                   class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
                 >
                   <span class="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
-                    {{ entitlementActualCostTextByID(row.subscription_entitlement_id, effectiveGroupRate(row.group.id, row.group.rate_multiplier)) }}
+                    {{ rowGroupActualCostText(row) }}
                   </span>
                   <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
                     {{ t('keys.changeGroup') }}
@@ -1286,14 +1286,14 @@
                 "
               />
               <div
-                v-if="groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id)"
+                v-if="groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id, selectedKeyForGroup ? rowAccessSource(selectedKeyForGroup) : undefined)"
                 class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left text-xs"
               >
                 <span class="text-primary-600 dark:text-primary-400">
-                  {{ groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id) }}
+                  {{ groupEntitlementScopeText(option, selectedKeyForGroup?.subscription_entitlement_id, selectedKeyForGroup ? rowAccessSource(selectedKeyForGroup) : undefined) }}
                 </span>
                 <span class="font-medium text-gray-600 dark:text-gray-300">
-                  {{ groupOptionActualCostText(option, selectedKeyForGroup?.subscription_entitlement_id) }}
+                  {{ groupOptionActualCostText(option, selectedKeyForGroup?.subscription_entitlement_id, selectedKeyForGroup ? rowAccessSource(selectedKeyForGroup) : undefined) }}
                 </span>
               </div>
             </div>
@@ -1860,7 +1860,21 @@ function entitlementForGroupOption(
   return null
 }
 
-function groupOptionActualCostText(option: GroupOption | null, entitlementID: number | null | undefined): string {
+function rowGroupActualCostText(key: ApiKey): string {
+  if (rowAccessSource(key) === 'balance') return t('keys.balanceDeductionHint')
+  if (!key.group) return t('keys.priceUnavailable')
+  return entitlementActualCostTextByID(
+    key.subscription_entitlement_id,
+    effectiveGroupRate(key.group.id, key.group.rate_multiplier)
+  )
+}
+
+function groupOptionActualCostText(
+  option: GroupOption | null,
+  entitlementID: number | null | undefined,
+  accessSource: AccessSource = formData.value.access_source
+): string {
+  if (accessSource === 'balance') return t('keys.balanceDeductionHint')
   return entitlementActualCostText(
     entitlementForGroupOption(option, entitlementID),
     option ? effectiveGroupOptionRate(option) : 1
@@ -1915,8 +1929,12 @@ function entitlementCountText(option: GroupOption): string {
   return t('keys.entitlementMultipleAvailable', { count: entitlements.length })
 }
 
-function groupEntitlementScopeText(option: GroupOption, entitlementID: number | null | undefined): string {
-  if (formData.value.access_source === 'balance') {
+function groupEntitlementScopeText(
+  option: GroupOption,
+  entitlementID: number | null | undefined,
+  accessSource: AccessSource = formData.value.access_source
+): string {
+  if (accessSource === 'balance') {
     return t('keys.accessSourceBalanceShort')
   }
   if (entitlementID && entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)) {

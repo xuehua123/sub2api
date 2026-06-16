@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -405,7 +406,7 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 			return nil, err
 		}
 	}
-	if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, updatedPlan, overagePolicy); err != nil {
+	if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, updatedPlan, overagePolicy, groupIDsFromEntGroups(access.EffectiveGroups), planUpdateShouldSyncEntitlementGroups(req), false); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -824,26 +825,229 @@ func applyPlanLimitPatch(u *dbent.SubscriptionPlanUpdateOne, daily, weekly, mont
 	}
 }
 
-func syncActiveEntitlementsForPlanUpdate(ctx context.Context, tx *dbent.Tx, plan *dbent.SubscriptionPlan, overagePolicy string) error {
+func planUpdateShouldSyncEntitlementGroups(req UpdatePlanRequest) bool {
+	return req.AccessScope != nil || req.GroupID != nil || req.GroupIDs != nil || req.AllowedPlatforms != nil
+}
+
+func syncActiveEntitlementsForPlanUpdate(ctx context.Context, tx *dbent.Tx, plan *dbent.SubscriptionPlan, overagePolicy string, groupIDs []int64, syncGroups bool, allowEmptyGroups bool) error {
 	if plan == nil {
 		return nil
 	}
 	now := time.Now()
+	groupIDs = normalizedInt64Set(groupIDs)
+	if syncGroups && len(groupIDs) == 0 && !allowEmptyGroups {
+		return fmt.Errorf("sync active entitlement groups for plan update: empty group scope")
+	}
+	predicates := []predicate.SubscriptionEntitlement{
+		subscriptionentitlement.PlanIDEQ(plan.ID),
+		subscriptionentitlement.DeletedAtIsNil(),
+		subscriptionentitlement.StatusEQ(SubscriptionStatusActive),
+		subscriptionentitlement.ExpiresAtGT(now),
+	}
 	update := tx.SubscriptionEntitlement.Update().
-		Where(
-			subscriptionentitlement.PlanIDEQ(plan.ID),
-			subscriptionentitlement.DeletedAtIsNil(),
-			subscriptionentitlement.StatusEQ(SubscriptionStatusActive),
-			subscriptionentitlement.ExpiresAtGT(now),
-		).
+		Where(predicates...).
 		SetName(subscriptionPlanEntitlementName(plan)).
 		SetOveragePolicy(normalizeEntitlementOveragePolicy(overagePolicy)).
 		SetUpdatedAt(now)
 	applyEntitlementPlanLimitSync(update, plan.DailyLimitUsd, plan.WeeklyLimitUsd, plan.MonthlyLimitUsd)
+	if syncGroups {
+		if len(groupIDs) > 0 {
+			update.SetPrimaryGroupID(groupIDs[0])
+		} else {
+			update.ClearPrimaryGroupID()
+		}
+	}
 	if _, err := update.Save(ctx); err != nil {
 		return fmt.Errorf("sync active entitlements for plan update: %w", err)
 	}
+	if syncGroups {
+		ids, err := tx.SubscriptionEntitlement.Query().
+			Where(predicates...).
+			IDs(ctx)
+		if err != nil {
+			return fmt.Errorf("load active entitlements for plan group sync: %w", err)
+		}
+		if err := replaceActiveEntitlementGroupsForPlanUpdate(ctx, tx, ids, groupIDs, allowEmptyGroups); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func replaceActiveEntitlementGroupsForPlanUpdate(ctx context.Context, tx *dbent.Tx, entitlementIDs []int64, groupIDs []int64, allowEmptyGroups bool) error {
+	if len(entitlementIDs) == 0 {
+		return nil
+	}
+	groupIDs = normalizedInt64Set(groupIDs)
+	if len(groupIDs) == 0 && !allowEmptyGroups {
+		return fmt.Errorf("sync active entitlement groups for plan update: empty group scope")
+	}
+	if _, err := tx.SubscriptionEntitlementGroup.Delete().
+		Where(subscriptionentitlementgroup.EntitlementIDIn(entitlementIDs...)).
+		Exec(ctx); err != nil {
+		return fmt.Errorf("delete active entitlement groups for plan update: %w", err)
+	}
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	creates := make([]*dbent.SubscriptionEntitlementGroupCreate, 0, len(entitlementIDs)*len(groupIDs))
+	for _, entitlementID := range entitlementIDs {
+		for i, groupID := range groupIDs {
+			creates = append(creates, tx.SubscriptionEntitlementGroup.Create().
+				SetEntitlementID(entitlementID).
+				SetGroupID(groupID).
+				SetSortOrder(i).
+				SetEnabled(true))
+		}
+	}
+	if err := tx.SubscriptionEntitlementGroup.CreateBulk(creates...).Exec(ctx); err != nil {
+		return fmt.Errorf("create active entitlement groups for plan update: %w", err)
+	}
+	return nil
+}
+
+func syncDynamicPlanAutoGrantScopesForGroupChange(ctx context.Context, client *dbent.Client, before, after *Group) error {
+	platforms := planAutoGrantSyncPlatformsForGroupChange(before, after)
+	if len(platforms) == 0 {
+		return nil
+	}
+	return syncDynamicPlanAutoGrantScopesForPlatforms(ctx, client, platforms)
+}
+
+func planAutoGrantSyncPlatformsForGroupChange(before, after *Group) []string {
+	beforeQualifies := groupQualifiesForPlanAutoGrantSync(before)
+	afterQualifies := groupQualifiesForPlanAutoGrantSync(after)
+	platforms := make([]string, 0, 2)
+	if afterQualifies {
+		platforms = append(platforms, after.Platform)
+	}
+	if beforeQualifies && afterQualifies && normalizePlanAutoGrantPlatform(before.Platform) != normalizePlanAutoGrantPlatform(after.Platform) {
+		platforms = append(platforms, before.Platform, after.Platform)
+	}
+	if before != nil && after != nil && before.Status == StatusActive && after.Status != StatusActive {
+		platforms = append(platforms, before.Platform)
+	}
+	return normalizedPlanAutoGrantPlatforms(platforms)
+}
+
+func groupQualifiesForPlanAutoGrantSync(group *Group) bool {
+	if group == nil {
+		return false
+	}
+	return group.Status == StatusActive && group.SubscriptionEnabled && group.PlanAutoGrantEnabled && !group.IsExclusive
+}
+
+func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbent.Client, platforms []string) error {
+	platforms = normalizedPlanAutoGrantPlatforms(platforms)
+	if client == nil || len(platforms) == 0 {
+		return nil
+	}
+	platformSet := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		platformSet[platform] = struct{}{}
+	}
+
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("start dynamic plan auto-grant sync transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	plans, err := tx.SubscriptionPlan.Query().
+		Where(subscriptionplan.AccessScopeIn(PlanAccessScopeAllSubscriptionGroups, PlanAccessScopePlatformSubscriptionGroups)).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("load dynamic subscription plans for auto-grant sync: %w", err)
+	}
+	for _, plan := range plans {
+		scope := normalizePlanAccessScopeForResponse(plan.AccessScope)
+		if !dynamicPlanScopeAffectedByPlatforms(scope, plan.AllowedPlatforms, platformSet) {
+			continue
+		}
+		groups, err := loadDynamicPlanAutoGrantGroups(ctx, tx.Client(), scope, plan.AllowedPlatforms)
+		if err != nil {
+			return err
+		}
+		groupIDs := groupIDsFromEntGroups(groups)
+		if len(groupIDs) > 0 && plan.GroupID != groupIDs[0] {
+			if _, err := tx.SubscriptionPlan.UpdateOneID(plan.ID).
+				SetGroupID(groupIDs[0]).
+				Save(ctx); err != nil {
+				return fmt.Errorf("sync dynamic plan primary group: %w", err)
+			}
+			plan.GroupID = groupIDs[0]
+		}
+		if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, plan, plan.OveragePolicy, groupIDs, true, true); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit dynamic plan auto-grant sync transaction: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func dynamicPlanScopeAffectedByPlatforms(scope string, allowedPlatforms []string, platformSet map[string]struct{}) bool {
+	if scope == PlanAccessScopeAllSubscriptionGroups {
+		return true
+	}
+	if scope != PlanAccessScopePlatformSubscriptionGroups {
+		return false
+	}
+	for _, platform := range allowedPlatforms {
+		if _, ok := platformSet[normalizePlanAutoGrantPlatform(platform)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func loadDynamicPlanAutoGrantGroups(ctx context.Context, client *dbent.Client, scope string, allowedPlatforms []string) ([]*dbent.Group, error) {
+	if client == nil {
+		return nil, nil
+	}
+	query := client.Group.Query().
+		Where(subscriptionPlanAutoGrantGroupPredicates()...).
+		Order(group.BySortOrder(), group.ByID())
+	if scope == PlanAccessScopePlatformSubscriptionGroups {
+		platforms := normalizedPlanAutoGrantPlatforms(allowedPlatforms)
+		if len(platforms) == 0 {
+			return nil, nil
+		}
+		query.Where(group.PlatformIn(platforms...))
+	}
+	groups, err := query.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load dynamic plan auto-grant groups: %w", err)
+	}
+	return groups, nil
+}
+
+func normalizedPlanAutoGrantPlatforms(platforms []string) []string {
+	out := make([]string, 0, len(platforms))
+	seen := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		platform = normalizePlanAutoGrantPlatform(platform)
+		if platform == "" {
+			continue
+		}
+		if _, ok := seen[platform]; ok {
+			continue
+		}
+		seen[platform] = struct{}{}
+		out = append(out, platform)
+	}
+	return out
+}
+
+func normalizePlanAutoGrantPlatform(platform string) string {
+	return strings.ToLower(strings.TrimSpace(platform))
 }
 
 func subscriptionPlanEntitlementName(plan *dbent.SubscriptionPlan) string {
