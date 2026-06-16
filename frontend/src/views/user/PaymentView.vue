@@ -1,6 +1,6 @@
 <template>
   <AppLayout>
-    <div class="mx-auto w-full max-w-[1400px] px-4 py-6 text-slate-100 sm:px-6 lg:px-8">
+    <div class="mx-auto w-full max-w-[1400px] px-4 py-6 text-slate-900 sm:px-6 lg:px-8 dark:text-slate-100">
       <div v-if="loading" class="flex items-center justify-center py-32">
         <div class="relative flex h-12 w-12 items-center justify-center">
           <div class="absolute inset-0 animate-ping rounded-full bg-primary-500/30"></div>
@@ -11,7 +11,7 @@
       <template v-else>
         <!-- Payment in progress Phase -->
         <template v-if="paymentPhase === 'paying'">
-          <div class="mx-auto max-w-2xl rounded-2xl border border-white/5 bg-[#090f1d]/60 p-6 backdrop-blur-xl shadow-2xl">
+          <div class="mx-auto max-w-2xl rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-2xl shadow-slate-200/70 backdrop-blur-xl dark:border-white/5 dark:bg-[#090f1d]/60 dark:shadow-black/30">
             <PaymentStatusPanel
               :order-id="paymentState.orderId"
               :qr-code="paymentState.qrCode"
@@ -32,29 +32,29 @@
           <!-- Page Header & Tab Switcher (Show only in Selection Step) -->
           <div v-if="!selectedPlan" class="text-center mb-10 space-y-4">
             <template v-if="activeTab === 'subscription'">
-              <h1 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl md:text-5xl">
+              <h1 class="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl md:text-5xl dark:text-white">
                 选择更稳的 <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-cyan-400">AI API</span> 额度
               </h1>
-              <p class="mx-auto max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
+              <p class="mx-auto max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base dark:text-slate-400">
                 全面兼容 GPT-5 / Claude Code / OpenAI 系列模型及生态工具，稳定接口调度，原倍率计费，成本公开透明。
               </p>
             </template>
             <template v-else>
-              <h1 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl md:text-5xl">
+              <h1 class="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl md:text-5xl dark:text-white">
                 账户余额充值
               </h1>
-              <p class="mx-auto max-w-2xl text-sm leading-relaxed text-slate-400 sm:text-base">
+              <p class="mx-auto max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base dark:text-slate-400">
                 安全快捷，即时入账。充值余额可用于所有分组的按量计费抵扣。
               </p>
             </template>
             
             <!-- Tab Switcher -->
-            <div v-if="tabs.length > 1" class="inline-flex rounded-xl p-1 bg-slate-900/60 border border-white/5 backdrop-blur-md shadow-lg">
+            <div v-if="tabs.length > 1" class="inline-flex rounded-xl border border-slate-200/80 bg-white/[0.85] p-1 shadow-lg shadow-slate-200/70 backdrop-blur-md dark:border-white/5 dark:bg-slate-900/60 dark:shadow-black/20">
               <button
                 v-for="tab in tabs"
                 :key="tab.key"
                 class="h-9 px-6 rounded-lg text-xs font-bold transition-all duration-200"
-                :class="activeTab === tab.key ? 'bg-primary-500 text-white shadow-md shadow-primary-500/10' : 'text-slate-400 hover:text-slate-200'"
+                :class="activeTab === tab.key ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'"
                 @click="activeTab = tab.key"
               >
                 {{ tab.label }}
@@ -66,7 +66,7 @@
               <span
                 v-for="chip in heroCapabilityChips"
                 :key="chip"
-                class="rounded-full border border-white/5 bg-white/[0.02] px-2.5 py-0.5 text-[11px] font-medium text-slate-400 shadow-sm"
+                class="rounded-full border border-slate-200/80 bg-white/75 px-2.5 py-0.5 text-[11px] font-medium text-slate-500 shadow-sm dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-400"
               >
                 {{ chip }}
               </span>
@@ -80,7 +80,7 @@
             <template v-if="!selectedPlan">
               <div v-if="checkout.plans.length === 0" class="card py-24 text-center glass-panel">
                 <Icon name="gift" size="xl" class="mx-auto mb-4 text-slate-500" />
-                <p class="text-slate-400">{{ t('payment.noPlans') }}</p>
+                <p class="text-slate-500 dark:text-slate-400">{{ t('payment.noPlans') }}</p>
               </div>
               
               <template v-else>
@@ -92,8 +92,8 @@
                     :class="[
                       'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300',
                       isRecommendedPlan(plan)
-                        ? 'recommended-card bg-gradient-to-b from-[#0d2229]/50 via-[#0a1120]/40 to-[#070c16]/30 border-primary-500/25 shadow-[0_0_40px_rgba(20,184,166,0.08)] hover:shadow-[0_0_50px_rgba(20,184,166,0.12)]'
-                        : 'bg-[#090f1d]/40 border-white/5 hover:border-white/10 hover:bg-[#0c1528]/50 shadow-lg'
+                        ? 'recommended-card border-primary-300/70 bg-gradient-to-b from-white via-cyan-50/80 to-white shadow-xl shadow-cyan-100/80 hover:shadow-2xl hover:shadow-cyan-100 dark:border-primary-500/25 dark:from-[#0d2229]/50 dark:via-[#0a1120]/40 dark:to-[#070c16]/30 dark:shadow-[0_0_40px_rgba(20,184,166,0.08)] dark:hover:shadow-[0_0_50px_rgba(20,184,166,0.12)]'
+                        : 'border-slate-200/80 bg-white/[0.92] shadow-xl shadow-slate-200/70 hover:border-primary-200 hover:bg-white hover:shadow-2xl hover:shadow-slate-200/90 dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-lg dark:hover:border-white/10 dark:hover:bg-[#0c1528]/50'
                     ]"
                   >
                     <!-- Recommended Badge -->
@@ -106,49 +106,49 @@
 
                     <!-- Card Header -->
                     <div class="space-y-1">
-                      <span class="text-[11px] font-bold tracking-wide uppercase text-slate-400">
+                      <span class="text-[11px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                         {{ planAudience(plan) }}
                       </span>
-                      <h3 class="text-lg font-bold text-white group-hover:text-primary-300 transition-colors">
+                      <h3 class="text-lg font-bold text-slate-950 transition-colors group-hover:text-primary-600 dark:text-white dark:group-hover:text-primary-300">
                         {{ plan.name }}
                       </h3>
                     </div>
 
                     <!-- Price -->
                     <div class="mt-4 flex items-baseline gap-1">
-                      <span class="text-3xl font-extrabold text-white tracking-tight">
+                      <span class="text-3xl font-extrabold tracking-tight text-slate-950 dark:text-white">
                         {{ formatPlanPrice(plan) }}
                       </span>
-                      <span class="text-xs text-slate-400">/ {{ validitySuffixForPlan(plan) }}</span>
+                      <span class="text-xs text-slate-500 dark:text-slate-400">/ {{ validitySuffixForPlan(plan) }}</span>
                     </div>
 
                     <!-- Original Price / Discount -->
                     <div class="mt-1 flex items-center gap-2 min-h-[20px]">
-                      <span v-if="plan.original_price && plan.original_price > plan.price" class="text-xs text-slate-500 line-through">
+                      <span v-if="plan.original_price && plan.original_price > plan.price" class="text-xs text-slate-400 line-through dark:text-slate-500">
                         {{ formatSelectedPaymentAmount(plan.original_price) }}
                       </span>
-                      <span v-if="discountText(plan)" class="rounded-md bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/20">
+                      <span v-if="discountText(plan)" class="rounded-md border border-amber-300/40 bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-300">
                         {{ discountText(plan) }}
                       </span>
                     </div>
 
                     <!-- Metrics Grid -->
-                    <div class="mt-5 space-y-2.5 border-t border-white/5 pt-5 text-xs">
+                    <div class="mt-5 space-y-2.5 border-t border-slate-200/80 pt-5 text-xs dark:border-white/5">
                       <div class="flex items-center justify-between">
-                        <span class="text-slate-400">月度额度</span>
-                        <span class="font-bold text-white">{{ planQuotaText(plan) }}</span>
+                        <span class="text-slate-500 dark:text-slate-400">月度额度</span>
+                        <span class="font-bold text-slate-900 dark:text-white">{{ planQuotaText(plan) }}</span>
                       </div>
                       <div class="flex items-center justify-between">
-                        <span class="text-slate-400">每刀成本</span>
-                        <span class="font-bold text-white">{{ unitCostText(plan) }}</span>
+                        <span class="text-slate-500 dark:text-slate-400">每刀成本</span>
+                        <span class="font-bold text-slate-900 dark:text-white">{{ unitCostText(plan) }}</span>
                       </div>
                     </div>
 
                     <!-- Covered Groups -->
-                    <div class="mt-4 border-t border-white/5 pt-4">
+                    <div class="mt-4 border-t border-slate-200/80 pt-4 dark:border-white/5">
                       <div class="flex items-center justify-between text-xs">
-                        <span class="text-slate-400">覆盖分组</span>
-                        <span class="rounded bg-primary-500/10 px-1.5 py-0.5 font-bold text-primary-300 border border-primary-500/20">
+                        <span class="text-slate-500 dark:text-slate-400">覆盖分组</span>
+                        <span class="rounded border border-primary-200 bg-primary-50 px-1.5 py-0.5 font-bold text-primary-700 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300">
                           {{ planGroupCountText(plan) }}
                         </span>
                       </div>
@@ -156,16 +156,16 @@
                         <div
                           v-for="group in planGroupRows(plan, 3)"
                           :key="group.key"
-                          class="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-slate-900/60 px-2.5 py-1.5 text-[10px]"
+                          class="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-[10px] dark:border-white/5 dark:bg-slate-900/60"
                         >
-                          <span class="min-w-0 truncate font-medium text-slate-300">{{ group.name }}</span>
-                          <span class="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 font-black text-emerald-300">
+                          <span class="min-w-0 truncate font-medium text-slate-700 dark:text-slate-300">{{ group.name }}</span>
+                          <span class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-black text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
                             {{ group.multiplierText }}
                           </span>
                         </div>
                         <div
                           v-if="planGroupRowOverflowText(plan, 3)"
-                          class="rounded-lg border border-primary-500/20 bg-primary-500/10 px-2.5 py-1.5 text-[10px] font-bold text-primary-300"
+                          class="rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-1.5 text-[10px] font-bold text-primary-700 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300"
                         >
                           {{ planGroupRowOverflowText(plan, 3) }}
                         </div>
@@ -173,7 +173,7 @@
                     </div>
 
                     <!-- Core Features (Compact Summary) -->
-                    <div class="mt-5 text-[11px] leading-relaxed text-slate-400 italic">
+                    <div class="mt-5 text-[11px] italic leading-relaxed text-slate-500 dark:text-slate-400">
                       {{ compactPlanFeatureSummary(plan) }}
                     </div>
 
@@ -187,7 +187,7 @@
                         'w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-bold transition-all duration-200 active:scale-[0.98]',
                         isRecommendedPlan(plan)
                           ? 'bg-gradient-to-r from-primary-500 to-cyan-500 text-slate-950 shadow-lg shadow-primary-500/25 hover:from-primary-400 hover:to-cyan-400'
-                          : 'bg-white/[0.04] text-primary-300 border border-primary-500/20 hover:border-primary-400 hover:bg-primary-500/10 hover:text-white'
+                          : 'border border-primary-200 bg-primary-50 text-primary-700 hover:border-primary-300 hover:bg-primary-100 dark:border-primary-500/20 dark:bg-white/[0.04] dark:text-primary-300 dark:hover:border-primary-400 dark:hover:bg-primary-500/10 dark:hover:text-white'
                       ]"
                       @click="selectPlan(plan)"
                     >
@@ -201,7 +201,7 @@
                 <div class="mt-12 flex flex-col items-center justify-center max-w-5xl mx-auto w-full space-y-4">
                   <button
                     type="button"
-                    class="flex items-center gap-2 rounded-xl border border-white/5 bg-slate-900/40 px-5 py-2.5 text-sm font-bold text-slate-300 transition-all hover:bg-slate-800/40 hover:text-white"
+                    class="flex items-center gap-2 rounded-xl border border-slate-200/80 bg-white/80 px-5 py-2.5 text-sm font-bold text-slate-600 shadow-sm transition-all hover:bg-white hover:text-slate-950 dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-800/40 dark:hover:text-white"
                     @click="isComparisonOpen = !isComparisonOpen"
                   >
                     <span>对比套餐详细权益及说明</span>
@@ -217,60 +217,60 @@
                     </svg>
                   </button>
                   
-                  <div v-if="isComparisonOpen" class="w-full rounded-2xl border border-white/5 bg-[#090f1d]/45 p-6 backdrop-blur-md transition-all duration-300">
+                  <div v-if="isComparisonOpen" class="w-full rounded-2xl border border-slate-200/80 bg-white/[0.88] p-6 shadow-xl shadow-slate-200/70 backdrop-blur-md transition-all duration-300 dark:border-white/5 dark:bg-[#090f1d]/45 dark:shadow-black/20">
                     <!-- Custom table style without heavy borders -->
                     <div class="overflow-x-auto rounded-xl">
-                      <table class="w-full min-w-[700px] border-collapse text-left text-xs text-slate-300">
+                      <table class="w-full min-w-[700px] border-collapse text-left text-xs text-slate-700 dark:text-slate-300">
                         <thead>
-                          <tr class="border-b border-white/5 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                          <tr class="border-b border-slate-200/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-white/5 dark:text-slate-400">
                             <th class="pb-3 pr-4">权益项目</th>
-                            <th v-for="plan in subscriptionPlans" :key="plan.id" class="pb-3 px-4" :class="{'text-primary-300 font-extrabold': isRecommendedPlan(plan)}">
+                            <th v-for="plan in subscriptionPlans" :key="plan.id" class="pb-3 px-4" :class="{'text-primary-600 dark:text-primary-300 font-extrabold': isRecommendedPlan(plan)}">
                               {{ plan.name }}
                             </th>
                           </tr>
                         </thead>
-                        <tbody class="divide-y divide-white/5">
+                        <tbody class="divide-y divide-slate-200/70 dark:divide-white/5">
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">月度价格</td>
-                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-bold text-white">
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">月度价格</td>
+                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-bold text-slate-900 dark:text-white">
                               {{ formatPlanPrice(plan) }} / {{ validitySuffixForPlan(plan) }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">原价 / 折扣</td>
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">原价 / 折扣</td>
                             <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4">
-                              <span v-if="plan.original_price && plan.original_price > plan.price" class="text-slate-500 line-through mr-2">
+                              <span v-if="plan.original_price && plan.original_price > plan.price" class="mr-2 text-slate-400 line-through dark:text-slate-500">
                                 {{ formatSelectedPaymentAmount(plan.original_price) }}
                               </span>
-                              <span v-if="discountText(plan)" class="text-amber-300 font-bold bg-amber-400/10 px-1.5 py-0.5 rounded">
+                              <span v-if="discountText(plan)" class="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
                                 {{ discountText(plan) }}
                               </span>
-                              <span v-else class="text-slate-500">-</span>
+                              <span v-else class="text-slate-400 dark:text-slate-500">-</span>
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">月度额度</td>
-                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-bold text-white">
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">月度额度</td>
+                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-bold text-slate-900 dark:text-white">
                               {{ planQuotaText(plan) }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">每刀成本</td>
-                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-semibold text-white">
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">每刀成本</td>
+                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 font-semibold text-slate-900 dark:text-white">
                               {{ unitCostText(plan) }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">适合人群</td>
-                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 text-slate-400">
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">适合人群</td>
+                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 text-slate-600 dark:text-slate-400">
                               {{ planAudience(plan) }}
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">包含权益</td>
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">包含权益</td>
                             <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4">
                               <div class="flex flex-wrap gap-1">
-                                <span v-for="feat in compactPlanFeatures(plan)" :key="feat" class="inline-flex items-center gap-1 text-[10px] text-slate-300 bg-white/[0.02] px-1.5 py-0.5 rounded border border-white/5">
+                                <span v-for="feat in compactPlanFeatures(plan)" :key="feat" class="inline-flex items-center gap-1 rounded border border-slate-200/80 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600 dark:border-white/5 dark:bg-white/[0.02] dark:text-slate-300">
                                   <svg class="h-3 w-3 text-primary-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                                   </svg>
@@ -280,18 +280,18 @@
                             </td>
                           </tr>
                           <tr>
-                            <td class="py-3 pr-4 font-medium text-slate-400">包含分组</td>
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">包含分组</td>
                             <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4">
                               <div class="space-y-1.5">
                                 <div
                                   v-for="group in planGroupRows(plan, 4)"
                                   :key="group.key"
-                                  class="flex items-center justify-between gap-2 rounded-lg border border-white/5 bg-slate-900/60 px-2 py-1"
+                                  class="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50 px-2 py-1 dark:border-white/5 dark:bg-slate-900/60"
                                 >
-                                  <span class="min-w-0 truncate text-[10px] text-slate-300">{{ group.name }}</span>
-                                  <span class="shrink-0 text-[10px] font-black text-emerald-300">{{ group.multiplierText }}</span>
+                                  <span class="min-w-0 truncate text-[10px] text-slate-700 dark:text-slate-300">{{ group.name }}</span>
+                                  <span class="shrink-0 text-[10px] font-black text-emerald-700 dark:text-emerald-300">{{ group.multiplierText }}</span>
                                 </div>
-                                <span v-if="planGroupRowOverflowText(plan, 4)" class="block text-[10px] font-bold text-primary-300">
+                                <span v-if="planGroupRowOverflowText(plan, 4)" class="block text-[10px] font-bold text-primary-700 dark:text-primary-300">
                                   {{ planGroupRowOverflowText(plan, 4) }}
                                 </span>
                               </div>
@@ -310,7 +310,7 @@
               <div class="mb-6">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-400 hover:text-white transition-colors"
+                  class="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-500 transition-colors hover:text-slate-950 dark:text-slate-400 dark:hover:text-white"
                   @click="selectedPlan = null"
                 >
                   <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
@@ -324,30 +324,30 @@
                 
                 <!-- Left: Selected Package Overview & Group details -->
                 <div class="space-y-6">
-                  <div class="rounded-2xl border border-white/5 bg-[#090f1d]/40 p-6 backdrop-blur-md shadow-xl">
-                    <h2 class="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                  <div class="rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-xl shadow-slate-200/70 backdrop-blur-md dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-black/20">
+                    <h2 class="mb-6 flex items-center gap-2 text-xl font-bold text-slate-950 dark:text-white">
                       <span class="inline-block w-1.5 h-5 bg-primary-500 rounded-full"></span>
                       确认您的订阅套餐
                     </h2>
 
                     <!-- Plan Summary Header -->
-                    <div class="flex flex-wrap justify-between items-start gap-4 pb-6 border-b border-white/5">
+                    <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200/80 pb-6 dark:border-white/5">
                       <div class="space-y-1">
                         <div class="flex items-center gap-2">
-                          <h3 class="text-2xl font-extrabold text-white">{{ selectedPlan.name }}</h3>
-                          <span v-if="isRecommendedPlan(selectedPlan)" class="rounded-full bg-primary-500/10 border border-primary-500/30 px-2.5 py-0.5 text-[10px] font-bold text-primary-300">
+                          <h3 class="text-2xl font-extrabold text-slate-950 dark:text-white">{{ selectedPlan.name }}</h3>
+                          <span v-if="isRecommendedPlan(selectedPlan)" class="rounded-full border border-primary-200 bg-primary-50 px-2.5 py-0.5 text-[10px] font-bold text-primary-700 dark:border-primary-500/30 dark:bg-primary-500/10 dark:text-primary-300">
                             推荐套餐
                           </span>
                         </div>
-                        <p class="text-xs text-slate-400">{{ selectedPlanSummaryText }}</p>
+                        <p class="text-xs text-slate-500 dark:text-slate-400">{{ selectedPlanSummaryText }}</p>
                       </div>
 
                       <div class="text-right">
                         <div class="flex items-baseline gap-1 justify-end">
                           <span class="text-3xl font-extrabold text-primary-400">{{ formatPlanPrice(selectedPlan) }}</span>
-                          <span class="text-xs text-slate-400">/ {{ validitySuffixForPlan(selectedPlan) }}</span>
+                          <span class="text-xs text-slate-500 dark:text-slate-400">/ {{ validitySuffixForPlan(selectedPlan) }}</span>
                         </div>
-                        <div v-if="selectedPlan.original_price && selectedPlan.original_price > selectedPlan.price" class="text-xs text-slate-500 line-through">
+                        <div v-if="selectedPlan.original_price && selectedPlan.original_price > selectedPlan.price" class="text-xs text-slate-400 line-through dark:text-slate-500">
                           原价 {{ formatSelectedPaymentAmount(selectedPlan.original_price) }}
                         </div>
                       </div>
@@ -355,13 +355,13 @@
 
                     <!-- Quota & Cost Grid -->
                     <div class="grid grid-cols-2 gap-4 mt-6">
-                      <div class="rounded-xl border border-white/5 bg-white/[0.01] p-4">
-                        <span class="text-xs text-slate-500 block">月度额度</span>
-                        <span class="text-lg font-bold text-white mt-1 block">{{ planQuotaText(selectedPlan) }}</span>
+                      <div class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/5 dark:bg-white/[0.01]">
+                        <span class="block text-xs text-slate-500">月度额度</span>
+                        <span class="mt-1 block text-lg font-bold text-slate-950 dark:text-white">{{ planQuotaText(selectedPlan) }}</span>
                       </div>
-                      <div class="rounded-xl border border-white/5 bg-white/[0.01] p-4">
-                        <span class="text-xs text-slate-500 block">每刀成本</span>
-                        <span class="text-lg font-bold text-white mt-1 block">{{ unitCostText(selectedPlan) }}</span>
+                      <div class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 dark:border-white/5 dark:bg-white/[0.01]">
+                        <span class="block text-xs text-slate-500">每刀成本</span>
+                        <span class="mt-1 block text-lg font-bold text-slate-950 dark:text-white">{{ unitCostText(selectedPlan) }}</span>
                       </div>
                     </div>
 
@@ -373,19 +373,19 @@
                         <div
                           v-for="group in planGroups(selectedPlan)"
                           :key="group.id"
-                          class="flex items-center justify-between rounded-xl border border-white/5 bg-slate-950/40 p-4"
+                          class="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/5 dark:bg-slate-950/40"
                         >
                           <div class="space-y-0.5">
-                            <span class="text-sm font-bold text-white">
+                            <span class="text-sm font-bold text-slate-950 dark:text-white">
                               {{ displayGroupName(group.name) }}
                             </span>
-                            <div class="flex gap-2 text-[10px] text-slate-400 font-medium">
+                            <div class="flex gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
                               <span>平台: {{ platformLabel(group.platform || '') }}</span>
                               <span>·</span>
                               <span>额度: {{ groupQuotaText(group) }}</span>
                             </div>
                           </div>
-                          <span class="rounded-md bg-emerald-500/10 border border-emerald-500/25 px-2 py-1 text-xs font-bold text-emerald-300">
+                          <span class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
                             倍率 {{ formatGroupMultiplier(group.rate_multiplier) }}
                           </span>
                         </div>
@@ -396,31 +396,31 @@
                 </div>
 
                 <!-- Right: Secure Checkout Panel -->
-                <aside class="rounded-2xl border border-white/5 bg-[#090f1d]/60 p-6 backdrop-blur-md shadow-xl space-y-6 lg:sticky lg:top-24">
+                <aside class="space-y-6 rounded-2xl border border-slate-200/80 bg-white/[0.92] p-6 shadow-xl shadow-slate-200/80 backdrop-blur-md dark:border-white/5 dark:bg-[#090f1d]/60 dark:shadow-black/20 lg:sticky lg:top-24">
                   <div>
-                    <h2 class="text-lg font-extrabold text-white">订单支付详情</h2>
-                    <p class="text-xs text-slate-400 mt-1">请核对订单金额并选择合适的支付通道完成付款</p>
+                    <h2 class="text-lg font-extrabold text-slate-950 dark:text-white">订单支付详情</h2>
+                    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">请核对订单金额并选择合适的支付通道完成付款</p>
                   </div>
 
                   <!-- Price details -->
-                  <div class="rounded-xl border border-white/5 bg-white/[0.01] p-4 space-y-3 text-xs">
-                    <div class="flex justify-between text-slate-400">
+                  <div class="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 text-xs dark:border-white/5 dark:bg-white/[0.01]">
+                    <div class="flex justify-between text-slate-500 dark:text-slate-400">
                       <span>套餐价格</span>
-                      <span class="font-semibold text-white">{{ formatSelectedPaymentAmount(selectedPlan.price) }}</span>
+                      <span class="font-semibold text-slate-950 dark:text-white">{{ formatSelectedPaymentAmount(selectedPlan.price) }}</span>
                     </div>
-                    <div class="flex justify-between text-slate-400">
+                    <div class="flex justify-between text-slate-500 dark:text-slate-400">
                       <span>通道手续费</span>
-                      <span class="font-semibold text-white">{{ formatSelectedPaymentAmount(subFeeAmount) }}</span>
+                      <span class="font-semibold text-slate-950 dark:text-white">{{ formatSelectedPaymentAmount(subFeeAmount) }}</span>
                     </div>
-                    <div class="flex justify-between text-sm pt-3 border-t border-white/5">
-                      <span class="font-bold text-slate-200">应付总额</span>
+                    <div class="flex justify-between border-t border-slate-200/80 pt-3 text-sm dark:border-white/5">
+                      <span class="font-bold text-slate-700 dark:text-slate-200">应付总额</span>
                       <span class="text-xl font-extrabold text-primary-400">{{ formatSelectedPaymentAmount(subTotalAmount) }}</span>
                     </div>
                   </div>
 
                   <!-- Payment methods selector -->
                   <div class="space-y-2">
-                    <p class="text-xs font-bold text-slate-400">选择支付方式</p>
+                    <p class="text-xs font-bold text-slate-500 dark:text-slate-400">选择支付方式</p>
                     <div v-if="enabledMethods.length >= 1" class="grid grid-cols-2 gap-3">
                       <button
                         v-for="method in subMethodOptions"
@@ -430,10 +430,10 @@
                         :class="[
                           'relative flex flex-col items-center justify-center rounded-xl border p-4 text-center transition-all duration-200',
                           !method.available
-                            ? 'cursor-not-allowed border-white/5 bg-white/[0.01] opacity-40'
+                            ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-40 dark:border-white/5 dark:bg-white/[0.01]'
                             : selectedMethod === method.type
-                              ? 'border-primary-500 bg-primary-500/10 text-white shadow-[0_0_15px_rgba(20,184,166,0.15)]'
-                              : 'border-white/5 bg-slate-900/40 text-slate-300 hover:border-white/10 hover:text-white'
+                              ? 'border-primary-400 bg-primary-50 text-slate-950 shadow-[0_0_15px_rgba(20,184,166,0.15)] dark:border-primary-500 dark:bg-primary-500/10 dark:text-white'
+                              : 'border-slate-200/80 bg-white text-slate-600 hover:border-primary-200 hover:text-slate-950 dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:border-white/10 dark:hover:text-white'
                         ]"
                         @click="method.available && (selectedMethod = method.type)"
                       >
@@ -464,20 +464,20 @@
                   </button>
 
                   <!-- Trust info -->
-                  <div class="grid grid-cols-2 gap-3 border-t border-white/5 pt-5 text-center text-[10px] text-slate-400">
-                    <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                  <div class="grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-5 text-center text-[10px] text-slate-500 dark:border-white/5 dark:text-slate-400">
+                    <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                       <Icon name="shield" size="xs" class="text-primary-400" />
                       安全可信
                     </span>
-                    <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                    <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                       <Icon name="clock" size="xs" class="text-primary-400" />
                       极速生效
                     </span>
-                    <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                    <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                       <Icon name="document" size="xs" class="text-primary-400" />
                       支持发票
                     </span>
-                    <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                    <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                       <Icon name="server" size="xs" class="text-primary-400" />
                       分组调度
                     </span>
@@ -497,24 +497,24 @@
               <!-- Left: Recharge Amount Selection -->
               <div class="space-y-6">
                 <!-- Account Info -->
-                <div class="rounded-2xl border border-white/5 bg-[#090f1d]/40 p-6 backdrop-blur-md shadow-xl flex items-center justify-between">
+                <div class="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-xl shadow-slate-200/70 backdrop-blur-md dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-black/20">
                   <div class="space-y-1">
-                    <span class="text-xs text-slate-500 block">当前充值账户</span>
-                    <span class="text-base font-bold text-white block">{{ user?.username || '' }}</span>
+                    <span class="block text-xs text-slate-500">当前充值账户</span>
+                    <span class="block text-base font-bold text-slate-950 dark:text-white">{{ user?.username || '' }}</span>
                   </div>
                   <div class="text-right">
-                    <span class="text-xs text-slate-500 block">当前余额</span>
-                    <span class="text-2xl font-extrabold text-emerald-400 block mt-0.5">
+                    <span class="block text-xs text-slate-500">当前余额</span>
+                    <span class="mt-0.5 block text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">
                       ${{ user?.balance?.toFixed(2) || '0.00' }}
                     </span>
                   </div>
                 </div>
 
                 <!-- Preset Amount Selector -->
-                <div class="rounded-2xl border border-white/5 bg-[#090f1d]/40 p-6 backdrop-blur-md shadow-xl space-y-6">
-                  <h2 class="text-lg font-bold text-white">选择充值金额</h2>
+                <div class="space-y-6 rounded-2xl border border-slate-200/80 bg-white/90 p-6 shadow-xl shadow-slate-200/70 backdrop-blur-md dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-black/20">
+                  <h2 class="text-lg font-bold text-slate-950 dark:text-white">选择充值金额</h2>
                   
-                  <div v-if="enabledMethods.length === 0" class="py-12 text-center text-slate-500 text-xs">
+                  <div v-if="enabledMethods.length === 0" class="py-12 text-center text-xs text-slate-500">
                     充值功能暂未开放
                   </div>
 
@@ -531,41 +531,41 @@
               </div>
 
               <!-- Right: Checkout Sidebar -->
-              <aside class="rounded-2xl border border-white/5 bg-[#090f1d]/60 p-6 backdrop-blur-md shadow-xl space-y-6 lg:sticky lg:top-24">
+              <aside class="space-y-6 rounded-2xl border border-slate-200/80 bg-white/[0.92] p-6 shadow-xl shadow-slate-200/80 backdrop-blur-md dark:border-white/5 dark:bg-[#090f1d]/60 dark:shadow-black/20 lg:sticky lg:top-24">
                 <div>
-                  <h2 class="text-lg font-extrabold text-white">余额充值详情</h2>
-                  <p class="text-xs text-slate-400 mt-1">确认手续费与到账余额并付款</p>
+                  <h2 class="text-lg font-extrabold text-slate-950 dark:text-white">余额充值详情</h2>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">确认手续费与到账余额并付款</p>
                 </div>
 
                 <!-- Price breakdown -->
-                <div v-if="validAmount > 0" class="rounded-xl border border-white/5 bg-white/[0.01] p-4 space-y-3 text-xs">
-                  <div class="flex justify-between text-slate-400">
+                <div v-if="validAmount > 0" class="space-y-3 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 text-xs dark:border-white/5 dark:bg-white/[0.01]">
+                  <div class="flex justify-between text-slate-500 dark:text-slate-400">
                     <span>充值面额</span>
-                    <span class="font-semibold text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
+                    <span class="font-semibold text-slate-950 dark:text-white">{{ formatSelectedPaymentAmount(validAmount) }}</span>
                   </div>
-                  <div v-if="feeRate > 0" class="flex justify-between text-slate-400">
+                  <div v-if="feeRate > 0" class="flex justify-between text-slate-500 dark:text-slate-400">
                     <span>手续费 ({{ feeRate }}%)</span>
-                    <span class="font-semibold text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
+                    <span class="font-semibold text-slate-950 dark:text-white">{{ formatSelectedPaymentAmount(feeAmount) }}</span>
                   </div>
-                  <div class="flex justify-between text-slate-400 border-b border-white/5 pb-3">
+                  <div class="flex justify-between border-b border-slate-200/80 pb-3 text-slate-500 dark:border-white/5 dark:text-slate-400">
                     <span>到账额度</span>
-                    <span class="font-semibold text-emerald-400">${{ creditedAmount.toFixed(2) }}</span>
+                    <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ creditedAmount.toFixed(2) }}</span>
                   </div>
-                  <div class="flex justify-between text-sm pt-2">
-                    <span class="font-bold text-slate-200">实际应付</span>
+                  <div class="flex justify-between pt-2 text-sm">
+                    <span class="font-bold text-slate-700 dark:text-slate-200">实际应付</span>
                     <span class="text-xl font-extrabold text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </div>
-                  <p v-if="balanceRechargeMultiplier !== 1" class="text-[10px] text-slate-500 pt-1 border-t border-white/5 mt-2">
+                  <p v-if="balanceRechargeMultiplier !== 1" class="mt-2 border-t border-slate-200/80 pt-1 text-[10px] text-slate-500 dark:border-white/5">
                     充值比例折算：$1.00 到账额度需实付 ¥{{ balanceRechargeMultiplier.toFixed(2) }} 
                   </p>
                 </div>
-                <div v-else class="rounded-xl border border-white/5 bg-white/[0.01] p-6 text-center text-xs text-slate-500">
+                <div v-else class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-6 text-center text-xs text-slate-500 dark:border-white/5 dark:bg-white/[0.01]">
                   请在左侧选择或输入充值金额来计算应付金额
                 </div>
 
                 <!-- Payment methods selector -->
                 <div class="space-y-2">
-                  <p class="text-xs font-bold text-slate-400">选择支付方式</p>
+                  <p class="text-xs font-bold text-slate-500 dark:text-slate-400">选择支付方式</p>
                   <div v-if="enabledMethods.length >= 1" class="grid grid-cols-2 gap-3">
                     <button
                       v-for="method in methodOptions"
@@ -575,10 +575,10 @@
                       :class="[
                         'relative flex flex-col items-center justify-center rounded-xl border p-4 text-center transition-all duration-200',
                         !method.available
-                          ? 'cursor-not-allowed border-white/5 bg-white/[0.01] opacity-40'
+                          ? 'cursor-not-allowed border-slate-200 bg-slate-50 opacity-40 dark:border-white/5 dark:bg-white/[0.01]'
                           : selectedMethod === method.type
-                            ? 'border-primary-500 bg-primary-500/10 text-white shadow-[0_0_15px_rgba(20,184,166,0.15)]'
-                            : 'border-white/5 bg-slate-900/40 text-slate-300 hover:border-white/10 hover:text-white'
+                            ? 'border-primary-400 bg-primary-50 text-slate-950 shadow-[0_0_15px_rgba(20,184,166,0.15)] dark:border-primary-500 dark:bg-primary-500/10 dark:text-white'
+                            : 'border-slate-200/80 bg-white text-slate-600 hover:border-primary-200 hover:text-slate-950 dark:border-white/5 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:border-white/10 dark:hover:text-white'
                       ]"
                       @click="selectedMethod = method.type"
                     >
@@ -606,12 +606,12 @@
                 </button>
 
                 <!-- Trust info -->
-                <div class="grid grid-cols-2 gap-3 border-t border-white/5 pt-5 text-center text-[10px] text-slate-400">
-                  <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                <div class="grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-5 text-center text-[10px] text-slate-500 dark:border-white/5 dark:text-slate-400">
+                  <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                     <Icon name="shield" size="xs" class="text-primary-400" />
                     安全充值
                   </span>
-                  <span class="flex items-center gap-1.5 justify-center rounded-lg bg-white/[0.01] py-2">
+                  <span class="flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 py-2 dark:bg-white/[0.01]">
                     <Icon name="clock" size="xs" class="text-primary-400" />
                     即时入账
                   </span>
@@ -622,25 +622,25 @@
           </template>
 
           <!-- Help Info Section (Global bottom placement) -->
-          <div v-if="(checkout.help_text || checkout.help_image_url) && !selectedPlan" class="max-w-5xl mx-auto mt-16 pt-8 border-t border-white/5">
-            <div class="rounded-2xl border border-white/5 bg-slate-900/20 p-6 flex flex-col md:flex-row items-center justify-center gap-6 text-center md:text-left">
+          <div v-if="(checkout.help_text || checkout.help_image_url) && !selectedPlan" class="mx-auto mt-16 max-w-5xl border-t border-slate-200/80 pt-8 dark:border-white/5">
+            <div class="flex flex-col items-center justify-center gap-6 rounded-2xl border border-slate-200/80 bg-white/80 p-6 text-center shadow-sm md:flex-row md:text-left dark:border-white/5 dark:bg-slate-900/20">
               <img
                 v-if="checkout.help_image_url"
                 :src="checkout.help_image_url"
                 alt="Help Image"
-                class="h-28 max-w-full cursor-pointer rounded-xl object-contain transition-opacity hover:opacity-85 shadow-md"
+                class="h-28 max-w-full cursor-pointer rounded-xl object-contain shadow-md transition-opacity hover:opacity-[0.85]"
                 @click="previewImage = checkout.help_image_url"
               />
               <div v-if="checkout.help_text" class="space-y-1">
-                <h4 class="text-sm font-bold text-white">支付常见问题及解答</h4>
-                <p class="text-xs text-slate-400 max-w-xl leading-relaxed">{{ checkout.help_text }}</p>
+                <h4 class="text-sm font-bold text-slate-950 dark:text-white">支付常见问题及解答</h4>
+                <p class="max-w-xl text-xs leading-relaxed text-slate-500 dark:text-slate-400">{{ checkout.help_text }}</p>
               </div>
             </div>
           </div>
 
           <!-- Active subscriptions (Listed at bottom of Step 1) -->
-          <div v-if="activeSubscriptions.length > 0 && !selectedPlan" class="max-w-5xl mx-auto mt-12 space-y-4">
-            <h3 class="text-sm font-bold text-slate-400 flex items-center gap-2">
+          <div v-if="activeSubscriptions.length > 0 && !selectedPlan" class="mx-auto mt-12 max-w-5xl space-y-4">
+            <h3 class="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400">
               <span class="inline-block w-1.5 h-3.5 bg-emerald-500 rounded-full"></span>
               您的当前有效订阅
             </h3>
@@ -649,25 +649,25 @@
               <div
                 v-for="sub in activeSubscriptions"
                 :key="sub.id"
-                class="flex items-center gap-3 rounded-xl border border-white/5 bg-[#090f1d]/40 p-4"
+                class="flex items-center gap-3 rounded-xl border border-slate-200/80 bg-white/90 p-4 shadow-sm dark:border-white/5 dark:bg-[#090f1d]/40"
               >
                 <div :class="['h-8 w-1 shrink-0 rounded-full', platformAccentBarClass(sub.group?.platform || '')]" />
                 <div class="min-w-0 flex-1 space-y-0.5">
                   <div class="flex items-center gap-2">
-                    <span class="truncate text-xs font-bold text-white">
+                    <span class="truncate text-xs font-bold text-slate-950 dark:text-white">
                       {{ sub.group?.name || t('payment.groupFallback', { id: sub.group_id }) }}
                     </span>
-                    <span :class="['shrink-0 rounded-full px-1.5 py-0.2 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(sub.group?.platform || '')]">
+                    <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(sub.group?.platform || '')]">
                       {{ platformLabel(sub.group?.platform || '') }}
                     </span>
                   </div>
-                  <div class="flex flex-wrap gap-x-3 text-[10px] text-slate-400">
+                  <div class="flex flex-wrap gap-x-3 text-[10px] text-slate-500 dark:text-slate-400">
                     <span v-if="sub.group?.daily_limit_usd == null && sub.group?.weekly_limit_usd == null && sub.group?.monthly_limit_usd == null">额度: 无限制</span>
                     <span v-if="sub.expires_at">{{ formatSubscriptionRemaining(sub.expires_at) }}</span>
                     <span v-else>无到期时间</span>
                   </div>
                 </div>
-                <span class="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400 border border-emerald-500/20">
+                <span class="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-400">
                   有效中
                 </span>
               </div>
@@ -681,13 +681,13 @@
     <!-- Renewal Plan Selection Modal -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" @click.self="closeRenewalModal">
-          <div class="relative w-full max-w-lg rounded-2xl border border-white/5 bg-[#0b1222] p-6 shadow-2xl">
+        <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm dark:bg-black/75" @click.self="closeRenewalModal">
+          <div class="relative w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/5 dark:bg-[#0b1222]">
             <!-- Close button -->
-            <button class="absolute right-4 top-4 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/5 hover:text-white" @click="closeRenewalModal">
+            <button class="absolute right-4 top-4 rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white" @click="closeRenewalModal">
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h3 class="mb-4 text-lg font-bold text-white flex items-center gap-2">
+            <h3 class="mb-4 flex items-center gap-2 text-lg font-bold text-slate-950 dark:text-white">
               <span class="inline-block w-1 h-4 bg-primary-500 rounded-full"></span>
               {{ t('payment.selectPlan') }}
             </h3>
