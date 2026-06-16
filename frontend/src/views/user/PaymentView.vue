@@ -172,9 +172,9 @@
                       </div>
                     </div>
 
-                    <!-- Core Features (Compact Summary) -->
-                    <div class="mt-5 text-[11px] italic leading-relaxed text-slate-500 dark:text-slate-400">
-                      {{ compactPlanFeatureSummary(plan) }}
+                    <!-- Description / Compact Summary -->
+                    <div class="plan-description-clamp mt-5 text-[10px] italic leading-[1.55] text-slate-500 dark:text-slate-400">
+                      {{ planCardSummaryText(plan) }}
                     </div>
 
                     <!-- Spacer -->
@@ -267,6 +267,14 @@
                             </td>
                           </tr>
                           <tr>
+                            <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">套餐说明</td>
+                            <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4 text-slate-600 dark:text-slate-400">
+                              <p class="max-w-[220px] leading-relaxed">
+                                {{ planDescriptionText(plan) || '-' }}
+                              </p>
+                            </td>
+                          </tr>
+                          <tr>
                             <td class="py-3 pr-4 font-medium text-slate-500 dark:text-slate-400">包含权益</td>
                             <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4">
                               <div class="flex flex-wrap gap-1">
@@ -340,6 +348,9 @@
                           </span>
                         </div>
                         <p class="text-xs text-slate-500 dark:text-slate-400">{{ selectedPlanSummaryText }}</p>
+                        <p v-if="planDescriptionText(selectedPlan)" class="mt-2 max-w-2xl text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                          {{ planDescriptionText(selectedPlan) }}
+                        </p>
                       </div>
 
                       <div class="text-right">
@@ -1242,8 +1253,21 @@ function compactPlanFeatures(plan: SubscriptionPlan): string[] {
   return ['全模型覆盖', '标准接口调度', '原倍率计费', '可开票']
 }
 
+function normalizePlanText(value?: string | null): string {
+  return (value || '').replace(/\s+/g, ' ').trim()
+}
+
+function planDescriptionText(plan: SubscriptionPlan): string {
+  const description = normalizePlanText(plan.description)
+  return description === '[]' ? '' : description
+}
+
 function compactPlanFeatureSummary(plan: SubscriptionPlan): string {
   return compactPlanFeatures(plan).slice(0, 4).join(' · ')
+}
+
+function planCardSummaryText(plan: SubscriptionPlan): string {
+  return planDescriptionText(plan) || compactPlanFeatureSummary(plan)
 }
 
 function validitySuffixForPlan(plan: SubscriptionPlan): string {
@@ -1830,6 +1854,14 @@ onMounted(async () => {
   color: #64748b;
   animation: none;
   cursor: not-allowed;
+}
+
+.plan-description-clamp {
+  display: -webkit-box;
+  min-height: 1.95rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .group-scrollbar::-webkit-scrollbar {
