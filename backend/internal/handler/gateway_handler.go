@@ -1433,6 +1433,37 @@ func (h *GatewayHandler) usageQuotaLimited(c *gin.Context, ctx context.Context, 
 // usageUnrestricted 处理 unrestricted 模式的响应（向后兼容）
 func (h *GatewayHandler) usageUnrestricted(c *gin.Context, ctx context.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, usageData gin.H, dailyUsage any, modelStats any) {
 	// 订阅模式
+	if entitlement, ok := middleware2.GetSubscriptionEntitlementFromContext(c); ok && entitlement != nil {
+		resp := gin.H{
+			"mode":      "unrestricted",
+			"isValid":   true,
+			"planName":  entitlement.Name,
+			"remaining": calculateEntitlementRemaining(entitlement),
+			"unit":      "USD",
+			"subscription": gin.H{
+				"daily_usage_usd":   entitlement.DailyUsageUSD,
+				"weekly_usage_usd":  entitlement.WeeklyUsageUSD,
+				"monthly_usage_usd": entitlement.MonthlyUsageUSD,
+				"daily_limit_usd":   entitlement.DailyLimitUSD,
+				"weekly_limit_usd":  entitlement.WeeklyLimitUSD,
+				"monthly_limit_usd": entitlement.MonthlyLimitUSD,
+				"expires_at":        entitlement.ExpiresAt,
+				"entitlement_id":    entitlement.ID,
+			},
+		}
+		if usageData != nil {
+			resp["usage"] = usageData
+		}
+		if dailyUsage != nil {
+			resp["daily_usage"] = dailyUsage
+		}
+		if modelStats != nil {
+			resp["model_stats"] = modelStats
+		}
+		c.JSON(http.StatusOK, resp)
+		return
+	}
+
 	if apiKey.Group != nil && apiKey.Group.IsSubscriptionType() {
 		resp := gin.H{
 			"mode":     "unrestricted",

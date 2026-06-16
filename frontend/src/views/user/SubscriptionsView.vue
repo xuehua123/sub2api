@@ -357,14 +357,14 @@
             </div>
 
             <!-- Daily Usage -->
-            <div v-if="subscription.group?.daily_limit_usd" class="space-y-2">
+            <div v-if="subscriptionDailyLimit(subscription)" class="space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('userSubscriptions.daily') }}
                 </span>
                 <span class="text-sm text-gray-500 dark:text-dark-400">
                   ${{ (subscription.daily_usage_usd || 0).toFixed(2) }} / ${{
-                    subscription.group.daily_limit_usd.toFixed(2)
+                    subscriptionDailyLimit(subscription)?.toFixed(2)
                   }}
                 </span>
               </div>
@@ -374,13 +374,13 @@
                   :class="
                     getProgressBarClass(
                       subscription.daily_usage_usd,
-                      subscription.group.daily_limit_usd
+                      subscriptionDailyLimit(subscription)
                     )
                   "
                   :style="{
                     width: getProgressWidth(
                       subscription.daily_usage_usd,
-                      subscription.group.daily_limit_usd
+                      subscriptionDailyLimit(subscription)
                     )
                   }"
                 ></div>
@@ -391,14 +391,14 @@
             </div>
 
             <!-- Weekly Usage -->
-            <div v-if="subscription.group?.weekly_limit_usd" class="space-y-2">
+            <div v-if="subscriptionWeeklyLimit(subscription)" class="space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('userSubscriptions.weekly') }}
                 </span>
                 <span class="text-sm text-gray-500 dark:text-dark-400">
                   ${{ (subscription.weekly_usage_usd || 0).toFixed(2) }} / ${{
-                    subscription.group.weekly_limit_usd.toFixed(2)
+                    subscriptionWeeklyLimit(subscription)?.toFixed(2)
                   }}
                 </span>
               </div>
@@ -408,13 +408,13 @@
                   :class="
                     getProgressBarClass(
                       subscription.weekly_usage_usd,
-                      subscription.group.weekly_limit_usd
+                      subscriptionWeeklyLimit(subscription)
                     )
                   "
                   :style="{
                     width: getProgressWidth(
                       subscription.weekly_usage_usd,
-                      subscription.group.weekly_limit_usd
+                      subscriptionWeeklyLimit(subscription)
                     )
                   }"
                 ></div>
@@ -429,14 +429,14 @@
             </div>
 
             <!-- Monthly Usage -->
-            <div v-if="subscription.group?.monthly_limit_usd" class="space-y-2">
+            <div v-if="subscriptionMonthlyLimit(subscription)" class="space-y-2">
               <div class="flex items-center justify-between">
                 <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
                   {{ t('userSubscriptions.monthly') }}
                 </span>
                 <span class="text-sm text-gray-500 dark:text-dark-400">
                   ${{ (subscription.monthly_usage_usd || 0).toFixed(2) }} / ${{
-                    subscription.group.monthly_limit_usd.toFixed(2)
+                    subscriptionMonthlyLimit(subscription)?.toFixed(2)
                   }}
                 </span>
               </div>
@@ -446,13 +446,13 @@
                   :class="
                     getProgressBarClass(
                       subscription.monthly_usage_usd,
-                      subscription.group.monthly_limit_usd
+                      subscriptionMonthlyLimit(subscription)
                     )
                   "
                   :style="{
                     width: getProgressWidth(
                       subscription.monthly_usage_usd,
-                      subscription.group.monthly_limit_usd
+                      subscriptionMonthlyLimit(subscription)
                     )
                   }"
                 ></div>
@@ -488,9 +488,9 @@
             <!-- No limits configured - Unlimited badge -->
             <div
               v-if="
-                !subscription.group?.daily_limit_usd &&
-                !subscription.group?.weekly_limit_usd &&
-                !subscription.group?.monthly_limit_usd
+                !subscriptionDailyLimit(subscription) &&
+                !subscriptionWeeklyLimit(subscription) &&
+                !subscriptionMonthlyLimit(subscription)
               "
               class="flex items-center justify-center rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 py-6 dark:from-emerald-900/20 dark:to-teal-900/20"
             >
@@ -727,6 +727,32 @@ async function saveSwitchPreferences() {
   } finally {
     savingPreferences.value = false
   }
+}
+
+function positiveSubscriptionLimit(value: number | null | undefined): number | null {
+  return typeof value === 'number' && value > 0 ? value : null
+}
+
+function isEntitlementBackedSubscription(subscription: UserSubscription): boolean {
+  return subscription.entitlement_id != null || subscription.plan_id != null
+}
+
+function subscriptionDailyLimit(subscription: UserSubscription): number | null {
+  const subscriptionLimit = positiveSubscriptionLimit(subscription.daily_limit_usd)
+  if (isEntitlementBackedSubscription(subscription)) return subscriptionLimit
+  return subscriptionLimit ?? positiveSubscriptionLimit(subscription.group?.daily_limit_usd)
+}
+
+function subscriptionWeeklyLimit(subscription: UserSubscription): number | null {
+  const subscriptionLimit = positiveSubscriptionLimit(subscription.weekly_limit_usd)
+  if (isEntitlementBackedSubscription(subscription)) return subscriptionLimit
+  return subscriptionLimit ?? positiveSubscriptionLimit(subscription.group?.weekly_limit_usd)
+}
+
+function subscriptionMonthlyLimit(subscription: UserSubscription): number | null {
+  const subscriptionLimit = positiveSubscriptionLimit(subscription.monthly_limit_usd)
+  if (isEntitlementBackedSubscription(subscription)) return subscriptionLimit
+  return subscriptionLimit ?? positiveSubscriptionLimit(subscription.group?.monthly_limit_usd)
 }
 
 function getProgressWidth(used: number | undefined, limit: number | null | undefined): string {

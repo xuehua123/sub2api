@@ -92,4 +92,34 @@ describe('SubscriptionProgressMini', () => {
     expect(wrapper.text()).toContain('$120.00/$600.00')
     expect(wrapper.text()).not.toContain('Unlimited')
   })
+
+  it('does not fall back to group weekly limit for entitlement-backed subscriptions', async () => {
+    subscriptions.activeSubscriptions = [
+      activeAlias({
+        weekly_usage_usd: 667.56,
+        weekly_limit_usd: null,
+        group: {
+          id: 10,
+          name: 'OpenAI Main',
+          daily_limit_usd: null,
+          weekly_limit_usd: 300,
+          monthly_limit_usd: null
+        }
+      })
+    ]
+    subscriptions.fetchActiveSubscriptions.mockResolvedValue(subscriptions.activeSubscriptions)
+
+    const wrapper = mount(SubscriptionProgressMini, {
+      global: {
+        stubs: {
+          RouterLink: true
+        }
+      }
+    })
+
+    await wrapper.find('button').trigger('click')
+
+    expect(wrapper.text()).toContain('$120.00/$600.00')
+    expect(wrapper.text()).not.toContain('$667.56/$300.00')
+  })
 })

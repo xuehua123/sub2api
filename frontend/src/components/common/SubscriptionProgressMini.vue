@@ -238,16 +238,26 @@ function positiveLimit(value: number | null | undefined): number | null {
   return typeof value === 'number' && value > 0 ? value : null
 }
 
+function isEntitlementBackedSubscription(sub: UserSubscription): boolean {
+  return sub.entitlement_only === true || sub.entitlement_id != null || sub.plan_id != null
+}
+
 function subscriptionDailyLimit(sub: UserSubscription): number | null {
-  return positiveLimit(sub.daily_limit_usd) ?? positiveLimit(sub.group?.daily_limit_usd)
+  const subscriptionLimit = positiveLimit(sub.daily_limit_usd)
+  if (isEntitlementBackedSubscription(sub)) return subscriptionLimit
+  return subscriptionLimit ?? positiveLimit(sub.group?.daily_limit_usd)
 }
 
 function subscriptionWeeklyLimit(sub: UserSubscription): number | null {
-  return positiveLimit(sub.weekly_limit_usd) ?? positiveLimit(sub.group?.weekly_limit_usd)
+  const subscriptionLimit = positiveLimit(sub.weekly_limit_usd)
+  if (isEntitlementBackedSubscription(sub)) return subscriptionLimit
+  return subscriptionLimit ?? positiveLimit(sub.group?.weekly_limit_usd)
 }
 
 function subscriptionMonthlyLimit(sub: UserSubscription): number | null {
-  return positiveLimit(sub.monthly_limit_usd) ?? positiveLimit(sub.group?.monthly_limit_usd)
+  const subscriptionLimit = positiveLimit(sub.monthly_limit_usd)
+  if (isEntitlementBackedSubscription(sub)) return subscriptionLimit
+  return subscriptionLimit ?? positiveLimit(sub.group?.monthly_limit_usd)
 }
 
 function getProgressDotClass(sub: UserSubscription): string {
