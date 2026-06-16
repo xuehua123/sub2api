@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -911,7 +912,8 @@ func syncDynamicPlanAutoGrantScopesForGroupChange(ctx context.Context, client *d
 	if len(platforms) == 0 {
 		return nil
 	}
-	return syncDynamicPlanAutoGrantScopesForPlatforms(ctx, client, platforms)
+	addGroupID, removeGroupID := explicitPlanAutoGrantGroupChangeIDs(before, after)
+	return syncDynamicPlanAutoGrantScopesForPlatforms(ctx, client, platforms, addGroupID, removeGroupID)
 }
 
 func planAutoGrantSyncPlatformsForGroupChange(before, after *Group) []string {
@@ -937,7 +939,19 @@ func groupQualifiesForPlanAutoGrantSync(group *Group) bool {
 	return group.Status == StatusActive && group.SubscriptionEnabled && group.PlanAutoGrantEnabled && !group.IsExclusive
 }
 
-func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbent.Client, platforms []string) error {
+func explicitPlanAutoGrantGroupChangeIDs(before, after *Group) (int64, int64) {
+	var addGroupID int64
+	if groupQualifiesForPlanAutoGrantSync(after) {
+		addGroupID = after.ID
+	}
+	var removeGroupID int64
+	if before != nil && after != nil && before.Status == StatusActive && after.Status != StatusActive {
+		removeGroupID = before.ID
+	}
+	return addGroupID, removeGroupID
+}
+
+func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbent.Client, platforms []string, addGroupID, removeGroupID int64) error {
 	platforms = normalizedPlanAutoGrantPlatforms(platforms)
 	if client == nil || len(platforms) == 0 {
 		return nil
@@ -986,7 +1000,7 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 			return err
 		}
 	}
-	if err := syncExplicitPlanAutoGrantEntitlementsForPlatforms(ctx, tx, platforms); err != nil {
+	if err := syncExplicitPlanAutoGrantEntitlementsForGroupChange(ctx, tx, addGroupID, removeGroupID); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -996,37 +1010,17 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 	return nil
 }
 
-func syncExplicitPlanAutoGrantEntitlementsForPlatforms(ctx context.Context, tx *dbent.Tx, platforms []string) error {
-	platforms = normalizedPlanAutoGrantPlatforms(platforms)
-	if tx == nil || len(platforms) == 0 {
+func syncExplicitPlanAutoGrantEntitlementsForGroupChange(ctx context.Context, tx *dbent.Tx, addGroupID, removeGroupID int64) error {
+	if tx == nil {
 		return nil
 	}
-	links, err := tx.SubscriptionPlanGroup.Query().
-		Where(
-			subscriptionplangroup.EnabledEQ(true),
-			subscriptionplangroup.HasPlanWith(subscriptionplan.AccessScopeEQ(PlanAccessScopeExplicit)),
-			subscriptionplangroup.HasGroupWith(
-				group.PlatformIn(platforms...),
-				group.SubscriptionEnabledEQ(true),
-				group.PlanAutoGrantEnabledEQ(true),
-				group.IsExclusiveEQ(false),
-			),
-		).
-		All(ctx)
+	addGroupID, err := normalizeExplicitPlanAutoGrantAddGroupID(ctx, tx, addGroupID)
 	if err != nil {
-		return fmt.Errorf("load explicit plans for auto-grant sync: %w", err)
+		return err
 	}
-	planIDs := make([]int64, 0, len(links))
-	seen := make(map[int64]struct{}, len(links))
-	for _, link := range links {
-		if link.PlanID <= 0 {
-			continue
-		}
-		if _, ok := seen[link.PlanID]; ok {
-			continue
-		}
-		seen[link.PlanID] = struct{}{}
-		planIDs = append(planIDs, link.PlanID)
+	planIDs, err := applyExplicitPlanAutoGrantGroupMembershipChange(ctx, tx, addGroupID, removeGroupID)
+	if err != nil {
+		return err
 	}
 	for _, planID := range planIDs {
 		plan, err := tx.SubscriptionPlan.Get(ctx, planID)
@@ -1049,6 +1043,159 @@ func syncExplicitPlanAutoGrantEntitlementsForPlatforms(ctx context.Context, tx *
 		if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, plan, plan.OveragePolicy, groupIDs, true, true); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func normalizeExplicitPlanAutoGrantAddGroupID(ctx context.Context, tx *dbent.Tx, groupID int64) (int64, error) {
+	if tx == nil || groupID <= 0 {
+		return 0, nil
+	}
+	predicates := append([]predicate.Group{group.IDEQ(groupID)}, subscriptionPlanAutoGrantGroupPredicates()...)
+	ok, err := tx.Group.Query().
+		Where(predicates...).
+		Exist(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("validate explicit plan auto-grant group: %w", err)
+	}
+	if !ok {
+		return 0, nil
+	}
+	return groupID, nil
+}
+
+func applyExplicitPlanAutoGrantGroupMembershipChange(ctx context.Context, tx *dbent.Tx, addGroupID, removeGroupID int64) ([]int64, error) {
+	planSet := make(map[int64]struct{})
+	if addGroupID > 0 {
+		planIDs, err := listExplicitAutoManagedPlanIDs(ctx, tx)
+		if err != nil {
+			return nil, err
+		}
+		for _, planID := range planIDs {
+			if err := ensureExplicitPlanGroup(ctx, tx, planID, addGroupID); err != nil {
+				return nil, err
+			}
+			planSet[planID] = struct{}{}
+		}
+	}
+	if removeGroupID > 0 {
+		planIDs, err := listExplicitPlanIDsForGroup(ctx, tx, removeGroupID)
+		if err != nil {
+			return nil, err
+		}
+		if len(planIDs) > 0 {
+			if _, err := tx.SubscriptionPlanGroup.Delete().
+				Where(
+					subscriptionplangroup.PlanIDIn(planIDs...),
+					subscriptionplangroup.GroupIDEQ(removeGroupID),
+				).
+				Exec(ctx); err != nil {
+				return nil, fmt.Errorf("remove disabled auto-grant group from explicit plans: %w", err)
+			}
+		}
+		for _, planID := range planIDs {
+			planSet[planID] = struct{}{}
+		}
+	}
+	if len(planSet) == 0 {
+		return nil, nil
+	}
+	planIDs := make([]int64, 0, len(planSet))
+	for planID := range planSet {
+		planIDs = append(planIDs, planID)
+	}
+	sort.Slice(planIDs, func(i, j int) bool { return planIDs[i] < planIDs[j] })
+	return planIDs, nil
+}
+
+func listExplicitAutoManagedPlanIDs(ctx context.Context, tx *dbent.Tx) ([]int64, error) {
+	if tx == nil {
+		return nil, nil
+	}
+	links, err := tx.SubscriptionPlanGroup.Query().
+		Where(
+			subscriptionplangroup.EnabledEQ(true),
+			subscriptionplangroup.HasPlanWith(subscriptionplan.AccessScopeEQ(PlanAccessScopeExplicit)),
+			subscriptionplangroup.HasGroupWith(subscriptionPlanAutoGrantGroupPredicates()...),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load explicit auto-managed plans: %w", err)
+	}
+	return uniquePlanIDsFromLinks(links), nil
+}
+
+func listExplicitPlanIDsForGroup(ctx context.Context, tx *dbent.Tx, groupID int64) ([]int64, error) {
+	if tx == nil || groupID <= 0 {
+		return nil, nil
+	}
+	links, err := tx.SubscriptionPlanGroup.Query().
+		Where(
+			subscriptionplangroup.GroupIDEQ(groupID),
+			subscriptionplangroup.HasPlanWith(subscriptionplan.AccessScopeEQ(PlanAccessScopeExplicit)),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load explicit plans containing group: %w", err)
+	}
+	return uniquePlanIDsFromLinks(links), nil
+}
+
+func uniquePlanIDsFromLinks(links []*dbent.SubscriptionPlanGroup) []int64 {
+	planIDs := make([]int64, 0, len(links))
+	seen := make(map[int64]struct{}, len(links))
+	for _, link := range links {
+		if link.PlanID <= 0 {
+			continue
+		}
+		if _, ok := seen[link.PlanID]; ok {
+			continue
+		}
+		seen[link.PlanID] = struct{}{}
+		planIDs = append(planIDs, link.PlanID)
+	}
+	sort.Slice(planIDs, func(i, j int) bool { return planIDs[i] < planIDs[j] })
+	return planIDs
+}
+
+func ensureExplicitPlanGroup(ctx context.Context, tx *dbent.Tx, planID, groupID int64) error {
+	if tx == nil || planID <= 0 || groupID <= 0 {
+		return nil
+	}
+	links, err := tx.SubscriptionPlanGroup.Query().
+		Where(subscriptionplangroup.PlanIDEQ(planID)).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("load explicit plan group links: %w", err)
+	}
+	maxSortOrder := -1
+	for _, link := range links {
+		if link.SortOrder > maxSortOrder {
+			maxSortOrder = link.SortOrder
+		}
+		if link.GroupID == groupID {
+			if link.Enabled {
+				return nil
+			}
+			if _, err := tx.SubscriptionPlanGroup.Update().
+				Where(
+					subscriptionplangroup.PlanIDEQ(planID),
+					subscriptionplangroup.GroupIDEQ(groupID),
+				).
+				SetEnabled(true).
+				Save(ctx); err != nil {
+				return fmt.Errorf("enable explicit auto-grant plan group: %w", err)
+			}
+			return nil
+		}
+	}
+	if _, err := tx.SubscriptionPlanGroup.Create().
+		SetPlanID(planID).
+		SetGroupID(groupID).
+		SetSortOrder(maxSortOrder + 1).
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		return fmt.Errorf("add explicit auto-grant plan group: %w", err)
 	}
 	return nil
 }

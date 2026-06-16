@@ -589,7 +589,7 @@ func TestExplicitPlanAutoGrantGroupSaveSyncsActiveEntitlements(t *testing.T) {
 	svc := &PaymentConfigService{entClient: client}
 	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
 		Name:         "Explicit Auto",
-		GroupIDs:     []int64{oldGroup.ID, newGroup.ID},
+		GroupIDs:     []int64{oldGroup.ID},
 		Price:        9.99,
 		ValidityDays: 30,
 		ValidityUnit: "day",
@@ -638,6 +638,15 @@ func TestExplicitPlanAutoGrantGroupSaveSyncsActiveEntitlements(t *testing.T) {
 	}
 	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), serviceGroup(newGroup, StatusActive)))
 
+	planGroups, err := client.SubscriptionPlanGroup.Query().
+		Where(subscriptionplangroup.PlanIDEQ(created.ID)).
+		Order(subscriptionplangroup.BySortOrder()).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, planGroups, 2)
+	require.Equal(t, oldGroup.ID, planGroups[0].GroupID)
+	require.Equal(t, newGroup.ID, planGroups[1].GroupID)
+
 	activeGroups, err := client.SubscriptionEntitlementGroup.Query().
 		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
 		Order(subscriptionentitlementgroup.BySortOrder()).
@@ -652,6 +661,14 @@ func TestExplicitPlanAutoGrantGroupSaveSyncsActiveEntitlements(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), serviceGroup(newGroup, StatusDisabled)))
+
+	planGroups, err = client.SubscriptionPlanGroup.Query().
+		Where(subscriptionplangroup.PlanIDEQ(created.ID)).
+		Order(subscriptionplangroup.BySortOrder()).
+		All(ctx)
+	require.NoError(t, err)
+	require.Len(t, planGroups, 1)
+	require.Equal(t, oldGroup.ID, planGroups[0].GroupID)
 
 	activeGroups, err = client.SubscriptionEntitlementGroup.Query().
 		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
