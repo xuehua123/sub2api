@@ -986,11 +986,100 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 			return err
 		}
 	}
+	if err := syncExplicitPlanAutoGrantEntitlementsForPlatforms(ctx, tx, platforms); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit dynamic plan auto-grant sync transaction: %w", err)
 	}
 	committed = true
 	return nil
+}
+
+func syncExplicitPlanAutoGrantEntitlementsForPlatforms(ctx context.Context, tx *dbent.Tx, platforms []string) error {
+	platforms = normalizedPlanAutoGrantPlatforms(platforms)
+	if tx == nil || len(platforms) == 0 {
+		return nil
+	}
+	links, err := tx.SubscriptionPlanGroup.Query().
+		Where(
+			subscriptionplangroup.EnabledEQ(true),
+			subscriptionplangroup.HasPlanWith(subscriptionplan.AccessScopeEQ(PlanAccessScopeExplicit)),
+			subscriptionplangroup.HasGroupWith(
+				group.PlatformIn(platforms...),
+				group.SubscriptionEnabledEQ(true),
+				group.PlanAutoGrantEnabledEQ(true),
+				group.IsExclusiveEQ(false),
+			),
+		).
+		All(ctx)
+	if err != nil {
+		return fmt.Errorf("load explicit plans for auto-grant sync: %w", err)
+	}
+	planIDs := make([]int64, 0, len(links))
+	seen := make(map[int64]struct{}, len(links))
+	for _, link := range links {
+		if link.PlanID <= 0 {
+			continue
+		}
+		if _, ok := seen[link.PlanID]; ok {
+			continue
+		}
+		seen[link.PlanID] = struct{}{}
+		planIDs = append(planIDs, link.PlanID)
+	}
+	for _, planID := range planIDs {
+		plan, err := tx.SubscriptionPlan.Get(ctx, planID)
+		if err != nil {
+			return fmt.Errorf("load explicit plan for auto-grant sync: %w", err)
+		}
+		groups, err := loadExplicitPlanActiveGroups(ctx, tx.Client(), planID)
+		if err != nil {
+			return err
+		}
+		groupIDs := groupIDsFromEntGroups(groups)
+		if len(groupIDs) > 0 && plan.GroupID != groupIDs[0] {
+			if _, err := tx.SubscriptionPlan.UpdateOneID(plan.ID).
+				SetGroupID(groupIDs[0]).
+				Save(ctx); err != nil {
+				return fmt.Errorf("sync explicit plan primary group: %w", err)
+			}
+			plan.GroupID = groupIDs[0]
+		}
+		if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, plan, plan.OveragePolicy, groupIDs, true, true); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func loadExplicitPlanActiveGroups(ctx context.Context, client *dbent.Client, planID int64) ([]*dbent.Group, error) {
+	if client == nil || planID <= 0 {
+		return nil, nil
+	}
+	links, err := client.SubscriptionPlanGroup.Query().
+		Where(
+			subscriptionplangroup.PlanIDEQ(planID),
+			subscriptionplangroup.EnabledEQ(true),
+		).
+		WithGroup().
+		Order(subscriptionplangroup.BySortOrder(), subscriptionplangroup.ByGroupID()).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load explicit plan groups for auto-grant sync: %w", err)
+	}
+	groups := make([]*dbent.Group, 0, len(links))
+	for _, link := range links {
+		group := link.Edges.Group
+		if group == nil {
+			continue
+		}
+		if group.Status != StatusActive || !group.SubscriptionEnabled {
+			continue
+		}
+		groups = append(groups, group)
+	}
+	return groups, nil
 }
 
 func dynamicPlanScopeAffectedByPlatforms(scope string, allowedPlatforms []string, platformSet map[string]struct{}) bool {
