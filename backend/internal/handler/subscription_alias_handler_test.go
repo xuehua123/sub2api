@@ -68,6 +68,7 @@ func TestSubscriptionHandler_V2OffListAndActiveKeepLegacyShape(t *testing.T) {
 		require.Equal(t, float64(fx.groupA), rows[0]["group_id"])
 		require.NotContains(t, rows[0], "entitlement_id")
 		require.NotContains(t, rows[0], "plan_id")
+		require.NotContains(t, rows[0], "plan_name")
 		require.NotContains(t, rows[0], "groups")
 		require.NotContains(t, rows[0], "overage_policy")
 	}
@@ -127,6 +128,7 @@ func TestSubscriptionHandler_V2OnListReturnsLegacyLinkedEntitlementAliases(t *te
 	require.Equal(t, float64(primaryGroupID), got["group_id"])
 	require.Equal(t, float64(entitlementID), got["entitlement_id"])
 	require.Equal(t, float64(fx.planID), got["plan_id"])
+	require.Equal(t, "Shared Pro", got["plan_name"])
 	require.Equal(t, service.SubscriptionEntitlementOverageBalanceFallback, got["overage_policy"])
 	require.Equal(t, 10.0, got["daily_limit_usd"])
 	require.Equal(t, 20.0, got["weekly_limit_usd"])

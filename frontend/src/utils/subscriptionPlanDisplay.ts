@@ -91,6 +91,7 @@ export function subscriptionDisplayName(
   subscription: UserSubscription,
   plans: SubscriptionPlan[]
 ): string {
+  if (subscription.plan_name?.trim()) return subscription.plan_name.trim()
   const plan = planForSubscription(subscription, plans)
   if (plan) return subscriptionPlanDisplayName(plan)
   return subscription.group?.name || `Group #${subscription.group_id}`

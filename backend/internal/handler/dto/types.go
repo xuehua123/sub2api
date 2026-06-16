@@ -636,6 +636,7 @@ type UserSubscriptionAlias struct {
 
 	EntitlementID int64                  `json:"entitlement_id"`
 	PlanID        *int64                 `json:"plan_id"`
+	PlanName      string                 `json:"plan_name,omitempty"`
 	Groups        []UserEntitlementGroup `json:"groups"`
 	OveragePolicy string                 `json:"overage_policy"`
 }

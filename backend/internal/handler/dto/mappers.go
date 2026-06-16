@@ -784,6 +784,7 @@ func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) 
 		Group:              GroupFromServiceShallow(group),
 		EntitlementID:      ent.ID,
 		PlanID:             cloneInt64(ent.PlanID),
+		PlanName:           ent.Name,
 		Groups:             userEntitlementGroups(ent),
 		OveragePolicy:      ent.OveragePolicy,
 	}
