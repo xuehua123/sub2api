@@ -1157,7 +1157,6 @@ const getSubscriptionLimit = (
       ? subscription.weekly_limit_usd
       : subscription.monthly_limit_usd
   if (typeof entitlementLimit === 'number' && entitlementLimit > 0) return entitlementLimit
-  if (subscription.entitlement_id != null || subscription.entitlement_only === true) return null
 
   const plan = resolveSubscriptionPlan(subscription)
   const planLimit = period === 'daily'
@@ -1166,7 +1165,7 @@ const getSubscriptionLimit = (
       ? plan?.weekly_limit_usd
       : plan?.monthly_limit_usd
   if (typeof planLimit === 'number' && planLimit > 0) return planLimit
-  if (subscription.plan_id != null) return null
+  if (subscription.entitlement_id != null || subscription.entitlement_only === true || subscription.plan_id != null) return null
 
   const groupLimit = period === 'daily'
     ? subscription.group?.daily_limit_usd
