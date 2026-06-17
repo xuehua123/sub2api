@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -58,6 +59,14 @@ type BulkAssignSubscriptionRequest struct {
 // AdjustSubscriptionRequest represents adjust subscription request (extend or shorten)
 type AdjustSubscriptionRequest struct {
 	Days int `json:"days" binding:"required,min=-36500,max=36500"` // negative to shorten, positive to extend
+}
+
+type MonthlyCycleAdjustmentRequest struct {
+	Mode                     service.MonthlyCycleAdjustmentMode `json:"mode" binding:"required"`
+	CycleCount               int                                `json:"cycle_count,omitempty"`
+	CustomMonthlyWindowStart *time.Time                         `json:"custom_monthly_window_start,omitempty"`
+	CustomExpiresAt          *time.Time                         `json:"custom_expires_at,omitempty"`
+	Reason                   string                             `json:"reason,omitempty"`
 }
 
 // List handles listing all subscriptions with pagination and filters
@@ -249,6 +258,69 @@ func (h *SubscriptionHandler) ResetQuota(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.UserSubscriptionFromServiceAdmin(sub))
+}
+
+// PreviewMonthlyCycleAdjustment calculates the effect of an admin monthly cycle adjustment without mutating data.
+// POST /api/v1/admin/subscriptions/:id/monthly-cycle-adjustments/preview
+func (h *SubscriptionHandler) PreviewMonthlyCycleAdjustment(c *gin.Context) {
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+
+	var req MonthlyCycleAdjustmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	adminID := getAdminIDFromContext(c)
+	preview, err := h.subscriptionService.PreviewMonthlyCycleAdjustment(c.Request.Context(), subscriptionID, monthlyCycleAdjustmentInputFromRequest(req, adminID))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, preview)
+}
+
+// ApplyMonthlyCycleAdjustment applies an admin monthly cycle adjustment after recalculating it in a transaction.
+// POST /api/v1/admin/subscriptions/:id/monthly-cycle-adjustments
+func (h *SubscriptionHandler) ApplyMonthlyCycleAdjustment(c *gin.Context) {
+	subscriptionID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid subscription ID")
+		return
+	}
+
+	var req MonthlyCycleAdjustmentRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	adminID := getAdminIDFromContext(c)
+
+	idempotencyPayload := struct {
+		SubscriptionID int64                         `json:"subscription_id"`
+		Body           MonthlyCycleAdjustmentRequest `json:"body"`
+	}{
+		SubscriptionID: subscriptionID,
+		Body:           req,
+	}
+	executeAdminIdempotentJSON(c, "admin.subscriptions.monthly_cycle_adjustment", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		return h.subscriptionService.ApplyMonthlyCycleAdjustment(ctx, subscriptionID, monthlyCycleAdjustmentInputFromRequest(req, adminID))
+	})
+}
+
+func monthlyCycleAdjustmentInputFromRequest(req MonthlyCycleAdjustmentRequest, adminID int64) service.MonthlyCycleAdjustmentInput {
+	return service.MonthlyCycleAdjustmentInput{
+		Mode:                     req.Mode,
+		CycleCount:               req.CycleCount,
+		CustomMonthlyWindowStart: req.CustomMonthlyWindowStart,
+		CustomExpiresAt:          req.CustomExpiresAt,
+		Reason:                   req.Reason,
+		AdminID:                  adminID,
+	}
 }
 
 // Revoke handles revoking a subscription

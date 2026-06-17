@@ -302,6 +302,22 @@ func TestMigration156AddsEntitlementCycleResetLogsAdditively(t *testing.T) {
 	require.NotContains(t, sql, "INSERT INTO subscription_cycle_reset_logs")
 }
 
+func TestMigration159AddsCycleResetAuditFieldsAdditively(t *testing.T) {
+	content, err := FS.ReadFile("159_subscription_cycle_reset_audit_fields.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE subscription_cycle_reset_logs")
+	require.Contains(t, sql, "ALTER TABLE subscription_entitlement_cycle_reset_logs")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS mode VARCHAR(64) NOT NULL DEFAULT 'advance_next_cycle'")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS reason TEXT NOT NULL DEFAULT ''")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_cycle_reset_logs_admin_created")
+	require.Contains(t, sql, "CREATE INDEX IF NOT EXISTS idx_subscription_entitlement_cycle_reset_logs_admin_created")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
 func TestMigration157BackfillsActiveEntitlementWindowsFromStartsAt(t *testing.T) {
 	content, err := FS.ReadFile("157_backfill_entitlement_window_starts.sql")
 	require.NoError(t, err)

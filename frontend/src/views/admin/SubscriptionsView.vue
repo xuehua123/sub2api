@@ -402,6 +402,14 @@
               </button>
               <button
                 v-if="row.status === 'active'"
+                @click="handleCycleAdjustment(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-teal-50 hover:text-teal-600 dark:hover:bg-teal-900/20 dark:hover:text-teal-400"
+              >
+                <Icon name="clock" size="sm" />
+                <span class="text-xs">{{ t('admin.subscriptions.cycleAdjustment') }}</span>
+              </button>
+              <button
+                v-if="row.status === 'active'"
                 @click="handleResetQuota(row)"
                 :disabled="resettingQuota && resettingSubscription?.id === row.id"
                 class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
@@ -661,6 +669,225 @@
       </template>
     </BaseDialog>
 
+    <!-- Monthly Cycle Adjustment Modal -->
+    <BaseDialog
+      :show="showCycleAdjustmentModal"
+      :title="t('admin.subscriptions.cycleAdjustmentTitle')"
+      width="wide"
+      @close="closeCycleAdjustmentModal"
+    >
+      <form
+        v-if="cycleAdjustmentSubscription"
+        id="cycle-adjustment-form"
+        class="space-y-5"
+        @submit.prevent="previewCycleAdjustment"
+      >
+        <div class="rounded-lg bg-gray-50 p-4 dark:bg-dark-700">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="text-sm text-gray-600 dark:text-gray-400">
+                {{ t('admin.subscriptions.cycleAdjustmentFor') }}
+                <span class="font-medium text-gray-900 dark:text-white">
+                  {{ cycleAdjustmentSubscription.user?.email || t('admin.redeem.userPrefix', { id: cycleAdjustmentSubscription.user_id }) }}
+                </span>
+              </p>
+              <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {{ subscriptionDisplayName(cycleAdjustmentSubscription, subscriptionPlans) }}
+              </p>
+            </div>
+            <span
+              v-if="cycleAdjustmentSubscription.entitlement_id || cycleAdjustmentSubscription.entitlement_only"
+              class="inline-flex items-center rounded-md bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
+            >
+              {{ t('admin.subscriptions.entitlementOnly') }}
+            </span>
+          </div>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2">
+          <div>
+            <label class="input-label">{{ t('admin.subscriptions.cycleAdjustmentMode') }}</label>
+            <select
+              v-model="cycleAdjustmentForm.mode"
+              class="input"
+              @change="clearCycleAdjustmentPreview"
+            >
+              <option
+                v-for="option in cycleAdjustmentModeOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <p class="input-hint">{{ cycleAdjustmentModeHint }}</p>
+          </div>
+
+          <div v-if="cycleAdjustmentNeedsCycleCount">
+            <label class="input-label">{{ t('admin.subscriptions.cycleCount') }}</label>
+            <input
+              v-model.number="cycleAdjustmentForm.cycle_count"
+              type="number"
+              min="1"
+              :max="cycleAdjustmentMaxCycleCount"
+              class="input"
+              @input="clearCycleAdjustmentPreview"
+            />
+            <p class="input-hint">{{ t('admin.subscriptions.cycleCountHint') }}</p>
+          </div>
+
+          <div v-if="cycleAdjustmentNeedsCustomTimes">
+            <label class="input-label">{{ t('admin.subscriptions.customMonthlyWindowStart') }}</label>
+            <input
+              v-model="cycleAdjustmentForm.custom_monthly_window_start"
+              type="datetime-local"
+              class="input"
+              @input="clearCycleAdjustmentPreview"
+            />
+          </div>
+
+          <div v-if="cycleAdjustmentNeedsCustomTimes">
+            <label class="input-label">{{ t('admin.subscriptions.customExpiresAt') }}</label>
+            <input
+              v-model="cycleAdjustmentForm.custom_expires_at"
+              type="datetime-local"
+              class="input"
+              @input="clearCycleAdjustmentPreview"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label class="input-label">
+            {{ t('admin.subscriptions.cycleAdjustmentReason') }}
+            <span v-if="cycleAdjustmentReasonRequired" class="text-red-500">*</span>
+          </label>
+          <textarea
+            v-model.trim="cycleAdjustmentForm.reason"
+            rows="2"
+            :maxlength="cycleAdjustmentReasonMaxLength"
+            class="input resize-none"
+            :placeholder="t('admin.subscriptions.cycleAdjustmentReasonPlaceholder')"
+            @input="clearCycleAdjustmentPreview"
+          ></textarea>
+        </div>
+      </form>
+
+      <div
+        v-if="cycleAdjustmentPreview"
+        class="mt-5 space-y-4 rounded-lg border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800"
+      >
+        <div class="grid gap-3 md:grid-cols-2">
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.subscriptions.beforeAdjustment') }}
+            </h3>
+            <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.expiresAt') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.current_expires_at) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.monthlyWindowStart') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.current_monthly_window_start) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.nextResetAt') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.current_reset_at) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.monthlyUsage') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">
+                  {{ formatAdjustmentUsage(cycleAdjustmentPreview.current_monthly_usage_usd, cycleAdjustmentPreview.monthly_limit_usd) }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="space-y-3">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.subscriptions.afterAdjustment') }}
+            </h3>
+            <div class="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.expiresAt') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.new_expires_at) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.monthlyWindowStart') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.new_monthly_window_start) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.nextResetAt') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDateTime(cycleAdjustmentPreview.new_reset_at) }}</span>
+              </div>
+              <div class="flex justify-between gap-3">
+                <span>{{ t('admin.subscriptions.monthlyUsage') }}</span>
+                <span class="text-right font-medium text-gray-900 dark:text-white">
+                  {{ formatAdjustmentUsage(cycleAdjustmentPreview.new_monthly_usage_usd, cycleAdjustmentPreview.monthly_limit_usd) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-3 border-t border-gray-200 pt-3 text-sm dark:border-dark-600 md:grid-cols-3">
+          <div>
+            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.subscriptions.deductedValidity') }}</span>
+            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDuration(cycleAdjustmentPreview.deducted_seconds) }}</div>
+          </div>
+          <div>
+            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.subscriptions.fullCycles') }}</span>
+            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ cycleAdjustmentPreview.full_cycles }}</div>
+          </div>
+          <div>
+            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.subscriptions.tailDuration') }}</span>
+            <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ formatAdjustmentDuration(cycleAdjustmentPreview.tail_seconds) }}</div>
+          </div>
+        </div>
+
+        <div
+          v-if="!cycleAdjustmentPreview.can_apply"
+          class="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-300"
+        >
+          {{ formatCycleAdjustmentUnavailable(cycleAdjustmentPreview.unavailable_reason) }}
+        </div>
+
+        <div
+          v-if="cycleAdjustmentPreview.warnings?.length"
+          class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-900/20 dark:text-amber-200"
+        >
+          <div v-for="warning in cycleAdjustmentPreview.warnings" :key="warning">
+            {{ formatCycleAdjustmentWarning(warning) }}
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <div v-if="cycleAdjustmentSubscription" class="flex flex-wrap justify-end gap-3">
+          <button @click="closeCycleAdjustmentModal" type="button" class="btn btn-secondary">
+            {{ t('common.cancel') }}
+          </button>
+          <button
+            type="submit"
+            form="cycle-adjustment-form"
+            :disabled="cycleAdjustmentLoading || cycleAdjustmentSubmitting"
+            class="btn btn-secondary"
+          >
+            {{ cycleAdjustmentLoading ? t('admin.subscriptions.previewing') : t('admin.subscriptions.previewAdjustment') }}
+          </button>
+          <button
+            type="button"
+            :disabled="cycleAdjustmentSubmitting || !cycleAdjustmentPreview?.can_apply"
+            class="btn btn-primary"
+            @click="applyCycleAdjustment"
+          >
+            {{ cycleAdjustmentSubmitting ? t('admin.subscriptions.applyingCycleAdjustment') : t('admin.subscriptions.applyCycleAdjustment') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
     <!-- Revoke Confirmation Dialog -->
     <ConfirmDialog
       :show="showRevokeDialog"
@@ -770,11 +997,21 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminAPI } from '@/api/admin'
-import type { UserSubscription } from '@/types'
+import type {
+  MonthlyCycleAdjustmentMode,
+  MonthlyCycleAdjustmentPreview,
+  MonthlyCycleAdjustmentRequest,
+  UserSubscription
+} from '@/types'
 import type { SubscriptionPlan } from '@/types/payment'
 import type { SimpleUser } from '@/api/admin/usage'
 import type { Column } from '@/components/common/types'
-import { formatDateOnly } from '@/utils/format'
+import {
+  formatDateOnly,
+  formatDateTime,
+  formatDateTimeLocalInput,
+  parseDateTimeLocalInput
+} from '@/utils/format'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
@@ -942,6 +1179,7 @@ const loading = ref(false)
 let abortController: AbortController | null = null
 
 type SubscriptionQuotaPeriod = 'daily' | 'weekly' | 'monthly'
+const MONTHLY_CYCLE_MS = 30 * 24 * 60 * 60 * 1000
 
 // Toolbar user filter (fuzzy search -> select user_id)
 const filterUserKeyword = ref('')
@@ -988,6 +1226,13 @@ const resettingSubscription = ref<UserSubscription | null>(null)
 const resettingQuota = ref(false)
 const extendingSubscription = ref<UserSubscription | null>(null)
 const revokingSubscription = ref<UserSubscription | null>(null)
+const showCycleAdjustmentModal = ref(false)
+const cycleAdjustmentSubscription = ref<UserSubscription | null>(null)
+const cycleAdjustmentPreview = ref<MonthlyCycleAdjustmentPreview | null>(null)
+const cycleAdjustmentLoading = ref(false)
+const cycleAdjustmentSubmitting = ref(false)
+const cycleAdjustmentMaxCycleCount = 1217
+const cycleAdjustmentReasonMaxLength = 500
 
 const assignForm = reactive({
   user_id: null as number | null,
@@ -998,6 +1243,14 @@ const assignForm = reactive({
 
 const extendForm = reactive({
   days: 30
+})
+
+const cycleAdjustmentForm = reactive({
+  mode: 'advance_next_cycle' as MonthlyCycleAdjustmentMode,
+  cycle_count: 1,
+  custom_monthly_window_start: '',
+  custom_expires_at: '',
+  reason: ''
 })
 
 const planFilterOptions = computed(() => [
@@ -1015,6 +1268,24 @@ const platformFilterOptions = computed(() => [
   { value: 'gemini', label: 'Gemini' },
   { value: 'antigravity', label: 'Antigravity' }
 ])
+
+const cycleAdjustmentModeOptions = computed<Array<{ value: MonthlyCycleAdjustmentMode; label: string }>>(() => [
+  { value: 'advance_next_cycle', label: t('admin.subscriptions.cycleAdjustmentModes.advanceNextCycle') },
+  { value: 'compensate_reset', label: t('admin.subscriptions.cycleAdjustmentModes.compensateReset') },
+  { value: 'align_to_reset', label: t('admin.subscriptions.cycleAdjustmentModes.alignToReset') },
+  { value: 'align_to_expiry', label: t('admin.subscriptions.cycleAdjustmentModes.alignToExpiry') },
+  { value: 'custom', label: t('admin.subscriptions.cycleAdjustmentModes.custom') }
+])
+
+const cycleAdjustmentNeedsCycleCount = computed(() =>
+  cycleAdjustmentForm.mode === 'align_to_reset' || cycleAdjustmentForm.mode === 'align_to_expiry'
+)
+
+const cycleAdjustmentNeedsCustomTimes = computed(() => cycleAdjustmentForm.mode === 'custom')
+const cycleAdjustmentReasonRequired = computed(() => cycleAdjustmentForm.mode === 'compensate_reset')
+const cycleAdjustmentModeHint = computed(() =>
+  t(`admin.subscriptions.cycleAdjustmentModeHints.${cycleAdjustmentForm.mode}`)
+)
 
 const subscriptionPlanOptions = computed<PlanOption[]>(() =>
   saleSubscriptionPlans.value.map((plan) => {
@@ -1602,6 +1873,117 @@ const confirmResetQuota = async () => {
   }
 }
 
+const handleCycleAdjustment = (subscription: UserSubscription) => {
+  cycleAdjustmentSubscription.value = subscription
+  cycleAdjustmentForm.mode = 'advance_next_cycle'
+  cycleAdjustmentForm.cycle_count = inferCycleCountFromSubscription(subscription)
+  cycleAdjustmentForm.custom_monthly_window_start = toDateTimeLocalValue(subscription.monthly_window_start || subscription.starts_at)
+  cycleAdjustmentForm.custom_expires_at = toDateTimeLocalValue(subscription.expires_at)
+  cycleAdjustmentForm.reason = ''
+  cycleAdjustmentPreview.value = null
+  showCycleAdjustmentModal.value = true
+}
+
+const closeCycleAdjustmentModal = () => {
+  if (cycleAdjustmentLoading.value || cycleAdjustmentSubmitting.value) return
+  showCycleAdjustmentModal.value = false
+  cycleAdjustmentSubscription.value = null
+  cycleAdjustmentPreview.value = null
+  cycleAdjustmentForm.mode = 'advance_next_cycle'
+  cycleAdjustmentForm.cycle_count = 1
+  cycleAdjustmentForm.custom_monthly_window_start = ''
+  cycleAdjustmentForm.custom_expires_at = ''
+  cycleAdjustmentForm.reason = ''
+}
+
+const clearCycleAdjustmentPreview = () => {
+  cycleAdjustmentPreview.value = null
+}
+
+const previewCycleAdjustment = async () => {
+  if (!cycleAdjustmentSubscription.value) return
+  const request = buildCycleAdjustmentRequest()
+  if (!request) return
+
+  cycleAdjustmentLoading.value = true
+  try {
+    cycleAdjustmentPreview.value = await adminAPI.subscriptions.previewMonthlyCycleAdjustment(
+      cycleAdjustmentSubscription.value.id,
+      request
+    )
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.subscriptions.failedToPreviewCycleAdjustment'))
+    console.error('Error previewing monthly cycle adjustment:', error)
+  } finally {
+    cycleAdjustmentLoading.value = false
+  }
+}
+
+const applyCycleAdjustment = async () => {
+  if (!cycleAdjustmentSubscription.value || !cycleAdjustmentPreview.value?.can_apply) return
+  const request = buildCycleAdjustmentRequest()
+  if (!request) return
+
+  cycleAdjustmentSubmitting.value = true
+  try {
+    await adminAPI.subscriptions.applyMonthlyCycleAdjustment(cycleAdjustmentSubscription.value.id, request)
+    appStore.showSuccess(t('admin.subscriptions.cycleAdjustmentApplied'))
+    showCycleAdjustmentModal.value = false
+    cycleAdjustmentSubscription.value = null
+    cycleAdjustmentPreview.value = null
+    await loadSubscriptions()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.subscriptions.failedToApplyCycleAdjustment'))
+    console.error('Error applying monthly cycle adjustment:', error)
+  } finally {
+    cycleAdjustmentSubmitting.value = false
+  }
+}
+
+const buildCycleAdjustmentRequest = (): MonthlyCycleAdjustmentRequest | null => {
+  const request: MonthlyCycleAdjustmentRequest = {
+    mode: cycleAdjustmentForm.mode
+  }
+
+  if (cycleAdjustmentNeedsCycleCount.value) {
+    const cycleCount = Number(cycleAdjustmentForm.cycle_count)
+    if (!Number.isFinite(cycleCount) || cycleCount < 1) {
+      appStore.showError(t('admin.subscriptions.cycleCountRequired'))
+      return null
+    }
+    if (cycleCount > cycleAdjustmentMaxCycleCount) {
+      appStore.showError(t('admin.subscriptions.cycleCountOutOfRange', { max: cycleAdjustmentMaxCycleCount }))
+      return null
+    }
+    request.cycle_count = Math.floor(cycleCount)
+  }
+
+  if (cycleAdjustmentNeedsCustomTimes.value) {
+    const windowStart = dateTimeLocalToISOString(cycleAdjustmentForm.custom_monthly_window_start)
+    const expiresAt = dateTimeLocalToISOString(cycleAdjustmentForm.custom_expires_at)
+    if (!windowStart || !expiresAt) {
+      appStore.showError(t('admin.subscriptions.customTimesRequired'))
+      return null
+    }
+    request.custom_monthly_window_start = windowStart
+    request.custom_expires_at = expiresAt
+  }
+
+  const reason = cycleAdjustmentForm.reason.trim()
+  if (reason.length > cycleAdjustmentReasonMaxLength) {
+    appStore.showError(t('admin.subscriptions.cycleAdjustmentReasonTooLong', { max: cycleAdjustmentReasonMaxLength }))
+    return null
+  }
+  if (reason) {
+    request.reason = reason
+  } else if (cycleAdjustmentReasonRequired.value) {
+    appStore.showError(t('admin.subscriptions.cycleAdjustmentReasonRequired'))
+    return null
+  }
+
+  return request
+}
+
 // Helper functions
 const formatExpirationRemaining = (expiresAt: string): string | null => {
   return formatRemainingDurationCompact(expiresAt)
@@ -1674,6 +2056,60 @@ const formatResetTime = (
   const parts = getRemainingDurationParts(resetTime, new Date())
 
   return parts ? formatResetDuration(parts) : t('admin.subscriptions.windowNotActive')
+}
+
+const toDateTimeLocalValue = (value: string | null | undefined): string => {
+  if (!value) return ''
+  const timestamp = Date.parse(value)
+  if (!Number.isFinite(timestamp)) return ''
+  return formatDateTimeLocalInput(Math.floor(timestamp / 1000))
+}
+
+const dateTimeLocalToISOString = (value: string): string | undefined => {
+  const timestampSeconds = parseDateTimeLocalInput(value)
+  if (!timestampSeconds) return undefined
+  return new Date(timestampSeconds * 1000).toISOString()
+}
+
+const inferCycleCountFromSubscription = (subscription: UserSubscription): number => {
+  const start = Date.parse(subscription.monthly_window_start || subscription.starts_at || '')
+  const expires = Date.parse(subscription.expires_at || '')
+  if (!Number.isFinite(start) || !Number.isFinite(expires) || expires <= start) return 1
+  return Math.max(1, Math.ceil((expires - start) / MONTHLY_CYCLE_MS))
+}
+
+const formatAdjustmentDateTime = (value: string | null | undefined): string => {
+  return value ? formatDateTime(value) : '-'
+}
+
+const formatAdjustmentUsage = (usage: number, limit?: number | null): string => {
+  const used = `$${(usage || 0).toFixed(2)}`
+  return typeof limit === 'number' && limit > 0 ? `${used} / $${limit.toFixed(2)}` : used
+}
+
+const formatAdjustmentDuration = (seconds: number | null | undefined): string => {
+  const totalSeconds = Math.max(0, Math.floor(seconds || 0))
+  if (totalSeconds === 0) return t('admin.subscriptions.durationZero')
+
+  const days = Math.floor(totalSeconds / 86400)
+  const hours = Math.floor((totalSeconds % 86400) / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  if (days > 0) {
+    return t('admin.subscriptions.durationDaysHours', { days, hours })
+  }
+  if (hours > 0) {
+    return t('admin.subscriptions.durationHoursMinutes', { hours, minutes })
+  }
+  return t('admin.subscriptions.durationMinutes', { minutes: Math.max(1, minutes) })
+}
+
+const formatCycleAdjustmentUnavailable = (reason?: string): string => {
+  if (!reason) return t('admin.subscriptions.cycleAdjustmentUnavailable.generic')
+  return t(`admin.subscriptions.cycleAdjustmentUnavailable.${reason}`)
+}
+
+const formatCycleAdjustmentWarning = (warning: string): string => {
+  return t(`admin.subscriptions.cycleAdjustmentWarnings.${warning}`)
 }
 
 // Handle click outside to close dropdowns

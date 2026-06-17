@@ -10,6 +10,8 @@ import type {
   AssignSubscriptionRequest,
   BulkAssignSubscriptionRequest,
   ExtendSubscriptionRequest,
+  MonthlyCycleAdjustmentPreview,
+  MonthlyCycleAdjustmentRequest,
   PaginatedResponse
 } from '@/types'
 
@@ -138,6 +140,28 @@ export async function resetQuota(
   return data
 }
 
+export async function previewMonthlyCycleAdjustment(
+  id: number,
+  request: MonthlyCycleAdjustmentRequest
+): Promise<MonthlyCycleAdjustmentPreview> {
+  const { data } = await apiClient.post<MonthlyCycleAdjustmentPreview>(
+    `/admin/subscriptions/${id}/monthly-cycle-adjustments/preview`,
+    request
+  )
+  return data
+}
+
+export async function applyMonthlyCycleAdjustment(
+  id: number,
+  request: MonthlyCycleAdjustmentRequest
+): Promise<MonthlyCycleAdjustmentPreview> {
+  const { data } = await apiClient.post<MonthlyCycleAdjustmentPreview>(
+    `/admin/subscriptions/${id}/monthly-cycle-adjustments`,
+    request
+  )
+  return data
+}
+
 /**
  * List subscriptions by group
  * @param groupId - Group ID
@@ -189,6 +213,8 @@ export const subscriptionsAPI = {
   extend,
   revoke,
   resetQuota,
+  previewMonthlyCycleAdjustment,
+  applyMonthlyCycleAdjustment,
   listByGroup,
   listByUser
 }

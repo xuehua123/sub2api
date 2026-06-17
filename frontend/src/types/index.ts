@@ -1761,6 +1761,50 @@ export interface AdvanceEntitlementMonthlyCycleResult {
   new_monthly_window_start: string
 }
 
+export type MonthlyCycleAdjustmentMode =
+  | 'advance_next_cycle'
+  | 'compensate_reset'
+  | 'align_to_reset'
+  | 'align_to_expiry'
+  | 'custom'
+
+export interface MonthlyCycleAdjustmentRequest {
+  mode: MonthlyCycleAdjustmentMode
+  cycle_count?: number
+  custom_monthly_window_start?: string
+  custom_expires_at?: string
+  reason?: string
+}
+
+export interface MonthlyCycleAdjustmentPreview {
+  mode: MonthlyCycleAdjustmentMode
+  target_type: 'subscription' | 'entitlement' | string
+  subscription_id: number
+  entitlement_id?: number | null
+  user_id: number
+  group_id?: number
+  plan_id?: number | null
+  status: string
+  current_expires_at: string
+  new_expires_at: string
+  current_monthly_window_start?: string | null
+  new_monthly_window_start: string
+  current_reset_at?: string | null
+  new_reset_at?: string | null
+  monthly_limit_usd?: number | null
+  current_monthly_usage_usd: number
+  new_monthly_usage_usd: number
+  deducted_days: number
+  deducted_seconds: number
+  cycle_count: number
+  full_cycles: number
+  tail_seconds: number
+  can_apply: boolean
+  unavailable_reason?: string
+  warnings?: string[]
+  reason?: string
+}
+
 export interface AssignSubscriptionRequest {
   user_id: number
   group_id: number

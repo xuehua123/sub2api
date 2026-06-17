@@ -321,6 +321,24 @@ describe('SubscriptionsView entitlement v2 section', () => {
     expect(wrapper.text()).toContain('Entitlement available now')
   })
 
+  it('allows entitlement monthly advance when validity is short by one second', async () => {
+    getEntitlements.mockResolvedValue([{
+      ...entitlement,
+      starts_at: '2026-05-16T19:21:36Z',
+      expires_at: '2026-07-27T11:48:47Z',
+      monthly_usage_usd: 100,
+      monthly_window_start: '2026-05-28T11:48:48Z',
+      monthly_resets_at: null,
+      monthly_resets_in_seconds: null,
+    }])
+
+    const wrapper = await mountView()
+    const button = wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]')
+
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(wrapper.text()).toContain('Entitlement available now')
+  })
+
   it('disables entitlement monthly advance button and shows reason below threshold', async () => {
     getEntitlements.mockResolvedValue([{ ...entitlement, monthly_usage_usd: 50 }])
 
@@ -368,7 +386,7 @@ describe('SubscriptionsView entitlement v2 section', () => {
     expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
   })
 
-  it('does not call legacy advance for alias subscriptions with entitlement_id', async () => {
+  it('does not render legacy advance for alias subscriptions with entitlement_id', async () => {
     getMySubscriptions.mockResolvedValue([{
       ...legacySubscription,
       entitlement_id: 22,
@@ -383,12 +401,9 @@ describe('SubscriptionsView entitlement v2 section', () => {
 
     const wrapper = await mountView()
     const legacyButton = wrapper.findAll('button').find((button) => button.text().includes('Use next cycle now'))
-    expect(legacyButton).toBeTruthy()
-    expect(legacyButton!.attributes('disabled')).toBeDefined()
-    await legacyButton!.trigger('click')
 
+    expect(legacyButton).toBeUndefined()
     expect(advanceMonthlyCycle).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('Use entitlement card')
   })
 
   it('keeps legacy subscriptions visible when entitlement loading fails', async () => {

@@ -224,4 +224,7 @@ type SubscriptionEntitlementCycleResetLog struct {
 	NewMonthlyWindowStart      time.Time
 	DeductedDays               int
 	DeductedSeconds            int64
+	Mode                       MonthlyCycleAdjustmentMode
+	Reason                     string
+	AdminID                    *int64
 }

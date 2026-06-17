@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -362,13 +363,18 @@ func (r *subscriptionEntitlementRepository) UpdateEntitlementMonthlyCycle(ctx co
 
 func (r *subscriptionEntitlementRepository) InsertEntitlementCycleResetLog(ctx context.Context, log service.SubscriptionEntitlementCycleResetLog) error {
 	client := clientFromContext(ctx, r.client)
+	mode := string(log.Mode)
+	if mode == "" {
+		mode = string(service.MonthlyCycleAdjustmentAdvanceNextCycle)
+	}
+	reason := strings.TrimSpace(log.Reason)
 	_, err := client.ExecContext(ctx, `
 		INSERT INTO subscription_entitlement_cycle_reset_logs (
 			user_id, entitlement_id, plan_id, previous_expires_at, new_expires_at,
 			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,
-			deducted_days, deducted_seconds, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds)
+			deducted_days, deducted_seconds, mode, reason, admin_id, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds, mode, reason, nullableInt64Arg(log.AdminID))
 	return err
 }
 

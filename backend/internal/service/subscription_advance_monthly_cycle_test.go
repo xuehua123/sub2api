@@ -303,6 +303,7 @@ func TestCanAdvanceMonthlyCycleByValidityRequiresFullNextCycle(t *testing.T) {
 
 	require.False(t, canAdvanceMonthlyCycleByValidity(startsAt, startsAt.Add(30*24*time.Hour), resetAt))
 	require.False(t, canAdvanceMonthlyCycleByValidity(startsAt, resetAt.Add(29*24*time.Hour), resetAt))
+	require.True(t, canAdvanceMonthlyCycleByValidity(startsAt, resetAt.Add(30*24*time.Hour-time.Second), resetAt))
 	require.True(t, canAdvanceMonthlyCycleByValidity(startsAt, resetAt.Add(30*24*time.Hour), resetAt))
 }
 

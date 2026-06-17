@@ -890,6 +890,12 @@ func applyAdminEntitlementQuota(out *UserSubscription, link *service.UserSubscri
 	if out == nil || link == nil {
 		return
 	}
+	if !link.ExpiresAt.IsZero() {
+		out.ExpiresAt = link.ExpiresAt
+	}
+	if link.Status != "" {
+		out.Status = link.Status
+	}
 	out.DailyWindowStart = cloneTime(link.DailyWindowStart)
 	out.WeeklyWindowStart = cloneTime(link.WeeklyWindowStart)
 	out.MonthlyWindowStart = cloneTime(link.MonthlyWindowStart)

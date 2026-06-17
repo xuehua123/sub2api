@@ -29,25 +29,28 @@ const MaxValidityDays = 36500
 const (
 	monthlyCycleDuration              = 30 * 24 * time.Hour
 	monthlyCycleAdvanceUsageThreshold = 0.9
+	monthlyCycleAdvanceValidityGrace  = time.Minute
 )
 
 var (
-	ErrSubscriptionNotFound            = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
-	ErrSubscriptionExpired             = infraerrors.Forbidden("SUBSCRIPTION_EXPIRED", "subscription has expired")
-	ErrSubscriptionSuspended           = infraerrors.Forbidden("SUBSCRIPTION_SUSPENDED", "subscription is suspended")
-	ErrSubscriptionAlreadyExists       = infraerrors.Conflict("SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists for this user and group")
-	ErrSubscriptionAssignConflict      = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
-	ErrGroupNotSubscriptionType        = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
-	ErrInvalidInput                    = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
-	ErrMonthlyCycleNotExhausted        = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
-	ErrMonthlyCycleNoFutureTime        = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not include a full next monthly cycle to advance")
-	ErrDailyLimitExceeded              = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
-	ErrWeeklyLimitExceeded             = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
-	ErrMonthlyLimitExceeded            = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
-	ErrSubscriptionNilInput            = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
-	ErrAdjustWouldExpire               = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
-	ErrSubscriptionMaintenance         = infraerrors.ServiceUnavailable("SUBSCRIPTION_MAINTENANCE_FAILED", "subscription maintenance failed")
-	ErrSubscriptionEndpointUnsupported = infraerrors.Forbidden("SUBSCRIPTION_ENDPOINT_UNSUPPORTED", "subscription group does not support this endpoint")
+	ErrSubscriptionNotFound              = infraerrors.NotFound("SUBSCRIPTION_NOT_FOUND", "subscription not found")
+	ErrSubscriptionExpired               = infraerrors.Forbidden("SUBSCRIPTION_EXPIRED", "subscription has expired")
+	ErrSubscriptionSuspended             = infraerrors.Forbidden("SUBSCRIPTION_SUSPENDED", "subscription is suspended")
+	ErrSubscriptionAlreadyExists         = infraerrors.Conflict("SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists for this user and group")
+	ErrSubscriptionAssignConflict        = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
+	ErrGroupNotSubscriptionType          = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
+	ErrInvalidInput                      = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
+	ErrMonthlyCycleNotExhausted          = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
+	ErrMonthlyCycleNoFutureTime          = infraerrors.BadRequest("MONTHLY_CYCLE_NO_FUTURE_TIME", "subscription does not include a full next monthly cycle to advance")
+	ErrMonthlyCycleAdjustmentInvalid     = infraerrors.BadRequest("MONTHLY_CYCLE_ADJUSTMENT_INVALID", "invalid monthly cycle adjustment request")
+	ErrMonthlyCycleAdjustmentUnavailable = infraerrors.BadRequest("MONTHLY_CYCLE_ADJUSTMENT_UNAVAILABLE", "monthly cycle adjustment is not available")
+	ErrDailyLimitExceeded                = infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily usage limit exceeded")
+	ErrWeeklyLimitExceeded               = infraerrors.TooManyRequests("WEEKLY_LIMIT_EXCEEDED", "weekly usage limit exceeded")
+	ErrMonthlyLimitExceeded              = infraerrors.TooManyRequests("MONTHLY_LIMIT_EXCEEDED", "monthly usage limit exceeded")
+	ErrSubscriptionNilInput              = infraerrors.BadRequest("SUBSCRIPTION_NIL_INPUT", "subscription input cannot be nil")
+	ErrAdjustWouldExpire                 = infraerrors.BadRequest("ADJUST_WOULD_EXPIRE", "adjustment would result in expired subscription (remaining days must be > 0)")
+	ErrSubscriptionMaintenance           = infraerrors.ServiceUnavailable("SUBSCRIPTION_MAINTENANCE_FAILED", "subscription maintenance failed")
+	ErrSubscriptionEndpointUnsupported   = infraerrors.Forbidden("SUBSCRIPTION_ENDPOINT_UNSUPPORTED", "subscription group does not support this endpoint")
 )
 
 // SubscriptionService 订阅服务
@@ -730,6 +733,9 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 	if err != nil {
 		return err
 	}
+	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
+		return s.adminRevokeEntitlement(ctx, sub.EntitlementLink.EntitlementID)
+	}
 
 	if err := s.userSubRepo.Delete(ctx, subscriptionID); err != nil {
 		return err
@@ -772,6 +778,9 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 	sub, err := s.userSubRepo.GetByID(ctx, subscriptionID)
 	if err != nil {
 		return nil, ErrSubscriptionNotFound
+	}
+	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
+		return s.adminAdjustEntitlement(ctx, sub.EntitlementLink.EntitlementID, days)
 	}
 
 	// 限制调整天数范围
@@ -1609,7 +1618,7 @@ func canAdvanceMonthlyCycleByValidity(startsAt, expiresAt, resetAt time.Time) bo
 	if !expiresAt.After(startsAt.Add(monthlyCycleDuration)) {
 		return false
 	}
-	return !expiresAt.Before(resetAt.Add(monthlyCycleDuration))
+	return !expiresAt.Add(monthlyCycleAdvanceValidityGrace).Before(resetAt.Add(monthlyCycleDuration))
 }
 
 func monthlyCycleResetAt(windowStart *time.Time, startsAt, now time.Time) time.Time {

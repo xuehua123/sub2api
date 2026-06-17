@@ -32,3 +32,28 @@ func TestUserEntitlementFromServiceUsesStartsAtWhenWindowStartMissing(t *testing
 	require.NotNil(t, out.MonthlyResetsInSeconds)
 	require.EqualValues(t, int64((29*24+12)*3600), *out.MonthlyResetsInSeconds)
 }
+
+func TestUserSubscriptionFromServiceAdminUsesLinkedEntitlementExpiryAndStatus(t *testing.T) {
+	legacyExpiresAt := time.Date(2026, 7, 17, 11, 48, 47, 0, time.UTC)
+	entitlementExpiresAt := time.Date(2026, 7, 27, 11, 48, 47, 0, time.UTC)
+
+	out := UserSubscriptionFromServiceAdmin(&service.UserSubscription{
+		ID:        912,
+		UserID:    989,
+		GroupID:   12,
+		StartsAt:  time.Date(2026, 5, 16, 19, 21, 36, 0, time.UTC),
+		ExpiresAt: legacyExpiresAt,
+		Status:    service.SubscriptionStatusExpired,
+		EntitlementLink: &service.UserSubscriptionEntitlementLink{
+			EntitlementID: 1103,
+			Status:        service.SubscriptionStatusActive,
+			ExpiresAt:     entitlementExpiresAt,
+		},
+	})
+
+	require.NotNil(t, out)
+	require.Equal(t, entitlementExpiresAt, out.ExpiresAt)
+	require.Equal(t, service.SubscriptionStatusActive, out.Status)
+	require.NotNil(t, out.EntitlementExpiresAt)
+	require.Equal(t, entitlementExpiresAt, *out.EntitlementExpiresAt)
+}

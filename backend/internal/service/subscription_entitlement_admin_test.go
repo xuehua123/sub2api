@@ -37,6 +37,44 @@ func TestSubscriptionServiceExtendSubscription_AdjustsSyntheticEntitlementRow(t 
 	require.True(t, repo.entitlements[91].ExpiresAt.After(now.Add(7*24*time.Hour)))
 }
 
+func TestSubscriptionServiceExtendSubscription_AdjustsLinkedEntitlementRow(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(28)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[91] = &SubscriptionEntitlement{
+		ID:             91,
+		UserID:         7,
+		PrimaryGroupID: &groupID,
+		Name:           "Pro Plan",
+		Status:         SubscriptionStatusActive,
+		StartsAt:       now.Add(-time.Hour),
+		ExpiresAt:      now.Add(24 * time.Hour),
+		GroupGrants:    testGroupGrants([]int64{groupID}),
+	}
+	userSubs := &linkedEntitlementUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:        912,
+			UserID:    7,
+			GroupID:   groupID,
+			StartsAt:  now.Add(-time.Hour),
+			ExpiresAt: now.Add(24 * time.Hour),
+			Status:    SubscriptionStatusActive,
+			EntitlementLink: &UserSubscriptionEntitlementLink{
+				EntitlementID: 91,
+			},
+		},
+	}
+	svc := newSubscriptionServiceWithLinkedEntitlementRepo(repo, userSubs)
+
+	got, err := svc.ExtendSubscription(context.Background(), 912, 7)
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, int64(-91), got.ID)
+	require.Equal(t, int64(91), got.EntitlementLink.EntitlementID)
+	require.True(t, repo.entitlements[91].ExpiresAt.After(now.Add(7*24*time.Hour)))
+}
+
 func TestSubscriptionServiceAdminResetQuota_ResetsSyntheticEntitlementRow(t *testing.T) {
 	now := time.Now().UTC()
 	groupID := int64(28)
@@ -90,8 +128,60 @@ func TestSubscriptionServiceRevokeSubscription_RevokesSyntheticEntitlementRow(t 
 	require.Contains(t, repo.entitlements[93].Notes, "revoked by admin")
 }
 
+func TestSubscriptionServiceRevokeSubscription_RevokesLinkedEntitlementRow(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(28)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[93] = &SubscriptionEntitlement{
+		ID:             93,
+		UserID:         7,
+		PrimaryGroupID: &groupID,
+		Name:           "Pro Plan",
+		Status:         SubscriptionStatusActive,
+		StartsAt:       now.Add(-time.Hour),
+		ExpiresAt:      now.Add(24 * time.Hour),
+		GroupGrants:    testGroupGrants([]int64{groupID}),
+	}
+	userSubs := &linkedEntitlementUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:        912,
+			UserID:    7,
+			GroupID:   groupID,
+			StartsAt:  now.Add(-time.Hour),
+			ExpiresAt: now.Add(24 * time.Hour),
+			Status:    SubscriptionStatusActive,
+			EntitlementLink: &UserSubscriptionEntitlementLink{
+				EntitlementID: 93,
+			},
+		},
+	}
+	svc := newSubscriptionServiceWithLinkedEntitlementRepo(repo, userSubs)
+
+	err := svc.RevokeSubscription(context.Background(), 912)
+
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionStatusRevoked, repo.entitlements[93].Status)
+	require.Contains(t, repo.entitlements[93].Notes, "revoked by admin")
+}
+
 func newSubscriptionServiceWithEntitlementRepo(repo *fakeSubscriptionEntitlementRepo) *SubscriptionService {
 	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
+	svc.entitlementSvc = NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
+	return svc
+}
+
+type linkedEntitlementUserSubRepoStub struct {
+	userSubRepoNoop
+	sub *UserSubscription
+}
+
+func (r *linkedEntitlementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
+	cp := *r.sub
+	return &cp, nil
+}
+
+func newSubscriptionServiceWithLinkedEntitlementRepo(repo *fakeSubscriptionEntitlementRepo, userSubRepo UserSubscriptionRepository) *SubscriptionService {
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepo, nil, nil, nil)
 	svc.entitlementSvc = NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
 	return svc
 }

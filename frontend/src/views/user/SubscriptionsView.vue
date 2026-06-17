@@ -572,6 +572,7 @@ const draggedPreferenceGroupID = ref<number | null>(null)
 const deletingSubscription = ref(false)
 const monthlyCycleAdvanceThreshold = 0.9
 const monthlyCycleDurationMs = 30 * 24 * 60 * 60 * 1000
+const monthlyCycleAdvanceValidityGraceMs = 60 * 1000
 
 type DeleteSubscriptionTarget = {
   type: 'entitlement' | 'subscription'
@@ -1169,7 +1170,7 @@ function hasFullNextEntitlementMonthlyCycle(
   const startsAt = new Date(entitlement.starts_at)
   if (!isValidDate(startsAt)) return false
   if (expiresAt.getTime() <= startsAt.getTime() + monthlyCycleDurationMs) return false
-  return expiresAt.getTime() >= resetAt.getTime() + monthlyCycleDurationMs
+  return expiresAt.getTime() + monthlyCycleAdvanceValidityGraceMs >= resetAt.getTime() + monthlyCycleDurationMs
 }
 
 function estimateEntitlementDeductedSeconds(entitlement: UserEntitlement, now = new Date()): number {
@@ -1195,7 +1196,7 @@ function hasFullNextMonthlyCycle(
   const startsAt = new Date(subscription.starts_at)
   if (!isValidDate(startsAt)) return false
   if (expiresAt.getTime() <= startsAt.getTime() + monthlyCycleDurationMs) return false
-  return expiresAt.getTime() >= resetAt.getTime() + monthlyCycleDurationMs
+  return expiresAt.getTime() + monthlyCycleAdvanceValidityGraceMs >= resetAt.getTime() + monthlyCycleDurationMs
 }
 
 function estimateDeductedSeconds(subscription: UserSubscription, now = new Date()): number {
