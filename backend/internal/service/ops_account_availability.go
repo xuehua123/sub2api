@@ -123,6 +123,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 			Platform:    acc.Platform,
 			GroupID:     displayGroupID,
 			GroupName:   displayGroupName,
+			Tags:        AccountTagsFromExtra(acc.Extra),
 			Status:      acc.Status,
 
 			IsOpened:            acc.Status == StatusActive && acc.Schedulable,

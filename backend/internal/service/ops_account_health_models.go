@@ -105,11 +105,12 @@ type OpsAccountHealthRecommendation struct {
 }
 
 type OpsAccountHealthItem struct {
-	AccountID   int64  `json:"account_id"`
-	AccountName string `json:"account_name"`
-	Platform    string `json:"platform"`
-	GroupID     int64  `json:"group_id"`
-	GroupName   string `json:"group_name"`
+	AccountID   int64    `json:"account_id"`
+	AccountName string   `json:"account_name"`
+	Platform    string   `json:"platform"`
+	GroupID     int64    `json:"group_id"`
+	GroupName   string   `json:"group_name"`
+	Tags        []string `json:"tags"`
 
 	Status string `json:"status"`
 

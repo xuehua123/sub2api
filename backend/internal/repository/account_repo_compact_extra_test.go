@@ -37,3 +37,13 @@ func TestShouldEnqueueSchedulerOutboxForExtraUpdates_AccountHealthProbeKeysAreOb
 		t.Fatalf("expected account health probe updates to skip scheduler outbox")
 	}
 }
+
+func TestShouldEnqueueSchedulerOutboxForExtraUpdates_TagsAreObservational(t *testing.T) {
+	updates := map[string]any{
+		"tags": []string{"pro", "生图"},
+	}
+
+	if shouldEnqueueSchedulerOutboxForExtraUpdates(updates) {
+		t.Fatalf("expected account tags updates to skip scheduler outbox")
+	}
+}

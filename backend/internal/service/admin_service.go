@@ -81,6 +81,7 @@ type AdminService interface {
 	// UpdateAccountExtra 仅对 Extra 做 JSONB 增量合并（key 级覆盖），不会影响其它字段或运行态键。
 	// 用于刷新流程持久化 account_uuid / org_uuid 等少量键，避免被全量快照覆盖。
 	UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error
+	UpdateAccountTags(ctx context.Context, id int64, tags []string) ([]string, error)
 	DeleteAccount(ctx context.Context, id int64) error
 	RefreshAccountCredentials(ctx context.Context, id int64) (*Account, error)
 	ClearAccountError(ctx context.Context, id int64) (*Account, error)
@@ -2858,6 +2859,14 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 		return nil
 	}
 	return s.accountRepo.UpdateExtra(ctx, id, updates)
+}
+
+func (s *adminServiceImpl) UpdateAccountTags(ctx context.Context, id int64, tags []string) ([]string, error) {
+	normalized := NormalizeAccountTags(tags)
+	if err := s.UpdateAccountExtra(ctx, id, map[string]any{AccountExtraTagsKey: normalized}); err != nil {
+		return nil, err
+	}
+	return normalized, nil
 }
 
 // BulkUpdateAccounts updates multiple accounts in one request.

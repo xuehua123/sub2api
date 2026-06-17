@@ -380,6 +380,7 @@ export interface AccountAvailability {
   platform: string
   group_id: number
   group_name: string
+  tags: string[]
   status: string
   is_opened: boolean
   is_schedulable: boolean

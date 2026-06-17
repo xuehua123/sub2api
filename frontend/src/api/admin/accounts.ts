@@ -463,6 +463,18 @@ export async function setSchedulable(id: number, schedulable: boolean): Promise<
   return data
 }
 
+export interface AccountTagsState {
+  account_id: number
+  tags: string[]
+}
+
+export async function updateTags(id: number, tags: string[]): Promise<AccountTagsState> {
+  const { data } = await apiClient.patch<AccountTagsState>(`/admin/accounts/${id}/tags`, {
+    tags
+  })
+  return data
+}
+
 /**
  * Get available models for an account
  * @param id - Account ID
@@ -728,6 +740,7 @@ export const accountsAPI = {
   getTempUnschedulableStatus,
   resetTempUnschedulable,
   setSchedulable,
+  updateTags,
   getAvailableModels,
   syncUpstreamModels,
   syncUpstreamModelsPreview,

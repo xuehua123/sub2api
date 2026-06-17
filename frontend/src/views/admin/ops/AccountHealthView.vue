@@ -75,7 +75,7 @@
                   v-model.trim="searchQuery"
                   type="text"
                   class="input h-9"
-                  placeholder="搜索账号、ID、分组、建议、模型"
+                  placeholder="搜索账号、ID、平台、分组、建议、模型、标签"
                 />
               </label>
               <div class="inline-flex h-9 w-fit rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-900">
@@ -109,9 +109,69 @@
                 {{ filter.label }} {{ filter.count }}
               </button>
             </div>
+            <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
+              <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
+                <button
+                  v-for="option in availableTagOptions"
+                  :key="option.tag"
+                  type="button"
+                  class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition"
+                  :class="isTagFilterSelected(option.tag) ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 dark:hover:text-white'"
+                  @click="toggleTagFilter(option.tag)"
+                >
+                  {{ option.tag }} {{ option.count }}
+                </button>
+                <button
+                  v-if="selectedTagFilters.length > 0"
+                  type="button"
+                  class="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:text-white"
+                  @click="clearTagFilters"
+                >
+                  清空标签
+                </button>
+              </div>
+              <div class="inline-flex h-8 w-fit rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-900">
+                <button
+                  type="button"
+                  class="rounded-md px-2.5 text-xs font-semibold transition"
+                  :class="tagMatchMode === 'any' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+                  @click="tagMatchMode = 'any'"
+                >
+                  任一标签
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md px-2.5 text-xs font-semibold transition"
+                  :class="tagMatchMode === 'all' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
+                  @click="tagMatchMode = 'all'"
+                >
+                  全部标签
+                </button>
+              </div>
+            </div>
           </div>
           <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
             显示 {{ visibleItems.length }} / {{ items.length }}
+          </div>
+        </div>
+      </section>
+
+      <section
+        v-if="selectedCount > 0"
+        class="rounded-lg border border-sky-200 bg-sky-50 p-3 shadow-sm dark:border-sky-900/50 dark:bg-sky-900/20"
+      >
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="text-sm font-semibold text-sky-800 dark:text-sky-100">已选择 {{ selectedCount }} 个账号</div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="bulkSchedulableLoading" @click="bulkToggleSchedulable(true)">
+              开启调度
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="bulkSchedulableLoading" @click="bulkToggleSchedulable(false)">
+              关闭调度
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm" :disabled="bulkSchedulableLoading" @click="clearSelection">
+              清空选择
+            </button>
           </div>
         </div>
       </section>
@@ -300,87 +360,225 @@
       </section>
 
       <section v-else-if="viewMode === 'list'" class="overflow-x-auto rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
-        <div class="hidden min-w-[1180px] grid-cols-[minmax(220px,1.4fr)_110px_110px_110px_110px_minmax(160px,1fr)_150px_150px_120px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 lg:grid">
-          <span>账号</span>
-          <span>1m</span>
-          <span>10m</span>
-          <span>30m</span>
-          <span>1h</span>
+        <div class="hidden min-w-[1680px] grid-cols-[44px_minmax(280px,1.45fr)_118px_repeat(5,126px)_minmax(190px,1fr)_150px_170px_150px] gap-3 border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-500 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 lg:grid">
+          <label class="flex items-center justify-center">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+              :checked="allVisibleSelected"
+              @change="toggleSelectAllVisible"
+            />
+          </label>
+          <span>账号 / 标签</span>
+          <span>调度</span>
+          <span v-for="window in windowOrder" :key="`head-${window}`">{{ window }}</span>
           <span>最近60</span>
           <span>模型</span>
           <span>建议</span>
           <span class="text-right">操作</span>
         </div>
         <div class="divide-y divide-gray-200 dark:divide-dark-700">
-          <article
-            v-for="item in visibleItems"
-            :key="item.account_id"
-            class="grid gap-3 px-3 py-3 lg:min-w-[1180px] lg:grid-cols-[minmax(220px,1.4fr)_110px_110px_110px_110px_minmax(160px,1fr)_150px_150px_120px] lg:items-center"
-          >
-            <div class="min-w-0">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold" :class="platformAvatarClass(item)">
-                  {{ platformInitial(item.platform) }}
-                </span>
-                <div class="min-w-0">
-                  <div class="flex min-w-0 items-center gap-2">
-                    <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</span>
-                    <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
+          <div v-for="item in visibleItems" :key="item.account_id" class="lg:min-w-[1680px]">
+            <article class="grid gap-3 px-3 py-3 lg:grid-cols-[44px_minmax(280px,1.45fr)_118px_repeat(5,126px)_minmax(190px,1fr)_150px_170px_150px] lg:items-center">
+              <div class="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                  :checked="isAccountSelected(item.account_id)"
+                  @change="onAccountSelectionChange(item.account_id, $event)"
+                />
+                <button
+                  type="button"
+                  class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 text-gray-500 transition hover:text-gray-900 dark:border-dark-700 dark:text-gray-400 dark:hover:text-white"
+                  @click="toggleExpanded(item.account_id)"
+                >
+                  <Icon :name="isExpanded(item.account_id) ? 'chevronDown' : 'chevronRight'" size="xs" />
+                </button>
+              </div>
+
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold" :class="platformAvatarClass(item)">
+                    {{ platformInitial(item.platform) }}
+                  </span>
+                  <div class="min-w-0">
+                    <div class="flex min-w-0 items-center gap-2">
+                      <span class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</span>
+                      <span class="shrink-0 text-xs text-gray-400">#{{ item.account_id }}</span>
+                    </div>
+                    <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.platform || '-' }} · {{ item.group_name || '-' }} · group {{ item.group_id }}</div>
                   </div>
-                  <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.platform || '-' }} · {{ item.group_name || '-' }}</div>
+                </div>
+                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span
+                    v-for="tag in visibleTagsForItem(item)"
+                    :key="`${item.account_id}-tag-${tag}`"
+                    class="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  >
+                    {{ tag }}
+                  </span>
+                  <span v-if="hiddenTagCount(item) > 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">
+                    +{{ hiddenTagCount(item) }}
+                  </span>
+                  <span v-if="tagsForItem(item).length === 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">
+                    无标签
+                  </span>
+                  <button
+                    type="button"
+                    class="rounded-md border border-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-500 transition hover:text-gray-900 dark:border-dark-700 dark:text-gray-400 dark:hover:text-white"
+                    @click="startEditingTags(item)"
+                  >
+                    标签
+                  </button>
+                </div>
+                <div v-if="editingTagsAccountId === item.account_id" class="mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+                  <input
+                    v-model="tagEditDraft"
+                    type="text"
+                    class="input h-8 text-xs"
+                    placeholder="pro, plus, 生图"
+                    @keyup.enter="updateAccountTags(item)"
+                    @keyup.esc="cancelEditingTags"
+                  />
+                  <div class="mt-2 flex justify-end gap-1.5">
+                    <button type="button" class="btn btn-secondary btn-sm" :disabled="isSavingTags(item.account_id)" @click="cancelEditingTags">取消</button>
+                    <button type="button" class="btn btn-primary btn-sm" :disabled="isSavingTags(item.account_id)" @click="updateAccountTags(item)">
+                      {{ isSavingTags(item.account_id) ? '保存中' : '保存' }}
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div class="mt-2 flex flex-wrap gap-1.5">
-                <StatusBadge :text="item.is_opened ? '开' : '关'" :kind="item.is_opened ? 'success' : 'muted'" />
-                <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
-                <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="停探测" kind="muted" />
+
+              <div class="min-w-0">
+                <button
+                  type="button"
+                  class="inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-70"
+                  :class="item.is_schedulable ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-700 dark:bg-dark-700/60 dark:text-gray-300'"
+                  :disabled="isTogglingSchedulable(item.account_id)"
+                  @click="toggleAccountSchedulable(item)"
+                >
+                  <span class="relative h-4 w-7 rounded-full transition" :class="item.is_schedulable ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-600'">
+                    <span class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition" :class="item.is_schedulable ? 'left-3.5' : 'left-0.5'"></span>
+                  </span>
+                  <span>{{ item.is_schedulable ? '调度开' : '调度关' }}</span>
+                </button>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <StatusBadge :text="item.is_opened ? '开' : '关'" :kind="item.is_opened ? 'success' : 'muted'" />
+                  <StatusBadge :text="item.is_available ? '可调度' : '不可调度'" :kind="item.is_available ? 'success' : 'warning'" />
+                </div>
+              </div>
+
+              <div v-for="window in windowOrder" :key="`${item.account_id}-${window}`" class="rounded-lg bg-gray-50 px-2 py-1.5 dark:bg-dark-700/60">
+                <div class="flex items-center justify-between gap-2 text-[11px] text-gray-400">
+                  <span>{{ window }}</span>
+                  <span>{{ windowCountText(item, window) }}</span>
+                </div>
+                <div class="mt-1 text-sm font-semibold" :class="windowMetricClass(item, window)">
+                  {{ windowMetricText(item, window) }}
+                </div>
+                <div class="mt-1 grid grid-cols-2 gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                  <span class="truncate">延 {{ windowLatencyText(item, window) }}</span>
+                  <span class="truncate" :class="windowFirstTokenClass(item, window)">首 {{ windowFirstTokenText(item, window) }}</span>
+                </div>
+                <div class="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                  <div class="h-full rounded-full" :class="windowBarClass(item, window)" :style="{ width: `${windowBarPercent(item, window)}%` }"></div>
+                </div>
+              </div>
+
+              <div class="min-w-0">
+                <div class="grid grid-cols-[repeat(60,minmax(2px,1fr))] gap-0.5">
+                  <span
+                    v-for="(sample, idx) in recentSamplesForDisplay(item)"
+                    :key="`${item.account_id}-list-${idx}-${sample?.created_at || 'empty'}`"
+                    class="h-4 rounded-sm"
+                    :class="sampleClass(sample)"
+                    :title="sampleTitle(sample)"
+                  ></span>
+                </div>
+                <div class="mt-1 truncate text-[11px] text-gray-400">{{ recentTimelineTitle(item) }}</div>
+              </div>
+
+              <div class="min-w-0 text-xs text-gray-600 dark:text-gray-300">
+                <div class="truncate font-semibold">{{ probeModelEffective(item) }}</div>
+                <div class="truncate text-[11px] text-gray-400">{{ item.probe_model_id ? '账号独立模型' : '继承全局' }}</div>
+              </div>
+
+              <div class="min-w-0">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="severityClass(item.recommendation.severity)">
+                    {{ item.recommendation.severity || 'P3' }}
+                  </span>
+                  <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(item.recommendation.notify_mode)">
+                    {{ notifyLabel(item.recommendation.notify_mode) }}
+                  </span>
+                </div>
+                <div class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">{{ actionLabel(item.recommendation.action) }}</div>
+                <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.recommendation.title }}</div>
+              </div>
+
+              <div class="flex justify-end gap-1.5">
+                <button type="button" class="btn btn-secondary btn-sm" @click="openDetail(item)">详情</button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="goToAccount(item)">账号</button>
+              </div>
+            </article>
+
+            <div v-if="isExpanded(item.account_id)" class="px-3 pb-3">
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-700 dark:bg-dark-900/70">
+                <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1.5fr_1fr_1fr]">
+                  <div>
+                    <div class="text-xs font-semibold text-gray-500 dark:text-gray-400">完整窗口矩阵</div>
+                    <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-5">
+                      <div v-for="window in windowOrder" :key="`${item.account_id}-expanded-${window}`" class="rounded-lg border border-gray-200 bg-white p-2.5 dark:border-dark-700 dark:bg-dark-800">
+                        <div class="flex items-center justify-between gap-2">
+                          <span class="text-xs font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
+                          <span class="text-xs text-gray-400">{{ windowCountText(item, window) }}</span>
+                        </div>
+                        <div class="mt-2 text-lg font-semibold" :class="windowMetricClass(item, window)">{{ windowMetricText(item, window) }}</div>
+                        <div class="mt-1 grid grid-cols-2 gap-1 text-[11px] text-gray-500 dark:text-gray-400">
+                          <span>{{ windowLeftMeta(item, window) }}</span>
+                          <span>{{ windowRightMeta(item, window) }}</span>
+                          <span>延 {{ windowLatencyText(item, window) }}</span>
+                          <span :class="windowFirstTokenClass(item, window)">首 {{ windowFirstTokenText(item, window) }}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="rounded-lg border p-3" :class="recommendationPanelClass(item)">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="severityClass(item.recommendation.severity)">{{ item.recommendation.severity || 'P3' }}</span>
+                      <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(item.recommendation.notify_mode)">{{ notifyLabel(item.recommendation.notify_mode) }}</span>
+                      <span v-if="item.probe?.checked_at" class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="probeStatusClass(item)">{{ probeStatusLabel(item) }}</span>
+                    </div>
+                    <div class="mt-3 text-sm font-semibold text-gray-900 dark:text-white">{{ item.recommendation.title }}</div>
+                    <p class="mt-2 break-words text-xs text-gray-600 dark:text-gray-300">{{ item.recommendation.reason || '-' }}</p>
+                    <div class="mt-3 grid grid-cols-2 gap-2 text-xs">
+                      <div class="rounded-lg bg-white/60 p-2 dark:bg-dark-900/30">
+                        <div class="text-gray-500 dark:text-gray-400">建议动作</div>
+                        <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ actionLabel(item.recommendation.action) }}</div>
+                      </div>
+                      <div class="rounded-lg bg-white/60 p-2 dark:bg-dark-900/30">
+                        <div class="text-gray-500 dark:text-gray-400">恢复状态</div>
+                        <div class="mt-1 font-semibold" :class="item.recommendation.recovery_ready ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-700 dark:text-gray-200'">
+                          {{ item.recommendation.recovery_ready ? '可恢复' : '未满足' }}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="rounded-lg border border-gray-200 bg-white p-3 text-xs dark:border-dark-700 dark:bg-dark-800">
+                    <div class="font-semibold text-gray-900 dark:text-white">运行说明</div>
+                    <div class="mt-2 space-y-2 text-gray-600 dark:text-gray-300">
+                      <div>探测状态：{{ probeText(item) || probeStatusLabel(item) }}</div>
+                      <div>限流：{{ item.is_rate_limited ? cooldownText(item) || '限流中' : '无' }}</div>
+                      <div>过载：{{ item.is_overloaded ? cooldownText(item) || '过载冷却中' : '无' }}</div>
+                      <div>临停：{{ item.is_temp_unschedulable ? '临时不可调度' : '无' }}</div>
+                      <div class="break-words">错误：{{ item.error_message || '无' }}</div>
+                      <div>探测模型：{{ probeModelEffective(item) }}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div v-for="window in windowOrder.filter(w => w !== '5m')" :key="`${item.account_id}-${window}`" class="rounded-lg bg-gray-50 px-2 py-1.5 dark:bg-dark-700/60">
-              <div class="flex items-center justify-between gap-2 text-[11px] text-gray-400">
-                <span>{{ window }}</span>
-                <span>{{ windowCountText(item, window) }}</span>
-              </div>
-              <div class="mt-1 text-sm font-semibold" :class="windowMetricClass(item, window)">
-                {{ windowMetricText(item, window) }}
-              </div>
-              <div class="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
-                <div class="h-full rounded-full" :class="windowBarClass(item, window)" :style="{ width: `${windowBarPercent(item, window)}%` }"></div>
-              </div>
-            </div>
-            <div class="min-w-0">
-              <div class="grid grid-cols-[repeat(60,minmax(2px,1fr))] gap-0.5">
-                <span
-                  v-for="(sample, idx) in recentSamplesForDisplay(item)"
-                  :key="`${item.account_id}-list-${idx}-${sample?.created_at || 'empty'}`"
-                  class="h-4 rounded-sm"
-                  :class="sampleClass(sample)"
-                  :title="sampleTitle(sample)"
-                ></span>
-              </div>
-              <div class="mt-1 truncate text-[11px] text-gray-400">{{ recentTimelineTitle(item) }}</div>
-            </div>
-            <div class="min-w-0 text-xs text-gray-600 dark:text-gray-300">
-              <div class="truncate font-semibold">{{ probeModelEffective(item) }}</div>
-              <div class="truncate text-[11px] text-gray-400">{{ item.probe_model_id ? '账号独立模型' : '继承全局' }}</div>
-            </div>
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-1.5">
-                <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="severityClass(item.recommendation.severity)">
-                  {{ item.recommendation.severity || 'P3' }}
-                </span>
-                <span class="rounded-md px-2 py-0.5 text-xs font-semibold" :class="notifyClass(item.recommendation.notify_mode)">
-                  {{ notifyLabel(item.recommendation.notify_mode) }}
-                </span>
-              </div>
-              <div class="mt-1 truncate text-sm font-semibold text-gray-900 dark:text-white">{{ actionLabel(item.recommendation.action) }}</div>
-              <div class="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">{{ item.recommendation.title }}</div>
-            </div>
-            <div class="flex justify-end gap-1.5">
-              <button type="button" class="btn btn-secondary btn-sm" @click="openDetail(item)">详情</button>
-              <button type="button" class="btn btn-secondary btn-sm" @click="goToAccount(item)">账号</button>
-            </div>
-          </article>
+          </div>
         </div>
       </section>
 
@@ -406,6 +604,40 @@
                     <span>{{ item.platform || '-' }}</span>
                     <span>{{ item.group_name || '-' }}</span>
                     <span>group {{ item.group_id }}</span>
+                  </div>
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span
+                      v-for="tag in visibleTagsForItem(item)"
+                      :key="`${item.account_id}-card-tag-${tag}`"
+                      class="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    >
+                      {{ tag }}
+                    </span>
+                    <span v-if="hiddenTagCount(item) > 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">+{{ hiddenTagCount(item) }}</span>
+                    <span v-if="tagsForItem(item).length === 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">无标签</span>
+                    <button
+                      type="button"
+                      class="rounded-md border border-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-500 transition hover:text-gray-900 dark:border-dark-700 dark:text-gray-400 dark:hover:text-white"
+                      @click="startEditingTags(item)"
+                    >
+                      标签
+                    </button>
+                  </div>
+                  <div v-if="editingTagsAccountId === item.account_id" class="mt-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+                    <input
+                      v-model="tagEditDraft"
+                      type="text"
+                      class="input h-8 text-xs"
+                      placeholder="pro, plus, 生图"
+                      @keyup.enter="updateAccountTags(item)"
+                      @keyup.esc="cancelEditingTags"
+                    />
+                    <div class="mt-2 flex justify-end gap-1.5">
+                      <button type="button" class="btn btn-secondary btn-sm" :disabled="isSavingTags(item.account_id)" @click="cancelEditingTags">取消</button>
+                      <button type="button" class="btn btn-primary btn-sm" :disabled="isSavingTags(item.account_id)" @click="updateAccountTags(item)">
+                        {{ isSavingTags(item.account_id) ? '保存中' : '保存' }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -469,6 +701,18 @@
               <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
               <StatusBadge v-if="item.is_temp_unschedulable" text="临时暂停" kind="warning" />
               <StatusBadge v-if="item.has_error" text="错误状态" kind="danger" />
+              <button
+                type="button"
+                class="inline-flex h-7 items-center gap-2 rounded-lg border px-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-70"
+                :class="item.is_schedulable ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-700 dark:bg-dark-700/60 dark:text-gray-300'"
+                :disabled="isTogglingSchedulable(item.account_id)"
+                @click="toggleAccountSchedulable(item)"
+              >
+                <span class="relative h-4 w-7 rounded-full transition" :class="item.is_schedulable ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-600'">
+                  <span class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition" :class="item.is_schedulable ? 'left-3.5' : 'left-0.5'"></span>
+                </span>
+                <span>{{ item.is_schedulable ? '调度开' : '调度关' }}</span>
+              </button>
             </div>
 
             <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -626,6 +870,58 @@
           </div>
 
           <div class="space-y-4 p-4">
+            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">标签与调度</div>
+                  <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span
+                      v-for="tag in visibleTagsForItem(selectedAccount)"
+                      :key="`${selectedAccount.account_id}-detail-tag-${tag}`"
+                      class="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    >
+                      {{ tag }}
+                    </span>
+                    <span v-if="hiddenTagCount(selectedAccount) > 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">+{{ hiddenTagCount(selectedAccount) }}</span>
+                    <span v-if="tagsForItem(selectedAccount).length === 0" class="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 dark:bg-dark-700 dark:text-slate-300">无标签</span>
+                  </div>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="btn btn-secondary btn-sm" @click="startEditingTags(selectedAccount)">
+                    标签
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex h-8 items-center gap-2 rounded-lg border px-2 text-xs font-semibold transition disabled:cursor-wait disabled:opacity-70"
+                    :class="selectedAccount.is_schedulable ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-700 dark:bg-dark-700/60 dark:text-gray-300'"
+                    :disabled="isTogglingSchedulable(selectedAccount.account_id)"
+                    @click="toggleAccountSchedulable(selectedAccount)"
+                  >
+                    <span class="relative h-4 w-7 rounded-full transition" :class="selectedAccount.is_schedulable ? 'bg-emerald-500' : 'bg-gray-400 dark:bg-dark-600'">
+                      <span class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition" :class="selectedAccount.is_schedulable ? 'left-3.5' : 'left-0.5'"></span>
+                    </span>
+                    <span>{{ selectedAccount.is_schedulable ? '调度开' : '调度关' }}</span>
+                  </button>
+                </div>
+              </div>
+              <div v-if="editingTagsAccountId === selectedAccount.account_id" class="mt-3 rounded-lg border border-gray-200 bg-white p-2 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+                <input
+                  v-model="tagEditDraft"
+                  type="text"
+                  class="input h-8 text-xs"
+                  placeholder="pro, plus, 生图"
+                  @keyup.enter="updateAccountTags(selectedAccount)"
+                  @keyup.esc="cancelEditingTags"
+                />
+                <div class="mt-2 flex justify-end gap-1.5">
+                  <button type="button" class="btn btn-secondary btn-sm" :disabled="isSavingTags(selectedAccount.account_id)" @click="cancelEditingTags">取消</button>
+                  <button type="button" class="btn btn-primary btn-sm" :disabled="isSavingTags(selectedAccount.account_id)" @click="updateAccountTags(selectedAccount)">
+                    {{ isSavingTags(selectedAccount.account_id) ? '保存中' : '保存' }}
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(selectedAccount) }}</div>
@@ -814,6 +1110,14 @@ import {
   type OpsAccountHealthWindowStats
 } from '@/api/admin/ops'
 import type { ClaudeModel } from '@/types'
+import {
+  availableTagOptions as buildAvailableTagOptions,
+  matchesTagFilter as matchesTags,
+  normalizeTags,
+  tagKey,
+  tagsForItem,
+  type TagMatchMode
+} from './accountHealthTags'
 
 const WEBHOOK_MASK = '__configured__'
 const DEFAULT_PROBE_MODEL = 'gpt-5.4-mini'
@@ -896,15 +1200,24 @@ const errorMessage = ref('')
 const platformFilter = ref('')
 const groupIdInput = ref('')
 const settingsOpen = ref(false)
-const viewMode = ref<HealthViewMode>('card')
+const viewMode = ref<HealthViewMode>('list')
 const quickFilter = ref<HealthQuickFilter>('all')
 const searchQuery = ref('')
+const selectedTagFilters = ref<string[]>([])
+const tagMatchMode = ref<TagMatchMode>('any')
+const selectedAccountIds = ref<Set<number>>(new Set())
+const expandedAccountIds = ref<Set<number>>(new Set())
+const editingTagsAccountId = ref<number | null>(null)
+const tagEditDraft = ref('')
 const selectedAccountID = ref<number | null>(null)
 const lastUpdated = ref<Date | null>(null)
 const probingAccounts = ref<Set<number>>(new Set())
 const togglingAutoProbeAccounts = ref<Set<number>>(new Set())
+const togglingSchedulableAccounts = ref<Set<number>>(new Set())
+const bulkSchedulableLoading = ref(false)
 const loadingModelAccounts = ref<Set<number>>(new Set())
 const savingModelAccounts = ref<Set<number>>(new Set())
+const savingTagsAccountId = ref<number | null>(null)
 const probeModelOptionsByAccount = ref<Record<number, ProbeModelOption[]>>({})
 const probeModelDraftByAccount = ref<Record<number, string>>({})
 const autoRefreshMs = 45_000
@@ -953,12 +1266,23 @@ const sortedItems = computed(() => {
   })
 })
 
-const visibleItems = computed(() => sortedItems.value.filter(item => matchesQuickFilter(item) && matchesSearch(item)))
+const visibleItems = computed(() => sortedItems.value.filter(item => matchesQuickFilter(item) && matchesTagFilter(item) && matchesSearch(item)))
+
+const selectedCount = computed(() => selectedAccountIds.value.size)
+
+const visibleAccountIds = computed(() => visibleItems.value.map(item => item.account_id))
+
+const allVisibleSelected = computed(() => {
+  const ids = visibleAccountIds.value
+  return ids.length > 0 && ids.every(id => selectedAccountIds.value.has(id))
+})
 
 const selectedAccount = computed(() => {
   if (!selectedAccountID.value) return null
   return items.value.find(item => item.account_id === selectedAccountID.value) || null
 })
+
+const availableTagOptions = computed(() => buildAvailableTagOptions(items.value))
 
 const quickFilters = computed<Array<{ key: HealthQuickFilter; label: string; count: number }>>(() => [
   { key: 'all', label: '全部', count: items.value.length },
@@ -1072,12 +1396,95 @@ function matchesSearch(item: OpsAccountHealthItem): boolean {
     item.recommendation?.title,
     item.recommendation?.reason,
     item.probe_model_id,
-    item.probe_model_effective
+    item.probe_model_effective,
+    ...tagsForItem(item)
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
   return haystack.includes(query)
+}
+
+function visibleTagsForItem(item: OpsAccountHealthItem): string[] {
+  return tagsForItem(item).slice(0, 4)
+}
+
+function hiddenTagCount(item: OpsAccountHealthItem): number {
+  return Math.max(0, tagsForItem(item).length - 4)
+}
+
+function matchesTagFilter(item: OpsAccountHealthItem): boolean {
+  return matchesTags(tagsForItem(item), selectedTagFilters.value, tagMatchMode.value)
+}
+
+function isTagFilterSelected(tag: string): boolean {
+  const key = tagKey(tag)
+  return selectedTagFilters.value.some(selected => tagKey(selected) === key)
+}
+
+function toggleTagFilter(tag: string) {
+  const key = tagKey(tag)
+  if (!key) return
+  if (isTagFilterSelected(tag)) {
+    selectedTagFilters.value = selectedTagFilters.value.filter(selected => tagKey(selected) !== key)
+    return
+  }
+  selectedTagFilters.value = [...selectedTagFilters.value, tag]
+}
+
+function clearTagFilters() {
+  selectedTagFilters.value = []
+}
+
+function isAccountSelected(accountID: number): boolean {
+  return selectedAccountIds.value.has(accountID)
+}
+
+function toggleAccountSelection(accountID: number, selected?: boolean) {
+  const next = new Set(selectedAccountIds.value)
+  const shouldSelect = selected ?? !next.has(accountID)
+  if (shouldSelect) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  selectedAccountIds.value = next
+}
+
+function onAccountSelectionChange(accountID: number, event: Event) {
+  toggleAccountSelection(accountID, Boolean((event.target as HTMLInputElement | null)?.checked))
+}
+
+function toggleSelectAllVisible(event?: Event) {
+  const target = event?.target as HTMLInputElement | null
+  const checked = target?.checked ?? !allVisibleSelected.value
+  const next = new Set(selectedAccountIds.value)
+  for (const id of visibleAccountIds.value) {
+    if (checked) {
+      next.add(id)
+    } else {
+      next.delete(id)
+    }
+  }
+  selectedAccountIds.value = next
+}
+
+function clearSelection() {
+  selectedAccountIds.value = new Set()
+}
+
+function isExpanded(accountID: number): boolean {
+  return expandedAccountIds.value.has(accountID)
+}
+
+function toggleExpanded(accountID: number) {
+  const next = new Set(expandedAccountIds.value)
+  if (next.has(accountID)) {
+    next.delete(accountID)
+  } else {
+    next.add(accountID)
+  }
+  expandedAccountIds.value = next
 }
 
 function isAbnormal(item: OpsAccountHealthItem): boolean {
@@ -1107,6 +1514,12 @@ watch(
   },
   { deep: true, flush: 'sync' }
 )
+
+watch(items, (nextItems) => {
+  const liveIds = new Set(nextItems.map(item => item.account_id))
+  selectedAccountIds.value = new Set([...selectedAccountIds.value].filter(id => liveIds.has(id)))
+  expandedAccountIds.value = new Set([...expandedAccountIds.value].filter(id => liveIds.has(id)))
+})
 
 async function fetchData() {
   loading.value = true
@@ -1154,6 +1567,142 @@ async function saveSettings() {
     appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '规则保存失败')
   } finally {
     savingSettings.value = false
+  }
+}
+
+function startEditingTags(item: OpsAccountHealthItem) {
+  editingTagsAccountId.value = item.account_id
+  tagEditDraft.value = tagsForItem(item).join(', ')
+}
+
+function cancelEditingTags() {
+  editingTagsAccountId.value = null
+  tagEditDraft.value = ''
+}
+
+function isSavingTags(accountID: number): boolean {
+  return savingTagsAccountId.value === accountID
+}
+
+async function updateAccountTags(item: OpsAccountHealthItem) {
+  if (!item?.account_id || isSavingTags(item.account_id)) return
+  const previousTags = tagsForItem(item)
+  const nextTags = normalizeTags(tagEditDraft.value)
+  item.tags = nextTags
+  savingTagsAccountId.value = item.account_id
+  try {
+    const state = await adminAPI.accounts.updateTags(item.account_id, nextTags)
+    item.tags = normalizeTags(state.tags)
+    appStore.showSuccess('账号标签已保存')
+    cancelEditingTags()
+    await fetchData()
+  } catch (err: any) {
+    item.tags = previousTags
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '账号标签保存失败')
+  } finally {
+    savingTagsAccountId.value = null
+  }
+}
+
+function isTogglingSchedulable(accountID: number): boolean {
+  return togglingSchedulableAccounts.value.has(accountID)
+}
+
+function setTogglingSchedulable(accountID: number, toggling: boolean) {
+  const next = new Set(togglingSchedulableAccounts.value)
+  if (toggling) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  togglingSchedulableAccounts.value = next
+}
+
+function applySchedulableState(item: OpsAccountHealthItem, schedulable: boolean) {
+  item.is_schedulable = schedulable
+  item.is_opened = item.status === 'active' && schedulable
+  item.is_available = item.status === 'active' &&
+    schedulable &&
+    !item.is_rate_limited &&
+    !item.is_overloaded &&
+    !item.is_temp_unschedulable &&
+    !item.has_error
+}
+
+async function toggleAccountSchedulable(item: OpsAccountHealthItem, schedulable = !item.is_schedulable) {
+  if (!item?.account_id || isTogglingSchedulable(item.account_id)) return
+  const previous = {
+    is_schedulable: item.is_schedulable,
+    is_opened: item.is_opened,
+    is_available: item.is_available,
+    status: item.status
+  }
+  setTogglingSchedulable(item.account_id, true)
+  applySchedulableState(item, schedulable)
+  try {
+    const updated = await adminAPI.accounts.setSchedulable(item.account_id, schedulable)
+    item.status = updated.status
+    applySchedulableState(item, Boolean(updated.schedulable))
+    appStore.showSuccess(updated.schedulable ? '已开启账号调度' : '已关闭账号调度')
+    await fetchData()
+  } catch (err: any) {
+    item.is_schedulable = previous.is_schedulable
+    item.is_opened = previous.is_opened
+    item.is_available = previous.is_available
+    item.status = previous.status
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '调度开关更新失败')
+  } finally {
+    setTogglingSchedulable(item.account_id, false)
+  }
+}
+
+async function bulkToggleSchedulable(schedulable: boolean) {
+  const ids = [...selectedAccountIds.value]
+  if (ids.length === 0 || bulkSchedulableLoading.value) return
+  if (!schedulable && !window.confirm(`确认关闭选中的 ${ids.length} 个账号调度？`)) {
+    return
+  }
+
+  bulkSchedulableLoading.value = true
+  const targetIds = new Set(ids)
+  const previous = items.value
+    .filter(item => targetIds.has(item.account_id))
+    .map(item => ({
+      item,
+      is_schedulable: item.is_schedulable,
+      is_opened: item.is_opened,
+      is_available: item.is_available
+    }))
+  for (const snapshot of previous) {
+    applySchedulableState(snapshot.item, schedulable)
+  }
+
+  try {
+    const result = await adminAPI.accounts.bulkUpdate(ids, { schedulable })
+    const successIDs = new Set<number>(
+      (result.success_ids?.length ? result.success_ids : result.results.filter(row => row.success).map(row => row.account_id))
+    )
+    for (const item of items.value) {
+      if (successIDs.has(item.account_id)) {
+        applySchedulableState(item, schedulable)
+      }
+    }
+    if (result.failed > 0) {
+      appStore.showWarning(`批量调度部分成功：成功 ${result.success}，失败 ${result.failed}`)
+    } else {
+      appStore.showSuccess(schedulable ? `已开启 ${result.success} 个账号调度` : `已关闭 ${result.success} 个账号调度`)
+      clearSelection()
+    }
+    await fetchData()
+  } catch (err: any) {
+    for (const snapshot of previous) {
+      snapshot.item.is_schedulable = snapshot.is_schedulable
+      snapshot.item.is_opened = snapshot.is_opened
+      snapshot.item.is_available = snapshot.is_available
+    }
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '批量调度更新失败')
+  } finally {
+    bulkSchedulableLoading.value = false
   }
 }
 
@@ -1632,6 +2181,15 @@ function latencyHint(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (window && stat && stat.request_count > 0) return `${window} · ${stat.request_count} 次请求平均`
   return probeText(item) || '等待主动探测'
+}
+
+function windowLatencyText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
+  const stat = statFor(item, window)
+  if (stat && stat.request_count > 0 && typeof stat.avg_duration_ms === 'number' && Number.isFinite(stat.avg_duration_ms)) return `${Math.round(stat.avg_duration_ms)}ms`
+  const probeSummary = probeWindowSummary(item, window)
+  if (probeSummary.avgDurationMs !== null) return `${Math.round(probeSummary.avgDurationMs)}ms`
+  if (item.probe?.latency_ms) return `${item.probe.latency_ms}ms`
+  return '暂无'
 }
 
 function firstTokenStatFor(item: OpsAccountHealthItem, window: FirstTokenWindow): OpsAccountHealthFirstTokenStats | undefined {

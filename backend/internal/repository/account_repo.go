@@ -63,6 +63,7 @@ var schedulerNeutralExtraKeyPrefixes = []string{
 var schedulerNeutralExtraKeys = map[string]struct{}{
 	"codex_usage_updated_at":     {},
 	"session_window_utilization": {},
+	"tags":                       {},
 }
 
 // NewAccountRepository 创建账户仓储实例。

@@ -1941,6 +1941,15 @@ type SetSchedulableRequest struct {
 	Schedulable bool `json:"schedulable"`
 }
 
+type UpdateAccountTagsRequest struct {
+	Tags []string `json:"tags"`
+}
+
+type AccountTagsResponse struct {
+	AccountID int64    `json:"account_id"`
+	Tags      []string `json:"tags"`
+}
+
 // SetSchedulable handles toggling account schedulable status
 // POST /api/v1/admin/accounts/:id/schedulable
 func (h *AccountHandler) SetSchedulable(c *gin.Context) {
@@ -1963,6 +1972,30 @@ func (h *AccountHandler) SetSchedulable(c *gin.Context) {
 	}
 
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
+// UpdateTags handles account health tag editing.
+// PATCH /api/v1/admin/accounts/:id/tags
+func (h *AccountHandler) UpdateTags(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req UpdateAccountTagsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	tags, err := h.adminService.UpdateAccountTags(c.Request.Context(), accountID, req.Tags)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, AccountTagsResponse{AccountID: accountID, Tags: tags})
 }
 
 // GetAvailableModels handles getting available models for an account

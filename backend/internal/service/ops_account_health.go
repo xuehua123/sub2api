@@ -387,6 +387,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			Platform:               availability.Platform,
 			GroupID:                availability.GroupID,
 			GroupName:              availability.GroupName,
+			Tags:                   availability.Tags,
 			Status:                 availability.Status,
 			IsOpened:               availability.IsOpened,
 			IsSchedulable:          availability.IsSchedulable,

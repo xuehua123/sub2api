@@ -364,6 +364,10 @@ func (s *stubAdminService) UpdateAccountExtra(ctx context.Context, id int64, upd
 	return nil
 }
 
+func (s *stubAdminService) UpdateAccountTags(ctx context.Context, id int64, tags []string) ([]string, error) {
+	return service.NormalizeAccountTags(tags), nil
+}
+
 func (s *stubAdminService) DeleteAccount(ctx context.Context, id int64) error {
 	return nil
 }
