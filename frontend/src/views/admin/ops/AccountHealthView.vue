@@ -476,9 +476,8 @@
                 <div class="mt-1 text-sm font-semibold" :class="windowMetricClass(item, window)">
                   {{ windowMetricText(item, window) }}
                 </div>
-                <div class="mt-1 grid grid-cols-2 gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-                  <span class="truncate">延 {{ windowLatencyText(item, window) }}</span>
-                  <span class="truncate" :class="windowFirstTokenClass(item, window)">首 {{ windowFirstTokenText(item, window) }}</span>
+                <div class="mt-1 truncate text-[11px] font-medium" :class="windowFirstTokenClass(item, window)">
+                  首 {{ windowFirstTokenText(item, window) }}
                 </div>
                 <div class="mt-1 h-1 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
                   <div class="h-full rounded-full" :class="windowBarClass(item, window)" :style="{ width: `${windowBarPercent(item, window)}%` }"></div>
@@ -537,8 +536,7 @@
                         <div class="mt-1 grid grid-cols-2 gap-1 text-[11px] text-gray-500 dark:text-gray-400">
                           <span>{{ windowLeftMeta(item, window) }}</span>
                           <span>{{ windowRightMeta(item, window) }}</span>
-                          <span>延 {{ windowLatencyText(item, window) }}</span>
-                          <span :class="windowFirstTokenClass(item, window)">首 {{ windowFirstTokenText(item, window) }}</span>
+                          <span class="col-span-2" :class="windowFirstTokenClass(item, window)">首 {{ windowFirstTokenText(item, window) }}</span>
                         </div>
                       </div>
                     </div>
@@ -2181,15 +2179,6 @@ function latencyHint(item: OpsAccountHealthItem): string {
   const stat = primaryStat(item)
   if (window && stat && stat.request_count > 0) return `${window} · ${stat.request_count} 次请求平均`
   return probeText(item) || '等待主动探测'
-}
-
-function windowLatencyText(item: OpsAccountHealthItem, window: OpsAccountHealthWindow): string {
-  const stat = statFor(item, window)
-  if (stat && stat.request_count > 0 && typeof stat.avg_duration_ms === 'number' && Number.isFinite(stat.avg_duration_ms)) return `${Math.round(stat.avg_duration_ms)}ms`
-  const probeSummary = probeWindowSummary(item, window)
-  if (probeSummary.avgDurationMs !== null) return `${Math.round(probeSummary.avgDurationMs)}ms`
-  if (item.probe?.latency_ms) return `${item.probe.latency_ms}ms`
-  return '暂无'
 }
 
 function firstTokenStatFor(item: OpsAccountHealthItem, window: FirstTokenWindow): OpsAccountHealthFirstTokenStats | undefined {
