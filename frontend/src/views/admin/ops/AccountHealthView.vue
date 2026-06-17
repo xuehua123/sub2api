@@ -109,45 +109,25 @@
                 {{ filter.label }} {{ filter.count }}
               </button>
             </div>
-            <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
-              <div class="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1">
-                <button
-                  v-for="option in availableTagOptions"
-                  :key="option.tag"
-                  type="button"
-                  class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition"
-                  :class="isTagFilterSelected(option.tag) ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 dark:hover:text-white'"
-                  @click="toggleTagFilter(option.tag)"
-                >
-                  {{ option.tag }} {{ option.count }}
-                </button>
-                <button
-                  v-if="selectedTagFilters.length > 0"
-                  type="button"
-                  class="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:text-white"
-                  @click="clearTagFilters"
-                >
-                  清空标签
-                </button>
-              </div>
-              <div class="inline-flex h-8 w-fit rounded-lg border border-gray-200 bg-gray-50 p-0.5 dark:border-dark-700 dark:bg-dark-900">
-                <button
-                  type="button"
-                  class="rounded-md px-2.5 text-xs font-semibold transition"
-                  :class="tagMatchMode === 'any' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
-                  @click="tagMatchMode = 'any'"
-                >
-                  任一标签
-                </button>
-                <button
-                  type="button"
-                  class="rounded-md px-2.5 text-xs font-semibold transition"
-                  :class="tagMatchMode === 'all' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-700 dark:text-white' : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'"
-                  @click="tagMatchMode = 'all'"
-                >
-                  全部标签
-                </button>
-              </div>
+            <div class="flex min-w-0 gap-2 overflow-x-auto pb-1">
+              <button
+                v-for="option in availableTagOptions"
+                :key="option.tag"
+                type="button"
+                class="shrink-0 rounded-full border px-3 py-1 text-xs font-semibold transition"
+                :class="isTagFilterSelected(option.tag) ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' : 'border-gray-200 bg-gray-50 text-gray-500 hover:border-gray-300 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400 dark:hover:text-white'"
+                @click="toggleTagFilter(option.tag)"
+              >
+                {{ option.tag }} {{ option.count }}
+              </button>
+              <button
+                v-if="selectedTagFilters.length > 0"
+                type="button"
+                class="shrink-0 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-gray-500 hover:text-gray-900 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-400 dark:hover:text-white"
+                @click="clearTagFilters"
+              >
+                清空标签
+              </button>
             </div>
           </div>
           <div class="shrink-0 text-xs text-gray-500 dark:text-gray-400">
@@ -1113,8 +1093,7 @@ import {
   matchesTagFilter as matchesTags,
   normalizeTags,
   tagKey,
-  tagsForItem,
-  type TagMatchMode
+  tagsForItem
 } from './accountHealthTags'
 
 const WEBHOOK_MASK = '__configured__'
@@ -1202,7 +1181,6 @@ const viewMode = ref<HealthViewMode>('list')
 const quickFilter = ref<HealthQuickFilter>('all')
 const searchQuery = ref('')
 const selectedTagFilters = ref<string[]>([])
-const tagMatchMode = ref<TagMatchMode>('any')
 const selectedAccountIds = ref<Set<number>>(new Set())
 const expandedAccountIds = ref<Set<number>>(new Set())
 const editingTagsAccountId = ref<number | null>(null)
@@ -1412,7 +1390,7 @@ function hiddenTagCount(item: OpsAccountHealthItem): number {
 }
 
 function matchesTagFilter(item: OpsAccountHealthItem): boolean {
-  return matchesTags(tagsForItem(item), selectedTagFilters.value, tagMatchMode.value)
+  return matchesTags(tagsForItem(item), selectedTagFilters.value, 'any')
 }
 
 function isTagFilterSelected(tag: string): boolean {
@@ -1424,10 +1402,10 @@ function toggleTagFilter(tag: string) {
   const key = tagKey(tag)
   if (!key) return
   if (isTagFilterSelected(tag)) {
-    selectedTagFilters.value = selectedTagFilters.value.filter(selected => tagKey(selected) !== key)
+    selectedTagFilters.value = []
     return
   }
-  selectedTagFilters.value = [...selectedTagFilters.value, tag]
+  selectedTagFilters.value = [tag]
 }
 
 function clearTagFilters() {
