@@ -710,7 +710,7 @@
             <select
               v-model="cycleAdjustmentForm.mode"
               class="input"
-              @change="clearCycleAdjustmentPreview"
+              @change="handleCycleAdjustmentModeChange"
             >
               <option
                 v-for="option in cycleAdjustmentModeOptions"
@@ -755,6 +755,24 @@
               @input="clearCycleAdjustmentPreview"
             />
           </div>
+
+          <label class="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-dark-600 dark:bg-dark-800">
+            <input
+              v-model="cycleAdjustmentForm.reset_monthly_usage"
+              type="checkbox"
+              class="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :disabled="cycleAdjustmentForcesUsageReset"
+              @change="clearCycleAdjustmentPreview"
+            />
+            <span>
+              <span class="block font-medium text-gray-900 dark:text-white">
+                {{ t('admin.subscriptions.resetMonthlyUsage') }}
+              </span>
+              <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+                {{ cycleAdjustmentForcesUsageReset ? t('admin.subscriptions.resetMonthlyUsageForcedHint') : t('admin.subscriptions.resetMonthlyUsageOptionalHint') }}
+              </span>
+            </span>
+          </label>
         </div>
 
         <div>
@@ -1250,6 +1268,7 @@ const cycleAdjustmentForm = reactive({
   cycle_count: 1,
   custom_monthly_window_start: '',
   custom_expires_at: '',
+  reset_monthly_usage: true,
   reason: ''
 })
 
@@ -1282,6 +1301,9 @@ const cycleAdjustmentNeedsCycleCount = computed(() =>
 )
 
 const cycleAdjustmentNeedsCustomTimes = computed(() => cycleAdjustmentForm.mode === 'custom')
+const cycleAdjustmentForcesUsageReset = computed(() =>
+  cycleAdjustmentForm.mode === 'advance_next_cycle' || cycleAdjustmentForm.mode === 'compensate_reset'
+)
 const cycleAdjustmentReasonRequired = computed(() => cycleAdjustmentForm.mode === 'compensate_reset')
 const cycleAdjustmentModeHint = computed(() =>
   t(`admin.subscriptions.cycleAdjustmentModeHints.${cycleAdjustmentForm.mode}`)
@@ -1879,6 +1901,7 @@ const handleCycleAdjustment = (subscription: UserSubscription) => {
   cycleAdjustmentForm.cycle_count = inferCycleCountFromSubscription(subscription)
   cycleAdjustmentForm.custom_monthly_window_start = toDateTimeLocalValue(subscription.monthly_window_start || subscription.starts_at)
   cycleAdjustmentForm.custom_expires_at = toDateTimeLocalValue(subscription.expires_at)
+  cycleAdjustmentForm.reset_monthly_usage = true
   cycleAdjustmentForm.reason = ''
   cycleAdjustmentPreview.value = null
   showCycleAdjustmentModal.value = true
@@ -1893,11 +1916,17 @@ const closeCycleAdjustmentModal = () => {
   cycleAdjustmentForm.cycle_count = 1
   cycleAdjustmentForm.custom_monthly_window_start = ''
   cycleAdjustmentForm.custom_expires_at = ''
+  cycleAdjustmentForm.reset_monthly_usage = true
   cycleAdjustmentForm.reason = ''
 }
 
 const clearCycleAdjustmentPreview = () => {
   cycleAdjustmentPreview.value = null
+}
+
+const handleCycleAdjustmentModeChange = () => {
+  cycleAdjustmentForm.reset_monthly_usage = cycleAdjustmentForcesUsageReset.value
+  clearCycleAdjustmentPreview()
 }
 
 const previewCycleAdjustment = async () => {
@@ -1942,7 +1971,8 @@ const applyCycleAdjustment = async () => {
 
 const buildCycleAdjustmentRequest = (): MonthlyCycleAdjustmentRequest | null => {
   const request: MonthlyCycleAdjustmentRequest = {
-    mode: cycleAdjustmentForm.mode
+    mode: cycleAdjustmentForm.mode,
+    reset_monthly_usage: cycleAdjustmentForcesUsageReset.value || cycleAdjustmentForm.reset_monthly_usage
   }
 
   if (cycleAdjustmentNeedsCycleCount.value) {

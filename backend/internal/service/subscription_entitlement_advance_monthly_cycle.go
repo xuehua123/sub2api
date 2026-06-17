@@ -104,6 +104,7 @@ func advanceEntitlementMonthlyCycleLocked(
 		UserID:                snapshot.UserID,
 		NewExpiresAt:          newExpiresAt,
 		NewMonthlyWindowStart: newWindowStart,
+		NewMonthlyUsageUSD:    0,
 		UpdatedAt:             now.Add(time.Millisecond),
 	}); err != nil {
 		return nil, err
@@ -119,6 +120,7 @@ func advanceEntitlementMonthlyCycleLocked(
 		NewMonthlyWindowStart:      newWindowStart,
 		DeductedDays:               deductedDays,
 		DeductedSeconds:            deductedSeconds,
+		ResetMonthlyUsage:          true,
 	}); err != nil {
 		return nil, err
 	}

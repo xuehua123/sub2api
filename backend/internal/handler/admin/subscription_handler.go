@@ -66,6 +66,7 @@ type MonthlyCycleAdjustmentRequest struct {
 	CycleCount               int                                `json:"cycle_count,omitempty"`
 	CustomMonthlyWindowStart *time.Time                         `json:"custom_monthly_window_start,omitempty"`
 	CustomExpiresAt          *time.Time                         `json:"custom_expires_at,omitempty"`
+	ResetMonthlyUsage        *bool                              `json:"reset_monthly_usage,omitempty"`
 	Reason                   string                             `json:"reason,omitempty"`
 }
 
@@ -318,6 +319,7 @@ func monthlyCycleAdjustmentInputFromRequest(req MonthlyCycleAdjustmentRequest, a
 		CycleCount:               req.CycleCount,
 		CustomMonthlyWindowStart: req.CustomMonthlyWindowStart,
 		CustomExpiresAt:          req.CustomExpiresAt,
+		ResetMonthlyUsage:        req.ResetMonthlyUsage,
 		Reason:                   req.Reason,
 		AdminID:                  adminID,
 	}

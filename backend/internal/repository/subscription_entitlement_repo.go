@@ -342,12 +342,12 @@ func (r *subscriptionEntitlementRepository) UpdateEntitlementMonthlyCycle(ctx co
 	client := clientFromContext(ctx, r.client)
 	result, err := client.ExecContext(ctx, `
 		UPDATE subscription_entitlements
-		SET monthly_usage_usd = 0,
-			monthly_window_start = $1,
-			expires_at = $2,
-			updated_at = $3
-		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
-	`, update.NewMonthlyWindowStart, update.NewExpiresAt, update.UpdatedAt, update.EntitlementID, update.UserID)
+		SET monthly_usage_usd = $1,
+			monthly_window_start = $2,
+			expires_at = $3,
+			updated_at = $4
+		WHERE id = $5 AND user_id = $6 AND deleted_at IS NULL
+	`, update.NewMonthlyUsageUSD, update.NewMonthlyWindowStart, update.NewExpiresAt, update.UpdatedAt, update.EntitlementID, update.UserID)
 	if err != nil {
 		return err
 	}
@@ -372,9 +372,9 @@ func (r *subscriptionEntitlementRepository) InsertEntitlementCycleResetLog(ctx c
 		INSERT INTO subscription_entitlement_cycle_reset_logs (
 			user_id, entitlement_id, plan_id, previous_expires_at, new_expires_at,
 			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,
-			deducted_days, deducted_seconds, mode, reason, admin_id, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds, mode, reason, nullableInt64Arg(log.AdminID))
+			deducted_days, deducted_seconds, mode, reason, admin_id, reset_monthly_usage, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds, mode, reason, nullableInt64Arg(log.AdminID), log.ResetMonthlyUsage)
 	return err
 }
 

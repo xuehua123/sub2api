@@ -54,7 +54,7 @@ func (r *advanceEntitlementMonthlyCycleRepo) UpdateEntitlementMonthlyCycle(_ con
 	if !ok || ent.UserID != update.UserID {
 		return ErrSubscriptionEntitlementNotFound
 	}
-	ent.MonthlyUsageUSD = 0
+	ent.MonthlyUsageUSD = update.NewMonthlyUsageUSD
 	ent.MonthlyWindowStart = cloneTimeValue(update.NewMonthlyWindowStart)
 	ent.ExpiresAt = update.NewExpiresAt
 	ent.UpdatedAt = update.UpdatedAt
@@ -137,6 +137,7 @@ func TestAdvanceEntitlementMonthlyCycleSucceedsAndOnlyResetsMonthlyUsage(t *test
 	require.Equal(t, now, log.NewMonthlyWindowStart)
 	require.Equal(t, result.DeductedDays, log.DeductedDays)
 	require.Equal(t, result.DeductedSeconds, log.DeductedSeconds)
+	require.True(t, log.ResetMonthlyUsage)
 }
 
 func TestAdvanceEntitlementMonthlyCycleRejectsBelowThreshold(t *testing.T) {

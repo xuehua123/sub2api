@@ -1773,6 +1773,7 @@ export interface MonthlyCycleAdjustmentRequest {
   cycle_count?: number
   custom_monthly_window_start?: string
   custom_expires_at?: string
+  reset_monthly_usage?: boolean
   reason?: string
 }
 
@@ -1794,6 +1795,7 @@ export interface MonthlyCycleAdjustmentPreview {
   monthly_limit_usd?: number | null
   current_monthly_usage_usd: number
   new_monthly_usage_usd: number
+  reset_monthly_usage: boolean
   deducted_days: number
   deducted_seconds: number
   cycle_count: number

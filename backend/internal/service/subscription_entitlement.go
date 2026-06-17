@@ -209,6 +209,7 @@ type SubscriptionEntitlementMonthlyCycleUpdate struct {
 	UserID                int64
 	NewExpiresAt          time.Time
 	NewMonthlyWindowStart time.Time
+	NewMonthlyUsageUSD    float64
 	UpdatedAt             time.Time
 }
 
@@ -224,6 +225,7 @@ type SubscriptionEntitlementCycleResetLog struct {
 	NewMonthlyWindowStart      time.Time
 	DeductedDays               int
 	DeductedSeconds            int64
+	ResetMonthlyUsage          bool
 	Mode                       MonthlyCycleAdjustmentMode
 	Reason                     string
 	AdminID                    *int64

@@ -318,6 +318,18 @@ func TestMigration159AddsCycleResetAuditFieldsAdditively(t *testing.T) {
 	require.NotContains(t, sql, "DROP COLUMN")
 }
 
+func TestMigration160AddsCycleResetUsageChoiceAdditively(t *testing.T) {
+	content, err := FS.ReadFile("160_subscription_cycle_reset_usage_choice.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "ALTER TABLE subscription_cycle_reset_logs")
+	require.Contains(t, sql, "ALTER TABLE subscription_entitlement_cycle_reset_logs")
+	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS reset_monthly_usage BOOLEAN NOT NULL DEFAULT TRUE")
+	require.NotContains(t, sql, "DROP TABLE")
+	require.NotContains(t, sql, "DROP COLUMN")
+}
+
 func TestMigration157BackfillsActiveEntitlementWindowsFromStartsAt(t *testing.T) {
 	content, err := FS.ReadFile("157_backfill_entitlement_window_starts.sql")
 	require.NoError(t, err)

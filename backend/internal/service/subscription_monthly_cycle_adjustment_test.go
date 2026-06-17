@@ -104,12 +104,14 @@ func TestApplyMonthlyCycleAdjustmentCompensateResetLinkedEntitlement(t *testing.
 	require.True(t, preview.CanApply)
 	require.Equal(t, expiresAt, preview.NewExpiresAt)
 	require.Zero(t, preview.DeductedSeconds)
+	require.True(t, preview.ResetMonthlyUsage)
 	require.Len(t, repo.updateCalls, 1)
 	require.Len(t, repo.resetLogs, 1)
 	require.Equal(t, expiresAt, repo.entitlements[91].ExpiresAt)
 	require.Equal(t, now, *repo.entitlements[91].MonthlyWindowStart)
 	require.Zero(t, repo.entitlements[91].MonthlyUsageUSD)
 	require.Zero(t, repo.resetLogs[0].DeductedSeconds)
+	require.True(t, repo.resetLogs[0].ResetMonthlyUsage)
 	require.Equal(t, MonthlyCycleAdjustmentCompensateReset, repo.resetLogs[0].Mode)
 	require.Equal(t, "payment callback recovered by support", repo.resetLogs[0].Reason)
 	require.Nil(t, repo.resetLogs[0].AdminID)
@@ -160,10 +162,100 @@ func TestApplyMonthlyCycleAdjustmentCompensateResetLinkedEntitlementRecordsAudit
 	require.True(t, preview.CanApply)
 	require.Equal(t, "support verified payment callback", preview.Reason)
 	require.Len(t, repo.resetLogs, 1)
+	require.True(t, repo.resetLogs[0].ResetMonthlyUsage)
 	require.Equal(t, MonthlyCycleAdjustmentCompensateReset, repo.resetLogs[0].Mode)
 	require.Equal(t, "support verified payment callback", repo.resetLogs[0].Reason)
 	require.NotNil(t, repo.resetLogs[0].AdminID)
 	require.Equal(t, int64(66), *repo.resetLogs[0].AdminID)
+}
+
+func TestApplyMonthlyCycleAdjustmentAlignToExpiryPreservesMonthlyUsageByDefault(t *testing.T) {
+	now := time.Date(2026, 6, 17, 11, 18, 43, 0, time.UTC)
+	groupID := int64(28)
+	monthlyLimit := 100.0
+	startsAt := now.Add(-20 * 24 * time.Hour)
+	monthlyWindowStart := startsAt
+	expiresAt := now.Add(40 * 24 * time.Hour)
+	repo := newAdvanceEntitlementMonthlyCycleRepo(now)
+	repo.entitlements[91] = &SubscriptionEntitlement{
+		ID:                 91,
+		UserID:             7,
+		PrimaryGroupID:     &groupID,
+		Name:               "Pro Plan",
+		Status:             SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          expiresAt,
+		MonthlyLimitUSD:    &monthlyLimit,
+		MonthlyUsageUSD:    52,
+		MonthlyWindowStart: &monthlyWindowStart,
+		GroupGrants:        testGroupGrants([]int64{groupID}),
+	}
+	userSubs := &linkedEntitlementUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:      912,
+			UserID:  7,
+			GroupID: groupID,
+			Status:  SubscriptionStatusActive,
+			EntitlementLink: &UserSubscriptionEntitlementLink{
+				EntitlementID: 91,
+			},
+		},
+	}
+	svc := newSubscriptionServiceWithLinkedEntitlementCycleRepo(repo, userSubs)
+
+	preview, err := svc.ApplyMonthlyCycleAdjustment(context.Background(), 912, MonthlyCycleAdjustmentInput{
+		Mode:       MonthlyCycleAdjustmentAlignToExpiry,
+		CycleCount: 2,
+		Now:        now,
+	})
+
+	require.NoError(t, err)
+	require.True(t, preview.CanApply)
+	require.False(t, preview.ResetMonthlyUsage)
+	require.Equal(t, 52.0, preview.NewMonthlyUsageUSD)
+	require.Equal(t, 52.0, repo.entitlements[91].MonthlyUsageUSD)
+	require.Len(t, repo.updateCalls, 1)
+	require.Equal(t, 52.0, repo.updateCalls[0].NewMonthlyUsageUSD)
+	require.Len(t, repo.resetLogs, 1)
+	require.False(t, repo.resetLogs[0].ResetMonthlyUsage)
+	require.NotContains(t, preview.Warnings, "monthly_usage_will_reset")
+}
+
+func TestPreviewMonthlyCycleAdjustmentAlignToResetCanResetMonthlyUsage(t *testing.T) {
+	now := time.Date(2026, 6, 17, 11, 18, 43, 0, time.UTC)
+	groupID := int64(28)
+	monthlyLimit := 100.0
+	monthlyWindowStart := now.Add(-12 * 24 * time.Hour)
+	expiresAt := monthlyWindowStart.Add(90 * 24 * time.Hour)
+	repo := newAdvanceEntitlementMonthlyCycleRepo(now)
+	repo.entitlements[91] = &SubscriptionEntitlement{
+		ID:                 91,
+		UserID:             7,
+		PrimaryGroupID:     &groupID,
+		Name:               "Pro Plan",
+		Status:             SubscriptionStatusActive,
+		StartsAt:           monthlyWindowStart,
+		ExpiresAt:          expiresAt,
+		MonthlyLimitUSD:    &monthlyLimit,
+		MonthlyUsageUSD:    12,
+		MonthlyWindowStart: &monthlyWindowStart,
+		GroupGrants:        testGroupGrants([]int64{groupID}),
+	}
+	svc := newSubscriptionServiceWithEntitlementRepo(repo.fakeSubscriptionEntitlementRepo)
+	resetMonthlyUsage := true
+
+	preview, err := svc.PreviewMonthlyCycleAdjustment(context.Background(), -91, MonthlyCycleAdjustmentInput{
+		Mode:              MonthlyCycleAdjustmentAlignToReset,
+		CycleCount:        3,
+		ResetMonthlyUsage: &resetMonthlyUsage,
+		Now:               now,
+	})
+
+	require.NoError(t, err)
+	require.True(t, preview.CanApply)
+	require.True(t, preview.ResetMonthlyUsage)
+	require.Zero(t, preview.NewMonthlyUsageUSD)
+	require.Contains(t, preview.Warnings, "monthly_usage_will_reset")
 }
 
 func TestPreviewMonthlyCycleAdjustmentAlignToExpiryInfersCurrentCycleCount(t *testing.T) {
@@ -198,7 +290,9 @@ func TestPreviewMonthlyCycleAdjustmentAlignToExpiryInfersCurrentCycleCount(t *te
 	require.Equal(t, 3, preview.CycleCount)
 	require.Equal(t, expiresAt, preview.NewExpiresAt)
 	require.Equal(t, monthlyWindowStart, preview.NewMonthlyWindowStart)
-	require.Contains(t, preview.Warnings, "monthly_usage_will_reset")
+	require.False(t, preview.ResetMonthlyUsage)
+	require.Equal(t, 12.0, preview.NewMonthlyUsageUSD)
+	require.NotContains(t, preview.Warnings, "monthly_usage_will_reset")
 }
 
 func TestPreviewMonthlyCycleAdjustmentAlignToExpiryRejectsFutureWindowStart(t *testing.T) {

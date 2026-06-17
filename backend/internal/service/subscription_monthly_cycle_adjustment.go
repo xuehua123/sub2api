@@ -30,6 +30,7 @@ type MonthlyCycleAdjustmentInput struct {
 	CycleCount               int                        `json:"cycle_count,omitempty"`
 	CustomMonthlyWindowStart *time.Time                 `json:"custom_monthly_window_start,omitempty"`
 	CustomExpiresAt          *time.Time                 `json:"custom_expires_at,omitempty"`
+	ResetMonthlyUsage        *bool                      `json:"reset_monthly_usage,omitempty"`
 	Reason                   string                     `json:"reason,omitempty"`
 
 	AdminID int64     `json:"-"`
@@ -56,6 +57,7 @@ type MonthlyCycleAdjustmentPreview struct {
 	MonthlyLimitUSD        *float64 `json:"monthly_limit_usd,omitempty"`
 	CurrentMonthlyUsageUSD float64  `json:"current_monthly_usage_usd"`
 	NewMonthlyUsageUSD     float64  `json:"new_monthly_usage_usd"`
+	ResetMonthlyUsage      bool     `json:"reset_monthly_usage"`
 
 	DeductedDays    int   `json:"deducted_days"`
 	DeductedSeconds int64 `json:"deducted_seconds"`
@@ -218,7 +220,8 @@ func buildMonthlyCycleAdjustmentPreview(target *monthlyCycleAdjustmentTarget, in
 		CurrentResetAt:            cloneTimeValueForMonthlyCycleAdjustment(currentResetAt),
 		MonthlyLimitUSD:           cloneFloat64PtrForMonthlyCycleAdjustment(target.monthlyLimitUSD),
 		CurrentMonthlyUsageUSD:    target.monthlyUsageUSD,
-		NewMonthlyUsageUSD:        0,
+		NewMonthlyUsageUSD:        target.monthlyUsageUSD,
+		ResetMonthlyUsage:         monthlyCycleAdjustmentResetUsage(input),
 		CanApply:                  true,
 		Reason:                    input.Reason,
 	}
@@ -327,7 +330,6 @@ func applyAlignToResetPreview(preview *MonthlyCycleAdjustmentPreview, target *mo
 	preview.CycleCount = cycleCount
 	preview.NewMonthlyWindowStart = anchor
 	preview.NewExpiresAt = newExpiresAt
-	preview.addWarning("monthly_usage_will_reset")
 }
 
 func applyAlignToExpiryPreview(preview *MonthlyCycleAdjustmentPreview, target *monthlyCycleAdjustmentTarget, input MonthlyCycleAdjustmentInput, now time.Time) {
@@ -356,7 +358,6 @@ func applyAlignToExpiryPreview(preview *MonthlyCycleAdjustmentPreview, target *m
 	preview.CycleCount = cycleCount
 	preview.NewMonthlyWindowStart = newWindowStart
 	preview.NewExpiresAt = target.expiresAt
-	preview.addWarning("monthly_usage_will_reset")
 }
 
 func applyCustomMonthlyCyclePreview(preview *MonthlyCycleAdjustmentPreview, input MonthlyCycleAdjustmentInput, now time.Time) error {
@@ -389,7 +390,6 @@ func applyCustomMonthlyCyclePreview(preview *MonthlyCycleAdjustmentPreview, inpu
 	preview.NewMonthlyWindowStart = newWindowStart
 	preview.NewExpiresAt = newExpiresAt
 	preview.CycleCount = 0
-	preview.addWarning("monthly_usage_will_reset")
 	return nil
 }
 
@@ -400,6 +400,12 @@ func finalizeMonthlyCycleAdjustmentPreview(preview *MonthlyCycleAdjustmentPrevie
 	if preview.NewExpiresAt.After(MaxExpiresAt) {
 		preview.markUnavailable("expires_at_after_max")
 		return
+	}
+	if preview.ResetMonthlyUsage {
+		preview.NewMonthlyUsageUSD = 0
+		preview.addWarning("monthly_usage_will_reset")
+	} else {
+		preview.NewMonthlyUsageUSD = target.monthlyUsageUSD
 	}
 	if preview.CycleCount < 0 {
 		preview.CycleCount = 0
@@ -453,6 +459,7 @@ func (s *SubscriptionService) applyEntitlementMonthlyCycleAdjustment(ctx context
 			UserID:                snapshot.UserID,
 			NewExpiresAt:          preview.NewExpiresAt,
 			NewMonthlyWindowStart: preview.NewMonthlyWindowStart,
+			NewMonthlyUsageUSD:    preview.NewMonthlyUsageUSD,
 			UpdatedAt:             now.Add(time.Millisecond),
 		}); err != nil {
 			return err
@@ -468,6 +475,7 @@ func (s *SubscriptionService) applyEntitlementMonthlyCycleAdjustment(ctx context
 			NewMonthlyWindowStart:      preview.NewMonthlyWindowStart,
 			DeductedDays:               preview.DeductedDays,
 			DeductedSeconds:            preview.DeductedSeconds,
+			ResetMonthlyUsage:          preview.ResetMonthlyUsage,
 			Mode:                       preview.Mode,
 			Reason:                     preview.Reason,
 			AdminID:                    monthlyCycleAdjustmentAdminIDPtr(input.AdminID),
@@ -582,12 +590,12 @@ func (s *SubscriptionService) applySubscriptionMonthlyCycleAdjustmentTx(ctx cont
 
 	result, err := txClient.ExecContext(ctx, `
 		UPDATE user_subscriptions
-		SET monthly_usage_usd = 0,
-			monthly_window_start = $1,
-			expires_at = $2,
-			updated_at = $3
-		WHERE id = $4 AND user_id = $5 AND deleted_at IS NULL
-	`, preview.NewMonthlyWindowStart, preview.NewExpiresAt, now.Add(time.Millisecond), target.subscriptionID, target.userID)
+		SET monthly_usage_usd = $1,
+			monthly_window_start = $2,
+			expires_at = $3,
+			updated_at = $4
+		WHERE id = $5 AND user_id = $6 AND deleted_at IS NULL
+	`, preview.NewMonthlyUsageUSD, preview.NewMonthlyWindowStart, preview.NewExpiresAt, now.Add(time.Millisecond), target.subscriptionID, target.userID)
 	if err != nil {
 		_ = tx.Rollback()
 		return nil, err
@@ -605,9 +613,9 @@ func (s *SubscriptionService) applySubscriptionMonthlyCycleAdjustmentTx(ctx cont
 		INSERT INTO subscription_cycle_reset_logs (
 			user_id, subscription_id, group_id, previous_expires_at, new_expires_at,
 			previous_monthly_usage_usd, previous_monthly_window_start, new_monthly_window_start,
-			deducted_days, deducted_seconds, mode, reason, admin_id, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-	`, target.userID, target.subscriptionID, target.groupID, previousExpiresAt, preview.NewExpiresAt, previousUsage, nullableTimeArg(previousWindowStart), preview.NewMonthlyWindowStart, preview.DeductedDays, preview.DeductedSeconds, preview.Mode, preview.Reason, monthlyCycleAdjustmentAdminIDArg(input.AdminID)); err != nil {
+			deducted_days, deducted_seconds, mode, reason, admin_id, reset_monthly_usage, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+	`, target.userID, target.subscriptionID, target.groupID, previousExpiresAt, preview.NewExpiresAt, previousUsage, nullableTimeArg(previousWindowStart), preview.NewMonthlyWindowStart, preview.DeductedDays, preview.DeductedSeconds, preview.Mode, preview.Reason, monthlyCycleAdjustmentAdminIDArg(input.AdminID), preview.ResetMonthlyUsage); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
@@ -637,6 +645,17 @@ func normalizeMonthlyCycleAdjustmentInput(input MonthlyCycleAdjustmentInput) Mon
 	input.Mode = normalizeMonthlyCycleAdjustmentMode(input.Mode)
 	input.Reason = strings.TrimSpace(input.Reason)
 	return input
+}
+
+func monthlyCycleAdjustmentResetUsage(input MonthlyCycleAdjustmentInput) bool {
+	switch input.Mode {
+	case MonthlyCycleAdjustmentAdvanceNextCycle, MonthlyCycleAdjustmentCompensateReset:
+		return true
+	case MonthlyCycleAdjustmentAlignToReset, MonthlyCycleAdjustmentAlignToExpiry, MonthlyCycleAdjustmentCustom:
+		return input.ResetMonthlyUsage != nil && *input.ResetMonthlyUsage
+	default:
+		return false
+	}
 }
 
 func validateMonthlyCycleAdjustmentInput(input MonthlyCycleAdjustmentInput) string {

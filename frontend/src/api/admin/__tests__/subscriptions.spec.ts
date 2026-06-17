@@ -43,6 +43,7 @@ describe('admin subscriptions api', () => {
     const request = {
       mode: 'align_to_expiry' as const,
       cycle_count: 3,
+      reset_monthly_usage: false,
       reason: 'support aligned cycle',
     }
 

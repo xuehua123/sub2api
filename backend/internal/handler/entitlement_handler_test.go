@@ -442,7 +442,7 @@ func (r *handlerAdvanceEntitlementRepo) UpdateEntitlementMonthlyCycle(_ context.
 	if r.ent == nil || r.ent.ID != update.EntitlementID || r.ent.UserID != update.UserID {
 		return service.ErrSubscriptionEntitlementNotFound
 	}
-	r.ent.MonthlyUsageUSD = 0
+	r.ent.MonthlyUsageUSD = update.NewMonthlyUsageUSD
 	r.ent.MonthlyWindowStart = cloneHandlerTimeValue(update.NewMonthlyWindowStart)
 	r.ent.ExpiresAt = update.NewExpiresAt
 	r.ent.UpdatedAt = update.UpdatedAt
