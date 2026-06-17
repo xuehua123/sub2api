@@ -485,6 +485,44 @@ func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthQuotaExceededDoesNotUseAno
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementQuotaExceeded)
 }
 
+func TestEntitlementDisplayPeriodUsageUSDLegacyMergeGuards(t *testing.T) {
+	now := time.Date(2026, 6, 17, 14, 0, 0, 0, time.UTC)
+	legacyID := int64(100)
+	entitlementWindowStart := now.Add(-30 * time.Minute)
+	legacyWindowStart := entitlementWindowStart
+	ent := &SubscriptionEntitlement{
+		ID:                   1,
+		UserID:               1,
+		LegacySubscriptionID: &legacyID,
+		StartsAt:             now.Add(-time.Hour),
+		ExpiresAt:            now.Add(30 * 24 * time.Hour),
+		QuotaPeriod:          "monthly",
+		MonthlyWindowStart:   &entitlementWindowStart,
+		MonthlyUsageUSD:      5,
+		GroupGrants:          testGroupGrants([]int64{20}),
+	}
+	legacySub := &UserSubscription{
+		ID:                 legacyID,
+		UserID:             1,
+		GroupID:            20,
+		Status:             SubscriptionStatusActive,
+		StartsAt:           now.Add(-time.Hour),
+		ExpiresAt:          now.Add(30 * 24 * time.Hour),
+		MonthlyWindowStart: &legacyWindowStart,
+		MonthlyUsageUSD:    400,
+	}
+
+	require.Equal(t, 400.0, entitlementDisplayPeriodUsageUSD(ent, map[int64]*UserSubscription{legacyID: legacySub}, now))
+
+	legacySub.GroupID = 30
+	require.Equal(t, 5.0, entitlementDisplayPeriodUsageUSD(ent, map[int64]*UserSubscription{legacyID: legacySub}, now))
+
+	legacySub.GroupID = 20
+	differentLegacyWindowStart := now.Add(-24 * time.Hour)
+	legacySub.MonthlyWindowStart = &differentLegacyWindowStart
+	require.Equal(t, 5.0, entitlementDisplayPeriodUsageUSD(ent, map[int64]*UserSubscription{legacyID: legacySub}, now))
+}
+
 func TestAPIKeyService_CompareAndSwapGroupIDWithEntitlement(t *testing.T) {
 	key := &APIKey{
 		ID:                        10,

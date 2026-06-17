@@ -1307,12 +1307,113 @@ func entitlementDisplayPeriodUsageUSD(ent *SubscriptionEntitlement, legacySubscr
 		return used
 	}
 	if legacySub := legacySubscriptionsByID[*ent.LegacySubscriptionID]; legacySub != nil {
-		legacyUsed := legacySubscriptionCurrentPeriodUsageUSD(legacySub, ent.QuotaPeriod, now)
+		legacyUsed := eligibleLegacySubscriptionUsageUSD(ent, legacySub, ent.QuotaPeriod, now)
 		if legacyUsed > used {
 			return legacyUsed
 		}
 	}
 	return used
+}
+
+func eligibleLegacySubscriptionUsageUSD(ent *SubscriptionEntitlement, legacySub *UserSubscription, quotaPeriod string, now time.Time) float64 {
+	if !shouldMergeLegacySubscriptionUsage(ent, legacySub, quotaPeriod, now) {
+		return 0
+	}
+	return legacySubscriptionCurrentPeriodUsageUSD(legacySub, quotaPeriod, now)
+}
+
+func shouldMergeLegacySubscriptionUsage(ent *SubscriptionEntitlement, legacySub *UserSubscription, quotaPeriod string, now time.Time) bool {
+	if ent == nil || legacySub == nil {
+		return false
+	}
+	if legacySub.GroupID <= 0 || !entitlementCoversGroupID(ent, legacySub.GroupID) {
+		return false
+	}
+	return entitlementAndLegacyUsageWindowsAligned(ent, legacySub, quotaPeriod, now)
+}
+
+func entitlementCoversGroupID(ent *SubscriptionEntitlement, groupID int64) bool {
+	if ent == nil || groupID <= 0 {
+		return false
+	}
+	if ent.PrimaryGroupID != nil && *ent.PrimaryGroupID == groupID {
+		return true
+	}
+	for _, coveredGroupID := range entitlementCoveredGroupIDs(ent) {
+		if coveredGroupID == groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func entitlementAndLegacyUsageWindowsAligned(ent *SubscriptionEntitlement, legacySub *UserSubscription, quotaPeriod string, now time.Time) bool {
+	entWindowStart := entitlementCurrentUsageWindowStart(ent, quotaPeriod, now)
+	legacyWindowStart := legacySubscriptionCurrentUsageWindowStart(legacySub, quotaPeriod, now)
+	if entWindowStart == nil || legacyWindowStart == nil {
+		return true
+	}
+	return entWindowStart.Equal(*legacyWindowStart)
+}
+
+func entitlementCurrentUsageWindowStart(ent *SubscriptionEntitlement, quotaPeriod string, now time.Time) *time.Time {
+	if ent == nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	switch quotaPeriod {
+	case "daily":
+		if ent.DailyWindowStart == nil {
+			return nil
+		}
+		if ent.HasOneTimeDailyQuota() {
+			t := *ent.DailyWindowStart
+			return &t
+		}
+		return effectiveWindowStartAt(ent.DailyWindowStart, ent.StartsAt, 24*time.Hour, now)
+	case "weekly":
+		if ent.WeeklyWindowStart == nil {
+			return nil
+		}
+		return effectiveWindowStartAt(ent.WeeklyWindowStart, ent.StartsAt, 7*24*time.Hour, now)
+	default:
+		if ent.MonthlyWindowStart == nil {
+			return nil
+		}
+		return effectiveWindowStartAt(ent.MonthlyWindowStart, ent.StartsAt, monthlyCycleDuration, now)
+	}
+}
+
+func legacySubscriptionCurrentUsageWindowStart(sub *UserSubscription, quotaPeriod string, now time.Time) *time.Time {
+	if sub == nil {
+		return nil
+	}
+	if now.IsZero() {
+		now = time.Now()
+	}
+	switch quotaPeriod {
+	case "daily":
+		if sub.DailyWindowStart == nil {
+			return nil
+		}
+		if sub.HasOneTimeDailyQuota() {
+			t := *sub.DailyWindowStart
+			return &t
+		}
+		return effectiveWindowStartAt(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now)
+	case "weekly":
+		if sub.WeeklyWindowStart == nil {
+			return nil
+		}
+		return effectiveWindowStartAt(sub.WeeklyWindowStart, sub.StartsAt, 7*24*time.Hour, now)
+	default:
+		if sub.MonthlyWindowStart == nil {
+			return nil
+		}
+		return effectiveWindowStartAt(sub.MonthlyWindowStart, sub.StartsAt, monthlyCycleDuration, now)
+	}
 }
 
 func entitlementCurrentPeriodUsageUSD(ent *SubscriptionEntitlement, now time.Time) float64 {
