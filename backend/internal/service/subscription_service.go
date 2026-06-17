@@ -190,9 +190,9 @@ func mergeLegacySubscriptionUsageIntoEntitlement(ent *SubscriptionEntitlement, l
 	if legacySub == nil {
 		return
 	}
-	ent.DailyUsageUSD = maxFloat64(ent.DailyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "daily", now))
-	ent.WeeklyUsageUSD = maxFloat64(ent.WeeklyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "weekly", now))
-	ent.MonthlyUsageUSD = maxFloat64(ent.MonthlyUsageUSD, legacySubscriptionCurrentPeriodUsageUSD(legacySub, "monthly", now))
+	ent.DailyUsageUSD = maxFloat64(ent.DailyUsageUSD, eligibleLegacySubscriptionUsageUSD(ent, legacySub, "daily", now))
+	ent.WeeklyUsageUSD = maxFloat64(ent.WeeklyUsageUSD, eligibleLegacySubscriptionUsageUSD(ent, legacySub, "weekly", now))
+	ent.MonthlyUsageUSD = maxFloat64(ent.MonthlyUsageUSD, eligibleLegacySubscriptionUsageUSD(ent, legacySub, "monthly", now))
 }
 
 func maxFloat64(left, right float64) float64 {
