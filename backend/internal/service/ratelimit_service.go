@@ -68,8 +68,10 @@ const (
 )
 
 const (
-	openAIImageRateLimitDefaultCooldown = time.Minute
-	openAIImageRateLimitReason          = "openai_image_rate_limited"
+	openAIImageRateLimitDefaultCooldown      = time.Minute
+	openAIImageCapabilityUnavailableCooldown = 24 * time.Hour
+	openAIImageRateLimitReason               = "openai_image_rate_limited"
+	openAIImageCapabilityUnavailableReason   = "openai_image_generation_unavailable"
 )
 
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
@@ -179,6 +181,9 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 
 	if len(requestedModel) > 0 && s.HandleUpstreamModelNotFound(ctx, account, requestedModel[0], statusCode, responseBody) {
 		return true
+	}
+	if account.Platform == PlatformOpenAI && s.HandleOpenAIImageRateLimit(ctx, account, statusCode, headers, responseBody) {
+		return false
 	}
 
 	// Anthropic official 5h / 7d window exhaustion is a hard account limit.
@@ -1756,16 +1761,22 @@ func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, accou
 		slog.Info("openai_image_rate_limit_skipped_by_error_code_policy", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
-	if !isOpenAIImageRateLimitError(statusCode, responseBody) {
+	resetAt := time.Time{}
+	reason := openAIImageRateLimitReason
+	if isOpenAIImageRateLimitError(statusCode, responseBody) {
+		resetAt = openAIImageRateLimitResetAt(headers, responseBody)
+	} else if isOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
+		resetAt = time.Now().Add(openAIImageCapabilityUnavailableCooldown)
+		reason = openAIImageCapabilityUnavailableReason
+	} else {
 		return false
 	}
 
-	resetAt := openAIImageRateLimitResetAt(headers, responseBody)
-	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, openAIImageRateLimitReason); err != nil {
+	if err := s.accountRepo.SetModelRateLimit(ctx, account.ID, openAIImageGenerationRateLimitKey, resetAt, reason); err != nil {
 		slog.Warn("openai_image_rate_limit_set_model_rate_limit_failed", "account_id", account.ID, "scope", openAIImageGenerationRateLimitKey, "error", err)
 		return true
 	}
-	slog.Info("openai_image_rate_limited", "account_id", account.ID, "scope", openAIImageGenerationRateLimitKey, "reset_at", resetAt, "reset_in", time.Until(resetAt).Truncate(time.Second))
+	slog.Info("openai_image_rate_limited", "account_id", account.ID, "scope", openAIImageGenerationRateLimitKey, "reason", reason, "reset_at", resetAt, "reset_in", time.Until(resetAt).Truncate(time.Second))
 	return true
 }
 
@@ -1785,6 +1796,14 @@ func isOpenAIImageRateLimitError(statusCode int, body []byte) bool {
 		}
 	}
 	return false
+}
+
+func isOpenAIImageCapabilityUnavailableError(statusCode int, body []byte) bool {
+	if statusCode != http.StatusForbidden || len(body) == 0 {
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, strings.ToLower(imageGenerationPermissionMessage))
 }
 
 func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {

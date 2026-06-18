@@ -60,6 +60,24 @@ func TestRateLimitService_HandleOpenAIImageRateLimit_DefaultsToOneMinute(t *test
 	require.WithinDuration(t, before.Add(time.Minute), call.resetAt, time.Second)
 }
 
+func TestRateLimitService_HandleOpenAIImageRateLimit_ImagePermissionCoolsImageScope(t *testing.T) {
+	repo := &modelNotFoundAccountRepoStub{}
+	svc := &RateLimitService{accountRepo: repo}
+	account := &Account{ID: 205, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"type":"permission_error","message":"Image generation is not enabled for this group"}}`)
+
+	before := time.Now()
+	handled := svc.HandleOpenAIImageRateLimit(context.Background(), account, http.StatusForbidden, http.Header{}, body)
+
+	require.True(t, handled)
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	call := repo.modelRateLimitCalls[0]
+	require.Equal(t, account.ID, call.accountID)
+	require.Equal(t, openAIImageGenerationRateLimitKey, call.scope)
+	require.Equal(t, openAIImageCapabilityUnavailableReason, call.reason)
+	require.WithinDuration(t, before.Add(openAIImageCapabilityUnavailableCooldown), call.resetAt, time.Second)
+}
+
 func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDoesNotBlockWholeAccount(t *testing.T) {
 	repo := &modelNotFoundAccountRepoStub{}
 	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
@@ -71,6 +89,22 @@ func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImageRateLimitDoe
 	require.False(t, disabled)
 	require.Len(t, repo.modelRateLimitCalls, 1)
 	require.Equal(t, openAIImageGenerationRateLimitKey, repo.modelRateLimitCalls[0].scope)
+	_, wholeAccountBlocked := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
+	require.False(t, wholeAccountBlocked)
+}
+
+func TestOpenAIGatewayService_HandleOpenAIAccountUpstreamError_ImagePermissionDoesNotBlockWholeAccount(t *testing.T) {
+	repo := &modelNotFoundAccountRepoStub{}
+	svc := &OpenAIGatewayService{rateLimitService: &RateLimitService{accountRepo: repo}}
+	account := &Account{ID: 206, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	body := []byte(`{"error":{"type":"permission_error","message":"Image generation is not enabled for this group"}}`)
+
+	disabled := svc.handleOpenAIAccountUpstreamError(context.Background(), account, http.StatusForbidden, http.Header{}, body, "gpt-5.4")
+
+	require.False(t, disabled)
+	require.Len(t, repo.modelRateLimitCalls, 1)
+	require.Equal(t, openAIImageGenerationRateLimitKey, repo.modelRateLimitCalls[0].scope)
+	require.Equal(t, openAIImageCapabilityUnavailableReason, repo.modelRateLimitCalls[0].reason)
 	_, wholeAccountBlocked := svc.openaiAccountRuntimeBlockUntil.Load(account.ID)
 	require.False(t, wholeAccountBlocked)
 }
