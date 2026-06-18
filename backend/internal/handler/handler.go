@@ -39,6 +39,7 @@ type AdminHandlers struct {
 	Referral               *admin.ReferralHandler
 	RechargeOrder          *admin.RechargeOrderHandler
 	Affiliate              *admin.AffiliateHandler
+	Compliance             *admin.ComplianceHandler
 }
 
 // Handlers contains all HTTP handlers

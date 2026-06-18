@@ -133,6 +133,8 @@ docs/*
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/plans/
 !docs/plans/*.md
+!docs/legal/
+!docs/legal/*.md
 .serena/
 .codex/
 .worktrees/

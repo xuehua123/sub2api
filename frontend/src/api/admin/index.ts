@@ -33,6 +33,7 @@ import referralAPI from './referral'
 import affiliatesAPI from './affiliates'
 import riskControlAPI from './riskControl'
 import adminIssuesAPI from './issues'
+import adminComplianceAPI from './compliance'
 
 /**
  * Unified admin API object for convenient access
@@ -67,7 +68,8 @@ export const adminAPI = {
   referral: referralAPI,
   affiliates: affiliatesAPI,
   riskControl: riskControlAPI,
-  issues: adminIssuesAPI
+  issues: adminIssuesAPI,
+  compliance: adminComplianceAPI
 }
 
 export {
@@ -100,7 +102,8 @@ export {
   referralAPI,
   affiliatesAPI,
   riskControlAPI,
-  adminIssuesAPI
+  adminIssuesAPI,
+  adminComplianceAPI
 }
 
 export default adminAPI

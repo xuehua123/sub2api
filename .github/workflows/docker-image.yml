@@ -49,19 +49,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-          flavor: |
-            latest=false
-
       - name: Resolve build version
         id: version
         shell: bash
@@ -73,6 +60,20 @@ jobs:
             VERSION="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
           fi
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            type=raw,value=v${{ steps.version.outputs.version }},enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+          flavor: |
+            latest=false
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -107,6 +108,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(tr -d '\r\n' < backend/cmd/server/VERSION)"
+          fi
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -115,6 +128,7 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-,format=short,enable={{is_default_branch}}
+            type=raw,value=v${{ steps.version.outputs.version }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
           flavor: |

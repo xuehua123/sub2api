@@ -366,3 +366,16 @@ func TestSubscriptionEntitlementsV2PreflightRunbookCoversSwitchAuditQueries(t *t
 	require.Contains(t, doc, "sub2_payment_page_legacy_mapping_enabled=false")
 	require.Contains(t, doc, "Do not delete entitlement schema or history")
 }
+
+func TestMigration151AddsAccountAutoPauseExpiryPartialIndex(t *testing.T) {
+	content, err := FS.ReadFile("151_account_autopause_expiry_index_notx.sql")
+	require.NoError(t, err)
+
+	sql := string(content)
+	require.Contains(t, sql, "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_accounts_autopause_expiry_due")
+	require.Contains(t, sql, "ON accounts (expires_at)")
+	require.Contains(t, sql, "WHERE deleted_at IS NULL")
+	require.Contains(t, sql, "schedulable = TRUE")
+	require.Contains(t, sql, "auto_pause_on_expired = TRUE")
+	require.Contains(t, sql, "expires_at IS NOT NULL")
+}
