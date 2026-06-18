@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/tidwall/gjson"
@@ -12,16 +13,9 @@ const (
 	imageGenerationPermissionMessage = "Image generation is not enabled for this group"
 )
 
-const openAIImageGenerationUnavailableClientMessage = "No image-capable upstream accounts are currently available, please retry later"
-
 // ImageGenerationPermissionMessage returns the stable end-user error text for disabled groups.
 func ImageGenerationPermissionMessage() string {
 	return imageGenerationPermissionMessage
-}
-
-// OpenAIImageGenerationUnavailableClientMessage returns the client-facing message used when all image-capable upstreams are exhausted.
-func OpenAIImageGenerationUnavailableClientMessage() string {
-	return openAIImageGenerationUnavailableClientMessage
 }
 
 // IsOpenAIImageCapabilityUnavailableError classifies upstream responses from OpenAI accounts whose upstream group cannot run image_generation.
@@ -56,6 +50,64 @@ func IsImageGenerationIntent(endpoint string, requestedModel string, body []byte
 		return true
 	}
 	return openAIJSONToolChoiceSelectsImageGeneration(gjson.GetBytes(body, "tool_choice"))
+}
+
+// BuildOpenAIResponsesTextFallbackBody removes image_generation-only request
+// constraints from a mixed Responses request so the handler can retry normal
+// text routing. It intentionally does not add any user-facing explanation.
+func BuildOpenAIResponsesTextFallbackBody(body []byte, fallbackModel string) ([]byte, string, bool, error) {
+	if len(body) == 0 || !gjson.ValidBytes(body) {
+		return nil, "", false, nil
+	}
+	var reqBody map[string]any
+	if err := json.Unmarshal(body, &reqBody); err != nil {
+		return nil, "", false, err
+	}
+	model := strings.TrimSpace(firstNonEmptyString(reqBody["model"]))
+	if model == "" {
+		model = strings.TrimSpace(fallbackModel)
+	}
+	if model == "" || isOpenAIImageGenerationModel(model) {
+		return nil, "", false, nil
+	}
+
+	changed := false
+	if rawTools, ok := reqBody["tools"].([]any); ok {
+		filtered := make([]any, 0, len(rawTools))
+		removedImageTool := false
+		for _, rawTool := range rawTools {
+			toolMap, ok := rawTool.(map[string]any)
+			if ok && strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
+				removedImageTool = true
+				continue
+			}
+			filtered = append(filtered, rawTool)
+		}
+		if removedImageTool {
+			changed = true
+			if len(filtered) == 0 {
+				delete(reqBody, "tools")
+				delete(reqBody, "tool_choice")
+			} else {
+				reqBody["tools"] = filtered
+			}
+		}
+	}
+	if openAIAnyToolChoiceReferencesImageGeneration(reqBody["tool_choice"]) {
+		delete(reqBody, "tool_choice")
+		changed = true
+	}
+	if !changed {
+		return nil, "", false, nil
+	}
+	if _, ok := reqBody["model"]; !ok {
+		reqBody["model"] = model
+	}
+	nextBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, "", false, err
+	}
+	return nextBody, model, true, nil
 }
 
 // IsImageGenerationIntentMap is the map-backed variant used after service-side request mutation.
@@ -180,6 +232,36 @@ func openAIAnyToolChoiceSelectsImageGeneration(choice any) bool {
 		}
 		if fn, ok := v["function"].(map[string]any); ok && strings.TrimSpace(firstNonEmptyString(fn["name"])) == "image_generation" {
 			return true
+		}
+	}
+	return false
+}
+
+func openAIAnyToolChoiceReferencesImageGeneration(choice any) bool {
+	if openAIAnyToolChoiceSelectsImageGeneration(choice) {
+		return true
+	}
+	switch v := choice.(type) {
+	case map[string]any:
+		if tool, ok := v["tool"].(map[string]any); ok && strings.TrimSpace(firstNonEmptyString(tool["type"])) == "image_generation" {
+			return true
+		}
+		if fn, ok := v["function"].(map[string]any); ok && strings.TrimSpace(firstNonEmptyString(fn["name"])) == "image_generation" {
+			return true
+		}
+		if tools, ok := v["tools"].([]any); ok {
+			for _, rawTool := range tools {
+				toolMap, ok := rawTool.(map[string]any)
+				if ok && strings.TrimSpace(firstNonEmptyString(toolMap["type"])) == "image_generation" {
+					return true
+				}
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if openAIAnyToolChoiceReferencesImageGeneration(item) {
+				return true
+			}
 		}
 	}
 	return false

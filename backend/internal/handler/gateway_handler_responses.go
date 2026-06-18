@@ -87,7 +87,8 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 	setOpsRequestContext(c, reqModel, reqStream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(reqStream, false)))
 	requestCtx := c.Request.Context()
-	if service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
+	imageIntent := service.IsImageGenerationIntent("/v1/responses", reqModel, body)
+	if imageIntent {
 		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
 	}
 
@@ -158,11 +159,55 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	// 3. Account selection + failover loop
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	textFallbackAttempted := false
+	tryResponsesTextFallback := func(reason string) bool {
+		if !imageIntent || textFallbackAttempted || streamStarted || c.Writer.Written() || c.Writer.Size() > 0 {
+			return false
+		}
+		nextBody, nextModel, ok, fallbackErr := service.BuildOpenAIResponsesTextFallbackBody(body, reqModel)
+		if fallbackErr != nil {
+			reqLog.Warn("gateway.responses_text_fallback_build_failed",
+				zap.String("reason", reason),
+				zap.Error(fallbackErr),
+			)
+			return false
+		}
+		if !ok {
+			return false
+		}
+		textFallbackAttempted = true
+		imageIntent = false
+		body = nextBody
+		reqModel = nextModel
+		requestCtx = c.Request.Context()
+		channelMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
+		bodyRef = service.NewRequestBodyRef(body)
+		parsedReq, _ = service.ParseGatewayRequest(bodyRef, "responses")
+		if parsedReq == nil {
+			parsedReq = &service.ParsedRequest{Model: reqModel, Stream: reqStream, Body: bodyRef}
+		}
+		parsedReq.SessionContext = &service.SessionContext{
+			ClientIP:  ip.GetClientIP(c),
+			UserAgent: c.GetHeader("User-Agent"),
+			APIKeyID:  apiKey.ID,
+		}
+		sessionHash = h.gatewayService.GenerateSessionHash(parsedReq)
+		fs = NewFailoverState(h.maxAccountSwitches, false)
+		setOpsRequestContext(c, reqModel, reqStream)
+		reqLog.Warn("gateway.responses_image_text_fallback_retry",
+			zap.String("reason", reason),
+			zap.String("model", reqModel),
+		)
+		return true
+	}
 
 	for {
 		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if len(fs.FailedAccountIDs) == 0 {
+				if tryResponsesTextFallback("image_selection_unavailable") {
+					continue
+				}
 				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "No available accounts: "+err.Error())
 				return
@@ -175,6 +220,10 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				return
 			default:
 				if fs.LastFailoverErr != nil {
+					if service.IsOpenAIImageCapabilityUnavailableError(fs.LastFailoverErr.StatusCode, fs.LastFailoverErr.ResponseBody) &&
+						tryResponsesTextFallback("image_failover_exhausted") {
+						continue
+					}
 					h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)
 				} else {
 					h.responsesErrorResponse(c, http.StatusBadGateway, "server_error", "All available accounts exhausted")
@@ -234,6 +283,11 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				case FailoverContinue:
 					continue
 				case FailoverExhausted:
+					if fs.LastFailoverErr != nil &&
+						service.IsOpenAIImageCapabilityUnavailableError(fs.LastFailoverErr.StatusCode, fs.LastFailoverErr.ResponseBody) &&
+						tryResponsesTextFallback("image_failover_exhausted") {
+						continue
+					}
 					h.handleResponsesFailoverExhausted(c, fs.LastFailoverErr, streamStarted)
 					return
 				case FailoverCanceled:
@@ -328,13 +382,6 @@ func (h *GatewayHandler) handleResponsesFailoverExhausted(c *gin.Context, lastEr
 	if lastErr != nil && service.IsOpenAISilentRefusalErrorBody(lastErr.ResponseBody) {
 		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
 		h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage())
-		return
-	}
-	if lastErr != nil && service.IsOpenAIImageCapabilityUnavailableError(statusCode, lastErr.ResponseBody) {
-		upstreamMsg := service.ExtractUpstreamErrorMessage(lastErr.ResponseBody)
-		clientMsg := service.OpenAIImageGenerationUnavailableClientMessage()
-		service.SetOpsUpstreamError(c, statusCode, upstreamMsg, clientMsg)
-		h.responsesErrorResponse(c, http.StatusServiceUnavailable, "server_error", clientMsg)
 		return
 	}
 	h.responsesErrorResponse(c, statusCode, "server_error", "All available accounts exhausted")

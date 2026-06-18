@@ -254,7 +254,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		h.errorResponse(c, http.StatusForbidden, "permission_error", service.ImageGenerationPermissionMessage())
 		return
 	}
+	requestCtx := c.Request.Context()
+	if imageIntent {
+		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+	}
 	var imageReleaseFunc func()
+	releaseImageSlot := func() {
+		if imageReleaseFunc != nil {
+			imageReleaseFunc()
+			imageReleaseFunc = nil
+		}
+	}
 	if imageIntent {
 		var imageAcquired bool
 		imageReleaseFunc, imageAcquired = h.acquireImageGenerationSlot(c, streamStarted)
@@ -262,12 +272,12 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			return
 		}
 		if imageReleaseFunc != nil {
-			defer imageReleaseFunc()
+			defer releaseImageSlot()
 		}
 	}
 
 	// 解析渠道级模型映射
-	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, reqModel)
+	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
 	forwardBody := openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
 
 	// 提前校验 function_call_output 是否具备可关联上下文，避免上游 400。
@@ -297,7 +307,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// 2. Re-check billing eligibility after wait
-	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
 		reqLog.Info("openai.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -319,12 +329,49 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
+	textFallbackAttempted := false
+	tryOpenAIResponsesTextFallback := func(reason string) bool {
+		if !imageIntent || textFallbackAttempted || streamStarted || c.Writer.Written() || c.Writer.Size() > 0 {
+			return false
+		}
+		nextBody, nextModel, ok, fallbackErr := service.BuildOpenAIResponsesTextFallbackBody(body, reqModel)
+		if fallbackErr != nil {
+			reqLog.Warn("openai.responses_text_fallback_build_failed",
+				zap.String("reason", reason),
+				zap.Error(fallbackErr),
+			)
+			return false
+		}
+		if !ok {
+			return false
+		}
+		textFallbackAttempted = true
+		imageIntent = false
+		releaseImageSlot()
+		body = nextBody
+		sessionHashBody = nextBody
+		reqModel = nextModel
+		requestCtx = c.Request.Context()
+		channelMapping, _ = h.gatewayService.ResolveChannelMappingAndRestrict(requestCtx, apiKey.GroupID, reqModel)
+		forwardBody = openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
+		sessionHash = h.gatewayService.GenerateSessionHash(c, sessionHashBody)
+		failedAccountIDs = make(map[int64]struct{})
+		sameAccountRetryCount = make(map[int64]int)
+		switchCount = 0
+		lastFailoverErr = nil
+		setOpsRequestContext(c, reqModel, reqStream)
+		reqLog.Warn("openai.responses_image_text_fallback_retry",
+			zap.String("reason", reason),
+			zap.String("model", reqModel),
+		)
+		return true
+	}
 
 	for {
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			c.Request.Context(),
+			requestCtx,
 			apiKey.GroupID,
 			previousResponseID,
 			sessionHash,
@@ -344,6 +391,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					h.handleStreamingAwareError(c, http.StatusBadRequest, "invalid_request_error", service.UnsupportedModelMessage, streamStarted)
 					return
 				}
+				if tryOpenAIResponsesTextFallback("image_selection_unavailable") {
+					continue
+				}
 				markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available OpenAI accounts support /responses/compact", streamStarted)
@@ -353,6 +403,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
+				if service.IsOpenAIImageCapabilityUnavailableError(lastFailoverErr.StatusCode, lastFailoverErr.ResponseBody) &&
+					tryOpenAIResponsesTextFallback("image_failover_exhausted") {
+					continue
+				}
 				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 			} else {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
@@ -396,7 +450,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
-			return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
+			return h.gatewayService.Forward(requestCtx, c, account, forwardBody)
 		}()
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
@@ -451,11 +505,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					failedAccountIDs[account.ID] = struct{}{}
 					lastFailoverErr = failoverErr
 					if switchCount >= maxAccountSwitches {
+						if service.IsOpenAIImageCapabilityUnavailableError(failoverErr.StatusCode, failoverErr.ResponseBody) &&
+							tryOpenAIResponsesTextFallback("image_switch_limit") {
+							continue
+						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
 					switchCount++
 					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount) {
+						if service.IsOpenAIImageCapabilityUnavailableError(failoverErr.StatusCode, failoverErr.ResponseBody) &&
+							tryOpenAIResponsesTextFallback("image_failover_stop") {
+							continue
+						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -1811,14 +1873,6 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage(), streamStarted)
 		return
 	}
-	if service.IsOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
-		upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
-		clientMsg := service.OpenAIImageGenerationUnavailableClientMessage()
-		service.SetOpsUpstreamError(c, statusCode, upstreamMsg, clientMsg)
-		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "server_error", clientMsg, streamStarted)
-		return
-	}
-
 	// 先检查透传规则
 	if h.errorPassthroughService != nil && len(responseBody) > 0 {
 		if rule := h.errorPassthroughService.MatchRule("openai", statusCode, responseBody); rule != nil {

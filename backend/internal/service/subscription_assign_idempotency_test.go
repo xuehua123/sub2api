@@ -445,7 +445,7 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyBelongsToDifferentPla
 		10: testEntitlementPlan(10, []int64{groupID, 2}, nil),
 	}}
 	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
-	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	subRepo := requireSubscriptionUserSubRepoStub(t, svc)
 	subRepo.seed(&UserSubscription{
 		ID:        43,
 		UserID:    3005,
@@ -488,7 +488,7 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyPlanIsUnknown(t *test
 		9: testEntitlementPlan(9, []int64{groupID, 2}, nil),
 	}}
 	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
-	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	subRepo := requireSubscriptionUserSubRepoStub(t, svc)
 	subRepo.seed(&UserSubscription{
 		ID:        44,
 		UserID:    3007,
@@ -531,7 +531,7 @@ func TestAssignSubscriptionV2PlanReassignAfterLinkedRevocationUsesNewLegacySubsc
 		wrongPlanID: testEntitlementPlan(wrongPlanID, []int64{groupID, 2}, nil),
 	}}
 	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
-	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	subRepo := requireSubscriptionUserSubRepoStub(t, svc)
 
 	wrong, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
 		UserID:       3006,
@@ -635,6 +635,13 @@ func newAssignSubscriptionEntitlementTestService(enabled bool, entRepo *fakeSubs
 		runtime: SubscriptionEntitlementsRuntime{Enabled: enabled},
 	}, entSvc)
 	return svc
+}
+
+func requireSubscriptionUserSubRepoStub(t *testing.T, svc *SubscriptionService) *subscriptionUserSubRepoStub {
+	t.Helper()
+	subRepo, ok := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	require.True(t, ok)
+	return subRepo
 }
 
 func TestNormalizeAssignValidityDays(t *testing.T) {

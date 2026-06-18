@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestIsImageGenerationIntent(t *testing.T) {
@@ -62,6 +63,55 @@ func TestIsImageGenerationIntent(t *testing.T) {
 			require.Equal(t, tt.want, IsImageGenerationIntent(tt.endpoint, tt.model, tt.body))
 		})
 	}
+}
+
+func TestBuildOpenAIResponsesTextFallbackBodyRemovesImageGenerationConstraints(t *testing.T) {
+	body := []byte(`{
+		"model": "gpt-5.4",
+		"input": "draw and explain",
+		"stream": true,
+		"tools": [
+			{"type": "image_generation", "model": "gpt-image-2", "size": "2048x1152"},
+			{"type": "function", "name": "lookup_price"}
+		],
+		"tool_choice": {"type": "image_generation"}
+	}`)
+
+	fallbackBody, fallbackModel, ok, err := BuildOpenAIResponsesTextFallbackBody(body, "")
+
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "gpt-5.4", fallbackModel)
+	require.Equal(t, "gpt-5.4", gjson.GetBytes(fallbackBody, "model").String())
+	require.Equal(t, "draw and explain", gjson.GetBytes(fallbackBody, "input").String())
+	require.True(t, gjson.GetBytes(fallbackBody, "stream").Bool())
+	require.False(t, gjson.GetBytes(fallbackBody, `tools.#(type=="image_generation")`).Exists())
+	require.True(t, gjson.GetBytes(fallbackBody, `tools.#(type=="function")`).Exists())
+	require.False(t, gjson.GetBytes(fallbackBody, "tool_choice").Exists())
+	require.NotContains(t, string(fallbackBody), "image-capable")
+}
+
+func TestBuildOpenAIResponsesTextFallbackBodyDeletesOnlyImageToolList(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","input":"draw","tools":[{"type":"image_generation"}],"tool_choice":{"type":"allowed_tools","tools":[{"type":"image_generation"}]}}`)
+
+	fallbackBody, fallbackModel, ok, err := BuildOpenAIResponsesTextFallbackBody(body, "")
+
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, "gpt-5.5", fallbackModel)
+	require.False(t, gjson.GetBytes(fallbackBody, "tools").Exists())
+	require.False(t, gjson.GetBytes(fallbackBody, "tool_choice").Exists())
+}
+
+func TestBuildOpenAIResponsesTextFallbackBodyDoesNotRewriteImageOnlyModel(t *testing.T) {
+	body := []byte(`{"model":"gpt-image-2","input":"draw","tools":[{"type":"image_generation"}]}`)
+
+	fallbackBody, fallbackModel, ok, err := BuildOpenAIResponsesTextFallbackBody(body, "")
+
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Empty(t, fallbackModel)
+	require.Nil(t, fallbackBody)
 }
 
 func TestResolveOpenAIResponsesImageBillingConfigUsesCurrentBodyModel(t *testing.T) {
