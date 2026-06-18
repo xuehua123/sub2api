@@ -1761,10 +1761,11 @@ func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, accou
 		slog.Info("openai_image_rate_limit_skipped_by_error_code_policy", "account_id", account.ID, "status_code", statusCode)
 		return false
 	}
-	resetAt := time.Time{}
-	reason := openAIImageRateLimitReason
+	var resetAt time.Time
+	var reason string
 	if isOpenAIImageRateLimitError(statusCode, responseBody) {
 		resetAt = openAIImageRateLimitResetAt(headers, responseBody)
+		reason = openAIImageRateLimitReason
 	} else if isOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
 		resetAt = time.Now().Add(openAIImageCapabilityUnavailableCooldown)
 		reason = openAIImageCapabilityUnavailableReason
