@@ -528,6 +528,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				Subscription:               subscription,
 				Entitlement:                subscriptionEntitlement,
 				EntitlementBalanceFallback: entitlementBalanceFallback,
+				AllowEntitlementOverage:    true,
 				InboundEndpoint:            inboundEndpoint,
 				UpstreamEndpoint:           upstreamEndpoint,
 				UserAgent:                  userAgent,
