@@ -1594,6 +1594,13 @@ func (h *GatewayHandler) handleFailoverExhausted(c *gin.Context, failoverErr *se
 		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage(), streamStarted)
 		return
 	}
+	if service.IsOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
+		upstreamMsg := service.ExtractUpstreamErrorMessage(responseBody)
+		clientMsg := service.OpenAIImageGenerationUnavailableClientMessage()
+		service.SetOpsUpstreamError(c, statusCode, upstreamMsg, clientMsg)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "server_error", clientMsg, streamStarted)
+		return
+	}
 
 	// 先检查透传规则
 	if h.errorPassthroughService != nil && len(responseBody) > 0 {

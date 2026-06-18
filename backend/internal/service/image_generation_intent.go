@@ -12,9 +12,25 @@ const (
 	imageGenerationPermissionMessage = "Image generation is not enabled for this group"
 )
 
+const openAIImageGenerationUnavailableClientMessage = "No image-capable upstream accounts are currently available, please retry later"
+
 // ImageGenerationPermissionMessage returns the stable end-user error text for disabled groups.
 func ImageGenerationPermissionMessage() string {
 	return imageGenerationPermissionMessage
+}
+
+// OpenAIImageGenerationUnavailableClientMessage returns the client-facing message used when all image-capable upstreams are exhausted.
+func OpenAIImageGenerationUnavailableClientMessage() string {
+	return openAIImageGenerationUnavailableClientMessage
+}
+
+// IsOpenAIImageCapabilityUnavailableError classifies upstream responses from OpenAI accounts whose upstream group cannot run image_generation.
+func IsOpenAIImageCapabilityUnavailableError(statusCode int, body []byte) bool {
+	if statusCode != 403 || len(body) == 0 {
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	return strings.Contains(lower, strings.ToLower(imageGenerationPermissionMessage))
 }
 
 // GroupAllowsImageGeneration preserves ungrouped-key behavior and enforces the flag when a group is present.

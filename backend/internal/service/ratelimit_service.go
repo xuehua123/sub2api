@@ -1766,7 +1766,7 @@ func (s *RateLimitService) HandleOpenAIImageRateLimit(ctx context.Context, accou
 	if isOpenAIImageRateLimitError(statusCode, responseBody) {
 		resetAt = openAIImageRateLimitResetAt(headers, responseBody)
 		reason = openAIImageRateLimitReason
-	} else if isOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
+	} else if IsOpenAIImageCapabilityUnavailableError(statusCode, responseBody) {
 		resetAt = time.Now().Add(openAIImageCapabilityUnavailableCooldown)
 		reason = openAIImageCapabilityUnavailableReason
 	} else {
@@ -1797,14 +1797,6 @@ func isOpenAIImageRateLimitError(statusCode int, body []byte) bool {
 		}
 	}
 	return false
-}
-
-func isOpenAIImageCapabilityUnavailableError(statusCode int, body []byte) bool {
-	if statusCode != http.StatusForbidden || len(body) == 0 {
-		return false
-	}
-	lower := strings.ToLower(string(body))
-	return strings.Contains(lower, strings.ToLower(imageGenerationPermissionMessage))
 }
 
 func openAIImageRateLimitResetAt(headers http.Header, body []byte) time.Time {
