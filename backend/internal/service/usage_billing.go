@@ -38,6 +38,7 @@ type UsageBillingCommand struct {
 	BalanceCost                float64
 	SubscriptionCost           float64
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	APIKeyQuotaCost            float64
 	APIKeyRateLimitCost        float64
 	AccountQuotaCost           float64
@@ -81,7 +82,7 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 		c.AccountQuotaCost,
 	)
 	if c.EntitlementID != nil || c.EntitlementBalanceFallback {
-		raw += fmt.Sprintf("|ent:%d|fallback:%t", valueOrZero(c.EntitlementID), c.EntitlementBalanceFallback)
+		raw += fmt.Sprintf("|ent:%d|fallback:%t|overage:%t", valueOrZero(c.EntitlementID), c.EntitlementBalanceFallback, c.AllowEntitlementOverage)
 	}
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash

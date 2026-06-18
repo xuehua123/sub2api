@@ -8738,6 +8738,7 @@ type RecordUsageInput struct {
 	Subscription               *UserSubscription // 可选：订阅信息
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	InboundEndpoint            string             // 入站端点（客户端请求路径）
 	UpstreamEndpoint           string             // 上游端点（标准化后的上游路径）
 	UserAgent                  string             // 请求的 User-Agent
@@ -8773,6 +8774,7 @@ type postUsageBillingParams struct {
 	Subscription               *UserSubscription
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	RequestPayloadHash         string
 	IsSubscriptionBill         bool
 	AccountRateMultiplier      float64
@@ -8948,6 +8950,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		entitlementID := p.Entitlement.ID
 		cmd.EntitlementID = &entitlementID
 		cmd.EntitlementBalanceFallback = p.EntitlementBalanceFallback
+		cmd.AllowEntitlementOverage = p.AllowEntitlementOverage
 	}
 
 	// Record subscription / balance cost using ActualCost so the group (and any
@@ -8958,6 +8961,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		entitlementID := p.Entitlement.ID
 		cmd.EntitlementID = &entitlementID
 		cmd.EntitlementBalanceFallback = p.EntitlementBalanceFallback
+		cmd.AllowEntitlementOverage = p.AllowEntitlementOverage
 		cmd.SubscriptionCost = p.Cost.ActualCost
 	} else if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
 		cmd.SubscriptionID = &p.Subscription.ID
@@ -9255,6 +9259,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		Subscription:               input.Subscription,
 		Entitlement:                input.Entitlement,
 		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		AllowEntitlementOverage:    input.AllowEntitlementOverage,
 		InboundEndpoint:            input.InboundEndpoint,
 		UpstreamEndpoint:           input.UpstreamEndpoint,
 		UserAgent:                  input.UserAgent,
@@ -9276,6 +9281,7 @@ type RecordUsageLongContextInput struct {
 	Subscription               *UserSubscription // 可选：订阅信息
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	InboundEndpoint            string             // 入站端点（客户端请求路径）
 	UpstreamEndpoint           string             // 上游端点（标准化后的上游路径）
 	UserAgent                  string             // 请求的 User-Agent
@@ -9300,6 +9306,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		Subscription:               input.Subscription,
 		Entitlement:                input.Entitlement,
 		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		AllowEntitlementOverage:    input.AllowEntitlementOverage,
 		InboundEndpoint:            input.InboundEndpoint,
 		UpstreamEndpoint:           input.UpstreamEndpoint,
 		UserAgent:                  input.UserAgent,
@@ -9324,6 +9331,7 @@ type recordUsageCoreInput struct {
 	Subscription               *UserSubscription
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	InboundEndpoint            string
 	UpstreamEndpoint           string
 	UserAgent                  string
@@ -9444,6 +9452,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		Subscription:               subscription,
 		Entitlement:                entitlement,
 		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+		AllowEntitlementOverage:    input.AllowEntitlementOverage,
 		RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
 		IsSubscriptionBill:         isSubscriptionBilling,
 		AccountRateMultiplier:      accountRateMultiplier,

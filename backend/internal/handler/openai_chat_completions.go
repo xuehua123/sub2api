@@ -307,6 +307,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			Subscription:               subscription,
 			Entitlement:                subscriptionEntitlement,
 			EntitlementBalanceFallback: entitlementBalanceFallback,
+			AllowEntitlementOverage:    reqStream,
 			InboundEndpoint:            inboundEndpoint,
 			UpstreamEndpoint:           upstreamEndpoint,
 			UserAgent:                  userAgent,

@@ -159,6 +159,7 @@ func TestRecordCyberPolicyUsageLog_PreservesEntitlementBilling(t *testing.T) {
 	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
 	require.Nil(t, billingRepo.lastCmd.SubscriptionID)
 	require.True(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+	require.True(t, billingRepo.lastCmd.AllowEntitlementOverage)
 	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
 	require.Zero(t, billingRepo.lastCmd.BalanceCost)
 	require.Equal(t, 0, userRepo.deductCalls)
@@ -173,6 +174,41 @@ func TestRecordCyberPolicyUsageLog_PreservesEntitlementBilling(t *testing.T) {
 	require.Nil(t, usageRepo.lastLog.SubscriptionID)
 	require.NotNil(t, usageRepo.lastLog.BillingSource)
 	require.Equal(t, BillingSourceEntitlementQuota, *usageRepo.lastLog.BillingSource)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_AllowEntitlementOverageReachesBillingCommand(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true}}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(
+		usageRepo,
+		billingRepo,
+		&openAIRecordUsageUserRepoStub{},
+		&openAIRecordUsageSubRepoStub{},
+		nil,
+	)
+	entitlement := &SubscriptionEntitlement{ID: 904}
+
+	err := svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID: "resp_entitlement_overage_settlement",
+			Usage:     OpenAIUsage{InputTokens: 10, OutputTokens: 5},
+			Model:     "gpt-5.1",
+			Duration:  time.Second,
+		},
+		APIKey:                  &APIKey{ID: 100, AccessSource: APIKeyAccessSourceEntitlement, GroupID: i64p(88), Group: &Group{ID: 88, SubscriptionType: SubscriptionTypeStandard, RateMultiplier: 1.0}},
+		User:                    &User{ID: 200},
+		Account:                 &Account{ID: 300},
+		Entitlement:             entitlement,
+		AllowEntitlementOverage: true,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
+	require.True(t, billingRepo.lastCmd.AllowEntitlementOverage)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost)
 }
 
 type openAIRecordUsageUserRepoStub struct {

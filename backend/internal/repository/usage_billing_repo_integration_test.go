@@ -464,6 +464,60 @@ func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackRequiresCommandFl
 	require.InDelta(t, 100, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
 }
 
+func TestUsageBillingRepositoryApply_EntitlementFinalOverageSettlement(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-ent-final-overage-user-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Balance:      100,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-ent-final-overage-" + uuid.NewString(),
+		Name:   "billing-ent-final-overage",
+	})
+	limit := 5.0
+	now := time.Now().UTC()
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:             user.ID,
+		Name:               "usage billing entitlement final overage",
+		StartsAt:           now.Add(-time.Hour),
+		ExpiresAt:          now.Add(48 * time.Hour),
+		MonthlyWindowStart: ptrUsageBillingTime(now.Add(-time.Hour)),
+		MonthlyLimitUSD:    &limit,
+		MonthlyUsageUSD:    4.99,
+		OveragePolicy:      service.SubscriptionEntitlementOverageBlock,
+	})
+
+	_, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:        uuid.NewString(),
+		APIKeyID:         apiKey.ID,
+		UserID:           user.ID,
+		EntitlementID:    &entitlement.ID,
+		SubscriptionCost: 0.02,
+	})
+	require.ErrorIs(t, err, service.ErrSubscriptionEntitlementQuotaExceeded)
+	_, _, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	require.InDelta(t, 4.99, monthly, 0.000001)
+
+	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:               uuid.NewString(),
+		APIKeyID:                apiKey.ID,
+		UserID:                  user.ID,
+		EntitlementID:           &entitlement.ID,
+		SubscriptionCost:        0.02,
+		AllowEntitlementOverage: true,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	_, _, monthly = usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	require.InDelta(t, 5.01, monthly, 0.000001)
+	require.InDelta(t, 100, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
+}
+
 func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackDeductsBalance(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)

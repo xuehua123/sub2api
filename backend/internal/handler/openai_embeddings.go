@@ -224,6 +224,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 				Subscription:               subscription,
 				Entitlement:                subscriptionEntitlement,
 				EntitlementBalanceFallback: entitlementBalanceFallback,
+				AllowEntitlementOverage:    true,
 				InboundEndpoint:            inboundEndpoint,
 				UpstreamEndpoint:           upstreamEndpoint,
 				UserAgent:                  userAgent,

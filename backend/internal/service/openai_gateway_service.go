@@ -6142,6 +6142,7 @@ type OpenAIRecordUsageInput struct {
 	Subscription               *UserSubscription
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
+	AllowEntitlementOverage    bool
 	InboundEndpoint            string
 	UpstreamEndpoint           string
 	UserAgent                  string // 请求的 User-Agent
@@ -6205,6 +6206,7 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 		Subscription:               in.Subscription,
 		Entitlement:                in.Entitlement,
 		EntitlementBalanceFallback: in.EntitlementBalanceFallback,
+		AllowEntitlementOverage:    true,
 		InboundEndpoint:            in.InboundEndpoint,
 		UpstreamEndpoint:           in.UpstreamEndpoint,
 		UserAgent:                  in.UserAgent,
@@ -6447,6 +6449,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			Subscription:               subscription,
 			Entitlement:                entitlement,
 			EntitlementBalanceFallback: input.EntitlementBalanceFallback,
+			AllowEntitlementOverage:    input.AllowEntitlementOverage,
 			RequestPayloadHash:         resolveUsageBillingPayloadFingerprint(ctx, input.RequestPayloadHash),
 			IsSubscriptionBill:         isSubscriptionBilling,
 			AccountRateMultiplier:      accountRateMultiplier,

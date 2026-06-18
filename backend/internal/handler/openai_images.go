@@ -346,6 +346,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 				Subscription:               subscription,
 				Entitlement:                subscriptionEntitlement,
 				EntitlementBalanceFallback: entitlementBalanceFallback,
+				AllowEntitlementOverage:    true,
 				InboundEndpoint:            inboundEndpoint,
 				UpstreamEndpoint:           upstreamEndpoint,
 				UserAgent:                  userAgent,

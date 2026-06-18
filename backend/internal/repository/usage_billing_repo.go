@@ -108,7 +108,7 @@ func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *s
 
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
 	if cmd.SubscriptionCost > 0 && cmd.EntitlementID != nil {
-		entitlementVersion, usedFallback, err := applyUsageBillingEntitlement(ctx, tx, cmd.UserID, *cmd.EntitlementID, cmd.SubscriptionCost, cmd.EntitlementBalanceFallback)
+		entitlementVersion, usedFallback, err := applyUsageBillingEntitlement(ctx, tx, cmd.UserID, *cmd.EntitlementID, cmd.SubscriptionCost, cmd.EntitlementBalanceFallback, cmd.AllowEntitlementOverage)
 		if err != nil {
 			return err
 		}
@@ -223,7 +223,7 @@ type usageBillingEntitlementState struct {
 	OveragePolicy      string
 }
 
-func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entitlementID int64, costUSD float64, allowBalanceFallback bool) (int64, bool, error) {
+func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entitlementID int64, costUSD float64, allowBalanceFallback bool, allowOverage bool) (int64, bool, error) {
 	if costUSD < 0 {
 		return 0, false, service.ErrSubscriptionEntitlementInvalidUsage
 	}
@@ -253,13 +253,16 @@ func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entit
 	}
 	usage.activateAndReset(state.StartsAt, state.ExpiresAt, now)
 
-	if usageBillingLimitExceeded(usage.dailyUsageUSD, state.DailyLimitUSD, costUSD) ||
+	limitExceeded := usageBillingLimitExceeded(usage.dailyUsageUSD, state.DailyLimitUSD, costUSD) ||
 		usageBillingLimitExceeded(usage.weeklyUsageUSD, state.WeeklyLimitUSD, costUSD) ||
-		usageBillingLimitExceeded(usage.monthlyUsageUSD, state.MonthlyLimitUSD, costUSD) {
+		usageBillingLimitExceeded(usage.monthlyUsageUSD, state.MonthlyLimitUSD, costUSD)
+	if limitExceeded {
 		if allowBalanceFallback && state.OveragePolicy == service.SubscriptionEntitlementOverageBalanceFallback {
 			return 0, true, nil
 		}
-		return 0, false, service.ErrSubscriptionEntitlementQuotaExceeded
+		if !allowOverage {
+			return 0, false, service.ErrSubscriptionEntitlementQuotaExceeded
+		}
 	}
 
 	usage.dailyUsageUSD += costUSD
