@@ -763,6 +763,12 @@ func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) 
 	if groupID <= 0 {
 		return nil
 	}
+	groupDTO := GroupFromServiceShallow(group)
+	if groupDTO != nil {
+		groupDTO.DailyLimitUSD = cloneFloat64(ent.DailyLimitUSD)
+		groupDTO.WeeklyLimitUSD = cloneFloat64(ent.WeeklyLimitUSD)
+		groupDTO.MonthlyLimitUSD = cloneFloat64(ent.MonthlyLimitUSD)
+	}
 	return &UserSubscriptionAlias{
 		ID:                 *ent.LegacySubscriptionID,
 		UserID:             ent.UserID,
@@ -781,7 +787,7 @@ func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) 
 		MonthlyLimitUSD:    cloneFloat64(ent.MonthlyLimitUSD),
 		CreatedAt:          ent.CreatedAt,
 		UpdatedAt:          ent.UpdatedAt,
-		Group:              GroupFromServiceShallow(group),
+		Group:              groupDTO,
 		EntitlementID:      ent.ID,
 		PlanID:             cloneInt64(ent.PlanID),
 		PlanName:           ent.Name,
