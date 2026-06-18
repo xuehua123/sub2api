@@ -88,7 +88,11 @@ func (r *userSubscriptionRepository) GetByUserIDAndGroupID(ctx context.Context, 
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
 	}
-	return userSubscriptionEntityToService(m), nil
+	out := []service.UserSubscription{*userSubscriptionEntityToService(m)}
+	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
+		return nil, err
+	}
+	return &out[0], nil
 }
 
 func (r *userSubscriptionRepository) GetActiveByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {

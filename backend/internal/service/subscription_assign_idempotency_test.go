@@ -133,6 +133,7 @@ type subscriptionUserSubRepoStub struct {
 	byID        map[int64]*UserSubscription
 	byUserGroup map[string]*UserSubscription
 	createCalls int
+	deleteCalls int
 }
 
 func newSubscriptionUserSubRepoStub() *subscriptionUserSubRepoStub {
@@ -156,6 +157,17 @@ func (s *subscriptionUserSubRepoStub) seed(sub *UserSubscription) {
 		cp.ID = s.nextID
 		s.nextID++
 	}
+	s.byID[cp.ID] = &cp
+	s.byUserGroup[s.key(cp.UserID, cp.GroupID)] = &cp
+}
+
+func (s *subscriptionUserSubRepoStub) setEntitlementLink(id int64, link *UserSubscriptionEntitlementLink) {
+	sub := s.byID[id]
+	if sub == nil {
+		return
+	}
+	cp := *sub
+	cp.EntitlementLink = link
 	s.byID[cp.ID] = &cp
 	s.byUserGroup[s.key(cp.UserID, cp.GroupID)] = &cp
 }
@@ -423,6 +435,151 @@ func TestAssignSubscriptionV2PlanReplayDoesNotDuplicateEntitlement(t *testing.T)
 	require.Len(t, entRepo.entitlements, 1)
 }
 
+func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyBelongsToDifferentPlan(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	existingPlanID := int64(10)
+	groupID := int64(1)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		9:  testEntitlementPlan(9, []int64{groupID, 2}, nil),
+		10: testEntitlementPlan(10, []int64{groupID, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	subRepo.seed(&UserSubscription{
+		ID:        43,
+		UserID:    3005,
+		GroupID:   groupID,
+		StartsAt:  now,
+		ExpiresAt: now.AddDate(0, 0, 30),
+		Status:    SubscriptionStatusActive,
+		Notes:     "admin-plan",
+		EntitlementLink: &UserSubscriptionEntitlementLink{
+			EntitlementID:   91,
+			PlanID:          &existingPlanID,
+			Status:          SubscriptionStatusActive,
+			ExpiresAt:       now.AddDate(0, 0, 30),
+			PrimaryGroupID:  &groupID,
+			OveragePolicy:   SubscriptionEntitlementOverageBalanceFallback,
+			MonthlyUsageUSD: 0,
+		},
+	})
+
+	_, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3005,
+		GroupID:      groupID,
+		PlanID:       9,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "SUBSCRIPTION_ASSIGN_CONFLICT", infraerrorsReason(err))
+	require.Equal(t, 0, subRepo.createCalls)
+	require.Equal(t, 0, entRepo.createCount)
+}
+
+func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyPlanIsUnknown(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	groupID := int64(1)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		9: testEntitlementPlan(9, []int64{groupID, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+	subRepo.seed(&UserSubscription{
+		ID:        44,
+		UserID:    3007,
+		GroupID:   groupID,
+		StartsAt:  now,
+		ExpiresAt: now.AddDate(0, 0, 30),
+		Status:    SubscriptionStatusActive,
+		Notes:     "admin-plan",
+		EntitlementLink: &UserSubscriptionEntitlementLink{
+			EntitlementID:  92,
+			Status:         SubscriptionStatusActive,
+			ExpiresAt:      now.AddDate(0, 0, 30),
+			PrimaryGroupID: &groupID,
+		},
+	})
+
+	_, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3007,
+		GroupID:      groupID,
+		PlanID:       9,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.Error(t, err)
+	require.Equal(t, "SUBSCRIPTION_ASSIGN_CONFLICT", infraerrorsReason(err))
+	require.Equal(t, 0, subRepo.createCalls)
+	require.Equal(t, 0, entRepo.createCount)
+}
+
+func TestAssignSubscriptionV2PlanReassignAfterLinkedRevocationUsesNewLegacySubscription(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	groupID := int64(1)
+	wrongPlanID := int64(10)
+	rightPlanID := int64(9)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		rightPlanID: testEntitlementPlan(rightPlanID, []int64{groupID, 2}, nil),
+		wrongPlanID: testEntitlementPlan(wrongPlanID, []int64{groupID, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+	subRepo := svc.userSubRepo.(*subscriptionUserSubRepoStub)
+
+	wrong, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3006,
+		GroupID:      groupID,
+		PlanID:       wrongPlanID,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "wrong-plan",
+	})
+	require.NoError(t, err)
+	wrongEnt := requireTestEntitlementByLegacy(t, entRepo, wrong.ID, wrongPlanID)
+	subRepo.setEntitlementLink(wrong.ID, &UserSubscriptionEntitlementLink{
+		EntitlementID:  wrongEnt.ID,
+		PlanID:         &wrongPlanID,
+		Status:         SubscriptionStatusActive,
+		ExpiresAt:      wrongEnt.ExpiresAt,
+		PrimaryGroupID: &groupID,
+	})
+
+	err = svc.RevokeSubscription(context.Background(), wrong.ID)
+	require.NoError(t, err)
+	require.Equal(t, 1, subRepo.deleteCalls)
+	exists, err := subRepo.ExistsByUserIDAndGroupID(context.Background(), 3006, groupID)
+	require.NoError(t, err)
+	require.False(t, exists)
+	revokedWrongEnt, err := entRepo.GetByID(context.Background(), wrongEnt.ID)
+	require.NoError(t, err)
+	require.Equal(t, SubscriptionStatusRevoked, revokedWrongEnt.Status)
+
+	right, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:       3006,
+		GroupID:      groupID,
+		PlanID:       rightPlanID,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "right-plan",
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, wrong.ID, right.ID)
+	require.Equal(t, 2, subRepo.createCalls)
+	require.Equal(t, 2, entRepo.createCount)
+	rightEnt := requireTestEntitlementByLegacy(t, entRepo, right.ID, rightPlanID)
+	require.NotNil(t, rightEnt.SourceExternalID)
+	require.Equal(t, adminAssignEntitlementSourceExternalID(right.ID, rightPlanID), *rightEnt.SourceExternalID)
+	require.NotNil(t, revokedWrongEnt.LegacySubscriptionID)
+	require.Equal(t, wrong.ID, *revokedWrongEnt.LegacySubscriptionID)
+}
+
 func TestAssignSubscriptionV2PlanReusesExistingEntitlementAndBackfillsLegacyID(t *testing.T) {
 	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
 	entRepo := newFakeSubscriptionEntitlementRepo(now)
@@ -523,6 +680,17 @@ func TestDetectAssignSemanticConflictCases(t *testing.T) {
 	})
 	require.True(t, conflict)
 	require.Equal(t, "notes_mismatch", reason)
+
+	base.EntitlementLink = &UserSubscriptionEntitlementLink{EntitlementID: 91}
+	reason, conflict = detectAssignSemanticConflict(base, &AssignSubscriptionInput{
+		UserID:       1,
+		GroupID:      1,
+		PlanID:       9,
+		ValidityDays: 30,
+		Notes:        "same",
+	})
+	require.True(t, conflict)
+	require.Equal(t, "plan_id_mismatch", reason)
 }
 
 func TestAssignSubscriptionGroupTypeValidation(t *testing.T) {
@@ -547,4 +715,17 @@ func strconvFormatInt(v int64) string {
 
 func infraerrorsReason(err error) string {
 	return infraerrors.Reason(err)
+}
+
+func requireTestEntitlementByLegacy(t *testing.T, repo *fakeSubscriptionEntitlementRepo, legacySubscriptionID, planID int64) *SubscriptionEntitlement {
+	t.Helper()
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	for _, ent := range repo.entitlements {
+		if ent.LegacySubscriptionID != nil && *ent.LegacySubscriptionID == legacySubscriptionID && ent.PlanID != nil && *ent.PlanID == planID {
+			return cloneTestEntitlement(ent)
+		}
+	}
+	t.Fatalf("entitlement not found for legacy subscription %d and plan %d", legacySubscriptionID, planID)
+	return nil
 }

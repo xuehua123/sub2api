@@ -162,6 +162,7 @@ func TestSubscriptionServiceRevokeSubscription_RevokesLinkedEntitlementRow(t *te
 	require.NoError(t, err)
 	require.Equal(t, SubscriptionStatusRevoked, repo.entitlements[93].Status)
 	require.Contains(t, repo.entitlements[93].Notes, "revoked by admin")
+	require.Equal(t, int64(912), userSubs.deletedID)
 }
 
 func newSubscriptionServiceWithEntitlementRepo(repo *fakeSubscriptionEntitlementRepo) *SubscriptionService {
@@ -172,12 +173,18 @@ func newSubscriptionServiceWithEntitlementRepo(repo *fakeSubscriptionEntitlement
 
 type linkedEntitlementUserSubRepoStub struct {
 	userSubRepoNoop
-	sub *UserSubscription
+	sub       *UserSubscription
+	deletedID int64
 }
 
 func (r *linkedEntitlementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
 	cp := *r.sub
 	return &cp, nil
+}
+
+func (r *linkedEntitlementUserSubRepoStub) Delete(_ context.Context, id int64) error {
+	r.deletedID = id
+	return nil
 }
 
 func newSubscriptionServiceWithLinkedEntitlementRepo(repo *fakeSubscriptionEntitlementRepo, userSubRepo UserSubscriptionRepository) *SubscriptionService {

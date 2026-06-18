@@ -483,6 +483,7 @@ func (s *subscriptionUserSubRepoStub) Delete(_ context.Context, subscriptionID i
 	if sub == nil {
 		return ErrSubscriptionNotFound
 	}
+	s.deleteCalls++
 	delete(s.byID, subscriptionID)
 	delete(s.byUserGroup, s.key(sub.UserID, sub.GroupID))
 	return nil

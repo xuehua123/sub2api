@@ -692,6 +692,12 @@ func detectAssignSemanticConflict(existing *UserSubscription, input *AssignSubsc
 		return "", false
 	}
 
+	if input.PlanID > 0 && existing.EntitlementLink != nil {
+		if existing.EntitlementLink.PlanID == nil || *existing.EntitlementLink.PlanID != input.PlanID {
+			return "plan_id_mismatch", true
+		}
+	}
+
 	normalizedDays := normalizeAssignValidityDays(input.ValidityDays)
 	if !existing.StartsAt.IsZero() {
 		expectedExpiresAt := existing.StartsAt.AddDate(0, 0, normalizedDays)
@@ -734,7 +740,10 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 		return err
 	}
 	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
-		return s.adminRevokeEntitlement(ctx, sub.EntitlementLink.EntitlementID)
+		if err := s.revokeLinkedEntitlementSubscription(ctx, sub); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	if err := s.userSubRepo.Delete(ctx, subscriptionID); err != nil {
@@ -742,6 +751,33 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 	}
 
 	// 失效订阅缓存
+	s.InvalidateSubCache(sub.UserID, sub.GroupID)
+	if s.billingCacheService != nil {
+		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
+		go func() {
+			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
+		}()
+	}
+
+	return nil
+}
+
+func (s *SubscriptionService) revokeLinkedEntitlementSubscription(ctx context.Context, sub *UserSubscription) error {
+	if sub == nil || sub.EntitlementLink == nil || sub.EntitlementLink.EntitlementID <= 0 {
+		return ErrSubscriptionNotFound
+	}
+
+	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		if err := s.adminRevokeEntitlement(txCtx, sub.EntitlementLink.EntitlementID); err != nil {
+			return err
+		}
+		return s.userSubRepo.Delete(txCtx, sub.ID)
+	}); err != nil {
+		return err
+	}
+
 	s.InvalidateSubCache(sub.UserID, sub.GroupID)
 	if s.billingCacheService != nil {
 		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
