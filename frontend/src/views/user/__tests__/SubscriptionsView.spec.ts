@@ -416,13 +416,14 @@ describe('SubscriptionsView entitlement v2 section', () => {
     expect(showError).not.toHaveBeenCalled()
   })
 
-  it('does not block legacy subscriptions while entitlements are still loading', async () => {
+  it('keeps legacy subscriptions hidden while entitlements are still loading', async () => {
     getMySubscriptions.mockResolvedValue([legacySubscription])
     getEntitlements.mockImplementation(() => new Promise(() => {}))
 
     const wrapper = await mountView()
 
-    expect(wrapper.text()).toContain('Legacy Group')
+    expect(wrapper.text()).not.toContain('Legacy Group')
+    expect(wrapper.text()).not.toContain('No Active Subscriptions')
     expect(wrapper.find('[data-testid="entitlement-section"]').exists()).toBe(false)
   })
 })

@@ -618,10 +618,6 @@ async function loadSubscriptions() {
     subscriptions.value = subs
     void loadSubscriptionPlansForSubscriptions(subs)
 
-    if (subs.length > 0) {
-      loading.value = false
-    }
-
     const entitlementRecords = await entitlementRecordsPromise
     entitlements.value = entitlementRecords
 
