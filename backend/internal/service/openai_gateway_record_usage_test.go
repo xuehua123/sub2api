@@ -127,6 +127,54 @@ func TestRecordCyberPolicyUsageLog_SkipsWhenIncomplete(t *testing.T) {
 	require.Equal(t, 0, usageRepo.calls, "APIKey/User/Account 缺失或 Model 空时跳过，不记不扣费")
 }
 
+func TestRecordCyberPolicyUsageLog_PreservesEntitlementBilling(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newOpenAIRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo, nil)
+
+	entitlement := &SubscriptionEntitlement{ID: 902}
+	svc.RecordCyberPolicyUsageLog(context.Background(), CyberPolicyUsageInput{
+		APIKey: &APIKey{
+			ID:           2,
+			User:         &User{ID: 1},
+			AccessSource: APIKeyAccessSourceEntitlement,
+			GroupID:      i64p(88),
+			Group:        &Group{ID: 88, RateMultiplier: 1},
+		},
+		Account:                    &Account{ID: 3},
+		Entitlement:                entitlement,
+		EntitlementBalanceFallback: true,
+		RequestID:                  "rid-cyber-entitlement",
+		Model:                      "gpt-5.1",
+		Stream:                     true,
+		InputTokens:                100,
+		OutputTokens:               10,
+	})
+
+	require.Equal(t, 1, billingRepo.calls)
+	require.NotNil(t, billingRepo.lastCmd)
+	require.NotNil(t, billingRepo.lastCmd.EntitlementID)
+	require.Equal(t, entitlement.ID, *billingRepo.lastCmd.EntitlementID)
+	require.Nil(t, billingRepo.lastCmd.SubscriptionID)
+	require.True(t, billingRepo.lastCmd.EntitlementBalanceFallback)
+	require.Greater(t, billingRepo.lastCmd.SubscriptionCost, 0.0)
+	require.Zero(t, billingRepo.lastCmd.BalanceCost)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
+
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, RequestTypeCyberBlocked, usageRepo.lastLog.RequestType)
+	require.Equal(t, BillingTypeSubscription, usageRepo.lastLog.BillingType)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, entitlement.ID, *usageRepo.lastLog.EntitlementID)
+	require.Nil(t, usageRepo.lastLog.SubscriptionID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementQuota, *usageRepo.lastLog.BillingSource)
+}
+
 type openAIRecordUsageUserRepoStub struct {
 	UserRepository
 

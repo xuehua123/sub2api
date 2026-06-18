@@ -6157,14 +6157,16 @@ type OpenAIRecordUsageInput struct {
 // 用量按上游真实 token 计费，与 WS cyber 及正常请求口径一致（InputTokens/OutputTokens
 // 取自上游 response.failed 报告的 usage，即 mark.UpstreamInTok/OutTok）。
 type CyberPolicyUsageInput struct {
-	APIKey       *APIKey
-	Account      *Account
-	Subscription *UserSubscription
-	RequestID    string
-	Model        string
-	Stream       bool
-	InputTokens  int
-	OutputTokens int
+	APIKey                     *APIKey
+	Account                    *Account
+	Subscription               *UserSubscription
+	Entitlement                *SubscriptionEntitlement
+	EntitlementBalanceFallback bool
+	RequestID                  string
+	Model                      string
+	Stream                     bool
+	InputTokens                int
+	OutputTokens               int
 	// 渠道归因与请求级 meta，使 cyber 计费行与正常 RecordUsage 行口径一致
 	// （否则 cyber 行 channel_id 等为空，渠道维度统计会遗漏 cyber 命中）。
 	InboundEndpoint    string
@@ -6196,19 +6198,21 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 		},
 	}
 	if err := s.RecordUsage(ctx, &OpenAIRecordUsageInput{
-		Result:             result,
-		APIKey:             in.APIKey,
-		User:               in.APIKey.User,
-		Account:            in.Account,
-		Subscription:       in.Subscription,
-		InboundEndpoint:    in.InboundEndpoint,
-		UpstreamEndpoint:   in.UpstreamEndpoint,
-		UserAgent:          in.UserAgent,
-		IPAddress:          in.IPAddress,
-		RequestPayloadHash: in.RequestPayloadHash,
-		APIKeyService:      in.APIKeyService,
-		ChannelUsageFields: in.ChannelUsageFields,
-		CyberBlocked:       true,
+		Result:                     result,
+		APIKey:                     in.APIKey,
+		User:                       in.APIKey.User,
+		Account:                    in.Account,
+		Subscription:               in.Subscription,
+		Entitlement:                in.Entitlement,
+		EntitlementBalanceFallback: in.EntitlementBalanceFallback,
+		InboundEndpoint:            in.InboundEndpoint,
+		UpstreamEndpoint:           in.UpstreamEndpoint,
+		UserAgent:                  in.UserAgent,
+		IPAddress:                  in.IPAddress,
+		RequestPayloadHash:         in.RequestPayloadHash,
+		APIKeyService:              in.APIKeyService,
+		ChannelUsageFields:         in.ChannelUsageFields,
+		CyberBlocked:               true,
 	}); err != nil {
 		logger.LegacyPrintf("service.openai_gateway", "cyber usage record failed: request_id=%s err=%v", in.RequestID, err)
 	}
