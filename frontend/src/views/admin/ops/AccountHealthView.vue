@@ -211,6 +211,16 @@
             >
               webhook 已配置
             </div>
+            <button
+              v-if="settingsForm.notification.enterprise_wechat_enabled"
+              type="button"
+              class="btn btn-secondary btn-sm mt-2 w-full"
+              :disabled="testingWeChat || loadingRuntime || savingSettings"
+              @click="testEnterpriseWeChat"
+            >
+              <Icon name="bell" size="xs" :class="testingWeChat ? 'animate-pulse' : ''" />
+              <span>{{ testingWeChat ? '发送中' : '发送测试通知' }}</span>
+            </button>
             <label v-if="settingsForm.notification.enterprise_wechat_enabled" class="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
               <input v-model="settingsForm.notification.mention_all_on_immediate" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
               立即通知 @所有人
@@ -1173,6 +1183,7 @@ const response = ref<OpsAccountHealthResponse | null>(null)
 const loading = ref(false)
 const loadingRuntime = ref(false)
 const savingSettings = ref(false)
+const testingWeChat = ref(false)
 const errorMessage = ref('')
 const platformFilter = ref('')
 const groupIdInput = ref('')
@@ -1543,6 +1554,23 @@ async function saveSettings() {
     appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '规则保存失败')
   } finally {
     savingSettings.value = false
+  }
+}
+
+async function testEnterpriseWeChat() {
+  if (testingWeChat.value) return
+  if (!settingsLoaded.value) {
+    await loadRuntimeSettings()
+  }
+  if (!settingsLoaded.value) return
+  testingWeChat.value = true
+  try {
+    await opsAPI.testAccountHealthEnterpriseWeChat(cloneSettings(settingsForm.value))
+    appStore.showSuccess('企业微信测试通知已发送')
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '企业微信测试通知发送失败')
+  } finally {
+    testingWeChat.value = false
   }
 }
 

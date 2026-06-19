@@ -90,9 +90,9 @@
                   <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
                     {{ t('userSubscriptions.entitlements.authorizedGroups') }}
                   </div>
-                  <div class="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                  <div class="space-y-1.5">
                     <div
-                      v-for="group in entitlement.groups"
+                      v-for="group in visibleEntitlementGroups(entitlement)"
                       :key="group.id"
                       :class="[
                         'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium',
@@ -112,6 +112,15 @@
                         </span>
                       </div>
                     </div>
+                    <button
+                      v-if="hiddenEntitlementGroupCount(entitlement) > 0"
+                      type="button"
+                      class="flex w-full items-center justify-between rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-2 text-left text-xs font-bold text-primary-700 transition hover:border-primary-300 hover:bg-primary-100 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300 dark:hover:border-primary-400 dark:hover:bg-primary-500/15"
+                      @click="openEntitlementGroupsModal(entitlement)"
+                    >
+                      <span>+{{ hiddenEntitlementGroupCount(entitlement) }} 个分组</span>
+                      <span class="text-[10px] font-semibold opacity-80">查看全部</span>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -521,6 +530,61 @@
       @confirm="deleteSelectedSubscription"
       @cancel="cancelDeleteSubscription"
     />
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="groupsModalEntitlement"
+          class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          @click.self="closeEntitlementGroupsModal"
+        >
+          <div class="relative flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900">
+            <div class="flex items-start justify-between gap-4 border-b border-gray-100 p-5 dark:border-dark-700">
+              <div class="min-w-0">
+                <p class="text-xs font-bold uppercase tracking-wide text-primary-600 dark:text-primary-300">授权分组</p>
+                <h3 class="mt-1 truncate text-lg font-semibold text-gray-900 dark:text-white">
+                  {{ entitlementDisplayName(groupsModalEntitlement) }}
+                </h3>
+                <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                  共 {{ groupsModalEntitlement.groups.length }} 个可用分组，按分组倍率共享套餐额度
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-dark-700 dark:hover:text-white"
+                @click="closeEntitlementGroupsModal"
+              >
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div class="flex-1 space-y-2 overflow-y-auto p-5">
+              <div
+                v-for="group in groupsModalEntitlement.groups"
+                :key="group.id"
+                :class="[
+                  'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-2.5 text-sm',
+                  platformBadgeClass(group.platform || '')
+                ]"
+              >
+                <div class="min-w-0">
+                  <div class="truncate font-semibold">{{ group.name || `Group #${group.id}` }}</div>
+                  <div class="mt-0.5 truncate text-[11px] opacity-75">{{ platformLabel(group.platform || '') }}</div>
+                </div>
+                <div class="flex shrink-0 items-center gap-2 text-right">
+                  <span class="rounded bg-black/10 px-2 py-1 text-xs font-bold dark:bg-white/10">
+                    x{{ formatRateMultiplier(group.rate_multiplier) }}
+                  </span>
+                  <span class="w-[86px] truncate text-xs font-semibold">
+                    {{ entitlementGroupEstimatedCost(groupsModalEntitlement, group) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </AppLayout>
 </template>
 
@@ -573,6 +637,7 @@ const deletingSubscription = ref(false)
 const monthlyCycleAdvanceThreshold = 0.9
 const monthlyCycleDurationMs = 30 * 24 * 60 * 60 * 1000
 const monthlyCycleAdvanceValidityGraceMs = 60 * 1000
+const entitlementGroupPreviewLimit = 4
 
 type DeleteSubscriptionTarget = {
   type: 'entitlement' | 'subscription'
@@ -581,6 +646,7 @@ type DeleteSubscriptionTarget = {
 }
 
 const deleteTarget = ref<DeleteSubscriptionTarget | null>(null)
+const groupsModalEntitlement = ref<UserEntitlement | null>(null)
 
 const displayEntitlements = computed(() => {
   return [...entitlements.value].sort((a, b) => {
@@ -968,6 +1034,22 @@ function entitlementGroupEstimatedCost(
 
 function entitlementDisplayName(entitlement: UserEntitlement): string {
   return entitlement.plan_name || entitlement.name || `Entitlement #${entitlement.id}`
+}
+
+function visibleEntitlementGroups(entitlement: UserEntitlement): UserEntitlement['groups'] {
+  return entitlement.groups.slice(0, entitlementGroupPreviewLimit)
+}
+
+function hiddenEntitlementGroupCount(entitlement: UserEntitlement): number {
+  return Math.max(entitlement.groups.length - entitlementGroupPreviewLimit, 0)
+}
+
+function openEntitlementGroupsModal(entitlement: UserEntitlement) {
+  groupsModalEntitlement.value = entitlement
+}
+
+function closeEntitlementGroupsModal() {
+  groupsModalEntitlement.value = null
 }
 
 function confirmDeleteEntitlement(entitlement: UserEntitlement) {

@@ -352,6 +352,41 @@ func TestBuildOpsAccountHealthDigestWeComTextIncludesSustainedWindows(t *testing
 	require.Contains(t, text, "30m")
 }
 
+func TestBuildOpsAccountHealthWeComTextUsesMarkdownSections(t *testing.T) {
+	t.Parallel()
+
+	item := &OpsAccountHealthItem{
+		AccountID:     7,
+		AccountName:   "codex plus pro",
+		Platform:      "openai",
+		GroupID:       3,
+		GroupName:     "plus pro分组",
+		IsOpened:      true,
+		IsSchedulable: true,
+		IsAvailable:   false,
+		HasError:      true,
+		Windows:       defaultOpsAccountHealthWindows(),
+		Recommendation: OpsAccountHealthRecommendation{
+			Action:   OpsAccountHealthActionCloseNow,
+			Severity: "P1",
+			Title:    "账号处于错误状态",
+			Reason:   "upstream returned invalid_grant",
+		},
+	}
+	item.Windows[OpsAccountHealthWindow1m] = accountHealthTestWindow(OpsAccountHealthWindow1m, 24, 14, 10, 7)
+	normalizeAccountHealthMetrics(&OpsAccountHealthMetrics{Windows: item.Windows})
+
+	text := buildOpsAccountHealthWeComText(item, time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC))
+
+	require.Contains(t, text, "## <font color=\"warning\">[P1] 账号处于错误状态</font>")
+	require.Contains(t, text, "**建议动作**")
+	require.Contains(t, text, "**状态概览**")
+	require.Contains(t, text, "**窗口指标**")
+	require.Contains(t, text, "codex plus pro")
+	require.Contains(t, text, "1m：请求 **24**")
+	require.NotContains(t, text, "打开=true")
+}
+
 func TestShouldMentionAllForOpsAlertEnterpriseWeChat(t *testing.T) {
 	t.Parallel()
 
@@ -394,6 +429,40 @@ func TestSendOpsEnterpriseWeChatTextUsesShortTimeout(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, sawDeadline)
+}
+
+func TestSendOpsEnterpriseWeChatMarkdownPayload(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		http.DefaultTransport = originalTransport
+	})
+
+	var sawMarkdown bool
+	http.DefaultTransport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		body, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		payload := string(body)
+		require.Contains(t, payload, `"msgtype":"markdown"`)
+		require.Contains(t, payload, `"markdown"`)
+		require.Contains(t, payload, `hello`)
+		require.Contains(t, payload, `\u003c@all\u003e`)
+		sawMarkdown = true
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"errcode":0,"errmsg":"ok"}`)),
+			Header:     make(http.Header),
+			Request:    req,
+		}, nil
+	})
+
+	err := sendOpsEnterpriseWeChatMarkdown(
+		context.Background(),
+		"https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+		"## hello",
+		true,
+	)
+	require.NoError(t, err)
+	require.True(t, sawMarkdown)
 }
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)

@@ -755,7 +755,7 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 				continue
 			}
 			content := buildOpsAccountHealthWeComText(item, now)
-			if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, false); err != nil {
+			if err := sendOpsEnterpriseWeChatMarkdown(ctx, webhookURL, content, false); err != nil {
 				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health send failed (account=%d): %v", item.AccountID, err)
 				continue
 			}
@@ -766,7 +766,7 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 
 		mentionAll := immediate && settings.Notification.MentionAllOnImmediate
 		content := buildOpsAccountHealthWeComText(item, now)
-		if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, mentionAll); err != nil {
+		if err := sendOpsEnterpriseWeChatMarkdown(ctx, webhookURL, content, mentionAll); err != nil {
 			logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health send failed (account=%d): %v", item.AccountID, err)
 			continue
 		}
@@ -780,7 +780,7 @@ func (s *OpsAlertEvaluatorService) evaluateAccountHealthNotifications(ctx contex
 		s.accountHealthLimiter.SetLimit(settings.RateLimitPerHour)
 		if s.accountHealthLimiter.Allow(now) {
 			content := buildOpsAccountHealthDigestWeComText(digestItems, now)
-			if err := sendOpsEnterpriseWeChatText(ctx, webhookURL, content, false); err != nil {
+			if err := sendOpsEnterpriseWeChatMarkdown(ctx, webhookURL, content, false); err != nil {
 				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] enterprise wechat account health digest send failed (items=%d): %v", len(digestItems), err)
 			} else {
 				for _, item := range digestItems {
@@ -982,34 +982,51 @@ func buildOpsAccountHealthWeComText(item *OpsAccountHealthItem, now time.Time) s
 	if item == nil {
 		return ""
 	}
-	stat1m := item.Windows[OpsAccountHealthWindow1m]
-	stat5m := item.Windows[OpsAccountHealthWindow5m]
-	stat10m := item.Windows[OpsAccountHealthWindow10m]
-	stat30m := item.Windows[OpsAccountHealthWindow30m]
 	rec := item.Recommendation
-
 	lines := []string{
-		"Sub2API 账号健康通知",
-		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
-		fmt.Sprintf("账号: %s (#%d)", strings.TrimSpace(item.AccountName), item.AccountID),
-		fmt.Sprintf("平台/分组: %s / %s (#%d)", strings.TrimSpace(item.Platform), strings.TrimSpace(item.GroupName), item.GroupID),
-		fmt.Sprintf("状态: 打开=%t 可调度=%t", item.IsOpened, item.IsAvailable),
-		fmt.Sprintf("建议: %s [%s]", strings.TrimSpace(rec.Title), strings.TrimSpace(rec.Severity)),
-		fmt.Sprintf("原因: %s", strings.TrimSpace(rec.Reason)),
-		fmt.Sprintf("1m: %s", formatOpsAccountHealthWindowForNotify(stat1m)),
-		fmt.Sprintf("5m: %s", formatOpsAccountHealthWindowForNotify(stat5m)),
-		fmt.Sprintf("10m: %s", formatOpsAccountHealthWindowForNotify(stat10m)),
-		fmt.Sprintf("30m: %s", formatOpsAccountHealthWindowForNotify(stat30m)),
+		fmt.Sprintf("## <font color=\"%s\">[%s] %s</font>",
+			opsAccountHealthSeverityColor(rec.Severity),
+			escapeOpsWeComMarkdown(strings.TrimSpace(rec.Severity)),
+			escapeOpsWeComMarkdown(strings.TrimSpace(rec.Title)),
+		),
+		fmt.Sprintf("> **账号**：%s (#%d)", escapeOpsWeComMarkdown(accountHealthNotifyAccountName(item)), item.AccountID),
+		fmt.Sprintf("> **平台/分组**：%s / %s (#%d)",
+			escapeOpsWeComMarkdown(strings.TrimSpace(item.Platform)),
+			escapeOpsWeComMarkdown(strings.TrimSpace(item.GroupName)),
+			item.GroupID,
+		),
+		fmt.Sprintf("> **时间**：%s", formatOpsNotifyTime(now)),
+		"",
+		"**建议动作**",
+		fmt.Sprintf("> <font color=\"%s\">%s</font>",
+			opsAccountHealthSeverityColor(rec.Severity),
+			escapeOpsWeComMarkdown(opsAccountHealthNotifyActionText(rec.Action)),
+		),
+		fmt.Sprintf("> **原因**：%s", escapeOpsWeComMarkdown(strings.TrimSpace(rec.Reason))),
+		"",
+		"**状态概览**",
+		fmt.Sprintf("> 调度状态：%s / %s",
+			opsAccountHealthBoolText(item.IsOpened, "已打开", "已关闭"),
+			opsAccountHealthBoolText(item.IsAvailable, "可调度", "不可调度"),
+		),
+		fmt.Sprintf("> 异常标记：%s", escapeOpsWeComMarkdown(opsAccountHealthFlagSummary(item))),
+		"",
+		"**窗口指标**",
+		formatOpsAccountHealthWindowForMarkdown("1m", item.Windows[OpsAccountHealthWindow1m]),
+		formatOpsAccountHealthWindowForMarkdown("5m", item.Windows[OpsAccountHealthWindow5m]),
+		formatOpsAccountHealthWindowForMarkdown("10m", item.Windows[OpsAccountHealthWindow10m]),
+		formatOpsAccountHealthWindowForMarkdown("30m", item.Windows[OpsAccountHealthWindow30m]),
 	}
 	return truncateString(strings.Join(lines, "\n"), 1900)
 }
 
 func buildOpsAccountHealthDigestWeComText(items []*OpsAccountHealthItem, now time.Time) string {
 	lines := []string{
-		"Sub2API 账号健康汇总",
-		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
-		fmt.Sprintf("本轮命中: %d 个账号", len(items)),
-		"说明: P2 汇总仅包含 5m/10m/30m 持续变差账号，客服可按建议动作处理。",
+		fmt.Sprintf("## <font color=\"warning\">Sub2API 账号健康汇总 · %d 个账号</font>", len(items)),
+		fmt.Sprintf("> **时间**：%s", formatOpsNotifyTime(now)),
+		"> **说明**：汇总包含持续变差或需要人工关注的账号，请按建议动作处理。",
+		"",
+		"**重点账号**",
 	}
 	limit := 12
 	shown := 0
@@ -1018,32 +1035,48 @@ func buildOpsAccountHealthDigestWeComText(items []*OpsAccountHealthItem, now tim
 			continue
 		}
 		if shown >= limit {
-			lines = append(lines, fmt.Sprintf("... 还有 %d 个账号未列出", len(items)-limit))
+			lines = append(lines, fmt.Sprintf("> 还有 **%d** 个账号未列出，请打开账号健康看板查看。", len(items)-limit))
 			break
 		}
 		rec := item.Recommendation
-		name := strings.TrimSpace(item.AccountName)
-		if name == "" {
-			name = fmt.Sprintf("#%d", item.AccountID)
-		}
 		shown++
-		lines = append(lines, fmt.Sprintf(
-			"%d. [%s] %s (#%d) %s - %s",
+		lines = append(lines, fmt.Sprintf("%d. <font color=\"%s\">[%s] %s</font> %s (#%d)",
 			shown,
-			strings.TrimSpace(rec.Severity),
-			name,
-			item.AccountID,
+			opsAccountHealthSeverityColor(rec.Severity),
+			escapeOpsWeComMarkdown(strings.TrimSpace(rec.Severity)),
 			opsAccountHealthNotifyActionText(rec.Action),
-			strings.TrimSpace(rec.Title),
+			escapeOpsWeComMarkdown(accountHealthNotifyAccountName(item)),
+			item.AccountID,
 		))
-		lines = append(lines, fmt.Sprintf("   5m %s | 10m %s | 30m %s",
-			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow5m]),
-			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow10m]),
-			formatOpsAccountHealthWindowForNotify(item.Windows[OpsAccountHealthWindow30m]),
+		lines = append(lines, fmt.Sprintf("> %s / %s (#%d)",
+			escapeOpsWeComMarkdown(strings.TrimSpace(item.Platform)),
+			escapeOpsWeComMarkdown(strings.TrimSpace(item.GroupName)),
+			item.GroupID,
 		))
+		lines = append(lines, formatOpsAccountHealthWindowForMarkdown("5m", item.Windows[OpsAccountHealthWindow5m]))
+		lines = append(lines, formatOpsAccountHealthWindowForMarkdown("10m", item.Windows[OpsAccountHealthWindow10m]))
+		lines = append(lines, formatOpsAccountHealthWindowForMarkdown("30m", item.Windows[OpsAccountHealthWindow30m]))
 		if reason := strings.TrimSpace(rec.Reason); reason != "" {
-			lines = append(lines, "   "+reason)
+			lines = append(lines, fmt.Sprintf("> 原因：%s", escapeOpsWeComMarkdown(reason)))
 		}
+		lines = append(lines, "")
+	}
+	return truncateString(strings.Join(lines, "\n"), 1900)
+}
+
+func buildOpsAccountHealthTestWeComMarkdown(now time.Time) string {
+	lines := []string{
+		"## <font color=\"info\">Sub2API 账号健康测试通知</font>",
+		fmt.Sprintf("> **时间**：%s", formatOpsNotifyTime(now)),
+		"> **通道**：企业微信机器人 Markdown",
+		"> **结果**：Webhook 已连通，账号健康通知将按此样式展示。",
+		"",
+		"**示例重点**",
+		"> <font color=\"warning\">[P1] 账号处于错误状态</font>",
+		"> 建议动作：建议关闭；原因、窗口指标和分组信息会分段展示。",
+		"",
+		"**窗口指标示例**",
+		"> 1m：请求 **24** · 成功 <font color=\"warning\">58.3%</font> · 错误 41.7% · 上游 29.2%",
 	}
 	return truncateString(strings.Join(lines, "\n"), 1900)
 }
@@ -1079,6 +1112,98 @@ func formatOpsAccountHealthWindowForNotify(stat *OpsAccountHealthWindowStats) st
 	)
 }
 
+func formatOpsAccountHealthWindowForMarkdown(label string, stat *OpsAccountHealthWindowStats) string {
+	label = escapeOpsWeComMarkdown(strings.TrimSpace(label))
+	if stat == nil || stat.RequestCount <= 0 {
+		return fmt.Sprintf("> %s：<font color=\"comment\">无数据</font>", label)
+	}
+	successColor := "info"
+	if stat.SuccessRatePercent < 90 || stat.ErrorRatePercent >= 10 || stat.UpstreamErrorRatePercent >= 5 {
+		successColor = "warning"
+	}
+	return fmt.Sprintf(
+		"> %s：请求 **%d** · 成功 <font color=\"%s\">%.1f%%</font> · 错误 %.1f%% · 上游 %.1f%%",
+		label,
+		stat.RequestCount,
+		successColor,
+		stat.SuccessRatePercent,
+		stat.ErrorRatePercent,
+		stat.UpstreamErrorRatePercent,
+	)
+}
+
+func opsAccountHealthSeverityColor(severity string) string {
+	switch strings.ToUpper(strings.TrimSpace(severity)) {
+	case "P0", "P1", "CRITICAL":
+		return "warning"
+	case "P2", "WARNING":
+		return "info"
+	default:
+		return "comment"
+	}
+}
+
+func accountHealthNotifyAccountName(item *OpsAccountHealthItem) string {
+	if item == nil {
+		return "未知账号"
+	}
+	name := strings.TrimSpace(item.AccountName)
+	if name == "" {
+		return fmt.Sprintf("#%d", item.AccountID)
+	}
+	return name
+}
+
+func opsAccountHealthBoolText(ok bool, yes string, no string) string {
+	if ok {
+		return yes
+	}
+	return no
+}
+
+func opsAccountHealthFlagSummary(item *OpsAccountHealthItem) string {
+	if item == nil {
+		return "无数据"
+	}
+	flags := make([]string, 0, 5)
+	if item.HasError {
+		flags = append(flags, "错误状态")
+	}
+	if item.IsRateLimited {
+		flags = append(flags, "限流")
+	}
+	if item.IsOverloaded {
+		flags = append(flags, "过载")
+	}
+	if item.IsTempUnschedulable {
+		flags = append(flags, "临时不可调度")
+	}
+	if !item.IsSchedulable {
+		flags = append(flags, "调度关闭")
+	}
+	if len(flags) == 0 {
+		return "无明显异常"
+	}
+	return strings.Join(flags, " / ")
+}
+
+func formatOpsNotifyTime(t time.Time) string {
+	if t.IsZero() {
+		t = time.Now().UTC()
+	}
+	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+func escapeOpsWeComMarkdown(value string) string {
+	value = strings.TrimSpace(value)
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+	)
+	return replacer.Replace(value)
+}
+
 func sendOpsEnterpriseWeChatText(ctx context.Context, webhookURL string, content string, mentionAll bool) error {
 	webhookURL = strings.TrimSpace(webhookURL)
 	if webhookURL == "" {
@@ -1107,11 +1232,44 @@ func sendOpsEnterpriseWeChatText(ctx context.Context, webhookURL string, content
 		payload.Text.MentionedList = []string{"@all"}
 	}
 
+	return postOpsEnterpriseWeChatPayload(requestCtx, webhookURL, payload)
+}
+
+func sendOpsEnterpriseWeChatMarkdown(ctx context.Context, webhookURL string, content string, mentionAll bool) error {
+	webhookURL = strings.TrimSpace(webhookURL)
+	if webhookURL == "" {
+		return fmt.Errorf("enterprise wechat webhook url is empty")
+	}
+	if err := validateOpsEnterpriseWeChatWebhookURL(webhookURL); err != nil {
+		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, opsEnterpriseWeChatSendTimeout)
+	defer cancel()
+
+	payload := struct {
+		MsgType  string `json:"msgtype"`
+		Markdown struct {
+			Content string `json:"content"`
+		} `json:"markdown"`
+	}{
+		MsgType: "markdown",
+	}
+	payload.Markdown.Content = strings.TrimSpace(content)
+	if mentionAll {
+		payload.Markdown.Content = strings.TrimSpace(payload.Markdown.Content + "\n\n<@all>")
+	}
+	return postOpsEnterpriseWeChatPayload(requestCtx, webhookURL, payload)
+}
+
+func postOpsEnterpriseWeChatPayload(ctx context.Context, webhookURL string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}

@@ -382,6 +382,43 @@ func (s *OpsService) UpdateOpsAccountHealthSettings(ctx context.Context, setting
 	return settings, nil
 }
 
+func (s *OpsService) TestOpsAccountHealthEnterpriseWeChat(ctx context.Context, candidate *OpsAccountHealthSettings) error {
+	if s == nil || s.settingRepo == nil {
+		return errors.New("setting repository not initialized")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	cfg, err := s.GetOpsAlertRuntimeSettings(ctx)
+	if err != nil {
+		return err
+	}
+	if cfg == nil {
+		cfg = defaultOpsAlertRuntimeSettings()
+	}
+
+	settings := cfg.AccountHealth
+	if candidate != nil {
+		settings = *candidate
+		preserveMaskedOpsAccountHealthWebhook(&settings, cfg.AccountHealth)
+	}
+	normalizeOpsAccountHealthSettings(&settings)
+
+	if !settings.Notification.EnterpriseWeChatEnabled {
+		return errors.New("account health enterprise wechat notification is disabled")
+	}
+	webhookURL := strings.TrimSpace(settings.Notification.EnterpriseWeChatWebhookURL)
+	if webhookURL == "" || isOpsWebhookMasked(webhookURL) {
+		return errors.New("account health enterprise wechat webhook is not configured")
+	}
+	if err := validateOpsEnterpriseWeChatWebhookURL(webhookURL); err != nil {
+		return err
+	}
+
+	return sendOpsEnterpriseWeChatMarkdown(ctx, webhookURL, buildOpsAccountHealthTestWeComMarkdown(time.Now().UTC()), false)
+}
+
 func (s *OpsService) storeOpsAlertRuntimeSettings(ctx context.Context, cfg *OpsAlertRuntimeSettings) (*OpsAlertRuntimeSettings, error) {
 	raw, err := json.Marshal(cfg)
 	if err != nil {

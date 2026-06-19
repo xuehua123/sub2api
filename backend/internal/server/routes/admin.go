@@ -153,6 +153,7 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.GET("/account-availability", h.Admin.Ops.GetAccountAvailability)
 		ops.GET("/account-health", h.Admin.Ops.GetAccountHealth)
 		ops.PATCH("/account-health/settings", h.Admin.Ops.UpdateAccountHealthSettings)
+		ops.POST("/account-health/test-enterprise-wechat", h.Admin.Ops.TestAccountHealthEnterpriseWeChat)
 		ops.PATCH("/account-health/:id/probe-auto", h.Admin.Ops.UpdateAccountHealthProbeAuto)
 		ops.PATCH("/account-health/:id/probe-model", h.Admin.Ops.UpdateAccountHealthProbeModel)
 		ops.POST("/account-health/:id/probe", h.Admin.Ops.RunAccountHealthProbe)

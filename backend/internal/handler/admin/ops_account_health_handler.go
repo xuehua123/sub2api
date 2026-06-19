@@ -96,6 +96,36 @@ func (h *OpsHandler) UpdateAccountHealthSettings(c *gin.Context) {
 	response.Success(c, service.MaskOpsAccountHealthSettingsForResponse(updated))
 }
 
+// TestAccountHealthEnterpriseWeChat sends a sample formatted account-health
+// notification through the configured enterprise WeChat webhook.
+// POST /api/v1/admin/ops/account-health/test-enterprise-wechat
+func (h *OpsHandler) TestAccountHealthEnterpriseWeChat(c *gin.Context) {
+	if h.opsService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Ops service not available")
+		return
+	}
+	if err := h.opsService.RequireMonitoringEnabled(c.Request.Context()); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	var settings *service.OpsAccountHealthSettings
+	if c.Request.Body != nil && c.Request.ContentLength != 0 {
+		var req service.OpsAccountHealthSettings
+		if err := c.ShouldBindJSON(&req); err != nil {
+			response.BadRequest(c, "Invalid account health settings")
+			return
+		}
+		settings = &req
+	}
+
+	if err := h.opsService.TestOpsAccountHealthEnterpriseWeChat(c.Request.Context(), settings); err != nil {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"ok": true})
+}
+
 // UpdateAccountHealthProbeAuto updates whether a single closed account may be
 // picked by the background active-probe scheduler.
 // PATCH /api/v1/admin/ops/account-health/:id/probe-auto

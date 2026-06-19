@@ -55,7 +55,7 @@
                 :key="tab.key"
                 class="h-9 px-6 rounded-lg text-xs font-bold transition-all duration-200"
                 :class="activeTab === tab.key ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'"
-                @click="activeTab = tab.key"
+                @click="setActiveTab(tab.key)"
               >
                 {{ tab.label }}
               </button>
@@ -163,12 +163,14 @@
                             {{ group.multiplierText }}
                           </span>
                         </div>
-                        <div
+                        <button
                           v-if="planGroupRowOverflowText(plan, 3)"
-                          class="rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-1.5 text-[10px] font-bold text-primary-700 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300"
+                          type="button"
+                          class="w-full rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-1.5 text-left text-[10px] font-bold text-primary-700 transition hover:border-primary-300 hover:bg-primary-100 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300 dark:hover:border-primary-400 dark:hover:bg-primary-500/15"
+                          @click.stop="openPlanGroupsModal(plan)"
                         >
-                          {{ planGroupRowOverflowText(plan, 3) }}
-                        </div>
+                          {{ planGroupRowOverflowText(plan, 3) }} · 查看全部
+                        </button>
                       </div>
                     </div>
 
@@ -299,9 +301,14 @@
                                   <span class="min-w-0 truncate text-[10px] text-slate-700 dark:text-slate-300">{{ group.name }}</span>
                                   <span class="shrink-0 text-[10px] font-black text-emerald-700 dark:text-emerald-300">{{ group.multiplierText }}</span>
                                 </div>
-                                <span v-if="planGroupRowOverflowText(plan, 4)" class="block text-[10px] font-bold text-primary-700 dark:text-primary-300">
-                                  {{ planGroupRowOverflowText(plan, 4) }}
-                                </span>
+                                <button
+                                  v-if="planGroupRowOverflowText(plan, 4)"
+                                  type="button"
+                                  class="block text-left text-[10px] font-bold text-primary-700 transition hover:text-primary-500 dark:text-primary-300 dark:hover:text-primary-200"
+                                  @click="openPlanGroupsModal(plan)"
+                                >
+                                  {{ planGroupRowOverflowText(plan, 4) }} · 查看全部
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -380,7 +387,7 @@
                     <div class="mt-6 space-y-3">
                       <h4 class="text-xs font-bold uppercase tracking-wider text-slate-500">包含的分组权益与费率</h4>
                       
-                      <div class="max-h-[240px] overflow-y-auto pr-1 space-y-2 group-scrollbar">
+                      <div class="space-y-2">
                         <div
                           v-for="group in planGroups(selectedPlan)"
                           :key="group.id"
@@ -390,10 +397,12 @@
                             <span class="text-sm font-bold text-slate-950 dark:text-white">
                               {{ displayGroupName(group.name) }}
                             </span>
-                            <div class="flex gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            <div class="flex flex-wrap gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
                               <span>平台: {{ platformLabel(group.platform || '') }}</span>
-                              <span>·</span>
-                              <span>额度: {{ groupQuotaText(group) }}</span>
+                              <template v-if="groupQuotaText(group)">
+                                <span>·</span>
+                                <span>额度: {{ groupQuotaText(group) }}</span>
+                              </template>
                             </div>
                           </div>
                           <span class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
@@ -710,6 +719,60 @@
       </Transition>
     </Teleport>
 
+    <!-- Plan Groups Detail Modal -->
+    <Teleport to="body">
+      <Transition name="modal">
+        <div
+          v-if="planGroupsModalPlan"
+          class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
+          @click.self="closePlanGroupsModal"
+        >
+          <div class="relative flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-2xl dark:border-white/10 dark:bg-[#0b1222]">
+            <div class="flex items-start justify-between gap-4 border-b border-slate-200/80 p-5 dark:border-white/10">
+              <div class="min-w-0">
+                <p class="text-xs font-bold uppercase tracking-wide text-primary-600 dark:text-primary-300">
+                  覆盖分组
+                </p>
+                <h3 class="mt-1 truncate text-lg font-extrabold text-slate-950 dark:text-white">
+                  {{ planGroupsModalPlan.name }}
+                </h3>
+                <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  共 {{ planGroupCount(planGroupsModalPlan) }} 个分组，点击套餐后均按下方倍率计费
+                </p>
+              </div>
+              <button
+                type="button"
+                class="rounded-lg p-1.5 text-slate-500 transition hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white"
+                @click="closePlanGroupsModal"
+              >
+                <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div class="flex-1 space-y-2 overflow-y-auto p-5 group-scrollbar">
+              <div
+                v-for="group in planGroupDetailRows(planGroupsModalPlan)"
+                :key="group.key"
+                class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/5 dark:bg-slate-950/40"
+              >
+                <div class="min-w-0">
+                  <div class="truncate text-sm font-bold text-slate-950 dark:text-white">{{ group.name }}</div>
+                  <div class="mt-1 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    <span>{{ group.platformText }}</span>
+                    <span>{{ group.quotaText }}</span>
+                  </div>
+                </div>
+                <span class="h-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
+                  {{ group.multiplierText }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
     <!-- Image Preview Overlay -->
     <Teleport to="body">
       <Transition name="modal">
@@ -834,6 +897,7 @@ const selectedMethod = ref('')
 const selectedPlan = ref<SubscriptionPlan | null>(null)
 const previewImage = ref('')
 const isComparisonOpen = ref(true)
+const planGroupsModalPlan = ref<SubscriptionPlan | null>(null)
 
 const paymentPhase = ref<'select' | 'paying'>('select')
 
@@ -1100,6 +1164,11 @@ type PlanGroupRow = {
   multiplierText: string
 }
 
+type PlanGroupDetailRow = PlanGroupRow & {
+  platformText: string
+  quotaText: string
+}
+
 function formatGroupMultiplier(value?: number | null): string {
   const multiplier = value ?? 1
   const fractionDigits = Math.abs(multiplier - Math.round(multiplier)) > 0.0001 ? 2 : 0
@@ -1107,10 +1176,10 @@ function formatGroupMultiplier(value?: number | null): string {
 }
 
 function groupQuotaText(group: SubscriptionPlanGroupInfo): string {
-  if (group.monthly_limit_usd != null) return `$${formatPlainNumber(group.monthly_limit_usd)}/月`
-  if (group.weekly_limit_usd != null) return `$${formatPlainNumber(group.weekly_limit_usd)}/周`
-  if (group.daily_limit_usd != null) return `$${formatPlainNumber(group.daily_limit_usd)}/天`
-  return '无限制'
+  if (typeof group.monthly_limit_usd === 'number' && group.monthly_limit_usd > 0) return `$${formatPlainNumber(group.monthly_limit_usd)}/月`
+  if (typeof group.weekly_limit_usd === 'number' && group.weekly_limit_usd > 0) return `$${formatPlainNumber(group.weekly_limit_usd)}/周`
+  if (typeof group.daily_limit_usd === 'number' && group.daily_limit_usd > 0) return `$${formatPlainNumber(group.daily_limit_usd)}/天`
+  return ''
 }
 
 function planGroupLabels(plan: SubscriptionPlan, limit = Number.POSITIVE_INFINITY): string[] {
@@ -1162,6 +1231,34 @@ function planGroupRows(plan: SubscriptionPlan, limit = Number.POSITIVE_INFINITY)
 function planGroupRowOverflowText(plan: SubscriptionPlan, visibleCount: number): string {
   const overflow = planGroupOverflowText(plan, visibleCount)
   return overflow ? `${overflow}分组` : ''
+}
+
+function planGroupDetailRows(plan: SubscriptionPlan): PlanGroupDetailRow[] {
+  const groups = planGroups(plan)
+  if (groups.length > 0) {
+    return groups.map(group => ({
+      key: String(group.id),
+      name: displayGroupName(group.name),
+      multiplierText: formatGroupMultiplier(group.rate_multiplier),
+      platformText: `平台: ${platformLabel(group.platform || '')}`,
+      quotaText: groupQuotaText(group) ? `额度: ${groupQuotaText(group)}` : '额度不限',
+    }))
+  }
+  return planGroupRows(plan).map(row => ({
+    ...row,
+    platformText: plan.allowed_platforms?.length
+      ? `平台: ${plan.allowed_platforms.map(platform => platformLabel(platform)).join(' / ')}`
+      : '平台: 全部适用',
+    quotaText: '额度不限',
+  }))
+}
+
+function openPlanGroupsModal(plan: SubscriptionPlan) {
+  planGroupsModalPlan.value = plan
+}
+
+function closePlanGroupsModal() {
+  planGroupsModalPlan.value = null
 }
 
 function planCapabilityTags(plan: SubscriptionPlan): string[] {
@@ -1438,9 +1535,21 @@ const renewalPlans = computed(() => {
   return checkout.value.plans.filter(p => p.group_id === renewGroupId.value)
 })
 
+function setActiveTab(tab: 'recharge' | 'subscription') {
+  activeTab.value = tab
+  selectedPlan.value = null
+  errorMessage.value = ''
+  errorHintMessage.value = ''
+  paymentPhase.value = 'select'
+  closePlanGroupsModal()
+  closeRenewalModal()
+}
+
 function selectPlan(plan: SubscriptionPlan) {
   selectedPlan.value = plan
   errorMessage.value = ''
+  errorHintMessage.value = ''
+  closePlanGroupsModal()
 }
 
 function selectPlanFromModal(plan: SubscriptionPlan) {
@@ -1448,6 +1557,7 @@ function selectPlanFromModal(plan: SubscriptionPlan) {
   renewGroupId.value = null
   selectedPlan.value = plan
   errorMessage.value = ''
+  errorHintMessage.value = ''
 }
 
 function closeRenewalModal() {

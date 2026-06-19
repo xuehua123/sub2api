@@ -593,6 +593,10 @@ export async function updateAccountHealthSettings(settings: OpsAccountHealthSett
   return data
 }
 
+export async function testAccountHealthEnterpriseWeChat(settings: OpsAccountHealthSettings): Promise<void> {
+  await apiClient.post('/admin/ops/account-health/test-enterprise-wechat', settings)
+}
+
 export async function updateAccountHealthProbeAuto(accountId: number, enabled: boolean): Promise<OpsAccountHealthProbeAutoState> {
   const { data } = await apiClient.patch<OpsAccountHealthProbeAutoState>(`/admin/ops/account-health/${accountId}/probe-auto`, { enabled })
   return data
@@ -1521,6 +1525,7 @@ export const opsAPI = {
   getAccountAvailabilityStats,
   getAccountHealth,
   updateAccountHealthSettings,
+  testAccountHealthEnterpriseWeChat,
   updateAccountHealthProbeAuto,
   updateAccountHealthProbeModel,
   runAccountHealthProbe,
