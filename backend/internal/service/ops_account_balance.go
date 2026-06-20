@@ -240,8 +240,11 @@ func (s *OpsService) ListAccountBalanceMonitor(ctx context.Context, filter OpsAc
 	}
 	filter.Platform = strings.TrimSpace(filter.Platform)
 	filter.Status = strings.TrimSpace(filter.Status)
+	filter.ProbeStatus = strings.TrimSpace(filter.ProbeStatus)
 	filter.Search = strings.ToLower(strings.TrimSpace(filter.Search))
 	filter.Method = normalizeAccountBalanceProbeMethod(filter.Method)
+	filter.SortBy = normalizeAccountBalanceSortBy(filter.SortBy)
+	filter.SortOrder = normalizeAccountBalanceSortOrder(filter.SortOrder)
 
 	settings := defaultOpsAccountBalanceSettings()
 	if cfg, err := s.GetOpsAlertRuntimeSettings(ctx); err == nil && cfg != nil {
@@ -295,14 +298,7 @@ func (s *OpsService) ListAccountBalanceMonitor(ctx context.Context, filter OpsAc
 		}
 		allItems = append(allItems, item)
 	}
-	sort.Slice(allItems, func(i, j int) bool {
-		left := allItems[i]
-		right := allItems[j]
-		if left.Platform != right.Platform {
-			return left.Platform < right.Platform
-		}
-		return strings.ToLower(left.AccountName) < strings.ToLower(right.AccountName)
-	})
+	sortAccountBalanceMonitorItems(allItems, filter.SortBy, filter.SortOrder)
 
 	total := int64(len(allItems))
 	start := (filter.Page - 1) * filter.PageSize
@@ -330,7 +326,10 @@ func matchesAccountBalanceFilter(item OpsAccountBalanceAccountItem, filter OpsAc
 	if filter.Status != "" && !strings.EqualFold(item.Status, filter.Status) {
 		return false
 	}
-	if filter.Method != "" && filter.Method != item.BalanceProbe.Method {
+	if filter.ProbeStatus != "" && !strings.EqualFold(item.BalanceProbe.Status, filter.ProbeStatus) {
+		return false
+	}
+	if filter.Method != "" && filter.Method != item.BalanceProbe.Method && filter.Method != item.BalanceProbe.DetectedMethod {
 		return false
 	}
 	if filter.Search != "" {
@@ -355,7 +354,198 @@ func matchesAccountBalanceFilter(item OpsAccountBalanceAccountItem, filter OpsAc
 	if filter.OnlyFailed && item.BalanceProbe.Status != AccountBalanceProbeStatusFailed && item.BalanceProbe.Status != AccountBalanceProbeStatusUnsupported {
 		return false
 	}
+	if filter.OnlySchedulable && !item.Schedulable {
+		return false
+	}
 	return true
+}
+
+func normalizeAccountBalanceSortBy(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "id", "account_id":
+		return "account_id"
+	case "account", "name", "account_name":
+		return "account_name"
+	case "platform":
+		return "platform"
+	case "type":
+		return "type"
+	case "account_status":
+		return "account_status"
+	case "status", "probe_status":
+		return "probe_status"
+	case "method":
+		return "method"
+	case "detected_method":
+		return "detected_method"
+	case "balance", "balance_usd":
+		return "balance_usd"
+	case "threshold", "threshold_usd":
+		return "threshold_usd"
+	case "checked_at", "last_checked_at":
+		return "checked_at"
+	case "schedulable":
+		return "schedulable"
+	default:
+		return "account_name"
+	}
+}
+
+func normalizeAccountBalanceSortOrder(raw string) string {
+	if strings.EqualFold(strings.TrimSpace(raw), "desc") {
+		return "desc"
+	}
+	return "asc"
+}
+
+func sortAccountBalanceMonitorItems(items []OpsAccountBalanceAccountItem, sortBy string, sortOrder string) {
+	sortBy = normalizeAccountBalanceSortBy(sortBy)
+	desc := normalizeAccountBalanceSortOrder(sortOrder) == "desc"
+	sort.SliceStable(items, func(i, j int) bool {
+		cmp := compareAccountBalanceMonitorItems(items[i], items[j], sortBy, desc)
+		if cmp == 0 && sortBy != "platform" {
+			cmp = compareStrings(strings.ToLower(items[i].Platform), strings.ToLower(items[j].Platform), false)
+		}
+		if cmp == 0 && sortBy != "account_name" {
+			cmp = compareStrings(strings.ToLower(items[i].AccountName), strings.ToLower(items[j].AccountName), false)
+		}
+		if cmp == 0 {
+			cmp = compareInts64(items[i].AccountID, items[j].AccountID, false)
+		}
+		return cmp < 0
+	})
+}
+
+func compareAccountBalanceMonitorItems(left OpsAccountBalanceAccountItem, right OpsAccountBalanceAccountItem, sortBy string, desc bool) int {
+	switch sortBy {
+	case "account_id":
+		return compareInts64(left.AccountID, right.AccountID, desc)
+	case "account_name":
+		return compareStrings(strings.ToLower(left.AccountName), strings.ToLower(right.AccountName), desc)
+	case "platform":
+		return compareStrings(strings.ToLower(left.Platform), strings.ToLower(right.Platform), desc)
+	case "type":
+		return compareStrings(strings.ToLower(left.Type), strings.ToLower(right.Type), desc)
+	case "account_status":
+		return compareStrings(strings.ToLower(left.Status), strings.ToLower(right.Status), desc)
+	case "probe_status":
+		return compareStrings(accountBalanceStatusRank(left.BalanceProbe.Status), accountBalanceStatusRank(right.BalanceProbe.Status), desc)
+	case "method":
+		return compareStrings(left.BalanceProbe.Method, right.BalanceProbe.Method, desc)
+	case "detected_method":
+		return compareStrings(left.BalanceProbe.DetectedMethod, right.BalanceProbe.DetectedMethod, desc)
+	case "balance_usd":
+		return compareOptionalFloat(accountBalanceSortableBalance(left.BalanceProbe), accountBalanceSortableBalance(right.BalanceProbe), desc)
+	case "threshold_usd":
+		return compareOptionalFloat(left.BalanceProbe.ThresholdUSD, right.BalanceProbe.ThresholdUSD, desc)
+	case "checked_at":
+		return compareOptionalTime(left.BalanceProbe.CheckedAt, right.BalanceProbe.CheckedAt, desc)
+	case "schedulable":
+		return compareBools(left.Schedulable, right.Schedulable, desc)
+	default:
+		return compareStrings(strings.ToLower(left.AccountName), strings.ToLower(right.AccountName), desc)
+	}
+}
+
+func accountBalanceStatusRank(status string) string {
+	switch status {
+	case AccountBalanceProbeStatusOK:
+		return "1_ok"
+	case AccountBalanceProbeStatusFailed:
+		return "2_failed"
+	case AccountBalanceProbeStatusUnsupported:
+		return "3_unsupported"
+	case AccountBalanceProbeStatusSkipped:
+		return "4_skipped"
+	default:
+		return "5_unknown"
+	}
+}
+
+func accountBalanceSortableBalance(state OpsAccountBalanceState) *float64 {
+	if state.Unlimited {
+		value := math.Inf(1)
+		return &value
+	}
+	return state.BalanceUSD
+}
+
+func compareStrings(left string, right string, desc bool) int {
+	cmp := strings.Compare(left, right)
+	if desc {
+		return -cmp
+	}
+	return cmp
+}
+
+func compareInts64(left int64, right int64, desc bool) int {
+	cmp := 0
+	if left < right {
+		cmp = -1
+	} else if left > right {
+		cmp = 1
+	}
+	if desc {
+		return -cmp
+	}
+	return cmp
+}
+
+func compareBools(left bool, right bool, desc bool) int {
+	cmp := 0
+	if !left && right {
+		cmp = -1
+	} else if left && !right {
+		cmp = 1
+	}
+	if desc {
+		return -cmp
+	}
+	return cmp
+}
+
+func compareOptionalFloat(left *float64, right *float64, desc bool) int {
+	if left == nil && right == nil {
+		return 0
+	}
+	if left == nil {
+		return 1
+	}
+	if right == nil {
+		return -1
+	}
+	cmp := 0
+	if *left < *right {
+		cmp = -1
+	} else if *left > *right {
+		cmp = 1
+	}
+	if desc {
+		return -cmp
+	}
+	return cmp
+}
+
+func compareOptionalTime(left *time.Time, right *time.Time, desc bool) int {
+	if left == nil && right == nil {
+		return 0
+	}
+	if left == nil {
+		return 1
+	}
+	if right == nil {
+		return -1
+	}
+	cmp := 0
+	if left.Before(*right) {
+		cmp = -1
+	} else if left.After(*right) {
+		cmp = 1
+	}
+	if desc {
+		return -cmp
+	}
+	return cmp
 }
 
 func (s *OpsService) UpdateAccountBalanceProbeConfig(ctx context.Context, accountID int64, req OpsAccountBalanceProbeConfigUpdate) (OpsAccountBalanceState, error) {

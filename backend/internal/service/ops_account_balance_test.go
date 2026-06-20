@@ -2,7 +2,11 @@
 
 package service
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+	"time"
+)
 
 func TestAccountBalanceJoinEndpoint(t *testing.T) {
 	tests := []struct {
@@ -130,6 +134,99 @@ func TestAccountBalanceStateTreatsNullThresholdAsDefault(t *testing.T) {
 	if state.ThresholdUSD != nil {
 		t.Fatalf("ThresholdUSD = %#v, want nil", state.ThresholdUSD)
 	}
+}
+
+func TestSortAccountBalanceMonitorItems(t *testing.T) {
+	older := time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)
+	newer := older.Add(time.Hour)
+	low := 3.0
+	high := 25.0
+	items := []OpsAccountBalanceAccountItem{
+		{
+			AccountID:   2,
+			AccountName: "beta",
+			Platform:    "openai",
+			BalanceProbe: OpsAccountBalanceState{
+				Status:     AccountBalanceProbeStatusOK,
+				BalanceUSD: &low,
+				CheckedAt:  &older,
+			},
+		},
+		{
+			AccountID:   1,
+			AccountName: "alpha",
+			Platform:    "anthropic",
+			BalanceProbe: OpsAccountBalanceState{
+				Status:     AccountBalanceProbeStatusFailed,
+				BalanceUSD: &high,
+				CheckedAt:  &newer,
+			},
+		},
+		{
+			AccountID:   3,
+			AccountName: "gamma",
+			Platform:    "openai",
+			BalanceProbe: OpsAccountBalanceState{
+				Status:    AccountBalanceProbeStatusUnknown,
+				Unlimited: true,
+			},
+		},
+	}
+
+	sortAccountBalanceMonitorItems(items, "balance_usd", "desc")
+	if got := accountBalanceIDs(items); !reflect.DeepEqual(got, []int64{3, 1, 2}) {
+		t.Fatalf("balance desc order = %#v, want [3 1 2]", got)
+	}
+
+	sortAccountBalanceMonitorItems(items, "checked_at", "asc")
+	if got := accountBalanceIDs(items); !reflect.DeepEqual(got, []int64{2, 1, 3}) {
+		t.Fatalf("checked_at asc order = %#v, want [2 1 3]", got)
+	}
+}
+
+func TestMatchesAccountBalanceFilter(t *testing.T) {
+	now := time.Date(2026, 6, 20, 1, 0, 0, 0, time.UTC)
+	checkedAt := now.Add(-2 * time.Hour)
+	balance := 3.0
+	item := OpsAccountBalanceAccountItem{
+		AccountID:   7,
+		AccountName: "plus sub2api",
+		Platform:    "openai",
+		Type:        "apikey",
+		Status:      "active",
+		Schedulable: true,
+		BalanceProbe: OpsAccountBalanceState{
+			Method:         AccountBalanceProbeMethodAuto,
+			Enabled:        true,
+			DetectedMethod: AccountBalanceProbeMethodSub2APIUsage,
+			Status:         AccountBalanceProbeStatusOK,
+			BalanceUSD:     &balance,
+			CheckedAt:      &checkedAt,
+		},
+	}
+	settings := defaultOpsAccountBalanceSettings()
+	settings.DefaultThresholdUSD = 10
+
+	if !matchesAccountBalanceFilter(item, OpsAccountBalanceMonitorFilter{Method: AccountBalanceProbeMethodSub2APIUsage}, settings, now) {
+		t.Fatal("detected method should match method filter")
+	}
+	if !matchesAccountBalanceFilter(item, OpsAccountBalanceMonitorFilter{ProbeStatus: AccountBalanceProbeStatusOK}, settings, now) {
+		t.Fatal("probe status should match status filter")
+	}
+	if !matchesAccountBalanceFilter(item, OpsAccountBalanceMonitorFilter{OnlyLow: true, OnlyDue: true, OnlySchedulable: true}, settings, now) {
+		t.Fatal("low, due, schedulable filters should match item")
+	}
+	if matchesAccountBalanceFilter(item, OpsAccountBalanceMonitorFilter{OnlyFailed: true}, settings, now) {
+		t.Fatal("failed filter should reject healthy item")
+	}
+}
+
+func accountBalanceIDs(items []OpsAccountBalanceAccountItem) []int64 {
+	ids := make([]int64, 0, len(items))
+	for _, item := range items {
+		ids = append(ids, item.AccountID)
+	}
+	return ids
 }
 
 func assertFloatPtr(t *testing.T, name string, got *float64, want float64) {

@@ -24,15 +24,19 @@ func (h *OpsHandler) GetAccountBalanceMonitor(c *gin.Context) {
 	}
 	page, pageSize := response.ParsePagination(c)
 	filter := service.OpsAccountBalanceMonitorFilter{
-		Page:       page,
-		PageSize:   pageSize,
-		Platform:   strings.TrimSpace(c.Query("platform")),
-		Status:     strings.TrimSpace(c.Query("status")),
-		Search:     strings.TrimSpace(c.Query("q")),
-		Method:     strings.TrimSpace(c.Query("method")),
-		OnlyDue:    parseOpsBoolQuery(c.Query("only_due")),
-		OnlyLow:    parseOpsBoolQuery(c.Query("only_low")),
-		OnlyFailed: parseOpsBoolQuery(c.Query("only_failed")),
+		Page:            page,
+		PageSize:        pageSize,
+		Platform:        strings.TrimSpace(c.Query("platform")),
+		Status:          strings.TrimSpace(c.Query("status")),
+		ProbeStatus:     strings.TrimSpace(c.Query("probe_status")),
+		Search:          strings.TrimSpace(c.Query("q")),
+		Method:          strings.TrimSpace(c.Query("method")),
+		OnlyDue:         parseOpsBoolQuery(c.Query("only_due")),
+		OnlyLow:         parseOpsBoolQuery(c.Query("only_low")),
+		OnlyFailed:      parseOpsBoolQuery(c.Query("only_failed")),
+		OnlySchedulable: parseOpsBoolQuery(c.Query("only_schedulable")),
+		SortBy:          strings.TrimSpace(c.Query("sort_by")),
+		SortOrder:       strings.TrimSpace(c.Query("sort_order")),
 	}
 	result, err := h.opsService.ListAccountBalanceMonitor(c.Request.Context(), filter)
 	if err != nil {

@@ -182,15 +182,45 @@
             <h2 class="text-base font-semibold text-gray-900 dark:text-white">账号余额控制台</h2>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">单账号可以指定查询方式，也可以保持智能自动识别。</p>
           </div>
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <input v-model.trim="filters.q" type="text" class="input h-9 min-w-[14rem]" placeholder="搜索账号/平台/错误" @keyup.enter="loadBalance" />
-            <select v-model="filters.method" class="input h-9 min-w-[9rem]" @change="loadBalance">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <input v-model.trim="filters.q" type="text" class="input h-9 min-w-[12rem]" placeholder="搜索账号/平台/错误" @keyup.enter="applyBalanceFilters" />
+            <select v-model="filters.platform" class="input h-9 min-w-[8rem]" @change="applyBalanceFilters">
+              <option value="">全部平台</option>
+              <option v-for="platform in platformOptions" :key="platform.value" :value="platform.value">{{ platform.label }}</option>
+            </select>
+            <select v-model="filters.method" class="input h-9 min-w-[9rem]" @change="applyBalanceFilters">
               <option value="">全部方式</option>
               <option v-for="method in methodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
             </select>
+            <select v-model="filters.probe_status" class="input h-9 min-w-[8rem]" @change="applyBalanceFilters">
+              <option value="">全部状态</option>
+              <option v-for="status in probeStatusOptions" :key="status.value" :value="status.value">{{ status.label }}</option>
+            </select>
+            <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="applyBalanceFilters">
+              <Icon name="search" size="sm" />
+              <span>筛选</span>
+            </button>
+            <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="resetBalanceFilters">
+              <Icon name="refresh" size="sm" />
+              <span>重置</span>
+            </button>
+          </div>
+          <div class="flex flex-wrap gap-2">
             <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
-              <input v-model="filters.only_low" type="checkbox" class="checkbox" @change="loadBalance" />
+              <input v-model="filters.only_low" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
               只看低余额
+            </label>
+            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+              <input v-model="filters.only_failed" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
+              只看异常
+            </label>
+            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+              <input v-model="filters.only_due" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
+              只看待检查
+            </label>
+            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+              <input v-model="filters.only_schedulable" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
+              只看可调度
             </label>
           </div>
         </div>
@@ -199,12 +229,42 @@
           <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900 dark:text-gray-400">
               <tr>
-                <th class="px-4 py-3 text-left">账号</th>
-                <th class="px-4 py-3 text-left">余额</th>
-                <th class="px-4 py-3 text-left">状态</th>
-                <th class="px-4 py-3 text-left">查询方式</th>
-                <th class="px-4 py-3 text-left">阈值</th>
-                <th class="px-4 py-3 text-left">最近检查</th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('account_name')" @click="toggleBalanceSort('account_name')">
+                    <span>账号</span>
+                    <span>{{ sortHeaderMark('account_name') }}</span>
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('balance_usd')" @click="toggleBalanceSort('balance_usd')">
+                    <span>余额</span>
+                    <span>{{ sortHeaderMark('balance_usd') }}</span>
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('probe_status')" @click="toggleBalanceSort('probe_status')">
+                    <span>状态</span>
+                    <span>{{ sortHeaderMark('probe_status') }}</span>
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('method')" @click="toggleBalanceSort('method')">
+                    <span>查询方式</span>
+                    <span>{{ sortHeaderMark('method') }}</span>
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('threshold_usd')" @click="toggleBalanceSort('threshold_usd')">
+                    <span>阈值</span>
+                    <span>{{ sortHeaderMark('threshold_usd') }}</span>
+                  </button>
+                </th>
+                <th class="px-4 py-3 text-left">
+                  <button type="button" :class="sortHeaderClass('checked_at')" @click="toggleBalanceSort('checked_at')">
+                    <span>最近检查</span>
+                    <span>{{ sortHeaderMark('checked_at') }}</span>
+                  </button>
+                </th>
                 <th class="px-4 py-3 text-right">操作</th>
               </tr>
             </thead>
@@ -315,6 +375,21 @@ const methodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string 
   { value: 'disabled', label: '禁用' }
 ]
 
+const platformOptions = [
+  { value: 'openai', label: 'OpenAI' },
+  { value: 'anthropic', label: 'Anthropic' },
+  { value: 'gemini', label: 'Gemini' },
+  { value: 'openrouter', label: 'OpenRouter' }
+]
+
+const probeStatusOptions = [
+  { value: 'ok', label: '正常' },
+  { value: 'failed', label: '失败' },
+  { value: 'unsupported', label: '不支持' },
+  { value: 'skipped', label: '跳过' },
+  { value: 'unknown', label: '未知' }
+]
+
 const loading = ref(false)
 const saving = ref(false)
 const testingRobot = ref(false)
@@ -329,8 +404,15 @@ const filters = reactive({
   page: 1,
   page_size: 20,
   q: '',
+  platform: '',
+  probe_status: '',
   method: '',
-  only_low: false
+  only_low: false,
+  only_failed: false,
+  only_due: false,
+  only_schedulable: false,
+  sort_by: 'account_name',
+  sort_order: 'asc' as 'asc' | 'desc'
 })
 
 const balanceItems = computed(() => balanceResponse.value?.items ?? [])
@@ -369,9 +451,16 @@ async function loadBalance() {
   const data = await getAccountBalanceMonitor({
     page: filters.page,
     page_size: filters.page_size,
+    platform: filters.platform || undefined,
+    probe_status: filters.probe_status || undefined,
     q: filters.q || undefined,
     method: filters.method || undefined,
-    only_low: filters.only_low || undefined
+    only_low: filters.only_low || undefined,
+    only_failed: filters.only_failed || undefined,
+    only_due: filters.only_due || undefined,
+    only_schedulable: filters.only_schedulable || undefined,
+    sort_by: filters.sort_by,
+    sort_order: filters.sort_order
   })
   balanceResponse.value = data
   applyBalanceSettings(data.settings)
@@ -386,6 +475,12 @@ async function saveAll() {
   saving.value = true
   errorMessage.value = ''
   try {
+    const validationError = validateNotificationRobotSettings()
+    if (validationError) {
+      errorMessage.value = validationError
+      appStore.showError(validationError)
+      return
+    }
     const [balance, health] = await Promise.all([
       updateAccountBalanceSettings(toPlain(balanceSettings)),
       updateAccountHealthSettings(toPlain(healthSettings))
@@ -507,6 +602,49 @@ function changePage(page: number) {
   void loadBalance()
 }
 
+function applyBalanceFilters() {
+  filters.page = 1
+  void loadBalance()
+}
+
+function resetBalanceFilters() {
+  filters.page = 1
+  filters.q = ''
+  filters.platform = ''
+  filters.probe_status = ''
+  filters.method = ''
+  filters.only_low = false
+  filters.only_failed = false
+  filters.only_due = false
+  filters.only_schedulable = false
+  filters.sort_by = 'account_name'
+  filters.sort_order = 'asc'
+  void loadBalance()
+}
+
+function toggleBalanceSort(key: string) {
+  if (filters.sort_by === key) {
+    filters.sort_order = filters.sort_order === 'asc' ? 'desc' : 'asc'
+  } else {
+    filters.sort_by = key
+    filters.sort_order = key === 'checked_at' || key === 'balance_usd' ? 'desc' : 'asc'
+  }
+  filters.page = 1
+  void loadBalance()
+}
+
+function sortHeaderClass(key: string) {
+  return [
+    'inline-flex items-center gap-1 font-semibold transition hover:text-teal-600 dark:hover:text-teal-300',
+    filters.sort_by === key ? 'text-teal-600 dark:text-teal-300' : 'text-gray-500 dark:text-gray-400'
+  ]
+}
+
+function sortHeaderMark(key: string) {
+  if (filters.sort_by !== key) return '↕'
+  return filters.sort_order === 'asc' ? '↑' : '↓'
+}
+
 function formatBalance(state: OpsAccountBalanceProbeState) {
   if (state.unlimited) return '无限额度'
   if (state.balance_usd == null) return '未知'
@@ -572,9 +710,37 @@ function toPlain<T>(value: T): T {
 function errorMessageOf(error: unknown, fallback: string) {
   if (typeof error === 'object' && error !== null) {
     const anyError = error as { response?: { data?: { message?: string; error?: string } }; message?: string }
-    return anyError.response?.data?.message || anyError.response?.data?.error || anyError.message || fallback
+    return humanizeOpsError(anyError.response?.data?.message || anyError.response?.data?.error || anyError.message || fallback)
   }
   return fallback
+}
+
+function humanizeOpsError(message: string) {
+  if (message.includes('account_balance.notification.enterprise_wechat_webhook_url is required')) {
+    return '已开启余额低额通知，请先填写余额机器人 Webhook，或关闭余额通知。'
+  }
+  if (message.includes('account health enterprise wechat webhook is not configured')) {
+    return '已开启账号健康通知，请先填写账号健康机器人 Webhook，或关闭健康通知。'
+  }
+  if (message.includes('enterprise wechat webhook')) {
+    return '企业微信机器人 Webhook 配置不正确，请检查地址后再保存。'
+  }
+  return message
+}
+
+function validateNotificationRobotSettings() {
+  if (balanceSettings.notification.enterprise_wechat_enabled && !hasConfiguredWebhook(balanceSettings.notification.enterprise_wechat_webhook_url)) {
+    return '已开启余额低额通知，请先填写余额机器人 Webhook，或关闭余额通知。'
+  }
+  if (healthSettings.notification.enterprise_wechat_enabled && !hasConfiguredWebhook(healthSettings.notification.enterprise_wechat_webhook_url)) {
+    return '已开启账号健康通知，请先填写账号健康机器人 Webhook，或关闭健康通知。'
+  }
+  return ''
+}
+
+function hasConfiguredWebhook(value?: string) {
+  const trimmed = String(value ?? '').trim()
+  return trimmed !== ''
 }
 
 function defaultBalanceSettings(): OpsAccountBalanceSettings {

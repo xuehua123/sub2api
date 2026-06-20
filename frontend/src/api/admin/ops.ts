@@ -717,11 +717,15 @@ export async function getAccountBalanceMonitor(params: {
   page_size?: number
   platform?: string
   status?: string
+  probe_status?: string
   method?: string
   q?: string
   only_due?: boolean
   only_low?: boolean
   only_failed?: boolean
+  only_schedulable?: boolean
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
 } = {}): Promise<OpsAccountBalanceListResponse> {
   const { data } = await apiClient.get<OpsAccountBalanceListResponse>('/admin/ops/account-balance', { params })
   return data

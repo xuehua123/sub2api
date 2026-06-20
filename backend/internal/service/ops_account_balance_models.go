@@ -105,15 +105,19 @@ type OpsAccountBalanceSummary struct {
 }
 
 type OpsAccountBalanceMonitorFilter struct {
-	Page       int
-	PageSize   int
-	Platform   string
-	Status     string
-	Search     string
-	Method     string
-	OnlyDue    bool
-	OnlyLow    bool
-	OnlyFailed bool
+	Page            int
+	PageSize        int
+	Platform        string
+	Status          string
+	ProbeStatus     string
+	Search          string
+	Method          string
+	OnlyDue         bool
+	OnlyLow         bool
+	OnlyFailed      bool
+	OnlySchedulable bool
+	SortBy          string
+	SortOrder       string
 }
 
 type OpsAccountBalanceProbeConfigUpdate struct {
