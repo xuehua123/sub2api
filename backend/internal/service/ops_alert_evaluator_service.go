@@ -1104,18 +1104,6 @@ func opsAccountHealthNotifyActionText(action string) string {
 	}
 }
 
-func formatOpsAccountHealthWindowForNotify(stat *OpsAccountHealthWindowStats) string {
-	if stat == nil || stat.RequestCount <= 0 {
-		return "无数据"
-	}
-	return fmt.Sprintf("req=%d success=%.1f%% err=%.1f%% upstream=%.1f%%",
-		stat.RequestCount,
-		stat.SuccessRatePercent,
-		stat.ErrorRatePercent,
-		stat.UpstreamErrorRatePercent,
-	)
-}
-
 func formatOpsAccountHealthWindowForMarkdown(label string, stat *OpsAccountHealthWindowStats) string {
 	label = escapeOpsWeComMarkdown(strings.TrimSpace(label))
 	if stat == nil || stat.RequestCount <= 0 {
