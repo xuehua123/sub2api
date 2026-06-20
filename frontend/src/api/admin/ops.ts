@@ -399,6 +399,92 @@ export interface AccountAvailability {
   probe_model_id?: string
   probe_model_effective?: string
   health_probe?: OpsAccountHealthProbe | null
+  balance_probe?: OpsAccountBalanceProbeState | null
+}
+
+export type OpsAccountBalanceProbeMethod = 'auto' | 'disabled' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
+export type OpsAccountBalanceProbeStatus = 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped'
+
+export interface OpsAccountBalanceProbeState {
+  account_id: number
+  method: OpsAccountBalanceProbeMethod | string
+  enabled: boolean
+  threshold_usd?: number | null
+  detected_method?: OpsAccountBalanceProbeMethod | string
+  status: OpsAccountBalanceProbeStatus | string
+  error?: string
+  balance_usd?: number | null
+  unlimited: boolean
+  endpoint?: string
+  total_used_usd?: number | null
+  total_granted_usd?: number | null
+  checked_at?: string | null
+  notified_at?: string | null
+}
+
+export interface OpsAccountBalanceProbeSettings {
+  interval_minutes: number
+  max_per_run: number
+  timeout_seconds: number
+  only_schedulable: boolean
+  method_order: Array<OpsAccountBalanceProbeMethod | string>
+}
+
+export interface OpsAccountBalanceNotificationSettings {
+  enterprise_wechat_enabled: boolean
+  enterprise_wechat_webhook_url?: string
+  mention_all_on_low_balance: boolean
+}
+
+export interface OpsAccountBalanceSettings {
+  enabled: boolean
+  probe: OpsAccountBalanceProbeSettings
+  notification: OpsAccountBalanceNotificationSettings
+  default_threshold_usd: number
+  rate_limit_per_hour: number
+}
+
+export interface OpsAccountBalanceAccountItem {
+  account_id: number
+  account_name: string
+  platform: string
+  type: string
+  status: string
+  schedulable: boolean
+  group_ids?: number[]
+  balance_probe: OpsAccountBalanceProbeState
+}
+
+export interface OpsAccountBalanceSummary {
+  total_accounts: number
+  known_balance_count: number
+  low_balance_count: number
+  failed_count: number
+  unsupported_count: number
+  unlimited_count: number
+  disabled_count: number
+  due_count: number
+}
+
+export interface OpsAccountBalanceListResponse {
+  generated_at: string
+  settings: OpsAccountBalanceSettings
+  items: OpsAccountBalanceAccountItem[]
+  total: number
+  page: number
+  page_size: number
+  summary: OpsAccountBalanceSummary
+}
+
+export interface OpsAccountBalanceProbeResult {
+  account_id: number
+  state: OpsAccountBalanceProbeState
+  attempts?: Array<{
+    method: string
+    endpoint: string
+    status: string
+    message?: string
+  }>
 }
 
 export type OpsAccountHealthWindow = '1m' | '5m' | '10m' | '30m' | '1h'
@@ -623,6 +709,49 @@ export async function runAccountHealthProbe(accountId: number, options: {
     payload.prompt = options.prompt
   }
   const { data } = await apiClient.post<OpsAccountHealthProbe>(`/admin/ops/account-health/${accountId}/probe`, payload)
+  return data
+}
+
+export async function getAccountBalanceMonitor(params: {
+  page?: number
+  page_size?: number
+  platform?: string
+  status?: string
+  method?: string
+  q?: string
+  only_due?: boolean
+  only_low?: boolean
+  only_failed?: boolean
+} = {}): Promise<OpsAccountBalanceListResponse> {
+  const { data } = await apiClient.get<OpsAccountBalanceListResponse>('/admin/ops/account-balance', { params })
+  return data
+}
+
+export async function updateAccountBalanceSettings(settings: OpsAccountBalanceSettings): Promise<OpsAccountBalanceSettings> {
+  const { data } = await apiClient.patch<OpsAccountBalanceSettings>('/admin/ops/account-balance/settings', settings)
+  return data
+}
+
+export async function testAccountBalanceEnterpriseWeChat(settings?: OpsAccountBalanceSettings): Promise<{ ok: boolean }> {
+  const { data } = await apiClient.post<{ ok: boolean }>('/admin/ops/account-balance/test-enterprise-wechat', settings ?? {})
+  return data
+}
+
+export async function updateAccountBalanceProbeConfig(accountId: number, payload: {
+  method?: OpsAccountBalanceProbeMethod | string
+  enabled?: boolean
+  threshold_usd?: number
+  use_default_threshold?: boolean
+}): Promise<OpsAccountBalanceProbeState> {
+  const { data } = await apiClient.patch<OpsAccountBalanceProbeState>(`/admin/ops/account-balance/${accountId}`, payload)
+  return data
+}
+
+export async function runAccountBalanceProbe(accountId: number, payload: {
+  method?: OpsAccountBalanceProbeMethod | string
+  force?: boolean
+} = { force: true }): Promise<OpsAccountBalanceProbeResult> {
+  const { data } = await apiClient.post<OpsAccountBalanceProbeResult>(`/admin/ops/account-balance/${accountId}/probe`, payload)
   return data
 }
 
@@ -990,8 +1119,9 @@ export interface OpsAlertRuntimeSettings {
       reason: string
     }>
   }
-  thresholds: OpsMetricThresholds // 指标阈值配置
+  thresholds: OpsMetricThresholds
   account_health: OpsAccountHealthSettings
+  account_balance: OpsAccountBalanceSettings
 }
 
 export interface OpsOpenAIAccountQuotaAutoPauseSettings {
@@ -1529,6 +1659,11 @@ export const opsAPI = {
   updateAccountHealthProbeAuto,
   updateAccountHealthProbeModel,
   runAccountHealthProbe,
+  getAccountBalanceMonitor,
+  updateAccountBalanceSettings,
+  testAccountBalanceEnterpriseWeChat,
+  updateAccountBalanceProbeConfig,
+  runAccountBalanceProbe,
   getRealtimeTrafficSummary,
   subscribeQPS,
 

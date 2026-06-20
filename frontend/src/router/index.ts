@@ -478,6 +478,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/notification-robots',
+    name: 'AdminNotificationRobots',
+    component: () => import('@/views/admin/ops/NotificationRobotsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Notification Robots',
+      titleKey: 'admin.notificationRobots.title'
+    }
+  },
+  {
     path: '/admin/users',
     name: 'AdminUsers',
     component: () => import('@/views/admin/UsersView.vue'),

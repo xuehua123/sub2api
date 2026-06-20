@@ -297,6 +297,29 @@
               @open="openAccountHealth(row)"
             />
           </template>
+          <template #cell-account_balance="{ row }">
+            <div class="flex min-w-[12rem] flex-col gap-1">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold" :class="accountBalanceClass(row)">
+                  {{ accountBalanceText(row) }}
+                </span>
+                <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="accountBalanceStatusClass(row)">
+                  {{ accountBalanceStatusText(row) }}
+                </span>
+              </div>
+              <div class="flex items-center gap-1">
+                <select class="input h-7 min-w-[7.5rem] text-xs" :value="accountBalanceMethod(row)" @change="onAccountBalanceMethodChange(row, $event)">
+                  <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
+                </select>
+                <button type="button" class="btn btn-secondary h-7 px-2 text-xs" :disabled="accountBalanceProbeIds.has(row.id)" @click="probeAccountBalance(row)">
+                  <Icon name="beaker" size="xs" />
+                </button>
+              </div>
+              <div v-if="accountBalanceState(row)?.checked_at" class="text-[11px] text-gray-400 dark:text-dark-400">
+                {{ formatRelativeTime(accountBalanceState(row)?.checked_at) }}
+              </div>
+            </div>
+          </template>
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
@@ -430,7 +453,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import { opsAPI, type OpsAccountHealthItem } from '@/api/admin/ops'
+import { opsAPI, type OpsAccountBalanceProbeMethod, type OpsAccountBalanceProbeState, type OpsAccountHealthItem } from '@/api/admin/ops'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -611,7 +634,15 @@ const accountHealthReqSeq = ref(0)
 const pendingAccountHealthRefresh = ref(false)
 const accountHealthLastLoadedAt = ref(0)
 const ACCOUNT_HEALTH_REFRESH_MIN_MS = 30_000
+const accountBalanceProbeIds = ref(new Set<number>())
 const usageManualRefreshToken = ref(0)
+const accountBalanceMethodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
+  { value: 'auto', label: '智能' },
+  { value: 'newapi_token_usage', label: 'New API' },
+  { value: 'sub2api_usage', label: 'Sub2API' },
+  { value: 'openai_billing', label: 'OpenAI' },
+  { value: 'disabled', label: '禁用' }
+]
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -666,7 +697,7 @@ const refreshTodayStatsBatch = async () => {
 }
 
 const refreshAccountHealthBatch = async (force = false) => {
-  if (hiddenColumns.has('account_health')) {
+  if (hiddenColumns.has('account_health') && hiddenColumns.has('account_balance')) {
     accountHealthLoading.value = false
     accountHealthError.value = null
     return
@@ -696,6 +727,92 @@ const refreshAccountHealthBatch = async (force = false) => {
     if (reqSeq === accountHealthReqSeq.value) {
       accountHealthLoading.value = false
     }
+  }
+}
+
+function accountBalanceState(row: Account): OpsAccountBalanceProbeState | null {
+  return accountHealthByAccountId.value[String(row.id)]?.balance_probe ?? row.balance_probe ?? null
+}
+
+function syncAccountBalanceState(row: Account, state: OpsAccountBalanceProbeState) {
+  row.balance_probe = state
+  const key = String(row.id)
+  const healthItem = accountHealthByAccountId.value[key]
+  if (healthItem) {
+    healthItem.balance_probe = state
+  }
+}
+
+function accountBalanceText(row: Account): string {
+  const state = accountBalanceState(row)
+  if (!state) return '-'
+  if (state.unlimited) return '无限额度'
+  if (state.balance_usd == null) return '未知'
+  return `$${Number(state.balance_usd).toFixed(2)}`
+}
+
+function accountBalanceClass(row: Account): string {
+  const state = accountBalanceState(row)
+  if (!state || state.balance_usd == null) return 'text-gray-500 dark:text-gray-400'
+  if (state.unlimited) return 'text-sky-600 dark:text-sky-300'
+  const threshold = state.threshold_usd ?? 0
+  if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
+  return 'text-emerald-600 dark:text-emerald-300'
+}
+
+function accountBalanceStatusText(row: Account): string {
+  const status = accountBalanceState(row)?.status ?? 'unknown'
+  if (status === 'ok') return '正常'
+  if (status === 'failed') return '失败'
+  if (status === 'unsupported') return '不支持'
+  if (status === 'skipped') return '跳过'
+  return '未知'
+}
+
+function accountBalanceStatusClass(row: Account): string {
+  const status = accountBalanceState(row)?.status ?? 'unknown'
+  if (status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (status === 'failed' || status === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (status === 'skipped') return 'bg-gray-100 text-gray-600 dark:bg-dark-600 dark:text-gray-300'
+  return 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300'
+}
+
+function accountBalanceMethod(row: Account): OpsAccountBalanceProbeMethod {
+  return (accountBalanceState(row)?.method ?? 'auto') as OpsAccountBalanceProbeMethod
+}
+
+async function updateAccountBalanceMethod(row: Account, method: string) {
+  try {
+    const state = await opsAPI.updateAccountBalanceProbeConfig(row.id, { method })
+    syncAccountBalanceState(row, state)
+    appStore.showSuccess('余额查询方式已更新')
+  } catch (error) {
+    console.error('Failed to update account balance method:', error)
+    appStore.showError('余额查询方式更新失败')
+  }
+}
+
+function onAccountBalanceMethodChange(row: Account, event: Event) {
+  const target = event.target as HTMLSelectElement | null
+  if (!target) return
+  void updateAccountBalanceMethod(row, target.value)
+}
+
+async function probeAccountBalance(row: Account) {
+  const next = new Set(accountBalanceProbeIds.value)
+  next.add(row.id)
+  accountBalanceProbeIds.value = next
+  try {
+    const result = await opsAPI.runAccountBalanceProbe(row.id, { force: true })
+    syncAccountBalanceState(row, result.state)
+    appStore.showSuccess('余额探测完成')
+  } catch (error) {
+    console.error('Failed to probe account balance:', error)
+    appStore.showError('余额探测失败')
+  } finally {
+    const done = new Set(accountBalanceProbeIds.value)
+    done.delete(row.id)
+    accountBalanceProbeIds.value = done
   }
 }
 
@@ -1271,7 +1388,8 @@ const allColumns = computed(() => {
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false },
-    { key: 'account_health', label: '健康', sortable: false }
+    { key: 'account_health', label: '健康', sortable: false },
+    { key: 'account_balance', label: '上游余额', sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })

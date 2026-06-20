@@ -138,6 +138,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 
 			ErrorMessage: acc.ErrorMessage,
 			HealthProbe:  accountHealthProbeFromAccount(&acc),
+			BalanceProbe: AccountBalanceStateFromAccount(&acc),
 		}
 
 		if isRateLimited && acc.RateLimitResetAt != nil {

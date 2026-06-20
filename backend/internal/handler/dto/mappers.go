@@ -220,6 +220,25 @@ func groupFromServiceBase(g *service.Group) Group {
 	}
 }
 
+func AccountBalanceProbeFromService(state service.OpsAccountBalanceState) *AccountBalanceProbeState {
+	return &AccountBalanceProbeState{
+		AccountID:       state.AccountID,
+		Method:          state.Method,
+		Enabled:         state.Enabled,
+		ThresholdUSD:    state.ThresholdUSD,
+		DetectedMethod:  state.DetectedMethod,
+		Status:          state.Status,
+		Error:           state.Error,
+		BalanceUSD:      state.BalanceUSD,
+		Unlimited:       state.Unlimited,
+		Endpoint:        state.Endpoint,
+		TotalUsedUSD:    state.TotalUsedUSD,
+		TotalGrantedUSD: state.TotalGrantedUSD,
+		CheckedAt:       state.CheckedAt,
+		NotifiedAt:      state.NotifiedAt,
+	}
+}
+
 func AccountFromServiceShallow(a *service.Account) *Account {
 	if a == nil {
 		return nil
@@ -234,6 +253,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Credentials:             redactedCreds,
 		CredentialsStatus:       credsStatus,
 		Extra:                   a.Extra,
+		BalanceProbe:            AccountBalanceProbeFromService(service.AccountBalanceStateFromAccount(a)),
 		ProxyID:                 a.ProxyID,
 		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
 		ProxyFallbackOriginName: a.ProxyFallbackOriginName,

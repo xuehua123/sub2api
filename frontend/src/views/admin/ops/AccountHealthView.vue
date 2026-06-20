@@ -559,6 +559,8 @@
                       <div>限流：{{ item.is_rate_limited ? cooldownText(item) || '限流中' : '无' }}</div>
                       <div>过载：{{ item.is_overloaded ? cooldownText(item) || '过载冷却中' : '无' }}</div>
                       <div>临停：{{ item.is_temp_unschedulable ? '临时不可调度' : '无' }}</div>
+                      <div>上游余额：{{ accountBalanceText(item) }}</div>
+                      <div>余额方式：{{ accountBalanceMethodLabel(accountBalanceMethod(item)) }}</div>
                       <div class="break-words">错误：{{ item.error_message || '无' }}</div>
                       <div>探测模型：{{ probeModelEffective(item) }}</div>
                     </div>
@@ -685,6 +687,7 @@
               <StatusBadge :text="probeModelText(item)" kind="muted" />
               <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="自动探测已关" kind="muted" />
               <StatusBadge v-if="!hasTraffic(item)" text="暂无流量" kind="muted" />
+              <StatusBadge :text="accountBalanceBadgeText(item)" :kind="accountBalanceBadgeKind(item)" />
               <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
               <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
               <StatusBadge v-if="item.is_temp_unschedulable" text="临时暂停" kind="warning" />
@@ -700,6 +703,19 @@
                   <span class="absolute top-0.5 h-3 w-3 rounded-full bg-white transition" :class="item.is_schedulable ? 'left-3.5' : 'left-0.5'"></span>
                 </span>
                 <span>{{ item.is_schedulable ? '调度开' : '调度关' }}</span>
+              </button>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-dark-700 dark:bg-dark-900/70">
+              <div class="mr-auto min-w-[8rem]">
+                <div class="text-[11px] text-gray-500 dark:text-gray-400">上游余额</div>
+                <div class="text-sm font-semibold" :class="accountBalanceTextClass(item)">{{ accountBalanceText(item) }}</div>
+              </div>
+              <select class="input h-8 min-w-[8rem] text-xs" :value="accountBalanceMethod(item)" @change="onAccountBalanceMethodChange(item, $event)">
+                <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
+              </select>
+              <button type="button" class="btn btn-secondary btn-sm" :disabled="isAccountBalanceProbing(item.account_id)" @click="probeAccountBalance(item)">
+                <Icon name="beaker" size="xs" :class="isAccountBalanceProbing(item.account_id) ? 'animate-pulse' : ''" />
+                <span>{{ isAccountBalanceProbing(item.account_id) ? '查余额中' : '查余额' }}</span>
               </button>
             </div>
 
@@ -929,6 +945,30 @@
             </section>
 
             <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
+              <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                <div class="min-w-0">
+                  <div class="text-sm font-semibold text-gray-900 dark:text-white">上游余额探测</div>
+                  <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span class="text-base font-semibold" :class="accountBalanceTextClass(selectedAccount)">{{ accountBalanceText(selectedAccount) }}</span>
+                    <span class="rounded px-2 py-0.5 font-semibold" :class="accountBalanceStatusClass(selectedAccount)">{{ accountBalanceStatusText(selectedAccount) }}</span>
+                    <span v-if="selectedAccount.balance_probe?.detected_method">命中 {{ accountBalanceMethodLabel(selectedAccount.balance_probe.detected_method) }}</span>
+                    <span v-if="selectedAccount.balance_probe?.checked_at">{{ formatRelativeTime(selectedAccount.balance_probe.checked_at) }}</span>
+                  </div>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <select class="input h-9 min-w-[9rem]" :value="accountBalanceMethod(selectedAccount)" @change="onAccountBalanceMethodChange(selectedAccount, $event)">
+                    <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary btn-sm" :disabled="isAccountBalanceProbing(selectedAccount.account_id)" @click="probeAccountBalance(selectedAccount)">
+                    <Icon name="beaker" size="xs" :class="isAccountBalanceProbing(selectedAccount.account_id) ? 'animate-pulse' : ''" />
+                    <span>{{ isAccountBalanceProbing(selectedAccount.account_id) ? '查询中' : '立即查余额' }}</span>
+                  </button>
+                </div>
+              </div>
+              <p v-if="selectedAccount.balance_probe?.error" class="mt-2 break-words text-xs text-red-500">{{ selectedAccount.balance_probe.error }}</p>
+            </section>
+
+            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
               <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
                 <div class="min-w-0 flex-1">
                   <div class="text-sm font-semibold text-gray-900 dark:text-white">账号探测模型</div>
@@ -1087,8 +1127,11 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAdminSettingsStore } from '@/stores'
 import { adminAPI } from '@/api/admin'
+import { formatRelativeTime } from '@/utils/format'
 import {
   opsAPI,
+  type OpsAccountBalanceProbeMethod,
+  type OpsAccountBalanceProbeState,
   type OpsAccountHealthItem,
   type OpsAccountHealthFirstTokenStats,
   type OpsAccountHealthResponse,
@@ -1199,6 +1242,7 @@ const tagEditDraft = ref('')
 const selectedAccountID = ref<number | null>(null)
 const lastUpdated = ref<Date | null>(null)
 const probingAccounts = ref<Set<number>>(new Set())
+const accountBalanceProbingAccounts = ref<Set<number>>(new Set())
 const togglingAutoProbeAccounts = ref<Set<number>>(new Set())
 const togglingSchedulableAccounts = ref<Set<number>>(new Set())
 const bulkSchedulableLoading = ref(false)
@@ -1207,6 +1251,13 @@ const savingModelAccounts = ref<Set<number>>(new Set())
 const savingTagsAccountId = ref<number | null>(null)
 const probeModelOptionsByAccount = ref<Record<number, ProbeModelOption[]>>({})
 const probeModelDraftByAccount = ref<Record<number, string>>({})
+const accountBalanceMethodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
+  { value: 'auto', label: '智能' },
+  { value: 'newapi_token_usage', label: 'New API' },
+  { value: 'sub2api_usage', label: 'Sub2API' },
+  { value: 'openai_billing', label: 'OpenAI' },
+  { value: 'disabled', label: '禁用' }
+]
 const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
 let applyingSettings = false
@@ -1727,6 +1778,113 @@ async function runProbe(item: OpsAccountHealthItem) {
   } finally {
     setProbing(item.account_id, false)
   }
+}
+
+function accountBalanceState(item: OpsAccountHealthItem): OpsAccountBalanceProbeState | null {
+  return item.balance_probe ?? null
+}
+
+function accountBalanceMethod(item: OpsAccountHealthItem): OpsAccountBalanceProbeMethod {
+  return (accountBalanceState(item)?.method ?? 'auto') as OpsAccountBalanceProbeMethod
+}
+
+function accountBalanceMethodLabel(method?: string): string {
+  return accountBalanceMethodOptions.find(option => option.value === method)?.label ?? method ?? '智能'
+}
+
+function accountBalanceText(item: OpsAccountHealthItem): string {
+  const state = accountBalanceState(item)
+  if (!state) return '-'
+  if (state.unlimited) return '无限额度'
+  if (state.balance_usd == null) return '未知'
+  return `$${Number(state.balance_usd).toFixed(2)}`
+}
+
+function accountBalanceTextClass(item: OpsAccountHealthItem): string {
+  const state = accountBalanceState(item)
+  if (!state || state.balance_usd == null) return 'text-gray-500 dark:text-gray-400'
+  if (state.unlimited) return 'text-sky-600 dark:text-sky-300'
+  const threshold = state.threshold_usd ?? 0
+  if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
+  return 'text-emerald-600 dark:text-emerald-300'
+}
+
+function accountBalanceStatusText(item: OpsAccountHealthItem): string {
+  const status = accountBalanceState(item)?.status ?? 'unknown'
+  if (status === 'ok') return '正常'
+  if (status === 'failed') return '失败'
+  if (status === 'unsupported') return '不支持'
+  if (status === 'skipped') return '跳过'
+  return '未知'
+}
+
+function accountBalanceStatusClass(item: OpsAccountHealthItem): string {
+  const status = accountBalanceState(item)?.status ?? 'unknown'
+  if (status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+  if (status === 'failed' || status === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+  if (status === 'skipped') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
+  return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+}
+
+function accountBalanceBadgeText(item: OpsAccountHealthItem): string {
+  const state = accountBalanceState(item)
+  if (!state) return '余额未知'
+  if (state.status === 'ok') return `余额 ${accountBalanceText(item)}`
+  return `余额${accountBalanceStatusText(item)}`
+}
+
+function accountBalanceBadgeKind(item: OpsAccountHealthItem): string {
+  const state = accountBalanceState(item)
+  if (!state || state.balance_usd == null) return 'muted'
+  if (state.status === 'failed' || state.status === 'unsupported') return 'danger'
+  const threshold = state.threshold_usd ?? 0
+  if (!state.unlimited && threshold > 0 && state.balance_usd <= threshold) return 'warning'
+  return 'success'
+}
+
+function isAccountBalanceProbing(accountID: number): boolean {
+  return accountBalanceProbingAccounts.value.has(accountID)
+}
+
+function setAccountBalanceProbing(accountID: number, probing: boolean) {
+  const next = new Set(accountBalanceProbingAccounts.value)
+  if (probing) {
+    next.add(accountID)
+  } else {
+    next.delete(accountID)
+  }
+  accountBalanceProbingAccounts.value = next
+}
+
+async function probeAccountBalance(item: OpsAccountHealthItem) {
+  if (!item?.account_id || isAccountBalanceProbing(item.account_id)) return
+  setAccountBalanceProbing(item.account_id, true)
+  try {
+    const result = await opsAPI.runAccountBalanceProbe(item.account_id, { force: true })
+    item.balance_probe = result.state
+    appStore.showSuccess('余额探测完成')
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '余额探测失败')
+  } finally {
+    setAccountBalanceProbing(item.account_id, false)
+  }
+}
+
+async function updateAccountBalanceMethod(item: OpsAccountHealthItem, method: string) {
+  if (!item?.account_id) return
+  try {
+    const state = await opsAPI.updateAccountBalanceProbeConfig(item.account_id, { method })
+    item.balance_probe = state
+    appStore.showSuccess('余额查询方式已更新')
+  } catch (err: any) {
+    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '余额查询方式更新失败')
+  }
+}
+
+function onAccountBalanceMethodChange(item: OpsAccountHealthItem, event: Event) {
+  const target = event.target as HTMLSelectElement | null
+  if (!target) return
+  void updateAccountBalanceMethod(item, target.value)
 }
 
 async function onAutoProbeChange(item: OpsAccountHealthItem, event: Event) {

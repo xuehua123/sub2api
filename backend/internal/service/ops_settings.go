@@ -210,8 +210,9 @@ func defaultOpsAlertRuntimeSettings() *OpsAlertRuntimeSettings {
 			GlobalReason:       "",
 			Entries:            []OpsAlertSilenceEntry{},
 		},
-		Thresholds:    *defaultOpsMetricThresholds(),
-		AccountHealth: defaultOpsAccountHealthSettings(),
+		Thresholds:     *defaultOpsMetricThresholds(),
+		AccountHealth:  defaultOpsAccountHealthSettings(),
+		AccountBalance: defaultOpsAccountBalanceSettings(),
 	}
 }
 
@@ -309,6 +310,7 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 	normalizeOpsAccountHealthSettings(&cfg.AccountHealth)
+	normalizeOpsAccountBalanceSettings(&cfg.AccountBalance)
 
 	return cfg, nil
 }
@@ -349,6 +351,7 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 	cfg.AccountHealth = existing.AccountHealth
+	cfg.AccountBalance = existing.AccountBalance
 
 	return s.storeOpsAlertRuntimeSettings(ctx, cfg)
 }
@@ -454,11 +457,16 @@ func MaskOpsAlertRuntimeSettingsForResponse(cfg *OpsAlertRuntimeSettings) *OpsAl
 	}
 	out := *cfg
 	out.AccountHealth = maskOpsAccountHealthSettings(out.AccountHealth)
+	out.AccountBalance = maskOpsAccountBalanceSettings(out.AccountBalance)
 	return &out
 }
 
 func MaskOpsAccountHealthSettingsForResponse(settings OpsAccountHealthSettings) OpsAccountHealthSettings {
 	return maskOpsAccountHealthSettings(settings)
+}
+
+func MaskOpsAccountBalanceSettingsForResponse(settings OpsAccountBalanceSettings) OpsAccountBalanceSettings {
+	return maskOpsAccountBalanceSettings(settings)
 }
 
 // =========================

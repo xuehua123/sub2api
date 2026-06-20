@@ -401,6 +401,7 @@ export default {
     redeemCodes: 'Redeem Codes',
     ops: 'Ops',
     accountHealth: 'Account Health',
+    notificationRobots: 'Notification Robots',
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',
@@ -1899,6 +1900,10 @@ export default {
 
     accountHealth: {
       title: 'Account Health'
+    },
+
+    notificationRobots: {
+      title: 'Notification Robots'
     },
 
     backup: {

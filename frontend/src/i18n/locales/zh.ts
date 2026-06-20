@@ -401,6 +401,7 @@ export default {
     redeemCodes: '兑换码',
     ops: '运维监控',
     accountHealth: '账号健康',
+    notificationRobots: '通知机器人',
     promoCodes: '优惠码',
     settings: '系统设置',
     myAccount: '我的账户',
@@ -1920,6 +1921,10 @@ export default {
 
     accountHealth: {
       title: '账号健康'
+    },
+
+    notificationRobots: {
+      title: '通知机器人'
     },
 
     backup: {

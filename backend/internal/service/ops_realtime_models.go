@@ -98,5 +98,6 @@ type AccountAvailability struct {
 	ErrorMessage           string     `json:"error_message"`
 	TempUnschedulableUntil *time.Time `json:"temp_unschedulable_until,omitempty"`
 
-	HealthProbe *OpsAccountHealthProbe `json:"health_probe,omitempty"`
+	HealthProbe  *OpsAccountHealthProbe `json:"health_probe,omitempty"`
+	BalanceProbe OpsAccountBalanceState `json:"balance_probe"`
 }

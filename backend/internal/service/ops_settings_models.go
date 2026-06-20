@@ -87,8 +87,9 @@ type OpsAlertRuntimeSettings struct {
 
 	DistributedLock OpsDistributedLockSettings `json:"distributed_lock"`
 	Silencing       OpsAlertSilencingSettings  `json:"silencing"`
-	Thresholds      OpsMetricThresholds        `json:"thresholds"` // 指标阈值配置
+	Thresholds      OpsMetricThresholds        `json:"thresholds"`
 	AccountHealth   OpsAccountHealthSettings   `json:"account_health"`
+	AccountBalance  OpsAccountBalanceSettings  `json:"account_balance"`
 }
 
 // OpsAdvancedSettings stores advanced ops configuration (data retention, aggregation).

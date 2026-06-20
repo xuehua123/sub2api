@@ -157,6 +157,11 @@ func registerOpsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		ops.PATCH("/account-health/:id/probe-auto", h.Admin.Ops.UpdateAccountHealthProbeAuto)
 		ops.PATCH("/account-health/:id/probe-model", h.Admin.Ops.UpdateAccountHealthProbeModel)
 		ops.POST("/account-health/:id/probe", h.Admin.Ops.RunAccountHealthProbe)
+		ops.GET("/account-balance", h.Admin.Ops.GetAccountBalanceMonitor)
+		ops.PATCH("/account-balance/settings", h.Admin.Ops.UpdateAccountBalanceSettings)
+		ops.POST("/account-balance/test-enterprise-wechat", h.Admin.Ops.TestAccountBalanceEnterpriseWeChat)
+		ops.PATCH("/account-balance/:id", h.Admin.Ops.UpdateAccountBalanceProbeConfig)
+		ops.POST("/account-balance/:id/probe", h.Admin.Ops.RunAccountBalanceProbe)
 		ops.GET("/realtime-traffic", h.Admin.Ops.GetRealtimeTrafficSummary)
 
 		// Alerts (rules + events)

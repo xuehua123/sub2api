@@ -895,6 +895,25 @@ export interface TempUnschedulableStatus {
   state?: TempUnschedulableState
 }
 
+export type AccountBalanceProbeMethod = 'auto' | 'disabled' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
+
+export interface AccountBalanceProbeState {
+  account_id: number
+  method: AccountBalanceProbeMethod | string
+  enabled: boolean
+  threshold_usd?: number | null
+  detected_method?: AccountBalanceProbeMethod | string
+  status: 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped' | string
+  error?: string
+  balance_usd?: number | null
+  unlimited: boolean
+  endpoint?: string
+  total_used_usd?: number | null
+  total_granted_usd?: number | null
+  checked_at?: string | null
+  notified_at?: string | null
+}
+
 export interface Account {
   id: number
   name: string
@@ -907,6 +926,7 @@ export interface Account {
   // 改为通过 credentials_status.has_<key> 暴露存在性。
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
+  balance_probe?: AccountBalanceProbeState | null
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
     upstream_gzip_enabled?: boolean
