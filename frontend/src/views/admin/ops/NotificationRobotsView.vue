@@ -117,11 +117,11 @@
             </label>
             <label class="space-y-1">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">余额机器人 Webhook</span>
-              <input v-model.trim="balanceSettings.notification.enterprise_wechat_webhook_url" type="password" class="input" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
+              <input v-model.trim="balanceSettings.notification.enterprise_wechat_webhook_url" type="text" class="input" autocomplete="off" spellcheck="false" placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=..." />
             </label>
             <label class="space-y-1">
               <span class="text-xs font-medium text-gray-500 dark:text-gray-400">账号健康机器人 Webhook</span>
-              <input v-model.trim="healthSettings.notification.enterprise_wechat_webhook_url" type="password" class="input" placeholder="留空则不修改" />
+              <input v-model.trim="healthSettings.notification.enterprise_wechat_webhook_url" type="text" class="input" autocomplete="off" spellcheck="false" placeholder="留空则不修改" />
             </label>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
