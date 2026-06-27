@@ -4,6 +4,7 @@ package service
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -218,6 +219,51 @@ func TestMatchesAccountBalanceFilter(t *testing.T) {
 	}
 	if matchesAccountBalanceFilter(item, OpsAccountBalanceMonitorFilter{OnlyFailed: true}, settings, now) {
 		t.Fatal("failed filter should reject healthy item")
+	}
+}
+
+func TestNormalizeOpsAccountBalanceSettingsMigratesLegacyDefaultInterval(t *testing.T) {
+	settings := defaultOpsAccountBalanceSettings()
+	settings.Probe.IntervalMinutes = accountBalanceLegacyDefaultIntervalMinutes
+
+	normalizeOpsAccountBalanceSettings(&settings)
+
+	if settings.Probe.IntervalMinutes != 5 {
+		t.Fatalf("interval = %d, want 5", settings.Probe.IntervalMinutes)
+	}
+}
+
+func TestBuildOpsAccountBalanceWeComMarkdownUsesShanghaiTime(t *testing.T) {
+	now := time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC)
+	balance := 3.21
+	settings := defaultOpsAccountBalanceSettings()
+	text := buildOpsAccountBalanceLowWeComMarkdown(Account{
+		ID:       7,
+		Name:     "codex plus pro",
+		Platform: "openai",
+		Type:     "apikey",
+	}, OpsAccountBalanceState{
+		Method:     AccountBalanceProbeMethodAuto,
+		Status:     AccountBalanceProbeStatusOK,
+		BalanceUSD: &balance,
+	}, settings, now)
+
+	if !strings.Contains(text, "2026-06-28 09:02:03 Asia/Shanghai") {
+		t.Fatalf("notification time = %q, want Asia/Shanghai time", text)
+	}
+	if strings.Contains(text, "UTC") {
+		t.Fatalf("notification time should not expose UTC: %q", text)
+	}
+}
+
+func TestBuildOpsAccountBalanceTestWeComMarkdownUsesShanghaiTime(t *testing.T) {
+	text := buildOpsAccountBalanceTestWeComMarkdown(time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC))
+
+	if !strings.Contains(text, "2026-06-28 09:02:03 Asia/Shanghai") {
+		t.Fatalf("test notification time = %q, want Asia/Shanghai time", text)
+	}
+	if strings.Contains(text, "UTC") {
+		t.Fatalf("test notification time should not expose UTC: %q", text)
 	}
 }
 

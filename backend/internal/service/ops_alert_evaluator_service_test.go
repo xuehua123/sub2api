@@ -387,6 +387,39 @@ func TestBuildOpsAccountHealthWeComTextUsesMarkdownSections(t *testing.T) {
 	require.NotContains(t, text, "打开=true")
 }
 
+func TestBuildOpsAccountHealthWeComTextUsesShanghaiTime(t *testing.T) {
+	t.Parallel()
+
+	item := &OpsAccountHealthItem{
+		AccountID:   7,
+		AccountName: "codex plus pro",
+		Windows:     defaultOpsAccountHealthWindows(),
+		Recommendation: OpsAccountHealthRecommendation{
+			Action:   OpsAccountHealthActionCloseNow,
+			Severity: "P1",
+			Title:    "account unhealthy",
+		},
+	}
+
+	text := buildOpsAccountHealthWeComText(item, time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC))
+
+	require.Contains(t, text, "2026-06-28 09:02:03 Asia/Shanghai")
+	require.NotContains(t, text, "UTC")
+}
+
+func TestBuildOpsAlertEventWeComTextUsesShanghaiTime(t *testing.T) {
+	t.Parallel()
+
+	text := buildOpsAlertEventWeComText(nil, &OpsAlertEvent{
+		Severity: "P1",
+		Title:    "high error rate",
+	}, time.Date(2026, 6, 28, 1, 2, 3, 0, time.UTC))
+
+	require.Contains(t, text, "2026-06-28 09:02:03 Asia/Shanghai")
+	require.NotContains(t, text, "UTC")
+	require.NotContains(t, text, "2026-06-28T01:02:03Z")
+}
+
 func TestShouldMentionAllForOpsAlertEnterpriseWeChat(t *testing.T) {
 	t.Parallel()
 

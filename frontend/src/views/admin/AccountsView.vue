@@ -6,7 +6,7 @@
           <AccountTableFilters
             v-model:searchQuery="params.search"
             :filters="params"
-            :groups="groups"
+            :groups="visibleAccountGroups"
             @update:filters="(newFilters) => Object.assign(params, newFilters)"
             @change="debouncedReload"
             @update:searchQuery="debouncedReload"
@@ -298,25 +298,39 @@
             />
           </template>
           <template #cell-account_balance="{ row }">
-            <div class="flex min-w-[12rem] flex-col gap-1">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-semibold" :class="accountBalanceClass(row)">
-                  {{ accountBalanceText(row) }}
-                </span>
-                <span class="rounded px-1.5 py-0.5 text-[10px] font-semibold" :class="accountBalanceStatusClass(row)">
-                  {{ accountBalanceStatusText(row) }}
-                </span>
+            <div class="grid min-w-[16rem] max-w-[18rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
+              <div class="min-w-0">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="truncate text-sm font-semibold leading-5" :class="accountBalanceClass(row)">
+                    {{ accountBalanceText(row) }}
+                  </span>
+                  <span class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold" :class="accountBalanceStatusClass(row)">
+                    {{ accountBalanceStatusText(row) }}
+                  </span>
+                </div>
+                <div class="mt-0.5 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-4 text-gray-400 dark:text-dark-400">
+                  <span v-if="accountBalanceState(row)?.checked_at">{{ formatRelativeTime(accountBalanceState(row)?.checked_at) }}</span>
+                  <span v-if="accountBalanceDetectedMethod(row)">命中 {{ accountBalanceMethodLabel(accountBalanceDetectedMethod(row)) }}</span>
+                </div>
               </div>
-              <div class="flex items-center gap-1">
-                <select class="input h-7 min-w-[7.5rem] text-xs" :value="accountBalanceMethod(row)" @change="onAccountBalanceMethodChange(row, $event)">
-                  <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
-                </select>
-                <button type="button" class="btn btn-secondary h-7 px-2 text-xs" :disabled="accountBalanceProbeIds.has(row.id)" @click="probeAccountBalance(row)">
-                  <Icon name="beaker" size="xs" />
-                </button>
-              </div>
-              <div v-if="accountBalanceState(row)?.checked_at" class="text-[11px] text-gray-400 dark:text-dark-400">
-                {{ formatRelativeTime(accountBalanceState(row)?.checked_at) }}
+              <button
+                type="button"
+                class="btn btn-secondary h-8 w-8 shrink-0 p-0"
+                :disabled="accountBalanceProbeIds.has(row.id)"
+                title="探测余额"
+                @click="probeAccountBalance(row)"
+              >
+                <Icon name="beaker" size="xs" :class="accountBalanceProbeIds.has(row.id) ? 'animate-pulse' : ''" />
+              </button>
+              <select
+                class="input col-span-2 h-8 w-full text-xs"
+                :value="accountBalanceMethod(row)"
+                @change="onAccountBalanceMethodChange(row, $event)"
+              >
+                <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
+              </select>
+              <div v-if="accountBalanceError(row)" class="col-span-2 max-w-[18rem] truncate text-[11px] text-red-500" :title="accountBalanceError(row)">
+                {{ accountBalanceError(row) }}
               </div>
             </div>
           </template>
@@ -412,8 +426,8 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
-    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
-    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
+    <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="visibleAccountGroups" @close="showCreate = false" @created="reload" />
+    <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="editAccountGroups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
@@ -428,7 +442,7 @@
       :selected-types="selTypes"
       :target="bulkEditTarget ?? undefined"
       :proxies="proxies"
-      :groups="groups"
+      :groups="visibleAccountGroups"
       @close="showBulkEdit = false"
       @updated="handleBulkUpdated"
     />
@@ -499,6 +513,31 @@ const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
+
+const isAccountManagementVisibleGroup = (group: AdminGroup) =>
+  group.status === 'active' &&
+  (
+    (group.balance_enabled ?? group.subscription_type !== 'subscription') ||
+    (group.subscription_enabled ?? group.subscription_type === 'subscription') ||
+    Boolean(group.plan_auto_grant_enabled)
+  )
+
+const visibleAccountGroups = computed(() => groups.value.filter(isAccountManagementVisibleGroup))
+
+const editAccountGroups = computed(() => {
+  if (!edAcc.value) return visibleAccountGroups.value
+  const merged = new Map<number, AdminGroup>()
+  for (const group of visibleAccountGroups.value) {
+    merged.set(group.id, group)
+  }
+  const boundGroupIDs = edAcc.value.group_ids ?? edAcc.value.groups?.map(group => group.id) ?? []
+  for (const groupID of boundGroupIDs) {
+    const group = groups.value.find(candidate => candidate.id === groupID)
+    if (group) merged.set(group.id, group)
+  }
+  return Array.from(merged.values())
+})
+
 type AccountBulkEditTarget =
   | {
       mode: 'selected'
@@ -779,6 +818,18 @@ function accountBalanceStatusClass(row: Account): string {
 
 function accountBalanceMethod(row: Account): OpsAccountBalanceProbeMethod {
   return (accountBalanceState(row)?.method ?? 'auto') as OpsAccountBalanceProbeMethod
+}
+
+function accountBalanceDetectedMethod(row: Account): string {
+  return accountBalanceState(row)?.detected_method ?? ''
+}
+
+function accountBalanceError(row: Account): string {
+  return accountBalanceState(row)?.error ?? ''
+}
+
+function accountBalanceMethodLabel(method?: string): string {
+  return accountBalanceMethodOptions.find(option => option.value === method)?.label ?? method ?? '智能'
 }
 
 async function updateAccountBalanceMethod(row: Account, method: string) {

@@ -33,14 +33,20 @@
             </label>
             <label class="min-w-0">
               <span class="sr-only">分组 ID</span>
-              <input
+              <select
                 v-model.trim="groupIdInput"
-                type="number"
-                min="1"
-                class="input h-9 min-w-[8rem]"
-                placeholder="group_id"
-                @keyup.enter="fetchData"
-              />
+                class="input h-9 min-w-[10rem]"
+                @change="fetchData"
+              >
+                <option value="">全部分组</option>
+                <option v-for="group in healthGroupOptions" :key="group.id" :value="String(group.id)">
+                  {{ group.name }}
+                </option>
+              </select>
+            </label>
+            <label class="inline-flex h-9 items-center gap-2 whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+              <input v-model="showHistoricalGroups" type="checkbox" class="checkbox" />
+              <span>显示历史分组</span>
             </label>
             <button type="button" class="btn btn-secondary h-9 whitespace-nowrap" :disabled="loading" @click="fetchData">
               <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
@@ -719,7 +725,7 @@
               </button>
             </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(item) }}</div>
                 <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="primaryMetricClass(item)">
@@ -740,6 +746,13 @@
                   {{ firstTokenMetricText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(item) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">上游余额</div>
+                <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="accountBalanceTextClass(item)">
+                  {{ accountBalanceText(item) }}
+                </div>
+                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="accountBalanceHint(item)">{{ accountBalanceHint(item) }}</div>
               </div>
             </div>
 
@@ -926,7 +939,7 @@
               </div>
             </section>
 
-            <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <section class="grid grid-cols-1 gap-3 sm:grid-cols-4">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(selectedAccount) }}</div>
                 <div class="mt-1 text-3xl font-semibold" :class="primaryMetricClass(selectedAccount)">{{ primaryMetricText(selectedAccount) }}</div>
@@ -941,6 +954,11 @@
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">首 Token · 5m</div>
                 <div class="mt-1 text-3xl font-semibold" :class="firstTokenMetricClass(selectedAccount)">{{ firstTokenMetricText(selectedAccount) }}</div>
                 <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(selectedAccount) }}</div>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
+                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">上游余额</div>
+                <div class="mt-1 text-3xl font-semibold" :class="accountBalanceTextClass(selectedAccount)">{{ accountBalanceText(selectedAccount) }}</div>
+                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400" :title="accountBalanceHint(selectedAccount)">{{ accountBalanceHint(selectedAccount) }}</div>
               </div>
             </section>
 
@@ -1140,7 +1158,7 @@ import {
   type OpsAccountHealthWindow,
   type OpsAccountHealthWindowStats
 } from '@/api/admin/ops'
-import type { ClaudeModel } from '@/types'
+import type { AdminGroup, ClaudeModel } from '@/types'
 import {
   availableTagOptions as buildAvailableTagOptions,
   matchesTagFilter as matchesTags,
@@ -1230,6 +1248,8 @@ const testingWeChat = ref(false)
 const errorMessage = ref('')
 const platformFilter = ref('')
 const groupIdInput = ref('')
+const healthGroups = ref<AdminGroup[]>([])
+const showHistoricalGroups = ref(false)
 const settingsOpen = ref(false)
 const viewMode = ref<HealthViewMode>('list')
 const quickFilter = ref<HealthQuickFilter>('all')
@@ -1287,6 +1307,27 @@ const settingsDirty = ref(false)
 const groupId = computed(() => {
   const parsed = Number(groupIdInput.value)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+})
+
+const isDefaultVisibleGroup = (group: AdminGroup): boolean =>
+  group.status === 'active' &&
+  (
+    (group.balance_enabled ?? group.subscription_type !== 'subscription') ||
+    (group.subscription_enabled ?? group.subscription_type === 'subscription') ||
+    Boolean(group.plan_auto_grant_enabled)
+  )
+
+const healthGroupOptions = computed(() => {
+  if (showHistoricalGroups.value) return healthGroups.value
+
+  const selectedID = groupId.value
+  const visible = healthGroups.value.filter(isDefaultVisibleGroup)
+  if (!selectedID || visible.some(group => group.id === selectedID)) {
+    return visible
+  }
+
+  const selected = healthGroups.value.find(group => group.id === selectedID)
+  return selected ? [...visible, selected] : visible
 })
 
 const items = computed(() => response.value?.items ?? [])
@@ -1577,6 +1618,15 @@ async function fetchData() {
   }
 }
 
+async function loadHealthGroups() {
+  try {
+    const groups = await adminAPI.groups.getAll()
+    healthGroups.value = groups || []
+  } catch (err) {
+    console.error('Failed to load account health groups:', err)
+  }
+}
+
 async function loadRuntimeSettings() {
   loadingRuntime.value = true
   try {
@@ -1824,6 +1874,21 @@ function accountBalanceStatusClass(item: OpsAccountHealthItem): string {
   if (status === 'failed' || status === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
   if (status === 'skipped') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
   return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+}
+
+function accountBalanceHint(item: OpsAccountHealthItem): string {
+  const state = accountBalanceState(item)
+  if (!state) return '等待探测'
+  if (state.error) return state.error
+
+  const parts: string[] = [accountBalanceStatusText(item)]
+  if (state.detected_method) {
+    parts.push(accountBalanceMethodLabel(state.detected_method))
+  }
+  if (state.checked_at) {
+    parts.push(formatRelativeTime(state.checked_at))
+  }
+  return parts.join(' · ')
 }
 
 function accountBalanceBadgeText(item: OpsAccountHealthItem): string {
@@ -2754,7 +2819,7 @@ watch(
 
 onMounted(async () => {
   adminSettingsStore.fetch()
-  await Promise.all([fetchData(), loadRuntimeSettings()])
+  await Promise.all([fetchData(), loadRuntimeSettings(), loadHealthGroups()])
   autoRefreshTimer = setInterval(fetchData, autoRefreshMs)
 })
 

@@ -176,14 +176,32 @@
         </div>
       </section>
 
-      <section class="rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
-        <div class="flex flex-col gap-3 border-b border-gray-200 p-4 dark:border-dark-700 xl:flex-row xl:items-center xl:justify-between">
-          <div>
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">账号余额控制台</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">单账号可以指定查询方式，也可以保持智能自动识别。</p>
+      <section class="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-800">
+        <div class="border-b border-gray-200 bg-gray-50/70 p-4 dark:border-dark-700 dark:bg-dark-900/30">
+          <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div class="min-w-0">
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-base font-semibold text-gray-900 dark:text-white">账号余额控制台</h2>
+                <span class="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:ring-dark-700">
+                  共 {{ balanceResponse?.total ?? 0 }} 个账号
+                </span>
+              </div>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">单账号指定查询方式、阈值和开关；异常账号优先浮现。</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="applyBalanceFilters">
+                <Icon name="search" size="sm" />
+                <span>筛选</span>
+              </button>
+              <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="resetBalanceFilters">
+                <Icon name="refresh" size="sm" />
+                <span>重置</span>
+              </button>
+            </div>
           </div>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
-            <input v-model.trim="filters.q" type="text" class="input h-9 min-w-[12rem]" placeholder="搜索账号/平台/错误" @keyup.enter="applyBalanceFilters" />
+
+          <div class="mt-4 grid grid-cols-1 gap-2 md:grid-cols-[minmax(16rem,1fr)_repeat(3,minmax(8rem,10rem))]">
+            <input v-model.trim="filters.q" type="text" class="input h-9" placeholder="搜索账号、平台或错误" @keyup.enter="applyBalanceFilters" />
             <select v-model="filters.platform" class="input h-9 min-w-[8rem]" @change="applyBalanceFilters">
               <option value="">全部平台</option>
               <option v-for="platform in platformOptions" :key="platform.value" :value="platform.value">{{ platform.label }}</option>
@@ -196,29 +214,22 @@
               <option value="">全部状态</option>
               <option v-for="status in probeStatusOptions" :key="status.value" :value="status.value">{{ status.label }}</option>
             </select>
-            <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="applyBalanceFilters">
-              <Icon name="search" size="sm" />
-              <span>筛选</span>
-            </button>
-            <button type="button" class="btn btn-secondary h-9" :disabled="loading" @click="resetBalanceFilters">
-              <Icon name="refresh" size="sm" />
-              <span>重置</span>
-            </button>
           </div>
-          <div class="flex flex-wrap gap-2">
-            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+
+          <div class="mt-3 flex flex-wrap gap-2">
+            <label class="inline-flex h-8 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-amber-300 hover:text-amber-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
               <input v-model="filters.only_low" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
               只看低余额
             </label>
-            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+            <label class="inline-flex h-8 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-red-300 hover:text-red-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
               <input v-model="filters.only_failed" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
               只看异常
             </label>
-            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+            <label class="inline-flex h-8 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-sky-300 hover:text-sky-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
               <input v-model="filters.only_due" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
               只看待检查
             </label>
-            <label class="inline-flex h-9 items-center gap-2 rounded-lg border border-gray-200 px-3 text-sm dark:border-dark-700">
+            <label class="inline-flex h-8 items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition hover:border-emerald-300 hover:text-emerald-700 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
               <input v-model="filters.only_schedulable" type="checkbox" class="checkbox" @change="applyBalanceFilters" />
               只看可调度
             </label>
@@ -226,79 +237,95 @@
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-700">
-            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-900 dark:text-gray-400">
+          <table class="w-full min-w-[1180px] table-fixed divide-y divide-gray-200 text-sm dark:divide-dark-700">
+            <colgroup>
+              <col class="w-[30%]" />
+              <col class="w-[14%]" />
+              <col class="w-[23%]" />
+              <col class="w-[10%]" />
+              <col class="w-[13%]" />
+              <col class="w-[10%]" />
+            </colgroup>
+            <thead class="bg-white text-xs uppercase tracking-wide text-gray-500 dark:bg-dark-800 dark:text-gray-400">
               <tr>
-                <th class="px-4 py-3 text-left">
+                <th class="px-4 py-2.5 text-left">
                   <button type="button" :class="sortHeaderClass('account_name')" @click="toggleBalanceSort('account_name')">
                     <span>账号</span>
                     <span>{{ sortHeaderMark('account_name') }}</span>
                   </button>
                 </th>
-                <th class="px-4 py-3 text-left">
+                <th class="px-4 py-2.5 text-left">
                   <button type="button" :class="sortHeaderClass('balance_usd')" @click="toggleBalanceSort('balance_usd')">
-                    <span>余额</span>
+                    <span>余额/状态</span>
                     <span>{{ sortHeaderMark('balance_usd') }}</span>
                   </button>
                 </th>
-                <th class="px-4 py-3 text-left">
-                  <button type="button" :class="sortHeaderClass('probe_status')" @click="toggleBalanceSort('probe_status')">
-                    <span>状态</span>
-                    <span>{{ sortHeaderMark('probe_status') }}</span>
-                  </button>
-                </th>
-                <th class="px-4 py-3 text-left">
+                <th class="px-4 py-2.5 text-left">
                   <button type="button" :class="sortHeaderClass('method')" @click="toggleBalanceSort('method')">
                     <span>查询方式</span>
                     <span>{{ sortHeaderMark('method') }}</span>
                   </button>
                 </th>
-                <th class="px-4 py-3 text-left">
+                <th class="px-4 py-2.5 text-left">
                   <button type="button" :class="sortHeaderClass('threshold_usd')" @click="toggleBalanceSort('threshold_usd')">
                     <span>阈值</span>
                     <span>{{ sortHeaderMark('threshold_usd') }}</span>
                   </button>
                 </th>
-                <th class="px-4 py-3 text-left">
+                <th class="px-4 py-2.5 text-left">
                   <button type="button" :class="sortHeaderClass('checked_at')" @click="toggleBalanceSort('checked_at')">
                     <span>最近检查</span>
                     <span>{{ sortHeaderMark('checked_at') }}</span>
                   </button>
                 </th>
-                <th class="px-4 py-3 text-right">操作</th>
+                <th class="px-4 py-2.5 text-right">操作</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-for="item in balanceItems" :key="item.account_id" class="hover:bg-gray-50 dark:hover:bg-dark-700/60">
+              <tr v-for="item in balanceItems" :key="item.account_id" class="align-middle transition hover:bg-gray-50 dark:hover:bg-dark-700/50" :class="balanceRowClass(item)">
                 <td class="px-4 py-3">
-                  <div class="font-medium text-gray-900 dark:text-white">{{ item.account_name }}</div>
-                  <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">#{{ item.account_id }} · {{ item.platform }} · {{ item.type }}</div>
+                  <div class="min-w-0">
+                    <div class="truncate font-medium text-gray-900 dark:text-white" :title="item.account_name">{{ item.account_name }}</div>
+                    <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      <span>#{{ item.account_id }}</span>
+                      <span class="text-gray-300 dark:text-dark-500">/</span>
+                      <span>{{ item.platform }}</span>
+                      <span class="text-gray-300 dark:text-dark-500">/</span>
+                      <span>{{ item.type }}</span>
+                    </div>
+                  </div>
                 </td>
                 <td class="px-4 py-3">
-                  <div class="font-semibold" :class="balanceTextClass(item.balance_probe)">
-                    {{ formatBalance(item.balance_probe) }}
-                  </div>
-                  <div v-if="item.balance_probe.total_used_usd != null" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    已用 ${{ formatNumber(item.balance_probe.total_used_usd) }}
+                  <div class="flex min-w-0 flex-col gap-1">
+                    <span class="text-base font-semibold tabular-nums" :class="balanceTextClass(item.balance_probe)">
+                      {{ formatBalance(item.balance_probe) }}
+                    </span>
+                    <div class="flex items-center gap-2">
+                      <span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold" :class="probeStatusClass(item.balance_probe.status)">
+                        <span class="h-1.5 w-1.5 rounded-full bg-current"></span>
+                        {{ probeStatusLabel(item.balance_probe.status) }}
+                      </span>
+                      <span v-if="item.balance_probe.total_used_usd != null" class="truncate text-xs text-gray-500 dark:text-gray-400">
+                        已用 ${{ formatNumber(item.balance_probe.total_used_usd) }}
+                      </span>
+                    </div>
                   </div>
                 </td>
                 <td class="px-4 py-3">
-                  <span class="rounded-full px-2 py-0.5 text-xs font-semibold" :class="probeStatusClass(item.balance_probe.status)">
-                    {{ probeStatusLabel(item.balance_probe.status) }}
-                  </span>
-                  <div v-if="item.balance_probe.error" class="mt-1 max-w-[18rem] truncate text-xs text-red-500" :title="item.balance_probe.error">
+                  <select class="input h-8 w-full text-xs" :value="item.balance_probe.method" @change="onItemMethodChange(item, $event)">
+                    <option v-for="method in methodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
+                  </select>
+                  <div class="mt-1 flex min-h-[1rem] items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                    <span v-if="item.balance_probe.detected_method">命中 {{ methodLabel(item.balance_probe.detected_method) }}</span>
+                    <span v-else>等待命中方式</span>
+                  </div>
+                  <div v-if="item.balance_probe.error" class="mt-1 truncate text-xs text-red-500" :title="item.balance_probe.error">
                     {{ item.balance_probe.error }}
                   </div>
                 </td>
                 <td class="px-4 py-3">
-                  <select class="input h-8 min-w-[9rem]" :value="item.balance_probe.method" @change="onItemMethodChange(item, $event)">
-                    <option v-for="method in methodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
-                  </select>
-                  <div v-if="item.balance_probe.detected_method" class="mt-1 text-xs text-gray-500 dark:text-gray-400">命中 {{ methodLabel(item.balance_probe.detected_method) }}</div>
-                </td>
-                <td class="px-4 py-3">
                   <input
-                    class="input h-8 w-24"
+                    class="input h-8 w-full max-w-[6.5rem] text-xs"
                     type="number"
                     min="0"
                     step="0.01"
@@ -307,16 +334,16 @@
                     @change="onItemThresholdChange(item, $event)"
                   />
                 </td>
-                <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">
-                  {{ formatTime(item.balance_probe.checked_at) }}
+                <td class="px-4 py-3">
+                  <div class="text-xs tabular-nums text-gray-600 dark:text-gray-300">{{ formatTime(item.balance_probe.checked_at) }}</div>
                 </td>
                 <td class="px-4 py-3">
-                  <div class="flex justify-end gap-2">
-                    <label class="inline-flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                  <div class="flex items-center justify-end gap-2">
+                    <label class="inline-flex h-8 items-center gap-1 rounded-md border border-gray-200 px-2 text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
                       <input :checked="item.balance_probe.enabled" type="checkbox" class="checkbox" @change="onItemEnabledChange(item, $event)" />
                       启用
                     </label>
-                    <button type="button" class="btn btn-secondary btn-sm" :disabled="probingIds.has(item.account_id)" @click="probeItem(item)">
+                    <button type="button" class="btn btn-secondary btn-sm w-[4.75rem] justify-center" :disabled="probingIds.has(item.account_id)" @click="probeItem(item)">
                       <Icon name="beaker" size="xs" />
                       <span>{{ probingIds.has(item.account_id) ? '探测中' : '探测' }}</span>
                     </button>
@@ -663,6 +690,18 @@ function balanceTextClass(state: OpsAccountBalanceProbeState) {
   return 'text-emerald-600 dark:text-emerald-300'
 }
 
+function balanceRowClass(item: OpsAccountBalanceAccountItem) {
+  const state = item.balance_probe
+  if (state.status === 'failed' || state.status === 'unsupported') {
+    return 'bg-red-50/40 dark:bg-red-950/10'
+  }
+  const threshold = state.threshold_usd ?? balanceSettings.default_threshold_usd
+  if (!state.unlimited && state.balance_usd != null && threshold > 0 && state.balance_usd <= threshold) {
+    return 'bg-amber-50/40 dark:bg-amber-950/10'
+  }
+  return ''
+}
+
 function probeStatusLabel(status: string) {
   switch (status) {
     case 'ok':
@@ -747,7 +786,7 @@ function defaultBalanceSettings(): OpsAccountBalanceSettings {
   return {
     enabled: true,
     probe: {
-      interval_minutes: 60,
+      interval_minutes: 5,
       max_per_run: 2,
       timeout_seconds: 8,
       only_schedulable: true,

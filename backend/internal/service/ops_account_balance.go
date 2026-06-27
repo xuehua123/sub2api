@@ -19,17 +19,18 @@ import (
 )
 
 const (
-	accountBalanceNewAPIQuotaUnitPerUSD = 500000.0
-	accountBalancePersistTimeout        = 5 * time.Second
-	accountBalanceDefaultTimeout        = 8 * time.Second
-	accountBalanceMaxResponseBytes      = 64 * 1024
+	accountBalanceNewAPIQuotaUnitPerUSD        = 500000.0
+	accountBalancePersistTimeout               = 5 * time.Second
+	accountBalanceDefaultTimeout               = 8 * time.Second
+	accountBalanceMaxResponseBytes             = 64 * 1024
+	accountBalanceLegacyDefaultIntervalMinutes = 60
 )
 
 func defaultOpsAccountBalanceSettings() OpsAccountBalanceSettings {
 	return OpsAccountBalanceSettings{
 		Enabled: true,
 		Probe: OpsAccountBalanceProbeSettings{
-			IntervalMinutes: 60,
+			IntervalMinutes: 5,
 			MaxPerRun:       2,
 			TimeoutSeconds:  int(accountBalanceDefaultTimeout.Seconds()),
 			OnlySchedulable: true,
@@ -58,7 +59,7 @@ func normalizeOpsAccountBalanceSettings(settings *OpsAccountBalanceSettings) {
 		*settings = defaults
 		return
 	}
-	if settings.Probe.IntervalMinutes <= 0 {
+	if settings.Probe.IntervalMinutes <= 0 || settings.Probe.IntervalMinutes == accountBalanceLegacyDefaultIntervalMinutes {
 		settings.Probe.IntervalMinutes = defaults.Probe.IntervalMinutes
 	}
 	if settings.Probe.IntervalMinutes > 1440 {
@@ -1341,7 +1342,7 @@ func buildOpsAccountBalanceLowWeComMarkdown(account Account, state OpsAccountBal
 		fmt.Sprintf("> 当前余额：<font color=\"warning\">%s</font>", escapeOpsWeComMarkdown(balance)),
 		fmt.Sprintf("> 告警阈值：$%.2f", threshold),
 		fmt.Sprintf("> 查询方式：%s", escapeOpsWeComMarkdown(accountBalanceMethodLabel(state.DetectedMethod, state.Method))),
-		fmt.Sprintf("> 检查时间：%s", now.Format("2006-01-02 15:04:05 UTC")),
+		fmt.Sprintf("> 检查时间：%s", formatOpsNotifyTime(now)),
 		"",
 		"请及时补充上游余额，避免调度账号突然不可用。",
 	}
@@ -1352,7 +1353,7 @@ func buildOpsAccountBalanceTestWeComMarkdown(now time.Time) string {
 	return strings.Join([]string{
 		"### 上游余额通知测试",
 		"> 企业微信机器人已连通。",
-		fmt.Sprintf("> 测试时间：%s", now.Format("2006-01-02 15:04:05 UTC")),
+		fmt.Sprintf("> 测试时间：%s", formatOpsNotifyTime(now)),
 		"",
 		"之后账号余额低于阈值时，会按配置发送提醒。",
 	}, "\n")

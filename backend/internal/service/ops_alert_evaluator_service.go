@@ -36,6 +36,16 @@ end
 return 0
 `)
 
+var opsNotifyTimeLocation = loadOpsNotifyTimeLocation()
+
+func loadOpsNotifyTimeLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("Asia/Shanghai", 8*60*60)
+	}
+	return loc
+}
+
 type OpsAlertEvaluatorService struct {
 	opsService         *OpsService
 	opsRepo            OpsRepository
@@ -1181,9 +1191,9 @@ func opsAccountHealthFlagSummary(item *OpsAccountHealthItem) string {
 
 func formatOpsNotifyTime(t time.Time) string {
 	if t.IsZero() {
-		t = time.Now().UTC()
+		t = time.Now()
 	}
-	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+	return t.In(opsNotifyTimeLocation).Format("2006-01-02 15:04:05 Asia/Shanghai")
 }
 
 func escapeOpsWeComMarkdown(value string) string {
@@ -1329,7 +1339,7 @@ func buildOpsAlertEventWeComText(rule *OpsAlertRule, event *OpsAlertEvent, now t
 	}
 	lines := []string{
 		"Sub2API 运维告警",
-		fmt.Sprintf("时间: %s", now.Format(time.RFC3339)),
+		fmt.Sprintf("时间: %s", formatOpsNotifyTime(now)),
 		fmt.Sprintf("级别: %s", strings.TrimSpace(event.Severity)),
 		fmt.Sprintf("标题: %s", strings.TrimSpace(event.Title)),
 	}
