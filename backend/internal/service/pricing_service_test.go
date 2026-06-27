@@ -235,6 +235,46 @@ func TestParsePricingData_PreservesServiceTierPriorityFields(t *testing.T) {
 	require.True(t, pricing.SupportsServiceTier)
 }
 
+func TestParsePricingData_PreservesLongContextAndPriorityLongContextFields(t *testing.T) {
+	svc := &PricingService{}
+	pricingData, err := svc.parsePricingData([]byte(`{
+		"gpt-5.5": {
+			"input_cost_per_token": 0.000002,
+			"input_cost_per_token_priority": 0.000004,
+			"input_cost_per_token_above_200k_tokens": 0.000006,
+			"input_cost_per_token_above_200k_tokens_priority": 0.000009,
+			"output_cost_per_token": 0.000010,
+			"output_cost_per_token_priority": 0.000020,
+			"output_cost_per_token_above_200k_tokens": 0.000030,
+			"output_cost_per_token_above_200k_tokens_priority": 0.000045,
+			"cache_creation_input_token_cost": 0.000002,
+			"cache_creation_input_token_cost_above_200k_tokens": 0.000007,
+			"cache_read_input_token_cost": 0.0000002,
+			"cache_read_input_token_cost_priority": 0.0000004,
+			"cache_read_input_token_cost_above_200k_tokens": 0.0000006,
+			"cache_read_input_token_cost_above_200k_tokens_priority": 0.0000009,
+			"supports_service_tier": true,
+			"litellm_provider": "openai",
+			"mode": "chat"
+		}
+	}`))
+	require.NoError(t, err)
+
+	pricing := pricingData["gpt-5.5"]
+	require.NotNil(t, pricing)
+	require.InDelta(t, 6e-6, pricing.InputCostPerTokenAbove200K, 1e-12)
+	require.InDelta(t, 9e-6, pricing.InputCostPerTokenAbove200KPriority, 1e-12)
+	require.InDelta(t, 30e-6, pricing.OutputCostPerTokenAbove200K, 1e-12)
+	require.InDelta(t, 45e-6, pricing.OutputCostPerTokenAbove200KPriority, 1e-12)
+	require.InDelta(t, 7e-6, pricing.CacheCreationInputTokenCostAbove200K, 1e-12)
+	require.InDelta(t, 6e-7, pricing.CacheReadInputTokenCostAbove200K, 1e-12)
+	require.InDelta(t, 9e-7, pricing.CacheReadInputTokenCostAbove200KPriority, 1e-12)
+	require.Equal(t, 200000, pricing.LongContextInputTokenThreshold)
+	require.InDelta(t, 3.0, pricing.LongContextInputCostMultiplier, 1e-12)
+	require.InDelta(t, 3.0, pricing.LongContextOutputCostMultiplier, 1e-12)
+	require.InDelta(t, 3.0, pricing.LongContextCacheReadCostMultiplier, 1e-12)
+}
+
 // ---------------------------------------------------------------------------
 // ListModelNamesByProvider
 // ---------------------------------------------------------------------------

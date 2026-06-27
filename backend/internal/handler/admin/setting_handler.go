@@ -302,6 +302,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
+		ModelPriceUSDCNYRate:     settings.ModelPriceUSDCNYRate,
+		ModelPricesUserVisible:   settings.ModelPricesUserVisible,
 
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		ReferralEnabled:                      settings.ReferralEnabled,
@@ -680,6 +682,10 @@ type UpdateSettingsRequest struct {
 
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+
+	// Model prices page
+	ModelPriceUSDCNYRate   *float64 `json:"model_price_usd_cny_rate"`
+	ModelPricesUserVisible *bool    `json:"model_prices_user_visible"`
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
@@ -2049,6 +2055,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AvailableChannelsEnabled
 		}(),
+		ModelPriceUSDCNYRate: func() float64 {
+			if req.ModelPriceUSDCNYRate != nil {
+				return *req.ModelPriceUSDCNYRate
+			}
+			return previousSettings.ModelPriceUSDCNYRate
+		}(),
+		ModelPricesUserVisible: func() bool {
+			if req.ModelPricesUserVisible != nil {
+				return *req.ModelPricesUserVisible
+			}
+			return previousSettings.ModelPricesUserVisible
+		}(),
 		BalanceLowNotifyEnabled: func() bool {
 			if req.BalanceLowNotifyEnabled != nil {
 				return *req.BalanceLowNotifyEnabled
@@ -2426,6 +2444,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
+		ModelPriceUSDCNYRate:     updatedSettings.ModelPriceUSDCNYRate,
+		ModelPricesUserVisible:   updatedSettings.ModelPricesUserVisible,
 
 		AffiliateEnabled:                     updatedSettings.AffiliateEnabled,
 		ReferralEnabled:                      updatedSettings.ReferralEnabled,
@@ -2860,6 +2880,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
 		changed = append(changed, "available_channels_enabled")
 	}
+	if before.ModelPricesUserVisible != after.ModelPricesUserVisible {
+		changed = append(changed, "model_prices_user_visible")
+	}
 	if before.ReferralWithdrawEnabled != after.ReferralWithdrawEnabled {
 		changed = append(changed, "referral_withdraw_enabled")
 	}
@@ -2968,6 +2991,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
 		changed = append(changed, "available_channels_enabled")
+	}
+	if before.ModelPricesUserVisible != after.ModelPricesUserVisible {
+		changed = append(changed, "model_prices_user_visible")
 	}
 	if before.AffiliateEnabled != after.AffiliateEnabled {
 		changed = append(changed, "affiliate_enabled")

@@ -307,6 +307,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/model-prices',
+    name: 'ModelPrices',
+    component: () => import('@/views/ModelPricesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Model Prices',
+      titleKey: 'modelPrices.title'
+    }
+  },
+  {
     path: '/profile',
     name: 'Profile',
     component: () => import('@/views/user/ProfileView.vue'),
@@ -977,6 +988,14 @@ router.beforeEach(async (to, _from, next) => {
     const riskControlEnabled = appStore.cachedPublicSettings?.risk_control_enabled === true
     if (!riskControlEnabled) {
       next(authStore.isAdmin ? '/admin/settings' : '/dashboard')
+      return
+    }
+  }
+
+  if (to.name === 'ModelPrices' && !authStore.isAdmin) {
+    const modelPricesVisible = appStore.cachedPublicSettings?.model_prices_user_visible !== false
+    if (!modelPricesVisible) {
+      next('/dashboard')
       return
     }
   }

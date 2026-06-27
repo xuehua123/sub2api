@@ -393,6 +393,7 @@ export default {
     channelMonitor: '渠道监控',
     channelStatus: '渠道状态',
     availableChannels: '可用渠道',
+    modelPrices: '模型价格',
     issueCenter: '问题中心',
     issueManagement: '问题管理',
     subscriptions: '订阅管理',
@@ -1526,6 +1527,10 @@ export default {
       unitPerMillion: '/ 1M token',
       unitPerRequest: '/ 次'
     }
+  },
+
+  modelPrices: {
+    title: '模型价格'
   },
 
   affiliate: {
@@ -6624,6 +6629,12 @@ export default {
         remove: '删除',
         moveUp: '上移',
         moveDown: '下移',
+      },
+      builtinMenus: {
+        title: '内置菜单',
+        description: '控制系统内置页面在普通用户侧边栏中的显示，不需要在自定义菜单中重复添加。',
+        modelPricesUserVisible: '普通用户可查看模型价格页',
+        modelPricesUserVisibleHint: '关闭后普通用户侧边栏不显示模型价格，接口也会禁止访问；管理员仍可查看。',
       },
       payment: {
         title: '支付设置',

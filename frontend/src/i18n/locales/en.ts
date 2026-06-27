@@ -393,6 +393,7 @@ export default {
     channelMonitor: 'Channel Monitor',
     channelStatus: 'Channel Status',
     availableChannels: 'Available Channels',
+    modelPrices: 'Model Prices',
     issueCenter: 'Issue Center',
     issueManagement: 'Issue Management',
     subscriptions: 'Subscriptions',
@@ -1522,6 +1523,10 @@ export default {
       unitPerMillion: '/ 1M tokens',
       unitPerRequest: '/ request'
     }
+  },
+
+  modelPrices: {
+    title: 'Model Prices'
   },
 
   affiliate: {
@@ -6468,6 +6473,12 @@ export default {
         remove: 'Remove',
         moveUp: 'Move Up',
         moveDown: 'Move Down',
+      },
+      builtinMenus: {
+        title: 'Built-in Menus',
+        description: 'Control built-in pages in the regular user sidebar. These pages do not need to be added again as custom menus.',
+        modelPricesUserVisible: 'Allow regular users to view Model Prices',
+        modelPricesUserVisibleHint: 'When disabled, regular users will not see Model Prices in the sidebar and the API will reject access. Admins can still view it.',
       },
       payment: {
         title: 'Payment Settings',

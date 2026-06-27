@@ -342,6 +342,7 @@ const (
 	defaultGoogleOAuthFrontend   = "/auth/oauth/callback"
 	defaultLoginAgreementMode    = "modal"
 	defaultLoginAgreementDate    = "2026-03-31"
+	defaultModelPriceUSDCNYRate  = 7.0
 )
 
 func normalizeLoginAgreementMode(raw string) string {
@@ -703,6 +704,28 @@ func (s *SettingService) GetAllSettings(ctx context.Context) (*SystemSettings, e
 	return s.parseSettings(settings), nil
 }
 
+func (s *SettingService) GetModelPriceUSDCNYRate(ctx context.Context) float64 {
+	if s == nil || s.settingRepo == nil {
+		return defaultModelPriceUSDCNYRate
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPriceUSDCNYRate)
+	if err != nil {
+		return defaultModelPriceUSDCNYRate
+	}
+	return parseModelPriceUSDCNYRate(value)
+}
+
+func (s *SettingService) IsModelPricesUserVisible(ctx context.Context) bool {
+	if s == nil || s.settingRepo == nil {
+		return true
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPricesUserVisible)
+	if err != nil {
+		return true
+	}
+	return !isFalseSettingValue(value)
+}
+
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
 func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyFrontendURL)
@@ -852,6 +875,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorEnabled,
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyAvailableChannelsEnabled,
+		SettingKeyModelPricesUserVisible,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
@@ -976,6 +1000,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 			settings[SettingKeyChannelMonitorDefaultIntervalSeconds],
 		),
 		AvailableChannelsEnabled:    settings[SettingKeyAvailableChannelsEnabled] == "true",
+		ModelPricesUserVisible:      !isFalseSettingValue(settings[SettingKeyModelPricesUserVisible]),
 		BalanceLowNotifyEnabled:     settings[SettingKeyBalanceLowNotifyEnabled] == "true",
 		AccountQuotaNotifyEnabled:   settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
 		BalanceLowNotifyThreshold:   balanceLowNotifyThreshold,
@@ -1318,6 +1343,7 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 	AvailableChannelsEnabled             bool `json:"available_channels_enabled"`
+	ModelPricesUserVisible               bool `json:"model_prices_user_visible"`
 	AffiliateEnabled                     bool `json:"affiliate_enabled"`
 	RiskControlEnabled                   bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests           bool `json:"allow_user_view_error_requests"`
@@ -1396,6 +1422,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorEnabled:                settings.ChannelMonitorEnabled,
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
+		ModelPricesUserVisible:               settings.ModelPricesUserVisible,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
@@ -1981,6 +2008,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyTablePageSizeOptions] = string(tablePageSizeOptionsJSON)
 	updates[SettingKeyCustomMenuItems] = settings.CustomMenuItems
 	updates[SettingKeyCustomEndpoints] = settings.CustomEndpoints
+	updates[SettingKeyModelPriceUSDCNYRate] = strconv.FormatFloat(parseModelPriceUSDCNYRate(strconv.FormatFloat(settings.ModelPriceUSDCNYRate, 'f', 8, 64)), 'f', 8, 64)
+	updates[SettingKeyModelPricesUserVisible] = strconv.FormatBool(settings.ModelPricesUserVisible)
 
 	// 默认配置
 	updates[SettingKeyDefaultConcurrency] = strconv.Itoa(settings.DefaultConcurrency)
@@ -3046,6 +3075,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAuthSourceDefaultDingTalkGrantOnSignup:    "false",
 		SettingKeyAuthSourceDefaultDingTalkGrantOnFirstBind: "false",
 		SettingKeyForceEmailOnThirdPartySignup:              "false",
+		SettingKeyModelPriceUSDCNYRate:                      "7",
+		SettingKeyModelPricesUserVisible:                    "true",
 		SettingKeySMTPPort:                                  "587",
 		SettingKeySMTPUseTLS:                                "false",
 		SettingKeyReferralCreditConversionEnabled:           "false",
@@ -3591,6 +3622,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
+	result.ModelPriceUSDCNYRate = parseModelPriceUSDCNYRate(settings[SettingKeyModelPriceUSDCNYRate])
+	result.ModelPricesUserVisible = !isFalseSettingValue(settings[SettingKeyModelPricesUserVisible])
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
 	result.AffiliateEnabled = settings[SettingKeyAffiliateEnabled] == "true"
@@ -3803,6 +3836,14 @@ func isFalseSettingValue(value string) bool {
 	default:
 		return false
 	}
+}
+
+func parseModelPriceUSDCNYRate(raw string) float64 {
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+		return defaultModelPriceUSDCNYRate
+	}
+	return rate
 }
 
 func normalizeVisibleMethodSettingSource(method, source string, enabled bool) (string, error) {

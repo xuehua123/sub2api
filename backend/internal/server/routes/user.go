@@ -78,6 +78,9 @@ func RegisterUserRoutes(
 			channels.GET("/available", h.AvailableChannel.List)
 		}
 
+		// 模型价格（管理员和普通用户共用，按角色过滤可见分组）
+		authenticated.GET("/model-prices", h.ModelPrice.List)
+
 		// 使用记录
 		usage := authenticated.Group("/usage")
 		{

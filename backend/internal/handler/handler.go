@@ -64,6 +64,7 @@ type Handlers struct {
 	Referral         *ReferralHandler
 	LobeHub          *LobeHubHandler
 	AvailableChannel *AvailableChannelHandler
+	ModelPrice       *ModelPriceHandler
 }
 
 // BuildInfo contains build-time information

@@ -362,6 +362,7 @@ export const useAppStore = defineStore('app', () => {
         channel_monitor_enabled: true,
         channel_monitor_default_interval_seconds: 60,
         available_channels_enabled: false,
+        model_prices_user_visible: true,
         referral_enabled: false,
         referral_allow_manual_input: false,
         referral_bind_before_first_paid_only: false,

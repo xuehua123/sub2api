@@ -257,6 +257,7 @@ const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = makeSidebarFlag(FeatureFlags.payment)
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
+const flagModelPrices = () => authStore.isAdmin || makeSidebarFlag(FeatureFlags.modelPrices)()
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
@@ -697,6 +698,13 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       icon: ChannelIcon,
       hideInSimpleMode: true,
       featureFlag: flagAvailableChannels,
+    },
+    {
+      path: '/model-prices',
+      label: t('nav.modelPrices'),
+      icon: PriceTagIcon,
+      hideInSimpleMode: true,
+      featureFlag: flagModelPrices,
     },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
     { path: '/issues', label: t('nav.issueCenter'), icon: TicketIcon, badgeCount: issueUnreadCount.value },

@@ -133,6 +133,7 @@ func ProvideHandlers(
 	referralHandler *ReferralHandler,
 	lobeHubHandler *LobeHubHandler,
 	availableChannelHandler *AvailableChannelHandler,
+	modelPriceHandler *ModelPriceHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -157,6 +158,7 @@ func ProvideHandlers(
 		Referral:         referralHandler,
 		LobeHub:          lobeHubHandler,
 		AvailableChannel: availableChannelHandler,
+		ModelPrice:       modelPriceHandler,
 	}
 }
 
@@ -183,6 +185,7 @@ var ProviderSet = wire.NewSet(
 	NewReferralHandler,
 	ProvideLobeHubHandler,
 	NewAvailableChannelHandler,
+	NewModelPriceHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
