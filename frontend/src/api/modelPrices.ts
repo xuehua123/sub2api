@@ -11,6 +11,16 @@ export interface ModelPriceGroup {
   image_rate_independent: boolean
   image_rate_multiplier: number
   is_exclusive: boolean
+  best_plan?: ModelPricePlan
+}
+
+export interface ModelPricePlan {
+  id: number
+  name: string
+  price_cny: number
+  quota_usd: number
+  cny_per_quota_usd: number
+  usd_multiplier: number
 }
 
 export interface ModelPriceValue {

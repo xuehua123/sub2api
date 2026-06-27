@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"math"
 	"sort"
 	"strconv"
@@ -14,11 +15,12 @@ import (
 )
 
 type ModelPriceHandler struct {
-	channelService *service.ChannelService
-	apiKeyService  *service.APIKeyService
-	groupService   *service.GroupService
-	pricingService *service.PricingService
-	settingService *service.SettingService
+	channelService       *service.ChannelService
+	apiKeyService        *service.APIKeyService
+	groupService         *service.GroupService
+	pricingService       *service.PricingService
+	settingService       *service.SettingService
+	paymentConfigService *service.PaymentConfigService
 }
 
 func NewModelPriceHandler(
@@ -27,27 +29,39 @@ func NewModelPriceHandler(
 	groupService *service.GroupService,
 	pricingService *service.PricingService,
 	settingService *service.SettingService,
+	paymentConfigService *service.PaymentConfigService,
 ) *ModelPriceHandler {
 	return &ModelPriceHandler{
-		channelService: channelService,
-		apiKeyService:  apiKeyService,
-		groupService:   groupService,
-		pricingService: pricingService,
-		settingService: settingService,
+		channelService:       channelService,
+		apiKeyService:        apiKeyService,
+		groupService:         groupService,
+		pricingService:       pricingService,
+		settingService:       settingService,
+		paymentConfigService: paymentConfigService,
 	}
 }
 
+type modelPricePlanDTO struct {
+	ID             int64   `json:"id"`
+	Name           string  `json:"name"`
+	PriceCNY       float64 `json:"price_cny"`
+	QuotaUSD       float64 `json:"quota_usd"`
+	CNYPerQuotaUSD float64 `json:"cny_per_quota_usd"`
+	USDMultiplier  float64 `json:"usd_multiplier"`
+}
+
 type modelPriceGroupDTO struct {
-	ID                   int64    `json:"id"`
-	Name                 string   `json:"name"`
-	Platform             string   `json:"platform"`
-	SubscriptionType     string   `json:"subscription_type"`
-	RateMultiplier       float64  `json:"rate_multiplier"`
-	EffectiveMultiplier  float64  `json:"effective_multiplier"`
-	UserRateMultiplier   *float64 `json:"user_rate_multiplier,omitempty"`
-	ImageRateIndependent bool     `json:"image_rate_independent"`
-	ImageRateMultiplier  float64  `json:"image_rate_multiplier"`
-	IsExclusive          bool     `json:"is_exclusive"`
+	ID                   int64              `json:"id"`
+	Name                 string             `json:"name"`
+	Platform             string             `json:"platform"`
+	SubscriptionType     string             `json:"subscription_type"`
+	RateMultiplier       float64            `json:"rate_multiplier"`
+	EffectiveMultiplier  float64            `json:"effective_multiplier"`
+	UserRateMultiplier   *float64           `json:"user_rate_multiplier,omitempty"`
+	ImageRateIndependent bool               `json:"image_rate_independent"`
+	ImageRateMultiplier  float64            `json:"image_rate_multiplier"`
+	IsExclusive          bool               `json:"is_exclusive"`
+	BestPlan             *modelPricePlanDTO `json:"best_plan,omitempty"`
 }
 
 type modelPriceValueDTO struct {
@@ -145,6 +159,7 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	}
 
 	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
+	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
 	models := []modelPriceModelDTO{}
 	if selected != nil {
 		channels, err := h.channelService.ListAvailable(c.Request.Context())
@@ -216,6 +231,104 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 		}
 		return out[i].Platform < out[j].Platform
 	})
+	return out
+}
+
+func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []modelPriceGroupDTO, usdCNYRate float64) {
+	if h.paymentConfigService == nil || usdCNYRate <= 0 {
+		return
+	}
+	plans, err := h.paymentConfigService.ListPlanResponsesForSale(ctx)
+	if err != nil {
+		return
+	}
+	bestByGroup := make(map[int64]modelPricePlanDTO)
+	for _, plan := range plans {
+		quotaUSD := planPackageQuotaUSD(plan)
+		if plan.ID <= 0 || plan.Price <= 0 || quotaUSD <= 0 {
+			continue
+		}
+		cnyPerQuotaUSD := plan.Price / quotaUSD
+		if cnyPerQuotaUSD <= 0 || math.IsNaN(cnyPerQuotaUSD) || math.IsInf(cnyPerQuotaUSD, 0) {
+			continue
+		}
+		candidate := modelPricePlanDTO{
+			ID:             plan.ID,
+			Name:           plan.Name,
+			PriceCNY:       roundPrice(plan.Price),
+			QuotaUSD:       roundPrice(quotaUSD),
+			CNYPerQuotaUSD: roundPrice(cnyPerQuotaUSD),
+			USDMultiplier:  roundPrice(cnyPerQuotaUSD / usdCNYRate),
+		}
+		for _, groupID := range planModelPriceGroupIDs(plan) {
+			existing, ok := bestByGroup[groupID]
+			if !ok || candidate.CNYPerQuotaUSD < existing.CNYPerQuotaUSD {
+				bestByGroup[groupID] = candidate
+			}
+		}
+	}
+	for i := range groups {
+		if best, ok := bestByGroup[groups[i].ID]; ok {
+			groups[i].BestPlan = &best
+		}
+	}
+}
+
+func planPackageQuotaUSD(plan service.SubscriptionPlanResponse) float64 {
+	validityDays := planValidityDays(plan.ValidityDays, plan.ValidityUnit)
+	if validityDays <= 0 {
+		validityDays = 30
+	}
+	if plan.MonthlyLimitUSD != nil && *plan.MonthlyLimitUSD > 0 {
+		return *plan.MonthlyLimitUSD * float64(validityDays) / 30
+	}
+	if plan.WeeklyLimitUSD != nil && *plan.WeeklyLimitUSD > 0 {
+		return *plan.WeeklyLimitUSD * float64(validityDays) / 7
+	}
+	if plan.DailyLimitUSD != nil && *plan.DailyLimitUSD > 0 {
+		return *plan.DailyLimitUSD * float64(validityDays)
+	}
+	return 0
+}
+
+func planValidityDays(days int, unit string) int {
+	if days <= 0 {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(unit)) {
+	case "year", "years":
+		return days * 365
+	case "month", "months":
+		return days * 30
+	case "week", "weeks":
+		return days * 7
+	case "day", "days", "":
+		return days
+	default:
+		return days
+	}
+}
+
+func planModelPriceGroupIDs(plan service.SubscriptionPlanResponse) []int64 {
+	seen := map[int64]struct{}{}
+	out := make([]int64, 0, len(plan.GroupIDs)+1)
+	add := func(id int64) {
+		if id <= 0 {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	add(plan.GroupID)
+	for _, id := range plan.GroupIDs {
+		add(id)
+	}
+	for _, group := range plan.Groups {
+		add(group.ID)
+	}
 	return out
 }
 
@@ -311,8 +424,11 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 	}
 
 	multiplier := group.EffectiveMultiplier
+	if group.BestPlan != nil && group.BestPlan.USDMultiplier > 0 {
+		multiplier = group.BestPlan.USDMultiplier
+	}
 	if (agg.billingMode == string(service.BillingModeImage) || official.ImageOutputUSDPerM != nil) &&
-		group.ImageRateIndependent {
+		group.ImageRateIndependent && group.BestPlan == nil {
 		multiplier = group.ImageRateMultiplier
 	}
 	multiplier = normalizeMultiplier(multiplier)

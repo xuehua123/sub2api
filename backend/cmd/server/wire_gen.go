@@ -290,7 +290,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	lobeHubHandler := handler.ProvideLobeHubHandler(lobeHubLaunchService, lobeHubOIDCService, lobeHubSSOService)
 	availableChannelHandler := handler.NewAvailableChannelHandler(channelService, apiKeyService, settingService)
 	groupService := service.NewGroupService(groupRepository, apiKeyAuthCacheInvalidator)
-	modelPriceHandler := handler.NewModelPriceHandler(channelService, apiKeyService, groupService, pricingService, settingService)
+	modelPriceHandler := handler.NewModelPriceHandler(channelService, apiKeyService, groupService, pricingService, settingService, paymentConfigService)
 	idempotencyCoordinator := service.ProvideIdempotencyCoordinator(idempotencyRepository, configConfig)
 	idempotencyCleanupService := service.ProvideIdempotencyCleanupService(idempotencyRepository, configConfig)
 	handlers := handler.ProvideHandlers(authHandler, userHandler, apiKeyHandler, usageHandler, redeemHandler, subscriptionHandler, entitlementHandler, announcementHandler, supportIssueHandler, channelMonitorUserHandler, adminHandlers, gatewayHandler, openAIGatewayHandler, handlerSettingHandler, totpHandler, handlerPaymentHandler, paymentWebhookHandler, handlerReferralHandler, lobeHubHandler, availableChannelHandler, modelPriceHandler, idempotencyCoordinator, idempotencyCleanupService)

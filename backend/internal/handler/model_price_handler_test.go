@@ -56,6 +56,58 @@ func TestSelectModelPriceGroupIDFallsBackToFirstVisibleGroup(t *testing.T) {
 	require.Nil(t, selectModelPriceGroupID("", nil))
 }
 
+func TestPlanPackageQuotaUSDUsesFullPackageValidity(t *testing.T) {
+	monthly := 100.0
+	weekly := 70.0
+	daily := 10.0
+
+	require.InDelta(t, 1216.666666, planPackageQuotaUSD(service.SubscriptionPlanResponse{
+		ValidityDays:    1,
+		ValidityUnit:    "year",
+		MonthlyLimitUSD: &monthly,
+	}), 0.000001)
+	require.Equal(t, 140.0, planPackageQuotaUSD(service.SubscriptionPlanResponse{
+		ValidityDays:   2,
+		ValidityUnit:   "week",
+		WeeklyLimitUSD: &weekly,
+	}))
+	require.Equal(t, 300.0, planPackageQuotaUSD(service.SubscriptionPlanResponse{
+		ValidityDays:  30,
+		ValidityUnit:  "day",
+		DailyLimitUSD: &daily,
+	}))
+}
+
+func TestModelPriceDTOPrefersPackageMultiplier(t *testing.T) {
+	h := &ModelPriceHandler{}
+	input := 10.0 / 1_000_000
+
+	dto := h.toModelPriceDTO(&modelAggregate{
+		name:        "gpt-test",
+		platform:    "openai",
+		billingMode: string(service.BillingModeToken),
+		pricing: &service.ChannelModelPricing{
+			BillingMode: service.BillingModeToken,
+			InputPrice:  &input,
+		},
+		channelNames: map[string]struct{}{"primary": {}},
+	}, modelPriceGroupDTO{
+		ID:                  1,
+		Name:                "套餐分组",
+		Platform:            "openai",
+		EffectiveMultiplier: 3.6,
+		BestPlan: &modelPricePlanDTO{
+			USDMultiplier: 0.1,
+		},
+	}, 7)
+
+	require.Equal(t, 0.1, dto.Multiplier)
+	require.NotNil(t, dto.Actual.InputCNYPerM)
+	require.Equal(t, 7.0, *dto.Actual.InputCNYPerM)
+	require.NotNil(t, dto.CheaperFactor)
+	require.Equal(t, 10.0, *dto.CheaperFactor)
+}
+
 func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
 	pricing := &service.LiteLLMModelPricing{
 		InputCostPerToken:               2e-6,
