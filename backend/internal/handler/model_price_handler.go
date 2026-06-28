@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -26,6 +27,11 @@ type ModelPriceHandler struct {
 type modelPriceCatalog interface {
 	GetModelPricing(model string) *service.LiteLLMModelPricing
 	ListModelNamesByProvider(provider string) []string
+}
+
+type modelPriceCatalogManager interface {
+	GetStatus() map[string]any
+	ForceUpdate() error
 }
 
 func NewModelPriceHandler(
@@ -66,6 +72,9 @@ type modelPriceGroupDTO struct {
 	ImageRateIndependent bool               `json:"image_rate_independent"`
 	ImageRateMultiplier  float64            `json:"image_rate_multiplier"`
 	IsExclusive          bool               `json:"is_exclusive"`
+	Hidden               bool               `json:"hidden"`
+	ModelCount           int                `json:"model_count"`
+	ChannelCount         int                `json:"channel_count"`
 	BestPlan             *modelPricePlanDTO `json:"best_plan,omitempty"`
 }
 
@@ -122,12 +131,39 @@ type modelPriceSummaryDTO struct {
 	AverageCheaperFactor *float64 `json:"average_cheaper_factor"`
 }
 
+type modelPriceGroupOverviewDTO struct {
+	Category     string `json:"category"`
+	GroupCount   int    `json:"group_count"`
+	ModelCount   int    `json:"model_count"`
+	ChannelCount int    `json:"channel_count"`
+}
+
+type modelPriceCatalogStatusDTO struct {
+	ModelCount  int    `json:"model_count"`
+	LastUpdated string `json:"last_updated,omitempty"`
+	LocalHash   string `json:"local_hash,omitempty"`
+}
+
 type modelPriceResponseDTO struct {
-	USDCNYRate      float64              `json:"usd_cny_rate"`
-	Groups          []modelPriceGroupDTO `json:"groups"`
-	SelectedGroupID *int64               `json:"selected_group_id"`
-	Models          []modelPriceModelDTO `json:"models"`
-	Summary         modelPriceSummaryDTO `json:"summary"`
+	USDCNYRate          float64                      `json:"usd_cny_rate"`
+	Groups              []modelPriceGroupDTO         `json:"groups"`
+	GroupOverview       []modelPriceGroupOverviewDTO `json:"group_overview"`
+	SelectedGroupID     *int64                       `json:"selected_group_id"`
+	Models              []modelPriceModelDTO         `json:"models"`
+	Summary             modelPriceSummaryDTO         `json:"summary"`
+	CatalogStatus       *modelPriceCatalogStatusDTO  `json:"catalog_status,omitempty"`
+	IncludeCatalog      bool                         `json:"include_catalog"`
+	ShowHiddenGroups    bool                         `json:"show_hidden_groups"`
+	HiddenGroupIDs      []int64                      `json:"hidden_group_ids"`
+	SelectedGroupHidden bool                         `json:"selected_group_hidden"`
+}
+
+type updateModelPriceHiddenGroupsRequest struct {
+	HiddenGroupIDs []int64 `json:"hidden_group_ids"`
+}
+
+type updateModelPriceHiddenGroupsResponse struct {
+	HiddenGroupIDs []int64 `json:"hidden_group_ids"`
 }
 
 // List returns a group-centric model price view for admins and regular users.
@@ -145,6 +181,8 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 		response.Forbidden(c, "Model prices page is disabled")
 		return
 	}
+	showHiddenGroups := isAdmin && parseModelPriceBoolQuery(c.Query("show_hidden_groups"))
+	includeCatalog := isAdmin && parseModelPriceBoolQuery(c.Query("include_catalog"))
 	groups, err := h.visibleGroups(c, subject.UserID, isAdmin)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -152,9 +190,16 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	}
 
 	groupDTOs := h.groupDTOs(c, groups, subject.UserID, isAdmin)
+	channels, err := h.channelService.ListAvailable(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	applyModelPriceGroupUsage(groupDTOs, channels)
 	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
 	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
-	groupDTOs = filterCurrentSaleModelPriceGroups(groupDTOs)
+	hiddenGroupIDs := h.settingService.GetModelPriceHiddenGroupIDs(c.Request.Context())
+	groupDTOs = applyModelPriceHiddenGroups(groupDTOs, hiddenGroupIDs, showHiddenGroups)
 	selectedGroupID := selectModelPriceGroupID(c.Query("group_id"), groupDTOs)
 	var selected *modelPriceGroupDTO
 	if selectedGroupID != nil {
@@ -168,21 +213,84 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 
 	models := []modelPriceModelDTO{}
 	if selected != nil {
-		channels, err := h.channelService.ListAvailable(c.Request.Context())
-		if err != nil {
-			response.ErrorFrom(c, err)
-			return
-		}
-		models = h.modelsForGroup(channels, *selected, usdCNYRate)
+		models = h.modelsForGroup(channels, *selected, usdCNYRate, includeCatalog)
 	}
 
 	response.Success(c, modelPriceResponseDTO{
-		USDCNYRate:      usdCNYRate,
-		Groups:          groupDTOs,
-		SelectedGroupID: selectedGroupID,
-		Models:          models,
-		Summary:         summarizeModelPrices(models),
+		USDCNYRate:          usdCNYRate,
+		Groups:              groupDTOs,
+		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels),
+		SelectedGroupID:     selectedGroupID,
+		Models:              models,
+		Summary:             summarizeModelPrices(models),
+		CatalogStatus:       h.catalogStatus(isAdmin),
+		IncludeCatalog:      includeCatalog,
+		ShowHiddenGroups:    showHiddenGroups,
+		HiddenGroupIDs:      sortedInt64SetKeys(hiddenGroupIDs),
+		SelectedGroupHidden: selected != nil && selected.Hidden,
 	})
+}
+
+func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
+	var req updateModelPriceHiddenGroupsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	ids, err := h.settingService.SetModelPriceHiddenGroupIDs(c.Request.Context(), req.HiddenGroupIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, updateModelPriceHiddenGroupsResponse{HiddenGroupIDs: ids})
+}
+
+func (h *ModelPriceHandler) SyncCatalog(c *gin.Context) {
+	manager, ok := h.pricingService.(modelPriceCatalogManager)
+	if !ok || manager == nil {
+		response.BadRequest(c, "Pricing catalog sync is unavailable")
+		return
+	}
+	if err := manager.ForceUpdate(); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, modelPriceCatalogStatusFromMap(manager.GetStatus()))
+}
+
+func (h *ModelPriceHandler) catalogStatus(isAdmin bool) *modelPriceCatalogStatusDTO {
+	if !isAdmin {
+		return nil
+	}
+	manager, ok := h.pricingService.(modelPriceCatalogManager)
+	if !ok || manager == nil {
+		return nil
+	}
+	return modelPriceCatalogStatusFromMap(manager.GetStatus())
+}
+
+func modelPriceCatalogStatusFromMap(status map[string]any) *modelPriceCatalogStatusDTO {
+	out := &modelPriceCatalogStatusDTO{}
+	switch v := status["model_count"].(type) {
+	case int:
+		out.ModelCount = v
+	case int64:
+		out.ModelCount = int(v)
+	case float64:
+		out.ModelCount = int(v)
+	}
+	switch v := status["last_updated"].(type) {
+	case time.Time:
+		if !v.IsZero() {
+			out.LastUpdated = v.Format(time.RFC3339)
+		}
+	case string:
+		out.LastUpdated = strings.TrimSpace(v)
+	}
+	if hash, ok := status["local_hash"].(string); ok {
+		out.LocalHash = strings.TrimSpace(hash)
+	}
+	return out
 }
 
 func (h *ModelPriceHandler) visibleGroups(c *gin.Context, userID int64, isAdmin bool) ([]service.Group, error) {
@@ -246,25 +354,132 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 	return out
 }
 
-func filterCurrentSaleModelPriceGroups(groups []modelPriceGroupDTO) []modelPriceGroupDTO {
-	hasSaleBackedGroup := false
-	for i := range groups {
-		if groups[i].BestPlan != nil {
-			hasSaleBackedGroup = true
-			break
-		}
-	}
-	if !hasSaleBackedGroup {
+func applyModelPriceHiddenGroups(groups []modelPriceGroupDTO, hidden map[int64]struct{}, includeHidden bool) []modelPriceGroupDTO {
+	if len(groups) == 0 || len(hidden) == 0 {
 		return groups
 	}
 	out := make([]modelPriceGroupDTO, 0, len(groups))
 	for i := range groups {
-		if groups[i].BestPlan == nil {
+		_, isHidden := hidden[groups[i].ID]
+		groups[i].Hidden = isHidden
+		if isHidden && !includeHidden {
 			continue
 		}
 		out = append(out, groups[i])
 	}
 	return out
+}
+
+func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.AvailableChannel) {
+	if len(groups) == 0 || len(channels) == 0 {
+		return
+	}
+	platformByGroup := make(map[int64]string, len(groups))
+	channelCounts := make(map[int64]int, len(groups))
+	modelNamesByGroup := make(map[int64]map[string]struct{}, len(groups))
+	for i := range groups {
+		platformByGroup[groups[i].ID] = groups[i].Platform
+		modelNamesByGroup[groups[i].ID] = make(map[string]struct{})
+	}
+	for _, ch := range channels {
+		if ch.Status != service.StatusActive {
+			continue
+		}
+		for _, group := range ch.Groups {
+			platform, ok := platformByGroup[group.ID]
+			if !ok {
+				continue
+			}
+			channelCounts[group.ID]++
+			for _, model := range ch.SupportedModels {
+				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
+					continue
+				}
+				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
+				modelNamesByGroup[group.ID][key] = struct{}{}
+			}
+		}
+	}
+	for i := range groups {
+		groups[i].ChannelCount = channelCounts[groups[i].ID]
+		groups[i].ModelCount = len(modelNamesByGroup[groups[i].ID])
+	}
+}
+
+func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []service.AvailableChannel) []modelPriceGroupOverviewDTO {
+	type aggregate struct {
+		groups   int
+		models   map[string]struct{}
+		channels map[string]struct{}
+	}
+	categories := []string{"claude", "openai", "gemini", "domestic"}
+	byCategory := make(map[string]*aggregate, len(categories))
+	for _, category := range categories {
+		byCategory[category] = &aggregate{
+			models:   make(map[string]struct{}),
+			channels: make(map[string]struct{}),
+		}
+	}
+	platformByGroup := make(map[int64]string, len(groups))
+	categoryByGroup := make(map[int64]string, len(groups))
+	for _, group := range groups {
+		category := modelPriceGroupCategory(group.Platform)
+		byCategory[category].groups++
+		platformByGroup[group.ID] = group.Platform
+		categoryByGroup[group.ID] = category
+	}
+	for _, ch := range channels {
+		if ch.Status != service.StatusActive {
+			continue
+		}
+		for _, group := range ch.Groups {
+			category, ok := categoryByGroup[group.ID]
+			if !ok {
+				continue
+			}
+			byCategory[category].channels[modelPriceChannelKey(ch)] = struct{}{}
+			platform := platformByGroup[group.ID]
+			for _, model := range ch.SupportedModels {
+				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
+					continue
+				}
+				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
+				byCategory[category].models[key] = struct{}{}
+			}
+		}
+	}
+	out := make([]modelPriceGroupOverviewDTO, 0, len(categories))
+	for _, category := range categories {
+		agg := byCategory[category]
+		out = append(out, modelPriceGroupOverviewDTO{
+			Category:     category,
+			GroupCount:   agg.groups,
+			ModelCount:   len(agg.models),
+			ChannelCount: len(agg.channels),
+		})
+	}
+	return out
+}
+
+func modelPriceChannelKey(ch service.AvailableChannel) string {
+	if ch.ID > 0 {
+		return strconv.FormatInt(ch.ID, 10)
+	}
+	return strings.ToLower(strings.TrimSpace(ch.Name))
+}
+
+func modelPriceGroupCategory(platform string) string {
+	lower := strings.ToLower(strings.TrimSpace(platform))
+	switch {
+	case strings.Contains(lower, "anthropic") || strings.Contains(lower, "claude"):
+		return "claude"
+	case strings.Contains(lower, "openai"):
+		return "openai"
+	case strings.Contains(lower, "gemini") || strings.Contains(lower, "google") || strings.Contains(lower, "vertex"):
+		return "gemini"
+	default:
+		return "domestic"
+	}
 }
 
 func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []modelPriceGroupDTO, usdCNYRate float64) {
@@ -378,8 +593,7 @@ func selectModelPriceGroupID(raw string, groups []modelPriceGroupDTO) *int64 {
 			}
 		}
 	}
-	id := groups[0].ID
-	return &id
+	return nil
 }
 
 type modelAggregate struct {
@@ -390,9 +604,8 @@ type modelAggregate struct {
 	channelNames map[string]struct{}
 }
 
-func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, group modelPriceGroupDTO, usdCNYRate float64) []modelPriceModelDTO {
+func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool) []modelPriceModelDTO {
 	aggregates := make(map[string]*modelAggregate)
-	h.seedCatalogModelsForGroup(aggregates, group)
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive || !channelHasGroup(ch, group.ID) {
 			continue
@@ -421,6 +634,9 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 			}
 			agg.channelNames[ch.Name] = struct{}{}
 		}
+	}
+	if includeCatalog {
+		h.seedCatalogModelsForGroup(aggregates, group)
 	}
 
 	models := make([]modelPriceModelDTO, 0, len(aggregates))
@@ -828,4 +1044,22 @@ func sortedSetKeys(values map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func sortedInt64SetKeys(values map[int64]struct{}) []int64 {
+	out := make([]int64, 0, len(values))
+	for v := range values {
+		out = append(out, v)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func parseModelPriceBoolQuery(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

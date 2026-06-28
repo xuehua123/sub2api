@@ -59,6 +59,12 @@ func RegisterAdminRoutes(
 		// 系统设置
 		registerSettingsRoutes(admin, h)
 
+		// 模型价格页展示控制
+		if h.ModelPrice != nil {
+			admin.PATCH("/model-prices/hidden-groups", h.ModelPrice.UpdateHiddenGroups)
+			admin.POST("/model-prices/sync-catalog", h.ModelPrice.SyncCatalog)
+		}
+
 		// 数据管理
 		registerDataManagementRoutes(admin, h)
 

@@ -726,6 +726,62 @@ func (s *SettingService) IsModelPricesUserVisible(ctx context.Context) bool {
 	return !isFalseSettingValue(value)
 }
 
+func (s *SettingService) GetModelPriceHiddenGroupIDs(ctx context.Context) map[int64]struct{} {
+	out := map[int64]struct{}{}
+	if s == nil || s.settingRepo == nil {
+		return out
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPriceHiddenGroupIDs)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return out
+	}
+	var ids []int64
+	if err := json.Unmarshal([]byte(value), &ids); err != nil {
+		return out
+	}
+	for _, id := range ids {
+		if id > 0 {
+			out[id] = struct{}{}
+		}
+	}
+	return out
+}
+
+func (s *SettingService) SetModelPriceHiddenGroupIDs(ctx context.Context, ids []int64) ([]int64, error) {
+	if s == nil || s.settingRepo == nil {
+		return nil, nil
+	}
+	normalized := normalizePositiveInt64s(ids)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("marshal model price hidden group ids: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, SettingKeyModelPriceHiddenGroupIDs, string(payload)); err != nil {
+		return nil, fmt.Errorf("set model price hidden group ids: %w", err)
+	}
+	return normalized, nil
+}
+
+func normalizePositiveInt64s(ids []int64) []int64 {
+	if len(ids) == 0 {
+		return []int64{}
+	}
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
 // GetFrontendURL 获取前端基础URL（数据库优先，fallback 到配置文件）
 func (s *SettingService) GetFrontendURL(ctx context.Context) string {
 	val, err := s.settingRepo.GetValue(ctx, SettingKeyFrontendURL)
@@ -3077,6 +3133,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyForceEmailOnThirdPartySignup:              "false",
 		SettingKeyModelPriceUSDCNYRate:                      "7",
 		SettingKeyModelPricesUserVisible:                    "true",
+		SettingKeyModelPriceHiddenGroupIDs:                  "[]",
 		SettingKeySMTPPort:                                  "587",
 		SettingKeySMTPUseTLS:                                "false",
 		SettingKeyReferralCreditConversionEnabled:           "false",

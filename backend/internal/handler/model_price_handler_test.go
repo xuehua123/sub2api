@@ -4,6 +4,7 @@ package handler
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -21,6 +22,18 @@ func (s stubModelPriceCatalog) GetModelPricing(model string) *service.LiteLLMMod
 
 func (s stubModelPriceCatalog) ListModelNamesByProvider(provider string) []string {
 	return append([]string(nil), s.byProv[provider]...)
+}
+
+func TestModelPriceCatalogStatusFromMapFormatsLastUpdated(t *testing.T) {
+	status := modelPriceCatalogStatusFromMap(map[string]any{
+		"model_count":  123,
+		"last_updated": time.Date(2026, 6, 28, 12, 30, 0, 0, time.UTC),
+		"local_hash":   "abcdef12",
+	})
+
+	require.Equal(t, 123, status.ModelCount)
+	require.Equal(t, "2026-06-28T12:30:00Z", status.LastUpdated)
+	require.Equal(t, "abcdef12", status.LocalHash)
 }
 
 func TestModelPriceDTOAppliesMultiplierAndExchangeRate(t *testing.T) {
@@ -58,7 +71,7 @@ func TestModelPriceDTOAppliesMultiplierAndExchangeRate(t *testing.T) {
 	require.Equal(t, []string{"primary"}, dto.ChannelNames)
 }
 
-func TestModelsForGroupIncludesOfficialCatalogModelsWithoutChannelModels(t *testing.T) {
+func TestModelsForGroupUsesChannelModelsByDefault(t *testing.T) {
 	h := &ModelPriceHandler{
 		pricingService: stubModelPriceCatalog{
 			prices: map[string]*service.LiteLLMModelPricing{
@@ -78,7 +91,32 @@ func TestModelsForGroupIncludesOfficialCatalogModelsWithoutChannelModels(t *test
 		ID:                  1,
 		Platform:            service.PlatformAnthropic,
 		EffectiveMultiplier: 0.1,
-	}, 7)
+	}, 7, false)
+
+	require.Empty(t, models)
+}
+
+func TestModelsForGroupIncludesOfficialCatalogModelsWhenRequested(t *testing.T) {
+	h := &ModelPriceHandler{
+		pricingService: stubModelPriceCatalog{
+			prices: map[string]*service.LiteLLMModelPricing{
+				"claude-sonnet-4-5": {
+					LiteLLMProvider:    "anthropic",
+					InputCostPerToken:  3e-6,
+					OutputCostPerToken: 15e-6,
+				},
+			},
+			byProv: map[string][]string{
+				"anthropic": {"claude-sonnet-4-5"},
+			},
+		},
+	}
+
+	models := h.modelsForGroup(nil, modelPriceGroupDTO{
+		ID:                  1,
+		Platform:            service.PlatformAnthropic,
+		EffectiveMultiplier: 0.1,
+	}, 7, true)
 
 	require.Len(t, models, 1)
 	require.Equal(t, "claude-sonnet-4-5", models[0].Name)
@@ -98,40 +136,102 @@ func TestCatalogProvidersForPlatformIncludesRealGeminiProviders(t *testing.T) {
 	require.Contains(t, providers, "vertex_ai-embedding-models")
 }
 
-func TestSelectModelPriceGroupIDFallsBackToFirstVisibleGroup(t *testing.T) {
+func TestSelectModelPriceGroupIDDoesNotDefaultWithoutExplicitGroup(t *testing.T) {
 	groups := []modelPriceGroupDTO{
 		{ID: 2, Name: "B"},
 		{ID: 3, Name: "C"},
 	}
 
 	require.Equal(t, int64(3), *selectModelPriceGroupID("3", groups))
-	require.Equal(t, int64(2), *selectModelPriceGroupID("999", groups))
+	require.Nil(t, selectModelPriceGroupID("999", groups))
 	require.Nil(t, selectModelPriceGroupID("", nil))
+	require.Nil(t, selectModelPriceGroupID("", groups))
 }
 
-func TestFilterCurrentSaleModelPriceGroupsHidesGroupsWithoutSalePlans(t *testing.T) {
+func TestApplyModelPriceHiddenGroupsFiltersUnlessIncluded(t *testing.T) {
 	groups := []modelPriceGroupDTO{
-		{ID: 1, Name: "current", BestPlan: &modelPricePlanDTO{ID: 10, USDMultiplier: 0.1}},
-		{ID: 2, Name: "legacy"},
-		{ID: 3, Name: "also-current", BestPlan: &modelPricePlanDTO{ID: 11, USDMultiplier: 0.2}},
+		{ID: 1, Name: "visible"},
+		{ID: 2, Name: "hidden"},
 	}
+	hidden := map[int64]struct{}{2: {}}
 
-	filtered := filterCurrentSaleModelPriceGroups(groups)
-
-	require.Len(t, filtered, 2)
+	filtered := applyModelPriceHiddenGroups(groups, hidden, false)
+	require.Len(t, filtered, 1)
 	require.Equal(t, int64(1), filtered[0].ID)
-	require.Equal(t, int64(3), filtered[1].ID)
+
+	included := applyModelPriceHiddenGroups(groups, hidden, true)
+	require.Len(t, included, 2)
+	require.True(t, included[1].Hidden)
 }
 
-func TestFilterCurrentSaleModelPriceGroupsKeepsReferenceGroupsWhenNoSalePlansLoaded(t *testing.T) {
+func TestApplyModelPriceGroupUsageCountsActiveChannelsAndModels(t *testing.T) {
 	groups := []modelPriceGroupDTO{
-		{ID: 1, Name: "reference-a"},
-		{ID: 2, Name: "reference-b"},
+		{ID: 1, Platform: service.PlatformAnthropic},
+		{ID: 2, Platform: service.PlatformOpenAI},
+	}
+	channels := []service.AvailableChannel{
+		{
+			ID:     10,
+			Name:   "primary",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{
+				{ID: 1},
+				{ID: 2},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "claude-sonnet-4-5", Platform: service.PlatformAnthropic},
+				{Name: "claude-sonnet-4-5", Platform: service.PlatformAnthropic},
+				{Name: "gpt-5", Platform: service.PlatformOpenAI},
+			},
+		},
+		{
+			ID:     11,
+			Name:   "disabled",
+			Status: "disabled",
+			Groups: []service.AvailableGroupRef{
+				{ID: 1},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "claude-opus-4-5", Platform: service.PlatformAnthropic},
+			},
+		},
 	}
 
-	filtered := filterCurrentSaleModelPriceGroups(groups)
+	applyModelPriceGroupUsage(groups, channels)
 
-	require.Equal(t, groups, filtered)
+	require.Equal(t, 1, groups[0].ChannelCount)
+	require.Equal(t, 1, groups[0].ModelCount)
+	require.Equal(t, 1, groups[1].ChannelCount)
+	require.Equal(t, 1, groups[1].ModelCount)
+}
+
+func TestBuildModelPriceGroupOverviewDeduplicatesAcrossGroups(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 1, Platform: service.PlatformOpenAI},
+		{ID: 2, Platform: service.PlatformOpenAI},
+	}
+	channels := []service.AvailableChannel{
+		{
+			ID:     10,
+			Name:   "shared",
+			Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{
+				{ID: 1},
+				{ID: 2},
+			},
+			SupportedModels: []service.SupportedModel{
+				{Name: "gpt-5", Platform: service.PlatformOpenAI},
+			},
+		},
+	}
+
+	overview := buildModelPriceGroupOverview(groups, channels)
+	openai := overview[1]
+
+	require.Equal(t, "openai", openai.Category)
+	require.Equal(t, 2, openai.GroupCount)
+	require.Equal(t, 1, openai.ModelCount)
+	require.Equal(t, 1, openai.ChannelCount)
 }
 
 func TestPlanPackageQuotaUSDUsesFullPackageValidity(t *testing.T) {

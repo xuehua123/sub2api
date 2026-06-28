@@ -11,6 +11,9 @@ export interface ModelPriceGroup {
   image_rate_independent: boolean
   image_rate_multiplier: number
   is_exclusive: boolean
+  hidden: boolean
+  model_count: number
+  channel_count: number
   best_plan?: ModelPricePlan
 }
 
@@ -76,22 +79,64 @@ export interface ModelPriceSummary {
   average_cheaper_factor: number | null
 }
 
+export interface ModelPriceGroupOverview {
+  category: 'claude' | 'openai' | 'gemini' | 'domestic' | string
+  group_count: number
+  model_count: number
+  channel_count: number
+}
+
+export interface ModelPriceCatalogStatus {
+  model_count: number
+  last_updated?: string
+  local_hash?: string
+}
+
 export interface ModelPriceResponse {
   usd_cny_rate: number
   groups: ModelPriceGroup[]
+  group_overview: ModelPriceGroupOverview[]
   selected_group_id: number | null
   models: ModelPriceModel[]
   summary: ModelPriceSummary
+  catalog_status?: ModelPriceCatalogStatus | null
+  include_catalog: boolean
+  show_hidden_groups: boolean
+  hidden_group_ids: number[]
+  selected_group_hidden: boolean
 }
 
-export async function getModelPrices(params?: { group_id?: number; signal?: AbortSignal }): Promise<ModelPriceResponse> {
+export interface GetModelPricesParams {
+  group_id?: number
+  include_catalog?: boolean
+  show_hidden_groups?: boolean
+  signal?: AbortSignal
+}
+
+export async function getModelPrices(params?: GetModelPricesParams): Promise<ModelPriceResponse> {
+  const query: Record<string, number | boolean> = {}
+  if (params?.group_id) query.group_id = params.group_id
+  if (params?.include_catalog) query.include_catalog = true
+  if (params?.show_hidden_groups) query.show_hidden_groups = true
   const { data } = await apiClient.get<ModelPriceResponse>('/model-prices', {
-    params: params?.group_id ? { group_id: params.group_id } : undefined,
+    params: Object.keys(query).length > 0 ? query : undefined,
     signal: params?.signal
   })
   return data
 }
 
-export const modelPricesAPI = { getModelPrices }
+export async function syncCatalog(): Promise<ModelPriceCatalogStatus> {
+  const { data } = await apiClient.post<ModelPriceCatalogStatus>('/admin/model-prices/sync-catalog')
+  return data
+}
+
+export async function updateHiddenGroups(hiddenGroupIDs: number[]): Promise<{ hidden_group_ids: number[] }> {
+  const { data } = await apiClient.patch<{ hidden_group_ids: number[] }>('/admin/model-prices/hidden-groups', {
+    hidden_group_ids: hiddenGroupIDs,
+  })
+  return data
+}
+
+export const modelPricesAPI = { getModelPrices, syncCatalog, updateHiddenGroups }
 
 export default modelPricesAPI
