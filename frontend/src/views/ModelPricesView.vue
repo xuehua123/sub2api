@@ -2,7 +2,7 @@
   <AppLayout>
     <div class="model-market -m-4 min-h-[calc(100vh-4rem)] bg-[#0f1014] text-slate-100 md:-m-6 lg:-m-8">
       <div class="flex min-h-[calc(100vh-4rem)]">
-        <aside class="hidden w-[300px] shrink-0 border-r border-white/[0.08] bg-[#101114] px-4 py-5 xl:block">
+        <aside class="hidden w-[360px] shrink-0 border-r border-white/[0.08] bg-[#101114] px-4 py-5 xl:block">
           <div class="mb-5 flex items-center justify-between">
             <div>
               <p class="text-lg font-semibold text-white">筛选</p>
@@ -13,7 +13,7 @@
             </button>
           </div>
 
-          <FilterSection title="供应商">
+          <FilterSection v-if="isAdmin" title="供应商">
             <FilterPill
               v-for="item in providerFilters"
               :key="item.value"
@@ -31,7 +31,7 @@
               :key="group.id"
               :active="selectedGroupID === group.id"
               :label="group.name"
-              :count-label="group.best_plan ? saveFactorLabel(group.best_plan.usd_multiplier) : '参考'"
+              :count-label="group.best_plan ? saveFactorLabel(groupSaleMultiplier(group)) : '参考'"
               tone="cyan"
               @click="selectedGroupID = group.id"
             />
@@ -49,7 +49,7 @@
             />
           </FilterSection>
 
-          <FilterSection title="端点类型">
+          <FilterSection v-if="isAdmin" title="端点类型">
             <FilterPill
               v-for="item in platformFilters"
               :key="item.value"
@@ -69,27 +69,27 @@
               <div class="relative flex h-full items-center justify-between gap-5">
                 <div>
                   <div class="flex items-center gap-2">
-                    <h1 class="text-xl font-bold text-white">模型价格广场</h1>
+                    <h1 class="text-xl font-bold text-white">模型价格</h1>
                     <span class="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-blue-700">
                       共 {{ filteredModels.length }} 个模型
                     </span>
                   </div>
                   <p class="mt-2 max-w-3xl text-sm text-blue-50/90">
-                    价格按当前分组可售套餐折算，优先展示客户实际感知的到手人民币价格；官方价只做参考。
+                    按当前分组展示我们的到手价格，并对照官方参考价，让优惠力度一眼能看懂。
                   </p>
                 </div>
                 <div class="hidden shrink-0 grid-cols-3 gap-3 xl:grid">
-                  <div class="hero-stat">
+                  <div v-if="isAdmin" class="hero-stat">
                     <span>官方汇率</span>
                     <strong>{{ formatNumber(response?.usd_cny_rate ?? 7, 4) }}</strong>
                   </div>
                   <div class="hero-stat">
-                    <span>套餐折算</span>
+                    <span>{{ isAdmin ? '套餐折算' : '我们的价格' }}</span>
                     <strong>{{ selectedGroup?.best_plan ? `¥${formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4)}` : '参考价' }}</strong>
                   </div>
                   <div class="hero-stat">
-                    <span>优惠感知</span>
-                    <strong>{{ selectedGroup?.best_plan ? saveFactorLabel(selectedGroup.best_plan.usd_multiplier) : '-' }}</strong>
+                    <span>优惠力度</span>
+                    <strong>{{ selectedGroup?.best_plan ? saveFactorLabel(groupSaleMultiplier(selectedGroup)) : '-' }}</strong>
                   </div>
                 </div>
               </div>
@@ -102,11 +102,11 @@
                   <input
                     v-model="searchQuery"
                     class="h-10 w-full rounded-md border border-white/10 bg-[#2a2c31] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400"
-                    placeholder="模糊搜索模型名称"
+                    placeholder="搜索模型名称"
                   />
                 </div>
                 <div class="flex flex-wrap items-center gap-2 text-xs">
-                  <button class="toolbar-button" :class="{ active: showOfficial }" @click="showOfficial = !showOfficial">
+                  <button v-if="isAdmin" class="toolbar-button" :class="{ active: showOfficial }" @click="showOfficial = !showOfficial">
                     参考价显示
                   </button>
                   <button class="toolbar-button" :class="{ active: showMultiplier }" @click="showMultiplier = !showMultiplier">
@@ -131,15 +131,15 @@
               <strong>{{ selectedGroup.name }}</strong>
             </div>
             <div class="metric-tile">
-              <span>套餐单价</span>
+              <span>{{ isAdmin ? '套餐单价' : '我们的价格' }}</span>
               <strong v-if="selectedGroup.best_plan">
-                ¥{{ formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD · {{ selectedGroup.best_plan.name }}
+                ¥{{ formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD<span v-if="isAdmin"> · 分组 {{ formatNumber(selectedGroup.effective_multiplier, 2) }}x</span> · {{ selectedGroup.best_plan.name }}
               </strong>
               <strong v-else>暂无套餐，显示参考价</strong>
             </div>
             <div class="metric-tile">
-              <span>客户可感知</span>
-              <strong class="text-emerald-300">{{ selectedGroup.best_plan ? saveFactorLabel(selectedGroup.best_plan.usd_multiplier) : '按官方参考' }}</strong>
+              <span>优惠力度</span>
+              <strong class="text-emerald-300">{{ selectedGroup.best_plan ? saveFactorLabel(groupSaleMultiplier(selectedGroup)) : '按官方参考' }}</strong>
             </div>
           </section>
 
@@ -149,7 +149,83 @@
           <div v-else-if="filteredModels.length === 0" class="flex min-h-[420px] items-center justify-center text-sm text-slate-400">
             暂无可展示模型
           </div>
-          <section v-else class="mt-4 grid gap-3 2xl:grid-cols-3 lg:grid-cols-2">
+          <template v-else>
+          <section class="mt-4 hidden overflow-hidden rounded-lg border border-white/[0.08] bg-[#14161b] xl:block">
+            <div class="price-table-header" :class="{ admin: isAdmin }">
+              <span>模型</span>
+              <span>我们的价格</span>
+              <span>官方参考价</span>
+              <span>阶梯价格</span>
+              <span>优惠力度</span>
+              <span v-if="isAdmin">来源</span>
+            </div>
+            <article
+              v-for="model in filteredModels"
+              :key="model.platform + ':' + model.name"
+              class="price-table-row"
+              :class="{ admin: isAdmin }"
+            >
+              <div class="flex min-w-0 items-center gap-3">
+                <ProviderMark :provider="model.platform" />
+                <div class="min-w-0">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <h2 class="truncate text-sm font-bold text-slate-100" :title="model.name">{{ model.name }}</h2>
+                    <button class="copy-button" title="复制模型名" @click="copyText(model.name)">
+                      <Icon name="copy" size="xs" />
+                    </button>
+                  </div>
+                  <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <span class="tag">{{ providerLabel(model.platform) }}</span>
+                    <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
+                    <span v-if="isAdmin && model.channel_names.length > 0" class="tag tag-blue">{{ model.channel_names.length }} 渠道</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="price-pair actual">
+                <strong>输入 {{ formatCNYPerMillion(bestActual(model, 'input_cny_per_m')) }}</strong>
+                <strong>输出 {{ formatCNYPerMillion(bestActual(model, 'output_cny_per_m')) }}</strong>
+                <small v-if="selectedGroup?.best_plan">{{ selectedGroup.best_plan.name }}</small>
+              </div>
+
+              <div class="price-pair muted">
+                <span>输入 {{ formatUSDPerMillion(model.official.input_usd_per_m) }}</span>
+                <span>输出 {{ formatUSDPerMillion(model.official.output_usd_per_m) }}</span>
+                <small v-if="isAdmin && showOfficial">缓存读 {{ formatUSD(model.official.cache_read_usd_per_m) }} / 写 {{ formatUSD(model.official.cache_write_usd_per_m) }}</small>
+              </div>
+
+              <div class="tier-list">
+                <template v-if="tierBadges(model).length > 0">
+                  <span
+                    v-for="tier in tierBadges(model)"
+                    :key="tier.key"
+                    class="tier-chip"
+                    :title="tier.detail"
+                  >
+                    {{ tier.label }}
+                  </span>
+                </template>
+                <span v-else class="text-xs text-slate-600">基础价</span>
+              </div>
+
+              <div>
+                <span v-if="showMultiplier && isActuallyCheaper(model.cheaper_factor)" class="save-badge">
+                  便宜 {{ formatNumber(model.cheaper_factor, 1) }} 倍
+                </span>
+                <span v-else-if="selectedGroup?.best_plan" class="save-badge neutral">
+                  套餐折算
+                </span>
+                <span v-else class="text-xs font-semibold text-slate-500">参考</span>
+              </div>
+
+              <div v-if="isAdmin" class="source-cell">
+                <span>{{ sourceLabel(model.pricing_source) }}</span>
+                <small v-if="model.official_missing">缺官方价</small>
+              </div>
+            </article>
+          </section>
+
+          <section class="mt-4 grid gap-3 lg:grid-cols-2 xl:hidden">
             <article
               v-for="model in filteredModels"
               :key="model.platform + ':' + model.name"
@@ -167,44 +243,44 @@
                   <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <span class="tag">{{ providerLabel(model.platform) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
-                    <span v-if="model.price_tiers.length > 0" class="tag tag-blue">多档价格</span>
+                    <span v-if="tierBadges(model).length > 0" class="tag tag-blue">阶梯价格</span>
                   </div>
                 </div>
               </div>
 
               <div class="mt-4 rounded-lg border border-emerald-400/10 bg-emerald-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-emerald-200">套餐折算价</span>
+                  <span class="text-[11px] font-bold text-emerald-200">我们的价格</span>
                   <span v-if="selectedGroup?.best_plan" class="truncate text-[11px] text-slate-500" :title="selectedGroup.best_plan.name">
                     {{ selectedGroup.best_plan.name }}
                   </span>
                 </div>
                 <div class="space-y-2">
-                  <PriceRow label="输入价格" :value="bestActual(model, 'input_cny_per_m')" suffix="/ 1M Tokens" highlight />
-                  <PriceRow label="补全价格" :value="bestActual(model, 'output_cny_per_m')" suffix="/ 1M Tokens" highlight />
-                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_cny_per_m')" suffix="/ 1M Tokens" />
-                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" suffix="/ 1M Tokens" />
+                  <PriceRow label="输入价格" :value="bestActual(model, 'input_cny_per_m')" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="输出价格" :value="bestActual(model, 'output_cny_per_m')" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_cny_per_m')" suffix="/ 百万 tokens" />
+                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" suffix="/ 百万 tokens" />
                 </div>
               </div>
 
-              <div v-if="extraTiers(model).length > 0" class="tier-strip">
+              <div v-if="tierBadges(model).length > 0" class="tier-strip">
                 <div
-                  v-for="tier in extraTiers(model)"
+                  v-for="tier in tierBadges(model)"
                   :key="tier.key"
                   class="tier-line"
                 >
-                  <span class="truncate" :title="tierTitle(tier)">{{ tierTitle(tier) }}</span>
-                  <strong>{{ tierPriceSummary(tier) }}</strong>
+                  <span class="truncate" :title="tier.detail">{{ tier.label }}</span>
+                  <strong>可选</strong>
                 </div>
               </div>
 
               <div v-if="showOfficial" class="mt-3 rounded-md border border-white/[0.08] bg-black/[0.16] p-2.5">
                 <div class="mb-1.5 text-[11px] font-semibold text-slate-500">官方参考价</div>
                 <div class="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                  <span>输入 {{ formatUSD(model.official.input_usd_per_m) }}</span>
-                  <span>输出 {{ formatUSD(model.official.output_usd_per_m) }}</span>
-                  <span>缓存读 {{ formatUSD(model.official.cache_read_usd_per_m) }}</span>
-                  <span>缓存写 {{ formatUSD(model.official.cache_write_usd_per_m) }}</span>
+                  <span>输入 {{ formatUSDPerMillion(model.official.input_usd_per_m) }}</span>
+                  <span>输出 {{ formatUSDPerMillion(model.official.output_usd_per_m) }}</span>
+                  <span>缓存读 {{ formatUSDPerMillion(model.official.cache_read_usd_per_m) }}</span>
+                  <span>缓存写 {{ formatUSDPerMillion(model.official.cache_write_usd_per_m) }}</span>
                 </div>
               </div>
 
@@ -213,12 +289,13 @@
                 <span v-if="showMultiplier && isActuallyCheaper(model.cheaper_factor)" class="save-badge">
                   便宜 {{ formatNumber(model.cheaper_factor, 1) }} 倍
                 </span>
-                <span v-else-if="selectedGroup?.best_plan" class="save-badge">
-                  套餐折算价
+                <span v-else-if="selectedGroup?.best_plan" class="save-badge neutral">
+                  我们的价格
                 </span>
               </div>
             </article>
           </section>
+          </template>
         </main>
       </div>
     </div>
@@ -235,11 +312,16 @@ import modelPricesAPI, {
   type ModelPriceResponse,
   type ModelPriceTier,
 } from '@/api/modelPrices'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 type FilterTone = 'purple' | 'cyan' | 'amber' | 'emerald'
 type ActualPriceKey = keyof ModelPriceModel['actual']
+interface TierBadge {
+  key: string
+  label: string
+  detail: string
+}
 
 const FilterSection = defineComponent({
   props: {
@@ -248,7 +330,7 @@ const FilterSection = defineComponent({
   setup(props, { slots }) {
     return () => h('section', { class: 'mb-6 border-t border-white/[0.08] pt-4' }, [
       h('h3', { class: 'mb-3 px-1 text-sm font-bold text-slate-100' }, props.title),
-      h('div', { class: 'grid grid-cols-2 gap-2' }, slots.default?.()),
+      h('div', { class: 'grid gap-2' }, slots.default?.()),
     ])
   },
 })
@@ -314,6 +396,7 @@ const PriceRow = defineComponent({
 })
 
 const appStore = useAppStore()
+const authStore = useAuthStore()
 const response = ref<ModelPriceResponse | null>(null)
 const selectedGroupID = ref<number | undefined>(undefined)
 const selectedProvider = ref('all')
@@ -324,7 +407,8 @@ const loading = ref(false)
 const showOfficial = ref(false)
 const showMultiplier = ref(true)
 
-const groups = computed(() => response.value?.groups ?? [])
+const isAdmin = computed(() => authStore.isAdmin)
+const groups = computed(() => sortGroupsForSales(response.value?.groups ?? []))
 const selectedGroup = computed<ModelPriceGroup | undefined>(() =>
   groups.value.find((group) => group.id === selectedGroupID.value),
 )
@@ -369,7 +453,7 @@ const filteredModels = computed(() => {
       model.platform.toLowerCase().includes(q) ||
       model.provider.toLowerCase().includes(q) ||
       model.channel_names.some(name => name.toLowerCase().includes(q))
-  })
+  }).sort(compareModelsForSales)
 })
 
 watch(selectedGroupID, (id, oldID) => {
@@ -382,7 +466,12 @@ async function loadPrices(groupID?: number) {
   loading.value = true
   try {
     response.value = await modelPricesAPI.getModelPrices({ group_id: groupID })
-    selectedGroupID.value = response.value.selected_group_id ?? response.value.groups[0]?.id
+    const preferredGroupID = groupID ?? groupFilters.value[0]?.id ?? response.value.selected_group_id ?? response.value.groups[0]?.id
+    selectedGroupID.value = preferredGroupID
+    if (!groupID && preferredGroupID && response.value.selected_group_id !== preferredGroupID) {
+      await loadPrices(preferredGroupID)
+      return
+    }
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, '加载模型价格失败'))
   } finally {
@@ -411,14 +500,47 @@ function extraTiers(model: ModelPriceModel): ModelPriceTier[] {
   return model.price_tiers.filter((tier) => tier.key !== 'base')
 }
 
+function tierBadges(model: ModelPriceModel): TierBadge[] {
+  const tiers = extraTiers(model)
+  const hasLongContext = tiers.some(tier => Boolean(tier.threshold_tokens))
+  const hasFast = tiers.some(tier => tier.label.toLowerCase().includes('fast'))
+  const badges: TierBadge[] = []
+  if (hasLongContext) {
+    const thresholds = tiers
+      .map(tier => tier.threshold_tokens)
+      .filter((value): value is number => typeof value === 'number' && value > 0)
+    const maxThreshold = thresholds.length > 0 ? Math.max(...thresholds) : undefined
+    badges.push({
+      key: 'long-context',
+      label: maxThreshold ? `长上下文 >${formatCompactTokens(maxThreshold)}` : '长上下文',
+      detail: tiers.filter(tier => tier.threshold_tokens).map(tier => `${tierTitle(tier)}：${tierPriceSummary(tier)}`).join('；'),
+    })
+  }
+  if (hasFast) {
+    badges.push({
+      key: 'fast',
+      label: 'Fast 加速价',
+      detail: tiers.filter(tier => tier.label.toLowerCase().includes('fast')).map(tier => `${tierTitle(tier)}：${tierPriceSummary(tier)}`).join('；'),
+    })
+  }
+  if (!hasLongContext && !hasFast && tiers.length > 0) {
+    badges.push({
+      key: 'tiered',
+      label: `${tiers.length} 档阶梯价`,
+      detail: tiers.map(tier => `${tierTitle(tier)}：${tierPriceSummary(tier)}`).join('；'),
+    })
+  }
+  return badges
+}
+
 function tierTitle(tier: ModelPriceTier): string {
   if (!tier.threshold_tokens) return tier.label
   return `${tier.label} >${formatCompactTokens(tier.threshold_tokens)}`
 }
 
 function tierPriceSummary(tier: ModelPriceTier): string {
-  const input = formatCNYCompact(tier.actual.input_cny_per_m)
-  const output = formatCNYCompact(tier.actual.output_cny_per_m)
+  const input = formatCNYPerMillion(tier.actual.input_cny_per_m)
+  const output = formatCNYPerMillion(tier.actual.output_cny_per_m)
   if (input === '-' && output === '-') return '暂未定价'
   return `入 ${input} / 出 ${output}`
 }
@@ -439,6 +561,39 @@ function countBy<T>(items: T[], getKey: (item: T) => string): Record<string, num
     acc[key] = (acc[key] ?? 0) + 1
     return acc
   }, {})
+}
+
+function sortGroupsForSales(items: ModelPriceGroup[]): ModelPriceGroup[] {
+  return [...items].sort((a, b) => {
+    const factorDiff = groupSaveFactor(b) - groupSaveFactor(a)
+    if (factorDiff !== 0) return factorDiff
+    return a.name.localeCompare(b.name, 'zh-CN')
+  })
+}
+
+function groupSaveFactor(group: ModelPriceGroup): number {
+  const multiplier = groupSaleMultiplier(group)
+  if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0) return 0
+  if (multiplier >= 1) return 1 / multiplier
+  return 1 / multiplier
+}
+
+function compareModelsForSales(a: ModelPriceModel, b: ModelPriceModel): number {
+  const factorDiff = numericOrZero(b.cheaper_factor) - numericOrZero(a.cheaper_factor)
+  if (factorDiff !== 0) return factorDiff
+  const rankDiff = modelVersionRank(b.name) - modelVersionRank(a.name)
+  if (rankDiff !== 0) return rankDiff
+  return a.name.localeCompare(b.name, 'zh-CN', { numeric: true })
+}
+
+function numericOrZero(value: number | null | undefined): number {
+  return value != null && Number.isFinite(value) ? value : 0
+}
+
+function modelVersionRank(name: string): number {
+  const matches = name.match(/\d+(?:\.\d+)?/g)
+  if (!matches) return 0
+  return Math.max(...matches.map(value => Number.parseFloat(value)).filter(Number.isFinite))
 }
 
 function providerLabel(platform: string): string {
@@ -465,6 +620,22 @@ function billingLabel(mode: string): string {
   return '按量计费'
 }
 
+function sourceLabel(source: string): string {
+  if (source === 'official') return '官方目录'
+  if (source === 'channel') return '渠道配置'
+  return '待补价'
+}
+
+function groupSaleMultiplier(group: ModelPriceGroup | undefined): number | undefined {
+  if (!group?.best_plan) return undefined
+  return normalizePositive(group.effective_multiplier) * group.best_plan.usd_multiplier
+}
+
+function normalizePositive(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value) || value <= 0) return 1
+  return value
+}
+
 function saveFactorLabel(multiplier: number | null | undefined): string {
   if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0) return '参考'
   if (multiplier >= 1) return '套餐价'
@@ -476,9 +647,19 @@ function formatUSD(value: number | null | undefined): string {
   return `$${formatNumber(value, value < 1 ? 4 : 2)}`
 }
 
+function formatUSDPerMillion(value: number | null | undefined): string {
+  const formatted = formatUSD(value)
+  return formatted === '-' ? '-' : `${formatted} / 百万 tokens`
+}
+
 function formatCNYCompact(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return '-'
   return `¥${formatNumber(value, value < 1 ? 4 : 2)}`
+}
+
+function formatCNYPerMillion(value: number | null | undefined): string {
+  const formatted = formatCNYCompact(value)
+  return formatted === '-' ? '-' : `${formatted} / 百万 tokens`
 }
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
@@ -541,17 +722,18 @@ onMounted(() => loadPrices())
 .filter-pill {
   display: flex;
   min-width: 0;
-  height: 34px;
+  min-height: 38px;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
   border-radius: 7px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.025);
-  padding: 0 10px;
+  padding: 7px 10px;
   color: rgb(203 213 225);
   font-size: 12px;
   font-weight: 700;
+  text-align: left;
 }
 
 .filter-pill.active {
@@ -563,6 +745,10 @@ onMounted(() => loadPrices())
   flex: none;
   border-radius: 999px;
   padding: 1px 6px;
+  max-width: 96px;
+  white-space: normal;
+  text-align: center;
+  line-height: 1.15;
   font-size: 10px;
   background: rgba(255, 255, 255, 0.12);
 }
@@ -627,6 +813,118 @@ onMounted(() => loadPrices())
 .model-card:hover {
   border-color: rgba(96, 165, 250, 0.45);
   background: #171a21;
+}
+
+.price-table-header {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #191c23;
+  padding: 0 16px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgb(100 116 139);
+}
+
+.price-table-header.admin {
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 100px;
+}
+
+.price-table-row {
+  display: grid;
+  min-height: 94px;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 14px 16px;
+}
+
+.price-table-row.admin {
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 100px;
+}
+
+.price-table-row:last-child {
+  border-bottom: 0;
+}
+
+.price-table-row:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.price-pair {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.price-pair strong,
+.price-pair span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+}
+
+.price-pair.actual strong {
+  color: #86efac;
+}
+
+.price-pair.muted span {
+  color: rgb(148 163 184);
+}
+
+.price-pair small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: rgb(100 116 139);
+}
+
+.tier-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tier-chip {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  background: rgba(14, 165, 233, 0.08);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #bae6fd;
+}
+
+.tier-chip.dim {
+  border-color: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgb(148 163 184);
+}
+
+.source-cell {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgb(203 213 225);
+}
+
+.source-cell small {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fbbf24;
 }
 
 .provider-mark {
@@ -738,5 +1036,10 @@ onMounted(() => loadPrices())
   color: #6ee7b7;
   font-size: 12px;
   font-weight: 800;
+}
+
+.save-badge.neutral {
+  background: rgba(148, 163, 184, 0.12);
+  color: rgb(203 213 225);
 }
 </style>

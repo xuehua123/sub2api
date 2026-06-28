@@ -18,9 +18,14 @@ type ModelPriceHandler struct {
 	channelService       *service.ChannelService
 	apiKeyService        *service.APIKeyService
 	groupService         *service.GroupService
-	pricingService       *service.PricingService
+	pricingService       modelPriceCatalog
 	settingService       *service.SettingService
 	paymentConfigService *service.PaymentConfigService
+}
+
+type modelPriceCatalog interface {
+	GetModelPricing(model string) *service.LiteLLMModelPricing
+	ListModelNamesByProvider(provider string) []string
 }
 
 func NewModelPriceHandler(
@@ -387,6 +392,7 @@ type modelAggregate struct {
 
 func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, group modelPriceGroupDTO, usdCNYRate float64) []modelPriceModelDTO {
 	aggregates := make(map[string]*modelAggregate)
+	h.seedCatalogModelsForGroup(aggregates, group)
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive || !channelHasGroup(ch, group.ID) {
 			continue
@@ -427,6 +433,63 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 	return models
 }
 
+func (h *ModelPriceHandler) seedCatalogModelsForGroup(aggregates map[string]*modelAggregate, group modelPriceGroupDTO) {
+	if h.pricingService == nil {
+		return
+	}
+	for _, provider := range catalogProvidersForPlatform(group.Platform) {
+		for _, name := range h.pricingService.ListModelNamesByProvider(provider) {
+			name = strings.TrimSpace(name)
+			if name == "" || !catalogModelMatchesGroupPlatform(name, group.Platform) {
+				continue
+			}
+			key := strings.ToLower(group.Platform + "\x00" + name)
+			if _, ok := aggregates[key]; ok {
+				continue
+			}
+			billingMode := string(service.BillingModeToken)
+			if p := h.pricingService.GetModelPricing(name); p != nil && p.Mode == "image_generation" {
+				billingMode = string(service.BillingModeImage)
+			}
+			aggregates[key] = &modelAggregate{
+				name:         name,
+				platform:     group.Platform,
+				billingMode:  billingMode,
+				channelNames: make(map[string]struct{}),
+			}
+		}
+	}
+}
+
+func catalogProvidersForPlatform(platform string) []string {
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case service.PlatformOpenAI:
+		return []string{"openai", "text-completion-openai"}
+	case service.PlatformAnthropic:
+		return []string{"anthropic"}
+	case service.PlatformGemini:
+		return []string{"google", "gemini", "vertex_ai-language-models", "vertex_ai-embedding-models"}
+	case service.PlatformAntigravity:
+		return []string{"anthropic", "google", "gemini", "vertex_ai-language-models", "vertex_ai-embedding-models"}
+	default:
+		return nil
+	}
+}
+
+func catalogModelMatchesGroupPlatform(modelName, platform string) bool {
+	modelName = strings.ToLower(strings.TrimSpace(modelName))
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case service.PlatformAnthropic:
+		return strings.HasPrefix(modelName, "claude-")
+	case service.PlatformGemini:
+		return strings.Contains(modelName, "gemini")
+	case service.PlatformAntigravity:
+		return strings.HasPrefix(modelName, "claude-") || strings.Contains(modelName, "gemini")
+	default:
+		return true
+	}
+}
+
 func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPriceGroupDTO, usdCNYRate float64) modelPriceModelDTO {
 	official := modelPriceValueDTO{}
 	priceTiers := []modelPriceTierDTO{}
@@ -451,15 +514,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		officialMissing = false
 	}
 
-	multiplier := group.EffectiveMultiplier
-	if group.BestPlan != nil && group.BestPlan.USDMultiplier > 0 {
-		multiplier = group.BestPlan.USDMultiplier
-	}
-	if (agg.billingMode == string(service.BillingModeImage) || official.ImageOutputUSDPerM != nil) &&
-		group.ImageRateIndependent && group.BestPlan == nil {
-		multiplier = group.ImageRateMultiplier
-	}
-	multiplier = normalizeMultiplier(multiplier)
+	multiplier := modelPriceMultiplier(group, agg.billingMode, official)
 	priceTiers = actualizePriceTiers(priceTiers, multiplier, usdCNYRate)
 
 	return modelPriceModelDTO{
@@ -476,6 +531,18 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		ChannelNames:    sortedSetKeys(agg.channelNames),
 		OfficialMissing: officialMissing,
 	}
+}
+
+func modelPriceMultiplier(group modelPriceGroupDTO, billingMode string, official modelPriceValueDTO) float64 {
+	base := group.EffectiveMultiplier
+	if (billingMode == string(service.BillingModeImage) || official.ImageOutputUSDPerM != nil) && group.ImageRateIndependent {
+		base = group.ImageRateMultiplier
+	}
+	base = normalizeMultiplier(base)
+	if group.BestPlan != nil && group.BestPlan.USDMultiplier > 0 {
+		return normalizeMultiplier(base * group.BestPlan.USDMultiplier)
+	}
+	return base
 }
 
 func channelHasGroup(ch service.AvailableChannel, groupID int64) bool {

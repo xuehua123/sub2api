@@ -10,6 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type stubModelPriceCatalog struct {
+	prices map[string]*service.LiteLLMModelPricing
+	byProv map[string][]string
+}
+
+func (s stubModelPriceCatalog) GetModelPricing(model string) *service.LiteLLMModelPricing {
+	return s.prices[model]
+}
+
+func (s stubModelPriceCatalog) ListModelNamesByProvider(provider string) []string {
+	return append([]string(nil), s.byProv[provider]...)
+}
+
 func TestModelPriceDTOAppliesMultiplierAndExchangeRate(t *testing.T) {
 	h := &ModelPriceHandler{}
 	input := 3.0 / 1_000_000
@@ -43,6 +56,46 @@ func TestModelPriceDTOAppliesMultiplierAndExchangeRate(t *testing.T) {
 	require.NotNil(t, dto.CheaperFactor)
 	require.Equal(t, 5.0, *dto.CheaperFactor)
 	require.Equal(t, []string{"primary"}, dto.ChannelNames)
+}
+
+func TestModelsForGroupIncludesOfficialCatalogModelsWithoutChannelModels(t *testing.T) {
+	h := &ModelPriceHandler{
+		pricingService: stubModelPriceCatalog{
+			prices: map[string]*service.LiteLLMModelPricing{
+				"claude-sonnet-4-5": {
+					LiteLLMProvider:    "anthropic",
+					InputCostPerToken:  3e-6,
+					OutputCostPerToken: 15e-6,
+				},
+			},
+			byProv: map[string][]string{
+				"anthropic": {"claude-sonnet-4-5"},
+			},
+		},
+	}
+
+	models := h.modelsForGroup(nil, modelPriceGroupDTO{
+		ID:                  1,
+		Platform:            service.PlatformAnthropic,
+		EffectiveMultiplier: 0.1,
+	}, 7)
+
+	require.Len(t, models, 1)
+	require.Equal(t, "claude-sonnet-4-5", models[0].Name)
+	require.Equal(t, "official", models[0].PricingSource)
+	require.NotNil(t, models[0].Official.InputUSDPerM)
+	require.Equal(t, 3.0, *models[0].Official.InputUSDPerM)
+	require.NotNil(t, models[0].Actual.InputCNYPerM)
+	require.Equal(t, 2.1, *models[0].Actual.InputCNYPerM)
+}
+
+func TestCatalogProvidersForPlatformIncludesRealGeminiProviders(t *testing.T) {
+	providers := catalogProvidersForPlatform(service.PlatformGemini)
+
+	require.Contains(t, providers, "google")
+	require.Contains(t, providers, "gemini")
+	require.Contains(t, providers, "vertex_ai-language-models")
+	require.Contains(t, providers, "vertex_ai-embedding-models")
 }
 
 func TestSelectModelPriceGroupIDFallsBackToFirstVisibleGroup(t *testing.T) {
@@ -103,7 +156,7 @@ func TestPlanPackageQuotaUSDUsesFullPackageValidity(t *testing.T) {
 	}))
 }
 
-func TestModelPriceDTOPrefersPackageMultiplier(t *testing.T) {
+func TestModelPriceDTOCombinesGroupAndPackageMultiplier(t *testing.T) {
 	h := &ModelPriceHandler{}
 	input := 10.0 / 1_000_000
 
@@ -126,11 +179,11 @@ func TestModelPriceDTOPrefersPackageMultiplier(t *testing.T) {
 		},
 	}, 7)
 
-	require.Equal(t, 0.1, dto.Multiplier)
+	require.Equal(t, 0.36, dto.Multiplier)
 	require.NotNil(t, dto.Actual.InputCNYPerM)
-	require.Equal(t, 7.0, *dto.Actual.InputCNYPerM)
+	require.Equal(t, 25.2, *dto.Actual.InputCNYPerM)
 	require.NotNil(t, dto.CheaperFactor)
-	require.Equal(t, 10.0, *dto.CheaperFactor)
+	require.Equal(t, 2.777778, *dto.CheaperFactor)
 }
 
 func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
