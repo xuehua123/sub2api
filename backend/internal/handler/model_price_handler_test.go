@@ -56,6 +56,31 @@ func TestSelectModelPriceGroupIDFallsBackToFirstVisibleGroup(t *testing.T) {
 	require.Nil(t, selectModelPriceGroupID("", nil))
 }
 
+func TestFilterCurrentSaleModelPriceGroupsHidesGroupsWithoutSalePlans(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 1, Name: "current", BestPlan: &modelPricePlanDTO{ID: 10, USDMultiplier: 0.1}},
+		{ID: 2, Name: "legacy"},
+		{ID: 3, Name: "also-current", BestPlan: &modelPricePlanDTO{ID: 11, USDMultiplier: 0.2}},
+	}
+
+	filtered := filterCurrentSaleModelPriceGroups(groups)
+
+	require.Len(t, filtered, 2)
+	require.Equal(t, int64(1), filtered[0].ID)
+	require.Equal(t, int64(3), filtered[1].ID)
+}
+
+func TestFilterCurrentSaleModelPriceGroupsKeepsReferenceGroupsWhenNoSalePlansLoaded(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 1, Name: "reference-a"},
+		{ID: 2, Name: "reference-b"},
+	}
+
+	filtered := filterCurrentSaleModelPriceGroups(groups)
+
+	require.Equal(t, groups, filtered)
+}
+
 func TestPlanPackageQuotaUSDUsesFullPackageValidity(t *testing.T) {
 	monthly := 100.0
 	weekly := 70.0

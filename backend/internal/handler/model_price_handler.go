@@ -147,6 +147,9 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	}
 
 	groupDTOs := h.groupDTOs(c, groups, subject.UserID, isAdmin)
+	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
+	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
+	groupDTOs = filterCurrentSaleModelPriceGroups(groupDTOs)
 	selectedGroupID := selectModelPriceGroupID(c.Query("group_id"), groupDTOs)
 	var selected *modelPriceGroupDTO
 	if selectedGroupID != nil {
@@ -158,8 +161,6 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 		}
 	}
 
-	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
-	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
 	models := []modelPriceModelDTO{}
 	if selected != nil {
 		channels, err := h.channelService.ListAvailable(c.Request.Context())
@@ -189,6 +190,9 @@ func (h *ModelPriceHandler) visibleGroups(c *gin.Context, userID int64, isAdmin 
 	}
 	groups := make([]service.Group, 0, len(available))
 	for i := range available {
+		if !available[i].Group.IsActive() {
+			continue
+		}
 		groups = append(groups, available[i].Group)
 	}
 	return groups, nil
@@ -206,6 +210,9 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 	out := make([]modelPriceGroupDTO, 0, len(groups))
 	for i := range groups {
 		g := groups[i]
+		if !g.IsActive() {
+			continue
+		}
 		effective := g.RateMultiplier
 		var userRate *float64
 		if rate, ok := userRates[g.ID]; ok {
@@ -231,6 +238,27 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 		}
 		return out[i].Platform < out[j].Platform
 	})
+	return out
+}
+
+func filterCurrentSaleModelPriceGroups(groups []modelPriceGroupDTO) []modelPriceGroupDTO {
+	hasSaleBackedGroup := false
+	for i := range groups {
+		if groups[i].BestPlan != nil {
+			hasSaleBackedGroup = true
+			break
+		}
+	}
+	if !hasSaleBackedGroup {
+		return groups
+	}
+	out := make([]modelPriceGroupDTO, 0, len(groups))
+	for i := range groups {
+		if groups[i].BestPlan == nil {
+			continue
+		}
+		out = append(out, groups[i])
+	}
 	return out
 }
 
