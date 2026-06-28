@@ -279,11 +279,11 @@ func TestModelPriceDTOCombinesGroupAndPackageMultiplier(t *testing.T) {
 		},
 	}, 7)
 
-	require.Equal(t, 0.36, dto.Multiplier)
+	require.InDelta(t, 0.36, dto.Multiplier, 0.000001)
 	require.NotNil(t, dto.Actual.InputCNYPerM)
-	require.Equal(t, 25.2, *dto.Actual.InputCNYPerM)
+	require.InDelta(t, 25.2, *dto.Actual.InputCNYPerM, 0.000001)
 	require.NotNil(t, dto.CheaperFactor)
-	require.Equal(t, 2.777778, *dto.CheaperFactor)
+	require.InDelta(t, 2.777778, *dto.CheaperFactor, 0.000001)
 }
 
 func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
