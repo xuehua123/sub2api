@@ -324,25 +324,26 @@ var (
 )
 
 const (
-	defaultAuthSourceBalance     = 0
-	defaultAuthSourceConcurrency = 5
-	defaultWeChatConnectMode     = "open"
-	defaultWeChatConnectScopes   = "snsapi_login"
-	defaultWeChatConnectFrontend = "/auth/wechat/callback"
-	defaultGitHubOAuthAuthorize  = "https://github.com/login/oauth/authorize"
-	defaultGitHubOAuthToken      = "https://github.com/login/oauth/access_token"
-	defaultGitHubOAuthUserInfo   = "https://api.github.com/user"
-	defaultGitHubOAuthEmails     = "https://api.github.com/user/emails"
-	defaultGitHubOAuthScopes     = "read:user user:email"
-	defaultGitHubOAuthFrontend   = "/auth/oauth/callback"
-	defaultGoogleOAuthAuthorize  = "https://accounts.google.com/o/oauth2/v2/auth"
-	defaultGoogleOAuthToken      = "https://oauth2.googleapis.com/token"
-	defaultGoogleOAuthUserInfo   = "https://openidconnect.googleapis.com/v1/userinfo"
-	defaultGoogleOAuthScopes     = "openid email profile"
-	defaultGoogleOAuthFrontend   = "/auth/oauth/callback"
-	defaultLoginAgreementMode    = "modal"
-	defaultLoginAgreementDate    = "2026-03-31"
-	defaultModelPriceUSDCNYRate  = 7.0
+	defaultAuthSourceBalance        = 0
+	defaultAuthSourceConcurrency    = 5
+	defaultWeChatConnectMode        = "open"
+	defaultWeChatConnectScopes      = "snsapi_login"
+	defaultWeChatConnectFrontend    = "/auth/wechat/callback"
+	defaultGitHubOAuthAuthorize     = "https://github.com/login/oauth/authorize"
+	defaultGitHubOAuthToken         = "https://github.com/login/oauth/access_token"
+	defaultGitHubOAuthUserInfo      = "https://api.github.com/user"
+	defaultGitHubOAuthEmails        = "https://api.github.com/user/emails"
+	defaultGitHubOAuthScopes        = "read:user user:email"
+	defaultGitHubOAuthFrontend      = "/auth/oauth/callback"
+	defaultGoogleOAuthAuthorize     = "https://accounts.google.com/o/oauth2/v2/auth"
+	defaultGoogleOAuthToken         = "https://oauth2.googleapis.com/token"
+	defaultGoogleOAuthUserInfo      = "https://openidconnect.googleapis.com/v1/userinfo"
+	defaultGoogleOAuthScopes        = "openid email profile"
+	defaultGoogleOAuthFrontend      = "/auth/oauth/callback"
+	defaultLoginAgreementMode       = "modal"
+	defaultLoginAgreementDate       = "2026-03-31"
+	defaultModelPriceUSDCNYRate     = 7.0
+	defaultModelPriceCNYPerQuotaUSD = 0.068
 )
 
 func normalizeLoginAgreementMode(raw string) string {
@@ -713,6 +714,17 @@ func (s *SettingService) GetModelPriceUSDCNYRate(ctx context.Context) float64 {
 		return defaultModelPriceUSDCNYRate
 	}
 	return parseModelPriceUSDCNYRate(value)
+}
+
+func (s *SettingService) GetModelPriceCNYPerQuotaUSD(ctx context.Context) float64 {
+	if s == nil || s.settingRepo == nil {
+		return defaultModelPriceCNYPerQuotaUSD
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPriceCNYPerQuotaUSD)
+	if err != nil {
+		return defaultModelPriceCNYPerQuotaUSD
+	}
+	return parseModelPriceCNYPerQuotaUSD(value)
 }
 
 func (s *SettingService) IsModelPricesUserVisible(ctx context.Context) bool {
@@ -2274,6 +2286,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyCustomMenuItems] = settings.CustomMenuItems
 	updates[SettingKeyCustomEndpoints] = settings.CustomEndpoints
 	updates[SettingKeyModelPriceUSDCNYRate] = strconv.FormatFloat(parseModelPriceUSDCNYRate(strconv.FormatFloat(settings.ModelPriceUSDCNYRate, 'f', 8, 64)), 'f', 8, 64)
+	updates[SettingKeyModelPriceCNYPerQuotaUSD] = strconv.FormatFloat(parseModelPriceCNYPerQuotaUSD(strconv.FormatFloat(settings.ModelPriceCNYPerQuotaUSD, 'f', 8, 64)), 'f', 8, 64)
 	updates[SettingKeyModelPricesUserVisible] = strconv.FormatBool(settings.ModelPricesUserVisible)
 
 	// 默认配置
@@ -3341,6 +3354,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyAuthSourceDefaultDingTalkGrantOnFirstBind: "false",
 		SettingKeyForceEmailOnThirdPartySignup:              "false",
 		SettingKeyModelPriceUSDCNYRate:                      "7",
+		SettingKeyModelPriceCNYPerQuotaUSD:                  "0.068",
 		SettingKeyModelPricesUserVisible:                    "true",
 		SettingKeyModelPriceHiddenGroupIDs:                  "[]",
 		SettingKeyModelPriceHiddenModelKeys:                 "[]",
@@ -3891,6 +3905,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// Available channels feature (default: disabled; strict true)
 	result.AvailableChannelsEnabled = settings[SettingKeyAvailableChannelsEnabled] == "true"
 	result.ModelPriceUSDCNYRate = parseModelPriceUSDCNYRate(settings[SettingKeyModelPriceUSDCNYRate])
+	result.ModelPriceCNYPerQuotaUSD = parseModelPriceCNYPerQuotaUSD(settings[SettingKeyModelPriceCNYPerQuotaUSD])
 	result.ModelPricesUserVisible = !isFalseSettingValue(settings[SettingKeyModelPricesUserVisible])
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
@@ -4112,6 +4127,14 @@ func parseModelPriceUSDCNYRate(raw string) float64 {
 		return defaultModelPriceUSDCNYRate
 	}
 	return rate
+}
+
+func parseModelPriceCNYPerQuotaUSD(raw string) float64 {
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return defaultModelPriceCNYPerQuotaUSD
+	}
+	return value
 }
 
 func normalizeVisibleMethodSettingSource(method, source string, enabled bool) (string, error) {

@@ -303,6 +303,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 		ModelPriceUSDCNYRate:     settings.ModelPriceUSDCNYRate,
+		ModelPriceCNYPerQuotaUSD: settings.ModelPriceCNYPerQuotaUSD,
 		ModelPricesUserVisible:   settings.ModelPricesUserVisible,
 
 		AffiliateEnabled:                     settings.AffiliateEnabled,
@@ -684,8 +685,9 @@ type UpdateSettingsRequest struct {
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
 
 	// Model prices page
-	ModelPriceUSDCNYRate   *float64 `json:"model_price_usd_cny_rate"`
-	ModelPricesUserVisible *bool    `json:"model_prices_user_visible"`
+	ModelPriceUSDCNYRate     *float64 `json:"model_price_usd_cny_rate"`
+	ModelPriceCNYPerQuotaUSD *float64 `json:"model_price_cny_per_quota_usd"`
+	ModelPricesUserVisible   *bool    `json:"model_prices_user_visible"`
 
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
@@ -2061,6 +2063,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ModelPriceUSDCNYRate
 		}(),
+		ModelPriceCNYPerQuotaUSD: func() float64 {
+			if req.ModelPriceCNYPerQuotaUSD != nil {
+				return *req.ModelPriceCNYPerQuotaUSD
+			}
+			return previousSettings.ModelPriceCNYPerQuotaUSD
+		}(),
 		ModelPricesUserVisible: func() bool {
 			if req.ModelPricesUserVisible != nil {
 				return *req.ModelPricesUserVisible
@@ -2445,6 +2453,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
 		ModelPriceUSDCNYRate:     updatedSettings.ModelPriceUSDCNYRate,
+		ModelPriceCNYPerQuotaUSD: updatedSettings.ModelPriceCNYPerQuotaUSD,
 		ModelPricesUserVisible:   updatedSettings.ModelPricesUserVisible,
 
 		AffiliateEnabled:                     updatedSettings.AffiliateEnabled,

@@ -184,7 +184,7 @@
                     </span>
                   </div>
                   <p class="mt-2 max-w-3xl text-sm text-blue-50/90">
-                    按当前分组展示官方美元价格和我们的折扣后美元价格，让优惠力度一眼能看懂。
+                    按当前分组展示官方美元参考价和我们的折扣后人民币成交价，美元小字仅作参考。
                   </p>
                 </div>
                 <div class="hidden shrink-0 grid-cols-3 gap-3 xl:grid">
@@ -194,7 +194,7 @@
                   </div>
                   <div class="hero-stat">
                     <span>价格口径</span>
-                    <strong>USD / 百万 tokens</strong>
+                    <strong>人民币 / 百万 tokens</strong>
                   </div>
                   <div class="hero-stat">
                     <span>优惠力度</span>
@@ -283,8 +283,8 @@
             <div class="ops-card">
               <div>
                 <span>我们的销售价</span>
-                <strong>官方美元价 × 分组折扣</strong>
-                <small>官方同步不会覆盖销售配置</small>
+                <strong>官方价 × 分组倍率 × 套餐换算</strong>
+                <small>人民币成交价由下方换算参数控制</small>
               </div>
               <RouterLink class="toolbar-button" to="/admin/channels/pricing">
                 维护渠道价格
@@ -294,8 +294,43 @@
               <div>
                 <span>换算参数</span>
                 <strong>USD/CNY {{ formatNumber(response?.usd_cny_rate ?? 7, 4) }}</strong>
-                <small>{{ selectedGroup ? `当前分组倍率 ${formatNumber(selectedGroup.effective_multiplier, 4)}x` : '选择分组后查看倍率' }}</small>
+                <small>¥{{ formatNumber(response?.cny_per_quota_usd ?? 0.068, 4) }}/额度 USD · {{ selectedGroup ? `当前分组 ${formatNumber(selectedGroup.effective_multiplier, 4)}x` : '选择分组后查看倍率' }}</small>
               </div>
+            </div>
+            <div class="ops-card pricing-settings-card">
+              <div>
+                <span>销售换算参数</span>
+                <strong>¥{{ formatNumber(pricingSettings.cnyPerQuotaUSD || response?.cny_per_quota_usd || 0.068, 4) }}/额度 USD</strong>
+                <small>线上口径：¥680 兑换 10000 刀</small>
+              </div>
+              <div class="pricing-settings-form">
+                <label>
+                  <span>USD/CNY</span>
+                  <input v-model.number="pricingSettings.usdCnyRate" type="number" min="0.0001" step="0.0001" />
+                </label>
+                <label>
+                  <span>¥/额度 USD</span>
+                  <input v-model.number="pricingSettings.cnyPerQuotaUSD" type="number" min="0.000001" step="0.000001" />
+                </label>
+                <button class="toolbar-button active" :disabled="savingPricingSettings" @click="savePricingSettings">
+                  <Icon name="check" size="xs" />
+                  保存
+                </button>
+                <p class="pricing-preview">{{ pricingPreviewText }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section class="sales-note mt-4">
+            <div>
+              <span>价格说明</span>
+              <strong>页面优先展示折扣后的人民币参考价</strong>
+              <p>美元价格仅作为换算参考，实际结算按当前套餐、分组倍率与用量规则执行；固定价格会按每张、每次或每分钟展示。</p>
+            </div>
+            <div v-if="isAdmin" class="sales-note-admin" :class="profitSafety.tone">
+              <span>利润安全提示</span>
+              <strong>{{ profitSafety.title }}</strong>
+              <p>{{ profitSafety.detail }}</p>
             </div>
           </section>
 
@@ -308,10 +343,10 @@
               <span>{{ isAdmin ? '内部套餐换算' : '价格口径' }}</span>
               <strong v-if="selectedGroup.best_plan">
                 <template v-if="isAdmin">
-                  ¥{{ formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD · 分组 {{ formatNumber(selectedGroup.effective_multiplier, 2) }}x · {{ selectedGroup.best_plan.name }}
+                  ¥{{ formatNumber(response?.cny_per_quota_usd ?? selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD · 分组 {{ formatNumber(selectedGroup.effective_multiplier, 2) }}x · {{ selectedGroup.best_plan.name }}
                 </template>
                 <template v-else>
-                  折扣后美元价
+                  折扣后人民币价
                 </template>
               </strong>
               <strong v-else>暂无套餐，显示参考价</strong>
@@ -325,7 +360,7 @@
           <section v-if="isAdmin && selectedGroup && issueModels.length > 0" class="price-alert mt-4" :class="{ critical: criticalIssueCount > 0 }">
             <div>
               <strong>价格来源异常 {{ issueModels.length }} 个</strong>
-              <span>严重 {{ criticalIssueCount }} 个 · 提醒 {{ warningIssueCount }} 个 · {{ issueModels.slice(0, 3).map(item => `${item.name}：${priceIssueLabel(item)}`).join('、') }}</span>
+              <span>严重 {{ criticalIssueCount }} 个 · 提醒 {{ warningIssueCount }} 个 · {{ issueSummaryText }}</span>
             </div>
             <RouterLink class="toolbar-button" to="/admin/channels/pricing">
               去补价格
@@ -449,13 +484,13 @@
               </div>
 
               <div v-if="isFixedPriceModel(model)" class="price-pair actual">
-                <strong>{{ fixedPriceUnitLabel(model) }} {{ formatUSDPerUnit(bestActual(model, 'per_request_usd'), fixedPriceUnit(model)) }}</strong>
-                <small v-if="selectedGroup?.best_plan">{{ selectedGroup.best_plan.name }}</small>
+                <strong>{{ fixedPriceUnitLabel(model) }} {{ formatCNYPerUnit(bestActual(model, 'per_request_cny'), fixedPriceUnit(model)) }}</strong>
+                <small>{{ formatUSDPerUnit(bestActual(model, 'per_request_usd'), fixedPriceUnit(model)) }}</small>
               </div>
               <div v-else class="price-pair actual">
-                <strong>输入 {{ formatUSDPerMillion(bestActual(model, 'input_usd_per_m')) }}</strong>
-                <strong>输出 {{ formatUSDPerMillion(bestActual(model, 'output_usd_per_m')) }}</strong>
-                <small v-if="selectedGroup?.best_plan">{{ selectedGroup.best_plan.name }}</small>
+                <strong>输入 {{ formatCNYPerMillion(bestActual(model, 'input_cny_per_m')) }}</strong>
+                <strong>输出 {{ formatCNYPerMillion(bestActual(model, 'output_cny_per_m')) }}</strong>
+                <small>{{ actualUSDLine(model) }}</small>
               </div>
 
               <div class="tier-list">
@@ -484,7 +519,7 @@
 
               <div v-if="isAdmin" class="source-cell">
                 <span>{{ sourceLabel(model.pricing_source) }}</span>
-                <small v-if="model.official_missing">缺官方价</small>
+                <small v-if="priceIssueSeverity(model) !== 'none'">{{ priceIssueDetail(model) }}</small>
                 <button class="inline-edit-button" @click="openPriceEditor(model)">改价</button>
                 <button class="inline-edit-button danger" :disabled="savingHiddenModels" @click="toggleModelHidden(model)">
                   {{ model.hidden ? '恢复' : '隐藏' }}
@@ -546,19 +581,19 @@
 
               <div class="mt-3 rounded-lg border border-cyan-400/10 bg-cyan-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-cyan-200">折扣后价格</span>
+                  <span class="text-[11px] font-bold text-cyan-200">折扣后人民币价</span>
                   <span v-if="selectedGroup?.best_plan" class="truncate text-[11px] text-slate-500" :title="selectedGroup.best_plan.name">
                     {{ selectedGroup.best_plan.name }}
                   </span>
                 </div>
                 <div v-if="isFixedPriceModel(model)" class="space-y-2">
-                  <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="bestActual(model, 'per_request_usd')" :suffix="`/ ${fixedPriceUnit(model)}`" highlight />
+                  <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="bestActual(model, 'per_request_cny')" :secondary="formatUSDPerUnit(bestActual(model, 'per_request_usd'), fixedPriceUnit(model))" currency="cny" :suffix="`/ ${fixedPriceUnit(model)}`" highlight />
                 </div>
                 <div v-else class="space-y-2">
-                  <PriceRow label="输入价格" :value="bestActual(model, 'input_usd_per_m')" suffix="/ 百万 tokens" highlight />
-                  <PriceRow label="输出价格" :value="bestActual(model, 'output_usd_per_m')" suffix="/ 百万 tokens" highlight />
-                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_usd_per_m')" suffix="/ 百万 tokens" />
-                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_usd_per_m')" suffix="/ 百万 tokens" />
+                  <PriceRow label="输入价格" :value="bestActual(model, 'input_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'input_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="输出价格" :value="bestActual(model, 'output_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'output_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_read_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
+                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_write_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
                 </div>
               </div>
 
@@ -676,6 +711,7 @@ import modelPricesAPI, {
 } from '@/api/modelPrices'
 import { useAppStore, useAuthStore } from '@/stores'
 import { extractApiErrorMessage } from '@/utils/apiError'
+import { adminAPI } from '@/api/admin'
 
 type FilterTone = 'purple' | 'cyan' | 'amber' | 'emerald'
 type GroupCategory = 'all' | 'claude' | 'openai' | 'gemini' | 'domestic'
@@ -773,14 +809,17 @@ const PriceRow = defineComponent({
     label: { type: String, required: true },
     value: { type: Number, default: null },
     suffix: { type: String, default: '' },
+    secondary: { type: String, default: '' },
+    currency: { type: String as () => 'usd' | 'cny', default: 'usd' },
     highlight: { type: Boolean, default: false },
   },
   setup(props) {
     return () => h('div', { class: 'price-row' }, [
       h('span', { class: 'text-slate-400' }, props.label),
       h('strong', { class: props.highlight ? 'text-emerald-300' : 'text-slate-200' }, [
-        props.value == null ? '暂未定价' : formatUSD(props.value),
+        props.value == null ? '暂未定价' : (props.currency === 'cny' ? formatCNY(props.value) : formatUSD(props.value)),
         props.value == null ? '' : h('small', { class: 'ml-1 text-[11px] font-medium text-slate-500' }, props.suffix),
+        props.secondary && props.secondary !== '-' ? h('em', { class: 'block text-[11px] font-medium not-italic text-slate-500' }, props.secondary) : null,
       ]),
     ])
   },
@@ -797,6 +836,7 @@ const searchQuery = ref('')
 const loading = ref(false)
 const savingHiddenGroups = ref(false)
 const syncingCatalog = ref(false)
+const savingPricingSettings = ref(false)
 const showGroupDrawer = ref(false)
 const showOfficial = ref(false)
 const showMultiplier = ref(false)
@@ -810,6 +850,10 @@ const savingHiddenModels = ref(false)
 const selectedGroupIDs = ref<Set<number>>(new Set())
 const selectedModelNames = ref<Set<string>>(new Set())
 const priceEditor = ref<PriceEditorState | null>(null)
+const pricingSettings = ref({
+  usdCnyRate: 7,
+  cnyPerQuotaUSD: 0.068,
+})
 
 const isAdmin = computed(() => authStore.isAdmin)
 const groups = computed(() => sortGroupsForSales(response.value?.groups ?? []))
@@ -907,6 +951,55 @@ const criticalIssueCount = computed(() =>
 const warningIssueCount = computed(() =>
   issueModels.value.filter(model => priceIssueSeverity(model) === 'warning').length,
 )
+const issueSummaryText = computed(() => {
+  const items = issueModels.value.slice(0, 4).map(item => `${item.name}：${priceIssueDetail(item)}`)
+  return items.length > 0 ? items.join('、') : '暂无异常'
+})
+const pricingPreviewText = computed(() => {
+  const groupMultiplier = normalizePositive(selectedGroup.value?.effective_multiplier)
+  const cnyPerQuotaUSD = normalizePositive(pricingSettings.value.cnyPerQuotaUSD)
+  const price = groupMultiplier * cnyPerQuotaUSD
+  return `试算：官方 $1/M × 分组 ${formatNumber(groupMultiplier, 4)}x = ${formatCNY(price)} / 百万 tokens`
+})
+const profitSafety = computed(() => {
+  if (!selectedGroup.value) {
+    return {
+      tone: 'neutral',
+      title: '选择分组后检查',
+      detail: '选择具体分组后，会按当前换算参数检查模型展示价是否缺失或异常偏低。',
+    }
+  }
+  const visible = filteredModels.value
+  const priced = visible.filter(model => hasActualPrice(model))
+  const critical = visible.filter(model => priceIssueSeverity(model) === 'critical')
+  const lowPrice = priced.filter(model => isSuspiciouslyLowPrice(model))
+  if (critical.length > 0) {
+    return {
+      tone: 'danger',
+      title: `有 ${critical.length} 个模型缺关键价格`,
+      detail: `先补齐 ${critical.slice(0, 3).map(model => model.name).join('、')}，否则客户看到的价格可能不完整。`,
+    }
+  }
+  if (lowPrice.length > 0) {
+    return {
+      tone: 'warning',
+      title: `有 ${lowPrice.length} 个模型价格异常偏低`,
+      detail: `${lowPrice.slice(0, 3).map(model => model.name).join('、')} 的折扣后价低于安全阈值，请确认官方价和分组倍率。`,
+    }
+  }
+  if (priced.length === 0) {
+    return {
+      tone: 'warning',
+      title: '当前没有可检查价格',
+      detail: '该分组暂无可展示模型价格，建议检查账号模型映射和渠道定价。',
+    }
+  }
+  return {
+    tone: 'safe',
+    title: '当前展示价未发现明显风险',
+    detail: `已检查 ${priced.length} 个模型，按 ¥${formatNumber(response.value?.cny_per_quota_usd ?? 0.068, 4)}/额度 USD 与分组倍率计算。`,
+  }
+})
 
 watch(selectedGroupID, (id, oldID) => {
   if (id !== oldID) {
@@ -949,6 +1042,7 @@ async function loadPrices(groupID?: number) {
       show_hidden_groups: showHiddenGroups.value,
       show_hidden_models: showHiddenModels.value,
     })
+    syncPricingSettingsFromResponse()
     if (groupID && response.value.selected_group_id === groupID) {
       selectedGroupID.value = groupID
     } else if (!groupID) {
@@ -960,6 +1054,41 @@ async function loadPrices(groupID?: number) {
     appStore.showError(extractApiErrorMessage(err, '加载模型价格失败'))
   } finally {
     loading.value = false
+  }
+}
+
+function syncPricingSettingsFromResponse() {
+  if (!response.value) return
+  pricingSettings.value = {
+    usdCnyRate: response.value.usd_cny_rate || 7,
+    cnyPerQuotaUSD: response.value.cny_per_quota_usd || 0.068,
+  }
+}
+
+async function savePricingSettings() {
+  if (!isAdmin.value || savingPricingSettings.value) return
+  const usdCnyRate = Number(pricingSettings.value.usdCnyRate)
+  const cnyPerQuotaUSD = Number(pricingSettings.value.cnyPerQuotaUSD)
+  if (!Number.isFinite(usdCnyRate) || usdCnyRate <= 0) {
+    appStore.showError('USD/CNY 必须大于 0')
+    return
+  }
+  if (!Number.isFinite(cnyPerQuotaUSD) || cnyPerQuotaUSD <= 0) {
+    appStore.showError('¥/额度 USD 必须大于 0')
+    return
+  }
+  savingPricingSettings.value = true
+  try {
+    await adminAPI.settings.updateSettings({
+      model_price_usd_cny_rate: usdCnyRate,
+      model_price_cny_per_quota_usd: cnyPerQuotaUSD,
+    })
+    appStore.showSuccess('销售换算参数已保存')
+    await loadPrices(selectedGroupID.value)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '保存销售换算参数失败'))
+  } finally {
+    savingPricingSettings.value = false
   }
 }
 
@@ -1455,9 +1584,11 @@ function sourceLabel(source: string): string {
   return '待补价'
 }
 
-function priceIssueLabel(model: ModelPriceModel): string {
-  if (priceIssueSeverity(model) === 'critical') return '待补价'
+function priceIssueDetail(model: ModelPriceModel): string {
+  if (model.pricing_source === 'unknown' || !hasActualPrice(model)) return '缺渠道价或实际展示价'
   if (model.official_missing) return '缺官方参考价'
+  if (isFixedPriceModel(model) && !fixedPriceUnit(model)) return '固定价格单位不明确'
+  if (model.channel_names.length === 0) return '没有可用渠道来源'
   return '来源正常'
 }
 
@@ -1466,6 +1597,22 @@ function priceIssueSeverity(model: ModelPriceModel): 'none' | 'warning' | 'criti
   if (model.pricing_source === 'unknown' || !hasActualPrice(model)) return 'critical'
   if (model.official_missing) return 'warning'
   return 'none'
+}
+
+function isSuspiciouslyLowPrice(model: ModelPriceModel): boolean {
+  const candidates = [
+    bestActual(model, 'input_cny_per_m'),
+    bestActual(model, 'output_cny_per_m'),
+    bestActual(model, 'cache_write_cny_per_m'),
+    bestActual(model, 'cache_read_cny_per_m'),
+    bestActual(model, 'per_request_cny'),
+  ].filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+  if (candidates.length === 0) return false
+  if (candidates.some(value => value <= 0)) return true
+  const safetyFloor = normalizePositive(selectedGroup.value?.effective_multiplier) *
+    normalizePositive(response.value?.cny_per_quota_usd ?? pricingSettings.value.cnyPerQuotaUSD) *
+    0.01
+  return candidates.some(value => value < safetyFloor)
 }
 
 function groupSaleMultiplier(group: ModelPriceGroup | undefined): number | undefined {
@@ -1489,14 +1636,36 @@ function formatUSD(value: number | null | undefined): string {
   return `$${formatNumber(value, value < 1 ? 4 : 2)}`
 }
 
+function formatCNY(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '-'
+  return `¥${formatNumber(value, value < 1 ? 4 : 2)}`
+}
+
 function formatUSDPerMillion(value: number | null | undefined): string {
   const formatted = formatUSD(value)
+  return formatted === '-' ? '-' : `${formatted} / 百万 tokens`
+}
+
+function formatCNYPerMillion(value: number | null | undefined): string {
+  const formatted = formatCNY(value)
   return formatted === '-' ? '-' : `${formatted} / 百万 tokens`
 }
 
 function formatUSDPerUnit(value: number | null | undefined, unit: string): string {
   const formatted = formatUSD(value)
   return formatted === '-' ? '-' : `${formatted} / ${unit}`
+}
+
+function formatCNYPerUnit(value: number | null | undefined, unit: string): string {
+  const formatted = formatCNY(value)
+  return formatted === '-' ? '-' : `${formatted} / ${unit}`
+}
+
+function actualUSDLine(model: ModelPriceModel): string {
+  const input = formatUSDPerMillion(bestActual(model, 'input_usd_per_m'))
+  const output = formatUSDPerMillion(bestActual(model, 'output_usd_per_m'))
+  if (input === '-' && output === '-') return selectedGroup.value?.best_plan?.name || ''
+  return `美元参考：输入 ${input} · 输出 ${output}`
 }
 
 function formatNumber(value: number | null | undefined, digits = 2): string {
@@ -1817,7 +1986,110 @@ onMounted(() => loadPrices())
 .admin-price-panel {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pricing-settings-card {
+  align-items: stretch;
+  gap: 12px;
+}
+
+.pricing-settings-form {
+  display: grid;
+  gap: 8px;
+}
+
+.pricing-settings-form label {
+  display: grid;
+  gap: 4px;
+}
+
+.pricing-settings-form label span {
+  font-size: 11px;
+  font-weight: 800;
+  color: rgb(100 116 139);
+}
+
+.pricing-settings-form input {
+  height: 32px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0f1014;
+  padding: 0 9px;
+  color: white;
+  outline: none;
+}
+
+.pricing-settings-form input:focus {
+  border-color: rgba(45, 212, 191, 0.5);
+}
+
+.pricing-preview {
+  margin-top: 2px;
+  color: #67e8f9;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.sales-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.85fr);
+  gap: 12px;
+}
+
+.sales-note > div {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #15171c;
+  padding: 14px;
+}
+
+.sales-note span {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgb(100 116 139);
+}
+
+.sales-note strong {
+  display: block;
+  margin-top: 5px;
+  color: white;
+  font-size: 15px;
+}
+
+.sales-note p {
+  margin-top: 6px;
+  color: rgb(148 163 184);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sales-note-admin.safe {
+  border-color: rgba(52, 211, 153, 0.22);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.sales-note-admin.safe strong {
+  color: #86efac;
+}
+
+.sales-note-admin.warning {
+  border-color: rgba(251, 191, 36, 0.26);
+  background: rgba(245, 158, 11, 0.07);
+}
+
+.sales-note-admin.warning strong {
+  color: #fde68a;
+}
+
+.sales-note-admin.danger {
+  border-color: rgba(248, 113, 113, 0.28);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.sales-note-admin.danger strong {
+  color: #fecaca;
 }
 
 .ops-card {
@@ -1864,6 +2136,10 @@ onMounted(() => loadPrices())
 
 @media (max-width: 1279px) {
   .admin-price-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-note {
     grid-template-columns: 1fr;
   }
 }

@@ -144,6 +144,7 @@ type SystemSettings struct {
 	CustomMenuItems                     string // JSON array of custom menu items
 	CustomEndpoints                     string // JSON array of custom endpoints
 	ModelPriceUSDCNYRate                float64
+	ModelPriceCNYPerQuotaUSD            float64
 	ModelPricesUserVisible              bool
 
 	DefaultConcurrency           int

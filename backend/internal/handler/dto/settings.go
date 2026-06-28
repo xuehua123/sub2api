@@ -281,8 +281,9 @@ type SystemSettings struct {
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 
 	// Model prices page
-	ModelPriceUSDCNYRate   float64 `json:"model_price_usd_cny_rate"`
-	ModelPricesUserVisible bool    `json:"model_prices_user_visible"`
+	ModelPriceUSDCNYRate     float64 `json:"model_price_usd_cny_rate"`
+	ModelPriceCNYPerQuotaUSD float64 `json:"model_price_cny_per_quota_usd"`
+	ModelPricesUserVisible   bool    `json:"model_prices_user_visible"`
 
 	// 风控中心功能开关
 	RiskControlEnabled bool `json:"risk_control_enabled"`

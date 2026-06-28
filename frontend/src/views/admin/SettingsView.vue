@@ -7930,6 +7930,7 @@ const form = reactive<SettingsForm>({
   login_agreement_updated_at: "2026-03-31",
   login_agreement_documents: defaultLoginAgreementDocuments(),
   model_price_usd_cny_rate: 7,
+  model_price_cny_per_quota_usd: 0.068,
   model_prices_user_visible: true,
   default_balance: 0,
   default_platform_quotas: normalizePlatformQuotasMap() as DefaultPlatformQuotasMap,
@@ -9382,6 +9383,7 @@ async function saveSettings() {
       // Available Channels feature switch
       available_channels_enabled: form.available_channels_enabled,
       model_price_usd_cny_rate: Number(form.model_price_usd_cny_rate) || 7,
+      model_price_cny_per_quota_usd: Number(form.model_price_cny_per_quota_usd) || 0.068,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
       allow_user_view_error_requests: form.allow_user_view_error_requests,

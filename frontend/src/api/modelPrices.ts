@@ -107,6 +107,7 @@ export interface ModelPriceCatalogStatus {
 
 export interface ModelPriceResponse {
   usd_cny_rate: number
+  cny_per_quota_usd: number
   groups: ModelPriceGroup[]
   group_overview: ModelPriceGroupOverview[]
   selected_group_id: number | null

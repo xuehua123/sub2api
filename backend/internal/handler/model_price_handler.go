@@ -151,6 +151,7 @@ type modelPriceCatalogStatusDTO struct {
 
 type modelPriceResponseDTO struct {
 	USDCNYRate          float64                      `json:"usd_cny_rate"`
+	CNYPerQuotaUSD      float64                      `json:"cny_per_quota_usd"`
 	Groups              []modelPriceGroupDTO         `json:"groups"`
 	GroupOverview       []modelPriceGroupOverviewDTO `json:"group_overview"`
 	SelectedGroupID     *int64                       `json:"selected_group_id"`
@@ -239,7 +240,8 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	hiddenModelKeys := h.settingService.GetModelPriceHiddenModelKeys(c.Request.Context())
 	applyModelPriceGroupUsage(groupDTOs, channels, accountsByGroup, hiddenModelKeys, showHiddenModels)
 	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
-	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
+	cnyPerQuotaUSD := h.settingService.GetModelPriceCNYPerQuotaUSD(c.Request.Context())
+	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate, cnyPerQuotaUSD)
 	hiddenGroupIDs := h.settingService.GetModelPriceHiddenGroupIDs(c.Request.Context())
 	groupDTOs = applyModelPriceHiddenGroups(groupDTOs, hiddenGroupIDs, showHiddenGroups)
 	selectedGroupID := selectModelPriceGroupID(c.Query("group_id"), groupDTOs)
@@ -269,6 +271,7 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 
 	response.Success(c, modelPriceResponseDTO{
 		USDCNYRate:          usdCNYRate,
+		CNYPerQuotaUSD:      cnyPerQuotaUSD,
 		Groups:              groupDTOs,
 		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels, accountsByGroup, hiddenModelKeys, showHiddenModels),
 		SelectedGroupID:     selectedGroupID,
@@ -692,7 +695,7 @@ func modelPriceGroupCategory(platform, name string) string {
 	}
 }
 
-func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []modelPriceGroupDTO, usdCNYRate float64) {
+func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []modelPriceGroupDTO, usdCNYRate float64, configuredCNYPerQuotaUSD float64) {
 	if h.paymentConfigService == nil || usdCNYRate <= 0 {
 		return
 	}
@@ -706,9 +709,13 @@ func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []mod
 		if plan.ID <= 0 || plan.Price <= 0 || quotaUSD <= 0 {
 			continue
 		}
-		cnyPerQuotaUSD := plan.Price / quotaUSD
-		if cnyPerQuotaUSD <= 0 || math.IsNaN(cnyPerQuotaUSD) || math.IsInf(cnyPerQuotaUSD, 0) {
+		planCNYPerQuotaUSD := plan.Price / quotaUSD
+		if planCNYPerQuotaUSD <= 0 || math.IsNaN(planCNYPerQuotaUSD) || math.IsInf(planCNYPerQuotaUSD, 0) {
 			continue
+		}
+		cnyPerQuotaUSD := planCNYPerQuotaUSD
+		if configuredCNYPerQuotaUSD > 0 && !math.IsNaN(configuredCNYPerQuotaUSD) && !math.IsInf(configuredCNYPerQuotaUSD, 0) {
+			cnyPerQuotaUSD = configuredCNYPerQuotaUSD
 		}
 		candidate := modelPricePlanDTO{
 			ID:             plan.ID,
@@ -720,7 +727,7 @@ func (h *ModelPriceHandler) applyPlanEconomics(ctx context.Context, groups []mod
 		}
 		for _, groupID := range planModelPriceGroupIDs(plan) {
 			existing, ok := bestByGroup[groupID]
-			if !ok || candidate.CNYPerQuotaUSD < existing.CNYPerQuotaUSD {
+			if !ok || planCNYPerQuotaUSD < existing.PriceCNY/existing.QuotaUSD {
 				bestByGroup[groupID] = candidate
 			}
 		}

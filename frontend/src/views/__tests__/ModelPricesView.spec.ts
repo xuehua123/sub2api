@@ -75,6 +75,7 @@ function model(overrides: Partial<ModelPriceModel> = {}): ModelPriceModel {
 function response(overrides: Partial<ModelPriceResponse> = {}): ModelPriceResponse {
   return {
     usd_cny_rate: 7,
+    cny_per_quota_usd: 0.068,
     groups: [
       {
         id: 46,
