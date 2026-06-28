@@ -87,7 +87,7 @@ func TestModelsForGroupUsesChannelModelsByDefault(t *testing.T) {
 		},
 	}
 
-	models := h.modelsForGroup(nil, modelPriceGroupDTO{
+	models := h.modelsForGroup(nil, nil, modelPriceGroupDTO{
 		ID:                  1,
 		Platform:            service.PlatformAnthropic,
 		EffectiveMultiplier: 0.1,
@@ -112,7 +112,7 @@ func TestModelsForGroupIncludesOfficialCatalogModelsWhenRequested(t *testing.T) 
 		},
 	}
 
-	models := h.modelsForGroup(nil, modelPriceGroupDTO{
+	models := h.modelsForGroup(nil, nil, modelPriceGroupDTO{
 		ID:                  1,
 		Platform:            service.PlatformAnthropic,
 		EffectiveMultiplier: 0.1,
@@ -197,12 +197,88 @@ func TestApplyModelPriceGroupUsageCountsActiveChannelsAndModels(t *testing.T) {
 		},
 	}
 
-	applyModelPriceGroupUsage(groups, channels)
+	applyModelPriceGroupUsage(groups, channels, nil)
 
 	require.Equal(t, 1, groups[0].ChannelCount)
 	require.Equal(t, 1, groups[0].ModelCount)
 	require.Equal(t, 1, groups[1].ChannelCount)
 	require.Equal(t, 1, groups[1].ModelCount)
+}
+
+func TestApplyModelPriceGroupUsageFallsBackToAccountsWithoutChannels(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 46, Platform: service.PlatformOpenAI},
+	}
+	accountsByGroup := map[int64][]service.Account{
+		46: {
+			{
+				ID:       206,
+				Name:     "pro",
+				Platform: service.PlatformOpenAI,
+				Status:   service.StatusActive,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"gpt-5.5":     "gpt-5.5",
+						"gpt-image-2": "gpt-image-2",
+					},
+				},
+			},
+			{
+				ID:       207,
+				Name:     "disabled",
+				Platform: service.PlatformOpenAI,
+				Status:   service.StatusDisabled,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{
+						"gpt-5.4": "gpt-5.4",
+					},
+				},
+			},
+		},
+	}
+
+	applyModelPriceGroupUsage(groups, nil, accountsByGroup)
+
+	require.Equal(t, 1, groups[0].ChannelCount)
+	require.Equal(t, 2, groups[0].ModelCount)
+}
+
+func TestModelsForGroupIncludesAccountModelMapping(t *testing.T) {
+	h := &ModelPriceHandler{
+		pricingService: stubModelPriceCatalog{
+			prices: map[string]*service.LiteLLMModelPricing{
+				"gpt-5.5": {
+					LiteLLMProvider:   "openai",
+					InputCostPerToken: 1e-6,
+				},
+			},
+		},
+	}
+	accounts := []service.Account{
+		{
+			ID:       206,
+			Name:     "pro",
+			Platform: service.PlatformOpenAI,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"gpt-5.5": "gpt-5.5",
+					"gpt-*":   "gpt-5.5",
+				},
+			},
+		},
+	}
+
+	models := h.modelsForGroup(nil, accounts, modelPriceGroupDTO{
+		ID:                  46,
+		Platform:            service.PlatformOpenAI,
+		EffectiveMultiplier: 0.5,
+	}, 7, false)
+
+	require.Len(t, models, 1)
+	require.Equal(t, "gpt-5.5", models[0].Name)
+	require.Equal(t, "official", models[0].PricingSource)
+	require.Equal(t, []string{"pro"}, models[0].ChannelNames)
 }
 
 func TestBuildModelPriceGroupOverviewDeduplicatesAcrossGroups(t *testing.T) {
@@ -225,7 +301,7 @@ func TestBuildModelPriceGroupOverviewDeduplicatesAcrossGroups(t *testing.T) {
 		},
 	}
 
-	overview := buildModelPriceGroupOverview(groups, channels)
+	overview := buildModelPriceGroupOverview(groups, channels, nil)
 	openai := overview[1]
 
 	require.Equal(t, "openai", openai.Category)

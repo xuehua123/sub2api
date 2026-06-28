@@ -285,7 +285,7 @@
               >
                 <span>{{ item.label }}</span>
                 <strong>{{ item.groupCount }} 分组</strong>
-                <small>{{ item.modelCount }} 模型 · {{ item.channelCount }} 渠道</small>
+                <small>{{ item.modelCount }} 模型 · {{ item.channelCount }} 来源</small>
               </button>
             </div>
             <div class="overview-list">
@@ -296,7 +296,7 @@
                 @click="selectGroup(group.id)"
               >
                 <span>{{ group.name }}</span>
-                <strong>{{ group.model_count }} 模型 · {{ group.channel_count }} 渠道</strong>
+                <strong>{{ group.model_count }} 模型 · {{ group.channel_count }} 来源</strong>
               </button>
             </div>
           </section>
@@ -331,7 +331,7 @@
                   <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <span class="tag">{{ providerLabel(model.platform) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
-                    <span v-if="isAdmin && model.channel_names.length > 0" class="tag tag-blue">{{ model.channel_names.length }} 渠道</span>
+                    <span v-if="isAdmin && model.channel_names.length > 0" class="tag tag-blue">{{ model.channel_names.length }} 来源</span>
                   </div>
                 </div>
               </div>
@@ -861,7 +861,7 @@ function groupCategoryKey(platform: string): GroupCategory {
 }
 
 function groupPillLabel(group: ModelPriceGroup): string {
-  const usage = `${group.model_count} 模型 · ${group.channel_count} 渠道`
+  const usage = `${group.model_count} 模型 · ${group.channel_count} 来源`
   return group.hidden ? `隐藏 · ${usage}` : usage
 }
 

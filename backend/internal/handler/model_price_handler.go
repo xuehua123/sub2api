@@ -17,6 +17,7 @@ import (
 
 type ModelPriceHandler struct {
 	channelService       *service.ChannelService
+	accountService       *service.AccountService
 	apiKeyService        *service.APIKeyService
 	groupService         *service.GroupService
 	pricingService       modelPriceCatalog
@@ -36,6 +37,7 @@ type modelPriceCatalogManager interface {
 
 func NewModelPriceHandler(
 	channelService *service.ChannelService,
+	accountService *service.AccountService,
 	apiKeyService *service.APIKeyService,
 	groupService *service.GroupService,
 	pricingService *service.PricingService,
@@ -44,6 +46,7 @@ func NewModelPriceHandler(
 ) *ModelPriceHandler {
 	return &ModelPriceHandler{
 		channelService:       channelService,
+		accountService:       accountService,
 		apiKeyService:        apiKeyService,
 		groupService:         groupService,
 		pricingService:       pricingService,
@@ -195,7 +198,12 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	applyModelPriceGroupUsage(groupDTOs, channels)
+	accountsByGroup, err := h.modelPriceAccountsByGroup(c.Request.Context(), groupDTOs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	applyModelPriceGroupUsage(groupDTOs, channels, accountsByGroup)
 	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
 	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
 	hiddenGroupIDs := h.settingService.GetModelPriceHiddenGroupIDs(c.Request.Context())
@@ -213,13 +221,13 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 
 	models := []modelPriceModelDTO{}
 	if selected != nil {
-		models = h.modelsForGroup(channels, *selected, usdCNYRate, includeCatalog)
+		models = h.modelsForGroup(channels, accountsByGroup[selected.ID], *selected, usdCNYRate, includeCatalog)
 	}
 
 	response.Success(c, modelPriceResponseDTO{
 		USDCNYRate:          usdCNYRate,
 		Groups:              groupDTOs,
-		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels),
+		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels, accountsByGroup),
 		SelectedGroupID:     selectedGroupID,
 		Models:              models,
 		Summary:             summarizeModelPrices(models),
@@ -370,12 +378,28 @@ func applyModelPriceHiddenGroups(groups []modelPriceGroupDTO, hidden map[int64]s
 	return out
 }
 
-func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.AvailableChannel) {
-	if len(groups) == 0 || len(channels) == 0 {
+func (h *ModelPriceHandler) modelPriceAccountsByGroup(ctx context.Context, groups []modelPriceGroupDTO) (map[int64][]service.Account, error) {
+	out := make(map[int64][]service.Account, len(groups))
+	if h.accountService == nil || len(groups) == 0 {
+		return out, nil
+	}
+	for i := range groups {
+		accounts, err := h.accountService.ListByGroup(ctx, groups[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		out[groups[i].ID] = accounts
+	}
+	return out, nil
+}
+
+func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account) {
+	if len(groups) == 0 {
 		return
 	}
 	platformByGroup := make(map[int64]string, len(groups))
 	channelCounts := make(map[int64]int, len(groups))
+	accountCounts := make(map[int64]int, len(groups))
 	modelNamesByGroup := make(map[int64]map[string]struct{}, len(groups))
 	for i := range groups {
 		platformByGroup[groups[i].ID] = groups[i].Platform
@@ -400,13 +424,33 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 			}
 		}
 	}
+	for groupID, accounts := range accountsByGroup {
+		platform, ok := platformByGroup[groupID]
+		if !ok {
+			continue
+		}
+		for i := range accounts {
+			account := accounts[i]
+			if !modelPriceAccountUsableForGroup(account, platform) {
+				continue
+			}
+			accountCounts[groupID]++
+			for _, model := range accountModelPriceNames(account, platform) {
+				key := strings.ToLower(platform + "\x00" + model)
+				modelNamesByGroup[groupID][key] = struct{}{}
+			}
+		}
+	}
 	for i := range groups {
 		groups[i].ChannelCount = channelCounts[groups[i].ID]
+		if groups[i].ChannelCount == 0 {
+			groups[i].ChannelCount = accountCounts[groups[i].ID]
+		}
 		groups[i].ModelCount = len(modelNamesByGroup[groups[i].ID])
 	}
 }
 
-func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []service.AvailableChannel) []modelPriceGroupOverviewDTO {
+func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account) []modelPriceGroupOverviewDTO {
 	type aggregate struct {
 		groups   int
 		models   map[string]struct{}
@@ -428,6 +472,7 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 		platformByGroup[group.ID] = group.Platform
 		categoryByGroup[group.ID] = category
 	}
+	channelCountsByGroup := make(map[int64]int, len(groups))
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive {
 			continue
@@ -438,12 +483,31 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 				continue
 			}
 			byCategory[category].channels[modelPriceChannelKey(ch)] = struct{}{}
+			channelCountsByGroup[group.ID]++
 			platform := platformByGroup[group.ID]
 			for _, model := range ch.SupportedModels {
 				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
 					continue
 				}
 				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
+				byCategory[category].models[key] = struct{}{}
+			}
+		}
+	}
+	for groupID, accounts := range accountsByGroup {
+		category, ok := categoryByGroup[groupID]
+		if !ok || channelCountsByGroup[groupID] > 0 {
+			continue
+		}
+		platform := platformByGroup[groupID]
+		for i := range accounts {
+			account := accounts[i]
+			if !modelPriceAccountUsableForGroup(account, platform) {
+				continue
+			}
+			byCategory[category].channels["account:"+strconv.FormatInt(account.ID, 10)] = struct{}{}
+			for _, model := range accountModelPriceNames(account, platform) {
+				key := strings.ToLower(platform + "\x00" + model)
 				byCategory[category].models[key] = struct{}{}
 			}
 		}
@@ -604,7 +668,23 @@ type modelAggregate struct {
 	channelNames map[string]struct{}
 }
 
-func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool) []modelPriceModelDTO {
+func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool) []modelPriceModelDTO {
+	aggregates := collectModelPriceAggregates(channels, accounts, group)
+	if includeCatalog {
+		h.seedCatalogModelsForGroup(aggregates, group)
+	}
+
+	models := make([]modelPriceModelDTO, 0, len(aggregates))
+	for _, agg := range aggregates {
+		models = append(models, h.toModelPriceDTO(agg, group, usdCNYRate))
+	}
+	sort.SliceStable(models, func(i, j int) bool {
+		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
+	})
+	return models
+}
+
+func collectModelPriceAggregates(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO) map[string]*modelAggregate {
 	aggregates := make(map[string]*modelAggregate)
 	for _, ch := range channels {
 		if ch.Status != service.StatusActive || !channelHasGroup(ch, group.ID) {
@@ -635,18 +715,27 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 			agg.channelNames[ch.Name] = struct{}{}
 		}
 	}
-	if includeCatalog {
-		h.seedCatalogModelsForGroup(aggregates, group)
+	for i := range accounts {
+		account := accounts[i]
+		if !modelPriceAccountUsableForGroup(account, group.Platform) {
+			continue
+		}
+		for _, model := range accountModelPriceNames(account, group.Platform) {
+			key := strings.ToLower(group.Platform + "\x00" + model)
+			agg, ok := aggregates[key]
+			if !ok {
+				agg = &modelAggregate{
+					name:         model,
+					platform:     group.Platform,
+					billingMode:  string(service.BillingModeToken),
+					channelNames: make(map[string]struct{}),
+				}
+				aggregates[key] = agg
+			}
+			agg.channelNames[account.Name] = struct{}{}
+		}
 	}
-
-	models := make([]modelPriceModelDTO, 0, len(aggregates))
-	for _, agg := range aggregates {
-		models = append(models, h.toModelPriceDTO(agg, group, usdCNYRate))
-	}
-	sort.SliceStable(models, func(i, j int) bool {
-		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
-	})
-	return models
+	return aggregates
 }
 
 func (h *ModelPriceHandler) seedCatalogModelsForGroup(aggregates map[string]*modelAggregate, group modelPriceGroupDTO) {
@@ -768,6 +857,46 @@ func channelHasGroup(ch service.AvailableChannel, groupID int64) bool {
 		}
 	}
 	return false
+}
+
+func modelPriceAccountUsableForGroup(account service.Account, groupPlatform string) bool {
+	if account.Status != service.StatusActive {
+		return false
+	}
+	accountPlatform := strings.ToLower(strings.TrimSpace(account.Platform))
+	groupPlatform = strings.ToLower(strings.TrimSpace(groupPlatform))
+	if accountPlatform == groupPlatform {
+		return true
+	}
+	return accountPlatform == service.PlatformAntigravity &&
+		(groupPlatform == service.PlatformAnthropic || groupPlatform == service.PlatformGemini)
+}
+
+func accountModelPriceNames(account service.Account, groupPlatform string) []string {
+	mapping := (&account).GetModelMapping()
+	if len(mapping) == 0 {
+		return nil
+	}
+	seen := make(map[string]string, len(mapping))
+	for raw := range mapping {
+		name := strings.TrimSpace(raw)
+		if name == "" || strings.Contains(name, "*") || !catalogModelMatchesGroupPlatform(name, groupPlatform) {
+			continue
+		}
+		lower := strings.ToLower(name)
+		if _, ok := seen[lower]; ok {
+			continue
+		}
+		seen[lower] = name
+	}
+	out := make([]string, 0, len(seen))
+	for _, name := range seen {
+		out = append(out, name)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
 }
 
 func priceValueFromLiteLLM(p *service.LiteLLMModelPricing) modelPriceValueDTO {
