@@ -964,7 +964,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 	}
 	if officialMissing && pricingHasValues(agg.pricing) {
 		official = priceValueFromChannel(agg.pricing)
-		priceTiers = basePriceTier(official)
+		priceTiers = priceTiersFromChannel(agg.pricing)
 		source = "channel"
 		officialMissing = false
 	}
@@ -1136,6 +1136,65 @@ func priceValueFromLiteLLM(p *service.LiteLLMModelPricing) modelPriceValueDTO {
 		ImageOutputUSDPerM: perMillionPtr(p.OutputCostPerImageToken),
 		PerRequestUSD:      nonZeroFloatPtr(p.OutputCostPerImage),
 	}
+}
+
+func priceTiersFromChannel(p *service.ChannelModelPricing) []modelPriceTierDTO {
+	if p == nil {
+		return nil
+	}
+	if len(p.Intervals) == 0 {
+		return basePriceTier(priceValueFromChannel(p))
+	}
+	tiers := make([]modelPriceTierDTO, 0, len(p.Intervals))
+	for _, interval := range p.Intervals {
+		value := modelPriceValueDTO{
+			InputUSDPerM:      perMillionFromPtr(interval.InputPrice),
+			OutputUSDPerM:     perMillionFromPtr(interval.OutputPrice),
+			CacheWriteUSDPerM: perMillionFromPtr(interval.CacheWritePrice),
+			CacheReadUSDPerM:  perMillionFromPtr(interval.CacheReadPrice),
+			PerRequestUSD:     clonePositivePtr(interval.PerRequestPrice),
+		}
+		if !priceValueHasValues(value) {
+			continue
+		}
+		label := strings.TrimSpace(interval.TierLabel)
+		if label == "" {
+			label = channelIntervalLabel(interval)
+		}
+		tier := modelPriceTierDTO{
+			Key:      "channel_interval_" + strconv.Itoa(interval.SortOrder),
+			Label:    label,
+			Official: value,
+		}
+		if interval.MaxTokens != nil && *interval.MaxTokens > 0 {
+			tier.ThresholdTokens = intPtr(*interval.MaxTokens)
+		}
+		tiers = append(tiers, tier)
+	}
+	if len(tiers) == 0 {
+		return basePriceTier(priceValueFromChannel(p))
+	}
+	return tiers
+}
+
+func channelIntervalLabel(interval service.PricingInterval) string {
+	if interval.MaxTokens == nil {
+		return formatTokenBoundary(interval.MinTokens) + "+"
+	}
+	if interval.MinTokens <= 0 {
+		return "<=" + formatTokenBoundary(*interval.MaxTokens)
+	}
+	return formatTokenBoundary(interval.MinTokens) + "-" + formatTokenBoundary(*interval.MaxTokens)
+}
+
+func formatTokenBoundary(tokens int) string {
+	if tokens >= 1000000 && tokens%1000000 == 0 {
+		return strconv.Itoa(tokens/1000000) + "M"
+	}
+	if tokens >= 1000 && tokens%1000 == 0 {
+		return strconv.Itoa(tokens/1000) + "K"
+	}
+	return strconv.Itoa(tokens)
 }
 
 func priceTiersFromLiteLLM(p *service.LiteLLMModelPricing) []modelPriceTierDTO {

@@ -347,6 +347,57 @@ func TestModelsForGroupAppliesCustomUSDPrice(t *testing.T) {
 	require.Equal(t, 0.8, *models[0].Actual.InputUSDPerM)
 }
 
+func TestModelPriceDTOUsesChannelIntervalsWhenOfficialCatalogMissing(t *testing.T) {
+	inputBase := 2.5e-6
+	outputBase := 10e-6
+	inputLong := 4e-6
+	outputLong := 16e-6
+	maxBase := 32768
+	h := &ModelPriceHandler{}
+
+	model := h.toModelPriceDTO(&modelAggregate{
+		name:        "qwen3-max",
+		platform:    service.PlatformOpenAI,
+		billingMode: string(service.BillingModeToken),
+		pricing: &service.ChannelModelPricing{
+			InputPrice:  &inputBase,
+			OutputPrice: &outputBase,
+			Intervals: []service.PricingInterval{
+				{
+					TierLabel:   "<=32K",
+					MaxTokens:   &maxBase,
+					InputPrice:  &inputBase,
+					OutputPrice: &outputBase,
+					SortOrder:   0,
+				},
+				{
+					TierLabel:   "32K-128K",
+					MinTokens:   maxBase,
+					InputPrice:  &inputLong,
+					OutputPrice: &outputLong,
+					SortOrder:   1,
+				},
+			},
+		},
+	}, modelPriceGroupDTO{
+		ID:                  51,
+		Platform:            service.PlatformOpenAI,
+		EffectiveMultiplier: 0.4,
+	}, 7)
+
+	require.Equal(t, "channel", model.PricingSource)
+	require.False(t, model.OfficialMissing)
+	require.Len(t, model.PriceTiers, 2)
+	require.Equal(t, "<=32K", model.PriceTiers[0].Label)
+	require.Equal(t, maxBase, *model.PriceTiers[0].ThresholdTokens)
+	require.InDelta(t, 2.5, *model.PriceTiers[0].Official.InputUSDPerM, 0.000001)
+	require.InDelta(t, 1.0, *model.PriceTiers[0].Actual.InputUSDPerM, 0.000001)
+	require.Equal(t, "32K-128K", model.PriceTiers[1].Label)
+	require.Nil(t, model.PriceTiers[1].ThresholdTokens)
+	require.InDelta(t, 4.0, *model.PriceTiers[1].Official.InputUSDPerM, 0.000001)
+	require.InDelta(t, 6.4, *model.PriceTiers[1].Actual.OutputUSDPerM, 0.000001)
+}
+
 func TestSanitizeModelPriceModelsForUserHidesCustomPriceMetadata(t *testing.T) {
 	customInput := 0.8
 	models := sanitizeModelPriceModelsForUser([]modelPriceModelDTO{{
