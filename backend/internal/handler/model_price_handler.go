@@ -114,18 +114,19 @@ type modelPriceTierDTO struct {
 }
 
 type modelPriceModelDTO struct {
-	Name            string              `json:"name"`
-	Platform        string              `json:"platform"`
-	Provider        string              `json:"provider"`
-	BillingMode     string              `json:"billing_mode"`
-	PricingSource   string              `json:"pricing_source"`
-	Official        modelPriceValueDTO  `json:"official"`
-	Actual          modelPriceActualDTO `json:"actual"`
-	PriceTiers      []modelPriceTierDTO `json:"price_tiers"`
-	Multiplier      float64             `json:"multiplier"`
-	CheaperFactor   *float64            `json:"cheaper_factor"`
-	ChannelNames    []string            `json:"channel_names"`
-	OfficialMissing bool                `json:"official_missing"`
+	Name            string                         `json:"name"`
+	Platform        string                         `json:"platform"`
+	Provider        string                         `json:"provider"`
+	BillingMode     string                         `json:"billing_mode"`
+	PricingSource   string                         `json:"pricing_source"`
+	Official        modelPriceValueDTO             `json:"official"`
+	Actual          modelPriceActualDTO            `json:"actual"`
+	PriceTiers      []modelPriceTierDTO            `json:"price_tiers"`
+	Multiplier      float64                        `json:"multiplier"`
+	CheaperFactor   *float64                       `json:"cheaper_factor"`
+	ChannelNames    []string                       `json:"channel_names"`
+	OfficialMissing bool                           `json:"official_missing"`
+	CustomPrice     *service.ModelPriceCustomPrice `json:"custom_price,omitempty"`
 }
 
 type modelPriceSummaryDTO struct {
@@ -167,6 +168,23 @@ type updateModelPriceHiddenGroupsRequest struct {
 
 type updateModelPriceHiddenGroupsResponse struct {
 	HiddenGroupIDs []int64 `json:"hidden_group_ids"`
+}
+
+type updateModelPriceCustomPriceRequest struct {
+	GroupID            int64    `json:"group_id"`
+	Model              string   `json:"model"`
+	BillingMode        string   `json:"billing_mode"`
+	InputUSDPerM       *float64 `json:"input_usd_per_m"`
+	OutputUSDPerM      *float64 `json:"output_usd_per_m"`
+	CacheWriteUSDPerM  *float64 `json:"cache_write_usd_per_m"`
+	CacheReadUSDPerM   *float64 `json:"cache_read_usd_per_m"`
+	ImageOutputUSDPerM *float64 `json:"image_output_usd_per_m"`
+	PerRequestUSD      *float64 `json:"per_request_usd"`
+	Clear              bool     `json:"clear"`
+}
+
+type updateModelPriceCustomPriceResponse struct {
+	CustomPrices map[string]service.ModelPriceCustomPrice `json:"custom_prices"`
 }
 
 // List returns a group-centric model price view for admins and regular users.
@@ -221,7 +239,11 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 
 	models := []modelPriceModelDTO{}
 	if selected != nil {
-		models = h.modelsForGroup(channels, accountsByGroup[selected.ID], *selected, usdCNYRate, includeCatalog)
+		customPrices := h.settingService.GetModelPriceCustomPrices(c.Request.Context())
+		models = h.modelsForGroup(channels, accountsByGroup[selected.ID], *selected, usdCNYRate, includeCatalog, customPrices)
+		if !isAdmin {
+			models = sanitizeModelPriceModelsForUser(models)
+		}
 	}
 
 	response.Success(c, modelPriceResponseDTO{
@@ -239,6 +261,16 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	})
 }
 
+func sanitizeModelPriceModelsForUser(models []modelPriceModelDTO) []modelPriceModelDTO {
+	for i := range models {
+		models[i].CustomPrice = nil
+		if models[i].PricingSource == "custom" {
+			models[i].PricingSource = "official"
+		}
+	}
+	return models
+}
+
 func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
 	var req updateModelPriceHiddenGroupsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -251,6 +283,32 @@ func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
 		return
 	}
 	response.Success(c, updateModelPriceHiddenGroupsResponse{HiddenGroupIDs: ids})
+}
+
+func (h *ModelPriceHandler) UpdateCustomPrice(c *gin.Context) {
+	var req updateModelPriceCustomPriceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	var price *service.ModelPriceCustomPrice
+	if !req.Clear {
+		price = &service.ModelPriceCustomPrice{
+			BillingMode:        normalizeModelPriceBillingMode(req.BillingMode),
+			InputUSDPerM:       req.InputUSDPerM,
+			OutputUSDPerM:      req.OutputUSDPerM,
+			CacheWriteUSDPerM:  req.CacheWriteUSDPerM,
+			CacheReadUSDPerM:   req.CacheReadUSDPerM,
+			ImageOutputUSDPerM: req.ImageOutputUSDPerM,
+			PerRequestUSD:      req.PerRequestUSD,
+		}
+	}
+	customPrices, err := h.settingService.SetModelPriceCustomPrice(c.Request.Context(), req.GroupID, req.Model, price)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, updateModelPriceCustomPriceResponse{CustomPrices: customPrices})
 }
 
 func (h *ModelPriceHandler) SyncCatalog(c *gin.Context) {
@@ -467,7 +525,7 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 	platformByGroup := make(map[int64]string, len(groups))
 	categoryByGroup := make(map[int64]string, len(groups))
 	for _, group := range groups {
-		category := modelPriceGroupCategory(group.Platform)
+		category := modelPriceGroupCategory(group.Platform, group.Name)
 		byCategory[category].groups++
 		platformByGroup[group.ID] = group.Platform
 		categoryByGroup[group.ID] = category
@@ -532,7 +590,18 @@ func modelPriceChannelKey(ch service.AvailableChannel) string {
 	return strings.ToLower(strings.TrimSpace(ch.Name))
 }
 
-func modelPriceGroupCategory(platform string) string {
+func modelPriceGroupCategory(platform, name string) string {
+	text := strings.ToLower(strings.TrimSpace(platform + " " + name))
+	if strings.Contains(name, "国模") ||
+		strings.Contains(text, "deepseek") ||
+		strings.Contains(text, "qwen") ||
+		strings.Contains(text, "kimi") ||
+		strings.Contains(text, "glm") ||
+		strings.Contains(text, "minimax") ||
+		strings.Contains(text, "moonshot") ||
+		strings.Contains(text, "doubao") {
+		return "domestic"
+	}
 	lower := strings.ToLower(strings.TrimSpace(platform))
 	switch {
 	case strings.Contains(lower, "anthropic") || strings.Contains(lower, "claude"):
@@ -668,7 +737,7 @@ type modelAggregate struct {
 	channelNames map[string]struct{}
 }
 
-func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool) []modelPriceModelDTO {
+func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool, customPrices map[string]service.ModelPriceCustomPrice) []modelPriceModelDTO {
 	aggregates := collectModelPriceAggregates(channels, accounts, group)
 	if includeCatalog {
 		h.seedCatalogModelsForGroup(aggregates, group)
@@ -676,7 +745,11 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 
 	models := make([]modelPriceModelDTO, 0, len(aggregates))
 	for _, agg := range aggregates {
-		models = append(models, h.toModelPriceDTO(agg, group, usdCNYRate))
+		model := h.toModelPriceDTO(agg, group, usdCNYRate)
+		if custom, ok := customPrices[service.ModelPriceCustomPriceKey(group.ID, agg.name)]; ok && custom.HasPrice() {
+			model = applyModelPriceCustomPrice(model, custom, usdCNYRate)
+		}
+		models = append(models, model)
 	}
 	sort.SliceStable(models, func(i, j int) bool {
 		return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
@@ -835,6 +908,84 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		CheaperFactor:   cheaperFactor(multiplier),
 		ChannelNames:    sortedSetKeys(agg.channelNames),
 		OfficialMissing: officialMissing,
+	}
+}
+
+func applyModelPriceCustomPrice(model modelPriceModelDTO, custom service.ModelPriceCustomPrice, usdCNYRate float64) modelPriceModelDTO {
+	actual := model.actualFromCustom(custom, usdCNYRate)
+	model.Actual = actual
+	model.PriceTiers = []modelPriceTierDTO{}
+	model.PricingSource = "custom"
+	if custom.BillingMode != "" {
+		model.BillingMode = normalizeModelPriceBillingMode(custom.BillingMode)
+	}
+	model.Multiplier = 1
+	model.CheaperFactor = cheaperFactorFromActual(model.Official, actual)
+	model.CustomPrice = &custom
+	return model
+}
+
+func (m modelPriceModelDTO) actualFromCustom(custom service.ModelPriceCustomPrice, usdCNYRate float64) modelPriceActualDTO {
+	return modelPriceActualDTO{
+		InputUSDPerM:       custom.InputUSDPerM,
+		InputCNYPerM:       usdToCNYPtr(custom.InputUSDPerM, usdCNYRate),
+		OutputUSDPerM:      custom.OutputUSDPerM,
+		OutputCNYPerM:      usdToCNYPtr(custom.OutputUSDPerM, usdCNYRate),
+		CacheWriteUSDPerM:  custom.CacheWriteUSDPerM,
+		CacheWriteCNYPerM:  usdToCNYPtr(custom.CacheWriteUSDPerM, usdCNYRate),
+		CacheReadUSDPerM:   custom.CacheReadUSDPerM,
+		CacheReadCNYPerM:   usdToCNYPtr(custom.CacheReadUSDPerM, usdCNYRate),
+		ImageOutputUSDPerM: custom.ImageOutputUSDPerM,
+		ImageOutputCNYPerM: usdToCNYPtr(custom.ImageOutputUSDPerM, usdCNYRate),
+		PerRequestUSD:      custom.PerRequestUSD,
+		PerRequestCNY:      usdToCNYPtr(custom.PerRequestUSD, usdCNYRate),
+	}
+}
+
+func usdToCNYPtr(value *float64, usdCNYRate float64) *float64 {
+	if value == nil || usdCNYRate <= 0 {
+		return nil
+	}
+	v := *value * usdCNYRate
+	return &v
+}
+
+func cheaperFactorFromActual(official modelPriceValueDTO, actual modelPriceActualDTO) *float64 {
+	candidates := []struct {
+		official *float64
+		actual   *float64
+	}{
+		{official.InputUSDPerM, actual.InputUSDPerM},
+		{official.OutputUSDPerM, actual.OutputUSDPerM},
+		{official.CacheWriteUSDPerM, actual.CacheWriteUSDPerM},
+		{official.CacheReadUSDPerM, actual.CacheReadUSDPerM},
+		{official.ImageOutputUSDPerM, actual.ImageOutputUSDPerM},
+		{official.PerRequestUSD, actual.PerRequestUSD},
+	}
+	best := 0.0
+	for _, candidate := range candidates {
+		if candidate.official == nil || candidate.actual == nil || *candidate.official <= 0 || *candidate.actual <= 0 {
+			continue
+		}
+		factor := *candidate.official / *candidate.actual
+		if factor > best {
+			best = factor
+		}
+	}
+	if best <= 0 {
+		return nil
+	}
+	return &best
+}
+
+func normalizeModelPriceBillingMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case string(service.BillingModeImage):
+		return string(service.BillingModeImage)
+	case string(service.BillingModePerRequest), "request":
+		return string(service.BillingModePerRequest)
+	default:
+		return string(service.BillingModeToken)
 	}
 }
 

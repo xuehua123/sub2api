@@ -762,6 +762,103 @@ func (s *SettingService) SetModelPriceHiddenGroupIDs(ctx context.Context, ids []
 	return normalized, nil
 }
 
+type ModelPriceCustomPrice struct {
+	BillingMode        string   `json:"billing_mode,omitempty"`
+	InputUSDPerM       *float64 `json:"input_usd_per_m,omitempty"`
+	OutputUSDPerM      *float64 `json:"output_usd_per_m,omitempty"`
+	CacheWriteUSDPerM  *float64 `json:"cache_write_usd_per_m,omitempty"`
+	CacheReadUSDPerM   *float64 `json:"cache_read_usd_per_m,omitempty"`
+	ImageOutputUSDPerM *float64 `json:"image_output_usd_per_m,omitempty"`
+	PerRequestUSD      *float64 `json:"per_request_usd,omitempty"`
+	UpdatedAt          string   `json:"updated_at,omitempty"`
+}
+
+func ModelPriceCustomPriceKey(groupID int64, model string) string {
+	return strconv.FormatInt(groupID, 10) + ":" + strings.ToLower(strings.TrimSpace(model))
+}
+
+func (p ModelPriceCustomPrice) HasPrice() bool {
+	return modelPricePositiveFloatPtr(p.InputUSDPerM) ||
+		modelPricePositiveFloatPtr(p.OutputUSDPerM) ||
+		modelPricePositiveFloatPtr(p.CacheWriteUSDPerM) ||
+		modelPricePositiveFloatPtr(p.CacheReadUSDPerM) ||
+		modelPricePositiveFloatPtr(p.ImageOutputUSDPerM) ||
+		modelPricePositiveFloatPtr(p.PerRequestUSD)
+}
+
+func modelPricePositiveFloatPtr(v *float64) bool {
+	return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v > 0
+}
+
+func (s *SettingService) GetModelPriceCustomPrices(ctx context.Context) map[string]ModelPriceCustomPrice {
+	out := map[string]ModelPriceCustomPrice{}
+	if s == nil || s.settingRepo == nil {
+		return out
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPriceCustomPrices)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(value), &out); err != nil {
+		return map[string]ModelPriceCustomPrice{}
+	}
+	return out
+}
+
+func (s *SettingService) SetModelPriceCustomPrice(ctx context.Context, groupID int64, model string, price *ModelPriceCustomPrice) (map[string]ModelPriceCustomPrice, error) {
+	if s == nil || s.settingRepo == nil {
+		return map[string]ModelPriceCustomPrice{}, nil
+	}
+	if groupID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be greater than 0")
+	}
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return nil, infraerrors.BadRequest("INVALID_MODEL", "model is required")
+	}
+
+	prices := s.GetModelPriceCustomPrices(ctx)
+	key := ModelPriceCustomPriceKey(groupID, model)
+	if price != nil {
+		normalizeModelPriceCustomPrice(price)
+	}
+	if price == nil || !price.HasPrice() {
+		delete(prices, key)
+	} else {
+		normalized := *price
+		normalized.BillingMode = strings.TrimSpace(normalized.BillingMode)
+		normalized.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		prices[key] = normalized
+	}
+	payload, err := json.Marshal(prices)
+	if err != nil {
+		return nil, fmt.Errorf("marshal model price custom prices: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, SettingKeyModelPriceCustomPrices, string(payload)); err != nil {
+		return nil, fmt.Errorf("set model price custom prices: %w", err)
+	}
+	return prices, nil
+}
+
+func normalizeModelPriceCustomPrice(price *ModelPriceCustomPrice) {
+	if price == nil {
+		return
+	}
+	price.InputUSDPerM = positiveModelPriceValue(price.InputUSDPerM)
+	price.OutputUSDPerM = positiveModelPriceValue(price.OutputUSDPerM)
+	price.CacheWriteUSDPerM = positiveModelPriceValue(price.CacheWriteUSDPerM)
+	price.CacheReadUSDPerM = positiveModelPriceValue(price.CacheReadUSDPerM)
+	price.ImageOutputUSDPerM = positiveModelPriceValue(price.ImageOutputUSDPerM)
+	price.PerRequestUSD = positiveModelPriceValue(price.PerRequestUSD)
+}
+
+func positiveModelPriceValue(value *float64) *float64 {
+	if !modelPricePositiveFloatPtr(value) {
+		return nil
+	}
+	return value
+}
+
 func normalizePositiveInt64s(ids []int64) []int64 {
 	if len(ids) == 0 {
 		return []int64{}
@@ -3134,6 +3231,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyModelPriceUSDCNYRate:                      "7",
 		SettingKeyModelPricesUserVisible:                    "true",
 		SettingKeyModelPriceHiddenGroupIDs:                  "[]",
+		SettingKeyModelPriceCustomPrices:                    "{}",
 		SettingKeySMTPPort:                                  "587",
 		SettingKeySMTPUseTLS:                                "false",
 		SettingKeyReferralCreditConversionEnabled:           "false",

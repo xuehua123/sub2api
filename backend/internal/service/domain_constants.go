@@ -269,6 +269,7 @@ const (
 	SettingKeyModelPriceUSDCNYRate                = "model_price_usd_cny_rate"  // 模型价格页 USD/CNY 汇率
 	SettingKeyModelPricesUserVisible              = "model_prices_user_visible" // 普通用户是否可见模型价格页
 	SettingKeyModelPriceHiddenGroupIDs            = "model_price_hidden_group_ids"
+	SettingKeyModelPriceCustomPrices              = "model_price_custom_prices"
 
 	// 默认配置
 	SettingKeyDefaultConcurrency   = "default_concurrency"    // 新用户默认并发量

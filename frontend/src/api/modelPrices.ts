@@ -50,6 +50,17 @@ export interface ModelPriceActual {
   per_request_cny: number | null
 }
 
+export interface ModelPriceCustomPrice {
+  billing_mode?: string
+  input_usd_per_m?: number | null
+  output_usd_per_m?: number | null
+  cache_write_usd_per_m?: number | null
+  cache_read_usd_per_m?: number | null
+  image_output_usd_per_m?: number | null
+  per_request_usd?: number | null
+  updated_at?: string
+}
+
 export interface ModelPriceTier {
   key: string
   label: string
@@ -71,6 +82,7 @@ export interface ModelPriceModel {
   cheaper_factor: number | null
   channel_names: string[]
   official_missing: boolean
+  custom_price?: ModelPriceCustomPrice | null
 }
 
 export interface ModelPriceSummary {
@@ -137,6 +149,17 @@ export async function updateHiddenGroups(hiddenGroupIDs: number[]): Promise<{ hi
   return data
 }
 
-export const modelPricesAPI = { getModelPrices, syncCatalog, updateHiddenGroups }
+export interface UpdateModelPriceCustomPriceRequest extends ModelPriceCustomPrice {
+  group_id: number
+  model: string
+  clear?: boolean
+}
+
+export async function updateCustomPrice(req: UpdateModelPriceCustomPriceRequest): Promise<{ custom_prices: Record<string, ModelPriceCustomPrice> }> {
+  const { data } = await apiClient.patch<{ custom_prices: Record<string, ModelPriceCustomPrice> }>('/admin/model-prices/custom-price', req)
+  return data
+}
+
+export const modelPricesAPI = { getModelPrices, syncCatalog, updateHiddenGroups, updateCustomPrice }
 
 export default modelPricesAPI

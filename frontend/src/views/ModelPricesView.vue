@@ -128,7 +128,7 @@
                     </span>
                   </div>
                   <p class="mt-2 max-w-3xl text-sm text-blue-50/90">
-                    按当前分组展示我们的到手价格，并对照官方参考价，让优惠力度一眼能看懂。
+                    按当前分组展示官方美元价格和我们的折扣后美元价格，让优惠力度一眼能看懂。
                   </p>
                 </div>
                 <div class="hidden shrink-0 grid-cols-3 gap-3 xl:grid">
@@ -137,8 +137,8 @@
                     <strong>{{ formatNumber(response?.usd_cny_rate ?? 7, 4) }}</strong>
                   </div>
                   <div class="hero-stat">
-                    <span>{{ isAdmin ? '套餐折算' : '我们的价格' }}</span>
-                    <strong>{{ selectedGroup?.best_plan ? `¥${formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4)}` : '参考价' }}</strong>
+                    <span>价格口径</span>
+                    <strong>USD / 百万 tokens</strong>
                   </div>
                   <div class="hero-stat">
                     <span>优惠力度</span>
@@ -218,7 +218,7 @@
             <div class="ops-card">
               <div>
                 <span>我们的销售价</span>
-                <strong>渠道价格 + 套餐单价 + 分组倍率</strong>
+                <strong>官方美元价 × 分组折扣</strong>
                 <small>官方同步不会覆盖销售配置</small>
               </div>
               <RouterLink class="toolbar-button" to="/admin/channels/pricing">
@@ -240,9 +240,14 @@
               <strong>{{ selectedGroup.name }}</strong>
             </div>
             <div class="metric-tile">
-              <span>{{ isAdmin ? '套餐单价' : '我们的价格' }}</span>
+              <span>{{ isAdmin ? '内部套餐换算' : '价格口径' }}</span>
               <strong v-if="selectedGroup.best_plan">
-                ¥{{ formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD<span v-if="isAdmin"> · 分组 {{ formatNumber(selectedGroup.effective_multiplier, 2) }}x</span> · {{ selectedGroup.best_plan.name }}
+                <template v-if="isAdmin">
+                  ¥{{ formatNumber(selectedGroup.best_plan.cny_per_quota_usd, 4) }}/额度 USD · 分组 {{ formatNumber(selectedGroup.effective_multiplier, 2) }}x · {{ selectedGroup.best_plan.name }}
+                </template>
+                <template v-else>
+                  折扣后美元价
+                </template>
               </strong>
               <strong v-else>暂无套餐，显示参考价</strong>
             </div>
@@ -307,8 +312,8 @@
           <section class="mt-4 hidden overflow-hidden rounded-lg border border-white/[0.08] bg-[#14161b] xl:block">
             <div class="price-table-header" :class="{ admin: isAdmin }">
               <span>模型</span>
-              <span>我们的价格</span>
               <span>官方参考价</span>
+              <span>折扣后价格</span>
               <span>阶梯价格</span>
               <span>优惠力度</span>
               <span v-if="isAdmin">来源</span>
@@ -320,7 +325,7 @@
               :class="{ admin: isAdmin }"
             >
               <div class="flex min-w-0 items-center gap-3">
-                <ProviderMark :provider="model.platform" />
+                <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0">
                   <div class="flex min-w-0 items-center gap-2">
                     <h2 class="truncate text-sm font-bold text-slate-100" :title="model.name">{{ model.name }}</h2>
@@ -329,31 +334,32 @@
                     </button>
                   </div>
                   <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <span class="tag">{{ providerLabel(model.platform) }}</span>
+                    <span class="tag">{{ providerLabel(displayProvider(model)) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
+                    <span v-if="isAdmin && model.custom_price" class="tag tag-amber">自定义价</span>
                     <span v-if="isAdmin && model.channel_names.length > 0" class="tag tag-blue">{{ model.channel_names.length }} 来源</span>
                   </div>
                 </div>
               </div>
 
+              <div v-if="isFixedPriceModel(model)" class="price-pair muted">
+                <strong>{{ fixedPriceUnitLabel(model) }} {{ formatUSDPerUnit(model.official.per_request_usd, fixedPriceUnit(model)) }}</strong>
+                <small>官方美元价</small>
+              </div>
+              <div v-else class="price-pair muted">
+                <strong>输入 {{ formatUSDPerMillion(model.official.input_usd_per_m) }}</strong>
+                <strong>输出 {{ formatUSDPerMillion(model.official.output_usd_per_m) }}</strong>
+                <small>官方美元价</small>
+              </div>
+
               <div v-if="isFixedPriceModel(model)" class="price-pair actual">
-                <strong>{{ fixedPriceUnitLabel(model) }} {{ formatCNYPerUnit(bestActual(model, 'per_request_cny'), fixedPriceUnit(model)) }}</strong>
+                <strong>{{ fixedPriceUnitLabel(model) }} {{ formatUSDPerUnit(bestActual(model, 'per_request_usd'), fixedPriceUnit(model)) }}</strong>
                 <small v-if="selectedGroup?.best_plan">{{ selectedGroup.best_plan.name }}</small>
               </div>
               <div v-else class="price-pair actual">
-                <strong>输入 {{ formatCNYPerMillion(bestActual(model, 'input_cny_per_m')) }}</strong>
-                <strong>输出 {{ formatCNYPerMillion(bestActual(model, 'output_cny_per_m')) }}</strong>
+                <strong>输入 {{ formatUSDPerMillion(bestActual(model, 'input_usd_per_m')) }}</strong>
+                <strong>输出 {{ formatUSDPerMillion(bestActual(model, 'output_usd_per_m')) }}</strong>
                 <small v-if="selectedGroup?.best_plan">{{ selectedGroup.best_plan.name }}</small>
-              </div>
-
-              <div v-if="isFixedPriceModel(model)" class="price-pair muted">
-                <span>官方 {{ formatUSDPerUnit(model.official.per_request_usd, fixedPriceUnit(model)) }}</span>
-                <small v-if="isAdmin && showOfficial">{{ sourceLabel(model.pricing_source) }}</small>
-              </div>
-              <div v-else class="price-pair muted">
-                <span>输入 {{ formatUSDPerMillion(model.official.input_usd_per_m) }}</span>
-                <span>输出 {{ formatUSDPerMillion(model.official.output_usd_per_m) }}</span>
-                <small v-if="isAdmin && showOfficial">缓存读 {{ formatUSD(model.official.cache_read_usd_per_m) }} / 写 {{ formatUSD(model.official.cache_write_usd_per_m) }}</small>
               </div>
 
               <div class="tier-list">
@@ -383,6 +389,7 @@
               <div v-if="isAdmin" class="source-cell">
                 <span>{{ sourceLabel(model.pricing_source) }}</span>
                 <small v-if="model.official_missing">缺官方价</small>
+                <button class="inline-edit-button" @click="openPriceEditor(model)">改价</button>
               </div>
             </article>
           </section>
@@ -394,7 +401,7 @@
               class="model-card group"
             >
               <div class="flex items-start gap-3">
-                <ProviderMark :provider="model.platform" />
+                <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0 flex-1">
                   <div class="flex min-w-0 items-start justify-between gap-3">
                     <h2 class="truncate text-base font-bold text-slate-100" :title="model.name">{{ model.name }}</h2>
@@ -403,8 +410,9 @@
                     </button>
                   </div>
                   <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
-                    <span class="tag">{{ providerLabel(model.platform) }}</span>
+                    <span class="tag">{{ providerLabel(displayProvider(model)) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
+                    <span v-if="isAdmin && model.custom_price" class="tag tag-amber">自定义价</span>
                     <span v-if="tierBadges(model).length > 0" class="tag tag-blue">阶梯价格</span>
                   </div>
                 </div>
@@ -412,19 +420,34 @@
 
               <div class="mt-4 rounded-lg border border-emerald-400/10 bg-emerald-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-emerald-200">我们的价格</span>
+                  <span class="text-[11px] font-bold text-emerald-200">官方参考价</span>
+                </div>
+                <div v-if="isFixedPriceModel(model)" class="space-y-2">
+                  <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="priceValue(model.official.per_request_usd)" :suffix="`/ ${fixedPriceUnit(model)}`" />
+                </div>
+                <div v-else class="space-y-2">
+                  <PriceRow label="输入价格" :value="priceValue(model.official.input_usd_per_m)" suffix="/ 百万 tokens" />
+                  <PriceRow label="输出价格" :value="priceValue(model.official.output_usd_per_m)" suffix="/ 百万 tokens" />
+                  <PriceRow label="缓存读取" :value="priceValue(model.official.cache_read_usd_per_m)" suffix="/ 百万 tokens" />
+                  <PriceRow label="缓存创建" :value="priceValue(model.official.cache_write_usd_per_m)" suffix="/ 百万 tokens" />
+                </div>
+              </div>
+
+              <div class="mt-3 rounded-lg border border-cyan-400/10 bg-cyan-400/[0.035] p-3">
+                <div class="mb-2 flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-bold text-cyan-200">折扣后价格</span>
                   <span v-if="selectedGroup?.best_plan" class="truncate text-[11px] text-slate-500" :title="selectedGroup.best_plan.name">
                     {{ selectedGroup.best_plan.name }}
                   </span>
                 </div>
                 <div v-if="isFixedPriceModel(model)" class="space-y-2">
-                  <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="bestActual(model, 'per_request_cny')" :suffix="`/ ${fixedPriceUnit(model)}`" highlight />
+                  <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="bestActual(model, 'per_request_usd')" :suffix="`/ ${fixedPriceUnit(model)}`" highlight />
                 </div>
                 <div v-else class="space-y-2">
-                  <PriceRow label="输入价格" :value="bestActual(model, 'input_cny_per_m')" suffix="/ 百万 tokens" highlight />
-                  <PriceRow label="输出价格" :value="bestActual(model, 'output_cny_per_m')" suffix="/ 百万 tokens" highlight />
-                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_cny_per_m')" suffix="/ 百万 tokens" />
-                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" suffix="/ 百万 tokens" />
+                  <PriceRow label="输入价格" :value="bestActual(model, 'input_usd_per_m')" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="输出价格" :value="bestActual(model, 'output_usd_per_m')" suffix="/ 百万 tokens" highlight />
+                  <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_usd_per_m')" suffix="/ 百万 tokens" />
+                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_usd_per_m')" suffix="/ 百万 tokens" />
                 </div>
               </div>
 
@@ -439,32 +462,86 @@
                 </div>
               </div>
 
-              <div v-if="showOfficial" class="mt-3 rounded-md border border-white/[0.08] bg-black/[0.16] p-2.5">
-                <div class="mb-1.5 text-[11px] font-semibold text-slate-500">官方参考价</div>
-                <div v-if="isFixedPriceModel(model)" class="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                  <span>官方 {{ formatUSDPerUnit(model.official.per_request_usd, fixedPriceUnit(model)) }}</span>
-                </div>
-                <div v-else class="grid grid-cols-2 gap-2 text-xs text-slate-400">
-                  <span>输入 {{ formatUSDPerMillion(model.official.input_usd_per_m) }}</span>
-                  <span>输出 {{ formatUSDPerMillion(model.official.output_usd_per_m) }}</span>
-                  <span>缓存读 {{ formatUSDPerMillion(model.official.cache_read_usd_per_m) }}</span>
-                  <span>缓存写 {{ formatUSDPerMillion(model.official.cache_write_usd_per_m) }}</span>
-                </div>
-              </div>
-
               <div class="mt-4 flex items-center justify-between gap-3">
                 <span class="rounded-full bg-violet-500/[0.12] px-2.5 py-1 text-xs font-semibold text-violet-200">{{ billingLabel(model.billing_mode) }}</span>
+                <button v-if="isAdmin" class="toolbar-button" @click="openPriceEditor(model)">改价</button>
                 <span v-if="showMultiplier && isActuallyCheaper(model.cheaper_factor)" class="save-badge">
                   便宜 {{ formatNumber(model.cheaper_factor, 1) }} 倍
                 </span>
                 <span v-else-if="selectedGroup?.best_plan" class="save-badge neutral">
-                  我们的价格
+                  折扣后价格
                 </span>
               </div>
             </article>
           </section>
           </template>
         </main>
+      </div>
+
+      <div v-if="priceEditor" class="price-editor-overlay" @click.self="closePriceEditor">
+        <section class="price-editor-dialog">
+          <div class="flex items-start justify-between gap-4">
+            <div class="min-w-0">
+              <p class="text-sm font-bold text-white">自定义展示价</p>
+              <h3 class="mt-1 truncate text-lg font-black text-white" :title="priceEditor.model.name">{{ priceEditor.model.name }}</h3>
+              <p class="mt-1 text-xs text-slate-500">{{ selectedGroup?.name }} · 美元价格，保存后优先展示给用户</p>
+            </div>
+            <button class="copy-button" title="关闭" @click="closePriceEditor">
+              <Icon name="x" size="xs" />
+            </button>
+          </div>
+
+          <div class="mt-4 grid gap-3">
+            <label class="editor-field">
+              <span>计费方式</span>
+              <select v-model="priceEditor.billingMode">
+                <option value="token">按量计费</option>
+                <option value="per_request">按次计费</option>
+                <option value="image">图片计费</option>
+              </select>
+            </label>
+
+            <template v-if="priceEditor.billingMode === 'token'">
+              <div class="editor-grid">
+                <label class="editor-field">
+                  <span>输入 $/百万 tokens</span>
+                  <input v-model="priceEditor.inputUSDPerM" type="number" step="any" min="0" placeholder="例如 3.2" />
+                </label>
+                <label class="editor-field">
+                  <span>输出 $/百万 tokens</span>
+                  <input v-model="priceEditor.outputUSDPerM" type="number" step="any" min="0" placeholder="例如 11.2" />
+                </label>
+                <label class="editor-field">
+                  <span>缓存写入 $/百万 tokens</span>
+                  <input v-model="priceEditor.cacheWriteUSDPerM" type="number" step="any" min="0" placeholder="可不填" />
+                </label>
+                <label class="editor-field">
+                  <span>缓存读取 $/百万 tokens</span>
+                  <input v-model="priceEditor.cacheReadUSDPerM" type="number" step="any" min="0" placeholder="可不填" />
+                </label>
+              </div>
+            </template>
+            <template v-else>
+              <label class="editor-field">
+                <span>{{ priceEditor.billingMode === 'image' ? '图片 $/张' : '固定 $/次' }}</span>
+                <input v-model="priceEditor.perRequestUSD" type="number" step="any" min="0" placeholder="例如 0.05" />
+              </label>
+            </template>
+          </div>
+
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-2">
+            <button class="toolbar-button danger" :disabled="savingCustomPrice || !priceEditor.model.custom_price" @click="clearCustomPrice">
+              清除自定义价
+            </button>
+            <div class="flex items-center gap-2">
+              <button class="toolbar-button" @click="closePriceEditor">取消</button>
+              <button class="toolbar-button active" :disabled="savingCustomPrice" @click="saveCustomPrice">
+                <Icon name="check" size="xs" />
+                保存
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
   </AppLayout>
@@ -475,6 +552,7 @@ import { computed, defineComponent, h, onMounted, ref, watch } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import modelPricesAPI, {
+  type ModelPriceCustomPrice,
   type ModelPriceGroup,
   type ModelPriceModel,
   type ModelPriceResponse,
@@ -491,6 +569,15 @@ interface TierBadge {
   key: string
   label: string
   detail: string
+}
+interface PriceEditorState {
+  model: ModelPriceModel
+  billingMode: string
+  inputUSDPerM: string
+  outputUSDPerM: string
+  cacheWriteUSDPerM: string
+  cacheReadUSDPerM: string
+  perRequestUSD: string
 }
 
 const FilterSection = defineComponent({
@@ -558,7 +645,7 @@ const PriceRow = defineComponent({
     return () => h('div', { class: 'price-row' }, [
       h('span', { class: 'text-slate-400' }, props.label),
       h('strong', { class: props.highlight ? 'text-emerald-300' : 'text-slate-200' }, [
-        props.value == null ? '暂未定价' : `¥${formatNumber(props.value, props.value < 1 ? 4 : 2)}`,
+        props.value == null ? '暂未定价' : formatUSD(props.value),
         props.value == null ? '' : h('small', { class: 'ml-1 text-[11px] font-medium text-slate-500' }, props.suffix),
       ]),
     ])
@@ -582,6 +669,8 @@ const showMultiplier = ref(false)
 const showOnlyIssues = ref(false)
 const includeCatalog = ref(false)
 const showHiddenGroups = ref(false)
+const savingCustomPrice = ref(false)
+const priceEditor = ref<PriceEditorState | null>(null)
 
 const isAdmin = computed(() => authStore.isAdmin)
 const groups = computed(() => sortGroupsForSales(response.value?.groups ?? []))
@@ -591,7 +680,7 @@ const selectedGroup = computed<ModelPriceGroup | undefined>(() =>
 const models = computed(() => response.value?.models ?? [])
 
 const groupPlatformFilters = computed(() => {
-  const counts = countBy(groups.value, group => groupCategoryKey(group.platform))
+  const counts = countBy(groups.value, group => groupCategoryKey(group.platform, group.name))
   return [
     { value: 'all' as GroupCategory, label: '全部', count: groups.value.length, tone: 'cyan' as FilterTone },
     { value: 'claude' as GroupCategory, label: 'Claude', count: counts.claude ?? 0, tone: 'amber' as FilterTone },
@@ -620,7 +709,7 @@ const groupOverviewCards = computed(() => {
 const groupFilters = computed(() => {
   const q = groupSearchQuery.value.trim().toLowerCase()
   return groups.value.filter((group) => {
-    if (selectedGroupCategory.value !== 'all' && groupCategoryKey(group.platform) !== selectedGroupCategory.value) return false
+    if (selectedGroupCategory.value !== 'all' && groupCategoryKey(group.platform, group.name) !== selectedGroupCategory.value) return false
     if (!q) return true
     return group.name.toLowerCase().includes(q) || group.platform.toLowerCase().includes(q)
   })
@@ -770,6 +859,113 @@ async function syncOfficialCatalog() {
   }
 }
 
+function openPriceEditor(model: ModelPriceModel) {
+  const custom = model.custom_price
+  const billingMode = normalizeBillingMode(custom?.billing_mode || model.billing_mode)
+  priceEditor.value = {
+    model,
+    billingMode,
+    inputUSDPerM: priceInput(custom?.input_usd_per_m ?? bestActual(model, 'input_usd_per_m')),
+    outputUSDPerM: priceInput(custom?.output_usd_per_m ?? bestActual(model, 'output_usd_per_m')),
+    cacheWriteUSDPerM: priceInput(custom?.cache_write_usd_per_m ?? bestActual(model, 'cache_write_usd_per_m')),
+    cacheReadUSDPerM: priceInput(custom?.cache_read_usd_per_m ?? bestActual(model, 'cache_read_usd_per_m')),
+    perRequestUSD: priceInput(custom?.per_request_usd ?? bestActual(model, 'per_request_usd')),
+  }
+}
+
+function closePriceEditor() {
+  if (savingCustomPrice.value) return
+  priceEditor.value = null
+}
+
+async function saveCustomPrice() {
+  if (!isAdmin.value || !selectedGroupID.value || !priceEditor.value || savingCustomPrice.value) return
+  const editor = priceEditor.value
+  const payload: ModelPriceCustomPrice = editor.billingMode === 'token'
+    ? {
+        billing_mode: editor.billingMode,
+        input_usd_per_m: parseOptionalPrice(editor.inputUSDPerM),
+        output_usd_per_m: parseOptionalPrice(editor.outputUSDPerM),
+        cache_write_usd_per_m: parseOptionalPrice(editor.cacheWriteUSDPerM),
+        cache_read_usd_per_m: parseOptionalPrice(editor.cacheReadUSDPerM),
+      }
+    : {
+        billing_mode: editor.billingMode,
+        per_request_usd: parseOptionalPrice(editor.perRequestUSD),
+      }
+  if (!customPriceHasValue(payload)) {
+    appStore.showError('至少填写一个价格')
+    return
+  }
+  savingCustomPrice.value = true
+  try {
+    await modelPricesAPI.updateCustomPrice({
+      group_id: selectedGroupID.value,
+      model: editor.model.name,
+      ...payload,
+    })
+    appStore.showSuccess('自定义价格已保存')
+    priceEditor.value = null
+    await loadPrices(selectedGroupID.value)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '保存自定义价格失败'))
+  } finally {
+    savingCustomPrice.value = false
+  }
+}
+
+async function clearCustomPrice() {
+  if (!isAdmin.value || !selectedGroupID.value || !priceEditor.value || savingCustomPrice.value) return
+  savingCustomPrice.value = true
+  try {
+    await modelPricesAPI.updateCustomPrice({
+      group_id: selectedGroupID.value,
+      model: priceEditor.value.model.name,
+      billing_mode: normalizeBillingMode(priceEditor.value.model.billing_mode),
+      clear: true,
+    })
+    appStore.showSuccess('自定义价格已清除')
+    priceEditor.value = null
+    await loadPrices(selectedGroupID.value)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '清除自定义价格失败'))
+  } finally {
+    savingCustomPrice.value = false
+  }
+}
+
+function priceInput(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? String(value) : ''
+}
+
+function priceValue(value: number | null | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+function parseOptionalPrice(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const parsed = Number.parseFloat(trimmed)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
+function customPriceHasValue(price: ModelPriceCustomPrice): boolean {
+  return [
+    price.input_usd_per_m,
+    price.output_usd_per_m,
+    price.cache_write_usd_per_m,
+    price.cache_read_usd_per_m,
+    price.image_output_usd_per_m,
+    price.per_request_usd,
+  ].some(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
+}
+
+function normalizeBillingMode(mode: string | undefined): string {
+  if (mode === 'image') return 'image'
+  if (mode === 'per_request' || mode === 'request') return 'per_request'
+  return 'token'
+}
+
 function bestActual(model: ModelPriceModel, key: ActualPriceKey): number | undefined {
   const base = model.actual[key]
   if (typeof base === 'number' && Number.isFinite(base) && base > 0) return base
@@ -823,8 +1019,8 @@ function tierTitle(tier: ModelPriceTier): string {
 }
 
 function tierPriceSummary(tier: ModelPriceTier): string {
-  const input = formatCNYPerMillion(tier.actual.input_cny_per_m)
-  const output = formatCNYPerMillion(tier.actual.output_cny_per_m)
+  const input = formatUSDPerMillion(tier.actual.input_usd_per_m)
+  const output = formatUSDPerMillion(tier.actual.output_usd_per_m)
   if (input === '-' && output === '-') return '暂未定价'
   return `入 ${input} / 出 ${output}`
 }
@@ -852,7 +1048,9 @@ function countBy<T>(items: T[], getKey: (item: T) => string): Record<string, num
   }, {})
 }
 
-function groupCategoryKey(platform: string): GroupCategory {
+function groupCategoryKey(platform: string, name = ''): GroupCategory {
+  const text = `${platform} ${name}`.toLowerCase()
+  if (text.includes('国模') || text.includes('deepseek') || text.includes('qwen') || text.includes('kimi') || text.includes('glm') || text.includes('minimax') || text.includes('moonshot') || text.includes('doubao')) return 'domestic'
   const lower = platform.toLowerCase()
   if (lower.includes('anthropic') || lower.includes('claude')) return 'claude'
   if (lower.includes('openai')) return 'openai'
@@ -903,6 +1101,12 @@ function modelVersionRank(name: string): number {
 
 function providerLabel(platform: string): string {
   const lower = platform.toLowerCase()
+  if (lower.includes('deepseek')) return 'DeepSeek'
+  if (lower.includes('qwen') || lower.includes('tongyi')) return 'Qwen'
+  if (lower.includes('kimi') || lower.includes('moonshot')) return 'Kimi'
+  if (lower.includes('glm') || lower.includes('zhipu')) return 'GLM'
+  if (lower.includes('minimax')) return 'MiniMax'
+  if (lower.includes('doubao')) return '豆包'
   if (lower.includes('anthropic')) return 'Anthropic'
   if (lower.includes('openai')) return 'OpenAI'
   if (lower.includes('gemini')) return 'Gemini'
@@ -912,6 +1116,12 @@ function providerLabel(platform: string): string {
 
 function providerShort(platform: string): string {
   const label = providerLabel(platform)
+  if (label === 'DeepSeek') return 'DS'
+  if (label === 'Qwen') return 'QW'
+  if (label === 'Kimi') return 'KM'
+  if (label === 'GLM') return 'GL'
+  if (label === 'MiniMax') return 'MI'
+  if (label === '豆包') return '豆'
   if (label === 'Anthropic') return '✹'
   if (label === 'OpenAI') return '◎'
   if (label === 'Gemini') return 'G'
@@ -920,9 +1130,20 @@ function providerShort(platform: string): string {
 }
 
 function billingLabel(mode: string): string {
-  if (mode === 'request') return '按次计费'
+  if (mode === 'request' || mode === 'per_request') return '按次计费'
   if (mode === 'image') return '图片计费'
   return '按量计费'
+}
+
+function displayProvider(model: ModelPriceModel): string {
+  const name = model.name.toLowerCase()
+  if (name.startsWith('deepseek')) return 'deepseek'
+  if (name.startsWith('qwen') || name.startsWith('qwq')) return 'qwen'
+  if (name.startsWith('kimi') || name.includes('moonshot')) return 'kimi'
+  if (name.startsWith('glm')) return 'glm'
+  if (name.startsWith('minimax')) return 'minimax'
+  if (name.startsWith('doubao')) return 'doubao'
+  return model.provider || model.platform
 }
 
 function hasPositiveNumber(value: number | null | undefined): boolean {
@@ -937,8 +1158,9 @@ function hasActualPrice(model: ModelPriceModel): boolean {
 
 function isFixedPriceModel(model: ModelPriceModel): boolean {
   return model.billing_mode === 'request' ||
+    model.billing_mode === 'per_request' ||
     hasPositiveNumber(model.official.per_request_usd) ||
-    hasPositiveNumber(model.actual.per_request_cny)
+    hasPositiveNumber(model.actual.per_request_usd)
 }
 
 function fixedPriceUnit(model: ModelPriceModel): string {
@@ -957,6 +1179,7 @@ function fixedPriceUnitLabel(model: ModelPriceModel): string {
 }
 
 function sourceLabel(source: string): string {
+  if (source === 'custom') return '自定义价'
   if (source === 'official') return '官方目录'
   if (source === 'channel') return '渠道配置'
   return '待补价'
@@ -969,6 +1192,7 @@ function priceIssueLabel(model: ModelPriceModel): string {
 }
 
 function priceIssueSeverity(model: ModelPriceModel): 'none' | 'warning' | 'critical' {
+  if (model.pricing_source === 'custom') return 'none'
   if (model.pricing_source === 'unknown' || !hasActualPrice(model)) return 'critical'
   if (model.official_missing) return 'warning'
   return 'none'
@@ -1002,21 +1226,6 @@ function formatUSDPerMillion(value: number | null | undefined): string {
 
 function formatUSDPerUnit(value: number | null | undefined, unit: string): string {
   const formatted = formatUSD(value)
-  return formatted === '-' ? '-' : `${formatted} / ${unit}`
-}
-
-function formatCNYCompact(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '-'
-  return `¥${formatNumber(value, value < 1 ? 4 : 2)}`
-}
-
-function formatCNYPerMillion(value: number | null | undefined): string {
-  const formatted = formatCNYCompact(value)
-  return formatted === '-' ? '-' : `${formatted} / 百万 tokens`
-}
-
-function formatCNYPerUnit(value: number | null | undefined, unit: string): string {
-  const formatted = formatCNYCompact(value)
   return formatted === '-' ? '-' : `${formatted} / ${unit}`
 }
 
@@ -1150,6 +1359,76 @@ onMounted(() => loadPrices())
 .toolbar-button:disabled {
   cursor: not-allowed;
   opacity: 0.56;
+}
+
+.toolbar-button.danger {
+  border-color: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+}
+
+.toolbar-button.danger:hover {
+  background: rgba(248, 113, 113, 0.12);
+}
+
+.price-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.66);
+  padding: 20px;
+}
+
+.price-editor-dialog {
+  width: min(94vw, 560px);
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #15171c;
+  padding: 18px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+}
+
+.editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.editor-field {
+  display: grid;
+  gap: 6px;
+}
+
+.editor-field span {
+  font-size: 12px;
+  font-weight: 800;
+  color: rgb(148 163 184);
+}
+
+.editor-field input,
+.editor-field select {
+  height: 38px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #0f1014;
+  padding: 0 10px;
+  color: white;
+  outline: none;
+}
+
+.editor-field input:focus,
+.editor-field select:focus {
+  border-color: rgba(45, 212, 191, 0.5);
+}
+
+@media (max-width: 640px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .mobile-group-overlay {
@@ -1411,7 +1690,7 @@ onMounted(() => loadPrices())
 }
 
 .price-table-header.admin {
-  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 100px;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 140px;
 }
 
 .price-table-row {
@@ -1425,7 +1704,7 @@ onMounted(() => loadPrices())
 }
 
 .price-table-row.admin {
-  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 100px;
+  grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px 140px;
 }
 
 .price-table-row:last-child {
@@ -1508,6 +1787,22 @@ onMounted(() => loadPrices())
   color: #fbbf24;
 }
 
+.inline-edit-button {
+  width: fit-content;
+  border-radius: 999px;
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  background: rgba(20, 184, 166, 0.1);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: #5eead4;
+}
+
+.inline-edit-button:hover {
+  border-color: rgba(94, 234, 212, 0.5);
+  background: rgba(20, 184, 166, 0.18);
+}
+
 .provider-mark {
   display: flex;
   width: 36px;
@@ -1568,6 +1863,11 @@ onMounted(() => loadPrices())
 .tag-blue {
   color: #93c5fd;
   background: rgba(59, 130, 246, 0.14);
+}
+
+.tag-amber {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.14);
 }
 
 .tier-strip {

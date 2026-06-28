@@ -91,7 +91,7 @@ func TestModelsForGroupUsesChannelModelsByDefault(t *testing.T) {
 		ID:                  1,
 		Platform:            service.PlatformAnthropic,
 		EffectiveMultiplier: 0.1,
-	}, 7, false)
+	}, 7, false, nil)
 
 	require.Empty(t, models)
 }
@@ -116,7 +116,7 @@ func TestModelsForGroupIncludesOfficialCatalogModelsWhenRequested(t *testing.T) 
 		ID:                  1,
 		Platform:            service.PlatformAnthropic,
 		EffectiveMultiplier: 0.1,
-	}, 7, true)
+	}, 7, true, nil)
 
 	require.Len(t, models, 1)
 	require.Equal(t, "claude-sonnet-4-5", models[0].Name)
@@ -273,12 +273,78 @@ func TestModelsForGroupIncludesAccountModelMapping(t *testing.T) {
 		ID:                  46,
 		Platform:            service.PlatformOpenAI,
 		EffectiveMultiplier: 0.5,
-	}, 7, false)
+	}, 7, false, nil)
 
 	require.Len(t, models, 1)
 	require.Equal(t, "gpt-5.5", models[0].Name)
 	require.Equal(t, "official", models[0].PricingSource)
 	require.Equal(t, []string{"pro"}, models[0].ChannelNames)
+}
+
+func TestModelsForGroupAppliesCustomUSDPrice(t *testing.T) {
+	h := &ModelPriceHandler{
+		pricingService: stubModelPriceCatalog{
+			prices: map[string]*service.LiteLLMModelPricing{
+				"deepseek-v4-pro": {
+					LiteLLMProvider:   "deepseek",
+					InputCostPerToken: 0.435e-6,
+				},
+			},
+		},
+	}
+	customInput := 0.8
+	accounts := []service.Account{
+		{
+			ID:       301,
+			Name:     "domestic",
+			Platform: service.PlatformOpenAI,
+			Status:   service.StatusActive,
+			Credentials: map[string]any{
+				"model_mapping": map[string]any{
+					"deepseek-v4-pro": "deepseek-v4-pro",
+				},
+			},
+		},
+	}
+
+	models := h.modelsForGroup(nil, accounts, modelPriceGroupDTO{
+		ID:                  70,
+		Platform:            service.PlatformOpenAI,
+		EffectiveMultiplier: 0.5,
+	}, 7, false, map[string]service.ModelPriceCustomPrice{
+		service.ModelPriceCustomPriceKey(70, "deepseek-v4-pro"): {
+			BillingMode:  string(service.BillingModeToken),
+			InputUSDPerM: &customInput,
+		},
+	})
+
+	require.Len(t, models, 1)
+	require.Equal(t, "custom", models[0].PricingSource)
+	require.NotNil(t, models[0].CustomPrice)
+	require.NotNil(t, models[0].Actual.InputCNYPerM)
+	require.InDelta(t, 5.6, *models[0].Actual.InputCNYPerM, 0.000001)
+	require.NotNil(t, models[0].Actual.InputUSDPerM)
+	require.Equal(t, 0.8, *models[0].Actual.InputUSDPerM)
+}
+
+func TestSanitizeModelPriceModelsForUserHidesCustomPriceMetadata(t *testing.T) {
+	customInput := 0.8
+	models := sanitizeModelPriceModelsForUser([]modelPriceModelDTO{{
+		Name:          "deepseek-v4-pro",
+		PricingSource: "custom",
+		CustomPrice: &service.ModelPriceCustomPrice{
+			InputUSDPerM: &customInput,
+		},
+		Actual: modelPriceActualDTO{
+			InputUSDPerM: &customInput,
+		},
+	}})
+
+	require.Len(t, models, 1)
+	require.Nil(t, models[0].CustomPrice)
+	require.Equal(t, "official", models[0].PricingSource)
+	require.NotNil(t, models[0].Actual.InputUSDPerM)
+	require.Equal(t, 0.8, *models[0].Actual.InputUSDPerM)
 }
 
 func TestBuildModelPriceGroupOverviewDeduplicatesAcrossGroups(t *testing.T) {
