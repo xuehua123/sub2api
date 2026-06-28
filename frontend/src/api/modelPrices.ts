@@ -83,6 +83,7 @@ export interface ModelPriceModel {
   channel_names: string[]
   official_missing: boolean
   custom_price?: ModelPriceCustomPrice | null
+  hidden: boolean
 }
 
 export interface ModelPriceSummary {
@@ -114,7 +115,9 @@ export interface ModelPriceResponse {
   catalog_status?: ModelPriceCatalogStatus | null
   include_catalog: boolean
   show_hidden_groups: boolean
+  show_hidden_models: boolean
   hidden_group_ids: number[]
+  hidden_model_keys: string[]
   selected_group_hidden: boolean
 }
 
@@ -122,6 +125,7 @@ export interface GetModelPricesParams {
   group_id?: number
   include_catalog?: boolean
   show_hidden_groups?: boolean
+  show_hidden_models?: boolean
   signal?: AbortSignal
 }
 
@@ -130,6 +134,7 @@ export async function getModelPrices(params?: GetModelPricesParams): Promise<Mod
   if (params?.group_id) query.group_id = params.group_id
   if (params?.include_catalog) query.include_catalog = true
   if (params?.show_hidden_groups) query.show_hidden_groups = true
+  if (params?.show_hidden_models) query.show_hidden_models = true
   const { data } = await apiClient.get<ModelPriceResponse>('/model-prices', {
     params: Object.keys(query).length > 0 ? query : undefined,
     signal: params?.signal
@@ -149,6 +154,24 @@ export async function updateHiddenGroups(hiddenGroupIDs: number[]): Promise<{ hi
   return data
 }
 
+export async function updateHiddenModel(groupID: number, model: string, hidden: boolean): Promise<{ hidden_model_keys: string[] }> {
+  const { data } = await apiClient.patch<{ hidden_model_keys: string[] }>('/admin/model-prices/hidden-model', {
+    group_id: groupID,
+    model,
+    hidden,
+  })
+  return data
+}
+
+export async function updateHiddenModels(groupID: number, models: string[], hidden: boolean): Promise<{ hidden_model_keys: string[] }> {
+  const { data } = await apiClient.patch<{ hidden_model_keys: string[] }>('/admin/model-prices/hidden-model', {
+    group_id: groupID,
+    models,
+    hidden,
+  })
+  return data
+}
+
 export interface UpdateModelPriceCustomPriceRequest extends ModelPriceCustomPrice {
   group_id: number
   model: string
@@ -160,6 +183,6 @@ export async function updateCustomPrice(req: UpdateModelPriceCustomPriceRequest)
   return data
 }
 
-export const modelPricesAPI = { getModelPrices, syncCatalog, updateHiddenGroups, updateCustomPrice }
+export const modelPricesAPI = { getModelPrices, syncCatalog, updateHiddenGroups, updateHiddenModel, updateHiddenModels, updateCustomPrice }
 
 export default modelPricesAPI

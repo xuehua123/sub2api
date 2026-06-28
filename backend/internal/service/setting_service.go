@@ -762,6 +762,67 @@ func (s *SettingService) SetModelPriceHiddenGroupIDs(ctx context.Context, ids []
 	return normalized, nil
 }
 
+func ModelPriceHiddenModelKey(groupID int64, model string) string {
+	return strconv.FormatInt(groupID, 10) + ":" + strings.ToLower(strings.TrimSpace(model))
+}
+
+func (s *SettingService) GetModelPriceHiddenModelKeys(ctx context.Context) map[string]struct{} {
+	out := map[string]struct{}{}
+	if s == nil || s.settingRepo == nil {
+		return out
+	}
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyModelPriceHiddenModelKeys)
+	if err != nil || strings.TrimSpace(value) == "" {
+		return out
+	}
+	var keys []string
+	if err := json.Unmarshal([]byte(value), &keys); err != nil {
+		return out
+	}
+	for _, key := range keys {
+		if normalized := normalizeModelPriceHiddenModelKey(key); normalized != "" {
+			out[normalized] = struct{}{}
+		}
+	}
+	return out
+}
+
+func (s *SettingService) SetModelPriceHiddenModel(ctx context.Context, groupID int64, model string, hidden bool) ([]string, error) {
+	return s.SetModelPriceHiddenModels(ctx, groupID, []string{model}, hidden)
+}
+
+func (s *SettingService) SetModelPriceHiddenModels(ctx context.Context, groupID int64, models []string, hidden bool) ([]string, error) {
+	if s == nil || s.settingRepo == nil {
+		return []string{}, nil
+	}
+	if groupID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be greater than 0")
+	}
+	normalizedModels := normalizeModelPriceModelNames(models)
+	if len(normalizedModels) == 0 {
+		return nil, infraerrors.BadRequest("INVALID_MODEL", "models are required")
+	}
+
+	keys := s.GetModelPriceHiddenModelKeys(ctx)
+	for _, model := range normalizedModels {
+		key := ModelPriceHiddenModelKey(groupID, model)
+		if hidden {
+			keys[key] = struct{}{}
+		} else {
+			delete(keys, key)
+		}
+	}
+	normalized := sortedModelPriceHiddenModelKeys(keys)
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("marshal model price hidden model keys: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, SettingKeyModelPriceHiddenModelKeys, string(payload)); err != nil {
+		return nil, fmt.Errorf("set model price hidden model keys: %w", err)
+	}
+	return normalized, nil
+}
+
 type ModelPriceCustomPrice struct {
 	BillingMode        string   `json:"billing_mode,omitempty"`
 	InputUSDPerM       *float64 `json:"input_usd_per_m,omitempty"`
@@ -876,6 +937,57 @@ func normalizePositiveInt64s(ids []int64) []int64 {
 		out = append(out, id)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func normalizeModelPriceModelNames(models []string) []string {
+	if len(models) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(models))
+	out := make([]string, 0, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		key := strings.ToLower(model)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, model)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+	})
+	return out
+}
+
+func normalizeModelPriceHiddenModelKey(key string) string {
+	parts := strings.SplitN(strings.TrimSpace(key), ":", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+	groupID, err := strconv.ParseInt(strings.TrimSpace(parts[0]), 10, 64)
+	if err != nil || groupID <= 0 {
+		return ""
+	}
+	model := strings.ToLower(strings.TrimSpace(parts[1]))
+	if model == "" {
+		return ""
+	}
+	return strconv.FormatInt(groupID, 10) + ":" + model
+}
+
+func sortedModelPriceHiddenModelKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for v := range values {
+		if normalized := normalizeModelPriceHiddenModelKey(v); normalized != "" {
+			out = append(out, normalized)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -3231,6 +3343,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyModelPriceUSDCNYRate:                      "7",
 		SettingKeyModelPricesUserVisible:                    "true",
 		SettingKeyModelPriceHiddenGroupIDs:                  "[]",
+		SettingKeyModelPriceHiddenModelKeys:                 "[]",
 		SettingKeyModelPriceCustomPrices:                    "{}",
 		SettingKeySMTPPort:                                  "587",
 		SettingKeySMTPUseTLS:                                "false",

@@ -164,6 +164,26 @@ func TestApplyModelPriceHiddenGroupsFiltersUnlessIncluded(t *testing.T) {
 	require.True(t, included[1].Hidden)
 }
 
+func TestApplyModelPriceHiddenModelsFiltersPerGroupUnlessIncluded(t *testing.T) {
+	models := []modelPriceModelDTO{
+		{Name: "gpt-5"},
+		{Name: "gpt-5.5"},
+	}
+	hidden := map[string]struct{}{
+		service.ModelPriceHiddenModelKey(46, "gpt-5.5"): {},
+		service.ModelPriceHiddenModelKey(47, "gpt-5"):   {},
+	}
+
+	filtered := applyModelPriceHiddenModels(models, 46, hidden, false)
+	require.Len(t, filtered, 1)
+	require.Equal(t, "gpt-5", filtered[0].Name)
+
+	included := applyModelPriceHiddenModels(models, 46, hidden, true)
+	require.Len(t, included, 2)
+	require.False(t, included[0].Hidden)
+	require.True(t, included[1].Hidden)
+}
+
 func TestApplyModelPriceGroupUsageCountsActiveChannelsAndModels(t *testing.T) {
 	groups := []modelPriceGroupDTO{
 		{ID: 1, Platform: service.PlatformAnthropic},
@@ -197,7 +217,7 @@ func TestApplyModelPriceGroupUsageCountsActiveChannelsAndModels(t *testing.T) {
 		},
 	}
 
-	applyModelPriceGroupUsage(groups, channels, nil)
+	applyModelPriceGroupUsage(groups, channels, nil, nil, false)
 
 	require.Equal(t, 1, groups[0].ChannelCount)
 	require.Equal(t, 1, groups[0].ModelCount)
@@ -237,7 +257,7 @@ func TestApplyModelPriceGroupUsageFallsBackToAccountsWithoutChannels(t *testing.
 		},
 	}
 
-	applyModelPriceGroupUsage(groups, nil, accountsByGroup)
+	applyModelPriceGroupUsage(groups, nil, accountsByGroup, nil, false)
 
 	require.Equal(t, 1, groups[0].ChannelCount)
 	require.Equal(t, 2, groups[0].ModelCount)
@@ -367,13 +387,63 @@ func TestBuildModelPriceGroupOverviewDeduplicatesAcrossGroups(t *testing.T) {
 		},
 	}
 
-	overview := buildModelPriceGroupOverview(groups, channels, nil)
+	overview := buildModelPriceGroupOverview(groups, channels, nil, nil, false)
 	openai := overview[1]
 
 	require.Equal(t, "openai", openai.Category)
 	require.Equal(t, 2, openai.GroupCount)
 	require.Equal(t, 1, openai.ModelCount)
 	require.Equal(t, 1, openai.ChannelCount)
+}
+
+func TestModelPriceGroupUsageExcludesHiddenModelsFromCounts(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 46, Platform: service.PlatformOpenAI},
+	}
+	channels := []service.AvailableChannel{{
+		ID:     10,
+		Name:   "primary",
+		Status: service.StatusActive,
+		Groups: []service.AvailableGroupRef{{ID: 46}},
+		SupportedModels: []service.SupportedModel{
+			{Name: "gpt-5", Platform: service.PlatformOpenAI},
+			{Name: "gpt-5.5", Platform: service.PlatformOpenAI},
+		},
+	}}
+	hidden := map[string]struct{}{
+		service.ModelPriceHiddenModelKey(46, "gpt-5.5"): {},
+	}
+
+	applyModelPriceGroupUsage(groups, channels, nil, hidden, false)
+	require.Equal(t, 1, groups[0].ModelCount)
+
+	applyModelPriceGroupUsage(groups, channels, nil, hidden, true)
+	require.Equal(t, 2, groups[0].ModelCount)
+}
+
+func TestBuildModelPriceGroupOverviewExcludesHiddenModels(t *testing.T) {
+	groups := []modelPriceGroupDTO{
+		{ID: 1, Platform: service.PlatformOpenAI},
+	}
+	channels := []service.AvailableChannel{{
+		ID:     10,
+		Name:   "primary",
+		Status: service.StatusActive,
+		Groups: []service.AvailableGroupRef{{ID: 1}},
+		SupportedModels: []service.SupportedModel{
+			{Name: "gpt-5", Platform: service.PlatformOpenAI},
+			{Name: "gpt-5.5", Platform: service.PlatformOpenAI},
+		},
+	}}
+	hidden := map[string]struct{}{
+		service.ModelPriceHiddenModelKey(1, "gpt-5.5"): {},
+	}
+
+	overview := buildModelPriceGroupOverview(groups, channels, nil, hidden, false)
+	require.Equal(t, 1, overview[1].ModelCount)
+
+	overview = buildModelPriceGroupOverview(groups, channels, nil, hidden, true)
+	require.Equal(t, 2, overview[1].ModelCount)
 }
 
 func TestPlanPackageQuotaUSDUsesFullPackageValidity(t *testing.T) {

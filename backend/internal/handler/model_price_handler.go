@@ -127,6 +127,7 @@ type modelPriceModelDTO struct {
 	ChannelNames    []string                       `json:"channel_names"`
 	OfficialMissing bool                           `json:"official_missing"`
 	CustomPrice     *service.ModelPriceCustomPrice `json:"custom_price,omitempty"`
+	Hidden          bool                           `json:"hidden"`
 }
 
 type modelPriceSummaryDTO struct {
@@ -158,7 +159,9 @@ type modelPriceResponseDTO struct {
 	CatalogStatus       *modelPriceCatalogStatusDTO  `json:"catalog_status,omitempty"`
 	IncludeCatalog      bool                         `json:"include_catalog"`
 	ShowHiddenGroups    bool                         `json:"show_hidden_groups"`
+	ShowHiddenModels    bool                         `json:"show_hidden_models"`
 	HiddenGroupIDs      []int64                      `json:"hidden_group_ids"`
+	HiddenModelKeys     []string                     `json:"hidden_model_keys"`
 	SelectedGroupHidden bool                         `json:"selected_group_hidden"`
 }
 
@@ -168,6 +171,17 @@ type updateModelPriceHiddenGroupsRequest struct {
 
 type updateModelPriceHiddenGroupsResponse struct {
 	HiddenGroupIDs []int64 `json:"hidden_group_ids"`
+}
+
+type updateModelPriceHiddenModelRequest struct {
+	GroupID int64    `json:"group_id"`
+	Model   string   `json:"model"`
+	Models  []string `json:"models"`
+	Hidden  bool     `json:"hidden"`
+}
+
+type updateModelPriceHiddenModelResponse struct {
+	HiddenModelKeys []string `json:"hidden_model_keys"`
 }
 
 type updateModelPriceCustomPriceRequest struct {
@@ -203,6 +217,7 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 		return
 	}
 	showHiddenGroups := isAdmin && parseModelPriceBoolQuery(c.Query("show_hidden_groups"))
+	showHiddenModels := isAdmin && parseModelPriceBoolQuery(c.Query("show_hidden_models"))
 	includeCatalog := isAdmin && parseModelPriceBoolQuery(c.Query("include_catalog"))
 	groups, err := h.visibleGroups(c, subject.UserID, isAdmin)
 	if err != nil {
@@ -221,7 +236,8 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	applyModelPriceGroupUsage(groupDTOs, channels, accountsByGroup)
+	hiddenModelKeys := h.settingService.GetModelPriceHiddenModelKeys(c.Request.Context())
+	applyModelPriceGroupUsage(groupDTOs, channels, accountsByGroup, hiddenModelKeys, showHiddenModels)
 	usdCNYRate := h.settingService.GetModelPriceUSDCNYRate(c.Request.Context())
 	h.applyPlanEconomics(c.Request.Context(), groupDTOs, usdCNYRate)
 	hiddenGroupIDs := h.settingService.GetModelPriceHiddenGroupIDs(c.Request.Context())
@@ -241,22 +257,29 @@ func (h *ModelPriceHandler) List(c *gin.Context) {
 	if selected != nil {
 		customPrices := h.settingService.GetModelPriceCustomPrices(c.Request.Context())
 		models = h.modelsForGroup(channels, accountsByGroup[selected.ID], *selected, usdCNYRate, includeCatalog, customPrices)
+		models = applyModelPriceHiddenModels(models, selected.ID, hiddenModelKeys, showHiddenModels)
 		if !isAdmin {
 			models = sanitizeModelPriceModelsForUser(models)
 		}
+	}
+	responseHiddenModelKeys := map[string]struct{}{}
+	if isAdmin {
+		responseHiddenModelKeys = hiddenModelKeys
 	}
 
 	response.Success(c, modelPriceResponseDTO{
 		USDCNYRate:          usdCNYRate,
 		Groups:              groupDTOs,
-		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels, accountsByGroup),
+		GroupOverview:       buildModelPriceGroupOverview(groupDTOs, channels, accountsByGroup, hiddenModelKeys, showHiddenModels),
 		SelectedGroupID:     selectedGroupID,
 		Models:              models,
 		Summary:             summarizeModelPrices(models),
 		CatalogStatus:       h.catalogStatus(isAdmin),
 		IncludeCatalog:      includeCatalog,
 		ShowHiddenGroups:    showHiddenGroups,
+		ShowHiddenModels:    showHiddenModels,
 		HiddenGroupIDs:      sortedInt64SetKeys(hiddenGroupIDs),
+		HiddenModelKeys:     sortedModelPriceHandlerStringSetKeys(responseHiddenModelKeys),
 		SelectedGroupHidden: selected != nil && selected.Hidden,
 	})
 }
@@ -283,6 +306,24 @@ func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
 		return
 	}
 	response.Success(c, updateModelPriceHiddenGroupsResponse{HiddenGroupIDs: ids})
+}
+
+func (h *ModelPriceHandler) UpdateHiddenModel(c *gin.Context) {
+	var req updateModelPriceHiddenModelRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	models := req.Models
+	if strings.TrimSpace(req.Model) != "" {
+		models = append(models, req.Model)
+	}
+	keys, err := h.settingService.SetModelPriceHiddenModels(c.Request.Context(), req.GroupID, models, req.Hidden)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, updateModelPriceHiddenModelResponse{HiddenModelKeys: keys})
 }
 
 func (h *ModelPriceHandler) UpdateCustomPrice(c *gin.Context) {
@@ -436,6 +477,22 @@ func applyModelPriceHiddenGroups(groups []modelPriceGroupDTO, hidden map[int64]s
 	return out
 }
 
+func applyModelPriceHiddenModels(models []modelPriceModelDTO, groupID int64, hidden map[string]struct{}, includeHidden bool) []modelPriceModelDTO {
+	if len(models) == 0 || len(hidden) == 0 {
+		return models
+	}
+	out := make([]modelPriceModelDTO, 0, len(models))
+	for i := range models {
+		_, isHidden := hidden[service.ModelPriceHiddenModelKey(groupID, models[i].Name)]
+		models[i].Hidden = isHidden
+		if isHidden && !includeHidden {
+			continue
+		}
+		out = append(out, models[i])
+	}
+	return out
+}
+
 func (h *ModelPriceHandler) modelPriceAccountsByGroup(ctx context.Context, groups []modelPriceGroupDTO) (map[int64][]service.Account, error) {
 	out := make(map[int64][]service.Account, len(groups))
 	if h.accountService == nil || len(groups) == 0 {
@@ -451,7 +508,7 @@ func (h *ModelPriceHandler) modelPriceAccountsByGroup(ctx context.Context, group
 	return out, nil
 }
 
-func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account) {
+func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account, hiddenModels map[string]struct{}, includeHiddenModels bool) {
 	if len(groups) == 0 {
 		return
 	}
@@ -477,6 +534,9 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
 					continue
 				}
+				if modelPriceModelHidden(group.ID, strings.TrimSpace(model.Name), hiddenModels, includeHiddenModels) {
+					continue
+				}
 				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
 				modelNamesByGroup[group.ID][key] = struct{}{}
 			}
@@ -494,6 +554,9 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 			}
 			accountCounts[groupID]++
 			for _, model := range accountModelPriceNames(account, platform) {
+				if modelPriceModelHidden(groupID, model, hiddenModels, includeHiddenModels) {
+					continue
+				}
 				key := strings.ToLower(platform + "\x00" + model)
 				modelNamesByGroup[groupID][key] = struct{}{}
 			}
@@ -508,7 +571,7 @@ func applyModelPriceGroupUsage(groups []modelPriceGroupDTO, channels []service.A
 	}
 }
 
-func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account) []modelPriceGroupOverviewDTO {
+func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []service.AvailableChannel, accountsByGroup map[int64][]service.Account, hiddenModels map[string]struct{}, includeHiddenModels bool) []modelPriceGroupOverviewDTO {
 	type aggregate struct {
 		groups   int
 		models   map[string]struct{}
@@ -547,6 +610,9 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 				if model.Platform != platform || strings.TrimSpace(model.Name) == "" {
 					continue
 				}
+				if modelPriceModelHidden(group.ID, strings.TrimSpace(model.Name), hiddenModels, includeHiddenModels) {
+					continue
+				}
 				key := strings.ToLower(model.Platform + "\x00" + strings.TrimSpace(model.Name))
 				byCategory[category].models[key] = struct{}{}
 			}
@@ -565,6 +631,9 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 			}
 			byCategory[category].channels["account:"+strconv.FormatInt(account.ID, 10)] = struct{}{}
 			for _, model := range accountModelPriceNames(account, platform) {
+				if modelPriceModelHidden(groupID, model, hiddenModels, includeHiddenModels) {
+					continue
+				}
 				key := strings.ToLower(platform + "\x00" + model)
 				byCategory[category].models[key] = struct{}{}
 			}
@@ -581,6 +650,14 @@ func buildModelPriceGroupOverview(groups []modelPriceGroupDTO, channels []servic
 		})
 	}
 	return out
+}
+
+func modelPriceModelHidden(groupID int64, model string, hiddenModels map[string]struct{}, includeHiddenModels bool) bool {
+	if includeHiddenModels || len(hiddenModels) == 0 {
+		return false
+	}
+	_, ok := hiddenModels[service.ModelPriceHiddenModelKey(groupID, model)]
+	return ok
 }
 
 func modelPriceChannelKey(ch service.AvailableChannel) string {
@@ -1332,6 +1409,15 @@ func sortedInt64SetKeys(values map[int64]struct{}) []int64 {
 		out = append(out, v)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
+}
+
+func sortedModelPriceHandlerStringSetKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for v := range values {
+		out = append(out, v)
+	}
+	sort.Strings(out)
 	return out
 }
 

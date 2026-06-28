@@ -13,6 +13,29 @@
             </button>
           </div>
 
+          <div v-if="isAdmin" class="selection-panel mb-4" data-testid="group-bulk-panel">
+            <div class="selection-panel-row">
+              <div>
+                <span>分组批量管理</span>
+                <strong>{{ selectedGroupIDs.size > 0 ? `已选 ${selectedGroupIDs.size} 个` : '先勾选分组' }}</strong>
+              </div>
+              <button class="toolbar-button" :disabled="groupFilters.length === 0" data-testid="group-select-visible" @click="toggleAllVisibleGroupsSelected">
+                {{ allVisibleGroupsSelected ? '取消全选' : '全选当前' }}
+              </button>
+            </div>
+            <div v-if="selectedGroupIDs.size > 0" class="bulk-action-strip">
+              <button class="toolbar-button danger" :disabled="savingHiddenGroups" data-testid="group-bulk-hide" @click="bulkSetGroupsHidden(true)">
+                批量隐藏
+              </button>
+              <button class="toolbar-button" :disabled="savingHiddenGroups" data-testid="group-bulk-restore" @click="bulkSetGroupsHidden(false)">
+                批量恢复
+              </button>
+              <button class="toolbar-button ghost" :disabled="savingHiddenGroups" data-testid="group-bulk-clear" @click="clearSelectedGroups">
+                清空
+              </button>
+            </div>
+          </div>
+
           <div class="relative mb-4">
             <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
             <input
@@ -49,7 +72,12 @@
               :label="group.name"
               :count-label="groupPillLabel(group)"
               tone="cyan"
+              :show-checkbox="isAdmin"
+              :checked="selectedGroupIDs.has(group.id)"
+              :test-id="`group-pill-${group.id}`"
+              :checkbox-test-id="`group-select-${group.id}`"
               @click="selectedGroupID = group.id"
+              @toggle="toggleGroupSelected(group.id)"
             />
             <FilterPill
               v-if="groupFilters.length === 0"
@@ -71,6 +99,29 @@
               <button class="copy-button" title="关闭" @click="showGroupDrawer = false">
                 <Icon name="x" size="xs" />
               </button>
+            </div>
+
+            <div v-if="isAdmin" class="selection-panel mb-4">
+              <div class="selection-panel-row">
+                <div>
+                  <span>分组批量管理</span>
+                  <strong>{{ selectedGroupIDs.size > 0 ? `已选 ${selectedGroupIDs.size} 个` : '先勾选分组' }}</strong>
+                </div>
+                <button class="toolbar-button" :disabled="groupFilters.length === 0" @click="toggleAllVisibleGroupsSelected">
+                  {{ allVisibleGroupsSelected ? '取消全选' : '全选当前' }}
+                </button>
+              </div>
+              <div v-if="selectedGroupIDs.size > 0" class="bulk-action-strip">
+                <button class="toolbar-button danger" :disabled="savingHiddenGroups" @click="bulkSetGroupsHidden(true)">
+                  批量隐藏
+                </button>
+                <button class="toolbar-button" :disabled="savingHiddenGroups" @click="bulkSetGroupsHidden(false)">
+                  批量恢复
+                </button>
+                <button class="toolbar-button ghost" :disabled="savingHiddenGroups" @click="clearSelectedGroups">
+                  清空
+                </button>
+              </div>
             </div>
 
             <div class="relative mb-4">
@@ -109,7 +160,12 @@
                 :label="group.name"
                 :count-label="groupPillLabel(group)"
                 tone="cyan"
+                :show-checkbox="isAdmin"
+                :checked="selectedGroupIDs.has(group.id)"
+                :test-id="`drawer-group-pill-${group.id}`"
+                :checkbox-test-id="`drawer-group-select-${group.id}`"
                 @click="selectGroup(group.id)"
+                @toggle="toggleGroupSelected(group.id)"
               />
             </FilterSection>
           </section>
@@ -175,11 +231,20 @@
                   <button v-if="isAdmin && selectedGroup" class="toolbar-button" :class="{ active: showOnlyIssues }" @click="showOnlyIssues = !showOnlyIssues">
                     只看异常 {{ issueModels.length }}
                   </button>
+                  <button v-if="isAdmin && selectedGroup" class="toolbar-button" :class="{ active: showOnlyHiddenModels }" data-testid="model-hidden-only-filter" @click="showOnlyHiddenModels = !showOnlyHiddenModels">
+                    只看隐藏 {{ hiddenModelCount }}
+                  </button>
+                  <button v-if="isAdmin && selectedGroup" class="toolbar-button" :disabled="filteredModels.length === 0" data-testid="model-select-visible" @click="toggleAllVisibleModelsSelected">
+                    {{ allVisibleModelsSelected ? '取消全选模型' : '全选当前模型' }}
+                  </button>
                   <button v-if="isAdmin" class="toolbar-button" :class="{ active: includeCatalog }" @click="toggleIncludeCatalog">
                     官方目录补充
                   </button>
                   <button v-if="isAdmin" class="toolbar-button" :class="{ active: showHiddenGroups }" @click="toggleShowHiddenGroups">
                     显示隐藏分组
+                  </button>
+                  <button v-if="isAdmin && selectedGroup" class="toolbar-button" :class="{ active: showHiddenModels }" @click="toggleShowHiddenModels">
+                    显示隐藏模型
                   </button>
                   <button v-if="isAdmin && selectedGroup" class="toolbar-button" :disabled="savingHiddenGroups" @click="toggleCurrentGroupHidden">
                     {{ selectedGroup.hidden ? '恢复当前分组' : '隐藏当前分组' }}
@@ -309,6 +374,26 @@
             {{ showOnlyIssues ? '暂无价格异常模型' : '暂无可展示模型' }}
           </div>
           <template v-else>
+          <section v-if="isAdmin && selectedGroup" class="model-selection-bar" :class="{ active: selectedModelNames.size > 0 }" data-testid="model-bulk-panel">
+            <div class="model-selection-copy">
+              <span>模型批量管理</span>
+              <strong>{{ selectedModelNames.size > 0 ? `已选 ${selectedModelNames.size} 个模型` : '勾选模型后批量隐藏或恢复' }}</strong>
+            </div>
+            <div class="bulk-action-strip">
+              <button class="toolbar-button" :disabled="filteredModels.length === 0" data-testid="model-select-visible-bar" @click="toggleAllVisibleModelsSelected">
+                {{ allVisibleModelsSelected ? '取消全选' : '全选当前' }}
+              </button>
+              <button class="toolbar-button danger" :disabled="selectedModelNames.size === 0 || savingHiddenModels" data-testid="model-bulk-hide" @click="bulkSetModelsHidden(true)">
+                隐藏所选
+              </button>
+              <button class="toolbar-button" :disabled="selectedModelNames.size === 0 || savingHiddenModels" data-testid="model-bulk-restore" @click="bulkSetModelsHidden(false)">
+                恢复所选
+              </button>
+              <button class="toolbar-button ghost" :disabled="selectedModelNames.size === 0 || savingHiddenModels" data-testid="model-bulk-clear" @click="clearSelectedModels">
+                清空
+              </button>
+            </div>
+          </section>
           <section class="mt-4 hidden overflow-hidden rounded-lg border border-white/[0.08] bg-[#14161b] xl:block">
             <div class="price-table-header" :class="{ admin: isAdmin }">
               <span>模型</span>
@@ -322,9 +407,19 @@
               v-for="model in filteredModels"
               :key="model.platform + ':' + model.name"
               class="price-table-row"
-              :class="{ admin: isAdmin }"
+              :class="{ admin: isAdmin, 'hidden-model': model.hidden }"
+              data-testid="model-price-row"
+              :data-model-name="model.name"
             >
               <div class="flex min-w-0 items-center gap-3">
+                <input
+                  v-if="isAdmin"
+                  class="bulk-checkbox"
+                  type="checkbox"
+                  :checked="selectedModelNames.has(model.name)"
+                  :data-testid="`model-select-${model.name}`"
+                  @change="toggleModelSelected(model.name)"
+                />
                 <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0">
                   <div class="flex min-w-0 items-center gap-2">
@@ -337,6 +432,7 @@
                     <span class="tag">{{ providerLabel(displayProvider(model)) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
                     <span v-if="isAdmin && model.custom_price" class="tag tag-amber">自定义价</span>
+                    <span v-if="isAdmin && model.hidden" class="tag tag-amber">已隐藏</span>
                     <span v-if="isAdmin && model.channel_names.length > 0" class="tag tag-blue">{{ model.channel_names.length }} 来源</span>
                   </div>
                 </div>
@@ -390,6 +486,9 @@
                 <span>{{ sourceLabel(model.pricing_source) }}</span>
                 <small v-if="model.official_missing">缺官方价</small>
                 <button class="inline-edit-button" @click="openPriceEditor(model)">改价</button>
+                <button class="inline-edit-button danger" :disabled="savingHiddenModels" @click="toggleModelHidden(model)">
+                  {{ model.hidden ? '恢复' : '隐藏' }}
+                </button>
               </div>
             </article>
           </section>
@@ -399,8 +498,19 @@
               v-for="model in filteredModels"
               :key="model.platform + ':' + model.name"
               class="model-card group"
+              :class="{ 'hidden-model': model.hidden }"
+              data-testid="model-price-card"
+              :data-model-name="model.name"
             >
               <div class="flex items-start gap-3">
+                <input
+                  v-if="isAdmin"
+                  class="bulk-checkbox mt-1"
+                  type="checkbox"
+                  :checked="selectedModelNames.has(model.name)"
+                  :data-testid="`mobile-model-select-${model.name}`"
+                  @change="toggleModelSelected(model.name)"
+                />
                 <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0 flex-1">
                   <div class="flex min-w-0 items-start justify-between gap-3">
@@ -413,6 +523,7 @@
                     <span class="tag">{{ providerLabel(displayProvider(model)) }}</span>
                     <span class="tag tag-purple">{{ billingLabel(model.billing_mode) }}</span>
                     <span v-if="isAdmin && model.custom_price" class="tag tag-amber">自定义价</span>
+                    <span v-if="isAdmin && model.hidden" class="tag tag-amber">已隐藏</span>
                     <span v-if="tierBadges(model).length > 0" class="tag tag-blue">阶梯价格</span>
                   </div>
                 </div>
@@ -464,7 +575,12 @@
 
               <div class="mt-4 flex items-center justify-between gap-3">
                 <span class="rounded-full bg-violet-500/[0.12] px-2.5 py-1 text-xs font-semibold text-violet-200">{{ billingLabel(model.billing_mode) }}</span>
-                <button v-if="isAdmin" class="toolbar-button" @click="openPriceEditor(model)">改价</button>
+                <div v-if="isAdmin" class="flex items-center gap-2">
+                  <button class="toolbar-button" @click="openPriceEditor(model)">改价</button>
+                  <button class="toolbar-button danger" :disabled="savingHiddenModels" @click="toggleModelHidden(model)">
+                    {{ model.hidden ? '恢复' : '隐藏' }}
+                  </button>
+                </div>
                 <span v-if="showMultiplier && isActuallyCheaper(model.cheaper_factor)" class="save-badge">
                   便宜 {{ formatNumber(model.cheaper_factor, 1) }} 倍
                 </span>
@@ -599,13 +715,31 @@ const FilterPill = defineComponent({
     count: { type: Number, default: undefined },
     countLabel: { type: String, default: '' },
     tone: { type: String as () => FilterTone, default: 'purple' },
+    showCheckbox: { type: Boolean, default: false },
+    checked: { type: Boolean, default: false },
+    testId: { type: String, default: '' },
+    checkboxTestId: { type: String, default: '' },
   },
-  emits: ['click'],
+  emits: ['click', 'toggle'],
   setup(props, { emit }) {
     return () => h('button', {
       class: ['filter-pill', `tone-${props.tone}`, props.active ? 'active' : ''],
+      'data-testid': props.testId || undefined,
       onClick: () => emit('click'),
     }, [
+      props.showCheckbox
+        ? h('input', {
+            class: 'bulk-checkbox',
+            type: 'checkbox',
+            checked: props.checked,
+            'data-testid': props.checkboxTestId || undefined,
+            onClick: (event: Event) => event.stopPropagation(),
+            onChange: (event: Event) => {
+              event.stopPropagation()
+              emit('toggle')
+            },
+          })
+        : null,
       h('span', { class: 'truncate' }, props.label),
       props.count !== undefined || props.countLabel
         ? h('span', { class: 'pill-count' }, props.countLabel || String(props.count))
@@ -667,9 +801,14 @@ const showGroupDrawer = ref(false)
 const showOfficial = ref(false)
 const showMultiplier = ref(false)
 const showOnlyIssues = ref(false)
+const showOnlyHiddenModels = ref(false)
 const includeCatalog = ref(false)
 const showHiddenGroups = ref(false)
+const showHiddenModels = ref(false)
 const savingCustomPrice = ref(false)
+const savingHiddenModels = ref(false)
+const selectedGroupIDs = ref<Set<number>>(new Set())
+const selectedModelNames = ref<Set<string>>(new Set())
 const priceEditor = ref<PriceEditorState | null>(null)
 
 const isAdmin = computed(() => authStore.isAdmin)
@@ -740,6 +879,8 @@ const priceKindFilters = computed(() => {
 const searchableModels = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
   return models.value.filter((model) => {
+    if (model.hidden && (!isAdmin.value || !showHiddenModels.value)) return false
+    if (showOnlyHiddenModels.value && !model.hidden) return false
     if (selectedPriceKind.value === 'fixed' && !isFixedPriceModel(model)) return false
     if (selectedPriceKind.value === 'metered' && isFixedPriceModel(model)) return false
     if (!q) return true
@@ -753,6 +894,13 @@ const issueModels = computed(() =>
   searchableModels.value.filter(model => priceIssueSeverity(model) !== 'none'),
 )
 const filteredModels = computed(() => showOnlyIssues.value ? issueModels.value : searchableModels.value)
+const hiddenModelCount = computed(() => models.value.filter(model => model.hidden).length)
+const allVisibleGroupsSelected = computed(() =>
+  groupFilters.value.length > 0 && groupFilters.value.every(group => selectedGroupIDs.value.has(group.id)),
+)
+const allVisibleModelsSelected = computed(() =>
+  filteredModels.value.length > 0 && filteredModels.value.every(model => selectedModelNames.value.has(model.name)),
+)
 const criticalIssueCount = computed(() =>
   issueModels.value.filter(model => priceIssueSeverity(model) === 'critical').length,
 )
@@ -774,6 +922,24 @@ watch(showHiddenGroups, () => {
   loadPrices(selectedGroupID.value)
 })
 
+watch(showHiddenModels, () => {
+  loadPrices(selectedGroupID.value)
+})
+
+watch(showOnlyHiddenModels, (enabled) => {
+  if (enabled && !showHiddenModels.value) showHiddenModels.value = true
+})
+
+watch(filteredModels, () => {
+  const visible = new Set(filteredModels.value.map(model => model.name))
+  selectedModelNames.value = new Set([...selectedModelNames.value].filter(name => visible.has(name)))
+})
+
+watch(groupFilters, () => {
+  const visible = new Set(groupFilters.value.map(group => group.id))
+  selectedGroupIDs.value = new Set([...selectedGroupIDs.value].filter(id => visible.has(id)))
+})
+
 async function loadPrices(groupID?: number) {
   loading.value = true
   try {
@@ -781,6 +947,7 @@ async function loadPrices(groupID?: number) {
       group_id: groupID,
       include_catalog: includeCatalog.value,
       show_hidden_groups: showHiddenGroups.value,
+      show_hidden_models: showHiddenModels.value,
     })
     if (groupID && response.value.selected_group_id === groupID) {
       selectedGroupID.value = groupID
@@ -802,6 +969,9 @@ function resetFilters() {
   groupSearchQuery.value = ''
   searchQuery.value = ''
   showOnlyIssues.value = false
+  showOnlyHiddenModels.value = false
+  selectedGroupIDs.value = new Set()
+  selectedModelNames.value = new Set()
 }
 
 function selectGroup(id: number | undefined) {
@@ -815,6 +985,49 @@ function toggleIncludeCatalog() {
 
 function toggleShowHiddenGroups() {
   showHiddenGroups.value = !showHiddenGroups.value
+}
+
+function toggleShowHiddenModels() {
+  showHiddenModels.value = !showHiddenModels.value
+  if (!showHiddenModels.value) showOnlyHiddenModels.value = false
+}
+
+function toggleGroupSelected(groupID: number) {
+  const next = new Set(selectedGroupIDs.value)
+  if (next.has(groupID)) next.delete(groupID)
+  else next.add(groupID)
+  selectedGroupIDs.value = next
+}
+
+function toggleAllVisibleGroupsSelected() {
+  if (allVisibleGroupsSelected.value) {
+    selectedGroupIDs.value = new Set()
+    return
+  }
+  selectedGroupIDs.value = new Set(groupFilters.value.map(group => group.id))
+}
+
+function clearSelectedGroups() {
+  selectedGroupIDs.value = new Set()
+}
+
+function toggleModelSelected(model: string) {
+  const next = new Set(selectedModelNames.value)
+  if (next.has(model)) next.delete(model)
+  else next.add(model)
+  selectedModelNames.value = next
+}
+
+function toggleAllVisibleModelsSelected() {
+  if (allVisibleModelsSelected.value) {
+    selectedModelNames.value = new Set()
+    return
+  }
+  selectedModelNames.value = new Set(filteredModels.value.map(model => model.name))
+}
+
+function clearSelectedModels() {
+  selectedModelNames.value = new Set()
 }
 
 async function toggleCurrentGroupHidden() {
@@ -841,6 +1054,63 @@ async function toggleCurrentGroupHidden() {
     appStore.showError(extractApiErrorMessage(err, '保存隐藏分组失败'))
   } finally {
     savingHiddenGroups.value = false
+  }
+}
+
+async function bulkSetGroupsHidden(hidden: boolean) {
+  if (!isAdmin.value || selectedGroupIDs.value.size === 0 || savingHiddenGroups.value) return
+  const current = new Set(response.value?.hidden_group_ids ?? [])
+  for (const id of selectedGroupIDs.value) {
+    if (hidden) current.add(id)
+    else current.delete(id)
+  }
+  savingHiddenGroups.value = true
+  try {
+    const result = await modelPricesAPI.updateHiddenGroups([...current])
+    if (response.value) response.value.hidden_group_ids = result.hidden_group_ids
+    selectedGroupIDs.value = new Set()
+    appStore.showSuccess(hidden ? '已批量隐藏分组' : '已批量恢复分组')
+    if (selectedGroupID.value && hidden && !showHiddenGroups.value && current.has(selectedGroupID.value)) {
+      selectedGroupID.value = undefined
+      await loadPrices()
+    } else {
+      await loadPrices(selectedGroupID.value)
+    }
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '批量保存分组隐藏状态失败'))
+  } finally {
+    savingHiddenGroups.value = false
+  }
+}
+
+async function toggleModelHidden(model: ModelPriceModel) {
+  if (!isAdmin.value || !selectedGroupID.value || savingHiddenModels.value) return
+  savingHiddenModels.value = true
+  try {
+    const result = await modelPricesAPI.updateHiddenModel(selectedGroupID.value, model.name, !model.hidden)
+    if (response.value) response.value.hidden_model_keys = result.hidden_model_keys
+    appStore.showSuccess(model.hidden ? '已恢复模型展示' : '已隐藏模型')
+    await loadPrices(selectedGroupID.value)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '保存模型隐藏状态失败'))
+  } finally {
+    savingHiddenModels.value = false
+  }
+}
+
+async function bulkSetModelsHidden(hidden: boolean) {
+  if (!isAdmin.value || !selectedGroupID.value || selectedModelNames.value.size === 0 || savingHiddenModels.value) return
+  savingHiddenModels.value = true
+  try {
+    const result = await modelPricesAPI.updateHiddenModels(selectedGroupID.value, [...selectedModelNames.value], hidden)
+    if (response.value) response.value.hidden_model_keys = result.hidden_model_keys
+    selectedModelNames.value = new Set()
+    appStore.showSuccess(hidden ? '已批量隐藏模型' : '已批量恢复模型')
+    await loadPrices(selectedGroupID.value)
+  } catch (err: unknown) {
+    appStore.showError(extractApiErrorMessage(err, '批量保存模型隐藏状态失败'))
+  } finally {
+    savingHiddenModels.value = false
   }
 }
 
@@ -1370,6 +1640,92 @@ onMounted(() => loadPrices())
   background: rgba(248, 113, 113, 0.12);
 }
 
+.toolbar-button.ghost {
+  color: rgb(148 163 184);
+}
+
+.selection-panel {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  padding: 10px;
+}
+
+.selection-panel-row,
+.model-selection-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.selection-panel span,
+.model-selection-copy span {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgb(100 116 139);
+}
+
+.selection-panel strong,
+.model-selection-copy strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+  color: rgb(226 232 240);
+}
+
+.bulk-action-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.selection-panel .bulk-action-strip {
+  margin-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 10px;
+}
+
+.model-selection-bar {
+  margin-top: 16px;
+  min-height: 58px;
+  border-radius: 8px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  background: rgba(14, 165, 233, 0.055);
+  padding: 12px 14px;
+}
+
+.model-selection-bar.active {
+  border-color: rgba(52, 211, 153, 0.24);
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.bulk-check-row {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 6px 8px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.bulk-check-row small {
+  color: #64748b;
+}
+
+.bulk-checkbox {
+  height: 15px;
+  width: 15px;
+  accent-color: #38bdf8;
+}
+
 .price-editor-overlay {
   position: fixed;
   inset: 0;
@@ -1428,6 +1784,17 @@ onMounted(() => loadPrices())
 @media (max-width: 640px) {
   .editor-grid {
     grid-template-columns: 1fr;
+  }
+
+  .model-selection-bar,
+  .selection-panel-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .bulk-action-strip .toolbar-button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 }
 
