@@ -1,6 +1,7 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <div class="keys-market">
+      <TablePageLayout>
       <template #filters>
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap items-center gap-3">
@@ -101,12 +102,12 @@
             <button
               v-if="rowAccessSource(row) === 'entitlement' && row.subscription_entitlement_id"
               type="button"
-              class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] cursor-pointer flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left transition-colors duration-200 hover:border-primary-200 hover:bg-primary-50/60 dark:hover:border-primary-900/60 dark:hover:bg-primary-950/20"
+              class="entitlement-card-btn plan"
               :title="t('keys.clickToChangeEntitlement')"
               @click="editKey(row)"
             >
               <div class="flex w-full items-center gap-2">
-                <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-primary-700 ring-1 ring-primary-200 dark:text-primary-300 dark:ring-primary-800/70">
+                <span class="badge-tag plan-badge">
                   {{ t('keys.planCardBadge') }}
                 </span>
                 <span class="ml-auto text-[11px] font-medium text-gray-500 dark:text-gray-400">
@@ -126,7 +127,7 @@
                   >
                     {{ entitlementQuotaRemainingTextByID(row.subscription_entitlement_id) }}
                   </span>
-                  <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                  <span class="action-trigger-text">
                     {{ t('keys.switchCardShort') }}
                   </span>
                 </div>
@@ -135,21 +136,21 @@
             <button
               v-else
               type="button"
-              class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] flex-col items-start rounded-md border border-dashed border-gray-300 px-2 py-1.5 text-left transition-colors hover:border-primary-300 hover:bg-primary-50/60 dark:border-dark-600 dark:hover:border-primary-800 dark:hover:bg-primary-950/20"
+              class="entitlement-card-btn balance"
               :title="t('keys.clickToChangeEntitlement')"
               @click="editKey(row)"
             >
-              <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-gray-200 dark:text-gray-300 dark:ring-dark-600">
+              <span class="badge-tag balance-badge">
                 {{ t('keys.accessSourceBalanceShort') }}
               </span>
-              <span class="mt-1 text-sm font-medium text-gray-500 dark:text-dark-300">
+              <span class="mt-1 text-sm font-semibold text-gray-900 dark:text-white">
                 {{ t('keys.accessSourceBalance') }}
               </span>
-              <div class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs">
+              <div class="mt-1.5 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs">
                 <span class="min-w-0 truncate text-gray-500 dark:text-dark-300">
                   {{ t('keys.balanceDeductionHint') }}
                 </span>
-                <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                <span class="action-trigger-text">
                   {{ t('keys.switchAccessSourceShort') }}
                 </span>
               </div>
@@ -161,11 +162,11 @@
               <button
                 :ref="(el) => setGroupButtonRef(row.id, el)"
                 @click="openGroupSelector(row)"
-                class="-mx-2 -my-1.5 flex min-w-[240px] max-w-[320px] cursor-pointer flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left transition-colors duration-200 hover:border-primary-200 hover:bg-primary-50/60 dark:hover:border-primary-900/60 dark:hover:bg-primary-950/20"
+                class="entitlement-card-btn group-select-card"
                 :title="t('keys.clickToChangeGroup')"
               >
                 <div class="flex w-full items-center gap-2">
-                  <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-200 dark:text-amber-300 dark:ring-amber-800/70">
+                  <span class="badge-tag group-badge">
                     {{ t('keys.currentCardGroupBadge') }}
                   </span>
                   <span
@@ -175,7 +176,7 @@
                     {{ t('keys.rateMultiplierBadge', { rate: formatRateMultiplier(effectiveGroupRate(row.group.id, row.group.rate_multiplier)) }) }}
                   </span>
                 </div>
-                <div class="mt-1 flex max-w-full items-center gap-2">
+                <div class="mt-1.5 flex max-w-full items-center gap-2">
                   <GroupBadge
                     v-if="row.group"
                     :name="row.group.name"
@@ -191,12 +192,12 @@
                 </div>
                 <div
                   v-if="row.group"
-                  class="mt-1 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
+                  class="mt-1.5 grid w-full min-w-0 grid-cols-[1fr_auto] items-center gap-2 text-xs"
                 >
-                  <span class="min-w-0 truncate font-medium text-gray-700 dark:text-gray-200">
+                  <span class="min-w-0 truncate font-semibold text-gray-900 dark:text-white">
                     {{ rowGroupActualCostText(row) }}
                   </span>
-                  <span class="shrink-0 font-medium text-primary-600 dark:text-primary-400">
+                  <span class="action-trigger-text">
                     {{ t('keys.changeGroup') }}
                   </span>
                 </div>
@@ -238,7 +239,7 @@
               </div>
               <!-- Quota progress (if quota is set) -->
               <div v-if="row.quota > 0" class="mt-1.5">
-                <div class="flex items-center gap-1.5">
+                <div class="flex items-center gap-1.5 text-xs">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.quota') }}:</span>
                   <span :class="[
                     'font-medium',
@@ -249,13 +250,13 @@
                     ${{ row.quota_used?.toFixed(2) || '0.00' }} / ${{ row.quota?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                <div class="progress-bar-track mt-1">
                   <div
+                    class="progress-bar-fill"
                     :class="[
-                      'h-full rounded-full transition-all',
-                      row.quota_used >= row.quota ? 'bg-red-500' :
-                      row.quota_used >= row.quota * 0.8 ? 'bg-yellow-500' :
-                      'bg-primary-500'
+                      row.quota_used >= row.quota ? 'danger' :
+                      row.quota_used >= row.quota * 0.8 ? 'warning' :
+                      'primary'
                     ]"
                     :style="{ width: Math.min((row.quota_used / row.quota) * 100, 100) + '%' }"
                   />
@@ -268,10 +269,10 @@
             <div v-if="row.rate_limit_5h > 0 || row.rate_limit_1d > 0 || row.rate_limit_7d > 0" class="space-y-1.5 min-w-[140px]">
               <!-- 5h window -->
               <div v-if="row.rate_limit_5h > 0">
-                <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center justify-between text-[11px]">
                   <span class="text-gray-500 dark:text-gray-400">5h</span>
                   <span :class="[
-                    'font-medium tabular-nums',
+                    'font-semibold tabular-nums',
                     row.usage_5h >= row.rate_limit_5h ? 'text-red-500' :
                     row.usage_5h >= row.rate_limit_5h * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
@@ -279,13 +280,13 @@
                     ${{ row.usage_5h?.toFixed(2) || '0.00' }}/${{ row.rate_limit_5h?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                <div class="progress-bar-track thin">
                   <div
+                    class="progress-bar-fill"
                     :class="[
-                      'h-full rounded-full transition-all',
-                      row.usage_5h >= row.rate_limit_5h ? 'bg-red-500' :
-                      row.usage_5h >= row.rate_limit_5h * 0.8 ? 'bg-yellow-500' :
-                      'bg-emerald-500'
+                      row.usage_5h >= row.rate_limit_5h ? 'danger' :
+                      row.usage_5h >= row.rate_limit_5h * 0.8 ? 'warning' :
+                      'success'
                     ]"
                     :style="{ width: Math.min((row.usage_5h / row.rate_limit_5h) * 100, 100) + '%' }"
                   />
@@ -296,10 +297,10 @@
               </div>
               <!-- 1d window -->
               <div v-if="row.rate_limit_1d > 0">
-                <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center justify-between text-[11px]">
                   <span class="text-gray-500 dark:text-gray-400">1d</span>
                   <span :class="[
-                    'font-medium tabular-nums',
+                    'font-semibold tabular-nums',
                     row.usage_1d >= row.rate_limit_1d ? 'text-red-500' :
                     row.usage_1d >= row.rate_limit_1d * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
@@ -307,13 +308,13 @@
                     ${{ row.usage_1d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_1d?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                <div class="progress-bar-track thin">
                   <div
+                    class="progress-bar-fill"
                     :class="[
-                      'h-full rounded-full transition-all',
-                      row.usage_1d >= row.rate_limit_1d ? 'bg-red-500' :
-                      row.usage_1d >= row.rate_limit_1d * 0.8 ? 'bg-yellow-500' :
-                      'bg-emerald-500'
+                      row.usage_1d >= row.rate_limit_1d ? 'danger' :
+                      row.usage_1d >= row.rate_limit_1d * 0.8 ? 'warning' :
+                      'success'
                     ]"
                     :style="{ width: Math.min((row.usage_1d / row.rate_limit_1d) * 100, 100) + '%' }"
                   />
@@ -324,10 +325,10 @@
               </div>
               <!-- 7d window -->
               <div v-if="row.rate_limit_7d > 0">
-                <div class="flex items-center justify-between text-xs">
+                <div class="flex items-center justify-between text-[11px]">
                   <span class="text-gray-500 dark:text-gray-400">7d</span>
                   <span :class="[
-                    'font-medium tabular-nums',
+                    'font-semibold tabular-nums',
                     row.usage_7d >= row.rate_limit_7d ? 'text-red-500' :
                     row.usage_7d >= row.rate_limit_7d * 0.8 ? 'text-yellow-500' :
                     'text-gray-700 dark:text-gray-300'
@@ -335,13 +336,13 @@
                     ${{ row.usage_7d?.toFixed(2) || '0.00' }}/${{ row.rate_limit_7d?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="h-1 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
+                <div class="progress-bar-track thin">
                   <div
+                    class="progress-bar-fill"
                     :class="[
-                      'h-full rounded-full transition-all',
-                      row.usage_7d >= row.rate_limit_7d ? 'bg-red-500' :
-                      row.usage_7d >= row.rate_limit_7d * 0.8 ? 'bg-yellow-500' :
-                      'bg-emerald-500'
+                      row.usage_7d >= row.rate_limit_7d ? 'danger' :
+                      row.usage_7d >= row.rate_limit_7d * 0.8 ? 'warning' :
+                      'success'
                     ]"
                     :style="{ width: Math.min((row.usage_7d / row.rate_limit_7d) * 100, 100) + '%' }"
                   />
@@ -481,6 +482,7 @@
         />
       </template>
     </TablePageLayout>
+    </div>
 
     <!-- Create/Edit Modal -->
     <BaseDialog
@@ -507,35 +509,31 @@
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               type="button"
-              class="order-2 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors"
-              :class="formData.access_source === 'balance'
-                ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
-                : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
+              class="access-source-card balance order-2"
+              :class="{ active: formData.access_source === 'balance' }"
               data-testid="access-source-balance"
               @click="selectAccessSource('balance')"
             >
-              <Icon name="dollar" size="sm" class="mt-0.5 shrink-0" />
+              <Icon name="dollar" size="sm" class="mt-0.5 shrink-0 icon" />
               <span class="min-w-0">
-                <span class="block text-sm font-medium">{{ t('keys.accessSourceBalance') }}</span>
-                <span class="mt-0.5 block text-xs text-gray-500 dark:text-dark-400">
+                <span class="block text-sm font-semibold">{{ t('keys.accessSourceBalance') }}</span>
+                <span class="mt-0.5 block text-xs desc-text">
                   {{ t('keys.accessSourceBalanceHint') }}
                 </span>
               </span>
             </button>
             <button
               type="button"
-              class="order-1 flex min-w-0 items-start gap-2 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-              :class="formData.access_source === 'entitlement'
-                ? 'border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-600 dark:bg-primary-950/30 dark:text-primary-100'
-                : 'border-gray-200 hover:border-primary-200 hover:bg-gray-50 dark:border-dark-700 dark:hover:border-primary-900/60 dark:hover:bg-dark-800'"
+              class="access-source-card entitlement order-1"
+              :class="{ active: formData.access_source === 'entitlement' }"
               :disabled="availableEntitlements.length === 0"
               data-testid="access-source-entitlement"
               @click="selectAccessSource('entitlement')"
             >
-              <Icon name="badge" size="sm" class="mt-0.5 shrink-0" />
+              <Icon name="badge" size="sm" class="mt-0.5 shrink-0 icon" />
               <span class="min-w-0">
-                <span class="block text-sm font-medium">{{ t('keys.accessSourceEntitlement') }}</span>
-                <span class="mt-0.5 block text-xs text-gray-500 dark:text-dark-400">
+                <span class="block text-sm font-semibold">{{ t('keys.accessSourceEntitlement') }}</span>
+                <span class="mt-0.5 block text-xs desc-text">
                   {{ availableEntitlements.length > 0 ? t('keys.accessSourceEntitlementHint') : t('keys.accessSourceNoEntitlementHint') }}
                 </span>
               </span>
@@ -2783,3 +2781,260 @@ onUnmounted(() => {
   if (resetTimer) clearInterval(resetTimer)
 })
 </script>
+
+<style scoped>
+.keys-market {
+  --bg-card-glow: rgba(59, 130, 246, 0.03);
+  --border-glow: #3b82f6;
+
+  --plan-bg: rgba(239, 246, 255, 0.55);
+  --plan-border: rgba(191, 219, 254, 0.6);
+  --plan-text: #1d4ed8;
+
+  --balance-bg: rgba(240, 253, 244, 0.55);
+  --balance-border: rgba(187, 247, 208, 0.6);
+  --balance-text: #15803d;
+
+  --group-bg: rgba(254, 243, 199, 0.5);
+  --group-border: rgba(253, 230, 138, 0.6);
+  --group-text: #b45309;
+}
+
+/* Card Button styles for cells */
+.keys-market :deep(.entitlement-card-btn) {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 250px;
+  max-width: 320px;
+  border-radius: 10px;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  background: #ffffff;
+  padding: 10px 14px;
+  text-align: left;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.keys-market :deep(.entitlement-card-btn):hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.05);
+}
+
+.keys-market :deep(.entitlement-card-btn.plan) {
+  background: var(--plan-bg);
+  border-color: var(--plan-border);
+}
+
+.keys-market :deep(.entitlement-card-btn.plan):hover {
+  border-color: var(--border-glow);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+}
+
+.keys-market :deep(.entitlement-card-btn.balance) {
+  border-style: dashed;
+  background: var(--balance-bg);
+  border-color: var(--balance-border);
+}
+
+.keys-market :deep(.entitlement-card-btn.balance):hover {
+  border-style: solid;
+  border-color: #10b981;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.08);
+}
+
+.keys-market :deep(.entitlement-card-btn.group-select-card) {
+  background: var(--group-bg);
+  border-color: var(--group-border);
+}
+
+.keys-market :deep(.entitlement-card-btn.group-select-card):hover {
+  border-color: #f59e0b;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.08);
+}
+
+/* Badge style inside card */
+.keys-market :deep(.badge-tag) {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 1.5px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.keys-market :deep(.plan-badge) {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--plan-text);
+}
+
+.keys-market :deep(.balance-badge) {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--balance-text);
+}
+
+.keys-market :deep(.group-badge) {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--group-text);
+}
+
+/* Action Trigger Text */
+.keys-market :deep(.action-trigger-text) {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--border-glow);
+  opacity: 0.85;
+  transition: opacity 0.2s;
+}
+
+.keys-market :deep(.entitlement-card-btn):hover .action-trigger-text {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+/* Progress bar styles */
+.keys-market :deep(.progress-bar-track) {
+  position: relative;
+  height: 6px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: #e2e8f0;
+}
+
+.keys-market :deep(.progress-bar-track.thin) {
+  height: 4px;
+}
+
+.keys-market :deep(.progress-bar-fill) {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.keys-market :deep(.progress-bar-fill.primary) {
+  background: linear-gradient(90deg, #6366f1, #8b5cf6);
+}
+
+.keys-market :deep(.progress-bar-fill.success) {
+  background: linear-gradient(90deg, #10b981, #059669);
+}
+
+.keys-market :deep(.progress-bar-fill.warning) {
+  background: linear-gradient(90deg, #f59e0b, #d97706);
+}
+
+.keys-market :deep(.progress-bar-fill.danger) {
+  background: linear-gradient(90deg, #ef4444, #dc2626);
+}
+
+/* Dialog: Access Source Cards styling */
+.access-source-card {
+  display: flex;
+  min-width: 0;
+  align-items: start;
+  gap: 12px;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  padding: 14px;
+  text-align: left;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.access-source-card .icon {
+  color: #64748b;
+  transition: color 0.2s;
+}
+
+.access-source-card .desc-text {
+  color: #64748b;
+}
+
+.access-source-card:hover:not(:disabled) {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.access-source-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.access-source-card.active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.03);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.05);
+}
+
+.access-source-card.active .icon {
+  color: #3b82f6;
+}
+
+.access-source-card.balance.active {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.03);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.05);
+}
+
+.access-source-card.balance.active .icon {
+  color: #10b981;
+}
+</style>
+
+<style>
+/* Unscoped dark mode overrides for KeysView specifically prefixed to avoid Vue compiler stripping */
+.dark .keys-market {
+  --bg-card-glow: rgba(56, 189, 248, 0.02);
+  --border-glow: #38bdf8;
+
+  --plan-bg: rgba(56, 189, 248, 0.04);
+  --plan-border: rgba(56, 189, 248, 0.18);
+  --plan-text: #38bdf8;
+
+  --balance-bg: rgba(52, 211, 153, 0.04);
+  --balance-border: rgba(52, 211, 153, 0.18);
+  --balance-text: #34d399;
+
+  --group-bg: rgba(251, 191, 36, 0.04);
+  --group-border: rgba(251, 191, 36, 0.18);
+  --group-text: #fbbf24;
+}
+
+.dark .keys-market .entitlement-card-btn {
+  border-color: rgba(255, 255, 255, 0.05);
+  background: #14161b;
+}
+
+.dark .keys-market .progress-bar-track {
+  background: #1f2937;
+}
+
+/* Dialog dark overrides */
+.dark .access-source-card {
+  border-color: rgba(255, 255, 255, 0.07);
+  background: #14161b;
+}
+
+.dark .access-source-card:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: #181b21;
+}
+
+.dark .access-source-card.active {
+  border-color: #38bdf8;
+  background: rgba(56, 189, 248, 0.06);
+}
+
+.dark .access-source-card.balance.active {
+  border-color: #34d399;
+  background: rgba(52, 211, 153, 0.06);
+}
+
+.dark .access-source-card .desc-text {
+  color: #94a3b8;
+}
+</style>
