@@ -1118,6 +1118,8 @@ export default {
     rateMultiplierBadge: '倍率 {rate}',
     actualDeductionHint: '{rate}倍率后实际价格{amount}/刀',
     actualRmbCostHint: '{rate}倍率后实际价格{amount}/刀',
+    actualRmbUsageApprox: '约 {amount}',
+    actualRmbUsageTooltip: '按订阅价格折算：套餐价格 ÷ 套餐额度 × 已用量',
     priceUnavailable: '价格待同步',
     entitlementQuotaRemaining: '剩余 {remaining} / {total}',
     entitlementQuotaCompact: '剩余 {remaining} / {total}',

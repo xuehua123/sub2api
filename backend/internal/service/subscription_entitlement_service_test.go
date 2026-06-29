@@ -463,6 +463,50 @@ func TestSubscriptionEntitlementService_AssignOrExtendFromPlanCreatesEntitlement
 	require.Equal(t, ent.ID, resolvedB.Entitlement.ID)
 }
 
+func TestSubscriptionEntitlementService_AssignOrExtendFromPlanAllowsHiddenPlanGroups(t *testing.T) {
+	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		1: {
+			ID:           1,
+			GroupID:      101,
+			Name:         "Hidden Group Plan",
+			ValidityDays: 30,
+			ValidityUnit: validityUnitDay,
+			ForSale:      true,
+			Groups: []SubscriptionEntitlementPlanGroup{
+				{
+					GroupID: 101,
+					Enabled: true,
+					Group: &Group{
+						ID:                  101,
+						Status:              StatusDisabled,
+						SubscriptionType:    SubscriptionTypeSubscription,
+						SubscriptionEnabled: false,
+					},
+				},
+			},
+		},
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	ent, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:  42,
+		PlanID:  1,
+		OrderID: 9002,
+		Notes:   "paid order",
+	})
+
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.Equal(t, 1, repo.createCount)
+	require.Equal(t, 1, repo.eventCount)
+	require.Empty(t, repo.createGroups[0])
+	require.NotNil(t, ent.PrimaryGroupID)
+	require.Equal(t, int64(101), *ent.PrimaryGroupID)
+}
+
 func TestSubscriptionEntitlementService_SourceRedeemCodeReplayDoesNotExtendTwice(t *testing.T) {
 	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	repo := newFakeSubscriptionEntitlementRepo(now)

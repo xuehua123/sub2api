@@ -1119,6 +1119,8 @@ export default {
     rateMultiplierBadge: 'Rate {rate}',
     actualDeductionHint: '{rate} actual price {amount}/$1',
     actualRmbCostHint: '{rate} actual price {amount}/$1',
+    actualRmbUsageApprox: '≈ {amount}',
+    actualRmbUsageTooltip: 'Estimated from plan price: plan price ÷ plan quota × used quota',
     priceUnavailable: 'Price pending sync',
     entitlementQuotaRemaining: 'Remaining {remaining} / {total}',
     entitlementQuotaCompact: '{remaining} / {total} left',

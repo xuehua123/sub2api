@@ -314,6 +314,9 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 			return s.assignPlanEntitlementAlias(txCtx, input, sub)
 		})
 		if err != nil {
+			if shouldFallbackToEntitlementOnlyAssign(err) {
+				return s.assignPlanEntitlementOnly(ctx, input)
+			}
 			return nil, err
 		}
 		return sub, nil
@@ -331,6 +334,17 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 
 func (s *SubscriptionService) shouldAssignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput) bool {
 	return s != nil && input != nil && input.PlanID > 0 && s.ShouldUseSubscriptionEntitlementAliases(ctx)
+}
+
+func shouldFallbackToEntitlementOnlyAssign(err error) bool {
+	if !errors.Is(err, ErrSubscriptionAssignConflict) {
+		return false
+	}
+	appErr := infraerrors.FromError(err)
+	if appErr == nil || appErr.Metadata == nil {
+		return false
+	}
+	return appErr.Metadata["conflict_reason"] == "plan_id_mismatch"
 }
 
 // AssignOrExtendSubscription 分配或续期订阅（用于兑换码等场景）
@@ -443,6 +457,27 @@ func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, in
 		return fmt.Errorf("assign subscription entitlement alias: %w", err)
 	}
 	return nil
+}
+
+func (s *SubscriptionService) assignPlanEntitlementOnly(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if s == nil || input == nil || input.PlanID <= 0 || !s.ShouldUseSubscriptionEntitlementAliases(ctx) {
+		return nil, ErrSubscriptionEntitlementPlanRequired
+	}
+	ent, _, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
+		UserID:               input.UserID,
+		PlanID:               input.PlanID,
+		SourceType:           SubscriptionEntitlementSourceAdminAssign,
+		ValidityDaysOverride: input.ValidityDays,
+		AssignedBy:           input.AssignedBy,
+		Notes:                input.Notes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("assign subscription entitlement only: %w", err)
+	}
+	if input.GroupID > 0 {
+		s.InvalidateSubCache(input.UserID, input.GroupID)
+	}
+	return adminSubscriptionFromEntitlement(ent), nil
 }
 
 func adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID int64) string {

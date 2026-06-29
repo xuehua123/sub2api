@@ -1,14 +1,14 @@
 <template>
   <AppLayout>
-    <div class="model-market -m-4 min-h-[calc(100vh-4rem)] bg-[#0f1014] text-slate-100 md:-m-6 lg:-m-8">
+    <div class="model-market -m-4 min-h-[calc(100vh-4rem)] bg-[var(--bg-main)] text-[var(--text-main)] md:-m-6 lg:-m-8 transition-all duration-200">
       <div class="flex min-h-[calc(100vh-4rem)]">
-        <aside class="hidden w-[360px] shrink-0 border-r border-white/[0.08] bg-[#101114] px-4 py-5 xl:block">
+        <aside class="hidden w-[360px] shrink-0 border-r border-[var(--border-color)] bg-[var(--bg-sidebar)] px-4 py-5 xl:block">
           <div class="mb-5 flex items-center justify-between">
             <div>
-              <p class="text-lg font-semibold text-white">分组</p>
-              <p class="mt-1 text-xs text-slate-500">按销售分组查看价格</p>
+              <p class="text-lg font-semibold text-[var(--text-main)]">分组</p>
+              <p class="mt-1 text-xs text-[var(--text-muted)]">按销售分组查看价格</p>
             </div>
-            <button class="rounded-md border border-white/10 px-2.5 py-1 text-xs text-slate-300 hover:bg-white/[0.06]" @click="resetFilters">
+            <button class="rounded-md border border-[var(--border-color)] px-2.5 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-button-hover)] transition-all duration-200" @click="resetFilters">
               重置
             </button>
           </div>
@@ -37,10 +37,10 @@
           </div>
 
           <div class="relative mb-4">
-            <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-light)]" />
             <input
               v-model="groupSearchQuery"
-              class="h-9 w-full rounded-md border border-white/10 bg-[#1c1e23] pl-9 pr-3 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400"
+              class="h-9 w-full rounded-md border border-[var(--border-color)] bg-[var(--bg-input)] pl-9 pr-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-light)] focus:border-[var(--input-focus-border)] transition-all duration-200"
               placeholder="搜索分组"
             />
           </div>
@@ -93,8 +93,8 @@
           <section class="mobile-group-drawer">
             <div class="mb-4 flex items-center justify-between gap-3">
               <div>
-                <p class="text-base font-semibold text-white">选择分组</p>
-                <p class="mt-1 text-xs text-slate-500">按销售分组查看价格</p>
+                <p class="text-base font-semibold text-[var(--text-main)]">选择分组</p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">按销售分组查看价格</p>
               </div>
               <button class="copy-button" title="关闭" @click="showGroupDrawer = false">
                 <Icon name="x" size="xs" />
@@ -125,10 +125,10 @@
             </div>
 
             <div class="relative mb-4">
-              <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-light)]" />
               <input
                 v-model="groupSearchQuery"
-                class="h-9 w-full rounded-md border border-white/10 bg-[#1c1e23] pl-9 pr-3 text-xs text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400"
+                class="h-9 w-full rounded-md border border-[var(--border-color)] bg-[var(--bg-input)] pl-9 pr-3 text-xs text-[var(--text-main)] outline-none placeholder:text-[var(--text-light)] focus:border-[var(--input-focus-border)] transition-all duration-200"
                 placeholder="搜索分组"
               />
             </div>
@@ -172,9 +172,9 @@
         </div>
 
         <main class="min-w-0 flex-1 px-4 py-5 sm:px-5 lg:px-6">
-          <section class="overflow-hidden rounded-lg border border-white/10 bg-[#14161b] shadow-2xl shadow-black/30">
-            <div class="relative min-h-[98px] overflow-hidden bg-[radial-gradient(circle_at_15%_20%,rgba(34,211,238,.34),transparent_31%),linear-gradient(105deg,#1e40af,#2563eb_42%,#4338ca)] px-5 py-4">
-              <div class="absolute inset-y-0 right-0 w-2/3 bg-[linear-gradient(120deg,transparent,rgba(255,255,255,.16))]" />
+          <section class="overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-panel)] shadow-sm dark:shadow-2xl dark:shadow-black/30 transition-all duration-200">
+            <div class="relative min-h-[110px] overflow-hidden bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-700 px-6 py-5 transition-all duration-300">
+              <div class="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.12),transparent_50%)]" />
               <div class="relative flex h-full items-center justify-between gap-5">
                 <div>
                   <div class="flex items-center gap-2">
@@ -204,13 +204,13 @@
               </div>
             </div>
 
-            <div class="border-b border-white/10 bg-[#15171c] p-3">
+            <div class="border-b border-[var(--border-color)] bg-[var(--bg-panel)] p-3">
               <div class="flex flex-col gap-3 xl:flex-row xl:items-center">
                 <div class="relative min-w-0 flex-1">
-                  <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                  <Icon name="search" size="sm" class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-light)]" />
                   <input
                     v-model="searchQuery"
-                    class="h-10 w-full rounded-md border border-white/10 bg-[#2a2c31] pl-9 pr-3 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-blue-400"
+                    class="h-10 w-full rounded-md border border-[var(--border-color)] bg-[var(--bg-input)] pl-9 pr-3 text-sm text-[var(--text-main)] outline-none placeholder:text-[var(--text-light)] focus:border-[var(--input-focus-border)] transition-all duration-200"
                     placeholder="搜索模型名称"
                   />
                 </div>
@@ -367,7 +367,7 @@
             </RouterLink>
           </section>
 
-          <div v-if="loading" class="flex min-h-[420px] items-center justify-center text-sm text-slate-400">
+          <div v-if="loading" class="flex min-h-[420px] items-center justify-center text-sm text-[var(--text-muted)]">
             正在加载模型价格...
           </div>
           <section v-else-if="!selectedGroup" class="group-overview mt-4">
@@ -405,7 +405,7 @@
               </button>
             </div>
           </section>
-          <div v-else-if="filteredModels.length === 0" class="flex min-h-[420px] items-center justify-center text-sm text-slate-400">
+          <div v-else-if="filteredModels.length === 0" class="flex min-h-[420px] items-center justify-center text-sm text-[var(--text-muted)]">
             {{ showOnlyIssues ? '暂无价格异常模型' : '暂无可展示模型' }}
           </div>
           <template v-else>
@@ -429,7 +429,7 @@
               </button>
             </div>
           </section>
-          <section class="mt-4 hidden overflow-hidden rounded-lg border border-white/[0.08] bg-[#14161b] xl:block">
+          <section class="mt-4 hidden overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-panel)] xl:block transition-all duration-200">
             <div class="price-table-header" :class="{ admin: isAdmin }">
               <span>模型</span>
               <span>官方参考价</span>
@@ -458,7 +458,7 @@
                 <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0">
                   <div class="flex min-w-0 items-center gap-2">
-                    <h2 class="truncate text-sm font-bold text-slate-100" :title="model.name">{{ model.name }}</h2>
+                    <h2 class="truncate text-sm font-bold text-[var(--text-main)]" :title="model.name">{{ model.name }}</h2>
                     <button class="copy-button" title="复制模型名" @click="copyText(model.name)">
                       <Icon name="copy" size="xs" />
                     </button>
@@ -549,7 +549,7 @@
                 <ProviderMark :provider="displayProvider(model)" />
                 <div class="min-w-0 flex-1">
                   <div class="flex min-w-0 items-start justify-between gap-3">
-                    <h2 class="truncate text-base font-bold text-slate-100" :title="model.name">{{ model.name }}</h2>
+                    <h2 class="truncate text-base font-bold text-[var(--text-main)]" :title="model.name">{{ model.name }}</h2>
                     <button class="copy-button" title="复制模型名" @click="copyText(model.name)">
                       <Icon name="copy" size="xs" />
                     </button>
@@ -564,9 +564,9 @@
                 </div>
               </div>
 
-              <div class="mt-4 rounded-lg border border-emerald-400/10 bg-emerald-400/[0.035] p-3">
+              <div class="mt-4 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.02] dark:border-emerald-400/10 dark:bg-emerald-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-emerald-200">官方参考价</span>
+                  <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-200">官方参考价</span>
                 </div>
                 <div v-if="isFixedPriceModel(model)" class="space-y-2">
                   <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="priceValue(model.official.per_request_usd)" :suffix="`/ ${fixedPriceUnit(model)}`" />
@@ -579,10 +579,10 @@
                 </div>
               </div>
 
-              <div class="mt-3 rounded-lg border border-cyan-400/10 bg-cyan-400/[0.035] p-3">
+              <div class="mt-3 rounded-lg border border-cyan-500/15 bg-cyan-500/[0.02] dark:border-cyan-400/10 dark:bg-cyan-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-cyan-200">折扣后人民币价</span>
-                  <span v-if="selectedGroup?.best_plan" class="truncate text-[11px] text-slate-500" :title="selectedGroup.best_plan.name">
+                  <span class="text-[11px] font-bold text-cyan-600 dark:text-cyan-200">折扣后人民币价</span>
+                  <span v-if="selectedGroup?.best_plan" class="truncate text-[11px] text-[var(--text-light)]" :title="selectedGroup.best_plan.name">
                     {{ selectedGroup.best_plan.name }}
                   </span>
                 </div>
@@ -609,7 +609,7 @@
               </div>
 
               <div class="mt-4 flex items-center justify-between gap-3">
-                <span class="rounded-full bg-violet-500/[0.12] px-2.5 py-1 text-xs font-semibold text-violet-200">{{ billingLabel(model.billing_mode) }}</span>
+                <span class="rounded-full bg-violet-500/[0.1] dark:bg-violet-500/[0.12] px-2.5 py-1 text-xs font-semibold text-violet-700 dark:text-violet-200">{{ billingLabel(model.billing_mode) }}</span>
                 <div v-if="isAdmin" class="flex items-center gap-2">
                   <button class="toolbar-button" @click="openPriceEditor(model)">改价</button>
                   <button class="toolbar-button danger" :disabled="savingHiddenModels" @click="toggleModelHidden(model)">
@@ -633,9 +633,9 @@
         <section class="price-editor-dialog">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0">
-              <p class="text-sm font-bold text-white">自定义展示价</p>
-              <h3 class="mt-1 truncate text-lg font-black text-white" :title="priceEditor.model.name">{{ priceEditor.model.name }}</h3>
-              <p class="mt-1 text-xs text-slate-500">{{ selectedGroup?.name }} · 美元价格，保存后优先展示给用户</p>
+              <p class="text-sm font-bold text-[var(--text-muted)]">自定义展示价</p>
+              <h3 class="mt-1 truncate text-lg font-black text-[var(--text-main)]" :title="priceEditor.model.name">{{ priceEditor.model.name }}</h3>
+              <p class="mt-1 text-xs text-[var(--text-light)]">{{ selectedGroup?.name }} · 美元价格，保存后优先展示给用户</p>
             </div>
             <button class="copy-button" title="关闭" @click="closePriceEditor">
               <Icon name="x" size="xs" />
@@ -737,8 +737,8 @@ const FilterSection = defineComponent({
     title: { type: String, required: true },
   },
   setup(props, { slots }) {
-    return () => h('section', { class: 'mb-6 border-t border-white/[0.08] pt-4' }, [
-      h('h3', { class: 'mb-3 px-1 text-sm font-bold text-slate-100' }, props.title),
+    return () => h('section', { class: 'mb-6 border-t border-[var(--border-color)] pt-4' }, [
+      h('h3', { class: 'mb-3 px-1 text-sm font-bold text-[var(--text-main)]' }, props.title),
       h('div', { class: 'grid gap-2' }, slots.default?.()),
     ])
   },
@@ -815,11 +815,11 @@ const PriceRow = defineComponent({
   },
   setup(props) {
     return () => h('div', { class: 'price-row' }, [
-      h('span', { class: 'text-slate-400' }, props.label),
-      h('strong', { class: props.highlight ? 'text-emerald-300' : 'text-slate-200' }, [
+      h('span', { class: 'text-slate-500 dark:text-slate-400' }, props.label),
+      h('strong', { class: props.highlight ? 'text-emerald-600 dark:text-emerald-300' : 'text-slate-800 dark:text-slate-200' }, [
         props.value == null ? '暂未定价' : (props.currency === 'cny' ? formatCNY(props.value) : formatUSD(props.value)),
-        props.value == null ? '' : h('small', { class: 'ml-1 text-[11px] font-medium text-slate-500' }, props.suffix),
-        props.secondary && props.secondary !== '-' ? h('em', { class: 'block text-[11px] font-medium not-italic text-slate-500' }, props.secondary) : null,
+        props.value == null ? '' : h('small', { class: 'ml-1 text-[11px] font-medium text-slate-500 dark:text-slate-400' }, props.suffix),
+        props.secondary && props.secondary !== '-' ? h('em', { class: 'block text-[11px] font-medium not-italic text-slate-500 dark:text-slate-400' }, props.secondary) : null,
       ]),
     ])
   },
@@ -1708,33 +1708,83 @@ onMounted(() => loadPrices())
 
 <style scoped>
 .model-market {
-  color-scheme: dark;
+  color-scheme: light dark;
+  --bg-main: #f8fafc;
+  --bg-sidebar: #ffffff;
+  --bg-panel: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f1f5f9;
+  --bg-input: #ffffff;
+  --bg-button: #f1f5f9;
+  --bg-button-hover: #e2e8f0;
+  --bg-header: #f1f5f9;
+
+  --text-main: #0f172a;
+  --text-muted: #475569;
+  --text-light: #64748b;
+  --text-white: #ffffff;
+
+  --border-color: #e2e8f0;
+  --border-light: #f1f5f9;
+
+  --tag-bg: #f1f5f9;
+  --tag-text: #475569;
+  --tag-purple-bg: #f3e8ff;
+  --tag-purple-text: #6b21a8;
+  --tag-blue-bg: #dbeafe;
+  --tag-blue-text: #1e40af;
+  --tag-amber-bg: #fef3c7;
+  --tag-amber-text: #92400e;
+
+  --input-focus-border: #3b82f6;
+
+  --price-actual: #16a34a;
+  --price-muted: #475569;
+
+  --alert-bg: #fffbeb;
+  --alert-border: #fde68a;
+  --alert-text: #92400e;
+
+  --alert-critical-bg: #fef2f2;
+  --alert-critical-border: #fca5a5;
+  --alert-critical-text: #991b1b;
 }
 
 .hero-stat {
   min-width: 110px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(15, 23, 42, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(10px);
   padding: 9px 11px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.hero-stat:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .hero-stat span {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  color: rgba(219, 234, 254, 0.72);
+  color: rgba(255, 255, 255, 0.72);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .hero-stat strong {
-  margin-top: 3px;
+  margin-top: 4px;
   display: block;
   max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
-  color: white;
+  font-weight: 800;
+  color: #ffffff;
 }
 
 .filter-pill {
@@ -1745,18 +1795,27 @@ onMounted(() => loadPrices())
   justify-content: space-between;
   gap: 8px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 7px 10px;
-  color: rgb(203 213 225);
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 700;
   text-align: left;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.filter-pill:hover {
+  background: var(--bg-card-hover);
+  color: var(--text-main);
+  border-color: var(--input-focus-border);
 }
 
 .filter-pill.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
+  background: var(--bg-button-hover);
+  color: var(--text-main);
+  border-color: var(--input-focus-border);
 }
 
 .pill-count {
@@ -1768,13 +1827,19 @@ onMounted(() => loadPrices())
   text-align: center;
   line-height: 1.15;
   font-size: 10px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--tag-bg);
+  color: var(--text-muted);
+  transition: all 0.2s ease;
 }
 
-.tone-purple.active .pill-count { color: #c4b5fd; }
-.tone-cyan.active .pill-count { color: #67e8f9; }
-.tone-amber.active .pill-count { color: #fcd34d; }
-.tone-emerald.active .pill-count { color: #6ee7b7; }
+.filter-pill.active .pill-count {
+  background: var(--tag-bg);
+}
+
+.tone-purple.active .pill-count { color: var(--tag-purple-text); }
+.tone-cyan.active .pill-count { color: var(--tag-blue-text); }
+.tone-amber.active .pill-count { color: var(--tag-amber-text); }
+.tone-emerald.active .pill-count { color: var(--price-actual); }
 
 .toolbar-button {
   display: inline-flex;
@@ -1782,17 +1847,20 @@ onMounted(() => loadPrices())
   align-items: center;
   gap: 6px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-color);
+  background: var(--bg-button);
   padding: 0 10px;
-  color: rgb(203 213 225);
+  color: var(--text-muted);
   font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .toolbar-button.active,
-.toolbar-button:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: white;
+.toolbar-button:hover:not(:disabled) {
+  background: var(--bg-button-hover);
+  color: var(--text-main);
+  border-color: var(--input-focus-border);
 }
 
 .toolbar-button:disabled {
@@ -1801,22 +1869,24 @@ onMounted(() => loadPrices())
 }
 
 .toolbar-button.danger {
-  border-color: rgba(248, 113, 113, 0.2);
-  color: #fecaca;
+  border-color: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
 }
 
-.toolbar-button.danger:hover {
-  background: rgba(248, 113, 113, 0.12);
+.toolbar-button.danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.08);
+  color: #dc2626;
 }
+
 
 .toolbar-button.ghost {
-  color: rgb(148 163 184);
+  color: var(--text-light);
 }
 
 .selection-panel {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 10px;
 }
 
@@ -1833,7 +1903,7 @@ onMounted(() => loadPrices())
   display: block;
   font-size: 11px;
   font-weight: 700;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .selection-panel strong,
@@ -1841,7 +1911,7 @@ onMounted(() => loadPrices())
   display: block;
   margin-top: 3px;
   font-size: 13px;
-  color: rgb(226 232 240);
+  color: var(--text-main);
 }
 
 .bulk-action-strip {
@@ -1853,7 +1923,7 @@ onMounted(() => loadPrices())
 
 .selection-panel .bulk-action-strip {
   margin-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  border-top: 1px solid var(--border-color);
   padding-top: 10px;
 }
 
@@ -1861,14 +1931,19 @@ onMounted(() => loadPrices())
   margin-top: 16px;
   min-height: 58px;
   border-radius: 8px;
-  border: 1px solid rgba(56, 189, 248, 0.18);
-  background: rgba(14, 165, 233, 0.055);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 12px 14px;
+  transition: all 0.2s ease;
 }
 
 .model-selection-bar.active {
-  border-color: rgba(52, 211, 153, 0.24);
-  background: rgba(16, 185, 129, 0.07);
+  border-color: var(--alert-critical-border);
+  background: var(--alert-critical-bg);
+}
+
+.model-selection-bar.active .model-selection-copy strong {
+  color: var(--alert-critical-text);
 }
 
 .bulk-check-row {
@@ -1878,21 +1953,21 @@ onMounted(() => loadPrices())
   align-items: center;
   gap: 8px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 6px 8px;
-  color: #cbd5e1;
+  color: var(--text-main);
   font-size: 12px;
 }
 
 .bulk-check-row small {
-  color: #64748b;
+  color: var(--text-light);
 }
 
 .bulk-checkbox {
   height: 15px;
   width: 15px;
-  accent-color: #38bdf8;
+  accent-color: var(--input-focus-border);
 }
 
 .price-editor-overlay {
@@ -1902,7 +1977,8 @@ onMounted(() => loadPrices())
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.66);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
   padding: 20px;
 }
 
@@ -1911,10 +1987,10 @@ onMounted(() => loadPrices())
   max-height: min(86vh, 720px);
   overflow-y: auto;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #15171c;
+  border: 1px solid var(--border-color);
+  background: var(--bg-sidebar);
   padding: 18px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 .editor-grid {
@@ -1931,23 +2007,24 @@ onMounted(() => loadPrices())
 .editor-field span {
   font-size: 12px;
   font-weight: 800;
-  color: rgb(148 163 184);
+  color: var(--text-muted);
 }
 
 .editor-field input,
 .editor-field select {
   height: 38px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0f1014;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 0 10px;
-  color: white;
+  color: var(--text-main);
   outline: none;
+  transition: all 0.2s ease;
 }
 
 .editor-field input:focus,
 .editor-field select:focus {
-  border-color: rgba(45, 212, 191, 0.5);
+  border-color: var(--input-focus-border);
 }
 
 @media (max-width: 640px) {
@@ -1971,15 +2048,16 @@ onMounted(() => loadPrices())
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: rgba(0, 0, 0, 0.58);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
 }
 
 .mobile-group-drawer {
   width: min(92vw, 380px);
   height: 100%;
   overflow-y: auto;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
-  background: #101114;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-sidebar);
   padding: 18px;
 }
 
@@ -2007,26 +2085,27 @@ onMounted(() => loadPrices())
 .pricing-settings-form label span {
   font-size: 11px;
   font-weight: 800;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .pricing-settings-form input {
   height: 32px;
   border-radius: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0f1014;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
   padding: 0 9px;
-  color: white;
+  color: var(--text-main);
   outline: none;
+  transition: all 0.2s ease;
 }
 
 .pricing-settings-form input:focus {
-  border-color: rgba(45, 212, 191, 0.5);
+  border-color: var(--input-focus-border);
 }
 
 .pricing-preview {
   margin-top: 2px;
-  color: #67e8f9;
+  color: var(--input-focus-border);
   font-size: 11px;
   font-weight: 800;
 }
@@ -2039,8 +2118,8 @@ onMounted(() => loadPrices())
 
 .sales-note > div {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #15171c;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 14px;
 }
 
@@ -2048,48 +2127,48 @@ onMounted(() => loadPrices())
   display: block;
   font-size: 12px;
   font-weight: 800;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .sales-note strong {
   display: block;
   margin-top: 5px;
-  color: white;
+  color: var(--text-main);
   font-size: 15px;
 }
 
 .sales-note p {
   margin-top: 6px;
-  color: rgb(148 163 184);
+  color: var(--text-muted);
   font-size: 12px;
   line-height: 1.6;
 }
 
 .sales-note-admin.safe {
-  border-color: rgba(52, 211, 153, 0.22);
-  background: rgba(16, 185, 129, 0.06);
+  border-color: rgba(34, 197, 94, 0.2);
+  background: rgba(34, 197, 94, 0.05);
 }
 
 .sales-note-admin.safe strong {
-  color: #86efac;
+  color: #16a34a;
 }
 
 .sales-note-admin.warning {
-  border-color: rgba(251, 191, 36, 0.26);
-  background: rgba(245, 158, 11, 0.07);
+  border-color: rgba(245, 158, 11, 0.2);
+  background: rgba(245, 158, 11, 0.05);
 }
 
 .sales-note-admin.warning strong {
-  color: #fde68a;
+  color: #d97706;
 }
 
 .sales-note-admin.danger {
-  border-color: rgba(248, 113, 113, 0.28);
-  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.2);
+  background: rgba(239, 68, 68, 0.05);
 }
 
 .sales-note-admin.danger strong {
-  color: #fecaca;
+  color: #dc2626;
 }
 
 .ops-card {
@@ -2099,9 +2178,17 @@ onMounted(() => loadPrices())
   justify-content: space-between;
   gap: 14px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #15171c;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.01);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ops-card:hover {
+  border-color: var(--input-focus-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
 }
 
 .ops-card div {
@@ -2111,7 +2198,7 @@ onMounted(() => loadPrices())
 .ops-card span {
   display: block;
   font-size: 12px;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .ops-card strong {
@@ -2121,7 +2208,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 14px;
-  color: white;
+  color: var(--text-main);
 }
 
 .ops-card small {
@@ -2131,7 +2218,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: rgb(148 163 184);
+  color: var(--text-muted);
 }
 
 @media (max-width: 1279px) {
@@ -2146,8 +2233,8 @@ onMounted(() => loadPrices())
 
 .group-overview {
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #14161b;
+  border: 1px solid var(--border-color);
+  background: var(--bg-panel);
   padding: 16px;
 }
 
@@ -2161,13 +2248,13 @@ onMounted(() => loadPrices())
 .overview-heading h2 {
   font-size: 16px;
   font-weight: 800;
-  color: white;
+  color: var(--text-main);
 }
 
 .overview-heading p {
   margin-top: 4px;
   font-size: 12px;
-  color: rgb(100 116 139);
+  color: var(--text-muted);
 }
 
 .overview-grid {
@@ -2181,16 +2268,20 @@ onMounted(() => loadPrices())
 .overview-group {
   min-width: 0;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 13px;
   text-align: left;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.01);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .overview-card:hover,
 .overview-group:hover {
-  border-color: rgba(96, 165, 250, 0.42);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--input-focus-border);
+  background: var(--bg-card-hover);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
 }
 
 .overview-card span,
@@ -2200,7 +2291,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 12px;
-  color: rgb(148 163 184);
+  color: var(--text-light);
 }
 
 .overview-card strong,
@@ -2211,7 +2302,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 15px;
-  color: white;
+  color: var(--text-main);
 }
 
 .overview-card small {
@@ -2221,7 +2312,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: rgb(100 116 139);
+  color: var(--text-muted);
 }
 
 .overview-list {
@@ -2238,14 +2329,14 @@ onMounted(() => loadPrices())
   justify-content: space-between;
   gap: 14px;
   border-radius: 8px;
-  border: 1px solid rgba(251, 191, 36, 0.22);
-  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid var(--alert-border);
+  background: var(--alert-bg);
   padding: 12px 14px;
 }
 
 .price-alert.critical {
-  border-color: rgba(248, 113, 113, 0.28);
-  background: rgba(248, 113, 113, 0.09);
+  border-color: var(--alert-critical-border);
+  background: var(--alert-critical-bg);
 }
 
 .price-alert strong,
@@ -2254,18 +2345,18 @@ onMounted(() => loadPrices())
 }
 
 .price-alert strong {
-  color: #fde68a;
+  color: var(--alert-text);
   font-size: 13px;
 }
 
 .price-alert.critical strong {
-  color: #fecaca;
+  color: var(--alert-critical-text);
 }
 
 .price-alert span {
   margin-top: 4px;
   font-size: 12px;
-  color: rgb(203 213 225);
+  color: var(--text-muted);
 }
 
 @media (max-width: 1279px) {
@@ -2283,15 +2374,22 @@ onMounted(() => loadPrices())
 .metric-tile {
   min-height: 72px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: #15171c;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.01);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metric-tile:hover {
+  border-color: var(--input-focus-border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
 }
 
 .metric-tile span {
   display: block;
   font-size: 12px;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .metric-tile strong {
@@ -2301,21 +2399,23 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 15px;
-  color: white;
+  color: var(--text-main);
 }
 
 .model-card {
   min-height: 186px;
   border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: #14161b;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
   padding: 16px;
-  box-shadow: inset 0 1px rgba(255, 255, 255, 0.03);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: all 0.2s ease;
 }
 
 .model-card:hover {
-  border-color: rgba(96, 165, 250, 0.45);
-  background: #171a21;
+  border-color: var(--input-focus-border);
+  background: var(--bg-card-hover);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .price-table-header {
@@ -2324,12 +2424,12 @@ onMounted(() => loadPrices())
   grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px;
   align-items: center;
   gap: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #191c23;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-header);
   padding: 0 16px;
   font-size: 12px;
   font-weight: 800;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .price-table-header.admin {
@@ -2342,8 +2442,9 @@ onMounted(() => loadPrices())
   grid-template-columns: minmax(280px, 1.35fr) minmax(220px, 1fr) minmax(200px, 0.9fr) minmax(180px, 0.9fr) 120px;
   align-items: center;
   gap: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-light);
   padding: 14px 16px;
+  transition: all 0.2s ease;
 }
 
 .price-table-row.admin {
@@ -2355,7 +2456,7 @@ onMounted(() => loadPrices())
 }
 
 .price-table-row:hover {
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--bg-card-hover);
 }
 
 .price-pair {
@@ -2374,11 +2475,11 @@ onMounted(() => loadPrices())
 }
 
 .price-pair.actual strong {
-  color: #86efac;
+  color: var(--price-actual);
 }
 
 .price-pair.muted span {
-  color: rgb(148 163 184);
+  color: var(--price-muted);
 }
 
 .price-pair small {
@@ -2386,7 +2487,7 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 11px;
-  color: rgb(100 116 139);
+  color: var(--text-light);
 }
 
 .tier-list {
@@ -2402,18 +2503,19 @@ onMounted(() => loadPrices())
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 999px;
-  border: 1px solid rgba(125, 211, 252, 0.14);
-  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.15);
+  background: rgba(14, 165, 233, 0.05);
   padding: 3px 8px;
   font-size: 11px;
   font-weight: 700;
-  color: #bae6fd;
+  color: #0284c7;
+  transition: all 0.2s ease;
 }
 
 .tier-chip.dim {
-  border-color: rgba(255, 255, 255, 0.09);
-  background: rgba(255, 255, 255, 0.04);
-  color: rgb(148 163 184);
+  border-color: var(--border-color);
+  background: var(--bg-button);
+  color: var(--text-muted);
 }
 
 .source-cell {
@@ -2421,29 +2523,31 @@ onMounted(() => loadPrices())
   gap: 5px;
   font-size: 12px;
   font-weight: 800;
-  color: rgb(203 213 225);
+  color: var(--text-muted);
 }
 
 .source-cell small {
   font-size: 11px;
   font-weight: 700;
-  color: #fbbf24;
+  color: #d97706;
 }
 
 .inline-edit-button {
   width: fit-content;
   border-radius: 999px;
-  border: 1px solid rgba(45, 212, 191, 0.22);
-  background: rgba(20, 184, 166, 0.1);
+  border: 1px solid rgba(13, 148, 136, 0.22);
+  background: rgba(13, 148, 136, 0.08);
   padding: 3px 8px;
   font-size: 11px;
   font-weight: 800;
-  color: #5eead4;
+  color: #0d9488;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .inline-edit-button:hover {
-  border-color: rgba(94, 234, 212, 0.5);
-  background: rgba(20, 184, 166, 0.18);
+  border-color: rgba(13, 148, 136, 0.5);
+  background: rgba(13, 148, 136, 0.18);
 }
 
 .provider-mark {
@@ -2454,7 +2558,8 @@ onMounted(() => loadPrices())
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  background: #1d2027;
+  background: var(--bg-button);
+  border: 1px solid var(--border-color);
   font-size: 18px;
   font-weight: 900;
 }
@@ -2466,11 +2571,11 @@ onMounted(() => loadPrices())
 }
 
 .provider-mark.openai {
-  color: #dbeafe;
+  color: var(--text-muted);
 }
 
 .provider-mark.anthropic {
-  color: #fb923c;
+  color: #ea580c;
 }
 
 .copy-button {
@@ -2480,37 +2585,41 @@ onMounted(() => loadPrices())
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgb(148 163 184);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
 .copy-button:hover {
-  color: white;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-main);
+  background: var(--bg-button-hover);
+  border-color: var(--input-focus-border);
 }
 
 .tag {
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--tag-bg);
   padding: 2px 7px;
   font-size: 11px;
   font-weight: 700;
-  color: rgb(203 213 225);
+  color: var(--text-muted);
 }
 
 .tag-purple {
-  color: #c4b5fd;
-  background: rgba(139, 92, 246, 0.14);
+  color: var(--tag-purple-text);
+  background: var(--tag-purple-bg);
 }
 
 .tag-blue {
-  color: #93c5fd;
-  background: rgba(59, 130, 246, 0.14);
+  color: var(--tag-blue-text);
+  background: var(--tag-blue-bg);
 }
 
 .tag-amber {
-  color: #fde68a;
-  background: rgba(245, 158, 11, 0.14);
+  color: var(--tag-amber-text);
+  background: var(--tag-amber-bg);
 }
 
 .tier-strip {
@@ -2518,8 +2627,8 @@ onMounted(() => loadPrices())
   display: grid;
   gap: 6px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid var(--border-color);
+  background: var(--bg-card-hover);
   padding: 8px;
 }
 
@@ -2529,13 +2638,13 @@ onMounted(() => loadPrices())
   align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: rgb(148 163 184);
+  color: var(--text-muted);
 }
 
 .tier-line strong {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 800;
-  color: rgb(203 213 225);
+  color: var(--text-main);
 }
 
 .price-row {
@@ -2555,15 +2664,131 @@ onMounted(() => loadPrices())
 
 .save-badge {
   border-radius: 999px;
-  background: rgba(16, 185, 129, 0.13);
+  background: rgba(22, 163, 74, 0.1);
   padding: 4px 9px;
-  color: #6ee7b7;
+  color: #16a34a;
   font-size: 12px;
   font-weight: 800;
 }
 
 .save-badge.neutral {
-  background: rgba(148, 163, 184, 0.12);
+  background: var(--tag-bg);
+  color: var(--text-muted);
+}
+</style>
+
+<style>
+/* Unscoped dark mode overrides specifically prefixed for model-market to avoid compiler stripping */
+.dark .model-market {
+  color-scheme: dark;
+  --bg-main: #0f1014;
+  --bg-sidebar: #101114;
+  --bg-panel: #14161b;
+  --bg-card: #14161b;
+  --bg-card-hover: #171a21;
+  --bg-input: #1c1e23;
+  --bg-button: rgba(255, 255, 255, 0.035);
+  --bg-button-hover: rgba(255, 255, 255, 0.12);
+  --bg-header: #191c23;
+
+  --text-main: #cbd5e1;
+  --text-muted: #94a3b8;
+  --text-light: #64748b;
+  --text-white: #ffffff;
+
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-light: rgba(255, 255, 255, 0.05);
+
+  --tag-bg: rgba(255, 255, 255, 0.07);
+  --tag-text: rgb(203 213 225);
+  --tag-purple-bg: rgba(139, 92, 246, 0.14);
+  --tag-purple-text: #c4b5fd;
+  --tag-blue-bg: rgba(59, 130, 246, 0.14);
+  --tag-blue-text: #93c5fd;
+  --tag-amber-bg: rgba(245, 158, 11, 0.14);
+  --tag-amber-text: #fde68a;
+
+  --input-focus-border: #38bdf8;
+
+  --price-actual: #86efac;
+  --price-muted: rgb(148 163 184);
+
+  --alert-bg: rgba(251, 191, 36, 0.08);
+  --alert-border: rgba(251, 191, 36, 0.22);
+  --alert-text: #fde68a;
+
+  --alert-critical-bg: rgba(248, 113, 113, 0.09);
+  --alert-critical-border: rgba(248, 113, 113, 0.28);
+  --alert-critical-text: #fecaca;
+}
+
+.dark .model-market .toolbar-button.danger {
+  border-color: rgba(248, 113, 113, 0.2);
+  color: #fecaca;
+}
+
+.dark .model-market .toolbar-button.danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+}
+
+.dark .model-market .price-editor-dialog {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.dark .model-market .sales-note-admin.safe strong {
+  color: #86efac;
+}
+
+.dark .model-market .sales-note-admin.warning strong {
+  color: #fde68a;
+}
+
+.dark .model-market .sales-note-admin.danger strong {
+  color: #fecaca;
+}
+
+.dark .model-market .tier-chip {
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  background: rgba(14, 165, 233, 0.08);
+  color: #bae6fd;
+}
+
+.dark .model-market .source-cell small {
+  color: #fbbf24;
+}
+
+.dark .model-market .inline-edit-button {
+  border: 1px solid rgba(45, 212, 191, 0.22);
+  background: rgba(20, 184, 166, 0.1);
+  color: #5eead4;
+}
+
+.dark .model-market .inline-edit-button:hover {
+  border-color: rgba(94, 234, 212, 0.5);
+  background: rgba(20, 184, 166, 0.18);
+}
+
+.dark .model-market .provider-mark.openai {
+  color: #dbeafe;
+}
+
+.dark .model-market .provider-mark.anthropic {
+  color: #fb923c;
+}
+
+.dark .model-market .copy-button:hover {
+  color: white;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.dark .model-market .tag {
+  background: rgba(255, 255, 255, 0.07);
   color: rgb(203 213 225);
+}
+
+.dark .model-market .save-badge {
+  background: rgba(16, 185, 129, 0.13);
+  color: #6ee7b7;
 }
 </style>

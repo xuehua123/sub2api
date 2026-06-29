@@ -206,17 +206,35 @@
 
           <template #cell-usage="{ row }">
             <div class="text-sm">
-              <div class="flex items-center gap-1.5">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
-                <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.today_actual_cost ?? 0).toFixed(4) }}
-                </span>
+              <div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
+                  <span class="font-medium text-gray-900 dark:text-white">
+                    {{ formatUsageUSD(apiKeyUsageCost(row, 'today')) }}
+                  </span>
+                </div>
+                <div
+                  v-if="apiKeySubscriptionUsageText(row, 'today')"
+                  class="mt-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                  :title="t('keys.actualRmbUsageTooltip')"
+                >
+                  {{ apiKeySubscriptionUsageText(row, 'today') }}
+                </div>
               </div>
-              <div class="mt-0.5 flex items-center gap-1.5">
-                <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
-                <span class="font-medium text-gray-900 dark:text-white">
-                  ${{ (usageStats[row.id]?.total_actual_cost ?? 0).toFixed(4) }}
-                </span>
+              <div class="mt-1">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
+                  <span class="font-medium text-gray-900 dark:text-white">
+                    {{ formatUsageUSD(apiKeyUsageCost(row, 'total')) }}
+                  </span>
+                </div>
+                <div
+                  v-if="apiKeySubscriptionUsageText(row, 'total')"
+                  class="mt-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
+                  :title="t('keys.actualRmbUsageTooltip')"
+                >
+                  {{ apiKeySubscriptionUsageText(row, 'total') }}
+                </div>
               </div>
               <!-- Quota progress (if quota is set) -->
               <div v-if="row.quota > 0" class="mt-1.5">
@@ -1747,6 +1765,13 @@ function formatQuotaUSD(value: number): string {
   }).format(value)}`
 }
 
+function formatUsageUSD(value: number): string {
+  return `$${new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(value)}`
+}
+
 function entitlementQuotaTotal(entitlement: AvailableGroupEntitlement | null | undefined): number | null {
   return positiveNumber(entitlement?.quota_usd)
 }
@@ -1867,6 +1892,31 @@ function rowGroupActualCostText(key: ApiKey): string {
     key.subscription_entitlement_id,
     effectiveGroupRate(key.group.id, key.group.rate_multiplier)
   )
+}
+
+type ApiKeyUsageScope = 'today' | 'total'
+
+function apiKeyUsageCost(key: ApiKey, scope: ApiKeyUsageScope): number {
+  const stats = usageStats.value[key.id]
+  const cost = scope === 'today' ? stats?.today_actual_cost : stats?.total_actual_cost
+  const value = typeof cost === 'number' ? cost : Number(cost)
+  return Number.isFinite(value) ? value : 0
+}
+
+function apiKeySubscriptionUsageAmount(key: ApiKey, scope: ApiKeyUsageScope): number | null {
+  if (rowAccessSource(key) !== 'entitlement') return null
+  const unitCost = entitlementUnitCost(entitlementByID(key.subscription_entitlement_id))
+  if (unitCost === null) return null
+  return apiKeyUsageCost(key, scope) * unitCost
+}
+
+function apiKeySubscriptionUsageText(key: ApiKey, scope: ApiKeyUsageScope): string {
+  const amount = apiKeySubscriptionUsageAmount(key, scope)
+  if (amount === null) return ''
+  const entitlement = entitlementByID(key.subscription_entitlement_id)
+  return t('keys.actualRmbUsageApprox', {
+    amount: formatMoneyAmount(amount, entitlement?.purchase_currency),
+  })
 }
 
 function groupOptionActualCostText(

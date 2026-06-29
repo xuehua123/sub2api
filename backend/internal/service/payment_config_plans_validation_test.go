@@ -737,6 +737,43 @@ func TestPaymentConfigUpdatePlanClearsOriginalPrice(t *testing.T) {
 	require.Nil(t, dbPlan.OriginalPrice)
 }
 
+func TestPaymentConfigUpdatePlanAllowsForSalePatchWhenExistingGroupIsDisabled(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+	group := createPaymentConfigPlanTestGroup(t, client, "disable-before-delist", PlatformOpenAI, 0)
+
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "Delist After Group Disabled",
+		GroupIDs:     []int64{group.ID},
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+		ForSale:      true,
+	})
+	require.NoError(t, err)
+
+	_, err = client.Group.UpdateOneID(group.ID).
+		SetSubscriptionEnabled(false).
+		Save(ctx)
+	require.NoError(t, err)
+
+	forSale := false
+	updated, err := svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{ForSale: &forSale})
+	require.NoError(t, err)
+	require.False(t, updated.ForSale)
+	require.Empty(t, updated.GroupIDs)
+	require.Empty(t, updated.Groups)
+
+	plan, err := svc.GetPlan(ctx, created.ID)
+	require.NoError(t, err)
+	access, err := svc.ResolvePlanOrderAccess(ctx, plan)
+	require.NoError(t, err)
+	require.Equal(t, group.ID, access.PrimaryGroupID)
+	require.Empty(t, access.GroupIDs)
+	require.Empty(t, access.Groups)
+}
+
 func createPaymentConfigPlanTestGroup(t *testing.T, client *dbent.Client, name, platform string, sortOrder int) *dbent.Group {
 	t.Helper()
 	group, err := client.Group.Create().

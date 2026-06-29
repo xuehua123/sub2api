@@ -206,7 +206,10 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		if planAccess != nil && planAccess.PrimaryGroupID > 0 {
 			primaryGroupID = planAccess.PrimaryGroupID
 		}
-		b.SetPlanID(plan.ID).SetSubscriptionGroupID(primaryGroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
+		b.SetPlanID(plan.ID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
+		if primaryGroupID > 0 {
+			b.SetSubscriptionGroupID(primaryGroupID)
+		}
 	}
 	order, err := b.Save(ctx)
 	if err != nil {

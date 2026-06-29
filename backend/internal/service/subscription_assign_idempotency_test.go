@@ -435,7 +435,7 @@ func TestAssignSubscriptionV2PlanReplayDoesNotDuplicateEntitlement(t *testing.T)
 	require.Len(t, entRepo.entitlements, 1)
 }
 
-func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyBelongsToDifferentPlan(t *testing.T) {
+func TestAssignSubscriptionV2PlanFallbacksToEntitlementOnlyWhenExistingLegacyBelongsToDifferentPlan(t *testing.T) {
 	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
 	existingPlanID := int64(10)
 	groupID := int64(1)
@@ -465,7 +465,7 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyBelongsToDifferentPla
 		},
 	})
 
-	_, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
 		UserID:       3005,
 		GroupID:      groupID,
 		PlanID:       9,
@@ -474,13 +474,23 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyBelongsToDifferentPla
 		Notes:        "admin-plan",
 	})
 
-	require.Error(t, err)
-	require.Equal(t, "SUBSCRIPTION_ASSIGN_CONFLICT", infraerrorsReason(err))
+	require.NoError(t, err)
+	require.NotNil(t, sub)
+	require.True(t, sub.EntitlementOnly)
+	require.Negative(t, sub.ID)
+	require.NotNil(t, sub.EntitlementLink)
+	require.NotNil(t, sub.EntitlementLink.PlanID)
+	require.Equal(t, int64(9), *sub.EntitlementLink.PlanID)
 	require.Equal(t, 0, subRepo.createCalls)
-	require.Equal(t, 0, entRepo.createCount)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Len(t, entRepo.entitlements, 1)
+	for _, ent := range entRepo.entitlements {
+		require.Nil(t, ent.LegacySubscriptionID)
+		require.Equal(t, int64(9), *ent.PlanID)
+	}
 }
 
-func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyPlanIsUnknown(t *testing.T) {
+func TestAssignSubscriptionV2PlanFallbacksToEntitlementOnlyWhenExistingLegacyPlanIsUnknown(t *testing.T) {
 	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
 	groupID := int64(1)
 	entRepo := newFakeSubscriptionEntitlementRepo(now)
@@ -505,7 +515,7 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyPlanIsUnknown(t *test
 		},
 	})
 
-	_, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
 		UserID:       3007,
 		GroupID:      groupID,
 		PlanID:       9,
@@ -514,10 +524,20 @@ func TestAssignSubscriptionV2PlanConflictWhenExistingLegacyPlanIsUnknown(t *test
 		Notes:        "admin-plan",
 	})
 
-	require.Error(t, err)
-	require.Equal(t, "SUBSCRIPTION_ASSIGN_CONFLICT", infraerrorsReason(err))
+	require.NoError(t, err)
+	require.NotNil(t, sub)
+	require.True(t, sub.EntitlementOnly)
+	require.Negative(t, sub.ID)
+	require.NotNil(t, sub.EntitlementLink)
+	require.NotNil(t, sub.EntitlementLink.PlanID)
+	require.Equal(t, int64(9), *sub.EntitlementLink.PlanID)
 	require.Equal(t, 0, subRepo.createCalls)
-	require.Equal(t, 0, entRepo.createCount)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Len(t, entRepo.entitlements, 1)
+	for _, ent := range entRepo.entitlements {
+		require.Nil(t, ent.LegacySubscriptionID)
+		require.Equal(t, int64(9), *ent.PlanID)
+	}
 }
 
 func TestAssignSubscriptionV2PlanReassignAfterLinkedRevocationUsesNewLegacySubscription(t *testing.T) {

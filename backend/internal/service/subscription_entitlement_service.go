@@ -95,7 +95,7 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 		return ent, true, err
 	}
 
-	ent := newEntitlementFromPlan(plan, input.UserID, groupIDs[0], validityDays, input.Notes, source, now, input.LegacySubscriptionID)
+	ent := newEntitlementFromPlan(plan, input.UserID, entitlementPrimaryGroupID(plan, groupIDs), validityDays, input.Notes, source, now, input.LegacySubscriptionID)
 	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency)
 	fulfillment := newEntitlementFulfillment(ent, validityDays, source)
 	if err := s.entitlementRepo.CreateWithFulfillment(ctx, ent, groupIDs, fulfillment); err != nil {
@@ -321,7 +321,7 @@ func entitlementSourceFromAssignInput(input AssignEntitlementFromPlanInput, now 
 	}
 }
 
-func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID, primaryGroupID int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time, legacySubscriptionID *int64) *SubscriptionEntitlement {
+func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID int64, primaryGroupID *int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time, legacySubscriptionID *int64) *SubscriptionEntitlement {
 	planID := plan.ID
 	windowStart := now
 	name := plan.Name
@@ -332,7 +332,7 @@ func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID, primaryGr
 		UserID:               userID,
 		PlanID:               &planID,
 		LegacySubscriptionID: cloneInt64Ptr(legacySubscriptionID),
-		PrimaryGroupID:       &primaryGroupID,
+		PrimaryGroupID:       cloneInt64Ptr(primaryGroupID),
 		Name:                 name,
 		SourceType:           source.SourceType,
 		Status:               SubscriptionStatusActive,
@@ -432,10 +432,19 @@ func entitlementPlanGroupIDs(plan *SubscriptionEntitlementPlan) ([]int64, error)
 	if len(groupIDs) == 0 && !hasConfiguredGroups && plan.GroupID > 0 {
 		groupIDs = append(groupIDs, plan.GroupID)
 	}
-	if len(groupIDs) == 0 {
-		return nil, ErrSubscriptionEntitlementPlanInvalid
-	}
 	return groupIDs, nil
+}
+
+func entitlementPrimaryGroupID(plan *SubscriptionEntitlementPlan, groupIDs []int64) *int64 {
+	if len(groupIDs) > 0 && groupIDs[0] > 0 {
+		id := groupIDs[0]
+		return &id
+	}
+	if plan != nil && plan.GroupID > 0 {
+		id := plan.GroupID
+		return &id
+	}
+	return nil
 }
 
 func sameEntitlementGroupScope(ent *SubscriptionEntitlement, groupIDs []int64) bool {

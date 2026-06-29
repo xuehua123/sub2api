@@ -318,23 +318,7 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 	if err != nil {
 		return nil, infraerrors.NotFound("PLAN_NOT_FOUND", "subscription plan not found")
 	}
-	scope, err := effectivePlanAccessScope(existing.AccessScope, req.AccessScope)
-	if err != nil {
-		return nil, err
-	}
-	groupIDs, groupIDsExplicit, err := s.effectivePlanGroupIDs(ctx, id, req.GroupIDs, req.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	allowedPlatforms, err := effectivePlanAllowedPlatforms(existing.AllowedPlatforms, req.AccessScope, req.AllowedPlatforms)
-	if err != nil {
-		return nil, err
-	}
 	overagePolicy, err := effectivePlanOveragePolicy(existing.OveragePolicy, req.OveragePolicy)
-	if err != nil {
-		return nil, err
-	}
-	access, err := s.resolvePlanAccess(ctx, scope, groupIDs, groupIDsExplicit, allowedPlatforms)
 	if err != nil {
 		return nil, err
 	}
@@ -358,11 +342,37 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 		}
 	}()
 
+	syncGroups := planUpdateShouldSyncEntitlementGroups(req)
+	var access *resolvedPlanAccess
+	var groupIDsExplicit bool
+	var scope string
+	if syncGroups {
+		scope, err = effectivePlanAccessScope(existing.AccessScope, req.AccessScope)
+		if err != nil {
+			return nil, err
+		}
+		groupIDs, explicit, err := s.effectivePlanGroupIDs(ctx, id, req.GroupIDs, req.GroupID)
+		if err != nil {
+			return nil, err
+		}
+		groupIDsExplicit = explicit
+		allowedPlatforms, err := effectivePlanAllowedPlatforms(existing.AllowedPlatforms, req.AccessScope, req.AllowedPlatforms)
+		if err != nil {
+			return nil, err
+		}
+		access, err = s.resolvePlanAccess(ctx, scope, groupIDs, groupIDsExplicit, allowedPlatforms)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	u := tx.SubscriptionPlan.UpdateOneID(id).
-		SetGroupID(access.PrimaryGroupID).
-		SetAccessScope(scope).
-		SetAllowedPlatforms(access.AllowedPlatforms).
 		SetOveragePolicy(overagePolicy)
+	if syncGroups {
+		u.SetGroupID(access.PrimaryGroupID).
+			SetAccessScope(scope).
+			SetAllowedPlatforms(access.AllowedPlatforms)
+	}
 	if req.Name != nil {
 		u.SetName(*req.Name)
 	}
@@ -407,7 +417,11 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 			return nil, err
 		}
 	}
-	if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, updatedPlan, overagePolicy, groupIDsFromEntGroups(access.EffectiveGroups), planUpdateShouldSyncEntitlementGroups(req), false); err != nil {
+	var syncGroupIDs []int64
+	if syncGroups {
+		syncGroupIDs = groupIDsFromEntGroups(access.EffectiveGroups)
+	}
+	if err := syncActiveEntitlementsForPlanUpdate(ctx, tx, updatedPlan, overagePolicy, syncGroupIDs, syncGroups, false); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -455,30 +469,31 @@ func (s *PaymentConfigService) ResolvePlanOrderAccess(ctx context.Context, plan 
 		return nil, infraerrors.NotFound("PLAN_NOT_FOUND", "subscription plan not found")
 	}
 	scope := normalizePlanAccessScopeForResponse(plan.AccessScope)
-	var (
-		groupIDs         []int64
-		groupIDsExplicit bool
-		err              error
-	)
-	if scope == PlanAccessScopeExplicit {
-		groupIDsExplicit = true
-		groupIDs, err = s.listPersistedPlanGroupIDs(ctx, plan.ID)
+	switch scope {
+	case PlanAccessScopeExplicit:
+		groupIDs, err := s.listPersistedPlanGroupIDs(ctx, plan.ID)
 		if err != nil {
 			return nil, err
 		}
 		if len(groupIDs) == 0 && plan.GroupID > 0 {
 			groupIDs = []int64{plan.GroupID}
 		}
+		return s.resolveExplicitPlanOrderAccess(ctx, groupIDs, plan.GroupID)
+	case PlanAccessScopePlatformSubscriptionGroups:
+		groups, err := s.loadSubscriptionGroupsByPlatforms(ctx, nonNilStrings(plan.AllowedPlatforms))
+		if err != nil {
+			return nil, err
+		}
+		return planOrderAccessFromGroups(groups, plan.GroupID), nil
+	case PlanAccessScopeAllSubscriptionGroups:
+		groups, err := s.loadAllSubscriptionGroups(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return planOrderAccessFromGroups(groups, plan.GroupID), nil
+	default:
+		return nil, infraerrors.BadRequest("PLAN_ACCESS_SCOPE_INVALID", "invalid access scope")
 	}
-	access, err := s.resolvePlanAccess(ctx, scope, groupIDs, groupIDsExplicit, nonNilStrings(plan.AllowedPlatforms))
-	if err != nil {
-		return nil, err
-	}
-	return &SubscriptionPlanOrderAccess{
-		PrimaryGroupID: access.PrimaryGroupID,
-		GroupIDs:       groupIDsFromEntGroups(access.EffectiveGroups),
-		Groups:         planGroupInfosFromEnt(access.EffectiveGroups),
-	}, nil
 }
 
 type resolvedPlanAccess struct {
@@ -733,6 +748,51 @@ func (s *PaymentConfigService) loadSubscriptionGroupsInOrder(ctx context.Context
 		groups = append(groups, g)
 	}
 	return groups, nil
+}
+
+func (s *PaymentConfigService) resolveExplicitPlanOrderAccess(ctx context.Context, ids []int64, fallbackPrimaryGroupID int64) (*SubscriptionPlanOrderAccess, error) {
+	groupsByID, err := s.loadGroupsByID(ctx, ids, false)
+	if err != nil {
+		return nil, err
+	}
+	visibleGroups := make([]*dbent.Group, 0, len(ids))
+	visibleGroupIDs := make([]int64, 0, len(ids))
+	var primaryGroupID int64
+	for _, id := range ids {
+		if primaryGroupID <= 0 && id > 0 {
+			primaryGroupID = id
+		}
+		group := groupsByID[id]
+		if !isPlanDisplayableSubscriptionGroup(group) {
+			continue
+		}
+		visibleGroups = append(visibleGroups, group)
+		visibleGroupIDs = append(visibleGroupIDs, id)
+	}
+	if primaryGroupID <= 0 {
+		primaryGroupID = fallbackPrimaryGroupID
+	}
+	return &SubscriptionPlanOrderAccess{
+		PrimaryGroupID: primaryGroupID,
+		GroupIDs:       visibleGroupIDs,
+		Groups:         planGroupInfosFromEnt(visibleGroups),
+	}, nil
+}
+
+func planOrderAccessFromGroups(groups []*dbent.Group, fallbackPrimaryGroupID int64) *SubscriptionPlanOrderAccess {
+	primaryGroupID := fallbackPrimaryGroupID
+	if len(groups) > 0 {
+		primaryGroupID = groups[0].ID
+	}
+	return &SubscriptionPlanOrderAccess{
+		PrimaryGroupID: primaryGroupID,
+		GroupIDs:       groupIDsFromEntGroups(groups),
+		Groups:         planGroupInfosFromEnt(groups),
+	}
+}
+
+func isPlanDisplayableSubscriptionGroup(group *dbent.Group) bool {
+	return group != nil && group.Status == StatusActive && group.SubscriptionEnabled
 }
 
 func (s *PaymentConfigService) loadGroupsByID(ctx context.Context, ids []int64, requireActiveSubscription bool) (map[int64]*dbent.Group, error) {
@@ -1402,12 +1462,14 @@ func (s *PaymentConfigService) resolvePlanResponseGroups(ctx context.Context, pl
 			return nil, nil, err
 		}
 		infos := make([]PlanGroupInfo, 0, len(ids))
+		visibleIDs := make([]int64, 0, len(ids))
 		for _, id := range ids {
-			if g := groupsByID[id]; g != nil {
+			if g := groupsByID[id]; isPlanDisplayableSubscriptionGroup(g) {
 				infos = append(infos, planGroupInfoFromEnt(g, sortOrders[id]))
+				visibleIDs = append(visibleIDs, id)
 			}
 		}
-		return infos, ids, nil
+		return infos, visibleIDs, nil
 	}
 }
 
