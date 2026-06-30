@@ -10,6 +10,25 @@
       @refresh="manualReload"
     />
 
+    <!-- Banner Tip for Model Prices -->
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-primary-500/10 bg-primary-500/5 p-4 text-xs dark:border-primary-500/20">
+        <div class="flex items-start gap-2.5 text-gray-600 dark:text-gray-300">
+          <Icon name="infoCircle" size="sm" class="shrink-0 mt-0.5 text-primary-500" />
+          <span class="leading-relaxed">
+            {{ t('monitorCommon.bannerTip') }}
+          </span>
+        </div>
+        <router-link
+          to="/model-prices"
+          class="shrink-0 inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-cyan-500 px-4 py-2 font-bold text-slate-950 shadow-md shadow-primary-500/10 transition hover:from-primary-400 hover:to-cyan-400 active:scale-[0.98] sm:self-center"
+        >
+          <span>{{ t('monitorCommon.goToPrices') }}</span>
+          <Icon name="arrowRight" size="xs" />
+        </router-link>
+      </div>
+    </div>
+
     <MonitorCardGrid
       :items="items"
       :window="currentWindow"
@@ -46,6 +65,7 @@ import MonitorHero, {
 } from '@/components/user/monitor/MonitorHero.vue'
 import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
 import MonitorDetailDialog from '@/components/user/MonitorDetailDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_INTERVAL_SECONDS, STATUS_ERROR } from '@/constants/channelMonitor'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 import { normalizeMonitorStatusForDisplay } from '@/composables/useChannelMonitorFormat'

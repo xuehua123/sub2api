@@ -90,10 +90,10 @@
                     v-for="plan in subscriptionPlans"
                     :key="plan.id"
                     :class="[
-                      'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01]',
+                      'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300',
                       isRecommendedPlan(plan)
-                        ? 'recommended-card border-primary-300/70 bg-gradient-to-b from-white via-cyan-50/80 to-white shadow-xl shadow-cyan-100/80 hover:shadow-2xl hover:shadow-cyan-200 dark:border-primary-500/25 dark:from-[#0d2229]/50 dark:via-[#0a1120]/40 dark:to-[#070c16]/30 dark:shadow-[0_0_40px_rgba(20,184,166,0.08)] dark:hover:shadow-[0_0_50px_rgba(20,184,166,0.15)]'
-                        : 'border-slate-200/80 bg-white/[0.92] shadow-xl shadow-slate-200/70 hover:border-primary-200 hover:bg-white hover:shadow-2xl hover:shadow-slate-200/90 dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-lg dark:hover:border-white/10 dark:hover:bg-[#0c1528]/50'
+                        ? 'recommended-card border-primary-300/70 bg-gradient-to-b from-white via-cyan-50/80 to-white shadow-xl shadow-cyan-100/80 hover:-translate-y-1 hover:scale-[1.01] hover:border-primary-400/80 hover:shadow-2xl hover:shadow-cyan-400/20 dark:border-primary-500/25 dark:from-[#0d2229]/50 dark:via-[#0a1120]/40 dark:to-[#070c16]/30 dark:shadow-[0_0_40px_rgba(20,184,166,0.08)] dark:hover:shadow-cyan-500/10'
+                        : 'border-slate-200/80 bg-white/[0.92] shadow-xl shadow-slate-200/70 hover:-translate-y-1 hover:border-primary-200 hover:bg-white hover:shadow-2xl hover:shadow-slate-300/40 dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-lg dark:hover:border-white/10 dark:hover:bg-[#0c1528]/50 dark:hover:shadow-black/30'
                     ]"
                   >
                     <!-- Recommended Badge -->
@@ -136,11 +136,11 @@
                     <div class="mt-5 space-y-2.5 border-t border-slate-200/80 pt-5 text-xs dark:border-white/5">
                       <div class="flex items-center justify-between">
                         <span class="text-slate-500 dark:text-slate-400">月度额度</span>
-                        <span class="font-bold text-slate-900 dark:text-white">{{ planQuotaText(plan) }}</span>
+                        <span class="font-bold text-slate-950 dark:text-white">{{ planQuotaText(plan) }}</span>
                       </div>
                       <div class="flex items-center justify-between">
                         <span class="text-slate-500 dark:text-slate-400">每刀成本</span>
-                        <span class="font-bold text-slate-900 dark:text-white">{{ unitCostText(plan) }}</span>
+                        <span class="font-bold text-slate-950 dark:text-white">{{ unitCostText(plan) }}</span>
                       </div>
                     </div>
 
@@ -154,7 +154,7 @@
                       </div>
                       <div class="mt-2.5 space-y-1.5">
                         <div
-                          v-for="group in planGroupRows(plan, 3)"
+                          v-for="group in getPlanView(plan.id).cardGroups"
                           :key="group.key"
                           class="flex flex-col gap-1 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[10px] dark:border-white/5 dark:bg-slate-900/60 transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800/40"
                         >
@@ -172,20 +172,20 @@
                               {{ group.multiplierText }}
                             </span>
                           </div>
-                          <div v-if="groupActualCostText(plan, group.rateMultiplier) !== '-'" class="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-medium leading-none">
-                            <span>实际单价 (估算)</span>
+                          <div v-if="group.actualCostText !== null" class="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-medium leading-none">
+                            <span>{{ GROUP_LABELS.actualCost }}</span>
                             <span class="font-bold text-emerald-600 dark:text-emerald-400">
-                              {{ groupActualCostText(plan, group.rateMultiplier) }}
+                              {{ group.actualCostText }}
                             </span>
                           </div>
                         </div>
                         <button
-                          v-if="planGroupRowOverflowText(plan, 3)"
+                          v-if="getPlanView(plan.id).cardOverflowCount > 0"
                           type="button"
                           class="w-full rounded-lg border border-primary-200 bg-primary-50 px-2.5 py-1.5 text-left text-[10px] font-bold text-primary-700 transition hover:border-primary-300 hover:bg-primary-100 dark:border-primary-500/20 dark:bg-primary-500/10 dark:text-primary-300 dark:hover:border-primary-400 dark:hover:bg-primary-500/15"
                           @click.stop="openPlanGroupsModal(plan)"
                         >
-                          {{ planGroupRowOverflowText(plan, 3) }} · 查看全部
+                          +{{ getPlanView(plan.id).cardOverflowCount }} 个分组 · 查看全部
                         </button>
                       </div>
                     </div>
@@ -214,11 +214,6 @@
                     </button>
                   </div>
                 </div>
-
-                <!-- Disclaimer under card grid -->
-                <p class="mt-6 text-center text-[10px] text-slate-400 dark:text-slate-500 max-w-xl mx-auto">
-                  * 实际单价为“套餐每刀成本 × 分组计费倍率”的估算值。分组通道费率可能会有调整波动，请以实际调用时的计费为准。
-                </p>
 
                 <!-- Accordion Comparison Toggle -->
                 <div class="mt-12 flex flex-col items-center justify-center max-w-5xl mx-auto w-full space-y-4">
@@ -315,7 +310,7 @@
                             <td v-for="plan in subscriptionPlans" :key="plan.id" class="py-3 px-4">
                               <div class="space-y-1.5">
                                 <div
-                                  v-for="group in planGroupRows(plan, 4)"
+                                  v-for="group in getPlanView(plan.id).compareGroups"
                                   :key="group.key"
                                   class="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50 px-2 py-1 dark:border-white/5 dark:bg-slate-900/60"
                                 >
@@ -323,12 +318,12 @@
                                   <span class="shrink-0 text-[10px] font-black text-emerald-700 dark:text-emerald-300">{{ group.multiplierText }}</span>
                                 </div>
                                 <button
-                                  v-if="planGroupRowOverflowText(plan, 4)"
+                                  v-if="getPlanView(plan.id).compareOverflowCount > 0"
                                   type="button"
                                   class="block text-left text-[10px] font-bold text-primary-700 transition hover:text-primary-500 dark:text-primary-300 dark:hover:text-primary-200"
                                   @click="openPlanGroupsModal(plan)"
                                 >
-                                  {{ planGroupRowOverflowText(plan, 4) }} · 查看全部
+                                  +{{ getPlanView(plan.id).compareOverflowCount }} 个分组 · 查看全部
                                 </button>
                               </div>
                             </td>
@@ -410,28 +405,25 @@
                       
                       <div class="space-y-2">
                         <div
-                          v-for="group in planGroups(selectedPlan)"
-                          :key="group.id"
+                          v-for="group in getPlanView(selectedPlan?.id).groupRows"
+                          :key="group.key"
                           class="flex items-center justify-between rounded-xl border border-slate-200/80 bg-slate-50/90 p-4 dark:border-white/5 dark:bg-slate-950/40"
                         >
                           <div class="space-y-0.5">
                             <span class="text-sm font-bold text-slate-950 dark:text-white">
-                              {{ displayGroupName(group.name) }}
+                              {{ group.name }}
                             </span>
                             <div class="flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                              <span>平台: {{ platformLabel(group.platform || '') }}</span>
-                              <template v-if="groupQuotaText(group)">
-                                <span>·</span>
-                                <span>额度: {{ groupQuotaText(group) }}</span>
+                              <template v-for="(item, idx) in group.metadataLines" :key="idx">
+                                <span v-if="idx > 0">·</span>
+                                <span :class="{ 'font-bold text-emerald-600 dark:text-emerald-400': idx === group.metadataLines.length - 1 }">
+                                  {{ item }}
+                                </span>
                               </template>
-                              <span>·</span>
-                              <span class="flex items-center gap-0.5 font-bold text-emerald-600 dark:text-emerald-400">
-                                实际单价: {{ groupActualCostText(selectedPlan, group.rate_multiplier) }}
-                              </span>
                             </div>
                           </div>
                           <span class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
-                            倍率 {{ formatGroupMultiplier(group.rate_multiplier) }}
+                            倍率 {{ group.multiplierText }}
                           </span>
                         </div>
                       </div>
@@ -785,27 +777,20 @@
               </button>
             </div>
             <div class="flex-1 space-y-2 overflow-y-auto p-5 group-scrollbar">
-              <!-- Pricing Disclaimer inside Modal -->
-              <div class="mb-3 flex gap-2 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 text-xs text-amber-600/90 dark:border-amber-500/20 dark:text-amber-400/90">
-                <Icon name="infoCircle" size="xs" class="shrink-0 mt-0.5 text-amber-500" />
-                <span class="text-[10px] opacity-85 leading-snug">每刀估算单价仅供参考，由于汇率与分组通道费率变动可能存在波动，请以实际调用时系统设定的费率为准。</span>
-              </div>
-
               <div
-                v-for="group in planGroupDetailRows(planGroupsModalPlan)"
+                v-for="group in getPlanView(planGroupsModalPlan?.id).groupRows"
                 :key="group.key"
                 class="grid grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-xl border border-slate-200/80 bg-slate-50/90 p-3 dark:border-white/5 dark:bg-slate-950/40"
               >
                 <div class="min-w-0">
                   <div class="truncate text-sm font-bold text-slate-950 dark:text-white">{{ group.name }}</div>
                   <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    <span>{{ group.platformText }}</span>
-                    <span>·</span>
-                    <span>{{ group.quotaText }}</span>
-                    <span>·</span>
-                    <span class="font-semibold text-emerald-600 dark:text-emerald-400">
-                      实际单价: {{ groupActualCostText(planGroupsModalPlan, group.rateMultiplier) }}
-                    </span>
+                    <template v-for="(item, idx) in group.metadataLines" :key="idx">
+                      <span v-if="idx > 0">·</span>
+                      <span :class="{ 'font-semibold text-emerald-600 dark:text-emerald-400': idx === group.metadataLines.length - 1 }">
+                        {{ item }}
+                      </span>
+                    </template>
                   </div>
                 </div>
                 <span class="h-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
@@ -1142,6 +1127,37 @@ const subscriptionPlans = computed(() =>
   })
 )
 
+const planViewMap = computed<Record<number, PlanView>>(() => {
+  const map: Record<number, PlanView> = {}
+  for (const plan of subscriptionPlans.value) {
+    const groupRows = buildGroupRows(plan)
+    map[plan.id] = {
+      groupRows,
+      cardGroups: groupRows.slice(0, PLAN_CARD_GROUP_LIMIT),
+      cardOverflowCount: Math.max(0, groupRows.length - PLAN_CARD_GROUP_LIMIT),
+      compareGroups: groupRows.slice(0, PLAN_COMPARE_GROUP_LIMIT),
+      compareOverflowCount: Math.max(0, groupRows.length - PLAN_COMPARE_GROUP_LIMIT),
+    }
+  }
+  return map
+})
+
+const PLAN_CARD_GROUP_LIMIT = 3
+const PLAN_COMPARE_GROUP_LIMIT = 4
+
+const EMPTY_PLAN_VIEW: PlanView = {
+  groupRows: [],
+  cardGroups: [],
+  cardOverflowCount: 0,
+  compareGroups: [],
+  compareOverflowCount: 0,
+}
+
+function getPlanView(planId?: number | null): PlanView {
+  if (!planId) return EMPTY_PLAN_VIEW
+  return planViewMap.value[planId] || EMPTY_PLAN_VIEW
+}
+
 function isRecommendedPlan(plan: SubscriptionPlan): boolean {
   return /尊享|推荐|优选|premium|pro/i.test(plan.name)
 }
@@ -1203,18 +1219,29 @@ function displayGroupName(name: string): string {
     .trim()
 }
 
-type PlanGroupRow = {
+const GROUP_LABELS = {
+  platform: '平台',
+  quota: '额度',
+  actualCost: '实际单价',
+  unlimitedQuota: '不限',
+  allPlatforms: '全部适用',
+}
+
+interface PlanGroupViewRow {
   key: string
   name: string
   multiplierText: string
-  platform?: string
-  rateMultiplier?: number
+  platform: string
+  actualCostText: string | null
+  metadataLines: string[]
 }
 
-type PlanGroupDetailRow = PlanGroupRow & {
-  platformText: string
-  quotaText: string
-  rateMultiplier: number
+interface PlanView {
+  groupRows: PlanGroupViewRow[]
+  cardGroups: PlanGroupViewRow[]
+  cardOverflowCount: number
+  compareGroups: PlanGroupViewRow[]
+  compareOverflowCount: number
 }
 
 function formatGroupMultiplier(value?: number | null): string {
@@ -1255,57 +1282,69 @@ function planGroupCountText(plan: SubscriptionPlan): string {
   return `${planGroupCount(plan)} 个分组`
 }
 
-function planGroupOverflowText(plan: SubscriptionPlan, visibleCount: number): string {
-  const count = planGroupCount(plan)
-  return count > visibleCount ? `+${count - visibleCount} 个` : ''
-}
-
-function planGroupRows(plan: SubscriptionPlan, limit = Number.POSITIVE_INFINITY): PlanGroupRow[] {
+function buildGroupRows(plan: SubscriptionPlan): PlanGroupViewRow[] {
   const groups = planGroups(plan)
+  const baseCost = unitCost(plan)
+  
+  let rawItems: {
+    key: string
+    name: string
+    multiplier: number
+    platform: string
+    quotaText: string
+    actualCost: number | null
+  }[] = []
+
   if (groups.length > 0) {
-    return groups.slice(0, limit).map(group => ({
-      key: String(group.id),
-      name: displayGroupName(group.name),
-      multiplierText: formatGroupMultiplier(group.rate_multiplier),
-      platform: group.platform || '',
-      rateMultiplier: group.rate_multiplier,
+    rawItems = groups.map(group => {
+      const multiplier = group.rate_multiplier ?? 1
+      return {
+        key: String(group.id),
+        name: displayGroupName(group.name),
+        multiplier,
+        platform: group.platform || '',
+        quotaText: groupQuotaText(group),
+        actualCost: baseCost !== null ? baseCost * multiplier : null,
+      }
+    })
+  } else {
+    const fallbackMultiplier = plan.rate_multiplier ?? 1
+    rawItems = planGroupLabels(plan).map((name, index) => ({
+      key: `${plan.id}-${name}-${index}`,
+      name,
+      multiplier: fallbackMultiplier,
+      platform: '',
+      quotaText: '',
+      actualCost: baseCost !== null ? baseCost * fallbackMultiplier : null,
     }))
   }
-  return planGroupLabels(plan, limit).map((name, index) => ({
-    key: `${plan.id}-${name}-${index}`,
-    name,
-    multiplierText: formatGroupMultiplier(plan.rate_multiplier ?? 1),
-    platform: '',
-    rateMultiplier: plan.rate_multiplier ?? 1,
-  }))
-}
 
-function planGroupRowOverflowText(plan: SubscriptionPlan, visibleCount: number): string {
-  const overflow = planGroupOverflowText(plan, visibleCount)
-  return overflow ? `${overflow}分组` : ''
-}
+  return rawItems.map(item => {
+    const multiplierText = formatGroupMultiplier(item.multiplier)
+    const actualCostText = item.actualCost !== null 
+      ? `¥${formatPlainNumber(item.actualCost, item.actualCost > 0 && item.actualCost < 1 ? 4 : 2)}/刀` 
+      : null
 
-function planGroupDetailRows(plan: SubscriptionPlan): PlanGroupDetailRow[] {
-  const groups = planGroups(plan)
-  if (groups.length > 0) {
-    return groups.map(group => ({
-      key: String(group.id),
-      name: displayGroupName(group.name),
-      multiplierText: formatGroupMultiplier(group.rate_multiplier),
-      platformText: `平台: ${platformLabel(group.platform || '')}`,
-      quotaText: groupQuotaText(group) ? `额度: ${groupQuotaText(group)}` : '额度不限',
-      platform: group.platform || '',
-      rateMultiplier: group.rate_multiplier,
-    }))
-  }
-  return planGroupRows(plan).map(row => ({
-    ...row,
-    platformText: plan.allowed_platforms?.length
-      ? `平台: ${plan.allowed_platforms.map(platform => platformLabel(platform)).join(' / ')}`
-      : '平台: 全部适用',
-    quotaText: '额度不限',
-    rateMultiplier: row.rateMultiplier ?? 1,
-  }))
+    const platformText = item.platform ? platformLabel(item.platform) : GROUP_LABELS.allPlatforms
+    const metadataLines = [
+      `${GROUP_LABELS.platform}: ${platformText}`
+    ]
+    if (item.quotaText) {
+      metadataLines.push(`${GROUP_LABELS.quota}: ${item.quotaText}`)
+    }
+    if (actualCostText) {
+      metadataLines.push(`${GROUP_LABELS.actualCost}: ${actualCostText}`)
+    }
+
+    return {
+      key: item.key,
+      name: item.name,
+      multiplierText,
+      platform: item.platform,
+      actualCostText,
+      metadataLines
+    }
+  })
 }
 
 function openPlanGroupsModal(plan: SubscriptionPlan) {
@@ -1423,20 +1462,6 @@ function unitCostText(plan: SubscriptionPlan): string {
   const cost = unitCost(plan)
   if (cost == null) return '-'
   return `¥${formatPlainNumber(cost, cost > 0 && cost < 1 ? 4 : 2)}/刀`
-}
-
-function groupActualCost(plan: SubscriptionPlan, rateMultiplier?: number | null): number | null {
-  const cost = unitCost(plan)
-  if (cost == null) return null
-  const multiplier = rateMultiplier ?? 1
-  return cost * multiplier
-}
-
-function groupActualCostText(plan: SubscriptionPlan | null | undefined, rateMultiplier?: number | null): string {
-  if (!plan) return '-'
-  const actualCost = groupActualCost(plan, rateMultiplier)
-  if (actualCost == null) return '-'
-  return `¥${formatPlainNumber(actualCost, actualCost > 0 && actualCost < 1 ? 4 : 2)}/刀`
 }
 
 function discountText(plan: SubscriptionPlan): string {
@@ -1975,6 +2000,8 @@ async function resumeWechatPaymentFromQuery() {
     })
   }
 }
+
+
 
 onMounted(async () => {
   try {

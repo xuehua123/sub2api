@@ -1450,7 +1450,12 @@ export default {
     relativeSecondsAgo: '{n} 秒前',
     relativeMinutesAgo: '{n} 分钟前',
     relativeHoursAgo: '{n} 小时前',
-    relativeDaysAgo: '{n} 天前'
+    relativeDaysAgo: '{n} 天前',
+    primaryModelPrefix: '测试模型: ',
+    bannerTip: '提示：此处仅展示监控所用的测试模型，渠道实际支持该平台下的全部/多个模型。完整的模型列表及倍率请查看【模型价格表】。',
+    goToPrices: '前往模型价格表',
+    dialogTip: '💡 以上仅为监控所测模型的状态。渠道实际支持该平台下的全部/多个模型。',
+    viewPrices: '查看完整价格表 →'
   },
 
   // Channel Status (user-facing read-only view)

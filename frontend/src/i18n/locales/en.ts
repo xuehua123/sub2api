@@ -1446,7 +1446,12 @@ export default {
     relativeSecondsAgo: '{n}s ago',
     relativeMinutesAgo: '{n}m ago',
     relativeHoursAgo: '{n}h ago',
-    relativeDaysAgo: '{n}d ago'
+    relativeDaysAgo: '{n}d ago',
+    primaryModelPrefix: 'Test Model: ',
+    bannerTip: 'Note: Only the model used for health checks is shown here. The channel actually supports all or multiple models of this platform. Check the [Model Prices] page for the full list.',
+    goToPrices: 'Go to Model Prices',
+    dialogTip: '💡 The above only shows the status of models tested by the monitor. The channel actually supports all or multiple models under this platform.',
+    viewPrices: 'View Full Prices →'
   },
 
   // Channel Status (user-facing read-only view)

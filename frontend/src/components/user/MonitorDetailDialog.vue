@@ -49,6 +49,19 @@
       </table>
     </div>
 
+    <!-- Dialog Footer Tip -->
+    <div class="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-gray-200/80 bg-gray-50/50 p-3.5 text-xs dark:border-dark-700/60 dark:bg-dark-900/20">
+      <span class="text-gray-500 dark:text-gray-400">
+        {{ t('monitorCommon.dialogTip') }}
+      </span>
+      <router-link
+        to="/model-prices"
+        class="shrink-0 font-bold text-primary-600 hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300 transition"
+      >
+        {{ t('monitorCommon.viewPrices') }}
+      </router-link>
+    </div>
+
     <template #footer>
       <div class="flex justify-end">
         <button @click="$emit('close')" class="btn btn-secondary">
