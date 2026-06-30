@@ -1002,6 +1002,7 @@ export default {
   dashboard: {
     title: 'Dashboard',
     welcomeMessage: "Welcome back! Here's an overview of your account.",
+    cnyEstimateNote: 'CNY amounts are estimated based on current subscription rate, for reference only',
     balance: 'Balance',
     apiKeys: 'API Keys',
     todayRequests: 'Today Requests',
@@ -1301,6 +1302,7 @@ export default {
     actualCost: 'Actual',
     accountCost: 'Cost',
     userBilled: 'User billed',
+    cnyEstimateNote: 'CNY amounts are estimated based on current subscription rate, for reference only',
     accountBilled: 'Account billed',
     resetNow: 'Now',
     resetPending: 'Pending refresh',

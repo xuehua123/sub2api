@@ -310,6 +310,8 @@ type PublicSettings struct {
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 	ModelPricesUserVisible      bool
+	ModelPriceUSDCNYRate        float64
+	ModelPriceCNYPerQuotaUSD    float64
 
 	LinuxDoOAuthEnabled      bool
 	DingTalkOAuthEnabled     bool

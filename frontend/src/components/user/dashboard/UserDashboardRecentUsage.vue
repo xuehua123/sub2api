@@ -22,11 +22,14 @@
               <p class="text-xs text-gray-500 dark:text-dark-400">{{ formatDateTime(log.created_at) }}</p>
             </div>
           </div>
-          <div class="text-right">
+          <div class="text-right flex flex-col items-end">
             <p class="text-sm font-semibold">
               <span class="text-green-600 dark:text-green-400">${{ formatCost(log.actual_cost) }}</span>
             </p>
-            <p class="text-xs text-gray-500 dark:text-dark-400">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>
+            <p class="text-[10px] text-orange-500/80 dark:text-orange-400/70">
+              ≈ {{ formatCny(convertUsdToCnyForLog(log.actual_cost, log)) }}
+            </p>
+            <p class="text-xs text-gray-500 dark:text-dark-400 mt-0.5">{{ (log.input_tokens + log.output_tokens).toLocaleString() }} tokens</p>
           </div>
         </div>
 
@@ -52,5 +55,7 @@ defineProps<{
   loading: boolean
 }>()
 const { t } = useI18n()
+import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
+const { convertUsdToCnyForLog, formatCny } = useCurrencyResolver()
 const formatCost = (c: number) => c.toFixed(4)
 </script>

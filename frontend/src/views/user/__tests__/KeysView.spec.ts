@@ -70,6 +70,14 @@ vi.mock('@/composables/useClipboard', () => ({
   }),
 }))
 
+vi.mock('@/composables/useCurrencyResolver', () => ({
+  useCurrencyResolver: () => ({
+    convertUsdToCnyForLog: (val: number) => (val != null ? val * 7 : null),
+    convertUsdToCny: (val: number) => (val != null ? val * 7 : null),
+    formatCny: (val: number | null | undefined) => (val != null ? `¥${val.toFixed(2)}` : '-'),
+  })
+}))
+
 vi.mock('@/api', () => ({
   keysAPI: {
     list: apiMocks.list,

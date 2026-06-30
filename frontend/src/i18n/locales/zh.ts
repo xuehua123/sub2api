@@ -1001,6 +1001,7 @@ export default {
   dashboard: {
     title: '仪表盘',
     welcomeMessage: '欢迎回来！这是您账户的概览。',
+    cnyEstimateNote: '人民币金额基于当前订阅汇率估算，仅供参考',
     balance: '余额',
     apiKeys: 'API 密钥',
     todayRequests: '今日请求',
@@ -1305,6 +1306,7 @@ export default {
     actualCost: '实际',
     accountCost: '成本',
     userBilled: '用户扣费',
+    cnyEstimateNote: '人民币金额基于当前订阅汇率估算，仅供参考',
     accountBilled: '账号计费',
     resetNow: '现在',
     resetPending: '待刷新',

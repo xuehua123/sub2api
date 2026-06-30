@@ -72,6 +72,9 @@
               <p class="text-xl font-bold text-green-600 dark:text-green-400">
                 ${{ (usageStats?.total_actual_cost || 0).toFixed(4) }}
               </p>
+              <p class="text-xs text-orange-500/80 dark:text-orange-400/70">
+                ≈ {{ formatCny(convertUsdToCny(usageStats?.total_actual_cost || 0)) }}
+              </p>
               <p class="text-xs text-gray-500 dark:text-gray-400">
                 {{ t('usage.inSelectedRange') }}
               </p>
@@ -314,9 +317,14 @@
 
           <template #cell-cost="{ row }">
             <div class="flex items-center gap-1.5 text-sm">
-              <span class="font-medium text-green-600 dark:text-green-400">
-                ${{ (row.actual_cost ?? 0).toFixed(6) }}
-              </span>
+              <div class="flex flex-col">
+                <span class="font-medium text-green-600 dark:text-green-400">
+                  ${{ (row.actual_cost ?? 0).toFixed(6) }}
+                </span>
+                <span class="text-[10px] text-orange-500/80 dark:text-orange-400/70">
+                  ≈ {{ formatCny(convertUsdToCnyForLog(row.actual_cost, row)) }}
+                </span>
+              </div>
               <!-- Cost Detail Tooltip -->
               <div
                 class="group relative"
@@ -528,15 +536,21 @@
             <div class="text-xs font-semibold text-gray-300 mb-1">{{ t('usage.costDetails') }}</div>
             <div v-if="tooltipData && tooltipData.input_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.inputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.input_cost.toFixed(6) }}
+                <span class="text-orange-300/70 text-[10px]">≈ {{ formatCny(convertUsdToCnyForLog(tooltipData.input_cost, tooltipData)) }}</span>
+              </span>
             </div>
             <div v-if="tooltipData && tooltipData.output_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.outputCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.output_cost.toFixed(6) }}
+                <span class="text-orange-300/70 text-[10px]">≈ {{ formatCny(convertUsdToCnyForLog(tooltipData.output_cost, tooltipData)) }}</span>
+              </span>
             </div>
             <div v-if="tooltipData && hasImageOutputCost(tooltipData)" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('usage.imageOutputCost') }}</span>
-              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}</span>
+              <span class="font-medium text-pink-300">${{ tooltipData.image_output_cost.toFixed(6) }}
+                <span class="text-orange-300/70 text-[10px]">≈ {{ formatCny(convertUsdToCnyForLog(tooltipData.image_output_cost, tooltipData)) }}</span>
+              </span>
             </div>
             <!-- Token billing: show unit prices per 1M tokens -->
             <template v-if="!isImageUsage(tooltipData) && (!tooltipData?.billing_mode || tooltipData.billing_mode === BILLING_MODE_TOKEN)">
@@ -594,11 +608,15 @@
             </div>
             <div v-if="tooltipData && tooltipData.cache_creation_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheCreationCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_creation_cost.toFixed(6) }}
+                <span class="text-orange-300/70 text-[10px]">≈ {{ formatCny(convertUsdToCnyForLog(tooltipData.cache_creation_cost, tooltipData)) }}</span>
+              </span>
             </div>
             <div v-if="tooltipData && tooltipData.cache_read_cost > 0" class="flex items-center justify-between gap-4">
               <span class="text-gray-400">{{ t('admin.usage.cacheReadCost') }}</span>
-              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(6) }}</span>
+              <span class="font-medium text-white">${{ tooltipData.cache_read_cost.toFixed(6) }}
+                <span class="text-orange-300/70 text-[10px]">≈ {{ formatCny(convertUsdToCnyForLog(tooltipData.cache_read_cost, tooltipData)) }}</span>
+              </span>
             </div>
           </div>
           <!-- Rate and Summary -->
@@ -614,10 +632,17 @@
           </div>
           <div class="flex items-center justify-between gap-6 border-t border-gray-700 pt-1.5">
             <span class="text-gray-400">{{ t('usage.userBilled') }}</span>
-            <span class="font-semibold text-green-400"
-              >${{ tooltipData?.actual_cost.toFixed(6) }}</span
-            >
+            <div class="flex flex-col items-end">
+              <span class="font-semibold text-green-400"
+                >${{ tooltipData?.actual_cost.toFixed(6) }}</span
+              >
+              <span class="text-orange-300/80 text-[10px]">
+                ≈ {{ formatCny(convertUsdToCnyForLog(tooltipData?.actual_cost, tooltipData)) }}
+              </span>
+            </div>
           </div>
+          <!-- CNY estimate note -->
+          <p class="mt-1.5 text-[9px] text-orange-400/50 italic text-center">{{ t('usage.cnyEstimateNote') }}</p>
         </div>
         <!-- Tooltip Arrow (left side) -->
         <div
@@ -650,6 +675,7 @@ import { formatCacheTokens, formatMultiplier } from '@/utils/formatters'
 import { formatTokenPricePerMillion } from '@/utils/usagePricing'
 import { getUsageServiceTierLabel } from '@/utils/usageServiceTier'
 import { resolveUsageRequestType } from '@/utils/usageRequestType'
+import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
 import {
   BILLING_MODE_IMAGE,
   BILLING_MODE_TOKEN,
@@ -669,6 +695,7 @@ import {
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const { convertUsdToCnyForLog, convertUsdToCny, formatCny } = useCurrencyResolver()
 
 let abortController: AbortController | null = null
 

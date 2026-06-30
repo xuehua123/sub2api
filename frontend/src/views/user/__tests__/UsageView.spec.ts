@@ -83,6 +83,14 @@ vi.mock('@/stores/app', () => ({
   useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
 }))
 
+vi.mock('@/composables/useCurrencyResolver', () => ({
+  useCurrencyResolver: () => ({
+    convertUsdToCnyForLog: (val: number) => (val != null ? val * 7 : null),
+    convertUsdToCny: (val: number) => (val != null ? val * 7 : null),
+    formatCny: (val: number | null | undefined) => (val != null ? `¥${val.toFixed(2)}` : '-'),
+  })
+}))
+
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return {

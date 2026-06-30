@@ -210,31 +210,33 @@
               <div>
                 <div class="flex items-center gap-1.5">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.today') }}:</span>
-                  <span class="font-medium text-gray-900 dark:text-white">
-                    {{ formatUsageUSD(apiKeyUsageCost(row, 'today')) }}
-                  </span>
-                </div>
-                <div
-                  v-if="apiKeySubscriptionUsageText(row, 'today')"
-                  class="mt-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
-                  :title="t('keys.actualRmbUsageTooltip')"
-                >
-                  {{ apiKeySubscriptionUsageText(row, 'today') }}
+                  <div class="flex flex-col items-start">
+                    <span class="font-medium text-gray-900 dark:text-white">
+                      {{ formatUsageUSD(apiKeyUsageCost(row, 'today')) }}
+                    </span>
+                    <span
+                      v-if="apiKeyUsageCnyText(row, 'today')"
+                      class="text-[10px] text-orange-500/80 dark:text-orange-400/70"
+                    >
+                      ≈ {{ apiKeyUsageCnyText(row, 'today') }}
+                    </span>
+                  </div>
                 </div>
               </div>
-              <div class="mt-1">
+              <div class="mt-1.5">
                 <div class="flex items-center gap-1.5">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('keys.total') }}:</span>
-                  <span class="font-medium text-gray-900 dark:text-white">
-                    {{ formatUsageUSD(apiKeyUsageCost(row, 'total')) }}
-                  </span>
-                </div>
-                <div
-                  v-if="apiKeySubscriptionUsageText(row, 'total')"
-                  class="mt-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400"
-                  :title="t('keys.actualRmbUsageTooltip')"
-                >
-                  {{ apiKeySubscriptionUsageText(row, 'total') }}
+                  <div class="flex flex-col items-start">
+                    <span class="font-medium text-gray-900 dark:text-white">
+                      {{ formatUsageUSD(apiKeyUsageCost(row, 'total')) }}
+                    </span>
+                    <span
+                      v-if="apiKeyUsageCnyText(row, 'total')"
+                      class="text-[10px] text-orange-500/80 dark:text-orange-400/70"
+                    >
+                      ≈ {{ apiKeyUsageCnyText(row, 'total') }}
+                    </span>
+                  </div>
                 </div>
               </div>
               <!-- Quota progress (if quota is set) -->
@@ -1360,7 +1362,8 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
-
+import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
+const { convertUsdToCnyForLog, formatCny } = useCurrencyResolver()
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
   const date = new Date(isoDate)
@@ -1901,20 +1904,12 @@ function apiKeyUsageCost(key: ApiKey, scope: ApiKeyUsageScope): number {
   return Number.isFinite(value) ? value : 0
 }
 
-function apiKeySubscriptionUsageAmount(key: ApiKey, scope: ApiKeyUsageScope): number | null {
-  if (rowAccessSource(key) !== 'entitlement') return null
-  const unitCost = entitlementUnitCost(entitlementByID(key.subscription_entitlement_id))
-  if (unitCost === null) return null
-  return apiKeyUsageCost(key, scope) * unitCost
-}
-
-function apiKeySubscriptionUsageText(key: ApiKey, scope: ApiKeyUsageScope): string {
-  const amount = apiKeySubscriptionUsageAmount(key, scope)
-  if (amount === null) return ''
-  const entitlement = entitlementByID(key.subscription_entitlement_id)
-  return t('keys.actualRmbUsageApprox', {
-    amount: formatMoneyAmount(amount, entitlement?.purchase_currency),
+function apiKeyUsageCnyText(key: ApiKey, scope: ApiKeyUsageScope): string {
+  if (rowAccessSource(key) !== 'entitlement' || !key.subscription_entitlement_id) return ''
+  const amount = convertUsdToCnyForLog(apiKeyUsageCost(key, scope), {
+    entitlement_id: key.subscription_entitlement_id,
   })
+  return formatCny(amount)
 }
 
 function groupOptionActualCostText(

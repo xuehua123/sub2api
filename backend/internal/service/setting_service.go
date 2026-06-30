@@ -1156,6 +1156,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
+		SettingKeyModelPriceUSDCNYRate,
+		SettingKeyModelPriceCNYPerQuotaUSD,
 	}
 
 	settings, err := s.settingRepo.GetMultiple(ctx, keys)
@@ -1211,6 +1213,20 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	var balanceLowNotifyThreshold float64
 	if v, err := strconv.ParseFloat(settings[SettingKeyBalanceLowNotifyThreshold], 64); err == nil && v >= 0 {
 		balanceLowNotifyThreshold = v
+	}
+
+	var modelPriceUSDCNYRate float64
+	if v, err := strconv.ParseFloat(settings[SettingKeyModelPriceUSDCNYRate], 64); err == nil && v >= 0 {
+		modelPriceUSDCNYRate = v
+	} else {
+		modelPriceUSDCNYRate = 7.0
+	}
+
+	var modelPriceCNYPerQuotaUSD float64
+	if v, err := strconv.ParseFloat(settings[SettingKeyModelPriceCNYPerQuotaUSD], 64); err == nil && v >= 0 {
+		modelPriceCNYPerQuotaUSD = v
+	} else {
+		modelPriceCNYPerQuotaUSD = 0.068
 	}
 
 	return &PublicSettings{
@@ -1285,6 +1301,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AffiliateEnabled:            settings[SettingKeyAffiliateEnabled] == "true",
 		RiskControlEnabled:          settings[SettingKeyRiskControlEnabled] == "true",
 		AllowUserViewErrorRequests:  settings[SettingKeyAllowUserViewErrorRequests] == "true",
+		ModelPriceUSDCNYRate:        modelPriceUSDCNYRate,
+		ModelPriceCNYPerQuotaUSD:    modelPriceCNYPerQuotaUSD,
 	}, nil
 }
 
@@ -1624,6 +1642,8 @@ type PublicSettingsInjectionPayload struct {
 	AffiliateEnabled                     bool `json:"affiliate_enabled"`
 	RiskControlEnabled                   bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests           bool `json:"allow_user_view_error_requests"`
+	ModelPriceUSDCNYRate                 float64 `json:"model_price_usd_cny_rate"`
+	ModelPriceCNYPerQuotaUSD             float64 `json:"model_price_cny_per_quota_usd"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection
@@ -1703,6 +1723,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
+		ModelPriceUSDCNYRate:                 settings.ModelPriceUSDCNYRate,
+		ModelPriceCNYPerQuotaUSD:             settings.ModelPriceCNYPerQuotaUSD,
 	}, nil
 }
 

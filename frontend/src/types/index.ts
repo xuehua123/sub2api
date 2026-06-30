@@ -258,6 +258,8 @@ export interface PublicSettings {
   service_quota_enabled: boolean
   affiliate_enabled: boolean
   allow_user_view_error_requests?: boolean
+  model_price_usd_cny_rate: number
+  model_price_cny_per_quota_usd: number
 }
 
 export interface AuthResponse {
