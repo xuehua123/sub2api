@@ -90,9 +90,9 @@
                     v-for="plan in subscriptionPlans"
                     :key="plan.id"
                     :class="[
-                      'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300',
+                      'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300 hover:-translate-y-2 hover:scale-[1.01]',
                       isRecommendedPlan(plan)
-                        ? 'recommended-card border-primary-300/70 bg-gradient-to-b from-white via-cyan-50/80 to-white shadow-xl shadow-cyan-100/80 hover:shadow-2xl hover:shadow-cyan-100 dark:border-primary-500/25 dark:from-[#0d2229]/50 dark:via-[#0a1120]/40 dark:to-[#070c16]/30 dark:shadow-[0_0_40px_rgba(20,184,166,0.08)] dark:hover:shadow-[0_0_50px_rgba(20,184,166,0.12)]'
+                        ? 'recommended-card border-primary-300/70 bg-gradient-to-b from-white via-cyan-50/80 to-white shadow-xl shadow-cyan-100/80 hover:shadow-2xl hover:shadow-cyan-200 dark:border-primary-500/25 dark:from-[#0d2229]/50 dark:via-[#0a1120]/40 dark:to-[#070c16]/30 dark:shadow-[0_0_40px_rgba(20,184,166,0.08)] dark:hover:shadow-[0_0_50px_rgba(20,184,166,0.15)]'
                         : 'border-slate-200/80 bg-white/[0.92] shadow-xl shadow-slate-200/70 hover:border-primary-200 hover:bg-white hover:shadow-2xl hover:shadow-slate-200/90 dark:border-white/5 dark:bg-[#090f1d]/40 dark:shadow-lg dark:hover:border-white/10 dark:hover:bg-[#0c1528]/50'
                     ]"
                   >
@@ -156,12 +156,28 @@
                         <div
                           v-for="group in planGroupRows(plan, 3)"
                           :key="group.key"
-                          class="flex items-center justify-between gap-2 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-1.5 text-[10px] dark:border-white/5 dark:bg-slate-900/60"
+                          class="flex flex-col gap-1 rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2 text-[10px] dark:border-white/5 dark:bg-slate-900/60 transition-all hover:bg-slate-100/50 dark:hover:bg-slate-800/40"
                         >
-                          <span class="min-w-0 truncate font-medium text-slate-700 dark:text-slate-300">{{ group.name }}</span>
-                          <span class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-black text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
-                            {{ group.multiplierText }}
-                          </span>
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                              <span
+                                v-if="group.platform"
+                                :class="['shrink-0 rounded-full px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(group.platform)]"
+                              >
+                                {{ platformLabel(group.platform) }}
+                              </span>
+                              <span class="truncate font-semibold text-slate-700 dark:text-slate-300">{{ group.name }}</span>
+                            </div>
+                            <span class="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-extrabold text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300">
+                              {{ group.multiplierText }}
+                            </span>
+                          </div>
+                          <div v-if="groupActualCostText(plan, group.rateMultiplier) !== '-'" class="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-medium leading-none">
+                            <span>实际单价 (估算)</span>
+                            <span class="font-bold text-emerald-600 dark:text-emerald-400">
+                              {{ groupActualCostText(plan, group.rateMultiplier) }}
+                            </span>
+                          </div>
                         </div>
                         <button
                           v-if="planGroupRowOverflowText(plan, 3)"
@@ -198,6 +214,11 @@
                     </button>
                   </div>
                 </div>
+
+                <!-- Disclaimer under card grid -->
+                <p class="mt-6 text-center text-[10px] text-slate-400 dark:text-slate-500 max-w-xl mx-auto">
+                  * 实际单价为“套餐每刀成本 × 分组计费倍率”的估算值。分组通道费率可能会有调整波动，请以实际调用时的计费为准。
+                </p>
 
                 <!-- Accordion Comparison Toggle -->
                 <div class="mt-12 flex flex-col items-center justify-center max-w-5xl mx-auto w-full space-y-4">
@@ -397,17 +418,30 @@
                             <span class="text-sm font-bold text-slate-950 dark:text-white">
                               {{ displayGroupName(group.name) }}
                             </span>
-                            <div class="flex flex-wrap gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                            <div class="flex flex-wrap items-center gap-2 text-[10px] font-medium text-slate-500 dark:text-slate-400">
                               <span>平台: {{ platformLabel(group.platform || '') }}</span>
                               <template v-if="groupQuotaText(group)">
                                 <span>·</span>
                                 <span>额度: {{ groupQuotaText(group) }}</span>
                               </template>
+                              <span>·</span>
+                              <span class="flex items-center gap-0.5 font-bold text-emerald-600 dark:text-emerald-400">
+                                实际单价: {{ groupActualCostText(selectedPlan, group.rate_multiplier) }}
+                              </span>
                             </div>
                           </div>
                           <span class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
                             倍率 {{ formatGroupMultiplier(group.rate_multiplier) }}
                           </span>
+                        </div>
+                      </div>
+
+                      <!-- Price disclaimer / Fluctuation notice -->
+                      <div class="mt-4 flex gap-2 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3.5 text-xs text-amber-600/90 dark:border-amber-500/20 dark:text-amber-400/90">
+                        <Icon name="infoCircle" size="sm" class="shrink-0 mt-0.5 text-amber-500" />
+                        <div class="leading-relaxed">
+                          <p class="font-bold">关于每刀单价与费率波动的说明：</p>
+                          <p class="mt-0.5 text-[11px] opacity-85">每个分组的“实际单价”是根据当前套餐的每刀成本乘以该分组的计费倍率估算而得。分组通道费率可能会根据市场和汇率进行调整波动，最终计费以实际调用时系统设定的费率为准。</p>
                         </div>
                       </div>
                     </div>
@@ -751,6 +785,12 @@
               </button>
             </div>
             <div class="flex-1 space-y-2 overflow-y-auto p-5 group-scrollbar">
+              <!-- Pricing Disclaimer inside Modal -->
+              <div class="mb-3 flex gap-2 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3 text-xs text-amber-600/90 dark:border-amber-500/20 dark:text-amber-400/90">
+                <Icon name="infoCircle" size="xs" class="shrink-0 mt-0.5 text-amber-500" />
+                <span class="text-[10px] opacity-85 leading-snug">每刀估算单价仅供参考，由于汇率与分组通道费率变动可能存在波动，请以实际调用时系统设定的费率为准。</span>
+              </div>
+
               <div
                 v-for="group in planGroupDetailRows(planGroupsModalPlan)"
                 :key="group.key"
@@ -758,9 +798,14 @@
               >
                 <div class="min-w-0">
                   <div class="truncate text-sm font-bold text-slate-950 dark:text-white">{{ group.name }}</div>
-                  <div class="mt-1 flex flex-wrap gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                     <span>{{ group.platformText }}</span>
+                    <span>·</span>
                     <span>{{ group.quotaText }}</span>
+                    <span>·</span>
+                    <span class="font-semibold text-emerald-600 dark:text-emerald-400">
+                      实际单价: {{ groupActualCostText(planGroupsModalPlan, group.rateMultiplier) }}
+                    </span>
                   </div>
                 </div>
                 <span class="h-fit rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700 dark:border-emerald-500/25 dark:bg-emerald-500/10 dark:text-emerald-300">
@@ -1162,11 +1207,14 @@ type PlanGroupRow = {
   key: string
   name: string
   multiplierText: string
+  platform?: string
+  rateMultiplier?: number
 }
 
 type PlanGroupDetailRow = PlanGroupRow & {
   platformText: string
   quotaText: string
+  rateMultiplier: number
 }
 
 function formatGroupMultiplier(value?: number | null): string {
@@ -1219,12 +1267,16 @@ function planGroupRows(plan: SubscriptionPlan, limit = Number.POSITIVE_INFINITY)
       key: String(group.id),
       name: displayGroupName(group.name),
       multiplierText: formatGroupMultiplier(group.rate_multiplier),
+      platform: group.platform || '',
+      rateMultiplier: group.rate_multiplier,
     }))
   }
   return planGroupLabels(plan, limit).map((name, index) => ({
     key: `${plan.id}-${name}-${index}`,
     name,
     multiplierText: formatGroupMultiplier(plan.rate_multiplier ?? 1),
+    platform: '',
+    rateMultiplier: plan.rate_multiplier ?? 1,
   }))
 }
 
@@ -1242,6 +1294,8 @@ function planGroupDetailRows(plan: SubscriptionPlan): PlanGroupDetailRow[] {
       multiplierText: formatGroupMultiplier(group.rate_multiplier),
       platformText: `平台: ${platformLabel(group.platform || '')}`,
       quotaText: groupQuotaText(group) ? `额度: ${groupQuotaText(group)}` : '额度不限',
+      platform: group.platform || '',
+      rateMultiplier: group.rate_multiplier,
     }))
   }
   return planGroupRows(plan).map(row => ({
@@ -1250,6 +1304,7 @@ function planGroupDetailRows(plan: SubscriptionPlan): PlanGroupDetailRow[] {
       ? `平台: ${plan.allowed_platforms.map(platform => platformLabel(platform)).join(' / ')}`
       : '平台: 全部适用',
     quotaText: '额度不限',
+    rateMultiplier: row.rateMultiplier ?? 1,
   }))
 }
 
@@ -1368,6 +1423,20 @@ function unitCostText(plan: SubscriptionPlan): string {
   const cost = unitCost(plan)
   if (cost == null) return '-'
   return `¥${formatPlainNumber(cost, cost > 0 && cost < 1 ? 4 : 2)}/刀`
+}
+
+function groupActualCost(plan: SubscriptionPlan, rateMultiplier?: number | null): number | null {
+  const cost = unitCost(plan)
+  if (cost == null) return null
+  const multiplier = rateMultiplier ?? 1
+  return cost * multiplier
+}
+
+function groupActualCostText(plan: SubscriptionPlan | null | undefined, rateMultiplier?: number | null): string {
+  if (!plan) return '-'
+  const actualCost = groupActualCost(plan, rateMultiplier)
+  if (actualCost == null) return '-'
+  return `¥${formatPlainNumber(actualCost, actualCost > 0 && actualCost < 1 ? 4 : 2)}/刀`
 }
 
 function discountText(plan: SubscriptionPlan): string {
