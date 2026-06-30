@@ -384,7 +384,7 @@ type PublicSettings struct {
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 
-	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+	AllowUserViewErrorRequests bool    `json:"allow_user_view_error_requests"`
 	ModelPriceUSDCNYRate       float64 `json:"model_price_usd_cny_rate"`
 	ModelPriceCNYPerQuotaUSD   float64 `json:"model_price_cny_per_quota_usd"`
 }

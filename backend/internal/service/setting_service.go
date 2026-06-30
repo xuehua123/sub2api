@@ -1635,13 +1635,13 @@ type PublicSettingsInjectionPayload struct {
 	BalanceLowNotifyThreshold        float64                  `json:"balance_low_notify_threshold"`
 	BalanceLowNotifyRechargeURL      string                   `json:"balance_low_notify_recharge_url"`
 
-	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
-	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
-	AvailableChannelsEnabled             bool `json:"available_channels_enabled"`
-	ModelPricesUserVisible               bool `json:"model_prices_user_visible"`
-	AffiliateEnabled                     bool `json:"affiliate_enabled"`
-	RiskControlEnabled                   bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests           bool `json:"allow_user_view_error_requests"`
+	ChannelMonitorEnabled                bool    `json:"channel_monitor_enabled"`
+	ChannelMonitorDefaultIntervalSeconds int     `json:"channel_monitor_default_interval_seconds"`
+	AvailableChannelsEnabled             bool    `json:"available_channels_enabled"`
+	ModelPricesUserVisible               bool    `json:"model_prices_user_visible"`
+	AffiliateEnabled                     bool    `json:"affiliate_enabled"`
+	RiskControlEnabled                   bool    `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests           bool    `json:"allow_user_view_error_requests"`
 	ModelPriceUSDCNYRate                 float64 `json:"model_price_usd_cny_rate"`
 	ModelPriceCNYPerQuotaUSD             float64 `json:"model_price_cny_per_quota_usd"`
 }
