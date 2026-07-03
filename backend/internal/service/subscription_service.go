@@ -320,10 +320,6 @@ func (s *SubscriptionService) StartSubCacheInvalidationSubscriber(ctx context.Co
 	}
 }
 
-func (s *SubscriptionService) invalidateSubscriptionCaches(userID, groupID int64) error {
-	return s.invalidateSubscriptionCachesBefore(userID, groupID, 0)
-}
-
 func (s *SubscriptionService) invalidateSubscriptionCachesBefore(userID, groupID, staleBeforeVersion int64) error {
 	s.InvalidateSubCacheSync(userID, groupID)
 	if s.billingCacheService == nil {
