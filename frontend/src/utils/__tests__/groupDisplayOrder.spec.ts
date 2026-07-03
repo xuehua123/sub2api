@@ -12,10 +12,19 @@ describe('sortGroupsForDisplay', () => {
     expect(sortGroupsForDisplay(groups).map((group) => group.id)).toEqual([2, 1, 3])
   })
 
-  it('keeps explicit custom sort order ahead of multiplier order', () => {
+  it('uses custom sort order only as a tie breaker for equal multipliers', () => {
     const groups = [
       { id: 1, name: 'cheap', rate_multiplier: 0.68, sort_order: 20 },
       { id: 2, name: 'expensive', rate_multiplier: 16, sort_order: 10 },
+    ]
+
+    expect(sortGroupsForDisplay(groups).map((group) => group.id)).toEqual([1, 2])
+  })
+
+  it('keeps custom order when multipliers are the same', () => {
+    const groups = [
+      { id: 1, name: 'second', rate_multiplier: 1, sort_order: 20 },
+      { id: 2, name: 'first', rate_multiplier: 1, sort_order: 10 },
     ]
 
     expect(sortGroupsForDisplay(groups).map((group) => group.id)).toEqual([2, 1])

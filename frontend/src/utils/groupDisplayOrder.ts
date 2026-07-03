@@ -39,13 +39,13 @@ export function compareGroupsForDisplay<T extends GroupDisplayOrderItem>(
   right: T,
   options: GroupDisplayOrderOptions<T> = {},
 ): number {
-  const leftSortOrder = displaySortOrder(options.getSortOrder?.(left) ?? left.sort_order)
-  const rightSortOrder = displaySortOrder(options.getSortOrder?.(right) ?? right.sort_order)
-  if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
-
   const leftRate = displayRate(options.getRateMultiplier?.(left) ?? left.rate_multiplier)
   const rightRate = displayRate(options.getRateMultiplier?.(right) ?? right.rate_multiplier)
   if (leftRate !== rightRate) return leftRate - rightRate
+
+  const leftSortOrder = displaySortOrder(options.getSortOrder?.(left) ?? left.sort_order)
+  const rightSortOrder = displaySortOrder(options.getSortOrder?.(right) ?? right.sort_order)
+  if (leftSortOrder !== rightSortOrder) return leftSortOrder - rightSortOrder
 
   const leftName = displayName(options.getName?.(left) ?? left.name)
   const rightName = displayName(options.getName?.(right) ?? right.name)

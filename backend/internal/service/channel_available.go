@@ -88,13 +88,13 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 			}
 		}
 		sort.SliceStable(groups, func(i, j int) bool {
-			if groups[i].SortOrder != groups[j].SortOrder {
-				return groups[i].SortOrder < groups[j].SortOrder
-			}
 			leftRate := availableGroupDisplayRate(groups[i])
 			rightRate := availableGroupDisplayRate(groups[j])
 			if leftRate != rightRate {
 				return leftRate < rightRate
+			}
+			if groups[i].SortOrder != groups[j].SortOrder {
+				return groups[i].SortOrder < groups[j].SortOrder
 			}
 			leftName := strings.ToLower(groups[i].Name)
 			rightName := strings.ToLower(groups[j].Name)
