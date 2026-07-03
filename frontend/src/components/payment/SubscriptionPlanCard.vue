@@ -53,6 +53,11 @@
         </div>
       </div>
 
+      <div v-if="hasPeakRate" class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200">
+        <span class="font-semibold">{{ t('payment.planCard.peakRate') }}: </span>
+        <span>{{ peakRateDisplay }}</span>
+      </div>
+
       <div class="rounded-xl border border-gray-100 bg-gray-50/40 p-3 dark:border-dark-700/80 dark:bg-dark-900/30">
         <div class="mb-2 flex items-center justify-between gap-2">
           <span class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-dark-300">
@@ -130,6 +135,8 @@ import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan, SubscriptionPlanGroupInfo } from '@/types/payment'
 import type { UserSubscription } from '@/types'
 import { normalizePlanValidityUnit } from '@/utils/subscriptionTime'
+import { useAppStore } from '@/stores/app'
+import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import {
   platformAccentBarClass,
   platformBadgeLightClass,
@@ -155,6 +162,10 @@ const includedGroups = computed<SubscriptionPlanGroupInfo[]>(() => {
       name: props.plan.group_name || '',
       platform: props.plan.group_platform || '',
       rate_multiplier: props.plan.rate_multiplier ?? 1,
+      peak_rate_enabled: props.plan.peak_rate_enabled,
+      peak_start: props.plan.peak_start,
+      peak_end: props.plan.peak_end,
+      peak_rate_multiplier: props.plan.peak_rate_multiplier,
       daily_limit_usd: props.plan.daily_limit_usd,
       weekly_limit_usd: props.plan.weekly_limit_usd,
       monthly_limit_usd: props.plan.monthly_limit_usd,
@@ -237,6 +248,14 @@ const overagePolicyText = computed(() => {
 const visibleFeatures = computed(() => (
   props.plan.features || []
 ).map(feature => feature.trim()).filter(feature => feature && feature !== '[]'))
+
+const appStore = useAppStore()
+
+const hasPeakRate = computed(() => groupHasPeakRate(props.plan))
+
+const peakRateDisplay = computed(() => {
+  return formatPeakRateWindow(props.plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
+})
 
 const MODEL_SCOPE_LABELS: Record<string, string> = {
   claude: 'Claude',

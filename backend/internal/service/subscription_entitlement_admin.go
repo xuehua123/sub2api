@@ -126,6 +126,35 @@ func (s *SubscriptionService) adminRevokeEntitlement(ctx context.Context, entitl
 	return nil
 }
 
+func (s *SubscriptionService) adminRestoreEntitlement(ctx context.Context, entitlementID int64) (*UserSubscription, error) {
+	entitlementSvc, err := s.adminEntitlementService()
+	if err != nil {
+		return nil, err
+	}
+	ent, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if ent.Status != SubscriptionStatusRevoked {
+		return nil, ErrSubscriptionNotRevoked
+	}
+
+	restoredStatus := SubscriptionStatusActive
+	if !ent.ExpiresAt.After(time.Now()) {
+		restoredStatus = SubscriptionStatusExpired
+	}
+	notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
+	if err := entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, ent.StartsAt, ent.ExpiresAt, restoredStatus, notes); err != nil {
+		return nil, err
+	}
+	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return nil, err
+	}
+	s.invalidateEntitlementLegacyAlias(refreshed)
+	return adminSubscriptionFromEntitlement(refreshed), nil
+}
+
 func (s *SubscriptionService) adminEntitlementService() (*SubscriptionEntitlementService, error) {
 	if s == nil || s.entitlementSvc == nil || s.entitlementSvc.entitlementRepo == nil {
 		return nil, ErrSubscriptionEntitlementNotFound

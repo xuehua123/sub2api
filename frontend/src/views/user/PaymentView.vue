@@ -464,6 +464,17 @@
                     </div>
                   </div>
 
+                  <div v-if="planHasPeakRate(selectedPlan)" class="rounded-xl border border-amber-500/15 bg-amber-500/5 p-3">
+                    <span class="text-xs text-amber-700 dark:text-amber-300">{{ t('payment.planCard.peakRate') }}</span>
+                    <div class="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                      {{ planPeakRateLabel(selectedPlan) }}
+                    </div>
+                  </div>
+                  <div v-if="selectedPlan.daily_limit_usd != null" class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 dark:border-white/5 dark:bg-white/[0.01]">
+                    <span class="text-xs text-slate-500 dark:text-slate-400">{{ t('payment.planCard.dailyLimit') }}</span>
+                    <div class="text-sm font-semibold text-slate-950 dark:text-white">${{ selectedPlan.daily_limit_usd }}</div>
+                  </div>
+
                   <!-- Payment methods selector -->
                   <div class="space-y-2">
                     <p class="text-xs font-bold text-slate-500 dark:text-slate-400">选择支付方式</p>
@@ -602,7 +613,7 @@
                     <span class="text-xl font-extrabold text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </div>
                   <p v-if="balanceRechargeMultiplier !== 1" class="mt-2 border-t border-slate-200/80 pt-1 text-[10px] text-slate-500 dark:border-white/5">
-                    充值比例折算：$1.00 到账额度需实付 ¥{{ balanceRechargeMultiplier.toFixed(2) }} 
+                    充值比例折算：$1.00 到账额度需实付 ¥{{ balanceRechargeMultiplier.toFixed(2) }}
                   </p>
                 </div>
                 <div v-else class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-6 text-center text-xs text-slate-500 dark:border-white/5 dark:bg-white/[0.01]">
@@ -826,6 +837,7 @@ import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
 import type { SubscriptionPlan, SubscriptionPlanGroupInfo, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import { METHOD_ORDER, getPaymentPopupFeatures } from '@/components/payment/providerConfig'
@@ -1322,7 +1334,7 @@ function buildGroupRows(plan: SubscriptionPlan): PlanGroupViewRow[] {
   return rawItems.map(item => {
     const multiplierText = formatGroupMultiplier(item.multiplier)
     const actualCostText = item.actualCost !== null 
-      ? `¥${formatPlainNumber(item.actualCost, item.actualCost > 0 && item.actualCost < 1 ? 4 : 2)}/刀` 
+      ? `¥${formatPlainNumber(item.actualCost, item.actualCost > 0 && item.actualCost < 1 ? 4 : 2)}/刀`
       : null
 
     const platformText = item.platform ? platformLabel(item.platform) : GROUP_LABELS.allPlatforms
@@ -1637,6 +1649,14 @@ function setActiveTab(tab: 'recharge' | 'subscription') {
   paymentPhase.value = 'select'
   closePlanGroupsModal()
   closeRenewalModal()
+}
+
+function planHasPeakRate(plan: SubscriptionPlan): boolean {
+  return hasPeakRate(plan)
+}
+
+function planPeakRateLabel(plan: SubscriptionPlan): string {
+  return formatPeakRateWindow(plan, serverTimezoneLabel(appStore.cachedPublicSettings?.server_utc_offset))
 }
 
 function selectPlan(plan: SubscriptionPlan) {

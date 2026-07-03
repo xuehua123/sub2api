@@ -130,6 +130,7 @@ func TestOpenAIChatCompletionsNonStreamBillingFailureReplacesBufferedSuccess(t *
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 	cache := &concurrencyCacheMock{
 		acquireUserSlotFn: func(ctx context.Context, userID int64, maxConcurrency int, requestID string) (bool, error) {

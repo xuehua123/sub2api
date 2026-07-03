@@ -165,6 +165,75 @@ func TestSubscriptionServiceRevokeSubscription_RevokesLinkedEntitlementRow(t *te
 	require.Equal(t, int64(912), userSubs.deletedID)
 }
 
+func TestSubscriptionServiceRestoreSubscription_RestoresSyntheticEntitlementRow(t *testing.T) {
+	now := time.Now().UTC()
+	groupID := int64(28)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[95] = &SubscriptionEntitlement{
+		ID:             95,
+		UserID:         7,
+		PrimaryGroupID: &groupID,
+		Name:           "Pro Plan",
+		Status:         SubscriptionStatusRevoked,
+		StartsAt:       now.Add(-time.Hour),
+		ExpiresAt:      now.Add(24 * time.Hour),
+		GroupGrants:    testGroupGrants([]int64{groupID}),
+	}
+	svc := newSubscriptionServiceWithEntitlementRepo(repo)
+
+	got, err := svc.RestoreSubscription(context.Background(), -95)
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, int64(-95), got.ID)
+	require.True(t, got.EntitlementOnly)
+	require.Equal(t, int64(95), got.EntitlementLink.EntitlementID)
+	require.Equal(t, SubscriptionStatusActive, repo.entitlements[95].Status)
+	require.Contains(t, repo.entitlements[95].Notes, "restored by admin")
+}
+
+func TestSubscriptionServiceRestoreSubscription_RestoresLinkedEntitlementRow(t *testing.T) {
+	now := time.Now().UTC()
+	deletedAt := now.Add(-time.Hour)
+	groupID := int64(28)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[94] = &SubscriptionEntitlement{
+		ID:             94,
+		UserID:         7,
+		PrimaryGroupID: &groupID,
+		Name:           "Pro Plan",
+		Status:         SubscriptionStatusRevoked,
+		StartsAt:       now.Add(-time.Hour),
+		ExpiresAt:      now.Add(24 * time.Hour),
+		GroupGrants:    testGroupGrants([]int64{groupID}),
+	}
+	userSubs := &linkedEntitlementUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:        913,
+			UserID:    7,
+			GroupID:   groupID,
+			StartsAt:  now.Add(-time.Hour),
+			ExpiresAt: now.Add(24 * time.Hour),
+			Status:    SubscriptionStatusActive,
+			DeletedAt: &deletedAt,
+			EntitlementLink: &UserSubscriptionEntitlementLink{
+				EntitlementID: 94,
+			},
+		},
+	}
+	svc := newSubscriptionServiceWithLinkedEntitlementRepo(repo, userSubs)
+
+	got, err := svc.RestoreSubscription(context.Background(), 913)
+
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, int64(913), userSubs.restoredID)
+	require.Equal(t, SubscriptionStatusActive, userSubs.restoredStatus)
+	require.Equal(t, SubscriptionStatusActive, repo.entitlements[94].Status)
+	require.Contains(t, repo.entitlements[94].Notes, "restored by admin")
+	require.Nil(t, got.DeletedAt)
+}
+
 func newSubscriptionServiceWithEntitlementRepo(repo *fakeSubscriptionEntitlementRepo) *SubscriptionService {
 	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepoNoop{}, nil, nil, nil)
 	svc.entitlementSvc = NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
@@ -173,8 +242,10 @@ func newSubscriptionServiceWithEntitlementRepo(repo *fakeSubscriptionEntitlement
 
 type linkedEntitlementUserSubRepoStub struct {
 	userSubRepoNoop
-	sub       *UserSubscription
-	deletedID int64
+	sub            *UserSubscription
+	deletedID      int64
+	restoredID     int64
+	restoredStatus string
 }
 
 func (r *linkedEntitlementUserSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
@@ -182,9 +253,28 @@ func (r *linkedEntitlementUserSubRepoStub) GetByID(context.Context, int64) (*Use
 	return &cp, nil
 }
 
+func (r *linkedEntitlementUserSubRepoStub) GetByIDIncludeDeleted(context.Context, int64) (*UserSubscription, error) {
+	cp := *r.sub
+	return &cp, nil
+}
+
 func (r *linkedEntitlementUserSubRepoStub) Delete(_ context.Context, id int64) error {
 	r.deletedID = id
 	return nil
+}
+
+func (r *linkedEntitlementUserSubRepoStub) ExistsActiveByUserIDAndGroupID(context.Context, int64, int64) (bool, error) {
+	return false, nil
+}
+
+func (r *linkedEntitlementUserSubRepoStub) Restore(_ context.Context, id int64, restoredStatus string) (*UserSubscription, error) {
+	r.restoredID = id
+	r.restoredStatus = restoredStatus
+	cp := *r.sub
+	cp.Status = restoredStatus
+	cp.DeletedAt = nil
+	r.sub = &cp
+	return &cp, nil
 }
 
 func newSubscriptionServiceWithLinkedEntitlementRepo(repo *fakeSubscriptionEntitlementRepo, userSubRepo UserSubscriptionRepository) *SubscriptionService {

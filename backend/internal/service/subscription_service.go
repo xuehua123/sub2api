@@ -38,6 +38,8 @@ var (
 	ErrSubscriptionSuspended             = infraerrors.Forbidden("SUBSCRIPTION_SUSPENDED", "subscription is suspended")
 	ErrSubscriptionAlreadyExists         = infraerrors.Conflict("SUBSCRIPTION_ALREADY_EXISTS", "subscription already exists for this user and group")
 	ErrSubscriptionAssignConflict        = infraerrors.Conflict("SUBSCRIPTION_ASSIGN_CONFLICT", "subscription exists but request conflicts with existing assignment semantics")
+	ErrSubscriptionNotRevoked            = infraerrors.Conflict("SUBSCRIPTION_NOT_REVOKED", "subscription is not revoked")
+	ErrSubscriptionRestoreConflict       = infraerrors.Conflict("SUBSCRIPTION_RESTORE_CONFLICT", "subscription already exists for this user and group")
 	ErrGroupNotSubscriptionType          = infraerrors.BadRequest("GROUP_NOT_SUBSCRIPTION_TYPE", "group is not a subscription type")
 	ErrInvalidInput                      = infraerrors.BadRequest("INVALID_INPUT", "at least one of resetDaily, resetWeekly, or resetMonthly must be true")
 	ErrMonthlyCycleNotExhausted          = infraerrors.BadRequest("MONTHLY_CYCLE_NOT_EXHAUSTED", "remaining monthly quota must be 10% or less before advancing the next cycle")
@@ -116,6 +118,7 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 	}
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
+	svc.StartSubCacheInvalidationSubscriber(context.Background())
 	return svc
 }
 
@@ -291,7 +294,63 @@ func (s *SubscriptionService) waitSubCacheInvalidation() {
 	}
 }
 
+// InvalidateSubCacheSync 失效订阅 L1 缓存并等待 Ristretto 删除操作生效。
+func (s *SubscriptionService) InvalidateSubCacheSync(userID, groupID int64) {
+	s.invalidateSubCacheKeySync(subCacheKey(userID, groupID))
+	s.invalidateSubCacheKeySync(activeSubscriptionsCacheKey(userID))
+}
+
+func (s *SubscriptionService) invalidateSubCacheKeySync(key string) {
+	if s.subCacheL1 == nil {
+		return
+	}
+	s.subCacheL1.Del(key)
+	s.subCacheL1.Wait()
+}
+
+// StartSubCacheInvalidationSubscriber 启动跨实例订阅 L1 缓存失效订阅。
+func (s *SubscriptionService) StartSubCacheInvalidationSubscriber(ctx context.Context) {
+	if s.billingCacheService == nil || s.subCacheL1 == nil {
+		return
+	}
+	if err := s.billingCacheService.SubscribeSubscriptionCacheInvalidation(ctx, func(cacheKey string) {
+		s.invalidateSubCacheKeySync(cacheKey)
+	}); err != nil {
+		log.Printf("Warning: failed to start subscription cache invalidation subscriber: %v", err)
+	}
+}
+
+func (s *SubscriptionService) invalidateSubscriptionCaches(userID, groupID int64) error {
+	return s.invalidateSubscriptionCachesBefore(userID, groupID, 0)
+}
+
+func (s *SubscriptionService) invalidateSubscriptionCachesBefore(userID, groupID, staleBeforeVersion int64) error {
+	s.InvalidateSubCacheSync(userID, groupID)
+	if s.billingCacheService == nil {
+		return nil
+	}
+
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleBeforeVersion); err != nil {
+		return fmt.Errorf("invalidate billing subscription cache: %w", err)
+	}
+	if err := s.billingCacheService.PublishSubscriptionCacheInvalidation(cacheCtx, subCacheKey(userID, groupID)); err != nil {
+		return fmt.Errorf("publish subscription cache invalidation: %w", err)
+	}
+	if err := s.billingCacheService.PublishSubscriptionCacheInvalidation(cacheCtx, activeSubscriptionsCacheKey(userID)); err != nil {
+		return fmt.Errorf("publish active subscriptions cache invalidation: %w", err)
+	}
+	return nil
+}
+
 // AssignSubscriptionInput 分配订阅输入
+func (s *SubscriptionService) bestEffortInvalidateSubscriptionCachesBefore(action string, userID, groupID, staleBeforeVersion int64) {
+	if err := s.invalidateSubscriptionCachesBefore(userID, groupID, staleBeforeVersion); err != nil {
+		log.Printf("Warning: subscription cache invalidation failed after %s for user=%d group=%d: %v", action, userID, groupID, err)
+	}
+}
+
 type AssignSubscriptionInput struct {
 	UserID       int64
 	GroupID      int64
@@ -785,17 +844,7 @@ func (s *SubscriptionService) RevokeSubscription(ctx context.Context, subscripti
 		return err
 	}
 
-	// 失效订阅缓存
-	s.InvalidateSubCache(sub.UserID, sub.GroupID)
-	if s.billingCacheService != nil {
-		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
-		}()
-	}
-
+	s.bestEffortInvalidateSubscriptionCachesBefore("revoke subscription", sub.UserID, sub.GroupID, subscriptionCacheVersion(sub))
 	return nil
 }
 
@@ -813,15 +862,7 @@ func (s *SubscriptionService) revokeLinkedEntitlementSubscription(ctx context.Co
 		return err
 	}
 
-	s.InvalidateSubCache(sub.UserID, sub.GroupID)
-	if s.billingCacheService != nil {
-		userID, groupID, staleVersion := sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscriptionBefore(cacheCtx, userID, groupID, staleVersion)
-		}()
-	}
+	s.bestEffortInvalidateSubscriptionCachesBefore("revoke linked entitlement subscription", sub.UserID, sub.GroupID, subscriptionCacheVersion(sub))
 
 	return nil
 }
@@ -840,7 +881,84 @@ func (s *SubscriptionService) RevokeUserSubscription(ctx context.Context, userID
 	return s.RevokeSubscription(ctx, subscriptionID)
 }
 
+// RestoreSubscription 恢复已撤销订阅
+func (s *SubscriptionService) RestoreSubscription(ctx context.Context, subscriptionID int64) (*UserSubscription, error) {
+	if entitlementID, ok := syntheticEntitlementIDFromSubscriptionID(subscriptionID); ok {
+		return s.adminRestoreEntitlement(ctx, entitlementID)
+	}
+
+	sub, err := s.userSubRepo.GetByIDIncludeDeleted(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	if sub.DeletedAt == nil {
+		return nil, ErrSubscriptionNotRevoked
+	}
+
+	exists, err := s.userSubRepo.ExistsActiveByUserIDAndGroupID(ctx, sub.UserID, sub.GroupID)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, ErrSubscriptionRestoreConflict
+	}
+
+	restoredStatus := sub.Status
+	now := time.Now()
+	if restoredStatus == SubscriptionStatusActive && !sub.ExpiresAt.After(now) {
+		restoredStatus = SubscriptionStatusExpired
+	}
+
+	var restored *UserSubscription
+	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
+		restored, err = s.restoreLinkedEntitlementSubscription(ctx, sub, restoredStatus)
+	} else {
+		restored, err = s.userSubRepo.Restore(ctx, subscriptionID, restoredStatus)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	s.bestEffortInvalidateSubscriptionCachesBefore("restore subscription", restored.UserID, restored.GroupID, 0)
+	return restored, nil
+}
+
 // ExtendSubscription 调整订阅时长（正数延长，负数缩短）
+func (s *SubscriptionService) restoreLinkedEntitlementSubscription(ctx context.Context, sub *UserSubscription, restoredStatus string) (*UserSubscription, error) {
+	if sub == nil || sub.EntitlementLink == nil || sub.EntitlementLink.EntitlementID <= 0 {
+		return nil, ErrSubscriptionNotFound
+	}
+	entitlementSvc, err := s.adminEntitlementService()
+	if err != nil {
+		return nil, err
+	}
+
+	var restored *UserSubscription
+	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		ent, err := entitlementSvc.entitlementRepo.GetByID(txCtx, sub.EntitlementLink.EntitlementID)
+		if err != nil {
+			return err
+		}
+		startsAt := sub.StartsAt
+		if startsAt.IsZero() {
+			startsAt = ent.StartsAt
+		}
+		expiresAt := sub.ExpiresAt
+		if expiresAt.IsZero() {
+			expiresAt = ent.ExpiresAt
+		}
+		notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
+		if err := entitlementSvc.entitlementRepo.UpdateTerm(txCtx, ent.ID, startsAt, expiresAt, restoredStatus, notes); err != nil {
+			return err
+		}
+		restored, err = s.userSubRepo.Restore(txCtx, sub.ID, restoredStatus)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return restored, nil
+}
+
 func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscriptionID int64, days int) (*UserSubscription, error) {
 	if entitlementID, ok := syntheticEntitlementIDFromSubscriptionID(subscriptionID); ok {
 		return s.adminAdjustEntitlement(ctx, entitlementID, days)
@@ -1900,6 +2018,10 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 		}
 		return s.userSubRepo.GetByID(ctx, subscriptionID)
 	}
+	// Invalidate L1 ristretto cache. Ristretto's Del() is asynchronous by design,
+	// so call Wait() immediately after to flush pending operations and guarantee
+	// the deleted key is not returned on the very next Get() call.
+	s.InvalidateSubCacheSync(sub.UserID, sub.GroupID)
 	if s.billingCacheService != nil {
 		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
