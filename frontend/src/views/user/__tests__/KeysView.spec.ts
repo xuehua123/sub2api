@@ -320,7 +320,7 @@ describe('KeysView entitlement group binding', () => {
     expect(vm.entitlementQuotaRemainingTextByID(101)).toBe('keys.entitlementQuotaTotal:$10.00')
   })
 
-  it('filters selectable groups by the selected entitlement first', async () => {
+  it('filters selectable groups by the selected entitlement and display order', async () => {
     const wrapper = await mountView([
       subscriptionGroup([201, 202], { id: 20, name: 'Claude 默认组' }),
       subscriptionGroup([202], { id: 30, name: 'Claude 长上下文组' }),
@@ -333,7 +333,7 @@ describe('KeysView entitlement group binding', () => {
     vm.formData.subscription_entitlement_id = 202
     await nextTick()
 
-    expect(vm.formGroupOptions.map((option: { value: number }) => option.value)).toEqual([20, 30])
+    expect(vm.formGroupOptions.map((option: { value: number }) => option.value)).toEqual([30, 20])
 
     vm.formData.group_id = 40
     await nextTick()
@@ -342,7 +342,7 @@ describe('KeysView entitlement group binding', () => {
     expect(vm.formData.subscription_entitlement_id).toBe(202)
   })
 
-  it('filters quick-switch groups to the key current plan card', async () => {
+  it('filters quick-switch groups to the key current plan card and display order', async () => {
     const key = keyFixture({
       group_id: 20,
       access_source: 'entitlement',
@@ -359,7 +359,7 @@ describe('KeysView entitlement group binding', () => {
     vm.openGroupSelector(key)
     await nextTick()
 
-    expect(vm.filteredGroupOptions.map((option: { value: number }) => option.value)).toEqual([20, 30])
+    expect(vm.filteredGroupOptions.map((option: { value: number }) => option.value)).toEqual([30, 20])
   })
 
   it('auto-selects a single entitlement and sends it when creating a key', async () => {

@@ -135,6 +135,7 @@ import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan, SubscriptionPlanGroupInfo } from '@/types/payment'
 import type { UserSubscription } from '@/types'
 import { normalizePlanValidityUnit } from '@/utils/subscriptionTime'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import {
@@ -154,7 +155,7 @@ const { t, locale } = useI18n()
 
 const includedGroups = computed<SubscriptionPlanGroupInfo[]>(() => {
   if (props.plan.groups?.length) {
-    return [...props.plan.groups].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id)
+    return sortGroupsForDisplay(props.plan.groups)
   }
   if (props.plan.group_id) {
     return [{

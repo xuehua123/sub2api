@@ -180,6 +180,7 @@ import type { GroupPlatform, SubscriptionType } from '@/types'
 import { platformBadgeClass } from '@/utils/platformColors'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 
 const props = defineProps<{
   columns: {
@@ -206,11 +207,17 @@ void props.userGroupRates
 const { t } = useI18n()
 
 function exclusiveGroups(section: UserChannelPlatformSection): UserAvailableGroup[] {
-  return section.groups.filter((g) => g.is_exclusive)
+  return groupsForDisplay(section, true)
 }
 
 function publicGroups(section: UserChannelPlatformSection): UserAvailableGroup[] {
-  return section.groups.filter((g) => !g.is_exclusive)
+  return groupsForDisplay(section, false)
+}
+
+function groupsForDisplay(section: UserChannelPlatformSection, exclusive: boolean): UserAvailableGroup[] {
+  return sortGroupsForDisplay(section.groups.filter((g) => g.is_exclusive === exclusive), {
+    getRateMultiplier: (group) => props.userGroupRates[group.id] ?? group.rate_multiplier,
+  })
 }
 
 const appStore = useAppStore()

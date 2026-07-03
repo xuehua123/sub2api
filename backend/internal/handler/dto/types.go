@@ -96,6 +96,7 @@ type Group struct {
 	Description    string  `json:"description"`
 	Platform       string  `json:"platform"`
 	RateMultiplier float64 `json:"rate_multiplier"`
+	SortOrder      int     `json:"sort_order"`
 	IsExclusive    bool    `json:"is_exclusive"`
 	Status         string  `json:"status"`
 
@@ -680,6 +681,7 @@ type UserEntitlementGroup struct {
 	Name           string  `json:"name"`
 	Platform       string  `json:"platform"`
 	RateMultiplier float64 `json:"rate_multiplier"`
+	SortOrder      int     `json:"sort_order"`
 }
 
 type UserEntitlement struct {

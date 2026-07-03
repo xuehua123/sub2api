@@ -532,6 +532,7 @@ export interface Group {
   description: string | null
   platform: GroupPlatform
   rate_multiplier: number
+  sort_order?: number
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   is_exclusive: boolean
   status: 'active' | 'inactive'
@@ -1763,6 +1764,7 @@ export interface UserEntitlementGroup {
   name: string
   platform: GroupPlatform | string
   rate_multiplier: number
+  sort_order?: number
 }
 
 export interface UserEntitlement {

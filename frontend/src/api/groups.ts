@@ -5,6 +5,7 @@
 
 import { apiClient } from './client'
 import type { AvailableGroup } from '@/types'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 
 /**
  * Get available groups that the current user can bind to API keys
@@ -15,7 +16,7 @@ import type { AvailableGroup } from '@/types'
  */
 export async function getAvailable(): Promise<AvailableGroup[]> {
   const { data } = await apiClient.get<AvailableGroup[]>('/groups/available')
-  return data
+  return sortGroupsForDisplay(data)
 }
 
 /**

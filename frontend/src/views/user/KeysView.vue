@@ -1379,6 +1379,7 @@ import {
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 const { convertUsdToCnyForLog, formatCny } = useCurrencyResolver()
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1397,6 +1398,7 @@ interface GroupOption {
   peakStart: string
   peakEnd: string
   peakRateMultiplier: number
+  sortOrder: number | null
   subscriptionType: SubscriptionType
   balanceEnabled?: boolean
   subscriptionEnabled?: boolean
@@ -1536,11 +1538,17 @@ const statusOptions = computed(() => [
   { value: 'inactive', label: t('common.inactive') }
 ])
 
+const sortedGroups = computed(() =>
+  sortGroupsForDisplay(groups.value, {
+    getRateMultiplier: (group) => effectiveGroupRate(group.id, group.rate_multiplier),
+  })
+)
+
 // Filter dropdown options
 const groupFilterOptions = computed(() => [
   { value: '', label: t('keys.allGroups') },
   { value: 0, label: t('keys.noGroup') },
-  ...groups.value.map((g) => ({ value: g.id, label: g.name }))
+  ...sortedGroups.value.map((g) => ({ value: g.id, label: g.name }))
 ])
 
 const statusFilterOptions = computed(() => [
@@ -1574,7 +1582,7 @@ const onStatusFilterChange = (value: string | number | boolean | null) => {
 
 // Convert groups to Select options format with rate multiplier and subscription type
 const groupOptions = computed(() =>
-  groups.value.map((group) => ({
+  sortedGroups.value.map((group) => ({
     value: group.id,
     label: group.name,
     description: group.description,
@@ -1584,6 +1592,7 @@ const groupOptions = computed(() =>
     peakStart: group.peak_start,
     peakEnd: group.peak_end,
     peakRateMultiplier: group.peak_rate_multiplier,
+    sortOrder: group.sort_order ?? null,
     subscriptionType: group.subscription_type,
     balanceEnabled: group.balance_enabled,
     subscriptionEnabled: group.subscription_enabled,

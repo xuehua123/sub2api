@@ -863,6 +863,7 @@ import type { UserSubscription } from '@/types'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError, paymentMethodI18nKey } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
 import { formatRemainingDurationCompact, normalizePlanValidityUnit } from '@/utils/subscriptionTime'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
 import stripeIcon from '@/assets/icons/stripe.svg'
@@ -1200,11 +1201,7 @@ function uniqueStrings(values: string[]): string[] {
 
 function planGroups(plan: SubscriptionPlan): SubscriptionPlanGroupInfo[] {
   if (Array.isArray(plan.groups) && plan.groups.length > 0) {
-    return [...plan.groups].sort((a, b) => {
-      const orderDiff = (a.sort_order || 0) - (b.sort_order || 0)
-      if (orderDiff !== 0) return orderDiff
-      return a.id - b.id
-    })
+    return sortGroupsForDisplay(plan.groups)
   }
   if (!plan.group_name) return []
   return [{

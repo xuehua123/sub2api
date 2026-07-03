@@ -18,6 +18,7 @@ type AvailableGroupRef struct {
 	Platform           string
 	SubscriptionType   string
 	RateMultiplier     float64
+	SortOrder          int
 	PeakRateEnabled    bool
 	PeakStart          string
 	PeakEnd            string
@@ -68,6 +69,7 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 			Platform:           g.Platform,
 			SubscriptionType:   g.SubscriptionType,
 			RateMultiplier:     g.RateMultiplier,
+			SortOrder:          g.SortOrder,
 			PeakRateEnabled:    g.PeakRateEnabled,
 			PeakStart:          g.PeakStart,
 			PeakEnd:            g.PeakEnd,
@@ -85,7 +87,22 @@ func (s *ChannelService) ListAvailable(ctx context.Context) ([]AvailableChannel,
 				groups = append(groups, ref)
 			}
 		}
-		sort.SliceStable(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+		sort.SliceStable(groups, func(i, j int) bool {
+			if groups[i].SortOrder != groups[j].SortOrder {
+				return groups[i].SortOrder < groups[j].SortOrder
+			}
+			leftRate := availableGroupDisplayRate(groups[i])
+			rightRate := availableGroupDisplayRate(groups[j])
+			if leftRate != rightRate {
+				return leftRate < rightRate
+			}
+			leftName := strings.ToLower(groups[i].Name)
+			rightName := strings.ToLower(groups[j].Name)
+			if leftName != rightName {
+				return leftName < rightName
+			}
+			return groups[i].ID < groups[j].ID
+		})
 
 		ch.normalizeBillingModelSource()
 
@@ -195,6 +212,13 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 		CacheReadPrice:   nonZeroPtr(lp.CacheReadInputTokenCost),
 		ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
 	}
+}
+
+func availableGroupDisplayRate(g AvailableGroupRef) float64 {
+	if g.RateMultiplier > 0 {
+		return g.RateMultiplier
+	}
+	return 1
 }
 
 func nonZeroPtr(v float64) *float64 {

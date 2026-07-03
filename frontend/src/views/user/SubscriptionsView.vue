@@ -566,7 +566,7 @@
             </div>
             <div class="flex-1 space-y-2 overflow-y-auto p-5">
               <div
-                v-for="group in groupsModalEntitlement.groups"
+                v-for="group in entitlementGroupsForDisplay(groupsModalEntitlement)"
                 :key="group.id"
                 :class="[
                   'grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl border px-3 py-2.5 text-sm',
@@ -616,6 +616,7 @@ import {
   getRemainingHours,
 } from '@/utils/subscriptionTime'
 import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
+import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 
 function platformAccentDotClass(p: string): string {
   switch (p) {
@@ -1052,11 +1053,15 @@ function entitlementDisplayName(entitlement: UserEntitlement): string {
 }
 
 function visibleEntitlementGroups(entitlement: UserEntitlement): UserEntitlement['groups'] {
-  return entitlement.groups.slice(0, entitlementGroupPreviewLimit)
+  return entitlementGroupsForDisplay(entitlement).slice(0, entitlementGroupPreviewLimit)
 }
 
 function hiddenEntitlementGroupCount(entitlement: UserEntitlement): number {
   return Math.max(entitlement.groups.length - entitlementGroupPreviewLimit, 0)
+}
+
+function entitlementGroupsForDisplay(entitlement: UserEntitlement): UserEntitlement['groups'] {
+  return sortGroupsForDisplay(entitlement.groups)
 }
 
 function openEntitlementGroupsModal(entitlement: UserEntitlement) {
