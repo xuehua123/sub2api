@@ -108,6 +108,31 @@ func TestSyncBalanceCacheAfterDeduction_InvalidatesWhenBalanceFallsBelowReserve(
 	require.Equal(t, int64(0), cache.deductCalls.Load())
 }
 
+func TestFinalizePostUsageBilling_UsesReturnedBalanceToInvalidateExhaustedCache(t *testing.T) {
+	cache := &balanceEligibilityCacheStub{balance: 0.50}
+	cfg := &config.Config{}
+	cfg.Billing.MinimumBalanceReserve = 0.01
+	svc := NewBillingCacheService(cache, nil, nil, nil, nil, nil, cfg, nil)
+	t.Cleanup(svc.Stop)
+
+	newBalance := -0.25
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:    &CostBreakdown{ActualCost: 0.75, TotalCost: 0.75},
+		User:    &User{ID: 1},
+		Account: &Account{ID: 10},
+	}, &billingDeps{
+		billingCacheService: svc,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{
+		Applied:            true,
+		NewBalance:         &newBalance,
+		BalanceOverdrafted: true,
+	})
+
+	require.Equal(t, int64(1), cache.invalidateCalls.Load())
+	require.Equal(t, int64(0), cache.deductCalls.Load())
+}
+
 func TestSyncBalanceCacheAfterDeduction_QueuesDeductWhenBalanceStillEligible(t *testing.T) {
 	cache := &balanceEligibilityCacheStub{balance: 1}
 	cfg := &config.Config{}

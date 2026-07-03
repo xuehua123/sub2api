@@ -78,6 +78,9 @@ const DataTableStub = {
         <slot name="cell-billing_source" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-first_client_flush" :row="row" />
+        <slot name="cell-first_sse_event" :row="row" />
+        <slot name="cell-first_token" :row="row" />
       </div>
     </div>
   `,
@@ -288,6 +291,51 @@ describe('admin UsageTable tooltip', () => {
     const text = wrapper.text()
     expect(text).not.toContain('Entitlement Quota')
     expect(text).toContain('-')
+  })
+
+  it('renders first response, upstream first event, and first token timings', () => {
+    const row = {
+      request_id: 'req-admin-timing-1',
+      model: 'claude-3',
+      actual_cost: 0,
+      total_cost: 0,
+      account_rate_multiplier: 1,
+      rate_multiplier: 1,
+      input_cost: 0,
+      output_cost: 0,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 1,
+      output_tokens: 1,
+      first_client_flush_ms: 180,
+      first_sse_event_ms: 120,
+      first_token_ms: 150,
+    }
+
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [row],
+        loading: false,
+        columns: [
+          { key: 'first_client_flush', label: 'First response' },
+          { key: 'first_sse_event', label: 'First event' },
+          { key: 'first_token', label: 'First token' },
+        ],
+      },
+      global: {
+        stubs: {
+          DataTable: DataTableStub,
+          EmptyState: true,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    const text = wrapper.text()
+    expect(text).toContain('180ms')
+    expect(text).toContain('120ms')
+    expect(text).toContain('150ms')
   })
 
   it.each([

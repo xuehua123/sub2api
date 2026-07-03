@@ -9299,13 +9299,11 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 	}
 
 	if usageBillingAppliedBalanceDeduction(p, result) {
-		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
+		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	} else if p.IsSubscriptionBill && p.Subscription != nil && p.Entitlement == nil {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsageWithVersion(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost, result.SubscriptionVersion)
 		}
-	} else if !p.IsSubscriptionBill && p.Cost.ActualCost > 0 && p.User != nil {
-		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
 	}
 
 	if p.Cost.ActualCost > 0 && p.APIKey != nil && p.APIKey.HasRateLimits() {

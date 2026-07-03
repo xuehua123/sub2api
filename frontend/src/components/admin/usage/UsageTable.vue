@@ -204,6 +204,24 @@
           <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
         </template>
 
+        <template #cell-first_sse_event="{ row }">
+          <span v-if="row.first_sse_event_ms != null" class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.first_sse_event_ms) }}</span>
+          <span v-else class="text-sm text-gray-400 dark:text-gray-500">-</span>
+        </template>
+
+        <template #cell-first_client_flush="{ row }">
+          <span
+            :class="[
+              'text-sm',
+              firstResponseMs(row) != null
+                ? 'text-gray-600 dark:text-gray-400'
+                : 'text-gray-400 dark:text-gray-500'
+            ]"
+          >
+            {{ formatFirstResponse(row) }}
+          </span>
+        </template>
+
         <template #cell-duration="{ row }">
           <span class="text-sm text-gray-600 dark:text-gray-400">{{ formatDuration(row.duration_ms) }}</span>
         </template>
@@ -574,6 +592,15 @@ const formatDuration = (ms: number | null | undefined): string => {
   if (ms == null) return '-'
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
+}
+
+const firstResponseMs = (log: AdminUsageLog): number | null => {
+  return log.first_client_flush_ms ?? log.first_sse_event_ms ?? log.first_token_ms
+}
+
+const formatFirstResponse = (log: AdminUsageLog): string => {
+  const ms = firstResponseMs(log)
+  return ms == null ? '-' : formatDuration(ms)
 }
 
 // Cost tooltip functions
