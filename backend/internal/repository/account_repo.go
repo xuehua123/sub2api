@@ -643,6 +643,8 @@ func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platfor
 			dbaccount.FieldID,
 			dbaccount.FieldName,
 			dbaccount.FieldPlatform,
+			dbaccount.FieldType,
+			dbaccount.FieldExtra,
 			dbaccount.FieldConcurrency,
 			dbaccount.FieldLoadFactor,
 			dbaccount.FieldStatus,
@@ -651,6 +653,10 @@ func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platfor
 			dbaccount.FieldRateLimitResetAt,
 			dbaccount.FieldOverloadUntil,
 			dbaccount.FieldTempUnschedulableUntil,
+			dbaccount.FieldTempUnschedulableReason,
+			dbaccount.FieldSessionWindowStart,
+			dbaccount.FieldSessionWindowEnd,
+			dbaccount.FieldSessionWindowStatus,
 		).
 		Order(dbent.Asc(dbaccount.FieldID)).
 		All(ctx)
