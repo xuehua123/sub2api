@@ -496,6 +496,58 @@ func (s *AccountRepoSuite) TestListByPlatform() {
 	s.Require().Equal(service.PlatformAnthropic, accounts[0].Platform)
 }
 
+func (s *AccountRepoSuite) TestListOpsAccountsForStats_PreservesOpsFields() {
+	windowStart := time.Now().UTC().Truncate(time.Second)
+	windowEnd := windowStart.Add(30 * time.Minute)
+	account := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:                "ops-stats-fields",
+		Platform:            service.PlatformOpenAI,
+		Type:                service.AccountTypeAPIKey,
+		Status:              service.StatusActive,
+		SessionWindowStart:  &windowStart,
+		SessionWindowEnd:    &windowEnd,
+		SessionWindowStatus: "active",
+		Extra: map[string]any{
+			service.AccountExtraTagsKey: "ops,priority",
+			"balance_probe_enabled":     false,
+			"balance_probe_method":      service.AccountBalanceProbeMethodDisabled,
+			"balance_probe_status":      service.AccountBalanceProbeStatusOK,
+		},
+	})
+	until := windowStart.Add(15 * time.Minute)
+	reason := `{"rule":"401","matched_keyword":"invalid token"}`
+	s.Require().NoError(s.repo.SetTempUnschedulable(s.ctx, account.ID, until, reason))
+
+	accounts, err := s.repo.ListOpsAccountsForStats(s.ctx, service.PlatformOpenAI, nil)
+	s.Require().NoError(err)
+
+	var got *service.Account
+	for i := range accounts {
+		if accounts[i].ID == account.ID {
+			got = &accounts[i]
+			break
+		}
+	}
+	s.Require().NotNil(got)
+	s.Require().Equal(service.AccountTypeAPIKey, got.Type)
+	s.Require().Equal("ops,priority", got.Extra[service.AccountExtraTagsKey])
+	s.Require().Equal(false, got.Extra["balance_probe_enabled"])
+	s.Require().Equal(service.AccountBalanceProbeStatusOK, got.Extra["balance_probe_status"])
+	s.Require().NotNil(got.TempUnschedulableUntil)
+	s.Require().WithinDuration(until, *got.TempUnschedulableUntil, time.Second)
+	s.Require().Equal(reason, got.TempUnschedulableReason)
+	s.Require().NotNil(got.SessionWindowStart)
+	s.Require().WithinDuration(windowStart, *got.SessionWindowStart, time.Second)
+	s.Require().NotNil(got.SessionWindowEnd)
+	s.Require().WithinDuration(windowEnd, *got.SessionWindowEnd, time.Second)
+	s.Require().Equal("active", got.SessionWindowStatus)
+
+	balanceState := service.AccountBalanceStateFromAccount(got)
+	s.Require().False(balanceState.Enabled)
+	s.Require().Equal(service.AccountBalanceProbeMethodDisabled, balanceState.Method)
+	s.Require().Equal(service.AccountBalanceProbeStatusOK, balanceState.Status)
+}
+
 // --- Preload and VirtualFields ---
 
 func (s *AccountRepoSuite) TestPreload_And_VirtualFields() {
