@@ -47,6 +47,13 @@ func TestShouldFailoverGeminiUpstreamError(t *testing.T) {
 	}
 }
 
+func TestShouldFailoverGeminiUpstreamError_MonitorProbe400(t *testing.T) {
+	svc := &GeminiMessagesCompatService{}
+
+	require.False(t, svc.shouldFailoverGeminiUpstreamError(http.StatusBadRequest))
+	require.True(t, svc.shouldFailoverGeminiUpstreamErrorForContext(WithChannelMonitorProbe(context.Background()), http.StatusBadRequest))
+}
+
 // ---------------------------------------------------------------------------
 // TestCheckErrorPolicy_GeminiAccounts — verifies CheckErrorPolicy works
 // correctly for Gemini platform accounts (API Key type).

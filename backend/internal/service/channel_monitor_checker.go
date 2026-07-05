@@ -271,7 +271,9 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 		return "", "", 0, err
 	}
 	headers := mergeHeaders(adapter.buildHeaders(apiKey), opts)
-	full := joinURL(endpoint, adapter.buildPath(model))
+	path := adapter.buildPath(model)
+	full := joinURL(endpoint, path)
+	AddChannelMonitorProbeHeaders(headers, http.MethodPost, monitorProbePathFromURL(full, path), time.Now())
 	respBytes, status, err := postRawJSON(ctx, full, body, headers)
 	if err != nil {
 		return "", "", status, err
@@ -280,6 +282,14 @@ func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt
 		return extractOpenAIResponsesText(respBytes), string(respBytes), status, nil
 	}
 	return gjson.GetBytes(respBytes, adapter.textPath).String(), string(respBytes), status, nil
+}
+
+func monitorProbePathFromURL(rawURL, fallback string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Path == "" {
+		return fallback
+	}
+	return u.Path
 }
 
 // extractOpenAIResponsesText 聚合 Responses API 的最终 assistant 文本。

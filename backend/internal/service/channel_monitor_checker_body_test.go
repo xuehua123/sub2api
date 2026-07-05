@@ -159,6 +159,46 @@ func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {
 	if h.lastHeaders.Get("x-api-key") != "sk-fake" {
 		t.Errorf("expected adapter's x-api-key header, got %q", h.lastHeaders.Get("x-api-key"))
 	}
+	if h.lastHeaders.Get(ChannelMonitorProbeHeaderName) != ChannelMonitorProbeHeaderValue() {
+		t.Errorf("expected monitor probe header, got %q", h.lastHeaders.Get(ChannelMonitorProbeHeaderName))
+	}
+	if !IsValidChannelMonitorProbe(
+		http.MethodPost,
+		providerAnthropicPath,
+		h.lastHeaders.Get(ChannelMonitorProbeHeaderName),
+		h.lastHeaders.Get(ChannelMonitorProbeTSHeaderName),
+		h.lastHeaders.Get(ChannelMonitorProbeSigHeaderName),
+		time.Now(),
+	) {
+		t.Error("expected valid signed monitor probe headers")
+	}
+}
+
+func TestRunCheckForModel_MonitorProbeHeaderOverridesExtraHeader(t *testing.T) {
+	h := &captureHandler{respondText: "the answer is 42"}
+	endpoint := setupFakeAnthropic(t, h)
+
+	_ = runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", &CheckOptions{
+		ExtraHeaders: map[string]string{
+			ChannelMonitorProbeHeaderName:    "user-value",
+			ChannelMonitorProbeTSHeaderName:  "123",
+			ChannelMonitorProbeSigHeaderName: "user-signature",
+		},
+	})
+
+	if h.lastHeaders.Get(ChannelMonitorProbeHeaderName) != ChannelMonitorProbeHeaderValue() {
+		t.Errorf("monitor probe header should not be overridden by extra headers, got %q", h.lastHeaders.Get(ChannelMonitorProbeHeaderName))
+	}
+	if !IsValidChannelMonitorProbe(
+		http.MethodPost,
+		providerAnthropicPath,
+		h.lastHeaders.Get(ChannelMonitorProbeHeaderName),
+		h.lastHeaders.Get(ChannelMonitorProbeTSHeaderName),
+		h.lastHeaders.Get(ChannelMonitorProbeSigHeaderName),
+		time.Now(),
+	) {
+		t.Error("monitor probe signature headers should not be overridden by extra headers")
+	}
 }
 
 func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {

@@ -19,6 +19,18 @@ type mockTempUnscheduler struct {
 	calls []tempUnscheduleCall
 }
 
+func TestHandleSelectionExhausted_ChannelMonitorProbeDoesNotRetrySingleAccount503(t *testing.T) {
+	fs := NewFailoverState(3, false)
+	fs.LastFailoverErr = newTestFailoverErr(503, false, false)
+	fs.FailedAccountIDs[100] = struct{}{}
+	fs.SwitchCount = 1
+
+	action := fs.HandleSelectionExhausted(service.WithChannelMonitorProbe(context.Background()))
+
+	require.Equal(t, FailoverExhausted, action)
+	require.Contains(t, fs.FailedAccountIDs, int64(100))
+}
+
 type tempUnscheduleCall struct {
 	accountID   int64
 	failoverErr *service.UpstreamFailoverError
@@ -362,6 +374,21 @@ func TestHandleFailoverError_SameAccountRetry(t *testing.T) {
 		require.Equal(t, FailoverContinue, action)
 		require.Len(t, mock.calls, 2, "第二次耗尽也应调用 TempUnschedule")
 	})
+}
+
+func TestHandleFailoverError_ChannelMonitorProbeSkipsSameAccountRetry(t *testing.T) {
+	mock := &mockTempUnscheduler{}
+	fs := NewFailoverState(3, false)
+	err := newTestFailoverErr(503, true, false)
+	ctx := service.WithChannelMonitorProbe(context.Background())
+
+	action := fs.HandleFailoverError(ctx, mock, 100, service.PlatformAntigravity, err)
+
+	require.Equal(t, FailoverContinue, action)
+	require.Equal(t, 1, fs.SwitchCount)
+	require.Contains(t, fs.FailedAccountIDs, int64(100))
+	require.Empty(t, fs.SameAccountRetryCount)
+	require.Empty(t, mock.calls, "monitor probes should not temp-unschedule before switching accounts")
 }
 
 // ---------------------------------------------------------------------------
