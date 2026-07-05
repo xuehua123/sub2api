@@ -253,7 +253,7 @@ func (s *OpsService) ListAccountBalanceMonitor(ctx context.Context, filter OpsAc
 	}
 	normalizeOpsAccountBalanceSettings(&settings)
 
-	accounts, err := s.listAllAccountsForOps(ctx, filter.Platform)
+	accounts, err := s.listAllAccountsForOps(ctx, filter.Platform, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -675,7 +675,7 @@ func (s *OpsService) RunAccountBalanceMonitorCycle(ctx context.Context, settings
 	if !settings.Enabled {
 		return 0
 	}
-	accounts, err := s.listAllAccountsForOps(ctx, "")
+	accounts, err := s.listAllAccountsForOps(ctx, "", nil)
 	if err != nil {
 		return 0
 	}

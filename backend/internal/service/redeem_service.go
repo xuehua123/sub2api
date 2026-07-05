@@ -419,6 +419,13 @@ func (s *RedeemService) releaseRedeemLock(ctx context.Context, code string) {
 	_ = s.cache.ReleaseRedeemLock(ctx, code)
 }
 
+func unsupportedRedeemTypeError(codeType string) error {
+	if codeType == RedeemTypeInvitation {
+		return infraerrors.BadRequest("REDEEM_CODE_UNSUPPORTED_TYPE", "invitation codes can only be used during registration")
+	}
+	return infraerrors.BadRequest("REDEEM_CODE_UNSUPPORTED_TYPE", fmt.Sprintf("unsupported redeem type: %s", codeType))
+}
+
 // Redeem uses a redeem code with no external source context.
 func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (*RedeemCode, error) {
 	return s.RedeemWithOptions(ctx, RedeemInput{UserID: userID, Code: code})
@@ -516,7 +523,7 @@ func (s *RedeemService) RedeemWithOptions(ctx context.Context, input RedeemInput
 		}
 
 	default:
-		return nil, fmt.Errorf("unsupported redeem type: %s", redeemCode.Type)
+		return nil, unsupportedRedeemTypeError(redeemCode.Type)
 	}
 
 	// 提交事务
@@ -549,8 +556,15 @@ func (s *RedeemService) subscriptionEntitlementsRuntime(ctx context.Context) Sub
 }
 
 func (s *RedeemService) validateRedeemCodeForUse(redeemCode *RedeemCode, runtime SubscriptionEntitlementsRuntime) error {
-	if redeemCode == nil || redeemCode.Type != RedeemTypeSubscription {
+	if redeemCode == nil {
 		return nil
+	}
+	switch redeemCode.Type {
+	case RedeemTypeBalance, RedeemTypeConcurrency:
+		return nil
+	case RedeemTypeSubscription:
+	default:
+		return unsupportedRedeemTypeError(redeemCode.Type)
 	}
 	if redeemCode.GroupID != nil && *redeemCode.GroupID <= 0 {
 		return infraerrors.BadRequest("REDEEM_CODE_INVALID", "invalid subscription redeem code: invalid group_id")

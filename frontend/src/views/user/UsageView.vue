@@ -107,7 +107,7 @@
           <div class="px-6 py-4">
           <div class="flex flex-wrap items-end gap-4">
             <!-- API Key Filter -->
-            <div class="min-w-[180px]">
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
               <label class="input-label">{{ t('usage.apiKeyFilter') }}</label>
               <Select
                 v-model="filters.api_key_id"
@@ -116,6 +116,33 @@
                 @change="applyFilters"
               />
             </div>
+
+            <template v-else>
+              <div class="min-w-[180px]">
+                <label class="input-label">{{ t('usage.errors.keyName') }}</label>
+                <Select v-model="errorFilter.api_key_id" :options="errorKeyOptions" @change="applyErrorFilters" />
+              </div>
+              <div class="min-w-[200px]">
+                <label class="input-label">{{ t('usage.errors.model') }}</label>
+                <Select
+                  v-model="errorFilter.model"
+                  :options="errorModelOptions"
+                  searchable
+                  creatable
+                  clearable
+                  :placeholder="t('usage.errors.modelPlaceholder')"
+                  @change="applyErrorFilters"
+                />
+              </div>
+              <div class="min-w-[180px]">
+                <label class="input-label">{{ t('usage.errors.category') }}</label>
+                <Select v-model="errorFilter.category" :options="errorCategoryOptions" @change="applyErrorFilters" />
+              </div>
+              <div class="min-w-[160px]">
+                <label class="input-label">{{ t('usage.errors.status') }}</label>
+                <Select v-model="errorFilter.status_code" :options="errorStatusOptions" @change="applyErrorFilters" />
+              </div>
+            </template>
 
             <!-- Date Range Filter -->
             <div>
@@ -129,13 +156,13 @@
 
             <!-- Actions -->
             <div class="ml-auto flex items-center gap-3">
-              <button @click="applyFilters" :disabled="loading" class="btn btn-secondary">
+              <button @click="refreshActiveTab" :disabled="activeTab === 'errors' ? errorLoading : loading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
               </button>
               <button @click="resetFilters" class="btn btn-secondary">
                 {{ t('common.reset') }}
               </button>
-              <button @click="exportToCSV" :disabled="exporting" class="btn btn-primary">
+              <button v-if="activeTab === 'usage'" @click="exportToCSV" :disabled="exporting" class="btn btn-primary">
                 <svg
                   v-if="exporting"
                   class="-ml-1 mr-2 h-4 w-4 animate-spin"
@@ -414,10 +441,10 @@
             :loading="errorLoading"
             :page="errorPage"
             :page-size="errorPageSize"
-            :api-keys="apiKeys"
-            @filter="onErrorFilter"
+            @sort="onErrorSort"
             @update:page="onErrorPage"
             @update:pageSize="onErrorPageSize"
+            @ipGeoBatchFailed="handleIpGeoBatchFailed"
           />
         </div>
       </template>
@@ -664,7 +691,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import Select from '@/components/common/Select.vue'
+import Select, { type SelectOption } from '@/components/common/Select.vue'
 import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UserErrorRequestsTable from '@/components/user/UserErrorRequestsTable.vue'
@@ -693,6 +720,7 @@ import {
   textOutputTokens,
   hasImageOutputCost,
 } from '@/utils/imageUsage'
+import { COMMON_ERROR_STATUS_CODES } from '@/utils/errorBadges'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -757,6 +785,35 @@ const apiKeyOptions = computed(() => {
   ]
 })
 
+const errorKeyOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('usage.errors.allKeys') },
+  ...apiKeys.value.map((key) => ({ value: key.id, label: key.name }))
+])
+
+const errorModelOptions = computed<SelectOption[]>(() => {
+  const seen = new Set<string>()
+  const opts: SelectOption[] = []
+  for (const row of errorRows.value) {
+    if (row.model && !seen.has(row.model)) {
+      seen.add(row.model)
+      opts.push({ value: row.model, label: row.model })
+    }
+  }
+  return opts
+})
+
+const errorCategoryCodes = ['auth', 'rate_limit', 'quota', 'invalid_request', 'service_unavailable', 'upstream', 'internal', 'cyber']
+
+const errorCategoryOptions = computed<SelectOption[]>(() => [
+  { value: '', label: t('usage.errors.allCategories') },
+  ...errorCategoryCodes.map((code) => ({ value: code, label: t('usage.errors.categories.' + code) }))
+])
+
+const errorStatusOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('usage.errors.allStatuses') },
+  ...COMMON_ERROR_STATUS_CODES.map((code) => ({ value: code, label: String(code) }))
+])
+
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -789,13 +846,13 @@ const onDateRangeChange = (range: {
 }) => {
   filters.value.start_date = range.startDate
   filters.value.end_date = range.endDate
-  applyFilters()
   errorPage.value = 1
   if (activeTab.value === 'errors') {
     loadErrors()
-  } else {
-    errorRows.value = []  // 失效，下次切到 errors tab 时按新日期重新加载
+    return
   }
+  applyFilters()
+  errorRows.value = []
 }
 
 const pagination = reactive({
@@ -967,6 +1024,14 @@ const applyFilters = () => {
   loadUsageStats()
 }
 
+const refreshActiveTab = () => {
+  if (activeTab.value === 'errors') {
+    loadErrors()
+    return
+  }
+  applyFilters()
+}
+
 const resetFilters = () => {
   filters.value = {
     api_key_id: undefined,
@@ -981,9 +1046,12 @@ const resetFilters = () => {
   endDate.value = formatLocalDate(now)
   filters.value.start_date = startDate.value
   filters.value.end_date = endDate.value
-  pagination.page = 1
-  loadUsageLogs()
-  loadUsageStats()
+  if (activeTab.value === 'errors') {
+    errorFilter.value = { model: '', category: '', api_key_id: null, status_code: null }
+    applyErrorFilters()
+    return
+  }
+  applyFilters()
 }
 
 const handlePageChange = (page: number) => {
@@ -1159,7 +1227,19 @@ const errorLoading = ref(false)
 const errorPage = ref(1)
 const errorPageSize = ref(20)
 const errorTotal = ref(0)
-const errorFilter = ref<{ model: string; category: string; api_key_id: number | null }>({ model: '', category: '', api_key_id: null })
+const errorSortBy = ref('created_at')
+const errorSortOrder = ref<'asc' | 'desc'>('desc')
+const errorFilter = ref<{
+  model: string | null
+  category: string
+  api_key_id: number | null
+  status_code: number | null
+}>({ model: '', category: '', api_key_id: null, status_code: null })
+
+const applyErrorFilters = () => {
+  errorPage.value = 1
+  loadErrors()
+}
 
 const loadErrors = async () => {
   errorLoading.value = true
@@ -1169,9 +1249,12 @@ const loadErrors = async () => {
       page_size: errorPageSize.value,
       start_date: startDate.value,
       end_date: endDate.value,
-      model: errorFilter.value.model || undefined,
+      model: (errorFilter.value.model ?? '').trim() || undefined,
       category: errorFilter.value.category || undefined,
       api_key_id: errorFilter.value.api_key_id ?? undefined,
+      status_code: errorFilter.value.status_code ?? undefined,
+      sort_by: errorSortBy.value,
+      sort_order: errorSortOrder.value,
     })
     errorRows.value = resp.items
     errorTotal.value = resp.total
@@ -1183,8 +1266,9 @@ const loadErrors = async () => {
   }
 }
 
-const onErrorFilter = (f: { model: string; category: string; api_key_id: number | null }) => {
-  errorFilter.value = f
+const onErrorSort = (sortBy: string, sortOrder: 'asc' | 'desc') => {
+  errorSortBy.value = sortBy
+  errorSortOrder.value = sortOrder
   errorPage.value = 1
   loadErrors()
 }
