@@ -432,8 +432,8 @@
                       <div class="mt-4 flex gap-2 rounded-xl border border-amber-300/30 bg-amber-500/5 p-3.5 text-xs text-amber-600/90 dark:border-amber-500/20 dark:text-amber-400/90">
                         <Icon name="infoCircle" size="sm" class="shrink-0 mt-0.5 text-amber-500" />
                         <div class="leading-relaxed">
-                          <p class="font-bold">关于每刀单价与费率波动的说明：</p>
-                          <p class="mt-0.5 text-[11px] opacity-85">每个分组的“实际单价”是根据当前套餐的每刀成本乘以该分组的计费倍率估算而得。分组通道费率可能会根据市场和汇率进行调整波动，最终计费以实际调用时系统设定的费率为准。</p>
+                          <p class="font-bold">关于倍率后实际单价与费率波动的说明：</p>
+                          <p class="mt-0.5 text-[11px] opacity-85">每个分组的“倍率后实际单价”是根据当前套餐的每刀成本乘以该分组的计费倍率估算而得。分组通道费率可能会根据市场和汇率进行调整波动，最终计费以实际调用时系统设定的费率为准。</p>
                         </div>
                       </div>
                     </div>
@@ -774,7 +774,7 @@
                   {{ planGroupsModalPlan.name }}
                 </h3>
                 <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                  共 {{ planGroupCount(planGroupsModalPlan) }} 个分组，点击套餐后均按下方倍率计费
+                  共 {{ planGroupCount(planGroupsModalPlan) }} 个分组，展示每个分组的倍率与倍率后实际单价
                 </p>
               </div>
               <button
@@ -1231,7 +1231,7 @@ function displayGroupName(name: string): string {
 const GROUP_LABELS = {
   platform: '平台',
   quota: '额度',
-  actualCost: '实际单价',
+  actualCost: '倍率后实际单价',
   unlimitedQuota: '不限',
   allPlatforms: '全部适用',
 }
