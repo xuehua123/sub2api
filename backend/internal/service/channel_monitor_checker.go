@@ -56,6 +56,29 @@ type CheckOptions struct {
 //
 // opts 承载模板 / 监控快照带来的自定义配置。nil 等同于 "off + 无 extra headers"。
 func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions) *CheckResult {
+	var last *CheckResult
+	for attempt := 1; attempt <= monitorCheckMaxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if last != nil {
+				last.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("monitor check canceled after %d attempt(s); last: %s", attempt-1, last.Message)))
+				return last
+			}
+			return monitorCheckContextError(model, err)
+		}
+
+		res := runCheckForModelAttempt(ctx, provider, endpoint, apiKey, model, opts)
+		if res.Status == MonitorStatusOperational {
+			return res
+		}
+		last = res
+	}
+	if last != nil && monitorCheckMaxAttempts > 1 {
+		last.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("all %d monitor attempts failed; last: %s", monitorCheckMaxAttempts, last.Message)))
+	}
+	return last
+}
+
+func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions) *CheckResult {
 	res := &CheckResult{
 		Model:     model,
 		Status:    MonitorStatusError,
@@ -104,6 +127,18 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 	}
 
 	return finalizeOperational(res)
+}
+
+func monitorCheckContextError(model string, err error) *CheckResult {
+	res := &CheckResult{
+		Model:     model,
+		Status:    MonitorStatusError,
+		CheckedAt: time.Now(),
+	}
+	if err != nil {
+		res.Message = truncateMessage(sanitizeErrorMessage(err.Error()))
+	}
+	return res
 }
 
 // finalizeOperational 负责走到最后一步的成功判定。

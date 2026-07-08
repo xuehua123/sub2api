@@ -18,6 +18,7 @@ type stubMonitorSvc struct {
 	runErr     error
 	listErr    error
 	runHoldFor time.Duration // RunCheck 内额外阻塞的时长，用来测试 Stop 等待行为
+	deadlineCh chan time.Duration
 }
 
 func (s *stubMonitorSvc) ListEnabledMonitors(_ context.Context) ([]*ChannelMonitor, error) {
@@ -35,6 +36,13 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 		default:
 		}
 	}
+	if s.deadlineCh != nil {
+		if deadline, ok := ctx.Deadline(); ok {
+			s.deadlineCh <- time.Until(deadline)
+		} else {
+			s.deadlineCh <- 0
+		}
+	}
 	if s.runHoldFor > 0 {
 		select {
 		case <-time.After(s.runHoldFor):
@@ -46,6 +54,24 @@ func (s *stubMonitorSvc) RunCheck(ctx context.Context, id int64) ([]*CheckResult
 
 func newRunnerForTest(svc monitorRunnerSvc) *ChannelMonitorRunner {
 	return newChannelMonitorRunner(svc, nil)
+}
+
+func TestRunOne_TimeoutCoversMonitorLevelRetries(t *testing.T) {
+	deadlineCh := make(chan time.Duration, 1)
+	svc := &stubMonitorSvc{deadlineCh: deadlineCh}
+	r := newRunnerForTest(svc)
+
+	r.runOne(1, "m1")
+
+	select {
+	case remaining := <-deadlineCh:
+		minExpected := monitorRequestTimeout*time.Duration(monitorCheckMaxAttempts) + monitorPingTimeout
+		if remaining < minExpected {
+			t.Fatalf("runOne deadline too short: remaining=%s min_expected=%s", remaining, minExpected)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("RunCheck was not called")
+	}
 }
 
 // 等待 condition 在 timeout 内变 true，否则 t.Fatalf。轮询 5ms 一次。

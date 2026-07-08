@@ -65,9 +65,12 @@ type openAICaptureHandler struct {
 	lastPath                  string
 	status                    int
 	responsesLeadingReasoning bool
+	requestCount              int
+	emptyResponsesBeforeOK    int
 }
 
 func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.requestCount++
 	h.lastHeaders = r.Header.Clone()
 	h.lastPath = r.URL.Path
 	defer func() { _ = r.Body.Close() }()
@@ -82,6 +85,9 @@ func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(h.status)
 
 	answer := answerFromOpenAIRequest(parsed)
+	if h.requestCount <= h.emptyResponsesBeforeOK {
+		answer = ""
+	}
 	if h.lastPath == providerOpenAIResponsesPath {
 		output := []map[string]any{}
 		if h.responsesLeadingReasoning {
@@ -279,6 +285,22 @@ func TestRunCheckForModel_OpenAIResponses_SkipsLeadingReasoningItem(t *testing.T
 	}
 	if h.lastPath != providerOpenAIResponsesPath {
 		t.Fatalf("expected responses path %q, got %q", providerOpenAIResponsesPath, h.lastPath)
+	}
+}
+
+func TestRunCheckForModel_RetriesMonitorLevelChallengeMismatch(t *testing.T) {
+	h := &openAICaptureHandler{emptyResponsesBeforeOK: 1}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", &CheckOptions{
+		APIMode: MonitorAPIModeResponses,
+	})
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("monitor-level retry should recover after first empty challenge response, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.requestCount != 2 {
+		t.Fatalf("expected exactly 2 monitor attempts, got %d", h.requestCount)
 	}
 }
 

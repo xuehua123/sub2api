@@ -10,7 +10,9 @@ import (
 // 这些是 MVP 阶段的硬编码值，按需可以提到 config 中。
 const (
 	// monitorRequestTimeout 单次模型请求总超时（含 Body 读取）。
-	monitorRequestTimeout = 45 * time.Second
+	// 监控请求进入本地网关后，网关内部还可能跨账号 failover；这里必须比
+	// 上游单次响应头超时更宽，否则监控客户端会先断开，导致误判渠道失败。
+	monitorRequestTimeout = 100 * time.Second
 	// monitorPingTimeout HEAD 请求 endpoint origin 的超时。
 	monitorPingTimeout = 8 * time.Second
 	// monitorHistoryRetentionDays 明细历史保留天数。
@@ -89,15 +91,24 @@ const (
 
 	// monitorRunOneBuffer runOne 的总超时缓冲（除请求超时与 ping 超时外的额外裕量）。
 	monitorRunOneBuffer = 10 * time.Second
+	// monitorRunOneTimeout 自动调度单个 monitor 的总超时。
+	// RunCheck 内部会并发检测主模型和附加模型；每个模型最多跑 monitorCheckMaxAttempts 次，
+	// 因此这里按单模型完整重试预算计算，避免自动调度比手动检测更早取消。
+	monitorRunOneTimeout = monitorRequestTimeout*monitorCheckMaxAttempts + monitorPingTimeout + monitorRunOneBuffer
 
 	// monitorIdleConnTimeout HTTP transport 空闲连接关闭超时。
 	monitorIdleConnTimeout = 30 * time.Second
 	// monitorTLSHandshakeTimeout HTTP transport TLS 握手超时。
 	monitorTLSHandshakeTimeout = 10 * time.Second
 	// monitorResponseHeaderTimeout HTTP transport 等待响应头超时。
-	monitorResponseHeaderTimeout = 30 * time.Second
+	monitorResponseHeaderTimeout = 90 * time.Second
 	// monitorPingDiscardMaxBytes ping 时丢弃响应体的最大字节数。
 	monitorPingDiscardMaxBytes = 1024
+
+	// monitorCheckMaxAttempts 是监控层对单个模型的判定重试次数。
+	// 每次请求内部仍由网关按 ChannelMonitorProbeMaxAccountSwitches 做账号切换；
+	// 这里覆盖的是监控层失败，如响应超时、2xx 但 challenge 为空/不匹配。
+	monitorCheckMaxAttempts = 3
 
 	// monitorDialTimeout 自定义 dialer 单次连接超时。
 	monitorDialTimeout = 10 * time.Second
