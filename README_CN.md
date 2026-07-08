@@ -538,8 +538,7 @@ gateway:
   sora_media_signed_url_ttl_seconds: 900
 ```
 
-> 若未配置签名密钥，`/sora/media-signed` 将返回 503。
-> 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
+> 若未配置签名密钥，`/sora/media-signed` 将返回 503。> 如需更严格的访问控制，可将 `sora_media_require_api_key` 设为 true，仅允许携带 API Key 的 `/sora/media` 访问。
 
 访问策略说明：
 - `/sora/media`：内部调用或客户端携带 API Key 才能下载
@@ -568,20 +567,20 @@ gateway:
 
 **⚠️ 安全警告：HTTP URL 配置**
 
-当 `security.url_allowlist.enabled=false` 时，系统默认执行最小 URL 校验，**拒绝 HTTP URL**，仅允许 HTTPS。要允许 HTTP URL（例如用于开发或内网测试），必须显式设置：
+当 `security.url_allowlist.enabled=false` 时，系统仅执行最小 URL 校验，且**默认允许 HTTP URL**（开发友好模式，Docker Compose 部署的默认值一致）。生产环境建议显式收紧为仅允许 HTTPS：
 
 ```yaml
 security:
   url_allowlist:
     enabled: false                # 禁用白名单检查
-    allow_insecure_http: true     # 允许 HTTP URL（⚠️ 不安全）
+    allow_insecure_http: false    # 仅允许 HTTPS（生产环境推荐）
 ```
 
 **或通过环境变量：**
 
 ```bash
 SECURITY_URL_ALLOWLIST_ENABLED=false
-SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
+SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=false
 ```
 
 **允许 HTTP 的风险：**
@@ -595,7 +594,7 @@ SECURITY_URL_ALLOWLIST_ALLOW_INSECURE_HTTP=true
 - ✅ 获取 HTTPS 前测试账号连通性
 - ❌ 生产环境（仅使用 HTTPS）
 
-**未设置此项时的错误示例：**
+**设置 `allow_insecure_http: false` 后，HTTP URL 会返回如下错误：**
 ```
 Invalid base URL: invalid url scheme: http
 ```
@@ -711,9 +710,6 @@ Antigravity 账户支持可选的**混合调度**功能。开启后，通用端�
 
 > **⚠️ 注意**：Anthropic Claude 和 Antigravity Claude **不能在同一上下文中混合使用**，请通过分组功能做好隔离。
 
-### 已知问题
-在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。）
-解决办法：shift + Tab，手动退出Plan mode，然后输入内容 告诉 Claude Code 同意或拒绝 Plan
 ---
 
 ## 项目结构

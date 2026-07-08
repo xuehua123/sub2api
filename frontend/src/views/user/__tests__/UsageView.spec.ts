@@ -328,7 +328,6 @@ describe('user UsageView tooltip', () => {
     expect(hasSortedExportQuery).toBe(true)
     expect(clickSpy).toHaveBeenCalled()
     expect(showSuccess).toHaveBeenCalled()
-
     expect(setupState.columns.some((column: { key: string }) => column.key === 'ip_address')).toBe(true)
     const csv = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -336,10 +335,19 @@ describe('user UsageView tooltip', () => {
       reader.onerror = () => reject(reader.error)
       reader.readAsText(exportedBlob as Blob)
     })
-    expect(csv).toContain('Cost')
-    expect(csv).toContain('0.09288300')
-    expect(csv).not.toContain('Rate Multiplier')
-    expect(csv).not.toContain('Original Cost')
+    const csvBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as ArrayBuffer)
+      reader.onerror = () => reject(reader.error)
+      reader.readAsArrayBuffer(exportedBlob as Blob)
+    })
+    const csvBytes = new Uint8Array(csvBuffer)
+    expect(Array.from(csvBytes.slice(0, 3))).toEqual([0xef, 0xbb, 0xbf])
+    const csvBody = csv.replace(/^\uFEFF/, '')
+    expect(csvBody).toContain('Cost')
+    expect(csvBody).toContain('0.09288300')
+    expect(csvBody).not.toContain('Rate Multiplier')
+    expect(csvBody).not.toContain('Original Cost')
 
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL

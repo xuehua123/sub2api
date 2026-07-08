@@ -1952,3 +1952,342 @@ func TestPaymentAmountToleranceForThreeDecimalCurrency(t *testing.T) {
 	assert.Equal(t, amountToleranceCNY, paymentAmountToleranceForCurrency("JPY"))
 	assert.InDelta(t, 0.0005, paymentAmountToleranceForCurrency("KWD"), 1e-12)
 }
+
+func ensurePaymentAuditOrderActionUniqueIndex(t *testing.T, ctx context.Context, client *dbent.Client) {
+	t.Helper()
+	_, err := client.ExecContext(ctx, `
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_payment_audit_logs_order_action_uniq
+		ON payment_audit_logs (order_id, action)
+	`)
+	require.NoError(t, err)
+}
+
+func TestExecuteSubscriptionFulfillmentAppliesAffiliateRebate(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("subscription-affiliate@example.com").
+		SetPasswordHash("hash").
+		SetUsername("subscription-affiliate-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(9.99).
+		SetPayAmount(71.36).
+		SetFeeRate(0).
+		SetRechargeCode("PAY-SUB-AFFILIATE").
+		SetOutTradeNo("sub2_subscription_affiliate").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-sub-affiliate").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(99).
+		SetSubscriptionGroupID(7).
+		SetSubscriptionDays(30).
+		SetStatus(OrderStatusPaid).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inviterID := int64(9001)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		inviteeSummary: &AffiliateSummary{
+			UserID:    user.ID,
+			AffCode:   "INVITEE",
+			InviterID: &inviterID,
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+		},
+		inviterSummary: &AffiliateSummary{
+			UserID:    inviterID,
+			AffCode:   "INVITER",
+			CreatedAt: time.Now().Add(-48 * time.Hour),
+		},
+	}
+	settingSvc := NewSettingService(&paymentFulfillmentSettingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled:           "true",
+		SettingKeyAffiliateRebateRate:        "15",
+		SettingKeyAffiliateRebateFreezeHours: "0",
+	}}, nil)
+	subRepo := newSubscriptionUserSubRepoStub()
+	subscriptionSvc := NewSubscriptionService(&subscriptionGroupRepoStub{
+		group: &Group{ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription},
+	}, subRepo, nil, nil, nil)
+	svc := &PaymentService{
+		entClient:        client,
+		groupRepo:        &subscriptionGroupRepoStub{group: &Group{ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subscriptionSvc:  subscriptionSvc,
+		affiliateService: NewAffiliateService(affiliateRepo, settingSvc, nil, nil),
+	}
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Len(t, affiliateRepo.accrueCalls, 1)
+	require.Equal(t, inviterID, affiliateRepo.accrueCalls[0].inviterID)
+	require.Equal(t, user.ID, affiliateRepo.accrueCalls[0].inviteeUserID)
+	require.InDelta(t, 1.4985, affiliateRepo.accrueCalls[0].amount, 0.00000001)
+	require.NotNil(t, affiliateRepo.accrueCalls[0].sourceOrderID)
+	require.Equal(t, order.ID, *affiliateRepo.accrueCalls[0].sourceOrderID)
+	require.Equal(t, 1, subRepo.createCalls)
+
+	applied, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("AFFILIATE_REBATE_APPLIED")).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Contains(t, applied.Detail, `"baseAmount":9.99`)
+	require.Contains(t, applied.Detail, `"rebateAmount":1.4985`)
+}
+
+func TestExecuteSubscriptionFulfillmentDoesNotDuplicateWorkAfterLegacySuccessAudit(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+
+	user, err := client.User.Create().
+		SetEmail("subscription-affiliate-idempotent@example.com").
+		SetPasswordHash("hash").
+		SetUsername("subscription-affiliate-idempotent-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(80).
+		SetPayAmount(80).
+		SetFeeRate(0).
+		SetRechargeCode("PAY-SUB-AFFILIATE-IDEMPOTENT").
+		SetOutTradeNo("sub2_subscription_affiliate_idempotent").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-sub-affiliate-idempotent").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetPlanID(100).
+		SetSubscriptionGroupID(7).
+		SetSubscriptionDays(30).
+		SetStatus(OrderStatusPaid).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("SUBSCRIPTION_SUCCESS").
+		SetDetail(`{"groupID":7,"validityDays":30}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("AFFILIATE_REBATE_APPLIED").
+		SetDetail(`{"baseAmount":80,"rebateAmount":16}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inviterID := int64(9001)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{
+		inviteeSummary: &AffiliateSummary{
+			UserID:    user.ID,
+			AffCode:   "INVITEE",
+			InviterID: &inviterID,
+			CreatedAt: time.Now().Add(-24 * time.Hour),
+		},
+		inviterSummary: &AffiliateSummary{
+			UserID:    inviterID,
+			AffCode:   "INVITER",
+			CreatedAt: time.Now().Add(-48 * time.Hour),
+		},
+	}
+	settingSvc := NewSettingService(&paymentFulfillmentSettingRepoStub{values: map[string]string{
+		SettingKeyAffiliateEnabled:    "true",
+		SettingKeyAffiliateRebateRate: "20",
+	}}, nil)
+	subRepo := newSubscriptionUserSubRepoStub()
+	subscriptionSvc := NewSubscriptionService(&subscriptionGroupRepoStub{
+		group: &Group{ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription},
+	}, subRepo, nil, nil, nil)
+	svc := &PaymentService{
+		entClient:        client,
+		groupRepo:        &subscriptionGroupRepoStub{group: &Group{ID: 7, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}},
+		subscriptionSvc:  subscriptionSvc,
+		affiliateService: NewAffiliateService(affiliateRepo, settingSvc, nil, nil),
+	}
+
+	err = svc.ExecuteSubscriptionFulfillment(ctx, order.ID)
+	require.NoError(t, err)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Empty(t, affiliateRepo.accrueCalls)
+	require.Zero(t, subRepo.createCalls)
+}
+
+type paymentFulfillmentAffiliateAccrueCall struct {
+	inviterID     int64
+	inviteeUserID int64
+	amount        float64
+	freezeHours   int
+	sourceOrderID *int64
+}
+
+type paymentFulfillmentAffiliateRepoStub struct {
+	inviteeSummary *AffiliateSummary
+	inviterSummary *AffiliateSummary
+	accrued        float64
+	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
+	if s.inviteeSummary != nil && s.inviteeSummary.UserID == userID {
+		return s.inviteeSummary, nil
+	}
+	if s.inviterSummary != nil && s.inviterSummary.UserID == userID {
+		return s.inviterSummary, nil
+	}
+	return &AffiliateSummary{UserID: userID, CreatedAt: time.Now()}, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error) {
+	return nil, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) BindInviter(ctx context.Context, userID, inviterID int64) (bool, error) {
+	return false, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
+	s.accrueCalls = append(s.accrueCalls, paymentFulfillmentAffiliateAccrueCall{
+		inviterID:     inviterID,
+		inviteeUserID: inviteeUserID,
+		amount:        amount,
+		freezeHours:   freezeHours,
+		sourceOrderID: sourceOrderID,
+	})
+	return true, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {
+	return s.accrued, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ThawFrozenQuota(ctx context.Context, userID int64) (float64, error) {
+	return 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error) {
+	return 0, 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error) {
+	return nil, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) UpdateUserAffCode(ctx context.Context, userID int64, newCode string) error {
+	return nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ResetUserAffCode(ctx context.Context, userID int64) (string, error) {
+	return "", nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) SetUserRebateRate(ctx context.Context, userID int64, ratePercent *float64) error {
+	return nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) BatchSetUserRebateRate(ctx context.Context, userIDs []int64, ratePercent *float64) error {
+	return nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ListUsersWithCustomSettings(ctx context.Context, filter AffiliateAdminFilter) ([]AffiliateAdminEntry, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateInviteRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateInviteRecord, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error) {
+	return nil, 0, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error) {
+	return nil, nil
+}
+
+type paymentFulfillmentSettingRepoStub struct {
+	values map[string]string
+}
+
+func (s *paymentFulfillmentSettingRepoStub) Get(ctx context.Context, key string) (*Setting, error) {
+	value, ok := s.values[key]
+	if !ok {
+		return nil, errors.New("setting not found")
+	}
+	return &Setting{Key: key, Value: value}, nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) GetValue(ctx context.Context, key string) (string, error) {
+	value, ok := s.values[key]
+	if !ok {
+		return "", errors.New("setting not found")
+	}
+	return value, nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) Set(ctx context.Context, key, value string) error {
+	s.values[key] = value
+	return nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) GetMultiple(ctx context.Context, keys []string) (map[string]string, error) {
+	out := make(map[string]string, len(keys))
+	for _, key := range keys {
+		if value, ok := s.values[key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) SetMultiple(ctx context.Context, settings map[string]string) error {
+	if s.values == nil {
+		s.values = make(map[string]string, len(settings))
+	}
+	for key, value := range settings {
+		s.values[key] = value
+	}
+	return nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) GetAll(ctx context.Context) (map[string]string, error) {
+	out := make(map[string]string, len(s.values))
+	for key, value := range s.values {
+		out[key] = value
+	}
+	return out, nil
+}
+
+func (s *paymentFulfillmentSettingRepoStub) Delete(ctx context.Context, key string) error {
+	delete(s.values, key)
+	return nil
+}
+
+var _ AffiliateRepository = (*paymentFulfillmentAffiliateRepoStub)(nil)
+var _ SettingRepository = (*paymentFulfillmentSettingRepoStub)(nil)

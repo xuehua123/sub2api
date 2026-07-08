@@ -220,6 +220,7 @@ function keyFixture(overrides: Partial<ApiKey> = {}): ApiKey {
     expires_at: null,
     created_at: '2026-06-01T00:00:00Z',
     updated_at: '2026-06-01T00:00:00Z',
+    current_concurrency: 3,
     rate_limit_5h: 0,
     rate_limit_1d: 0,
     rate_limit_7d: 0,
@@ -291,6 +292,7 @@ describe('KeysView entitlement group binding', () => {
     expect(vm.columns.map((column: { key: string; label: string }) => [column.key, column.label])).toEqual(expect.arrayContaining([
       ['entitlement', 'keys.accessSourceColumn'],
       ['group', 'keys.currentGroupLabel'],
+      ['current_concurrency', 'keys.currentConcurrency'],
     ]))
   })
 
