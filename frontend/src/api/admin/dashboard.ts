@@ -177,7 +177,7 @@ export interface UserBreakdownParams {
   api_key_id?: number
   account_id?: number
   entitlement_id?: number
-  request_type?: number
+  request_type?: UsageRequestType
   stream?: boolean
   billing_type?: number | null
 }
