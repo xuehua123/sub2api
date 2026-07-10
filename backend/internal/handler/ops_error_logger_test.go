@@ -139,6 +139,36 @@ func TestOpsErrorLoggerMiddleware_DoesNotBreakOuterMiddlewares(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 }
 
+func TestOpsErrorLoggerMiddleware_RestoresWriterWhenInnerHandlerWrapsCaptureWriter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	type retainedWriter struct {
+		gin.ResponseWriter
+	}
+
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Next()
+
+		require.NotPanics(t, func() {
+			_ = c.Writer.Status()
+			_ = c.Writer.Written()
+		})
+	})
+	r.GET("/v1/responses/compact", OpsErrorLoggerMiddleware(nil), func(c *gin.Context) {
+		c.Writer = &retainedWriter{ResponseWriter: c.Writer}
+		c.Status(http.StatusNoContent)
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/responses/compact", nil)
+
+	require.NotPanics(t, func() {
+		r.ServeHTTP(rec, req)
+	})
+	require.Equal(t, http.StatusNoContent, rec.Code)
+}
+
 // setupOpsErrorLogTestQueue 阻止 enqueueOpsErrorLog 启动真实 worker，改用可检查的测试队列。
 func setupOpsErrorLogTestQueue(t *testing.T, size int) {
 	t.Helper()
