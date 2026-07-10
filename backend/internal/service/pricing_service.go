@@ -170,6 +170,9 @@ type LiteLLMRawEntry struct {
 	CacheReadInputTokenCostAbove200K         *float64 `json:"cache_read_input_token_cost_above_200k_tokens"`
 	CacheReadInputTokenCostAbove200KPriority *float64 `json:"cache_read_input_token_cost_above_200k_tokens_priority"`
 	CacheReadInputTokenCostAbove272K         *float64 `json:"cache_read_input_token_cost_above_272k_tokens"`
+	LongContextInputTokenThreshold           *int     `json:"long_context_input_token_threshold"`
+	LongContextInputCostMultiplier           *float64 `json:"long_context_input_cost_multiplier"`
+	LongContextOutputCostMultiplier          *float64 `json:"long_context_output_cost_multiplier"`
 	SupportsServiceTier                      bool     `json:"supports_service_tier"`
 	LiteLLMProvider                          string   `json:"litellm_provider"`
 	Mode                                     string   `json:"mode"`
@@ -546,6 +549,17 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 			pricing.LongContextInputTokenThreshold = openAIGPT54LongContextInputThreshold
 			pricing.LongContextCacheReadCostMultiplier = *entry.CacheReadInputTokenCostAbove272K / pricing.CacheReadInputTokenCost
 		}
+		// Explicit long-context metadata takes precedence over values derived from
+		// legacy above-threshold token prices.
+		if entry.LongContextInputTokenThreshold != nil {
+			pricing.LongContextInputTokenThreshold = *entry.LongContextInputTokenThreshold
+		}
+		if entry.LongContextInputCostMultiplier != nil {
+			pricing.LongContextInputCostMultiplier = *entry.LongContextInputCostMultiplier
+		}
+		if entry.LongContextOutputCostMultiplier != nil {
+			pricing.LongContextOutputCostMultiplier = *entry.LongContextOutputCostMultiplier
+		}
 		if entry.OutputCostPerImage != nil {
 			pricing.OutputCostPerImage = *entry.OutputCostPerImage
 		}
@@ -854,6 +868,12 @@ func normalizeModelNameForPricing(model string) string {
 
 	model = strings.TrimLeft(model, "/")
 	if canonical := canonicalizeOpenAIModelAliasSpelling(model); canonical != "" {
+		if canonical == "gpt-5.6" {
+			return "gpt-5.6-sol"
+		}
+		if suffix, ok := strings.CutPrefix(canonical, "gpt-5.6-"); ok && (suffix == "max" || isKnownCodexModelSuffix(suffix)) {
+			return "gpt-5.6-sol"
+		}
 		return canonical
 	}
 	return model

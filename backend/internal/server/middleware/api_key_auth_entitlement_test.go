@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -215,6 +216,9 @@ func TestAPIKeyAuthEntitlementV2ExplicitSetsEntitlementContext(t *testing.T) {
 	ent := middlewareEntitlement(100, 1, now, []service.Group{middlewareSubscriptionGroup(20)})
 	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
 	router := newEntitlementAuthRouter(apiKeyService, func(c *gin.Context) {
+		userID, ok := c.Request.Context().Value(ctxkey.UserID).(int64)
+		require.True(t, ok)
+		require.Equal(t, int64(1), userID)
 		entitlement, ok := GetSubscriptionEntitlementFromContext(c)
 		require.True(t, ok)
 		require.Equal(t, int64(100), entitlement.ID)

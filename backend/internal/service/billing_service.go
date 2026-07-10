@@ -154,8 +154,7 @@ func isOpenAIGPT54Model(model string) bool {
 	// Restrict normalization to known GPT-5/Codex models so unrelated models
 	// are not treated as GPT-5.4 by the default Codex-model fallback.
 	normalized := normalizeKnownOpenAICodexModel(model)
-	return normalized == "gpt-5.4" || normalized == "gpt-5.5" || normalized == "gpt-5.5-pro" ||
-		normalized == "gpt-5.6-sol" || normalized == "gpt-5.6-terra" || normalized == "gpt-5.6-luna"
+	return normalized == "gpt-5.4" || normalized == "gpt-5.5" || normalized == "gpt-5.5-pro"
 }
 
 // UsageTokens 使用的token数量
@@ -1138,6 +1137,19 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	if !isGPT56 && !usesLegacyLongContextPricing {
 		return pricing
 	}
+	needsPriorityPolicy := usesLegacyLongContextPricing &&
+		(pricing.InputPricePerTokenPriority < openAIGPT54PriorityInputPrice ||
+			pricing.OutputPricePerTokenPriority < openAIGPT54PriorityOutputPrice ||
+			pricing.CacheReadPricePerTokenPriority < openAIGPT54PriorityCacheReadPrice)
+	needsLongContextPolicy := (isGPT56 || usesLegacyLongContextPricing) &&
+		(pricing.LongContextInputThreshold <= 0 || pricing.LongContextInputMultiplier <= 0 || pricing.LongContextOutputMultiplier <= 0)
+	needsCacheCreationPolicy := isGPT56 && !pricing.CacheCreationPriceExplicit &&
+		(pricing.CacheCreationPricePerToken <= 0 ||
+			(pricing.InputPricePerTokenPriority > 0 && pricing.CacheCreationPricePerTokenPriority <= 0))
+	needsCacheReadPolicy := pricing.LongContextCacheReadMultiplier <= 0
+	if !needsPriorityPolicy && !needsLongContextPolicy && !needsCacheCreationPolicy && !needsCacheReadPolicy {
+		return pricing
+	}
 	cloned := *pricing
 	if usesLegacyLongContextPricing {
 		if cloned.InputPricePerTokenPriority < openAIGPT54PriorityInputPrice {
@@ -1158,7 +1170,7 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 			cloned.CacheCreationPricePerTokenPriority = cloned.InputPricePerTokenPriority * 1.25
 		}
 	}
-	if usesLegacyLongContextPricing {
+	if isGPT56 || usesLegacyLongContextPricing {
 		if cloned.LongContextInputThreshold <= 0 {
 			cloned.LongContextInputThreshold = openAIGPT54LongContextInputThreshold
 		}
