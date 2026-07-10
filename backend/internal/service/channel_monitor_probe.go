@@ -108,13 +108,13 @@ func signChannelMonitorProbe(method, path, ts string) ([]byte, bool) {
 		return nil, false
 	}
 	mac := hmac.New(sha256.New, secret)
-	mac.Write([]byte(strings.ToUpper(method)))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(path))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(ts))
-	mac.Write([]byte("\n"))
-	mac.Write([]byte(channelMonitorProbeHeaderValue))
+	_, _ = mac.Write([]byte(strings.ToUpper(method)))
+	_, _ = mac.Write([]byte("\n"))
+	_, _ = mac.Write([]byte(path))
+	_, _ = mac.Write([]byte("\n"))
+	_, _ = mac.Write([]byte(ts))
+	_, _ = mac.Write([]byte("\n"))
+	_, _ = mac.Write([]byte(channelMonitorProbeHeaderValue))
 	return mac.Sum(nil), true
 }
 

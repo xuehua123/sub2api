@@ -276,23 +276,34 @@ async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder
   }
 }
 
+let pollInFlight = false
 async function pollStatus() {
   if (!props.orderId || outcome.value) return
-  let order = await paymentStore.pollOrderStatus(props.orderId)
-  if (!order) return
-  order = await tryRecoverPendingOrder(order)
-  const normalizedStatus = String(order.status || '').trim().toUpperCase()
-  if (isSuccessStatus(normalizedStatus)) {
-    cleanup()
-    paidOrder.value = order
-    setOutcome('success')
-    emit('success')
-  } else if (normalizedStatus === 'CANCELLED') {
-    cleanup()
-    setOutcome('cancelled')
-  } else if (normalizedStatus === 'EXPIRED' || normalizedStatus === 'FAILED') {
-    cleanup()
-    setOutcome('expired')
+  // 防重入：接口（含 verifyOrder 二次确认）响应慢于 3 秒轮询间隔时避免并发重叠请求。
+  if (pollInFlight) return
+  pollInFlight = true
+  try {
+    let order = await paymentStore.pollOrderStatus(props.orderId)
+    if (!order) return
+    // 已进入终态则不再处理迟到的响应。
+    if (outcome.value) return
+    order = await tryRecoverPendingOrder(order)
+    if (outcome.value) return
+    const normalizedStatus = String(order.status || '').trim().toUpperCase()
+    if (isSuccessStatus(normalizedStatus)) {
+      cleanup()
+      paidOrder.value = order
+      setOutcome('success')
+      emit('success')
+    } else if (normalizedStatus === 'CANCELLED') {
+      cleanup()
+      setOutcome('cancelled')
+    } else if (normalizedStatus === 'EXPIRED' || normalizedStatus === 'FAILED') {
+      cleanup()
+      setOutcome('expired')
+    }
+  } finally {
+    pollInFlight = false
   }
 }
 

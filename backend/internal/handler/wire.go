@@ -136,6 +136,7 @@ func ProvideHandlers(
 	lobeHubHandler *LobeHubHandler,
 	availableChannelHandler *AvailableChannelHandler,
 	modelPriceHandler *ModelPriceHandler,
+	batchImageHandler *BatchImageHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -161,6 +162,7 @@ func ProvideHandlers(
 		LobeHub:          lobeHubHandler,
 		AvailableChannel: availableChannelHandler,
 		ModelPrice:       modelPriceHandler,
+		BatchImage:       batchImageHandler,
 	}
 }
 
@@ -188,6 +190,7 @@ var ProviderSet = wire.NewSet(
 	ProvideLobeHubHandler,
 	NewAvailableChannelHandler,
 	NewModelPriceHandler,
+	NewBatchImageHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
