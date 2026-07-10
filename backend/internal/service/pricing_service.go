@@ -37,6 +37,48 @@ var (
 		Mode:                            "chat",
 		SupportsPromptCaching:           true,
 	}
+	openAIGPT56SolFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   5e-06,
+		InputCostPerTokenPriority:           1e-05,
+		OutputCostPerToken:                  3e-05,
+		OutputCostPerTokenPriority:          6e-05,
+		CacheCreationInputTokenCost:         6.25e-06,
+		CacheCreationInputTokenCostPriority: 1.25e-05,
+		CacheReadInputTokenCost:             5e-07,
+		CacheReadInputTokenCostPriority:     1e-06,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	openAIGPT56TerraFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   2.5e-06,
+		InputCostPerTokenPriority:           5e-06,
+		OutputCostPerToken:                  1.5e-05,
+		OutputCostPerTokenPriority:          3e-05,
+		CacheCreationInputTokenCost:         3.125e-06,
+		CacheCreationInputTokenCostPriority: 6.25e-06,
+		CacheReadInputTokenCost:             2.5e-07,
+		CacheReadInputTokenCostPriority:     5e-07,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
+	openAIGPT56LunaFallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken:                   1e-06,
+		InputCostPerTokenPriority:           2e-06,
+		OutputCostPerToken:                  6e-06,
+		OutputCostPerTokenPriority:          1.2e-05,
+		CacheCreationInputTokenCost:         1.25e-06,
+		CacheCreationInputTokenCostPriority: 2.5e-06,
+		CacheReadInputTokenCost:             1e-07,
+		CacheReadInputTokenCostPriority:     2e-07,
+		SupportsServiceTier:                 true,
+		LiteLLMProvider:                     "openai",
+		Mode:                                "chat",
+		SupportsPromptCaching:               true,
+	}
 	openAIGPT54MiniFallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:       7.5e-07,
 		OutputCostPerToken:      4.5e-06,
@@ -69,6 +111,7 @@ type LiteLLMModelPricing struct {
 	OutputCostPerTokenAbove200KPriority      float64                   `json:"output_cost_per_token_above_200k_tokens_priority,omitempty"`
 	OutputCostPerTokenAbove272K              float64                   `json:"output_cost_per_token_above_272k_tokens,omitempty"`
 	CacheCreationInputTokenCost              float64                   `json:"cache_creation_input_token_cost"`
+	CacheCreationInputTokenCostPriority      float64                   `json:"cache_creation_input_token_cost_priority"`
 	CacheCreationInputTokenCostAbove1hr      float64                   `json:"cache_creation_input_token_cost_above_1hr"`
 	CacheCreationInputTokenCostAbove200K     float64                   `json:"cache_creation_input_token_cost_above_200k_tokens,omitempty"`
 	CacheReadInputTokenCost                  float64                   `json:"cache_read_input_token_cost"`
@@ -87,6 +130,8 @@ type LiteLLMModelPricing struct {
 	OutputCostPerImage                       float64                   `json:"output_cost_per_image"`       // 图片生成模型每张图片价格
 	OutputCostPerImageToken                  float64                   `json:"output_cost_per_image_token"` // 图片输出 token 价格
 	ContextPriceTiers                        []LiteLLMContextPriceTier `json:"context_price_tiers,omitempty"`
+	// TokenPricingAbsent marks image-only entries whose token prices were absent in the source data.
+	TokenPricingAbsent bool `json:"-"`
 }
 
 type LiteLLMContextPriceTier struct {
@@ -117,6 +162,7 @@ type LiteLLMRawEntry struct {
 	OutputCostPerTokenAbove200KPriority      *float64 `json:"output_cost_per_token_above_200k_tokens_priority"`
 	OutputCostPerTokenAbove272K              *float64 `json:"output_cost_per_token_above_272k_tokens"`
 	CacheCreationInputTokenCost              *float64 `json:"cache_creation_input_token_cost"`
+	CacheCreationInputTokenCostPriority      *float64 `json:"cache_creation_input_token_cost_priority"`
 	CacheCreationInputTokenCostAbove1hr      *float64 `json:"cache_creation_input_token_cost_above_1hr"`
 	CacheCreationInputTokenCostAbove200K     *float64 `json:"cache_creation_input_token_cost_above_200k_tokens"`
 	CacheReadInputTokenCost                  *float64 `json:"cache_read_input_token_cost"`
@@ -352,6 +398,7 @@ func (s *PricingService) downloadPricingData() error {
 	if err != nil {
 		return fmt.Errorf("parse pricing data: %w", err)
 	}
+	data = s.mergeFallbackPricingData(data)
 
 	// 保存到本地文件
 	pricingFile := s.getPricingFilePath()
@@ -406,7 +453,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 
 		// 只保留有有效价格的条目
-		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil {
+		if entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil && entry.OutputCostPerImage == nil && entry.OutputCostPerImageToken == nil {
 			continue
 		}
 
@@ -415,6 +462,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 			Mode:                  entry.Mode,
 			SupportsPromptCaching: entry.SupportsPromptCaching,
 			SupportsServiceTier:   entry.SupportsServiceTier,
+			TokenPricingAbsent:    entry.InputCostPerToken == nil && entry.OutputCostPerToken == nil,
 		}
 
 		if entry.InputCostPerToken != nil {
@@ -449,6 +497,9 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 		if entry.CacheCreationInputTokenCost != nil {
 			pricing.CacheCreationInputTokenCost = *entry.CacheCreationInputTokenCost
+		}
+		if entry.CacheCreationInputTokenCostPriority != nil {
+			pricing.CacheCreationInputTokenCostPriority = *entry.CacheCreationInputTokenCostPriority
 		}
 		if entry.CacheCreationInputTokenCostAbove1hr != nil {
 			pricing.CacheCreationInputTokenCostAbove1hr = *entry.CacheCreationInputTokenCostAbove1hr
@@ -585,6 +636,7 @@ func (s *PricingService) loadPricingData(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("parse pricing data: %w", err)
 	}
+	pricingData = s.mergeFallbackPricingData(pricingData)
 
 	// 计算哈希
 	hash := sha256.Sum256(data)
@@ -604,6 +656,37 @@ func (s *PricingService) loadPricingData(filePath string) error {
 
 	logger.LegacyPrintf("service.pricing", "[Pricing] Loaded %d models from %s", len(pricingData), filePath)
 	return nil
+}
+
+func (s *PricingService) mergeFallbackPricingData(data map[string]*LiteLLMModelPricing) map[string]*LiteLLMModelPricing {
+	if data == nil {
+		data = make(map[string]*LiteLLMModelPricing)
+	}
+	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Pricing.FallbackFile) == "" {
+		return data
+	}
+	fallbackBody, err := os.ReadFile(s.cfg.Pricing.FallbackFile)
+	if err != nil {
+		logger.LegacyPrintf("service.pricing", "[Pricing] Fallback merge skipped: %v", err)
+		return data
+	}
+	fallbackData, err := s.parsePricingData(fallbackBody)
+	if err != nil {
+		logger.LegacyPrintf("service.pricing", "[Pricing] Fallback merge parse skipped: %v", err)
+		return data
+	}
+	merged := 0
+	for modelName, pricing := range fallbackData {
+		if _, ok := data[modelName]; ok {
+			continue
+		}
+		data[modelName] = pricing
+		merged++
+	}
+	if merged > 0 {
+		logger.LegacyPrintf("service.pricing", "[Pricing] Merged %d fallback-only models", merged)
+	}
+	return data
 }
 
 // useFallbackPricing 使用回退价格文件
@@ -942,11 +1025,20 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		}
 	}
 
-	// GPT-5.6（sol / terra / luna）回退到 GPT-5.4 定价
-	if strings.HasPrefix(model, "gpt-5.6") {
+	if strings.HasPrefix(model, "gpt-5.6-sol") {
 		logger.With(zap.String("component", "service.pricing")).
-			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.4(static)"))
-		return openAIGPT54FallbackPricing
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.6-sol(static)"))
+		return openAIGPT56SolFallbackPricing
+	}
+	if strings.HasPrefix(model, "gpt-5.6-terra") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.6-terra(static)"))
+		return openAIGPT56TerraFallbackPricing
+	}
+	if strings.HasPrefix(model, "gpt-5.6-luna") {
+		logger.With(zap.String("component", "service.pricing")).
+			Info(fmt.Sprintf("[Pricing] OpenAI fallback matched %s -> %s", model, "gpt-5.6-luna(static)"))
+		return openAIGPT56LunaFallbackPricing
 	}
 
 	// GPT-5.5 回退到 GPT-5.4 定价

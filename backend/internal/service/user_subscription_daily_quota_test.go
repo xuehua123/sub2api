@@ -16,7 +16,7 @@ type dailyResetTrackingUserSubRepo struct {
 	resetDailyStart  time.Time
 }
 
-func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(_ context.Context, _ int64, windowStart time.Time) error {
+func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(_ context.Context, _ int64, _ *time.Time, windowStart time.Time) error {
 	r.resetDailyCalled = true
 	r.resetDailyStart = windowStart
 	return nil

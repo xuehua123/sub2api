@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
@@ -127,6 +128,90 @@ type UsageBillingApplyResult struct {
 	EntitlementVersion   int64              // post-increment entitlement updated_at in Unix microseconds (0 = no entitlement increment)
 }
 
+// BatchImageBalanceHoldCommand describes an idempotent balance hold operation.
+type BatchImageBalanceHoldCommand struct {
+	RequestID                  string
+	APIKeyID                   int64
+	RequestFingerprint         string
+	RequestPayloadHash         string
+	UserID                     int64
+	BatchID                    string
+	GroupID                    *int64
+	SubscriptionID             *int64
+	EntitlementID              *int64
+	BillingType                int8
+	BillingSource              string
+	EntitlementBalanceFallback bool
+	HeldDailyWindowStart       *time.Time
+	HeldWeeklyWindowStart      *time.Time
+	HeldMonthlyWindowStart     *time.Time
+	HoldAmount                 float64
+	ActualAmount               float64
+}
+
+func (c *BatchImageBalanceHoldCommand) Normalize() {
+	if c == nil {
+		return
+	}
+	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.BatchID = strings.TrimSpace(c.BatchID)
+	c.BillingSource = strings.TrimSpace(c.BillingSource)
+	if !IsValidUsageBillingSource(c.BillingSource) {
+		c.BillingSource = ResolveUsageBillingSource(c.BillingType, c.SubscriptionID, c.EntitlementID, false)
+	}
+	if strings.TrimSpace(c.RequestFingerprint) == "" {
+		c.RequestFingerprint = buildBatchImageBalanceHoldFingerprint(c)
+	}
+}
+
+func buildBatchImageBalanceHoldFingerprint(c *BatchImageBalanceHoldCommand) string {
+	if c == nil {
+		return ""
+	}
+	raw := fmt.Sprintf(
+		"%d|%d|%s|group:%d|subscription:%d|entitlement:%d|type:%d|source:%s|fallback:%t|daily:%s|weekly:%s|monthly:%s|%0.10f|%0.10f",
+		c.UserID,
+		c.APIKeyID,
+		strings.TrimSpace(c.BatchID),
+		valueOrZero(c.GroupID),
+		valueOrZero(c.SubscriptionID),
+		valueOrZero(c.EntitlementID),
+		c.BillingType,
+		strings.TrimSpace(c.BillingSource),
+		c.EntitlementBalanceFallback,
+		batchImageBillingWindowFingerprint(c.HeldDailyWindowStart),
+		batchImageBillingWindowFingerprint(c.HeldWeeklyWindowStart),
+		batchImageBillingWindowFingerprint(c.HeldMonthlyWindowStart),
+		c.HoldAmount,
+		c.ActualAmount,
+	)
+	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
+		raw += "|" + payloadHash
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+func batchImageBillingWindowFingerprint(windowStart *time.Time) string {
+	if windowStart == nil {
+		return ""
+	}
+	return windowStart.UTC().Format(time.RFC3339Nano)
+}
+
+type BatchImageBalanceHoldResult struct {
+	Applied                bool
+	NewBalance             *float64
+	FrozenBalance          *float64
+	BillingSource          string
+	HeldDailyWindowStart   *time.Time
+	HeldWeeklyWindowStart  *time.Time
+	HeldMonthlyWindowStart *time.Time
+}
+
 type UsageBillingRepository interface {
 	Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error)
+	ReserveBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	CaptureBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	ReleaseBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
 }

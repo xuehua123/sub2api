@@ -29,6 +29,22 @@ func (r *autoSwitchUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Contex
 	return &cp, nil
 }
 
+func (r *autoSwitchUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
+	for _, sub := range r.activeByGroup {
+		if sub.ID == id {
+			cp := sub
+			return &cp, nil
+		}
+	}
+	for _, sub := range r.list {
+		if sub.ID == id {
+			cp := sub
+			return &cp, nil
+		}
+	}
+	return nil, ErrSubscriptionNotFound
+}
+
 func (r *autoSwitchUserSubRepoStub) ListActiveByUserID(_ context.Context, userID int64) ([]UserSubscription, error) {
 	r.listCalls++
 	out := make([]UserSubscription, 0, len(r.list))
@@ -44,7 +60,7 @@ func (r *autoSwitchUserSubRepoStub) ListByGroupID(context.Context, int64, pagina
 	panic("unexpected ListByGroupID call")
 }
 
-func (r *autoSwitchUserSubRepoStub) ResetMonthlyUsage(_ context.Context, id int64, windowStart time.Time) error {
+func (r *autoSwitchUserSubRepoStub) ResetMonthlyUsage(_ context.Context, id int64, _ *time.Time, windowStart time.Time) error {
 	r.resetMonthlyCalls++
 	r.resetMonthlyID = id
 	for groupID, sub := range r.activeByGroup {
