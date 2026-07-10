@@ -393,6 +393,36 @@ func TestCalculateCost_OpenAIGPT54DynamicPricingStillAppliesMissingOfficialFloor
 	require.InDelta(t, 100*openAIGPT54PriorityOutputPrice, priorityCost.OutputCost, 1e-10)
 }
 
+func TestGetModelPricing_OpenAIGPT54PriorityFloorsPreserveExplicitLongContextPolicy(t *testing.T) {
+	pricingSvc := &PricingService{
+		pricingData: map[string]*LiteLLMModelPricing{
+			"gpt-5.4": {
+				InputCostPerToken:                  2.5e-6,
+				InputCostPerTokenPriority:          1e-6,
+				OutputCostPerToken:                 15e-6,
+				OutputCostPerTokenPriority:         2e-6,
+				CacheReadInputTokenCost:            0.25e-6,
+				CacheReadInputTokenCostPriority:    0.1e-6,
+				LongContextInputTokenThreshold:     123456,
+				LongContextInputCostMultiplier:     1.75,
+				LongContextOutputCostMultiplier:    1.25,
+				LongContextCacheReadCostMultiplier: 1.5,
+			},
+		},
+	}
+	svc := NewBillingService(&config.Config{}, pricingSvc)
+
+	pricing, err := svc.GetModelPricing("gpt-5.4")
+	require.NoError(t, err)
+	require.InDelta(t, openAIGPT54PriorityInputPrice, pricing.InputPricePerTokenPriority, 1e-12)
+	require.InDelta(t, openAIGPT54PriorityOutputPrice, pricing.OutputPricePerTokenPriority, 1e-12)
+	require.InDelta(t, openAIGPT54PriorityCacheReadPrice, pricing.CacheReadPricePerTokenPriority, 1e-12)
+	require.Equal(t, 123456, pricing.LongContextInputThreshold)
+	require.InDelta(t, 1.75, pricing.LongContextInputMultiplier, 1e-12)
+	require.InDelta(t, 1.25, pricing.LongContextOutputMultiplier, 1e-12)
+	require.InDelta(t, 1.5, pricing.LongContextCacheReadMultiplier, 1e-12)
+}
+
 // 阴性测试：未触发长上下文时，cache_read_price 不应被错误地乘以倍率。
 func TestCalculateCost_OpenAIGPT54NoLongContextKeepsCacheReadAtBasePrice(t *testing.T) {
 	svc := newTestBillingService()
