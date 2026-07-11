@@ -161,7 +161,12 @@ jobs:
               make_latest: "true"
             }' > "$payload_file"
 
-          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id' 2>/dev/null || true)"
+          if release_json="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" 2>/dev/null)"; then
+            release_id="$(jq -r '.id' <<< "$release_json")"
+          else
+            release_id=""
+          fi
+
           if [ -n "$release_id" ]; then
             gh api --method PATCH \
               "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
