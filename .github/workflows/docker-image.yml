@@ -17,7 +17,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -92,6 +92,86 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
+      - name: Publish rolling Docker release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: docker-latest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          source_sha="${{ steps.source.outputs.source_sha }}"
+          short_sha="${{ steps.source.outputs.short_sha }}"
+          version="${{ steps.source.outputs.version }}"
+          image_ref="${IMAGE_NAME}:sha-${short_sha}"
+          release_title="Sub2API Docker Latest"
+          body_file="$(mktemp)"
+          payload_file="$(mktemp)"
+          trap 'rm -f "$body_file" "$payload_file"' EXIT
+
+          cat > "$body_file" <<EOF
+          # Sub2API Docker Latest
+
+          This rolling release points to the latest \`main\` commit that passed the complete CI workflow and was published to GHCR.
+
+          ## Recommended deployment
+
+          \`\`\`bash
+          docker pull ${image_ref}
+          \`\`\`
+
+          Convenience tag:
+
+          \`\`\`bash
+          docker pull ${IMAGE_NAME}:latest
+          \`\`\`
+
+          - Version: \`${version}\`
+          - Commit: [\`${source_sha}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${source_sha})
+          - Image: \`${image_ref}\`
+          - Build: [GitHub Actions run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})
+
+          This release intentionally contains no binary assets. Production servers should only pull the prebuilt image and restart the service.
+          EOF
+
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
+              -f sha="$source_sha" \
+              -F force=true >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${RELEASE_TAG}" \
+              -f sha="$source_sha" >/dev/null
+          fi
+
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg target "$source_sha" \
+            --arg name "$release_title" \
+            --rawfile body "$body_file" \
+            '{
+              tag_name: $tag,
+              target_commitish: $target,
+              name: $name,
+              body: $body,
+              draft: false,
+              prerelease: false,
+              make_latest: "true"
+            }' > "$payload_file"
+
+          release_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '.id' 2>/dev/null || true)"
+          if [ -n "$release_id" ]; then
+            gh api --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/releases/${release_id}" \
+              --input "$payload_file" >/dev/null
+          else
+            gh api --method POST \
+              "repos/${GITHUB_REPOSITORY}/releases" \
+              --input "$payload_file" >/dev/null
+          fi
+
       - name: Publish deployment reference
         shell: bash
         run: |
@@ -103,4 +183,5 @@ jobs:
             echo '```'
             echo
             echo "Commit: \`${{ steps.source.outputs.source_sha }}\`"
+            echo "Rolling release: [Sub2API Docker Latest](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/docker-latest)"
           } >> "$GITHUB_STEP_SUMMARY"
