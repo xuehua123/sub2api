@@ -125,8 +125,8 @@ func TestAdvanceMonthlyCycleRespectsManualResetAnchor(t *testing.T) {
 	groupID := int64(21)
 	limit := 10.0
 	previousUsage := 9.5
-	previousStartsAt := time.Date(2026, 5, 1, 15, 30, 0, 0, time.UTC)
-	manualWindowStart := time.Date(2026, 5, 12, 9, 0, 0, 0, time.UTC)
+	manualWindowStart := time.Now().Truncate(time.Second).Add(-10 * 24 * time.Hour)
+	previousStartsAt := manualWindowStart.Add(-10 * 24 * time.Hour)
 	previousExpiresAt := manualWindowStart.Add(90 * 24 * time.Hour)
 	previousUpdatedAt := manualWindowStart.Add(-time.Hour)
 	group := &Group{

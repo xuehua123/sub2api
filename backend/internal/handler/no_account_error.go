@@ -15,16 +15,17 @@ import (
 // account selection failed with ErrNoAvailableAccounts. Handlers obtain it
 // via classifyNoAccountError and choose between:
 //
-//   - 404 model_not_found — the group has accounts, but none of them are
+//   - 404 model_not_found: the group has accounts, but none of them are
 //     configured to serve the requested model (config / typo / unsupported
-//     model). Returning 503 here misleads operators and trips reverse-proxy
-//     health checks; 404 lets the client surface the real problem.
+//     model). Returning 429 here would hide a real configuration problem.
 //
-//   - 503 api_error — accounts that could serve the model exist but are
-//     temporarily exhausted (rate limit, quota auto-pause, runtime block) OR
-//     the group has no accounts at all. Both stay on 503 because retrying
-//     after a backoff can plausibly succeed (or, in the empty-pool case, the
-//     operator may be in the middle of adding accounts).
+//   - 429 rate_limit_error: the requested model is configured, but routing
+//     found no currently usable account because quota/capacity/business limits
+//     made the pool unavailable. The client-facing message is intentionally
+//     normalized to avoid leaking scheduler internals.
+//
+//   - 503 api_error: only used when the classifier lacks enough context to
+//     safely diagnose the selection failure.
 type noAccountErrorClassification struct {
 	Status        int
 	ErrType       string
@@ -32,8 +33,9 @@ type noAccountErrorClassification struct {
 	ModelNotFound bool // true when this is a 404 model_not_found classification
 }
 
-// classifyNoAccountError decides between 404 model_not_found and 503
-// api_error for "no available accounts" failures.
+// classifyNoAccountError decides between 404 model_not_found, 429 quota-like
+// exhaustion, and a conservative 503 fallback for "no available accounts"
+// failures.
 //
 // The classifier intentionally does not consume the original error: the
 // selection layer never tells us *why* the pool came up empty (rate-limited
@@ -68,6 +70,11 @@ func classifyNoAccountError(
 		ErrType: "api_error",
 		Message: "Service temporarily unavailable",
 	}
+	quotaInsufficient := noAccountErrorClassification{
+		Status:  http.StatusTooManyRequests,
+		ErrType: "rate_limit_error",
+		Message: service.QuotaInsufficientMessage,
+	}
 
 	routingModel = strings.TrimSpace(routingModel)
 	displayModel = strings.TrimSpace(displayModel)
@@ -87,7 +94,7 @@ func classifyNoAccountError(
 			ModelNotFound: true,
 		}
 	}
-	return fallback
+	return quotaInsufficient
 }
 
 // classifyNoAccountErrorFromGin is a thin wrapper that forwards the gin

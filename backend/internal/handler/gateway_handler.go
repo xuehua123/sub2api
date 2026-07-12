@@ -316,11 +316,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Bool("model_not_found", cls.ModelNotFound),
 						zap.Error(err),
 					)
-					message := cls.Message
-					if !cls.ModelNotFound {
-						message = "No available accounts: " + err.Error()
-					}
-					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
+					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 					return
 				}
 				action := fs.HandleSelectionExhausted(c.Request.Context())
@@ -369,7 +365,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.String("model", reqModel),
 						zap.String("platform", platform),
 					)
-					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, streamStarted)
 					return
 				}
 				accountWaitCounted := false
@@ -626,11 +622,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.Bool("model_not_found", cls.ModelNotFound),
 						zap.Error(err),
 					)
-					message := cls.Message
-					if !cls.ModelNotFound {
-						message = "No available accounts: " + err.Error()
-					}
-					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, message, streamStarted)
+					h.handleStreamingAwareError(c, cls.Status, cls.ErrType, cls.Message, streamStarted)
 					return
 				}
 				action := fs.HandleSelectionExhausted(c.Request.Context())
@@ -689,7 +681,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.String("model", reqModel),
 						zap.String("platform", platform),
 					)
-					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "No available accounts", streamStarted)
+					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, streamStarted)
 					return
 				}
 				accountWaitCounted := false
@@ -2198,12 +2190,13 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 	if errors.Is(err, service.ErrDailyLimitExceeded) ||
 		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
 		errors.Is(err, service.ErrMonthlyLimitExceeded) {
-		msg := pkgerrors.Message(err)
-		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", msg, 0
+		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0
 	}
 	if errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
-		msg := pkgerrors.Message(err)
-		return http.StatusTooManyRequests, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", msg, 0
+		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0
+	}
+	if errors.Is(err, service.ErrInsufficientBalance) {
+		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0
 	}
 	if errors.Is(err, service.ErrSubscriptionNotFound) {
 		msg := pkgerrors.Message(err)
@@ -2243,8 +2236,7 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		errors.Is(err, service.ErrUserPlatformMonthlyQuotaExhausted) {
 		// 与 RPM 超限一致映射 429 + Retry-After，让 SDK 自动退避（而非 403 直接失败）。
 		// 错误码用 rate_limit_exceeded 与 OpenAI 兼容客户端一致；细分类型由 ErrCode + window_resets_at metadata 区分。
-		msg := pkgerrors.Message(err)
-		return http.StatusTooManyRequests, "rate_limit_exceeded", msg, extractQuotaResetSeconds(err)
+		return http.StatusTooManyRequests, "rate_limit_exceeded", service.QuotaInsufficientMessage, extractQuotaResetSeconds(err)
 	}
 	msg := pkgerrors.Message(err)
 	if msg == "" {

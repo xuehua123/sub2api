@@ -187,8 +187,9 @@ func TestOpenAIChatCompletionsNonStreamBillingFailureReplacesBufferedSuccess(t *
 
 	router.ServeHTTP(rec, req)
 
-	require.Equal(t, http.StatusForbidden, rec.Code)
-	require.Contains(t, rec.Body.String(), "billing_error")
+	require.Equal(t, http.StatusTooManyRequests, rec.Code)
+	require.Contains(t, rec.Body.String(), "USAGE_LIMIT_EXCEEDED")
+	require.Contains(t, rec.Body.String(), service.QuotaInsufficientMessage)
 	require.NotContains(t, rec.Body.String(), "chatcmpl_success")
 	require.NotContains(t, rec.Body.String(), "upstream ok")
 	require.Equal(t, 1, upstream.calls)

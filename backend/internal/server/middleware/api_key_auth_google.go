@@ -141,7 +141,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				currentGroupUnavailable,
 			)
 			if err != nil {
-				abortWithGoogleError(c, subscriptionErrorStatus(err), err.Error())
+				abortWithGoogleError(c, subscriptionErrorStatus(err), subscriptionErrorMessage(err))
 				return
 			}
 			if resolved != nil && resolved.Entitlement != nil {
@@ -175,7 +175,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				subscriptionSwitchRequestForContext(c),
 			)
 			if err != nil {
-				abortWithGoogleError(c, subscriptionErrorStatus(err), err.Error())
+				abortWithGoogleError(c, subscriptionErrorStatus(err), subscriptionErrorMessage(err))
 				return
 			}
 			if candidate != nil && candidate.Subscription != nil {
@@ -207,20 +207,14 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					_, validateErr = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				}
 				if validateErr != nil {
-					status := 403
-					if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrWeeklyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
-						status = 429
-					}
-					abortWithGoogleError(c, status, validateErr.Error())
+					abortWithGoogleError(c, subscriptionErrorStatus(validateErr), subscriptionErrorMessage(validateErr))
 					return
 				}
 				c.Set(string(ContextKeySubscription), subscription)
 			}
 		} else {
 			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-				abortWithGoogleError(c, 403, "Insufficient account balance")
+				abortWithGoogleError(c, 429, service.QuotaInsufficientMessage)
 				return
 			}
 		}

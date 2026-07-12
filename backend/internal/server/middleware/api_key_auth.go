@@ -205,7 +205,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					currentGroupUnavailable,
 				)
 				if entErr != nil {
-					AbortWithError(c, subscriptionErrorStatus(entErr), subscriptionErrorCode(entErr), entErr.Error())
+					AbortWithError(c, subscriptionErrorStatus(entErr), subscriptionErrorCode(entErr), subscriptionErrorMessage(entErr))
 					return
 				}
 				if resolved != nil && resolved.Entitlement != nil {
@@ -248,7 +248,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					subscriptionSwitchRequestForContext(c),
 				)
 				if subErr != nil {
-					AbortWithError(c, subscriptionErrorStatus(subErr), subscriptionErrorCode(subErr), subErr.Error())
+					AbortWithError(c, subscriptionErrorStatus(subErr), subscriptionErrorCode(subErr), subscriptionErrorMessage(subErr))
 					return
 				}
 				if candidate != nil && candidate.Subscription != nil {
@@ -289,15 +289,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					_, validateErr = subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				}
 				if validateErr != nil {
-					code := "SUBSCRIPTION_INVALID"
-					status := 403
-					if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrWeeklyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
-						code = "USAGE_LIMIT_EXCEEDED"
-						status = 429
-					}
-					AbortWithError(c, status, code, validateErr.Error())
+					AbortWithError(c, subscriptionErrorStatus(validateErr), subscriptionErrorCode(validateErr), subscriptionErrorMessage(validateErr))
 					return
 				}
 			} else if entitlement != nil {
@@ -306,7 +298,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			} else {
 				// 非订阅模式 或 订阅模式但 subscriptionService 未注入：回退到余额检查
 				if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
-					AbortWithError(c, 403, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+					AbortWithError(c, 429, "INSUFFICIENT_BALANCE", service.QuotaInsufficientMessage)
 					return
 				}
 			}
@@ -354,7 +346,7 @@ func applyResolvedSubscriptionGroup(c *gin.Context, apiKey *service.APIKey, grou
 func apiKeyStatusBlock(apiKey *service.APIKey) (status int, code string, message string, blocked bool) {
 	switch apiKey.Status {
 	case service.StatusAPIKeyQuotaExhausted:
-		return 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完", true
+		return 429, "API_KEY_QUOTA_EXHAUSTED", service.QuotaInsufficientMessage, true
 	case service.StatusAPIKeyExpired:
 		return 403, "API_KEY_EXPIRED", "API key 已过期", true
 	}
@@ -369,7 +361,7 @@ func apiKeyBillingBlock(apiKey *service.APIKey) (status int, code string, messag
 		return 403, "API_KEY_EXPIRED", "API key 已过期", true
 	}
 	if apiKey.IsQuotaExhausted() {
-		return 429, "API_KEY_QUOTA_EXHAUSTED", "API key 额度已用完", true
+		return 429, "API_KEY_QUOTA_EXHAUSTED", service.QuotaInsufficientMessage, true
 	}
 	return 0, "", "", false
 }
@@ -378,10 +370,7 @@ func subscriptionErrorStatus(err error) int {
 	if errors.Is(err, service.ErrBillingServiceUnavailable) {
 		return 503
 	}
-	if errors.Is(err, service.ErrDailyLimitExceeded) ||
-		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-		errors.Is(err, service.ErrMonthlyLimitExceeded) ||
-		errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
+	if isQuotaInsufficientError(err) {
 		return 429
 	}
 	if errors.Is(err, service.ErrSubscriptionMaintenance) {
@@ -390,14 +379,32 @@ func subscriptionErrorStatus(err error) int {
 	return 403
 }
 
+func subscriptionErrorMessage(err error) string {
+	if isQuotaInsufficientError(err) {
+		return service.QuotaInsufficientMessage
+	}
+	return err.Error()
+}
+
+func isQuotaInsufficientError(err error) bool {
+	return errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded) ||
+		errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) ||
+		errors.Is(err, service.ErrInsufficientBalance) ||
+		errors.Is(err, service.ErrUserPlatformDailyQuotaExhausted) ||
+		errors.Is(err, service.ErrUserPlatformWeeklyQuotaExhausted) ||
+		errors.Is(err, service.ErrUserPlatformMonthlyQuotaExhausted)
+}
+
 func subscriptionErrorCode(err error) string {
 	if errors.Is(err, service.ErrBillingServiceUnavailable) {
 		return "billing_service_error"
 	}
-	if errors.Is(err, service.ErrDailyLimitExceeded) ||
-		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
-		errors.Is(err, service.ErrMonthlyLimitExceeded) ||
-		errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
+	if errors.Is(err, service.ErrInsufficientBalance) {
+		return "INSUFFICIENT_BALANCE"
+	}
+	if isQuotaInsufficientError(err) {
 		return "USAGE_LIMIT_EXCEEDED"
 	}
 	if errors.Is(err, service.ErrSubscriptionNotFound) {

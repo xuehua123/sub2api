@@ -62,7 +62,7 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 			return
 		}
 		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
+		googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 			return
 		}
 		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-		googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts: "+err.Error())
+		googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
 		return
 	}
 
@@ -355,11 +355,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 				}
-				message := cls.Message
-				if !cls.ModelNotFound {
-					message = "No available Gemini accounts: " + err.Error()
-				}
-				googleError(c, cls.Status, message)
+				googleError(c, cls.Status, cls.Message)
 				return
 			}
 			action := fs.HandleSelectionExhausted(c.Request.Context())
@@ -407,7 +403,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				markOpsRoutingCapacityLimited(c)
-				googleError(c, http.StatusServiceUnavailable, "No available Gemini accounts")
+				googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
 				return
 			}
 			accountWaitCounted := false

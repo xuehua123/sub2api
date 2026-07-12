@@ -505,7 +505,7 @@ func TestClassifyOpsLocalBusinessLimitErrorsExcludedFromSLA(t *testing.T) {
 		{
 			name:        "standard API key quota exhausted",
 			errType:     "api_error",
-			message:     "API key 额度已用完",
+			message:     service.QuotaInsufficientMessage,
 			code:        "API_KEY_QUOTA_EXHAUSTED",
 			status:      http.StatusTooManyRequests,
 			wantErrType: "api_error",
@@ -550,9 +550,9 @@ func TestClassifyOpsLocalBusinessLimitErrorsExcludedFromSLA(t *testing.T) {
 		{
 			name:        "google insufficient account balance",
 			errType:     "api_error",
-			message:     "Insufficient account balance",
-			code:        "403",
-			status:      http.StatusForbidden,
+			message:     service.QuotaInsufficientMessage,
+			code:        "429",
+			status:      http.StatusTooManyRequests,
 			wantErrType: "api_error",
 			wantPhase:   "request",
 		},

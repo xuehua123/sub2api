@@ -114,26 +114,29 @@ func TestClassifyNoAccountError_ModelNotSupported_Returns404(t *testing.T) {
 	require.Equal(t, int64(42), *fd.calls[0].GroupID)
 }
 
-func TestClassifyNoAccountError_HasModelSupport_KeepsRoutingMessageGenerationToCaller(t *testing.T) {
+func TestClassifyNoAccountError_HasModelSupport_ReturnsQuotaInsufficient(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: true, HasModelSupport: true}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "model exists somewhere — caller stays on 503")
-	require.Equal(t, "api_error", cls.ErrType)
+	require.Equal(t, http.StatusTooManyRequests, cls.Status)
+	require.Equal(t, "rate_limit_error", cls.ErrType)
+	require.Equal(t, service.QuotaInsufficientMessage, cls.Message)
 	require.False(t, cls.ModelNotFound)
 }
 
-func TestClassifyNoAccountError_NoAccountsInPool_Stays503(t *testing.T) {
+func TestClassifyNoAccountError_NoAccountsInPool_ReturnsQuotaInsufficient(t *testing.T) {
 	c := newTestGinContextWithRequest()
 	fd := &fakeDiagnoser{resp: service.ModelAvailabilityDiagnosis{HasAccountsInPool: false, HasModelSupport: false}}
 	apiKey := &service.APIKey{GroupID: ptrInt64(7)}
 
 	cls := classifyNoAccountErrorFromGin(c, fd, apiKey, "gpt-5", "gpt-5", service.PlatformOpenAI)
 
-	require.Equal(t, http.StatusServiceUnavailable, cls.Status, "empty pool is a service-availability issue, not a model issue")
+	require.Equal(t, http.StatusTooManyRequests, cls.Status)
+	require.Equal(t, "rate_limit_error", cls.ErrType)
+	require.Equal(t, service.QuotaInsufficientMessage, cls.Message)
 	require.False(t, cls.ModelNotFound)
 }
 

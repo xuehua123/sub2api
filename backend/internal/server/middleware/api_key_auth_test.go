@@ -236,6 +236,7 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 
 		require.Equal(t, http.StatusTooManyRequests, w.Code)
 		require.Contains(t, w.Body.String(), "USAGE_LIMIT_EXCEEDED")
+		require.Contains(t, w.Body.String(), service.QuotaInsufficientMessage)
 	})
 }
 
@@ -328,22 +329,25 @@ func TestSimpleModeBlocksExpiredAndQuotaExhaustedAPIKeys(t *testing.T) {
 		Concurrency: 3,
 	}
 	tests := []struct {
-		name       string
-		status     string
-		wantStatus int
-		wantCode   string
+		name        string
+		status      string
+		wantStatus  int
+		wantCode    string
+		wantMessage string
 	}{
 		{
-			name:       "expired",
-			status:     service.StatusAPIKeyExpired,
-			wantStatus: http.StatusForbidden,
-			wantCode:   "API_KEY_EXPIRED",
+			name:        "expired",
+			status:      service.StatusAPIKeyExpired,
+			wantStatus:  http.StatusForbidden,
+			wantCode:    "API_KEY_EXPIRED",
+			wantMessage: "API key 已过期",
 		},
 		{
-			name:       "quota_exhausted",
-			status:     service.StatusAPIKeyQuotaExhausted,
-			wantStatus: http.StatusTooManyRequests,
-			wantCode:   "API_KEY_QUOTA_EXHAUSTED",
+			name:        "quota_exhausted",
+			status:      service.StatusAPIKeyQuotaExhausted,
+			wantStatus:  http.StatusTooManyRequests,
+			wantCode:    "API_KEY_QUOTA_EXHAUSTED",
+			wantMessage: service.QuotaInsufficientMessage,
 		},
 	}
 	for _, tt := range tests {
@@ -376,6 +380,7 @@ func TestSimpleModeBlocksExpiredAndQuotaExhaustedAPIKeys(t *testing.T) {
 
 			require.Equal(t, tt.wantStatus, w.Code)
 			require.Contains(t, w.Body.String(), tt.wantCode)
+			require.Contains(t, w.Body.String(), tt.wantMessage)
 		})
 	}
 }
@@ -1416,8 +1421,8 @@ func TestAPIKeyAuthRejectsExhaustedBalance(t *testing.T) {
 	req.Header.Set("x-api-key", apiKey.Key)
 	router.ServeHTTP(w, req)
 
-	require.Equal(t, http.StatusForbidden, w.Code)
-	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", "Insufficient account balance")
+	require.Equal(t, http.StatusTooManyRequests, w.Code)
+	requireAPIKeyAuthError(t, w, "INSUFFICIENT_BALANCE", service.QuotaInsufficientMessage)
 }
 
 func newAuthTestRouter(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) *gin.Engine {

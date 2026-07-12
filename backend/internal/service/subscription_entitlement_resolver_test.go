@@ -50,6 +50,7 @@ func TestSubscriptionEntitlementResolver_DisabledGrantDoesNotFallBackToGroupsEdg
 	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	repo := newFakeSubscriptionEntitlementRepo(now)
 	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	svc.SetNowFunc(func() time.Time { return now })
 	ent := testActiveEntitlement(1, 42, []int64{101}, now, now.AddDate(0, 0, 30))
 	ent.GroupGrants[0].Enabled = false
 	repo.entitlements[1] = ent
@@ -72,6 +73,7 @@ func TestSubscriptionEntitlementResolver_SharedMonthlyUsageExhaustedAcrossGroups
 	monthlyLimit := 5.0
 	repo := newFakeSubscriptionEntitlementRepo(now)
 	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	svc.SetNowFunc(func() time.Time { return now })
 	ent := testActiveEntitlement(1, 42, []int64{101, 202}, now, now.AddDate(0, 0, 30))
 	ent.MonthlyLimitUSD = &monthlyLimit
 	ent.MonthlyUsageUSD = 5
@@ -86,6 +88,7 @@ func TestSubscriptionEntitlementResolver_BalanceFallbackDoesNotBypassQuota(t *te
 	monthlyLimit := 5.0
 	repo := newFakeSubscriptionEntitlementRepo(now)
 	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	svc.SetNowFunc(func() time.Time { return now })
 	ent := testActiveEntitlement(1, 42, []int64{101}, now, now.AddDate(0, 0, 30))
 	ent.OveragePolicy = SubscriptionEntitlementOverageBalanceFallback
 	ent.MonthlyLimitUSD = &monthlyLimit

@@ -57,7 +57,7 @@ func TestBillingErrorDetails_SubscriptionUsageLimitsMapToUsageLimitExceeded(t *t
 		status, code, msg, retryAfter := billingErrorDetails(err)
 		require.Equal(t, http.StatusTooManyRequests, status, "status for %v", err)
 		require.Equal(t, "USAGE_LIMIT_EXCEEDED", code, "code for %v", err)
-		require.NotEmpty(t, msg)
+		require.Equal(t, service.QuotaInsufficientMessage, msg)
 		require.Equal(t, 0, retryAfter)
 	}
 }
@@ -65,8 +65,8 @@ func TestBillingErrorDetails_SubscriptionUsageLimitsMapToUsageLimitExceeded(t *t
 func TestBillingErrorDetails_SubscriptionEntitlementQuotaExceededMapsToTooManyRequests(t *testing.T) {
 	status, code, msg, retryAfter := billingErrorDetails(service.ErrSubscriptionEntitlementQuotaExceeded)
 	require.Equal(t, http.StatusTooManyRequests, status)
-	require.Equal(t, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", code)
-	require.NotEmpty(t, msg)
+	require.Equal(t, "USAGE_LIMIT_EXCEEDED", code)
+	require.Equal(t, service.QuotaInsufficientMessage, msg)
 	require.Equal(t, 0, retryAfter)
 }
 
@@ -120,11 +120,12 @@ func TestBillingErrorDetails_SubscriptionErrorsKeepSubscriptionCodes(t *testing.
 	}
 }
 
-func TestBillingErrorDetails_UnknownErrorFallsBackTo403(t *testing.T) {
-	status, code, msg, _ := billingErrorDetails(service.ErrInsufficientBalance)
-	require.Equal(t, http.StatusForbidden, status)
-	require.Equal(t, "billing_error", code)
-	require.NotEmpty(t, msg)
+func TestBillingErrorDetails_InsufficientBalanceMapsToQuotaInsufficient(t *testing.T) {
+	status, code, msg, retryAfter := billingErrorDetails(service.ErrInsufficientBalance)
+	require.Equal(t, http.StatusTooManyRequests, status)
+	require.Equal(t, "USAGE_LIMIT_EXCEEDED", code)
+	require.Equal(t, service.QuotaInsufficientMessage, msg)
+	require.Equal(t, 0, retryAfter)
 }
 
 func TestExtractQuotaResetSeconds_T19_HappyPath(t *testing.T) {
@@ -185,12 +186,15 @@ func TestBillingErrorDetails_T10_QuotaExhaustedReturns429WithRetryAfter(t *testi
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			status, code, _, retryAfter := billingErrorDetails(tc.err)
+			status, code, msg, retryAfter := billingErrorDetails(tc.err)
 			if status != http.StatusTooManyRequests {
 				t.Errorf("status = %d, want 429", status)
 			}
 			if code != "rate_limit_exceeded" {
 				t.Errorf("code = %q, want rate_limit_exceeded", code)
+			}
+			if msg != service.QuotaInsufficientMessage {
+				t.Errorf("message = %q, want %q", msg, service.QuotaInsufficientMessage)
 			}
 			if retryAfter < 3599 || retryAfter > 3601 {
 				t.Errorf("retryAfter = %d, want ~3600", retryAfter)
