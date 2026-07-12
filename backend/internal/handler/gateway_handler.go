@@ -365,7 +365,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.String("model", reqModel),
 						zap.String("platform", platform),
 					)
-					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, streamStarted)
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 					return
 				}
 				accountWaitCounted := false
@@ -681,7 +681,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						zap.String("model", reqModel),
 						zap.String("platform", platform),
 					)
-					h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, streamStarted)
+					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", streamStarted)
 					return
 				}
 				accountWaitCounted := false
@@ -2193,7 +2193,7 @@ func billingErrorDetails(err error) (status int, code, message string, retryAfte
 		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0
 	}
 	if errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
-		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0
+		return http.StatusTooManyRequests, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", service.QuotaInsufficientMessage, 0
 	}
 	if errors.Is(err, service.ErrInsufficientBalance) {
 		return http.StatusTooManyRequests, "USAGE_LIMIT_EXCEEDED", service.QuotaInsufficientMessage, 0

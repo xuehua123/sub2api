@@ -1164,7 +1164,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 ) (func(), bool) {
 	if selection == nil || selection.Account == nil {
 		markOpsRoutingCapacityLimited(c)
-		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, *streamStarted)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", *streamStarted)
 		return nil, false
 	}
 
@@ -1175,7 +1175,7 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
-		h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage, *streamStarted)
+		h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable", *streamStarted)
 		return nil, false
 	}
 

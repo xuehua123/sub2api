@@ -240,6 +240,14 @@ func TestSimpleModeBypassesQuotaCheck(t *testing.T) {
 	})
 }
 
+func TestSubscriptionEntitlementQuotaErrorPreservesMachineCode(t *testing.T) {
+	err := service.ErrSubscriptionEntitlementQuotaExceeded
+
+	require.Equal(t, http.StatusTooManyRequests, subscriptionErrorStatus(err))
+	require.Equal(t, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", subscriptionErrorCode(err))
+	require.Equal(t, service.QuotaInsufficientMessage, subscriptionErrorMessage(err))
+}
+
 func TestAPIKeyAuthSubscriptionBillingServiceUnavailableReturns503(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

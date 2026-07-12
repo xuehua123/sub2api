@@ -62,7 +62,7 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 			return
 		}
 		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-		googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
+		googleError(c, http.StatusServiceUnavailable, "Service temporarily unavailable")
 		return
 	}
 
@@ -115,7 +115,7 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 			return
 		}
 		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
-		googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
+		googleError(c, http.StatusServiceUnavailable, "Service temporarily unavailable")
 		return
 	}
 
@@ -403,7 +403,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				markOpsRoutingCapacityLimited(c)
-				googleError(c, http.StatusTooManyRequests, service.QuotaInsufficientMessage)
+				googleError(c, http.StatusServiceUnavailable, "Service temporarily unavailable")
 				return
 			}
 			accountWaitCounted := false

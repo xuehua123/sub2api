@@ -193,7 +193,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		if !selection.Acquired {
 			if selection.WaitPlan == nil {
 				markOpsRoutingCapacityLimited(c)
-				h.responsesErrorResponse(c, http.StatusTooManyRequests, "rate_limit_error", service.QuotaInsufficientMessage)
+				h.responsesErrorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
 				return
 			}
 			accountReleaseFunc, err = h.concurrencyHelper.AcquireAccountSlotWithWaitTimeout(

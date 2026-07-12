@@ -404,6 +404,9 @@ func subscriptionErrorCode(err error) string {
 	if errors.Is(err, service.ErrInsufficientBalance) {
 		return "INSUFFICIENT_BALANCE"
 	}
+	if errors.Is(err, service.ErrSubscriptionEntitlementQuotaExceeded) {
+		return "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED"
+	}
 	if isQuotaInsufficientError(err) {
 		return "USAGE_LIMIT_EXCEEDED"
 	}

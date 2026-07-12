@@ -19,13 +19,9 @@ import (
 //     configured to serve the requested model (config / typo / unsupported
 //     model). Returning 429 here would hide a real configuration problem.
 //
-//   - 429 rate_limit_error: the requested model is configured, but routing
-//     found no currently usable account because quota/capacity/business limits
-//     made the pool unavailable. The client-facing message is intentionally
-//     normalized to avoid leaking scheduler internals.
-//
-//   - 503 api_error: only used when the classifier lacks enough context to
-//     safely diagnose the selection failure.
+//   - 503 api_error: accounts that could serve the model exist but are
+//     temporarily unavailable, the group has no accounts, or diagnosis cannot
+//     be completed safely. These are provider-side availability failures.
 type noAccountErrorClassification struct {
 	Status        int
 	ErrType       string
@@ -33,9 +29,8 @@ type noAccountErrorClassification struct {
 	ModelNotFound bool // true when this is a 404 model_not_found classification
 }
 
-// classifyNoAccountError decides between 404 model_not_found, 429 quota-like
-// exhaustion, and a conservative 503 fallback for "no available accounts"
-// failures.
+// classifyNoAccountError decides between 404 model_not_found and a
+// conservative 503 fallback for "no available accounts" failures.
 //
 // The classifier intentionally does not consume the original error: the
 // selection layer never tells us *why* the pool came up empty (rate-limited
@@ -70,12 +65,6 @@ func classifyNoAccountError(
 		ErrType: "api_error",
 		Message: "Service temporarily unavailable",
 	}
-	quotaInsufficient := noAccountErrorClassification{
-		Status:  http.StatusTooManyRequests,
-		ErrType: "rate_limit_error",
-		Message: service.QuotaInsufficientMessage,
-	}
-
 	routingModel = strings.TrimSpace(routingModel)
 	displayModel = strings.TrimSpace(displayModel)
 	if displayModel == "" {
@@ -94,7 +83,7 @@ func classifyNoAccountError(
 			ModelNotFound: true,
 		}
 	}
-	return quotaInsufficient
+	return fallback
 }
 
 // classifyNoAccountErrorFromGin is a thin wrapper that forwards the gin

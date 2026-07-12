@@ -65,7 +65,7 @@ func TestBillingErrorDetails_SubscriptionUsageLimitsMapToUsageLimitExceeded(t *t
 func TestBillingErrorDetails_SubscriptionEntitlementQuotaExceededMapsToTooManyRequests(t *testing.T) {
 	status, code, msg, retryAfter := billingErrorDetails(service.ErrSubscriptionEntitlementQuotaExceeded)
 	require.Equal(t, http.StatusTooManyRequests, status)
-	require.Equal(t, "USAGE_LIMIT_EXCEEDED", code)
+	require.Equal(t, "SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", code)
 	require.Equal(t, service.QuotaInsufficientMessage, msg)
 	require.Equal(t, 0, retryAfter)
 }
