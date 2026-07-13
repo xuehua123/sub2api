@@ -271,7 +271,14 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 		return nil, ErrCommissionWithdrawMethodInvalid
 	}
 	if input.Amount < settings.ReferralWithdrawMinAmount {
-		return nil, ErrCommissionWithdrawAmountInvalid
+		minimumAmount := fmt.Sprintf("%.2f", settings.ReferralWithdrawMinAmount)
+		return nil, infraerrors.BadRequest(
+			"COMMISSION_WITHDRAW_AMOUNT_INVALID",
+			fmt.Sprintf("minimum withdrawal amount is ¥%s", minimumAmount),
+		).WithMetadata(map[string]string{
+			"minimum_amount": minimumAmount,
+			"currency":       ReferralSettlementCurrencyCNY,
+		})
 	}
 	if settings.ReferralWithdrawMaxAmount > 0 && input.Amount > settings.ReferralWithdrawMaxAmount {
 		return nil, ErrCommissionWithdrawAmountInvalid

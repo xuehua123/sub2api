@@ -443,6 +443,35 @@ func TestReferralWithdrawalService_CreateWithdrawal_FreezesAvailableRewards(t *t
 	require.Equal(t, CommissionRewardStatusPartiallyFrozen, repo.rewards[1].Status)
 }
 
+func TestReferralWithdrawalService_CreateWithdrawal_ExplainsConfiguredMinimum(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawEnabled:        "true",
+		SettingKeyReferralWithdrawMinAmount:      "10",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	result, err := svc.CreateWithdrawal(context.Background(), &CreateReferralWithdrawalInput{
+		UserID:       200,
+		Amount:       8.4,
+		PayoutMethod: CommissionPayoutMethodAlipay,
+	})
+
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, 400, infraerrors.Code(err))
+	require.Equal(t, "COMMISSION_WITHDRAW_AMOUNT_INVALID", infraerrors.Reason(err))
+	require.Equal(t, "minimum withdrawal amount is ¥10.00", infraerrors.Message(err))
+	require.Equal(t, map[string]string{
+		"minimum_amount": "10.00",
+		"currency":       ReferralSettlementCurrencyCNY,
+	}, infraerrors.FromError(err).Metadata)
+	require.Empty(t, repo.withdrawals)
+	require.Empty(t, repo.withdrawalItems)
+	require.Empty(t, repo.ledgers)
+}
+
 func TestReferralWithdrawalService_RejectWithdrawal_ReturnsFrozenAmount(t *testing.T) {
 	repo := newWithdrawalCommissionRepoStub()
 	repo.rewards = []CommissionReward{
