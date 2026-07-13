@@ -3,14 +3,25 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+)
+
+const (
+	maxPayoutQRImageBytes        = 2 * 1024 * 1024
+	maxPayoutQRImageDataURLBytes = 64 + ((maxPayoutQRImageBytes + 2) / 3 * 4)
+	maxPayoutQRImageURLBytes     = 512
+	maxPayoutAccountFieldRunes   = 128
 )
 
 type CreateReferralWithdrawalInput struct {
@@ -98,6 +109,16 @@ func (s *ReferralWithdrawalService) UpsertPayoutAccount(ctx context.Context, use
 
 	accountName := strings.TrimSpace(input.AccountName)
 	accountNo := strings.TrimSpace(input.AccountNo)
+	bankName := strings.TrimSpace(input.BankName)
+	qrImageURL := strings.TrimSpace(input.QRImageURL)
+	if utf8.RuneCountInString(accountName) > maxPayoutAccountFieldRunes ||
+		utf8.RuneCountInString(accountNo) > maxPayoutAccountFieldRunes ||
+		utf8.RuneCountInString(bankName) > maxPayoutAccountFieldRunes {
+		return nil, infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout account fields must not exceed 128 characters")
+	}
+	if err := validatePayoutQRImageURL(qrImageURL); err != nil {
+		return nil, err
+	}
 
 	accounts, err := s.commissionRepo.ListPayoutAccountsByUser(ctx, userID)
 	if err != nil {
@@ -115,7 +136,7 @@ func (s *ReferralWithdrawalService) UpsertPayoutAccount(ctx context.Context, use
 	if accountID > 0 && existing == nil {
 		return nil, ErrCommissionPayoutAccountNotFound
 	}
-	if accountName == "" || (accountNo == "" && strings.TrimSpace(input.QRImageURL) == "" && existing == nil) {
+	if accountName == "" || (accountNo == "" && qrImageURL == "" && existing == nil) {
 		return nil, infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout account details are required")
 	}
 	if existing != nil {
@@ -141,8 +162,8 @@ func (s *ReferralWithdrawalService) UpsertPayoutAccount(ctx context.Context, use
 		AccountName:        accountName,
 		AccountNoMasked:    stringValuePtr(maskAccountNo(accountNo)),
 		AccountNoEncrypted: encryptedAccountNo,
-		BankName:           optionalTrimmedString(input.BankName),
-		QRImageURL:         optionalTrimmedString(input.QRImageURL),
+		BankName:           optionalTrimmedString(bankName),
+		QRImageURL:         optionalTrimmedString(qrImageURL),
 		IsDefault:          input.IsDefault,
 		Status:             StatusActive,
 	}
@@ -182,6 +203,52 @@ func (s *ReferralWithdrawalService) UpsertPayoutAccount(ctx context.Context, use
 		return nil, err
 	}
 	return sanitizePayoutAccount(account), nil
+}
+
+func validatePayoutQRImageURL(value string) error {
+	if value == "" {
+		return nil
+	}
+	lowerValue := strings.ToLower(value)
+	if !strings.HasPrefix(lowerValue, "data:") {
+		if len(value) > maxPayoutQRImageURLBytes {
+			return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image URL must not exceed 512 bytes")
+		}
+		parsed, err := url.Parse(value)
+		if err != nil {
+			return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image URL must use HTTP or HTTPS")
+		}
+		scheme := strings.ToLower(parsed.Scheme)
+		if (scheme != "http" && scheme != "https") || parsed.Host == "" {
+			return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image URL must use HTTP or HTTPS")
+		}
+		return nil
+	}
+	if !strings.HasPrefix(lowerValue, "data:image/png;base64,") &&
+		!strings.HasPrefix(lowerValue, "data:image/jpeg;base64,") &&
+		!strings.HasPrefix(lowerValue, "data:image/gif;base64,") {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image must be PNG, JPEG, or GIF")
+	}
+	if len(value) > maxPayoutQRImageDataURLBytes {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image must not exceed 2 MB")
+	}
+
+	separator := strings.IndexByte(value, ',')
+	if separator < 0 || separator == len(value)-1 {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image is invalid")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(value[separator+1:])
+	if err != nil || len(decoded) == 0 || len(decoded) > maxPayoutQRImageBytes {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image is invalid or exceeds 2 MB")
+	}
+	detectedType := http.DetectContentType(decoded)
+	if detectedType != "image/png" && detectedType != "image/jpeg" && detectedType != "image/gif" {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image content is invalid")
+	}
+	if lowerValue[:separator] != "data:"+detectedType+";base64" {
+		return infraerrors.BadRequest("COMMISSION_PAYOUT_ACCOUNT_INVALID", "payout QR image type does not match its content")
+	}
+	return nil
 }
 
 func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input *CreateReferralWithdrawalInput) (*ReferralWithdrawalResult, error) {
@@ -772,9 +839,6 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 	}
 	if err := s.checkReferralEnabledForUser(ctx, settings, userID); err != nil {
 		return err
-	}
-	if amount < settings.ReferralWithdrawMinAmount {
-		return ErrCommissionWithdrawAmountInvalid
 	}
 	if settings.ReferralWithdrawMaxAmount > 0 && amount > settings.ReferralWithdrawMaxAmount {
 		return ErrCommissionWithdrawAmountInvalid

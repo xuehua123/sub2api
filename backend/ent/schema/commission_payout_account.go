@@ -51,7 +51,7 @@ func (CommissionPayoutAccount) Fields() []ent.Field {
 		field.String("qr_image_url").
 			Optional().
 			Nillable().
-			MaxLen(512),
+			SchemaType(map[string]string{dialect.Postgres: "text"}),
 		field.Bool("is_default").
 			Default(false),
 		field.String("status").

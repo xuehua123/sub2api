@@ -90,8 +90,6 @@ var (
 	AccountNoMaskedValidator func(string) error
 	// BankNameValidator is a validator for the "bank_name" field. It is called by the builders before save.
 	BankNameValidator func(string) error
-	// QrImageURLValidator is a validator for the "qr_image_url" field. It is called by the builders before save.
-	QrImageURLValidator func(string) error
 	// DefaultIsDefault holds the default value on creation for the "is_default" field.
 	DefaultIsDefault bool
 	// DefaultStatus holds the default value on creation for the "status" field.

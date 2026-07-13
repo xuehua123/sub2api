@@ -259,11 +259,6 @@ func (_u *CommissionPayoutAccountUpdate) check() error {
 			return &ValidationError{Name: "bank_name", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.bank_name": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.QrImageURL(); ok {
-		if err := commissionpayoutaccount.QrImageURLValidator(v); err != nil {
-			return &ValidationError{Name: "qr_image_url", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.qr_image_url": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.Status(); ok {
 		if err := commissionpayoutaccount.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.status": %w`, err)}
@@ -616,11 +611,6 @@ func (_u *CommissionPayoutAccountUpdateOne) check() error {
 	if v, ok := _u.mutation.BankName(); ok {
 		if err := commissionpayoutaccount.BankNameValidator(v); err != nil {
 			return &ValidationError{Name: "bank_name", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.bank_name": %w`, err)}
-		}
-	}
-	if v, ok := _u.mutation.QrImageURL(); ok {
-		if err := commissionpayoutaccount.QrImageURLValidator(v); err != nil {
-			return &ValidationError{Name: "qr_image_url", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.qr_image_url": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.Status(); ok {

@@ -89,7 +89,13 @@
           </div>
           <div v-if="payoutSnapshot?.qr_image_url" class="mt-3 text-sm">
             <div class="text-xs text-gray-500">{{ t('referral.qrCode', '收款二维码') }}</div>
-            <div class="mt-1 break-all text-primary-600 dark:text-primary-400">{{ payoutSnapshot.qr_image_url }}</div>
+            <img
+              :src="payoutSnapshot.qr_image_url"
+              alt="QR Code"
+              class="mt-2 h-48 w-48 rounded border border-gray-200 bg-white object-contain dark:border-dark-700"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+            />
           </div>
         </div>
 

@@ -129,5 +129,6 @@ describe('admin ReferralWithdrawalsView', () => {
     expect(document.body.textContent).toContain('admin.referral.withdrawalItemsTitle')
     expect(document.body.textContent).toContain('12.00')
     expect(document.body.textContent).toContain('alipay@example.com')
+    expect(document.body.querySelector('img[src="https://example.com/qr.png"]')).not.toBeNull()
   })
 })

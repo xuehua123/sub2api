@@ -248,11 +248,6 @@ func (_c *CommissionPayoutAccountCreate) check() error {
 			return &ValidationError{Name: "bank_name", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.bank_name": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.QrImageURL(); ok {
-		if err := commissionpayoutaccount.QrImageURLValidator(v); err != nil {
-			return &ValidationError{Name: "qr_image_url", err: fmt.Errorf(`ent: validator failed for field "CommissionPayoutAccount.qr_image_url": %w`, err)}
-		}
-	}
 	if _, ok := _c.mutation.IsDefault(); !ok {
 		return &ValidationError{Name: "is_default", err: errors.New(`ent: missing required field "CommissionPayoutAccount.is_default"`)}
 	}

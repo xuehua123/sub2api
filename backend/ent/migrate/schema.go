@@ -925,7 +925,7 @@ var (
 		{Name: "account_no_masked", Type: field.TypeString, Nullable: true, Size: 128},
 		{Name: "account_no_encrypted", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "bank_name", Type: field.TypeString, Nullable: true, Size: 128},
-		{Name: "qr_image_url", Type: field.TypeString, Nullable: true, Size: 512},
+		{Name: "qr_image_url", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "is_default", Type: field.TypeBool, Default: false},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "user_id", Type: field.TypeInt64},

@@ -4,10 +4,12 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -757,6 +759,169 @@ func TestReferralWithdrawalService_CreateWithdrawal_RechecksDailyLimitInsideTran
 	require.Equal(t, 2, repo.countWithdrawalsCalls)
 }
 
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsOversizedQRImage(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		AccountNo:   "alice@example.com",
+		QRImageURL:  "data:image/png;base64," + strings.Repeat("A", 3*1024*1024),
+		IsDefault:   true,
+	})
+	require.Error(t, err)
+	require.Equal(t, "COMMISSION_PAYOUT_ACCOUNT_INVALID", infraerrors.Reason(err))
+	require.Empty(t, repo.payoutAccounts)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsNonImageDataURL(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		AccountNo:   "alice@example.com",
+		QRImageURL:  "data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+		IsDefault:   true,
+	})
+	require.Error(t, err)
+	require.Equal(t, "COMMISSION_PAYOUT_ACCOUNT_INVALID", infraerrors.Reason(err))
+	require.Empty(t, repo.payoutAccounts)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsSpoofedImageDataURL(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		AccountNo:   "alice@example.com",
+		QRImageURL:  "data:image/png;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==",
+		IsDefault:   true,
+	})
+	require.Error(t, err)
+	require.Equal(t, "COMMISSION_PAYOUT_ACCOUNT_INVALID", infraerrors.Reason(err))
+	require.Empty(t, repo.payoutAccounts)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsUnsafeQRImageURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{name: "script scheme", value: "javascript:alert(1)"},
+		{name: "file scheme", value: "file:///etc/passwd"},
+		{name: "relative URL", value: "/uploads/payout.png"},
+		{name: "missing host", value: "https:///payout.png"},
+		{name: "invalid control character", value: "https://cdn.example.com/\npayout.png"},
+		{name: "oversized remote URL", value: "https://cdn.example.com/" + strings.Repeat("a", 512)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newWithdrawalCommissionRepoStub()
+			svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+				SettingKeyReferralEnabled:                "true",
+				SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+			}, nil)
+
+			_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+				Method:      CommissionPayoutMethodAlipay,
+				AccountName: "Alice",
+				AccountNo:   "alice@example.com",
+				QRImageURL:  tt.value,
+				IsDefault:   true,
+			})
+			require.Error(t, err)
+			require.Equal(t, "COMMISSION_PAYOUT_ACCOUNT_INVALID", infraerrors.Reason(err))
+			require.Empty(t, repo.payoutAccounts)
+		})
+	}
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_AcceptsHTTPSQRImageURL(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+
+	account, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		AccountNo:   "alice@example.com",
+		QRImageURL:  "https://cdn.example.com/payout/alice.png",
+		IsDefault:   true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, account.QRImageURL)
+	require.Equal(t, "https://cdn.example.com/payout/alice.png", *account.QRImageURL)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_AcceptsPNGDataURL(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                "true",
+		SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+	}, nil)
+	const pngDataURL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+
+	account, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, &UpsertReferralPayoutAccountInput{
+		Method:      CommissionPayoutMethodAlipay,
+		AccountName: "Alice",
+		QRImageURL:  pngDataURL,
+		IsDefault:   true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, account.QRImageURL)
+	require.Equal(t, pngDataURL, *account.QRImageURL)
+}
+
+func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsOversizedFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*UpsertReferralPayoutAccountInput)
+	}{
+		{name: "account name", mutate: func(input *UpsertReferralPayoutAccountInput) { input.AccountName = strings.Repeat("a", 129) }},
+		{name: "account number", mutate: func(input *UpsertReferralPayoutAccountInput) { input.AccountNo = strings.Repeat("1", 129) }},
+		{name: "bank name", mutate: func(input *UpsertReferralPayoutAccountInput) { input.BankName = strings.Repeat("b", 129) }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newWithdrawalCommissionRepoStub()
+			svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+				SettingKeyReferralEnabled:                "true",
+				SettingKeyReferralWithdrawMethodsEnabled: `["alipay"]`,
+			}, nil)
+			input := &UpsertReferralPayoutAccountInput{
+				Method:      CommissionPayoutMethodAlipay,
+				AccountName: "Alice",
+				AccountNo:   "alice@example.com",
+				IsDefault:   true,
+			}
+			tt.mutate(input)
+
+			_, err := svc.UpsertPayoutAccount(context.Background(), 200, 0, input)
+			require.Error(t, err)
+			require.Equal(t, "COMMISSION_PAYOUT_ACCOUNT_INVALID", infraerrors.Reason(err))
+			require.Empty(t, repo.payoutAccounts)
+		})
+	}
+}
+
 func TestReferralWithdrawalService_UpsertPayoutAccount_RejectsDisabledMethod(t *testing.T) {
 	repo := newWithdrawalCommissionRepoStub()
 	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
@@ -951,6 +1116,30 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_DoesNotRequireWithd
 	require.Len(t, repo.withdrawals, 1)
 	require.Equal(t, "credit_conversion", repo.withdrawals[0].PayoutMethod)
 	require.Equal(t, 10.0, userRepo.balanceUpdates[200])
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_AllowsAmountBelowCashWithdrawalMinimum(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 8.4, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 8.4, Currency: ReferralSettlementCurrencyCNY},
+	}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralCreditConversionRate:    "10",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+	}, nil)
+	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 8.4)
+	require.NoError(t, err)
+	require.Len(t, repo.withdrawals, 1)
+	require.Equal(t, 84.0, repo.withdrawals[0].NetAmount)
+	require.Equal(t, 84.0, userRepo.balanceUpdates[200])
 }
 
 func TestReferralWithdrawalService_ConvertCommissionToCredit_AppliesConversionRate(t *testing.T) {

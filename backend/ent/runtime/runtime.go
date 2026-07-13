@@ -953,10 +953,6 @@ func init() {
 	commissionpayoutaccountDescBankName := commissionpayoutaccountFields[5].Descriptor()
 	// commissionpayoutaccount.BankNameValidator is a validator for the "bank_name" field. It is called by the builders before save.
 	commissionpayoutaccount.BankNameValidator = commissionpayoutaccountDescBankName.Validators[0].(func(string) error)
-	// commissionpayoutaccountDescQrImageURL is the schema descriptor for qr_image_url field.
-	commissionpayoutaccountDescQrImageURL := commissionpayoutaccountFields[6].Descriptor()
-	// commissionpayoutaccount.QrImageURLValidator is a validator for the "qr_image_url" field. It is called by the builders before save.
-	commissionpayoutaccount.QrImageURLValidator = commissionpayoutaccountDescQrImageURL.Validators[0].(func(string) error)
 	// commissionpayoutaccountDescIsDefault is the schema descriptor for is_default field.
 	commissionpayoutaccountDescIsDefault := commissionpayoutaccountFields[7].Descriptor()
 	// commissionpayoutaccount.DefaultIsDefault holds the default value on creation for the is_default field.
