@@ -280,7 +280,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	handlerSettingHandler := handler.ProvideSettingHandler(settingService, buildInfo, notificationEmailService)
 	totpHandler := handler.NewTotpHandler(totpService)
 	paymentConfigReader := handler.ProvidePaymentConfigReader(paymentConfigService)
-	handlerPaymentHandler := handler.NewPaymentHandler(paymentService, paymentConfigReader, channelService)
+	handlerPaymentHandler := handler.NewPaymentHandler(paymentService, paymentConfigReader)
 	paymentWebhookHandler := handler.NewPaymentWebhookHandler(paymentService, registry)
 	referralCenterRelationRepository := repository.ProvideReferralCenterRelationRepository(client)
 	referralCenterCommissionRepository := repository.ProvideReferralCenterCommissionRepository(client)

@@ -65,7 +65,7 @@ func TestGetCheckoutInfoReturnsErrorWhenListPlansForSaleFails(t *testing.T) {
 
 	h := NewPaymentHandler(nil, &checkoutInfoConfigServiceStub{
 		plansErr: errors.New("plan query failed"),
-	}, nil)
+	})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -106,7 +106,7 @@ func TestGetCheckoutInfoReturnsFullPlanGroups(t *testing.T) {
 				ForSale:         true,
 			},
 		},
-	}, nil)
+	})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
