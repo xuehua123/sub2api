@@ -644,6 +644,40 @@ func TestBufferRawChatCompletions_RejectsOversizedResponse(t *testing.T) {
 	require.Equal(t, http.StatusBadGateway, rec.Code)
 }
 
+func TestForwardAsRawGrokChatCompletionsMonitorProbe400FailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok-4.3","messages":[{"role":"user","content":"hi"}],"stream":false}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"message":"bad monitor request"}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          rawChatCompletionsTestConfig(),
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          102,
+		Name:        "raw-grok-apikey",
+		Platform:    PlatformGrok,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{"api_key": "xai-test", "base_url": "https://api.x.ai/v1"},
+	}
+
+	result, err := svc.forwardAsRawChatCompletions(WithChannelMonitorProbe(context.Background()), c, account, body, "")
+	require.Error(t, err)
+	require.Nil(t, result)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, http.StatusBadRequest, failoverErr.StatusCode)
+}
+
 func rawChatCompletionsTestConfig() *config.Config {
 	return &config.Config{
 		Security: config.SecurityConfig{
