@@ -54,6 +54,7 @@ jobs:
           host: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_HOST || secrets.NEW_PIPIXIA_HOST }}
           username: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_USER || secrets.NEW_PIPIXIA_USER }}
           password: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PASSWORD || secrets.NEW_PIPIXIA_PASSWORD }}
+          key: ${{ inputs.target == 'stable' && (secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY) || '' }}
           port: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PORT || secrets.NEW_PIPIXIA_PORT }}
           envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
           script_stop: true
