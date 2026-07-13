@@ -44,18 +44,35 @@ jobs:
             *) echo "Only immutable sha-* tags or sha256 digests are allowed" >&2; exit 1 ;;
           esac
 
-      - name: Deploy to selected production target
+      - name: Deploy to stable with restricted deployment user
+        if: inputs.target == 'stable'
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
+        with:
+          host: ${{ secrets.NEW_STABLE_HOST }}
+          username: ${{ secrets.NEW_STABLE_USER }}
+          key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
+          port: ${{ secrets.NEW_STABLE_PORT }}
+          envs: DEPLOY_IMAGE_TAG
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            set -eu
+            printf '%s\n' "$DEPLOY_IMAGE_TAG" | sudo -n /usr/local/sbin/sub2api-deploy-stable
+
+      - name: Deploy to pipixia
+        if: inputs.target == 'pipixia'
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
         with:
-          host: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_HOST || secrets.NEW_PIPIXIA_HOST }}
-          username: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_USER || secrets.NEW_PIPIXIA_USER }}
-          password: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PASSWORD || secrets.NEW_PIPIXIA_PASSWORD }}
-          key: ${{ inputs.target == 'stable' && (secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY) || '' }}
-          port: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PORT || secrets.NEW_PIPIXIA_PORT }}
+          host: ${{ secrets.NEW_PIPIXIA_HOST }}
+          username: ${{ secrets.NEW_PIPIXIA_USER }}
+          password: ${{ secrets.NEW_PIPIXIA_PASSWORD }}
+          port: ${{ secrets.NEW_PIPIXIA_PORT }}
           envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
           script_stop: true
           command_timeout: 10m
@@ -80,7 +97,15 @@ jobs:
             fi
 
             cd "$deploy_dir"
-            services="$(docker compose -f "$compose_file" config --services | grep '^sub2api' || true)"
+            services="$(docker compose -f "$compose_file" config --format json | python3 -c '
+            import json, sys
+            config = json.load(sys.stdin)
+            prefixes = ("ghcr.io/xuehua123/sub2api:", "ghcr.io/xuehua123/sub2api@")
+            for name, service in config.get("services", {}).items():
+                image = service.get("image", "")
+                if image == "ghcr.io/xuehua123/sub2api" or image.startswith(prefixes):
+                    print(name)
+            ')"
             if [ -z "$services" ]; then
               echo "No Sub2API application services found" >&2
               exit 1
