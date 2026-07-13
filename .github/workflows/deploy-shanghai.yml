@@ -1,79 +1,174 @@
-name: Deploy Shanghai Sub2API
+name: Deploy Sub2API Production
 
 on:
   workflow_dispatch:
     inputs:
+      target:
+        description: "Production target"
+        required: true
+        type: choice
+        options:
+          - stable
+          - pipixia
       image_tag:
-        description: "Image tag or full image ref to deploy"
-        required: false
-        default: latest
+        description: "Immutable image tag or full image ref"
+        required: true
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: shanghai-sub2api-${{ github.ref_name }}
+  group: production-sub2api-${{ inputs.target }}
   cancel-in-progress: false
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/xuehua123/sub2api
 
 jobs:
   deploy:
     if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
+    environment: production-${{ inputs.target }}
 
     steps:
-      - name: Deploy to Shanghai
+      - name: Validate immutable image tag
+        env:
+          DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -eu
+          case "$DEPLOY_IMAGE_TAG" in
+            sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|sha256:*) ;;
+            ghcr.io/xuehua123/sub2api:sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            ghcr.io/xuehua123/sub2api@sha256:*) ;;
+            *) echo "Only immutable sha-* tags or sha256 digests are allowed" >&2; exit 1 ;;
+          esac
+
+      - name: Deploy to selected production target
         uses: appleboy/ssh-action@v1.2.0
         env:
-          DEPLOY_IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
+          DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
-          RESIN_PROXY_URL: ${{ secrets.RESIN_PROXY_URL }}
-          DOCKER_NO_PROXY: ${{ secrets.DOCKER_NO_PROXY || '127.0.0.1,localhost,postgres,redis' }}
         with:
-          host: ${{ secrets.SH_PROD_HOST || '101.35.240.224' }}
-          username: ${{ secrets.SH_PROD_USER || 'root' }}
-          key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY || secrets.SSH_PRIVATE_KEY }}
-          password: ${{ secrets.SH_PROD_PASSWORD }}
-          port: ${{ secrets.SH_PROD_PORT || '22' }}
-          envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME,RESIN_PROXY_URL,DOCKER_NO_PROXY
+          host: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_HOST || secrets.NEW_PIPIXIA_HOST }}
+          username: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_USER || secrets.NEW_PIPIXIA_USER }}
+          password: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PASSWORD || secrets.NEW_PIPIXIA_PASSWORD }}
+          port: ${{ inputs.target == 'stable' && secrets.NEW_STABLE_PORT || secrets.NEW_PIPIXIA_PORT }}
+          envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
           script_stop: true
           command_timeout: 10m
           script: |
             set -eu
-            cd /opt/platform
 
-            if echo "$DEPLOY_IMAGE_TAG" | grep -Eq '^[^/]+/[^:]+/.+[:@]'; then
-              deploy_image="$DEPLOY_IMAGE_TAG"
-              safe_tag="$(echo "$DEPLOY_IMAGE_TAG" | tr '/:@' '---')"
+            case "$DEPLOY_IMAGE_TAG" in
+              ghcr.io/*) deploy_image="$DEPLOY_IMAGE_TAG" ;;
+              sha256:*) deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}" ;;
+              *) deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}" ;;
+            esac
+
+            if [ -f /srv/sub2api/compose.yml ]; then
+              deploy_dir=/srv/sub2api
+              compose_file=compose.yml
+            elif [ -f /opt/platform/docker-compose.yml ]; then
+              deploy_dir=/opt/platform
+              compose_file=docker-compose.yml
             else
-              deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}"
-              safe_tag="$DEPLOY_IMAGE_TAG"
-            fi
-            backup="docker-compose.yml.bak-$(date +%Y%m%d-%H%M%S)-pre-${safe_tag}"
-
-            if [ -n "${GHCR_TOKEN:-}" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:-x-access-token}" --password-stdin
+              echo "No supported Sub2API compose file found" >&2
+              exit 1
             fi
 
-            if [ -n "${RESIN_PROXY_URL:-}" ]; then
-              export HTTP_PROXY="$RESIN_PROXY_URL"
-              export HTTPS_PROXY="$RESIN_PROXY_URL"
-              export http_proxy="$RESIN_PROXY_URL"
-              export https_proxy="$RESIN_PROXY_URL"
-              export NO_PROXY="$DOCKER_NO_PROXY"
-              export no_proxy="$DOCKER_NO_PROXY"
+            cd "$deploy_dir"
+            services="$(docker compose -f "$compose_file" config --services | grep '^sub2api' || true)"
+            if [ -z "$services" ]; then
+              echo "No Sub2API application services found" >&2
+              exit 1
             fi
 
-            cp docker-compose.yml "$backup"
-            DEPLOY_IMAGE="$deploy_image" python3 -c "from pathlib import Path; import os; path = Path('docker-compose.yml'); deploy_image = os.environ['DEPLOY_IMAGE']; lines = path.read_text().splitlines(); index = next((i for i, line in enumerate(lines) if line.lstrip().startswith('image: ghcr.io/xuehua123/sub2api')), None); assert index is not None, 'compose image line not found'; line = lines[index]; stripped = line.lstrip(); indent = line[: len(line) - len(stripped)]; lines[index] = f'{indent}image: {deploy_image}'; path.write_text('\\n'.join(lines) + '\\n')"
+            timestamp="$(date +%Y%m%d-%H%M%S)"
+            safe_tag="$(echo "$DEPLOY_IMAGE_TAG" | tr '/:@' '---')"
+            backup="${compose_file}.bak-${timestamp}-pre-${safe_tag}"
+            rollback_state="rollback-state-${timestamp}-pre-${safe_tag}.txt"
+            cp "$compose_file" "$backup"
 
-            docker compose pull sub2api
-            docker compose up -d --no-deps sub2api
+            {
+              echo "timestamp=$timestamp"
+              echo "deploy_image=$deploy_image"
+              echo "compose_backup=$backup"
+              for service in $services; do
+                container_id="$(docker compose -f "$compose_file" ps -q "$service" || true)"
+                echo "service=$service"
+                echo "container_id=$container_id"
+                if [ -n "$container_id" ]; then
+                  echo "container_image=$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+                  echo "container_image_id=$(docker inspect --format '{{.Image}}' "$container_id")"
+                fi
+              done
+            } > "$rollback_state"
 
-            docker compose ps
-            docker image prune -f
+            rollback() {
+              trap - ERR
+              echo "Deployment failed; restoring $backup" >&2
+              cp "$backup" "$compose_file"
+              for service in $services; do
+                docker compose -f "$compose_file" up -d --no-deps "$service" || true
+              done
+              docker compose -f "$compose_file" ps
+            }
+            trap rollback ERR
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:-x-access-token}" --password-stdin
+
+            DEPLOY_IMAGE="$deploy_image" COMPOSE_FILE="$compose_file" python3 - <<'PY'
+            from pathlib import Path
+            import os
+            import re
+
+            path = Path(os.environ["COMPOSE_FILE"])
+            image = os.environ["DEPLOY_IMAGE"]
+            lines = path.read_text().splitlines()
+            pattern = re.compile(r"^(\s*image:\s*)ghcr\.io/xuehua123/sub2api(?::[^\s#]+|@[^\s#]+)?(\s*(?:#.*)?)$")
+            replaced = 0
+            output = []
+            for line in lines:
+                match = pattern.match(line)
+                if match:
+                    line = f"{match.group(1)}{image}{match.group(2)}"
+                    replaced += 1
+                output.append(line)
+            if replaced == 0:
+                raise SystemExit("No Sub2API image entries found in compose file")
+            path.write_text("\n".join(output) + "\n")
+            print(f"Updated {replaced} Sub2API image entries")
+            PY
+
+            docker compose -f "$compose_file" pull $services
+            for service in $services; do
+              docker compose -f "$compose_file" up -d --no-deps "$service"
+              container_id="$(docker compose -f "$compose_file" ps -q "$service")"
+              [ -n "$container_id" ] || false
+
+              attempts=0
+              while [ "$attempts" -lt 60 ]; do
+                running="$(docker inspect --format '{{.State.Running}}' "$container_id")"
+                health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
+                if [ "$running" = true ] && { [ "$health" = healthy ] || [ "$health" = none ]; }; then
+                  break
+                fi
+                if [ "$running" != true ] || [ "$health" = unhealthy ]; then
+                  docker logs --tail 100 "$container_id" >&2 || true
+                  false
+                fi
+                attempts=$((attempts + 1))
+                sleep 2
+              done
+              if [ "$attempts" -ge 60 ]; then
+                docker logs --tail 100 "$container_id" >&2 || true
+                false
+              fi
+            done
+
+            trap - ERR
+            docker compose -f "$compose_file" ps
+            echo "Rollback state: $deploy_dir/$rollback_state"
+            echo "Compose backup: $deploy_dir/$backup"
