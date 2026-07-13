@@ -12,6 +12,29 @@ func TestAnnouncementTargeting_Matches_EmptyMatchesAll(t *testing.T) {
 	require.True(t, targeting.Matches(123.45, map[int64]struct{}{1: {}}))
 }
 
+func TestAnnouncementTargeting_MatchesUser_OnlyAllowsExplicitUsers(t *testing.T) {
+	targeting := AnnouncementTargeting{UserIDs: []int64{1012, 2048}}
+
+	require.True(t, targeting.MatchesUser(1012, 0, nil))
+	require.True(t, targeting.MatchesUser(2048, 0, nil))
+	require.False(t, targeting.MatchesUser(999, 0, nil))
+	require.False(t, targeting.Matches(0, nil), "缺少用户身份时不得命中定向公告")
+}
+
+func TestAnnouncementTargeting_NormalizeAndValidate_UserIDs(t *testing.T) {
+	targeting := AnnouncementTargeting{UserIDs: []int64{2048, 1012, 2048}}
+
+	normalized, err := targeting.NormalizeAndValidate()
+	require.NoError(t, err)
+	require.Equal(t, []int64{1012, 2048}, normalized.UserIDs)
+
+	_, err = (AnnouncementTargeting{UserIDs: []int64{0}}).NormalizeAndValidate()
+	require.ErrorIs(t, err, ErrAnnouncementInvalidTarget)
+
+	_, err = (AnnouncementTargeting{UserIDs: []int64{}}).NormalizeAndValidate()
+	require.ErrorIs(t, err, ErrAnnouncementInvalidTarget)
+}
+
 func TestAnnouncementTargeting_NormalizeAndValidate_RejectsEmptyGroup(t *testing.T) {
 	targeting := AnnouncementTargeting{
 		AnyOf: []AnnouncementConditionGroup{

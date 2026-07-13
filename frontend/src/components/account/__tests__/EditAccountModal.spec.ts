@@ -762,6 +762,28 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.upstream_gzip_enabled).toBe(true)
   })
 
+  it('persists the Anthropic cached-token input compatibility mode', async () => {
+    const account = buildAccount()
+    account.platform = 'anthropic'
+    account.name = 'Inclusive cached tokens upstream'
+    account.credentials = {
+      api_key: 'test-token',
+      base_url: 'https://example.com'
+    }
+    account.extra = {}
+    updateAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountMock.mockResolvedValue(account)
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="anthropic-cached-tokens-in-input"]').setValue(true)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock).toHaveBeenCalledTimes(1)
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.anthropic_cached_tokens_in_input).toBe(true)
+  })
+
   it('allows account-level OpenAI HTTP protocol override', async () => {
     const account = buildAccount()
     account.type = 'oauth'

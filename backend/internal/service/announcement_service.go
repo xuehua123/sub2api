@@ -243,7 +243,7 @@ func (s *AnnouncementService) ListForUser(ctx context.Context, userID int64, unr
 		if !a.IsActiveAt(now) {
 			continue
 		}
-		if !a.Targeting.Matches(user.Balance, activeGroupIDs) {
+		if !a.Targeting.MatchesUser(userID, user.Balance, activeGroupIDs) {
 			continue
 		}
 		visible = append(visible, a)
@@ -315,7 +315,7 @@ func (s *AnnouncementService) MarkRead(ctx context.Context, userID, announcement
 		activeGroupIDs[activeSubs[i].GroupID] = struct{}{}
 	}
 
-	if !a.Targeting.Matches(user.Balance, activeGroupIDs) {
+	if !a.Targeting.MatchesUser(userID, user.Balance, activeGroupIDs) {
 		return ErrAnnouncementNotFound
 	}
 
@@ -379,7 +379,7 @@ func (s *AnnouncementService) ListUserReadStatus(
 			Email:    u.Email,
 			Username: u.Username,
 			Balance:  u.Balance,
-			Eligible: domain.AnnouncementTargeting(ann.Targeting).Matches(u.Balance, activeGroupIDs),
+			Eligible: domain.AnnouncementTargeting(ann.Targeting).MatchesUser(u.ID, u.Balance, activeGroupIDs),
 			ReadAt:   ptr,
 		})
 	}

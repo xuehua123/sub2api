@@ -331,6 +331,7 @@ export interface AnnouncementConditionGroup {
 }
 
 export interface AnnouncementTargeting {
+  user_ids?: number[]
   any_of?: AnnouncementConditionGroup[]
 }
 
@@ -982,6 +983,7 @@ export interface Account {
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
     upstream_gzip_enabled?: boolean
+    anthropic_cached_tokens_in_input?: boolean
     model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
   } & Record<string, unknown>)

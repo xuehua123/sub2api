@@ -325,6 +325,8 @@ const statusLabel = (status: string) => {
 }
 
 const targetingSummary = (targeting: AnnouncementTargeting) => {
+  const userIDs = targeting?.user_ids ?? []
+  if (userIDs.length > 0) return t('admin.announcements.targetingSummaryUsers', { users: userIDs.length })
   const anyOf = targeting?.any_of ?? []
   if (!anyOf || anyOf.length === 0) return t('admin.announcements.targetingSummaryAll')
   return t('admin.announcements.targetingSummaryCustom', { groups: anyOf.length })

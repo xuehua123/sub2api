@@ -530,7 +530,7 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					ms := int(time.Since(startTime).Milliseconds())
 					firstTokenMs = &ms
 				}
-				s.parseSSEUsagePassthrough(data, usage)
+				s.parseSSEUsagePassthroughWithOptions(data, usage, account.AnthropicCachedTokensInInput())
 			} else {
 				trimmed := strings.TrimSpace(line)
 				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
@@ -610,16 +610,22 @@ func extractAnthropicSSEDataLine(line string) (string, bool) {
 }
 
 func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsage) {
+	s.parseSSEUsagePassthroughWithOptions(data, usage, false)
+}
+
+func (s *GatewayService) parseSSEUsagePassthroughWithOptions(data string, usage *ClaudeUsage, cachedTokensInInput bool) {
 	if usage == nil || data == "" || data == "[DONE]" {
 		return
 	}
 
 	parsed := gjson.Parse(data)
+	shouldNormalizeCachedInput := false
 	switch parsed.Get("type").String() {
 	case "message_start":
 		msgUsage := parsed.Get("message.usage")
 		if msgUsage.Exists() {
 			usage.InputTokens = int(msgUsage.Get("input_tokens").Int())
+			shouldNormalizeCachedInput = msgUsage.Get("input_tokens").Exists()
 			usage.CacheCreationInputTokens = int(msgUsage.Get("cache_creation_input_tokens").Int())
 			usage.CacheReadInputTokens = int(msgUsage.Get("cache_read_input_tokens").Int())
 
@@ -636,6 +642,7 @@ func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsag
 		if deltaUsage.Exists() {
 			if v := deltaUsage.Get("input_tokens").Int(); v > 0 {
 				usage.InputTokens = int(v)
+				shouldNormalizeCachedInput = true
 			}
 			if v := deltaUsage.Get("output_tokens").Int(); v > 0 {
 				usage.OutputTokens = int(v)
@@ -666,6 +673,9 @@ func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsag
 			usage.CacheReadInputTokens = int(cached)
 		}
 	}
+	if cachedTokensInInput && shouldNormalizeCachedInput && usage.CacheReadInputTokens > 0 {
+		usage.InputTokens = subtractCachedTokens(usage.InputTokens, usage.CacheReadInputTokens)
+	}
 	if usage.CacheCreationInputTokens == 0 {
 		cc5m := parsed.Get("message.usage.cache_creation.ephemeral_5m_input_tokens").Int()
 		cc1h := parsed.Get("message.usage.cache_creation.ephemeral_1h_input_tokens").Int()
@@ -681,6 +691,10 @@ func (s *GatewayService) parseSSEUsagePassthrough(data string, usage *ClaudeUsag
 }
 
 func parseClaudeUsageFromResponseBody(body []byte) *ClaudeUsage {
+	return parseClaudeUsageFromResponseBodyWithOptions(body, false)
+}
+
+func parseClaudeUsageFromResponseBodyWithOptions(body []byte, cachedTokensInInput bool) *ClaudeUsage {
 	usage := &ClaudeUsage{}
 	if len(body) == 0 {
 		return usage
@@ -710,6 +724,9 @@ func parseClaudeUsageFromResponseBody(body []byte) *ClaudeUsage {
 		if cached := usageNode.Get("cached_tokens").Int(); cached > 0 {
 			usage.CacheReadInputTokens = int(cached)
 		}
+	}
+	if cachedTokensInInput && usage.CacheReadInputTokens > 0 {
+		usage.InputTokens = subtractCachedTokens(usage.InputTokens, usage.CacheReadInputTokens)
 	}
 	return usage
 }
@@ -781,7 +798,7 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		}
 	}
 
-	usage := parseClaudeUsageFromResponseBody(body)
+	usage := parseClaudeUsageFromResponseBodyWithOptions(body, account.AnthropicCachedTokensInInput())
 
 	writeAnthropicPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))

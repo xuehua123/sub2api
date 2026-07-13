@@ -13,7 +13,7 @@ import (
 // ---------- reconcileCachedTokens 单元测试 ----------
 
 func TestReconcileCachedTokens_NilUsage(t *testing.T) {
-	assert.False(t, reconcileCachedTokens(nil))
+	assert.False(t, reconcileCachedTokens(nil, false))
 }
 
 func TestReconcileCachedTokens_AlreadyHasCacheRead(t *testing.T) {
@@ -22,8 +22,19 @@ func TestReconcileCachedTokens_AlreadyHasCacheRead(t *testing.T) {
 		"cache_read_input_tokens": float64(100),
 		"cached_tokens":           float64(50),
 	}
-	assert.False(t, reconcileCachedTokens(usage))
+	assert.False(t, reconcileCachedTokens(usage, false))
 	assert.Equal(t, float64(100), usage["cache_read_input_tokens"])
+}
+
+func TestReconcileCachedTokens_StandardCacheReadSubtractsOnlyWhenConfigured(t *testing.T) {
+	usage := map[string]any{
+		"input_tokens":            float64(100),
+		"cache_read_input_tokens": float64(30),
+	}
+
+	assert.True(t, reconcileCachedTokens(usage, true))
+	assert.Equal(t, float64(70), usage["input_tokens"])
+	assert.Equal(t, float64(30), usage["cache_read_input_tokens"])
 }
 
 func TestReconcileCachedTokens_KimiStyle(t *testing.T) {
@@ -34,8 +45,62 @@ func TestReconcileCachedTokens_KimiStyle(t *testing.T) {
 		"cache_read_input_tokens":     float64(0),
 		"cached_tokens":               float64(23),
 	}
-	assert.True(t, reconcileCachedTokens(usage))
+	assert.True(t, reconcileCachedTokens(usage, false))
 	assert.Equal(t, float64(23), usage["cache_read_input_tokens"])
+	assert.Equal(t, float64(23), usage["input_tokens"])
+}
+
+func TestReconcileCachedTokens_SubtractsCachedTokensFromInclusiveInput(t *testing.T) {
+	usage := map[string]any{
+		"input_tokens":  float64(100),
+		"cached_tokens": float64(30),
+	}
+
+	assert.True(t, reconcileCachedTokens(usage, true))
+	assert.Equal(t, float64(70), usage["input_tokens"])
+	assert.Equal(t, float64(30), usage["cache_read_input_tokens"])
+}
+
+func TestAccountAnthropicCachedTokensInInput_IsExplicitOptIn(t *testing.T) {
+	assert.False(t, (*Account)(nil).AnthropicCachedTokensInInput())
+	assert.False(t, (&Account{}).AnthropicCachedTokensInInput())
+	assert.False(t, (&Account{Extra: map[string]any{
+		AccountExtraAnthropicCachedTokensInInput: false,
+	}}).AnthropicCachedTokensInInput())
+	assert.True(t, (&Account{Extra: map[string]any{
+		AccountExtraAnthropicCachedTokensInInput: true,
+	}}).AnthropicCachedTokensInInput())
+}
+
+func TestParseClaudeUsageFromResponseBody_CachedTokensInputMode(t *testing.T) {
+	body := []byte(`{"usage":{"input_tokens":100,"output_tokens":5,"cached_tokens":30}}`)
+
+	defaultUsage := parseClaudeUsageFromResponseBody(body)
+	assert.Equal(t, 100, defaultUsage.InputTokens)
+	assert.Equal(t, 30, defaultUsage.CacheReadInputTokens)
+
+	inclusiveUsage := parseClaudeUsageFromResponseBodyWithOptions(body, true)
+	assert.Equal(t, 70, inclusiveUsage.InputTokens)
+	assert.Equal(t, 30, inclusiveUsage.CacheReadInputTokens)
+}
+
+func TestParseClaudeUsageFromResponseBody_StandardCacheReadInputMode(t *testing.T) {
+	body := []byte(`{"usage":{"input_tokens":100,"output_tokens":5,"cache_read_input_tokens":30}}`)
+
+	usage := parseClaudeUsageFromResponseBodyWithOptions(body, true)
+
+	assert.Equal(t, 70, usage.InputTokens)
+	assert.Equal(t, 30, usage.CacheReadInputTokens)
+}
+
+func TestParseSSEUsagePassthrough_CachedTokensInputMode(t *testing.T) {
+	data := `{"type":"message_start","message":{"usage":{"input_tokens":100,"cached_tokens":30}}}`
+	usage := &ClaudeUsage{}
+
+	(&GatewayService{}).parseSSEUsagePassthroughWithOptions(data, usage, true)
+
+	assert.Equal(t, 70, usage.InputTokens)
+	assert.Equal(t, 30, usage.CacheReadInputTokens)
 }
 
 func TestReconcileCachedTokens_NoCachedTokens(t *testing.T) {
@@ -45,7 +110,7 @@ func TestReconcileCachedTokens_NoCachedTokens(t *testing.T) {
 		"cache_read_input_tokens":     float64(0),
 		"cache_creation_input_tokens": float64(0),
 	}
-	assert.False(t, reconcileCachedTokens(usage))
+	assert.False(t, reconcileCachedTokens(usage, false))
 	assert.Equal(t, float64(0), usage["cache_read_input_tokens"])
 }
 
@@ -55,7 +120,7 @@ func TestReconcileCachedTokens_CachedTokensZero(t *testing.T) {
 		"cache_read_input_tokens": float64(0),
 		"cached_tokens":           float64(0),
 	}
-	assert.False(t, reconcileCachedTokens(usage))
+	assert.False(t, reconcileCachedTokens(usage, false))
 	assert.Equal(t, float64(0), usage["cache_read_input_tokens"])
 }
 
@@ -64,7 +129,7 @@ func TestReconcileCachedTokens_MissingCacheReadField(t *testing.T) {
 	usage := map[string]any{
 		"cached_tokens": float64(42),
 	}
-	assert.True(t, reconcileCachedTokens(usage))
+	assert.True(t, reconcileCachedTokens(usage, false))
 	assert.Equal(t, float64(42), usage["cache_read_input_tokens"])
 }
 
@@ -97,7 +162,7 @@ func TestStreamingReconcile_MessageStart(t *testing.T) {
 	// 模拟 processSSEEvent 中的 reconcile 逻辑
 	if msg, ok := event["message"].(map[string]any); ok {
 		if u, ok := msg["usage"].(map[string]any); ok {
-			reconcileCachedTokens(u)
+			reconcileCachedTokens(u, true)
 		}
 	}
 
@@ -107,6 +172,7 @@ func TestStreamingReconcile_MessageStart(t *testing.T) {
 	usage, ok := msg["usage"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, float64(23), usage["cache_read_input_tokens"])
+	assert.Equal(t, float64(0), usage["input_tokens"])
 
 	// 验证重新序列化后 JSON 也包含正确值
 	data, err := json.Marshal(event)
@@ -132,7 +198,7 @@ func TestStreamingReconcile_MessageStart_NativeClaude(t *testing.T) {
 
 	if msg, ok := event["message"].(map[string]any); ok {
 		if u, ok := msg["usage"].(map[string]any); ok {
-			reconcileCachedTokens(u)
+			reconcileCachedTokens(u, false)
 		}
 	}
 
@@ -165,7 +231,7 @@ func TestStreamingReconcile_MessageDelta(t *testing.T) {
 	// 模拟 processSSEEvent 中的 reconcile 逻辑
 	usage, ok := event["usage"].(map[string]any)
 	require.True(t, ok)
-	reconcileCachedTokens(usage)
+	reconcileCachedTokens(usage, false)
 	assert.Equal(t, float64(15), usage["cache_read_input_tokens"])
 }
 
@@ -183,7 +249,7 @@ func TestStreamingReconcile_MessageDelta_NativeClaude(t *testing.T) {
 
 	usage, ok := event["usage"].(map[string]any)
 	require.True(t, ok)
-	reconcileCachedTokens(usage)
+	reconcileCachedTokens(usage, false)
 	_, hasCacheRead := usage["cache_read_input_tokens"]
 	assert.False(t, hasCacheRead, "不应为原生 Claude 响应注入 cache_read_input_tokens")
 }
@@ -216,23 +282,16 @@ func TestNonStreamingReconcile_KimiResponse(t *testing.T) {
 	require.NoError(t, json.Unmarshal(body, &response))
 
 	// reconcile
-	if response.Usage.CacheReadInputTokens == 0 {
-		cachedTokens := gjson.GetBytes(body, "usage.cached_tokens").Int()
-		if cachedTokens > 0 {
-			response.Usage.CacheReadInputTokens = int(cachedTokens)
-			if newBody, err := sjson.SetBytes(body, "usage.cache_read_input_tokens", cachedTokens); err == nil {
-				body = newBody
-			}
-		}
-	}
+	body = reconcileNonStreamingCachedTokens(body, &response.Usage, true)
 
 	// 验证内部 usage（计费用）
 	assert.Equal(t, 23, response.Usage.CacheReadInputTokens)
-	assert.Equal(t, 23, response.Usage.InputTokens)
+	assert.Equal(t, 0, response.Usage.InputTokens)
 	assert.Equal(t, 7, response.Usage.OutputTokens)
 
 	// 验证返回给客户端的 JSON body
 	assert.Equal(t, int64(23), gjson.GetBytes(body, "usage.cache_read_input_tokens").Int())
+	assert.Equal(t, int64(0), gjson.GetBytes(body, "usage.input_tokens").Int())
 }
 
 func TestNonStreamingReconcile_NativeClaude(t *testing.T) {

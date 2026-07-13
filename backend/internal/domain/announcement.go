@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -38,6 +39,9 @@ var (
 )
 
 type AnnouncementTargeting struct {
+	// UserIDs 是硬性白名单；非空时，只有列表内用户才可能命中。
+	UserIDs []int64 `json:"user_ids,omitempty"`
+
 	// AnyOf 表示 OR：任意一个条件组满足即可展示。
 	AnyOf []AnnouncementConditionGroup `json:"any_of,omitempty"`
 }
@@ -64,6 +68,23 @@ type AnnouncementCondition struct {
 }
 
 func (t AnnouncementTargeting) Matches(balance float64, activeSubscriptionGroupIDs map[int64]struct{}) bool {
+	return t.MatchesUser(0, balance, activeSubscriptionGroupIDs)
+}
+
+func (t AnnouncementTargeting) MatchesUser(userID int64, balance float64, activeSubscriptionGroupIDs map[int64]struct{}) bool {
+	if len(t.UserIDs) > 0 {
+		matched := false
+		for _, targetUserID := range t.UserIDs {
+			if targetUserID == userID {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
 	// 空规则：展示给所有用户
 	if len(t.AnyOf) == 0 {
 		return true
@@ -130,7 +151,28 @@ func (c AnnouncementCondition) Matches(balance float64, activeSubscriptionGroupI
 }
 
 func (t AnnouncementTargeting) NormalizeAndValidate() (AnnouncementTargeting, error) {
-	normalized := AnnouncementTargeting{AnyOf: make([]AnnouncementConditionGroup, 0, len(t.AnyOf))}
+	if t.UserIDs != nil && len(t.UserIDs) == 0 {
+		return AnnouncementTargeting{}, ErrAnnouncementInvalidTarget
+	}
+	normalized := AnnouncementTargeting{
+		UserIDs: make([]int64, 0, len(t.UserIDs)),
+		AnyOf:   make([]AnnouncementConditionGroup, 0, len(t.AnyOf)),
+	}
+	if len(t.UserIDs) > 1000 {
+		return AnnouncementTargeting{}, ErrAnnouncementInvalidTarget
+	}
+	seenUserIDs := make(map[int64]struct{}, len(t.UserIDs))
+	for _, userID := range t.UserIDs {
+		if userID <= 0 {
+			return AnnouncementTargeting{}, ErrAnnouncementInvalidTarget
+		}
+		if _, exists := seenUserIDs[userID]; exists {
+			continue
+		}
+		seenUserIDs[userID] = struct{}{}
+		normalized.UserIDs = append(normalized.UserIDs, userID)
+	}
+	sort.Slice(normalized.UserIDs, func(i, j int) bool { return normalized.UserIDs[i] < normalized.UserIDs[j] })
 
 	// 允许空 targeting（展示给所有用户）
 	if len(t.AnyOf) == 0 {

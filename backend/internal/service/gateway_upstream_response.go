@@ -885,13 +885,13 @@ func (s *GatewayService) handleStreamingResponse(ctx context.Context, resp *http
 		if eventType == "message_start" {
 			if msg, ok := event["message"].(map[string]any); ok {
 				if u, ok := msg["usage"].(map[string]any); ok {
-					eventChanged = reconcileCachedTokens(u) || eventChanged
+					eventChanged = reconcileCachedTokens(u, account.AnthropicCachedTokensInInput()) || eventChanged
 				}
 			}
 		}
 		if eventType == "message_delta" {
 			if u, ok := event["usage"].(map[string]any); ok {
-				eventChanged = reconcileCachedTokens(u) || eventChanged
+				eventChanged = reconcileCachedTokens(u, account.AnthropicCachedTokensInInput()) || eventChanged
 			}
 		}
 
@@ -1357,15 +1357,7 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	}
 
 	// 兼容 Kimi cached_tokens → cache_read_input_tokens
-	if response.Usage.CacheReadInputTokens == 0 {
-		cachedTokens := gjson.GetBytes(body, "usage.cached_tokens").Int()
-		if cachedTokens > 0 {
-			response.Usage.CacheReadInputTokens = int(cachedTokens)
-			if newBody, err := sjson.SetBytes(body, "usage.cache_read_input_tokens", cachedTokens); err == nil {
-				body = newBody
-			}
-		}
-	}
+	body = reconcileNonStreamingCachedTokens(body, &response.Usage, account.AnthropicCachedTokensInInput())
 
 	// Cache TTL Override: 重写 non-streaming 响应中的 cache_creation 分类。
 	// 账号级设置优先；全局 1h 请求注入开启时，默认把 usage 计费归回 5m。
@@ -1418,18 +1410,61 @@ func (s *GatewayService) replaceModelInResponseBody(body []byte, fromModel, toMo
 
 // reconcileCachedTokens 兼容 Kimi 等上游：
 // 将 OpenAI 风格的 cached_tokens 映射到 Claude 标准的 cache_read_input_tokens
-func reconcileCachedTokens(usage map[string]any) bool {
+func reconcileCachedTokens(usage map[string]any, cachedTokensInInput bool) bool {
 	if usage == nil {
 		return false
 	}
 	cacheRead, _ := usage["cache_read_input_tokens"].(float64)
 	if cacheRead > 0 {
-		return false // 已有标准字段，无需处理
+		if input, ok := usage["input_tokens"].(float64); ok && cachedTokensInInput {
+			usage["input_tokens"] = float64(subtractCachedTokens(int(input), int(cacheRead)))
+			return true
+		}
+		return false
 	}
 	cached, _ := usage["cached_tokens"].(float64)
 	if cached <= 0 {
 		return false
 	}
 	usage["cache_read_input_tokens"] = cached
+	if input, ok := usage["input_tokens"].(float64); ok && cachedTokensInInput {
+		usage["input_tokens"] = float64(subtractCachedTokens(int(input), int(cached)))
+	}
 	return true
+}
+
+func reconcileNonStreamingCachedTokens(body []byte, usage *ClaudeUsage, cachedTokensInInput bool) []byte {
+	if usage == nil {
+		return body
+	}
+	cacheReadTokens := usage.CacheReadInputTokens
+	if cacheReadTokens == 0 {
+		cachedTokens := gjson.GetBytes(body, "usage.cached_tokens").Int()
+		if cachedTokens <= 0 {
+			return body
+		}
+		cacheReadTokens = int(cachedTokens)
+		usage.CacheReadInputTokens = cacheReadTokens
+		if newBody, err := sjson.SetBytes(body, "usage.cache_read_input_tokens", cachedTokens); err == nil {
+			body = newBody
+		}
+	}
+
+	if cachedTokensInInput {
+		usage.InputTokens = subtractCachedTokens(usage.InputTokens, cacheReadTokens)
+		if newBody, err := sjson.SetBytes(body, "usage.input_tokens", usage.InputTokens); err == nil {
+			body = newBody
+		}
+	}
+	return body
+}
+
+func subtractCachedTokens(inputTokens, cachedTokens int) int {
+	if inputTokens <= 0 || cachedTokens <= 0 {
+		return inputTokens
+	}
+	if cachedTokens >= inputTokens {
+		return 0
+	}
+	return inputTokens - cachedTokens
 }

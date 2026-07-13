@@ -26,6 +26,17 @@
           <input
             type="radio"
             name="announcement-targeting-mode"
+            value="users"
+            :checked="mode === 'users'"
+            @change="setMode('users')"
+            class="h-4 w-4"
+          />
+          {{ t('admin.announcements.form.targetingUsers') }}
+        </label>
+        <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+          <input
+            type="radio"
+            name="announcement-targeting-mode"
             value="custom"
             :checked="mode === 'custom'"
             @change="setMode('custom')"
@@ -34,6 +45,13 @@
           {{ t('admin.announcements.form.targetingCustom') }}
         </label>
       </div>
+    </div>
+
+    <div v-if="mode === 'users'" class="mt-4">
+      <AnnouncementUserTargetSelector
+        :model-value="props.modelValue?.user_ids ?? []"
+        @update:model-value="setTargetUsers"
+      />
     </div>
 
     <div v-if="mode === 'custom'" class="mt-4 space-y-4">
@@ -165,7 +183,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type {
   AdminGroup,
@@ -179,6 +197,7 @@ import type {
 import Select from '@/components/common/Select.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import Icon from '@/components/icons/Icon.vue'
+import AnnouncementUserTargetSelector from './AnnouncementUserTargetSelector.vue'
 
 const { t } = useI18n()
 
@@ -193,8 +212,9 @@ const emit = defineEmits<{
 
 const anyOf = computed(() => props.modelValue?.any_of ?? [])
 
-type Mode = 'all' | 'custom'
-const mode = computed<Mode>(() => (anyOf.value.length === 0 ? 'all' : 'custom'))
+type Mode = 'all' | 'users' | 'custom'
+const mode = ref<Mode>(props.modelValue?.user_ids?.length ? 'users' : (anyOf.value.length ? 'custom' : 'all'))
+let preserveEmptyUserMode = false
 
 const conditionTypeOptions = computed(() => [
   { value: 'subscription', label: t('admin.announcements.form.conditionSubscription') },
@@ -210,14 +230,44 @@ const balanceOperatorOptions = computed(() => [
 ])
 
 function setMode(next: Mode) {
+  mode.value = next
+  preserveEmptyUserMode = next === 'users'
   if (next === 'all') {
     emit('update:modelValue', { any_of: [] })
+    return
+  }
+  if (next === 'users') {
+    emit('update:modelValue', { user_ids: props.modelValue?.user_ids ?? [], any_of: [] })
     return
   }
   if (anyOf.value.length === 0) {
     emit('update:modelValue', { any_of: [{ all_of: [defaultSubscriptionCondition()] }] })
   }
 }
+
+function setTargetUsers(userIDs: number[]) {
+  preserveEmptyUserMode = userIDs.length === 0
+  emit('update:modelValue', { user_ids: userIDs, any_of: [] })
+}
+
+watch(
+  () => props.modelValue,
+  (targeting) => {
+    if (targeting?.user_ids?.length) {
+      mode.value = 'users'
+      preserveEmptyUserMode = false
+    } else if (targeting?.any_of?.length) {
+      mode.value = 'custom'
+      preserveEmptyUserMode = false
+    } else if (preserveEmptyUserMode) {
+      mode.value = 'users'
+      preserveEmptyUserMode = false
+    } else {
+      mode.value = 'all'
+    }
+  },
+  { deep: true }
+)
 
 function defaultSubscriptionCondition(): AnnouncementCondition {
   return {
@@ -236,6 +286,7 @@ function defaultBalanceCondition(): AnnouncementCondition {
 }
 
 type TargetingDraft = {
+  user_ids?: number[]
   any_of: AnnouncementConditionGroup[]
 }
 

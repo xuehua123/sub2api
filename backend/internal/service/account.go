@@ -83,6 +83,7 @@ type Account struct {
 
 const AccountExtraUpstreamGzipEnabled = "upstream_gzip_enabled"
 const AccountExtraOpenAIHTTPProtocol = "openai_http_protocol"
+const AccountExtraAnthropicCachedTokensInInput = "anthropic_cached_tokens_in_input"
 
 const (
 	OpenAIHTTPProtocolOverrideH1 = "h1"
@@ -921,6 +922,14 @@ func (a *Account) GetExtraString(key string) string {
 		}
 	}
 	return ""
+}
+
+func (a *Account) AnthropicCachedTokensInInput() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	enabled, _ := a.Extra[AccountExtraAnthropicCachedTokensInInput].(bool)
+	return enabled
 }
 
 func (a *Account) GetClaudeUserID() string {
