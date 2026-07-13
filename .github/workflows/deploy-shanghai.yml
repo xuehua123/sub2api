@@ -49,17 +49,23 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
         with:
           host: ${{ secrets.NEW_STABLE_HOST }}
           username: ${{ secrets.NEW_STABLE_USER }}
           key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
           port: ${{ secrets.NEW_STABLE_PORT }}
-          envs: DEPLOY_IMAGE_TAG
+          envs: DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
           script_stop: true
           command_timeout: 10m
           script: |
             set -eu
-            printf '%s\n' "$DEPLOY_IMAGE_TAG" | sudo -n /usr/local/sbin/sub2api-deploy-stable
+            printf '%s\n%s\n%s\n' \
+              "$DEPLOY_IMAGE_TAG" \
+              "$GHCR_USERNAME" \
+              "$GHCR_TOKEN" |
+              sudo -n /usr/local/sbin/sub2api-deploy-stable
 
       - name: Deploy to pipixia
         if: inputs.target == 'pipixia'
