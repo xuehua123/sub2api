@@ -33,6 +33,29 @@ case "$deploy_image_tag" in
     ;;
 esac
 
+if ! IFS= read -r ghcr_username || [[ -z "$ghcr_username" ]]; then
+  echo "A GHCR username must be provided on stdin" >&2
+  exit 2
+fi
+
+if ! IFS= read -r ghcr_token || [[ -z "$ghcr_token" ]]; then
+  echo "A GHCR token must be provided on stdin" >&2
+  exit 2
+fi
+
+docker_config="$(mktemp -d)"
+cleanup() {
+  unset ghcr_token
+  rm -rf -- "$docker_config"
+}
+trap cleanup EXIT
+
+printf '%s' "$ghcr_token" |
+  docker --config "$docker_config" login ghcr.io \
+    --username "$ghcr_username" \
+    --password-stdin
+unset ghcr_token
+
 if [[ ! -f "${DEPLOY_DIR}/${COMPOSE_FILE}" ]]; then
   echo "Stable compose file not found: ${DEPLOY_DIR}/${COMPOSE_FILE}" >&2
   exit 1
@@ -120,7 +143,7 @@ path.write_text("\n".join(output) + "\n")
 print(f"Updated {replaced} Sub2API image entries")
 PY
 
-docker compose -f "$COMPOSE_FILE" pull "${services[@]}"
+DOCKER_CONFIG="$docker_config" docker compose -f "$COMPOSE_FILE" pull "${services[@]}"
 
 for service in "${services[@]}"; do
   docker compose -f "$COMPOSE_FILE" up -d --no-deps "$service"
