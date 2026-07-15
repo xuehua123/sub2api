@@ -766,6 +766,7 @@ export default {
       public: 'Public',
       columns: {
         name: 'Name',
+        id: 'ID',
         platform: 'Platform',
         rateMultiplier: 'Rate Multiplier',
         rpmOverride: 'RPM Override',
