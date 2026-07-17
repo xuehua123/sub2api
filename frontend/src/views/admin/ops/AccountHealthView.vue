@@ -1845,15 +1845,15 @@ function accountBalanceMethodLabel(method?: string): string {
 function accountBalanceText(item: OpsAccountHealthItem): string {
   const state = accountBalanceState(item)
   if (!state) return '-'
-  if (state.unlimited) return '无限额度'
-  if (state.balance_usd == null) return '未知'
-  return `$${Number(state.balance_usd).toFixed(2)}`
+  if (state.balance_usd != null) return `$${Number(state.balance_usd).toFixed(2)}`
+  if (state.unlimited) return '额度未设上限'
+  return '未知'
 }
 
 function accountBalanceTextClass(item: OpsAccountHealthItem): string {
   const state = accountBalanceState(item)
-  if (!state || state.balance_usd == null) return 'text-gray-500 dark:text-gray-400'
-  if (state.unlimited) return 'text-sky-600 dark:text-sky-300'
+  if (!state) return 'text-gray-500 dark:text-gray-400'
+  if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
   const threshold = state.threshold_usd ?? 0
   if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
   return 'text-emerald-600 dark:text-emerald-300'
@@ -1882,6 +1882,9 @@ function accountBalanceHint(item: OpsAccountHealthItem): string {
   if (state.error) return state.error
 
   const parts: string[] = [accountBalanceStatusText(item)]
+  if (state.unlimited) {
+    parts.push('额度未设上限')
+  }
   if (state.detected_method) {
     parts.push(accountBalanceMethodLabel(state.detected_method))
   }
@@ -1900,10 +1903,11 @@ function accountBalanceBadgeText(item: OpsAccountHealthItem): string {
 
 function accountBalanceBadgeKind(item: OpsAccountHealthItem): string {
   const state = accountBalanceState(item)
-  if (!state || state.balance_usd == null) return 'muted'
+  if (!state) return 'muted'
   if (state.status === 'failed' || state.status === 'unsupported') return 'danger'
+  if (state.balance_usd == null) return 'muted'
   const threshold = state.threshold_usd ?? 0
-  if (!state.unlimited && threshold > 0 && state.balance_usd <= threshold) return 'warning'
+  if (threshold > 0 && state.balance_usd <= threshold) return 'warning'
   return 'success'
 }
 

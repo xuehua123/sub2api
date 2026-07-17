@@ -1252,6 +1252,13 @@ export interface OpenAIResponsesState {
   openai_responses_supported?: boolean
 }
 
+export interface UpstreamManagementAuthRequest {
+  clear?: boolean
+  username?: string
+  password?: string
+  access_token?: string
+}
+
 export interface CreateAccountRequest {
   name: string
   notes?: string | null
@@ -1259,6 +1266,7 @@ export interface CreateAccountRequest {
   type: AccountType
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
+  upstream_management_auth?: UpstreamManagementAuthRequest
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1276,6 +1284,7 @@ export interface UpdateAccountRequest {
   type?: AccountType
   credentials?: Record<string, unknown>
   extra?: Record<string, unknown>
+  upstream_management_auth?: UpstreamManagementAuthRequest
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null

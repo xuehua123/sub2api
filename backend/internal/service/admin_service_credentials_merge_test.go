@@ -115,3 +115,52 @@ func TestUpdateAccount_EmptyCredentialsSkipsUpdate(t *testing.T) {
 	require.Equal(t, "rt-existing", repo.account.Credentials["refresh_token"], "空 credentials 不应触碰已有 token")
 	require.Equal(t, "renamed", repo.account.Name)
 }
+
+func TestUpdateAccount_EncryptsAndPreservesUpstreamManagementAuth(t *testing.T) {
+	accountID := int64(205)
+	repo := &updateAccountCredsRepoStub{
+		account: &Account{
+			ID:          accountID,
+			Platform:    PlatformOpenAI,
+			Type:        AccountTypeAPIKey,
+			Status:      StatusActive,
+			Schedulable: true,
+			Credentials: map[string]any{"base_url": "https://example.com/v1", "api_key": "channel-key"},
+			Extra: map[string]any{
+				AccountExtraUpstreamRateMultiplierSyncEnabled:      true,
+				AccountExtraUpstreamRateMultiplierSyncGroup:        "plus",
+				AccountExtraUpstreamRateMultiplierSyncProvider:     string(UpstreamManagementProviderNewAPI),
+				AccountExtraUpstreamRateMultiplierSyncAuthMode:     string(UpstreamManagementAuthModeAccessToken),
+				AccountExtraUpstreamRateMultiplierSyncRemoteUserID: int64(42),
+			},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo, encryptor: upstreamManagementAuthTestEncryptor{}}
+
+	updated, err := svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		UpstreamManagementAuth: &UpstreamManagementAuthInput{AccessToken: "management-token"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	ciphertext := updated.GetCredential(upstreamManagementAuthCredentialKey)
+	require.NotEmpty(t, ciphertext)
+	require.NotContains(t, ciphertext, "management-token")
+	decrypted, err := DecryptUpstreamManagementAuth(upstreamManagementAuthTestEncryptor{}, ciphertext)
+	require.NoError(t, err)
+	require.Equal(t, "management-token", decrypted.AccessToken)
+
+	manualRate := 2.0
+	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{RateMultiplier: &manualRate})
+	require.EqualError(t, err, "rate_multiplier is managed by upstream rate multiplier sync")
+
+	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{Name: "renamed"})
+	require.NoError(t, err)
+	require.Equal(t, ciphertext, repo.account.GetCredential(upstreamManagementAuthCredentialKey))
+
+	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Extra: map[string]any{},
+	})
+	require.NoError(t, err)
+	require.Empty(t, repo.account.GetCredential(upstreamManagementAuthCredentialKey))
+}

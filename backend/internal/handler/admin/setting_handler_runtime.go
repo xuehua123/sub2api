@@ -154,6 +154,61 @@ func (h *SettingHandler) UpdateRateLimit429CooldownSettings(c *gin.Context) {
 	})
 }
 
+func (h *SettingHandler) GetRateMultiplierPrioritySettings(c *gin.Context) {
+	settings, err := h.settingService.GetRateMultiplierPrioritySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, rateMultiplierPrioritySettingsDTO(settings))
+}
+
+type UpdateRateMultiplierPrioritySettingsRequest struct {
+	Enabled         *bool `json:"enabled"`
+	IntervalMinutes *int  `json:"interval_minutes"`
+	PriorityStep    *int  `json:"priority_step"`
+}
+
+func (h *SettingHandler) UpdateRateMultiplierPrioritySettings(c *gin.Context) {
+	var req UpdateRateMultiplierPrioritySettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	settings, err := h.settingService.GetRateMultiplierPrioritySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if req.Enabled != nil {
+		settings.Enabled = *req.Enabled
+	}
+	if req.IntervalMinutes != nil {
+		settings.IntervalMinutes = *req.IntervalMinutes
+	}
+	if req.PriorityStep != nil {
+		settings.PriorityStep = *req.PriorityStep
+	}
+	if err := h.settingService.SetRateMultiplierPrioritySettings(c.Request.Context(), settings); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	updated, err := h.settingService.GetRateMultiplierPrioritySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, rateMultiplierPrioritySettingsDTO(updated))
+}
+
+func rateMultiplierPrioritySettingsDTO(settings *service.RateMultiplierPrioritySettings) dto.RateMultiplierPrioritySettings {
+	return dto.RateMultiplierPrioritySettings{
+		Enabled:         settings.Enabled,
+		IntervalMinutes: settings.IntervalMinutes,
+		PriorityStep:    settings.PriorityStep,
+	}
+}
+
 // GetStreamTimeoutSettings 获取流超时处理配置
 // GET /api/v1/admin/settings/stream-timeout
 func (h *SettingHandler) GetStreamTimeoutSettings(c *gin.Context) {

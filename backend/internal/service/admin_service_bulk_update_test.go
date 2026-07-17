@@ -131,6 +131,45 @@ func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
 }
 
 // TestAdminService_BulkUpdateAccounts_PartialFailureIDs 验证部分失败时 success_ids/failed_ids 正确。
+func TestAdminService_BulkUpdateAccounts_RejectsManualMultiplierForUpstreamManagedAccount(t *testing.T) {
+	multiplier := 0.5
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{{
+			ID: 1,
+			Extra: map[string]any{
+				AccountExtraUpstreamRateMultiplierSyncEnabled: true,
+			},
+		}},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs:     []int64{1},
+		RateMultiplier: &multiplier,
+	})
+
+	require.Nil(t, result)
+	require.EqualError(t, err, "rate_multiplier is managed by upstream rate multiplier sync; edit the account to disable sync first")
+	require.True(t, repo.getByIDsCalled)
+	require.Empty(t, repo.bulkUpdateIDs)
+}
+
+func TestAdminService_BulkUpdateAccounts_RejectsUpstreamSyncConfiguration(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1},
+		Extra: map[string]any{
+			AccountExtraUpstreamRateMultiplierSyncEnabled: true,
+		},
+	})
+
+	require.Nil(t, result)
+	require.EqualError(t, err, "upstream rate multiplier sync must be configured per account")
+	require.Empty(t, repo.bulkUpdateIDs)
+}
+
 func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{
 		bindGroupErrByID: map[int64]error{

@@ -83,6 +83,8 @@ type Account struct {
 const AccountExtraUpstreamGzipEnabled = "upstream_gzip_enabled"
 const AccountExtraOpenAIHTTPProtocol = "openai_http_protocol"
 const AccountExtraAnthropicCachedTokensInInput = "anthropic_cached_tokens_in_input"
+const AccountExtraUpstreamRateMultiplierSyncEnabled = "upstream_rate_multiplier_sync_enabled"
+const AccountExtraUpstreamRateMultiplierSyncGroup = "upstream_rate_multiplier_sync_group"
 
 const (
 	OpenAIHTTPProtocolOverrideH1 = "h1"
@@ -923,6 +925,25 @@ func (a *Account) GetExtraString(key string) string {
 		}
 	}
 	return ""
+}
+
+// IsUpstreamRateMultiplierSyncEnabled reports whether this account should copy
+// the rate multiplier of its single configured upstream group.
+func (a *Account) IsUpstreamRateMultiplierSyncEnabled() bool {
+	if a == nil || a.Extra == nil {
+		return false
+	}
+	enabled, _ := a.Extra[AccountExtraUpstreamRateMultiplierSyncEnabled].(bool)
+	return enabled
+}
+
+// UpstreamRateMultiplierSyncGroup returns the one upstream group associated
+// with this account. Local Sub2API account groups are intentionally unrelated.
+func (a *Account) UpstreamRateMultiplierSyncGroup() string {
+	if a == nil {
+		return ""
+	}
+	return strings.TrimSpace(a.GetExtraString(AccountExtraUpstreamRateMultiplierSyncGroup))
 }
 
 func (a *Account) AnthropicCachedTokensInInput() bool {

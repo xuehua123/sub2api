@@ -1266,6 +1266,29 @@ export async function updateRateLimit429CooldownSettings(
   return data;
 }
 
+export interface RateMultiplierPrioritySettings {
+  enabled: boolean;
+  interval_minutes: number;
+  priority_step: number;
+}
+
+export async function getRateMultiplierPrioritySettings(): Promise<RateMultiplierPrioritySettings> {
+  const { data } = await apiClient.get<RateMultiplierPrioritySettings>(
+    "/admin/settings/rate-multiplier-priority",
+  );
+  return data;
+}
+
+export async function updateRateMultiplierPrioritySettings(
+  settings: Partial<RateMultiplierPrioritySettings>,
+): Promise<RateMultiplierPrioritySettings> {
+  const { data } = await apiClient.put<RateMultiplierPrioritySettings>(
+    "/admin/settings/rate-multiplier-priority",
+    settings,
+  );
+  return data;
+}
+
 // ==================== Stream Timeout Settings ====================
 
 /**
@@ -1493,6 +1516,8 @@ export const settingsAPI = {
   updateOverloadCooldownSettings,
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
+  getRateMultiplierPrioritySettings,
+  updateRateMultiplierPrioritySettings,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
   getRectifierSettings,

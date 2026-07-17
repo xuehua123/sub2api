@@ -393,6 +393,63 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 	return normalized, nil
 }
 
+// NormalizeUpstreamRateMultiplierSyncExtra validates the account-level mapping
+// to one upstream group. It deliberately does not inspect local account groups:
+// the source ratio belongs to the upstream service, not Sub2API pricing.
+func NormalizeUpstreamRateMultiplierSyncExtra(extra map[string]any) (map[string]any, error) {
+	if extra == nil {
+		return nil, nil
+	}
+
+	normalized := make(map[string]any, len(extra))
+	for key, value := range extra {
+		normalized[key] = value
+	}
+
+	rawEnabled, hasEnabled := normalized[AccountExtraUpstreamRateMultiplierSyncEnabled]
+	rawGroup, hasGroup := normalized[AccountExtraUpstreamRateMultiplierSyncGroup]
+	if !hasEnabled {
+		if hasGroup || normalized[AccountExtraUpstreamRateMultiplierSyncProvider] != nil || normalized[AccountExtraUpstreamRateMultiplierSyncAuthMode] != nil || normalized[AccountExtraUpstreamRateMultiplierSyncRemoteUserID] != nil {
+			return nil, errors.New("upstream rate multiplier sync requires an enabled flag")
+		}
+		return normalized, nil
+	}
+
+	enabled, ok := rawEnabled.(bool)
+	if !ok {
+		return nil, errors.New("upstream rate multiplier sync enabled must be a boolean")
+	}
+	if !enabled {
+		delete(normalized, AccountExtraUpstreamRateMultiplierSyncGroup)
+		delete(normalized, AccountExtraUpstreamRateMultiplierSyncProvider)
+		delete(normalized, AccountExtraUpstreamRateMultiplierSyncAuthMode)
+		delete(normalized, AccountExtraUpstreamRateMultiplierSyncRemoteUserID)
+		return normalized, nil
+	}
+
+	group, ok := rawGroup.(string)
+	if !ok {
+		return nil, errors.New("upstream rate multiplier sync group is required")
+	}
+	group = strings.TrimSpace(group)
+	if group == "" || len(group) > 128 || strings.ContainsAny(group, "\r\n\x00") {
+		return nil, errors.New("upstream rate multiplier sync group must be 1-128 characters without line breaks")
+	}
+	normalized[AccountExtraUpstreamRateMultiplierSyncGroup] = group
+	config, err := upstreamRateMultiplierSyncConfigFromExtra(normalized)
+	if err != nil {
+		return nil, err
+	}
+	normalized[AccountExtraUpstreamRateMultiplierSyncProvider] = string(config.Provider)
+	normalized[AccountExtraUpstreamRateMultiplierSyncAuthMode] = string(config.AuthMode)
+	if config.RemoteUserID > 0 {
+		normalized[AccountExtraUpstreamRateMultiplierSyncRemoteUserID] = config.RemoteUserID
+	} else {
+		delete(normalized, AccountExtraUpstreamRateMultiplierSyncRemoteUserID)
+	}
+	return normalized, nil
+}
+
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
 	account := &Account{
 		Name:        input.Name,
@@ -444,6 +501,27 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	accountExtra, err = NormalizeUpstreamRateMultiplierSyncExtra(accountExtra)
+	if err != nil {
+		return nil, err
+	}
+	config, err := upstreamRateMultiplierSyncConfigFromExtraIfEnabled(accountExtra)
+	if err != nil {
+		return nil, err
+	}
+	if config.Group != "" && !supportsUpstreamRateMultiplierSyncAccountType(input.Type) {
+		return nil, errors.New("upstream rate multiplier sync only supports apikey and upstream accounts")
+	}
+	if config.Group != "" && input.RateMultiplier != nil {
+		return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync")
+	}
+	credentials, err := applyUpstreamManagementAuthInput(input.Credentials, config, input.UpstreamManagementAuth, s.encryptor)
+	if err != nil {
+		return nil, err
+	}
+	if accountExtra[AccountExtraUpstreamRateMultiplierSyncEnabled] == true && upstreamManagementAuthCiphertext(credentials) == "" {
+		return nil, errors.New("upstream rate multiplier sync requires management credentials")
+	}
 
 	// 绑定分组
 	groupIDs := input.GroupIDs
@@ -469,11 +547,13 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	}
 
 	// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
-	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
+	if err := NormalizeHeaderOverrideCredentials(credentials); err != nil {
 		return nil, err
 	}
 
-	account, err := buildAccountForCreate(input, accountExtra)
+	createInput := *input
+	createInput.Credentials = credentials
+	account, err := buildAccountForCreate(&createInput, accountExtra)
 	if err != nil {
 		return nil, err
 	}
@@ -524,6 +604,10 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
+		if err != nil {
+			return nil, err
+		}
+		normalizedExtra, err = NormalizeUpstreamRateMultiplierSyncExtra(normalizedExtra)
 		if err != nil {
 			return nil, err
 		}
@@ -605,8 +689,31 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		ComputeQuotaResetAt(account.Extra)
 		NormalizeFixedQuotaWindows(account.Extra)
 	}
+	// Turning synchronization off also retires the separately encrypted
+	// management identity. Retaining it would provide no benefit and makes an
+	// accidental re-enable silently reuse an old credential.
+	if input.Extra != nil && !account.IsUpstreamRateMultiplierSyncEnabled() {
+		delete(account.Credentials, upstreamManagementAuthCredentialKey)
+	}
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。
+	if input.UpstreamManagementAuth != nil {
+		if account.IsCredentialShadow() {
+			return nil, errors.New("spark shadow accounts cannot store upstream management credentials")
+		}
+		config, configErr := account.UpstreamRateMultiplierSyncConfig()
+		if configErr != nil {
+			return nil, configErr
+		}
+		credentials, credentialErr := applyUpstreamManagementAuthInput(account.Credentials, config, input.UpstreamManagementAuth, s.encryptor)
+		if credentialErr != nil {
+			return nil, credentialErr
+		}
+		account.Credentials = credentials
+	}
+	if err := validateConfiguredUpstreamManagementAuth(account, s.encryptor); err != nil {
+		return nil, err
+	}
 	if input.ProxyID != nil && !account.IsCredentialShadow() {
 		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）
 		if *input.ProxyID == 0 {
@@ -625,6 +732,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Priority = *input.Priority
 	}
 	if input.RateMultiplier != nil {
+		if account.IsUpstreamRateMultiplierSyncEnabled() {
+			return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync")
+		}
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
@@ -733,6 +843,17 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if len(input.AccountIDs) == 0 {
 		return result, nil
 	}
+	for _, key := range []string{
+		AccountExtraUpstreamRateMultiplierSyncEnabled,
+		AccountExtraUpstreamRateMultiplierSyncGroup,
+		AccountExtraUpstreamRateMultiplierSyncProvider,
+		AccountExtraUpstreamRateMultiplierSyncAuthMode,
+		AccountExtraUpstreamRateMultiplierSyncRemoteUserID,
+	} {
+		if _, configured := input.Extra[key]; configured {
+			return nil, errors.New("upstream rate multiplier sync must be configured per account")
+		}
+	}
 	if input.GroupIDs != nil {
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
 			return nil, err
@@ -744,7 +865,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || input.RateMultiplier != nil || needMixedChannelCheck || hasLongContextBillingUpdate {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -812,6 +933,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
+		}
+		for _, account := range cachedTargets {
+			if account != nil && account.IsUpstreamRateMultiplierSyncEnabled() {
+				return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync; edit the account to disable sync first")
+			}
 		}
 	}
 

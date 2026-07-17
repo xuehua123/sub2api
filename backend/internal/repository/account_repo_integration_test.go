@@ -775,6 +775,37 @@ func (s *AccountRepoSuite) TestBindGroups_EmptyList() {
 	s.Require().Empty(groups, "expected 0 groups after binding empty list")
 }
 
+func (s *AccountRepoSuite) TestUpdateRateMultiplierPrioritiesUpdatesAccountAndBoundGroups() {
+	groupOne := mustCreateGroup(s.T(), s.client, &service.Group{Name: "priority-sync-one"})
+	groupTwo := mustCreateGroup(s.T(), s.client, &service.Group{Name: "priority-sync-two"})
+	lowMultiplier := mustCreateAccount(s.T(), s.client, &service.Account{Name: "priority-sync-low", Priority: 1})
+	highMultiplier := mustCreateAccount(s.T(), s.client, &service.Account{Name: "priority-sync-high", Priority: 2})
+	mustBindAccountToGroup(s.T(), s.client, lowMultiplier.ID, groupOne.ID, 50)
+	mustBindAccountToGroup(s.T(), s.client, lowMultiplier.ID, groupTwo.ID, 50)
+	mustBindAccountToGroup(s.T(), s.client, highMultiplier.ID, groupOne.ID, 1)
+
+	updated, err := s.repo.UpdateRateMultiplierPriorities(s.ctx, map[int64]int{
+		lowMultiplier.ID:  1,
+		highMultiplier.ID: 2,
+	})
+	s.Require().NoError(err)
+	s.Require().EqualValues(2, updated)
+
+	lowGroups, err := s.client.AccountGroup.Query().
+		Where(accountgroup.AccountIDEQ(lowMultiplier.ID)).
+		All(s.ctx)
+	s.Require().NoError(err)
+	s.Require().Len(lowGroups, 2)
+	for _, group := range lowGroups {
+		s.Require().Equal(1, group.Priority)
+	}
+	highGroup, err := s.client.AccountGroup.Query().
+		Where(accountgroup.AccountIDEQ(highMultiplier.ID), accountgroup.GroupIDEQ(groupOne.ID)).
+		Only(s.ctx)
+	s.Require().NoError(err)
+	s.Require().Equal(2, highGroup.Priority)
+}
+
 // --- Schedulable ---
 
 func (s *AccountRepoSuite) TestListSchedulable() {
