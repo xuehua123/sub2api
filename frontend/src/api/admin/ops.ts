@@ -402,7 +402,7 @@ export interface AccountAvailability {
   balance_probe?: OpsAccountBalanceProbeState | null
 }
 
-export type OpsAccountBalanceProbeMethod = 'auto' | 'disabled' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
+export type OpsAccountBalanceProbeMethod = 'auto' | 'disabled' | 'upstream_management' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
 export type OpsAccountBalanceProbeStatus = 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped'
 
 export interface OpsAccountBalanceProbeState {
@@ -414,6 +414,8 @@ export interface OpsAccountBalanceProbeState {
   status: OpsAccountBalanceProbeStatus | string
   error?: string
   balance_usd?: number | null
+  balance_amount?: number | null
+  balance_currency?: string
   unlimited: boolean
   endpoint?: string
   total_used_usd?: number | null

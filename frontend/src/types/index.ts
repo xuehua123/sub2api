@@ -948,7 +948,7 @@ export interface TempUnschedulableStatus {
   state?: TempUnschedulableState
 }
 
-export type AccountBalanceProbeMethod = 'auto' | 'disabled' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
+export type AccountBalanceProbeMethod = 'auto' | 'disabled' | 'upstream_management' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
 
 export interface AccountBalanceProbeState {
   account_id: number
@@ -959,6 +959,8 @@ export interface AccountBalanceProbeState {
   status: 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped' | string
   error?: string
   balance_usd?: number | null
+  balance_amount?: number | null
+  balance_currency?: string
   unlimited: boolean
   endpoint?: string
   total_used_usd?: number | null

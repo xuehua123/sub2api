@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 type upstreamRateMultiplierDiscoveryRequest struct {
 	AccountID              *int64                               `json:"account_id,omitempty"`
 	BaseURL                string                               `json:"base_url,omitempty"`
+	UpstreamAPIKey         string                               `json:"upstream_api_key,omitempty"`
 	ProxyID                *int64                               `json:"proxy_id,omitempty"`
 	AuthMode               service.UpstreamManagementAuthMode   `json:"auth_mode"`
 	RemoteUserID           *int64                               `json:"remote_user_id,omitempty"`
@@ -86,8 +88,12 @@ func (h *AccountHandler) DiscoverUpstreamRateMultiplierGroups(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 24*time.Second)
 	defer cancel()
-	discovery, err := h.upstreamRateSync.DiscoverGroups(ctx, account, req.AuthMode, remoteUserID, req.UpstreamManagementAuth)
+	discovery, err := h.upstreamRateSync.DiscoverGroups(ctx, account, req.AuthMode, remoteUserID, req.UpstreamManagementAuth, req.UpstreamAPIKey)
 	if err != nil {
+		if errors.Is(err, service.ErrUpstreamAPIKeyGroupUnmapped) {
+			response.BadRequest(c, "unable to map this account API key to an upstream group; verify the API key and management user")
+			return
+		}
 		response.BadRequest(c, "unable to detect the upstream management API or load its groups; verify the address and management credentials")
 		return
 	}

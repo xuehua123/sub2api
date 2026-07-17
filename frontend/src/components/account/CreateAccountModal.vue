@@ -2789,7 +2789,10 @@
               {{ upstreamRateMultiplierSyncDiscovering ? t('admin.accounts.upstreamRateSync.discovering') : t('admin.accounts.upstreamRateSync.discover') }}
             </button>
           </div>
-          <select v-model="upstreamRateMultiplierSyncGroup" data-testid="create-upstream-rate-sync-group" class="input mt-2" :disabled="upstreamRateMultiplierSyncDiscovering || upstreamRateMultiplierSyncGroups.length === 0">
+          <div v-if="upstreamRateMultiplierSyncDetectedGroup" class="input mt-2 flex items-center bg-gray-50 text-sm text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+            {{ upstreamRateMultiplierSyncDetectedGroup.name }} ({{ upstreamRateMultiplierSyncDetectedGroup.rate_multiplier }}x)
+          </div>
+          <select v-else v-model="upstreamRateMultiplierSyncGroup" data-testid="create-upstream-rate-sync-group" class="input mt-2" :disabled="upstreamRateMultiplierSyncDiscovering || upstreamRateMultiplierSyncGroups.length === 0">
             <option value="" disabled>{{ t('admin.accounts.upstreamRateSync.groupSelectPlaceholder') }}</option>
             <option v-for="group in upstreamRateMultiplierSyncGroups" :key="group.name" :value="group.name">{{ group.name }} ({{ group.rate_multiplier }}x)</option>
           </select>
@@ -4170,8 +4173,9 @@ const upstreamRateMultiplierSyncRemoteUserID = ref<number | null>(null)
 const upstreamManagementUsername = ref('')
 const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
-type UpstreamRateMultiplierGroupOption = { name: string; rate_multiplier: number }
+type UpstreamRateMultiplierGroupOption = { id?: number; name: string; rate_multiplier: number }
 const upstreamRateMultiplierSyncGroups = ref<UpstreamRateMultiplierGroupOption[]>([])
+const upstreamRateMultiplierSyncDetectedGroup = ref<UpstreamRateMultiplierGroupOption | null>(null)
 const upstreamRateMultiplierSyncDiscovering = ref(false)
 const upstreamRateMultiplierSyncDiscoveredConfigKey = ref('')
 
@@ -4218,6 +4222,7 @@ const discoverUpstreamRateMultiplierGroups = async () => {
   try {
     const discovery = await adminAPI.accounts.discoverUpstreamRateMultiplierGroups({
       base_url: baseURL,
+      upstream_api_key: apiKeyValue.value.trim(),
       proxy_id: form.proxy_id,
       auth_mode: upstreamRateMultiplierSyncAuthMode.value,
       remote_user_id: upstreamRateMultiplierSyncRemoteUserID.value ?? undefined,
@@ -4230,9 +4235,13 @@ const discoverUpstreamRateMultiplierGroups = async () => {
       upstreamRateMultiplierSyncRemoteUserID.value = discovery.remote_user_id
     }
     upstreamRateMultiplierSyncGroups.value = discovery.groups
-    upstreamRateMultiplierSyncGroup.value = discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)
-      ? upstreamRateMultiplierSyncGroup.value
-      : discovery.groups[0]?.name || ''
+    upstreamRateMultiplierSyncDetectedGroup.value = discovery.matched_group || null
+    if (discovery.matched_group) {
+      upstreamRateMultiplierSyncGroup.value = discovery.matched_group.name
+      form.rate_multiplier = discovery.matched_group.rate_multiplier
+    } else if (!discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)) {
+      upstreamRateMultiplierSyncGroup.value = ''
+    }
     upstreamRateMultiplierSyncDiscoveredConfigKey.value = upstreamManagementCurrentConfigKey.value
     appStore.showSuccess(t('admin.accounts.upstreamRateSync.discoverSuccess'))
   } catch (error: any) {
@@ -4846,6 +4855,7 @@ const resetForm = () => {
   upstreamManagementPassword.value = ''
   upstreamManagementAccessToken.value = ''
   upstreamRateMultiplierSyncGroups.value = []
+  upstreamRateMultiplierSyncDetectedGroup.value = null
   upstreamRateMultiplierSyncDiscovering.value = false
   upstreamRateMultiplierSyncDiscoveredConfigKey.value = ''
   form.group_ids = []
@@ -5085,10 +5095,10 @@ const doCreateAccount = async (payload: CreateAccountRequest) => {
     payload.upstream_management_auth = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
       ? { access_token: upstreamManagementAccessToken.value.trim() }
       : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
-    // The source of truth is the upstream group. Let the backend default this
-    // field until the first management sync completes rather than saving a stale
-    // form value as if it had been fetched upstream.
-    payload.rate_multiplier = undefined
+    // Persist the value only when it was just resolved through an exact Key ->
+    // GroupID mapping. The scheduled synchronizer remains authoritative after
+    // this initial live value is saved.
+    payload.rate_multiplier = upstreamRateMultiplierSyncDetectedGroup.value?.rate_multiplier
   }
   payload.extra = Object.keys(extra).length > 0 ? extra : undefined
 

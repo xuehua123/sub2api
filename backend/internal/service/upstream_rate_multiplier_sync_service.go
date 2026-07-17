@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +29,15 @@ const (
 	upstreamRateMultiplierSyncMaxConcurrency = 4
 	upstreamRateMultiplierResponseLimit      = 1 << 20
 )
+
+// ErrUpstreamManagementBalanceUnavailable means this account does not have a
+// usable management-plane identity. It is a configuration gap, not an
+// upstream balance or billing failure.
+var ErrUpstreamManagementBalanceUnavailable = errors.New("upstream management credentials are not configured for account balance")
+
+// ErrUpstreamAPIKeyGroupUnmapped means the management identity is valid but
+// cannot prove which upstream group owns this account's forwarding API key.
+var ErrUpstreamAPIKeyGroupUnmapped = errors.New("upstream API key group could not be mapped")
 
 // UpstreamRateMultiplierSyncRepository is intentionally narrow. Syncing a
 // supplier's group multiplier must not gain access to local group pricing.
@@ -331,6 +341,7 @@ type upstreamManagementHTTPSession struct {
 // UpstreamRateMultiplierGroup is a selectable upstream group returned by a
 // read-only management-plane discovery request.
 type UpstreamRateMultiplierGroup struct {
+	ID             int64   `json:"id,omitempty"`
 	Name           string  `json:"name"`
 	RateMultiplier float64 `json:"rate_multiplier"`
 }
@@ -342,6 +353,7 @@ type UpstreamRateMultiplierDiscovery struct {
 	AuthMode     UpstreamManagementAuthMode    `json:"auth_mode"`
 	RemoteUserID int64                         `json:"remote_user_id,omitempty"`
 	Groups       []UpstreamRateMultiplierGroup `json:"groups"`
+	MatchedGroup *UpstreamRateMultiplierGroup  `json:"matched_group,omitempty"`
 }
 
 // DiscoverGroups detects a compatible upstream management API and returns the
@@ -353,6 +365,7 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 	authMode UpstreamManagementAuthMode,
 	remoteUserID int64,
 	input *UpstreamManagementAuthInput,
+	upstreamAPIKey string,
 ) (*UpstreamRateMultiplierDiscovery, error) {
 	if s == nil || account == nil {
 		return nil, errors.New("upstream rate multiplier discovery is unavailable")
@@ -388,14 +401,21 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 		return nil, err
 	}
 
+	upstreamAPIKey = strings.TrimSpace(upstreamAPIKey)
+	if upstreamAPIKey == "" {
+		upstreamAPIKey = accountBalanceAPIKey(account)
+	}
 	sub2APIConfig := configFor(UpstreamManagementProviderSub2API)
-	if groups, discoveredUserID, discoveryErr := s.discoverSub2APIGroups(ctx, client, baseURL, sub2APIConfig, secret); discoveryErr == nil && len(groups) > 0 {
+	if groups, discoveredUserID, matchedGroup, discoveryErr := s.discoverSub2APIGroups(ctx, client, baseURL, sub2APIConfig, secret, upstreamAPIKey); discoveryErr == nil && len(groups) > 0 {
 		return &UpstreamRateMultiplierDiscovery{
 			Provider:     sub2APIConfig.Provider,
 			AuthMode:     authMode,
 			RemoteUserID: discoveredUserID,
 			Groups:       groups,
+			MatchedGroup: matchedGroup,
 		}, nil
+	} else if errors.Is(discoveryErr, ErrUpstreamAPIKeyGroupUnmapped) {
+		return nil, discoveryErr
 	}
 
 	// NewAPI, RixAPI, and ShellAPI share the same management login endpoint.
@@ -422,6 +442,123 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 	}
 
 	return nil, errors.New("unable to detect an upstream management API or load a usable group list")
+}
+
+// FetchAccountBalance reads the upstream user wallet through the same
+// encrypted management identity used for rate-multiplier synchronization. It
+// intentionally never falls back to /api/usage/token because that endpoint
+// reports a single API key's quota rather than the upstream account balance.
+func (s *UpstreamRateMultiplierSyncService) FetchAccountBalance(ctx context.Context, account *Account) (opsAccountBalanceMethodResult, error) {
+	if s == nil || account == nil || s.encryptor == nil || !account.IsUpstreamRateMultiplierSyncEnabled() || !account.HasUpstreamManagementAuth() {
+		return opsAccountBalanceMethodResult{}, ErrUpstreamManagementBalanceUnavailable
+	}
+	config, err := account.UpstreamRateMultiplierSyncConfig()
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, fmt.Errorf("%w: %v", ErrUpstreamManagementBalanceUnavailable, err)
+	}
+	baseURL, err := s.managementBaseURL(account)
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	client, _, err := s.managementClientForAccount(account)
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	secret, err := DecryptUpstreamManagementAuth(s.encryptor, account.GetCredential(upstreamManagementAuthCredentialKey))
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	if err := validateUpstreamManagementAuth(config, secret); err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+
+	switch config.Provider {
+	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI:
+		return s.fetchNewAPIUserBalance(ctx, client, baseURL, config, secret)
+	case UpstreamManagementProviderSub2API:
+		return s.fetchSub2APIUserBalance(ctx, client, baseURL, config, secret)
+	default:
+		return opsAccountBalanceMethodResult{}, fmt.Errorf("unsupported upstream management provider %q", config.Provider)
+	}
+}
+
+func (s *UpstreamRateMultiplierSyncService) fetchNewAPIUserBalance(ctx context.Context, client *http.Client, baseURL string, config UpstreamRateMultiplierSyncConfig, secret upstreamManagementAuthSecret) (opsAccountBalanceMethodResult, error) {
+	session, err := s.authenticateNewAPIManagementSession(ctx, client, baseURL, config, secret)
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	headers := newAPIManagementHeaders(config.Provider, session)
+	endpoint := accountBalanceJoinEndpoint(baseURL, "/api/user/self", false)
+	profile, err := s.managementJSON(ctx, client, http.MethodGet, endpoint, headers, nil)
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	data := accountBalanceDataObject(profile.payload)
+	quota := accountBalanceNumber(data, "quota", "balance", "available")
+	if quota == nil {
+		return opsAccountBalanceMethodResult{}, errors.New("upstream management profile has no account quota")
+	}
+
+	amount := *quota
+	currency := "QUOTA"
+	var usedAmount *float64
+	if status, statusErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/status", false), headers, nil); statusErr == nil {
+		statusData := accountBalanceDataObject(status.payload)
+		if perUnit := accountBalanceNumber(statusData, "quota_per_unit"); perUnit != nil && *perUnit > 0 {
+			amount = *quota / *perUnit
+			if usedQuota := accountBalanceNumber(data, "used_quota", "used"); usedQuota != nil {
+				used := *usedQuota / *perUnit
+				usedAmount = &used
+			}
+			if displayType := strings.ToUpper(strings.TrimSpace(firstString(statusData, "quota_display_type", "currency"))); displayType != "" {
+				currency = displayType
+			}
+		}
+	}
+
+	result := opsAccountBalanceMethodResult{
+		Method:          AccountBalanceProbeMethodUpstreamManagement,
+		Endpoint:        endpoint,
+		BalanceAmount:   &amount,
+		BalanceCurrency: currency,
+	}
+	if currency == "USD" {
+		result.BalanceUSD = &amount
+		result.TotalUsedUSD = usedAmount
+	}
+	return result, nil
+}
+
+func (s *UpstreamRateMultiplierSyncService) fetchSub2APIUserBalance(ctx context.Context, client *http.Client, baseURL string, config UpstreamRateMultiplierSyncConfig, secret upstreamManagementAuthSecret) (opsAccountBalanceMethodResult, error) {
+	accessToken := secret.AccessToken
+	if config.AuthMode == UpstreamManagementAuthModePassword {
+		login, err := s.managementJSON(ctx, client, http.MethodPost, accountBalanceJoinEndpoint(baseURL, "/api/v1/auth/login", false), nil, map[string]string{"email": secret.Username, "password": secret.Password})
+		if err != nil {
+			return opsAccountBalanceMethodResult{}, err
+		}
+		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
+	}
+	if accessToken == "" {
+		return opsAccountBalanceMethodResult{}, errors.New("sub2api management login did not return an access token")
+	}
+	headers := make(http.Header)
+	headers.Set("Authorization", "Bearer "+accessToken)
+	endpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/user/profile", false)
+	profile, err := s.managementJSON(ctx, client, http.MethodGet, endpoint, headers, nil)
+	if err != nil {
+		return opsAccountBalanceMethodResult{}, err
+	}
+	balance := accountBalanceNumber(accountBalanceDataObject(profile.payload), "balance")
+	if balance == nil {
+		return opsAccountBalanceMethodResult{}, errors.New("sub2api management profile has no account balance")
+	}
+	return opsAccountBalanceMethodResult{
+		Method:          AccountBalanceProbeMethodUpstreamManagement,
+		Endpoint:        endpoint,
+		BalanceUSD:      balance,
+		BalanceAmount:   balance,
+		BalanceCurrency: "USD",
+	}, nil
 }
 
 func (s *UpstreamRateMultiplierSyncService) discoverySecret(account *Account, authMode UpstreamManagementAuthMode, input *UpstreamManagementAuthInput) (upstreamManagementAuthSecret, error) {
@@ -492,40 +629,50 @@ func (s *UpstreamRateMultiplierSyncService) discoverNewAPIGroups(ctx context.Con
 	return nil, 0, errors.New("upstream management API returned no usable groups")
 }
 
-func (s *UpstreamRateMultiplierSyncService) discoverSub2APIGroups(ctx context.Context, client *http.Client, baseURL string, config UpstreamRateMultiplierSyncConfig, secret upstreamManagementAuthSecret) ([]UpstreamRateMultiplierGroup, int64, error) {
+func (s *UpstreamRateMultiplierSyncService) discoverSub2APIGroups(ctx context.Context, client *http.Client, baseURL string, config UpstreamRateMultiplierSyncConfig, secret upstreamManagementAuthSecret, upstreamAPIKey string) ([]UpstreamRateMultiplierGroup, int64, *UpstreamRateMultiplierGroup, error) {
 	accessToken := secret.AccessToken
 	if config.AuthMode == UpstreamManagementAuthModePassword {
 		login, err := s.managementJSON(ctx, client, http.MethodPost, accountBalanceJoinEndpoint(baseURL, "/api/v1/auth/login", false), nil, map[string]string{"email": secret.Username, "password": secret.Password})
 		if err != nil {
-			return nil, 0, err
+			return nil, 0, nil, err
 		}
 		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
 		if accessToken == "" {
-			return nil, 0, errors.New("sub2api management login did not return an access token")
+			return nil, 0, nil, errors.New("sub2api management login did not return an access token")
 		}
 	}
 	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+accessToken)
-	groups := make([]UpstreamRateMultiplierGroup, 0)
-	ratesResponse, ratesErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/rates", false), headers, nil)
-	if ratesErr == nil {
-		groups = append(groups, extractUpstreamRateMultiplierGroups(envelopeData(ratesResponse.payload))...)
-	}
 	availableResponse, availableErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/available", false), headers, nil)
-	if availableErr == nil {
-		groups = append(groups, extractUpstreamRateMultiplierGroups(envelopeData(availableResponse.payload))...)
+	if availableErr != nil {
+		return nil, 0, nil, availableErr
+	}
+	groups := extractSub2APIAvailableGroups(envelopeData(availableResponse.payload))
+	if len(groups) == 0 {
+		return nil, 0, nil, errors.New("sub2api management API returned no usable groups")
+	}
+
+	// The rate endpoint is keyed by numeric group ID. Applying it after the
+	// available-groups response preserves the exact ID -> name relationship.
+	if ratesResponse, ratesErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/rates", false), headers, nil); ratesErr == nil {
+		applySub2APIGroupRates(groups, envelopeData(ratesResponse.payload))
 	}
 	groups = mergeUpstreamRateMultiplierGroups(groups)
-	if len(groups) > 0 {
-		return groups, 0, nil
+	if strings.TrimSpace(upstreamAPIKey) == "" {
+		return groups, 0, nil, nil
 	}
-	if ratesErr != nil {
-		return nil, 0, ratesErr
+
+	matchedGroupID, err := s.findSub2APIKeyGroupID(ctx, client, baseURL, headers, upstreamAPIKey)
+	if err != nil {
+		return nil, 0, nil, err
 	}
-	if availableErr != nil {
-		return nil, 0, availableErr
+	for index := range groups {
+		if groups[index].ID == matchedGroupID {
+			matched := groups[index]
+			return groups, 0, &matched, nil
+		}
 	}
-	return nil, 0, errors.New("sub2api management API returned no usable groups")
+	return nil, 0, nil, fmt.Errorf("%w: upstream API key belongs to group id %d, but that group is not available to the management user", ErrUpstreamAPIKeyGroupUnmapped, matchedGroupID)
 }
 
 func (s *UpstreamRateMultiplierSyncService) fetchGroupRateMultiplier(ctx context.Context, target *upstreamRateMultiplierTarget) (float64, error) {
@@ -618,23 +765,32 @@ func (s *UpstreamRateMultiplierSyncService) fetchSub2APIGroupRateMultiplier(ctx 
 	}
 	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+accessToken)
-	ratesResponse, ratesErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/rates", false), headers, nil)
-	if ratesErr == nil {
-		if multiplier, found := findGroupMultiplier(envelopeData(ratesResponse.payload), config.Group); found {
-			return multiplier, nil
-		}
-	}
 	availableResponse, availableErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/available", false), headers, nil)
 	if availableErr != nil {
-		if ratesErr != nil {
-			return 0, ratesErr
-		}
 		return 0, availableErr
 	}
-	if multiplier, found := findGroupMultiplier(envelopeData(availableResponse.payload), config.Group); found {
-		return multiplier, nil
+	groups := extractSub2APIAvailableGroups(envelopeData(availableResponse.payload))
+	matched := -1
+	for index := range groups {
+		if groups[index].Name == config.Group {
+			matched = index
+			break
+		}
 	}
-	return 0, fmt.Errorf("upstream group %q is absent from sub2api group rates", config.Group)
+	if matched < 0 || groups[matched].ID <= 0 {
+		return 0, fmt.Errorf("upstream group %q is absent from sub2api available groups", config.Group)
+	}
+
+	// /groups/rates is keyed by numeric group ID, while the persisted account
+	// configuration deliberately stores the stable human-readable group name.
+	// Resolve name -> ID through /groups/available before applying this user's
+	// rate table; never fall back to a global/default group ratio.
+	ratesResponse, ratesErr := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/rates", false), headers, nil)
+	if ratesErr != nil {
+		return 0, ratesErr
+	}
+	applySub2APIGroupRates(groups, envelopeData(ratesResponse.payload))
+	return groups[matched].RateMultiplier, nil
 }
 
 type managementJSONResponse struct {
@@ -769,7 +925,7 @@ func extractUpstreamRateMultiplierGroups(payload any) []UpstreamRateMultiplierGr
 		case map[string]any:
 			if name := firstString(current, "name", "group", "group_name", "id"); name != "" {
 				if multiplier, ok := parseGroupMultiplier(current); ok {
-					groups = append(groups, UpstreamRateMultiplierGroup{Name: name, RateMultiplier: multiplier})
+					groups = append(groups, UpstreamRateMultiplierGroup{ID: int64FromMap(current, "id"), Name: name, RateMultiplier: multiplier})
 					return
 				}
 			}
@@ -801,7 +957,9 @@ func mergeUpstreamRateMultiplierGroups(groups []UpstreamRateMultiplierGroup) []U
 		if group.Name == "" || math.IsNaN(group.RateMultiplier) || math.IsInf(group.RateMultiplier, 0) || group.RateMultiplier < 0 {
 			continue
 		}
-		byName[group.Name] = group
+		if existing, ok := byName[group.Name]; !ok || (existing.ID == 0 && group.ID > 0) {
+			byName[group.Name] = group
+		}
 	}
 	result := make([]UpstreamRateMultiplierGroup, 0, len(byName))
 	for _, group := range byName {
@@ -814,6 +972,112 @@ func mergeUpstreamRateMultiplierGroups(groups []UpstreamRateMultiplierGroup) []U
 		return result[i].Name < result[j].Name
 	})
 	return result
+}
+
+func extractSub2APIAvailableGroups(payload any) []UpstreamRateMultiplierGroup {
+	items := upstreamManagementItems(payload)
+	groups := make([]UpstreamRateMultiplierGroup, 0, len(items))
+	for _, item := range items {
+		row, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		groupID := int64FromMap(row, "id")
+		name := firstString(row, "name", "group", "group_name")
+		if name == "" {
+			continue
+		}
+		multiplier, ok := parseGroupMultiplier(row)
+		if !ok {
+			// A missing multiplier is not a reason to discard the group: the
+			// user-specific rate table can still supply it below.
+			multiplier = 1
+		}
+		groups = append(groups, UpstreamRateMultiplierGroup{ID: groupID, Name: name, RateMultiplier: multiplier})
+	}
+	return groups
+}
+
+func applySub2APIGroupRates(groups []UpstreamRateMultiplierGroup, payload any) {
+	rates, ok := payload.(map[string]any)
+	if !ok {
+		return
+	}
+	for index := range groups {
+		raw, exists := rates[strconv.FormatInt(groups[index].ID, 10)]
+		if !exists {
+			continue
+		}
+		if multiplier, valid := parseGroupMultiplier(raw); valid {
+			groups[index].RateMultiplier = multiplier
+		}
+	}
+}
+
+func (s *UpstreamRateMultiplierSyncService) findSub2APIKeyGroupID(ctx context.Context, client *http.Client, baseURL string, headers http.Header, upstreamAPIKey string) (int64, error) {
+	const pageSize = 100
+	for page := 1; page <= 100; page++ {
+		endpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/api-keys", false)
+		parsedEndpoint, err := url.Parse(endpoint)
+		if err != nil {
+			return 0, err
+		}
+		query := parsedEndpoint.Query()
+		query.Set("page", strconv.Itoa(page))
+		query.Set("page_size", strconv.Itoa(pageSize))
+		parsedEndpoint.RawQuery = query.Encode()
+		endpoint = parsedEndpoint.String()
+		response, err := s.managementJSON(ctx, client, http.MethodGet, endpoint, headers, nil)
+		if err != nil {
+			return 0, err
+		}
+		data := envelopeData(response.payload)
+		items := upstreamManagementItems(data)
+		for _, item := range items {
+			row, ok := item.(map[string]any)
+			if !ok || firstString(row, "key", "api_key", "token") != upstreamAPIKey {
+				continue
+			}
+			groupID := int64FromMap(row, "group_id", "groupId")
+			if groupID <= 0 {
+				return 0, fmt.Errorf("%w: upstream API key has no assigned group", ErrUpstreamAPIKeyGroupUnmapped)
+			}
+			return groupID, nil
+		}
+		pages := upstreamManagementPageCount(data)
+		if len(items) < pageSize || (pages > 0 && page >= pages) {
+			break
+		}
+	}
+	return 0, fmt.Errorf("%w: upstream API key was not found under the configured management user", ErrUpstreamAPIKeyGroupUnmapped)
+}
+
+func upstreamManagementItems(payload any) []any {
+	if list, ok := payload.([]any); ok {
+		return list
+	}
+	row, ok := payload.(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, key := range []string{"items", "list", "results"} {
+		if list, ok := row[key].([]any); ok {
+			return list
+		}
+	}
+	return nil
+}
+
+func upstreamManagementPageCount(payload any) int {
+	row, ok := payload.(map[string]any)
+	if !ok {
+		return 0
+	}
+	pages := int64FromMap(row, "pages", "page_count")
+	if pages > 0 {
+		return int(pages)
+	}
+	return 0
 }
 
 func parseGroupMultiplier(value any) (float64, bool) {
@@ -856,16 +1120,18 @@ func parseGroupMultiplier(value any) (float64, bool) {
 	return multiplier, true
 }
 
-func int64FromMap(value any, key string) int64 {
+func int64FromMap(value any, keys ...string) int64 {
 	row, ok := value.(map[string]any)
 	if !ok {
 		return 0
 	}
-	parsed, err := upstreamManagementRemoteUserID(row[key])
-	if err != nil {
-		return 0
+	for _, key := range keys {
+		parsed, err := upstreamManagementRemoteUserID(row[key])
+		if err == nil && parsed > 0 {
+			return parsed
+		}
 	}
-	return parsed
+	return 0
 }
 
 func firstString(value any, keys ...string) string {

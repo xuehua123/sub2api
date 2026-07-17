@@ -1533,7 +1533,10 @@
               {{ upstreamRateMultiplierSyncDiscovering ? t('admin.accounts.upstreamRateSync.discovering') : t('admin.accounts.upstreamRateSync.discover') }}
             </button>
           </div>
-          <select v-model="upstreamRateMultiplierSyncGroup" data-testid="edit-upstream-rate-sync-group" class="input mt-2" :disabled="upstreamRateMultiplierSyncDiscovering || upstreamRateMultiplierSyncGroups.length === 0">
+          <div v-if="upstreamRateMultiplierSyncDetectedGroup" class="input mt-2 flex items-center bg-gray-50 text-sm text-gray-700 dark:bg-dark-700 dark:text-gray-200">
+            {{ upstreamRateMultiplierSyncDetectedGroup.name }} ({{ upstreamRateMultiplierSyncDetectedGroup.rate_multiplier }}x)
+          </div>
+          <select v-else v-model="upstreamRateMultiplierSyncGroup" data-testid="edit-upstream-rate-sync-group" class="input mt-2" :disabled="upstreamRateMultiplierSyncDiscovering || upstreamRateMultiplierSyncGroups.length === 0">
             <option value="" disabled>{{ t('admin.accounts.upstreamRateSync.groupSelectPlaceholder') }}</option>
             <option v-for="group in upstreamRateMultiplierSyncGroups" :key="group.name" :value="group.name">{{ group.name }} ({{ group.rate_multiplier }}x)</option>
           </select>
@@ -3326,8 +3329,9 @@ const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
 const upstreamManagementAuthConfigured = ref(false)
 const upstreamManagementInitialConfigKey = ref('')
-type UpstreamRateMultiplierGroupOption = { name: string; rate_multiplier: number }
+type UpstreamRateMultiplierGroupOption = { id?: number; name: string; rate_multiplier: number }
 const upstreamRateMultiplierSyncGroups = ref<UpstreamRateMultiplierGroupOption[]>([])
+const upstreamRateMultiplierSyncDetectedGroup = ref<UpstreamRateMultiplierGroupOption | null>(null)
 const upstreamRateMultiplierSyncDiscovering = ref(false)
 const upstreamRateMultiplierSyncDiscoveredConfigKey = ref('')
 
@@ -3391,9 +3395,13 @@ const discoverUpstreamRateMultiplierGroups = async () => {
       upstreamRateMultiplierSyncRemoteUserID.value = discovery.remote_user_id
     }
     upstreamRateMultiplierSyncGroups.value = discovery.groups
-    upstreamRateMultiplierSyncGroup.value = discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)
-      ? upstreamRateMultiplierSyncGroup.value
-      : discovery.groups[0]?.name || ''
+    upstreamRateMultiplierSyncDetectedGroup.value = discovery.matched_group || null
+    if (discovery.matched_group) {
+      upstreamRateMultiplierSyncGroup.value = discovery.matched_group.name
+      form.rate_multiplier = discovery.matched_group.rate_multiplier
+    } else if (!discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)) {
+      upstreamRateMultiplierSyncGroup.value = ''
+    }
     upstreamRateMultiplierSyncDiscoveredConfigKey.value = upstreamManagementCurrentConfigKey.value
     appStore.showSuccess(t('admin.accounts.upstreamRateSync.discoverSuccess'))
   } catch (error: any) {
@@ -3580,6 +3588,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   upstreamRateMultiplierSyncGroups.value = upstreamRateMultiplierSyncGroup.value
     ? [{ name: upstreamRateMultiplierSyncGroup.value, rate_multiplier: newAccount.rate_multiplier ?? 1 }]
     : []
+  upstreamRateMultiplierSyncDetectedGroup.value = null
   upstreamRateMultiplierSyncDiscovering.value = false
   upstreamManagementInitialConfigKey.value = [
     upstreamRateMultiplierSyncProvider.value,
@@ -4965,9 +4974,9 @@ const handleSubmit = async () => {
           ? { access_token: upstreamManagementAccessToken.value.trim() }
           : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
       }
-      // Do not let an older form snapshot overwrite the value maintained by
-      // the synchronizer while an unrelated account field is being saved.
-      updatePayload.rate_multiplier = undefined
+      // A fresh exact Key -> GroupID match is safe to apply immediately. For
+      // normal edits, leave this field untouched for the scheduled synchronizer.
+      updatePayload.rate_multiplier = upstreamRateMultiplierSyncDetectedGroup.value?.rate_multiplier
     } else {
       delete mergedSyncExtra.upstream_rate_multiplier_sync_enabled
       delete mergedSyncExtra.upstream_rate_multiplier_sync_group

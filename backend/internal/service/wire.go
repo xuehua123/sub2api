@@ -544,6 +544,7 @@ func ProvideOpsService(
 	antigravityGatewayService *AntigravityGatewayService,
 	systemLogSink *OpsSystemLogSink,
 	settingService *SettingService,
+	upstreamRateMultiplierSyncService *UpstreamRateMultiplierSyncService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -563,6 +564,9 @@ func ProvideOpsService(
 		// Optional warm-up so the first scheduled request after process start observes
 		// a populated cache rather than zero defaults. Best-effort, sync-bounded.
 		settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
+	}
+	if upstreamRateMultiplierSyncService != nil {
+		svc.SetUpstreamAccountBalanceFetcher(upstreamRateMultiplierSyncService)
 	}
 	return svc
 }

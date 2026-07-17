@@ -204,6 +204,7 @@ export async function checkMixedChannelRisk(
 }
 
 export interface UpstreamRateMultiplierGroup {
+  id?: number
   name: string
   rate_multiplier: number
 }
@@ -211,6 +212,7 @@ export interface UpstreamRateMultiplierGroup {
 export interface UpstreamRateMultiplierDiscoveryRequest {
   account_id?: number
   base_url?: string
+  upstream_api_key?: string
   proxy_id?: number | null
   auth_mode: 'password' | 'access_token'
   remote_user_id?: number
@@ -226,6 +228,7 @@ export interface UpstreamRateMultiplierDiscoveryResponse {
   auth_mode: 'password' | 'access_token'
   remote_user_id?: number
   groups: UpstreamRateMultiplierGroup[]
+  matched_group?: UpstreamRateMultiplierGroup
 }
 
 export async function discoverUpstreamRateMultiplierGroups(

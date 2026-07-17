@@ -35,8 +35,8 @@ func defaultOpsAccountBalanceSettings() OpsAccountBalanceSettings {
 			TimeoutSeconds:  int(accountBalanceDefaultTimeout.Seconds()),
 			OnlySchedulable: true,
 			MethodOrder: []string{
-				AccountBalanceProbeMethodNewAPITokenUsage,
 				AccountBalanceProbeMethodSub2APIUsage,
+				AccountBalanceProbeMethodUpstreamManagement,
 				AccountBalanceProbeMethodOpenAIBilling,
 			},
 		},
@@ -77,7 +77,21 @@ func normalizeOpsAccountBalanceSettings(settings *OpsAccountBalanceSettings) {
 	if settings.Probe.TimeoutSeconds > 60 {
 		settings.Probe.TimeoutSeconds = 60
 	}
-	settings.Probe.MethodOrder = normalizeAccountBalanceMethodOrder(settings.Probe.MethodOrder)
+	hadRetiredNewAPITokenUsage := false
+	for _, method := range settings.Probe.MethodOrder {
+		if strings.EqualFold(strings.TrimSpace(method), AccountBalanceProbeMethodNewAPITokenUsage) {
+			hadRetiredNewAPITokenUsage = true
+			break
+		}
+	}
+	settings.Probe.MethodOrder = accountBalanceAccountMethodsOnly(normalizeAccountBalanceMethodOrder(settings.Probe.MethodOrder))
+	if hadRetiredNewAPITokenUsage {
+		settings.Probe.MethodOrder = append(
+			[]string{AccountBalanceProbeMethodSub2APIUsage, AccountBalanceProbeMethodUpstreamManagement},
+			settings.Probe.MethodOrder...,
+		)
+		settings.Probe.MethodOrder = normalizeAccountBalanceMethodOrder(settings.Probe.MethodOrder)
+	}
 	if len(settings.Probe.MethodOrder) == 0 {
 		settings.Probe.MethodOrder = defaults.Probe.MethodOrder
 	}
@@ -273,7 +287,7 @@ func (s *OpsService) ListAccountBalanceMonitor(ctx context.Context, filter OpsAc
 			BalanceProbe: state,
 		}
 		summary.TotalAccounts++
-		if state.BalanceUSD != nil || state.Unlimited {
+		if state.BalanceUSD != nil || state.BalanceAmount != nil || state.Unlimited {
 			summary.KnownBalanceCount++
 		}
 		if state.Unlimited {
@@ -745,7 +759,8 @@ func AccountBalanceStateFromAccount(account *Account) OpsAccountBalanceState {
 			Status:  AccountBalanceProbeStatusUnknown,
 		}
 	}
-	method := normalizeAccountBalanceProbeMethod(account.getExtraString(accountBalanceProbeMethodExtraKey))
+	rawMethod := strings.TrimSpace(account.getExtraString(accountBalanceProbeMethodExtraKey))
+	method := normalizeAccountBalanceProbeMethod(rawMethod)
 	if method == "" {
 		method = AccountBalanceProbeMethodAuto
 	}
@@ -774,7 +789,15 @@ func AccountBalanceStateFromAccount(account *Account) OpsAccountBalanceState {
 		TotalUsedUSD:    accountBalanceExtraFloatPtr(account, accountBalanceProbeTotalUsedUSDExtraKey),
 		TotalGrantedUSD: accountBalanceExtraFloatPtr(account, accountBalanceProbeGrantedUSDExtraKey),
 		BalanceUSD:      accountBalanceExtraFloatPtr(account, accountBalanceProbeBalanceUSDExtraKey),
+		BalanceAmount:   accountBalanceExtraFloatPtr(account, accountBalanceProbeBalanceAmountExtraKey),
+		BalanceCurrency: strings.ToUpper(strings.TrimSpace(account.getExtraString(accountBalanceProbeBalanceCurrencyExtraKey))),
 		ThresholdUSD:    accountBalanceExtraFloatPtr(account, accountBalanceProbeThresholdUSDExtraKey),
+	}
+	if state.BalanceAmount == nil && state.BalanceUSD != nil {
+		state.BalanceAmount = state.BalanceUSD
+		if state.BalanceCurrency == "" {
+			state.BalanceCurrency = "USD"
+		}
 	}
 	if checkedAt := account.getExtraTime(accountBalanceProbeCheckedAtExtraKey); !checkedAt.IsZero() {
 		t := checkedAt.UTC()
@@ -783,6 +806,17 @@ func AccountBalanceStateFromAccount(account *Account) OpsAccountBalanceState {
 	if notifiedAt := account.getExtraTime(accountBalanceProbeNotifiedAtExtraKey); !notifiedAt.IsZero() {
 		t := notifiedAt.UTC()
 		state.NotifiedAt = &t
+	}
+	// Historical snapshots from /api/usage/token described one API key, not the
+	// upstream account wallet. Hide them immediately instead of showing a
+	// negative cumulative key ledger or an "unlimited account" badge.
+	if state.DetectedMethod == AccountBalanceProbeMethodNewAPITokenUsage || rawMethod == AccountBalanceProbeMethodNewAPITokenUsage {
+		state.Status = AccountBalanceProbeStatusUnsupported
+		state.Error = "NewAPI API key usage is not an upstream account balance; use a supported direct balance endpoint or upstream management credentials"
+		state.BalanceUSD = nil
+		state.BalanceAmount = nil
+		state.BalanceCurrency = ""
+		state.Unlimited = false
 	}
 	return state
 }
@@ -817,7 +851,7 @@ func accountBalanceStateIsDue(state OpsAccountBalanceState, settings OpsAccountB
 }
 
 func accountBalanceStateIsLow(state OpsAccountBalanceState, settings OpsAccountBalanceSettings) bool {
-	if !state.Enabled || state.BalanceUSD == nil {
+	if !state.Enabled || state.Unlimited || state.BalanceUSD == nil {
 		return false
 	}
 	threshold := settings.DefaultThresholdUSD
@@ -849,9 +883,13 @@ func normalizeAccountBalanceProbeMethod(method string) string {
 	switch method {
 	case "", "smart":
 		return AccountBalanceProbeMethodAuto
+	case AccountBalanceProbeMethodNewAPITokenUsage:
+		// This endpoint is intentionally retired from account balance probing:
+		// it describes an API key, not the upstream user wallet.
+		return AccountBalanceProbeMethodAuto
 	case AccountBalanceProbeMethodAuto,
 		AccountBalanceProbeMethodDisabled,
-		AccountBalanceProbeMethodNewAPITokenUsage,
+		AccountBalanceProbeMethodUpstreamManagement,
 		AccountBalanceProbeMethodSub2APIUsage,
 		AccountBalanceProbeMethodOpenAIBilling:
 		return method
@@ -864,7 +902,7 @@ func isSupportedAccountBalanceProbeMethod(method string) bool {
 	switch normalizeAccountBalanceProbeMethod(method) {
 	case AccountBalanceProbeMethodAuto,
 		AccountBalanceProbeMethodDisabled,
-		AccountBalanceProbeMethodNewAPITokenUsage,
+		AccountBalanceProbeMethodUpstreamManagement,
 		AccountBalanceProbeMethodSub2APIUsage,
 		AccountBalanceProbeMethodOpenAIBilling:
 		return true
@@ -893,6 +931,20 @@ func normalizeAccountBalanceMethodOrder(methods []string) []string {
 	return out
 }
 
+// accountBalanceAccountMethodsOnly prevents historical token-level usage
+// endpoints from being used by automatic account-wallet monitoring. A token's
+// quota is not the upstream user's balance.
+func accountBalanceAccountMethodsOnly(methods []string) []string {
+	out := make([]string, 0, len(methods))
+	for _, method := range methods {
+		if method == AccountBalanceProbeMethodNewAPITokenUsage {
+			continue
+		}
+		out = append(out, method)
+	}
+	return out
+}
+
 func accountBalanceProbeMethodsForAccount(state OpsAccountBalanceState, settings OpsAccountBalanceSettings, methodOverride string) []string {
 	override := normalizeAccountBalanceProbeMethod(methodOverride)
 	if override != "" && override != AccountBalanceProbeMethodAuto {
@@ -913,11 +965,34 @@ func accountBalanceProbeMethodsForAccount(state OpsAccountBalanceState, settings
 		order = append(order, detected)
 	}
 	order = append(order, settings.Probe.MethodOrder...)
-	return normalizeAccountBalanceMethodOrder(order)
+	return accountBalanceAccountMethodsOnly(normalizeAccountBalanceMethodOrder(order))
 }
 
 func (s *OpsService) tryProbeAccountBalanceMethod(ctx context.Context, account *Account, method string, timeout time.Duration) (opsAccountBalanceMethodResult, OpsAccountBalanceProbeAttempt, error) {
 	method = normalizeAccountBalanceProbeMethod(method)
+	if method == AccountBalanceProbeMethodUpstreamManagement {
+		attempt := OpsAccountBalanceProbeAttempt{Method: method}
+		if s == nil || s.upstreamBalanceFetcher == nil {
+			attempt.Status = AccountBalanceProbeStatusUnsupported
+			attempt.Message = "upstream management balance probing is unavailable"
+			return opsAccountBalanceMethodResult{}, attempt, errors.New(attempt.Message)
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		result, err := s.upstreamBalanceFetcher.FetchAccountBalance(probeCtx, account)
+		attempt.Endpoint = result.Endpoint
+		if err != nil {
+			if errors.Is(err, ErrUpstreamManagementBalanceUnavailable) {
+				attempt.Status = AccountBalanceProbeStatusUnsupported
+			} else {
+				attempt.Status = AccountBalanceProbeStatusFailed
+			}
+			attempt.Message = err.Error()
+			return opsAccountBalanceMethodResult{}, attempt, err
+		}
+		attempt.Status = AccountBalanceProbeStatusOK
+		return result, attempt, nil
+	}
 	endpoint, err := s.accountBalanceProbeEndpoint(account, method)
 	attempt := OpsAccountBalanceProbeAttempt{Method: method, Endpoint: endpoint}
 	if err != nil {
@@ -954,6 +1029,8 @@ func (s *OpsService) accountBalanceProbeEndpoint(account *Account, method string
 		return "", err
 	}
 	switch method {
+	case AccountBalanceProbeMethodUpstreamManagement:
+		return "", errors.New("upstream management balance endpoint is resolved from the configured provider")
 	case AccountBalanceProbeMethodNewAPITokenUsage:
 		return accountBalanceJoinEndpoint(normalized, "/api/usage/token", false), nil
 	case AccountBalanceProbeMethodSub2APIUsage:
@@ -1052,6 +1129,8 @@ func (s *OpsService) fetchAccountBalanceJSON(ctx context.Context, account *Accou
 
 func parseAccountBalanceResult(method string, endpoint string, payload map[string]any) (opsAccountBalanceMethodResult, error) {
 	switch method {
+	case AccountBalanceProbeMethodUpstreamManagement:
+		return opsAccountBalanceMethodResult{}, errors.New("upstream management balance requires management authentication")
 	case AccountBalanceProbeMethodNewAPITokenUsage:
 		return parseNewAPIAccountBalance(endpoint, payload)
 	case AccountBalanceProbeMethodSub2APIUsage:
@@ -1066,6 +1145,9 @@ func parseAccountBalanceResult(method string, endpoint string, payload map[strin
 func parseNewAPIAccountBalance(endpoint string, payload map[string]any) (opsAccountBalanceMethodResult, error) {
 	data := accountBalanceDataObject(payload)
 	unlimited := accountBalanceBool(data, "unlimited_quota", "unlimited")
+	if unlimited {
+		return opsAccountBalanceMethodResult{}, errors.New("NewAPI API key quota is unlimited and cannot represent the upstream account balance")
+	}
 	totalAvailable := accountBalanceNumber(data, "total_available", "available", "quota_available")
 	totalGranted := accountBalanceNumber(data, "total_granted", "quota", "total_quota")
 	totalUsed := accountBalanceNumber(data, "total_used", "used", "quota_used")
@@ -1084,7 +1166,7 @@ func parseNewAPIAccountBalance(endpoint string, payload map[string]any) (opsAcco
 		v := *totalUsed / accountBalanceNewAPIQuotaUnitPerUSD
 		usedUSD = &v
 	}
-	if !unlimited && balanceUSD == nil && grantedUSD == nil && usedUSD == nil {
+	if balanceUSD == nil && grantedUSD == nil && usedUSD == nil {
 		return opsAccountBalanceMethodResult{}, errors.New("newapi usage response has no recognizable quota fields")
 	}
 	return opsAccountBalanceMethodResult{
@@ -1241,15 +1323,24 @@ func accountBalanceParseNumber(raw any) (float64, bool) {
 func (s *OpsService) persistAccountBalanceSuccess(ctx context.Context, account *Account, result opsAccountBalanceMethodResult) OpsAccountBalanceState {
 	now := time.Now().UTC()
 	updates := map[string]any{
-		accountBalanceProbeDetectedMethodExtraKey: result.Method,
-		accountBalanceProbeStatusExtraKey:         AccountBalanceProbeStatusOK,
-		accountBalanceProbeErrorExtraKey:          "",
-		accountBalanceProbeCheckedAtExtraKey:      now.Format(time.RFC3339Nano),
-		accountBalanceProbeUnlimitedExtraKey:      result.Unlimited,
-		accountBalanceProbeEndpointExtraKey:       result.Endpoint,
+		accountBalanceProbeDetectedMethodExtraKey:  result.Method,
+		accountBalanceProbeStatusExtraKey:          AccountBalanceProbeStatusOK,
+		accountBalanceProbeErrorExtraKey:           "",
+		accountBalanceProbeCheckedAtExtraKey:       now.Format(time.RFC3339Nano),
+		accountBalanceProbeUnlimitedExtraKey:       result.Unlimited,
+		accountBalanceProbeEndpointExtraKey:        result.Endpoint,
+		accountBalanceProbeBalanceUSDExtraKey:      nil,
+		accountBalanceProbeBalanceAmountExtraKey:   nil,
+		accountBalanceProbeBalanceCurrencyExtraKey: nil,
+		accountBalanceProbeTotalUsedUSDExtraKey:    nil,
+		accountBalanceProbeGrantedUSDExtraKey:      nil,
 	}
 	if result.BalanceUSD != nil {
 		updates[accountBalanceProbeBalanceUSDExtraKey] = *result.BalanceUSD
+	}
+	if result.BalanceAmount != nil {
+		updates[accountBalanceProbeBalanceAmountExtraKey] = *result.BalanceAmount
+		updates[accountBalanceProbeBalanceCurrencyExtraKey] = strings.ToUpper(strings.TrimSpace(result.BalanceCurrency))
 	}
 	if result.TotalUsedUSD != nil {
 		updates[accountBalanceProbeTotalUsedUSDExtraKey] = *result.TotalUsedUSD
@@ -1285,15 +1376,17 @@ func (s *OpsService) persistAccountBalanceFailure(ctx context.Context, account *
 		}
 	}
 	return s.persistAccountBalanceState(ctx, account, map[string]any{
-		accountBalanceProbeDetectedMethodExtraKey: "",
-		accountBalanceProbeStatusExtraKey:         status,
-		accountBalanceProbeErrorExtraKey:          truncateString(strings.TrimSpace(message), 500),
-		accountBalanceProbeCheckedAtExtraKey:      now.Format(time.RFC3339Nano),
-		accountBalanceProbeUnlimitedExtraKey:      false,
-		accountBalanceProbeEndpointExtraKey:       "",
-		accountBalanceProbeBalanceUSDExtraKey:     nil,
-		accountBalanceProbeTotalUsedUSDExtraKey:   nil,
-		accountBalanceProbeGrantedUSDExtraKey:     nil,
+		accountBalanceProbeDetectedMethodExtraKey:  "",
+		accountBalanceProbeStatusExtraKey:          status,
+		accountBalanceProbeErrorExtraKey:           truncateString(strings.TrimSpace(message), 500),
+		accountBalanceProbeCheckedAtExtraKey:       now.Format(time.RFC3339Nano),
+		accountBalanceProbeUnlimitedExtraKey:       false,
+		accountBalanceProbeEndpointExtraKey:        "",
+		accountBalanceProbeBalanceUSDExtraKey:      nil,
+		accountBalanceProbeBalanceAmountExtraKey:   nil,
+		accountBalanceProbeBalanceCurrencyExtraKey: nil,
+		accountBalanceProbeTotalUsedUSDExtraKey:    nil,
+		accountBalanceProbeGrantedUSDExtraKey:      nil,
 	})
 }
 
@@ -1324,13 +1417,10 @@ func accountBalancePersistContext(ctx context.Context) (context.Context, context
 
 func buildOpsAccountBalanceLowWeComMarkdown(account Account, state OpsAccountBalanceState, settings OpsAccountBalanceSettings, now time.Time) string {
 	balance := "未知"
-	if state.BalanceUSD != nil {
+	if state.Unlimited {
+		balance = "无限额度"
+	} else if state.BalanceUSD != nil {
 		balance = fmt.Sprintf("$%.2f", *state.BalanceUSD)
-		if state.Unlimited {
-			balance += "（额度未设上限）"
-		}
-	} else if state.Unlimited {
-		balance = "额度未设上限"
 	}
 	threshold := settings.DefaultThresholdUSD
 	if state.ThresholdUSD != nil {

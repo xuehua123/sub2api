@@ -116,7 +116,7 @@ func TestAccountBalanceProbeMethodsForAccount(t *testing.T) {
 		OpsAccountBalanceSettings{
 			Probe: OpsAccountBalanceProbeSettings{
 				MethodOrder: []string{
-					AccountBalanceProbeMethodNewAPITokenUsage,
+					AccountBalanceProbeMethodUpstreamManagement,
 					AccountBalanceProbeMethodSub2APIUsage,
 					AccountBalanceProbeMethodOpenAIBilling,
 				},
@@ -126,7 +126,7 @@ func TestAccountBalanceProbeMethodsForAccount(t *testing.T) {
 	)
 	want := []string{
 		AccountBalanceProbeMethodSub2APIUsage,
-		AccountBalanceProbeMethodNewAPITokenUsage,
+		AccountBalanceProbeMethodUpstreamManagement,
 		AccountBalanceProbeMethodOpenAIBilling,
 	}
 	if len(got) != len(want) {
@@ -136,6 +136,25 @@ func TestAccountBalanceProbeMethodsForAccount(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("method[%d] = %q, want %q; all=%#v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestNormalizeOpsAccountBalanceSettingsMigratesRetiredNewAPITokenUsage(t *testing.T) {
+	settings := defaultOpsAccountBalanceSettings()
+	settings.Probe.MethodOrder = []string{
+		AccountBalanceProbeMethodNewAPITokenUsage,
+		AccountBalanceProbeMethodSub2APIUsage,
+		AccountBalanceProbeMethodOpenAIBilling,
+	}
+
+	normalizeOpsAccountBalanceSettings(&settings)
+	want := []string{
+		AccountBalanceProbeMethodSub2APIUsage,
+		AccountBalanceProbeMethodUpstreamManagement,
+		AccountBalanceProbeMethodOpenAIBilling,
+	}
+	if !reflect.DeepEqual(settings.Probe.MethodOrder, want) {
+		t.Fatalf("method order = %#v, want %#v", settings.Probe.MethodOrder, want)
 	}
 }
 
@@ -178,6 +197,8 @@ func TestPersistAccountBalanceFailureClearsStaleProbeValues(t *testing.T) {
 	}
 	for _, key := range []string{
 		accountBalanceProbeBalanceUSDExtraKey,
+		accountBalanceProbeBalanceAmountExtraKey,
+		accountBalanceProbeBalanceCurrencyExtraKey,
 		accountBalanceProbeTotalUsedUSDExtraKey,
 		accountBalanceProbeGrantedUSDExtraKey,
 	} {
@@ -187,15 +208,84 @@ func TestPersistAccountBalanceFailureClearsStaleProbeValues(t *testing.T) {
 	}
 }
 
-func TestUnlimitedAccountWithNumericBalanceStillTriggersLowBalance(t *testing.T) {
+func TestUnlimitedAccountWithNumericBalanceIsNotLow(t *testing.T) {
 	balance := -0.12
 	state := OpsAccountBalanceState{
 		Enabled:    true,
 		Unlimited:  true,
 		BalanceUSD: &balance,
 	}
-	if !accountBalanceStateIsLow(state, defaultOpsAccountBalanceSettings()) {
-		t.Fatal("numeric negative balance with no hard cap should still be low")
+	if accountBalanceStateIsLow(state, defaultOpsAccountBalanceSettings()) {
+		t.Fatal("unlimited account must not be treated as low balance")
+	}
+}
+
+func TestParseNewAPIUnlimitedQuotaRejectsKeyLedgerAsAccountBalance(t *testing.T) {
+	_, err := parseNewAPIAccountBalance("https://example.com/api/usage/token", map[string]any{
+		"data": map[string]any{
+			"unlimited_quota": true,
+			"total_available": -612535910.0,
+			"total_used":      612535910.0,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "API key quota") {
+		t.Fatalf("parseNewAPIAccountBalance() error = %v, want API key quota rejection", err)
+	}
+}
+
+func TestAccountBalanceStateInvalidatesHistoricalNewAPIKeySnapshot(t *testing.T) {
+	for _, extra := range []map[string]any{
+		{
+			accountBalanceProbeDetectedMethodExtraKey: AccountBalanceProbeMethodNewAPITokenUsage,
+			accountBalanceProbeBalanceUSDExtraKey:     -42.0,
+		},
+		{
+			accountBalanceProbeMethodExtraKey:     AccountBalanceProbeMethodNewAPITokenUsage,
+			accountBalanceProbeBalanceUSDExtraKey: -42.0,
+		},
+	} {
+		state := AccountBalanceStateFromAccount(&Account{ID: 1, Extra: extra})
+		if state.BalanceUSD != nil {
+			t.Fatalf("BalanceUSD = %v, want nil for API key snapshot", *state.BalanceUSD)
+		}
+		if state.Status != AccountBalanceProbeStatusUnsupported || !strings.Contains(state.Error, "API key usage") {
+			t.Fatalf("state = %#v, want unsupported API key snapshot", state)
+		}
+	}
+}
+
+func TestPersistAccountBalanceSuccessStoresNativeCurrencyAmount(t *testing.T) {
+	staleBalance := -42.0
+	repo := &accountBalanceExtraRepoStub{}
+	service := &OpsService{accountRepo: repo}
+	account := &Account{
+		ID: 1,
+		Extra: map[string]any{
+			accountBalanceProbeBalanceUSDExtraKey: staleBalance,
+		},
+	}
+
+	state := service.persistAccountBalanceSuccess(context.Background(), account, opsAccountBalanceMethodResult{
+		Method:          AccountBalanceProbeMethodUpstreamManagement,
+		Endpoint:        "https://example.com/api/user/self",
+		BalanceCurrency: "CNY",
+		BalanceAmount:   accountBalanceFloat64Ptr(12.5),
+	})
+	if state.BalanceUSD != nil || state.BalanceAmount == nil || *state.BalanceAmount != 12.5 || state.BalanceCurrency != "CNY" {
+		t.Fatalf("state = %#v, want native CNY amount", state)
+	}
+	for _, key := range []string{
+		accountBalanceProbeBalanceUSDExtraKey,
+	} {
+		if value, ok := repo.updates[key]; !ok || value != nil {
+			t.Fatalf("persisted %s = %#v, want nil", key, value)
+		}
+	}
+	if got := repo.updates[accountBalanceProbeBalanceAmountExtraKey]; got != 12.5 {
+		t.Fatalf("native amount = %#v, want 12.5", got)
+	}
+	if got := repo.updates[accountBalanceProbeBalanceCurrencyExtraKey]; got != "CNY" {
+		t.Fatalf("native currency = %#v, want CNY", got)
 	}
 }
 
@@ -346,3 +436,5 @@ func assertFloatPtr(t *testing.T, name string, got *float64, want float64) {
 		t.Fatalf("%s = %.4f, want %.4f", name, *got, want)
 	}
 }
+
+func accountBalanceFloat64Ptr(value float64) *float64 { return &value }

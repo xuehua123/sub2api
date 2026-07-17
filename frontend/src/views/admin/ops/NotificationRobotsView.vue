@@ -396,7 +396,7 @@ const appStore = useAppStore()
 
 const methodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
   { value: 'auto', label: '智能' },
-  { value: 'newapi_token_usage', label: 'New API' },
+  { value: 'upstream_management', label: '上游账户' },
   { value: 'sub2api_usage', label: 'Sub2API' },
   { value: 'openai_billing', label: 'OpenAI Billing' },
   { value: 'disabled', label: '禁用' }
@@ -673,6 +673,13 @@ function sortHeaderMark(key: string) {
 }
 
 function formatBalance(state: OpsAccountBalanceProbeState) {
+  if (state.balance_amount != null) {
+    const currency = String(state.balance_currency || 'USD').toUpperCase()
+    const value = formatNumber(state.balance_amount)
+    if (currency === 'USD') return `$${value}`
+    if (currency === 'CNY') return `¥${value}`
+    return `${currency} ${value}`
+  }
   if (state.balance_usd != null) return `$${formatNumber(state.balance_usd)}`
   if (state.unlimited) return '额度未设上限'
   return '未知'
@@ -683,6 +690,7 @@ function formatNumber(value: number) {
 }
 
 function balanceTextClass(state: OpsAccountBalanceProbeState) {
+  if (state.balance_amount != null && state.balance_currency !== 'USD') return 'text-emerald-600 dark:text-emerald-300'
   if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
   const threshold = state.threshold_usd ?? balanceSettings.default_threshold_usd
   if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
@@ -731,6 +739,7 @@ function probeStatusClass(status: string) {
 }
 
 function methodLabel(method?: string) {
+  if (method === 'newapi_token_usage') return 'API Key 用量（非账户余额）'
   return methodOptions.find((item) => item.value === method)?.label ?? method ?? '智能'
 }
 
@@ -789,7 +798,7 @@ function defaultBalanceSettings(): OpsAccountBalanceSettings {
       max_per_run: 2,
       timeout_seconds: 8,
       only_schedulable: true,
-      method_order: ['newapi_token_usage', 'sub2api_usage', 'openai_billing']
+      method_order: ['upstream_management', 'sub2api_usage', 'openai_billing']
     },
     notification: {
       enterprise_wechat_enabled: false,

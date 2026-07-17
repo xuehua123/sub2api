@@ -757,7 +757,7 @@ const accountBalanceProbeIds = ref(new Set<number>())
 const usageManualRefreshToken = ref(0)
 const accountBalanceMethodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
   { value: 'auto', label: '智能' },
-  { value: 'newapi_token_usage', label: 'New API' },
+  { value: 'upstream_management', label: '上游账户' },
   { value: 'sub2api_usage', label: 'Sub2API' },
   { value: 'openai_billing', label: 'OpenAI' },
   { value: 'disabled', label: '禁用' }
@@ -865,14 +865,24 @@ function syncAccountBalanceState(row: Account, state: OpsAccountBalanceProbeStat
 function accountBalanceText(row: Account): string {
   const state = accountBalanceState(row)
   if (!state) return '-'
+  if (state.balance_amount != null) return formatAccountBalanceAmount(state.balance_amount, state.balance_currency)
   if (state.balance_usd != null) return `$${Number(state.balance_usd).toFixed(2)}`
   if (state.unlimited) return '额度未设上限'
   return '未知'
 }
 
+function formatAccountBalanceAmount(amount: number, currency?: string): string {
+  const value = Number(amount).toFixed(2)
+  const unit = String(currency || 'USD').toUpperCase()
+  if (unit === 'USD') return `$${value}`
+  if (unit === 'CNY') return `¥${value}`
+  return `${unit} ${value}`
+}
+
 function accountBalanceClass(row: Account): string {
   const state = accountBalanceState(row)
   if (!state) return 'text-gray-500 dark:text-gray-400'
+  if (state.balance_amount != null && state.balance_currency !== 'USD') return 'text-emerald-600 dark:text-emerald-300'
   if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
   const threshold = state.threshold_usd ?? 0
   if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
@@ -909,6 +919,7 @@ function accountBalanceError(row: Account): string {
 }
 
 function accountBalanceMethodLabel(method?: string): string {
+  if (method === 'newapi_token_usage') return 'API Key 用量（非账户余额）'
   return accountBalanceMethodOptions.find(option => option.value === method)?.label ?? method ?? '智能'
 }
 

@@ -193,6 +193,8 @@ type AccountBalanceProbeState struct {
 	Status          string     `json:"status"`
 	Error           string     `json:"error,omitempty"`
 	BalanceUSD      *float64   `json:"balance_usd,omitempty"`
+	BalanceAmount   *float64   `json:"balance_amount,omitempty"`
+	BalanceCurrency string     `json:"balance_currency,omitempty"`
 	Unlimited       bool       `json:"unlimited"`
 	Endpoint        string     `json:"endpoint,omitempty"`
 	TotalUsedUSD    *float64   `json:"total_used_usd,omitempty"`

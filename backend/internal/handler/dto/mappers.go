@@ -247,6 +247,8 @@ func AccountBalanceProbeFromService(state service.OpsAccountBalanceState) *Accou
 		Status:          state.Status,
 		Error:           state.Error,
 		BalanceUSD:      state.BalanceUSD,
+		BalanceAmount:   state.BalanceAmount,
+		BalanceCurrency: state.BalanceCurrency,
 		Unlimited:       state.Unlimited,
 		Endpoint:        state.Endpoint,
 		TotalUsedUSD:    state.TotalUsedUSD,

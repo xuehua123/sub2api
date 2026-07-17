@@ -1,13 +1,20 @@
 package service
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 const (
-	AccountBalanceProbeMethodAuto             = "auto"
-	AccountBalanceProbeMethodDisabled         = "disabled"
-	AccountBalanceProbeMethodNewAPITokenUsage = "newapi_token_usage"
-	AccountBalanceProbeMethodSub2APIUsage     = "sub2api_usage"
-	AccountBalanceProbeMethodOpenAIBilling    = "openai_billing"
+	AccountBalanceProbeMethodAuto     = "auto"
+	AccountBalanceProbeMethodDisabled = "disabled"
+	// AccountBalanceProbeMethodUpstreamManagement queries an upstream user's
+	// management profile. Unlike an API key usage endpoint, it represents the
+	// upstream account wallet.
+	AccountBalanceProbeMethodUpstreamManagement = "upstream_management"
+	AccountBalanceProbeMethodNewAPITokenUsage   = "newapi_token_usage"
+	AccountBalanceProbeMethodSub2APIUsage       = "sub2api_usage"
+	AccountBalanceProbeMethodOpenAIBilling      = "openai_billing"
 
 	AccountBalanceProbeStatusUnknown     = "unknown"
 	AccountBalanceProbeStatusOK          = "ok"
@@ -17,19 +24,21 @@ const (
 )
 
 const (
-	accountBalanceProbeMethodExtraKey         = "balance_probe_method"
-	accountBalanceProbeEnabledExtraKey        = "balance_probe_enabled"
-	accountBalanceProbeThresholdUSDExtraKey   = "balance_probe_threshold_usd"
-	accountBalanceProbeDetectedMethodExtraKey = "balance_probe_detected_method"
-	accountBalanceProbeStatusExtraKey         = "balance_probe_status"
-	accountBalanceProbeErrorExtraKey          = "balance_probe_error"
-	accountBalanceProbeCheckedAtExtraKey      = "balance_probe_checked_at"
-	accountBalanceProbeBalanceUSDExtraKey     = "balance_probe_balance_usd"
-	accountBalanceProbeUnlimitedExtraKey      = "balance_probe_unlimited"
-	accountBalanceProbeEndpointExtraKey       = "balance_probe_endpoint"
-	accountBalanceProbeTotalUsedUSDExtraKey   = "balance_probe_total_used_usd"
-	accountBalanceProbeGrantedUSDExtraKey     = "balance_probe_total_granted_usd"
-	accountBalanceProbeNotifiedAtExtraKey     = "balance_probe_notified_at"
+	accountBalanceProbeMethodExtraKey          = "balance_probe_method"
+	accountBalanceProbeEnabledExtraKey         = "balance_probe_enabled"
+	accountBalanceProbeThresholdUSDExtraKey    = "balance_probe_threshold_usd"
+	accountBalanceProbeDetectedMethodExtraKey  = "balance_probe_detected_method"
+	accountBalanceProbeStatusExtraKey          = "balance_probe_status"
+	accountBalanceProbeErrorExtraKey           = "balance_probe_error"
+	accountBalanceProbeCheckedAtExtraKey       = "balance_probe_checked_at"
+	accountBalanceProbeBalanceUSDExtraKey      = "balance_probe_balance_usd"
+	accountBalanceProbeBalanceAmountExtraKey   = "balance_probe_balance_amount"
+	accountBalanceProbeBalanceCurrencyExtraKey = "balance_probe_balance_currency"
+	accountBalanceProbeUnlimitedExtraKey       = "balance_probe_unlimited"
+	accountBalanceProbeEndpointExtraKey        = "balance_probe_endpoint"
+	accountBalanceProbeTotalUsedUSDExtraKey    = "balance_probe_total_used_usd"
+	accountBalanceProbeGrantedUSDExtraKey      = "balance_probe_total_granted_usd"
+	accountBalanceProbeNotifiedAtExtraKey      = "balance_probe_notified_at"
 )
 
 type OpsAccountBalanceSettings struct {
@@ -64,6 +73,8 @@ type OpsAccountBalanceState struct {
 	Status          string     `json:"status"`
 	Error           string     `json:"error,omitempty"`
 	BalanceUSD      *float64   `json:"balance_usd,omitempty"`
+	BalanceAmount   *float64   `json:"balance_amount,omitempty"`
+	BalanceCurrency string     `json:"balance_currency,omitempty"`
 	Unlimited       bool       `json:"unlimited"`
 	Endpoint        string     `json:"endpoint,omitempty"`
 	TotalUsedUSD    *float64   `json:"total_used_usd,omitempty"`
@@ -144,7 +155,13 @@ type opsAccountBalanceMethodResult struct {
 	Method          string
 	Endpoint        string
 	BalanceUSD      *float64
+	BalanceAmount   *float64
+	BalanceCurrency string
 	Unlimited       bool
 	TotalUsedUSD    *float64
 	TotalGrantedUSD *float64
+}
+
+type upstreamAccountBalanceFetcher interface {
+	FetchAccountBalance(ctx context.Context, account *Account) (opsAccountBalanceMethodResult, error)
 }
