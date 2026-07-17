@@ -178,9 +178,9 @@ func TestUpstreamRateMultiplierSyncUsesSub2APIGroupRates(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/api/v1/groups/rates":
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"team": 0.2}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"7": 0.2}})
 		case "/api/v1/groups/available":
-			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"name": "team"}}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": 7, "name": "team"}}})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
@@ -241,7 +241,7 @@ func TestUpstreamRateMultiplierSyncFallsBackToSub2APIAvailableGroupRates(t *test
 		case "/api/v1/groups/available":
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"code": 0,
-				"data": []any{map[string]any{"name": "team", "rate_multiplier": 0.35}},
+				"data": []any{map[string]any{"id": 7, "name": "team", "rate_multiplier": 0.35}},
 			})
 		default:
 			t.Fatalf("unexpected path %s", r.URL.Path)
