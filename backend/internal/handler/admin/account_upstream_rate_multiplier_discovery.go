@@ -15,6 +15,7 @@ import (
 type upstreamRateMultiplierDiscoveryRequest struct {
 	AccountID              *int64                               `json:"account_id,omitempty"`
 	BaseURL                string                               `json:"base_url,omitempty"`
+	ManagementBaseURL      *string                              `json:"management_base_url,omitempty"`
 	UpstreamAPIKey         string                               `json:"upstream_api_key,omitempty"`
 	ProxyID                *int64                               `json:"proxy_id,omitempty"`
 	AuthMode               service.UpstreamManagementAuthMode   `json:"auth_mode"`
@@ -51,12 +52,21 @@ func (h *AccountHandler) DiscoverUpstreamRateMultiplierGroups(c *gin.Context) {
 		account = &copied
 	}
 
-	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" {
+	if baseURL := strings.TrimSpace(req.BaseURL); baseURL != "" || req.ManagementBaseURL != nil {
 		credentials := make(map[string]any, len(account.Credentials)+1)
 		for key, value := range account.Credentials {
 			credentials[key] = value
 		}
-		credentials["base_url"] = baseURL
+		if baseURL != "" {
+			credentials["base_url"] = baseURL
+		}
+		if req.ManagementBaseURL != nil {
+			if managementBaseURL := strings.TrimSpace(*req.ManagementBaseURL); managementBaseURL != "" {
+				credentials[service.UpstreamManagementBaseURLCredentialKey] = managementBaseURL
+			} else {
+				delete(credentials, service.UpstreamManagementBaseURLCredentialKey)
+			}
+		}
 		account.Credentials = credentials
 	}
 	if req.AccountID == nil && strings.TrimSpace(req.BaseURL) == "" {

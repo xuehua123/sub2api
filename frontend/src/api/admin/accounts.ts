@@ -212,6 +212,7 @@ export interface UpstreamRateMultiplierGroup {
 export interface UpstreamRateMultiplierDiscoveryRequest {
   account_id?: number
   base_url?: string
+  management_base_url?: string
   upstream_api_key?: string
   proxy_id?: number | null
   auth_mode: 'password' | 'access_token'

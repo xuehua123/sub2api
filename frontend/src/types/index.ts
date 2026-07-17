@@ -1269,6 +1269,7 @@ export interface CreateAccountRequest {
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
   upstream_management_auth?: UpstreamManagementAuthRequest
+  upstream_management_base_url?: string
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1287,6 +1288,7 @@ export interface UpdateAccountRequest {
   credentials?: Record<string, unknown>
   extra?: Record<string, unknown>
   upstream_management_auth?: UpstreamManagementAuthRequest
+  upstream_management_base_url?: string
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null

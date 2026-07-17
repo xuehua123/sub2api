@@ -103,6 +103,35 @@ func TestValidateConfiguredUpstreamManagementAuthRejectsUnsupportedAccountType(t
 	}
 }
 
+func TestManagementBaseURLUsesDedicatedCredential(t *testing.T) {
+	t.Parallel()
+
+	syncer := NewUpstreamRateMultiplierSyncService(nil, nil, http.DefaultClient, nil, nil, time.Hour)
+	account := &Account{Credentials: map[string]any{
+		"base_url":                             "https://api.example.com/v1",
+		UpstreamManagementBaseURLCredentialKey: "https://console.example.com",
+	}}
+
+	baseURL, err := syncer.managementBaseURL(account)
+	require.NoError(t, err)
+	require.Equal(t, "https://console.example.com", baseURL)
+}
+
+func TestApplyUpstreamManagementBaseURLInput(t *testing.T) {
+	t.Parallel()
+
+	credentials := map[string]any{"base_url": "https://api.example.com/v1"}
+	managementURL := " https://console.example.com "
+	updated := applyUpstreamManagementBaseURLInput(credentials, &managementURL)
+	require.Equal(t, "https://console.example.com", updated[UpstreamManagementBaseURLCredentialKey])
+	require.NotContains(t, credentials, UpstreamManagementBaseURLCredentialKey)
+
+	empty := ""
+	updated = applyUpstreamManagementBaseURLInput(updated, &empty)
+	require.NotContains(t, updated, UpstreamManagementBaseURLCredentialKey)
+	require.Equal(t, "https://api.example.com/v1", updated["base_url"])
+}
+
 func TestUpstreamRateMultiplierSyncUsesNewAPIManagementToken(t *testing.T) {
 	t.Parallel()
 
@@ -147,7 +176,8 @@ func TestUpstreamRateMultiplierSyncUsesNewAPIManagementToken(t *testing.T) {
 		Schedulable:    true,
 		RateMultiplier: &one,
 		Credentials: map[string]any{
-			"base_url":                          server.URL + "/v1",
+			"base_url":                          "http://127.0.0.1:1/v1",
+			UpstreamManagementBaseURLCredentialKey: server.URL,
 			upstreamManagementAuthCredentialKey: ciphertext,
 		},
 		Extra: map[string]any{

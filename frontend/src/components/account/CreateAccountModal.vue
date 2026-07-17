@@ -2780,6 +2780,11 @@
           </button>
         </div>
         <div v-if="upstreamRateMultiplierSyncEnabled" class="mt-4 max-w-2xl">
+          <div class="mb-4">
+            <label class="input-label">{{ t('admin.accounts.upstreamRateSync.managementBaseUrl') }}</label>
+            <input v-model.trim="upstreamManagementBaseURL" data-testid="create-upstream-management-base-url" type="url" class="input" placeholder="https://console.example.com" />
+            <p class="input-hint">{{ t('admin.accounts.upstreamRateSync.managementBaseUrlHint') }}</p>
+          </div>
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.group') }}</label>
@@ -4170,6 +4175,7 @@ const upstreamRateMultiplierSyncGroup = ref('')
 const upstreamRateMultiplierSyncProvider = ref<'newapi' | 'rixapi' | 'shellapi' | 'sub2api'>('newapi')
 const upstreamRateMultiplierSyncAuthMode = ref<'password' | 'access_token'>('password')
 const upstreamRateMultiplierSyncRemoteUserID = ref<number | null>(null)
+const upstreamManagementBaseURL = ref('')
 const upstreamManagementUsername = ref('')
 const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
@@ -4205,7 +4211,8 @@ const upstreamManagementRequiresRemoteUserID = computed(() =>
 const upstreamManagementCurrentConfigKey = computed(() => [
   upstreamRateMultiplierSyncProvider.value,
   upstreamRateMultiplierSyncAuthMode.value,
-  upstreamRateMultiplierSyncRemoteUserID.value || ''
+  upstreamRateMultiplierSyncRemoteUserID.value || '',
+  upstreamManagementBaseURL.value.trim()
 ].join('|'))
 
 const discoverUpstreamRateMultiplierGroups = async () => {
@@ -4222,6 +4229,7 @@ const discoverUpstreamRateMultiplierGroups = async () => {
   try {
     const discovery = await adminAPI.accounts.discoverUpstreamRateMultiplierGroups({
       base_url: baseURL,
+      management_base_url: upstreamManagementBaseURL.value.trim(),
       upstream_api_key: apiKeyValue.value.trim(),
       proxy_id: form.proxy_id,
       auth_mode: upstreamRateMultiplierSyncAuthMode.value,
@@ -4851,6 +4859,7 @@ const resetForm = () => {
   upstreamRateMultiplierSyncProvider.value = 'newapi'
   upstreamRateMultiplierSyncAuthMode.value = 'password'
   upstreamRateMultiplierSyncRemoteUserID.value = null
+  upstreamManagementBaseURL.value = ''
   upstreamManagementUsername.value = ''
   upstreamManagementPassword.value = ''
   upstreamManagementAccessToken.value = ''
@@ -5095,6 +5104,7 @@ const doCreateAccount = async (payload: CreateAccountRequest) => {
     payload.upstream_management_auth = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
       ? { access_token: upstreamManagementAccessToken.value.trim() }
       : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
+    payload.upstream_management_base_url = upstreamManagementBaseURL.value.trim() || undefined
     // Persist the value only when it was just resolved through an exact Key ->
     // GroupID mapping. The scheduled synchronizer remains authoritative after
     // this initial live value is saved.

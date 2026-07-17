@@ -729,6 +729,8 @@ export default {
         providerShellAPI: 'ShellAPI',
         providerSub2API: 'Sub2API',
         authMode: 'Management Authentication',
+        managementBaseUrl: 'Upstream Management URL',
+        managementBaseUrlHint: 'Used only for management login, group/rate sync, and total-balance lookup. Leave empty to use the API base URL.',
         authModeAccessToken: 'Access Token',
         authModePassword: 'Username and Password',
         remoteUserId: 'Remote User ID',

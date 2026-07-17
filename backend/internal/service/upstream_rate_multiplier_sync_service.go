@@ -277,7 +277,7 @@ func (s *UpstreamRateMultiplierSyncService) Reconcile(ctx context.Context) (int6
 }
 
 func (s *UpstreamRateMultiplierSyncService) managementBaseURL(account *Account) (string, error) {
-	baseURL := accountUpstreamBaseURL(account)
+	baseURL := accountUpstreamManagementBaseURL(account)
 	if baseURL == "" {
 		return "", errors.New("base url is not configured")
 	}
@@ -290,6 +290,15 @@ func (s *UpstreamRateMultiplierSyncService) managementBaseURL(account *Account) 
 		RequireAllowlist: len(s.cfg.Security.URLAllowlist.UpstreamHosts) > 0,
 		AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
 	})
+}
+
+func accountUpstreamManagementBaseURL(account *Account) string {
+	if account != nil {
+		if value := strings.TrimSpace(account.GetCredential(UpstreamManagementBaseURLCredentialKey)); value != "" {
+			return value
+		}
+	}
+	return accountUpstreamBaseURL(account)
 }
 
 func accountUpstreamBaseURL(account *Account) string {

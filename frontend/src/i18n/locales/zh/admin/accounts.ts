@@ -815,6 +815,8 @@ export default {
         providerShellAPI: 'ShellAPI',
         providerSub2API: 'Sub2API',
         authMode: '管理端认证方式',
+        managementBaseUrl: '上游管理地址',
+        managementBaseUrlHint: '仅用于管理端登录、分组/倍率同步和总余额读取；留空时使用 API Base URL。',
         authModeAccessToken: '访问令牌',
         authModePassword: '用户名和密码',
         remoteUserId: '上游用户 ID',

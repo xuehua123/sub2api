@@ -519,6 +519,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
+	credentials = applyUpstreamManagementBaseURLInput(credentials, input.ManagementBaseURL)
 	if accountExtra[AccountExtraUpstreamRateMultiplierSyncEnabled] == true && upstreamManagementAuthCiphertext(credentials) == "" {
 		return nil, errors.New("upstream rate multiplier sync requires management credentials")
 	}
@@ -710,6 +711,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, credentialErr
 		}
 		account.Credentials = credentials
+	}
+	if input.ManagementBaseURL != nil {
+		account.Credentials = applyUpstreamManagementBaseURLInput(account.Credentials, input.ManagementBaseURL)
 	}
 	if err := validateConfiguredUpstreamManagementAuth(account, s.encryptor); err != nil {
 		return nil, err

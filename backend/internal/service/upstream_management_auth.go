@@ -8,7 +8,12 @@ import (
 	"strings"
 )
 
-const upstreamManagementAuthCredentialKey = "upstream_management_auth"
+const (
+	upstreamManagementAuthCredentialKey = "upstream_management_auth"
+	// UpstreamManagementBaseURLCredentialKey stores the optional management-plane
+	// address. It must never replace the forwarding base_url used for API traffic.
+	UpstreamManagementBaseURLCredentialKey = "upstream_management_base_url"
+)
 
 const (
 	AccountExtraUpstreamRateMultiplierSyncProvider     = "upstream_rate_multiplier_sync_provider"
@@ -39,6 +44,22 @@ type UpstreamManagementAuthInput struct {
 	Username    string `json:"username,omitempty"`
 	Password    string `json:"password,omitempty"`
 	AccessToken string `json:"access_token,omitempty"`
+}
+
+func applyUpstreamManagementBaseURLInput(credentials map[string]any, baseURL *string) map[string]any {
+	if baseURL == nil {
+		return credentials
+	}
+	updated := make(map[string]any, len(credentials)+1)
+	for key, value := range credentials {
+		updated[key] = value
+	}
+	if value := strings.TrimSpace(*baseURL); value != "" {
+		updated[UpstreamManagementBaseURLCredentialKey] = value
+	} else {
+		delete(updated, UpstreamManagementBaseURLCredentialKey)
+	}
+	return updated
 }
 
 type upstreamManagementAuthSecret struct {

@@ -1524,6 +1524,11 @@
           </button>
         </div>
         <div v-if="upstreamRateMultiplierSyncEnabled" class="mt-4 max-w-2xl">
+          <div class="mb-4">
+            <label class="input-label">{{ t('admin.accounts.upstreamRateSync.managementBaseUrl') }}</label>
+            <input v-model.trim="upstreamManagementBaseURL" data-testid="edit-upstream-management-base-url" type="url" class="input" placeholder="https://console.example.com" />
+            <p class="input-hint">{{ t('admin.accounts.upstreamRateSync.managementBaseUrlHint') }}</p>
+          </div>
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
               <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.group') }}</label>
@@ -3324,6 +3329,7 @@ const upstreamRateMultiplierSyncGroup = ref('')
 const upstreamRateMultiplierSyncProvider = ref<'newapi' | 'rixapi' | 'shellapi' | 'sub2api'>('newapi')
 const upstreamRateMultiplierSyncAuthMode = ref<'password' | 'access_token'>('password')
 const upstreamRateMultiplierSyncRemoteUserID = ref<number | null>(null)
+const upstreamManagementBaseURL = ref('')
 const upstreamManagementUsername = ref('')
 const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
@@ -3361,7 +3367,8 @@ const upstreamManagementRequiresRemoteUserID = computed(() =>
 const upstreamManagementCurrentConfigKey = computed(() => [
   upstreamRateMultiplierSyncProvider.value,
   upstreamRateMultiplierSyncAuthMode.value,
-  upstreamRateMultiplierSyncRemoteUserID.value || ''
+  upstreamRateMultiplierSyncRemoteUserID.value || '',
+  upstreamManagementBaseURL.value.trim()
 ].join('|'))
 
 const discoverUpstreamRateMultiplierGroups = async () => {
@@ -3381,6 +3388,7 @@ const discoverUpstreamRateMultiplierGroups = async () => {
   try {
     const discovery = await adminAPI.accounts.discoverUpstreamRateMultiplierGroups({
       account_id: props.account.id,
+      management_base_url: upstreamManagementBaseURL.value.trim(),
       proxy_id: form.proxy_id,
       auth_mode: upstreamRateMultiplierSyncAuthMode.value,
       remote_user_id: upstreamRateMultiplierSyncRemoteUserID.value ?? undefined,
@@ -3581,6 +3589,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     : 'password'
   const remoteUserID = Number(extra?.upstream_rate_multiplier_sync_remote_user_id)
   upstreamRateMultiplierSyncRemoteUserID.value = Number.isInteger(remoteUserID) && remoteUserID > 0 ? remoteUserID : null
+  upstreamManagementBaseURL.value = typeof credentials?.upstream_management_base_url === 'string'
+    ? credentials.upstream_management_base_url.trim()
+    : ''
   upstreamManagementUsername.value = ''
   upstreamManagementPassword.value = ''
   upstreamManagementAccessToken.value = ''
@@ -3593,7 +3604,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   upstreamManagementInitialConfigKey.value = [
     upstreamRateMultiplierSyncProvider.value,
     upstreamRateMultiplierSyncAuthMode.value,
-    upstreamRateMultiplierSyncRemoteUserID.value || ''
+    upstreamRateMultiplierSyncRemoteUserID.value || '',
+    upstreamManagementBaseURL.value.trim()
   ].join('|')
   upstreamRateMultiplierSyncDiscoveredConfigKey.value = upstreamManagementInitialConfigKey.value
   upstreamGzipExplicit.value = typeof extra?.upstream_gzip_enabled === 'boolean'
@@ -4974,6 +4986,7 @@ const handleSubmit = async () => {
           ? { access_token: upstreamManagementAccessToken.value.trim() }
           : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
       }
+      updatePayload.upstream_management_base_url = upstreamManagementBaseURL.value.trim()
       // A fresh exact Key -> GroupID match is safe to apply immediately. For
       // normal edits, leave this field untouched for the scheduled synchronizer.
       updatePayload.rate_multiplier = upstreamRateMultiplierSyncDetectedGroup.value?.rate_multiplier

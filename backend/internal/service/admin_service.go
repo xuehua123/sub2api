@@ -323,6 +323,7 @@ type CreateAccountInput struct {
 	Credentials            map[string]any
 	Extra                  map[string]any
 	UpstreamManagementAuth *UpstreamManagementAuthInput
+	ManagementBaseURL      *string
 	ProxyID                *int64
 	Concurrency            int
 	Priority               int
@@ -354,6 +355,7 @@ type UpdateAccountInput struct {
 	Credentials            map[string]any
 	Extra                  map[string]any
 	UpstreamManagementAuth *UpstreamManagementAuthInput
+	ManagementBaseURL      *string
 	ProxyID                *int64
 	Concurrency            *int     // 使用指针区分"未提供"和"设置为0"
 	Priority               *int     // 使用指针区分"未提供"和"设置为0"

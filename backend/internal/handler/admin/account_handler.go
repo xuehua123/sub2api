@@ -109,6 +109,7 @@ type CreateAccountRequest struct {
 	Credentials             map[string]any                       `json:"credentials" binding:"required"`
 	Extra                   map[string]any                       `json:"extra"`
 	UpstreamManagementAuth  *service.UpstreamManagementAuthInput `json:"upstream_management_auth"`
+	ManagementBaseURL       *string                              `json:"upstream_management_base_url"`
 	ProxyID                 *int64                               `json:"proxy_id"`
 	Concurrency             int                                  `json:"concurrency"`
 	Priority                int                                  `json:"priority"`
@@ -129,6 +130,7 @@ type UpdateAccountRequest struct {
 	Credentials             map[string]any                       `json:"credentials"`
 	Extra                   map[string]any                       `json:"extra"`
 	UpstreamManagementAuth  *service.UpstreamManagementAuthInput `json:"upstream_management_auth"`
+	ManagementBaseURL       *string                              `json:"upstream_management_base_url"`
 	ProxyID                 *int64                               `json:"proxy_id"`
 	Concurrency             *int                                 `json:"concurrency"`
 	Priority                *int                                 `json:"priority"`
@@ -818,6 +820,7 @@ func (h *AccountHandler) Create(c *gin.Context) {
 			Credentials:            req.Credentials,
 			Extra:                  req.Extra,
 			UpstreamManagementAuth: req.UpstreamManagementAuth,
+			ManagementBaseURL:      req.ManagementBaseURL,
 			ProxyID:                req.ProxyID,
 			Concurrency:            req.Concurrency,
 			Priority:               req.Priority,
@@ -945,6 +948,7 @@ func (h *AccountHandler) Update(c *gin.Context) {
 		Credentials:            req.Credentials,
 		Extra:                  req.Extra,
 		UpstreamManagementAuth: req.UpstreamManagementAuth,
+		ManagementBaseURL:      req.ManagementBaseURL,
 		ProxyID:                req.ProxyID,
 		Concurrency:            req.Concurrency, // 指针类型，nil 表示未提供
 		Priority:               req.Priority,    // 指针类型，nil 表示未提供

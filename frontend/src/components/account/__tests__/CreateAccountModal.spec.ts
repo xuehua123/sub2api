@@ -286,6 +286,7 @@ describe('CreateAccountModal', () => {
     await clickButtonContaining(wrapper, 'API Key')
     await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
     await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="create-upstream-management-base-url"]').setValue('https://console.example.com')
     const groupSelectBeforeDetection = wrapper.get('[data-testid="create-upstream-rate-sync-group"]')
     expect(groupSelectBeforeDetection.element.tagName).toBe('SELECT')
     expect(groupSelectBeforeDetection.attributes('disabled')).toBeDefined()
@@ -293,6 +294,7 @@ describe('CreateAccountModal', () => {
     await wrapper.get('[data-testid="create-upstream-rate-sync-password"]').setValue('management-password')
     await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="create-upstream-rate-sync-group"]').setValue('plus')
 
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
@@ -307,9 +309,11 @@ describe('CreateAccountModal', () => {
     })
     expect(discoverUpstreamRateMultiplierGroupsMock).toHaveBeenCalledWith(expect.objectContaining({
       base_url: 'https://api.openai.com',
+      management_base_url: 'https://console.example.com',
       auth_mode: 'password'
     }))
     expect(payload.upstream_management_auth).toEqual({ username: 'manager@example.com', password: 'management-password' })
+    expect(payload.upstream_management_base_url).toBe('https://console.example.com')
   })
 
   it('allows setting upstream gzip during account creation', async () => {

@@ -334,6 +334,7 @@ describe('EditAccountModal', () => {
       upstream_rate_multiplier_sync_remote_user_id: 42
     }
     account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
+    account.credentials.upstream_management_base_url = 'https://console.example.com'
     account.rate_multiplier = 0.5
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
@@ -352,6 +353,7 @@ describe('EditAccountModal', () => {
       upstream_rate_multiplier_sync_remote_user_id: 42
     })
     expect(payload.upstream_management_auth).toBeUndefined()
+    expect(payload.upstream_management_base_url).toBe('https://console.example.com')
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
