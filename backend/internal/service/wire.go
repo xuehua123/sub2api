@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -797,7 +798,36 @@ var ProviderSet = wire.NewSet(
 	ProvideChannelMonitorRunner,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
+	ProvideRateMultiplierPriorityService,
+	ProvideUpstreamRateMultiplierSyncService,
 )
+
+// ProvideRateMultiplierPriorityService starts the account-priority reconciler when
+// the concrete repository supports its narrow batch contract. Keeping this optional
+// avoids widening AccountRepository and breaking unrelated read-only implementations.
+func ProvideRateMultiplierPriorityService(accountRepo AccountRepository, settingService *SettingService) *RateMultiplierPriorityService {
+	repo, ok := accountRepo.(RateMultiplierPriorityRepository)
+	if !ok {
+		slog.Error("rate_multiplier_priority_repository_not_supported")
+		return NewRateMultiplierPriorityService(nil, settingService, rateMultiplierPriorityPollInterval)
+	}
+	service := NewRateMultiplierPriorityService(repo, settingService, rateMultiplierPriorityPollInterval)
+	service.Start()
+	return service
+}
+
+// ProvideUpstreamRateMultiplierSyncService starts the independent upstream-rate
+// synchronizer. Any priority reconciliation remains guarded by the global setting.
+func ProvideUpstreamRateMultiplierSyncService(cfg *config.Config, accountRepo AccountRepository, encryptor SecretEncryptor, priority *RateMultiplierPriorityService) *UpstreamRateMultiplierSyncService {
+	repo, ok := accountRepo.(UpstreamRateMultiplierSyncRepository)
+	if !ok {
+		slog.Error("upstream_rate_multiplier_sync_repository_not_supported")
+		return NewUpstreamRateMultiplierSyncService(nil, cfg, nil, encryptor, priority, upstreamRateMultiplierSyncInterval)
+	}
+	service := NewUpstreamRateMultiplierSyncService(repo, cfg, nil, encryptor, priority, upstreamRateMultiplierSyncInterval)
+	service.Start()
+	return service
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

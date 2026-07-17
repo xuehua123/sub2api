@@ -556,6 +556,20 @@ type RateLimit429CooldownSettings struct {
 	CooldownSeconds int `json:"cooldown_seconds"`
 }
 
+const (
+	DefaultRateMultiplierPriorityIntervalMinutes = 1
+	DefaultRateMultiplierPriorityStep            = 1
+)
+
+// RateMultiplierPrioritySettings controls automatic global account-priority
+// sorting by the existing account rate multiplier. It is disabled by default so
+// enabling the feature is always an explicit administrator action.
+type RateMultiplierPrioritySettings struct {
+	Enabled         bool `json:"enabled"`
+	IntervalMinutes int  `json:"interval_minutes"`
+	PriorityStep    int  `json:"priority_step"`
+}
+
 // DefaultOverloadCooldownSettings 返回默认的过载冷却配置（启用，10分钟）
 func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	return &OverloadCooldownSettings{
@@ -569,6 +583,14 @@ func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
 	return &RateLimit429CooldownSettings{
 		Enabled:         true,
 		CooldownSeconds: 5,
+	}
+}
+
+func DefaultRateMultiplierPrioritySettings() *RateMultiplierPrioritySettings {
+	return &RateMultiplierPrioritySettings{
+		Enabled:         false,
+		IntervalMinutes: DefaultRateMultiplierPriorityIntervalMinutes,
+		PriorityStep:    DefaultRateMultiplierPriorityStep,
 	}
 }
 

@@ -17,6 +17,31 @@
             @create="showCreate = true"
           >
             <template #after>
+              <div
+                class="flex h-10 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 dark:border-gray-700 dark:bg-dark-800"
+                :class="rateMultiplierPrioritySaving || rateMultiplierPriorityLoading ? 'pointer-events-none opacity-60' : ''"
+                :title="t('admin.accounts.autoRateMultiplierPriorityHint')"
+              >
+                <span class="hidden whitespace-nowrap text-sm text-gray-700 xl:inline dark:text-gray-200">
+                  {{ t('admin.accounts.autoRateMultiplierPriority') }}
+                </span>
+                <Toggle
+                  :modelValue="rateMultiplierPriorityEnabled"
+                  :aria-label="t('admin.accounts.autoRateMultiplierPriority')"
+                  @update:modelValue="setRateMultiplierPriorityEnabled"
+                />
+                <span class="h-4 border-l border-gray-200 dark:border-gray-700"></span>
+                <button
+                  type="button"
+                  class="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:text-dark-400 dark:hover:bg-dark-700 dark:hover:text-primary-300"
+                  :disabled="rateMultiplierPriorityLoading || rateMultiplierPrioritySaving"
+                  :title="t('admin.accounts.rateMultiplierPriorityConfigTitle')"
+                  @click="showRateMultiplierPriorityConfig = true"
+                >
+                  <Icon name="cog" size="sm" />
+                </button>
+              </div>
+
               <!-- Auto Refresh Dropdown -->
               <div class="relative" ref="autoRefreshDropdownRef">
                 <button
@@ -316,6 +341,7 @@
                 <div class="mt-0.5 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-4 text-gray-400 dark:text-dark-400">
                   <span v-if="accountBalanceState(row)?.checked_at">{{ formatRelativeTime(accountBalanceState(row)?.checked_at) }}</span>
                   <span v-if="accountBalanceDetectedMethod(row)">命中 {{ accountBalanceMethodLabel(accountBalanceDetectedMethod(row)) }}</span>
+                  <span v-if="accountBalanceState(row)?.unlimited">额度未设上限</span>
                 </div>
               </div>
               <button
@@ -454,6 +480,13 @@
       </template>
       <template #pagination><Pagination v-if="pagination.total > 0" :page="pagination.page" :total="pagination.total" :page-size="pagination.page_size" @update:page="handlePageChange" @update:pageSize="handlePageSizeChange" /></template>
     </TablePageLayout>
+    <RateMultiplierPriorityConfigModal
+      :show="showRateMultiplierPriorityConfig"
+      :settings="rateMultiplierPrioritySettings"
+      :saving="rateMultiplierPrioritySaving"
+      @close="showRateMultiplierPriorityConfig = false"
+      @save="saveRateMultiplierPrioritySettings"
+    />
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="visibleAccountGroups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="editAccountGroups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
@@ -503,6 +536,7 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import Toggle from '@/components/common/Toggle.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -522,6 +556,7 @@ import AccountUsageCell from '@/components/account/AccountUsageCell.vue'
 import AccountTodayStatsCell from '@/components/account/AccountTodayStatsCell.vue'
 import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
+import RateMultiplierPriorityConfigModal from '@/components/account/RateMultiplierPriorityConfigModal.vue'
 import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -531,6 +566,7 @@ import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import type { RateMultiplierPrioritySettings } from '@/api/admin/settings'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -695,6 +731,16 @@ const autoRefreshFetching = ref(false)
 const AUTO_REFRESH_SILENT_WINDOW_MS = 15000
 const autoRefreshSilentUntil = ref(0)
 const hasPendingListSync = ref(false)
+const defaultRateMultiplierPrioritySettings = (): RateMultiplierPrioritySettings => ({
+  enabled: false,
+  interval_minutes: 1,
+  priority_step: 1
+})
+const rateMultiplierPrioritySettings = ref<RateMultiplierPrioritySettings>(defaultRateMultiplierPrioritySettings())
+const rateMultiplierPriorityEnabled = computed(() => rateMultiplierPrioritySettings.value.enabled)
+const rateMultiplierPriorityLoading = ref(true)
+const rateMultiplierPrioritySaving = ref(false)
+const showRateMultiplierPriorityConfig = ref(false)
 const todayStatsByAccountId = ref<Record<string, WindowStats>>({})
 const todayStatsLoading = ref(false)
 const todayStatsError = ref<string | null>(null)
@@ -819,15 +865,15 @@ function syncAccountBalanceState(row: Account, state: OpsAccountBalanceProbeStat
 function accountBalanceText(row: Account): string {
   const state = accountBalanceState(row)
   if (!state) return '-'
-  if (state.unlimited) return '无限额度'
-  if (state.balance_usd == null) return '未知'
-  return `$${Number(state.balance_usd).toFixed(2)}`
+  if (state.balance_usd != null) return `$${Number(state.balance_usd).toFixed(2)}`
+  if (state.unlimited) return '额度未设上限'
+  return '未知'
 }
 
 function accountBalanceClass(row: Account): string {
   const state = accountBalanceState(row)
-  if (!state || state.balance_usd == null) return 'text-gray-500 dark:text-gray-400'
-  if (state.unlimited) return 'text-sky-600 dark:text-sky-300'
+  if (!state) return 'text-gray-500 dark:text-gray-400'
+  if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
   const threshold = state.threshold_usd ?? 0
   if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
   return 'text-emerald-600 dark:text-emerald-300'
@@ -1027,6 +1073,52 @@ const setAutoRefreshInterval = (seconds: (typeof autoRefreshIntervals)[number]) 
   saveAutoRefreshToStorage()
   if (autoRefreshEnabled.value) {
     autoRefreshCountdown.value = seconds
+  }
+}
+
+const loadRateMultiplierPrioritySettings = async () => {
+  const getSettings = adminAPI.settings?.getRateMultiplierPrioritySettings
+  if (!getSettings) {
+    rateMultiplierPriorityLoading.value = false
+    return
+  }
+  try {
+    const settings = await getSettings()
+    rateMultiplierPrioritySettings.value = settings
+  } catch (error) {
+    console.error('Failed to load rate multiplier priority settings:', error)
+  } finally {
+    rateMultiplierPriorityLoading.value = false
+  }
+}
+
+const setRateMultiplierPriorityEnabled = async (enabled: boolean) => {
+  if (rateMultiplierPriorityLoading.value || rateMultiplierPrioritySaving.value || enabled === rateMultiplierPriorityEnabled.value) return
+  rateMultiplierPrioritySaving.value = true
+  try {
+    const settings = await adminAPI.settings.updateRateMultiplierPrioritySettings({ enabled })
+    rateMultiplierPrioritySettings.value = settings
+    appStore.showSuccess(t('admin.accounts.autoRateMultiplierPriorityUpdated'))
+  } catch (error) {
+    console.error('Failed to update rate multiplier priority settings:', error)
+    appStore.showError(t('admin.accounts.autoRateMultiplierPriorityUpdateFailed'))
+  } finally {
+    rateMultiplierPrioritySaving.value = false
+  }
+}
+
+const saveRateMultiplierPrioritySettings = async (settings: RateMultiplierPrioritySettings) => {
+  if (rateMultiplierPrioritySaving.value) return
+  rateMultiplierPrioritySaving.value = true
+  try {
+    rateMultiplierPrioritySettings.value = await adminAPI.settings.updateRateMultiplierPrioritySettings(settings)
+    showRateMultiplierPriorityConfig.value = false
+    appStore.showSuccess(t('admin.accounts.rateMultiplierPriorityConfigUpdated'))
+  } catch (error) {
+    console.error('Failed to update rate multiplier priority configuration:', error)
+    appStore.showError(t('admin.accounts.rateMultiplierPriorityConfigUpdateFailed'))
+  } finally {
+    rateMultiplierPrioritySaving.value = false
   }
 }
 
@@ -2234,6 +2326,7 @@ onMounted(async () => {
   } catch (error) {
     console.error('Failed to load proxies/groups:', error)
   }
+  await loadRateMultiplierPrioritySettings()
   window.addEventListener('scroll', handleScroll, true)
   document.addEventListener('click', handleClickOutside)
 

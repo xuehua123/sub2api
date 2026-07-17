@@ -3,11 +3,25 @@
 package service
 
 import (
+	"context"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+type accountBalanceExtraRepoStub struct {
+	AccountRepository
+	updates map[string]any
+}
+
+func (r *accountBalanceExtraRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
+	r.updates = make(map[string]any, len(updates))
+	for key, value := range updates {
+		r.updates[key] = value
+	}
+	return nil
+}
 
 func TestAccountBalanceJoinEndpoint(t *testing.T) {
 	tests := []struct {
@@ -134,6 +148,54 @@ func TestAccountBalanceStateTreatsNullThresholdAsDefault(t *testing.T) {
 	})
 	if state.ThresholdUSD != nil {
 		t.Fatalf("ThresholdUSD = %#v, want nil", state.ThresholdUSD)
+	}
+}
+
+func TestPersistAccountBalanceFailureClearsStaleProbeValues(t *testing.T) {
+	balance := -52.55
+	used := 109.3
+	granted := 100000000.0
+	repo := &accountBalanceExtraRepoStub{}
+	service := &OpsService{accountRepo: repo}
+	account := &Account{
+		ID: 1,
+		Extra: map[string]any{
+			accountBalanceProbeDetectedMethodExtraKey: "openai_billing",
+			accountBalanceProbeUnlimitedExtraKey:      true,
+			accountBalanceProbeEndpointExtraKey:       "https://example.com/dashboard/billing/subscription",
+			accountBalanceProbeBalanceUSDExtraKey:     balance,
+			accountBalanceProbeTotalUsedUSDExtraKey:   used,
+			accountBalanceProbeGrantedUSDExtraKey:     granted,
+		},
+	}
+
+	state := service.persistAccountBalanceFailure(context.Background(), account, "upstream returned 401", nil)
+	if state.Status != AccountBalanceProbeStatusFailed {
+		t.Fatalf("status = %q, want %q", state.Status, AccountBalanceProbeStatusFailed)
+	}
+	if state.Unlimited || state.BalanceUSD != nil || state.TotalUsedUSD != nil || state.TotalGrantedUSD != nil || state.DetectedMethod != "" || state.Endpoint != "" {
+		t.Fatalf("stale balance state remained after failure: %#v", state)
+	}
+	for _, key := range []string{
+		accountBalanceProbeBalanceUSDExtraKey,
+		accountBalanceProbeTotalUsedUSDExtraKey,
+		accountBalanceProbeGrantedUSDExtraKey,
+	} {
+		if value, ok := repo.updates[key]; !ok || value != nil {
+			t.Fatalf("persisted %s = %#v, want nil", key, value)
+		}
+	}
+}
+
+func TestUnlimitedAccountWithNumericBalanceStillTriggersLowBalance(t *testing.T) {
+	balance := -0.12
+	state := OpsAccountBalanceState{
+		Enabled:    true,
+		Unlimited:  true,
+		BalanceUSD: &balance,
+	}
+	if !accountBalanceStateIsLow(state, defaultOpsAccountBalanceSettings()) {
+		t.Fatal("numeric negative balance with no hard cap should still be low")
 	}
 }
 

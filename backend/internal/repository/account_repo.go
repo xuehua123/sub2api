@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -807,6 +808,24 @@ func (r *accountRepository) ListActive(ctx context.Context) ([]service.Account, 
 	accounts, err := r.client.Account.Query().
 		Where(dbaccount.StatusEQ(service.StatusActive)).
 		Order(dbent.Asc(dbaccount.FieldPriority)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.accountsToService(ctx, accounts)
+}
+
+// ListActiveSchedulableForRateMultiplierPriority returns only accounts explicitly
+// enabled by an administrator. Temporary runtime penalties are intentionally not
+// considered here: this is a multiplier-priority policy, not a runtime eligibility check.
+func (r *accountRepository) ListActiveSchedulableForRateMultiplierPriority(ctx context.Context) ([]service.Account, error) {
+	accounts, err := r.client.Account.Query().
+		Where(
+			dbaccount.DeletedAtIsNil(),
+			dbaccount.StatusEQ(service.StatusActive),
+			dbaccount.SchedulableEQ(true),
+		).
+		Order(dbent.Asc(dbaccount.FieldPriority), dbent.Asc(dbaccount.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -2316,6 +2335,113 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 			r.syncSchedulerAccountSnapshots(ctx, ids)
 		}
 	}
+	return rows, nil
+}
+
+// UpdateRateMultiplierPriorities atomically applies each multiplier-derived band to
+// both the account and every bound local group, then refreshes scheduler state once.
+// Billing multipliers themselves are not changed here.
+func (r *accountRepository) UpdateRateMultiplierPriorities(ctx context.Context, priorities map[int64]int) (int64, error) {
+	if len(priorities) == 0 {
+		return 0, nil
+	}
+	if r.sql == nil {
+		return 0, errors.New("account repository SQL executor not configured")
+	}
+
+	ids := make([]int64, 0, len(priorities))
+	for id := range priorities {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	args := make([]any, 0, len(ids)*2)
+	valueClauses := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idPosition := len(args) + 1
+		args = append(args, id)
+		priorityPosition := len(args) + 1
+		args = append(args, priorities[id])
+		valueClauses = append(valueClauses, "($"+itoa(idPosition)+"::bigint, $"+itoa(priorityPosition)+"::integer)")
+	}
+	query := "WITH priority_updates (account_id, priority) AS (VALUES " + joinClauses(valueClauses, ", ") + "), " +
+		"updated_account_groups AS (" +
+		"UPDATE account_groups AS ag SET priority = updates.priority " +
+		"FROM priority_updates AS updates, accounts AS eligible " +
+		"WHERE ag.account_id = updates.account_id AND eligible.id = ag.account_id AND eligible.deleted_at IS NULL AND eligible.status = 'active' AND eligible.schedulable = TRUE " +
+		"AND ag.priority IS DISTINCT FROM updates.priority RETURNING ag.account_id" +
+		") " +
+		"UPDATE accounts AS account SET priority = updates.priority, updated_at = NOW() " +
+		"FROM priority_updates AS updates " +
+		"WHERE account.id = updates.account_id AND account.deleted_at IS NULL AND account.status = 'active' AND account.schedulable = TRUE " +
+		"AND (account.priority IS DISTINCT FROM updates.priority OR EXISTS (SELECT 1 FROM updated_account_groups AS changed WHERE changed.account_id = account.id))"
+
+	result, err := r.sql.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if rows <= 0 {
+		return 0, nil
+	}
+	payload := map[string]any{"account_ids": ids}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue multiplier priority update failed: err=%v", err)
+	}
+	r.syncSchedulerAccountSnapshots(ctx, ids)
+	return rows, nil
+}
+
+// UpdateRateMultipliers atomically applies source ratios collected from upstream
+// services. The account-level multiplier is the only billing value updated here;
+// local group pricing and account-group bindings are deliberately untouched.
+func (r *accountRepository) UpdateRateMultipliers(ctx context.Context, multipliers map[int64]float64) (int64, error) {
+	if len(multipliers) == 0 {
+		return 0, nil
+	}
+	if r.sql == nil {
+		return 0, errors.New("account repository SQL executor not configured")
+	}
+
+	ids := make([]int64, 0, len(multipliers))
+	for id := range multipliers {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	args := make([]any, 0, len(ids)*2+1)
+	caseClauses := make([]string, 0, len(ids))
+	for _, id := range ids {
+		idPosition := len(args) + 1
+		args = append(args, id)
+		multiplierPosition := len(args) + 1
+		args = append(args, multipliers[id])
+		caseClauses = append(caseClauses, "WHEN $"+itoa(idPosition)+" THEN $"+itoa(multiplierPosition))
+	}
+	idsPosition := len(args) + 1
+	args = append(args, pq.Array(ids))
+	multiplierCase := "CASE id " + joinClauses(caseClauses, " ") + " ELSE rate_multiplier END"
+	query := "UPDATE accounts SET rate_multiplier = " + multiplierCase + ", updated_at = NOW() WHERE id = ANY($" + itoa(idsPosition) + ") AND deleted_at IS NULL AND status = 'active' AND schedulable = TRUE AND rate_multiplier IS DISTINCT FROM " + multiplierCase
+
+	result, err := r.sql.ExecContext(ctx, query, args...)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if rows <= 0 {
+		return 0, nil
+	}
+	payload := map[string]any{"account_ids": ids}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue upstream multiplier update failed: err=%v", err)
+	}
+	r.syncSchedulerAccountSnapshots(ctx, ids)
 	return rows, nil
 }
 

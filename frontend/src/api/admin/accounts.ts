@@ -203,6 +203,41 @@ export async function checkMixedChannelRisk(
   return data
 }
 
+export interface UpstreamRateMultiplierGroup {
+  name: string
+  rate_multiplier: number
+}
+
+export interface UpstreamRateMultiplierDiscoveryRequest {
+  account_id?: number
+  base_url?: string
+  proxy_id?: number | null
+  auth_mode: 'password' | 'access_token'
+  remote_user_id?: number
+  upstream_management_auth?: {
+    username?: string
+    password?: string
+    access_token?: string
+  }
+}
+
+export interface UpstreamRateMultiplierDiscoveryResponse {
+  provider: 'newapi' | 'rixapi' | 'shellapi' | 'sub2api'
+  auth_mode: 'password' | 'access_token'
+  remote_user_id?: number
+  groups: UpstreamRateMultiplierGroup[]
+}
+
+export async function discoverUpstreamRateMultiplierGroups(
+  payload: UpstreamRateMultiplierDiscoveryRequest
+): Promise<UpstreamRateMultiplierDiscoveryResponse> {
+  const { data } = await apiClient.post<UpstreamRateMultiplierDiscoveryResponse>(
+    '/admin/accounts/upstream-rate-sync/discover',
+    payload
+  )
+  return data
+}
+
 /**
  * Delete account
  * @param id - Account ID
@@ -868,6 +903,7 @@ export const accountsAPI = {
   duplicate,
   update,
   checkMixedChannelRisk,
+  discoverUpstreamRateMultiplierGroups,
   delete: deleteAccount,
   toggleStatus,
   testAccount,

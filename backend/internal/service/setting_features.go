@@ -565,6 +565,62 @@ func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, se
 	return s.settingRepo.Set(ctx, SettingKeyRateLimit429CooldownSettings, string(data))
 }
 
+func (s *SettingService) GetRateMultiplierPrioritySettings(ctx context.Context) (*RateMultiplierPrioritySettings, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRateMultiplierPrioritySettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return DefaultRateMultiplierPrioritySettings(), nil
+		}
+		return nil, fmt.Errorf("get rate multiplier priority settings: %w", err)
+	}
+	if value == "" {
+		return DefaultRateMultiplierPrioritySettings(), nil
+	}
+
+	var settings RateMultiplierPrioritySettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return DefaultRateMultiplierPrioritySettings(), nil
+	}
+	normalized, err := normalizeRateMultiplierPrioritySettings(&settings)
+	if err != nil {
+		return DefaultRateMultiplierPrioritySettings(), nil
+	}
+	return normalized, nil
+}
+
+func (s *SettingService) SetRateMultiplierPrioritySettings(ctx context.Context, settings *RateMultiplierPrioritySettings) error {
+	normalized, err := normalizeRateMultiplierPrioritySettings(settings)
+	if err != nil {
+		return err
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return fmt.Errorf("marshal rate multiplier priority settings: %w", err)
+	}
+	return s.settingRepo.Set(ctx, SettingKeyRateMultiplierPrioritySettings, string(data))
+}
+
+func normalizeRateMultiplierPrioritySettings(settings *RateMultiplierPrioritySettings) (*RateMultiplierPrioritySettings, error) {
+	if settings == nil {
+		return nil, fmt.Errorf("settings cannot be nil")
+	}
+	normalized := *settings
+
+	if normalized.IntervalMinutes == 0 {
+		normalized.IntervalMinutes = DefaultRateMultiplierPriorityIntervalMinutes
+	}
+	if normalized.IntervalMinutes < 1 || normalized.IntervalMinutes > 60 {
+		return nil, fmt.Errorf("interval_minutes must be between 1-60")
+	}
+	if normalized.PriorityStep == 0 {
+		normalized.PriorityStep = DefaultRateMultiplierPriorityStep
+	}
+	if normalized.PriorityStep < 1 || normalized.PriorityStep > 1000 {
+		return nil, fmt.Errorf("priority_step must be between 1-1000")
+	}
+	return &normalized, nil
+}
+
 // GetStreamTimeoutSettings 获取流超时处理配置
 func (s *SettingService) GetStreamTimeoutSettings(ctx context.Context) (*StreamTimeoutSettings, error) {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyStreamTimeoutSettings)

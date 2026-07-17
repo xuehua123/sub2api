@@ -104,6 +104,8 @@ func provideCleanup(
 	paymentOrderExpiry *service.PaymentOrderExpiryService,
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
+	rateMultiplierPriority *service.RateMultiplierPriorityService,
+	upstreamRateMultiplierSync *service.UpstreamRateMultiplierSyncService,
 ) func() {
 	return func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -277,6 +279,18 @@ func provideCleanup(
 			{"UserPlatformQuotaUsageFlusher", func() error {
 				if quotaFlusher != nil {
 					quotaFlusher.Stop()
+				}
+				return nil
+			}},
+			{"RateMultiplierPriorityService", func() error {
+				if rateMultiplierPriority != nil {
+					rateMultiplierPriority.Stop()
+				}
+				return nil
+			}},
+			{"UpstreamRateMultiplierSyncService", func() error {
+				if upstreamRateMultiplierSync != nil {
+					upstreamRateMultiplierSync.Stop()
 				}
 				return nil
 			}},

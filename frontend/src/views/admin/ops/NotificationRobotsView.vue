@@ -673,9 +673,9 @@ function sortHeaderMark(key: string) {
 }
 
 function formatBalance(state: OpsAccountBalanceProbeState) {
-  if (state.unlimited) return '无限额度'
-  if (state.balance_usd == null) return '未知'
-  return `$${formatNumber(state.balance_usd)}`
+  if (state.balance_usd != null) return `$${formatNumber(state.balance_usd)}`
+  if (state.unlimited) return '额度未设上限'
+  return '未知'
 }
 
 function formatNumber(value: number) {
@@ -683,8 +683,7 @@ function formatNumber(value: number) {
 }
 
 function balanceTextClass(state: OpsAccountBalanceProbeState) {
-  if (state.unlimited) return 'text-sky-600 dark:text-sky-300'
-  if (state.balance_usd == null) return 'text-gray-500 dark:text-gray-400'
+  if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
   const threshold = state.threshold_usd ?? balanceSettings.default_threshold_usd
   if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
   return 'text-emerald-600 dark:text-emerald-300'
@@ -696,7 +695,7 @@ function balanceRowClass(item: OpsAccountBalanceAccountItem) {
     return 'bg-red-50/40 dark:bg-red-950/10'
   }
   const threshold = state.threshold_usd ?? balanceSettings.default_threshold_usd
-  if (!state.unlimited && state.balance_usd != null && threshold > 0 && state.balance_usd <= threshold) {
+  if (state.balance_usd != null && threshold > 0 && state.balance_usd <= threshold) {
     return 'bg-amber-50/40 dark:bg-amber-950/10'
   }
   return ''

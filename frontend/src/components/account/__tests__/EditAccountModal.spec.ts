@@ -324,6 +324,36 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
+  it('preserves an existing upstream sync configuration without overwriting its managed multiplier', async () => {
+    const account = buildAccount()
+    account.extra = {
+      upstream_rate_multiplier_sync_enabled: true,
+      upstream_rate_multiplier_sync_group: 'plus',
+      upstream_rate_multiplier_sync_provider: 'newapi',
+      upstream_rate_multiplier_sync_auth_mode: 'access_token',
+      upstream_rate_multiplier_sync_remote_user_id: 42
+    }
+    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
+    account.rate_multiplier = 0.5
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockReset().mockResolvedValue({ account_quota_notify_enabled: false })
+    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.rate_multiplier).toBeUndefined()
+    expect(payload.extra).toMatchObject({
+      upstream_rate_multiplier_sync_enabled: true,
+      upstream_rate_multiplier_sync_group: 'plus',
+      upstream_rate_multiplier_sync_auth_mode: 'access_token',
+      upstream_rate_multiplier_sync_remote_user_id: 42
+    })
+    expect(payload.upstream_management_auth).toBeUndefined()
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

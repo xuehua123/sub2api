@@ -1494,8 +1494,80 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.accounts.billingRateMultiplier') }}</label>
-          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" />
-          <p class="input-hint">{{ t('admin.accounts.billingRateMultiplierHint') }}</p>
+          <input v-model.number="form.rate_multiplier" type="number" min="0" step="0.001" class="input" :disabled="upstreamRateMultiplierSyncEnabled && (account?.type === 'apikey' || account?.type === 'upstream')" />
+          <p class="input-hint">{{ upstreamRateMultiplierSyncEnabled && (account?.type === 'apikey' || account?.type === 'upstream') ? t('admin.accounts.upstreamRateSync.managedHint') : t('admin.accounts.billingRateMultiplierHint') }}</p>
+        </div>
+      </div>
+      <div v-if="account?.type === 'apikey' || account?.type === 'upstream'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.title') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.upstreamRateSync.description') }}</p>
+          </div>
+          <button
+            type="button"
+            data-testid="edit-upstream-rate-sync-toggle"
+            :aria-pressed="upstreamRateMultiplierSyncEnabled"
+            :title="t('admin.accounts.upstreamRateSync.title')"
+            @click="upstreamRateMultiplierSyncEnabled = !upstreamRateMultiplierSyncEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              upstreamRateMultiplierSyncEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                upstreamRateMultiplierSyncEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+        <div v-if="upstreamRateMultiplierSyncEnabled" class="mt-4 max-w-2xl">
+          <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.group') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.accounts.upstreamRateSync.groupHint') }}</p>
+            </div>
+            <button type="button" data-testid="edit-upstream-rate-sync-discover" class="btn-secondary text-sm" :disabled="upstreamRateMultiplierSyncDiscovering" @click="discoverUpstreamRateMultiplierGroups">
+              {{ upstreamRateMultiplierSyncDiscovering ? t('admin.accounts.upstreamRateSync.discovering') : t('admin.accounts.upstreamRateSync.discover') }}
+            </button>
+          </div>
+          <select v-model="upstreamRateMultiplierSyncGroup" data-testid="edit-upstream-rate-sync-group" class="input mt-2" :disabled="upstreamRateMultiplierSyncDiscovering || upstreamRateMultiplierSyncGroups.length === 0">
+            <option value="" disabled>{{ t('admin.accounts.upstreamRateSync.groupSelectPlaceholder') }}</option>
+            <option v-for="group in upstreamRateMultiplierSyncGroups" :key="group.name" :value="group.name">{{ group.name }} ({{ group.rate_multiplier }}x)</option>
+          </select>
+          <div class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.upstreamRateSync.provider') }}</label>
+              <div class="input flex items-center bg-gray-50 text-sm text-gray-600 dark:bg-dark-700 dark:text-gray-300">{{ upstreamRateMultiplierSyncProviderLabel }}</div>
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.upstreamRateSync.authMode') }}</label>
+              <select v-model="upstreamRateMultiplierSyncAuthMode" class="input">
+                <option v-for="option in upstreamRateMultiplierSyncAuthModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+              </select>
+            </div>
+            <div v-if="upstreamManagementRequiresRemoteUserID">
+              <label class="input-label">{{ t('admin.accounts.upstreamRateSync.remoteUserId') }}</label>
+              <input v-model.number="upstreamRateMultiplierSyncRemoteUserID" data-testid="edit-upstream-rate-sync-remote-user-id" type="number" min="1" step="1" class="input" />
+            </div>
+          </div>
+          <p v-if="upstreamManagementAuthConfigured" class="mt-3 text-xs text-green-600 dark:text-green-400">{{ t('admin.accounts.upstreamRateSync.credentialsConfigured') }}</p>
+          <div v-if="upstreamRateMultiplierSyncAuthMode === 'access_token'" class="mt-4">
+            <label class="input-label">{{ t('admin.accounts.upstreamRateSync.accessToken') }}</label>
+            <input v-model.trim="upstreamManagementAccessToken" data-testid="edit-upstream-rate-sync-token" type="password" autocomplete="new-password" class="input" />
+          </div>
+          <div v-else class="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label class="input-label">{{ t('admin.accounts.upstreamRateSync.username') }}</label>
+              <input v-model.trim="upstreamManagementUsername" data-testid="edit-upstream-rate-sync-username" type="text" autocomplete="username" class="input" />
+            </div>
+            <div>
+              <label class="input-label">{{ t('admin.accounts.upstreamRateSync.password') }}</label>
+              <input v-model="upstreamManagementPassword" data-testid="edit-upstream-rate-sync-password" type="password" autocomplete="new-password" class="input" />
+            </div>
+          </div>
         </div>
       </div>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
@@ -3244,6 +3316,93 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const upstreamRateMultiplierSyncEnabled = ref(false)
+const upstreamRateMultiplierSyncGroup = ref('')
+const upstreamRateMultiplierSyncProvider = ref<'newapi' | 'rixapi' | 'shellapi' | 'sub2api'>('newapi')
+const upstreamRateMultiplierSyncAuthMode = ref<'password' | 'access_token'>('password')
+const upstreamRateMultiplierSyncRemoteUserID = ref<number | null>(null)
+const upstreamManagementUsername = ref('')
+const upstreamManagementPassword = ref('')
+const upstreamManagementAccessToken = ref('')
+const upstreamManagementAuthConfigured = ref(false)
+const upstreamManagementInitialConfigKey = ref('')
+type UpstreamRateMultiplierGroupOption = { name: string; rate_multiplier: number }
+const upstreamRateMultiplierSyncGroups = ref<UpstreamRateMultiplierGroupOption[]>([])
+const upstreamRateMultiplierSyncDiscovering = ref(false)
+const upstreamRateMultiplierSyncDiscoveredConfigKey = ref('')
+
+const upstreamRateMultiplierSyncProviderOptions = computed(() => [
+  { value: 'newapi', label: t('admin.accounts.upstreamRateSync.providerNewAPI') },
+  { value: 'rixapi', label: t('admin.accounts.upstreamRateSync.providerRixAPI') },
+  { value: 'shellapi', label: t('admin.accounts.upstreamRateSync.providerShellAPI') },
+  { value: 'sub2api', label: t('admin.accounts.upstreamRateSync.providerSub2API') }
+])
+
+const upstreamRateMultiplierSyncProviderLabel = computed(() =>
+  upstreamRateMultiplierSyncGroups.value.length === 0
+    ? t('admin.accounts.upstreamRateSync.notDetected')
+    : upstreamRateMultiplierSyncProviderOptions.value.find(option => option.value === upstreamRateMultiplierSyncProvider.value)?.label ||
+      upstreamRateMultiplierSyncProvider.value
+)
+
+const upstreamRateMultiplierSyncAuthModeOptions = computed(() => [
+  { value: 'access_token', label: t('admin.accounts.upstreamRateSync.authModeAccessToken') },
+  { value: 'password', label: t('admin.accounts.upstreamRateSync.authModePassword') }
+])
+
+const upstreamManagementRequiresRemoteUserID = computed(() =>
+  upstreamRateMultiplierSyncAuthMode.value === 'access_token' && upstreamRateMultiplierSyncProvider.value !== 'sub2api'
+)
+
+const upstreamManagementCurrentConfigKey = computed(() => [
+  upstreamRateMultiplierSyncProvider.value,
+  upstreamRateMultiplierSyncAuthMode.value,
+  upstreamRateMultiplierSyncRemoteUserID.value || ''
+].join('|'))
+
+const discoverUpstreamRateMultiplierGroups = async () => {
+  if (!props.account) return
+  const hasPartialCredentials = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+    ? Boolean(upstreamManagementAccessToken.value.trim())
+    : Boolean(upstreamManagementUsername.value.trim() || upstreamManagementPassword.value)
+  const hasCompleteCredentials = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+    ? Boolean(upstreamManagementAccessToken.value.trim())
+    : Boolean(upstreamManagementUsername.value.trim() && upstreamManagementPassword.value)
+  if ((hasPartialCredentials && !hasCompleteCredentials) || (!hasCompleteCredentials && !upstreamManagementAuthConfigured.value)) {
+    appStore.showError(t('admin.accounts.upstreamRateSync.credentialsRequired'))
+    return
+  }
+
+  upstreamRateMultiplierSyncDiscovering.value = true
+  try {
+    const discovery = await adminAPI.accounts.discoverUpstreamRateMultiplierGroups({
+      account_id: props.account.id,
+      proxy_id: form.proxy_id,
+      auth_mode: upstreamRateMultiplierSyncAuthMode.value,
+      remote_user_id: upstreamRateMultiplierSyncRemoteUserID.value ?? undefined,
+      upstream_management_auth: hasCompleteCredentials
+        ? (upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+            ? { access_token: upstreamManagementAccessToken.value.trim() }
+            : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value })
+        : undefined
+    })
+    upstreamRateMultiplierSyncProvider.value = discovery.provider
+    if (upstreamRateMultiplierSyncAuthMode.value === 'access_token' && discovery.remote_user_id) {
+      upstreamRateMultiplierSyncRemoteUserID.value = discovery.remote_user_id
+    }
+    upstreamRateMultiplierSyncGroups.value = discovery.groups
+    upstreamRateMultiplierSyncGroup.value = discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)
+      ? upstreamRateMultiplierSyncGroup.value
+      : discovery.groups[0]?.name || ''
+    upstreamRateMultiplierSyncDiscoveredConfigKey.value = upstreamManagementCurrentConfigKey.value
+    appStore.showSuccess(t('admin.accounts.upstreamRateSync.discoverSuccess'))
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.message || t('admin.accounts.upstreamRateSync.discoverFailed'))
+  } finally {
+    upstreamRateMultiplierSyncDiscovering.value = false
+  }
+}
+
 const statusOptions = computed(() => {
   const options = [
     { value: 'active', label: t('common.active') },
@@ -3399,6 +3558,35 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
   const extra = newAccount.extra as Record<string, unknown> | undefined
+  upstreamRateMultiplierSyncEnabled.value = extra?.upstream_rate_multiplier_sync_enabled === true
+  upstreamRateMultiplierSyncGroup.value = typeof extra?.upstream_rate_multiplier_sync_group === 'string'
+    ? extra.upstream_rate_multiplier_sync_group.trim()
+    : ''
+  const provider = typeof extra?.upstream_rate_multiplier_sync_provider === 'string'
+    ? extra.upstream_rate_multiplier_sync_provider
+    : 'newapi'
+  upstreamRateMultiplierSyncProvider.value = provider === 'rixapi' || provider === 'shellapi' || provider === 'sub2api'
+    ? provider
+    : 'newapi'
+  upstreamRateMultiplierSyncAuthMode.value = extra?.upstream_rate_multiplier_sync_auth_mode === 'access_token'
+    ? 'access_token'
+    : 'password'
+  const remoteUserID = Number(extra?.upstream_rate_multiplier_sync_remote_user_id)
+  upstreamRateMultiplierSyncRemoteUserID.value = Number.isInteger(remoteUserID) && remoteUserID > 0 ? remoteUserID : null
+  upstreamManagementUsername.value = ''
+  upstreamManagementPassword.value = ''
+  upstreamManagementAccessToken.value = ''
+  upstreamManagementAuthConfigured.value = newAccount.credentials_status?.has_upstream_management_auth === true
+  upstreamRateMultiplierSyncGroups.value = upstreamRateMultiplierSyncGroup.value
+    ? [{ name: upstreamRateMultiplierSyncGroup.value, rate_multiplier: newAccount.rate_multiplier ?? 1 }]
+    : []
+  upstreamRateMultiplierSyncDiscovering.value = false
+  upstreamManagementInitialConfigKey.value = [
+    upstreamRateMultiplierSyncProvider.value,
+    upstreamRateMultiplierSyncAuthMode.value,
+    upstreamRateMultiplierSyncRemoteUserID.value || ''
+  ].join('|')
+  upstreamRateMultiplierSyncDiscoveredConfigKey.value = upstreamManagementInitialConfigKey.value
   upstreamGzipExplicit.value = typeof extra?.upstream_gzip_enabled === 'boolean'
   upstreamGzipEnabled.value = getAccountUpstreamGzipEnabled(newAccount)
   openAIHTTPProtocol.value = normalizeOpenAIHTTPProtocol(extra?.openai_http_protocol)
@@ -4152,6 +4340,29 @@ const handleSubmit = async () => {
     appStore.showError(t('admin.accounts.pleaseSelectStatus'))
     return
   }
+  const supportsUpstreamRateSync = props.account.type === 'apikey' || props.account.type === 'upstream'
+  if (supportsUpstreamRateSync && upstreamRateMultiplierSyncEnabled.value && (
+    !upstreamRateMultiplierSyncGroups.value.some(group => group.name === upstreamRateMultiplierSyncGroup.value) ||
+    upstreamRateMultiplierSyncDiscoveredConfigKey.value !== upstreamManagementCurrentConfigKey.value
+  )) {
+    appStore.showError(t('admin.accounts.upstreamRateSync.groupRequired'))
+    return
+  }
+  const upstreamManagementAuthEntered = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+    ? Boolean(upstreamManagementAccessToken.value.trim())
+    : Boolean(upstreamManagementUsername.value.trim() || upstreamManagementPassword.value)
+  if (supportsUpstreamRateSync && upstreamRateMultiplierSyncEnabled.value) {
+    const hasRemoteUserID = !upstreamManagementRequiresRemoteUserID.value ||
+      (Number.isInteger(upstreamRateMultiplierSyncRemoteUserID.value) && Number(upstreamRateMultiplierSyncRemoteUserID.value) > 0)
+    const configChanged = upstreamManagementCurrentConfigKey.value !== upstreamManagementInitialConfigKey.value
+    const hasCompleteCredentials = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+      ? Boolean(upstreamManagementAccessToken.value.trim())
+      : Boolean(upstreamManagementUsername.value.trim() && upstreamManagementPassword.value)
+    if (!hasRemoteUserID || ((configChanged || !upstreamManagementAuthConfigured.value || upstreamManagementAuthEntered) && !hasCompleteCredentials)) {
+      appStore.showError(t('admin.accounts.upstreamRateSync.credentialsRequired'))
+      return
+    }
+  }
 
   const updatePayload: Record<string, unknown> = { ...form }
   try {
@@ -4735,6 +4946,36 @@ const handleSubmit = async () => {
       writeQuotaNotifyToExtra(newExtra, 'update')
       updatePayload.extra = newExtra
     }
+
+    const syncExtra = (updatePayload.extra as Record<string, unknown>) ||
+      ((props.account.extra as Record<string, unknown>) || {})
+    const mergedSyncExtra: Record<string, unknown> = { ...syncExtra }
+    if (supportsUpstreamRateSync && upstreamRateMultiplierSyncEnabled.value) {
+      mergedSyncExtra.upstream_rate_multiplier_sync_enabled = true
+      mergedSyncExtra.upstream_rate_multiplier_sync_group = upstreamRateMultiplierSyncGroup.value.trim()
+      mergedSyncExtra.upstream_rate_multiplier_sync_provider = upstreamRateMultiplierSyncProvider.value
+      mergedSyncExtra.upstream_rate_multiplier_sync_auth_mode = upstreamRateMultiplierSyncAuthMode.value
+      if (upstreamManagementRequiresRemoteUserID.value && upstreamRateMultiplierSyncRemoteUserID.value) {
+        mergedSyncExtra.upstream_rate_multiplier_sync_remote_user_id = upstreamRateMultiplierSyncRemoteUserID.value
+      } else {
+        delete mergedSyncExtra.upstream_rate_multiplier_sync_remote_user_id
+      }
+      if (upstreamManagementAuthEntered) {
+        updatePayload.upstream_management_auth = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
+          ? { access_token: upstreamManagementAccessToken.value.trim() }
+          : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
+      }
+      // Do not let an older form snapshot overwrite the value maintained by
+      // the synchronizer while an unrelated account field is being saved.
+      updatePayload.rate_multiplier = undefined
+    } else {
+      delete mergedSyncExtra.upstream_rate_multiplier_sync_enabled
+      delete mergedSyncExtra.upstream_rate_multiplier_sync_group
+      delete mergedSyncExtra.upstream_rate_multiplier_sync_provider
+      delete mergedSyncExtra.upstream_rate_multiplier_sync_auth_mode
+      delete mergedSyncExtra.upstream_rate_multiplier_sync_remote_user_id
+    }
+    updatePayload.extra = mergedSyncExtra
 
     applyUpstreamGzipExtra(updatePayload, props.account)
 

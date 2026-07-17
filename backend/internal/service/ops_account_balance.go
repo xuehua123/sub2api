@@ -464,6 +464,9 @@ func accountBalanceStatusRank(status string) string {
 }
 
 func accountBalanceSortableBalance(state OpsAccountBalanceState) *float64 {
+	if state.BalanceUSD != nil {
+		return state.BalanceUSD
+	}
 	if state.Unlimited {
 		value := math.Inf(1)
 		return &value
@@ -757,10 +760,13 @@ func AccountBalanceStateFromAccount(account *Account) OpsAccountBalanceState {
 		status = AccountBalanceProbeStatusUnknown
 	}
 	state := OpsAccountBalanceState{
-		AccountID:       account.ID,
-		Method:          method,
-		Enabled:         enabled,
-		DetectedMethod:  normalizeAccountBalanceProbeMethod(account.getExtraString(accountBalanceProbeDetectedMethodExtraKey)),
+		AccountID: account.ID,
+		Method:    method,
+		Enabled:   enabled,
+		// A configured method may safely default to auto, but a detected method is
+		// historical probe output. Keep an empty value empty after a failed probe so
+		// the UI never presents a stale or fabricated successful detection.
+		DetectedMethod:  strings.TrimSpace(account.getExtraString(accountBalanceProbeDetectedMethodExtraKey)),
 		Status:          status,
 		Error:           strings.TrimSpace(account.getExtraString(accountBalanceProbeErrorExtraKey)),
 		Unlimited:       account.getExtraBool(accountBalanceProbeUnlimitedExtraKey),
@@ -811,7 +817,7 @@ func accountBalanceStateIsDue(state OpsAccountBalanceState, settings OpsAccountB
 }
 
 func accountBalanceStateIsLow(state OpsAccountBalanceState, settings OpsAccountBalanceSettings) bool {
-	if !state.Enabled || state.Unlimited || state.BalanceUSD == nil {
+	if !state.Enabled || state.BalanceUSD == nil {
 		return false
 	}
 	threshold := settings.DefaultThresholdUSD
@@ -960,21 +966,7 @@ func (s *OpsService) accountBalanceProbeEndpoint(account *Account, method string
 }
 
 func accountBalanceBaseURL(account *Account) string {
-	if account == nil {
-		return ""
-	}
-	for _, key := range []string{"base_url", "url", "endpoint"} {
-		if v := strings.TrimSpace(account.GetCredential(key)); v != "" {
-			return v
-		}
-	}
-	if v := strings.TrimSpace(account.GetOpenAIBaseURL()); v != "" {
-		return v
-	}
-	if v := strings.TrimSpace(account.GetBaseURL()); v != "" {
-		return v
-	}
-	return ""
+	return accountUpstreamBaseURL(account)
 }
 
 func accountBalanceAPIKey(account *Account) string {
@@ -1293,9 +1285,15 @@ func (s *OpsService) persistAccountBalanceFailure(ctx context.Context, account *
 		}
 	}
 	return s.persistAccountBalanceState(ctx, account, map[string]any{
-		accountBalanceProbeStatusExtraKey:    status,
-		accountBalanceProbeErrorExtraKey:     truncateString(strings.TrimSpace(message), 500),
-		accountBalanceProbeCheckedAtExtraKey: now.Format(time.RFC3339Nano),
+		accountBalanceProbeDetectedMethodExtraKey: "",
+		accountBalanceProbeStatusExtraKey:         status,
+		accountBalanceProbeErrorExtraKey:          truncateString(strings.TrimSpace(message), 500),
+		accountBalanceProbeCheckedAtExtraKey:      now.Format(time.RFC3339Nano),
+		accountBalanceProbeUnlimitedExtraKey:      false,
+		accountBalanceProbeEndpointExtraKey:       "",
+		accountBalanceProbeBalanceUSDExtraKey:     nil,
+		accountBalanceProbeTotalUsedUSDExtraKey:   nil,
+		accountBalanceProbeGrantedUSDExtraKey:     nil,
 	})
 }
 
@@ -1326,10 +1324,13 @@ func accountBalancePersistContext(ctx context.Context) (context.Context, context
 
 func buildOpsAccountBalanceLowWeComMarkdown(account Account, state OpsAccountBalanceState, settings OpsAccountBalanceSettings, now time.Time) string {
 	balance := "未知"
-	if state.Unlimited {
-		balance = "无限额度"
-	} else if state.BalanceUSD != nil {
+	if state.BalanceUSD != nil {
 		balance = fmt.Sprintf("$%.2f", *state.BalanceUSD)
+		if state.Unlimited {
+			balance += "（额度未设上限）"
+		}
+	} else if state.Unlimited {
+		balance = "额度未设上限"
 	}
 	threshold := settings.DefaultThresholdUSD
 	if state.ThresholdUSD != nil {
