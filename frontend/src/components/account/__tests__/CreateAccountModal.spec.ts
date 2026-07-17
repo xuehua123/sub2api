@@ -316,6 +316,43 @@ describe('CreateAccountModal', () => {
     expect(payload.upstream_management_base_url).toBe('https://console.example.com')
   })
 
+  it('submits an upstream management refresh token with access-token authentication', async () => {
+    createAccountMock.mockReset()
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
+      provider: 'sub2api',
+      auth_mode: 'access_token',
+      groups: [{ name: 'team', rate_multiplier: 0.5 }]
+    })
+    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
+    createAccountMock.mockResolvedValue({ id: 1 })
+
+    const wrapper = mountModal()
+    await flushPromises()
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Upstream token account')
+    await clickButtonContaining(wrapper, 'OpenAI')
+    await clickButtonContaining(wrapper, 'API Key')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-auth-mode"]').setValue('access_token')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-token"]').setValue('access-token')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-refresh-token"]').setValue('refresh-token')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="create-upstream-rate-sync-group"]').setValue('team')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(discoverUpstreamRateMultiplierGroupsMock).toHaveBeenCalledWith(expect.objectContaining({
+      upstream_management_auth: { access_token: 'access-token', refresh_token: 'refresh-token' }
+    }))
+    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_management_auth).toEqual({
+      access_token: 'access-token',
+      refresh_token: 'refresh-token'
+    })
+  })
+
   it('allows setting upstream gzip during account creation', async () => {
     createAccountMock.mockReset()
     checkMixedChannelRiskMock.mockReset()

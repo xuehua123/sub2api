@@ -833,6 +833,25 @@ func (r *accountRepository) ListActiveSchedulableForRateMultiplierPriority(ctx c
 	return r.accountsToService(ctx, accounts)
 }
 
+// ListUpstreamManagementAuthRotationCandidates includes paused accounts so a
+// shared upstream refresh-token rotation cannot leave their stored credentials
+// stale. Callers must not use this list for probing, billing, or scheduling.
+func (r *accountRepository) ListUpstreamManagementAuthRotationCandidates(ctx context.Context) ([]service.Account, error) {
+	accounts, err := r.client.Account.Query().
+		Where(
+			dbaccount.DeletedAtIsNil(),
+			func(selector *entsql.Selector) {
+				selector.Where(sqljson.HasKey(dbaccount.FieldCredentials, sqljson.Path(service.UpstreamManagementAuthCredentialKey)))
+			},
+		).
+		Order(dbent.Asc(dbaccount.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return r.accountsToService(ctx, accounts)
+}
+
 func (r *accountRepository) ListOAuthRefreshCandidatePage(ctx context.Context, options service.OAuthRefreshPageOptions) (*service.OAuthRefreshCandidatePage, error) {
 	if r.sql == nil {
 		return nil, errors.New("account repository SQL executor not configured")
@@ -2443,6 +2462,86 @@ func (r *accountRepository) UpdateRateMultipliers(ctx context.Context, multiplie
 	}
 	r.syncSchedulerAccountSnapshots(ctx, ids)
 	return rows, nil
+}
+
+// UpdateUpstreamManagementAuthsIfUnchanged atomically rotates one upstream
+// management identity across all local accounts that share it. The statement
+// updates every requested account only when every saved ciphertext still
+// matches, so an administrator edit cannot leave a refresh-token family half
+// updated after an upstream RT rotation.
+func (r *accountRepository) UpdateUpstreamManagementAuthsIfUnchanged(ctx context.Context, updates []service.UpstreamManagementAuthUpdate) (bool, error) {
+	if r == nil || r.sql == nil {
+		return false, errors.New("account repository SQL executor is not configured")
+	}
+	if len(updates) == 0 {
+		return false, nil
+	}
+
+	ordered := append([]service.UpstreamManagementAuthUpdate(nil), updates...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].AccountID < ordered[j].AccountID })
+	ids := make([]int64, 0, len(ordered))
+	expected := make([]string, 0, len(ordered))
+	next := make([]string, 0, len(ordered))
+	for index, update := range ordered {
+		if update.AccountID <= 0 || update.ExpectedCiphertext == "" || update.NextCiphertext == "" {
+			return false, errors.New("invalid upstream management credential rotation")
+		}
+		if index > 0 && ordered[index-1].AccountID == update.AccountID {
+			return false, errors.New("duplicate account in upstream management credential rotation")
+		}
+		ids = append(ids, update.AccountID)
+		expected = append(expected, update.ExpectedCiphertext)
+		next = append(next, update.NextCiphertext)
+	}
+
+	result, err := r.sql.ExecContext(ctx, `
+		WITH requested AS (
+			SELECT * FROM unnest($1::bigint[], $2::text[], $3::text[])
+				AS request(account_id, expected_ciphertext, next_ciphertext)
+		), matching AS (
+			SELECT a.id, request.next_ciphertext
+			FROM accounts AS a
+			JOIN requested AS request ON request.account_id = a.id
+			WHERE a.deleted_at IS NULL
+				AND a.credentials ->> $4 = request.expected_ciphertext
+		), guard AS (
+			SELECT count(*) AS matched_count FROM matching
+		), updated AS (
+			UPDATE accounts AS a
+			SET credentials = jsonb_set(
+				COALESCE(a.credentials, '{}'::jsonb),
+				ARRAY[$4::text],
+				to_jsonb(matching.next_ciphertext),
+				true
+			),
+				updated_at = NOW()
+			FROM matching
+			WHERE a.id = matching.id
+				AND (SELECT matched_count FROM guard) = $5
+			RETURNING a.id
+		)
+		INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)
+		SELECT $6, updated.id, NULL, NULL FROM updated
+	`,
+		pq.Array(ids),
+		pq.Array(expected),
+		pq.Array(next),
+		service.UpstreamManagementAuthCredentialKey,
+		len(ordered),
+		service.SchedulerOutboxEventAccountChanged,
+	)
+	if err != nil {
+		return false, err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if rows != int64(len(ordered)) {
+		return false, nil
+	}
+	r.syncSchedulerAccountSnapshots(ctx, ids)
+	return true, nil
 }
 
 type accountGroupQueryOptions struct {

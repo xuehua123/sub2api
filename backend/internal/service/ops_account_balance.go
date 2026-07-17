@@ -1006,14 +1006,68 @@ func (s *OpsService) tryProbeAccountBalanceMethod(ctx context.Context, account *
 		attempt.Message = err.Error()
 		return opsAccountBalanceMethodResult{}, attempt, err
 	}
+	if method == AccountBalanceProbeMethodOpenAIBilling && openAIBillingUsageNeeded(payload) {
+		usedUSD, usageErr := s.fetchOpenAIBillingUsageUSD(ctx, account, timeout)
+		if usageErr != nil {
+			attempt.Status = AccountBalanceProbeStatusFailed
+			attempt.Message = usageErr.Error()
+			return opsAccountBalanceMethodResult{}, attempt, usageErr
+		}
+		// The subscription response supplies the period ceiling while usage is
+		// reported in cents. Supplying a normalized dollar value lets the normal
+		// parser calculate the remaining account budget consistently.
+		accountBalanceDataObject(payload)["used_usd"] = *usedUSD
+	}
 	result, err := parseAccountBalanceResult(method, endpoint, payload)
 	if err != nil {
 		attempt.Status = AccountBalanceProbeStatusUnsupported
 		attempt.Message = err.Error()
 		return opsAccountBalanceMethodResult{}, attempt, err
 	}
+	if method == AccountBalanceProbeMethodOpenAIBilling && !result.Unlimited && result.BalanceUSD == nil {
+		attempt.Status = AccountBalanceProbeStatusUnsupported
+		attempt.Message = "openai billing response has a spending limit but no usable balance or usage"
+		return opsAccountBalanceMethodResult{}, attempt, errors.New(attempt.Message)
+	}
 	attempt.Status = AccountBalanceProbeStatusOK
 	return result, attempt, nil
+}
+
+func openAIBillingUsageNeeded(payload map[string]any) bool {
+	data := accountBalanceDataObject(payload)
+	if accountBalanceNumber(data, "balance", "available", "used_usd", "total_used", "total_usage") != nil {
+		return false
+	}
+	hardLimitUSD := accountBalanceNumber(data, "hard_limit_usd", "system_hard_limit_usd")
+	return hardLimitUSD != nil && *hardLimitUSD < 999999
+}
+
+func (s *OpsService) fetchOpenAIBillingUsageUSD(ctx context.Context, account *Account, timeout time.Duration) (*float64, error) {
+	baseURL := accountBalanceBaseURL(account)
+	normalized, err := s.validateAccountBalanceBaseURL(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := accountBalanceJoinEndpoint(normalized, "/v1/dashboard/billing/usage", true)
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	query := parsed.Query()
+	query.Set("start_date", time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02"))
+	query.Set("end_date", now.AddDate(0, 0, 1).Format("2006-01-02"))
+	parsed.RawQuery = query.Encode()
+	payload, err := s.fetchAccountBalanceJSON(ctx, account, parsed.String(), timeout)
+	if err != nil {
+		return nil, fmt.Errorf("openai billing usage request failed: %w", err)
+	}
+	usageCents := accountBalanceNumber(accountBalanceDataObject(payload), "total_usage")
+	if usageCents == nil {
+		return nil, errors.New("openai billing usage response has no total_usage")
+	}
+	usedUSD := *usageCents / 100
+	return &usedUSD, nil
 }
 
 func (s *OpsService) accountBalanceProbeEndpoint(account *Account, method string) (string, error) {

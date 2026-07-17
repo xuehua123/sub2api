@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +29,26 @@ func (upstreamManagementAuthTestEncryptor) Decrypt(ciphertext string) (string, e
 		return "", fmt.Errorf("unexpected ciphertext")
 	}
 	decoded, err := base64.RawStdEncoding.DecodeString(ciphertext[len(prefix):])
+	if err != nil {
+		return "", err
+	}
+	return string(decoded), nil
+}
+
+type upstreamManagementAuthNonceEncryptor struct {
+	sequence atomic.Int64
+}
+
+func (e *upstreamManagementAuthNonceEncryptor) Encrypt(plaintext string) (string, error) {
+	return fmt.Sprintf("nonce-%d:%s", e.sequence.Add(1), base64.RawStdEncoding.EncodeToString([]byte(plaintext))), nil
+}
+
+func (upstreamManagementAuthNonceEncryptor) Decrypt(ciphertext string) (string, error) {
+	_, encoded, found := strings.Cut(ciphertext, ":")
+	if !found {
+		return "", fmt.Errorf("unexpected ciphertext")
+	}
+	decoded, err := base64.RawStdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", err
 	}
@@ -68,6 +90,41 @@ func TestUpstreamManagementAuthRoundTripAndCredentialRedaction(t *testing.T) {
 	if !status["has_"+upstreamManagementAuthCredentialKey] {
 		t.Fatalf("credential status = %#v, want management auth presence", status)
 	}
+}
+
+func TestApplyUpstreamManagementAuthInputPreservesRefreshTokenWhenReplacingAccessToken(t *testing.T) {
+	t.Parallel()
+
+	config := UpstreamRateMultiplierSyncConfig{
+		Provider: UpstreamManagementProviderSub2API,
+		AuthMode: UpstreamManagementAuthModeAccessToken,
+		Group:    "team",
+	}
+	ciphertext, err := EncryptUpstreamManagementAuth(
+		upstreamManagementAuthTestEncryptor{},
+		config,
+		&UpstreamManagementAuthInput{
+			AccessToken:  "old-access-token",
+			RefreshToken: "existing-refresh-token",
+		},
+	)
+	require.NoError(t, err)
+
+	credentials, err := applyUpstreamManagementAuthInput(
+		map[string]any{upstreamManagementAuthCredentialKey: ciphertext},
+		config,
+		&UpstreamManagementAuthInput{AccessToken: "replacement-access-token"},
+		upstreamManagementAuthTestEncryptor{},
+	)
+	require.NoError(t, err)
+
+	updated, err := DecryptUpstreamManagementAuth(
+		upstreamManagementAuthTestEncryptor{},
+		upstreamManagementAuthCiphertext(credentials),
+	)
+	require.NoError(t, err)
+	require.Equal(t, "replacement-access-token", updated.AccessToken)
+	require.Equal(t, "existing-refresh-token", updated.RefreshToken)
 }
 
 func TestValidateConfiguredUpstreamManagementAuthRejectsUnsupportedAccountType(t *testing.T) {
@@ -176,9 +233,9 @@ func TestUpstreamRateMultiplierSyncUsesNewAPIManagementToken(t *testing.T) {
 		Schedulable:    true,
 		RateMultiplier: &one,
 		Credentials: map[string]any{
-			"base_url":                          "http://127.0.0.1:1/v1",
+			"base_url":                             "http://127.0.0.1:1/v1",
 			UpstreamManagementBaseURLCredentialKey: server.URL,
-			upstreamManagementAuthCredentialKey: ciphertext,
+			upstreamManagementAuthCredentialKey:    ciphertext,
 		},
 		Extra: map[string]any{
 			AccountExtraUpstreamRateMultiplierSyncEnabled:      true,

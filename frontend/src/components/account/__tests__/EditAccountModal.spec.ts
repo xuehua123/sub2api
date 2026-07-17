@@ -356,6 +356,31 @@ describe('EditAccountModal', () => {
     expect(payload.upstream_management_base_url).toBe('https://console.example.com')
   })
 
+  it('submits a replacement access token and refresh token for an upstream sync account', async () => {
+    const account = buildAccount()
+    account.extra = {
+      upstream_rate_multiplier_sync_enabled: true,
+      upstream_rate_multiplier_sync_group: 'plus',
+      upstream_rate_multiplier_sync_provider: 'sub2api',
+      upstream_rate_multiplier_sync_auth_mode: 'access_token'
+    }
+    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockReset().mockResolvedValue({ account_quota_notify_enabled: false })
+    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
+
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="edit-upstream-rate-sync-token"]').setValue('replacement-access-token')
+    await wrapper.get('[data-testid="edit-upstream-rate-sync-refresh-token"]').setValue('replacement-refresh-token')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+
+    expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_management_auth).toEqual({
+      access_token: 'replacement-access-token',
+      refresh_token: 'replacement-refresh-token'
+    })
+  })
+
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
     const account = buildAccount()
     updateAccountMock.mockReset()

@@ -4,6 +4,8 @@ package service
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -105,6 +107,39 @@ func TestParseOpenAIBillingAccountBalance(t *testing.T) {
 	assertFloatPtr(t, "balance", result.BalanceUSD, 12.75)
 	assertFloatPtr(t, "granted", result.TotalGrantedUSD, 20)
 	assertFloatPtr(t, "used", result.TotalUsedUSD, 7.25)
+}
+
+func TestOpenAIBillingProbeUsesCurrentPeriodUsageWhenSubscriptionOnlyHasLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/dashboard/billing/subscription":
+			_, _ = w.Write([]byte(`{"hard_limit_usd":8850.002998}`))
+		case "/v1/dashboard/billing/usage":
+			if r.URL.Query().Get("start_date") == "" || r.URL.Query().Get("end_date") == "" {
+				t.Fatalf("usage date range = %q", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"total_usage":858831.892}`))
+		default:
+			t.Fatalf("unexpected request path %q", r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	service := &OpsService{}
+	account := &Account{Credentials: map[string]any{
+		"base_url": server.URL + "/v1",
+		"api_key":  "test-key",
+	}}
+	result, attempt, err := service.tryProbeAccountBalanceMethod(context.Background(), account, AccountBalanceProbeMethodOpenAIBilling, time.Second)
+	if err != nil {
+		t.Fatalf("tryProbeAccountBalanceMethod() error = %v", err)
+	}
+	if attempt.Status != AccountBalanceProbeStatusOK {
+		t.Fatalf("attempt status = %q, want ok", attempt.Status)
+	}
+	assertFloatPtr(t, "used", result.TotalUsedUSD, 8588.31892)
+	assertFloatPtr(t, "balance", result.BalanceUSD, 261.684078)
+	assertFloatPtr(t, "granted", result.TotalGrantedUSD, 8850.002998)
 }
 
 func TestAccountBalanceProbeMethodsForAccount(t *testing.T) {

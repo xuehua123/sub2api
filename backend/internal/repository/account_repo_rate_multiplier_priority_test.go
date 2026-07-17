@@ -49,3 +49,23 @@ func TestUpdateRateMultipliersWritesSortedActiveSchedulableAccounts(t *testing.T
 	require.EqualValues(t, 2, updated)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestUpdateUpstreamManagementAuthsIfUnchangedUpdatesCredentialFamilyAtomically(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	mock.ExpectExec(`(?s)WITH requested AS.*matched_count.*UPDATE accounts AS a.*INSERT INTO scheduler_outbox`).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), service.UpstreamManagementAuthCredentialKey, 2, service.SchedulerOutboxEventAccountChanged).
+		WillReturnResult(sqlmock.NewResult(1, 2))
+
+	repo := newAccountRepositoryWithSQL(nil, db, nil)
+	updated, err := repo.UpdateUpstreamManagementAuthsIfUnchanged(context.Background(), []service.UpstreamManagementAuthUpdate{
+		{AccountID: 9, ExpectedCiphertext: "expected-nine", NextCiphertext: "next-shared"},
+		{AccountID: 3, ExpectedCiphertext: "expected-three", NextCiphertext: "next-shared"},
+	})
+
+	require.NoError(t, err)
+	require.True(t, updated)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

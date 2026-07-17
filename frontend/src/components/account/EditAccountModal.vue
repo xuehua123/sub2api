@@ -1552,7 +1552,7 @@
             </div>
             <div>
               <label class="input-label">{{ t('admin.accounts.upstreamRateSync.authMode') }}</label>
-              <select v-model="upstreamRateMultiplierSyncAuthMode" class="input">
+              <select v-model="upstreamRateMultiplierSyncAuthMode" data-testid="edit-upstream-rate-sync-auth-mode" class="input">
                 <option v-for="option in upstreamRateMultiplierSyncAuthModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
             </div>
@@ -1565,6 +1565,9 @@
           <div v-if="upstreamRateMultiplierSyncAuthMode === 'access_token'" class="mt-4">
             <label class="input-label">{{ t('admin.accounts.upstreamRateSync.accessToken') }}</label>
             <input v-model.trim="upstreamManagementAccessToken" data-testid="edit-upstream-rate-sync-token" type="password" autocomplete="new-password" class="input" />
+            <label class="input-label mt-4">{{ t('admin.accounts.upstreamRateSync.refreshToken') }}</label>
+            <input v-model.trim="upstreamManagementRefreshToken" data-testid="edit-upstream-rate-sync-refresh-token" type="password" autocomplete="new-password" class="input" />
+            <p class="input-hint">{{ t('admin.accounts.upstreamRateSync.refreshTokenHint') }}</p>
           </div>
           <div v-else class="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
@@ -3333,6 +3336,7 @@ const upstreamManagementBaseURL = ref('')
 const upstreamManagementUsername = ref('')
 const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
+const upstreamManagementRefreshToken = ref('')
 const upstreamManagementAuthConfigured = ref(false)
 const upstreamManagementInitialConfigKey = ref('')
 type UpstreamRateMultiplierGroupOption = { id?: number; name: string; rate_multiplier: number }
@@ -3394,7 +3398,10 @@ const discoverUpstreamRateMultiplierGroups = async () => {
       remote_user_id: upstreamRateMultiplierSyncRemoteUserID.value ?? undefined,
       upstream_management_auth: hasCompleteCredentials
         ? (upstreamRateMultiplierSyncAuthMode.value === 'access_token'
-            ? { access_token: upstreamManagementAccessToken.value.trim() }
+            ? {
+                access_token: upstreamManagementAccessToken.value.trim(),
+                ...(upstreamManagementRefreshToken.value.trim() ? { refresh_token: upstreamManagementRefreshToken.value.trim() } : {})
+              }
             : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value })
         : undefined
     })
@@ -3595,6 +3602,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   upstreamManagementUsername.value = ''
   upstreamManagementPassword.value = ''
   upstreamManagementAccessToken.value = ''
+  upstreamManagementRefreshToken.value = ''
   upstreamManagementAuthConfigured.value = newAccount.credentials_status?.has_upstream_management_auth === true
   upstreamRateMultiplierSyncGroups.value = upstreamRateMultiplierSyncGroup.value
     ? [{ name: upstreamRateMultiplierSyncGroup.value, rate_multiplier: newAccount.rate_multiplier ?? 1 }]
@@ -4983,7 +4991,10 @@ const handleSubmit = async () => {
       }
       if (upstreamManagementAuthEntered) {
         updatePayload.upstream_management_auth = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
-          ? { access_token: upstreamManagementAccessToken.value.trim() }
+          ? {
+              access_token: upstreamManagementAccessToken.value.trim(),
+              ...(upstreamManagementRefreshToken.value.trim() ? { refresh_token: upstreamManagementRefreshToken.value.trim() } : {})
+            }
           : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
       }
       updatePayload.upstream_management_base_url = upstreamManagementBaseURL.value.trim()

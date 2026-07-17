@@ -100,6 +100,10 @@ func (h *AccountHandler) DiscoverUpstreamRateMultiplierGroups(c *gin.Context) {
 	defer cancel()
 	discovery, err := h.upstreamRateSync.DiscoverGroups(ctx, account, req.AuthMode, remoteUserID, req.UpstreamManagementAuth, req.UpstreamAPIKey)
 	if err != nil {
+		if errors.Is(err, service.ErrUpstreamManagementTurnstileRequired) {
+			response.BadRequest(c, "upstream password login requires Turnstile verification; select management access-token authentication instead")
+			return
+		}
 		if errors.Is(err, service.ErrUpstreamAPIKeyGroupUnmapped) {
 			response.BadRequest(c, "unable to map this account API key to an upstream group; verify the API key and management user")
 			return

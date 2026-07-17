@@ -735,6 +735,8 @@ export default {
         authModePassword: 'Username and Password',
         remoteUserId: 'Remote User ID',
         accessToken: 'Management Access Token',
+        refreshToken: 'Management Refresh Token',
+        refreshTokenHint: 'Used to renew the access token before it expires. It is never shown again after saving.',
         username: 'Management Username',
         password: 'Management Password',
         credentialsRequired: 'Enter complete upstream management credentials before enabling rate sync',

@@ -9,7 +9,10 @@ import (
 )
 
 const (
-	upstreamManagementAuthCredentialKey = "upstream_management_auth"
+	// UpstreamManagementAuthCredentialKey stores the encrypted management JWT,
+	// refresh token, and optional password credentials as one opaque value.
+	UpstreamManagementAuthCredentialKey = "upstream_management_auth"
+	upstreamManagementAuthCredentialKey = UpstreamManagementAuthCredentialKey
 	// UpstreamManagementBaseURLCredentialKey stores the optional management-plane
 	// address. It must never replace the forwarding base_url used for API traffic.
 	UpstreamManagementBaseURLCredentialKey = "upstream_management_base_url"
@@ -40,10 +43,11 @@ const (
 // UpstreamManagementAuthInput is accepted only on account create/update. Its
 // plaintext values are encrypted before persistence and never returned by DTOs.
 type UpstreamManagementAuthInput struct {
-	Clear       bool   `json:"clear,omitempty"`
-	Username    string `json:"username,omitempty"`
-	Password    string `json:"password,omitempty"`
-	AccessToken string `json:"access_token,omitempty"`
+	Clear        bool   `json:"clear,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 func applyUpstreamManagementBaseURLInput(credentials map[string]any, baseURL *string) map[string]any {
@@ -63,9 +67,11 @@ func applyUpstreamManagementBaseURLInput(credentials map[string]any, baseURL *st
 }
 
 type upstreamManagementAuthSecret struct {
-	Username    string `json:"username,omitempty"`
-	Password    string `json:"password,omitempty"`
-	AccessToken string `json:"access_token,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	ExpiresAt    int64  `json:"expires_at,omitempty"`
 }
 
 // UpstreamRateMultiplierSyncConfig is the non-secret, account-local mapping
@@ -195,12 +201,23 @@ func EncryptUpstreamManagementAuth(encryptor SecretEncryptor, config UpstreamRat
 		return "", errors.New("upstream management credentials are required")
 	}
 	secret := upstreamManagementAuthSecret{
-		Username:    strings.TrimSpace(input.Username),
-		Password:    strings.TrimSpace(input.Password),
-		AccessToken: strings.TrimSpace(input.AccessToken),
+		Username:     strings.TrimSpace(input.Username),
+		Password:     strings.TrimSpace(input.Password),
+		AccessToken:  strings.TrimSpace(input.AccessToken),
+		RefreshToken: strings.TrimSpace(input.RefreshToken),
 	}
 	if err := validateUpstreamManagementAuth(config, secret); err != nil {
 		return "", err
+	}
+	return encryptUpstreamManagementAuthSecret(encryptor, secret)
+}
+
+// encryptUpstreamManagementAuthSecret is kept separate from the admin input
+// path so a rotated management token can retain its refresh expiry metadata.
+// The secret is only ever persisted as one encrypted credential value.
+func encryptUpstreamManagementAuthSecret(encryptor SecretEncryptor, secret upstreamManagementAuthSecret) (string, error) {
+	if encryptor == nil {
+		return "", errors.New("upstream management credential encryption is unavailable")
 	}
 	payload, err := json.Marshal(secret)
 	if err != nil {
@@ -231,6 +248,7 @@ func DecryptUpstreamManagementAuth(encryptor SecretEncryptor, ciphertext string)
 	secret.Username = strings.TrimSpace(secret.Username)
 	secret.Password = strings.TrimSpace(secret.Password)
 	secret.AccessToken = strings.TrimSpace(secret.AccessToken)
+	secret.RefreshToken = strings.TrimSpace(secret.RefreshToken)
 	return secret, nil
 }
 
@@ -265,7 +283,17 @@ func applyUpstreamManagementAuthInput(credentials map[string]any, config Upstrea
 	if config.Group == "" {
 		return nil, errors.New("upstream management credentials require enabled rate multiplier sync")
 	}
-	ciphertext, err := EncryptUpstreamManagementAuth(encryptor, config, input)
+	// The edit DTO intentionally never returns the existing refresh token. When
+	// an admin replaces only the short-lived JWT, preserve the encrypted RT so
+	// scheduled renewal remains enabled. Clear=true is the explicit removal
+	// action for the whole management identity.
+	effectiveInput := *input
+	if effectiveInput.AccessToken != "" && effectiveInput.RefreshToken == "" {
+		if existing, decryptErr := DecryptUpstreamManagementAuth(encryptor, upstreamManagementAuthCiphertext(credentials)); decryptErr == nil {
+			effectiveInput.RefreshToken = existing.RefreshToken
+		}
+	}
+	ciphertext, err := EncryptUpstreamManagementAuth(encryptor, config, &effectiveInput)
 	if err != nil {
 		return nil, err
 	}

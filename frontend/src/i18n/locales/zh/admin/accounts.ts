@@ -821,6 +821,8 @@ export default {
         authModePassword: '用户名和密码',
         remoteUserId: '上游用户 ID',
         accessToken: '管理端访问令牌',
+        refreshToken: '管理端刷新令牌',
+        refreshTokenHint: '用于在访问令牌即将过期时自动换取新令牌；保存后不会再显示。',
         username: '管理端用户名',
         password: '管理端密码',
         credentialsRequired: '启用倍率同步前，请填写完整的上游管理端凭据',

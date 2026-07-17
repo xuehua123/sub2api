@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -39,11 +40,29 @@ var ErrUpstreamManagementBalanceUnavailable = errors.New("upstream management cr
 // cannot prove which upstream group owns this account's forwarding API key.
 var ErrUpstreamAPIKeyGroupUnmapped = errors.New("upstream API key group could not be mapped")
 
+// ErrUpstreamManagementTurnstileRequired means the upstream deliberately
+// requires an interactive browser challenge for password login. A scheduled
+// server-side synchronizer cannot complete that challenge and must use a
+// management access token instead.
+var ErrUpstreamManagementTurnstileRequired = errors.New("upstream management login requires Turnstile verification; use a management access token")
+
 // UpstreamRateMultiplierSyncRepository is intentionally narrow. Syncing a
 // supplier's group multiplier must not gain access to local group pricing.
 type UpstreamRateMultiplierSyncRepository interface {
 	ListActiveSchedulableForRateMultiplierPriority(ctx context.Context) ([]Account, error)
+	ListUpstreamManagementAuthRotationCandidates(ctx context.Context) ([]Account, error)
 	UpdateRateMultipliers(ctx context.Context, multipliers map[int64]float64) (int64, error)
+	UpdateUpstreamManagementAuthsIfUnchanged(ctx context.Context, updates []UpstreamManagementAuthUpdate) (bool, error)
+}
+
+// UpstreamManagementAuthUpdate is one conditional management-credential
+// rotation. A single upstream refresh-token identity can belong to multiple
+// local accounts in different upstream groups, so these updates are committed
+// together or not at all.
+type UpstreamManagementAuthUpdate struct {
+	AccountID          int64
+	ExpectedCiphertext string
+	NextCiphertext     string
 }
 
 // UpstreamRateMultiplierSyncService reads the configured upstream user's group
@@ -133,11 +152,34 @@ func (s *UpstreamRateMultiplierSyncService) reconcileAndLog() {
 }
 
 type upstreamRateMultiplierTarget struct {
-	baseURL    string
-	config     UpstreamRateMultiplierSyncConfig
-	ciphertext string
-	client     *http.Client
-	accounts   []Account
+	baseURL         string
+	config          UpstreamRateMultiplierSyncConfig
+	ciphertext      string
+	refreshIdentity string
+	client          *http.Client
+	accounts        []Account
+}
+
+type upstreamRateMultiplierFetchResult struct {
+	multiplier      float64
+	refreshIdentity string
+	rotatedSecret   *upstreamManagementAuthSecret
+}
+
+// upstreamManagementRefreshState shares one refresh exchange among targets
+// using the same persisted management credential. A single upstream user can
+// have accounts in more than one group; refresh-token rotation must not send
+// two concurrent refresh requests with the old token.
+type upstreamManagementRefreshState struct {
+	mu      sync.Mutex
+	entries map[string]*upstreamManagementRefreshEntry
+}
+
+type upstreamManagementRefreshEntry struct {
+	done      chan struct{}
+	secret    upstreamManagementAuthSecret
+	refreshed bool
+	err       error
 }
 
 // Reconcile probes each distinct management identity/group once. Any failed
@@ -209,14 +251,63 @@ func (s *UpstreamRateMultiplierSyncService) Reconcile(ctx context.Context) (int6
 		}
 		return left.config.Group < right.config.Group
 	})
+	refreshIdentities := make(map[string]struct{})
+	for _, target := range ordered {
+		if target.config.Provider != UpstreamManagementProviderSub2API || target.config.AuthMode != UpstreamManagementAuthModeAccessToken {
+			continue
+		}
+		secret, decryptErr := DecryptUpstreamManagementAuth(s.encryptor, target.ciphertext)
+		if decryptErr != nil || strings.TrimSpace(secret.RefreshToken) == "" {
+			continue
+		}
+		target.refreshIdentity = upstreamManagementRefreshIdentity(target.baseURL, target.config, secret.RefreshToken)
+		refreshIdentities[target.refreshIdentity] = struct{}{}
+	}
+	refreshBindings := make(map[string][]UpstreamManagementAuthUpdate, len(refreshIdentities))
+	if len(refreshIdentities) > 0 {
+		rotationCandidates, candidatesErr := s.repo.ListUpstreamManagementAuthRotationCandidates(ctx)
+		if candidatesErr != nil {
+			return 0, candidatesErr
+		}
+		for _, account := range rotationCandidates {
+			if !account.IsUpstreamRateMultiplierSyncEnabled() || account.Type != AccountTypeAPIKey && account.Type != AccountTypeUpstream {
+				continue
+			}
+			config, configErr := account.UpstreamRateMultiplierSyncConfig()
+			if configErr != nil || config.Provider != UpstreamManagementProviderSub2API || config.AuthMode != UpstreamManagementAuthModeAccessToken {
+				continue
+			}
+			ciphertext := account.GetCredential(upstreamManagementAuthCredentialKey)
+			if ciphertext == "" {
+				continue
+			}
+			baseURL, baseURLErr := s.managementBaseURL(&account)
+			if baseURLErr != nil {
+				continue
+			}
+			secret, decryptErr := DecryptUpstreamManagementAuth(s.encryptor, ciphertext)
+			if decryptErr != nil || strings.TrimSpace(secret.RefreshToken) == "" {
+				continue
+			}
+			identity := upstreamManagementRefreshIdentity(baseURL, config, secret.RefreshToken)
+			if _, matched := refreshIdentities[identity]; !matched {
+				continue
+			}
+			refreshBindings[identity] = append(refreshBindings[identity], UpstreamManagementAuthUpdate{
+				AccountID:          account.ID,
+				ExpectedCiphertext: ciphertext,
+			})
+		}
+	}
 
 	type result struct {
-		target     *upstreamRateMultiplierTarget
-		multiplier float64
-		err        error
+		target *upstreamRateMultiplierTarget
+		fetch  upstreamRateMultiplierFetchResult
+		err    error
 	}
 	jobs := make(chan *upstreamRateMultiplierTarget)
 	results := make(chan result, len(ordered))
+	refreshes := &upstreamManagementRefreshState{entries: make(map[string]*upstreamManagementRefreshEntry)}
 	workers := upstreamRateMultiplierSyncMaxConcurrency
 	if workers > len(ordered) {
 		workers = len(ordered)
@@ -227,8 +318,8 @@ func (s *UpstreamRateMultiplierSyncService) Reconcile(ctx context.Context) (int6
 		go func() {
 			defer workersWG.Done()
 			for target := range jobs {
-				multiplier, fetchErr := s.fetchGroupRateMultiplier(ctx, target)
-				results <- result{target: target, multiplier: multiplier, err: fetchErr}
+				fetch, fetchErr := s.fetchGroupRateMultiplier(ctx, target, refreshes)
+				results <- result{target: target, fetch: fetch, err: fetchErr}
 			}
 		}()
 	}
@@ -246,14 +337,55 @@ func (s *UpstreamRateMultiplierSyncService) Reconcile(ctx context.Context) (int6
 	}()
 
 	updates := make(map[int64]float64)
+	rotationPersisted := make(map[string]bool)
+	rotationHandled := make(map[string]bool)
 	for item := range results {
+		if item.fetch.rotatedSecret != nil {
+			identity := item.fetch.refreshIdentity
+			if !rotationHandled[identity] {
+				bindings := refreshBindings[identity]
+				if len(bindings) == 0 {
+					bindings = make([]UpstreamManagementAuthUpdate, 0, len(item.target.accounts))
+					for _, account := range item.target.accounts {
+						bindings = append(bindings, UpstreamManagementAuthUpdate{
+							AccountID:          account.ID,
+							ExpectedCiphertext: item.target.ciphertext,
+						})
+					}
+				}
+				for index := range bindings {
+					nextCiphertext, encryptErr := encryptUpstreamManagementAuthSecret(s.encryptor, *item.fetch.rotatedSecret)
+					if encryptErr != nil {
+						slog.Warn("upstream_rate_multiplier_sync_token_rotation_encrypt_failed", "account_id", bindings[index].AccountID, "error", encryptErr)
+						bindings = nil
+						break
+					}
+					bindings[index].NextCiphertext = nextCiphertext
+				}
+				persisted := false
+				var updateErr error
+				if len(bindings) > 0 {
+					persisted, updateErr = s.repo.UpdateUpstreamManagementAuthsIfUnchanged(ctx, bindings)
+				}
+				if updateErr != nil {
+					slog.Warn("upstream_rate_multiplier_sync_token_rotation_persist_failed", "account_id", item.target.accounts[0].ID, "error", updateErr)
+				} else if !persisted {
+					slog.Warn("upstream_rate_multiplier_sync_token_rotation_skipped", "account_id", item.target.accounts[0].ID, "reason", "credentials_changed")
+				}
+				rotationHandled[identity] = true
+				rotationPersisted[identity] = persisted
+			}
+			if !rotationPersisted[identity] {
+				continue
+			}
+		}
 		if item.err != nil {
 			slog.Warn("upstream_rate_multiplier_sync_probe_failed", "account_id", item.target.accounts[0].ID, "provider", item.target.config.Provider, "upstream_group", item.target.config.Group, "error", item.err)
 			continue
 		}
 		for _, account := range item.target.accounts {
-			if math.Abs(account.BillingRateMultiplier()-item.multiplier) > rateMultiplierPriorityEpsilon {
-				updates[account.ID] = item.multiplier
+			if math.Abs(account.BillingRateMultiplier()-item.fetch.multiplier) > rateMultiplierPriorityEpsilon {
+				updates[account.ID] = item.fetch.multiplier
 			}
 		}
 	}
@@ -425,6 +557,8 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 		}, nil
 	} else if errors.Is(discoveryErr, ErrUpstreamAPIKeyGroupUnmapped) {
 		return nil, discoveryErr
+	} else if errors.Is(discoveryErr, ErrUpstreamManagementTurnstileRequired) {
+		return nil, discoveryErr
 	}
 
 	// NewAPI, RixAPI, and ShellAPI share the same management login endpoint.
@@ -571,11 +705,12 @@ func (s *UpstreamRateMultiplierSyncService) fetchSub2APIUserBalance(ctx context.
 }
 
 func (s *UpstreamRateMultiplierSyncService) discoverySecret(account *Account, authMode UpstreamManagementAuthMode, input *UpstreamManagementAuthInput) (upstreamManagementAuthSecret, error) {
-	if input != nil && (strings.TrimSpace(input.Username) != "" || input.Password != "" || strings.TrimSpace(input.AccessToken) != "") {
+	if input != nil && (strings.TrimSpace(input.Username) != "" || input.Password != "" || strings.TrimSpace(input.AccessToken) != "" || strings.TrimSpace(input.RefreshToken) != "") {
 		return upstreamManagementAuthSecret{
-			Username:    strings.TrimSpace(input.Username),
-			Password:    input.Password,
-			AccessToken: strings.TrimSpace(input.AccessToken),
+			Username:     strings.TrimSpace(input.Username),
+			Password:     input.Password,
+			AccessToken:  strings.TrimSpace(input.AccessToken),
+			RefreshToken: strings.TrimSpace(input.RefreshToken),
 		}, nil
 	}
 	if account == nil || !account.HasUpstreamManagementAuth() {
@@ -684,22 +819,114 @@ func (s *UpstreamRateMultiplierSyncService) discoverSub2APIGroups(ctx context.Co
 	return nil, 0, nil, fmt.Errorf("%w: upstream API key belongs to group id %d, but that group is not available to the management user", ErrUpstreamAPIKeyGroupUnmapped, matchedGroupID)
 }
 
-func (s *UpstreamRateMultiplierSyncService) fetchGroupRateMultiplier(ctx context.Context, target *upstreamRateMultiplierTarget) (float64, error) {
+func (s *UpstreamRateMultiplierSyncService) fetchGroupRateMultiplier(ctx context.Context, target *upstreamRateMultiplierTarget, refreshes *upstreamManagementRefreshState) (upstreamRateMultiplierFetchResult, error) {
 	secret, err := DecryptUpstreamManagementAuth(s.encryptor, target.ciphertext)
 	if err != nil {
-		return 0, err
+		return upstreamRateMultiplierFetchResult{}, err
 	}
 	if err := validateUpstreamManagementAuth(target.config, secret); err != nil {
-		return 0, err
+		return upstreamRateMultiplierFetchResult{}, err
+	}
+	result := upstreamRateMultiplierFetchResult{}
+	if target.config.Provider == UpstreamManagementProviderSub2API && target.config.AuthMode == UpstreamManagementAuthModeAccessToken && shouldRefreshSub2APIManagementToken(secret) {
+		result.refreshIdentity = target.refreshIdentity
+		if result.refreshIdentity == "" {
+			result.refreshIdentity = upstreamManagementRefreshIdentity(target.baseURL, target.config, secret.RefreshToken)
+		}
+		refreshedSecret, refreshed, refreshErr := refreshes.refresh(ctx, s, target, secret)
+		if refreshErr != nil {
+			return result, refreshErr
+		}
+		secret = refreshedSecret
+		if refreshed {
+			rotated := secret
+			result.rotatedSecret = &rotated
+		}
 	}
 	switch target.config.Provider {
 	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI:
-		return s.fetchNewAPIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
+		result.multiplier, err = s.fetchNewAPIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
 	case UpstreamManagementProviderSub2API:
-		return s.fetchSub2APIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
+		result.multiplier, err = s.fetchSub2APIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
 	default:
-		return 0, errors.New("unsupported upstream management provider")
+		return upstreamRateMultiplierFetchResult{}, errors.New("unsupported upstream management provider")
 	}
+	return result, err
+}
+
+func (r *upstreamManagementRefreshState) refresh(ctx context.Context, service *UpstreamRateMultiplierSyncService, target *upstreamRateMultiplierTarget, secret upstreamManagementAuthSecret) (upstreamManagementAuthSecret, bool, error) {
+	key := target.refreshIdentity
+	if key == "" {
+		key = upstreamManagementRefreshIdentity(target.baseURL, target.config, secret.RefreshToken)
+	}
+	r.mu.Lock()
+	if existing := r.entries[key]; existing != nil {
+		r.mu.Unlock()
+		select {
+		case <-existing.done:
+			return existing.secret, existing.refreshed, existing.err
+		case <-ctx.Done():
+			return upstreamManagementAuthSecret{}, false, ctx.Err()
+		}
+	}
+	entry := &upstreamManagementRefreshEntry{done: make(chan struct{})}
+	r.entries[key] = entry
+	r.mu.Unlock()
+
+	entry.secret, entry.err = service.refreshSub2APIManagementToken(ctx, target.client, target.baseURL, secret)
+	entry.refreshed = entry.err == nil
+	close(entry.done)
+	return entry.secret, entry.refreshed, entry.err
+}
+
+// upstreamManagementRefreshIdentity is only an in-memory coordination key. It
+// deliberately hashes the high-entropy RT so the plaintext never becomes a map
+// key, log field, or persisted value. Different upstream groups sharing one RT
+// therefore perform a single token rotation.
+func upstreamManagementRefreshIdentity(baseURL string, config UpstreamRateMultiplierSyncConfig, refreshToken string) string {
+	source := strings.Join([]string{
+		strings.TrimRight(accountBalanceJoinEndpoint(baseURL, "/", false), "/"),
+		string(config.Provider),
+		string(config.AuthMode),
+		strings.TrimSpace(refreshToken),
+	}, "\x00")
+	hash := sha256.Sum256([]byte(source))
+	return fmt.Sprintf("%x", hash[:])
+}
+
+func shouldRefreshSub2APIManagementToken(secret upstreamManagementAuthSecret) bool {
+	if secret.RefreshToken == "" {
+		return false
+	}
+	// A legacy credential has no expiry metadata. Refresh it once so later runs
+	// can renew shortly before expiry instead of waiting for a 401 response.
+	return secret.ExpiresAt == 0 || time.Now().Add(5*time.Minute).Unix() >= secret.ExpiresAt
+}
+
+func (s *UpstreamRateMultiplierSyncService) refreshSub2APIManagementToken(ctx context.Context, client *http.Client, baseURL string, secret upstreamManagementAuthSecret) (upstreamManagementAuthSecret, error) {
+	response, err := s.managementJSON(ctx, client, http.MethodPost, accountBalanceJoinEndpoint(baseURL, "/api/v1/auth/refresh", false), nil, map[string]string{
+		"refresh_token": secret.RefreshToken,
+	})
+	if err != nil {
+		return upstreamManagementAuthSecret{}, fmt.Errorf("refresh upstream management access token: %w", err)
+	}
+	data := envelopeData(response.payload)
+	nextAccessToken := firstString(data, "access_token", "token", "jwt")
+	if nextAccessToken == "" {
+		return upstreamManagementAuthSecret{}, errors.New("upstream management token refresh returned no access token")
+	}
+	secret.AccessToken = nextAccessToken
+	if nextRefreshToken := firstString(data, "refresh_token"); nextRefreshToken != "" {
+		secret.RefreshToken = nextRefreshToken
+	}
+	if expiresIn := int64FromMap(data, "expires_in"); expiresIn > 0 {
+		secret.ExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).Unix()
+	} else {
+		// Force a refresh on the next reconciliation when the upstream does not
+		// disclose a lifetime, rather than incorrectly treating the JWT as durable.
+		secret.ExpiresAt = 0
+	}
+	return secret, nil
 }
 
 func (s *UpstreamRateMultiplierSyncService) fetchNewAPIGroupRateMultiplier(ctx context.Context, client *http.Client, baseURL string, config UpstreamRateMultiplierSyncConfig, secret upstreamManagementAuthSecret) (float64, error) {
@@ -866,6 +1093,9 @@ func (s *UpstreamRateMultiplierSyncService) managementJSON(ctx context.Context, 
 		return managementJSONResponse{}, errors.New("upstream management response is not valid JSON")
 	}
 	if success, ok := decoded["success"].(bool); ok && !success {
+		if strings.Contains(strings.ToLower(firstString(decoded, "message")), "turnstile") {
+			return managementJSONResponse{}, ErrUpstreamManagementTurnstileRequired
+		}
 		return managementJSONResponse{}, errors.New("upstream management request was rejected")
 	}
 	if _, ok := decoded["error"]; ok {
@@ -1026,7 +1256,10 @@ func applySub2APIGroupRates(groups []UpstreamRateMultiplierGroup, payload any) {
 func (s *UpstreamRateMultiplierSyncService) findSub2APIKeyGroupID(ctx context.Context, client *http.Client, baseURL string, headers http.Header, upstreamAPIKey string) (int64, error) {
 	const pageSize = 100
 	for page := 1; page <= 100; page++ {
-		endpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/api-keys", false)
+		// Sub2API exposes a user's own keys at /api/v1/keys. This endpoint is
+		// authenticated with the management JWT and supplies the exact group_id
+		// of the forwarding key being synchronized.
+		endpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/keys", false)
 		parsedEndpoint, err := url.Parse(endpoint)
 		if err != nil {
 			return 0, err

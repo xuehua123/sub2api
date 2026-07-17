@@ -2808,7 +2808,7 @@
             </div>
             <div>
               <label class="input-label">{{ t('admin.accounts.upstreamRateSync.authMode') }}</label>
-              <select v-model="upstreamRateMultiplierSyncAuthMode" class="input">
+              <select v-model="upstreamRateMultiplierSyncAuthMode" data-testid="create-upstream-rate-sync-auth-mode" class="input">
                 <option v-for="option in upstreamRateMultiplierSyncAuthModeOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
               </select>
             </div>
@@ -2820,6 +2820,9 @@
           <div v-if="upstreamRateMultiplierSyncAuthMode === 'access_token'" class="mt-4">
             <label class="input-label">{{ t('admin.accounts.upstreamRateSync.accessToken') }}</label>
             <input v-model.trim="upstreamManagementAccessToken" data-testid="create-upstream-rate-sync-token" type="password" autocomplete="new-password" class="input" />
+            <label class="input-label mt-4">{{ t('admin.accounts.upstreamRateSync.refreshToken') }}</label>
+            <input v-model.trim="upstreamManagementRefreshToken" data-testid="create-upstream-rate-sync-refresh-token" type="password" autocomplete="new-password" class="input" />
+            <p class="input-hint">{{ t('admin.accounts.upstreamRateSync.refreshTokenHint') }}</p>
           </div>
           <div v-else class="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
@@ -4179,6 +4182,7 @@ const upstreamManagementBaseURL = ref('')
 const upstreamManagementUsername = ref('')
 const upstreamManagementPassword = ref('')
 const upstreamManagementAccessToken = ref('')
+const upstreamManagementRefreshToken = ref('')
 type UpstreamRateMultiplierGroupOption = { id?: number; name: string; rate_multiplier: number }
 const upstreamRateMultiplierSyncGroups = ref<UpstreamRateMultiplierGroupOption[]>([])
 const upstreamRateMultiplierSyncDetectedGroup = ref<UpstreamRateMultiplierGroupOption | null>(null)
@@ -4235,7 +4239,10 @@ const discoverUpstreamRateMultiplierGroups = async () => {
       auth_mode: upstreamRateMultiplierSyncAuthMode.value,
       remote_user_id: upstreamRateMultiplierSyncRemoteUserID.value ?? undefined,
       upstream_management_auth: upstreamRateMultiplierSyncAuthMode.value === 'access_token'
-        ? { access_token: upstreamManagementAccessToken.value.trim() }
+        ? {
+            access_token: upstreamManagementAccessToken.value.trim(),
+            ...(upstreamManagementRefreshToken.value.trim() ? { refresh_token: upstreamManagementRefreshToken.value.trim() } : {})
+          }
         : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
     })
     upstreamRateMultiplierSyncProvider.value = discovery.provider
@@ -4863,6 +4870,7 @@ const resetForm = () => {
   upstreamManagementUsername.value = ''
   upstreamManagementPassword.value = ''
   upstreamManagementAccessToken.value = ''
+  upstreamManagementRefreshToken.value = ''
   upstreamRateMultiplierSyncGroups.value = []
   upstreamRateMultiplierSyncDetectedGroup.value = null
   upstreamRateMultiplierSyncDiscovering.value = false
@@ -5102,7 +5110,10 @@ const doCreateAccount = async (payload: CreateAccountRequest) => {
       extra.upstream_rate_multiplier_sync_remote_user_id = upstreamRateMultiplierSyncRemoteUserID.value
     }
     payload.upstream_management_auth = upstreamRateMultiplierSyncAuthMode.value === 'access_token'
-      ? { access_token: upstreamManagementAccessToken.value.trim() }
+      ? {
+          access_token: upstreamManagementAccessToken.value.trim(),
+          ...(upstreamManagementRefreshToken.value.trim() ? { refresh_token: upstreamManagementRefreshToken.value.trim() } : {})
+        }
       : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
     payload.upstream_management_base_url = upstreamManagementBaseURL.value.trim() || undefined
     // Persist the value only when it was just resolved through an exact Key ->
