@@ -73,6 +73,9 @@ func (s *adminSearchUserRepoStub) BatchSetConcurrency(context.Context, []int64, 
 func (s *adminSearchUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
 	panic("unexpected")
 }
+func (s *adminSearchUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
+	panic("unexpected")
+}
 func (s *adminSearchUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
 	panic("unexpected")
 }

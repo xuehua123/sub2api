@@ -263,6 +263,10 @@ func (s *paymentRefundUserRepoStub) DeductBalance(ctx context.Context, id int64,
 	return nil
 }
 
+func (s *paymentRefundUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
+	panic("unexpected BatchUpdateLimits")
+}
+
 type failingRechargeOrderRepoStub struct {
 	*rechargeOrderRepoStub
 	err error

@@ -83,8 +83,8 @@ func TestPrepareUsageLogInsert_IncludesFirstSSEEventMs(t *testing.T) {
 	prepared := prepareUsageLogInsert(log)
 
 	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
-	require.Equal(t, "integer", usageLogInsertArgTypes[33])
-	require.Equal(t, nullInt(&firstSSEEventMs), prepared.args[33])
-	require.Equal(t, "integer", usageLogInsertArgTypes[34])
-	require.Equal(t, nullInt(&firstClientFlushMs), prepared.args[34])
+	require.Equal(t, "integer", usageLogInsertArgTypes[35])
+	require.Equal(t, nullInt(&firstSSEEventMs), prepared.args[35])
+	require.Equal(t, "integer", usageLogInsertArgTypes[36])
+	require.Equal(t, nullInt(&firstClientFlushMs), prepared.args[36])
 }

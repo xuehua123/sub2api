@@ -25,12 +25,15 @@
         </div>
         <div class="shrink-0 rounded-2xl bg-gray-50/80 px-3 py-2 text-right shadow-sm ring-1 ring-gray-100 dark:bg-dark-900/60 dark:ring-white/5">
           <div class="flex items-baseline justify-end gap-1">
-            <span class="text-sm font-semibold text-gray-400 dark:text-dark-400">¥</span>
+            <span class="text-sm font-semibold text-gray-400 dark:text-dark-400">{{ planCurrencySymbol }}</span>
             <span :class="['text-4xl font-black leading-none tracking-normal drop-shadow-sm', textClass]">{{ formatAmount(plan.price) }}</span>
+            <span v-if="plan.currency" class="text-xs font-medium text-gray-400 dark:text-dark-500">{{ planCurrency }}</span>
           </div>
           <div class="mt-0.5 text-[11px] text-gray-400 dark:text-dark-400">/ {{ validitySuffix }}</div>
           <div v-if="plan.original_price" class="mt-1 flex items-center justify-end gap-1.5">
-            <span class="text-xs text-gray-400 line-through dark:text-dark-500">¥{{ formatAmount(plan.original_price) }}</span>
+            <span class="text-xs text-gray-400 line-through dark:text-dark-500">
+              {{ planCurrencySymbol }}{{ formatAmount(plan.original_price) }}<template v-if="plan.currency"> {{ planCurrency }}</template>
+            </span>
             <span v-if="discountText" :class="['rounded px-1.5 py-0.5 text-[10px] font-semibold', discountClass]">
               {{ discountText }}
             </span>
@@ -203,6 +206,18 @@ const pLabel = computed(() => (
   usesBroadGroupCoverage.value ? t('payment.planCard.allIncluded') : platformLabel(platform.value)
 ))
 
+const planCurrency = computed(() => props.plan.currency?.trim().toUpperCase() || 'CNY')
+const planCurrencySymbol = computed(() => {
+  switch (planCurrency.value) {
+    case 'CNY': return '¥'
+    case 'USD': return '$'
+    case 'EUR': return '€'
+    case 'GBP': return '£'
+    case 'JPY': return '¥'
+    default: return planCurrency.value
+  }
+})
+
 const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''
   const pct = Math.round((1 - props.plan.price / props.plan.original_price) * 100)
@@ -236,7 +251,7 @@ const unitCost = computed(() => {
 
 const unitCostText = computed(() => {
   if (!unitCost.value) return t('payment.planCard.priceUnavailable')
-  return t('payment.planCard.unitCostValue', { amount: formatCny(unitCost.value) })
+  return t('payment.planCard.unitCostValue', { amount: formatPlanCurrency(unitCost.value) })
 })
 
 const overagePolicyText = computed(() => {
@@ -292,10 +307,10 @@ function formatAmount(value: number | null | undefined): string {
   }).format(amount)
 }
 
-function formatCny(value: number): string {
+function formatPlanCurrency(value: number): string {
   return new Intl.NumberFormat(locale.value, {
     style: 'currency',
-    currency: 'CNY',
+    currency: planCurrency.value,
     maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
     minimumFractionDigits: value > 0 && value < 1 ? 4 : 2,
   }).format(value)
@@ -312,7 +327,7 @@ function rateText(rate: number | null | undefined): string {
 function groupUnitCostText(rate: number | null | undefined): string {
   if (!unitCost.value) return t('payment.planCard.priceUnavailable')
   return t('payment.planCard.unitCostValue', {
-    amount: formatCny(unitCost.value * normalizedRate(rate))
+    amount: formatPlanCurrency(unitCost.value * normalizedRate(rate))
   })
 }
 </script>

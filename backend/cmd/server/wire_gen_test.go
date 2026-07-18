@@ -72,8 +72,8 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		billingCacheSvc,
 		&service.UsageRecordWorkerPool{},
 		&service.SubscriptionService{},
-		nil, // subscriptionEntitlementService
-		nil, // subscriptionPlanExternalMappingService
+		nil, // subscriptionEntitlement
+		nil, // subscriptionPlanExternalMapping
 		oauthSvc,
 		openAIOAuthSvc,
 		geminiOAuthSvc,
@@ -87,6 +87,9 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // quotaFlusher
 		nil, // rateMultiplierPriority
 		nil, // upstreamRateMultiplierSync
+		nil, // upstreamBillingProbe
+		nil, // auditLog
+		nil, // promptAudit
 	)
 
 	require.NotPanics(t, func() {
