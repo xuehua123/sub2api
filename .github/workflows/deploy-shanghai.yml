@@ -44,27 +44,44 @@ jobs:
             *) echo "Only immutable sha-* tags or sha256 digests are allowed" >&2; exit 1 ;;
           esac
 
-      - name: Deploy to stable with restricted deployment user
+      - name: Prepare stable deployment payload
         if: inputs.target == 'stable'
-        uses: appleboy/ssh-action@v1.2.0
+        shell: bash
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+        run: |
+          set -euo pipefail
+          stable_deploy_payload="$(
+            printf '%s\n%s\n%s\n' \
+              "$DEPLOY_IMAGE_TAG" \
+              "$GHCR_USERNAME" \
+              "$GHCR_TOKEN" |
+              base64 -w0
+          )"
+          echo "::add-mask::$stable_deploy_payload"
+          printf 'STABLE_DEPLOY_PAYLOAD=%s\n' "$stable_deploy_payload" >> "$GITHUB_ENV"
+
+      - name: Deploy to stable with restricted deployment user
+        if: inputs.target == 'stable'
+        uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.NEW_STABLE_HOST }}
           username: ${{ secrets.NEW_STABLE_USER }}
           key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
           port: ${{ secrets.NEW_STABLE_PORT }}
-          envs: DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
+          envs: STABLE_DEPLOY_PAYLOAD
           script_stop: true
           command_timeout: 10m
           script: |
             set -eu
-            printf '%s\n%s\n%s\n' \
-              "$DEPLOY_IMAGE_TAG" \
-              "$GHCR_USERNAME" \
-              "$GHCR_TOKEN" |
+            if [ -z "${STABLE_DEPLOY_PAYLOAD:-}" ]; then
+              echo "Stable deployment payload is unavailable" >&2
+              exit 2
+            fi
+            printf '%s' "$STABLE_DEPLOY_PAYLOAD" |
+              base64 --decode |
               sudo -n /usr/local/sbin/sub2api-deploy-stable
 
       - name: Deploy to pipixia
