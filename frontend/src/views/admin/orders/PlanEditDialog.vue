@@ -93,6 +93,11 @@
       <div class="grid grid-cols-2 gap-4">
         <div><label class="input-label">{{ t('payment.admin.overagePolicy') }}</label><Select v-model="planForm.overage_policy" :options="overagePolicyOptions" /></div>
         <div><label class="input-label">{{ t('payment.admin.sortOrder') }}</label><input v-model.number="planForm.sort_order" type="number" min="0" class="input" /></div>
+        <div>
+          <label class="input-label">{{ t('payment.admin.currency') }}</label>
+          <input v-model="planForm.currency" type="text" maxlength="3" class="input uppercase" :placeholder="t('payment.admin.currencyPlaceholder')" />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.currencyHint') }}</p>
+        </div>
       </div>
       <div class="grid grid-cols-3 gap-4">
         <div><label class="input-label">{{ t('payment.admin.dailyLimit') }}</label><input :value="nullableInputValue(planForm.daily_limit_usd)" type="number" step="0.000001" min="0.000001" class="input" @input="planForm.daily_limit_usd = parseNullableInput($event)" /></div>
@@ -169,6 +174,7 @@ interface PlanFormState {
   description: string
   price: number
   original_price: number | null
+  currency: string
   validity_days: number
   validity_unit: string
   access_scope: PlanAccessScope
@@ -193,6 +199,7 @@ function defaultPlanForm(): PlanFormState {
     description: '',
     price: 0,
     original_price: null,
+    currency: '',
     validity_days: 30,
     validity_unit: 'day',
     access_scope: 'explicit',
@@ -326,6 +333,7 @@ watch(() => props.show, (visible) => {
       description: props.plan.description,
       price: props.plan.price,
       original_price: props.plan.original_price ?? null,
+      currency: props.plan.currency || '',
       validity_days: props.plan.validity_days,
       validity_unit: parsedValidityUnit ?? invalidValidityUnit.value ?? 'day',
       access_scope: props.plan.access_scope ?? 'explicit',
@@ -448,6 +456,7 @@ function buildPlanPayload(): CreateSubscriptionPlanRequest | null {
     description: planForm.description,
     price: planForm.price,
     original_price: planForm.original_price,
+    currency: planForm.currency.trim().toUpperCase(),
     validity_days: planForm.validity_days,
     validity_unit: parsedValidityUnit,
     access_scope: planForm.access_scope,

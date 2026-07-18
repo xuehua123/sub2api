@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
 	"github.com/google/wire"
@@ -39,12 +41,16 @@ func ProvideAdminHandlers(
 	channelMonitorHandler *admin.ChannelMonitorHandler,
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	contentModerationHandler *admin.ContentModerationHandler,
+	promptAuditHandler *securityaudit.PromptAdminHandler,
 	paymentHandler *admin.PaymentHandler,
 	referralHandler *admin.ReferralHandler,
 	rechargeOrderHandler *admin.RechargeOrderHandler,
 	affiliateHandler *admin.AffiliateHandler,
 	complianceHandler *admin.ComplianceHandler,
+	auditLogHandler *admin.AuditLogHandler,
+	upstreamBillingProbe *service.UpstreamBillingProbeService,
 ) *AdminHandlers {
+	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
@@ -76,12 +82,68 @@ func ProvideAdminHandlers(
 		ChannelMonitor:         channelMonitorHandler,
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		ContentModeration:      contentModerationHandler,
+		PromptAudit:            promptAuditHandler,
 		Payment:                paymentHandler,
 		Referral:               referralHandler,
 		RechargeOrder:          rechargeOrderHandler,
 		Affiliate:              affiliateHandler,
 		Compliance:             complianceHandler,
+		AuditLog:               auditLogHandler,
 	}
+}
+
+func ProvideGatewayHandler(
+	gatewayService *service.GatewayService,
+	openAIGatewayService *service.OpenAIGatewayService,
+	geminiCompatService *service.GeminiMessagesCompatService,
+	antigravityGatewayService *service.AntigravityGatewayService,
+	userService *service.UserService,
+	concurrencyService *service.ConcurrencyService,
+	billingCacheService *service.BillingCacheService,
+	usageService *service.UsageService,
+	apiKeyService *service.APIKeyService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	errorPassthroughService *service.ErrorPassthroughService,
+	contentModerationService *service.ContentModerationService,
+	userMsgQueueService *service.UserMessageQueueService,
+	cfg *config.Config,
+	settingService *service.SettingService,
+	coordinator *securityaudit.Coordinator,
+) *GatewayHandler {
+	h := NewGatewayHandler(gatewayService, openAIGatewayService, geminiCompatService, antigravityGatewayService,
+		userService, concurrencyService, billingCacheService, usageService, apiKeyService, usageRecordWorkerPool,
+		errorPassthroughService, contentModerationService, userMsgQueueService, cfg, settingService)
+	h.securityAuditCoordinator = coordinator
+	return h
+}
+
+func ProvideOpenAIGatewayHandler(
+	gatewayService *service.OpenAIGatewayService,
+	concurrencyService *service.ConcurrencyService,
+	billingCacheService *service.BillingCacheService,
+	apiKeyService *service.APIKeyService,
+	usageRecordWorkerPool *service.UsageRecordWorkerPool,
+	errorPassthroughService *service.ErrorPassthroughService,
+	contentModerationService *service.ContentModerationService,
+	opsService *service.OpsService,
+	cfg *config.Config,
+	coordinator *securityaudit.Coordinator,
+) *OpenAIGatewayHandler {
+	h := NewOpenAIGatewayHandler(gatewayService, concurrencyService, billingCacheService, apiKeyService,
+		usageRecordWorkerPool, errorPassthroughService, contentModerationService, opsService, cfg)
+	h.securityAuditCoordinator = coordinator
+	return h
+}
+
+func ProvideBatchImageHandler(
+	batchService *service.BatchImagePublicService,
+	download *service.BatchImageDownloadService,
+	cleanup *service.BatchImageCleanupService,
+	openAI *OpenAIGatewayHandler,
+) *BatchImageHandler {
+	h := NewBatchImageHandler(batchService, download, cleanup)
+	h.openAI = openAI
+	return h
 }
 
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
@@ -136,6 +198,7 @@ func ProvideHandlers(
 	lobeHubHandler *LobeHubHandler,
 	availableChannelHandler *AvailableChannelHandler,
 	modelPriceHandler *ModelPriceHandler,
+	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
@@ -162,6 +225,7 @@ func ProvideHandlers(
 		LobeHub:          lobeHubHandler,
 		AvailableChannel: availableChannelHandler,
 		ModelPrice:       modelPriceHandler,
+		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
 	}
 }
@@ -179,8 +243,8 @@ var ProviderSet = wire.NewSet(
 	NewAnnouncementHandler,
 	NewSupportIssueHandler,
 	NewChannelMonitorUserHandler,
-	NewGatewayHandler,
-	NewOpenAIGatewayHandler,
+	ProvideGatewayHandler,
+	ProvideOpenAIGatewayHandler,
 	NewTotpHandler,
 	ProvideSettingHandler,
 	NewPaymentHandler,
@@ -190,7 +254,8 @@ var ProviderSet = wire.NewSet(
 	ProvideLobeHubHandler,
 	NewAvailableChannelHandler,
 	NewModelPriceHandler,
-	NewBatchImageHandler,
+	NewAsyncImageHandler,
+	ProvideBatchImageHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -228,6 +293,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewRechargeOrderHandler,
 	admin.NewAffiliateHandler,
 	admin.NewComplianceHandler,
+	admin.NewAuditLogHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

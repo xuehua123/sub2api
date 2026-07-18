@@ -812,7 +812,18 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/issues', label: t('nav.issueManagement'), icon: TicketIcon, badgeCount: adminUnresolvedIssueCount.value },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
-    { path: '/admin/risk-control', label: t('nav.riskControl'), icon: ShieldIcon, hideInSimpleMode: true, featureFlag: flagRiskControl },
+    {
+      path: '/admin/security-audit',
+      label: t('nav.securityAudit'),
+      icon: ShieldIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      featureFlag: flagRiskControl,
+      children: [
+        { path: '/admin/risk-control', label: t('nav.contentModeration'), icon: ShieldIcon },
+        { path: '/admin/prompt-audit', label: t('nav.promptAudit'), icon: ShieldIcon },
+      ],
+    },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
     { path: '/admin/promo-codes', label: t('nav.promoCodes'), icon: GiftIcon, hideInSimpleMode: true },
     {
@@ -850,7 +861,8 @@ const adminNavItems = computed((): NavItem[] => {
         { path: '/admin/referral', label: t('nav.referralOverview'), icon: ChartIcon },
         { path: '/admin/referral-withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon },
       ],
-    }
+    },
+    { path: '/admin/audit-logs', label: t('nav.auditLogs'), icon: ShieldIcon, hideInSimpleMode: true }
   ]
 
   // 简单模式下，在系统设置前插入 API密钥

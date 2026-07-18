@@ -34,4 +34,15 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain('const handleOpenAIImportCodexPAT = async (accessToken: string) => {')
     expect(source).toContain('await adminAPI.accounts.createOpenAICodexPAT({')
   })
+
+  it('exposes custom upstream URL and header override for the OAuth create flow', () => {
+    expect(source).toContain('data-testid="grok-custom-base-url-toggle"')
+    expect(source).toContain('data-testid="grok-custom-base-url-input"')
+    expect(source).toContain("form.platform === 'grok' && isOAuthFlow")
+  })
+
+  it('validates and applies upstream config on all three Grok OAuth create paths', () => {
+    expect(source.match(/validateGrokOAuthUpstreamConfig\(\)/g)?.length).toBe(3)
+    expect(source.match(/applyGrokOAuthUpstreamConfig\(credentials\)/g)?.length).toBe(3)
+  })
 })

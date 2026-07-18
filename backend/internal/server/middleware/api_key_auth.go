@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -25,7 +26,9 @@ func NewAPIKeyAuthMiddleware(apiKeyService *service.APIKeyService, subscriptionS
 //   - 鉴权（Authentication）：验证 Key 有效性、用户状态、IP 限制 —— 始终执行
 //   - 计费执行（Billing Enforcement）：过期/配额/订阅/余额检查 —— skipBilling 时整块跳过
 //
-// /v1/usage 端点只需鉴权，不需要计费执行（允许过期/配额耗尽的 Key 查询自身用量）。
+// /v1/usage、/v1/sub2api/billing 端点与异步生图任务查询只需鉴权，不需要计费执行。
+// usage 允许过期/配额耗尽的 Key 查询自身用量，billing 用于读取当前 Key 的倍率配置，
+// 异步生图查询允许已耗尽额度的 Key 拉取自身任务结果。
 func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscriptionService *service.SubscriptionService, cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// ── 1. 提取 API Key ──────────────────────────────────────────
@@ -94,10 +97,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// 检查 IP 限制（白名单/黑名单）
 		// 注意：错误信息故意模糊，避免暴露具体的 IP 限制机制
 		if len(apiKey.IPWhitelist) > 0 || len(apiKey.IPBlacklist) > 0 {
-			clientIP := ip.GetTrustedClientIP(c)
-			if cfg.TrustForwardedIPForAPIKeyACL() {
-				clientIP = ip.GetClientIP(c)
-			}
+			clientIP := ip.GetSecurityClientIP(c, cfg.TrustForwardedIPForAPIKeyACL())
 			allowed, _ := ip.CheckIPRestrictionWithCompiledRules(clientIP, apiKey.CompiledIPWhitelist, apiKey.CompiledIPBlacklist)
 			if !allowed {
 				if clientIP == "" {
@@ -144,7 +144,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		}
 
 		// skipBilling: /v1/usage 只需鉴权，跳过所有计费执行
-		skipBilling := c.Request.URL.Path == "/v1/usage"
+		billingInfoRequest := c.Request.URL.Path == "/v1/sub2api/billing"
+		skipBilling := c.Request.URL.Path == "/v1/usage" || billingInfoRequest || isAsyncImageTaskRead(c.Request.Method, c.Request.URL.Path)
 
 		if !skipBilling {
 			if status, code, message, blocked := apiKeyStatusBlock(apiKey); blocked {
@@ -166,7 +167,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			})
 			c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 			setGroupContext(c, apiKey.Group)
-			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+			if !billingInfoRequest {
+				_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+			}
 			c.Next()
 			return
 		}
@@ -183,7 +186,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		var subscription *service.UserSubscription
 		var entitlement *service.SubscriptionEntitlement
 
-		if useEntitlementAccess {
+		if useEntitlementAccess && !billingInfoRequest {
 			if skipBilling {
 				if resolved, entErr := apiKeyService.ResolveEntitlementForAPIKeyAuth(
 					c.Request.Context(),
@@ -231,7 +234,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					}
 				}
 			}
-		} else if !v2EntitlementsEnabled && isSubscriptionType && subscriptionService != nil {
+		} else if !v2EntitlementsEnabled && isSubscriptionType && subscriptionService != nil && !billingInfoRequest {
 			if skipBilling {
 				sub, subErr := subscriptionService.GetActiveSubscription(
 					c.Request.Context(),
@@ -319,7 +322,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		})
 		c.Set(string(ContextKeyUserRole), apiKey.User.Role)
 		setGroupContext(c, apiKey.Group)
-		_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+		if !billingInfoRequest {
+			_ = apiKeyService.TouchLastUsed(c.Request.Context(), apiKey.ID)
+		}
 
 		c.Next()
 	}
@@ -429,6 +434,13 @@ func subscriptionErrorCode(err error) string {
 		return "SUBSCRIPTION_ENDPOINT_UNSUPPORTED"
 	}
 	return "SUBSCRIPTION_INVALID"
+}
+
+func isAsyncImageTaskRead(method, path string) bool {
+	if method != http.MethodGet {
+		return false
+	}
+	return strings.HasPrefix(path, "/v1/images/tasks/") || strings.HasPrefix(path, "/images/tasks/")
 }
 
 // GetAPIKeyFromContext 从上下文中获取API key

@@ -119,6 +119,9 @@ func (s *rechargeOrderHandlerUserRepoStub) BatchSetConcurrency(context.Context, 
 func (s *rechargeOrderHandlerUserRepoStub) BatchAddConcurrency(context.Context, []int64, int) (int, error) {
 	panic("unexpected BatchAddConcurrency")
 }
+func (s *rechargeOrderHandlerUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
+	panic("unexpected BatchUpdateLimits")
+}
 func (s *rechargeOrderHandlerUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail")
 }

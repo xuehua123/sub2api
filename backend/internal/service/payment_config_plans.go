@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
+	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -23,6 +24,19 @@ const (
 	PlanAccessScopePlatformSubscriptionGroups = "platform_subscription_groups"
 	PlanAccessScopeAllSubscriptionGroups      = "all_subscription_groups"
 )
+
+// normalizePlanCurrency validates and normalizes the display-only currency label.
+// Empty means "no label" and is kept as-is so existing plans stay unchanged.
+func normalizePlanCurrency(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	currency, err := payment.NormalizePaymentCurrency(raw)
+	if err != nil {
+		return "", infraerrors.BadRequest("PLAN_CURRENCY_INVALID", "currency must be a 3-letter ISO currency code")
+	}
+	return currency, nil
+}
 
 // validatePlanRequired checks that all required fields for a plan are provided.
 func validatePlanRequired(req CreatePlanRequest) error {
@@ -154,6 +168,7 @@ type SubscriptionPlanResponse struct {
 	Description      string          `json:"description"`
 	Price            float64         `json:"price"`
 	OriginalPrice    *float64        `json:"original_price,omitempty"`
+	Currency         string          `json:"currency,omitempty"`
 	ValidityDays     int             `json:"validity_days"`
 	ValidityUnit     string          `json:"validity_unit"`
 	AccessScope      string          `json:"access_scope"`
@@ -279,11 +294,16 @@ func (s *PaymentConfigService) CreatePlan(ctx context.Context, req CreatePlanReq
 		}
 	}()
 
+	currency, err := normalizePlanCurrency(req.Currency)
+	if err != nil {
+		return nil, err
+	}
 	b := tx.SubscriptionPlan.Create().
 		SetGroupID(access.PrimaryGroupID).
 		SetName(req.Name).
 		SetDescription(req.Description).
 		SetPrice(req.Price).
+		SetCurrency(currency).
 		SetValidityDays(req.ValidityDays).
 		SetValidityUnit(req.ValidityUnit).
 		SetAccessScope(scope).
@@ -392,6 +412,13 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 		} else {
 			u.SetOriginalPrice(*req.OriginalPrice.Value)
 		}
+	}
+	if req.Currency != nil {
+		currency, err := normalizePlanCurrency(*req.Currency)
+		if err != nil {
+			return nil, err
+		}
+		u.SetCurrency(currency)
 	}
 	if req.ValidityDays != nil {
 		u.SetValidityDays(*req.ValidityDays)
@@ -1407,6 +1434,7 @@ func (s *PaymentConfigService) buildPlanResponse(ctx context.Context, plan *dben
 		Description:      plan.Description,
 		Price:            plan.Price,
 		OriginalPrice:    plan.OriginalPrice,
+		Currency:         plan.Currency,
 		ValidityDays:     plan.ValidityDays,
 		ValidityUnit:     plan.ValidityUnit,
 		AccessScope:      normalizePlanAccessScopeForResponse(plan.AccessScope),
