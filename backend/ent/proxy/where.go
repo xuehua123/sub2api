@@ -913,6 +913,29 @@ func HasAccountsWith(preds ...predicate.Account) predicate.Proxy {
 	})
 }
 
+// HasUpstreamConnections applies the HasEdge predicate on the "upstream_connections" edge.
+func HasUpstreamConnections() predicate.Proxy {
+	return predicate.Proxy(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2M, true, UpstreamConnectionsTable, UpstreamConnectionsColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasUpstreamConnectionsWith applies the HasEdge predicate on the "upstream_connections" edge with a given conditions (other predicates).
+func HasUpstreamConnectionsWith(preds ...predicate.UpstreamConnection) predicate.Proxy {
+	return predicate.Proxy(func(s *sql.Selector) {
+		step := newUpstreamConnectionsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasBackupProxy applies the HasEdge predicate on the "backup_proxy" edge.
 func HasBackupProxy() predicate.Proxy {
 	return predicate.Proxy(func(s *sql.Selector) {

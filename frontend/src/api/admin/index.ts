@@ -36,6 +36,7 @@ import riskControlAPI from './riskControl'
 import adminIssuesAPI from './issues'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
+import upstreamConnectionsAPI from './upstreamConnections'
 
 /**
  * Unified admin API object for convenient access
@@ -73,7 +74,8 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   issues: adminIssuesAPI,
   compliance: adminComplianceAPI,
-  audit: auditAPI
+  audit: auditAPI,
+  upstreamConnections: upstreamConnectionsAPI
 }
 
 export {
@@ -109,7 +111,8 @@ export {
   riskControlAPI,
   adminIssuesAPI,
   adminComplianceAPI,
-  auditAPI
+  auditAPI,
+  upstreamConnectionsAPI
 }
 
 export default adminAPI
@@ -121,3 +124,10 @@ export type { ErrorPassthroughRule, CreateRuleRequest, UpdateRuleRequest } from 
 export type { BackupAgentHealth, DataManagementConfig } from './dataManagement'
 export type { TLSFingerprintProfile, CreateProfileRequest, UpdateProfileRequest } from './tlsFingerprintProfile'
 export type { ContentModerationConfig, ContentModerationLog, ModerationMode } from './riskControl'
+export type {
+  UpstreamConnection,
+  UpstreamAccountBinding,
+  UpstreamGroupObservation,
+  CreateUpstreamConnectionRequest,
+  UpdateUpstreamConnectionRequest
+} from './upstreamConnections'

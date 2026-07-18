@@ -227,6 +227,9 @@ func (Account) Edges() []ent.Edge {
 			Unique(),
 		// usage_logs: 该账户的使用日志
 		edge.To("usage_logs", UsageLog.Type),
+		// upstream_binding: optional V2 shared upstream management connection.
+		edge.To("upstream_binding", UpstreamAccountBinding.Type).
+			Unique(),
 	}
 }
 

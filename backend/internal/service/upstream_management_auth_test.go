@@ -406,7 +406,7 @@ func TestUpstreamRateMultiplierSyncUsesNewAPIManagementPassword(t *testing.T) {
 	}, &UpstreamManagementAuthInput{Username: "operator", Password: "password"}, 0.3)
 }
 
-func TestUpstreamRateMultiplierSyncUsesRixAndShellAPIManagementHeaders(t *testing.T) {
+func TestUpstreamRateMultiplierSyncUsesProviderManagementHeaders(t *testing.T) {
 	t.Parallel()
 
 	for _, test := range []struct {
@@ -417,6 +417,7 @@ func TestUpstreamRateMultiplierSyncUsesRixAndShellAPIManagementHeaders(t *testin
 	}{
 		{name: "rixapi", provider: UpstreamManagementProviderRixAPI, group: "pro", ratio: 0.7},
 		{name: "shellapi", provider: UpstreamManagementProviderShellAPI, group: "plus", ratio: 0.6},
+		{name: "veloera", provider: UpstreamManagementProviderVeloera, group: "vip", ratio: 0.5},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -426,6 +427,11 @@ func TestUpstreamRateMultiplierSyncUsesRixAndShellAPIManagementHeaders(t *testin
 					require.Equal(t, "42", r.Header.Get("Rix-Api-User"))
 				} else {
 					require.Empty(t, r.Header.Get("Rix-Api-User"))
+				}
+				if test.provider == UpstreamManagementProviderVeloera {
+					require.Equal(t, "42", r.Header.Get("Veloera-User"))
+				} else {
+					require.Empty(t, r.Header.Get("Veloera-User"))
 				}
 				switch r.URL.Path {
 				case "/api/user/self/groups":
@@ -446,6 +452,15 @@ func TestUpstreamRateMultiplierSyncUsesRixAndShellAPIManagementHeaders(t *testin
 			}, &UpstreamManagementAuthInput{AccessToken: "management-token"}, test.ratio)
 		})
 	}
+}
+
+func TestUpstreamAuthenticationRejectionMessageMatchesOfficialNewAPIPasswordError(t *testing.T) {
+	t.Parallel()
+
+	require.True(t, isUpstreamAuthenticationRejectionMessage(
+		"Username or password is incorrect, or user has been banned",
+	))
+	require.False(t, isUpstreamAuthenticationRejectionMessage("temporary upstream failure"))
 }
 
 func assertUpstreamManagementSyncUpdate(t *testing.T, server *httptest.Server, config UpstreamRateMultiplierSyncConfig, input *UpstreamManagementAuthInput, want float64) {

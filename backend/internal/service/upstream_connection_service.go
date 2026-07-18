@@ -1,0 +1,1182 @@
+package service
+
+import (
+	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
+	"github.com/google/uuid"
+)
+
+var (
+	ErrUpstreamConnectionNotFound         = infraerrors.NotFound("UPSTREAM_CONNECTION_NOT_FOUND", "upstream connection not found")
+	ErrUpstreamConnectionInUse            = infraerrors.Conflict("UPSTREAM_CONNECTION_IN_USE", "upstream connection is still bound to accounts")
+	ErrUpstreamConnectionInvalidReference = infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_REFERENCE", "referenced proxy or account does not exist")
+	ErrUpstreamConnectionChanged          = infraerrors.Conflict("UPSTREAM_CONNECTION_CHANGED", "upstream connection changed; reload and retry")
+	ErrUpstreamCredentialRefreshBusy      = infraerrors.Conflict("UPSTREAM_CREDENTIAL_REFRESH_BUSY", "another upstream credential refresh is already in progress")
+	ErrUpstreamAccountBindingNotFound     = infraerrors.NotFound("UPSTREAM_ACCOUNT_BINDING_NOT_FOUND", "upstream account binding not found")
+	ErrUpstreamConnectionAuthentication   = errors.New("upstream management authentication failed")
+	errUpstreamLegacyOwnershipConflict    = errors.New("legacy upstream monitoring was re-enabled after V2 took credential ownership; disable legacy monitoring before probing this connection")
+)
+
+type UpstreamConnectionRepository interface {
+	Create(ctx context.Context, connection *UpstreamConnection) error
+	GetByID(ctx context.Context, id int64) (*UpstreamConnection, error)
+	GetByLegacyMigrationKey(ctx context.Context, key string) (*UpstreamConnection, error)
+	List(ctx context.Context, params UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error)
+	UpdateIfVersion(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings bool) (bool, error)
+	DeleteIfUnbound(ctx context.Context, id int64) error
+	UpdateCredentialIfVersion(ctx context.Context, id, expectedVersion int64, update UpstreamConnectionCredentialPersistence) (bool, error)
+	FinalizeCredentialRefresh(ctx context.Context, id int64, expectedCiphertext, expectedProvider, expectedAuthMode, expectedManagementBaseURL string, update UpstreamConnectionCredentialPersistence) (bool, error)
+	ApplyProbeSuccess(ctx context.Context, id, expectedVersion int64, update UpstreamConnectionProbePersistence) (bool, error)
+	RecordProbeFailure(ctx context.Context, id, expectedVersion int64, failure UpstreamConnectionProbeFailure) (bool, error)
+	ListDueConnections(ctx context.Context, now time.Time, limit int) ([]*UpstreamConnection, error)
+	ListDueAccountBindings(ctx context.Context, connectionID int64, now time.Time, limit int) ([]UpstreamAccountBinding, error)
+	UpsertAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionVersion int64) (bool, error)
+	UpdateAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionID, expectedConnectionVersion int64) (bool, error)
+	GetAccountBinding(ctx context.Context, accountID int64) (*UpstreamAccountBinding, error)
+	DeleteAccountBinding(ctx context.Context, connectionID, accountID int64) error
+}
+
+type UpstreamConnectionService struct {
+	repo        UpstreamConnectionRepository
+	encryptor   SecretEncryptor
+	cfg         *config.Config
+	inspector   *upstreamConnectionInspector
+	accountRepo AccountRepository
+	lockCache   LeaderLockCache
+	db          *sql.DB
+	instanceID  string
+	refreshMu   sync.Mutex
+}
+
+func NewUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config) *UpstreamConnectionService {
+	return &UpstreamConnectionService{
+		repo: repo, encryptor: encryptor, cfg: cfg,
+		inspector:  newUpstreamConnectionInspector(cfg, nil, nil),
+		instanceID: uuid.NewString(),
+	}
+}
+
+func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
+	service := NewUpstreamConnectionService(repo, encryptor, cfg)
+	service.inspector = newUpstreamConnectionInspector(cfg, proxyRepo, nil)
+	service.accountRepo = accountRepo
+	service.lockCache = lockCache
+	service.db = db
+	return service
+}
+
+func (s *UpstreamConnectionService) List(ctx context.Context, params UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error) {
+	if params.Page < 1 {
+		params.Page = 1
+	}
+	if params.PageSize < 1 || params.PageSize > 200 {
+		params.PageSize = 20
+	}
+	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
+	params.Status = strings.ToLower(strings.TrimSpace(params.Status))
+	params.Search = strings.TrimSpace(params.Search)
+	items, total, err := s.repo.List(ctx, params)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list upstream connections: %w", err)
+	}
+	redactUpstreamConnections(items)
+	return items, total, nil
+}
+
+func (s *UpstreamConnectionService) Get(ctx context.Context, id int64) (*UpstreamConnection, error) {
+	connection, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get upstream connection: %w", err)
+	}
+	redactUpstreamConnection(connection)
+	return connection, nil
+}
+
+func (s *UpstreamConnectionService) Create(ctx context.Context, params UpstreamConnectionCreateParams) (*UpstreamConnection, error) {
+	return s.create(ctx, params, "")
+}
+
+func (s *UpstreamConnectionService) create(ctx context.Context, params UpstreamConnectionCreateParams, legacyMigrationKey string) (*UpstreamConnection, error) {
+	normalized, credential, err := s.normalizeCreate(params)
+	if err != nil {
+		return nil, err
+	}
+	ciphertext, fingerprint, hint, err := s.encryptCredential(normalized.AuthMode, normalized.ManagementBaseURL, credential)
+	if err != nil {
+		return nil, err
+	}
+	status := UpstreamConnectionStatusPending
+	if !normalized.SyncEnabled {
+		status = UpstreamConnectionStatusDisabled
+	}
+	connection := &UpstreamConnection{
+		Name:                  normalized.Name,
+		Provider:              normalized.Provider,
+		AuthMode:              normalized.AuthMode,
+		ManagementBaseURL:     normalized.ManagementBaseURL,
+		ForwardingBaseURL:     normalized.ForwardingBaseURL,
+		CredentialEncrypted:   ciphertext,
+		CredentialFingerprint: fingerprint,
+		LegacyMigrationKey:    strings.TrimSpace(legacyMigrationKey),
+		CredentialHint:        hint,
+		RemoteUserID:          normalized.RemoteUserID,
+		ProxyID:               cloneInt64Pointer(normalized.ProxyID),
+		Capabilities:          map[string]any{},
+		Status:                status,
+		SyncEnabled:           normalized.SyncEnabled,
+		SyncIntervalSeconds:   normalized.SyncIntervalSeconds,
+		Version:               1,
+		WalletReliability:     "unknown",
+		WalletRaw:             map[string]any{},
+		Groups:                []UpstreamGroup{},
+		Bindings:              []UpstreamAccountBinding{},
+	}
+	if err := s.repo.Create(ctx, connection); err != nil {
+		return nil, fmt.Errorf("create upstream connection: %w", err)
+	}
+	redactUpstreamConnection(connection)
+	return connection, nil
+}
+
+func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params UpstreamConnectionUpdateParams) (*UpstreamConnection, error) {
+	connection, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get upstream connection: %w", err)
+	}
+	if params.ExpectedVersion <= 0 || params.ExpectedVersion != connection.Version {
+		return nil, ErrUpstreamConnectionChanged
+	}
+
+	expectedVersion := params.ExpectedVersion
+	previousSyncEnabled := connection.SyncEnabled
+	previousSyncInterval := connection.SyncIntervalSeconds
+	identityChanged := false
+	legacyMigrationIdentityChanged := false
+	managementURLChanged := false
+	if params.Name != nil {
+		connection.Name = strings.TrimSpace(*params.Name)
+	}
+	if params.Provider != nil {
+		next := strings.ToLower(strings.TrimSpace(*params.Provider))
+		identityChanged = identityChanged || next != connection.Provider
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.Provider
+		connection.Provider = next
+	}
+	if params.AuthMode != nil {
+		next := strings.ToLower(strings.TrimSpace(*params.AuthMode))
+		if next != connection.AuthMode && params.Credential == nil {
+			return nil, infraerrors.BadRequest("UPSTREAM_CONNECTION_CREDENTIAL_REQUIRED", "credentials are required when auth mode changes")
+		}
+		identityChanged = identityChanged || next != connection.AuthMode
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.AuthMode
+		connection.AuthMode = next
+	}
+	if params.ManagementBaseURL != nil {
+		next, normalizeErr := s.normalizeURL(*params.ManagementBaseURL, true)
+		if normalizeErr != nil {
+			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_MANAGEMENT_URL", normalizeErr.Error())
+		}
+		managementURLChanged = next != connection.ManagementBaseURL
+		identityChanged = identityChanged || managementURLChanged
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || managementURLChanged
+		connection.ManagementBaseURL = next
+	}
+	if params.ForwardingBaseURL != nil {
+		next, normalizeErr := s.normalizeOptionalURL(*params.ForwardingBaseURL)
+		if normalizeErr != nil {
+			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_FORWARDING_URL", normalizeErr.Error())
+		}
+		identityChanged = identityChanged || next != connection.ForwardingBaseURL
+		connection.ForwardingBaseURL = next
+	}
+	if params.RemoteUserID != nil {
+		next, normalizeErr := normalizeRemoteUserID(*params.RemoteUserID)
+		if normalizeErr != nil {
+			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_REMOTE_USER_ID", normalizeErr.Error())
+		}
+		identityChanged = identityChanged || next != connection.RemoteUserID
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.RemoteUserID
+		connection.RemoteUserID = next
+	}
+	if params.ClearProxy {
+		identityChanged = identityChanged || connection.ProxyID != nil
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || connection.ProxyID != nil
+		connection.ProxyID = nil
+	} else if params.ProxyID != nil {
+		proxyChanged := connection.ProxyID == nil || *connection.ProxyID != *params.ProxyID
+		identityChanged = identityChanged || proxyChanged
+		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || proxyChanged
+		connection.ProxyID = cloneInt64Pointer(params.ProxyID)
+	}
+	if params.SyncEnabled != nil {
+		connection.SyncEnabled = *params.SyncEnabled
+	}
+	if params.SyncIntervalSeconds != nil {
+		connection.SyncIntervalSeconds = *params.SyncIntervalSeconds
+	}
+	if params.Credential != nil {
+		previousFingerprint := connection.CredentialFingerprint
+		ciphertext, fingerprint, hint, encryptErr := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, *params.Credential)
+		if encryptErr != nil {
+			return nil, encryptErr
+		}
+		connection.CredentialEncrypted = ciphertext
+		connection.CredentialFingerprint = fingerprint
+		connection.CredentialHint = hint
+		identityChanged = true
+		if upstreamConnectionLegacyIdentityUsesCredentialFingerprint(connection.Provider, connection.AuthMode, connection.RemoteUserID) &&
+			fingerprint != previousFingerprint {
+			legacyMigrationIdentityChanged = true
+		}
+	} else if managementURLChanged {
+		credential, credentialErr := s.loadCredential(connection)
+		if credentialErr != nil {
+			return nil, credentialErr
+		}
+		_, fingerprint, hint, identityErr := upstreamConnectionCredentialIdentity(
+			connection.AuthMode, connection.ManagementBaseURL,
+			UpstreamConnectionCredentialInput{
+				Username: credential.Username, Password: credential.Password,
+				AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
+			},
+		)
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		connection.CredentialFingerprint = fingerprint
+		connection.CredentialHint = hint
+	}
+	if err := validateUpstreamConnection(connection); err != nil {
+		return nil, err
+	}
+
+	connection.Version = expectedVersion + 1
+	if identityChanged {
+		resetUpstreamConnectionObservations(connection)
+	}
+	if legacyMigrationIdentityChanged {
+		connection.LegacyMigrationKey = ""
+	}
+	if !connection.SyncEnabled {
+		connection.Status = UpstreamConnectionStatusDisabled
+		connection.NextSyncAt = nil
+	} else if connection.Status == UpstreamConnectionStatusDisabled {
+		connection.Status = UpstreamConnectionStatusPending
+	}
+	if connection.SyncEnabled && (identityChanged || !previousSyncEnabled || connection.SyncIntervalSeconds != previousSyncInterval) {
+		now := time.Now().UTC()
+		connection.NextSyncAt = &now
+	}
+	applied, err := s.repo.UpdateIfVersion(ctx, connection, expectedVersion, identityChanged)
+	if err != nil {
+		return nil, fmt.Errorf("update upstream connection: %w", err)
+	}
+	if !applied {
+		return nil, ErrUpstreamConnectionChanged
+	}
+	redactUpstreamConnection(connection)
+	return connection, nil
+}
+
+func upstreamConnectionLegacyIdentityUsesCredentialFingerprint(provider, authMode, remoteUserID string) bool {
+	if authMode == string(UpstreamManagementAuthModePassword) {
+		return true
+	}
+	return provider == UpstreamConnectionProviderSub2API || strings.TrimSpace(remoteUserID) == ""
+}
+
+func (s *UpstreamConnectionService) Delete(ctx context.Context, id int64) error {
+	if err := s.repo.DeleteIfUnbound(ctx, id); err != nil {
+		return fmt.Errorf("delete upstream connection: %w", err)
+	}
+	return nil
+}
+
+func (s *UpstreamConnectionService) BindAccount(ctx context.Context, connectionID, accountID int64) (*UpstreamAccountBinding, error) {
+	if s.accountRepo == nil {
+		return nil, errors.New("account repository is unavailable")
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("get account for upstream binding: %w", err)
+	}
+	if !supportsUpstreamRateMultiplierSyncAccountType(account.Type) {
+		return nil, infraerrors.BadRequest("UNSUPPORTED_UPSTREAM_BINDING_ACCOUNT", "only API-key and upstream accounts can bind to an upstream connection")
+	}
+	apiKey := strings.TrimSpace(accountBalanceAPIKey(account))
+	if apiKey == "" {
+		return nil, infraerrors.BadRequest("UPSTREAM_BINDING_API_KEY_REQUIRED", "account does not contain a forwarding API key")
+	}
+	connection, err := s.repo.GetByID(ctx, connectionID)
+	if err != nil {
+		return nil, fmt.Errorf("get upstream connection: %w", err)
+	}
+	credential, err := s.loadCredential(connection)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	nextSync := now.Add(time.Minute)
+	binding := UpstreamAccountBinding{
+		AccountID: accountID, ConnectionID: connectionID, KeyFingerprint: upstreamAPIKeyFingerprint(apiKey),
+		ResolutionKind: UpstreamBindingResolutionUnresolved, FallbackGroups: []string{},
+		Confidence: "unknown", Source: "", ApplyPolicy: UpstreamBindingApplyObserveOnly,
+		Status: UpstreamBindingStatusPending, ResolutionDetails: map[string]any{}, NextSyncAt: &nextSync,
+	}
+	resolved, resolveErr := s.inspector.ResolveKey(ctx, connection, credential, apiKey)
+	if resolveErr != nil {
+		binding.Status = UpstreamBindingStatusError
+		binding.SyncFailures = 1
+		binding.LastError = truncateUpstreamConnectionError(resolveErr.Error())
+		next := now.Add(upstreamConnectionFailureBackoff(binding.SyncFailures))
+		binding.NextSyncAt = &next
+	} else {
+		resolved.AccountID = accountID
+		resolved.ConnectionID = connectionID
+		resolved.KeyFingerprint = binding.KeyFingerprint
+		resolved.ApplyPolicy = UpstreamBindingApplyObserveOnly
+		if resolved.FallbackGroups == nil {
+			resolved.FallbackGroups = []string{}
+		}
+		if resolved.ResolutionDetails == nil {
+			resolved.ResolutionDetails = map[string]any{}
+		}
+		if resolved.Status == "" {
+			resolved.Status = UpstreamBindingStatusReady
+		}
+		resolved.ObservedAt = &now
+		freshUntil := now.Add(2 * time.Duration(connection.SyncIntervalSeconds) * time.Second)
+		resolved.FreshUntil = &freshUntil
+		next := now.Add(time.Duration(connection.SyncIntervalSeconds) * time.Second)
+		resolved.NextSyncAt = &next
+		binding = resolved
+	}
+	applied, err := s.repo.UpsertAccountBindingIfCurrent(ctx, &binding, connection.Version)
+	if err != nil {
+		return nil, fmt.Errorf("save upstream account binding: %w", err)
+	}
+	if !applied {
+		return nil, ErrUpstreamConnectionChanged
+	}
+	binding.KeyFingerprint = ""
+	return &binding, nil
+}
+
+func (s *UpstreamConnectionService) GetAccountBinding(ctx context.Context, accountID int64) (*UpstreamAccountBinding, error) {
+	binding, err := s.repo.GetAccountBinding(ctx, accountID)
+	if err != nil {
+		return nil, fmt.Errorf("get upstream account binding: %w", err)
+	}
+	binding.KeyFingerprint = ""
+	return binding, nil
+}
+
+func (s *UpstreamConnectionService) UnbindAccount(ctx context.Context, connectionID, accountID int64) error {
+	if err := s.repo.DeleteAccountBinding(ctx, connectionID, accountID); err != nil {
+		return fmt.Errorf("delete upstream account binding: %w", err)
+	}
+	return nil
+}
+
+// SyncConnection refreshes one shared connection and then re-resolves a bounded
+// batch of its due API-key bindings. Binding observations never mutate account
+// pricing fields; they are monitoring data only.
+func (s *UpstreamConnectionService) SyncConnection(ctx context.Context, connectionID int64, bindingLimit int) error {
+	if _, err := s.Probe(ctx, connectionID); err != nil {
+		return err
+	}
+	connection, err := s.repo.GetByID(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("reload probed upstream connection: %w", err)
+	}
+	if bindingLimit < 1 {
+		return nil
+	}
+	bindings, err := s.repo.ListDueAccountBindings(ctx, connectionID, time.Now().UTC(), bindingLimit)
+	if err != nil {
+		return err
+	}
+	if len(bindings) == 0 {
+		return nil
+	}
+	credential, err := s.loadCredential(connection)
+	if err != nil {
+		return err
+	}
+	resolver, err := s.inspector.PrepareKeyResolver(ctx, connection, credential)
+	if err != nil {
+		return fmt.Errorf("prepare upstream key resolver: %w", err)
+	}
+	var syncErrors []error
+	for index := range bindings {
+		if ctx.Err() != nil {
+			syncErrors = append(syncErrors, ctx.Err())
+			break
+		}
+		if err := s.refreshAccountBinding(ctx, connection, resolver, &bindings[index]); err != nil {
+			syncErrors = append(syncErrors, fmt.Errorf("account %d: %w", bindings[index].AccountID, err))
+		}
+	}
+	return errors.Join(syncErrors...)
+}
+
+func (s *UpstreamConnectionService) refreshAccountBinding(
+	ctx context.Context,
+	connection *UpstreamConnection,
+	resolver upstreamConnectionKeyResolver,
+	binding *UpstreamAccountBinding,
+) error {
+	if s.accountRepo == nil {
+		return errors.New("account repository is unavailable")
+	}
+	expectedConnectionID := binding.ConnectionID
+	account, err := s.accountRepo.GetByID(ctx, binding.AccountID)
+	if err != nil {
+		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, err)
+	}
+	if !supportsUpstreamRateMultiplierSyncAccountType(account.Type) {
+		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, errors.New("bound account type no longer supports upstream key resolution"))
+	}
+	apiKey := strings.TrimSpace(accountBalanceAPIKey(account))
+	if apiKey == "" {
+		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, errors.New("bound account no longer contains a forwarding API key"))
+	}
+	resolved, err := resolver(ctx, apiKey)
+	if err != nil {
+		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, err)
+	}
+	now := time.Now().UTC()
+	resolved.ID = binding.ID
+	resolved.AccountID = binding.AccountID
+	resolved.ConnectionID = connection.ID
+	resolved.KeyFingerprint = upstreamAPIKeyFingerprint(apiKey)
+	resolved.ApplyPolicy = UpstreamBindingApplyObserveOnly
+	resolved.SyncFailures = 0
+	resolved.LastError = strings.TrimSpace(resolved.LastError)
+	resolved.ObservedAt = &now
+	if resolved.FallbackGroups == nil {
+		resolved.FallbackGroups = []string{}
+	}
+	if resolved.ResolutionDetails == nil {
+		resolved.ResolutionDetails = map[string]any{}
+	}
+	if resolved.Status == "" {
+		resolved.Status = UpstreamBindingStatusReady
+	}
+	freshUntil := now.Add(2 * time.Duration(connection.SyncIntervalSeconds) * time.Second)
+	resolved.FreshUntil = &freshUntil
+	next := now.Add(time.Duration(connection.SyncIntervalSeconds) * time.Second)
+	resolved.NextSyncAt = &next
+	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, &resolved, expectedConnectionID, connection.Version)
+	if err != nil {
+		return fmt.Errorf("persist refreshed upstream account binding: %w", err)
+	}
+	if !applied {
+		return ErrUpstreamConnectionChanged
+	}
+	return nil
+}
+
+func (s *UpstreamConnectionService) persistBindingRefreshFailure(
+	ctx context.Context,
+	binding *UpstreamAccountBinding,
+	expectedConnectionID, expectedConnectionVersion int64,
+	refreshErr error,
+) error {
+	binding.Status = UpstreamBindingStatusError
+	binding.SyncFailures++
+	binding.LastError = truncateUpstreamConnectionError(refreshErr.Error())
+	next := time.Now().UTC().Add(upstreamConnectionFailureBackoff(binding.SyncFailures))
+	binding.NextSyncAt = &next
+	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, binding, expectedConnectionID, expectedConnectionVersion)
+	if err != nil {
+		return fmt.Errorf("persist upstream binding refresh failure: %w", err)
+	}
+	if !applied {
+		return ErrUpstreamConnectionChanged
+	}
+	return refreshErr
+}
+
+func upstreamAPIKeyFingerprint(apiKey string) string {
+	digest := sha256.Sum256([]byte("upstream-api-key\x00" + strings.TrimSpace(apiKey)))
+	return "sha256:v1:" + hex.EncodeToString(digest[:])
+}
+
+func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*UpstreamConnection, error) {
+	connection, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("get upstream connection: %w", err)
+	}
+	credential, err := s.loadCredential(connection)
+	if err != nil {
+		return nil, err
+	}
+	connection, credential, err = s.prepareConnectionCredential(ctx, connection, credential)
+	if err != nil {
+		if errors.Is(err, ErrUpstreamConnectionChanged) || errors.Is(err, ErrUpstreamCredentialRefreshBusy) {
+			return nil, err
+		}
+		s.recordProbeFailure(ctx, connection, connection.Version, err)
+		return nil, infraerrors.New(502, "UPSTREAM_CONNECTION_CREDENTIAL_REFRESH_FAILED", "upstream connection credential refresh failed").WithCause(err)
+	}
+	if s.inspector == nil {
+		return nil, errors.New("upstream connection inspector is unavailable")
+	}
+	expectedVersion := connection.Version
+	snapshot, probeErr := s.inspector.Inspect(ctx, connection, credential)
+	if probeErr != nil {
+		s.recordProbeFailure(ctx, connection, expectedVersion, probeErr)
+		if errors.Is(probeErr, errUpstreamConnectionRemoteUserIDRequired) {
+			return nil, infraerrors.BadRequest("UPSTREAM_REMOTE_USER_ID_REQUIRED", probeErr.Error())
+		}
+		return nil, infraerrors.New(502, "UPSTREAM_CONNECTION_PROBE_FAILED", "upstream connection probe failed").WithCause(probeErr)
+	}
+
+	now := time.Now().UTC()
+	status := UpstreamConnectionStatusReady
+	lastError := ""
+	if len(snapshot.Warnings) > 0 {
+		status = UpstreamConnectionStatusDegraded
+		lastError = truncateUpstreamConnectionError(strings.Join(snapshot.Warnings, "; "))
+	}
+	if !connection.SyncEnabled {
+		status = UpstreamConnectionStatusDisabled
+	}
+	capabilities := snapshot.Capabilities
+	if capabilities == nil {
+		capabilities = map[string]any{}
+	}
+	capabilities["detected_provider"] = snapshot.DetectedProvider
+	capabilities["warnings"] = append([]string{}, snapshot.Warnings...)
+	remoteUserID := connection.RemoteUserID
+	if strings.TrimSpace(snapshot.RemoteUserID) != "" {
+		remoteUserID = snapshot.RemoteUserID
+	}
+	update := UpstreamConnectionProbePersistence{
+		RemoteUserID: remoteUserID, Capabilities: capabilities, Status: status, LastError: lastError,
+		SyncFailures: 0, Version: expectedVersion + 1,
+		WalletObserved: snapshot.WalletObserved, GroupsObserved: snapshot.GroupsObserved,
+		Groups: snapshot.Groups, LastDiscoveredAt: &now, LastSyncedAt: &now,
+	}
+	if connection.SyncEnabled {
+		next := now.Add(time.Duration(connection.SyncIntervalSeconds) * time.Second)
+		update.NextSyncAt = &next
+	}
+	if snapshot.Wallet != nil {
+		update.WalletAmount = cloneFloat64Ptr(snapshot.Wallet.Amount)
+		update.WalletCurrency = snapshot.Wallet.Currency
+		update.WalletUSD = cloneFloat64Ptr(snapshot.Wallet.USD)
+		update.WalletUnlimited = snapshot.Wallet.Unlimited
+		update.WalletSource = snapshot.Wallet.Source
+		update.WalletReliability = snapshot.Wallet.Reliability
+		update.WalletRaw = snapshot.Wallet.Raw
+		update.WalletObservedAt = &now
+	}
+	for index := range update.Groups {
+		observedAt := now
+		freshUntil := now.Add(2 * time.Duration(connection.SyncIntervalSeconds) * time.Second)
+		update.Groups[index].ConnectionID = connection.ID
+		update.Groups[index].ObservedAt = &observedAt
+		update.Groups[index].FreshUntil = &freshUntil
+	}
+	applied, err := s.repo.ApplyProbeSuccess(ctx, id, expectedVersion, update)
+	if err != nil {
+		return nil, fmt.Errorf("persist upstream connection probe: %w", err)
+	}
+	if !applied {
+		return nil, ErrUpstreamConnectionChanged
+	}
+	return s.Get(ctx, id)
+}
+
+// prepareConnectionCredential coordinates the compatibility hand-off from the
+// account-local synchronizer to V2. While any bound legacy source remains
+// enabled it is the sole refresh-token owner and V2 only follows its encrypted
+// credential. Once all matching legacy sources are disabled, V2 records the
+// hand-off and can rotate the token itself.
+func (s *UpstreamConnectionService) prepareConnectionCredential(
+	ctx context.Context,
+	connection *UpstreamConnection,
+	credential upstreamConnectionCredential,
+) (*UpstreamConnection, upstreamConnectionCredential, error) {
+	if !credential.LegacyManaged && connection.LegacyMigrationKey != "" {
+		_, legacyOwns, found, err := s.legacyCredentialHandoffInput(ctx, connection)
+		if err != nil {
+			return connection, credential, err
+		}
+		if found && legacyOwns {
+			return connection, credential, errUpstreamLegacyOwnershipConflict
+		}
+	}
+	if credential.LegacyManaged {
+		input, legacyOwns, found, err := s.legacyCredentialHandoffInput(ctx, connection)
+		if err != nil {
+			return connection, credential, err
+		}
+		if found {
+			input.LegacyManaged = legacyOwns
+			if !upstreamConnectionCredentialMatchesInput(credential, input) {
+				credential, err = s.persistConnectionCredential(ctx, connection, input)
+				if err != nil {
+					return connection, credential, err
+				}
+			}
+			if legacyOwns {
+				return connection, credential, nil
+			}
+		} else {
+			input = upstreamConnectionCredentialInput(credential)
+			input.LegacyManaged = false
+			credential, err = s.persistConnectionCredential(ctx, connection, input)
+			if err != nil {
+				return connection, credential, err
+			}
+		}
+	}
+
+	if connection.Provider != UpstreamConnectionProviderSub2API ||
+		connection.AuthMode != string(UpstreamManagementAuthModeAccessToken) ||
+		!shouldRefreshSub2APIManagementToken(upstreamManagementAuthSecret{
+			AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
+		}) {
+		return connection, credential, nil
+	}
+	if s.inspector == nil {
+		return connection, credential, errors.New("upstream connection inspector is unavailable")
+	}
+
+	// Token rotation must be single-flight both within this process and across
+	// application instances. A second caller reloads after the first finishes,
+	// observes the new expiry, and skips another refresh.
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	release, acquired := tryAcquireSingletonLeaderLock(
+		ctx, s.lockCache, s.db,
+		fmt.Sprintf("upstream:connections:v2:credential-refresh:%d", connection.ID),
+		s.instanceID, 2*time.Minute,
+	)
+	if !acquired {
+		return connection, credential, ErrUpstreamCredentialRefreshBusy
+	}
+	defer release()
+
+	latest, err := s.repo.GetByID(ctx, connection.ID)
+	if err != nil {
+		return connection, credential, fmt.Errorf("reload upstream connection before credential refresh: %w", err)
+	}
+	credential, err = s.loadCredential(latest)
+	if err != nil {
+		return latest, credential, err
+	}
+	connection = latest
+	if credential.LegacyManaged {
+		return connection, credential, ErrUpstreamConnectionChanged
+	}
+	if connection.LegacyMigrationKey != "" {
+		_, legacyOwns, found, handoffErr := s.legacyCredentialHandoffInput(ctx, connection)
+		if handoffErr != nil {
+			return connection, credential, handoffErr
+		}
+		if found && legacyOwns {
+			return connection, credential, errUpstreamLegacyOwnershipConflict
+		}
+	}
+	if connection.Provider != UpstreamConnectionProviderSub2API ||
+		connection.AuthMode != string(UpstreamManagementAuthModeAccessToken) ||
+		!shouldRefreshSub2APIManagementToken(upstreamManagementAuthSecret{
+			AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
+		}) {
+		return connection, credential, nil
+	}
+
+	// Claim the refresh by advancing the row version before the network call.
+	// This prevents concurrent manual probes or another node from consuming the
+	// same rotating refresh token twice.
+	claimedInput := upstreamConnectionCredentialInput(credential)
+	claimed, err := s.persistConnectionCredential(ctx, connection, claimedInput)
+	if err != nil {
+		return connection, credential, err
+	}
+	credential = claimed
+	claimedCiphertext := connection.CredentialEncrypted
+
+	client, err := s.inspector.clientForConnection(ctx, connection)
+	if err != nil {
+		return connection, credential, err
+	}
+	legacy := &UpstreamRateMultiplierSyncService{client: client}
+	refreshed, err := legacy.refreshSub2APIManagementToken(ctx, client, connection.ManagementBaseURL, upstreamManagementAuthSecret{
+		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
+	})
+	if err != nil {
+		return connection, credential, err
+	}
+	refreshedInput := UpstreamConnectionCredentialInput{
+		AccessToken: refreshed.AccessToken, RefreshToken: refreshed.RefreshToken, ExpiresAt: refreshed.ExpiresAt,
+	}
+	ciphertext, fingerprint, hint, err := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, refreshedInput)
+	if err != nil {
+		return connection, credential, err
+	}
+	applied, err := s.repo.FinalizeCredentialRefresh(
+		ctx, connection.ID, claimedCiphertext, connection.Provider, connection.AuthMode, connection.ManagementBaseURL,
+		UpstreamConnectionCredentialPersistence{
+			CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		},
+	)
+	if err != nil {
+		return connection, credential, fmt.Errorf("persist refreshed upstream connection credential: %w", err)
+	}
+	if !applied {
+		return connection, credential, ErrUpstreamConnectionChanged
+	}
+	connection, err = s.repo.GetByID(ctx, connection.ID)
+	if err != nil {
+		return connection, credential, fmt.Errorf("reload refreshed upstream connection credential: %w", err)
+	}
+	credential, err = s.loadCredential(connection)
+	return connection, credential, err
+}
+
+func (s *UpstreamConnectionService) persistConnectionCredential(
+	ctx context.Context,
+	connection *UpstreamConnection,
+	input UpstreamConnectionCredentialInput,
+) (upstreamConnectionCredential, error) {
+	if connection == nil {
+		return upstreamConnectionCredential{}, errors.New("upstream connection is required")
+	}
+	ciphertext, fingerprint, hint, err := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, input)
+	if err != nil {
+		return upstreamConnectionCredential{}, err
+	}
+	expectedVersion := connection.Version
+	nextVersion := expectedVersion + 1
+	applied, err := s.repo.UpdateCredentialIfVersion(ctx, connection.ID, expectedVersion, UpstreamConnectionCredentialPersistence{
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint, Version: nextVersion,
+	})
+	if err != nil {
+		return upstreamConnectionCredential{}, fmt.Errorf("persist upstream connection credential: %w", err)
+	}
+	if !applied {
+		return upstreamConnectionCredential{}, ErrUpstreamConnectionChanged
+	}
+	connection.CredentialEncrypted = ciphertext
+	connection.CredentialFingerprint = fingerprint
+	connection.CredentialHint = hint
+	connection.Version = nextVersion
+	return s.loadCredential(connection)
+}
+
+func (s *UpstreamConnectionService) legacyCredentialHandoffInput(
+	ctx context.Context,
+	connection *UpstreamConnection,
+) (UpstreamConnectionCredentialInput, bool, bool, error) {
+	if connection == nil || s.accountRepo == nil || len(connection.Bindings) == 0 {
+		return UpstreamConnectionCredentialInput{}, false, false, nil
+	}
+	accountIDs := make([]int64, 0, len(connection.Bindings))
+	for _, binding := range connection.Bindings {
+		accountIDs = append(accountIDs, binding.AccountID)
+	}
+	accounts, err := s.accountRepo.GetByIDs(ctx, accountIDs)
+	if err != nil {
+		return UpstreamConnectionCredentialInput{}, false, false, fmt.Errorf("load legacy credential hand-off sources: %w", err)
+	}
+
+	var latestAny *Account
+	var latestEnabled *Account
+	for _, account := range accounts {
+		if account == nil || !s.legacyAccountMatchesConnection(account, connection) {
+			continue
+		}
+		if latestAny == nil || account.UpdatedAt.After(latestAny.UpdatedAt) {
+			latestAny = account
+		}
+		if account.IsUpstreamRateMultiplierSyncEnabled() &&
+			(latestEnabled == nil || account.UpdatedAt.After(latestEnabled.UpdatedAt)) {
+			latestEnabled = account
+		}
+	}
+	source := latestAny
+	legacyOwns := false
+	if latestEnabled != nil {
+		source = latestEnabled
+		legacyOwns = true
+	}
+	if source == nil {
+		return UpstreamConnectionCredentialInput{}, false, false, nil
+	}
+	secret, err := DecryptUpstreamManagementAuth(s.encryptor, source.GetCredential(upstreamManagementAuthCredentialKey))
+	if err != nil {
+		return UpstreamConnectionCredentialInput{}, legacyOwns, true, errors.New("decrypt legacy credential hand-off source")
+	}
+	return UpstreamConnectionCredentialInput{
+		Username: secret.Username, Password: secret.Password,
+		AccessToken: secret.AccessToken, RefreshToken: secret.RefreshToken,
+		ExpiresAt: secret.ExpiresAt, LegacyManaged: legacyOwns,
+	}, legacyOwns, true, nil
+}
+
+func (s *UpstreamConnectionService) legacyAccountMatchesConnection(account *Account, connection *UpstreamConnection) bool {
+	if account == nil || connection == nil || !supportsUpstreamRateMultiplierSyncAccountType(account.Type) || !account.HasUpstreamManagementAuth() {
+		return false
+	}
+	managementURL, err := s.normalizeURL(accountUpstreamManagementBaseURL(account), true)
+	if err != nil || managementURL != connection.ManagementBaseURL || !sameOptionalInt64(account.ProxyID, connection.ProxyID) {
+		return false
+	}
+	// Disabling the legacy form removes its provider/auth/group fields but
+	// intentionally keeps the encrypted credential for rollback. A migrated,
+	// already-bound account is therefore still a valid one-time final hand-off
+	// source when URL and proxy identity remain unchanged.
+	if !account.IsUpstreamRateMultiplierSyncEnabled() {
+		return true
+	}
+	config, err := upstreamRateMultiplierSyncConfigFromExtra(account.Extra)
+	if err != nil || string(config.Provider) != connection.Provider || string(config.AuthMode) != connection.AuthMode {
+		return false
+	}
+	if config.Provider != UpstreamManagementProviderSub2API && config.AuthMode == UpstreamManagementAuthModeAccessToken {
+		remoteUserID, parseErr := parseConnectionRemoteUserID(connection.RemoteUserID)
+		return parseErr == nil && remoteUserID == config.RemoteUserID
+	}
+	return true
+}
+
+func upstreamConnectionCredentialInput(credential upstreamConnectionCredential) UpstreamConnectionCredentialInput {
+	return UpstreamConnectionCredentialInput{
+		Username: credential.Username, Password: credential.Password,
+		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
+		ExpiresAt: credential.ExpiresAt, LegacyManaged: credential.LegacyManaged,
+	}
+}
+
+func upstreamConnectionCredentialMatchesInput(credential upstreamConnectionCredential, input UpstreamConnectionCredentialInput) bool {
+	return credential.Username == strings.TrimSpace(input.Username) &&
+		credential.Password == strings.TrimSpace(input.Password) &&
+		credential.AccessToken == strings.TrimSpace(input.AccessToken) &&
+		credential.RefreshToken == strings.TrimSpace(input.RefreshToken) &&
+		credential.ExpiresAt == input.ExpiresAt && credential.LegacyManaged == input.LegacyManaged
+}
+
+func sameOptionalInt64(left, right *int64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func (s *UpstreamConnectionService) recordProbeFailure(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, probeErr error) {
+	status := UpstreamConnectionStatusDegraded
+	if !connection.SyncEnabled {
+		status = UpstreamConnectionStatusDisabled
+	} else if errors.Is(probeErr, ErrUpstreamConnectionAuthentication) {
+		status = UpstreamConnectionStatusAuthError
+	}
+	if connection.SyncEnabled && errors.Is(probeErr, errUpstreamConnectionRemoteUserIDRequired) {
+		status = UpstreamConnectionStatusNeedsInput
+	}
+	failures := connection.SyncFailures + 1
+	backoff := upstreamConnectionFailureBackoff(failures)
+	var next *time.Time
+	if connection.SyncEnabled {
+		value := time.Now().UTC().Add(backoff)
+		next = &value
+	}
+	_, _ = s.repo.RecordProbeFailure(ctx, connection.ID, expectedVersion, UpstreamConnectionProbeFailure{
+		Status: status, LastError: truncateUpstreamConnectionError(probeErr.Error()), SyncFailures: failures,
+		Version: expectedVersion + 1, NextSyncAt: next,
+	})
+}
+
+func upstreamConnectionFailureBackoff(failures int) time.Duration {
+	if failures < 1 {
+		failures = 1
+	}
+	delay := time.Minute << min(failures-1, 5)
+	if delay > 30*time.Minute {
+		return 30 * time.Minute
+	}
+	return delay
+}
+
+func truncateUpstreamConnectionError(message string) string {
+	const limit = 2000
+	message = strings.TrimSpace(strings.ToValidUTF8(message, "�"))
+	if len(message) <= limit {
+		return message
+	}
+	cut := limit
+	for cut > 0 && !utf8.ValidString(message[:cut]) {
+		cut--
+	}
+	return message[:cut]
+}
+
+func (s *UpstreamConnectionService) loadCredential(connection *UpstreamConnection) (upstreamConnectionCredential, error) {
+	if s == nil || s.encryptor == nil || connection == nil || strings.TrimSpace(connection.CredentialEncrypted) == "" {
+		return upstreamConnectionCredential{}, errors.New("upstream connection credentials are unavailable")
+	}
+	plaintext, err := s.encryptor.Decrypt(connection.CredentialEncrypted)
+	if err != nil {
+		return upstreamConnectionCredential{}, errors.New("decrypt upstream connection credentials")
+	}
+	var credential upstreamConnectionCredential
+	if err := json.Unmarshal([]byte(plaintext), &credential); err != nil {
+		return upstreamConnectionCredential{}, errors.New("decode upstream connection credentials")
+	}
+	if credential.Version != 1 {
+		return upstreamConnectionCredential{}, errors.New("unsupported upstream connection credential version")
+	}
+	return credential, nil
+}
+
+func (s *UpstreamConnectionService) normalizeCreate(params UpstreamConnectionCreateParams) (UpstreamConnectionCreateParams, UpstreamConnectionCredentialInput, error) {
+	params.Name = strings.TrimSpace(params.Name)
+	params.Provider = strings.ToLower(strings.TrimSpace(params.Provider))
+	params.AuthMode = strings.ToLower(strings.TrimSpace(params.AuthMode))
+	managementURL, err := s.normalizeURL(params.ManagementBaseURL, true)
+	if err != nil {
+		return params, params.Credential, infraerrors.BadRequest("INVALID_UPSTREAM_MANAGEMENT_URL", err.Error())
+	}
+	params.ManagementBaseURL = managementURL
+	forwardingURL, err := s.normalizeOptionalURL(params.ForwardingBaseURL)
+	if err != nil {
+		return params, params.Credential, infraerrors.BadRequest("INVALID_UPSTREAM_FORWARDING_URL", err.Error())
+	}
+	params.ForwardingBaseURL = forwardingURL
+	params.RemoteUserID, err = normalizeRemoteUserID(params.RemoteUserID)
+	if err != nil {
+		return params, params.Credential, infraerrors.BadRequest("INVALID_UPSTREAM_REMOTE_USER_ID", err.Error())
+	}
+	if params.SyncIntervalSeconds == 0 {
+		params.SyncIntervalSeconds = 300
+	}
+	temporary := &UpstreamConnection{
+		Name: params.Name, Provider: params.Provider, AuthMode: params.AuthMode,
+		ManagementBaseURL: params.ManagementBaseURL, ForwardingBaseURL: params.ForwardingBaseURL,
+		RemoteUserID: params.RemoteUserID, ProxyID: params.ProxyID, SyncEnabled: params.SyncEnabled,
+		SyncIntervalSeconds: params.SyncIntervalSeconds,
+	}
+	if err := validateUpstreamConnection(temporary); err != nil {
+		return params, params.Credential, err
+	}
+	return params, params.Credential, nil
+}
+
+func (s *UpstreamConnectionService) encryptCredential(authMode, managementBaseURL string, input UpstreamConnectionCredentialInput) (string, string, string, error) {
+	if s == nil || s.encryptor == nil {
+		return "", "", "", infraerrors.New(500, "UPSTREAM_CREDENTIAL_ENCRYPTION_UNAVAILABLE", "upstream credential encryption is unavailable")
+	}
+	credential, fingerprint, hint, err := upstreamConnectionCredentialIdentity(authMode, managementBaseURL, input)
+	if err != nil {
+		return "", "", "", err
+	}
+	payload, err := json.Marshal(credential)
+	if err != nil {
+		return "", "", "", fmt.Errorf("encode upstream connection credentials: %w", err)
+	}
+	ciphertext, err := s.encryptor.Encrypt(string(payload))
+	if err != nil {
+		return "", "", "", fmt.Errorf("encrypt upstream connection credentials: %w", err)
+	}
+	return ciphertext, fingerprint, hint, nil
+}
+
+func upstreamConnectionCredentialIdentity(authMode, managementBaseURL string, input UpstreamConnectionCredentialInput) (upstreamConnectionCredential, string, string, error) {
+	credential := upstreamConnectionCredential{
+		Version: 1, Username: strings.TrimSpace(input.Username), Password: strings.TrimSpace(input.Password),
+		AccessToken: strings.TrimSpace(input.AccessToken), RefreshToken: strings.TrimSpace(input.RefreshToken),
+		ExpiresAt: input.ExpiresAt, LegacyManaged: input.LegacyManaged,
+	}
+	var fingerprintSource, hint string
+	switch authMode {
+	case string(UpstreamManagementAuthModePassword):
+		if credential.Username == "" || credential.Password == "" {
+			return upstreamConnectionCredential{}, "", "", infraerrors.BadRequest("INVALID_UPSTREAM_CREDENTIAL", "username and password are required")
+		}
+		fingerprintSource = "password-identity\x00" + strings.ToLower(credential.Username) + "\x00" + managementBaseURL
+		hint = truncateUpstreamCredentialHint(credential.Username)
+	case string(UpstreamManagementAuthModeAccessToken):
+		if credential.AccessToken == "" {
+			return upstreamConnectionCredential{}, "", "", infraerrors.BadRequest("INVALID_UPSTREAM_CREDENTIAL", "access token is required")
+		}
+		fingerprintSource = "access-token\x00" + credential.AccessToken
+		hint = maskUpstreamCredential(credential.AccessToken)
+	default:
+		return upstreamConnectionCredential{}, "", "", infraerrors.BadRequest("INVALID_UPSTREAM_AUTH_MODE", "auth mode must be password or access_token")
+	}
+	digest := sha256.Sum256([]byte(fingerprintSource))
+	return credential, "sha256:v1:" + hex.EncodeToString(digest[:]), hint, nil
+}
+
+func truncateUpstreamCredentialHint(value string) string {
+	const limit = 100
+	runes := []rune(strings.TrimSpace(strings.ToValidUTF8(value, "")))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	return string(runes[:limit-3]) + "..."
+}
+
+func (s *UpstreamConnectionService) normalizeOptionalURL(raw string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "", nil
+	}
+	return s.normalizeURL(raw, false)
+}
+
+func (s *UpstreamConnectionService) normalizeURL(raw string, _ bool) (string, error) {
+	var normalized string
+	var err error
+	if s.cfg == nil || !s.cfg.Security.URLAllowlist.Enabled {
+		allowHTTP := s.cfg == nil || s.cfg.Security.URLAllowlist.AllowInsecureHTTP
+		normalized, err = urlvalidator.ValidateURLFormat(raw, allowHTTP)
+	} else {
+		normalized, err = urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
+			AllowedHosts:     s.cfg.Security.URLAllowlist.UpstreamHosts,
+			RequireAllowlist: len(s.cfg.Security.URLAllowlist.UpstreamHosts) > 0,
+			AllowPrivate:     s.cfg.Security.URLAllowlist.AllowPrivateHosts,
+		})
+	}
+	if err != nil {
+		return "", err
+	}
+	parsed, err := url.Parse(normalized)
+	if err != nil {
+		return "", errors.New("invalid upstream base url")
+	}
+	if parsed.User != nil {
+		return "", errors.New("upstream base url must not contain embedded credentials")
+	}
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", errors.New("upstream base url must not contain a query string or fragment")
+	}
+	return normalized, nil
+}
+
+func validateUpstreamConnection(connection *UpstreamConnection) error {
+	if connection == nil {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION", "upstream connection is required")
+	}
+	if connection.Name == "" || utf8.RuneCountInString(connection.Name) > 100 {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_NAME", "name must be 1-100 characters")
+	}
+	if !validUpstreamConnectionProvider(connection.Provider) {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_PROVIDER", "unsupported upstream provider")
+	}
+	if connection.AuthMode != string(UpstreamManagementAuthModePassword) && connection.AuthMode != string(UpstreamManagementAuthModeAccessToken) {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_AUTH_MODE", "auth mode must be password or access_token")
+	}
+	if connection.ManagementBaseURL == "" {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_MANAGEMENT_URL", "management base url is required")
+	}
+	if connection.SyncIntervalSeconds < 30 || connection.SyncIntervalSeconds > 86400 {
+		return infraerrors.BadRequest("INVALID_UPSTREAM_SYNC_INTERVAL", "sync interval must be between 30 and 86400 seconds")
+	}
+	if connection.ProxyID != nil && *connection.ProxyID <= 0 {
+		return infraerrors.BadRequest("INVALID_PROXY_ID", "proxy id must be positive")
+	}
+	if strings.TrimSpace(connection.RemoteUserID) != "" {
+		if _, err := parseConnectionRemoteUserID(connection.RemoteUserID); err != nil {
+			return infraerrors.BadRequest("INVALID_UPSTREAM_REMOTE_USER_ID", err.Error())
+		}
+	}
+	if connection.AuthMode == string(UpstreamManagementAuthModeAccessToken) &&
+		upstreamConnectionProviderRequiresRemoteUserID(connection.Provider) &&
+		strings.TrimSpace(connection.RemoteUserID) == "" {
+		return infraerrors.BadRequest("UPSTREAM_REMOTE_USER_ID_REQUIRED", "remote user id is required for this provider in access-token mode")
+	}
+	return nil
+}
+
+func upstreamConnectionProviderRequiresRemoteUserID(provider string) bool {
+	switch provider {
+	case UpstreamConnectionProviderNewAPI, UpstreamConnectionProviderRixAPI, UpstreamConnectionProviderShellAPI,
+		UpstreamConnectionProviderVeloera:
+		return true
+	default:
+		return false
+	}
+}
+
+func validUpstreamConnectionProvider(provider string) bool {
+	switch provider {
+	case UpstreamConnectionProviderAuto, UpstreamConnectionProviderNewAPI, UpstreamConnectionProviderSub2API,
+		UpstreamConnectionProviderRixAPI, UpstreamConnectionProviderShellAPI, UpstreamConnectionProviderOneAPI,
+		UpstreamConnectionProviderVeloera, UpstreamConnectionProviderOneHub, UpstreamConnectionProviderDoneHub:
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRemoteUserID(raw string) (string, error) {
+	value := strings.TrimSpace(raw)
+	if len(value) > 128 || strings.ContainsAny(value, "\r\n\x00") {
+		return "", errors.New("remote user id must be at most 128 characters without line breaks")
+	}
+	return value, nil
+}
+
+func maskUpstreamCredential(value string) string {
+	runes := []rune(strings.TrimSpace(strings.ToValidUTF8(value, "")))
+	if len(runes) <= 8 {
+		return "***"
+	}
+	return string(runes[:4]) + "..." + string(runes[len(runes)-4:])
+}
+
+func resetUpstreamConnectionObservations(connection *UpstreamConnection) {
+	connection.Capabilities = map[string]any{}
+	connection.Groups = []UpstreamGroup{}
+	connection.GroupCount = 0
+	connection.Status = UpstreamConnectionStatusPending
+	connection.LastError = ""
+	connection.SyncFailures = 0
+	connection.WalletAmount = nil
+	connection.WalletCurrency = ""
+	connection.WalletUSD = nil
+	connection.WalletUnlimited = false
+	connection.WalletSource = ""
+	connection.WalletReliability = "unknown"
+	connection.WalletRaw = map[string]any{}
+	connection.WalletObservedAt = nil
+	connection.LastDiscoveredAt = nil
+	connection.LastSyncedAt = nil
+	connection.NextSyncAt = nil
+}
+
+func redactUpstreamConnections(connections []*UpstreamConnection) {
+	for _, connection := range connections {
+		redactUpstreamConnection(connection)
+	}
+}
+
+func redactUpstreamConnection(connection *UpstreamConnection) {
+	if connection == nil {
+		return
+	}
+	connection.CredentialEncrypted = ""
+	connection.CredentialFingerprint = ""
+	connection.LegacyMigrationKey = ""
+	for i := range connection.Bindings {
+		connection.Bindings[i].KeyFingerprint = ""
+	}
+}

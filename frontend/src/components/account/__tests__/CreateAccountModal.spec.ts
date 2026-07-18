@@ -243,7 +243,8 @@ function mountModal() {
         ModelWhitelistSelector: true,
         QuotaLimitCard: true,
         OAuthAuthorizationFlow: OAuthAuthorizationFlowStub,
-        ConfirmDialog: true
+        ConfirmDialog: true,
+        RouterLink: { template: '<a><slot /></a>' }
       }
     }
   })
@@ -322,6 +323,37 @@ describe('CreateAccountModal', () => {
     }))
     expect(payload.upstream_management_auth).toEqual({ username: 'manager@example.com', password: 'management-password' })
     expect(payload.upstream_management_base_url).toBe('https://console.example.com')
+  })
+
+  it('does not submit the discovered exact group multiplier as a manual multiplier', async () => {
+    createAccountMock.mockReset().mockResolvedValue({ id: 1 })
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
+    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
+      provider: 'sub2api',
+      auth_mode: 'password',
+      groups: [{ id: 7, name: 'plus', rate_multiplier: 0.5 }],
+      matched_group: { id: 7, name: 'plus', rate_multiplier: 0.5 }
+    })
+
+    const wrapper = mountModal()
+    await flushPromises()
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Exact upstream account')
+    await clickButtonContaining(wrapper, 'OpenAI')
+    await clickButtonContaining(wrapper, 'API Key')
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-exact')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-username"]').setValue('manager@example.com')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-password"]').setValue('management-password')
+    await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.extra.upstream_rate_multiplier_sync_group).toBe('plus')
+    expect(payload.rate_multiplier).toBeUndefined()
   })
 
   it('submits an upstream management refresh token with access-token authentication', async () => {

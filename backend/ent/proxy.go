@@ -55,11 +55,13 @@ type Proxy struct {
 type ProxyEdges struct {
 	// Accounts holds the value of the accounts edge.
 	Accounts []*Account `json:"accounts,omitempty"`
+	// UpstreamConnections holds the value of the upstream_connections edge.
+	UpstreamConnections []*UpstreamConnection `json:"upstream_connections,omitempty"`
 	// BackupProxy holds the value of the backup_proxy edge.
 	BackupProxy *Proxy `json:"backup_proxy,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [2]bool
+	loadedTypes [3]bool
 }
 
 // AccountsOrErr returns the Accounts value or an error if the edge
@@ -71,12 +73,21 @@ func (e ProxyEdges) AccountsOrErr() ([]*Account, error) {
 	return nil, &NotLoadedError{edge: "accounts"}
 }
 
+// UpstreamConnectionsOrErr returns the UpstreamConnections value or an error if the edge
+// was not loaded in eager-loading.
+func (e ProxyEdges) UpstreamConnectionsOrErr() ([]*UpstreamConnection, error) {
+	if e.loadedTypes[1] {
+		return e.UpstreamConnections, nil
+	}
+	return nil, &NotLoadedError{edge: "upstream_connections"}
+}
+
 // BackupProxyOrErr returns the BackupProxy value or an error if the edge
 // was not loaded in eager-loading, or loaded but was not found.
 func (e ProxyEdges) BackupProxyOrErr() (*Proxy, error) {
 	if e.BackupProxy != nil {
 		return e.BackupProxy, nil
-	} else if e.loadedTypes[1] {
+	} else if e.loadedTypes[2] {
 		return nil, &NotFoundError{label: proxy.Label}
 	}
 	return nil, &NotLoadedError{edge: "backup_proxy"}
@@ -219,6 +230,11 @@ func (_m *Proxy) Value(name string) (ent.Value, error) {
 // QueryAccounts queries the "accounts" edge of the Proxy entity.
 func (_m *Proxy) QueryAccounts() *AccountQuery {
 	return NewProxyClient(_m.config).QueryAccounts(_m)
+}
+
+// QueryUpstreamConnections queries the "upstream_connections" edge of the Proxy entity.
+func (_m *Proxy) QueryUpstreamConnections() *UpstreamConnectionQuery {
+	return NewProxyClient(_m.config).QueryUpstreamConnections(_m)
 }
 
 // QueryBackupProxy queries the "backup_proxy" edge of the Proxy entity.

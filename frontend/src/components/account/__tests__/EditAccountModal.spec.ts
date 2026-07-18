@@ -1,18 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
 const {
   updateAccountMock,
   checkMixedChannelRiskMock,
   getWebSearchEmulationConfigMock,
   getSettingsMock,
+  discoverUpstreamRateMultiplierGroupsMock,
   authIsSimpleMode,
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
   getSettingsMock: vi.fn(),
+  discoverUpstreamRateMultiplierGroupsMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
@@ -36,7 +38,8 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock,
+      discoverUpstreamRateMultiplierGroups: discoverUpstreamRateMultiplierGroupsMock
     },
     settings: {
       getSettings: getSettingsMock,
@@ -313,7 +316,8 @@ function mountModal(account = buildAccount()) {
         Icon: true,
         ProxySelector: true,
         GroupSelector: GroupSelectorStub,
-        ModelWhitelistSelector: ModelWhitelistSelectorStub
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        RouterLink: { template: '<a><slot /></a>' }
       }
     }
   })
@@ -354,6 +358,39 @@ describe('EditAccountModal', () => {
     })
     expect(payload.upstream_management_auth).toBeUndefined()
     expect(payload.upstream_management_base_url).toBe('https://console.example.com')
+  })
+
+  it('does not submit an exact discovered group multiplier as a manual multiplier', async () => {
+    const account = buildAccount()
+    account.extra = {
+      upstream_rate_multiplier_sync_enabled: true,
+      upstream_rate_multiplier_sync_group: 'plus',
+      upstream_rate_multiplier_sync_provider: 'sub2api',
+      upstream_rate_multiplier_sync_auth_mode: 'password'
+    }
+    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
+    account.credentials.upstream_management_base_url = 'https://console.example.com'
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    getSettingsMock.mockReset().mockResolvedValue({ account_quota_notify_enabled: false })
+    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
+    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
+      provider: 'sub2api',
+      auth_mode: 'password',
+      groups: [{ id: 7, name: 'plus', rate_multiplier: 0.5 }],
+      matched_group: { id: 7, name: 'plus', rate_multiplier: 0.5 }
+    })
+
+    const wrapper = mountModal(account)
+    await flushPromises()
+    await wrapper.get('[data-testid="edit-upstream-rate-sync-discover"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.extra.upstream_rate_multiplier_sync_group).toBe('plus')
+    expect(payload.rate_multiplier).toBeUndefined()
   })
 
   it('submits a replacement access token and refresh token for an upstream sync account', async () => {

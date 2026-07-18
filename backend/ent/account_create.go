@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 )
 
@@ -488,6 +489,25 @@ func (_c *AccountCreate) AddUsageLogs(v ...*UsageLog) *AccountCreate {
 	return _c.AddUsageLogIDs(ids...)
 }
 
+// SetUpstreamBindingID sets the "upstream_binding" edge to the UpstreamAccountBinding entity by ID.
+func (_c *AccountCreate) SetUpstreamBindingID(id int64) *AccountCreate {
+	_c.mutation.SetUpstreamBindingID(id)
+	return _c
+}
+
+// SetNillableUpstreamBindingID sets the "upstream_binding" edge to the UpstreamAccountBinding entity by ID if the given value is not nil.
+func (_c *AccountCreate) SetNillableUpstreamBindingID(id *int64) *AccountCreate {
+	if id != nil {
+		_c = _c.SetUpstreamBindingID(*id)
+	}
+	return _c
+}
+
+// SetUpstreamBinding sets the "upstream_binding" edge to the UpstreamAccountBinding entity.
+func (_c *AccountCreate) SetUpstreamBinding(v *UpstreamAccountBinding) *AccountCreate {
+	return _c.SetUpstreamBindingID(v.ID)
+}
+
 // Mutation returns the AccountMutation object of the builder.
 func (_c *AccountCreate) Mutation() *AccountMutation {
 	return _c.mutation
@@ -880,6 +900,22 @@ func (_c *AccountCreate) createSpec() (*Account, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(usagelog.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UpstreamBindingIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   account.UpstreamBindingTable,
+			Columns: []string{account.UpstreamBindingColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamaccountbinding.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

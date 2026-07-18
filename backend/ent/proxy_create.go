@@ -13,6 +13,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
 )
 
 // ProxyCreate is the builder for creating a Proxy entity.
@@ -200,6 +201,21 @@ func (_c *ProxyCreate) AddAccounts(v ...*Account) *ProxyCreate {
 		ids[i] = v[i].ID
 	}
 	return _c.AddAccountIDs(ids...)
+}
+
+// AddUpstreamConnectionIDs adds the "upstream_connections" edge to the UpstreamConnection entity by IDs.
+func (_c *ProxyCreate) AddUpstreamConnectionIDs(ids ...int64) *ProxyCreate {
+	_c.mutation.AddUpstreamConnectionIDs(ids...)
+	return _c
+}
+
+// AddUpstreamConnections adds the "upstream_connections" edges to the UpstreamConnection entity.
+func (_c *ProxyCreate) AddUpstreamConnections(v ...*UpstreamConnection) *ProxyCreate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _c.AddUpstreamConnectionIDs(ids...)
 }
 
 // SetBackupProxy sets the "backup_proxy" edge to the Proxy entity.
@@ -425,6 +441,22 @@ func (_c *ProxyCreate) createSpec() (*Proxy, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.UpstreamConnectionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

@@ -55,6 +55,9 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/supportissueevent"
 	"github.com/Wei-Shaw/sub2api/ent/supportissueview"
 	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
@@ -2784,6 +2787,331 @@ func init() {
 	tlsfingerprintprofileDescEnableGrease := tlsfingerprintprofileFields[2].Descriptor()
 	// tlsfingerprintprofile.DefaultEnableGrease holds the default value on creation for the enable_grease field.
 	tlsfingerprintprofile.DefaultEnableGrease = tlsfingerprintprofileDescEnableGrease.Default.(bool)
+	upstreamaccountbindingMixin := schema.UpstreamAccountBinding{}.Mixin()
+	upstreamaccountbindingMixinFields0 := upstreamaccountbindingMixin[0].Fields()
+	_ = upstreamaccountbindingMixinFields0
+	upstreamaccountbindingFields := schema.UpstreamAccountBinding{}.Fields()
+	_ = upstreamaccountbindingFields
+	// upstreamaccountbindingDescCreatedAt is the schema descriptor for created_at field.
+	upstreamaccountbindingDescCreatedAt := upstreamaccountbindingMixinFields0[0].Descriptor()
+	// upstreamaccountbinding.DefaultCreatedAt holds the default value on creation for the created_at field.
+	upstreamaccountbinding.DefaultCreatedAt = upstreamaccountbindingDescCreatedAt.Default.(func() time.Time)
+	// upstreamaccountbindingDescUpdatedAt is the schema descriptor for updated_at field.
+	upstreamaccountbindingDescUpdatedAt := upstreamaccountbindingMixinFields0[1].Descriptor()
+	// upstreamaccountbinding.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	upstreamaccountbinding.DefaultUpdatedAt = upstreamaccountbindingDescUpdatedAt.Default.(func() time.Time)
+	// upstreamaccountbinding.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	upstreamaccountbinding.UpdateDefaultUpdatedAt = upstreamaccountbindingDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// upstreamaccountbindingDescKeyFingerprint is the schema descriptor for key_fingerprint field.
+	upstreamaccountbindingDescKeyFingerprint := upstreamaccountbindingFields[2].Descriptor()
+	// upstreamaccountbinding.DefaultKeyFingerprint holds the default value on creation for the key_fingerprint field.
+	upstreamaccountbinding.DefaultKeyFingerprint = upstreamaccountbindingDescKeyFingerprint.Default.(string)
+	// upstreamaccountbinding.KeyFingerprintValidator is a validator for the "key_fingerprint" field. It is called by the builders before save.
+	upstreamaccountbinding.KeyFingerprintValidator = upstreamaccountbindingDescKeyFingerprint.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescRemoteTokenID is the schema descriptor for remote_token_id field.
+	upstreamaccountbindingDescRemoteTokenID := upstreamaccountbindingFields[3].Descriptor()
+	// upstreamaccountbinding.DefaultRemoteTokenID holds the default value on creation for the remote_token_id field.
+	upstreamaccountbinding.DefaultRemoteTokenID = upstreamaccountbindingDescRemoteTokenID.Default.(string)
+	// upstreamaccountbinding.RemoteTokenIDValidator is a validator for the "remote_token_id" field. It is called by the builders before save.
+	upstreamaccountbinding.RemoteTokenIDValidator = upstreamaccountbindingDescRemoteTokenID.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescRemoteTokenName is the schema descriptor for remote_token_name field.
+	upstreamaccountbindingDescRemoteTokenName := upstreamaccountbindingFields[4].Descriptor()
+	// upstreamaccountbinding.DefaultRemoteTokenName holds the default value on creation for the remote_token_name field.
+	upstreamaccountbinding.DefaultRemoteTokenName = upstreamaccountbindingDescRemoteTokenName.Default.(string)
+	// upstreamaccountbinding.RemoteTokenNameValidator is a validator for the "remote_token_name" field. It is called by the builders before save.
+	upstreamaccountbinding.RemoteTokenNameValidator = upstreamaccountbindingDescRemoteTokenName.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescResolutionKind is the schema descriptor for resolution_kind field.
+	upstreamaccountbindingDescResolutionKind := upstreamaccountbindingFields[5].Descriptor()
+	// upstreamaccountbinding.DefaultResolutionKind holds the default value on creation for the resolution_kind field.
+	upstreamaccountbinding.DefaultResolutionKind = upstreamaccountbindingDescResolutionKind.Default.(string)
+	// upstreamaccountbinding.ResolutionKindValidator is a validator for the "resolution_kind" field. It is called by the builders before save.
+	upstreamaccountbinding.ResolutionKindValidator = upstreamaccountbindingDescResolutionKind.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescRemoteGroupID is the schema descriptor for remote_group_id field.
+	upstreamaccountbindingDescRemoteGroupID := upstreamaccountbindingFields[6].Descriptor()
+	// upstreamaccountbinding.DefaultRemoteGroupID holds the default value on creation for the remote_group_id field.
+	upstreamaccountbinding.DefaultRemoteGroupID = upstreamaccountbindingDescRemoteGroupID.Default.(string)
+	// upstreamaccountbinding.RemoteGroupIDValidator is a validator for the "remote_group_id" field. It is called by the builders before save.
+	upstreamaccountbinding.RemoteGroupIDValidator = upstreamaccountbindingDescRemoteGroupID.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescRemoteGroupName is the schema descriptor for remote_group_name field.
+	upstreamaccountbindingDescRemoteGroupName := upstreamaccountbindingFields[7].Descriptor()
+	// upstreamaccountbinding.DefaultRemoteGroupName holds the default value on creation for the remote_group_name field.
+	upstreamaccountbinding.DefaultRemoteGroupName = upstreamaccountbindingDescRemoteGroupName.Default.(string)
+	// upstreamaccountbinding.RemoteGroupNameValidator is a validator for the "remote_group_name" field. It is called by the builders before save.
+	upstreamaccountbinding.RemoteGroupNameValidator = upstreamaccountbindingDescRemoteGroupName.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescFallbackGroups is the schema descriptor for fallback_groups field.
+	upstreamaccountbindingDescFallbackGroups := upstreamaccountbindingFields[8].Descriptor()
+	// upstreamaccountbinding.DefaultFallbackGroups holds the default value on creation for the fallback_groups field.
+	upstreamaccountbinding.DefaultFallbackGroups = upstreamaccountbindingDescFallbackGroups.Default.(func() []string)
+	// upstreamaccountbindingDescObservedMultiplier is the schema descriptor for observed_multiplier field.
+	upstreamaccountbindingDescObservedMultiplier := upstreamaccountbindingFields[9].Descriptor()
+	// upstreamaccountbinding.ObservedMultiplierValidator is a validator for the "observed_multiplier" field. It is called by the builders before save.
+	upstreamaccountbinding.ObservedMultiplierValidator = upstreamaccountbindingDescObservedMultiplier.Validators[0].(func(float64) error)
+	// upstreamaccountbindingDescConfidence is the schema descriptor for confidence field.
+	upstreamaccountbindingDescConfidence := upstreamaccountbindingFields[10].Descriptor()
+	// upstreamaccountbinding.DefaultConfidence holds the default value on creation for the confidence field.
+	upstreamaccountbinding.DefaultConfidence = upstreamaccountbindingDescConfidence.Default.(string)
+	// upstreamaccountbinding.ConfidenceValidator is a validator for the "confidence" field. It is called by the builders before save.
+	upstreamaccountbinding.ConfidenceValidator = upstreamaccountbindingDescConfidence.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescSource is the schema descriptor for source field.
+	upstreamaccountbindingDescSource := upstreamaccountbindingFields[11].Descriptor()
+	// upstreamaccountbinding.DefaultSource holds the default value on creation for the source field.
+	upstreamaccountbinding.DefaultSource = upstreamaccountbindingDescSource.Default.(string)
+	// upstreamaccountbinding.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	upstreamaccountbinding.SourceValidator = upstreamaccountbindingDescSource.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescApplyPolicy is the schema descriptor for apply_policy field.
+	upstreamaccountbindingDescApplyPolicy := upstreamaccountbindingFields[12].Descriptor()
+	// upstreamaccountbinding.DefaultApplyPolicy holds the default value on creation for the apply_policy field.
+	upstreamaccountbinding.DefaultApplyPolicy = upstreamaccountbindingDescApplyPolicy.Default.(string)
+	// upstreamaccountbinding.ApplyPolicyValidator is a validator for the "apply_policy" field. It is called by the builders before save.
+	upstreamaccountbinding.ApplyPolicyValidator = upstreamaccountbindingDescApplyPolicy.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescStatus is the schema descriptor for status field.
+	upstreamaccountbindingDescStatus := upstreamaccountbindingFields[13].Descriptor()
+	// upstreamaccountbinding.DefaultStatus holds the default value on creation for the status field.
+	upstreamaccountbinding.DefaultStatus = upstreamaccountbindingDescStatus.Default.(string)
+	// upstreamaccountbinding.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	upstreamaccountbinding.StatusValidator = upstreamaccountbindingDescStatus.Validators[0].(func(string) error)
+	// upstreamaccountbindingDescSyncFailures is the schema descriptor for sync_failures field.
+	upstreamaccountbindingDescSyncFailures := upstreamaccountbindingFields[14].Descriptor()
+	// upstreamaccountbinding.DefaultSyncFailures holds the default value on creation for the sync_failures field.
+	upstreamaccountbinding.DefaultSyncFailures = upstreamaccountbindingDescSyncFailures.Default.(int)
+	// upstreamaccountbinding.SyncFailuresValidator is a validator for the "sync_failures" field. It is called by the builders before save.
+	upstreamaccountbinding.SyncFailuresValidator = upstreamaccountbindingDescSyncFailures.Validators[0].(func(int) error)
+	// upstreamaccountbindingDescLastError is the schema descriptor for last_error field.
+	upstreamaccountbindingDescLastError := upstreamaccountbindingFields[15].Descriptor()
+	// upstreamaccountbinding.DefaultLastError holds the default value on creation for the last_error field.
+	upstreamaccountbinding.DefaultLastError = upstreamaccountbindingDescLastError.Default.(string)
+	// upstreamaccountbindingDescResolutionDetails is the schema descriptor for resolution_details field.
+	upstreamaccountbindingDescResolutionDetails := upstreamaccountbindingFields[16].Descriptor()
+	// upstreamaccountbinding.DefaultResolutionDetails holds the default value on creation for the resolution_details field.
+	upstreamaccountbinding.DefaultResolutionDetails = upstreamaccountbindingDescResolutionDetails.Default.(func() map[string]interface{})
+	upstreamconnectionMixin := schema.UpstreamConnection{}.Mixin()
+	upstreamconnectionMixinFields0 := upstreamconnectionMixin[0].Fields()
+	_ = upstreamconnectionMixinFields0
+	upstreamconnectionFields := schema.UpstreamConnection{}.Fields()
+	_ = upstreamconnectionFields
+	// upstreamconnectionDescCreatedAt is the schema descriptor for created_at field.
+	upstreamconnectionDescCreatedAt := upstreamconnectionMixinFields0[0].Descriptor()
+	// upstreamconnection.DefaultCreatedAt holds the default value on creation for the created_at field.
+	upstreamconnection.DefaultCreatedAt = upstreamconnectionDescCreatedAt.Default.(func() time.Time)
+	// upstreamconnectionDescUpdatedAt is the schema descriptor for updated_at field.
+	upstreamconnectionDescUpdatedAt := upstreamconnectionMixinFields0[1].Descriptor()
+	// upstreamconnection.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	upstreamconnection.DefaultUpdatedAt = upstreamconnectionDescUpdatedAt.Default.(func() time.Time)
+	// upstreamconnection.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	upstreamconnection.UpdateDefaultUpdatedAt = upstreamconnectionDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// upstreamconnectionDescName is the schema descriptor for name field.
+	upstreamconnectionDescName := upstreamconnectionFields[0].Descriptor()
+	// upstreamconnection.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	upstreamconnection.NameValidator = func() func(string) error {
+		validators := upstreamconnectionDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamconnectionDescProvider is the schema descriptor for provider field.
+	upstreamconnectionDescProvider := upstreamconnectionFields[1].Descriptor()
+	// upstreamconnection.DefaultProvider holds the default value on creation for the provider field.
+	upstreamconnection.DefaultProvider = upstreamconnectionDescProvider.Default.(string)
+	// upstreamconnection.ProviderValidator is a validator for the "provider" field. It is called by the builders before save.
+	upstreamconnection.ProviderValidator = upstreamconnectionDescProvider.Validators[0].(func(string) error)
+	// upstreamconnectionDescAuthMode is the schema descriptor for auth_mode field.
+	upstreamconnectionDescAuthMode := upstreamconnectionFields[2].Descriptor()
+	// upstreamconnection.AuthModeValidator is a validator for the "auth_mode" field. It is called by the builders before save.
+	upstreamconnection.AuthModeValidator = func() func(string) error {
+		validators := upstreamconnectionDescAuthMode.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(auth_mode string) error {
+			for _, fn := range fns {
+				if err := fn(auth_mode); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamconnectionDescManagementBaseURL is the schema descriptor for management_base_url field.
+	upstreamconnectionDescManagementBaseURL := upstreamconnectionFields[3].Descriptor()
+	// upstreamconnection.ManagementBaseURLValidator is a validator for the "management_base_url" field. It is called by the builders before save.
+	upstreamconnection.ManagementBaseURLValidator = func() func(string) error {
+		validators := upstreamconnectionDescManagementBaseURL.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(management_base_url string) error {
+			for _, fn := range fns {
+				if err := fn(management_base_url); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamconnectionDescForwardingBaseURL is the schema descriptor for forwarding_base_url field.
+	upstreamconnectionDescForwardingBaseURL := upstreamconnectionFields[4].Descriptor()
+	// upstreamconnection.DefaultForwardingBaseURL holds the default value on creation for the forwarding_base_url field.
+	upstreamconnection.DefaultForwardingBaseURL = upstreamconnectionDescForwardingBaseURL.Default.(string)
+	// upstreamconnection.ForwardingBaseURLValidator is a validator for the "forwarding_base_url" field. It is called by the builders before save.
+	upstreamconnection.ForwardingBaseURLValidator = upstreamconnectionDescForwardingBaseURL.Validators[0].(func(string) error)
+	// upstreamconnectionDescCredentialEncrypted is the schema descriptor for credential_encrypted field.
+	upstreamconnectionDescCredentialEncrypted := upstreamconnectionFields[5].Descriptor()
+	// upstreamconnection.CredentialEncryptedValidator is a validator for the "credential_encrypted" field. It is called by the builders before save.
+	upstreamconnection.CredentialEncryptedValidator = upstreamconnectionDescCredentialEncrypted.Validators[0].(func(string) error)
+	// upstreamconnectionDescCredentialFingerprint is the schema descriptor for credential_fingerprint field.
+	upstreamconnectionDescCredentialFingerprint := upstreamconnectionFields[6].Descriptor()
+	// upstreamconnection.DefaultCredentialFingerprint holds the default value on creation for the credential_fingerprint field.
+	upstreamconnection.DefaultCredentialFingerprint = upstreamconnectionDescCredentialFingerprint.Default.(string)
+	// upstreamconnection.CredentialFingerprintValidator is a validator for the "credential_fingerprint" field. It is called by the builders before save.
+	upstreamconnection.CredentialFingerprintValidator = upstreamconnectionDescCredentialFingerprint.Validators[0].(func(string) error)
+	// upstreamconnectionDescLegacyMigrationKey is the schema descriptor for legacy_migration_key field.
+	upstreamconnectionDescLegacyMigrationKey := upstreamconnectionFields[7].Descriptor()
+	// upstreamconnection.LegacyMigrationKeyValidator is a validator for the "legacy_migration_key" field. It is called by the builders before save.
+	upstreamconnection.LegacyMigrationKeyValidator = upstreamconnectionDescLegacyMigrationKey.Validators[0].(func(string) error)
+	// upstreamconnectionDescCredentialHint is the schema descriptor for credential_hint field.
+	upstreamconnectionDescCredentialHint := upstreamconnectionFields[8].Descriptor()
+	// upstreamconnection.DefaultCredentialHint holds the default value on creation for the credential_hint field.
+	upstreamconnection.DefaultCredentialHint = upstreamconnectionDescCredentialHint.Default.(string)
+	// upstreamconnection.CredentialHintValidator is a validator for the "credential_hint" field. It is called by the builders before save.
+	upstreamconnection.CredentialHintValidator = upstreamconnectionDescCredentialHint.Validators[0].(func(string) error)
+	// upstreamconnectionDescRemoteUserID is the schema descriptor for remote_user_id field.
+	upstreamconnectionDescRemoteUserID := upstreamconnectionFields[9].Descriptor()
+	// upstreamconnection.DefaultRemoteUserID holds the default value on creation for the remote_user_id field.
+	upstreamconnection.DefaultRemoteUserID = upstreamconnectionDescRemoteUserID.Default.(string)
+	// upstreamconnection.RemoteUserIDValidator is a validator for the "remote_user_id" field. It is called by the builders before save.
+	upstreamconnection.RemoteUserIDValidator = upstreamconnectionDescRemoteUserID.Validators[0].(func(string) error)
+	// upstreamconnectionDescCapabilities is the schema descriptor for capabilities field.
+	upstreamconnectionDescCapabilities := upstreamconnectionFields[11].Descriptor()
+	// upstreamconnection.DefaultCapabilities holds the default value on creation for the capabilities field.
+	upstreamconnection.DefaultCapabilities = upstreamconnectionDescCapabilities.Default.(func() map[string]interface{})
+	// upstreamconnectionDescStatus is the schema descriptor for status field.
+	upstreamconnectionDescStatus := upstreamconnectionFields[12].Descriptor()
+	// upstreamconnection.DefaultStatus holds the default value on creation for the status field.
+	upstreamconnection.DefaultStatus = upstreamconnectionDescStatus.Default.(string)
+	// upstreamconnection.StatusValidator is a validator for the "status" field. It is called by the builders before save.
+	upstreamconnection.StatusValidator = upstreamconnectionDescStatus.Validators[0].(func(string) error)
+	// upstreamconnectionDescLastError is the schema descriptor for last_error field.
+	upstreamconnectionDescLastError := upstreamconnectionFields[13].Descriptor()
+	// upstreamconnection.DefaultLastError holds the default value on creation for the last_error field.
+	upstreamconnection.DefaultLastError = upstreamconnectionDescLastError.Default.(string)
+	// upstreamconnectionDescSyncEnabled is the schema descriptor for sync_enabled field.
+	upstreamconnectionDescSyncEnabled := upstreamconnectionFields[14].Descriptor()
+	// upstreamconnection.DefaultSyncEnabled holds the default value on creation for the sync_enabled field.
+	upstreamconnection.DefaultSyncEnabled = upstreamconnectionDescSyncEnabled.Default.(bool)
+	// upstreamconnectionDescSyncIntervalSeconds is the schema descriptor for sync_interval_seconds field.
+	upstreamconnectionDescSyncIntervalSeconds := upstreamconnectionFields[15].Descriptor()
+	// upstreamconnection.DefaultSyncIntervalSeconds holds the default value on creation for the sync_interval_seconds field.
+	upstreamconnection.DefaultSyncIntervalSeconds = upstreamconnectionDescSyncIntervalSeconds.Default.(int)
+	// upstreamconnection.SyncIntervalSecondsValidator is a validator for the "sync_interval_seconds" field. It is called by the builders before save.
+	upstreamconnection.SyncIntervalSecondsValidator = upstreamconnectionDescSyncIntervalSeconds.Validators[0].(func(int) error)
+	// upstreamconnectionDescSyncFailures is the schema descriptor for sync_failures field.
+	upstreamconnectionDescSyncFailures := upstreamconnectionFields[16].Descriptor()
+	// upstreamconnection.DefaultSyncFailures holds the default value on creation for the sync_failures field.
+	upstreamconnection.DefaultSyncFailures = upstreamconnectionDescSyncFailures.Default.(int)
+	// upstreamconnection.SyncFailuresValidator is a validator for the "sync_failures" field. It is called by the builders before save.
+	upstreamconnection.SyncFailuresValidator = upstreamconnectionDescSyncFailures.Validators[0].(func(int) error)
+	// upstreamconnectionDescVersion is the schema descriptor for version field.
+	upstreamconnectionDescVersion := upstreamconnectionFields[17].Descriptor()
+	// upstreamconnection.DefaultVersion holds the default value on creation for the version field.
+	upstreamconnection.DefaultVersion = upstreamconnectionDescVersion.Default.(int64)
+	// upstreamconnection.VersionValidator is a validator for the "version" field. It is called by the builders before save.
+	upstreamconnection.VersionValidator = upstreamconnectionDescVersion.Validators[0].(func(int64) error)
+	// upstreamconnectionDescWalletCurrency is the schema descriptor for wallet_currency field.
+	upstreamconnectionDescWalletCurrency := upstreamconnectionFields[19].Descriptor()
+	// upstreamconnection.DefaultWalletCurrency holds the default value on creation for the wallet_currency field.
+	upstreamconnection.DefaultWalletCurrency = upstreamconnectionDescWalletCurrency.Default.(string)
+	// upstreamconnection.WalletCurrencyValidator is a validator for the "wallet_currency" field. It is called by the builders before save.
+	upstreamconnection.WalletCurrencyValidator = upstreamconnectionDescWalletCurrency.Validators[0].(func(string) error)
+	// upstreamconnectionDescWalletUnlimited is the schema descriptor for wallet_unlimited field.
+	upstreamconnectionDescWalletUnlimited := upstreamconnectionFields[21].Descriptor()
+	// upstreamconnection.DefaultWalletUnlimited holds the default value on creation for the wallet_unlimited field.
+	upstreamconnection.DefaultWalletUnlimited = upstreamconnectionDescWalletUnlimited.Default.(bool)
+	// upstreamconnectionDescWalletSource is the schema descriptor for wallet_source field.
+	upstreamconnectionDescWalletSource := upstreamconnectionFields[22].Descriptor()
+	// upstreamconnection.DefaultWalletSource holds the default value on creation for the wallet_source field.
+	upstreamconnection.DefaultWalletSource = upstreamconnectionDescWalletSource.Default.(string)
+	// upstreamconnection.WalletSourceValidator is a validator for the "wallet_source" field. It is called by the builders before save.
+	upstreamconnection.WalletSourceValidator = upstreamconnectionDescWalletSource.Validators[0].(func(string) error)
+	// upstreamconnectionDescWalletReliability is the schema descriptor for wallet_reliability field.
+	upstreamconnectionDescWalletReliability := upstreamconnectionFields[23].Descriptor()
+	// upstreamconnection.DefaultWalletReliability holds the default value on creation for the wallet_reliability field.
+	upstreamconnection.DefaultWalletReliability = upstreamconnectionDescWalletReliability.Default.(string)
+	// upstreamconnection.WalletReliabilityValidator is a validator for the "wallet_reliability" field. It is called by the builders before save.
+	upstreamconnection.WalletReliabilityValidator = upstreamconnectionDescWalletReliability.Validators[0].(func(string) error)
+	// upstreamconnectionDescWalletRaw is the schema descriptor for wallet_raw field.
+	upstreamconnectionDescWalletRaw := upstreamconnectionFields[24].Descriptor()
+	// upstreamconnection.DefaultWalletRaw holds the default value on creation for the wallet_raw field.
+	upstreamconnection.DefaultWalletRaw = upstreamconnectionDescWalletRaw.Default.(func() map[string]interface{})
+	upstreamgroupMixin := schema.UpstreamGroup{}.Mixin()
+	upstreamgroupMixinFields0 := upstreamgroupMixin[0].Fields()
+	_ = upstreamgroupMixinFields0
+	upstreamgroupFields := schema.UpstreamGroup{}.Fields()
+	_ = upstreamgroupFields
+	// upstreamgroupDescCreatedAt is the schema descriptor for created_at field.
+	upstreamgroupDescCreatedAt := upstreamgroupMixinFields0[0].Descriptor()
+	// upstreamgroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	upstreamgroup.DefaultCreatedAt = upstreamgroupDescCreatedAt.Default.(func() time.Time)
+	// upstreamgroupDescUpdatedAt is the schema descriptor for updated_at field.
+	upstreamgroupDescUpdatedAt := upstreamgroupMixinFields0[1].Descriptor()
+	// upstreamgroup.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	upstreamgroup.DefaultUpdatedAt = upstreamgroupDescUpdatedAt.Default.(func() time.Time)
+	// upstreamgroup.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	upstreamgroup.UpdateDefaultUpdatedAt = upstreamgroupDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// upstreamgroupDescRemoteID is the schema descriptor for remote_id field.
+	upstreamgroupDescRemoteID := upstreamgroupFields[1].Descriptor()
+	// upstreamgroup.DefaultRemoteID holds the default value on creation for the remote_id field.
+	upstreamgroup.DefaultRemoteID = upstreamgroupDescRemoteID.Default.(string)
+	// upstreamgroup.RemoteIDValidator is a validator for the "remote_id" field. It is called by the builders before save.
+	upstreamgroup.RemoteIDValidator = upstreamgroupDescRemoteID.Validators[0].(func(string) error)
+	// upstreamgroupDescName is the schema descriptor for name field.
+	upstreamgroupDescName := upstreamgroupFields[2].Descriptor()
+	// upstreamgroup.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	upstreamgroup.NameValidator = func() func(string) error {
+		validators := upstreamgroupDescName.Validators
+		fns := [...]func(string) error{
+			validators[0].(func(string) error),
+			validators[1].(func(string) error),
+		}
+		return func(name string) error {
+			for _, fn := range fns {
+				if err := fn(name); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+	}()
+	// upstreamgroupDescRateMultiplier is the schema descriptor for rate_multiplier field.
+	upstreamgroupDescRateMultiplier := upstreamgroupFields[3].Descriptor()
+	// upstreamgroup.RateMultiplierValidator is a validator for the "rate_multiplier" field. It is called by the builders before save.
+	upstreamgroup.RateMultiplierValidator = upstreamgroupDescRateMultiplier.Validators[0].(func(float64) error)
+	// upstreamgroupDescSource is the schema descriptor for source field.
+	upstreamgroupDescSource := upstreamgroupFields[4].Descriptor()
+	// upstreamgroup.DefaultSource holds the default value on creation for the source field.
+	upstreamgroup.DefaultSource = upstreamgroupDescSource.Default.(string)
+	// upstreamgroup.SourceValidator is a validator for the "source" field. It is called by the builders before save.
+	upstreamgroup.SourceValidator = upstreamgroupDescSource.Validators[0].(func(string) error)
+	// upstreamgroupDescConfidence is the schema descriptor for confidence field.
+	upstreamgroupDescConfidence := upstreamgroupFields[5].Descriptor()
+	// upstreamgroup.DefaultConfidence holds the default value on creation for the confidence field.
+	upstreamgroup.DefaultConfidence = upstreamgroupDescConfidence.Default.(string)
+	// upstreamgroup.ConfidenceValidator is a validator for the "confidence" field. It is called by the builders before save.
+	upstreamgroup.ConfidenceValidator = upstreamgroupDescConfidence.Validators[0].(func(string) error)
+	// upstreamgroupDescMetadata is the schema descriptor for metadata field.
+	upstreamgroupDescMetadata := upstreamgroupFields[6].Descriptor()
+	// upstreamgroup.DefaultMetadata holds the default value on creation for the metadata field.
+	upstreamgroup.DefaultMetadata = upstreamgroupDescMetadata.Default.(func() map[string]interface{})
 	usagecleanuptaskMixin := schema.UsageCleanupTask{}.Mixin()
 	usagecleanuptaskMixinFields0 := usagecleanuptaskMixin[0].Fields()
 	_ = usagecleanuptaskMixinFields0

@@ -112,6 +112,12 @@ type Tx struct {
 	SupportIssueView *SupportIssueViewClient
 	// TLSFingerprintProfile is the client for interacting with the TLSFingerprintProfile builders.
 	TLSFingerprintProfile *TLSFingerprintProfileClient
+	// UpstreamAccountBinding is the client for interacting with the UpstreamAccountBinding builders.
+	UpstreamAccountBinding *UpstreamAccountBindingClient
+	// UpstreamConnection is the client for interacting with the UpstreamConnection builders.
+	UpstreamConnection *UpstreamConnectionClient
+	// UpstreamGroup is the client for interacting with the UpstreamGroup builders.
+	UpstreamGroup *UpstreamGroupClient
 	// UsageCleanupTask is the client for interacting with the UsageCleanupTask builders.
 	UsageCleanupTask *UsageCleanupTaskClient
 	// UsageLog is the client for interacting with the UsageLog builders.
@@ -308,6 +314,9 @@ func (tx *Tx) init() {
 	tx.SupportIssueEvent = NewSupportIssueEventClient(tx.config)
 	tx.SupportIssueView = NewSupportIssueViewClient(tx.config)
 	tx.TLSFingerprintProfile = NewTLSFingerprintProfileClient(tx.config)
+	tx.UpstreamAccountBinding = NewUpstreamAccountBindingClient(tx.config)
+	tx.UpstreamConnection = NewUpstreamConnectionClient(tx.config)
+	tx.UpstreamGroup = NewUpstreamGroupClient(tx.config)
 	tx.UsageCleanupTask = NewUsageCleanupTaskClient(tx.config)
 	tx.UsageLog = NewUsageLogClient(tx.config)
 	tx.User = NewUserClient(tx.config)

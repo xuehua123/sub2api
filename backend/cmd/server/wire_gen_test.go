@@ -88,6 +88,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // rateMultiplierPriority
 		nil, // upstreamRateMultiplierSync
 		nil, // upstreamBillingProbe
+		nil, // upstreamConnectionSync
 		nil, // auditLog
 		nil, // promptAudit
 	)

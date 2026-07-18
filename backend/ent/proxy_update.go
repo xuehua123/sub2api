@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
 )
 
 // ProxyUpdate is the builder for updating Proxy entities.
@@ -262,6 +263,21 @@ func (_u *ProxyUpdate) AddAccounts(v ...*Account) *ProxyUpdate {
 	return _u.AddAccountIDs(ids...)
 }
 
+// AddUpstreamConnectionIDs adds the "upstream_connections" edge to the UpstreamConnection entity by IDs.
+func (_u *ProxyUpdate) AddUpstreamConnectionIDs(ids ...int64) *ProxyUpdate {
+	_u.mutation.AddUpstreamConnectionIDs(ids...)
+	return _u
+}
+
+// AddUpstreamConnections adds the "upstream_connections" edges to the UpstreamConnection entity.
+func (_u *ProxyUpdate) AddUpstreamConnections(v ...*UpstreamConnection) *ProxyUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpstreamConnectionIDs(ids...)
+}
+
 // SetBackupProxy sets the "backup_proxy" edge to the Proxy entity.
 func (_u *ProxyUpdate) SetBackupProxy(v *Proxy) *ProxyUpdate {
 	return _u.SetBackupProxyID(v.ID)
@@ -291,6 +307,27 @@ func (_u *ProxyUpdate) RemoveAccounts(v ...*Account) *ProxyUpdate {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAccountIDs(ids...)
+}
+
+// ClearUpstreamConnections clears all "upstream_connections" edges to the UpstreamConnection entity.
+func (_u *ProxyUpdate) ClearUpstreamConnections() *ProxyUpdate {
+	_u.mutation.ClearUpstreamConnections()
+	return _u
+}
+
+// RemoveUpstreamConnectionIDs removes the "upstream_connections" edge to UpstreamConnection entities by IDs.
+func (_u *ProxyUpdate) RemoveUpstreamConnectionIDs(ids ...int64) *ProxyUpdate {
+	_u.mutation.RemoveUpstreamConnectionIDs(ids...)
+	return _u
+}
+
+// RemoveUpstreamConnections removes "upstream_connections" edges to UpstreamConnection entities.
+func (_u *ProxyUpdate) RemoveUpstreamConnections(v ...*UpstreamConnection) *ProxyUpdate {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpstreamConnectionIDs(ids...)
 }
 
 // ClearBackupProxy clears the "backup_proxy" edge to the Proxy entity.
@@ -485,6 +522,51 @@ func (_u *ProxyUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpstreamConnectionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpstreamConnectionsIDs(); len(nodes) > 0 && !_u.mutation.UpstreamConnectionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamConnectionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {
@@ -774,6 +856,21 @@ func (_u *ProxyUpdateOne) AddAccounts(v ...*Account) *ProxyUpdateOne {
 	return _u.AddAccountIDs(ids...)
 }
 
+// AddUpstreamConnectionIDs adds the "upstream_connections" edge to the UpstreamConnection entity by IDs.
+func (_u *ProxyUpdateOne) AddUpstreamConnectionIDs(ids ...int64) *ProxyUpdateOne {
+	_u.mutation.AddUpstreamConnectionIDs(ids...)
+	return _u
+}
+
+// AddUpstreamConnections adds the "upstream_connections" edges to the UpstreamConnection entity.
+func (_u *ProxyUpdateOne) AddUpstreamConnections(v ...*UpstreamConnection) *ProxyUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.AddUpstreamConnectionIDs(ids...)
+}
+
 // SetBackupProxy sets the "backup_proxy" edge to the Proxy entity.
 func (_u *ProxyUpdateOne) SetBackupProxy(v *Proxy) *ProxyUpdateOne {
 	return _u.SetBackupProxyID(v.ID)
@@ -803,6 +900,27 @@ func (_u *ProxyUpdateOne) RemoveAccounts(v ...*Account) *ProxyUpdateOne {
 		ids[i] = v[i].ID
 	}
 	return _u.RemoveAccountIDs(ids...)
+}
+
+// ClearUpstreamConnections clears all "upstream_connections" edges to the UpstreamConnection entity.
+func (_u *ProxyUpdateOne) ClearUpstreamConnections() *ProxyUpdateOne {
+	_u.mutation.ClearUpstreamConnections()
+	return _u
+}
+
+// RemoveUpstreamConnectionIDs removes the "upstream_connections" edge to UpstreamConnection entities by IDs.
+func (_u *ProxyUpdateOne) RemoveUpstreamConnectionIDs(ids ...int64) *ProxyUpdateOne {
+	_u.mutation.RemoveUpstreamConnectionIDs(ids...)
+	return _u
+}
+
+// RemoveUpstreamConnections removes "upstream_connections" edges to UpstreamConnection entities.
+func (_u *ProxyUpdateOne) RemoveUpstreamConnections(v ...*UpstreamConnection) *ProxyUpdateOne {
+	ids := make([]int64, len(v))
+	for i := range v {
+		ids[i] = v[i].ID
+	}
+	return _u.RemoveUpstreamConnectionIDs(ids...)
 }
 
 // ClearBackupProxy clears the "backup_proxy" edge to the Proxy entity.
@@ -1027,6 +1145,51 @@ func (_u *ProxyUpdateOne) sqlSave(ctx context.Context) (_node *Proxy, err error)
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(account.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.UpstreamConnectionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.RemovedUpstreamConnectionsIDs(); len(nodes) > 0 && !_u.mutation.UpstreamConnectionsCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.UpstreamConnectionsIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2M,
+			Inverse: true,
+			Table:   proxy.UpstreamConnectionsTable,
+			Columns: []string{proxy.UpstreamConnectionsColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(upstreamconnection.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

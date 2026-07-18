@@ -113,6 +113,9 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 
+		// Shared upstream management connections.
+		registerUpstreamConnectionRoutes(admin, h)
+
 		// 推荐系统管理
 		registerReferralAdminRoutes(admin, h)
 
@@ -753,6 +756,23 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		templates.DELETE("/:id", h.Admin.ChannelMonitorTemplate.Delete)
 		templates.GET("/:id/monitors", h.Admin.ChannelMonitorTemplate.AssociatedMonitors)
 		templates.POST("/:id/apply", h.Admin.ChannelMonitorTemplate.Apply)
+	}
+}
+
+func registerUpstreamConnectionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	connections := admin.Group("/upstream-connections")
+	{
+		connections.GET("", h.Admin.UpstreamConnection.List)
+		connections.POST("", h.Admin.UpstreamConnection.Create)
+		connections.GET("/bindings/by-account/:account_id", h.Admin.UpstreamConnection.GetAccountBinding)
+		connections.POST("/migrate-legacy/preview", h.Admin.UpstreamConnection.PreviewLegacyMigration)
+		connections.POST("/migrate-legacy", h.Admin.UpstreamConnection.MigrateLegacy)
+		connections.GET("/:id", h.Admin.UpstreamConnection.Get)
+		connections.PUT("/:id", h.Admin.UpstreamConnection.Update)
+		connections.DELETE("/:id", h.Admin.UpstreamConnection.Delete)
+		connections.POST("/:id/probe", h.Admin.UpstreamConnection.Probe)
+		connections.PUT("/:id/bindings/:account_id", h.Admin.UpstreamConnection.BindAccount)
+		connections.DELETE("/:id/bindings/:account_id", h.Admin.UpstreamConnection.UnbindAccount)
 	}
 }
 

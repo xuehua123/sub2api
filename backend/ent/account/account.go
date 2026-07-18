@@ -88,6 +88,8 @@ const (
 	EdgeChildren = "children"
 	// EdgeUsageLogs holds the string denoting the usage_logs edge name in mutations.
 	EdgeUsageLogs = "usage_logs"
+	// EdgeUpstreamBinding holds the string denoting the upstream_binding edge name in mutations.
+	EdgeUpstreamBinding = "upstream_binding"
 	// EdgeAccountGroups holds the string denoting the account_groups edge name in mutations.
 	EdgeAccountGroups = "account_groups"
 	// Table holds the table name of the account in the database.
@@ -119,6 +121,13 @@ const (
 	UsageLogsInverseTable = "usage_logs"
 	// UsageLogsColumn is the table column denoting the usage_logs relation/edge.
 	UsageLogsColumn = "account_id"
+	// UpstreamBindingTable is the table that holds the upstream_binding relation/edge.
+	UpstreamBindingTable = "upstream_account_bindings"
+	// UpstreamBindingInverseTable is the table name for the UpstreamAccountBinding entity.
+	// It exists in this package in order to avoid circular dependency with the "upstreamaccountbinding" package.
+	UpstreamBindingInverseTable = "upstream_account_bindings"
+	// UpstreamBindingColumn is the table column denoting the upstream_binding relation/edge.
+	UpstreamBindingColumn = "account_id"
 	// AccountGroupsTable is the table that holds the account_groups relation/edge.
 	AccountGroupsTable = "account_groups"
 	// AccountGroupsInverseTable is the table name for the AccountGroup entity.
@@ -457,6 +466,13 @@ func ByUsageLogs(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByUpstreamBindingField orders the results by upstream_binding field.
+func ByUpstreamBindingField(field string, opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpstreamBindingStep(), sql.OrderByField(field, opts...))
+	}
+}
+
 // ByAccountGroupsCount orders the results by account_groups count.
 func ByAccountGroupsCount(opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -503,6 +519,13 @@ func newUsageLogsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(UsageLogsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, false, UsageLogsTable, UsageLogsColumn),
+	)
+}
+func newUpstreamBindingStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpstreamBindingInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2O, false, UpstreamBindingTable, UpstreamBindingColumn),
 	)
 }
 func newAccountGroupsStep() *sqlgraph.Step {

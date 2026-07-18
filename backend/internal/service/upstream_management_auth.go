@@ -30,6 +30,7 @@ const (
 	UpstreamManagementProviderNewAPI   UpstreamManagementProvider = "newapi"
 	UpstreamManagementProviderRixAPI   UpstreamManagementProvider = "rixapi"
 	UpstreamManagementProviderShellAPI UpstreamManagementProvider = "shellapi"
+	UpstreamManagementProviderVeloera  UpstreamManagementProvider = "veloera"
 	UpstreamManagementProviderSub2API  UpstreamManagementProvider = "sub2api"
 )
 
@@ -111,9 +112,10 @@ func upstreamRateMultiplierSyncConfigFromExtra(extra map[string]any) (UpstreamRa
 
 	config.Provider = UpstreamManagementProvider(strings.ToLower(strings.TrimSpace(extraString(extra, AccountExtraUpstreamRateMultiplierSyncProvider))))
 	switch config.Provider {
-	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI, UpstreamManagementProviderSub2API:
+	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI,
+		UpstreamManagementProviderVeloera, UpstreamManagementProviderSub2API:
 	default:
-		return UpstreamRateMultiplierSyncConfig{}, errors.New("upstream rate multiplier sync provider must be newapi, rixapi, shellapi, or sub2api")
+		return UpstreamRateMultiplierSyncConfig{}, errors.New("upstream rate multiplier sync provider must be newapi, rixapi, shellapi, veloera, or sub2api")
 	}
 
 	config.AuthMode = UpstreamManagementAuthMode(strings.ToLower(strings.TrimSpace(extraString(extra, AccountExtraUpstreamRateMultiplierSyncAuthMode))))

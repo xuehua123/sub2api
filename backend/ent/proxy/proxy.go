@@ -45,6 +45,8 @@ const (
 	FieldExpiryWarnDays = "expiry_warn_days"
 	// EdgeAccounts holds the string denoting the accounts edge name in mutations.
 	EdgeAccounts = "accounts"
+	// EdgeUpstreamConnections holds the string denoting the upstream_connections edge name in mutations.
+	EdgeUpstreamConnections = "upstream_connections"
 	// EdgeBackupProxy holds the string denoting the backup_proxy edge name in mutations.
 	EdgeBackupProxy = "backup_proxy"
 	// Table holds the table name of the proxy in the database.
@@ -56,6 +58,13 @@ const (
 	AccountsInverseTable = "accounts"
 	// AccountsColumn is the table column denoting the accounts relation/edge.
 	AccountsColumn = "proxy_id"
+	// UpstreamConnectionsTable is the table that holds the upstream_connections relation/edge.
+	UpstreamConnectionsTable = "upstream_connections"
+	// UpstreamConnectionsInverseTable is the table name for the UpstreamConnection entity.
+	// It exists in this package in order to avoid circular dependency with the "upstreamconnection" package.
+	UpstreamConnectionsInverseTable = "upstream_connections"
+	// UpstreamConnectionsColumn is the table column denoting the upstream_connections relation/edge.
+	UpstreamConnectionsColumn = "proxy_id"
 	// BackupProxyTable is the table that holds the backup_proxy relation/edge.
 	BackupProxyTable = "proxies"
 	// BackupProxyColumn is the table column denoting the backup_proxy relation/edge.
@@ -219,6 +228,20 @@ func ByAccounts(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
 	}
 }
 
+// ByUpstreamConnectionsCount orders the results by upstream_connections count.
+func ByUpstreamConnectionsCount(opts ...sql.OrderTermOption) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborsCount(s, newUpstreamConnectionsStep(), opts...)
+	}
+}
+
+// ByUpstreamConnections orders the results by upstream_connections terms.
+func ByUpstreamConnections(term sql.OrderTerm, terms ...sql.OrderTerm) OrderOption {
+	return func(s *sql.Selector) {
+		sqlgraph.OrderByNeighborTerms(s, newUpstreamConnectionsStep(), append([]sql.OrderTerm{term}, terms...)...)
+	}
+}
+
 // ByBackupProxyField orders the results by backup_proxy field.
 func ByBackupProxyField(field string, opts ...sql.OrderTermOption) OrderOption {
 	return func(s *sql.Selector) {
@@ -230,6 +253,13 @@ func newAccountsStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(AccountsInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.O2M, true, AccountsTable, AccountsColumn),
+	)
+}
+func newUpstreamConnectionsStep() *sqlgraph.Step {
+	return sqlgraph.NewStep(
+		sqlgraph.From(Table, FieldID),
+		sqlgraph.To(UpstreamConnectionsInverseTable, FieldID),
+		sqlgraph.Edge(sqlgraph.O2M, true, UpstreamConnectionsTable, UpstreamConnectionsColumn),
 	)
 }
 func newBackupProxyStep() *sqlgraph.Step {

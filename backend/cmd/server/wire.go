@@ -110,6 +110,7 @@ func provideCleanup(
 	rateMultiplierPriority *service.RateMultiplierPriorityService,
 	upstreamRateMultiplierSync *service.UpstreamRateMultiplierSyncService,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
+	upstreamConnectionSync *service.UpstreamConnectionSyncService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) func() {
@@ -315,6 +316,12 @@ func provideCleanup(
 			{"UpstreamBillingProbeService", func() error {
 				if upstreamBillingProbe != nil {
 					upstreamBillingProbe.Stop()
+				}
+				return nil
+			}},
+			{"UpstreamConnectionSyncService", func() error {
+				if upstreamConnectionSync != nil {
+					upstreamConnectionSync.Stop()
 				}
 				return nil
 			}},

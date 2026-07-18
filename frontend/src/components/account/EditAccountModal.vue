@@ -1481,7 +1481,19 @@
           <p class="input-hint">{{ upstreamRateMultiplierSyncEnabled && (account?.type === 'apikey' || account?.type === 'upstream') ? t('admin.accounts.upstreamRateSync.managedHint') : t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
-      <div v-if="account?.type === 'apikey' || account?.type === 'upstream'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <UpstreamConnectionBindingField
+        v-if="account?.type === 'apikey' || account?.type === 'upstream'"
+        ref="upstreamConnectionBindingField"
+        v-model="selectedUpstreamConnectionId"
+        :account-id="account?.id"
+        :show="props.show"
+        @loading-change="upstreamConnectionBindingLoading = $event"
+      />
+      <details v-if="account?.type === 'apikey' || account?.type === 'upstream'" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200">
+          {{ t('admin.upstreamConnections.binding.legacyAdvanced') }}
+        </summary>
+        <div class="mt-4">
         <div class="flex items-start justify-between gap-4">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.title') }}</label>
@@ -1563,7 +1575,8 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </details>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -2680,7 +2693,7 @@
         <button
           type="submit"
           form="edit-account-form"
-          :disabled="submitting"
+          :disabled="submitting || (supportsUpstreamConnectionBinding && upstreamConnectionBindingLoading)"
           class="btn btn-primary"
           data-tour="account-form-submit"
         >
@@ -2751,6 +2764,7 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import UpstreamConnectionBindingField from '@/components/account/UpstreamConnectionBindingField.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -2809,6 +2823,12 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const selectedUpstreamConnectionId = ref<number | null>(null)
+const upstreamConnectionBindingLoading = ref(false)
+const upstreamConnectionBindingField = ref<{
+  apply: (accountId: number) => Promise<unknown>
+} | null>(null)
+const supportsUpstreamConnectionBinding = computed(() => props.account?.type === 'apikey' || props.account?.type === 'upstream')
 
 // Spark 影子账号(parent_account_id 非空):代理恒继承母账号,不可独立编辑(外审 B/P1),
 // 故隐藏代理选择器。
@@ -3403,7 +3423,6 @@ const discoverUpstreamRateMultiplierGroups = async () => {
     upstreamRateMultiplierSyncDetectedGroup.value = discovery.matched_group || null
     if (discovery.matched_group) {
       upstreamRateMultiplierSyncGroup.value = discovery.matched_group.name
-      form.rate_multiplier = discovery.matched_group.rate_multiplier
     } else if (!discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)) {
       upstreamRateMultiplierSyncGroup.value = ''
     }
@@ -3909,6 +3928,8 @@ watch(
       return
     }
     if (!wasShow || newAccount !== previousAccount) {
+      selectedUpstreamConnectionId.value = null
+      upstreamConnectionBindingLoading.value = newAccount.type === 'apikey' || newAccount.type === 'upstream'
       syncFormFromAccount(newAccount)
       loadTLSProfiles()
     }
@@ -4344,6 +4365,13 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
   try {
     const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
+    if (upstreamConnectionBindingField.value) {
+      try {
+        await upstreamConnectionBindingField.value.apply(accountID)
+      } catch {
+        appStore.showError(t('admin.upstreamConnections.binding.savedButBindingFailed'))
+      }
+    }
     emit('updated', updatedAccount)
     handleClose()
   } catch (error: any) {
@@ -5018,6 +5046,7 @@ const handleSubmit = async () => {
       ((props.account.extra as Record<string, unknown>) || {})
     const mergedSyncExtra: Record<string, unknown> = { ...syncExtra }
     if (supportsUpstreamRateSync && upstreamRateMultiplierSyncEnabled.value) {
+      delete updatePayload.rate_multiplier
       mergedSyncExtra.upstream_rate_multiplier_sync_enabled = true
       mergedSyncExtra.upstream_rate_multiplier_sync_group = upstreamRateMultiplierSyncGroup.value.trim()
       mergedSyncExtra.upstream_rate_multiplier_sync_provider = upstreamRateMultiplierSyncProvider.value
@@ -5036,9 +5065,6 @@ const handleSubmit = async () => {
           : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
       }
       updatePayload.upstream_management_base_url = upstreamManagementBaseURL.value.trim()
-      // A fresh exact Key -> GroupID match is safe to apply immediately. For
-      // normal edits, leave this field untouched for the scheduled synchronizer.
-      updatePayload.rate_multiplier = upstreamRateMultiplierSyncDetectedGroup.value?.rate_multiplier
     } else {
       delete mergedSyncExtra.upstream_rate_multiplier_sync_enabled
       delete mergedSyncExtra.upstream_rate_multiplier_sync_group

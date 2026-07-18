@@ -2784,7 +2784,17 @@
           <p class="input-hint">{{ upstreamRateMultiplierSyncEnabled && (accountCategory === 'apikey' || (form.platform === 'antigravity' && antigravityAccountType === 'upstream')) ? t('admin.accounts.upstreamRateSync.managedHint') : t('admin.accounts.billingRateMultiplierHint') }}</p>
         </div>
       </div>
-      <div v-if="accountCategory === 'apikey' || (form.platform === 'antigravity' && antigravityAccountType === 'upstream')" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <UpstreamConnectionBindingField
+        v-if="accountCategory === 'apikey' || (form.platform === 'antigravity' && antigravityAccountType === 'upstream')"
+        ref="upstreamConnectionBindingField"
+        v-model="selectedUpstreamConnectionId"
+        :show="props.show"
+      />
+      <details v-if="accountCategory === 'apikey' || (form.platform === 'antigravity' && antigravityAccountType === 'upstream')" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <summary class="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-200">
+          {{ t('admin.upstreamConnections.binding.legacyAdvanced') }}
+        </summary>
+        <div class="mt-4">
         <div class="flex items-start justify-between gap-4">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.upstreamRateSync.title') }}</label>
@@ -2865,7 +2875,8 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
+      </details>
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <label class="input-label">{{ t('admin.accounts.expiresAt') }}</label>
         <input v-model="expiresAtInput" type="datetime-local" class="input" />
@@ -3662,6 +3673,7 @@ import { useGeminiOAuth } from '@/composables/useGeminiOAuth'
 import { useAntigravityOAuth } from '@/composables/useAntigravityOAuth'
 import { useGrokOAuth } from '@/composables/useGrokOAuth'
 import type {
+  Account,
   Proxy,
   AdminGroup,
   AccountPlatform,
@@ -3684,6 +3696,7 @@ import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import UpstreamConnectionBindingField from '@/components/account/UpstreamConnectionBindingField.vue'
 import {
   applyAntigravityProjectID,
   applyHeaderOverride,
@@ -3766,6 +3779,26 @@ const emit = defineEmits<{
 }>()
 
 const appStore = useAppStore()
+const selectedUpstreamConnectionId = ref<number | null>(null)
+const upstreamConnectionBindingField = ref<{
+  apply: (accountId: number) => Promise<unknown>
+} | null>(null)
+
+const createAccountAndBind = async (payload: CreateAccountRequest): Promise<Account> => {
+  const created = await adminAPI.accounts.create(payload)
+  if (
+    selectedUpstreamConnectionId.value &&
+    upstreamConnectionBindingField.value &&
+    (payload.type === 'apikey' || payload.type === 'upstream')
+  ) {
+    try {
+      await upstreamConnectionBindingField.value.apply(created.id)
+    } catch {
+      appStore.showError(t('admin.upstreamConnections.binding.savedButBindingFailed'))
+    }
+  }
+  return created
+}
 
 // OAuth composables
 const oauth = useAccountOAuth() // For Anthropic OAuth
@@ -4298,7 +4331,6 @@ const discoverUpstreamRateMultiplierGroups = async () => {
     upstreamRateMultiplierSyncDetectedGroup.value = discovery.matched_group || null
     if (discovery.matched_group) {
       upstreamRateMultiplierSyncGroup.value = discovery.matched_group.name
-      form.rate_multiplier = discovery.matched_group.rate_multiplier
     } else if (!discovery.groups.some(group => group.name === upstreamRateMultiplierSyncGroup.value)) {
       upstreamRateMultiplierSyncGroup.value = ''
     }
@@ -4874,7 +4906,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    await createAccountAndBind(withAntigravityConfirmFlag(payload))
     appStore.showSuccess(t('admin.accounts.accountCreated'))
     emit('created')
     handleClose()
@@ -4908,6 +4940,7 @@ const resetForm = () => {
   form.load_factor = null
   form.priority = 1
   form.rate_multiplier = 1
+  selectedUpstreamConnectionId.value = null
   upstreamRateMultiplierSyncEnabled.value = false
   upstreamRateMultiplierSyncGroup.value = ''
   upstreamRateMultiplierSyncProvider.value = 'newapi'
@@ -5151,6 +5184,7 @@ const doCreateAccount = async (payload: CreateAccountRequest) => {
   }
   const extra: Record<string, unknown> = { ...(payload.extra || {}) }
   if (supportsUpstreamRateSync && upstreamRateMultiplierSyncEnabled.value) {
+    delete payload.rate_multiplier
     extra.upstream_rate_multiplier_sync_enabled = true
     extra.upstream_rate_multiplier_sync_group = upstreamRateMultiplierSyncGroup.value.trim()
     extra.upstream_rate_multiplier_sync_provider = upstreamRateMultiplierSyncProvider.value
@@ -5165,10 +5199,6 @@ const doCreateAccount = async (payload: CreateAccountRequest) => {
         }
       : { username: upstreamManagementUsername.value.trim(), password: upstreamManagementPassword.value }
     payload.upstream_management_base_url = upstreamManagementBaseURL.value.trim() || undefined
-    // Persist the value only when it was just resolved through an exact Key ->
-    // GroupID mapping. The scheduled synchronizer remains authoritative after
-    // this initial live value is saved.
-    payload.rate_multiplier = upstreamRateMultiplierSyncDetectedGroup.value?.rate_multiplier
   }
   payload.extra = Object.keys(extra).length > 0 ? extra : undefined
 
@@ -5576,7 +5606,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createAccountAndBind({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -5825,7 +5855,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     }
 
     if (shouldCreateOpenAI) {
-      await adminAPI.accounts.create({
+      await createAccountAndBind({
         name: form.name,
         notes: form.notes,
         platform: 'openai',
@@ -6106,7 +6136,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
-          await adminAPI.accounts.create({
+          await createAccountAndBind({
             name: accountName,
             notes: form.notes,
             platform: 'openai',
@@ -6221,7 +6251,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
         })
-        await adminAPI.accounts.create(createPayload)
+        await createAccountAndBind(createPayload)
         successCount++
       } catch (error: any) {
         failedCount++
@@ -6586,7 +6616,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           credentials.temp_unschedulable_rules = tempUnschedPayload
         }
 
-        await adminAPI.accounts.create({
+        await createAccountAndBind({
           name: accountName,
           notes: form.notes,
           platform: form.platform,

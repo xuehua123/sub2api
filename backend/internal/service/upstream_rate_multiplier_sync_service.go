@@ -561,7 +561,7 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 		return nil, discoveryErr
 	}
 
-	// NewAPI, RixAPI, and ShellAPI share the same management login endpoint.
+	// NewAPI-compatible providers share the same management login endpoint.
 	// Authenticate once, then probe only the provider-specific request headers.
 	session, err := s.authenticateNewAPIManagementSession(ctx, client, baseURL, configFor(UpstreamManagementProviderNewAPI), secret)
 	if err != nil {
@@ -571,6 +571,7 @@ func (s *UpstreamRateMultiplierSyncService) DiscoverGroups(
 		UpstreamManagementProviderNewAPI,
 		UpstreamManagementProviderRixAPI,
 		UpstreamManagementProviderShellAPI,
+		UpstreamManagementProviderVeloera,
 	} {
 		config := configFor(provider)
 		groups, discoveredUserID, discoveryErr := s.discoverNewAPIGroups(ctx, client, baseURL, config, session)
@@ -616,7 +617,8 @@ func (s *UpstreamRateMultiplierSyncService) FetchAccountBalance(ctx context.Cont
 	}
 
 	switch config.Provider {
-	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI:
+	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI,
+		UpstreamManagementProviderVeloera:
 		return s.fetchNewAPIUserBalance(ctx, client, baseURL, config, secret)
 	case UpstreamManagementProviderSub2API:
 		return s.fetchSub2APIUserBalance(ctx, client, baseURL, config, secret)
@@ -736,16 +738,17 @@ func (s *UpstreamRateMultiplierSyncService) authenticateNewAPIManagementSession(
 		data := envelopeData(login.payload)
 		session.remoteUserID = int64FromMap(data, "id")
 		session.accessToken = firstString(data, "access_token", "token")
-	} else if session.remoteUserID <= 0 {
-		selfHeaders := make(http.Header)
-		selfHeaders.Set("Authorization", "Bearer "+session.accessToken)
-		self, err := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/user/self", false), selfHeaders, nil)
-		if err == nil {
-			session.remoteUserID = int64FromMap(envelopeData(self.payload), "id")
-		}
 	}
 	if session.remoteUserID <= 0 {
-		return upstreamManagementHTTPSession{}, errors.New("upstream management API did not return a user id; provide a management token with a user id")
+		selfHeaders := newAPIManagementHeaders(config.Provider, session)
+		self, err := s.managementJSON(ctx, client, http.MethodGet, accountBalanceJoinEndpoint(baseURL, "/api/user/self", false), selfHeaders, nil)
+		if err != nil {
+			return upstreamManagementHTTPSession{}, err
+		}
+		session.remoteUserID = int64FromMap(envelopeData(self.payload), "id")
+	}
+	if session.remoteUserID <= 0 {
+		return upstreamManagementHTTPSession{}, errors.New("upstream management API did not return a user id; provide credentials whose user profile exposes an id")
 	}
 	return session, nil
 }
@@ -844,7 +847,8 @@ func (s *UpstreamRateMultiplierSyncService) fetchGroupRateMultiplier(ctx context
 		}
 	}
 	switch target.config.Provider {
-	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI:
+	case UpstreamManagementProviderNewAPI, UpstreamManagementProviderRixAPI, UpstreamManagementProviderShellAPI,
+		UpstreamManagementProviderVeloera:
 		result.multiplier, err = s.fetchNewAPIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
 	case UpstreamManagementProviderSub2API:
 		result.multiplier, err = s.fetchSub2APIGroupRateMultiplier(ctx, target.client, target.baseURL, target.config, secret)
@@ -977,6 +981,9 @@ func newAPIManagementHeaders(provider UpstreamManagementProvider, session upstre
 		if provider == UpstreamManagementProviderRixAPI {
 			headers.Set("Rix-Api-User", userID)
 		}
+		if provider == UpstreamManagementProviderVeloera {
+			headers.Set("Veloera-User", userID)
+		}
 	}
 	if session.accessToken != "" {
 		headers.Set("Authorization", "Bearer "+session.accessToken)
@@ -1079,6 +1086,9 @@ func (s *UpstreamRateMultiplierSyncService) managementJSON(ctx context.Context, 
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+			return managementJSONResponse{}, fmt.Errorf("%w: upstream management request returned HTTP %d", ErrUpstreamConnectionAuthentication, response.StatusCode)
+		}
 		return managementJSONResponse{}, fmt.Errorf("upstream management request returned HTTP %d", response.StatusCode)
 	}
 	payload, err := io.ReadAll(io.LimitReader(response.Body, upstreamRateMultiplierResponseLimit+1))
@@ -1093,8 +1103,12 @@ func (s *UpstreamRateMultiplierSyncService) managementJSON(ctx context.Context, 
 		return managementJSONResponse{}, errors.New("upstream management response is not valid JSON")
 	}
 	if success, ok := decoded["success"].(bool); ok && !success {
-		if strings.Contains(strings.ToLower(firstString(decoded, "message")), "turnstile") {
+		message := firstString(decoded, "message")
+		if strings.Contains(strings.ToLower(message), "turnstile") {
 			return managementJSONResponse{}, ErrUpstreamManagementTurnstileRequired
+		}
+		if isUpstreamAuthenticationRejectionMessage(message) {
+			return managementJSONResponse{}, fmt.Errorf("%w: upstream management request was rejected", ErrUpstreamConnectionAuthentication)
 		}
 		return managementJSONResponse{}, errors.New("upstream management request was rejected")
 	}
@@ -1102,6 +1116,23 @@ func (s *UpstreamRateMultiplierSyncService) managementJSON(ctx context.Context, 
 		return managementJSONResponse{}, errors.New("upstream management request returned an error")
 	}
 	return managementJSONResponse{payload: decoded, cookies: response.Cookies()}, nil
+}
+
+func isUpstreamAuthenticationRejectionMessage(message string) bool {
+	message = strings.ToLower(strings.TrimSpace(message))
+	if message == "" {
+		return false
+	}
+	for _, marker := range []string{
+		"unauthorized", "forbidden", "invalid access token", "access token invalid",
+		"authentication failed", "not logged in", "login required", "username or password",
+		"无权", "未登录", "登录失效", "用户名或密码", "认证失败", "鉴权失败", "access token 无效",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func envelopeData(payload map[string]any) any {
@@ -1302,12 +1333,38 @@ func upstreamManagementItems(payload any) []any {
 	if !ok {
 		return nil
 	}
-	for _, key := range []string{"items", "list", "results"} {
-		if list, ok := row[key].([]any); ok {
-			return list
+	for _, key := range []string{"items", "list", "results", "data"} {
+		switch nested := row[key].(type) {
+		case []any:
+			return nested
+		case map[string]any:
+			if list := upstreamManagementItems(nested); list != nil {
+				return list
+			}
 		}
 	}
 	return nil
+}
+
+func upstreamManagementItemsRecognized(payload any) bool {
+	if _, ok := payload.([]any); ok {
+		return true
+	}
+	row, ok := payload.(map[string]any)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"items", "list", "results", "data"} {
+		switch nested := row[key].(type) {
+		case []any:
+			return true
+		case map[string]any:
+			if upstreamManagementItemsRecognized(nested) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func upstreamManagementPageCount(payload any) int {
