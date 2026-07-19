@@ -171,12 +171,14 @@ export default {
         multiplierUnavailableTitle: '上游没有返回该分组的倍率。上游连接：{connection}；上游分组：{group}',
         stale: '观测过期',
         staleTitle: '上游倍率观测已过期。上游连接：{connection}；上游分组：{group}；最后同步：{observedAt}',
-        observeOnly: '回退倍率',
-        observeOnlyTitle: '当前仅为回退/不可靠的观测倍率，仅供展示，不会自动同步账号计费倍率。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；倍率可信度：{rateConfidence}；同步时间：{observedAt}',
+        displayOnly: '仅展示',
+        displayOnlyTitle: '当前观测倍率为参考值（上游专属费率不可用或仅有公开定价），不会自动同步账号计费倍率。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；倍率可信度：{rateConfidence}；同步时间：{observedAt}',
         mismatch: '有差异',
         mismatchTitle: '账号计费倍率与上游分组倍率暂不一致。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。可靠探测成功后会自动更新账号计费倍率。',
-        synchronized: '已同步',
-        synchronizedTitle: '账号计费倍率已与上游分组倍率自动同步。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。'
+        synchronizedDefault: '已同步：上游默认倍率',
+        synchronizedDefaultTitle: '账号计费倍率已与上游默认分组倍率自动同步。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。',
+        synchronizedOverride: '已同步：上游专属倍率',
+        synchronizedOverrideTitle: '账号计费倍率已与该用户上游专属分组倍率自动同步。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。'
       },
       allPrivacyModes: '全部Privacy状态',
       privacyUnset: '未设置',

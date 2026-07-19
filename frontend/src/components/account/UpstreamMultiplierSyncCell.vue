@@ -76,7 +76,12 @@ const rateConfidence = computed(() => {
   return typeof value === 'string' && value.trim() ? value.trim() : 'unknown'
 })
 
-const isReportedRate = computed(() => rateConfidence.value === 'reported')
+// override = user-specific rates; default = authenticated upstream default.
+// Both may auto-sync. unavailable/unknown are display-only.
+const isAutoSyncableRate = computed(() => {
+  const confidence = rateConfidence.value
+  return confidence === 'override' || confidence === 'default'
+})
 
 const observedAt = computed(() => {
   const value = props.binding?.observed_at
@@ -171,12 +176,12 @@ const syncMeta = computed<SyncMeta>(() => {
       icon: 'clock'
     }
   }
-  // Fallback/unknown rates are display-only and never authorize auto account
+  // unavailable/unknown rates are display-only and never authorize auto account
   // billing updates. Do not treat numeric equality as "already synchronized".
-  if (!isReportedRate.value) {
+  if (!isAutoSyncableRate.value) {
     return {
-      label: t(`${key}.observeOnly`),
-      title: t(`${key}.observeOnlyTitle`, upstreamDetails.value),
+      label: t(`${key}.displayOnly`),
+      title: t(`${key}.displayOnlyTitle`, upstreamDetails.value),
       className: 'text-amber-600 dark:text-amber-300',
       icon: 'exclamationTriangle'
     }
@@ -189,9 +194,17 @@ const syncMeta = computed<SyncMeta>(() => {
       icon: 'exclamationTriangle'
     }
   }
+  if (rateConfidence.value === 'override') {
+    return {
+      label: t(`${key}.synchronizedOverride`),
+      title: t(`${key}.synchronizedOverrideTitle`, upstreamDetails.value),
+      className: 'text-emerald-600 dark:text-emerald-300',
+      icon: 'checkCircle'
+    }
+  }
   return {
-    label: t(`${key}.synchronized`),
-    title: t(`${key}.synchronizedTitle`, upstreamDetails.value),
+    label: t(`${key}.synchronizedDefault`),
+    title: t(`${key}.synchronizedDefaultTitle`, upstreamDetails.value),
     className: 'text-emerald-600 dark:text-emerald-300',
     icon: 'checkCircle'
   }

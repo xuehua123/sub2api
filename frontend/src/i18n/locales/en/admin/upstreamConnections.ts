@@ -129,7 +129,7 @@ export default {
       token: 'Remote key',
       noGroups: 'No groups observed yet',
       noBindings: 'No local accounts are bound',
-      autoSync: 'After the key group is resolved reliably, its multiplier automatically updates the bound account billing rate.'
+      autoSync: 'After the key group is resolved reliably, the upstream default or user-specific group multiplier automatically updates the bound account billing rate.'
     },
     usage: {
       title: 'Today usage by account and upstream key',
@@ -147,7 +147,7 @@ export default {
       manage: 'Manage connections',
       none: 'No shared connection',
       empty: 'Create an upstream connection first, then return here to bind this account.',
-      autoSync: 'The binding monitors wallet, group, and key assignment data, and automatically updates the account billing rate after reliable resolution.',
+      autoSync: 'The binding monitors wallet, group, and key assignment data, and automatically updates the account billing rate from the upstream default or user-specific group multiplier after reliable resolution.',
       group: 'Resolved group',
       observedMultiplier: 'Observed upstream multiplier',
       savedButBindingFailed: 'The account was saved, but its upstream connection binding failed. You can retry from Edit Account.',

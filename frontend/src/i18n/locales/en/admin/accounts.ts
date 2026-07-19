@@ -215,12 +215,14 @@ export default {
         multiplierUnavailableTitle: 'The upstream did not provide a multiplier for this group. Connection: {connection}; Group: {group}',
         stale: 'Observation stale',
         staleTitle: 'The upstream multiplier observation has expired. Connection: {connection}; Group: {group}; Last synchronized: {observedAt}',
-        observeOnly: 'Fallback only',
-        observeOnlyTitle: 'This is a fallback/unreliable observed multiplier for display only. It does not automatically update the account billing rate. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Rate confidence: {rateConfidence}; Synchronized: {observedAt}',
+        displayOnly: 'Display only',
+        displayOnlyTitle: 'This observed multiplier is for reference only (user-specific rates unavailable or public pricing only). It does not automatically update the account billing rate. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Rate confidence: {rateConfidence}; Synchronized: {observedAt}',
         mismatch: 'Mismatch',
         mismatchTitle: 'The account billing rate temporarily differs from the upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}. A reliable successful probe updates the account billing rate automatically.',
-        synchronized: 'Synchronized',
-        synchronizedTitle: 'The account billing rate was synchronized automatically with the upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}.'
+        synchronizedDefault: 'Synced: upstream default',
+        synchronizedDefaultTitle: 'The account billing rate was synchronized with the upstream default group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}.',
+        synchronizedOverride: 'Synced: upstream override',
+        synchronizedOverrideTitle: 'The account billing rate was synchronized with this user\'s upstream-specific group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}.'
       },
       allPrivacyModes: 'All Privacy States',
       privacyUnset: 'Unset',

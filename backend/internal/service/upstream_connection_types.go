@@ -49,11 +49,20 @@ const (
 const (
 	// upstreamBindingRateConfidenceDetailKey stores the confidence of the
 	// observed group rate itself (not the key→group mapping confidence).
-	// Only "reported" authorizes automatic account rate updates.
 	upstreamBindingRateConfidenceDetailKey = "rate_confidence"
-	upstreamGroupRateConfidenceReported    = "reported"
-	upstreamGroupRateConfidenceFallback    = "fallback"
-	upstreamGroupRateConfidenceUnknown     = "unknown"
+
+	// upstreamGroupRateConfidenceOverride is a user-specific rate from
+	// Sub2API /groups/rates (or equivalent). Auto-sync is allowed.
+	upstreamGroupRateConfidenceOverride = "override"
+	// upstreamGroupRateConfidenceDefault is an authenticated upstream default
+	// group rate (Sub2API available when rates succeeded without that group,
+	// or NewAPI self_groups / authenticated group maps). Auto-sync is allowed.
+	upstreamGroupRateConfidenceDefault = "default"
+	// upstreamGroupRateConfidenceUnavailable means the user-specific rates
+	// probe failed or only public pricing was available. Display only.
+	upstreamGroupRateConfidenceUnavailable = "unavailable"
+	// upstreamGroupRateConfidenceUnknown means no usable multiplier was found.
+	upstreamGroupRateConfidenceUnknown = "unknown"
 )
 
 // UpstreamConnection is the service-layer view of one reusable upstream

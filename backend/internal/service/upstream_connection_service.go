@@ -529,9 +529,9 @@ func observedAccountRateMultiplier(binding *UpstreamAccountBinding) *float64 {
 		return nil
 	}
 	// Key→group mapping confidence is separate from group-rate confidence.
-	// Sub2API may still expose available-group fallback rates when /groups/rates
-	// fails; those must be observed but must not rewrite account billing.
-	if bindingRateConfidence(binding) != upstreamGroupRateConfidenceReported {
+	// Only override (user-specific) and default (authenticated upstream default)
+	// rates may rewrite account billing. unavailable/unknown are display-only.
+	if !isAutoSyncableGroupRateConfidence(bindingRateConfidence(binding)) {
 		return nil
 	}
 	value := *binding.ObservedMultiplier
@@ -539,6 +539,15 @@ func observedAccountRateMultiplier(binding *UpstreamAccountBinding) *float64 {
 		return nil
 	}
 	return cloneFloat64Ptr(&value)
+}
+
+func isAutoSyncableGroupRateConfidence(confidence string) bool {
+	switch strings.TrimSpace(confidence) {
+	case upstreamGroupRateConfidenceOverride, upstreamGroupRateConfidenceDefault:
+		return true
+	default:
+		return false
+	}
 }
 
 func bindingRateConfidence(binding *UpstreamAccountBinding) string {

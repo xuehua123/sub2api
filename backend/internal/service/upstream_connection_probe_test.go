@@ -275,6 +275,7 @@ func TestUpstreamConnectionInspectorOneHubLoadsSymbolBasedGroupRatios(t *testing
 	require.Equal(t, "2", snapshot.Groups[0].RemoteID)
 	require.Equal(t, 0.4, *snapshot.Groups[0].RateMultiplier)
 	require.Equal(t, "onehub:user_group_map", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceDefault, snapshot.Groups[0].Confidence)
 }
 
 func TestUpstreamConnectionInspectorOneAPIObservesInheritedUserGroupWithoutInventingRate(t *testing.T) {
@@ -431,6 +432,8 @@ func TestUpstreamConnectionInspectorNewAPIPricingFallbackReadsOnlyGroupRatios(t 
 	for _, group := range snapshot.Groups {
 		require.NotEqual(t, "model_ratio", group.Name)
 		require.NotEqual(t, "completion_ratio", group.Name)
+		require.Equal(t, "newapi:pricing", group.Source)
+		require.Equal(t, upstreamGroupRateConfidenceUnavailable, group.Confidence)
 	}
 }
 
@@ -464,9 +467,11 @@ func TestUpstreamConnectionInspectorNewAPIKeepsDynamicGroupWithoutInventingRate(
 	require.Len(t, snapshot.Groups, 2)
 	require.Equal(t, "default", snapshot.Groups[0].Name)
 	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "newapi:self_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceDefault, snapshot.Groups[0].Confidence)
 	require.Equal(t, "auto", snapshot.Groups[1].Name)
 	require.Nil(t, snapshot.Groups[1].RateMultiplier)
-	require.Equal(t, "unknown", snapshot.Groups[1].Confidence)
+	require.Equal(t, upstreamGroupRateConfidenceUnknown, snapshot.Groups[1].Confidence)
 }
 
 func TestUpstreamConnectionInspectorSub2APIKeepsMissingRateUnknown(t *testing.T) {
@@ -501,13 +506,13 @@ func TestUpstreamConnectionInspectorSub2APIKeepsMissingRateUnknown(t *testing.T)
 	require.Len(t, snapshot.Groups, 2)
 	require.Equal(t, "cheap", snapshot.Groups[0].Name)
 	require.Equal(t, 0.2, *snapshot.Groups[0].RateMultiplier)
-	require.Equal(t, "reported", snapshot.Groups[0].Confidence)
+	require.Equal(t, upstreamGroupRateConfidenceOverride, snapshot.Groups[0].Confidence)
 	require.Equal(t, "unknown", snapshot.Groups[1].Name)
 	require.Nil(t, snapshot.Groups[1].RateMultiplier)
-	require.Equal(t, "unknown", snapshot.Groups[1].Confidence)
+	require.Equal(t, upstreamGroupRateConfidenceUnknown, snapshot.Groups[1].Confidence)
 }
 
-func TestUpstreamConnectionInspectorSub2APIMarksAvailableRatesAsFallbackWhenOverridesFail(t *testing.T) {
+func TestUpstreamConnectionInspectorSub2APIMarksAvailableRatesUnavailableWhenRatesFail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
@@ -534,11 +539,11 @@ func TestUpstreamConnectionInspectorSub2APIMarksAvailableRatesAsFallbackWhenOver
 	require.NoError(t, err)
 	require.Len(t, snapshot.Groups, 1)
 	require.Equal(t, 0.2, *snapshot.Groups[0].RateMultiplier)
-	require.Equal(t, "fallback", snapshot.Groups[0].Confidence)
-	require.Contains(t, snapshot.Warnings, "groups: user-specific rates unavailable; showing available-group fallback rates")
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates unavailable; showing available-group default rates for reference only")
 }
 
-func TestUpstreamConnectionInspectorSub2APIPartialRatesLeaveMissingGroupsAsFallback(t *testing.T) {
+func TestUpstreamConnectionInspectorSub2APIPartialRatesMarkMissingGroupsAsDefault(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
@@ -550,8 +555,8 @@ func TestUpstreamConnectionInspectorSub2APIPartialRatesLeaveMissingGroupsAsFallb
 				map[string]any{"id": 2, "name": "missing", "rate_multiplier": 1.0},
 			}})
 		case "/api/v1/groups/rates":
-			// Only one group is present. The other must keep its available-group
-			// fallback multiplier and must not be promoted to "reported".
+			// Only one group is present. The other keeps the available-group
+			// default multiplier and is still auto-syncable as "default".
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"1": 0.25}})
 		default:
 			http.NotFound(writer, request)
@@ -570,11 +575,175 @@ func TestUpstreamConnectionInspectorSub2APIPartialRatesLeaveMissingGroupsAsFallb
 	require.Equal(t, "covered", snapshot.Groups[0].Name)
 	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
 	require.Equal(t, "sub2api:group_rates", snapshot.Groups[0].Source)
-	require.Equal(t, upstreamGroupRateConfidenceReported, snapshot.Groups[0].Confidence)
+	require.Equal(t, upstreamGroupRateConfidenceOverride, snapshot.Groups[0].Confidence)
 	require.Equal(t, "missing", snapshot.Groups[1].Name)
 	require.Equal(t, 1.0, *snapshot.Groups[1].RateMultiplier)
 	require.Equal(t, "sub2api:available_groups", snapshot.Groups[1].Source)
-	require.Equal(t, upstreamGroupRateConfidenceFallback, snapshot.Groups[1].Confidence)
+	require.Equal(t, upstreamGroupRateConfidenceDefault, snapshot.Groups[1].Confidence)
+}
+
+func TestUpstreamConnectionInspectorSub2APIEmptyRatesObjectIsValidDefault(t *testing.T) {
+	// Empty data:{} means "no user-specific overrides"; available defaults remain auto-syncable.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 0.25},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceDefault, snapshot.Groups[0].Confidence)
+}
+
+func TestUpstreamConnectionInspectorSub2APISuccessEnvelopeWithoutDataIsUnavailable(t *testing.T) {
+	// {"success":true} without data must not be treated as an empty rates map.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"success": true})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
+}
+
+func TestUpstreamConnectionInspectorSub2APIBareItemsObjectIsUnavailable(t *testing.T) {
+	// Bare {"items":[]} is not an empty rates map and must not enable default auto-sync.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"items": []any{}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
+}
+
+func TestUpstreamConnectionInspectorSub2APIRatesArrayIsUnavailable(t *testing.T) {
+	// HTTP success with data:[] is not a valid rates map and must not promote defaults.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": []any{}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
+}
+
+func TestUpstreamConnectionInspectorSub2APIInvalidKnownGroupRateIsUnavailable(t *testing.T) {
+	// Known group present in rates with null/illegal value fails the whole rates map.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"2": nil}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
 }
 
 func TestUpstreamConnectionInspectorAutoRejectsGenericSub2APIJSON(t *testing.T) {
@@ -699,7 +868,7 @@ func TestUpstreamConnectionInspectorResolveNewAPIKeyUsesExactGroup(t *testing.T)
 	binding, err := inspector.ResolveKey(context.Background(), &UpstreamConnection{
 		Provider: UpstreamConnectionProviderNewAPI, AuthMode: string(UpstreamManagementAuthModeAccessToken),
 		ManagementBaseURL: server.URL, RemoteUserID: "23",
-		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceReported}},
+		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceDefault}},
 	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"}, "sk-local-forwarding-key")
 
 	require.NoError(t, err)
@@ -708,7 +877,7 @@ func TestUpstreamConnectionInspectorResolveNewAPIKeyUsesExactGroup(t *testing.T)
 	require.Equal(t, UpstreamBindingResolutionFixed, binding.ResolutionKind)
 	require.Equal(t, "vip", binding.RemoteGroupName)
 	require.Equal(t, 0.3, *binding.ObservedMultiplier)
-	require.Equal(t, upstreamGroupRateConfidenceReported, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Equal(t, upstreamGroupRateConfidenceDefault, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
 	require.Equal(t, UpstreamBindingApplyAuto, binding.ApplyPolicy)
 }
 
@@ -929,7 +1098,7 @@ func TestUpstreamConnectionInspectorResolveSub2APIKeyByExactValue(t *testing.T) 
 		ManagementBaseURL: server.URL,
 		Groups: []UpstreamGroup{{
 			RemoteID: "2", Name: "grok", RateMultiplier: &multiplier,
-			Confidence: upstreamGroupRateConfidenceReported,
+			Confidence: upstreamGroupRateConfidenceOverride,
 		}},
 	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"}, "sub2-secret-key")
 
@@ -938,10 +1107,10 @@ func TestUpstreamConnectionInspectorResolveSub2APIKeyByExactValue(t *testing.T) 
 	require.Equal(t, "2", binding.RemoteGroupID)
 	require.Equal(t, "grok", binding.RemoteGroupName)
 	require.Equal(t, 0.18, *binding.ObservedMultiplier)
-	require.Equal(t, upstreamGroupRateConfidenceReported, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Equal(t, upstreamGroupRateConfidenceOverride, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
 }
 
-func TestUpstreamConnectionInspectorResolveSub2APIKeyRecordsFallbackRateConfidence(t *testing.T) {
+func TestUpstreamConnectionInspectorResolveSub2APIKeyRecordsUnavailableRateConfidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "/api/v1/keys", request.URL.Path)
@@ -957,14 +1126,14 @@ func TestUpstreamConnectionInspectorResolveSub2APIKeyRecordsFallbackRateConfiden
 		ManagementBaseURL: server.URL,
 		Groups: []UpstreamGroup{{
 			RemoteID: "2", Name: "grok", RateMultiplier: &multiplier,
-			Confidence: upstreamGroupRateConfidenceFallback,
+			Confidence: upstreamGroupRateConfidenceUnavailable,
 		}},
 	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"}, "sub2-secret-key")
 
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBindingStatusReady, binding.Status)
 	require.Equal(t, 1.0, *binding.ObservedMultiplier)
-	require.Equal(t, upstreamGroupRateConfidenceFallback, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
 	require.Nil(t, observedAccountRateMultiplier(&binding))
 }
 

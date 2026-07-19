@@ -357,11 +357,7 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 			groups[index].Source = groupSource
 			groups[index].Metadata = map[string]any{}
 			groups[index].ObservedAt = &now
-			if groups[index].RateMultiplier != nil {
-				groups[index].Confidence = "reported"
-			} else {
-				groups[index].Confidence = "unknown"
-			}
+			groups[index].Confidence = classifyNewAPIGroupRateConfidence(groupSource, groups[index].RateMultiplier != nil)
 		}
 		snapshot.Groups = groups
 		snapshot.Capabilities["groups"] = len(snapshot.Groups) > 0
@@ -733,24 +729,23 @@ func inspectSub2APIGroups(
 		return []UpstreamGroup{}, "", nil
 	}
 	warning := ""
+	ratesOK := false
 	ratesEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/rates", false)
 	if rates, ratesErr := management.managementJSON(ctx, client, http.MethodGet, ratesEndpoint, headers, nil); ratesErr == nil {
-		// Mark confidence per group only after that group is actually covered by
-		// /groups/rates. A successful rates HTTP response must not promote
-		// available-group fallback multipliers that were never overridden.
-		applySub2APIConnectionGroupRates(groups, envelopeData(rates.payload))
+		// ratesOK requires an explicit rates object: either data:{} / data:{id:rate},
+		// or a bare rate map. Generic success envelopes without data (e.g.
+		// {"success":true}) must NOT promote available defaults to auto-sync.
+		if ratesMap, ok := extractSub2APIGroupRatesMap(rates.payload); ok &&
+			applySub2APIConnectionGroupRates(groups, ratesMap) {
+			ratesOK = true
+		} else {
+			warning = "groups: user-specific rates response was invalid; showing available-group default rates for reference only"
+		}
 	} else {
-		warning = "groups: user-specific rates unavailable; showing available-group fallback rates"
+		warning = "groups: user-specific rates unavailable; showing available-group default rates for reference only"
 	}
 	for index := range groups {
-		switch {
-		case groups[index].RateMultiplier != nil && groups[index].Source == "sub2api:group_rates":
-			groups[index].Confidence = upstreamGroupRateConfidenceReported
-		case groups[index].RateMultiplier != nil:
-			groups[index].Confidence = upstreamGroupRateConfidenceFallback
-		default:
-			groups[index].Confidence = upstreamGroupRateConfidenceUnknown
-		}
+		groups[index].Confidence = classifySub2APIGroupRateConfidence(groups[index], ratesOK)
 	}
 	sort.Slice(groups, func(left, right int) bool {
 		return groups[left].Name < groups[right].Name
@@ -791,22 +786,83 @@ func extractSub2APIConnectionGroups(payload any, now time.Time) []UpstreamGroup 
 	return groups
 }
 
-func applySub2APIConnectionGroupRates(groups []UpstreamGroup, payload any) {
-	rates, ok := payload.(map[string]any)
-	if !ok {
-		return
+// extractSub2APIGroupRatesMap extracts the candidate rates object from a
+// /groups/rates response body. Valid shapes:
+//   - {"data": {}} or {"data": {"12": 0.25}, "success": true}
+//   - bare rate map {"12": 0.25} (further validated against known groups)
+// Invalid shapes include protocol envelopes without data ({"success":true}),
+// and non-object data values (array/null).
+func extractSub2APIGroupRatesMap(payload map[string]any) (map[string]any, bool) {
+	if payload == nil {
+		return nil, false
 	}
+	if raw, hasData := payload["data"]; hasData {
+		rates, ok := raw.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		return rates, true
+	}
+	// No explicit data field: accept only a bare rates map. Generic API
+	// envelopes that forgot data must not be treated as empty rate tables.
+	if sub2APIRatesPayloadLooksLikeEnvelope(payload) {
+		return nil, false
+	}
+	return payload, true
+}
+
+func sub2APIRatesPayloadLooksLikeEnvelope(payload map[string]any) bool {
+	for _, key := range []string{"success", "message", "code", "error", "status", "msg"} {
+		if _, ok := payload[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// applySub2APIConnectionGroupRates applies user-specific overrides from
+// /groups/rates. The rates object is valid only when:
+//   - it is empty {}, or
+//   - every key matches a currently discovered group RemoteID and every value
+//     parses as a non-negative finite multiplier.
+// Unknown keys (items/list/groups/...), illegal values, or null leave groups
+// unchanged and fail closed so available defaults stay display-only.
+func applySub2APIConnectionGroupRates(groups []UpstreamGroup, rates map[string]any) bool {
+	if rates == nil {
+		return false
+	}
+	if len(rates) == 0 {
+		return true
+	}
+	knownIDs := make(map[string]int, len(groups))
 	for index := range groups {
-		raw, exists := rates[groups[index].RemoteID]
-		if !exists {
+		remoteID := strings.TrimSpace(groups[index].RemoteID)
+		if remoteID == "" {
 			continue
 		}
-		if parsed, valid := parseGroupMultiplier(raw); valid {
-			value := parsed
-			groups[index].RateMultiplier = &value
-			groups[index].Source = "sub2api:group_rates"
+		// First occurrence wins if remote IDs collide.
+		if _, exists := knownIDs[remoteID]; !exists {
+			knownIDs[remoteID] = index
 		}
 	}
+	overrides := make(map[int]float64, len(rates))
+	for key, raw := range rates {
+		index, known := knownIDs[strings.TrimSpace(key)]
+		if !known {
+			return false
+		}
+		parsed, valid := parseGroupMultiplier(raw)
+		if !valid {
+			return false
+		}
+		overrides[index] = parsed
+	}
+	for index, value := range overrides {
+		rate := value
+		groups[index].RateMultiplier = &rate
+		groups[index].Source = "sub2api:group_rates"
+	}
+	return true
 }
 
 func upstreamConnectionLegacyNewAPIProvider(provider string) UpstreamManagementProvider {
@@ -1223,7 +1279,7 @@ func (i *upstreamConnectionInspector) resolveSub2APIKeyRow(
 
 // attachObservedGroupRate copies a group multiplier into the binding for
 // monitoring, and records how trustworthy that rate is. Automatic account
-// billing updates only use rates with confidence "reported".
+// billing updates only use override/default rates.
 func attachObservedGroupRate(binding *UpstreamAccountBinding, group UpstreamGroup) {
 	if binding == nil {
 		return
@@ -1239,6 +1295,43 @@ func attachObservedGroupRate(binding *UpstreamAccountBinding, group UpstreamGrou
 		confidence = upstreamGroupRateConfidenceUnknown
 	}
 	binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey] = confidence
+}
+
+func classifySub2APIGroupRateConfidence(group UpstreamGroup, ratesOK bool) string {
+	if group.RateMultiplier == nil {
+		return upstreamGroupRateConfidenceUnknown
+	}
+	if group.Source == "sub2api:group_rates" {
+		return upstreamGroupRateConfidenceOverride
+	}
+	if ratesOK {
+		// Rates endpoint succeeded but did not cover this group: the available
+		// multiplier is the authenticated upstream default and may auto-sync.
+		return upstreamGroupRateConfidenceDefault
+	}
+	// Rates probe failed: keep available multipliers for display only.
+	return upstreamGroupRateConfidenceUnavailable
+}
+
+func classifyNewAPIGroupRateConfidence(groupSource string, hasMultiplier bool) string {
+	if !hasMultiplier {
+		return upstreamGroupRateConfidenceUnknown
+	}
+	switch groupSource {
+	case "newapi:self_groups":
+		// Authenticated self-groups rates are the user's effective defaults.
+		return upstreamGroupRateConfidenceDefault
+	case "newapi:pricing":
+		// Public pricing is not a per-user rate; observe only.
+		return upstreamGroupRateConfidenceUnavailable
+	default:
+		// Authenticated provider maps (user_group_map / oneapi self) with a
+		// parsed multiplier are treated as syncable defaults.
+		if strings.HasSuffix(groupSource, ":user_group_map") || groupSource == "oneapi:user_self" {
+			return upstreamGroupRateConfidenceDefault
+		}
+		return upstreamGroupRateConfidenceUnavailable
+	}
 }
 
 func listSub2APIKeyRows(

@@ -28,14 +28,14 @@ const binding = (overrides: Partial<UpstreamAccountBinding> = {}): UpstreamAccou
   status: 'ready',
   sync_failures: 0,
   last_error: '',
-  resolution_details: { rate_confidence: 'reported' },
+  resolution_details: { rate_confidence: 'default' },
   observed_at: '2026-07-19T00:00:00Z',
   fresh_until: '2099-01-01T00:00:00Z',
   ...overrides
 })
 
 describe('UpstreamMultiplierSyncCell', () => {
-  it('marks a fresh matching reported multiplier as synchronized', () => {
+  it('marks a fresh matching default multiplier as synchronized with default source', () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: {
         accountMultiplier: 0.01,
@@ -47,12 +47,29 @@ describe('UpstreamMultiplierSyncCell', () => {
 
     expect(wrapper.text()).toContain('0.01x')
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
-      'admin.accounts.upstreamMultiplierSync.synchronized'
+      'admin.accounts.upstreamMultiplierSync.synchronizedDefault'
     )
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-emerald-600')
   })
 
-  it('flags a fresh reported upstream multiplier that differs from the account billing multiplier', () => {
+  it('marks a fresh matching override multiplier as synchronized with override source', () => {
+    const wrapper = mount(UpstreamMultiplierSyncCell, {
+      props: {
+        accountMultiplier: 0.18,
+        binding: binding({
+          observed_multiplier: 0.18,
+          resolution_details: { rate_confidence: 'override' }
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
+      'admin.accounts.upstreamMultiplierSync.synchronizedOverride'
+    )
+  })
+
+  it('flags a fresh auto-syncable upstream multiplier that differs from the account billing multiplier', () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: { accountMultiplier: 0.02, binding: binding() },
       global: { stubs: { Icon: true } }
@@ -64,20 +81,20 @@ describe('UpstreamMultiplierSyncCell', () => {
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-amber-600')
   })
 
-  it('does not treat matching fallback multipliers as synchronized', () => {
+  it('does not treat matching unavailable multipliers as synchronized', () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: {
         accountMultiplier: 1,
         binding: binding({
           observed_multiplier: 1,
-          resolution_details: { rate_confidence: 'fallback' }
+          resolution_details: { rate_confidence: 'unavailable' }
         })
       },
       global: { stubs: { Icon: true } }
     })
 
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
-      'admin.accounts.upstreamMultiplierSync.observeOnly'
+      'admin.accounts.upstreamMultiplierSync.displayOnly'
     )
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-amber-600')
   })
