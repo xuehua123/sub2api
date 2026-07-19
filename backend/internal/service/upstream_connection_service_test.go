@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +36,7 @@ type upstreamConnectionTestRepo struct {
 	items              []*UpstreamConnection
 	deleteErr          error
 	updateApplyResult  *bool
+	lastResetBindings  bool
 	credentialCAS      *UpstreamConnectionCredentialPersistence
 	applyProbeResult   *bool
 	probeUpdate        *UpstreamConnectionProbePersistence
@@ -49,6 +51,30 @@ type upstreamBindingAccountRepo struct {
 	AccountRepository
 	account     *Account
 	updateCalls int
+}
+
+type upstreamConnectionUsageReaderStub struct {
+	buckets    []UpstreamConnectionAccountUsageBucket
+	accountIDs []int64
+}
+
+func (r *upstreamConnectionUsageReaderStub) GetUpstreamAccountUsageBuckets(
+	_ context.Context,
+	accountIDs []int64,
+	_, _ time.Time,
+	_ string,
+) ([]UpstreamConnectionAccountUsageBucket, error) {
+	r.accountIDs = append([]int64(nil), accountIDs...)
+	return append([]UpstreamConnectionAccountUsageBucket(nil), r.buckets...), nil
+}
+
+type upstreamConnectionUsageAccountRepo struct {
+	AccountRepository
+	accounts []*Account
+}
+
+func (r *upstreamConnectionUsageAccountRepo) GetByIDs(_ context.Context, _ []int64) ([]*Account, error) {
+	return r.accounts, nil
 }
 
 func (r *upstreamBindingAccountRepo) GetByID(_ context.Context, _ int64) (*Account, error) {
@@ -92,6 +118,7 @@ func (r *upstreamConnectionTestRepo) List(_ context.Context, _ UpstreamConnectio
 }
 
 func (r *upstreamConnectionTestRepo) UpdateIfVersion(_ context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings bool) (bool, error) {
+	r.lastResetBindings = resetBindings
 	if r.updateApplyResult != nil && !*r.updateApplyResult {
 		return false, nil
 	}
@@ -786,4 +813,149 @@ func TestUpstreamConnectionCredentialRefreshStopsWhenDistributedLockIsHeld(t *te
 	require.ErrorIs(t, err, ErrUpstreamCredentialRefreshBusy)
 	require.Zero(t, refreshCalls.Load())
 	require.Equal(t, int64(1), repo.connection.Version)
+}
+
+func TestSub2APIManagementLoginBodyOnlySendsExplicitLocationConfirmation(t *testing.T) {
+	withoutConfirmation, err := json.Marshal(sub2APIManagementLoginBody(upstreamConnectionCredential{
+		Username: "admin@example.com", Password: "secret",
+	}))
+	require.NoError(t, err)
+	require.NotContains(t, string(withoutConfirmation), "not_in_cn_confirmed")
+
+	withConfirmation, err := json.Marshal(sub2APIManagementLoginBody(upstreamConnectionCredential{
+		Username: "admin@example.com", Password: "secret", NotInCNConfirmed: true,
+	}))
+	require.NoError(t, err)
+	require.JSONEq(t, `{"email":"admin@example.com","password":"secret","not_in_cn_confirmed":true}`, string(withConfirmation))
+}
+
+func TestUpstreamManagementClientClassifiesLocationConfirmationRequirement(t *testing.T) {
+	for _, statusCode := range []int{http.StatusBadRequest, http.StatusOK} {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				writer.WriteHeader(statusCode)
+				writeProbeJSON(t, writer, map[string]any{
+					"success": false,
+					"code":    400, "message": "must confirm you are not located in mainland China",
+					"reason": "NOT_IN_CN_CONFIRMATION_REQUIRED",
+				})
+			}))
+			defer server.Close()
+
+			client := &upstreamManagementClient{client: server.Client()}
+			_, err := client.managementJSON(context.Background(), server.Client(), http.MethodPost, server.URL, http.Header{}, map[string]string{"email": "admin@example.com"})
+
+			require.ErrorIs(t, err, ErrUpstreamManagementLocationConfirmationRequired)
+		})
+	}
+}
+
+func TestUpstreamConnectionLocationConfirmationFailureNeedsInput(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{ID: 91, SyncEnabled: true, Version: 4}}
+	svc := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+
+	svc.recordProbeFailure(context.Background(), repo.connection, 4, ErrUpstreamManagementLocationConfirmationRequired)
+
+	require.NotNil(t, repo.probeFailure)
+	require.Equal(t, UpstreamConnectionStatusNeedsInput, repo.probeFailure.Status)
+}
+
+func TestUpstreamConnectionUpdateCanChangeLocationConfirmationWithoutPassword(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{}
+	svc := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	ciphertext, fingerprint, hint, err := svc.encryptCredential(
+		string(UpstreamManagementAuthModePassword), "https://console.example.com",
+		UpstreamConnectionCredentialInput{Username: "admin@example.com", Password: "secret"},
+	)
+	require.NoError(t, err)
+	repo.connection = &UpstreamConnection{
+		ID: 71, Name: "console", Provider: UpstreamConnectionProviderSub2API,
+		AuthMode: string(UpstreamManagementAuthModePassword), ManagementBaseURL: "https://console.example.com",
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Status: UpstreamConnectionStatusReady, Version: 3,
+	}
+	confirmed := true
+
+	updated, err := svc.Update(context.Background(), 71, UpstreamConnectionUpdateParams{
+		ExpectedVersion: 3, NotInCNConfirmed: &confirmed,
+	})
+
+	require.NoError(t, err)
+	require.True(t, updated.NotInCNConfirmed)
+	require.Empty(t, updated.CredentialEncrypted)
+	stored, err := svc.loadCredential(repo.connection)
+	require.NoError(t, err)
+	require.Equal(t, "admin@example.com", stored.Username)
+	require.Equal(t, "secret", stored.Password)
+	require.True(t, stored.NotInCNConfirmed)
+	require.True(t, repo.lastResetBindings)
+}
+
+func TestUpstreamConnectionUpdateDoesNotResetBindingsWhenLocationConfirmationIsUnchanged(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{}
+	svc := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	ciphertext, fingerprint, hint, err := svc.encryptCredential(
+		string(UpstreamManagementAuthModePassword), "https://console.example.com",
+		UpstreamConnectionCredentialInput{
+			Username: "admin@example.com", Password: "secret", NotInCNConfirmed: true,
+		},
+	)
+	require.NoError(t, err)
+	repo.connection = &UpstreamConnection{
+		ID: 72, Name: "console", Provider: UpstreamConnectionProviderSub2API,
+		AuthMode: string(UpstreamManagementAuthModePassword), ManagementBaseURL: "https://console.example.com",
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Status: UpstreamConnectionStatusReady, Version: 3,
+		Groups: []UpstreamGroup{{ID: 1, Name: "vip"}}, GroupCount: 1,
+	}
+	confirmed := true
+
+	updated, err := svc.Update(context.Background(), 72, UpstreamConnectionUpdateParams{
+		ExpectedVersion: 3, NotInCNConfirmed: &confirmed,
+	})
+
+	require.NoError(t, err)
+	require.False(t, repo.lastResetBindings)
+	require.Len(t, updated.Groups, 1)
+	require.Equal(t, ciphertext, repo.connection.CredentialEncrypted)
+}
+
+func TestUpstreamConnectionTodayUsageAggregatesBoundAccountsAndFillsHourlyGaps(t *testing.T) {
+	location := time.Local
+	now := time.Date(2026, time.July, 19, 10, 30, 0, 0, location)
+	start := time.Date(2026, time.July, 19, 0, 0, 0, 0, location)
+	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{
+		ID: 81,
+		Bindings: []UpstreamAccountBinding{
+			{ID: 1, AccountID: 11, RemoteTokenID: "101", RemoteTokenName: "primary", RemoteGroupName: "vip", Status: UpstreamBindingStatusReady},
+			{ID: 2, AccountID: 12, RemoteTokenID: "102", RemoteTokenName: "backup", RemoteGroupName: "default", Status: UpstreamBindingStatusReady},
+		},
+	}}
+	reader := &upstreamConnectionUsageReaderStub{buckets: []UpstreamConnectionAccountUsageBucket{
+		{AccountID: 11, Bucket: start.Add(9 * time.Hour), UpstreamConnectionUsageStats: UpstreamConnectionUsageStats{Requests: 2, Tokens: 100, AccountCost: 1.25, StandardCost: 1, UserCost: 1.5}},
+		{AccountID: 11, Bucket: start.Add(10 * time.Hour), UpstreamConnectionUsageStats: UpstreamConnectionUsageStats{Requests: 3, Tokens: 200, AccountCost: 2.5, StandardCost: 2, UserCost: 3}},
+	}}
+	svc := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	svc.accountRepo = &upstreamConnectionUsageAccountRepo{accounts: []*Account{
+		{ID: 11, Name: "Primary account"}, {ID: 12, Name: "Backup account"},
+	}}
+	svc.usageReader = reader
+	svc.now = func() time.Time { return now }
+
+	usage, err := svc.GetTodayUsage(context.Background(), 81)
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{11, 12}, reader.accountIDs)
+	require.Equal(t, int64(5), usage.Summary.Requests)
+	require.Equal(t, int64(300), usage.Summary.Tokens)
+	require.InDelta(t, 3.75, usage.Summary.AccountCost, 0.000001)
+	require.Len(t, usage.Trend, 11)
+	require.Len(t, usage.Accounts, 2)
+	require.Equal(t, "Primary account", usage.Accounts[0].AccountName)
+	require.Equal(t, int64(5), usage.Accounts[0].Stats.Requests)
+	require.Zero(t, usage.Accounts[0].Trend[8].Requests)
+	require.Equal(t, int64(2), usage.Accounts[0].Trend[9].Requests)
+	require.Equal(t, "Backup account", usage.Accounts[1].AccountName)
+	require.Zero(t, usage.Accounts[1].Stats.Requests)
 }

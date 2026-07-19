@@ -31,6 +31,39 @@ func TestUpstreamConnectionInspectorAutoReportsMissingRemoteUserID(t *testing.T)
 	require.ErrorIs(t, err, errUpstreamConnectionRemoteUserIDRequired)
 }
 
+func TestUpstreamConnectionInspectorAutoStopsAtLocationConfirmation(t *testing.T) {
+	var fallbackLoginCalls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/status":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{"system_name": "Sub2API"}})
+		case "/api/v1/auth/login":
+			writer.WriteHeader(http.StatusBadRequest)
+			writeProbeJSON(t, writer, map[string]any{
+				"code": 400, "message": "must confirm you are not located in mainland China",
+				"reason": "NOT_IN_CN_CONFIRMATION_REQUIRED",
+			})
+		case "/api/user/login":
+			fallbackLoginCalls.Add(1)
+			http.SetCookie(writer, &http.Cookie{Name: "session", Value: "fallback-session"})
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{"id": 7}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	_, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderAuto, AuthMode: string(UpstreamManagementAuthModePassword),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, Username: "alice", Password: "secret"})
+
+	require.ErrorIs(t, err, ErrUpstreamManagementLocationConfirmationRequired)
+	require.Zero(t, fallbackLoginCalls.Load())
+}
+
 func TestUpstreamConnectionProviderHintFromStatus(t *testing.T) {
 	t.Parallel()
 

@@ -65,6 +65,7 @@ export interface UpstreamConnection {
   forwarding_base_url: string
   credential_configured: boolean
   credential_hint: string
+  not_in_cn_confirmed: boolean
   remote_user_id: string
   proxy_id: number | null
   capabilities: Record<string, unknown>
@@ -106,6 +107,7 @@ export interface CreateUpstreamConnectionRequest {
   management_base_url: string
   forwarding_base_url?: string
   credential: UpstreamConnectionCredentialInput
+  not_in_cn_confirmed?: boolean
   remote_user_id?: string
   proxy_id?: number | null
   sync_enabled?: boolean
@@ -120,11 +122,48 @@ export interface UpdateUpstreamConnectionRequest {
   management_base_url?: string
   forwarding_base_url?: string
   credential?: UpstreamConnectionCredentialInput
+  not_in_cn_confirmed?: boolean
   remote_user_id?: string
   proxy_id?: number | null
   clear_proxy?: boolean
   sync_enabled?: boolean
   sync_interval_seconds?: number
+}
+
+export interface UpstreamConnectionUsageStats {
+  requests: number
+  tokens: number
+  account_cost: number
+  standard_cost: number
+  user_cost: number
+}
+
+export interface UpstreamConnectionUsagePoint extends UpstreamConnectionUsageStats {
+  bucket: string
+}
+
+export interface UpstreamConnectionAccountUsage {
+  binding_id: number
+  account_id: number
+  account_name: string
+  remote_token_id: string
+  remote_token_name: string
+  remote_group_name: string
+  resolution_kind: string
+  observed_multiplier: number | null
+  status: string
+  stats: UpstreamConnectionUsageStats
+  trend: UpstreamConnectionUsagePoint[]
+}
+
+export interface UpstreamConnectionTodayUsage {
+  connection_id: number
+  timezone: string
+  start_at: string
+  end_at: string
+  summary: UpstreamConnectionUsageStats
+  trend: UpstreamConnectionUsagePoint[]
+  accounts: UpstreamConnectionAccountUsage[]
 }
 
 export async function list(
@@ -151,6 +190,13 @@ export async function listAll(filters?: UpstreamConnectionListFilters): Promise<
 
 export async function get(id: number): Promise<UpstreamConnection> {
   const { data } = await apiClient.get<UpstreamConnection>(`/admin/upstream-connections/${id}`)
+  return data
+}
+
+export async function getTodayUsage(id: number): Promise<UpstreamConnectionTodayUsage> {
+  const { data } = await apiClient.get<UpstreamConnectionTodayUsage>(
+    `/admin/upstream-connections/${id}/usage/today`
+  )
   return data
 }
 
@@ -195,6 +241,7 @@ export default {
   list,
   listAll,
   get,
+  getTodayUsage,
   create,
   update,
   remove,

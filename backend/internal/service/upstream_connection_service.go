@@ -48,15 +48,21 @@ type UpstreamConnectionRepository interface {
 	DeleteAccountBinding(ctx context.Context, connectionID, accountID int64) error
 }
 
+type upstreamConnectionUsageReader interface {
+	GetUpstreamAccountUsageBuckets(ctx context.Context, accountIDs []int64, startTime, endTime time.Time, timezoneName string) ([]UpstreamConnectionAccountUsageBucket, error)
+}
+
 type UpstreamConnectionService struct {
 	repo        UpstreamConnectionRepository
 	encryptor   SecretEncryptor
 	cfg         *config.Config
 	inspector   *upstreamConnectionInspector
 	accountRepo AccountRepository
+	usageReader upstreamConnectionUsageReader
 	lockCache   LeaderLockCache
 	db          *sql.DB
 	instanceID  string
+	now         func() time.Time
 	refreshMu   sync.Mutex
 }
 
@@ -65,13 +71,17 @@ func NewUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor S
 		repo: repo, encryptor: encryptor, cfg: cfg,
 		inspector:  newUpstreamConnectionInspector(cfg, nil, nil),
 		instanceID: uuid.NewString(),
+		now:        time.Now,
 	}
 }
 
-func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
+func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, usageLogRepo UsageLogRepository, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
 	service := NewUpstreamConnectionService(repo, encryptor, cfg)
 	service.inspector = newUpstreamConnectionInspector(cfg, proxyRepo, nil)
 	service.accountRepo = accountRepo
+	if reader, ok := usageLogRepo.(upstreamConnectionUsageReader); ok {
+		service.usageReader = reader
+	}
 	service.lockCache = lockCache
 	service.db = db
 	return service
@@ -91,6 +101,9 @@ func (s *UpstreamConnectionService) List(ctx context.Context, params UpstreamCon
 	if err != nil {
 		return nil, 0, fmt.Errorf("list upstream connections: %w", err)
 	}
+	for _, item := range items {
+		s.populateCredentialMetadata(item)
+	}
 	redactUpstreamConnections(items)
 	return items, total, nil
 }
@@ -100,6 +113,7 @@ func (s *UpstreamConnectionService) Get(ctx context.Context, id int64) (*Upstrea
 	if err != nil {
 		return nil, fmt.Errorf("get upstream connection: %w", err)
 	}
+	s.populateCredentialMetadata(connection)
 	redactUpstreamConnection(connection)
 	return connection, nil
 }
@@ -109,6 +123,7 @@ func (s *UpstreamConnectionService) Create(ctx context.Context, params UpstreamC
 	if err != nil {
 		return nil, err
 	}
+	credential.NotInCNConfirmed = normalized.NotInCNConfirmed
 	ciphertext, fingerprint, hint, err := s.encryptCredential(normalized.AuthMode, normalized.ManagementBaseURL, credential)
 	if err != nil {
 		return nil, err
@@ -126,6 +141,7 @@ func (s *UpstreamConnectionService) Create(ctx context.Context, params UpstreamC
 		CredentialEncrypted:   ciphertext,
 		CredentialFingerprint: fingerprint,
 		CredentialHint:        hint,
+		NotInCNConfirmed:      credential.NotInCNConfirmed,
 		RemoteUserID:          normalized.RemoteUserID,
 		ProxyID:               cloneInt64Pointer(normalized.ProxyID),
 		Capabilities:          map[string]any{},
@@ -155,6 +171,7 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	}
 
 	expectedVersion := params.ExpectedVersion
+	previousAuthMode := connection.AuthMode
 	previousSyncEnabled := connection.SyncEnabled
 	previousSyncInterval := connection.SyncIntervalSeconds
 	identityChanged := false
@@ -214,14 +231,39 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	if params.SyncIntervalSeconds != nil {
 		connection.SyncIntervalSeconds = *params.SyncIntervalSeconds
 	}
+	credentialInput := params.Credential
 	if params.Credential != nil {
-		ciphertext, fingerprint, hint, encryptErr := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, *params.Credential)
+		input := *params.Credential
+		if params.NotInCNConfirmed != nil {
+			input.NotInCNConfirmed = *params.NotInCNConfirmed
+		} else if connection.AuthMode == previousAuthMode {
+			stored, credentialErr := s.loadCredential(connection)
+			if credentialErr != nil {
+				return nil, credentialErr
+			}
+			input.NotInCNConfirmed = stored.NotInCNConfirmed
+		}
+		credentialInput = &input
+	} else if params.NotInCNConfirmed != nil {
+		stored, credentialErr := s.loadCredential(connection)
+		if credentialErr != nil {
+			return nil, credentialErr
+		}
+		if stored.NotInCNConfirmed != *params.NotInCNConfirmed {
+			input := upstreamConnectionCredentialInput(stored)
+			input.NotInCNConfirmed = *params.NotInCNConfirmed
+			credentialInput = &input
+		}
+	}
+	if credentialInput != nil {
+		ciphertext, fingerprint, hint, encryptErr := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, *credentialInput)
 		if encryptErr != nil {
 			return nil, encryptErr
 		}
 		connection.CredentialEncrypted = ciphertext
 		connection.CredentialFingerprint = fingerprint
 		connection.CredentialHint = hint
+		connection.NotInCNConfirmed = credentialInput.NotInCNConfirmed
 		identityChanged = true
 	} else if managementURLChanged {
 		credential, credentialErr := s.loadCredential(connection)
@@ -263,6 +305,7 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	if !applied {
 		return nil, ErrUpstreamConnectionChanged
 	}
+	s.populateCredentialMetadata(connection)
 	redactUpstreamConnection(connection)
 	return connection, nil
 }
@@ -512,6 +555,9 @@ func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*Upstr
 		if errors.Is(probeErr, errUpstreamConnectionRemoteUserIDRequired) {
 			return nil, infraerrors.BadRequest("UPSTREAM_REMOTE_USER_ID_REQUIRED", probeErr.Error())
 		}
+		if errors.Is(probeErr, ErrUpstreamManagementLocationConfirmationRequired) {
+			return nil, infraerrors.BadRequest("UPSTREAM_LOCATION_CONFIRMATION_REQUIRED", probeErr.Error())
+		}
 		return nil, infraerrors.New(502, "UPSTREAM_CONNECTION_PROBE_FAILED", "upstream connection probe failed").WithCause(probeErr)
 	}
 
@@ -647,7 +693,8 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 	}
 	refreshedInput := UpstreamConnectionCredentialInput{
 		AccessToken: refreshed.AccessToken, RefreshToken: refreshed.RefreshToken,
-		UserAgent: refreshed.UserAgent, ExpiresAt: refreshed.ExpiresAt,
+		NotInCNConfirmed: credential.NotInCNConfirmed,
+		UserAgent:        refreshed.UserAgent, ExpiresAt: refreshed.ExpiresAt,
 	}
 	ciphertext, fingerprint, hint, err := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, refreshedInput)
 	if err != nil {
@@ -707,7 +754,8 @@ func upstreamConnectionCredentialInput(credential upstreamConnectionCredential) 
 	return UpstreamConnectionCredentialInput{
 		Username: credential.Username, Password: credential.Password,
 		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
-		UserAgent: credential.UserAgent, ExpiresAt: credential.ExpiresAt,
+		NotInCNConfirmed: credential.NotInCNConfirmed,
+		UserAgent:        credential.UserAgent, ExpiresAt: credential.ExpiresAt,
 	}
 }
 
@@ -719,6 +767,9 @@ func (s *UpstreamConnectionService) recordProbeFailure(ctx context.Context, conn
 		status = UpstreamConnectionStatusAuthError
 	}
 	if connection.SyncEnabled && errors.Is(probeErr, errUpstreamConnectionRemoteUserIDRequired) {
+		status = UpstreamConnectionStatusNeedsInput
+	}
+	if connection.SyncEnabled && errors.Is(probeErr, ErrUpstreamManagementLocationConfirmationRequired) {
 		status = UpstreamConnectionStatusNeedsInput
 	}
 	failures := connection.SyncFailures + 1
@@ -841,7 +892,7 @@ func upstreamConnectionCredentialIdentity(authMode, managementBaseURL string, in
 	credential := upstreamConnectionCredential{
 		Version: 1, Username: strings.TrimSpace(input.Username), Password: strings.TrimSpace(input.Password),
 		AccessToken: strings.TrimSpace(input.AccessToken), RefreshToken: strings.TrimSpace(input.RefreshToken),
-		UserAgent: userAgent, ExpiresAt: input.ExpiresAt,
+		NotInCNConfirmed: input.NotInCNConfirmed, UserAgent: userAgent, ExpiresAt: input.ExpiresAt,
 	}
 	var fingerprintSource, hint string
 	switch authMode {
@@ -1015,5 +1066,15 @@ func redactUpstreamConnection(connection *UpstreamConnection) {
 	connection.CredentialFingerprint = ""
 	for i := range connection.Bindings {
 		connection.Bindings[i].KeyFingerprint = ""
+	}
+}
+
+func (s *UpstreamConnectionService) populateCredentialMetadata(connection *UpstreamConnection) {
+	if connection == nil || connection.AuthMode != string(UpstreamManagementAuthModePassword) {
+		return
+	}
+	credential, err := s.loadCredential(connection)
+	if err == nil {
+		connection.NotInCNConfirmed = credential.NotInCNConfirmed
 	}
 }

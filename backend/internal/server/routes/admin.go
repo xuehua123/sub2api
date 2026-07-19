@@ -759,6 +759,7 @@ func registerUpstreamConnectionRoutes(admin *gin.RouterGroup, h *handler.Handler
 		connections.GET("", h.Admin.UpstreamConnection.List)
 		connections.POST("", h.Admin.UpstreamConnection.Create)
 		connections.GET("/bindings/by-account/:account_id", h.Admin.UpstreamConnection.GetAccountBinding)
+		connections.GET("/:id/usage/today", h.Admin.UpstreamConnection.GetTodayUsage)
 		connections.GET("/:id", h.Admin.UpstreamConnection.Get)
 		connections.PUT("/:id", h.Admin.UpstreamConnection.Update)
 		connections.DELETE("/:id", h.Admin.UpstreamConnection.Delete)

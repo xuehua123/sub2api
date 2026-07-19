@@ -14,6 +14,7 @@ vi.mock('@/api/client', () => ({
 import {
   bindAccount,
   getAccountBinding,
+  getTodayUsage,
   listAll,
   unbindAccount
 } from '@/api/admin/upstreamConnections'
@@ -54,5 +55,18 @@ describe('admin upstream connections API', () => {
     expect(get).toHaveBeenNthCalledWith(2, '/admin/upstream-connections', {
       params: { page: 2, page_size: 200 }
     })
+  })
+
+  it('loads one connection today-usage snapshot', async () => {
+    const usage = {
+      connection_id: 9,
+      summary: { requests: 2, tokens: 20, account_cost: 1.25, standard_cost: 1, user_cost: 1.5 },
+      trend: [],
+      accounts: []
+    }
+    get.mockResolvedValueOnce({ data: usage })
+
+    await expect(getTodayUsage(9)).resolves.toEqual(usage)
+    expect(get).toHaveBeenCalledWith('/admin/upstream-connections/9/usage/today')
   })
 })

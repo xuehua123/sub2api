@@ -32,6 +32,7 @@ export default {
       provider: 'Provider',
       wallet: 'Wallet',
       todayRequests: 'Today requests',
+      todayUsage: 'Today usage',
       observations: 'Observed scope',
       lastSync: 'Last sync',
       status: 'Status',
@@ -46,6 +47,7 @@ export default {
     summary: {
       connections: 'Connections',
       lowBalance: 'Balance below $50',
+      todayAccountCost: 'Account cost today',
       todayRequests: 'Requests today'
     },
     fields: {
@@ -60,6 +62,8 @@ export default {
       username: 'Email or username',
       password: 'Password',
       passwordModeHint: 'Recommended: the service logs in once and discovers the remote user ID automatically.',
+      notInCNConfirmed: 'Confirm this upstream account user is outside mainland China',
+      notInCNConfirmedHint: 'Enable only when the upstream login explicitly requires this declaration. The service never confirms it automatically.',
       accessToken: 'Management access token',
       refreshToken: 'Refresh token (optional)',
       refreshTokenHint: 'Use this for Sub2API-compatible sites that rotate short-lived management tokens.',
@@ -113,6 +117,16 @@ export default {
       noGroups: 'No groups observed yet',
       noBindings: 'No local accounts are bound',
       observeOnly: 'Observed values never change local billing.'
+    },
+    usage: {
+      title: 'Today usage by account and upstream key',
+      accountCost: 'Account cost',
+      requests: 'Requests',
+      tokens: 'Tokens',
+      hourlyTrend: 'Hourly trend',
+      requestCount: '{count} requests',
+      retry: 'Retry',
+      loadFailed: 'Failed to load connection usage for today'
     },
     binding: {
       title: 'Shared upstream connection',

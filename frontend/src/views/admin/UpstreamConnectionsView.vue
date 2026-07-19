@@ -34,7 +34,7 @@
       </template>
 
       <template #table>
-        <div class="mb-3 grid grid-cols-3 divide-x divide-gray-200 border-y border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+        <div class="mb-3 grid grid-cols-2 divide-x divide-gray-200 border-y border-gray-200 bg-white lg:grid-cols-4 dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.connections') }}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{{ connectionSummary.total }}</p>
@@ -42,6 +42,10 @@
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.lowBalance') }}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.lowBalance > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-900 dark:text-white'">{{ connectionSummary.lowBalance }}</p>
+          </div>
+          <div class="px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayAccountCost') }}</p>
+            <p data-testid="today-cost-summary" class="mt-1 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{{ todayStatsAvailable ? `$${formatCost(connectionSummary.todayCost)}` : '-' }}</p>
           </div>
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayRequests') }}</p>
@@ -74,9 +78,14 @@
             </div>
           </template>
           <template #cell-today_requests="{ row }">
-            <span class="font-medium tabular-nums text-gray-800 dark:text-gray-100">
-              {{ row.today_requests === null ? '-' : row.today_requests.toLocaleString() }}
-            </span>
+            <div class="flex flex-col">
+              <span class="font-medium tabular-nums text-emerald-700 dark:text-emerald-300">
+                {{ row.today_cost === null ? '-' : `$${formatCost(row.today_cost)}` }}
+              </span>
+              <span class="text-xs tabular-nums text-gray-500 dark:text-gray-400">
+                {{ row.today_requests === null ? '-' : t('admin.upstreamConnections.usage.requestCount', { count: row.today_requests.toLocaleString() }) }}
+              </span>
+            </div>
           </template>
           <template #cell-observations="{ row }">
             <div class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">
@@ -182,6 +191,18 @@
             <input v-model="form.password" type="password" class="input" autocomplete="new-password" :required="!editing || form.auth_mode !== editing.auth_mode" />
           </div>
           <p class="sm:col-span-2 input-hint">{{ t('admin.upstreamConnections.fields.passwordModeHint') }}</p>
+          <label class="sm:col-span-2 flex items-start gap-3 border-y border-gray-200 py-3 text-sm text-gray-700 dark:border-dark-600 dark:text-gray-200">
+            <input
+              v-model="form.not_in_cn_confirmed"
+              data-testid="upstream-not-in-cn-confirmed"
+              type="checkbox"
+              class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600"
+            />
+            <span>
+              <span class="block font-medium">{{ t('admin.upstreamConnections.fields.notInCNConfirmed') }}</span>
+              <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.fields.notInCNConfirmedHint') }}</span>
+            </span>
+          </label>
         </div>
         <div v-else class="space-y-4">
           <div>
@@ -222,7 +243,7 @@
       </template>
     </BaseDialog>
 
-    <BaseDialog :show="Boolean(details)" :title="details?.name || ''" width="wide" @close="details = null">
+    <BaseDialog :show="Boolean(details)" :title="details?.name || ''" width="extra-wide" @close="closeDetails">
       <div v-if="details" class="space-y-6">
         <div class="grid gap-4 sm:grid-cols-3">
           <div>
@@ -254,25 +275,15 @@
           </div>
         </section>
 
-        <section>
-          <div class="flex items-center justify-between gap-3">
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.upstreamConnections.detail.bindings') }}</h3>
-            <span class="text-xs text-gray-500">{{ t('admin.upstreamConnections.detail.observeOnly') }}</span>
-          </div>
-          <div class="mt-2 overflow-x-auto border-y border-gray-200 dark:border-dark-600">
-            <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-600">
-              <thead class="bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-700">
-                <tr><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.accountId') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.token') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.groupName') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.multiplier') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.status') }}</th></tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                <tr v-for="binding in details.bindings" :key="binding.id"><td class="px-3 py-2">#{{ binding.account_id }}</td><td class="px-3 py-2">{{ binding.remote_token_name || binding.remote_token_id || '-' }}</td><td class="px-3 py-2">{{ binding.remote_group_name || binding.resolution_kind }}</td><td class="px-3 py-2">{{ binding.observed_multiplier === null ? '-' : `${binding.observed_multiplier}x` }}</td><td class="px-3 py-2"><span class="badge" :class="binding.status === 'ready' ? 'badge-success' : 'badge-warning'">{{ statusLabel(binding.status) }}</span></td></tr>
-                <tr v-if="details.bindings.length === 0"><td colspan="5" class="px-3 py-6 text-center text-gray-500">{{ t('admin.upstreamConnections.detail.noBindings') }}</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
+        <UpstreamConnectionUsagePanel
+          :usage="detailsUsage"
+          :bindings="details.bindings"
+          :loading="detailsUsageLoading"
+          :error="detailsUsageError"
+          @retry="loadDetailsUsage(details.id)"
+        />
       </div>
-      <template #footer><div class="flex justify-end"><button class="btn btn-secondary" @click="details = null">{{ t('common.close') }}</button></div></template>
+      <template #footer><div class="flex justify-end"><button class="btn btn-secondary" @click="closeDetails">{{ t('common.close') }}</button></div></template>
     </BaseDialog>
 
     <ConfirmDialog
@@ -295,10 +306,11 @@ import type {
   UpstreamConnection,
   UpstreamConnectionAuthMode,
   UpstreamConnectionProvider,
+  UpstreamConnectionTodayUsage,
   UpdateUpstreamConnectionRequest
 } from '@/api/admin/upstreamConnections'
 import type { Column } from '@/components/common/types'
-import type { Proxy } from '@/types'
+import type { Proxy, WindowStats } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime } from '@/utils/format'
 import AppLayout from '@/components/layout/AppLayout.vue'
@@ -309,23 +321,31 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import UpstreamConnectionUsagePanel from '@/components/admin/UpstreamConnectionUsagePanel.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const loading = ref(false)
 const saving = ref(false)
-type UpstreamConnectionRow = UpstreamConnection & { today_requests: number | null }
+type UpstreamConnectionRow = UpstreamConnection & {
+  today_requests: number | null
+  today_cost: number | null
+}
 const allConnections = ref<UpstreamConnectionRow[]>([])
 const connections = ref<UpstreamConnectionRow[]>([])
 const todayStatsAvailable = ref(true)
 const proxies = ref<Proxy[]>([])
 const probingIds = ref(new Set<number>())
 const details = ref<UpstreamConnection | null>(null)
+const detailsUsage = ref<UpstreamConnectionTodayUsage | null>(null)
+const detailsUsageLoading = ref(false)
+const detailsUsageError = ref('')
 const deleting = ref<UpstreamConnection | null>(null)
 const editing = ref<UpstreamConnection | null>(null)
 const showForm = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let loadGeneration = 0
+let detailsGeneration = 0
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const filters = reactive({ search: '', provider: '', status: '', sort: 'today_requests_desc' })
@@ -334,6 +354,7 @@ const form = reactive({
   auth_mode: 'password' as UpstreamConnectionAuthMode,
   management_base_url: '', forwarding_base_url: '', remote_user_id: '',
   username: '', password: '', access_token: '', refresh_token: '', proxy_id: null as number | null,
+  not_in_cn_confirmed: false,
   sync_enabled: true, sync_interval_seconds: 300
 })
 
@@ -341,7 +362,7 @@ const columns = computed<Column[]>(() => [
   { key: 'name', label: t('admin.upstreamConnections.columns.name') },
   { key: 'provider', label: t('admin.upstreamConnections.columns.provider') },
   { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet') },
-  { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayRequests') },
+  { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayUsage') },
   { key: 'observations', label: t('admin.upstreamConnections.columns.observations') },
   { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync') },
   { key: 'status', label: t('admin.upstreamConnections.columns.status') },
@@ -368,6 +389,7 @@ const requiresRemoteUserId = computed(() => form.auth_mode === 'access_token' &&
 const connectionSummary = computed(() => ({
   total: allConnections.value.length,
   lowBalance: allConnections.value.filter(isLowWallet).length,
+  todayCost: allConnections.value.reduce((total, row) => total + (row.today_cost ?? 0), 0),
   todayRequests: allConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
 }))
 
@@ -387,6 +409,9 @@ function formatWallet(connection: UpstreamConnection): string {
   if (connection.wallet_amount === null) return t('admin.upstreamConnections.unknown')
   const currency = connection.wallet_currency || ''
   return `${connection.wallet_amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${currency}`.trim()
+}
+function formatCost(value: number): string {
+  return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 function isLowWallet(connection: UpstreamConnection): boolean {
   return !connection.wallet_unlimited && connection.wallet_usd !== null && connection.wallet_usd < 50
@@ -411,7 +436,7 @@ async function loadConnections(page = pagination.page): Promise<void> {
       search: filters.search || undefined, provider: filters.provider || undefined, status: filters.status || undefined
     })
     const accountIds = [...new Set(items.flatMap(item => item.bound_account_ids ?? []))]
-    let stats: Record<string, { requests: number }> = {}
+    let stats: Record<string, WindowStats> = {}
     let statsAvailable = true
     if (accountIds.length > 0) {
       try {
@@ -424,6 +449,9 @@ async function loadConnections(page = pagination.page): Promise<void> {
       ...item,
       today_requests: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.requests ?? 0), 0)
+        : null,
+      today_cost: statsAvailable
+        ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.cost ?? 0), 0)
         : null
     }))
     if (generation === loadGeneration) {
@@ -472,12 +500,12 @@ function applySortAndPage(page = pagination.page): void {
   connections.value = rows.slice(start, start + pagination.page_size)
 }
 function resetForm(): void {
-  Object.assign(form, { name: '', provider: 'auto', auth_mode: 'password', management_base_url: '', forwarding_base_url: '', remote_user_id: '', username: '', password: '', access_token: '', refresh_token: '', proxy_id: null, sync_enabled: true, sync_interval_seconds: 300 })
+  Object.assign(form, { name: '', provider: 'auto', auth_mode: 'password', management_base_url: '', forwarding_base_url: '', remote_user_id: '', username: '', password: '', access_token: '', refresh_token: '', proxy_id: null, not_in_cn_confirmed: false, sync_enabled: true, sync_interval_seconds: 300 })
 }
 function openCreate(): void { editing.value = null; resetForm(); showForm.value = true }
 function openEdit(connection: UpstreamConnection): void {
   editing.value = connection
-  Object.assign(form, { name: connection.name, provider: connection.provider, auth_mode: connection.auth_mode, management_base_url: connection.management_base_url, forwarding_base_url: connection.forwarding_base_url, remote_user_id: connection.remote_user_id, username: '', password: '', access_token: '', refresh_token: '', proxy_id: connection.proxy_id, sync_enabled: connection.sync_enabled, sync_interval_seconds: connection.sync_interval_seconds })
+  Object.assign(form, { name: connection.name, provider: connection.provider, auth_mode: connection.auth_mode, management_base_url: connection.management_base_url, forwarding_base_url: connection.forwarding_base_url, remote_user_id: connection.remote_user_id, username: '', password: '', access_token: '', refresh_token: '', proxy_id: connection.proxy_id, not_in_cn_confirmed: connection.not_in_cn_confirmed ?? false, sync_enabled: connection.sync_enabled, sync_interval_seconds: connection.sync_interval_seconds })
   showForm.value = true
 }
 function closeForm(): void { showForm.value = false; editing.value = null }
@@ -517,6 +545,9 @@ async function saveConnection(): Promise<void> {
         management_base_url: form.management_base_url, forwarding_base_url: form.forwarding_base_url,
         remote_user_id: form.remote_user_id, sync_enabled: form.sync_enabled,
         sync_interval_seconds: form.sync_interval_seconds,
+        ...(form.auth_mode === 'password' && form.not_in_cn_confirmed !== (editing.value.not_in_cn_confirmed ?? false)
+          ? { not_in_cn_confirmed: form.not_in_cn_confirmed }
+          : {}),
         ...(form.proxy_id ? { proxy_id: form.proxy_id } : { clear_proxy: true })
       }
       if (credential) payload.credential = credential
@@ -527,6 +558,7 @@ async function saveConnection(): Promise<void> {
         name: form.name, provider: form.provider, auth_mode: form.auth_mode,
         management_base_url: form.management_base_url, forwarding_base_url: form.forwarding_base_url || undefined,
         credential: credential!, remote_user_id: form.remote_user_id || undefined,
+        ...(form.auth_mode === 'password' ? { not_in_cn_confirmed: form.not_in_cn_confirmed } : {}),
         proxy_id: form.proxy_id, sync_enabled: form.sync_enabled, sync_interval_seconds: form.sync_interval_seconds
       }
       const created = await adminAPI.upstreamConnections.create(payload)
@@ -546,7 +578,10 @@ async function probeConnection(connection: UpstreamConnection): Promise<void> {
   try {
     const result = await adminAPI.upstreamConnections.probe(connection.id)
     appStore.showSuccess(t('admin.upstreamConnections.probeSuccess'))
-    if (details.value?.id === result.id) details.value = result
+    if (details.value?.id === result.id) {
+      details.value = result
+      await loadDetailsUsage(result.id)
+    }
     await loadConnections()
   } catch (error: unknown) {
     appStore.showError(errorMessage(error, t('admin.upstreamConnections.probeFailed')))
@@ -555,8 +590,56 @@ async function probeConnection(connection: UpstreamConnection): Promise<void> {
   }
 }
 async function openDetails(connection: UpstreamConnection): Promise<void> {
-  try { details.value = await adminAPI.upstreamConnections.get(connection.id) }
-  catch (error: unknown) { appStore.showError(errorMessage(error, t('admin.upstreamConnections.loadFailed'))) }
+  const generation = ++detailsGeneration
+  details.value = connection
+  detailsUsage.value = null
+  detailsUsageError.value = ''
+  detailsUsageLoading.value = true
+  try {
+    const [connectionResult, usageResult] = await Promise.allSettled([
+      adminAPI.upstreamConnections.get(connection.id),
+      adminAPI.upstreamConnections.getTodayUsage(connection.id)
+    ])
+    if (generation !== detailsGeneration) return
+    if (connectionResult.status === 'rejected') throw connectionResult.reason
+    details.value = connectionResult.value
+    if (usageResult.status === 'fulfilled') {
+      detailsUsage.value = usageResult.value
+    } else {
+      detailsUsageError.value = errorMessage(usageResult.reason, t('admin.upstreamConnections.usage.loadFailed'))
+    }
+  } catch (error: unknown) {
+    if (generation === detailsGeneration) {
+      details.value = null
+      appStore.showError(errorMessage(error, t('admin.upstreamConnections.loadFailed')))
+    }
+  } finally {
+    if (generation === detailsGeneration) detailsUsageLoading.value = false
+  }
+}
+async function loadDetailsUsage(connectionId: number): Promise<void> {
+  const generation = ++detailsGeneration
+  detailsUsageLoading.value = true
+  detailsUsageError.value = ''
+  try {
+    const usage = await adminAPI.upstreamConnections.getTodayUsage(connectionId)
+    if (generation === detailsGeneration && details.value?.id === connectionId) {
+      detailsUsage.value = usage
+    }
+  } catch (error: unknown) {
+    if (generation === detailsGeneration && details.value?.id === connectionId) {
+      detailsUsageError.value = errorMessage(error, t('admin.upstreamConnections.usage.loadFailed'))
+    }
+  } finally {
+    if (generation === detailsGeneration) detailsUsageLoading.value = false
+  }
+}
+function closeDetails(): void {
+  detailsGeneration++
+  details.value = null
+  detailsUsage.value = null
+  detailsUsageError.value = ''
+  detailsUsageLoading.value = false
 }
 async function confirmDelete(): Promise<void> {
   if (!deleting.value) return
@@ -575,6 +658,7 @@ onMounted(async () => {
 })
 onBeforeUnmount(() => {
   loadGeneration++
+  detailsGeneration++
   if (searchTimer) clearTimeout(searchTimer)
 })
 </script>

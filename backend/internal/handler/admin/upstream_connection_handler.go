@@ -34,6 +34,7 @@ type upstreamConnectionCreateRequest struct {
 	ManagementBaseURL   string                              `json:"management_base_url" binding:"required,max=500"`
 	ForwardingBaseURL   string                              `json:"forwarding_base_url" binding:"omitempty,max=500"`
 	Credential          upstreamConnectionCredentialRequest `json:"credential" binding:"required"`
+	NotInCNConfirmed    bool                                `json:"not_in_cn_confirmed"`
 	RemoteUserID        string                              `json:"remote_user_id" binding:"omitempty,max=128"`
 	ProxyID             *int64                              `json:"proxy_id"`
 	SyncEnabled         *bool                               `json:"sync_enabled"`
@@ -48,6 +49,7 @@ type upstreamConnectionUpdateRequest struct {
 	ManagementBaseURL   *string                              `json:"management_base_url" binding:"omitempty,max=500"`
 	ForwardingBaseURL   *string                              `json:"forwarding_base_url" binding:"omitempty,max=500"`
 	Credential          *upstreamConnectionCredentialRequest `json:"credential"`
+	NotInCNConfirmed    *bool                                `json:"not_in_cn_confirmed"`
 	RemoteUserID        *string                              `json:"remote_user_id" binding:"omitempty,max=128"`
 	ProxyID             *int64                               `json:"proxy_id"`
 	ClearProxy          bool                                 `json:"clear_proxy"`
@@ -98,6 +100,7 @@ type upstreamConnectionResponse struct {
 	ForwardingBaseURL    string                           `json:"forwarding_base_url"`
 	CredentialConfigured bool                             `json:"credential_configured"`
 	CredentialHint       string                           `json:"credential_hint"`
+	NotInCNConfirmed     bool                             `json:"not_in_cn_confirmed"`
 	RemoteUserID         string                           `json:"remote_user_id"`
 	ProxyID              *int64                           `json:"proxy_id"`
 	Capabilities         map[string]any                   `json:"capabilities"`
@@ -158,6 +161,19 @@ func (h *UpstreamConnectionHandler) Get(c *gin.Context) {
 	response.Success(c, upstreamConnectionToResponse(connection))
 }
 
+func (h *UpstreamConnectionHandler) GetTodayUsage(c *gin.Context) {
+	id, ok := parseUpstreamConnectionID(c)
+	if !ok {
+		return
+	}
+	usage, err := h.service.GetTodayUsage(c.Request.Context(), id)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, usage)
+}
+
 func (h *UpstreamConnectionHandler) Create(c *gin.Context) {
 	var request upstreamConnectionCreateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -175,7 +191,8 @@ func (h *UpstreamConnectionHandler) Create(c *gin.Context) {
 	connection, err := h.service.Create(c.Request.Context(), service.UpstreamConnectionCreateParams{
 		Name: request.Name, Provider: provider, AuthMode: request.AuthMode,
 		ManagementBaseURL: request.ManagementBaseURL, ForwardingBaseURL: request.ForwardingBaseURL,
-		Credential: upstreamCredentialRequestToService(request.Credential, c.Request.UserAgent()), RemoteUserID: request.RemoteUserID,
+		Credential:       upstreamCredentialRequestToService(request.Credential, c.Request.UserAgent()),
+		NotInCNConfirmed: request.NotInCNConfirmed, RemoteUserID: request.RemoteUserID,
 		ProxyID: request.ProxyID, SyncEnabled: syncEnabled, SyncIntervalSeconds: request.SyncIntervalSeconds,
 	})
 	if err != nil {
@@ -201,6 +218,7 @@ func (h *UpstreamConnectionHandler) Update(c *gin.Context) {
 		ManagementBaseURL: request.ManagementBaseURL, ForwardingBaseURL: request.ForwardingBaseURL,
 		RemoteUserID: request.RemoteUserID, ProxyID: request.ProxyID, ClearProxy: request.ClearProxy,
 		SyncEnabled: request.SyncEnabled, SyncIntervalSeconds: request.SyncIntervalSeconds,
+		NotInCNConfirmed: request.NotInCNConfirmed,
 	}
 	if request.Credential != nil {
 		credential := upstreamCredentialRequestToService(*request.Credential, c.Request.UserAgent())
@@ -332,7 +350,8 @@ func upstreamConnectionToResponse(connection *service.UpstreamConnection) upstre
 		ID: connection.ID, Name: connection.Name, Provider: connection.Provider, AuthMode: connection.AuthMode,
 		ManagementBaseURL: connection.ManagementBaseURL, ForwardingBaseURL: connection.ForwardingBaseURL,
 		CredentialConfigured: connection.CredentialHint != "", CredentialHint: connection.CredentialHint,
-		RemoteUserID: connection.RemoteUserID, ProxyID: connection.ProxyID,
+		NotInCNConfirmed: connection.NotInCNConfirmed,
+		RemoteUserID:     connection.RemoteUserID, ProxyID: connection.ProxyID,
 		Capabilities: nonNilHandlerMap(connection.Capabilities), Status: connection.Status, LastError: connection.LastError,
 		SyncEnabled: connection.SyncEnabled, SyncIntervalSeconds: connection.SyncIntervalSeconds,
 		SyncFailures: connection.SyncFailures, Version: connection.Version,

@@ -32,6 +32,7 @@ export default {
       provider: '上游类型',
       wallet: '总余额',
       todayRequests: '今日请求',
+      todayUsage: '今日用量',
       observations: '观测范围',
       lastSync: '最近同步',
       status: '状态',
@@ -46,6 +47,7 @@ export default {
     summary: {
       connections: '连接总数',
       lowBalance: '余额低于 $50',
+      todayAccountCost: '今日账号成本',
       todayRequests: '今日请求总数'
     },
     fields: {
@@ -60,6 +62,8 @@ export default {
       username: '邮箱或用户名',
       password: '密码',
       passwordModeHint: '推荐方式：系统只登录一次，并自动识别远程用户 ID。',
+      notInCNConfirmed: '确认该上游账号使用者不在中国大陆',
+      notInCNConfirmedHint: '仅在上游登录明确要求此声明时勾选；系统不会自动代替你确认。',
       accessToken: '管理 Access Token',
       refreshToken: 'Refresh Token（可选）',
       refreshTokenHint: '适用于会轮换短期管理 Token 的 Sub2API 兼容站点。',
@@ -113,6 +117,16 @@ export default {
       noGroups: '暂未获取到分组',
       noBindings: '暂未绑定本地账号',
       observeOnly: '观测结果不会修改本地计费。'
+    },
+    usage: {
+      title: '今日账号与上游 Key 用量',
+      accountCost: '账号成本',
+      requests: '请求数',
+      tokens: 'Token 数',
+      hourlyTrend: '每小时趋势',
+      requestCount: '{count} 次请求',
+      retry: '重试',
+      loadFailed: '加载连接今日用量失败'
     },
     binding: {
       title: '共享上游连接',

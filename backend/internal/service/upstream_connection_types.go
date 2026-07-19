@@ -56,6 +56,7 @@ type UpstreamConnection struct {
 	CredentialEncrypted   string
 	CredentialFingerprint string
 	CredentialHint        string
+	NotInCNConfirmed      bool
 	RemoteUserID          string
 	ProxyID               *int64
 	Capabilities          map[string]any
@@ -135,11 +136,12 @@ type UpstreamConnectionListParams struct {
 }
 
 type UpstreamConnectionCredentialInput struct {
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	UserAgent    string `json:"-"`
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	AccessToken      string `json:"access_token,omitempty"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	NotInCNConfirmed bool   `json:"not_in_cn_confirmed,omitempty"`
+	UserAgent        string `json:"-"`
 	// ExpiresAt is internal token lifetime state and is deliberately excluded
 	// from admin request decoding so callers cannot forge it.
 	ExpiresAt int64 `json:"-"`
@@ -152,6 +154,7 @@ type UpstreamConnectionCreateParams struct {
 	ManagementBaseURL   string
 	ForwardingBaseURL   string
 	Credential          UpstreamConnectionCredentialInput
+	NotInCNConfirmed    bool
 	RemoteUserID        string
 	ProxyID             *int64
 	SyncEnabled         bool
@@ -166,6 +169,7 @@ type UpstreamConnectionUpdateParams struct {
 	ManagementBaseURL   *string
 	ForwardingBaseURL   *string
 	Credential          *UpstreamConnectionCredentialInput
+	NotInCNConfirmed    *bool
 	RemoteUserID        *string
 	ProxyID             *int64
 	ClearProxy          bool
@@ -212,11 +216,59 @@ type UpstreamConnectionCredentialPersistence struct {
 }
 
 type upstreamConnectionCredential struct {
-	Version      int    `json:"version"`
-	Username     string `json:"username,omitempty"`
-	Password     string `json:"password,omitempty"`
-	AccessToken  string `json:"access_token,omitempty"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	UserAgent    string `json:"user_agent,omitempty"`
-	ExpiresAt    int64  `json:"expires_at,omitempty"`
+	Version          int    `json:"version"`
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	AccessToken      string `json:"access_token,omitempty"`
+	RefreshToken     string `json:"refresh_token,omitempty"`
+	NotInCNConfirmed bool   `json:"not_in_cn_confirmed,omitempty"`
+	UserAgent        string `json:"user_agent,omitempty"`
+	ExpiresAt        int64  `json:"expires_at,omitempty"`
+}
+
+// UpstreamConnectionUsageStats is a read-only aggregate derived from usage_logs.
+// AccountCost is the upstream account cost and UserCost is the customer/API-key charge.
+type UpstreamConnectionUsageStats struct {
+	Requests     int64   `json:"requests"`
+	Tokens       int64   `json:"tokens"`
+	AccountCost  float64 `json:"account_cost"`
+	StandardCost float64 `json:"standard_cost"`
+	UserCost     float64 `json:"user_cost"`
+}
+
+type UpstreamConnectionUsagePoint struct {
+	Bucket time.Time `json:"bucket"`
+	UpstreamConnectionUsageStats
+}
+
+// UpstreamConnectionAccountUsageBucket is the repository projection used to
+// build both per-account and whole-connection hourly series in one query.
+type UpstreamConnectionAccountUsageBucket struct {
+	AccountID int64
+	Bucket    time.Time
+	UpstreamConnectionUsageStats
+}
+
+type UpstreamConnectionAccountUsage struct {
+	BindingID          int64                          `json:"binding_id"`
+	AccountID          int64                          `json:"account_id"`
+	AccountName        string                         `json:"account_name"`
+	RemoteTokenID      string                         `json:"remote_token_id"`
+	RemoteTokenName    string                         `json:"remote_token_name"`
+	RemoteGroupName    string                         `json:"remote_group_name"`
+	ResolutionKind     string                         `json:"resolution_kind"`
+	ObservedMultiplier *float64                       `json:"observed_multiplier"`
+	Status             string                         `json:"status"`
+	Stats              UpstreamConnectionUsageStats   `json:"stats"`
+	Trend              []UpstreamConnectionUsagePoint `json:"trend"`
+}
+
+type UpstreamConnectionTodayUsage struct {
+	ConnectionID int64                            `json:"connection_id"`
+	Timezone     string                           `json:"timezone"`
+	StartAt      time.Time                        `json:"start_at"`
+	EndAt        time.Time                        `json:"end_at"`
+	Summary      UpstreamConnectionUsageStats     `json:"summary"`
+	Trend        []UpstreamConnectionUsagePoint   `json:"trend"`
+	Accounts     []UpstreamConnectionAccountUsage `json:"accounts"`
 }

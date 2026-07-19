@@ -392,9 +392,13 @@
             </div>
           </template>
           <template #cell-rate_multiplier="{ row }">
-            <span class="text-sm font-mono text-gray-700 dark:text-gray-300">
-              {{ (row.rate_multiplier ?? 1).toFixed(2) }}x
-            </span>
+            <UpstreamMultiplierSyncCell
+              :account-multiplier="row.rate_multiplier"
+              :binding="upstreamBindingForAccount(row.id)"
+              :connection-name="upstreamConnectionForAccount(row.id)?.name ?? null"
+              :loading="upstreamConnectionsLoading"
+              :load-failed="upstreamConnectionsLoadFailed"
+            />
           </template>
           <template #cell-priority="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
@@ -550,6 +554,7 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import RateMultiplierPriorityConfigModal from '@/components/account/RateMultiplierPriorityConfigModal.vue'
 import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
 import UpstreamConnectionBalanceCell from '@/components/account/UpstreamConnectionBalanceCell.vue'
+import UpstreamMultiplierSyncCell from '@/components/account/UpstreamMultiplierSyncCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
@@ -561,7 +566,7 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 import type { RateMultiplierPrioritySettings } from '@/api/admin/settings'
-import type { UpstreamConnection } from '@/api/admin/upstreamConnections'
+import type { UpstreamAccountBinding, UpstreamConnection } from '@/api/admin/upstreamConnections'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -855,13 +860,25 @@ const upstreamConnectionByAccountID = computed(() => {
 
 const upstreamConnectionForAccount = (accountID: number) => upstreamConnectionByAccountID.value.get(accountID) ?? null
 
+const upstreamBindingByAccountID = computed(() => {
+  const mapping = new Map<number, UpstreamAccountBinding>()
+  for (const connection of upstreamConnections.value) {
+    for (const binding of connection.bindings || []) {
+      mapping.set(binding.account_id, binding)
+    }
+  }
+  return mapping
+})
+
+const upstreamBindingForAccount = (accountID: number) => upstreamBindingByAccountID.value.get(accountID) ?? null
+
 const isUpstreamConnectionRefreshing = (accountID: number) => {
   const connection = upstreamConnectionForAccount(accountID)
   return connection ? upstreamConnectionRefreshIds.value.has(connection.id) : false
 }
 
 const refreshUpstreamConnections = async (force = false) => {
-  if (hiddenColumns.has('account_balance')) {
+  if (hiddenColumns.has('account_balance') && hiddenColumns.has('rate_multiplier')) {
     upstreamConnectionsLoading.value = false
     upstreamConnectionsLoadFailed.value = false
     return
@@ -1103,7 +1120,7 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account health after showing column:', error)
     })
   }
-  if (key === 'account_balance' && wasHidden) {
+  if ((key === 'account_balance' || key === 'rate_multiplier') && wasHidden) {
     refreshUpstreamConnections(true).catch((error) => {
       console.error('Failed to load shared upstream balances after showing column:', error)
     })

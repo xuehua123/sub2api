@@ -27,6 +27,10 @@ var ErrUpstreamAPIKeyGroupUnmapped = errors.New("upstream API key group could no
 // requires an interactive browser challenge for password login.
 var ErrUpstreamManagementTurnstileRequired = errors.New("upstream management login requires Turnstile verification; use a management access token")
 
+// ErrUpstreamManagementLocationConfirmationRequired is returned only when the
+// upstream explicitly asks the operator to make this declaration.
+var ErrUpstreamManagementLocationConfirmationRequired = errors.New("upstream login requires explicit confirmation that the account user is outside mainland China")
+
 // upstreamManagementClient implements management protocols for shared upstream
 // connections. It has no account repository or billing mutation capability.
 type upstreamManagementClient struct {
@@ -176,12 +180,6 @@ func (s *upstreamManagementClient) managementJSON(ctx context.Context, client *h
 		return managementJSONResponse{}, err
 	}
 	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-			return managementJSONResponse{}, fmt.Errorf("%w: upstream management request returned HTTP %d", ErrUpstreamConnectionAuthentication, response.StatusCode)
-		}
-		return managementJSONResponse{}, fmt.Errorf("upstream management request returned HTTP %d", response.StatusCode)
-	}
 	payload, err := io.ReadAll(io.LimitReader(response.Body, upstreamManagementResponseLimit+1))
 	if err != nil {
 		return managementJSONResponse{}, err
@@ -190,7 +188,17 @@ func (s *upstreamManagementClient) managementJSON(ctx context.Context, client *h
 		return managementJSONResponse{}, fmt.Errorf("upstream management response exceeds %d bytes", upstreamManagementResponseLimit)
 	}
 	decoded := make(map[string]any)
-	if err := json.Unmarshal(payload, &decoded); err != nil {
+	decodeErr := json.Unmarshal(payload, &decoded)
+	if decodeErr == nil && isUpstreamLocationConfirmationRejection(decoded) {
+		return managementJSONResponse{}, ErrUpstreamManagementLocationConfirmationRequired
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+			return managementJSONResponse{}, fmt.Errorf("%w: upstream management request returned HTTP %d", ErrUpstreamConnectionAuthentication, response.StatusCode)
+		}
+		return managementJSONResponse{}, fmt.Errorf("upstream management request returned HTTP %d", response.StatusCode)
+	}
+	if decodeErr != nil {
 		return managementJSONResponse{}, errors.New("upstream management response is not valid JSON")
 	}
 	if success, ok := decoded["success"].(bool); ok && !success {
@@ -207,6 +215,19 @@ func (s *upstreamManagementClient) managementJSON(ctx context.Context, client *h
 		return managementJSONResponse{}, errors.New("upstream management request returned an error")
 	}
 	return managementJSONResponse{payload: decoded, cookies: response.Cookies()}, nil
+}
+
+func isUpstreamLocationConfirmationRejection(payload map[string]any) bool {
+	if success, ok := payload["success"].(bool); ok && success {
+		return false
+	}
+	reason := strings.ToUpper(strings.TrimSpace(firstString(payload, "reason", "code")))
+	if reason == "NOT_IN_CN_CONFIRMATION_REQUIRED" {
+		return true
+	}
+	message := strings.ToLower(strings.TrimSpace(firstString(payload, "message")))
+	return strings.Contains(message, "not located in mainland china") ||
+		strings.Contains(message, "outside mainland china")
 }
 
 func isUpstreamAuthenticationRejectionMessage(message string) bool {

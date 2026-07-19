@@ -40,6 +40,19 @@ type upstreamConnectionProbeSnapshot struct {
 	Warnings         []string
 }
 
+type sub2APIManagementLoginRequest struct {
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	NotInCNConfirmed bool   `json:"not_in_cn_confirmed,omitempty"`
+}
+
+func sub2APIManagementLoginBody(credential upstreamConnectionCredential) sub2APIManagementLoginRequest {
+	return sub2APIManagementLoginRequest{
+		Email: credential.Username, Password: credential.Password,
+		NotInCNConfirmed: credential.NotInCNConfirmed,
+	}
+}
+
 type upstreamConnectionInspector struct {
 	cfg       *config.Config
 	proxyRepo ProxyRepository
@@ -107,6 +120,9 @@ func (i *upstreamConnectionInspector) Inspect(ctx context.Context, connection *U
 		}
 		if errors.Is(probeErr, ErrUpstreamConnectionAuthentication) {
 			authenticationRejected = true
+		}
+		if errors.Is(probeErr, ErrUpstreamManagementLocationConfirmationRequired) {
+			return nil, probeErr
 		}
 		probeErrors = append(probeErrors, provider+": "+probeErr.Error())
 	}
@@ -623,7 +639,7 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
 		login, err := management.managementJSON(ctx, client, http.MethodPost,
 			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
-			map[string]string{"email": credential.Username, "password": credential.Password})
+			sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}
@@ -1144,7 +1160,7 @@ func (i *upstreamConnectionInspector) prepareSub2APIKeyResolver(
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
 		login, err := management.managementJSON(ctx, client, http.MethodPost,
 			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
-			map[string]string{"email": credential.Username, "password": credential.Password})
+			sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}

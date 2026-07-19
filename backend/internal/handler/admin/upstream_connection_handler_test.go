@@ -14,8 +14,9 @@ func TestUpstreamConnectionResponseNeverSerializesSecretMaterial(t *testing.T) {
 	response := upstreamConnectionToResponse(&service.UpstreamConnection{
 		ID: 1, Name: "upstream", CredentialEncrypted: "cipher-secret",
 		CredentialFingerprint: "credential-fingerprint", CredentialHint: "abcd...wxyz",
-		BoundAccountIDs: []int64{17, 23},
-		Bindings:        []service.UpstreamAccountBinding{{KeyFingerprint: "key-fingerprint"}},
+		NotInCNConfirmed: true,
+		BoundAccountIDs:  []int64{17, 23},
+		Bindings:         []service.UpstreamAccountBinding{{KeyFingerprint: "key-fingerprint"}},
 	})
 
 	payload, err := json.Marshal(response)
@@ -24,6 +25,7 @@ func TestUpstreamConnectionResponseNeverSerializesSecretMaterial(t *testing.T) {
 	require.NotContains(t, string(payload), "credential-fingerprint")
 	require.NotContains(t, string(payload), "key-fingerprint")
 	require.Contains(t, string(payload), "abcd...wxyz")
+	require.Contains(t, string(payload), `"not_in_cn_confirmed":true`)
 	require.Contains(t, string(payload), `"bound_account_ids":[17,23]`)
 }
 
