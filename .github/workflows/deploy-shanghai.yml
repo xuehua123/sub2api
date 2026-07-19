@@ -275,16 +275,6 @@ jobs:
               false
             fi
 
-            # Recovery guard: retain both healthy slots until the cleanup
-            # identity check is repaired. This restores public traffic without
-            # risking removal of the active backend.
-            trap - ERR
-            docker compose -f "$compose_file" ps
-            echo "Both healthy Sub2API slots retained; cleanup is temporarily disabled"
-            echo "Rollback state: $deploy_dir/$rollback_state"
-            echo "Compose backup: $deploy_dir/$backup"
-            exit 0
-
             # From this point the active instance is healthy and serving the
             # configured Nginx port.  Do not roll it back merely because an
             # inactive-container removal reports an operational error.
@@ -299,7 +289,9 @@ jobs:
             # Clean up only stale application containers belonging to this
             # compose project; databases, Redis, and unrelated containers are
             # deliberately outside this scope.
-            for container_id in $(docker ps -aq); do
+            # Compose returns full container IDs. Use the same form here so
+            # the active instance cannot be mistaken for a stale container.
+            for container_id in $(docker ps -aq --no-trunc); do
               container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
               container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
               if [ "$container_id" != "$active_container" ] && \
@@ -312,7 +304,7 @@ jobs:
             done
 
             running_app_containers=0
-            for container_id in $(docker ps -q); do
+            for container_id in $(docker ps -q --no-trunc); do
               container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
               container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
               if [ "$container_project" = "$active_project" ] && \
