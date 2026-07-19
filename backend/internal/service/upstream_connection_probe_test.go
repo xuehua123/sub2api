@@ -680,6 +680,160 @@ func TestUpstreamConnectionInspectorSub2APIBareItemsObjectIsUnavailable(t *testi
 	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
 }
 
+func TestUpstreamConnectionInspectorSub2APIRatesIgnoresUnknownGroupIDs(t *testing.T) {
+	// /rates often includes more group IDs than /available. Extra numeric IDs
+	// must not invalidate the whole rates table.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{
+				"2":  0.25,
+				"99": 0.5, // not in available snapshot
+			}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:group_rates", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceOverride, snapshot.Groups[0].Confidence)
+}
+
+func TestUpstreamConnectionInspectorSub2APIRatesNonNumericUnknownKeyIsUnavailable(t *testing.T) {
+	// Non-numeric garbage keys must not validate rates and promote available defaults.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"foo": 0.5}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
+}
+
+func TestUpstreamConnectionInspectorSub2APIRatesUnknownGroupIDIllegalValueIsUnavailable(t *testing.T) {
+	// Unknown numeric IDs may be ignored only when their multiplier is valid.
+	// {"99": null} must not validate the rates table.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/me":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"99": nil}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+	require.NoError(t, err)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+	require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+	require.Contains(t, snapshot.Warnings, "groups: user-specific rates response was invalid; showing available-group default rates for reference only")
+}
+
+func TestIsSub2APIGroupRateIDKeyRejectsAmbiguousOrOverflowKeys(t *testing.T) {
+	require.True(t, isSub2APIGroupRateIDKey("12"))
+	require.True(t, isSub2APIGroupRateIDKey("99"))
+
+	require.False(t, isSub2APIGroupRateIDKey(""))
+	require.False(t, isSub2APIGroupRateIDKey("0"))
+	require.False(t, isSub2APIGroupRateIDKey("01"))
+	require.False(t, isSub2APIGroupRateIDKey("+99"))
+	require.False(t, isSub2APIGroupRateIDKey("-99"))
+	require.False(t, isSub2APIGroupRateIDKey("foo"))
+	// One digit past math.MaxInt64.
+	require.False(t, isSub2APIGroupRateIDKey("9223372036854775808"))
+}
+
+func TestUpstreamConnectionInspectorSub2APIRatesAmbiguousUnknownIDKeyIsUnavailable(t *testing.T) {
+	// Leading-zero / signed keys must not be treated as ignorable group IDs.
+	for _, garbageKey := range []string{"01", "+99"} {
+		garbageKey := garbageKey
+		t.Run(garbageKey, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+				writer.Header().Set("Content-Type", "application/json")
+				switch request.URL.Path {
+				case "/api/v1/auth/me":
+					writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 10}})
+				case "/api/v1/groups/available":
+					writeProbeJSON(t, writer, map[string]any{"data": []any{
+						map[string]any{"id": 2, "name": "default", "rate_multiplier": 1.0},
+					}})
+				case "/api/v1/groups/rates":
+					writeProbeJSON(t, writer, map[string]any{"data": map[string]any{garbageKey: 0.5}})
+				default:
+					http.NotFound(writer, request)
+				}
+			}))
+			defer server.Close()
+
+			inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+			snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+				Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+				ManagementBaseURL: server.URL,
+			}, upstreamConnectionCredential{Version: 1, AccessToken: "management-token"})
+
+			require.NoError(t, err)
+			require.Len(t, snapshot.Groups, 1)
+			require.Equal(t, 1.0, *snapshot.Groups[0].RateMultiplier)
+			require.Equal(t, "sub2api:available_groups", snapshot.Groups[0].Source)
+			require.Equal(t, upstreamGroupRateConfidenceUnavailable, snapshot.Groups[0].Confidence)
+		})
+	}
+}
+
 func TestUpstreamConnectionInspectorSub2APIRatesArrayIsUnavailable(t *testing.T) {
 	// HTTP success with data:[] is not a valid rates map and must not promote defaults.
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

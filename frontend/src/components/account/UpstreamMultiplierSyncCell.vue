@@ -69,11 +69,23 @@ const hasMatchingMultiplier = computed(() => {
   return Math.abs(observed - localMultiplier.value) <= baseline * 1e-6
 })
 
+const normalizeRateConfidence = (raw: unknown): string => {
+  if (typeof raw !== 'string') return 'unknown'
+  const value = raw.trim()
+  // Legacy labels from the first auto-sync iteration.
+  // reported → override so UI shows "upstream-specific" (both are syncable).
+  if (value === 'reported') return 'override'
+  if (value === 'fallback') return 'unavailable'
+  if (value === 'override' || value === 'default' || value === 'unavailable' || value === 'unknown') {
+    return value
+  }
+  return 'unknown'
+}
+
 const rateConfidence = computed(() => {
   const details = props.binding?.resolution_details
   if (!details || typeof details !== 'object') return 'unknown'
-  const value = details.rate_confidence
-  return typeof value === 'string' && value.trim() ? value.trim() : 'unknown'
+  return normalizeRateConfidence(details.rate_confidence)
 })
 
 // override = user-specific rates; default = authenticated upstream default.

@@ -1057,6 +1057,8 @@ func TestObservedAccountRateMultiplierRequiresReliableReadyBinding(t *testing.T)
 	nan := math.NaN()
 	overrideDetails := map[string]any{upstreamBindingRateConfidenceDetailKey: upstreamGroupRateConfidenceOverride}
 	defaultDetails := map[string]any{upstreamBindingRateConfidenceDetailKey: upstreamGroupRateConfidenceDefault}
+	legacyReported := map[string]any{upstreamBindingRateConfidenceDetailKey: "reported"}
+	legacyFallback := map[string]any{upstreamBindingRateConfidenceDetailKey: "fallback"}
 	unavailableDetails := map[string]any{upstreamBindingRateConfidenceDetailKey: upstreamGroupRateConfidenceUnavailable}
 
 	require.Equal(t, 0.25, *observedAccountRateMultiplier(&UpstreamAccountBinding{
@@ -1066,6 +1068,17 @@ func TestObservedAccountRateMultiplierRequiresReliableReadyBinding(t *testing.T)
 	require.Equal(t, 0.25, *observedAccountRateMultiplier(&UpstreamAccountBinding{
 		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
 		ResolutionDetails: defaultDetails,
+	}))
+	require.Equal(t, 0.25, *observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
+		ResolutionDetails: legacyReported,
+	}))
+	require.Equal(t, upstreamGroupRateConfidenceOverride, bindingRateConfidence(&UpstreamAccountBinding{
+		ResolutionDetails: legacyReported,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
+		ResolutionDetails: legacyFallback,
 	}))
 	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
 		Status: UpstreamBindingStatusPending, Confidence: "exact", ObservedMultiplier: &valid,

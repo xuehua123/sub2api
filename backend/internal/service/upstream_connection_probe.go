@@ -821,14 +821,23 @@ func sub2APIRatesPayloadLooksLikeEnvelope(payload map[string]any) bool {
 	return false
 }
 
+// structuralSub2APIRateKeys are non-rate object keys. Their presence means the
+// payload is not a group-id -> multiplier table.
+var structuralSub2APIRateKeys = map[string]struct{}{
+	"items": {}, "list": {}, "results": {}, "groups": {}, "data": {},
+	"success": {}, "message": {}, "code": {}, "error": {}, "status": {}, "msg": {},
+}
+
 // applySub2APIConnectionGroupRates applies user-specific overrides from
-// /groups/rates. The rates object is valid only when:
+// /groups/rates. The rates object is valid when:
 //   - it is empty {}, or
-//   - every key matches a currently discovered group RemoteID and every value
-//     parses as a non-negative finite multiplier.
+//   - every key is either a known group RemoteID with a valid multiplier, or a
+//     well-formed numeric group id with a valid multiplier that is simply not
+//     in the current available snapshot (ignored after validation).
 //
-// Unknown keys (items/list/groups/...), illegal values, or null leave groups
-// unchanged and fail closed so available defaults stay display-only.
+// Structural keys (items/list/groups/...), non-numeric garbage keys (foo), and
+// illegal values for known or unknown numeric group IDs fail the whole rates
+// response so available defaults stay display-only.
 func applySub2APIConnectionGroupRates(groups []UpstreamGroup, rates map[string]any) bool {
 	if rates == nil {
 		return false
@@ -849,13 +858,28 @@ func applySub2APIConnectionGroupRates(groups []UpstreamGroup, rates map[string]a
 	}
 	overrides := make(map[int]float64, len(rates))
 	for key, raw := range rates {
-		index, known := knownIDs[strings.TrimSpace(key)]
-		if !known {
+		key = strings.TrimSpace(key)
+		if key == "" {
 			return false
 		}
+		if _, structural := structuralSub2APIRateKeys[strings.ToLower(key)]; structural {
+			return false
+		}
+		// Every rate entry must carry a parseable multiplier, including extra
+		// group ids that we will ignore for application. Null/illegal values
+		// must not validate the table as reliable.
 		parsed, valid := parseGroupMultiplier(raw)
 		if !valid {
 			return false
+		}
+		index, known := knownIDs[key]
+		if !known {
+			// Only ignore extra keys that look like real group IDs. Non-numeric
+			// garbage must not validate the rates table as reliable.
+			if !isSub2APIGroupRateIDKey(key) {
+				return false
+			}
+			continue
 		}
 		overrides[index] = parsed
 	}
@@ -865,6 +889,22 @@ func applySub2APIConnectionGroupRates(groups []UpstreamGroup, rates map[string]a
 		groups[index].Source = "sub2api:group_rates"
 	}
 	return true
+}
+
+// isSub2APIGroupRateIDKey reports whether key is a positive int64 group id
+// string such as "12". Leading zeros, signs, and overflow are rejected.
+func isSub2APIGroupRateIDKey(key string) bool {
+	key = strings.TrimSpace(key)
+	if key == "" || key[0] == '0' {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		if key[i] < '0' || key[i] > '9' {
+			return false
+		}
+	}
+	id, err := strconv.ParseInt(key, 10, 64)
+	return err == nil && id > 0
 }
 
 func upstreamConnectionLegacyNewAPIProvider(provider string) UpstreamManagementProvider {

@@ -542,11 +542,31 @@ func observedAccountRateMultiplier(binding *UpstreamAccountBinding) *float64 {
 }
 
 func isAutoSyncableGroupRateConfidence(confidence string) bool {
-	switch strings.TrimSpace(confidence) {
+	switch normalizeGroupRateConfidence(confidence) {
 	case upstreamGroupRateConfidenceOverride, upstreamGroupRateConfidenceDefault:
 		return true
 	default:
 		return false
+	}
+}
+
+// normalizeGroupRateConfidence maps persisted/legacy labels onto the current
+// override/default/unavailable/unknown model used by auto-sync and UI.
+func normalizeGroupRateConfidence(confidence string) string {
+	switch strings.TrimSpace(confidence) {
+	case upstreamGroupRateConfidenceOverride, "reported":
+		// Pre-rename "reported" meant a trusted observed rate. Map to override
+		// so UI shows "upstream-specific" rather than generic default.
+		return upstreamGroupRateConfidenceOverride
+	case upstreamGroupRateConfidenceDefault:
+		return upstreamGroupRateConfidenceDefault
+	case upstreamGroupRateConfidenceUnavailable, "fallback":
+		// Pre-rename "fallback" meant rates were not reliable enough to write.
+		return upstreamGroupRateConfidenceUnavailable
+	case upstreamGroupRateConfidenceUnknown, "":
+		return upstreamGroupRateConfidenceUnknown
+	default:
+		return upstreamGroupRateConfidenceUnknown
 	}
 }
 
@@ -560,9 +580,7 @@ func bindingRateConfidence(binding *UpstreamAccountBinding) string {
 	}
 	switch value := raw.(type) {
 	case string:
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			return trimmed
-		}
+		return normalizeGroupRateConfidence(value)
 	}
 	return upstreamGroupRateConfidenceUnknown
 }

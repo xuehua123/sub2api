@@ -99,6 +99,22 @@ describe('UpstreamMultiplierSyncCell', () => {
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-amber-600')
   })
 
+  it('maps legacy reported confidence to syncable override display', () => {
+    const wrapper = mount(UpstreamMultiplierSyncCell, {
+      props: {
+        accountMultiplier: 0.01,
+        binding: binding({
+          resolution_details: { rate_confidence: 'reported' }
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
+      'admin.accounts.upstreamMultiplierSync.synchronizedOverride'
+    )
+  })
+
   it('keeps missing, stale, and failed observations distinguishable', async () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: { accountMultiplier: 0.01 },
