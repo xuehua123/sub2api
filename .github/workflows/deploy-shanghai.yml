@@ -49,8 +49,8 @@ jobs:
         shell: bash
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
         run: |
           set -euo pipefail
           stable_deploy_payload="$(
