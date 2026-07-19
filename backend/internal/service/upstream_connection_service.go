@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"sync"
@@ -42,8 +43,8 @@ type UpstreamConnectionRepository interface {
 	RecordProbeFailure(ctx context.Context, id, expectedVersion int64, failure UpstreamConnectionProbeFailure) (bool, error)
 	ListDueConnections(ctx context.Context, now time.Time, limit int) ([]*UpstreamConnection, error)
 	ListDueAccountBindings(ctx context.Context, connectionID int64, now time.Time, limit int) ([]UpstreamAccountBinding, error)
-	UpsertAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionVersion int64) (bool, error)
-	UpdateAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionID, expectedConnectionVersion int64) (bool, error)
+	UpsertAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionVersion int64, rateMultiplier *float64) (bool, error)
+	UpdateAccountBindingIfCurrent(ctx context.Context, binding *UpstreamAccountBinding, expectedConnectionID, expectedConnectionVersion int64, rateMultiplier *float64) (bool, error)
 	GetAccountBinding(ctx context.Context, accountID int64) (*UpstreamAccountBinding, error)
 	DeleteAccountBinding(ctx context.Context, connectionID, accountID int64) error
 }
@@ -345,7 +346,7 @@ func (s *UpstreamConnectionService) BindAccount(ctx context.Context, connectionI
 	binding := UpstreamAccountBinding{
 		AccountID: accountID, ConnectionID: connectionID, KeyFingerprint: upstreamAPIKeyFingerprint(apiKey),
 		ResolutionKind: UpstreamBindingResolutionUnresolved, FallbackGroups: []string{},
-		Confidence: "unknown", Source: "", ApplyPolicy: UpstreamBindingApplyObserveOnly,
+		Confidence: "unknown", Source: "", ApplyPolicy: UpstreamBindingApplyAuto,
 		Status: UpstreamBindingStatusPending, ResolutionDetails: map[string]any{}, NextSyncAt: &nextSync,
 	}
 	resolved, resolveErr := s.inspector.ResolveKey(ctx, connection, credential, apiKey)
@@ -359,7 +360,7 @@ func (s *UpstreamConnectionService) BindAccount(ctx context.Context, connectionI
 		resolved.AccountID = accountID
 		resolved.ConnectionID = connectionID
 		resolved.KeyFingerprint = binding.KeyFingerprint
-		resolved.ApplyPolicy = UpstreamBindingApplyObserveOnly
+		resolved.ApplyPolicy = UpstreamBindingApplyAuto
 		if resolved.FallbackGroups == nil {
 			resolved.FallbackGroups = []string{}
 		}
@@ -376,7 +377,7 @@ func (s *UpstreamConnectionService) BindAccount(ctx context.Context, connectionI
 		resolved.NextSyncAt = &next
 		binding = resolved
 	}
-	applied, err := s.repo.UpsertAccountBindingIfCurrent(ctx, &binding, connection.Version)
+	applied, err := s.repo.UpsertAccountBindingIfCurrent(ctx, &binding, connection.Version, observedAccountRateMultiplier(&binding))
 	if err != nil {
 		return nil, fmt.Errorf("save upstream account binding: %w", err)
 	}
@@ -404,8 +405,7 @@ func (s *UpstreamConnectionService) UnbindAccount(ctx context.Context, connectio
 }
 
 // SyncConnection refreshes one shared connection and then re-resolves a bounded
-// batch of its due API-key bindings. Binding observations never mutate account
-// pricing fields; they are monitoring data only.
+// batch of its due API-key bindings.
 func (s *UpstreamConnectionService) SyncConnection(ctx context.Context, connectionID int64, bindingLimit int) error {
 	if _, err := s.Probe(ctx, connectionID); err != nil {
 		return err
@@ -475,7 +475,7 @@ func (s *UpstreamConnectionService) refreshAccountBinding(
 	resolved.AccountID = binding.AccountID
 	resolved.ConnectionID = connection.ID
 	resolved.KeyFingerprint = upstreamAPIKeyFingerprint(apiKey)
-	resolved.ApplyPolicy = UpstreamBindingApplyObserveOnly
+	resolved.ApplyPolicy = UpstreamBindingApplyAuto
 	resolved.SyncFailures = 0
 	resolved.LastError = strings.TrimSpace(resolved.LastError)
 	resolved.ObservedAt = &now
@@ -492,7 +492,7 @@ func (s *UpstreamConnectionService) refreshAccountBinding(
 	resolved.FreshUntil = &freshUntil
 	next := now.Add(time.Duration(connection.SyncIntervalSeconds) * time.Second)
 	resolved.NextSyncAt = &next
-	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, &resolved, expectedConnectionID, connection.Version)
+	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, &resolved, expectedConnectionID, connection.Version, observedAccountRateMultiplier(&resolved))
 	if err != nil {
 		return fmt.Errorf("persist refreshed upstream account binding: %w", err)
 	}
@@ -513,7 +513,7 @@ func (s *UpstreamConnectionService) persistBindingRefreshFailure(
 	binding.LastError = truncateUpstreamConnectionError(refreshErr.Error())
 	next := time.Now().UTC().Add(upstreamConnectionFailureBackoff(binding.SyncFailures))
 	binding.NextSyncAt = &next
-	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, binding, expectedConnectionID, expectedConnectionVersion)
+	applied, err := s.repo.UpdateAccountBindingIfCurrent(ctx, binding, expectedConnectionID, expectedConnectionVersion, nil)
 	if err != nil {
 		return fmt.Errorf("persist upstream binding refresh failure: %w", err)
 	}
@@ -521,6 +521,41 @@ func (s *UpstreamConnectionService) persistBindingRefreshFailure(
 		return ErrUpstreamConnectionChanged
 	}
 	return refreshErr
+}
+
+func observedAccountRateMultiplier(binding *UpstreamAccountBinding) *float64 {
+	if binding == nil || binding.Status != UpstreamBindingStatusReady || binding.Confidence != "exact" ||
+		binding.ObservedMultiplier == nil || strings.TrimSpace(binding.LastError) != "" {
+		return nil
+	}
+	// Key→group mapping confidence is separate from group-rate confidence.
+	// Sub2API may still expose available-group fallback rates when /groups/rates
+	// fails; those must be observed but must not rewrite account billing.
+	if bindingRateConfidence(binding) != upstreamGroupRateConfidenceReported {
+		return nil
+	}
+	value := *binding.ObservedMultiplier
+	if value < 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	return cloneFloat64Ptr(&value)
+}
+
+func bindingRateConfidence(binding *UpstreamAccountBinding) string {
+	if binding == nil || binding.ResolutionDetails == nil {
+		return upstreamGroupRateConfidenceUnknown
+	}
+	raw, ok := binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey]
+	if !ok || raw == nil {
+		return upstreamGroupRateConfidenceUnknown
+	}
+	switch value := raw.(type) {
+	case string:
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return upstreamGroupRateConfidenceUnknown
 }
 
 func upstreamAPIKeyFingerprint(apiKey string) string {

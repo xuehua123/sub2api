@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	dbaccount "github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamgroup"
@@ -520,16 +521,17 @@ func (r *upstreamConnectionRepository) UpsertAccountBindingIfCurrent(
 	ctx context.Context,
 	binding *service.UpstreamAccountBinding,
 	expectedConnectionVersion int64,
+	rateMultiplier *float64,
 ) (bool, error) {
 	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
-		return upsertAccountBindingIfCurrentWithClient(ctx, existingTx.Client(), binding, expectedConnectionVersion)
+		return upsertAccountBindingIfCurrentWithClient(ctx, existingTx.Client(), binding, expectedConnectionVersion, rateMultiplier)
 	}
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("begin upstream account binding update: %w", err)
 	}
 	txCtx := dbent.NewTxContext(ctx, tx)
-	applied, err := upsertAccountBindingIfCurrentWithClient(txCtx, tx.Client(), binding, expectedConnectionVersion)
+	applied, err := upsertAccountBindingIfCurrentWithClient(txCtx, tx.Client(), binding, expectedConnectionVersion, rateMultiplier)
 	if err != nil {
 		_ = tx.Rollback()
 		return false, err
@@ -545,6 +547,7 @@ func upsertAccountBindingIfCurrentWithClient(
 	client *dbent.Client,
 	binding *service.UpstreamAccountBinding,
 	expectedConnectionVersion int64,
+	rateMultiplier *float64,
 ) (bool, error) {
 	_, err := client.UpstreamConnection.Query().
 		Where(
@@ -603,6 +606,9 @@ func upsertAccountBindingIfCurrentWithClient(
 	}
 	converted := entUpstreamBindingToService(row)
 	*binding = converted
+	if err := applyObservedAccountRateMultiplier(ctx, client, binding.AccountID, rateMultiplier); err != nil {
+		return false, err
+	}
 	return true, nil
 }
 
@@ -610,8 +616,47 @@ func (r *upstreamConnectionRepository) UpdateAccountBindingIfCurrent(
 	ctx context.Context,
 	binding *service.UpstreamAccountBinding,
 	expectedConnectionID, expectedConnectionVersion int64,
+	rateMultiplier *float64,
 ) (bool, error) {
-	client := clientFromContext(ctx, r.client)
+	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
+		return updateAccountBindingIfCurrentWithClient(ctx, existingTx.Client(), binding, expectedConnectionID, expectedConnectionVersion, rateMultiplier)
+	}
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return false, fmt.Errorf("begin upstream account binding refresh: %w", err)
+	}
+	txCtx := dbent.NewTxContext(ctx, tx)
+	applied, err := updateAccountBindingIfCurrentWithClient(txCtx, tx.Client(), binding, expectedConnectionID, expectedConnectionVersion, rateMultiplier)
+	if err != nil {
+		_ = tx.Rollback()
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit upstream account binding refresh: %w", err)
+	}
+	return applied, nil
+}
+
+func updateAccountBindingIfCurrentWithClient(
+	ctx context.Context,
+	client *dbent.Client,
+	binding *service.UpstreamAccountBinding,
+	expectedConnectionID, expectedConnectionVersion int64,
+	rateMultiplier *float64,
+) (bool, error) {
+	_, err := client.UpstreamConnection.Query().
+		Where(
+			upstreamconnection.IDEQ(expectedConnectionID),
+			upstreamconnection.VersionEQ(expectedConnectionVersion),
+		).
+		ForUpdate().
+		Only(ctx)
+	if dbent.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, translateUpstreamConnectionPersistenceError(err)
+	}
 	updater := client.UpstreamAccountBinding.Update().
 		Where(
 			upstreamaccountbinding.IDEQ(binding.ID),
@@ -658,7 +703,39 @@ func (r *upstreamConnectionRepository) UpdateAccountBindingIfCurrent(
 	if err != nil {
 		return false, translateUpstreamConnectionPersistenceError(err)
 	}
-	return affected == 1, nil
+	if affected != 1 {
+		return false, nil
+	}
+	if err := applyObservedAccountRateMultiplier(ctx, client, binding.AccountID, rateMultiplier); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func applyObservedAccountRateMultiplier(ctx context.Context, client *dbent.Client, accountID int64, rateMultiplier *float64) error {
+	if rateMultiplier == nil {
+		return nil
+	}
+	account, err := client.Account.Query().
+		Where(dbaccount.IDEQ(accountID), dbaccount.DeletedAtIsNil()).
+		ForUpdate().
+		Only(ctx)
+	if dbent.IsNotFound(err) {
+		return service.ErrAccountNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if account.RateMultiplier == *rateMultiplier {
+		return nil
+	}
+	if _, err := client.Account.UpdateOne(account).SetRateMultiplier(*rateMultiplier).Save(ctx); err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(ctx, client, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (r *upstreamConnectionRepository) GetAccountBinding(ctx context.Context, accountID int64) (*service.UpstreamAccountBinding, error) {

@@ -47,7 +47,7 @@ export interface UpstreamAccountBinding {
   observed_multiplier: number | null
   confidence: string
   source: string
-  apply_policy: 'observe_only'
+  apply_policy: 'observe_only' | 'auto'
   status: string
   sync_failures: number
   last_error: string

@@ -24,18 +24,18 @@ const binding = (overrides: Partial<UpstreamAccountBinding> = {}): UpstreamAccou
   observed_multiplier: 0.01,
   confidence: 'exact',
   source: 'sub2api',
-  apply_policy: 'observe_only',
+  apply_policy: 'auto',
   status: 'ready',
   sync_failures: 0,
   last_error: '',
-  resolution_details: {},
+  resolution_details: { rate_confidence: 'reported' },
   observed_at: '2026-07-19T00:00:00Z',
   fresh_until: '2099-01-01T00:00:00Z',
   ...overrides
 })
 
 describe('UpstreamMultiplierSyncCell', () => {
-  it('marks a fresh matching observed multiplier as synchronized', () => {
+  it('marks a fresh matching reported multiplier as synchronized', () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: {
         accountMultiplier: 0.01,
@@ -52,7 +52,7 @@ describe('UpstreamMultiplierSyncCell', () => {
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-emerald-600')
   })
 
-  it('flags a fresh upstream multiplier that differs from the account billing multiplier', () => {
+  it('flags a fresh reported upstream multiplier that differs from the account billing multiplier', () => {
     const wrapper = mount(UpstreamMultiplierSyncCell, {
       props: { accountMultiplier: 0.02, binding: binding() },
       global: { stubs: { Icon: true } }
@@ -60,6 +60,24 @@ describe('UpstreamMultiplierSyncCell', () => {
 
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
       'admin.accounts.upstreamMultiplierSync.mismatch'
+    )
+    expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-amber-600')
+  })
+
+  it('does not treat matching fallback multipliers as synchronized', () => {
+    const wrapper = mount(UpstreamMultiplierSyncCell, {
+      props: {
+        accountMultiplier: 1,
+        binding: binding({
+          observed_multiplier: 1,
+          resolution_details: { rate_confidence: 'fallback' }
+        })
+      },
+      global: { stubs: { Icon: true } }
+    })
+
+    expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').text()).toContain(
+      'admin.accounts.upstreamMultiplierSync.observeOnly'
     )
     expect(wrapper.get('[data-testid="upstream-multiplier-sync-status"]').classes()).toContain('text-amber-600')
   })

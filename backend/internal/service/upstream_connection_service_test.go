@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,20 +32,21 @@ func (upstreamConnectionTestEncryptor) Decrypt(ciphertext string) (string, error
 }
 
 type upstreamConnectionTestRepo struct {
-	connection         *UpstreamConnection
-	createCalls        int
-	items              []*UpstreamConnection
-	deleteErr          error
-	updateApplyResult  *bool
-	lastResetBindings  bool
-	credentialCAS      *UpstreamConnectionCredentialPersistence
-	applyProbeResult   *bool
-	probeUpdate        *UpstreamConnectionProbePersistence
-	probeFailure       *UpstreamConnectionProbeFailure
-	binding            *UpstreamAccountBinding
-	bindingApplyResult *bool
-	dueConnections     []*UpstreamConnection
-	dueBindings        []UpstreamAccountBinding
+	connection            *UpstreamConnection
+	createCalls           int
+	items                 []*UpstreamConnection
+	deleteErr             error
+	updateApplyResult     *bool
+	lastResetBindings     bool
+	credentialCAS         *UpstreamConnectionCredentialPersistence
+	applyProbeResult      *bool
+	probeUpdate           *UpstreamConnectionProbePersistence
+	probeFailure          *UpstreamConnectionProbeFailure
+	binding               *UpstreamAccountBinding
+	bindingApplyResult    *bool
+	appliedRateMultiplier *float64
+	dueConnections        []*UpstreamConnection
+	dueBindings           []UpstreamAccountBinding
 }
 
 type upstreamBindingAccountRepo struct {
@@ -225,13 +227,14 @@ func (r *upstreamConnectionTestRepo) ListDueAccountBindings(_ context.Context, _
 	return items, nil
 }
 
-func (r *upstreamConnectionTestRepo) UpsertAccountBindingIfCurrent(_ context.Context, binding *UpstreamAccountBinding, expectedConnectionVersion int64) (bool, error) {
+func (r *upstreamConnectionTestRepo) UpsertAccountBindingIfCurrent(_ context.Context, binding *UpstreamAccountBinding, expectedConnectionVersion int64, rateMultiplier *float64) (bool, error) {
 	if r.bindingApplyResult != nil && !*r.bindingApplyResult {
 		return false, nil
 	}
 	if r.connection == nil || r.connection.Version != expectedConnectionVersion {
 		return false, nil
 	}
+	r.appliedRateMultiplier = cloneFloat64Ptr(rateMultiplier)
 	copy := *binding
 	copy.ID = 77
 	r.binding = &copy
@@ -243,10 +246,11 @@ func (r *upstreamConnectionTestRepo) UpsertAccountBindingIfCurrent(_ context.Con
 	return true, nil
 }
 
-func (r *upstreamConnectionTestRepo) UpdateAccountBindingIfCurrent(_ context.Context, binding *UpstreamAccountBinding, expectedConnectionID, expectedConnectionVersion int64) (bool, error) {
+func (r *upstreamConnectionTestRepo) UpdateAccountBindingIfCurrent(_ context.Context, binding *UpstreamAccountBinding, expectedConnectionID, expectedConnectionVersion int64, rateMultiplier *float64) (bool, error) {
 	if r.binding == nil || r.binding.ConnectionID != expectedConnectionID || r.connection == nil || r.connection.Version != expectedConnectionVersion {
 		return false, nil
 	}
+	r.appliedRateMultiplier = cloneFloat64Ptr(rateMultiplier)
 	copy := *binding
 	r.binding = &copy
 	return true, nil
@@ -574,7 +578,7 @@ func TestUpstreamConnectionServiceDeletePreservesInUseConflict(t *testing.T) {
 	require.True(t, errors.Is(err, ErrUpstreamConnectionInUse))
 }
 
-func TestUpstreamConnectionServiceBindAccountIsObserveOnlyAndDoesNotChangeBillingMultiplier(t *testing.T) {
+func TestUpstreamConnectionServiceBindAccountAppliesObservedBillingMultiplier(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "/api/token/search", request.URL.Path)
@@ -598,7 +602,7 @@ func TestUpstreamConnectionServiceBindAccountIsObserveOnlyAndDoesNotChangeBillin
 		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
 		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
 		RemoteUserID: "9", SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
-		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier}},
+		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceReported}},
 	}
 	existingBillingMultiplier := 1.7
 	accountRepo := &upstreamBindingAccountRepo{account: &Account{
@@ -610,13 +614,112 @@ func TestUpstreamConnectionServiceBindAccountIsObserveOnlyAndDoesNotChangeBillin
 
 	binding, err := connectionService.BindAccount(context.Background(), 5, 19)
 	require.NoError(t, err)
-	require.Equal(t, UpstreamBindingApplyObserveOnly, binding.ApplyPolicy)
+	require.Equal(t, UpstreamBindingApplyAuto, binding.ApplyPolicy)
 	require.Equal(t, UpstreamBindingResolutionFixed, binding.ResolutionKind)
 	require.Equal(t, 0.25, *binding.ObservedMultiplier)
+	require.Equal(t, upstreamGroupRateConfidenceReported, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
 	require.Empty(t, binding.KeyFingerprint)
 	require.NotEmpty(t, repo.binding.KeyFingerprint)
-	require.Equal(t, 0, accountRepo.updateCalls)
-	require.Equal(t, 1.7, *accountRepo.account.RateMultiplier)
+	require.Equal(t, 0.25, *repo.appliedRateMultiplier)
+}
+
+func TestUpstreamConnectionServiceBindAccountSkipsFallbackGroupRate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{"items": []any{
+			map[string]any{"id": 51, "name": "bound key", "group": "vip"},
+		}}})
+	}))
+	defer server.Close()
+
+	repo := &upstreamConnectionTestRepo{}
+	connectionService := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	ciphertext, fingerprint, hint, err := connectionService.encryptCredential(
+		string(UpstreamManagementAuthModeAccessToken), server.URL,
+		UpstreamConnectionCredentialInput{AccessToken: "management-token"},
+	)
+	require.NoError(t, err)
+	multiplier := 1.0
+	repo.connection = &UpstreamConnection{
+		ID: 5, Name: "NewAPI", Provider: UpstreamConnectionProviderNewAPI,
+		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		RemoteUserID: "9", SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
+		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceFallback}},
+	}
+	existingBillingMultiplier := 0.5
+	accountRepo := &upstreamBindingAccountRepo{account: &Account{
+		ID: 19, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sk-forwarding-key"},
+		RateMultiplier: &existingBillingMultiplier,
+	}}
+	connectionService.accountRepo = accountRepo
+	connectionService.inspector = newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	binding, err := connectionService.BindAccount(context.Background(), 5, 19)
+	require.NoError(t, err)
+	require.Equal(t, 1.0, *binding.ObservedMultiplier)
+	require.Equal(t, upstreamGroupRateConfidenceFallback, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Nil(t, repo.appliedRateMultiplier)
+	require.Equal(t, 0.5, *accountRepo.account.RateMultiplier)
+}
+
+func TestUpstreamConnectionServiceBindAccountSkipsPartialSub2APIRatesFallback(t *testing.T) {
+	// available has the bound key's group at 1.0x, but /groups/rates only covers a
+	// different group. The leftover available-group rate must stay fallback and
+	// must not rewrite the account billing multiplier.
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/keys":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
+				map[string]any{"id": 17, "name": "codex", "key": "sub2-secret-key", "group_id": 2},
+			}}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	availableRate := 1.0
+	reportedOtherRate := 0.25
+	repo := &upstreamConnectionTestRepo{}
+	connectionService := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	ciphertext, fingerprint, hint, err := connectionService.encryptCredential(
+		string(UpstreamManagementAuthModeAccessToken), server.URL,
+		UpstreamConnectionCredentialInput{AccessToken: "management-token"},
+	)
+	require.NoError(t, err)
+	repo.connection = &UpstreamConnection{
+		ID: 8, Name: "Sub2API", Provider: UpstreamConnectionProviderSub2API,
+		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
+		Groups: []UpstreamGroup{
+			{
+				RemoteID: "1", Name: "covered", RateMultiplier: &reportedOtherRate,
+				Source: "sub2api:group_rates", Confidence: upstreamGroupRateConfidenceReported,
+			},
+			{
+				RemoteID: "2", Name: "missing", RateMultiplier: &availableRate,
+				Source: "sub2api:available_groups", Confidence: upstreamGroupRateConfidenceFallback,
+			},
+		},
+	}
+	existingBillingMultiplier := 0.4
+	accountRepo := &upstreamBindingAccountRepo{account: &Account{
+		ID: 33, Type: AccountTypeAPIKey, Credentials: map[string]any{"api_key": "sub2-secret-key"},
+		RateMultiplier: &existingBillingMultiplier,
+	}}
+	connectionService.accountRepo = accountRepo
+	connectionService.inspector = newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	binding, err := connectionService.BindAccount(context.Background(), 8, 33)
+	require.NoError(t, err)
+	require.Equal(t, "2", binding.RemoteGroupID)
+	require.Equal(t, 1.0, *binding.ObservedMultiplier)
+	require.Equal(t, upstreamGroupRateConfidenceFallback, binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Nil(t, repo.appliedRateMultiplier)
+	require.Equal(t, 0.4, *accountRepo.account.RateMultiplier)
 }
 
 func TestUpstreamConnectionServiceBindAccountRejectsStaleConnectionVersion(t *testing.T) {
@@ -642,7 +745,7 @@ func TestUpstreamConnectionServiceBindAccountRejectsStaleConnectionVersion(t *te
 		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
 		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
 		RemoteUserID: "9", SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
-		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier}},
+		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceReported}},
 	}
 	existingBillingMultiplier := 1.7
 	accountRepo := &upstreamBindingAccountRepo{account: &Account{
@@ -656,11 +759,12 @@ func TestUpstreamConnectionServiceBindAccountRejectsStaleConnectionVersion(t *te
 
 	require.ErrorIs(t, err, ErrUpstreamConnectionChanged)
 	require.Nil(t, repo.binding)
+	require.Nil(t, repo.appliedRateMultiplier)
 	require.Equal(t, 0, accountRepo.updateCalls)
 	require.Equal(t, 1.7, *accountRepo.account.RateMultiplier)
 }
 
-func TestUpstreamConnectionServiceRefreshBindingRemainsObserveOnly(t *testing.T) {
+func TestUpstreamConnectionServiceRefreshBindingAppliesObservedBillingMultiplier(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "/api/token/search", request.URL.Path)
@@ -675,7 +779,7 @@ func TestUpstreamConnectionServiceRefreshBindingRemainsObserveOnly(t *testing.T)
 		ID: 7, Provider: UpstreamConnectionProviderNewAPI,
 		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
 		RemoteUserID: "3", SyncIntervalSeconds: 300,
-		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier}},
+		Groups: []UpstreamGroup{{Name: "vip", RateMultiplier: &multiplier, Confidence: upstreamGroupRateConfidenceReported}},
 	}
 	existingBillingMultiplier := 1.8
 	accountRepo := &upstreamBindingAccountRepo{account: &Account{
@@ -700,9 +804,10 @@ func TestUpstreamConnectionServiceRefreshBindingRemainsObserveOnly(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, UpstreamBindingStatusReady, repo.binding.Status)
 	require.Equal(t, 0.4, *repo.binding.ObservedMultiplier)
+	require.Equal(t, UpstreamBindingApplyAuto, repo.binding.ApplyPolicy)
 	require.Equal(t, 0, repo.binding.SyncFailures)
-	require.Equal(t, 0, accountRepo.updateCalls)
-	require.Equal(t, 1.8, *accountRepo.account.RateMultiplier)
+	require.Equal(t, upstreamGroupRateConfidenceReported, repo.binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey])
+	require.Equal(t, 0.4, *repo.appliedRateMultiplier)
 }
 
 func TestUpstreamConnectionServiceRefreshBindingRejectsStaleConnectionVersion(t *testing.T) {
@@ -731,6 +836,43 @@ func TestUpstreamConnectionServiceRefreshBindingRejectsStaleConnectionVersion(t 
 	require.ErrorIs(t, err, ErrUpstreamConnectionChanged)
 	require.Equal(t, UpstreamBindingStatusPending, repo.binding.Status)
 	require.Nil(t, repo.binding.ObservedMultiplier)
+	require.Nil(t, repo.appliedRateMultiplier)
+}
+
+func TestObservedAccountRateMultiplierRequiresReliableReadyBinding(t *testing.T) {
+	valid := 0.25
+	negative := -0.1
+	nan := math.NaN()
+	reportedDetails := map[string]any{upstreamBindingRateConfidenceDetailKey: upstreamGroupRateConfidenceReported}
+	fallbackDetails := map[string]any{upstreamBindingRateConfidenceDetailKey: upstreamGroupRateConfidenceFallback}
+
+	require.Equal(t, 0.25, *observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
+		ResolutionDetails: reportedDetails,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusPending, Confidence: "exact", ObservedMultiplier: &valid,
+		ResolutionDetails: reportedDetails,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "unknown", ObservedMultiplier: &valid,
+		ResolutionDetails: reportedDetails,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
+		ResolutionDetails: fallbackDetails,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &valid,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &negative,
+		ResolutionDetails: reportedDetails,
+	}))
+	require.Nil(t, observedAccountRateMultiplier(&UpstreamAccountBinding{
+		Status: UpstreamBindingStatusReady, Confidence: "exact", ObservedMultiplier: &nan,
+		ResolutionDetails: reportedDetails,
+	}))
 }
 
 func TestUpstreamConnectionCredentialRefreshesAutoDetectedSub2API(t *testing.T) {
