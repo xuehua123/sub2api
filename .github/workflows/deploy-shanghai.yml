@@ -237,8 +237,8 @@ jobs:
             # Keep exactly the instance Nginx is actively routing to.  Do not
             # infer the active slot from compose ordering: a stale file or a
             # partial deployment must fail closed instead of creating a 502.
-            active_ports="$(nginx -T 2>&1 | grep -Eo '127\\.0\\.0\\.1:(18080|28080)' | sort -u || true)"
-            active_port_count="$(printf '%s\\n' "$active_ports" | sed '/^$/d' | wc -l | tr -d ' ')"
+            active_ports="$(nginx -T 2>&1 | grep -Eo '127\.0\.0\.1:(18080|28080)' | sort -u || true)"
+            active_port_count="$(printf '%s\n' "$active_ports" | sed '/^$/d' | wc -l | tr -d ' ')"
             if [ "$active_port_count" -ne 1 ]; then
               echo "Expected Nginx to reference exactly one Sub2API blue-green port; found: ${active_ports:-none}" >&2
               false
@@ -251,7 +251,7 @@ jobs:
               container_id="$(docker compose -f "$compose_file" ps -q "$service")"
               [ -n "$container_id" ] || false
               host_ports="$(docker inspect --format '{{range $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{println .HostPort}}{{end}}{{end}}' "$container_id")"
-              if printf '%s\\n' "$host_ports" | grep -Fxq "$active_port"; then
+              if printf '%s\n' "$host_ports" | grep -Fxq "$active_port"; then
                 if [ -n "$active_service" ]; then
                   echo "More than one Sub2API service exposes Nginx active port $active_port" >&2
                   false
