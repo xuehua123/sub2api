@@ -95,7 +95,8 @@ jobs:
               -o StrictHostKeyChecking=accept-new \
               -o UserKnownHostsFile="$known_hosts_file" \
               -p "$STABLE_PORT" \
-              "$STABLE_USER@$STABLE_HOST"
+              "$STABLE_USER@$STABLE_HOST" \
+              "sudo -n /usr/local/sbin/sub2api-deploy-stable"
 
       - name: Deploy to pipixia
         if: inputs.target == 'pipixia'
