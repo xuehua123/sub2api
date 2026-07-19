@@ -790,6 +790,7 @@ func extractSub2APIConnectionGroups(payload any, now time.Time) []UpstreamGroup 
 // /groups/rates response body. Valid shapes:
 //   - {"data": {}} or {"data": {"12": 0.25}, "success": true}
 //   - bare rate map {"12": 0.25} (further validated against known groups)
+//
 // Invalid shapes include protocol envelopes without data ({"success":true}),
 // and non-object data values (array/null).
 func extractSub2APIGroupRatesMap(payload map[string]any) (map[string]any, bool) {
@@ -825,6 +826,7 @@ func sub2APIRatesPayloadLooksLikeEnvelope(payload map[string]any) bool {
 //   - it is empty {}, or
 //   - every key matches a currently discovered group RemoteID and every value
 //     parses as a non-negative finite multiplier.
+//
 // Unknown keys (items/list/groups/...), illegal values, or null leave groups
 // unchanged and fail closed so available defaults stay display-only.
 func applySub2APIConnectionGroupRates(groups []UpstreamGroup, rates map[string]any) bool {
