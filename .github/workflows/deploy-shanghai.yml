@@ -275,6 +275,16 @@ jobs:
               false
             fi
 
+            # Recovery guard: retain both healthy slots until the cleanup
+            # identity check is repaired. This restores public traffic without
+            # risking removal of the active backend.
+            trap - ERR
+            docker compose -f "$compose_file" ps
+            echo "Both healthy Sub2API slots retained; cleanup is temporarily disabled"
+            echo "Rollback state: $deploy_dir/$rollback_state"
+            echo "Compose backup: $deploy_dir/$backup"
+            exit 0
+
             # From this point the active instance is healthy and serving the
             # configured Nginx port.  Do not roll it back merely because an
             # inactive-container removal reports an operational error.
