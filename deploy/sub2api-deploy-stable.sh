@@ -6,8 +6,11 @@ umask 077
 
 readonly IMAGE_NAME="ghcr.io/xuehua123/sub2api"
 readonly DEPLOY_DIR="/opt/platform"
-readonly COMPOSE_FILE="docker-compose.yml"
+readonly COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
+readonly NGINX_CONFIG="/etc/nginx/sites-enabled/platform.conf"
+readonly CUTOVER_SCRIPT="/usr/local/sbin/sub2api-nginx-bluegreen-cutover"
 readonly LOCK_FILE="/var/lock/sub2api-stable-deploy.lock"
+readonly PUBLIC_HEALTH_URL="https://api.wenrugouai.com/health"
 
 if ! IFS= read -r deploy_image_tag || [[ -z "$deploy_image_tag" ]]; then
   echo "An immutable image tag must be provided on stdin" >&2
@@ -43,6 +46,13 @@ if ! IFS= read -r ghcr_token || [[ -z "$ghcr_token" ]]; then
   exit 2
 fi
 
+[[ -f "$COMPOSE_FILE" ]] || { echo "Stable compose file not found: $COMPOSE_FILE" >&2; exit 1; }
+[[ -f "$NGINX_CONFIG" ]] || { echo "Stable nginx config not found: $NGINX_CONFIG" >&2; exit 1; }
+[[ -x "$CUTOVER_SCRIPT" ]] || { echo "Blue-green cutover script not found: $CUTOVER_SCRIPT" >&2; exit 1; }
+
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "Another stable deployment is already running" >&2; exit 1; }
+
 docker_config="$(mktemp -d)"
 cleanup() {
   unset ghcr_token
@@ -56,130 +66,153 @@ printf '%s' "$ghcr_token" |
     --password-stdin
 unset ghcr_token
 
-if [[ ! -f "${DEPLOY_DIR}/${COMPOSE_FILE}" ]]; then
-  echo "Stable compose file not found: ${DEPLOY_DIR}/${COMPOSE_FILE}" >&2
-  exit 1
-fi
-
-exec 9>"$LOCK_FILE"
-if ! flock -n 9; then
-  echo "Another stable deployment is already running" >&2
-  exit 1
-fi
-
-cd "$DEPLOY_DIR"
-
-mapfile -t services < <(
-  docker compose -f "$COMPOSE_FILE" config --format json |
-    python3 -c 'import json, sys
-config = json.load(sys.stdin)
-prefixes = ("ghcr.io/xuehua123/sub2api:", "ghcr.io/xuehua123/sub2api@")
-for name, service in config.get("services", {}).items():
-    image = service.get("image", "")
-    if image == "ghcr.io/xuehua123/sub2api" or image.startswith(prefixes):
-        print(name)'
-)
-
-if [[ "${#services[@]}" -eq 0 ]]; then
-  echo "No Sub2API application services found in ${DEPLOY_DIR}/${COMPOSE_FILE}" >&2
-  exit 1
-fi
-
-timestamp="$(date +%Y%m%d-%H%M%S)"
-safe_tag="$(printf '%s' "$deploy_image_tag" | tr '/:@' '---')"
-backup="${COMPOSE_FILE}.bak-${timestamp}-pre-${safe_tag}"
-rollback_state="rollback-state-${timestamp}-pre-${safe_tag}.txt"
-
-cp --preserve=mode,ownership,timestamps "$COMPOSE_FILE" "$backup"
-
-{
-  echo "timestamp=$timestamp"
-  echo "deploy_image=$deploy_image"
-  echo "compose_backup=$backup"
-  for service in "${services[@]}"; do
-    container_id="$(docker compose -f "$COMPOSE_FILE" ps -q "$service" || true)"
-    echo "service=$service"
-    echo "container_id=$container_id"
-    if [[ -n "$container_id" ]]; then
-      echo "container_image=$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-      echo "container_image_id=$(docker inspect --format '{{.Image}}' "$container_id")"
-    fi
-  done
-} > "$rollback_state"
-
-rollback() {
-  trap - ERR INT TERM
-  echo "Deployment failed; restoring $backup" >&2
-  cp --preserve=mode,ownership,timestamps "$backup" "$COMPOSE_FILE"
-  for service in "${services[@]}"; do
-    docker compose -f "$COMPOSE_FILE" up -d --no-deps "$service" || true
-  done
-  docker compose -f "$COMPOSE_FILE" ps || true
+color_port() {
+  case "$1" in
+    blue) printf '%s' 18080 ;;
+    green) printf '%s' 28080 ;;
+    *) return 2 ;;
+  esac
 }
-trap rollback ERR INT TERM
 
-DEPLOY_IMAGE="$deploy_image" COMPOSE_PATH="${DEPLOY_DIR}/${COMPOSE_FILE}" python3 - <<'PY'
-from pathlib import Path
-import os
-import re
+container_healthy_on_port() {
+  local color=$1
+  local container="sub2api-${color}"
+  local port
+  port="$(color_port "$color")"
 
-path = Path(os.environ["COMPOSE_PATH"])
-image = os.environ["DEPLOY_IMAGE"]
-lines = path.read_text().splitlines()
-pattern = re.compile(
-    r"^(\s*image:\s*)ghcr\.io/xuehua123/sub2api(?::[^\s#]+|@[^\s#]+)?(\s*(?:#.*)?)$"
-)
-replaced = 0
-output = []
-for line in lines:
-    match = pattern.match(line)
-    if match:
-        line = f"{match.group(1)}{image}{match.group(2)}"
-        replaced += 1
-    output.append(line)
-if replaced == 0:
-    raise SystemExit("No Sub2API image entries found in compose file")
-path.write_text("\n".join(output) + "\n")
-print(f"Updated {replaced} Sub2API image entries")
-PY
+  [[ "$(docker inspect --format '{{.State.Running}}' "$container" 2>/dev/null || true)" == true ]] || return 1
+  [[ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container")" == healthy ]] || return 1
+  [[ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${port}/health")" == 200 ]]
+}
 
-DOCKER_CONFIG="$docker_config" docker compose -f "$COMPOSE_FILE" pull "${services[@]}"
-
-for service in "${services[@]}"; do
-  docker compose -f "$COMPOSE_FILE" up -d --no-deps "$service"
-  container_id="$(docker compose -f "$COMPOSE_FILE" ps -q "$service")"
-  [[ -n "$container_id" ]]
-
-  for ((attempt = 0; attempt < 90; attempt++)); do
-    running="$(docker inspect --format '{{.State.Running}}' "$container_id")"
-    health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
-
-    if [[ "$running" == "true" && "$health" == "healthy" ]]; then
-      break
+active_color=""
+for color in blue green; do
+  if container_healthy_on_port "$color"; then
+    if [[ -n "$active_color" ]]; then
+      echo "Both blue and green Sub2API instances are healthy; refusing ambiguous cutover" >&2
+      exit 1
     fi
-    if [[ "$running" != "true" || "$health" == "unhealthy" ]]; then
-      docker logs --tail 150 "$container_id" >&2 || true
-      false
-    fi
-    if [[ "$health" == "none" && "$attempt" -ge 5 ]]; then
-      break
-    fi
-    sleep 2
-  done
-
-  if [[ "$attempt" -ge 90 ]]; then
-    docker logs --tail 150 "$container_id" >&2 || true
-    false
-  fi
-
-  actual_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-  if [[ "$actual_image" != "$deploy_image" ]]; then
-    echo "Unexpected image for $service: $actual_image" >&2
-    false
+    active_color=$color
   fi
 done
 
+if [[ -z "$active_color" ]]; then
+  echo "No healthy active Sub2API blue-green instance was found" >&2
+  exit 1
+fi
+
+if [[ "$active_color" == blue ]]; then
+  target_color=green
+else
+  target_color=blue
+fi
+
+active_container="sub2api-${active_color}"
+target_container="sub2api-${target_color}"
+active_port="$(color_port "$active_color")"
+target_port="$(color_port "$target_color")"
+active_upstream="127.0.0.1:${active_port}"
+target_upstream="127.0.0.1:${target_port}"
+
+if ! grep -Fq "$active_upstream" "$NGINX_CONFIG"; then
+  echo "Nginx config does not reference the active upstream $active_upstream" >&2
+  exit 1
+fi
+
+# The inactive slot must be fully disposable before the new candidate is started.
+if [[ "$(docker inspect --format '{{.State.Running}}' "$target_container" 2>/dev/null || true)" == true ]]; then
+  echo "Inactive target container $target_container is unexpectedly running" >&2
+  exit 1
+fi
+docker rm -f "$target_container" >/dev/null 2>&1 || true
+
+safe_tag="$(printf '%s' "$deploy_image_tag" | tr '/:@' '---')"
+candidate="${DEPLOY_DIR}/sub2api-stable-${target_color}-${safe_tag}.yml"
+rollback_state="${DEPLOY_DIR}/rollback-state-$(date +%Y%m%d-%H%M%S)-pre-${safe_tag}.txt"
+
+if [[ "$target_color" == blue ]]; then
+  cat > "$candidate" <<EOF
+services:
+  sub2api:
+    container_name: sub2api-blue
+    image: ${deploy_image}
+    ports: !override
+      - "127.0.0.1:18080:8080"
+
+networks:
+  shanghai-net:
+    external: true
+    name: platform_shanghai-net
+EOF
+else
+  cat > "$candidate" <<EOF
+services:
+  sub2api:
+    container_name: sub2api-green
+    image: ${deploy_image}
+    ports:
+      - "127.0.0.1:18082:8080"
+
+networks:
+  shanghai-net:
+    external: true
+    name: platform_shanghai-net
+EOF
+fi
+
+{
+  echo "timestamp=$(date -Is)"
+  echo "deploy_image=$deploy_image"
+  echo "active_container=$active_container"
+  echo "active_image=$(docker inspect --format '{{.Config.Image}}' "$active_container")"
+  echo "target_container=$target_container"
+  echo "candidate=$candidate"
+  echo "nginx_config=$NGINX_CONFIG"
+} > "$rollback_state"
+
+compose=(docker compose -p "platform-${target_color}" -f "$COMPOSE_FILE" -f "$candidate")
+rollback_target() {
+  trap - ERR INT TERM
+  docker rm -f "$target_container" >/dev/null 2>&1 || true
+}
+trap rollback_target ERR INT TERM
+
+DOCKER_CONFIG="$docker_config" "${compose[@]}" pull sub2api
+"${compose[@]}" up -d --no-deps --force-recreate sub2api
+
+for ((attempt = 0; attempt < 90; attempt++)); do
+  running="$(docker inspect --format '{{.State.Running}}' "$target_container" 2>/dev/null || true)"
+  health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$target_container" 2>/dev/null || true)"
+
+  if [[ "$running" == true && "$health" == healthy ]] &&
+    [[ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://${target_upstream}/health")" == 200 ]]; then
+    break
+  fi
+  if [[ "$running" != true || "$health" == unhealthy ]]; then
+    docker logs --tail 150 "$target_container" >&2 || true
+    false
+  fi
+  sleep 2
+done
+
+if [[ "$attempt" -ge 90 ]]; then
+  docker logs --tail 150 "$target_container" >&2 || true
+  false
+fi
+
+actual_image="$(docker inspect --format '{{.Config.Image}}' "$target_container")"
+if [[ "$actual_image" != "$deploy_image" ]]; then
+  echo "Unexpected image for $target_container: $actual_image" >&2
+  false
+fi
+
+"$CUTOVER_SCRIPT" \
+  "$active_container" \
+  "$target_container" \
+  "$active_upstream" \
+  "$target_upstream" \
+  "$PUBLIC_HEALTH_URL" \
+  "$NGINX_CONFIG"
+
 trap - ERR INT TERM
-docker compose -f "$COMPOSE_FILE" ps "${services[@]}"
-echo "Rollback state: ${DEPLOY_DIR}/${rollback_state}"
-echo "Compose backup: ${DEPLOY_DIR}/${backup}"
+echo "Blue-green deployment complete: image=$deploy_image rollback_state=$rollback_state"
