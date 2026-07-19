@@ -129,7 +129,7 @@ export default {
       token: '远程 Key',
       noGroups: '暂未获取到分组',
       noBindings: '暂未绑定本地账号',
-      observeOnly: '观测结果不会修改本地计费。'
+      autoSync: '可靠解析到 Key 所属分组后，会自动更新对应账号的计费倍率。'
     },
     usage: {
       title: '今日账号与上游 Key 用量',
@@ -147,7 +147,7 @@ export default {
       manage: '管理上游连接',
       none: '不绑定共享连接',
       empty: '请先新增上游连接，再回来绑定这个账号。',
-      observeOnly: '这里只监控余额、分组和 Key 归属，不修改本地模型价格或账号计费倍率。',
+      autoSync: '绑定后会监控余额、分组和 Key 归属，并在可靠解析成功后自动更新账号计费倍率。',
       group: '解析到的分组',
       observedMultiplier: '观测到的上游倍率',
       savedButBindingFailed: '账号已经保存，但上游连接绑定失败，可在编辑账号时重试。',

@@ -732,22 +732,24 @@ func inspectSub2APIGroups(
 	if len(groups) == 0 {
 		return []UpstreamGroup{}, "", nil
 	}
-	ratesConfirmed := false
 	warning := ""
 	ratesEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/rates", false)
 	if rates, ratesErr := management.managementJSON(ctx, client, http.MethodGet, ratesEndpoint, headers, nil); ratesErr == nil {
+		// Mark confidence per group only after that group is actually covered by
+		// /groups/rates. A successful rates HTTP response must not promote
+		// available-group fallback multipliers that were never overridden.
 		applySub2APIConnectionGroupRates(groups, envelopeData(rates.payload))
-		ratesConfirmed = true
 	} else {
 		warning = "groups: user-specific rates unavailable; showing available-group fallback rates"
 	}
 	for index := range groups {
-		if groups[index].RateMultiplier != nil && ratesConfirmed {
-			groups[index].Confidence = "reported"
-		} else if groups[index].RateMultiplier != nil {
-			groups[index].Confidence = "fallback"
-		} else {
-			groups[index].Confidence = "unknown"
+		switch {
+		case groups[index].RateMultiplier != nil && groups[index].Source == "sub2api:group_rates":
+			groups[index].Confidence = upstreamGroupRateConfidenceReported
+		case groups[index].RateMultiplier != nil:
+			groups[index].Confidence = upstreamGroupRateConfidenceFallback
+		default:
+			groups[index].Confidence = upstreamGroupRateConfidenceUnknown
 		}
 	}
 	sort.Slice(groups, func(left, right int) bool {
@@ -1052,7 +1054,7 @@ func (i *upstreamConnectionInspector) resolveNewAPITokenRow(
 		RemoteTokenID:   strconv.FormatInt(int64FromMap(row, "id", "token_id"), 10),
 		RemoteTokenName: strings.TrimSpace(firstString(row, "name")),
 		ResolutionKind:  resolutionKind, RemoteGroupName: groupName, FallbackGroups: fallbackGroups,
-		Confidence: "exact", Source: source, ApplyPolicy: UpstreamBindingApplyObserveOnly,
+		Confidence: "exact", Source: source, ApplyPolicy: UpstreamBindingApplyAuto,
 		Status: UpstreamBindingStatusReady, ResolutionDetails: map[string]any{
 			"token_group": groupName, "cross_group_retry": firstBool(row, "cross_group_retry"),
 		},
@@ -1067,7 +1069,7 @@ func (i *upstreamConnectionInspector) resolveNewAPITokenRow(
 		(resolutionKind == UpstreamBindingResolutionFallbackChain && !strings.EqualFold(groupName, "auto")) {
 		if group, found := findObservedUpstreamGroup(connection.Groups, "", groupName); found {
 			binding.RemoteGroupID = group.RemoteID
-			binding.ObservedMultiplier = cloneFloat64Ptr(group.RateMultiplier)
+			attachObservedGroupRate(&binding, group)
 		} else {
 			binding.Status = UpstreamBindingStatusUnresolved
 			binding.LastError = fmt.Sprintf("resolved group %q is absent from the latest group snapshot", groupName)
@@ -1200,7 +1202,7 @@ func (i *upstreamConnectionInspector) resolveSub2APIKeyRow(
 		RemoteTokenName: strings.TrimSpace(firstString(row, "name")),
 		ResolutionKind:  UpstreamBindingResolutionFixed, RemoteGroupID: groupIDString,
 		FallbackGroups: []string{}, Confidence: "exact", Source: "sub2api:keys",
-		ApplyPolicy: UpstreamBindingApplyObserveOnly, Status: UpstreamBindingStatusReady,
+		ApplyPolicy: UpstreamBindingApplyAuto, Status: UpstreamBindingStatusReady,
 		ResolutionDetails: map[string]any{"group_id": groupID}, ObservedAt: &now,
 	}
 	if groupID <= 0 {
@@ -1211,12 +1213,32 @@ func (i *upstreamConnectionInspector) resolveSub2APIKeyRow(
 	}
 	if group, found := findObservedUpstreamGroup(connection.Groups, groupIDString, ""); found {
 		binding.RemoteGroupName = group.Name
-		binding.ObservedMultiplier = cloneFloat64Ptr(group.RateMultiplier)
+		attachObservedGroupRate(&binding, group)
 	} else {
 		binding.Status = UpstreamBindingStatusUnresolved
 		binding.LastError = fmt.Sprintf("resolved group id %d is absent from the latest group snapshot", groupID)
 	}
 	return binding, nil
+}
+
+// attachObservedGroupRate copies a group multiplier into the binding for
+// monitoring, and records how trustworthy that rate is. Automatic account
+// billing updates only use rates with confidence "reported".
+func attachObservedGroupRate(binding *UpstreamAccountBinding, group UpstreamGroup) {
+	if binding == nil {
+		return
+	}
+	binding.ObservedMultiplier = cloneFloat64Ptr(group.RateMultiplier)
+	if binding.ResolutionDetails == nil {
+		binding.ResolutionDetails = map[string]any{}
+	}
+	confidence := strings.TrimSpace(group.Confidence)
+	if confidence == "" {
+		// Empty confidence means the probe path did not classify the rate.
+		// Fail closed for billing writes; observation can still show the value.
+		confidence = upstreamGroupRateConfidenceUnknown
+	}
+	binding.ResolutionDetails[upstreamBindingRateConfidenceDetailKey] = confidence
 }
 
 func listSub2APIKeyRows(

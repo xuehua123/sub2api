@@ -171,10 +171,12 @@ export default {
         multiplierUnavailableTitle: '上游没有返回该分组的倍率。上游连接：{connection}；上游分组：{group}',
         stale: '观测过期',
         staleTitle: '上游倍率观测已过期。上游连接：{connection}；上游分组：{group}；最后同步：{observedAt}',
+        observeOnly: '回退倍率',
+        observeOnlyTitle: '当前仅为回退/不可靠的观测倍率，仅供展示，不会自动同步账号计费倍率。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；倍率可信度：{rateConfidence}；同步时间：{observedAt}',
         mismatch: '有差异',
-        mismatchTitle: '账号倍率与已观测的上游分组倍率不一致。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。此标识不会自动修改账号计费倍率。',
+        mismatchTitle: '账号计费倍率与上游分组倍率暂不一致。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。可靠探测成功后会自动更新账号计费倍率。',
         synchronized: '已同步',
-        synchronizedTitle: '账号倍率已与上游分组倍率核对一致。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。此标识只验证，不会自动修改账号计费倍率。'
+        synchronizedTitle: '账号计费倍率已与上游分组倍率自动同步。上游连接：{connection}；上游分组：{group}；上游倍率：{upstream}x；账号倍率：{account}x；同步时间：{observedAt}。'
       },
       allPrivacyModes: '全部Privacy状态',
       privacyUnset: '未设置',

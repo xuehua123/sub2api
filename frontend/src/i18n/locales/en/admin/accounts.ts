@@ -215,10 +215,12 @@ export default {
         multiplierUnavailableTitle: 'The upstream did not provide a multiplier for this group. Connection: {connection}; Group: {group}',
         stale: 'Observation stale',
         staleTitle: 'The upstream multiplier observation has expired. Connection: {connection}; Group: {group}; Last synchronized: {observedAt}',
+        observeOnly: 'Fallback only',
+        observeOnlyTitle: 'This is a fallback/unreliable observed multiplier for display only. It does not automatically update the account billing rate. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Rate confidence: {rateConfidence}; Synchronized: {observedAt}',
         mismatch: 'Mismatch',
-        mismatchTitle: 'The account rate differs from the observed upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}. This indicator never changes the account billing rate automatically.',
+        mismatchTitle: 'The account billing rate temporarily differs from the upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}. A reliable successful probe updates the account billing rate automatically.',
         synchronized: 'Synchronized',
-        synchronizedTitle: 'The account rate matches the observed upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}. This indicator verifies only and never changes the account billing rate automatically.'
+        synchronizedTitle: 'The account billing rate was synchronized automatically with the upstream group multiplier. Connection: {connection}; Group: {group}; Upstream: {upstream}x; Account: {account}x; Synchronized: {observedAt}.'
       },
       allPrivacyModes: 'All Privacy States',
       privacyUnset: 'Unset',

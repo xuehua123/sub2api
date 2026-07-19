@@ -32,7 +32,7 @@
       <p v-else-if="connections.length === 0" class="input-hint">
         {{ t('admin.upstreamConnections.binding.empty') }}
       </p>
-      <p v-else class="input-hint">{{ t('admin.upstreamConnections.binding.observeOnly') }}</p>
+      <p v-else class="input-hint">{{ t('admin.upstreamConnections.binding.autoSync') }}</p>
 
       <div
         v-if="binding"

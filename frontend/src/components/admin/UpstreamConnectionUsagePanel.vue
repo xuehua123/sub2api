@@ -6,7 +6,7 @@
           {{ t('admin.upstreamConnections.usage.title') }}
         </h3>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('admin.upstreamConnections.detail.observeOnly') }}
+          {{ t('admin.upstreamConnections.detail.autoSync') }}
         </p>
       </div>
       <button

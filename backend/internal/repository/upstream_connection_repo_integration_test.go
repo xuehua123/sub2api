@@ -132,3 +132,56 @@ func TestUpstreamConnectionRepositoryListIncludesBindingDetailsWhenRequested(t *
 	require.Equal(t, "pro", items[0].Bindings[0].RemoteGroupName)
 	require.Equal(t, 0.08, *items[0].Bindings[0].ObservedMultiplier)
 }
+
+func TestUpstreamConnectionRepositoryBindingSyncsAccountRateMultiplier(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	account, err := tx.Client().Account.Create().
+		SetName("auto multiplier account").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		SetRateMultiplier(1.5).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := &service.UpstreamConnection{
+		Name: "auto multiplier upstream", Provider: service.UpstreamConnectionProviderSub2API,
+		AuthMode: "access_token", ManagementBaseURL: "https://upstream.example.com",
+		CredentialEncrypted: "encrypted", CredentialFingerprint: "sha256:v1:auto-rate",
+		Capabilities: map[string]any{}, Status: service.UpstreamConnectionStatusReady,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
+		WalletReliability: "exact", WalletRaw: map[string]any{},
+	}
+	require.NoError(t, repo.Create(txCtx, connection))
+
+	rate := 0.25
+	binding := &service.UpstreamAccountBinding{
+		AccountID: account.ID, ConnectionID: connection.ID,
+		ResolutionKind:  service.UpstreamBindingResolutionFixed,
+		RemoteGroupName: "vip", ObservedMultiplier: &rate,
+		Confidence: "exact", ApplyPolicy: service.UpstreamBindingApplyAuto,
+		Status:         service.UpstreamBindingStatusReady,
+		FallbackGroups: []string{}, ResolutionDetails: map[string]any{},
+	}
+	applied, err := repo.UpsertAccountBindingIfCurrent(txCtx, binding, connection.Version, &rate)
+	require.NoError(t, err)
+	require.True(t, applied)
+
+	updatedAccount, err := tx.Client().Account.Get(txCtx, account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0.25, updatedAccount.RateMultiplier)
+
+	staleRate := 0.05
+	binding.ObservedMultiplier = &staleRate
+	applied, err = repo.UpdateAccountBindingIfCurrent(txCtx, binding, connection.ID, connection.Version+1, &staleRate)
+	require.NoError(t, err)
+	require.False(t, applied)
+	updatedAccount, err = tx.Client().Account.Get(txCtx, account.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0.25, updatedAccount.RateMultiplier)
+}

@@ -34,6 +34,7 @@ const (
 
 const (
 	UpstreamBindingApplyObserveOnly = "observe_only"
+	UpstreamBindingApplyAuto        = "auto"
 )
 
 const (
@@ -41,6 +42,18 @@ const (
 	UpstreamBindingStatusReady      = "ready"
 	UpstreamBindingStatusUnresolved = "unresolved"
 	UpstreamBindingStatusError      = "error"
+)
+
+// ResolutionDetails keys that control whether an observed upstream multiplier
+// is reliable enough to write into the local account billing rate.
+const (
+	// upstreamBindingRateConfidenceDetailKey stores the confidence of the
+	// observed group rate itself (not the key→group mapping confidence).
+	// Only "reported" authorizes automatic account rate updates.
+	upstreamBindingRateConfidenceDetailKey = "rate_confidence"
+	upstreamGroupRateConfidenceReported    = "reported"
+	upstreamGroupRateConfidenceFallback    = "fallback"
+	upstreamGroupRateConfidenceUnknown     = "unknown"
 )
 
 // UpstreamConnection is the service-layer view of one reusable upstream

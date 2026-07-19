@@ -69,6 +69,15 @@ const hasMatchingMultiplier = computed(() => {
   return Math.abs(observed - localMultiplier.value) <= baseline * 1e-6
 })
 
+const rateConfidence = computed(() => {
+  const details = props.binding?.resolution_details
+  if (!details || typeof details !== 'object') return 'unknown'
+  const value = details.rate_confidence
+  return typeof value === 'string' && value.trim() ? value.trim() : 'unknown'
+})
+
+const isReportedRate = computed(() => rateConfidence.value === 'reported')
+
 const observedAt = computed(() => {
   const value = props.binding?.observed_at
   return value ? formatDateTime(value) || t('common.time.never') : t('common.time.never')
@@ -82,7 +91,8 @@ const upstreamDetails = computed(() => ({
     : formatMultiplier(props.binding.observed_multiplier),
   account: formatMultiplier(localMultiplier.value),
   observedAt: observedAt.value,
-  error: props.binding?.last_error || '-'
+  error: props.binding?.last_error || '-',
+  rateConfidence: rateConfidence.value
 }))
 
 const syncMeta = computed<SyncMeta>(() => {
@@ -159,6 +169,16 @@ const syncMeta = computed<SyncMeta>(() => {
       title: t(`${key}.staleTitle`, upstreamDetails.value),
       className: 'text-amber-600 dark:text-amber-300',
       icon: 'clock'
+    }
+  }
+  // Fallback/unknown rates are display-only and never authorize auto account
+  // billing updates. Do not treat numeric equality as "already synchronized".
+  if (!isReportedRate.value) {
+    return {
+      label: t(`${key}.observeOnly`),
+      title: t(`${key}.observeOnlyTitle`, upstreamDetails.value),
+      className: 'text-amber-600 dark:text-amber-300',
+      icon: 'exclamationTriangle'
     }
   }
   if (!hasMatchingMultiplier.value) {
