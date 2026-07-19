@@ -111,12 +111,19 @@ jobs:
           password: ${{ secrets.NEW_PIPIXIA_PASSWORD }}
           port: ${{ secrets.NEW_PIPIXIA_PORT }}
           envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
-          script_stop: true
+          # The remote script already uses set -eu and an ERR rollback trap.
+          # script_stop injects Bash statements after every command and corrupts
+          # the Python heredoc below before it reaches the remote shell.
+          script_stop: false
           command_timeout: 10m
           script: |
             set -eu
 
-            if [[ "$DEPLOY_IMAGE_TAG" == ghcr.io/* ]]; then deploy_image="$DEPLOY_IMAGE_TAG"; elif [[ "$DEPLOY_IMAGE_TAG" == sha256:* ]]; then deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}"; else deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}"; fi
+            case "$DEPLOY_IMAGE_TAG" in
+              ghcr.io/*) deploy_image="$DEPLOY_IMAGE_TAG" ;;
+              sha256:*) deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}" ;;
+              *) deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}" ;;
+            esac
 
             if [ -f /srv/sub2api/compose.yml ]; then
               deploy_dir=/srv/sub2api
