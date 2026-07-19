@@ -116,11 +116,7 @@ jobs:
           script: |
             set -eu
 
-            case "$DEPLOY_IMAGE_TAG" in
-              ghcr.io/*) deploy_image="$DEPLOY_IMAGE_TAG" ;;
-              sha256:*) deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}" ;;
-              *) deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}" ;;
-            esac
+            if [[ "$DEPLOY_IMAGE_TAG" == ghcr.io/* ]]; then deploy_image="$DEPLOY_IMAGE_TAG"; elif [[ "$DEPLOY_IMAGE_TAG" == sha256:* ]]; then deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}"; else deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}"; fi
 
             if [ -f /srv/sub2api/compose.yml ]; then
               deploy_dir=/srv/sub2api
