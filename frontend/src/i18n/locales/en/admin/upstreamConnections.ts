@@ -8,6 +8,8 @@ export default {
     search: 'Search connections',
     allProviders: 'All providers',
     allStatuses: 'All statuses',
+    openHomepage: 'Open upstream homepage',
+    lowBalanceHint: 'Balance below $50',
     probe: 'Probe now',
     probeSuccess: 'Upstream observations refreshed',
     probeFailed: 'Upstream probe failed',
@@ -29,10 +31,22 @@ export default {
       name: 'Connection',
       provider: 'Provider',
       wallet: 'Wallet',
+      todayRequests: 'Today requests',
       observations: 'Observed scope',
       lastSync: 'Last sync',
       status: 'Status',
       actions: 'Actions'
+    },
+    sort: {
+      todayRequestsDesc: 'Most requests today',
+      balanceAsc: 'Lowest balance first',
+      lastSyncDesc: 'Latest sync first',
+      nameAsc: 'Name'
+    },
+    summary: {
+      connections: 'Connections',
+      lowBalance: 'Balance below $50',
+      todayRequests: 'Requests today'
     },
     fields: {
       name: 'Connection name',
@@ -100,43 +114,6 @@ export default {
       noBindings: 'No local accounts are bound',
       observeOnly: 'Observed values never change local billing.'
     },
-    migration: {
-      open: 'Migrate legacy',
-      title: 'Migrate legacy account monitoring',
-      loading: 'Analyzing legacy settings…',
-      safety: 'Migration only creates shared connections and observation bindings. It never changes account multipliers, packages, subscriptions, or billing formulas.',
-      compatibility: 'Legacy credentials and sync flags remain intact. Verify V2 observations before disabling legacy sync yourself.',
-      apply: 'Confirm migration',
-      applied: 'Migration completed: {count} accounts bound',
-      previewFailed: 'Failed to analyze legacy monitoring settings',
-      applyFailed: 'Failed to migrate legacy monitoring settings',
-      empty: 'No legacy account-level monitoring settings were found',
-      summary: {
-        eligible: 'Eligible accounts',
-        connections: 'Shared identities',
-        planned: 'Planned bindings',
-        migrated: 'Migrated',
-        skipped: 'Skipped or failed'
-      },
-      columns: {
-        account: 'Local account',
-        upstream: 'Upstream identity',
-        group: 'Legacy group',
-        action: 'Action',
-        note: 'Note'
-      },
-      actions: {
-        create_and_bind: 'Create and bind',
-        reuse_and_bind: 'Reuse and bind',
-        migrated: 'Created and bound',
-        reused_and_bound: 'Reused and bound',
-        already_migrated: 'Already migrated',
-        skip_disabled: 'Legacy sync disabled',
-        skip_invalid: 'Invalid settings',
-        skip_existing_binding: 'Existing binding kept',
-        failed: 'Migration failed'
-      }
-    },
     binding: {
       title: 'Shared upstream connection',
       description: 'Select the management connection that owns this forwarding key.',
@@ -146,7 +123,6 @@ export default {
       observeOnly: 'Wallet, group, and key assignment are monitored only. Local prices and billing multipliers are unchanged.',
       group: 'Resolved group',
       observedMultiplier: 'Observed upstream multiplier',
-      legacyAdvanced: 'Legacy account-level monitoring (advanced)',
       savedButBindingFailed: 'The account was saved, but its upstream connection binding failed. You can retry from Edit Account.',
       loadFailed: 'Failed to load upstream connection options'
     }

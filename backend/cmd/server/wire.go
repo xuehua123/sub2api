@@ -108,8 +108,6 @@ func provideCleanup(
 	channelMonitorRunner *service.ChannelMonitorRunner,
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	rateMultiplierPriority *service.RateMultiplierPriorityService,
-	upstreamRateMultiplierSync *service.UpstreamRateMultiplierSyncService,
-	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	upstreamConnectionSync *service.UpstreamConnectionSyncService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
@@ -304,18 +302,6 @@ func provideCleanup(
 			{"RateMultiplierPriorityService", func() error {
 				if rateMultiplierPriority != nil {
 					rateMultiplierPriority.Stop()
-				}
-				return nil
-			}},
-			{"UpstreamRateMultiplierSyncService", func() error {
-				if upstreamRateMultiplierSync != nil {
-					upstreamRateMultiplierSync.Stop()
-				}
-				return nil
-			}},
-			{"UpstreamBillingProbeService", func() error {
-				if upstreamBillingProbe != nil {
-					upstreamBillingProbe.Stop()
 				}
 				return nil
 			}},

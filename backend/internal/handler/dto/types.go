@@ -184,25 +184,6 @@ type AdminGroup struct {
 	SortOrder int `json:"sort_order"`
 }
 
-type AccountBalanceProbeState struct {
-	AccountID       int64      `json:"account_id"`
-	Method          string     `json:"method"`
-	Enabled         bool       `json:"enabled"`
-	ThresholdUSD    *float64   `json:"threshold_usd,omitempty"`
-	DetectedMethod  string     `json:"detected_method,omitempty"`
-	Status          string     `json:"status"`
-	Error           string     `json:"error,omitempty"`
-	BalanceUSD      *float64   `json:"balance_usd,omitempty"`
-	BalanceAmount   *float64   `json:"balance_amount,omitempty"`
-	BalanceCurrency string     `json:"balance_currency,omitempty"`
-	Unlimited       bool       `json:"unlimited"`
-	Endpoint        string     `json:"endpoint,omitempty"`
-	TotalUsedUSD    *float64   `json:"total_used_usd,omitempty"`
-	TotalGrantedUSD *float64   `json:"total_granted_usd,omitempty"`
-	CheckedAt       *time.Time `json:"checked_at,omitempty"`
-	NotifiedAt      *time.Time `json:"notified_at,omitempty"`
-}
-
 type Account struct {
 	ID       int64   `json:"id"`
 	Name     string  `json:"name"`
@@ -211,24 +192,23 @@ type Account struct {
 	Type     string  `json:"type"`
 	// Credentials 经 RedactCredentials 处理后只含非敏感子键；敏感 token / api_key / 私钥
 	// 的存在性通过 CredentialsStatus（has_<key>）暴露，原始值不返回前端。
-	Credentials             map[string]any            `json:"credentials"`
-	CredentialsStatus       map[string]bool           `json:"credentials_status,omitempty"`
-	Extra                   map[string]any            `json:"extra"`
-	BalanceProbe            *AccountBalanceProbeState `json:"balance_probe,omitempty"`
-	ProxyID                 *int64                    `json:"proxy_id"`
-	ProxyFallbackOriginID   *int64                    `json:"proxy_fallback_origin_id"`
-	ProxyFallbackOriginName *string                   `json:"proxy_fallback_origin_name,omitempty"`
-	Concurrency             int                       `json:"concurrency"`
-	LoadFactor              *int                      `json:"load_factor,omitempty"`
-	Priority                int                       `json:"priority"`
-	RateMultiplier          float64                   `json:"rate_multiplier"`
-	Status                  string                    `json:"status"`
-	ErrorMessage            string                    `json:"error_message"`
-	LastUsedAt              *time.Time                `json:"last_used_at"`
-	ExpiresAt               *int64                    `json:"expires_at"`
-	AutoPauseOnExpired      bool                      `json:"auto_pause_on_expired"`
-	CreatedAt               time.Time                 `json:"created_at"`
-	UpdatedAt               time.Time                 `json:"updated_at"`
+	Credentials             map[string]any  `json:"credentials"`
+	CredentialsStatus       map[string]bool `json:"credentials_status,omitempty"`
+	Extra                   map[string]any  `json:"extra"`
+	ProxyID                 *int64          `json:"proxy_id"`
+	ProxyFallbackOriginID   *int64          `json:"proxy_fallback_origin_id"`
+	ProxyFallbackOriginName *string         `json:"proxy_fallback_origin_name,omitempty"`
+	Concurrency             int             `json:"concurrency"`
+	LoadFactor              *int            `json:"load_factor,omitempty"`
+	Priority                int             `json:"priority"`
+	RateMultiplier          float64         `json:"rate_multiplier"`
+	Status                  string          `json:"status"`
+	ErrorMessage            string          `json:"error_message"`
+	LastUsedAt              *time.Time      `json:"last_used_at"`
+	ExpiresAt               *int64          `json:"expires_at"`
+	AutoPauseOnExpired      bool            `json:"auto_pause_on_expired"`
+	CreatedAt               time.Time       `json:"created_at"`
+	UpdatedAt               time.Time       `json:"updated_at"`
 
 	Schedulable bool `json:"schedulable"`
 

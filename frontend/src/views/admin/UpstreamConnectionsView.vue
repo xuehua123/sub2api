@@ -18,13 +18,12 @@
           <div class="w-full sm:w-40">
             <Select v-model="filters.status" :options="statusFilterOptions" @change="loadConnections(1)" />
           </div>
+          <div class="w-full sm:w-48">
+            <Select v-model="filters.sort" :options="sortOptions" @change="applySortAndPage(1)" />
+          </div>
           <div class="flex flex-1 items-center justify-end gap-2">
             <button class="btn btn-secondary" :title="t('common.refresh')" :disabled="loading" @click="loadConnections()">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-            </button>
-            <button class="btn btn-secondary" :disabled="migrationLoading" @click="openLegacyMigration">
-              <Icon name="database" size="md" class="mr-2" />
-              {{ t('admin.upstreamConnections.migration.open') }}
             </button>
             <button class="btn btn-primary" @click="openCreate">
               <Icon name="plus" size="md" class="mr-2" />
@@ -35,6 +34,20 @@
       </template>
 
       <template #table>
+        <div class="mb-3 grid grid-cols-3 divide-x divide-gray-200 border-y border-gray-200 bg-white dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+          <div class="px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.connections') }}</p>
+            <p class="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{{ connectionSummary.total }}</p>
+          </div>
+          <div class="px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.lowBalance') }}</p>
+            <p class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.lowBalance > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-900 dark:text-white'">{{ connectionSummary.lowBalance }}</p>
+          </div>
+          <div class="px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayRequests') }}</p>
+            <p data-testid="today-requests-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ todayStatsAvailable ? connectionSummary.todayRequests.toLocaleString() : '-' }}</p>
+          </div>
+        </div>
         <DataTable :columns="columns" :data="connections" :loading="loading">
           <template #cell-name="{ row }">
             <button class="text-left" @click="openDetails(row)">
@@ -53,10 +66,17 @@
             </div>
           </template>
           <template #cell-wallet="{ row }">
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-800 dark:text-gray-100">{{ formatWallet(row) }}</span>
-              <span class="text-xs text-gray-500">{{ reliabilityLabel(row.wallet_reliability) }}</span>
+            <div class="flex flex-col" :class="isLowWallet(row) ? 'border-l-2 border-amber-500 pl-2' : ''">
+              <span class="font-medium" :class="isLowWallet(row) ? 'text-amber-700 dark:text-amber-300' : 'text-gray-800 dark:text-gray-100'">{{ formatWallet(row) }}</span>
+              <span class="text-xs" :class="isLowWallet(row) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'">
+                {{ isLowWallet(row) ? t('admin.upstreamConnections.lowBalanceHint') : reliabilityLabel(row.wallet_reliability) }}
+              </span>
             </div>
+          </template>
+          <template #cell-today_requests="{ row }">
+            <span class="font-medium tabular-nums text-gray-800 dark:text-gray-100">
+              {{ row.today_requests === null ? '-' : row.today_requests.toLocaleString() }}
+            </span>
           </template>
           <template #cell-observations="{ row }">
             <div class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">
@@ -75,6 +95,17 @@
           </template>
           <template #cell-actions="{ row }">
             <div class="flex items-center gap-1">
+              <a
+                class="rounded p-1.5 text-gray-500 hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-900/20"
+                :href="homepageUrl(row.management_base_url)"
+                target="_blank"
+                rel="noopener noreferrer"
+                :title="t('admin.upstreamConnections.openHomepage')"
+                :aria-label="t('admin.upstreamConnections.openHomepage')"
+                @click.stop
+              >
+                <Icon name="globe" size="sm" />
+              </a>
               <button class="rounded p-1.5 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20" :title="t('admin.upstreamConnections.probe')" :disabled="probingIds.has(row.id)" @click="probeConnection(row)">
                 <Icon name="refresh" size="sm" :class="probingIds.has(row.id) ? 'animate-spin' : ''" />
               </button>
@@ -98,7 +129,7 @@
           :page="pagination.page"
           :total="pagination.total"
           :page-size="pagination.page_size"
-          @update:page="loadConnections"
+          @update:page="applySortAndPage"
           @update:pageSize="changePageSize"
         />
       </template>
@@ -244,95 +275,6 @@
       <template #footer><div class="flex justify-end"><button class="btn btn-secondary" @click="details = null">{{ t('common.close') }}</button></div></template>
     </BaseDialog>
 
-    <BaseDialog
-      :show="showLegacyMigration"
-      :title="t('admin.upstreamConnections.migration.title')"
-      width="wide"
-      @close="closeLegacyMigration"
-    >
-      <div v-if="migrationLoading" class="flex min-h-48 items-center justify-center text-gray-500">
-        <Icon name="refresh" size="lg" class="mr-3 animate-spin" />
-        {{ t('admin.upstreamConnections.migration.loading') }}
-      </div>
-      <div v-else-if="migrationResult" class="space-y-5">
-        <div class="border-y border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200">
-          <p>{{ t('admin.upstreamConnections.migration.safety') }}</p>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.migration.compatibility') }}</p>
-        </div>
-
-        <div class="grid grid-cols-2 divide-x divide-y border-y border-gray-200 text-center sm:grid-cols-4 dark:divide-dark-600 dark:border-dark-600">
-          <div class="px-3 py-3">
-            <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ migrationResult.summary.eligible_accounts }}</p>
-            <p class="text-xs text-gray-500">{{ t('admin.upstreamConnections.migration.summary.eligible') }}</p>
-          </div>
-          <div class="px-3 py-3">
-            <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ migrationResult.summary.unique_connections }}</p>
-            <p class="text-xs text-gray-500">{{ t('admin.upstreamConnections.migration.summary.connections') }}</p>
-          </div>
-          <div class="px-3 py-3">
-            <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ migrationResult.dry_run ? migrationResult.summary.planned_accounts : migrationResult.summary.migrated_accounts }}</p>
-            <p class="text-xs text-gray-500">{{ t(migrationResult.dry_run ? 'admin.upstreamConnections.migration.summary.planned' : 'admin.upstreamConnections.migration.summary.migrated') }}</p>
-          </div>
-          <div class="px-3 py-3">
-            <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ migrationResult.summary.skipped_accounts + migrationResult.summary.failed_accounts }}</p>
-            <p class="text-xs text-gray-500">{{ t('admin.upstreamConnections.migration.summary.skipped') }}</p>
-          </div>
-        </div>
-
-        <div class="max-h-[420px] overflow-auto border-y border-gray-200 dark:border-dark-600">
-          <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-dark-600">
-            <thead class="sticky top-0 bg-gray-50 text-left text-xs text-gray-500 dark:bg-dark-700">
-              <tr>
-                <th class="px-3 py-2">{{ t('admin.upstreamConnections.migration.columns.account') }}</th>
-                <th class="px-3 py-2">{{ t('admin.upstreamConnections.migration.columns.upstream') }}</th>
-                <th class="px-3 py-2">{{ t('admin.upstreamConnections.migration.columns.group') }}</th>
-                <th class="px-3 py-2">{{ t('admin.upstreamConnections.migration.columns.action') }}</th>
-                <th class="px-3 py-2">{{ t('admin.upstreamConnections.migration.columns.note') }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-              <tr v-for="item in migrationResult.items" :key="item.account_id">
-                <td class="px-3 py-2">
-                  <span class="block font-medium text-gray-900 dark:text-white">{{ item.account_name || `#${item.account_id}` }}</span>
-                  <span class="text-xs text-gray-500">#{{ item.account_id }}</span>
-                </td>
-                <td class="max-w-[220px] px-3 py-2">
-                  <span class="block">{{ providerLabel(item.provider) }}</span>
-                  <span class="block truncate text-xs text-gray-500" :title="item.management_base_url">{{ item.management_base_url || '-' }}</span>
-                </td>
-                <td class="px-3 py-2">{{ item.legacy_group || '-' }}</td>
-                <td class="px-3 py-2"><span class="badge" :class="migrationActionClass(item.action)">{{ migrationActionLabel(item.action) }}</span></td>
-                <td class="max-w-[280px] px-3 py-2 text-xs text-gray-600 dark:text-gray-300">{{ item.message }}</td>
-              </tr>
-              <tr v-if="migrationResult.items.length === 0">
-                <td colspan="5" class="px-3 py-8 text-center text-gray-500">{{ t('admin.upstreamConnections.migration.empty') }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div v-if="migrationResult.warnings.length" class="border-l-2 border-amber-500 pl-3 text-sm text-amber-700 dark:text-amber-300">
-          <p v-for="warning in migrationResult.warnings" :key="warning">{{ warning }}</p>
-        </div>
-      </div>
-      <template #footer>
-        <div class="flex w-full flex-wrap justify-end gap-3">
-          <button type="button" class="btn btn-secondary" :disabled="migrationApplying" @click="closeLegacyMigration">{{ t('common.close') }}</button>
-          <button
-            v-if="migrationResult?.dry_run"
-            type="button"
-            class="btn btn-primary"
-            :disabled="migrationApplying || migrationResult.summary.planned_accounts === 0"
-            @click="applyLegacyMigration"
-          >
-            <Icon v-if="migrationApplying" name="refresh" size="sm" class="mr-2 animate-spin" />
-            <Icon v-else name="database" size="sm" class="mr-2" />
-            {{ t('admin.upstreamConnections.migration.apply') }}
-          </button>
-        </div>
-      </template>
-    </BaseDialog>
-
     <ConfirmDialog
       :show="Boolean(deleting)"
       :title="t('admin.upstreamConnections.delete')"
@@ -352,7 +294,6 @@ import type {
   CreateUpstreamConnectionRequest,
   UpstreamConnection,
   UpstreamConnectionAuthMode,
-  UpstreamLegacyMigrationResult,
   UpstreamConnectionProvider,
   UpdateUpstreamConnectionRequest
 } from '@/api/admin/upstreamConnections'
@@ -373,22 +314,21 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const loading = ref(false)
 const saving = ref(false)
-const connections = ref<UpstreamConnection[]>([])
+type UpstreamConnectionRow = UpstreamConnection & { today_requests: number | null }
+const allConnections = ref<UpstreamConnectionRow[]>([])
+const connections = ref<UpstreamConnectionRow[]>([])
+const todayStatsAvailable = ref(true)
 const proxies = ref<Proxy[]>([])
 const probingIds = ref(new Set<number>())
 const details = ref<UpstreamConnection | null>(null)
 const deleting = ref<UpstreamConnection | null>(null)
 const editing = ref<UpstreamConnection | null>(null)
 const showForm = ref(false)
-const showLegacyMigration = ref(false)
-const migrationLoading = ref(false)
-const migrationApplying = ref(false)
-const migrationResult = ref<UpstreamLegacyMigrationResult | null>(null)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let loadGeneration = 0
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
-const filters = reactive({ search: '', provider: '', status: '' })
+const filters = reactive({ search: '', provider: '', status: '', sort: 'today_requests_desc' })
 const form = reactive({
   name: '', provider: 'auto' as UpstreamConnectionProvider,
   auth_mode: 'password' as UpstreamConnectionAuthMode,
@@ -401,6 +341,7 @@ const columns = computed<Column[]>(() => [
   { key: 'name', label: t('admin.upstreamConnections.columns.name') },
   { key: 'provider', label: t('admin.upstreamConnections.columns.provider') },
   { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet') },
+  { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayRequests') },
   { key: 'observations', label: t('admin.upstreamConnections.columns.observations') },
   { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync') },
   { key: 'status', label: t('admin.upstreamConnections.columns.status') },
@@ -412,12 +353,23 @@ const providerOptions = computed(() => providerValues.map(value => ({ value, lab
 const providerFilterOptions = computed(() => [{ value: '', label: t('admin.upstreamConnections.allProviders') }, ...providerOptions.value])
 const statusValues = ['pending', 'ready', 'degraded', 'auth_error', 'needs_input', 'disabled']
 const statusFilterOptions = computed(() => [{ value: '', label: t('admin.upstreamConnections.allStatuses') }, ...statusValues.map(value => ({ value, label: statusLabel(value) }))])
+const sortOptions = computed(() => [
+  { value: 'today_requests_desc', label: t('admin.upstreamConnections.sort.todayRequestsDesc') },
+  { value: 'balance_asc', label: t('admin.upstreamConnections.sort.balanceAsc') },
+  { value: 'last_sync_desc', label: t('admin.upstreamConnections.sort.lastSyncDesc') },
+  { value: 'name_asc', label: t('admin.upstreamConnections.sort.nameAsc') }
+])
 const authModeOptions = computed(() => [
   { value: 'password', label: t('admin.upstreamConnections.authModes.password') },
   { value: 'access_token', label: t('admin.upstreamConnections.authModes.access_token') }
 ])
 const showsRemoteUserId = computed(() => form.auth_mode === 'access_token' && form.provider !== 'sub2api')
 const requiresRemoteUserId = computed(() => form.auth_mode === 'access_token' && ['newapi', 'rixapi', 'shellapi', 'veloera'].includes(form.provider))
+const connectionSummary = computed(() => ({
+  total: allConnections.value.length,
+  lowBalance: allConnections.value.filter(isLowWallet).length,
+  todayRequests: allConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
+}))
 
 function providerLabel(provider: string): string { return provider ? t(`admin.upstreamConnections.providers.${provider}`, provider) : '-' }
 function statusLabel(status: string): string { return t(`admin.upstreamConnections.statuses.${status}`, status) }
@@ -430,20 +382,21 @@ function statusClass(status: string): string {
   if (status === 'auth_error') return 'badge-danger'
   return 'badge-warning'
 }
-function migrationActionLabel(action: string): string {
-  return t(`admin.upstreamConnections.migration.actions.${action}`, action)
-}
-function migrationActionClass(action: string): string {
-  if (['migrated', 'reused_and_bound', 'already_migrated'].includes(action)) return 'badge-success'
-  if (action === 'failed') return 'badge-danger'
-  if (action.startsWith('skip_')) return 'badge-warning'
-  return 'badge-gray'
-}
 function formatWallet(connection: UpstreamConnection): string {
   if (connection.wallet_unlimited) return t('admin.upstreamConnections.unlimited')
   if (connection.wallet_amount === null) return t('admin.upstreamConnections.unknown')
   const currency = connection.wallet_currency || ''
   return `${connection.wallet_amount.toLocaleString(undefined, { maximumFractionDigits: 4 })} ${currency}`.trim()
+}
+function isLowWallet(connection: UpstreamConnection): boolean {
+  return !connection.wallet_unlimited && connection.wallet_usd !== null && connection.wallet_usd < 50
+}
+function homepageUrl(value: string): string {
+  try {
+    return new URL(value).origin
+  } catch {
+    return value
+  }
 }
 function errorMessage(error: unknown, fallback: string): string {
   const response = (error as { response?: { data?: { message?: string; detail?: string } }; message?: string })
@@ -454,13 +407,30 @@ async function loadConnections(page = pagination.page): Promise<void> {
   const generation = ++loadGeneration
   loading.value = true
   try {
-    const result = await adminAPI.upstreamConnections.list(page, pagination.page_size, {
+    const items = await adminAPI.upstreamConnections.listAll({
       search: filters.search || undefined, provider: filters.provider || undefined, status: filters.status || undefined
     })
+    const accountIds = [...new Set(items.flatMap(item => item.bound_account_ids ?? []))]
+    let stats: Record<string, { requests: number }> = {}
+    let statsAvailable = true
+    if (accountIds.length > 0) {
+      try {
+        stats = (await adminAPI.accounts.getBatchTodayStats(accountIds)).stats
+      } catch {
+        statsAvailable = false
+      }
+    }
+    const rows: UpstreamConnectionRow[] = items.map(item => ({
+      ...item,
+      today_requests: statsAvailable
+        ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.requests ?? 0), 0)
+        : null
+    }))
     if (generation === loadGeneration) {
-      connections.value = result.items
-      pagination.page = result.page
-      pagination.total = result.total
+      todayStatsAvailable.value = statsAvailable
+      allConnections.value = rows
+      pagination.total = rows.length
+      applySortAndPage(page)
     }
   } catch (error: unknown) {
     if (generation === loadGeneration) {
@@ -474,7 +444,33 @@ function scheduleSearch(): void {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => void loadConnections(1), 250)
 }
-function changePageSize(size: number): void { pagination.page_size = size; void loadConnections(1) }
+function changePageSize(size: number): void { pagination.page_size = size; applySortAndPage(1) }
+function applySortAndPage(page = pagination.page): void {
+  const rows = [...allConnections.value]
+  rows.sort((a, b) => {
+    if (filters.sort === 'balance_asc') {
+      const aBalance = a.wallet_unlimited || a.wallet_usd === null ? Number.POSITIVE_INFINITY : a.wallet_usd
+      const bBalance = b.wallet_unlimited || b.wallet_usd === null ? Number.POSITIVE_INFINITY : b.wallet_usd
+      if (aBalance !== bBalance) return aBalance - bBalance
+    } else if (filters.sort === 'last_sync_desc') {
+      const aTime = a.last_synced_at ? Date.parse(a.last_synced_at) : 0
+      const bTime = b.last_synced_at ? Date.parse(b.last_synced_at) : 0
+      if (aTime !== bTime) return bTime - aTime
+    } else if (filters.sort === 'name_asc') {
+      const nameOrder = a.name.localeCompare(b.name)
+      if (nameOrder !== 0) return nameOrder
+    } else {
+      const aRequests = a.today_requests ?? -1
+      const bRequests = b.today_requests ?? -1
+      if (aRequests !== bRequests) return bRequests - aRequests
+    }
+    return b.id - a.id
+  })
+  const maxPage = Math.max(1, Math.ceil(rows.length / pagination.page_size))
+  pagination.page = Math.min(Math.max(1, page), maxPage)
+  const start = (pagination.page - 1) * pagination.page_size
+  connections.value = rows.slice(start, start + pagination.page_size)
+}
 function resetForm(): void {
   Object.assign(form, { name: '', provider: 'auto', auth_mode: 'password', management_base_url: '', forwarding_base_url: '', remote_user_id: '', username: '', password: '', access_token: '', refresh_token: '', proxy_id: null, sync_enabled: true, sync_interval_seconds: 300 })
 }
@@ -571,40 +567,6 @@ async function confirmDelete(): Promise<void> {
     await loadConnections(1)
   } catch (error: unknown) {
     appStore.showError(errorMessage(error, t('admin.upstreamConnections.deleteFailed')))
-  }
-}
-
-async function openLegacyMigration(): Promise<void> {
-  showLegacyMigration.value = true
-  migrationLoading.value = true
-  migrationResult.value = null
-  try {
-    migrationResult.value = await adminAPI.upstreamConnections.previewLegacyMigration()
-  } catch (error: unknown) {
-    appStore.showError(errorMessage(error, t('admin.upstreamConnections.migration.previewFailed')))
-    showLegacyMigration.value = false
-  } finally {
-    migrationLoading.value = false
-  }
-}
-function closeLegacyMigration(): void {
-  if (migrationApplying.value) return
-  showLegacyMigration.value = false
-  migrationResult.value = null
-}
-async function applyLegacyMigration(): Promise<void> {
-  if (!migrationResult.value?.dry_run || migrationResult.value.summary.planned_accounts === 0) return
-  migrationApplying.value = true
-  try {
-    migrationResult.value = await adminAPI.upstreamConnections.migrateLegacy()
-    appStore.showSuccess(t('admin.upstreamConnections.migration.applied', {
-      count: migrationResult.value.summary.migrated_accounts
-    }))
-    await loadConnections(1)
-  } catch (error: unknown) {
-    appStore.showError(errorMessage(error, t('admin.upstreamConnections.migration.applyFailed')))
-  } finally {
-    migrationApplying.value = false
   }
 }
 

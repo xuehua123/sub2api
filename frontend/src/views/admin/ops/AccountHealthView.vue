@@ -9,7 +9,7 @@
                 <Icon name="chart" size="md" />
               </span>
               <div class="min-w-0">
-                <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white">账号健康监控</h1>
+                <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white">账号健康</h1>
                 <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <span>生成 {{ formatTime(response?.generated_at) }}</span>
                   <span v-if="lastUpdated">刷新 {{ formatLocalTime(lastUpdated) }}</span>
@@ -52,9 +52,9 @@
               <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
               <span>刷新</span>
             </button>
-            <button type="button" class="btn btn-secondary h-9 whitespace-nowrap" @click="settingsOpen = !settingsOpen">
-              <Icon name="cog" size="sm" />
-              <span>规则</span>
+            <button type="button" class="btn btn-secondary h-9 whitespace-nowrap" @click="openNotificationRules">
+              <Icon name="bell" size="sm" />
+              <span>告警规则</span>
             </button>
           </div>
         </div>
@@ -158,187 +158,6 @@
             <button type="button" class="btn btn-secondary btn-sm" :disabled="bulkSchedulableLoading" @click="clearSelection">
               清空选择
             </button>
-          </div>
-        </div>
-      </section>
-
-      <section v-if="settingsOpen" class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-800">
-        <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div class="flex items-center gap-2">
-            <Icon name="bell" size="md" class="text-sky-500" />
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">客服判断与通知规则</h2>
-          </div>
-          <div class="flex items-center gap-2">
-            <button type="button" class="btn btn-secondary btn-sm" :disabled="loadingRuntime || savingSettings" @click="loadRuntimeSettings">
-              <Icon name="refresh" size="xs" :class="loadingRuntime ? 'animate-spin' : ''" />
-              <span>重载</span>
-            </button>
-            <button type="button" class="btn btn-primary btn-sm" :disabled="savingSettings || !settingsLoaded" @click="saveSettings">
-              <Icon name="check" size="xs" />
-              <span>{{ savingSettings ? '保存中' : '保存' }}</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
-          <div class="rounded-lg border border-gray-200 p-3 dark:border-dark-700 xl:col-span-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-semibold text-gray-900 dark:text-white">通知范围</label>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ notificationScopeText }}</div>
-              </div>
-              <input v-model="settingsForm.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
-            </div>
-            <div class="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 dark:bg-dark-700/60 dark:text-slate-200">
-              每小时最多 {{ settingsForm.rate_limit_per_hour }} 条通知
-            </div>
-            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">哪些账号发通知</label>
-            <select v-model="settingsForm.mode" class="input mt-1 h-9">
-              <option value="smart">智能：异常只看打开账号，恢复按下方勾选</option>
-              <option value="opened_only">只通知打开账号</option>
-              <option value="all">全部账号</option>
-            </select>
-            <label class="mt-3 block text-xs font-medium text-gray-500 dark:text-gray-400">每小时最多通知</label>
-            <input v-model.number="settingsForm.rate_limit_per_hour" type="number" min="0" max="1000" class="input mt-1 h-9" />
-            <label class="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <input v-model="settingsForm.notification.enterprise_wechat_enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
-              推送到企业微信
-            </label>
-            <input
-              v-if="settingsForm.notification.enterprise_wechat_enabled"
-              v-model.trim="settingsForm.notification.enterprise_wechat_webhook_url"
-              type="password"
-              class="input mt-2 h-9"
-              placeholder="https://qyapi.weixin.qq.com/..."
-            />
-            <div
-              v-if="settingsForm.notification.enterprise_wechat_enabled && settingsForm.notification.enterprise_wechat_webhook_url === WEBHOOK_MASK"
-              class="mt-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-300"
-            >
-              webhook 已配置
-            </div>
-            <button
-              v-if="settingsForm.notification.enterprise_wechat_enabled"
-              type="button"
-              class="btn btn-secondary btn-sm mt-2 w-full"
-              :disabled="testingWeChat || loadingRuntime || savingSettings"
-              @click="testEnterpriseWeChat"
-            >
-              <Icon name="bell" size="xs" :class="testingWeChat ? 'animate-pulse' : ''" />
-              <span>{{ testingWeChat ? '发送中' : '发送测试通知' }}</span>
-            </button>
-            <label v-if="settingsForm.notification.enterprise_wechat_enabled" class="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <input v-model="settingsForm.notification.mention_all_on_immediate" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
-              立即通知 @所有人
-            </label>
-          </div>
-
-          <div class="rounded-lg border border-red-200 p-3 dark:border-red-900/50 xl:col-span-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-semibold text-gray-900 dark:text-white">短时异常</label>
-                <div class="mt-1 text-xs text-red-600 dark:text-red-300">1 分钟爆错时直接提醒</div>
-              </div>
-              <input v-model="settingsForm.burst.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
-            </div>
-            <div class="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-900/20 dark:text-red-200">
-              {{ burstRuleText }}
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.burst.min_requests" label="1m 至少请求" />
-              <NumberField v-model="settingsForm.burst.error_rate_percent" label="错误率达到 %" />
-              <NumberField v-model="settingsForm.burst.upstream_error_rate_percent" label="上游错误达到 %" />
-              <NumberField v-model="settingsForm.burst.cooldown_minutes" label="重复提醒间隔" />
-            </div>
-            <label class="mt-3 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <input v-model="settingsForm.burst.bypass_digest" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500" />
-              命中后立即通知
-            </label>
-          </div>
-
-          <div class="rounded-lg border border-amber-200 p-3 dark:border-amber-900/50 xl:col-span-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-semibold text-gray-900 dark:text-white">持续变差</label>
-                <div class="mt-1 text-xs text-amber-600 dark:text-amber-300">页面先提示，持续踩线才汇总</div>
-              </div>
-              <input v-model="settingsForm.degrade.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500" />
-            </div>
-            <div class="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
-              {{ degradeRuleText }}
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.degrade.window_minutes" label="页面观察分钟" />
-              <NumberField v-model="settingsForm.degrade.min_requests" label="至少请求" />
-              <NumberField v-model="settingsForm.degrade.success_rate_min_percent" label="成功率低于 %" />
-              <NumberField v-model="settingsForm.degrade.error_rate_percent" label="错误率达到 %" />
-              <NumberField v-model="settingsForm.degrade.upstream_error_rate_percent" label="上游错误达到 %" />
-              <NumberField v-model="settingsForm.degrade.cooldown_minutes" label="汇总冷却分钟" />
-            </div>
-          </div>
-
-          <div class="rounded-lg border border-emerald-200 p-3 dark:border-emerald-900/50 xl:col-span-3">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-semibold text-gray-900 dark:text-white">恢复可开</label>
-                <div class="mt-1 text-xs text-emerald-600 dark:text-emerald-300">满足后建议打开或保持开启</div>
-              </div>
-              <input v-model="settingsForm.recovery.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-            </div>
-            <div class="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-200">
-              {{ recoveryRuleText }}
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2">
-              <NumberField v-model="settingsForm.recovery.window_minutes" label="观察分钟" />
-              <NumberField v-model="settingsForm.recovery.min_requests" label="至少请求" />
-              <NumberField v-model="settingsForm.recovery.success_rate_min_percent" label="成功率达到 %" />
-              <NumberField v-model="settingsForm.recovery.cooldown_minutes" label="重复提醒间隔" />
-            </div>
-            <div class="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600 dark:text-gray-300">
-              <label class="flex items-center gap-2">
-                <input v-model="settingsForm.recovery.notify_opened_accounts" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-                打开账号稳定后通知
-              </label>
-              <label class="flex items-center gap-2">
-                <input v-model="settingsForm.recovery.notify_closed_accounts" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500" />
-                关闭账号可打开时通知
-              </label>
-            </div>
-          </div>
-
-          <div class="rounded-lg border border-sky-200 p-3 dark:border-sky-900/50 xl:col-span-12">
-            <div class="flex items-center justify-between gap-3">
-              <div>
-                <label class="text-sm font-semibold text-gray-900 dark:text-white">关闭账号探测</label>
-                <p class="mt-0.5 text-[11px] text-sky-600 dark:text-sky-300">{{ probeRuleText }}</p>
-              </div>
-              <input v-model="settingsForm.probe.enabled" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
-            </div>
-            <div class="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-5">
-              <NumberField v-model="settingsForm.probe.interval_minutes" label="每隔几分钟" />
-              <NumberField v-model="settingsForm.probe.max_per_run" label="每轮最多账号" />
-              <NumberField v-model="settingsForm.probe.timeout_seconds" label="单次超时秒" />
-              <label class="block min-w-0">
-                <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">请求模式</span>
-                <select v-model="settingsForm.probe.mode" class="input mt-1 h-8 text-sm">
-                  <option value="default">默认连接测试</option>
-                  <option value="compact">OpenAI compact</option>
-                </select>
-              </label>
-              <label class="block min-w-0">
-                <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">模型</span>
-                <input v-model.trim="settingsForm.probe.model_id" type="text" class="input mt-1 h-8 text-sm" placeholder="默认" />
-              </label>
-            </div>
-            <label class="mt-3 block min-w-0">
-              <span class="block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400">探测内容</span>
-              <textarea
-                v-model.trim="settingsForm.probe.prompt"
-                rows="2"
-                class="input mt-1 text-sm"
-                placeholder="留空使用默认探测请求"
-              ></textarea>
-            </label>
           </div>
         </div>
       </section>
@@ -565,8 +384,6 @@
                       <div>限流：{{ item.is_rate_limited ? cooldownText(item) || '限流中' : '无' }}</div>
                       <div>过载：{{ item.is_overloaded ? cooldownText(item) || '过载冷却中' : '无' }}</div>
                       <div>临停：{{ item.is_temp_unschedulable ? '临时不可调度' : '无' }}</div>
-                      <div>上游余额：{{ accountBalanceText(item) }}</div>
-                      <div>余额方式：{{ accountBalanceMethodLabel(accountBalanceMethod(item)) }}</div>
                       <div class="break-words">错误：{{ item.error_message || '无' }}</div>
                       <div>探测模型：{{ probeModelEffective(item) }}</div>
                     </div>
@@ -693,7 +510,6 @@
               <StatusBadge :text="probeModelText(item)" kind="muted" />
               <StatusBadge v-if="!item.is_opened && item.probe_auto_disabled" text="自动探测已关" kind="muted" />
               <StatusBadge v-if="!hasTraffic(item)" text="暂无流量" kind="muted" />
-              <StatusBadge :text="accountBalanceBadgeText(item)" :kind="accountBalanceBadgeKind(item)" />
               <StatusBadge v-if="item.is_rate_limited" text="限流中" kind="warning" />
               <StatusBadge v-if="item.is_overloaded" text="过载冷却" kind="warning" />
               <StatusBadge v-if="item.is_temp_unschedulable" text="临时暂停" kind="warning" />
@@ -711,21 +527,7 @@
                 <span>{{ item.is_schedulable ? '调度开' : '调度关' }}</span>
               </button>
             </div>
-            <div class="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-dark-700 dark:bg-dark-900/70">
-              <div class="mr-auto min-w-[8rem]">
-                <div class="text-[11px] text-gray-500 dark:text-gray-400">上游余额</div>
-                <div class="text-sm font-semibold" :class="accountBalanceTextClass(item)">{{ accountBalanceText(item) }}</div>
-              </div>
-              <select class="input h-8 min-w-[8rem] text-xs" :value="accountBalanceMethod(item)" @change="onAccountBalanceMethodChange(item, $event)">
-                <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
-              </select>
-              <button type="button" class="btn btn-secondary btn-sm" :disabled="isAccountBalanceProbing(item.account_id)" @click="probeAccountBalance(item)">
-                <Icon name="beaker" size="xs" :class="isAccountBalanceProbing(item.account_id) ? 'animate-pulse' : ''" />
-                <span>{{ isAccountBalanceProbing(item.account_id) ? '查余额中' : '查余额' }}</span>
-              </button>
-            </div>
-
-            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
+            <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(item) }}</div>
                 <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="primaryMetricClass(item)">
@@ -746,13 +548,6 @@
                   {{ firstTokenMetricText(item) }}
                 </div>
                 <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(item) }}</div>
-              </div>
-              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700/60">
-                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">上游余额</div>
-                <div class="mt-1 truncate text-2xl font-semibold 2xl:text-3xl" :class="accountBalanceTextClass(item)">
-                  {{ accountBalanceText(item) }}
-                </div>
-                <div class="mt-1 truncate text-xs text-gray-500 dark:text-gray-400" :title="accountBalanceHint(item)">{{ accountBalanceHint(item) }}</div>
               </div>
             </div>
 
@@ -939,7 +734,7 @@
               </div>
             </section>
 
-            <section class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <section class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
                 <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ primaryMetricLabel(selectedAccount) }}</div>
                 <div class="mt-1 text-3xl font-semibold" :class="primaryMetricClass(selectedAccount)">{{ primaryMetricText(selectedAccount) }}</div>
@@ -955,35 +750,6 @@
                 <div class="mt-1 text-3xl font-semibold" :class="firstTokenMetricClass(selectedAccount)">{{ firstTokenMetricText(selectedAccount) }}</div>
                 <div class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ firstTokenMetricHint(selectedAccount) }}</div>
               </div>
-              <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-800">
-                <div class="text-xs font-medium text-gray-500 dark:text-gray-400">上游余额</div>
-                <div class="mt-1 text-3xl font-semibold" :class="accountBalanceTextClass(selectedAccount)">{{ accountBalanceText(selectedAccount) }}</div>
-                <div class="mt-1 text-xs text-gray-500 dark:text-gray-400" :title="accountBalanceHint(selectedAccount)">{{ accountBalanceHint(selectedAccount) }}</div>
-              </div>
-            </section>
-
-            <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
-              <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div class="min-w-0">
-                  <div class="text-sm font-semibold text-gray-900 dark:text-white">上游余额探测</div>
-                  <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                    <span class="text-base font-semibold" :class="accountBalanceTextClass(selectedAccount)">{{ accountBalanceText(selectedAccount) }}</span>
-                    <span class="rounded px-2 py-0.5 font-semibold" :class="accountBalanceStatusClass(selectedAccount)">{{ accountBalanceStatusText(selectedAccount) }}</span>
-                    <span v-if="selectedAccount.balance_probe?.detected_method">命中 {{ accountBalanceMethodLabel(selectedAccount.balance_probe.detected_method) }}</span>
-                    <span v-if="selectedAccount.balance_probe?.checked_at">{{ formatRelativeTime(selectedAccount.balance_probe.checked_at) }}</span>
-                  </div>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <select class="input h-9 min-w-[9rem]" :value="accountBalanceMethod(selectedAccount)" @change="onAccountBalanceMethodChange(selectedAccount, $event)">
-                    <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
-                  </select>
-                  <button type="button" class="btn btn-secondary btn-sm" :disabled="isAccountBalanceProbing(selectedAccount.account_id)" @click="probeAccountBalance(selectedAccount)">
-                    <Icon name="beaker" size="xs" :class="isAccountBalanceProbing(selectedAccount.account_id) ? 'animate-pulse' : ''" />
-                    <span>{{ isAccountBalanceProbing(selectedAccount.account_id) ? '查询中' : '立即查余额' }}</span>
-                  </button>
-                </div>
-              </div>
-              <p v-if="selectedAccount.balance_probe?.error" class="mt-2 break-words text-xs text-red-500">{{ selectedAccount.balance_probe.error }}</p>
             </section>
 
             <section class="rounded-lg border border-gray-200 p-3 dark:border-dark-700">
@@ -1145,11 +911,8 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useAppStore, useAdminSettingsStore } from '@/stores'
 import { adminAPI } from '@/api/admin'
-import { formatRelativeTime } from '@/utils/format'
 import {
   opsAPI,
-  type OpsAccountBalanceProbeMethod,
-  type OpsAccountBalanceProbeState,
   type OpsAccountHealthItem,
   type OpsAccountHealthFirstTokenStats,
   type OpsAccountHealthResponse,
@@ -1167,7 +930,6 @@ import {
   tagsForItem
 } from './accountHealthTags'
 
-const WEBHOOK_MASK = '__configured__'
 const DEFAULT_PROBE_MODEL = 'gpt-5.4-mini'
 
 type FirstTokenWindow = OpsAccountHealthWindow | '5m'
@@ -1191,30 +953,6 @@ interface ProbeModelOption {
   value: string
   label: string
 }
-
-const NumberField = defineComponent({
-  name: 'NumberField',
-  props: {
-    modelValue: { type: Number, required: true },
-    label: { type: String, required: true }
-  },
-  emits: ['update:modelValue'],
-  setup(props, { emit }) {
-    return () => h('label', { class: 'block min-w-0' }, [
-      h('span', { class: 'block truncate text-[11px] font-medium text-gray-500 dark:text-gray-400' }, props.label),
-      h('input', {
-        value: props.modelValue,
-        type: 'number',
-        min: 0,
-        class: 'input mt-1 h-8 text-sm',
-        onInput: (event: Event) => {
-          const value = Number((event.target as HTMLInputElement).value)
-          emit('update:modelValue', Number.isFinite(value) ? value : 0)
-        }
-      })
-    ])
-  }
-})
 
 const StatusBadge = defineComponent({
   name: 'StatusBadge',
@@ -1242,15 +980,11 @@ const router = useRouter()
 
 const response = ref<OpsAccountHealthResponse | null>(null)
 const loading = ref(false)
-const loadingRuntime = ref(false)
-const savingSettings = ref(false)
-const testingWeChat = ref(false)
 const errorMessage = ref('')
 const platformFilter = ref('')
 const groupIdInput = ref('')
 const healthGroups = ref<AdminGroup[]>([])
 const showHistoricalGroups = ref(false)
-const settingsOpen = ref(false)
 const viewMode = ref<HealthViewMode>('list')
 const quickFilter = ref<HealthQuickFilter>('all')
 const searchQuery = ref('')
@@ -1262,7 +996,6 @@ const tagEditDraft = ref('')
 const selectedAccountID = ref<number | null>(null)
 const lastUpdated = ref<Date | null>(null)
 const probingAccounts = ref<Set<number>>(new Set())
-const accountBalanceProbingAccounts = ref<Set<number>>(new Set())
 const togglingAutoProbeAccounts = ref<Set<number>>(new Set())
 const togglingSchedulableAccounts = ref<Set<number>>(new Set())
 const bulkSchedulableLoading = ref(false)
@@ -1271,16 +1004,8 @@ const savingModelAccounts = ref<Set<number>>(new Set())
 const savingTagsAccountId = ref<number | null>(null)
 const probeModelOptionsByAccount = ref<Record<number, ProbeModelOption[]>>({})
 const probeModelDraftByAccount = ref<Record<number, string>>({})
-const accountBalanceMethodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
-  { value: 'auto', label: '智能' },
-  { value: 'upstream_management', label: '上游账户' },
-  { value: 'sub2api_usage', label: 'Sub2API' },
-  { value: 'openai_billing', label: 'OpenAI' },
-  { value: 'disabled', label: '禁用' }
-]
 const autoRefreshMs = 45_000
 let autoRefreshTimer: ReturnType<typeof setInterval> | null = null
-let applyingSettings = false
 
 const windowOrder: OpsAccountHealthWindow[] = ['1m', '5m', '10m', '30m', '1h']
 const probeWindowMinutes: Record<OpsAccountHealthWindow, number> = {
@@ -1301,8 +1026,6 @@ interface ProbeWindowSummary {
 }
 
 const settingsForm = ref<OpsAccountHealthSettings>(defaultAccountHealthSettings())
-const settingsLoaded = ref(false)
-const settingsDirty = ref(false)
 
 const groupId = computed(() => {
   const parsed = Number(groupIdInput.value)
@@ -1387,50 +1110,18 @@ const summaryCards = computed(() => {
   const immediate = items.value.filter(item => item.recommendation.notify_mode === 'immediate').length
   const available = items.value.filter(item => item.is_available).length
   return [
-    { label: '账号', value: total, className: 'text-gray-900 dark:text-white' },
-    { label: '已打开', value: opened, className: 'text-sky-600 dark:text-sky-300' },
-    { label: '可调度', value: available, className: 'text-emerald-600 dark:text-emerald-300' },
     { label: '建议关闭', value: closeNow, className: closeNow ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white' },
     { label: '可恢复', value: canOpen, className: canOpen ? 'text-emerald-600 dark:text-emerald-300' : 'text-gray-900 dark:text-white' },
-    { label: '立即通知', value: immediate, className: immediate ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white' }
+    { label: '立即通知', value: immediate, className: immediate ? 'text-red-600 dark:text-red-300' : 'text-gray-900 dark:text-white' },
+    { label: '可调度', value: available, className: 'text-emerald-600 dark:text-emerald-300' },
+    { label: '已打开', value: opened, className: 'text-sky-600 dark:text-sky-300' },
+    { label: '账号总数', value: total, className: 'text-gray-900 dark:text-white' }
   ]
 })
 
-const notificationScopeText = computed(() => {
-  if (!settingsForm.value.enabled) return '已关闭，不发送通知'
-  switch (settingsForm.value.mode) {
-    case 'opened_only':
-      return '只通知当前打开的账号'
-    case 'all':
-      return '打开和关闭账号都会通知'
-    default:
-      return '异常看打开账号，恢复按勾选项通知'
-  }
-})
-
-const burstRuleText = computed(() => {
-  const rule = settingsForm.value.burst
-  if (!rule.enabled) return '已关闭：短时间爆错不会触发立即提醒'
-  return `1m 内请求 >= ${rule.min_requests}，且错误率 >= ${rule.error_rate_percent}% 或上游错误 >= ${rule.upstream_error_rate_percent}%`
-})
-
-const degradeRuleText = computed(() => {
-  const rule = settingsForm.value.degrade
-  if (!rule.enabled) return '已关闭：成功率变差不会触发关闭建议'
-  return `${rule.window_minutes}m 踩线先在看板提示；5m/10m/30m 都请求 >= ${rule.min_requests} 且成功率 < ${rule.success_rate_min_percent}%、错误率 >= ${rule.error_rate_percent}% 或上游错误 >= ${rule.upstream_error_rate_percent}% 时汇总通知`
-})
-
-const recoveryRuleText = computed(() => {
-  const rule = settingsForm.value.recovery
-  if (!rule.enabled) return '已关闭：恢复后不会主动提示可打开'
-  return `${rule.window_minutes}m 内请求 >= ${rule.min_requests}，成功率 >= ${rule.success_rate_min_percent}% 且无错误`
-})
-
-const probeRuleText = computed(() => {
-  const rule = settingsForm.value.probe
-  if (!rule.enabled) return '已关闭：关闭账号只靠手动探测或真实流量判断'
-  return `关闭账号每 ${rule.interval_minutes}m 自动探测，每轮最多 ${rule.max_per_run} 个，单次超时 ${rule.timeout_seconds}s`
-})
+function openNotificationRules() {
+  void router.push('/admin/notification-robots')
+}
 
 function matchesQuickFilter(item: OpsAccountHealthItem): boolean {
   switch (quickFilter.value) {
@@ -1577,21 +1268,11 @@ function isAbnormal(item: OpsAccountHealthItem): boolean {
 watch(
   () => response.value?.settings,
   (settings) => {
-    if (settings && !settingsLoaded.value && !settingsDirty.value) {
+    if (settings) {
       applySettingsToForm(settings)
     }
   },
   { immediate: true }
-)
-
-watch(
-  settingsForm,
-  () => {
-    if (!applyingSettings) {
-      settingsDirty.value = true
-    }
-  },
-  { deep: true, flush: 'sync' }
 )
 
 watch(items, (nextItems) => {
@@ -1624,54 +1305,6 @@ async function loadHealthGroups() {
     healthGroups.value = groups || []
   } catch (err) {
     console.error('Failed to load account health groups:', err)
-  }
-}
-
-async function loadRuntimeSettings() {
-  loadingRuntime.value = true
-  try {
-    const runtime = await opsAPI.getAlertRuntimeSettings()
-    applySettingsToForm(runtime.account_health || response.value?.settings || defaultAccountHealthSettings())
-  } catch (err: any) {
-    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '规则加载失败')
-  } finally {
-    loadingRuntime.value = false
-  }
-}
-
-async function saveSettings() {
-  if (!settingsLoaded.value) {
-    await loadRuntimeSettings()
-  }
-  if (!settingsLoaded.value) return
-
-  savingSettings.value = true
-  try {
-    const saved = await opsAPI.updateAccountHealthSettings(cloneSettings(settingsForm.value))
-    applySettingsToForm(saved)
-    appStore.showSuccess('账号健康规则已保存')
-    await fetchData()
-  } catch (err: any) {
-    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '规则保存失败')
-  } finally {
-    savingSettings.value = false
-  }
-}
-
-async function testEnterpriseWeChat() {
-  if (testingWeChat.value) return
-  if (!settingsLoaded.value) {
-    await loadRuntimeSettings()
-  }
-  if (!settingsLoaded.value) return
-  testingWeChat.value = true
-  try {
-    await opsAPI.testAccountHealthEnterpriseWeChat(cloneSettings(settingsForm.value))
-    appStore.showSuccess('企业微信测试通知已发送')
-  } catch (err: any) {
-    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '企业微信测试通知发送失败')
-  } finally {
-    testingWeChat.value = false
   }
 }
 
@@ -1828,143 +1461,6 @@ async function runProbe(item: OpsAccountHealthItem) {
   } finally {
     setProbing(item.account_id, false)
   }
-}
-
-function accountBalanceState(item: OpsAccountHealthItem): OpsAccountBalanceProbeState | null {
-  return item.balance_probe ?? null
-}
-
-function accountBalanceMethod(item: OpsAccountHealthItem): OpsAccountBalanceProbeMethod {
-  return (accountBalanceState(item)?.method ?? 'auto') as OpsAccountBalanceProbeMethod
-}
-
-function accountBalanceMethodLabel(method?: string): string {
-  if (method === 'newapi_token_usage') return 'API Key 用量（非账户余额）'
-  return accountBalanceMethodOptions.find(option => option.value === method)?.label ?? method ?? '智能'
-}
-
-function accountBalanceText(item: OpsAccountHealthItem): string {
-  const state = accountBalanceState(item)
-  if (!state) return '-'
-  if (state.balance_amount != null) return formatAccountBalanceAmount(state.balance_amount, state.balance_currency)
-  if (state.balance_usd != null) return `$${Number(state.balance_usd).toFixed(2)}`
-  if (state.unlimited) return '额度未设上限'
-  return '未知'
-}
-
-function formatAccountBalanceAmount(amount: number, currency?: string): string {
-  const value = Number(amount).toFixed(2)
-  const unit = String(currency || 'USD').toUpperCase()
-  if (unit === 'USD') return `$${value}`
-  if (unit === 'CNY') return `¥${value}`
-  return `${unit} ${value}`
-}
-
-function accountBalanceTextClass(item: OpsAccountHealthItem): string {
-  const state = accountBalanceState(item)
-  if (!state) return 'text-gray-500 dark:text-gray-400'
-  if (state.balance_amount != null && state.balance_currency !== 'USD') return 'text-emerald-600 dark:text-emerald-300'
-  if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
-  const threshold = state.threshold_usd ?? 0
-  if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
-  return 'text-emerald-600 dark:text-emerald-300'
-}
-
-function accountBalanceStatusText(item: OpsAccountHealthItem): string {
-  const status = accountBalanceState(item)?.status ?? 'unknown'
-  if (status === 'ok') return '正常'
-  if (status === 'failed') return '失败'
-  if (status === 'unsupported') return '不支持'
-  if (status === 'skipped') return '跳过'
-  return '未知'
-}
-
-function accountBalanceStatusClass(item: OpsAccountHealthItem): string {
-  const status = accountBalanceState(item)?.status ?? 'unknown'
-  if (status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-  if (status === 'failed' || status === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  if (status === 'skipped') return 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'
-  return 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-}
-
-function accountBalanceHint(item: OpsAccountHealthItem): string {
-  const state = accountBalanceState(item)
-  if (!state) return '等待探测'
-  if (state.error) return state.error
-
-  const parts: string[] = [accountBalanceStatusText(item)]
-  if (state.unlimited) {
-    parts.push('额度未设上限')
-  }
-  if (state.detected_method) {
-    parts.push(accountBalanceMethodLabel(state.detected_method))
-  }
-  if (state.checked_at) {
-    parts.push(formatRelativeTime(state.checked_at))
-  }
-  return parts.join(' · ')
-}
-
-function accountBalanceBadgeText(item: OpsAccountHealthItem): string {
-  const state = accountBalanceState(item)
-  if (!state) return '余额未知'
-  if (state.status === 'ok') return `余额 ${accountBalanceText(item)}`
-  return `余额${accountBalanceStatusText(item)}`
-}
-
-function accountBalanceBadgeKind(item: OpsAccountHealthItem): string {
-  const state = accountBalanceState(item)
-  if (!state) return 'muted'
-  if (state.status === 'failed' || state.status === 'unsupported') return 'danger'
-  if (state.balance_usd == null) return 'muted'
-  const threshold = state.threshold_usd ?? 0
-  if (threshold > 0 && state.balance_usd <= threshold) return 'warning'
-  return 'success'
-}
-
-function isAccountBalanceProbing(accountID: number): boolean {
-  return accountBalanceProbingAccounts.value.has(accountID)
-}
-
-function setAccountBalanceProbing(accountID: number, probing: boolean) {
-  const next = new Set(accountBalanceProbingAccounts.value)
-  if (probing) {
-    next.add(accountID)
-  } else {
-    next.delete(accountID)
-  }
-  accountBalanceProbingAccounts.value = next
-}
-
-async function probeAccountBalance(item: OpsAccountHealthItem) {
-  if (!item?.account_id || isAccountBalanceProbing(item.account_id)) return
-  setAccountBalanceProbing(item.account_id, true)
-  try {
-    const result = await opsAPI.runAccountBalanceProbe(item.account_id, { force: true })
-    item.balance_probe = result.state
-    appStore.showSuccess('余额探测完成')
-  } catch (err: any) {
-    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '余额探测失败')
-  } finally {
-    setAccountBalanceProbing(item.account_id, false)
-  }
-}
-
-async function updateAccountBalanceMethod(item: OpsAccountHealthItem, method: string) {
-  if (!item?.account_id) return
-  try {
-    const state = await opsAPI.updateAccountBalanceProbeConfig(item.account_id, { method })
-    item.balance_probe = state
-    appStore.showSuccess('余额查询方式已更新')
-  } catch (err: any) {
-    appStore.showError(err?.response?.data?.message || err?.response?.data?.detail || '余额查询方式更新失败')
-  }
-}
-
-function onAccountBalanceMethodChange(item: OpsAccountHealthItem, event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  if (!target) return
-  void updateAccountBalanceMethod(item, target.value)
 }
 
 async function onAutoProbeChange(item: OpsAccountHealthItem, event: Event) {
@@ -2137,11 +1633,7 @@ function setSavingProbeModel(accountID: number, saving: boolean) {
 }
 
 function applySettingsToForm(settings: OpsAccountHealthSettings) {
-  applyingSettings = true
   settingsForm.value = cloneSettings(settings)
-  settingsLoaded.value = true
-  settingsDirty.value = false
-  applyingSettings = false
 }
 
 function defaultAccountHealthSettings(): OpsAccountHealthSettings {
@@ -2834,7 +2326,7 @@ watch(
 
 onMounted(async () => {
   adminSettingsStore.fetch()
-  await Promise.all([fetchData(), loadRuntimeSettings(), loadHealthGroups()])
+  await Promise.all([fetchData(), loadHealthGroups()])
   autoRefreshTimer = setInterval(fetchData, autoRefreshMs)
 })
 

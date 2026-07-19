@@ -24,6 +24,7 @@ type upstreamConnectionCredentialRequest struct {
 	Password     string `json:"password" binding:"omitempty,max=4096"`
 	AccessToken  string `json:"access_token" binding:"omitempty,max=8192"`
 	RefreshToken string `json:"refresh_token" binding:"omitempty,max=8192"`
+	UserAgent    string `json:"user_agent" binding:"omitempty,max=512"`
 }
 
 type upstreamConnectionCreateRequest struct {
@@ -120,40 +121,9 @@ type upstreamConnectionResponse struct {
 	UpdatedAt            string                           `json:"updated_at"`
 	GroupCount           int                              `json:"group_count"`
 	BindingCount         int                              `json:"binding_count"`
+	BoundAccountIDs      []int64                          `json:"bound_account_ids"`
 	Groups               []upstreamGroupResponse          `json:"groups"`
 	Bindings             []upstreamAccountBindingResponse `json:"bindings"`
-}
-
-type upstreamLegacyMigrationSummaryResponse struct {
-	ScannedAccounts   int `json:"scanned_accounts"`
-	EligibleAccounts  int `json:"eligible_accounts"`
-	UniqueConnections int `json:"unique_connections"`
-	PlannedAccounts   int `json:"planned_accounts"`
-	MigratedAccounts  int `json:"migrated_accounts"`
-	AlreadyMigrated   int `json:"already_migrated"`
-	SkippedAccounts   int `json:"skipped_accounts"`
-	FailedAccounts    int `json:"failed_accounts"`
-}
-
-type upstreamLegacyMigrationItemResponse struct {
-	AccountID         int64  `json:"account_id"`
-	AccountName       string `json:"account_name"`
-	Provider          string `json:"provider"`
-	AuthMode          string `json:"auth_mode"`
-	ManagementBaseURL string `json:"management_base_url"`
-	ForwardingBaseURL string `json:"forwarding_base_url"`
-	ProxyID           *int64 `json:"proxy_id"`
-	LegacyGroup       string `json:"legacy_group"`
-	Action            string `json:"action"`
-	ConnectionID      *int64 `json:"connection_id"`
-	Message           string `json:"message"`
-}
-
-type upstreamLegacyMigrationResponse struct {
-	DryRun   bool                                   `json:"dry_run"`
-	Summary  upstreamLegacyMigrationSummaryResponse `json:"summary"`
-	Items    []upstreamLegacyMigrationItemResponse  `json:"items"`
-	Warnings []string                               `json:"warnings"`
 }
 
 func (h *UpstreamConnectionHandler) List(c *gin.Context) {
@@ -205,7 +175,7 @@ func (h *UpstreamConnectionHandler) Create(c *gin.Context) {
 	connection, err := h.service.Create(c.Request.Context(), service.UpstreamConnectionCreateParams{
 		Name: request.Name, Provider: provider, AuthMode: request.AuthMode,
 		ManagementBaseURL: request.ManagementBaseURL, ForwardingBaseURL: request.ForwardingBaseURL,
-		Credential: upstreamCredentialRequestToService(request.Credential), RemoteUserID: request.RemoteUserID,
+		Credential: upstreamCredentialRequestToService(request.Credential, c.Request.UserAgent()), RemoteUserID: request.RemoteUserID,
 		ProxyID: request.ProxyID, SyncEnabled: syncEnabled, SyncIntervalSeconds: request.SyncIntervalSeconds,
 	})
 	if err != nil {
@@ -233,7 +203,7 @@ func (h *UpstreamConnectionHandler) Update(c *gin.Context) {
 		SyncEnabled: request.SyncEnabled, SyncIntervalSeconds: request.SyncIntervalSeconds,
 	}
 	if request.Credential != nil {
-		credential := upstreamCredentialRequestToService(*request.Credential)
+		credential := upstreamCredentialRequestToService(*request.Credential, c.Request.UserAgent())
 		params.Credential = &credential
 	}
 	connection, err := h.service.Update(c.Request.Context(), id, params)
@@ -267,24 +237,6 @@ func (h *UpstreamConnectionHandler) Probe(c *gin.Context) {
 		return
 	}
 	response.Success(c, upstreamConnectionToResponse(connection))
-}
-
-func (h *UpstreamConnectionHandler) PreviewLegacyMigration(c *gin.Context) {
-	result, err := h.service.PreviewLegacyMigration(c.Request.Context())
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, upstreamLegacyMigrationToResponse(result))
-}
-
-func (h *UpstreamConnectionHandler) MigrateLegacy(c *gin.Context) {
-	result, err := h.service.MigrateLegacyConnections(c.Request.Context())
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, upstreamLegacyMigrationToResponse(result))
 }
 
 func (h *UpstreamConnectionHandler) BindAccount(c *gin.Context) {
@@ -351,10 +303,15 @@ func parseUpstreamBindingAccountID(c *gin.Context) (int64, bool) {
 	return id, true
 }
 
-func upstreamCredentialRequestToService(request upstreamConnectionCredentialRequest) service.UpstreamConnectionCredentialInput {
+func upstreamCredentialRequestToService(request upstreamConnectionCredentialRequest, requestUserAgent string) service.UpstreamConnectionCredentialInput {
+	userAgent := strings.TrimSpace(request.UserAgent)
+	if userAgent == "" {
+		userAgent = strings.TrimSpace(requestUserAgent)
+	}
 	return service.UpstreamConnectionCredentialInput{
 		Username: request.Username, Password: request.Password,
 		AccessToken: request.AccessToken, RefreshToken: request.RefreshToken,
+		UserAgent: userAgent,
 	}
 }
 
@@ -385,7 +342,8 @@ func upstreamConnectionToResponse(connection *service.UpstreamConnection) upstre
 		LastDiscoveredAt: formatOptionalTime(connection.LastDiscoveredAt), LastSyncedAt: formatOptionalTime(connection.LastSyncedAt),
 		NextSyncAt: formatOptionalTime(connection.NextSyncAt), CreatedAt: connection.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt: connection.UpdatedAt.UTC().Format(time.RFC3339), GroupCount: connection.GroupCount,
-		BindingCount: connection.BindingCount, Groups: groups, Bindings: bindings,
+		BindingCount: connection.BindingCount, BoundAccountIDs: nonNilHandlerInt64s(connection.BoundAccountIDs),
+		Groups: groups, Bindings: bindings,
 	}
 }
 
@@ -399,29 +357,6 @@ func upstreamBindingToResponse(binding service.UpstreamAccountBinding) upstreamA
 		Status: binding.Status, SyncFailures: binding.SyncFailures, LastError: binding.LastError,
 		ResolutionDetails: nonNilHandlerMap(binding.ResolutionDetails),
 		ObservedAt:        formatOptionalTime(binding.ObservedAt), FreshUntil: formatOptionalTime(binding.FreshUntil),
-	}
-}
-
-func upstreamLegacyMigrationToResponse(result *service.UpstreamLegacyMigrationResult) upstreamLegacyMigrationResponse {
-	items := make([]upstreamLegacyMigrationItemResponse, 0, len(result.Items))
-	for _, item := range result.Items {
-		items = append(items, upstreamLegacyMigrationItemResponse{
-			AccountID: item.AccountID, AccountName: item.AccountName, Provider: item.Provider,
-			AuthMode: item.AuthMode, ManagementBaseURL: item.ManagementBaseURL,
-			ForwardingBaseURL: item.ForwardingBaseURL, ProxyID: item.ProxyID,
-			LegacyGroup: item.LegacyGroup, Action: item.Action,
-			ConnectionID: item.ConnectionID, Message: item.Message,
-		})
-	}
-	return upstreamLegacyMigrationResponse{
-		DryRun: result.DryRun,
-		Summary: upstreamLegacyMigrationSummaryResponse{
-			ScannedAccounts: result.Summary.ScannedAccounts, EligibleAccounts: result.Summary.EligibleAccounts,
-			UniqueConnections: result.Summary.UniqueConnections, PlannedAccounts: result.Summary.PlannedAccounts,
-			MigratedAccounts: result.Summary.MigratedAccounts, AlreadyMigrated: result.Summary.AlreadyMigrated,
-			SkippedAccounts: result.Summary.SkippedAccounts, FailedAccounts: result.Summary.FailedAccounts,
-		},
-		Items: items, Warnings: append([]string{}, result.Warnings...),
 	}
 }
 
@@ -443,6 +378,13 @@ func nonNilHandlerMap(value map[string]any) map[string]any {
 func nonNilHandlerStrings(value []string) []string {
 	if value == nil {
 		return []string{}
+	}
+	return value
+}
+
+func nonNilHandlerInt64s(value []int64) []int64 {
+	if value == nil {
+		return []int64{}
 	}
 	return value
 }

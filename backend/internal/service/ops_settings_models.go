@@ -85,11 +85,11 @@ type OpsRuntimeLogConfig struct {
 type OpsAlertRuntimeSettings struct {
 	EvaluationIntervalSeconds int `json:"evaluation_interval_seconds"`
 
-	DistributedLock OpsDistributedLockSettings `json:"distributed_lock"`
-	Silencing       OpsAlertSilencingSettings  `json:"silencing"`
-	Thresholds      OpsMetricThresholds        `json:"thresholds"`
-	AccountHealth   OpsAccountHealthSettings   `json:"account_health"`
-	AccountBalance  OpsAccountBalanceSettings  `json:"account_balance"`
+	DistributedLock           OpsDistributedLockSettings            `json:"distributed_lock"`
+	Silencing                 OpsAlertSilencingSettings             `json:"silencing"`
+	Thresholds                OpsMetricThresholds                   `json:"thresholds"`
+	AccountHealth             OpsAccountHealthSettings              `json:"account_health"`
+	UpstreamConnectionBalance *OpsUpstreamConnectionBalanceSettings `json:"upstream_connection_balance,omitempty"`
 }
 
 // OpsAdvancedSettings stores advanced ops configuration (data retention, aggregation).

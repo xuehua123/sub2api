@@ -51,3 +51,41 @@ func TestUpstreamConnectionRepositoryIdentityResetClearsGroups(t *testing.T) {
 	require.NoError(t, err)
 	require.Zero(t, count)
 }
+
+func TestUpstreamConnectionRepositoryListIncludesBoundAccountIDsWithoutBindingDetails(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	account, err := tx.Client().Account.Create().
+		SetName("bound account").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := &service.UpstreamConnection{
+		Name: "shared wallet", Provider: service.UpstreamConnectionProviderSub2API,
+		AuthMode: "access_token", ManagementBaseURL: "https://upstream.example.com",
+		CredentialEncrypted: "encrypted", CredentialFingerprint: "sha256:v1:test",
+		Capabilities: map[string]any{}, Status: service.UpstreamConnectionStatusReady,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
+		WalletReliability: "exact", WalletRaw: map[string]any{},
+	}
+	require.NoError(t, repo.Create(txCtx, connection))
+	_, err = tx.Client().UpstreamAccountBinding.Create().
+		SetAccountID(account.ID).
+		SetConnectionID(connection.ID).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	items, total, err := repo.List(txCtx, service.UpstreamConnectionListParams{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, items, 1)
+	require.Equal(t, []int64{account.ID}, items[0].BoundAccountIDs)
+	require.Empty(t, items[0].Bindings)
+}

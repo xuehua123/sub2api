@@ -19,6 +19,7 @@ export interface UpstreamConnectionCredentialInput {
   password?: string
   access_token?: string
   refresh_token?: string
+  user_agent?: string
 }
 
 export interface UpstreamGroupObservation {
@@ -87,8 +88,15 @@ export interface UpstreamConnection {
   updated_at: string
   group_count: number
   binding_count: number
+  bound_account_ids: number[]
   groups: UpstreamGroupObservation[]
   bindings: UpstreamAccountBinding[]
+}
+
+export interface UpstreamConnectionListFilters {
+  provider?: string
+  status?: string
+  search?: string
 }
 
 export interface CreateUpstreamConnectionRequest {
@@ -119,42 +127,10 @@ export interface UpdateUpstreamConnectionRequest {
   sync_interval_seconds?: number
 }
 
-export interface UpstreamLegacyMigrationSummary {
-  scanned_accounts: number
-  eligible_accounts: number
-  unique_connections: number
-  planned_accounts: number
-  migrated_accounts: number
-  already_migrated: number
-  skipped_accounts: number
-  failed_accounts: number
-}
-
-export interface UpstreamLegacyMigrationItem {
-  account_id: number
-  account_name: string
-  provider: string
-  auth_mode: string
-  management_base_url: string
-  forwarding_base_url: string
-  proxy_id: number | null
-  legacy_group: string
-  action: string
-  connection_id: number | null
-  message: string
-}
-
-export interface UpstreamLegacyMigrationResult {
-  dry_run: boolean
-  summary: UpstreamLegacyMigrationSummary
-  items: UpstreamLegacyMigrationItem[]
-  warnings: string[]
-}
-
 export async function list(
   page = 1,
   pageSize = 20,
-  filters?: { provider?: string; status?: string; search?: string }
+  filters?: UpstreamConnectionListFilters
 ): Promise<PaginatedResponse<UpstreamConnection>> {
   const { data } = await apiClient.get<PaginatedResponse<UpstreamConnection>>('/admin/upstream-connections', {
     params: { page, page_size: pageSize, ...filters }
@@ -162,11 +138,11 @@ export async function list(
   return data
 }
 
-export async function listAll(): Promise<UpstreamConnection[]> {
+export async function listAll(filters?: UpstreamConnectionListFilters): Promise<UpstreamConnection[]> {
   const pageSize = 200
   const items: UpstreamConnection[] = []
   for (let page = 1; page <= 100; page += 1) {
-    const result = await list(page, pageSize)
+    const result = await list(page, pageSize, filters)
     items.push(...result.items)
     if (items.length >= result.total || result.items.length < pageSize) break
   }
@@ -215,20 +191,6 @@ export async function unbindAccount(connectionId: number, accountId: number): Pr
   await apiClient.delete(`/admin/upstream-connections/${connectionId}/bindings/${accountId}`)
 }
 
-export async function previewLegacyMigration(): Promise<UpstreamLegacyMigrationResult> {
-  const { data } = await apiClient.post<UpstreamLegacyMigrationResult>(
-    '/admin/upstream-connections/migrate-legacy/preview'
-  )
-  return data
-}
-
-export async function migrateLegacy(): Promise<UpstreamLegacyMigrationResult> {
-  const { data } = await apiClient.post<UpstreamLegacyMigrationResult>(
-    '/admin/upstream-connections/migrate-legacy'
-  )
-  return data
-}
-
 export default {
   list,
   listAll,
@@ -239,7 +201,5 @@ export default {
   probe,
   bindAccount,
   getAccountBinding,
-  unbindAccount,
-  previewLegacyMigration,
-  migrateLegacy
+  unbindAccount
 }

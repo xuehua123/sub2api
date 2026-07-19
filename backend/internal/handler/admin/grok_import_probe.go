@@ -183,7 +183,6 @@ func ProvideAccountHandler(
 	rpmCache service.RPMCache,
 	tokenCacheInvalidator service.TokenCacheInvalidator,
 	grokQuotaService *service.GrokQuotaService,
-	upstreamRateSync *service.UpstreamRateMultiplierSyncService,
 ) *AccountHandler {
 	handler := NewAccountHandler(
 		adminService,
@@ -202,6 +201,5 @@ func ProvideAccountHandler(
 		tokenCacheInvalidator,
 	)
 	handler.grokImportProber = grokQuotaService
-	handler.upstreamRateSync = upstreamRateSync
 	return handler
 }

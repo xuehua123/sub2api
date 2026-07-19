@@ -138,7 +138,6 @@ type OpsAccountHealthItem struct {
 	FirstToken5m      *OpsAccountHealthFirstTokenStats            `json:"first_token_5m,omitempty"`
 	FirstTokenWindows map[string]*OpsAccountHealthFirstTokenStats `json:"first_token_windows,omitempty"`
 	Probe             *OpsAccountHealthProbe                      `json:"probe,omitempty"`
-	BalanceProbe      OpsAccountBalanceState                      `json:"balance_probe"`
 	Recommendation    OpsAccountHealthRecommendation              `json:"recommendation"`
 }
 

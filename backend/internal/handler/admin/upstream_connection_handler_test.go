@@ -14,7 +14,8 @@ func TestUpstreamConnectionResponseNeverSerializesSecretMaterial(t *testing.T) {
 	response := upstreamConnectionToResponse(&service.UpstreamConnection{
 		ID: 1, Name: "upstream", CredentialEncrypted: "cipher-secret",
 		CredentialFingerprint: "credential-fingerprint", CredentialHint: "abcd...wxyz",
-		Bindings: []service.UpstreamAccountBinding{{KeyFingerprint: "key-fingerprint"}},
+		BoundAccountIDs: []int64{17, 23},
+		Bindings:        []service.UpstreamAccountBinding{{KeyFingerprint: "key-fingerprint"}},
 	})
 
 	payload, err := json.Marshal(response)
@@ -23,4 +24,14 @@ func TestUpstreamConnectionResponseNeverSerializesSecretMaterial(t *testing.T) {
 	require.NotContains(t, string(payload), "credential-fingerprint")
 	require.NotContains(t, string(payload), "key-fingerprint")
 	require.Contains(t, string(payload), "abcd...wxyz")
+	require.Contains(t, string(payload), `"bound_account_ids":[17,23]`)
+}
+
+func TestUpstreamCredentialRequestToServiceCapturesRequestUserAgent(t *testing.T) {
+	credential := upstreamCredentialRequestToService(upstreamConnectionCredentialRequest{
+		AccessToken: "management-token",
+	}, "Mozilla/5.0 exact-login-agent")
+
+	require.Equal(t, "management-token", credential.AccessToken)
+	require.Equal(t, "Mozilla/5.0 exact-login-agent", credential.UserAgent)
 }

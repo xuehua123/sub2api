@@ -197,6 +197,7 @@ func validateOpsEmailNotificationConfig(cfg *OpsEmailNotificationConfig) error {
 // =========================
 
 func defaultOpsAlertRuntimeSettings() *OpsAlertRuntimeSettings {
+	upstreamConnectionBalance := defaultOpsUpstreamConnectionBalanceSettings()
 	return &OpsAlertRuntimeSettings{
 		EvaluationIntervalSeconds: 60,
 		DistributedLock: OpsDistributedLockSettings{
@@ -210,9 +211,9 @@ func defaultOpsAlertRuntimeSettings() *OpsAlertRuntimeSettings {
 			GlobalReason:       "",
 			Entries:            []OpsAlertSilenceEntry{},
 		},
-		Thresholds:     *defaultOpsMetricThresholds(),
-		AccountHealth:  defaultOpsAccountHealthSettings(),
-		AccountBalance: defaultOpsAccountBalanceSettings(),
+		Thresholds:                *defaultOpsMetricThresholds(),
+		AccountHealth:             defaultOpsAccountHealthSettings(),
+		UpstreamConnectionBalance: &upstreamConnectionBalance,
 	}
 }
 
@@ -294,6 +295,11 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 			if b, mErr := json.Marshal(defaultCfg); mErr == nil {
 				_ = s.settingRepo.Set(ctx, SettingKeyOpsAlertRuntimeSettings, string(b))
 			}
+			upstreamConnectionBalance, resolveErr := s.resolveOpsUpstreamConnectionBalanceSettings(ctx, defaultCfg.UpstreamConnectionBalance)
+			if resolveErr != nil {
+				return nil, resolveErr
+			}
+			defaultCfg.UpstreamConnectionBalance = &upstreamConnectionBalance
 			return defaultCfg, nil
 		}
 		return nil, err
@@ -301,6 +307,11 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 
 	cfg := &OpsAlertRuntimeSettings{}
 	if err := json.Unmarshal([]byte(raw), cfg); err != nil {
+		upstreamConnectionBalance, resolveErr := s.resolveOpsUpstreamConnectionBalanceSettings(ctx, defaultCfg.UpstreamConnectionBalance)
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		defaultCfg.UpstreamConnectionBalance = &upstreamConnectionBalance
 		return defaultCfg, nil
 	}
 
@@ -310,7 +321,11 @@ func (s *OpsService) GetOpsAlertRuntimeSettings(ctx context.Context) (*OpsAlertR
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 	normalizeOpsAccountHealthSettings(&cfg.AccountHealth)
-	normalizeOpsAccountBalanceSettings(&cfg.AccountBalance)
+	upstreamConnectionBalance, err := s.resolveOpsUpstreamConnectionBalanceSettings(ctx, cfg.UpstreamConnectionBalance)
+	if err != nil {
+		return nil, err
+	}
+	cfg.UpstreamConnectionBalance = &upstreamConnectionBalance
 
 	return cfg, nil
 }
@@ -351,7 +366,7 @@ func (s *OpsService) UpdateOpsAlertRuntimeSettings(ctx context.Context, cfg *Ops
 	normalizeOpsDistributedLockSettings(&cfg.DistributedLock, opsAlertEvaluatorLeaderLockKeyDefault, defaultCfg.DistributedLock.TTLSeconds)
 	normalizeOpsAlertSilencingSettings(&cfg.Silencing)
 	cfg.AccountHealth = existing.AccountHealth
-	cfg.AccountBalance = existing.AccountBalance
+	cfg.UpstreamConnectionBalance = existing.UpstreamConnectionBalance
 
 	return s.storeOpsAlertRuntimeSettings(ctx, cfg)
 }
@@ -457,16 +472,19 @@ func MaskOpsAlertRuntimeSettingsForResponse(cfg *OpsAlertRuntimeSettings) *OpsAl
 	}
 	out := *cfg
 	out.AccountHealth = maskOpsAccountHealthSettings(out.AccountHealth)
-	out.AccountBalance = maskOpsAccountBalanceSettings(out.AccountBalance)
+	if out.UpstreamConnectionBalance != nil {
+		masked := maskOpsUpstreamConnectionBalanceSettings(*out.UpstreamConnectionBalance)
+		out.UpstreamConnectionBalance = &masked
+	}
 	return &out
+}
+
+func MaskOpsUpstreamConnectionBalanceSettingsForResponse(settings OpsUpstreamConnectionBalanceSettings) OpsUpstreamConnectionBalanceSettings {
+	return maskOpsUpstreamConnectionBalanceSettings(settings)
 }
 
 func MaskOpsAccountHealthSettingsForResponse(settings OpsAccountHealthSettings) OpsAccountHealthSettings {
 	return maskOpsAccountHealthSettings(settings)
-}
-
-func MaskOpsAccountBalanceSettingsForResponse(settings OpsAccountBalanceSettings) OpsAccountBalanceSettings {
-	return maskOpsAccountBalanceSettings(settings)
 }
 
 // =========================

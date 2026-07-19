@@ -5,14 +5,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 const {
   createAccountMock,
   checkMixedChannelRiskMock,
-  discoverUpstreamRateMultiplierGroupsMock,
   getWebSearchEmulationConfigMock,
   importCodexSessionMock,
   createOpenAICodexPATMock
 } = vi.hoisted(() => ({
   createAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
-  discoverUpstreamRateMultiplierGroupsMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
   importCodexSessionMock: vi.fn(),
   createOpenAICodexPATMock: vi.fn()
@@ -38,7 +36,6 @@ vi.mock('@/api/admin', () => ({
     accounts: {
       create: createAccountMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock,
-      discoverUpstreamRateMultiplierGroups: discoverUpstreamRateMultiplierGroupsMock,
       importCodexSession: importCodexSessionMock,
       createOpenAICodexPAT: createOpenAICodexPATMock
     },
@@ -277,120 +274,30 @@ async function openCodexImportStep(toggleClicks = 0) {
 }
 
 describe('CreateAccountModal', () => {
-  it('configures upstream management rate sync without submitting a manual multiplier', async () => {
-    createAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
-      provider: 'sub2api',
-      auth_mode: 'password',
-      groups: [{ name: 'plus', rate_multiplier: 0.5 }]
-    })
-    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
-    createAccountMock.mockResolvedValue({ id: 1 })
-
-    const wrapper = mountModal()
-    await flushPromises()
-    await wrapper.get('[data-tour="account-form-name"]').setValue('Upstream synced account')
-    await clickButtonContaining(wrapper, 'OpenAI')
-    await clickButtonContaining(wrapper, 'API Key')
-    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
-    await wrapper.get('[data-testid="create-upstream-management-base-url"]').setValue('https://console.example.com')
-    const groupSelectBeforeDetection = wrapper.get('[data-testid="create-upstream-rate-sync-group"]')
-    expect(groupSelectBeforeDetection.element.tagName).toBe('SELECT')
-    expect(groupSelectBeforeDetection.attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-testid="create-upstream-rate-sync-username"]').setValue('manager@example.com')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-password"]').setValue('management-password')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-testid="create-upstream-rate-sync-group"]').setValue('plus')
-
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    const payload = createAccountMock.mock.calls[0]?.[0]
-    expect(payload.rate_multiplier).toBeUndefined()
-    expect(payload.extra).toMatchObject({
-      upstream_rate_multiplier_sync_enabled: true,
-      upstream_rate_multiplier_sync_group: 'plus',
-      upstream_rate_multiplier_sync_provider: 'sub2api',
-      upstream_rate_multiplier_sync_auth_mode: 'password'
-    })
-    expect(discoverUpstreamRateMultiplierGroupsMock).toHaveBeenCalledWith(expect.objectContaining({
-      base_url: 'https://api.openai.com',
-      management_base_url: 'https://console.example.com',
-      auth_mode: 'password'
-    }))
-    expect(payload.upstream_management_auth).toEqual({ username: 'manager@example.com', password: 'management-password' })
-    expect(payload.upstream_management_base_url).toBe('https://console.example.com')
-  })
-
-  it('does not submit the discovered exact group multiplier as a manual multiplier', async () => {
+  it('uses shared upstream connections instead of rendering or submitting legacy management controls', async () => {
     createAccountMock.mockReset().mockResolvedValue({ id: 1 })
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
     getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
-    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
-      provider: 'sub2api',
-      auth_mode: 'password',
-      groups: [{ id: 7, name: 'plus', rate_multiplier: 0.5 }],
-      matched_group: { id: 7, name: 'plus', rate_multiplier: 0.5 }
-    })
 
     const wrapper = mountModal()
     await flushPromises()
-    await wrapper.get('[data-tour="account-form-name"]').setValue('Exact upstream account')
+    await wrapper.get('[data-tour="account-form-name"]').setValue('Shared connection account')
     await clickButtonContaining(wrapper, 'OpenAI')
     await clickButtonContaining(wrapper, 'API Key')
-    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-exact')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-username"]').setValue('manager@example.com')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-password"]').setValue('management-password')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
-    await flushPromises()
+    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
+
+    expect(wrapper.find('[data-testid="create-upstream-rate-sync-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="create-upstream-management-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-connection-binding-select"]').exists()).toBe(true)
 
     await wrapper.get('form#create-account-form').trigger('submit.prevent')
     await flushPromises()
 
     const payload = createAccountMock.mock.calls[0]?.[0]
-    expect(payload.extra.upstream_rate_multiplier_sync_group).toBe('plus')
-    expect(payload.rate_multiplier).toBeUndefined()
-  })
-
-  it('submits an upstream management refresh token with access-token authentication', async () => {
-    createAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
-      provider: 'sub2api',
-      auth_mode: 'access_token',
-      groups: [{ name: 'team', rate_multiplier: 0.5 }]
-    })
-    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
-    createAccountMock.mockResolvedValue({ id: 1 })
-
-    const wrapper = mountModal()
-    await flushPromises()
-    await wrapper.get('[data-tour="account-form-name"]').setValue('Upstream token account')
-    await clickButtonContaining(wrapper, 'OpenAI')
-    await clickButtonContaining(wrapper, 'API Key')
-    await wrapper.get('input[placeholder="sk-proj-..."]').setValue('sk-proj-test')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-toggle"]').trigger('click')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-auth-mode"]').setValue('access_token')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-token"]').setValue('access-token')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-refresh-token"]').setValue('refresh-token')
-    await wrapper.get('[data-testid="create-upstream-rate-sync-discover"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-testid="create-upstream-rate-sync-group"]').setValue('team')
-
-    await wrapper.get('form#create-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(discoverUpstreamRateMultiplierGroupsMock).toHaveBeenCalledWith(expect.objectContaining({
-      upstream_management_auth: { access_token: 'access-token', refresh_token: 'refresh-token' }
-    }))
-    expect(createAccountMock.mock.calls[0]?.[0]?.upstream_management_auth).toEqual({
-      access_token: 'access-token',
-      refresh_token: 'refresh-token'
-    })
+    expect(payload.rate_multiplier).toBe(1)
+    expect(payload.upstream_management_auth).toBeUndefined()
+    expect(payload.upstream_management_base_url).toBeUndefined()
+    expect(payload.extra?.upstream_rate_multiplier_sync_enabled).toBeUndefined()
   })
 
   it('allows setting upstream gzip during account creation', async () => {

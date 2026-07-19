@@ -100,11 +100,6 @@ func CredentialFingerprint(v string) predicate.UpstreamConnection {
 	return predicate.UpstreamConnection(sql.FieldEQ(FieldCredentialFingerprint, v))
 }
 
-// LegacyMigrationKey applies equality check predicate on the "legacy_migration_key" field. It's identical to LegacyMigrationKeyEQ.
-func LegacyMigrationKey(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldEQ(FieldLegacyMigrationKey, v))
-}
-
 // CredentialHint applies equality check predicate on the "credential_hint" field. It's identical to CredentialHintEQ.
 func CredentialHint(v string) predicate.UpstreamConnection {
 	return predicate.UpstreamConnection(sql.FieldEQ(FieldCredentialHint, v))
@@ -733,81 +728,6 @@ func CredentialFingerprintEqualFold(v string) predicate.UpstreamConnection {
 // CredentialFingerprintContainsFold applies the ContainsFold predicate on the "credential_fingerprint" field.
 func CredentialFingerprintContainsFold(v string) predicate.UpstreamConnection {
 	return predicate.UpstreamConnection(sql.FieldContainsFold(FieldCredentialFingerprint, v))
-}
-
-// LegacyMigrationKeyEQ applies the EQ predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyEQ(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldEQ(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyNEQ applies the NEQ predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyNEQ(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldNEQ(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyIn applies the In predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyIn(vs ...string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldIn(FieldLegacyMigrationKey, vs...))
-}
-
-// LegacyMigrationKeyNotIn applies the NotIn predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyNotIn(vs ...string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldNotIn(FieldLegacyMigrationKey, vs...))
-}
-
-// LegacyMigrationKeyGT applies the GT predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyGT(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldGT(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyGTE applies the GTE predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyGTE(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldGTE(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyLT applies the LT predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyLT(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldLT(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyLTE applies the LTE predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyLTE(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldLTE(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyContains applies the Contains predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyContains(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldContains(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyHasPrefix applies the HasPrefix predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyHasPrefix(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldHasPrefix(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyHasSuffix applies the HasSuffix predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyHasSuffix(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldHasSuffix(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyIsNil applies the IsNil predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyIsNil() predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldIsNull(FieldLegacyMigrationKey))
-}
-
-// LegacyMigrationKeyNotNil applies the NotNil predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyNotNil() predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldNotNull(FieldLegacyMigrationKey))
-}
-
-// LegacyMigrationKeyEqualFold applies the EqualFold predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyEqualFold(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldEqualFold(FieldLegacyMigrationKey, v))
-}
-
-// LegacyMigrationKeyContainsFold applies the ContainsFold predicate on the "legacy_migration_key" field.
-func LegacyMigrationKeyContainsFold(v string) predicate.UpstreamConnection {
-	return predicate.UpstreamConnection(sql.FieldContainsFold(FieldLegacyMigrationKey, v))
 }
 
 // CredentialHintEQ applies the EQ predicate on the "credential_hint" field.

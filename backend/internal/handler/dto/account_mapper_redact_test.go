@@ -65,3 +65,36 @@ func TestAccountFromServiceShallow_NilCredentialsOmitsStatus(t *testing.T) {
 	require.Nil(t, got.Credentials)
 	require.Nil(t, got.CredentialsStatus)
 }
+
+func TestAccountFromServiceShallow_HidesLegacyUpstreamProbeState(t *testing.T) {
+	src := &service.Account{
+		ID:   7,
+		Name: "legacy upstream",
+		Credentials: map[string]any{
+			"upstream_management_auth":     "encrypted-secret",
+			"upstream_management_base_url": "https://legacy.example.com",
+			"base_url":                     "https://api.example.com",
+		},
+		Extra: map[string]any{
+			"balance_probe_status":                  "ok",
+			"upstream_billing_probe_enabled":        true,
+			"upstream_rate_multiplier_sync_enabled": true,
+			"unrelated":                             "kept",
+		},
+	}
+
+	got := AccountFromServiceShallow(src)
+	require.NotNil(t, got)
+	require.NotContains(t, got.Credentials, "upstream_management_auth")
+	require.NotContains(t, got.Credentials, "upstream_management_base_url")
+	require.NotContains(t, got.CredentialsStatus, "has_upstream_management_auth")
+	require.Equal(t, map[string]any{"unrelated": "kept"}, got.Extra)
+
+	raw, err := json.Marshal(got)
+	require.NoError(t, err)
+	require.NotContains(t, string(raw), "encrypted-secret")
+	require.NotContains(t, string(raw), "upstream_management")
+	require.NotContains(t, string(raw), "balance_probe")
+	require.NotContains(t, string(raw), "upstream_billing_probe")
+	require.NotContains(t, string(raw), "upstream_rate_multiplier_sync")
+}

@@ -339,12 +339,12 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 	}
 
 	accountHealthSent := s.evaluateAccountHealthNotifications(ctx, runtimeCfg)
-	accountBalanceProbed := 0
-	if s.opsService != nil {
-		accountBalanceProbed = s.opsService.RunAccountBalanceMonitorCycle(ctx, runtimeCfg.AccountBalance)
+	upstreamConnectionBalancesEvaluated := 0
+	if s.opsService != nil && runtimeCfg.UpstreamConnectionBalance != nil {
+		upstreamConnectionBalancesEvaluated = s.opsService.RunUpstreamConnectionBalanceMonitorCycle(ctx, *runtimeCfg.UpstreamConnectionBalance)
 	}
 
-	result := truncateString(fmt.Sprintf("rules=%d enabled=%d evaluated=%d created=%d resolved=%d emails_sent=%d enterprise_wechat_sent=%d account_health_sent=%d account_balance_probed=%d", rulesTotal, rulesEnabled, rulesEvaluated, eventsCreated, eventsResolved, emailsSent, enterpriseWeChatSent, accountHealthSent, accountBalanceProbed), 2048)
+	result := truncateString(fmt.Sprintf("rules=%d enabled=%d evaluated=%d created=%d resolved=%d emails_sent=%d enterprise_wechat_sent=%d account_health_sent=%d upstream_connection_balances_evaluated=%d", rulesTotal, rulesEnabled, rulesEvaluated, eventsCreated, eventsResolved, emailsSent, enterpriseWeChatSent, accountHealthSent, upstreamConnectionBalancesEvaluated), 2048)
 	s.recordHeartbeatSuccess(runAt, time.Since(startedAt), result)
 }
 

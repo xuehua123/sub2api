@@ -399,94 +399,68 @@ export interface AccountAvailability {
   probe_model_id?: string
   probe_model_effective?: string
   health_probe?: OpsAccountHealthProbe | null
-  balance_probe?: OpsAccountBalanceProbeState | null
 }
 
-export type OpsAccountBalanceProbeMethod = 'auto' | 'disabled' | 'upstream_management' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
-export type OpsAccountBalanceProbeStatus = 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped'
-
-export interface OpsAccountBalanceProbeState {
-  account_id: number
-  method: OpsAccountBalanceProbeMethod | string
-  enabled: boolean
-  threshold_usd?: number | null
-  detected_method?: OpsAccountBalanceProbeMethod | string
-  status: OpsAccountBalanceProbeStatus | string
-  error?: string
-  balance_usd?: number | null
-  balance_amount?: number | null
-  balance_currency?: string
-  unlimited: boolean
-  endpoint?: string
-  total_used_usd?: number | null
-  total_granted_usd?: number | null
-  checked_at?: string | null
-  notified_at?: string | null
-}
-
-export interface OpsAccountBalanceProbeSettings {
-  interval_minutes: number
-  max_per_run: number
-  timeout_seconds: number
-  only_schedulable: boolean
-  method_order: Array<OpsAccountBalanceProbeMethod | string>
-}
-
-export interface OpsAccountBalanceNotificationSettings {
+export interface OpsUpstreamConnectionBalanceNotificationSettings {
   enterprise_wechat_enabled: boolean
   enterprise_wechat_webhook_url?: string
   mention_all_on_low_balance: boolean
 }
 
-export interface OpsAccountBalanceSettings {
+export interface OpsUpstreamConnectionBalanceSettings {
   enabled: boolean
-  probe: OpsAccountBalanceProbeSettings
-  notification: OpsAccountBalanceNotificationSettings
   default_threshold_usd: number
   rate_limit_per_hour: number
+  notification: OpsUpstreamConnectionBalanceNotificationSettings
 }
 
-export interface OpsAccountBalanceAccountItem {
-  account_id: number
-  account_name: string
-  platform: string
-  type: string
+export interface OpsUpstreamConnectionBalanceAlertState {
+  enabled: boolean
+  threshold_usd: number
+  uses_default_threshold: boolean
+  eligible: boolean
+  snapshot_fresh: boolean
+  low: boolean
+  notified_at?: string | null
+}
+
+export interface OpsUpstreamConnectionBalanceItem {
+  connection_id: number
+  name: string
+  provider: string
   status: string
-  schedulable: boolean
-  group_ids?: number[]
-  balance_probe: OpsAccountBalanceProbeState
+  last_error?: string
+  sync_enabled: boolean
+  sync_interval_seconds: number
+  binding_count: number
+  bound_account_ids: number[]
+  wallet_amount?: number | null
+  wallet_currency?: string
+  wallet_usd?: number | null
+  wallet_unlimited: boolean
+  wallet_source?: string
+  wallet_reliability?: string
+  wallet_observed_at?: string | null
+  alert: OpsUpstreamConnectionBalanceAlertState
 }
 
-export interface OpsAccountBalanceSummary {
-  total_accounts: number
-  known_balance_count: number
-  low_balance_count: number
-  failed_count: number
-  unsupported_count: number
-  unlimited_count: number
-  disabled_count: number
-  due_count: number
+export interface OpsUpstreamConnectionBalanceSummary {
+  total_connections: number
+  monitored_connections: number
+  low_balance_connections: number
+  failed_connections: number
+  stale_connections: number
+  unlimited_connections: number
 }
 
-export interface OpsAccountBalanceListResponse {
+export interface OpsUpstreamConnectionBalanceListResponse {
   generated_at: string
-  settings: OpsAccountBalanceSettings
-  items: OpsAccountBalanceAccountItem[]
+  settings: OpsUpstreamConnectionBalanceSettings
+  items: OpsUpstreamConnectionBalanceItem[]
   total: number
   page: number
   page_size: number
-  summary: OpsAccountBalanceSummary
-}
-
-export interface OpsAccountBalanceProbeResult {
-  account_id: number
-  state: OpsAccountBalanceProbeState
-  attempts?: Array<{
-    method: string
-    endpoint: string
-    status: string
-    message?: string
-  }>
+  summary: OpsUpstreamConnectionBalanceSummary
 }
 
 export type OpsAccountHealthWindow = '1m' | '5m' | '10m' | '30m' | '1h'
@@ -714,50 +688,53 @@ export async function runAccountHealthProbe(accountId: number, options: {
   return data
 }
 
-export async function getAccountBalanceMonitor(params: {
+export async function getUpstreamConnectionBalanceMonitor(params: {
   page?: number
   page_size?: number
-  platform?: string
-  status?: string
-  probe_status?: string
-  method?: string
   q?: string
-  only_due?: boolean
+  status?: string
   only_low?: boolean
   only_failed?: boolean
-  only_schedulable?: boolean
-  sort_by?: string
-  sort_order?: 'asc' | 'desc'
-} = {}): Promise<OpsAccountBalanceListResponse> {
-  const { data } = await apiClient.get<OpsAccountBalanceListResponse>('/admin/ops/account-balance', { params })
+} = {}): Promise<OpsUpstreamConnectionBalanceListResponse> {
+  const { data } = await apiClient.get<OpsUpstreamConnectionBalanceListResponse>('/admin/ops/upstream-connection-balance', { params })
   return data
 }
 
-export async function updateAccountBalanceSettings(settings: OpsAccountBalanceSettings): Promise<OpsAccountBalanceSettings> {
-  const { data } = await apiClient.patch<OpsAccountBalanceSettings>('/admin/ops/account-balance/settings', settings)
+export async function updateUpstreamConnectionBalanceSettings(
+  settings: OpsUpstreamConnectionBalanceSettings
+): Promise<OpsUpstreamConnectionBalanceSettings> {
+  const { data } = await apiClient.patch<OpsUpstreamConnectionBalanceSettings>(
+    '/admin/ops/upstream-connection-balance/settings',
+    settings
+  )
   return data
 }
 
-export async function testAccountBalanceEnterpriseWeChat(settings?: OpsAccountBalanceSettings): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.post<{ ok: boolean }>('/admin/ops/account-balance/test-enterprise-wechat', settings ?? {})
+export async function testUpstreamConnectionBalanceEnterpriseWeChat(
+  settings?: OpsUpstreamConnectionBalanceSettings
+): Promise<{ ok: boolean }> {
+  const { data } = await apiClient.post<{ ok: boolean }>(
+    '/admin/ops/upstream-connection-balance/test-enterprise-wechat',
+    settings ?? {}
+  )
   return data
 }
 
-export async function updateAccountBalanceProbeConfig(accountId: number, payload: {
-  method?: OpsAccountBalanceProbeMethod | string
-  enabled?: boolean
-  threshold_usd?: number
-  use_default_threshold?: boolean
-}): Promise<OpsAccountBalanceProbeState> {
-  const { data } = await apiClient.patch<OpsAccountBalanceProbeState>(`/admin/ops/account-balance/${accountId}`, payload)
+export async function updateUpstreamConnectionBalanceAlert(
+  connectionId: number,
+  payload: { enabled?: boolean; threshold_usd?: number; use_default_threshold?: boolean }
+): Promise<OpsUpstreamConnectionBalanceAlertState> {
+  const { data } = await apiClient.patch<OpsUpstreamConnectionBalanceAlertState>(
+    `/admin/ops/upstream-connection-balance/${connectionId}`,
+    payload
+  )
   return data
 }
 
-export async function runAccountBalanceProbe(accountId: number, payload: {
-  method?: OpsAccountBalanceProbeMethod | string
-  force?: boolean
-} = { force: true }): Promise<OpsAccountBalanceProbeResult> {
-  const { data } = await apiClient.post<OpsAccountBalanceProbeResult>(`/admin/ops/account-balance/${accountId}/probe`, payload)
+export async function probeUpstreamConnectionBalance(connectionId: number): Promise<OpsUpstreamConnectionBalanceItem> {
+  const { data } = await apiClient.post<OpsUpstreamConnectionBalanceItem>(
+    `/admin/ops/upstream-connection-balance/${connectionId}/probe`
+  )
   return data
 }
 
@@ -1128,7 +1105,7 @@ export interface OpsAlertRuntimeSettings {
   }
   thresholds: OpsMetricThresholds
   account_health: OpsAccountHealthSettings
-  account_balance: OpsAccountBalanceSettings
+  upstream_connection_balance?: OpsUpstreamConnectionBalanceSettings
 }
 
 export interface OpsOpenAIAccountQuotaAutoPauseSettings {
@@ -1682,11 +1659,11 @@ export const opsAPI = {
   updateAccountHealthProbeAuto,
   updateAccountHealthProbeModel,
   runAccountHealthProbe,
-  getAccountBalanceMonitor,
-  updateAccountBalanceSettings,
-  testAccountBalanceEnterpriseWeChat,
-  updateAccountBalanceProbeConfig,
-  runAccountBalanceProbe,
+  getUpstreamConnectionBalanceMonitor,
+  updateUpstreamConnectionBalanceSettings,
+  testUpstreamConnectionBalanceEnterpriseWeChat,
+  updateUpstreamConnectionBalanceAlert,
+  probeUpstreamConnectionBalance,
   getRealtimeTrafficSummary,
   subscribeQPS,
 

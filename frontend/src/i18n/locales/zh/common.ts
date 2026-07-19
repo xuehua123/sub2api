@@ -195,7 +195,7 @@ export default {
     issueCenter: '问题中心',
     issueManagement: '问题管理',
     accountHealth: '账号健康',
-    notificationRobots: '通知机器人',
+    notificationRobots: '告警规则与通知',
     referral: '推荐返佣',
     referralOverview: '推荐概览',
     referralWithdrawals: '提现管理',

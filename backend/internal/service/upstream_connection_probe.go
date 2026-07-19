@@ -51,7 +51,7 @@ type upstreamConnectionKeyResolver func(context.Context, string) (UpstreamAccoun
 
 func newUpstreamConnectionInspector(cfg *config.Config, proxyRepo ProxyRepository, client *http.Client) *upstreamConnectionInspector {
 	if client == nil {
-		client = &http.Client{Timeout: upstreamRateMultiplierRequestTimeout}
+		client = &http.Client{Timeout: upstreamManagementRequestTimeout}
 	}
 	return &upstreamConnectionInspector{cfg: cfg, proxyRepo: proxyRepo, client: client, now: time.Now}
 }
@@ -146,14 +146,30 @@ func upstreamConnectionProbeProviders(provider string) []string {
 	}
 }
 
+func upstreamConnectionEffectiveProvider(connection *UpstreamConnection) string {
+	if connection == nil {
+		return ""
+	}
+	provider := strings.ToLower(strings.TrimSpace(connection.Provider))
+	if provider != UpstreamConnectionProviderAuto {
+		return provider
+	}
+	detected, _ := connection.Capabilities["detected_provider"].(string)
+	detected = strings.ToLower(strings.TrimSpace(detected))
+	if detected != "" && detected != UpstreamConnectionProviderAuto && len(upstreamConnectionProbeProviders(detected)) == 1 {
+		return detected
+	}
+	return provider
+}
+
 func (i *upstreamConnectionInspector) detectUpstreamConnectionProvider(
 	ctx context.Context,
 	client *http.Client,
 	baseURL string,
 ) string {
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
-	status, err := legacy.managementJSON(ctx, client, http.MethodGet,
-		accountBalanceJoinEndpoint(baseURL, "/api/status", false), nil, nil)
+	management := &upstreamManagementClient{client: client}
+	status, err := management.managementJSON(ctx, client, http.MethodGet,
+		upstreamConnectionJoinEndpoint(baseURL, "/api/status", false), nil, nil)
 	if err != nil {
 		return ""
 	}
@@ -259,18 +275,19 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 		return nil, errUpstreamConnectionRemoteUserIDRequired
 	}
 	legacyProvider := upstreamConnectionLegacyNewAPIProvider(provider)
-	config := UpstreamRateMultiplierSyncConfig{
+	config := upstreamManagementConfig{
 		Provider: legacyProvider, AuthMode: authMode, Group: "__connection_probe__", RemoteUserID: remoteUserID,
 	}
 	secret := upstreamManagementAuthSecret{
 		Username: credential.Username, Password: credential.Password,
 		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
+		UserAgent: credential.UserAgent,
 	}
 	if err := validateUpstreamManagementAuth(config, secret); err != nil {
 		return nil, err
 	}
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
-	session, err := legacy.authenticateNewAPIManagementSession(ctx, client, connection.ManagementBaseURL, config, secret)
+	management := &upstreamManagementClient{client: client}
+	session, err := management.authenticateNewAPIManagementSession(ctx, client, connection.ManagementBaseURL, config, secret)
 	if err != nil {
 		return nil, err
 	}
@@ -288,13 +305,13 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 	}
 	successfulRequests := 0
 	authenticatedSession := authMode == UpstreamManagementAuthModePassword
-	profileEndpoint := accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/user/self", false)
-	profile, profileErr := legacy.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
+	profileEndpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/user/self", false)
+	profile, profileErr := management.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
 	var profileData map[string]any
 	if profileErr == nil {
-		profileData = accountBalanceDataObject(profile.payload)
+		profileData = upstreamConnectionDataObject(profile.payload)
 		discoveredID := int64FromMap(profileData, "id")
-		profileQuota := accountBalanceNumber(profileData, "quota", "balance", "available")
+		profileQuota := upstreamConnectionNumber(profileData, "quota", "balance", "available")
 		if discoveredID > 0 || profileQuota != nil || strings.TrimSpace(firstString(profileData, "group")) != "" {
 			successfulRequests++
 			authenticatedSession = true
@@ -302,7 +319,7 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 		if discoveredID > 0 {
 			snapshot.RemoteUserID = strconv.FormatInt(discoveredID, 10)
 		}
-		snapshot.Wallet = i.newAPIWallet(ctx, legacy, client, connection.ManagementBaseURL, headers, profileData)
+		snapshot.Wallet = i.newAPIWallet(ctx, management, client, connection.ManagementBaseURL, headers, profileData)
 		if snapshot.Wallet != nil {
 			snapshot.WalletObserved = true
 			snapshot.Capabilities["wallet"] = true
@@ -313,7 +330,7 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 		snapshot.Warnings = append(snapshot.Warnings, "wallet: "+profileErr.Error())
 	}
 
-	groups, groupSource, groupsErr := inspectNewAPIGroups(ctx, legacy, client, connection.ManagementBaseURL, headers, provider, profileData)
+	groups, groupSource, groupsErr := inspectNewAPIGroups(ctx, management, client, connection.ManagementBaseURL, headers, provider, profileData)
 	if groupsErr == nil {
 		successfulRequests++
 		if groupSource == "newapi:self_groups" {
@@ -355,7 +372,7 @@ func (i *upstreamConnectionInspector) inspectNewAPI(
 
 func inspectNewAPIGroups(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
 	headers http.Header,
@@ -370,8 +387,8 @@ func inspectNewAPIGroups(
 		return []UpstreamGroup{{Name: groupName}}, "oneapi:user_self", nil
 	}
 	if provider == UpstreamConnectionProviderOneHub || provider == UpstreamConnectionProviderDoneHub {
-		endpoint := accountBalanceJoinEndpoint(baseURL, "/api/user_group_map", false)
-		response, err := legacy.managementJSON(ctx, client, http.MethodGet, endpoint, headers, nil)
+		endpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/user_group_map", false)
+		response, err := management.managementJSON(ctx, client, http.MethodGet, endpoint, headers, nil)
 		if err != nil {
 			return nil, "", err
 		}
@@ -382,15 +399,15 @@ func inspectNewAPIGroups(
 		return groups, provider + ":user_group_map", nil
 	}
 
-	groupsEndpoint := accountBalanceJoinEndpoint(baseURL, "/api/user/self/groups", false)
-	groupsResponse, groupsErr := legacy.managementJSON(ctx, client, http.MethodGet, groupsEndpoint, headers, nil)
+	groupsEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/user/self/groups", false)
+	groupsResponse, groupsErr := management.managementJSON(ctx, client, http.MethodGet, groupsEndpoint, headers, nil)
 	if groupsErr == nil {
 		if groups := extractNewAPIConnectionGroups(envelopeData(groupsResponse.payload)); len(groups) > 0 {
 			return groups, "newapi:self_groups", nil
 		}
 	}
-	pricingEndpoint := accountBalanceJoinEndpoint(baseURL, "/api/pricing", false)
-	pricingResponse, pricingErr := legacy.managementJSON(ctx, client, http.MethodGet, pricingEndpoint, headers, nil)
+	pricingEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/pricing", false)
+	pricingResponse, pricingErr := management.managementJSON(ctx, client, http.MethodGet, pricingEndpoint, headers, nil)
 	if pricingErr == nil {
 		if groups := extractNewAPIConnectionGroups(newAPIPricingGroupRatios(pricingResponse.payload)); len(groups) > 0 {
 			return groups, "newapi:pricing", nil
@@ -512,13 +529,13 @@ func extractNewAPIConnectionGroups(payload any) []UpstreamGroup {
 
 func (i *upstreamConnectionInspector) newAPIWallet(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
 	headers http.Header,
 	profileData map[string]any,
 ) *upstreamConnectionWalletObservation {
-	quota := accountBalanceNumber(profileData, "quota", "balance", "available")
+	quota := upstreamConnectionNumber(profileData, "quota", "balance", "available")
 	if quota == nil {
 		return nil
 	}
@@ -526,13 +543,13 @@ func (i *upstreamConnectionInspector) newAPIWallet(
 	currency := "QUOTA"
 	reliability := "raw_quota"
 	raw := map[string]any{"quota": *quota}
-	if used := accountBalanceNumber(profileData, "used_quota", "used"); used != nil {
+	if used := upstreamConnectionNumber(profileData, "used_quota", "used"); used != nil {
 		raw["used_quota"] = *used
 	}
-	statusEndpoint := accountBalanceJoinEndpoint(baseURL, "/api/status", false)
-	if status, statusErr := legacy.managementJSON(ctx, client, http.MethodGet, statusEndpoint, headers, nil); statusErr == nil {
-		statusData := accountBalanceDataObject(status.payload)
-		if perUnit := accountBalanceNumber(statusData, "quota_per_unit"); perUnit != nil && *perUnit > 0 {
+	statusEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/status", false)
+	if status, statusErr := management.managementJSON(ctx, client, http.MethodGet, statusEndpoint, headers, nil); statusErr == nil {
+		statusData := upstreamConnectionDataObject(status.payload)
+		if perUnit := upstreamConnectionNumber(statusData, "quota_per_unit"); perUnit != nil && *perUnit > 0 {
 			usdAmount := *quota / *perUnit
 			amount = usdAmount
 			currency = "USD"
@@ -555,14 +572,14 @@ func (i *upstreamConnectionInspector) newAPIWallet(
 			}
 			switch displayType {
 			case "CNY":
-				if exchangeRate := accountBalanceNumber(statusData, "usd_exchange_rate"); exchangeRate != nil && *exchangeRate > 0 {
+				if exchangeRate := upstreamConnectionNumber(statusData, "usd_exchange_rate"); exchangeRate != nil && *exchangeRate > 0 {
 					amount = usdAmount * *exchangeRate
 					currency = "CNY"
 					reliability = "converted"
 					raw["usd_exchange_rate"] = *exchangeRate
 				}
 			case "CUSTOM":
-				if exchangeRate := accountBalanceNumber(statusData, "custom_currency_exchange_rate"); exchangeRate != nil && *exchangeRate > 0 {
+				if exchangeRate := upstreamConnectionNumber(statusData, "custom_currency_exchange_rate"); exchangeRate != nil && *exchangeRate > 0 {
 					amount = usdAmount * *exchangeRate
 					currency = safeUpstreamWalletCurrency(firstString(statusData, "custom_currency_symbol"), "CUSTOM")
 					reliability = "converted"
@@ -600,11 +617,12 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	connection *UpstreamConnection,
 	credential upstreamConnectionCredential,
 ) (*upstreamConnectionProbeSnapshot, error) {
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
+	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
+	headers := upstreamManagementRequestHeaders(credential.UserAgent)
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
-		login, err := legacy.managementJSON(ctx, client, http.MethodPost,
-			accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), nil,
+		login, err := management.managementJSON(ctx, client, http.MethodPost,
+			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
 			map[string]string{"email": credential.Username, "password": credential.Password})
 		if err != nil {
 			return nil, err
@@ -614,7 +632,6 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	if accessToken == "" {
 		return nil, errors.New("Sub2API management login did not return an access token")
 	}
-	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+accessToken)
 	now := i.now().UTC()
 	snapshot := &upstreamConnectionProbeSnapshot{
@@ -625,12 +642,12 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		Groups: []UpstreamGroup{}, Warnings: []string{},
 	}
 	successfulRequests := 0
-	profileEndpoint := accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/v1/user/profile", false)
-	profile, profileErr := legacy.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
+	profileEndpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/user/profile", false)
+	profile, profileErr := management.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
 	if profileErr == nil {
-		profileData := accountBalanceDataObject(profile.payload)
+		profileData := upstreamConnectionDataObject(profile.payload)
 		discoveredID := int64FromMap(profileData, "id", "user_id")
-		balance := accountBalanceNumber(profileData, "balance")
+		balance := upstreamConnectionNumber(profileData, "balance")
 		if discoveredID > 0 || balance != nil {
 			successfulRequests++
 		}
@@ -652,7 +669,7 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		snapshot.Warnings = append(snapshot.Warnings, "wallet: "+profileErr.Error())
 	}
 
-	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, legacy, client, connection.ManagementBaseURL, headers, now)
+	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, management, client, connection.ManagementBaseURL, headers, now)
 	if groupsErr == nil {
 		successfulRequests++
 		snapshot.GroupsObserved = true
@@ -678,14 +695,14 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 
 func inspectSub2APIGroups(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
 	headers http.Header,
 	now time.Time,
 ) ([]UpstreamGroup, string, error) {
-	availableEndpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/available", false)
-	available, err := legacy.managementJSON(ctx, client, http.MethodGet, availableEndpoint, headers, nil)
+	availableEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/available", false)
+	available, err := management.managementJSON(ctx, client, http.MethodGet, availableEndpoint, headers, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -699,8 +716,8 @@ func inspectSub2APIGroups(
 	}
 	ratesConfirmed := false
 	warning := ""
-	ratesEndpoint := accountBalanceJoinEndpoint(baseURL, "/api/v1/groups/rates", false)
-	if rates, ratesErr := legacy.managementJSON(ctx, client, http.MethodGet, ratesEndpoint, headers, nil); ratesErr == nil {
+	ratesEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/rates", false)
+	if rates, ratesErr := management.managementJSON(ctx, client, http.MethodGet, ratesEndpoint, headers, nil); ratesErr == nil {
 		applySub2APIConnectionGroupRates(groups, envelopeData(rates.payload))
 		ratesConfirmed = true
 	} else {
@@ -801,8 +818,8 @@ func (i *upstreamConnectionInspector) clientForConnection(ctx context.Context, c
 	if connection.ProxyID == nil {
 		if i.cfg != nil && i.cfg.Security.URLAllowlist.Enabled {
 			return httpclient.GetClient(httpclient.Options{
-				Timeout:               upstreamRateMultiplierRequestTimeout,
-				ResponseHeaderTimeout: upstreamRateMultiplierRequestTimeout,
+				Timeout:               upstreamManagementRequestTimeout,
+				ResponseHeaderTimeout: upstreamManagementRequestTimeout,
 				ValidateResolvedIP:    true,
 				AllowPrivateHosts:     i.cfg.Security.URLAllowlist.AllowPrivateHosts,
 			})
@@ -822,8 +839,8 @@ func (i *upstreamConnectionInspector) clientForConnection(ctx context.Context, c
 	validateResolvedIP := i.cfg != nil && i.cfg.Security.URLAllowlist.Enabled
 	return httpclient.GetClient(httpclient.Options{
 		ProxyURL:              proxy.URL(),
-		Timeout:               upstreamRateMultiplierRequestTimeout,
-		ResponseHeaderTimeout: upstreamRateMultiplierRequestTimeout,
+		Timeout:               upstreamManagementRequestTimeout,
+		ResponseHeaderTimeout: upstreamManagementRequestTimeout,
 		ValidateResolvedIP:    validateResolvedIP,
 		AllowPrivateHosts:     i.cfg != nil && i.cfg.Security.URLAllowlist.AllowPrivateHosts,
 	})
@@ -874,10 +891,7 @@ func (i *upstreamConnectionInspector) PrepareKeyResolver(
 	if err != nil {
 		return nil, err
 	}
-	detectedProvider := connection.Provider
-	if detectedProvider == UpstreamConnectionProviderAuto {
-		detectedProvider = strings.TrimSpace(fmt.Sprint(connection.Capabilities["detected_provider"]))
-	}
+	detectedProvider := upstreamConnectionEffectiveProvider(connection)
 	if detectedProvider == "" || detectedProvider == UpstreamConnectionProviderAuto {
 		return nil, errors.New("probe the upstream connection before binding an account")
 	}
@@ -903,22 +917,23 @@ func (i *upstreamConnectionInspector) prepareNewAPIKeyResolver(
 		return nil, errUpstreamConnectionRemoteUserIDRequired
 	}
 	legacyProvider := upstreamConnectionLegacyNewAPIProvider(provider)
-	config := UpstreamRateMultiplierSyncConfig{
+	config := upstreamManagementConfig{
 		Provider: legacyProvider, AuthMode: UpstreamManagementAuthMode(connection.AuthMode),
 		Group: "__key_resolution__", RemoteUserID: remoteUserID,
 	}
 	secret := upstreamManagementAuthSecret{
 		Username: credential.Username, Password: credential.Password,
 		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
+		UserAgent: credential.UserAgent,
 	}
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
-	session, err := legacy.authenticateNewAPIManagementSession(ctx, client, connection.ManagementBaseURL, config, secret)
+	management := &upstreamManagementClient{client: client}
+	session, err := management.authenticateNewAPIManagementSession(ctx, client, connection.ManagementBaseURL, config, secret)
 	if err != nil {
 		return nil, err
 	}
 	headers := newAPIManagementHeaders(legacyProvider, session)
 	if providerUsesPaginatedTokenList(provider) {
-		rows, listErr := listNewAPILikeTokenRows(ctx, legacy, client, connection.ManagementBaseURL, headers, provider)
+		rows, listErr := listNewAPILikeTokenRows(ctx, management, client, connection.ManagementBaseURL, headers, provider)
 		if listErr != nil {
 			return nil, listErr
 		}
@@ -927,11 +942,11 @@ func (i *upstreamConnectionInspector) prepareNewAPIKeyResolver(
 			if !ok {
 				return UpstreamAccountBinding{}, fmt.Errorf("%w: upstream API key was not found under the configured management user", ErrUpstreamAPIKeyGroupUnmapped)
 			}
-			return i.resolveNewAPITokenRow(resolveCtx, legacy, client, connection, headers, row, provider+":token_list")
+			return i.resolveNewAPITokenRow(resolveCtx, management, client, connection, headers, row, provider+":token_list")
 		}, nil
 	}
 	return func(resolveCtx context.Context, apiKey string) (UpstreamAccountBinding, error) {
-		return i.resolveNewAPIKeyWithSession(resolveCtx, legacy, client, connection, headers, apiKey, provider)
+		return i.resolveNewAPIKeyWithSession(resolveCtx, management, client, connection, headers, apiKey, provider)
 	}, nil
 }
 
@@ -946,7 +961,7 @@ func providerUsesPaginatedTokenList(provider string) bool {
 
 func (i *upstreamConnectionInspector) resolveNewAPIKeyWithSession(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	connection *UpstreamConnection,
 	headers http.Header,
@@ -957,7 +972,7 @@ func (i *upstreamConnectionInspector) resolveNewAPIKeyWithSession(
 	if apiKey == "" {
 		return UpstreamAccountBinding{}, errors.New("upstream API key is empty")
 	}
-	endpoint := accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/token/search", false)
+	endpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/token/search", false)
 	parsedEndpoint, err := url.Parse(endpoint)
 	if err != nil {
 		return UpstreamAccountBinding{}, err
@@ -967,7 +982,7 @@ func (i *upstreamConnectionInspector) resolveNewAPIKeyWithSession(
 	query.Set("p", "0")
 	query.Set("page_size", "10")
 	parsedEndpoint.RawQuery = query.Encode()
-	response, err := legacy.managementJSON(ctx, client, http.MethodGet, parsedEndpoint.String(), headers, nil)
+	response, err := management.managementJSON(ctx, client, http.MethodGet, parsedEndpoint.String(), headers, nil)
 	if err != nil {
 		return UpstreamAccountBinding{}, sanitizeUpstreamKeyLookupError(err, apiKey)
 	}
@@ -979,12 +994,12 @@ func (i *upstreamConnectionInspector) resolveNewAPIKeyWithSession(
 	if !ok {
 		return UpstreamAccountBinding{}, fmt.Errorf("%w: NewAPI token search returned an invalid item", ErrUpstreamAPIKeyGroupUnmapped)
 	}
-	return i.resolveNewAPITokenRow(ctx, legacy, client, connection, headers, row, provider+":token_search")
+	return i.resolveNewAPITokenRow(ctx, management, client, connection, headers, row, provider+":token_search")
 }
 
 func (i *upstreamConnectionInspector) resolveNewAPITokenRow(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	connection *UpstreamConnection,
 	headers http.Header,
@@ -998,12 +1013,12 @@ func (i *upstreamConnectionInspector) resolveNewAPITokenRow(
 		fallbackGroups = append(fallbackGroups, backupGroup)
 	}
 	if groupName == "" {
-		profile, profileErr := legacy.managementJSON(ctx, client, http.MethodGet,
-			accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/user/self", false), headers, nil)
+		profile, profileErr := management.managementJSON(ctx, client, http.MethodGet,
+			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/user/self", false), headers, nil)
 		if profileErr != nil {
 			return UpstreamAccountBinding{}, fmt.Errorf("resolve inherited NewAPI group: %w", profileErr)
 		}
-		groupName = strings.TrimSpace(firstString(accountBalanceDataObject(profile.payload), "group"))
+		groupName = strings.TrimSpace(firstString(upstreamConnectionDataObject(profile.payload), "group"))
 		resolutionKind = UpstreamBindingResolutionInherited
 	}
 	if strings.EqualFold(groupName, "auto") {
@@ -1045,7 +1060,7 @@ func (i *upstreamConnectionInspector) resolveNewAPITokenRow(
 
 func listNewAPILikeTokenRows(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
 	headers http.Header,
@@ -1062,7 +1077,7 @@ func listNewAPILikeTokenRows(
 	}
 	for offset := 0; offset < maxPages; offset++ {
 		page := startPage + offset
-		endpoint, err := url.Parse(accountBalanceJoinEndpoint(baseURL, "/api/token/", false))
+		endpoint, err := url.Parse(upstreamConnectionJoinEndpoint(baseURL, "/api/token/", false))
 		if err != nil {
 			return nil, err
 		}
@@ -1074,7 +1089,7 @@ func listNewAPILikeTokenRows(
 			query.Set("size", strconv.Itoa(pageSize))
 		}
 		endpoint.RawQuery = query.Encode()
-		response, requestErr := legacy.managementJSON(ctx, client, http.MethodGet, endpoint.String(), headers, nil)
+		response, requestErr := management.managementJSON(ctx, client, http.MethodGet, endpoint.String(), headers, nil)
 		if requestErr != nil {
 			return nil, requestErr
 		}
@@ -1123,11 +1138,12 @@ func (i *upstreamConnectionInspector) prepareSub2APIKeyResolver(
 	connection *UpstreamConnection,
 	credential upstreamConnectionCredential,
 ) (upstreamConnectionKeyResolver, error) {
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
+	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
+	headers := upstreamManagementRequestHeaders(credential.UserAgent)
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
-		login, err := legacy.managementJSON(ctx, client, http.MethodPost,
-			accountBalanceJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), nil,
+		login, err := management.managementJSON(ctx, client, http.MethodPost,
+			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
 			map[string]string{"email": credential.Username, "password": credential.Password})
 		if err != nil {
 			return nil, err
@@ -1137,9 +1153,8 @@ func (i *upstreamConnectionInspector) prepareSub2APIKeyResolver(
 	if accessToken == "" {
 		return nil, errors.New("Sub2API management login did not return an access token")
 	}
-	headers := make(http.Header)
 	headers.Set("Authorization", "Bearer "+accessToken)
-	rows, err := listSub2APIKeyRows(ctx, legacy, client, connection.ManagementBaseURL, headers)
+	rows, err := listSub2APIKeyRows(ctx, management, client, connection.ManagementBaseURL, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -1188,7 +1203,7 @@ func (i *upstreamConnectionInspector) resolveSub2APIKeyRow(
 
 func listSub2APIKeyRows(
 	ctx context.Context,
-	legacy *UpstreamRateMultiplierSyncService,
+	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
 	headers http.Header,
@@ -1200,7 +1215,7 @@ func listSub2APIKeyRows(
 	rows := make(map[string]map[string]any)
 	complete := false
 	for page := 1; page <= maxPages; page++ {
-		endpoint, err := url.Parse(accountBalanceJoinEndpoint(baseURL, "/api/v1/keys", false))
+		endpoint, err := url.Parse(upstreamConnectionJoinEndpoint(baseURL, "/api/v1/keys", false))
 		if err != nil {
 			return nil, err
 		}
@@ -1208,7 +1223,7 @@ func listSub2APIKeyRows(
 		query.Set("page", strconv.Itoa(page))
 		query.Set("page_size", strconv.Itoa(pageSize))
 		endpoint.RawQuery = query.Encode()
-		response, err := legacy.managementJSON(ctx, client, http.MethodGet, endpoint.String(), headers, nil)
+		response, err := management.managementJSON(ctx, client, http.MethodGet, endpoint.String(), headers, nil)
 		if err != nil {
 			return nil, err
 		}

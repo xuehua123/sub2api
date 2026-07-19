@@ -1344,6 +1344,6 @@ export default {
       deleteFailed: '删除模板失败'
     },
   notificationRobots: {
-    title: '通知机器人',
+    title: '告警规则与通知',
   },
 }

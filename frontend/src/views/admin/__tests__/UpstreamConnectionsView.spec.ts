@@ -5,15 +5,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 const {
   createConnectionMock,
   updateConnectionMock,
-  listConnectionsMock,
+  listAllConnectionsMock,
   probeConnectionMock,
+  getBatchTodayStatsMock,
   getProxiesMock,
   showErrorMock
 } = vi.hoisted(() => ({
   createConnectionMock: vi.fn(),
   updateConnectionMock: vi.fn(),
-  listConnectionsMock: vi.fn(),
+  listAllConnectionsMock: vi.fn(),
   probeConnectionMock: vi.fn(),
+  getBatchTodayStatsMock: vi.fn(),
   getProxiesMock: vi.fn(),
   showErrorMock: vi.fn()
 }))
@@ -37,11 +39,12 @@ vi.mock('@/utils/format', () => ({
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     upstreamConnections: {
-      list: listConnectionsMock,
+      listAll: listAllConnectionsMock,
       create: createConnectionMock,
       update: updateConnectionMock,
       probe: probeConnectionMock
     },
+    accounts: { getBatchTodayStats: getBatchTodayStatsMock },
     proxies: { getAll: getProxiesMock }
   }
 }))
@@ -76,7 +79,7 @@ const BaseDialogStub = defineComponent({
 
 const DataTableStub = defineComponent({
   props: { data: { type: Array, default: () => [] } },
-  template: '<div><div v-for="row in data" :key="row.id"><slot name="cell-actions" :row="row" /></div></div>'
+  template: '<div><div v-for="row in data" :key="row.id"><span class="row-name">{{ row.name }}</span><slot name="cell-wallet" :row="row" /><slot name="cell-today_requests" :row="row" /><slot name="cell-actions" :row="row" /></div></div>'
 })
 
 function mountView() {
@@ -96,10 +99,21 @@ function mountView() {
   })
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
 describe('UpstreamConnectionsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    listConnectionsMock.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20 })
+    listAllConnectionsMock.mockResolvedValue([])
+    getBatchTodayStatsMock.mockResolvedValue({ stats: {} })
     getProxiesMock.mockResolvedValue([])
     createConnectionMock.mockResolvedValue({ id: 12 })
     updateConnectionMock.mockResolvedValue({ id: 12 })
@@ -168,9 +182,16 @@ describe('UpstreamConnectionsView', () => {
       proxy_id: null,
       sync_enabled: true,
       sync_interval_seconds: 300,
-      version: 17
+      version: 17,
+      wallet_amount: null,
+      wallet_currency: '',
+      wallet_usd: null,
+      wallet_unlimited: false,
+      wallet_reliability: 'unknown',
+      bound_account_ids: [],
+      binding_count: 0
     }
-    listConnectionsMock.mockResolvedValue({ items: [connection], total: 1, page: 1, page_size: 20 })
+    listAllConnectionsMock.mockResolvedValue([connection])
     updateConnectionMock.mockResolvedValue(connection)
 
     const wrapper = mountView()
@@ -180,5 +201,109 @@ describe('UpstreamConnectionsView', () => {
     await flushPromises()
 
     expect(updateConnectionMock).toHaveBeenCalledWith(12, expect.objectContaining({ expected_version: 17 }))
+  })
+
+  it('shows the upstream homepage, today requests, and low-balance state', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 21,
+      name: 'Low wallet',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com/api',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: 49,
+      wallet_currency: 'USD',
+      wallet_usd: 49,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      bound_account_ids: [8],
+      binding_count: 1
+    }])
+    getBatchTodayStatsMock.mockResolvedValue({ stats: { '8': { requests: 123 } } })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('a[aria-label="admin.upstreamConnections.openHomepage"]').attributes('href')).toBe('https://console.example.com')
+    expect(wrapper.text()).toContain('123')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.lowBalanceHint')
+  })
+
+  it('sorts the full connection set by today request count by default', async () => {
+    const base = {
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: 100,
+      wallet_currency: 'USD',
+      wallet_usd: 100,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      binding_count: 1
+    }
+    listAllConnectionsMock.mockResolvedValue([
+      { ...base, id: 31, name: 'Lower traffic', bound_account_ids: [31] },
+      { ...base, id: 32, name: 'Higher traffic', bound_account_ids: [32] }
+    ])
+    getBatchTodayStatsMock.mockResolvedValue({ stats: {
+      '31': { requests: 4 },
+      '32': { requests: 40 }
+    } })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAll('.row-name').map(node => node.text())).toEqual(['Higher traffic', 'Lower traffic'])
+  })
+
+  it('ignores a stale today-stats failure after a newer refresh succeeds', async () => {
+    const connection = {
+      id: 41,
+      name: 'Current upstream',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: 100,
+      wallet_currency: 'USD',
+      wallet_usd: 100,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      bound_account_ids: [41],
+      binding_count: 1
+    }
+    const staleStats = deferred<{ stats: Record<string, { requests: number }> }>()
+    listAllConnectionsMock.mockResolvedValue([connection])
+    getBatchTodayStatsMock
+      .mockReturnValueOnce(staleStats.promise)
+      .mockResolvedValueOnce({ stats: { '41': { requests: 20 } } })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.findAll('select')[0].setValue('newapi')
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="today-requests-summary"]').text()).toBe('20')
+
+    staleStats.reject(new Error('stale request failed'))
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="today-requests-summary"]').text()).toBe('20')
   })
 })

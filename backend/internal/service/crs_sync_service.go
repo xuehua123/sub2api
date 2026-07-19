@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -368,8 +367,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			extra = mergeMap(existing.Extra, extra)
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformAnthropic, targetType, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -504,8 +502,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			extra = mergeMap(existing.Extra, extra)
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformAnthropic, AccountTypeAPIKey, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -659,8 +656,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		if existing != nil {
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformOpenAI, AccountTypeOAuth, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -810,8 +806,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		if existing != nil {
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformOpenAI, AccountTypeAPIKey, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -940,8 +935,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			extra = mergeMap(existing.Extra, extra)
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformGemini, AccountTypeOAuth, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -1070,8 +1064,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			extra = mergeMap(existing.Extra, extra)
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformGemini, AccountTypeAPIKey, credentials, extra)
-
+		stripRetiredCRSAccountState(credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -1152,31 +1145,6 @@ func mergeMap(existing map[string]any, updates map[string]any) map[string]any {
 		out[k] = v
 	}
 	return out
-}
-
-func reconcileCRSUpstreamBillingProbeExtra(
-	existing *Account,
-	targetPlatform, targetType string,
-	targetCredentials map[string]any,
-	extra map[string]any,
-) {
-	delete(extra, UpstreamBillingProbeEnabledExtraKey)
-	delete(extra, UpstreamBillingProbeExtraKey)
-	if existing == nil {
-		return
-	}
-	if targetPlatform != PlatformOpenAI || targetType != AccountTypeAPIKey {
-		return
-	}
-	if enabled, ok := existing.Extra[UpstreamBillingProbeEnabledExtraKey]; ok {
-		extra[UpstreamBillingProbeEnabledExtraKey] = enabled
-	}
-	target := &Account{Platform: targetPlatform, Type: targetType, Credentials: targetCredentials}
-	if reflect.DeepEqual(upstreamBillingProbeIdentity(existing), upstreamBillingProbeIdentity(target)) {
-		if snapshot, ok := existing.Extra[UpstreamBillingProbeExtraKey]; ok {
-			extra[UpstreamBillingProbeExtraKey] = snapshot
-		}
-	}
 }
 
 func mergeCRSOpenAILongContextBillingExtra(existing, updates map[string]any) (map[string]any, error) {
@@ -1271,6 +1239,11 @@ func sanitizeCredentialsMap(input map[string]any) map[string]any {
 		}
 	}
 	return out
+}
+
+func stripRetiredCRSAccountState(credentials, extra map[string]any) {
+	stripRetiredUpstreamManagementCredentials(credentials)
+	stripRetiredAccountProbeExtra(extra)
 }
 
 func mapCRSStatus(isActive bool, status string) string {

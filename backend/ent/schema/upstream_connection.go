@@ -56,12 +56,6 @@ func (UpstreamConnection) Fields() []ent.Field {
 			Default("").
 			MaxLen(128).
 			Sensitive(),
-		field.String("legacy_migration_key").
-			Optional().
-			Nillable().
-			MaxLen(128).
-			Unique().
-			Sensitive(),
 		field.String("credential_hint").
 			Default("").
 			MaxLen(100),

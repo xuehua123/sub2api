@@ -408,7 +408,6 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			FirstToken5m:           metrics.FirstToken5m,
 			FirstTokenWindows:      metrics.FirstTokenWindows,
 			Probe:                  availability.HealthProbe,
-			BalanceProbe:           availability.BalanceProbe,
 		}
 		item.ProbeModelID = accountHealthProbeConfiguredModelIDFromAvailability(availability)
 		item.ProbeModelEffective = resolveOpsAccountHealthProbeModelID(item.ProbeModelID, settings.Probe.ModelID)

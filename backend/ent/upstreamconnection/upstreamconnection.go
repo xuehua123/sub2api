@@ -32,8 +32,6 @@ const (
 	FieldCredentialEncrypted = "credential_encrypted"
 	// FieldCredentialFingerprint holds the string denoting the credential_fingerprint field in the database.
 	FieldCredentialFingerprint = "credential_fingerprint"
-	// FieldLegacyMigrationKey holds the string denoting the legacy_migration_key field in the database.
-	FieldLegacyMigrationKey = "legacy_migration_key"
 	// FieldCredentialHint holds the string denoting the credential_hint field in the database.
 	FieldCredentialHint = "credential_hint"
 	// FieldRemoteUserID holds the string denoting the remote_user_id field in the database.
@@ -119,7 +117,6 @@ var Columns = []string{
 	FieldForwardingBaseURL,
 	FieldCredentialEncrypted,
 	FieldCredentialFingerprint,
-	FieldLegacyMigrationKey,
 	FieldCredentialHint,
 	FieldRemoteUserID,
 	FieldProxyID,
@@ -180,8 +177,6 @@ var (
 	DefaultCredentialFingerprint string
 	// CredentialFingerprintValidator is a validator for the "credential_fingerprint" field. It is called by the builders before save.
 	CredentialFingerprintValidator func(string) error
-	// LegacyMigrationKeyValidator is a validator for the "legacy_migration_key" field. It is called by the builders before save.
-	LegacyMigrationKeyValidator func(string) error
 	// DefaultCredentialHint holds the default value on creation for the "credential_hint" field.
 	DefaultCredentialHint string
 	// CredentialHintValidator is a validator for the "credential_hint" field. It is called by the builders before save.
@@ -281,11 +276,6 @@ func ByCredentialEncrypted(opts ...sql.OrderTermOption) OrderOption {
 // ByCredentialFingerprint orders the results by the credential_fingerprint field.
 func ByCredentialFingerprint(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCredentialFingerprint, opts...).ToFunc()
-}
-
-// ByLegacyMigrationKey orders the results by the legacy_migration_key field.
-func ByLegacyMigrationKey(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldLegacyMigrationKey, opts...).ToFunc()
 }
 
 // ByCredentialHint orders the results by the credential_hint field.

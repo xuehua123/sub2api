@@ -195,7 +195,7 @@ export default {
     issueCenter: 'Issue Center',
     issueManagement: 'Issue Management',
     accountHealth: 'Account Health',
-    notificationRobots: 'Notification Robots',
+    notificationRobots: 'Alert Rules & Notifications',
     referral: 'Referral',
     referralOverview: 'Referral Overview',
     referralWithdrawals: 'Withdrawals',

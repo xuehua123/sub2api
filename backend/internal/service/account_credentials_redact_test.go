@@ -85,7 +85,7 @@ func TestIsSensitiveCredentialKey(t *testing.T) {
 	require.True(t, IsSensitiveCredentialKey("api_key"))
 	require.True(t, IsSensitiveCredentialKey("private_key"))
 	require.False(t, IsSensitiveCredentialKey("base_url"))
-	require.False(t, IsSensitiveCredentialKey(UpstreamManagementBaseURLCredentialKey))
+	require.False(t, IsSensitiveCredentialKey("upstream_management_base_url"))
 	require.False(t, IsSensitiveCredentialKey(""))
 	require.False(t, IsSensitiveCredentialKey("model_mapping"))
 }

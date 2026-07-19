@@ -28,13 +28,11 @@ var (
 	ErrUpstreamCredentialRefreshBusy      = infraerrors.Conflict("UPSTREAM_CREDENTIAL_REFRESH_BUSY", "another upstream credential refresh is already in progress")
 	ErrUpstreamAccountBindingNotFound     = infraerrors.NotFound("UPSTREAM_ACCOUNT_BINDING_NOT_FOUND", "upstream account binding not found")
 	ErrUpstreamConnectionAuthentication   = errors.New("upstream management authentication failed")
-	errUpstreamLegacyOwnershipConflict    = errors.New("legacy upstream monitoring was re-enabled after V2 took credential ownership; disable legacy monitoring before probing this connection")
 )
 
 type UpstreamConnectionRepository interface {
 	Create(ctx context.Context, connection *UpstreamConnection) error
 	GetByID(ctx context.Context, id int64) (*UpstreamConnection, error)
-	GetByLegacyMigrationKey(ctx context.Context, key string) (*UpstreamConnection, error)
 	List(ctx context.Context, params UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error)
 	UpdateIfVersion(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings bool) (bool, error)
 	DeleteIfUnbound(ctx context.Context, id int64) error
@@ -107,10 +105,6 @@ func (s *UpstreamConnectionService) Get(ctx context.Context, id int64) (*Upstrea
 }
 
 func (s *UpstreamConnectionService) Create(ctx context.Context, params UpstreamConnectionCreateParams) (*UpstreamConnection, error) {
-	return s.create(ctx, params, "")
-}
-
-func (s *UpstreamConnectionService) create(ctx context.Context, params UpstreamConnectionCreateParams, legacyMigrationKey string) (*UpstreamConnection, error) {
 	normalized, credential, err := s.normalizeCreate(params)
 	if err != nil {
 		return nil, err
@@ -131,7 +125,6 @@ func (s *UpstreamConnectionService) create(ctx context.Context, params UpstreamC
 		ForwardingBaseURL:     normalized.ForwardingBaseURL,
 		CredentialEncrypted:   ciphertext,
 		CredentialFingerprint: fingerprint,
-		LegacyMigrationKey:    strings.TrimSpace(legacyMigrationKey),
 		CredentialHint:        hint,
 		RemoteUserID:          normalized.RemoteUserID,
 		ProxyID:               cloneInt64Pointer(normalized.ProxyID),
@@ -165,7 +158,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	previousSyncEnabled := connection.SyncEnabled
 	previousSyncInterval := connection.SyncIntervalSeconds
 	identityChanged := false
-	legacyMigrationIdentityChanged := false
 	managementURLChanged := false
 	if params.Name != nil {
 		connection.Name = strings.TrimSpace(*params.Name)
@@ -173,7 +165,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	if params.Provider != nil {
 		next := strings.ToLower(strings.TrimSpace(*params.Provider))
 		identityChanged = identityChanged || next != connection.Provider
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.Provider
 		connection.Provider = next
 	}
 	if params.AuthMode != nil {
@@ -182,7 +173,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 			return nil, infraerrors.BadRequest("UPSTREAM_CONNECTION_CREDENTIAL_REQUIRED", "credentials are required when auth mode changes")
 		}
 		identityChanged = identityChanged || next != connection.AuthMode
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.AuthMode
 		connection.AuthMode = next
 	}
 	if params.ManagementBaseURL != nil {
@@ -192,7 +182,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		}
 		managementURLChanged = next != connection.ManagementBaseURL
 		identityChanged = identityChanged || managementURLChanged
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || managementURLChanged
 		connection.ManagementBaseURL = next
 	}
 	if params.ForwardingBaseURL != nil {
@@ -209,17 +198,14 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_REMOTE_USER_ID", normalizeErr.Error())
 		}
 		identityChanged = identityChanged || next != connection.RemoteUserID
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || next != connection.RemoteUserID
 		connection.RemoteUserID = next
 	}
 	if params.ClearProxy {
 		identityChanged = identityChanged || connection.ProxyID != nil
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || connection.ProxyID != nil
 		connection.ProxyID = nil
 	} else if params.ProxyID != nil {
 		proxyChanged := connection.ProxyID == nil || *connection.ProxyID != *params.ProxyID
 		identityChanged = identityChanged || proxyChanged
-		legacyMigrationIdentityChanged = legacyMigrationIdentityChanged || proxyChanged
 		connection.ProxyID = cloneInt64Pointer(params.ProxyID)
 	}
 	if params.SyncEnabled != nil {
@@ -229,7 +215,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		connection.SyncIntervalSeconds = *params.SyncIntervalSeconds
 	}
 	if params.Credential != nil {
-		previousFingerprint := connection.CredentialFingerprint
 		ciphertext, fingerprint, hint, encryptErr := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, *params.Credential)
 		if encryptErr != nil {
 			return nil, encryptErr
@@ -238,10 +223,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		connection.CredentialFingerprint = fingerprint
 		connection.CredentialHint = hint
 		identityChanged = true
-		if upstreamConnectionLegacyIdentityUsesCredentialFingerprint(connection.Provider, connection.AuthMode, connection.RemoteUserID) &&
-			fingerprint != previousFingerprint {
-			legacyMigrationIdentityChanged = true
-		}
 	} else if managementURLChanged {
 		credential, credentialErr := s.loadCredential(connection)
 		if credentialErr != nil {
@@ -249,10 +230,7 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		}
 		_, fingerprint, hint, identityErr := upstreamConnectionCredentialIdentity(
 			connection.AuthMode, connection.ManagementBaseURL,
-			UpstreamConnectionCredentialInput{
-				Username: credential.Username, Password: credential.Password,
-				AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
-			},
+			upstreamConnectionCredentialInput(credential),
 		)
 		if identityErr != nil {
 			return nil, identityErr
@@ -267,9 +245,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	connection.Version = expectedVersion + 1
 	if identityChanged {
 		resetUpstreamConnectionObservations(connection)
-	}
-	if legacyMigrationIdentityChanged {
-		connection.LegacyMigrationKey = ""
 	}
 	if !connection.SyncEnabled {
 		connection.Status = UpstreamConnectionStatusDisabled
@@ -292,13 +267,6 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	return connection, nil
 }
 
-func upstreamConnectionLegacyIdentityUsesCredentialFingerprint(provider, authMode, remoteUserID string) bool {
-	if authMode == string(UpstreamManagementAuthModePassword) {
-		return true
-	}
-	return provider == UpstreamConnectionProviderSub2API || strings.TrimSpace(remoteUserID) == ""
-}
-
 func (s *UpstreamConnectionService) Delete(ctx context.Context, id int64) error {
 	if err := s.repo.DeleteIfUnbound(ctx, id); err != nil {
 		return fmt.Errorf("delete upstream connection: %w", err)
@@ -314,10 +282,10 @@ func (s *UpstreamConnectionService) BindAccount(ctx context.Context, connectionI
 	if err != nil {
 		return nil, fmt.Errorf("get account for upstream binding: %w", err)
 	}
-	if !supportsUpstreamRateMultiplierSyncAccountType(account.Type) {
+	if !supportsUpstreamConnectionAccountType(account.Type) {
 		return nil, infraerrors.BadRequest("UNSUPPORTED_UPSTREAM_BINDING_ACCOUNT", "only API-key and upstream accounts can bind to an upstream connection")
 	}
-	apiKey := strings.TrimSpace(accountBalanceAPIKey(account))
+	apiKey := strings.TrimSpace(upstreamConnectionAPIKey(account))
 	if apiKey == "" {
 		return nil, infraerrors.BadRequest("UPSTREAM_BINDING_API_KEY_REQUIRED", "account does not contain a forwarding API key")
 	}
@@ -448,10 +416,10 @@ func (s *UpstreamConnectionService) refreshAccountBinding(
 	if err != nil {
 		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, err)
 	}
-	if !supportsUpstreamRateMultiplierSyncAccountType(account.Type) {
+	if !supportsUpstreamConnectionAccountType(account.Type) {
 		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, errors.New("bound account type no longer supports upstream key resolution"))
 	}
-	apiKey := strings.TrimSpace(accountBalanceAPIKey(account))
+	apiKey := strings.TrimSpace(upstreamConnectionAPIKey(account))
 	if apiKey == "" {
 		return s.persistBindingRefreshFailure(ctx, binding, expectedConnectionID, connection.Version, errors.New("bound account no longer contains a forwarding API key"))
 	}
@@ -604,52 +572,14 @@ func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*Upstr
 	return s.Get(ctx, id)
 }
 
-// prepareConnectionCredential coordinates the compatibility hand-off from the
-// account-local synchronizer to V2. While any bound legacy source remains
-// enabled it is the sole refresh-token owner and V2 only follows its encrypted
-// credential. Once all matching legacy sources are disabled, V2 records the
-// hand-off and can rotate the token itself.
+// prepareConnectionCredential refreshes an expiring shared Sub2API management
+// token. Shared connections are the sole credential owner.
 func (s *UpstreamConnectionService) prepareConnectionCredential(
 	ctx context.Context,
 	connection *UpstreamConnection,
 	credential upstreamConnectionCredential,
 ) (*UpstreamConnection, upstreamConnectionCredential, error) {
-	if !credential.LegacyManaged && connection.LegacyMigrationKey != "" {
-		_, legacyOwns, found, err := s.legacyCredentialHandoffInput(ctx, connection)
-		if err != nil {
-			return connection, credential, err
-		}
-		if found && legacyOwns {
-			return connection, credential, errUpstreamLegacyOwnershipConflict
-		}
-	}
-	if credential.LegacyManaged {
-		input, legacyOwns, found, err := s.legacyCredentialHandoffInput(ctx, connection)
-		if err != nil {
-			return connection, credential, err
-		}
-		if found {
-			input.LegacyManaged = legacyOwns
-			if !upstreamConnectionCredentialMatchesInput(credential, input) {
-				credential, err = s.persistConnectionCredential(ctx, connection, input)
-				if err != nil {
-					return connection, credential, err
-				}
-			}
-			if legacyOwns {
-				return connection, credential, nil
-			}
-		} else {
-			input = upstreamConnectionCredentialInput(credential)
-			input.LegacyManaged = false
-			credential, err = s.persistConnectionCredential(ctx, connection, input)
-			if err != nil {
-				return connection, credential, err
-			}
-		}
-	}
-
-	if connection.Provider != UpstreamConnectionProviderSub2API ||
+	if upstreamConnectionEffectiveProvider(connection) != UpstreamConnectionProviderSub2API ||
 		connection.AuthMode != string(UpstreamManagementAuthModeAccessToken) ||
 		!shouldRefreshSub2APIManagementToken(upstreamManagementAuthSecret{
 			AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
@@ -684,19 +614,7 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 		return latest, credential, err
 	}
 	connection = latest
-	if credential.LegacyManaged {
-		return connection, credential, ErrUpstreamConnectionChanged
-	}
-	if connection.LegacyMigrationKey != "" {
-		_, legacyOwns, found, handoffErr := s.legacyCredentialHandoffInput(ctx, connection)
-		if handoffErr != nil {
-			return connection, credential, handoffErr
-		}
-		if found && legacyOwns {
-			return connection, credential, errUpstreamLegacyOwnershipConflict
-		}
-	}
-	if connection.Provider != UpstreamConnectionProviderSub2API ||
+	if upstreamConnectionEffectiveProvider(connection) != UpstreamConnectionProviderSub2API ||
 		connection.AuthMode != string(UpstreamManagementAuthModeAccessToken) ||
 		!shouldRefreshSub2APIManagementToken(upstreamManagementAuthSecret{
 			AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
@@ -719,15 +637,17 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 	if err != nil {
 		return connection, credential, err
 	}
-	legacy := &UpstreamRateMultiplierSyncService{client: client}
-	refreshed, err := legacy.refreshSub2APIManagementToken(ctx, client, connection.ManagementBaseURL, upstreamManagementAuthSecret{
-		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
+	management := &upstreamManagementClient{client: client}
+	refreshed, err := management.refreshSub2APIManagementToken(ctx, client, connection.ManagementBaseURL, upstreamManagementAuthSecret{
+		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
+		UserAgent: credential.UserAgent, ExpiresAt: credential.ExpiresAt,
 	})
 	if err != nil {
 		return connection, credential, err
 	}
 	refreshedInput := UpstreamConnectionCredentialInput{
-		AccessToken: refreshed.AccessToken, RefreshToken: refreshed.RefreshToken, ExpiresAt: refreshed.ExpiresAt,
+		AccessToken: refreshed.AccessToken, RefreshToken: refreshed.RefreshToken,
+		UserAgent: refreshed.UserAgent, ExpiresAt: refreshed.ExpiresAt,
 	}
 	ciphertext, fingerprint, hint, err := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, refreshedInput)
 	if err != nil {
@@ -783,103 +703,12 @@ func (s *UpstreamConnectionService) persistConnectionCredential(
 	return s.loadCredential(connection)
 }
 
-func (s *UpstreamConnectionService) legacyCredentialHandoffInput(
-	ctx context.Context,
-	connection *UpstreamConnection,
-) (UpstreamConnectionCredentialInput, bool, bool, error) {
-	if connection == nil || s.accountRepo == nil || len(connection.Bindings) == 0 {
-		return UpstreamConnectionCredentialInput{}, false, false, nil
-	}
-	accountIDs := make([]int64, 0, len(connection.Bindings))
-	for _, binding := range connection.Bindings {
-		accountIDs = append(accountIDs, binding.AccountID)
-	}
-	accounts, err := s.accountRepo.GetByIDs(ctx, accountIDs)
-	if err != nil {
-		return UpstreamConnectionCredentialInput{}, false, false, fmt.Errorf("load legacy credential hand-off sources: %w", err)
-	}
-
-	var latestAny *Account
-	var latestEnabled *Account
-	for _, account := range accounts {
-		if account == nil || !s.legacyAccountMatchesConnection(account, connection) {
-			continue
-		}
-		if latestAny == nil || account.UpdatedAt.After(latestAny.UpdatedAt) {
-			latestAny = account
-		}
-		if account.IsUpstreamRateMultiplierSyncEnabled() &&
-			(latestEnabled == nil || account.UpdatedAt.After(latestEnabled.UpdatedAt)) {
-			latestEnabled = account
-		}
-	}
-	source := latestAny
-	legacyOwns := false
-	if latestEnabled != nil {
-		source = latestEnabled
-		legacyOwns = true
-	}
-	if source == nil {
-		return UpstreamConnectionCredentialInput{}, false, false, nil
-	}
-	secret, err := DecryptUpstreamManagementAuth(s.encryptor, source.GetCredential(upstreamManagementAuthCredentialKey))
-	if err != nil {
-		return UpstreamConnectionCredentialInput{}, legacyOwns, true, errors.New("decrypt legacy credential hand-off source")
-	}
-	return UpstreamConnectionCredentialInput{
-		Username: secret.Username, Password: secret.Password,
-		AccessToken: secret.AccessToken, RefreshToken: secret.RefreshToken,
-		ExpiresAt: secret.ExpiresAt, LegacyManaged: legacyOwns,
-	}, legacyOwns, true, nil
-}
-
-func (s *UpstreamConnectionService) legacyAccountMatchesConnection(account *Account, connection *UpstreamConnection) bool {
-	if account == nil || connection == nil || !supportsUpstreamRateMultiplierSyncAccountType(account.Type) || !account.HasUpstreamManagementAuth() {
-		return false
-	}
-	managementURL, err := s.normalizeURL(accountUpstreamManagementBaseURL(account), true)
-	if err != nil || managementURL != connection.ManagementBaseURL || !sameOptionalInt64(account.ProxyID, connection.ProxyID) {
-		return false
-	}
-	// Disabling the legacy form removes its provider/auth/group fields but
-	// intentionally keeps the encrypted credential for rollback. A migrated,
-	// already-bound account is therefore still a valid one-time final hand-off
-	// source when URL and proxy identity remain unchanged.
-	if !account.IsUpstreamRateMultiplierSyncEnabled() {
-		return true
-	}
-	config, err := upstreamRateMultiplierSyncConfigFromExtra(account.Extra)
-	if err != nil || string(config.Provider) != connection.Provider || string(config.AuthMode) != connection.AuthMode {
-		return false
-	}
-	if config.Provider != UpstreamManagementProviderSub2API && config.AuthMode == UpstreamManagementAuthModeAccessToken {
-		remoteUserID, parseErr := parseConnectionRemoteUserID(connection.RemoteUserID)
-		return parseErr == nil && remoteUserID == config.RemoteUserID
-	}
-	return true
-}
-
 func upstreamConnectionCredentialInput(credential upstreamConnectionCredential) UpstreamConnectionCredentialInput {
 	return UpstreamConnectionCredentialInput{
 		Username: credential.Username, Password: credential.Password,
 		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken,
-		ExpiresAt: credential.ExpiresAt, LegacyManaged: credential.LegacyManaged,
+		UserAgent: credential.UserAgent, ExpiresAt: credential.ExpiresAt,
 	}
-}
-
-func upstreamConnectionCredentialMatchesInput(credential upstreamConnectionCredential, input UpstreamConnectionCredentialInput) bool {
-	return credential.Username == strings.TrimSpace(input.Username) &&
-		credential.Password == strings.TrimSpace(input.Password) &&
-		credential.AccessToken == strings.TrimSpace(input.AccessToken) &&
-		credential.RefreshToken == strings.TrimSpace(input.RefreshToken) &&
-		credential.ExpiresAt == input.ExpiresAt && credential.LegacyManaged == input.LegacyManaged
-}
-
-func sameOptionalInt64(left, right *int64) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
 }
 
 func (s *UpstreamConnectionService) recordProbeFailure(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, probeErr error) {
@@ -944,6 +773,11 @@ func (s *UpstreamConnectionService) loadCredential(connection *UpstreamConnectio
 	if credential.Version != 1 {
 		return upstreamConnectionCredential{}, errors.New("unsupported upstream connection credential version")
 	}
+	userAgent, err := normalizeUpstreamManagementUserAgent(credential.UserAgent)
+	if err != nil {
+		return upstreamConnectionCredential{}, errors.New("invalid upstream connection user agent")
+	}
+	credential.UserAgent = userAgent
 	return credential, nil
 }
 
@@ -1000,10 +834,14 @@ func (s *UpstreamConnectionService) encryptCredential(authMode, managementBaseUR
 }
 
 func upstreamConnectionCredentialIdentity(authMode, managementBaseURL string, input UpstreamConnectionCredentialInput) (upstreamConnectionCredential, string, string, error) {
+	userAgent, err := normalizeUpstreamManagementUserAgent(input.UserAgent)
+	if err != nil {
+		return upstreamConnectionCredential{}, "", "", infraerrors.BadRequest("INVALID_UPSTREAM_USER_AGENT", err.Error())
+	}
 	credential := upstreamConnectionCredential{
 		Version: 1, Username: strings.TrimSpace(input.Username), Password: strings.TrimSpace(input.Password),
 		AccessToken: strings.TrimSpace(input.AccessToken), RefreshToken: strings.TrimSpace(input.RefreshToken),
-		ExpiresAt: input.ExpiresAt, LegacyManaged: input.LegacyManaged,
+		UserAgent: userAgent, ExpiresAt: input.ExpiresAt,
 	}
 	var fingerprintSource, hint string
 	switch authMode {
@@ -1175,7 +1013,6 @@ func redactUpstreamConnection(connection *UpstreamConnection) {
 	}
 	connection.CredentialEncrypted = ""
 	connection.CredentialFingerprint = ""
-	connection.LegacyMigrationKey = ""
 	for i := range connection.Bindings {
 		connection.Bindings[i].KeyFingerprint = ""
 	}

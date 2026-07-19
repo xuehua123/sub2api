@@ -113,60 +113,30 @@ func TestShouldCreateAccount(t *testing.T) {
 	}
 }
 
-func TestReconcileCRSUpstreamBillingProbeExtra(t *testing.T) {
-	remote := map[string]any{
-		"crs_account_id":                    "remote-1",
-		UpstreamBillingProbeEnabledExtraKey: true,
-		UpstreamBillingProbeExtraKey:        map[string]any{"status": "remote"},
+func TestStripRetiredCRSAccountState(t *testing.T) {
+	t.Parallel()
+
+	credentials := map[string]any{
+		"api_key":                      "keep",
+		"upstream_management_auth":     "drop",
+		"upstream_management_base_url": "https://drop.example",
+	}
+	extra := map[string]any{
+		"custom":                                  "keep",
+		"balance_probe_notified_at":               "drop",
+		"upstream_billing_probe":                  map[string]any{"status": "ok"},
+		"upstream_billing_probe_enabled":          true,
+		"upstream_rate_multiplier_sync_enabled":   true,
+		"upstream_rate_multiplier_sync_remote_id": "drop",
 	}
 
-	t.Run("create drops remote managed fields", func(t *testing.T) {
-		extra := mergeMap(nil, remote)
-		reconcileCRSUpstreamBillingProbeExtra(nil, PlatformOpenAI, AccountTypeAPIKey, map[string]any{"api_key": "new"}, extra)
-		require.NotContains(t, extra, UpstreamBillingProbeEnabledExtraKey)
-		require.NotContains(t, extra, UpstreamBillingProbeExtraKey)
-	})
+	stripRetiredCRSAccountState(credentials, extra)
 
-	existing := &Account{
-		Platform:    PlatformOpenAI,
-		Type:        AccountTypeAPIKey,
-		Credentials: map[string]any{"api_key": "local", "base_url": "http://127.0.0.1:8080"},
-		Extra: map[string]any{
-			UpstreamBillingProbeEnabledExtraKey: false,
-			UpstreamBillingProbeExtraKey:        map[string]any{"status": "local"},
-		},
-	}
-
-	t.Run("same identity keeps local state", func(t *testing.T) {
-		extra := mergeMap(existing.Extra, remote)
-		reconcileCRSUpstreamBillingProbeExtra(existing, existing.Platform, existing.Type, mergeMap(existing.Credentials, nil), extra)
-		require.Equal(t, false, extra[UpstreamBillingProbeEnabledExtraKey])
-		require.Equal(t, map[string]any{"status": "local"}, extra[UpstreamBillingProbeExtraKey])
-	})
-
-	t.Run("identity change keeps enabled and clears snapshot", func(t *testing.T) {
-		extra := mergeMap(existing.Extra, remote)
-		reconcileCRSUpstreamBillingProbeExtra(existing, PlatformOpenAI, AccountTypeAPIKey, map[string]any{"api_key": "changed"}, extra)
-		require.Equal(t, false, extra[UpstreamBillingProbeEnabledExtraKey])
-		require.NotContains(t, extra, UpstreamBillingProbeExtraKey)
-	})
-
-	for _, target := range []struct {
-		name     string
-		platform string
-		typeName string
-	}{
-		{name: "anthropic oauth", platform: PlatformAnthropic, typeName: AccountTypeOAuth},
-		{name: "anthropic api key", platform: PlatformAnthropic, typeName: AccountTypeAPIKey},
-		{name: "openai oauth", platform: PlatformOpenAI, typeName: AccountTypeOAuth},
-		{name: "gemini oauth", platform: PlatformGemini, typeName: AccountTypeOAuth},
-		{name: "gemini api key", platform: PlatformGemini, typeName: AccountTypeAPIKey},
-	} {
-		t.Run(target.name+" removes inapplicable state", func(t *testing.T) {
-			extra := mergeMap(existing.Extra, remote)
-			reconcileCRSUpstreamBillingProbeExtra(existing, target.platform, target.typeName, existing.Credentials, extra)
-			require.NotContains(t, extra, UpstreamBillingProbeEnabledExtraKey)
-			require.NotContains(t, extra, UpstreamBillingProbeExtraKey)
-		})
+	require.Equal(t, "keep", credentials["api_key"])
+	require.NotContains(t, credentials, "upstream_management_auth")
+	require.NotContains(t, credentials, "upstream_management_base_url")
+	require.Equal(t, "keep", extra["custom"])
+	for key := range extra {
+		require.NotRegexp(t, `^(balance_probe_|upstream_billing_probe|upstream_rate_multiplier_sync_)`, key)
 	}
 }

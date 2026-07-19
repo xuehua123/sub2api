@@ -116,51 +116,47 @@ func TestUpdateAccount_EmptyCredentialsSkipsUpdate(t *testing.T) {
 	require.Equal(t, "renamed", repo.account.Name)
 }
 
-func TestUpdateAccount_EncryptsAndPreservesUpstreamManagementAuth(t *testing.T) {
+func TestUpdateAccount_RemovesRetiredUpstreamMonitoringFields(t *testing.T) {
 	accountID := int64(205)
 	repo := &updateAccountCredsRepoStub{
 		account: &Account{
-			ID:          accountID,
-			Platform:    PlatformOpenAI,
-			Type:        AccountTypeAPIKey,
-			Status:      StatusActive,
-			Schedulable: true,
-			Credentials: map[string]any{"base_url": "https://example.com/v1", "api_key": "channel-key"},
+			ID:       accountID,
+			Platform: PlatformAnthropic,
+			Type:     AccountTypeAPIKey,
+			Status:   StatusActive,
+			Credentials: map[string]any{
+				"api_key":                      "sk-existing",
+				"upstream_management_auth":     "encrypted-existing",
+				"upstream_management_base_url": "https://legacy-console.example.com",
+			},
 			Extra: map[string]any{
-				AccountExtraUpstreamRateMultiplierSyncEnabled:      true,
-				AccountExtraUpstreamRateMultiplierSyncGroup:        "plus",
-				AccountExtraUpstreamRateMultiplierSyncProvider:     string(UpstreamManagementProviderNewAPI),
-				AccountExtraUpstreamRateMultiplierSyncAuthMode:     string(UpstreamManagementAuthModeAccessToken),
-				AccountExtraUpstreamRateMultiplierSyncRemoteUserID: int64(42),
+				"upstream_rate_multiplier_sync_enabled":  true,
+				"upstream_rate_multiplier_sync_provider": "newapi",
+				"upstream_billing_probe_enabled":         true,
 			},
 		},
 	}
-	svc := &adminServiceImpl{accountRepo: repo, encryptor: upstreamManagementAuthTestEncryptor{}}
+	svc := &adminServiceImpl{accountRepo: repo}
 
-	updated, err := svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
-		UpstreamManagementAuth: &UpstreamManagementAuthInput{AccessToken: "management-token"},
+	_, err := svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
+		Credentials: map[string]any{
+			"api_key":                      "sk-updated",
+			"upstream_management_auth":     "incoming-must-be-ignored",
+			"upstream_management_base_url": "https://incoming.example.com",
+		},
+		Extra: map[string]any{
+			"custom":                                 "value",
+			"upstream_rate_multiplier_sync_provider": "rixapi",
+			"upstream_billing_probe_enabled":         true,
+		},
 	})
 	require.NoError(t, err)
-	require.NotNil(t, updated)
 
-	ciphertext := updated.GetCredential(upstreamManagementAuthCredentialKey)
-	require.NotEmpty(t, ciphertext)
-	require.NotContains(t, ciphertext, "management-token")
-	decrypted, err := DecryptUpstreamManagementAuth(upstreamManagementAuthTestEncryptor{}, ciphertext)
-	require.NoError(t, err)
-	require.Equal(t, "management-token", decrypted.AccessToken)
-
-	manualRate := 2.0
-	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{RateMultiplier: &manualRate})
-	require.EqualError(t, err, "rate_multiplier is managed by upstream rate multiplier sync")
-
-	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{Name: "renamed"})
-	require.NoError(t, err)
-	require.Equal(t, ciphertext, repo.account.GetCredential(upstreamManagementAuthCredentialKey))
-
-	_, err = svc.UpdateAccount(context.Background(), accountID, &UpdateAccountInput{
-		Extra: map[string]any{},
-	})
-	require.NoError(t, err)
-	require.Empty(t, repo.account.GetCredential(upstreamManagementAuthCredentialKey))
+	require.Equal(t, "sk-updated", repo.account.Credentials["api_key"])
+	require.NotContains(t, repo.account.Credentials, "upstream_management_auth")
+	require.NotContains(t, repo.account.Credentials, "upstream_management_base_url")
+	require.NotContains(t, repo.account.Extra, "upstream_rate_multiplier_sync_enabled")
+	require.NotContains(t, repo.account.Extra, "upstream_rate_multiplier_sync_provider")
+	require.Equal(t, "value", repo.account.Extra["custom"])
+	require.NotContains(t, repo.account.Extra, "upstream_billing_probe_enabled")
 }

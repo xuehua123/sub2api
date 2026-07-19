@@ -569,7 +569,7 @@ func ProvideOpsService(
 	antigravityGatewayService *AntigravityGatewayService,
 	systemLogSink *OpsSystemLogSink,
 	settingService *SettingService,
-	upstreamRateMultiplierSyncService *UpstreamRateMultiplierSyncService,
+	upstreamConnectionService *UpstreamConnectionService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -590,8 +590,8 @@ func ProvideOpsService(
 		// a populated cache rather than zero defaults. Best-effort, sync-bounded.
 		settingService.WarmOpenAIQuotaAutoPauseSettings(context.Background())
 	}
-	if upstreamRateMultiplierSyncService != nil {
-		svc.SetUpstreamAccountBalanceFetcher(upstreamRateMultiplierSyncService)
+	if upstreamConnectionService != nil {
+		svc.SetUpstreamConnectionBalanceSource(upstreamConnectionService)
 	}
 	return svc
 }
@@ -754,7 +754,6 @@ var ProviderSet = wire.NewSet(
 	ProvideRateLimitService,
 	ProvideAccountUsageService,
 	ProvideAccountTestService,
-	ProvideUpstreamBillingProbeService,
 	ProvideSettingService,
 	NewDataManagementService,
 	ProvideBackupService,
@@ -833,7 +832,6 @@ var ProviderSet = wire.NewSet(
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
 	ProvideRateMultiplierPriorityService,
-	ProvideUpstreamRateMultiplierSyncService,
 )
 
 // ProvideRateMultiplierPriorityService starts the account-priority reconciler when
@@ -846,19 +844,6 @@ func ProvideRateMultiplierPriorityService(accountRepo AccountRepository, setting
 		return NewRateMultiplierPriorityService(nil, settingService, rateMultiplierPriorityPollInterval)
 	}
 	service := NewRateMultiplierPriorityService(repo, settingService, rateMultiplierPriorityPollInterval)
-	service.Start()
-	return service
-}
-
-// ProvideUpstreamRateMultiplierSyncService starts the independent upstream-rate
-// synchronizer. Any priority reconciliation remains guarded by the global setting.
-func ProvideUpstreamRateMultiplierSyncService(cfg *config.Config, accountRepo AccountRepository, encryptor SecretEncryptor, priority *RateMultiplierPriorityService) *UpstreamRateMultiplierSyncService {
-	repo, ok := accountRepo.(UpstreamRateMultiplierSyncRepository)
-	if !ok {
-		slog.Error("upstream_rate_multiplier_sync_repository_not_supported")
-		return NewUpstreamRateMultiplierSyncService(nil, cfg, nil, encryptor, priority, upstreamRateMultiplierSyncInterval)
-	}
-	service := NewUpstreamRateMultiplierSyncService(repo, cfg, nil, encryptor, priority, upstreamRateMultiplierSyncInterval)
 	service.Start()
 	return service
 }

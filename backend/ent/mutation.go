@@ -71181,7 +71181,6 @@ type UpstreamConnectionMutation struct {
 	forwarding_base_url      *string
 	credential_encrypted     *string
 	credential_fingerprint   *string
-	legacy_migration_key     *string
 	credential_hint          *string
 	remote_user_id           *string
 	capabilities             *map[string]interface{}
@@ -71641,55 +71640,6 @@ func (m *UpstreamConnectionMutation) OldCredentialFingerprint(ctx context.Contex
 // ResetCredentialFingerprint resets all changes to the "credential_fingerprint" field.
 func (m *UpstreamConnectionMutation) ResetCredentialFingerprint() {
 	m.credential_fingerprint = nil
-}
-
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (m *UpstreamConnectionMutation) SetLegacyMigrationKey(s string) {
-	m.legacy_migration_key = &s
-}
-
-// LegacyMigrationKey returns the value of the "legacy_migration_key" field in the mutation.
-func (m *UpstreamConnectionMutation) LegacyMigrationKey() (r string, exists bool) {
-	v := m.legacy_migration_key
-	if v == nil {
-		return
-	}
-	return *v, true
-}
-
-// OldLegacyMigrationKey returns the old "legacy_migration_key" field's value of the UpstreamConnection entity.
-// If the UpstreamConnection object wasn't provided to the builder, the object is fetched from the database.
-// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *UpstreamConnectionMutation) OldLegacyMigrationKey(ctx context.Context) (v *string, err error) {
-	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldLegacyMigrationKey is only allowed on UpdateOne operations")
-	}
-	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldLegacyMigrationKey requires an ID field in the mutation")
-	}
-	oldValue, err := m.oldValue(ctx)
-	if err != nil {
-		return v, fmt.Errorf("querying old value for OldLegacyMigrationKey: %w", err)
-	}
-	return oldValue.LegacyMigrationKey, nil
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (m *UpstreamConnectionMutation) ClearLegacyMigrationKey() {
-	m.legacy_migration_key = nil
-	m.clearedFields[upstreamconnection.FieldLegacyMigrationKey] = struct{}{}
-}
-
-// LegacyMigrationKeyCleared returns if the "legacy_migration_key" field was cleared in this mutation.
-func (m *UpstreamConnectionMutation) LegacyMigrationKeyCleared() bool {
-	_, ok := m.clearedFields[upstreamconnection.FieldLegacyMigrationKey]
-	return ok
-}
-
-// ResetLegacyMigrationKey resets all changes to the "legacy_migration_key" field.
-func (m *UpstreamConnectionMutation) ResetLegacyMigrationKey() {
-	m.legacy_migration_key = nil
-	delete(m.clearedFields, upstreamconnection.FieldLegacyMigrationKey)
 }
 
 // SetCredentialHint sets the "credential_hint" field.
@@ -72810,7 +72760,7 @@ func (m *UpstreamConnectionMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UpstreamConnectionMutation) Fields() []string {
-	fields := make([]string, 0, 31)
+	fields := make([]string, 0, 30)
 	if m.created_at != nil {
 		fields = append(fields, upstreamconnection.FieldCreatedAt)
 	}
@@ -72837,9 +72787,6 @@ func (m *UpstreamConnectionMutation) Fields() []string {
 	}
 	if m.credential_fingerprint != nil {
 		fields = append(fields, upstreamconnection.FieldCredentialFingerprint)
-	}
-	if m.legacy_migration_key != nil {
-		fields = append(fields, upstreamconnection.FieldLegacyMigrationKey)
 	}
 	if m.credential_hint != nil {
 		fields = append(fields, upstreamconnection.FieldCredentialHint)
@@ -72930,8 +72877,6 @@ func (m *UpstreamConnectionMutation) Field(name string) (ent.Value, bool) {
 		return m.CredentialEncrypted()
 	case upstreamconnection.FieldCredentialFingerprint:
 		return m.CredentialFingerprint()
-	case upstreamconnection.FieldLegacyMigrationKey:
-		return m.LegacyMigrationKey()
 	case upstreamconnection.FieldCredentialHint:
 		return m.CredentialHint()
 	case upstreamconnection.FieldRemoteUserID:
@@ -73001,8 +72946,6 @@ func (m *UpstreamConnectionMutation) OldField(ctx context.Context, name string) 
 		return m.OldCredentialEncrypted(ctx)
 	case upstreamconnection.FieldCredentialFingerprint:
 		return m.OldCredentialFingerprint(ctx)
-	case upstreamconnection.FieldLegacyMigrationKey:
-		return m.OldLegacyMigrationKey(ctx)
 	case upstreamconnection.FieldCredentialHint:
 		return m.OldCredentialHint(ctx)
 	case upstreamconnection.FieldRemoteUserID:
@@ -73116,13 +73059,6 @@ func (m *UpstreamConnectionMutation) SetField(name string, value ent.Value) erro
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetCredentialFingerprint(v)
-		return nil
-	case upstreamconnection.FieldLegacyMigrationKey:
-		v, ok := value.(string)
-		if !ok {
-			return fmt.Errorf("unexpected type %T for field %s", value, name)
-		}
-		m.SetLegacyMigrationKey(v)
 		return nil
 	case upstreamconnection.FieldCredentialHint:
 		v, ok := value.(string)
@@ -73364,9 +73300,6 @@ func (m *UpstreamConnectionMutation) AddField(name string, value ent.Value) erro
 // mutation.
 func (m *UpstreamConnectionMutation) ClearedFields() []string {
 	var fields []string
-	if m.FieldCleared(upstreamconnection.FieldLegacyMigrationKey) {
-		fields = append(fields, upstreamconnection.FieldLegacyMigrationKey)
-	}
 	if m.FieldCleared(upstreamconnection.FieldProxyID) {
 		fields = append(fields, upstreamconnection.FieldProxyID)
 	}
@@ -73402,9 +73335,6 @@ func (m *UpstreamConnectionMutation) FieldCleared(name string) bool {
 // error if the field is not defined in the schema.
 func (m *UpstreamConnectionMutation) ClearField(name string) error {
 	switch name {
-	case upstreamconnection.FieldLegacyMigrationKey:
-		m.ClearLegacyMigrationKey()
-		return nil
 	case upstreamconnection.FieldProxyID:
 		m.ClearProxyID()
 		return nil
@@ -73460,9 +73390,6 @@ func (m *UpstreamConnectionMutation) ResetField(name string) error {
 		return nil
 	case upstreamconnection.FieldCredentialFingerprint:
 		m.ResetCredentialFingerprint()
-		return nil
-	case upstreamconnection.FieldLegacyMigrationKey:
-		m.ResetLegacyMigrationKey()
 		return nil
 	case upstreamconnection.FieldCredentialHint:
 		m.ResetCredentialHint()

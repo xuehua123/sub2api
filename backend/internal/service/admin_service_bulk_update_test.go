@@ -130,14 +130,13 @@ func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
 	require.Len(t, result.Results, 3)
 }
 
-// TestAdminService_BulkUpdateAccounts_PartialFailureIDs 验证部分失败时 success_ids/failed_ids 正确。
-func TestAdminService_BulkUpdateAccounts_RejectsManualMultiplierForUpstreamManagedAccount(t *testing.T) {
+func TestAdminService_BulkUpdateAccounts_AllowsManualMultiplierAfterRetiredSyncRemoval(t *testing.T) {
 	multiplier := 0.5
 	repo := &accountRepoStubForBulkUpdate{
 		getByIDsAccounts: []*Account{{
 			ID: 1,
 			Extra: map[string]any{
-				AccountExtraUpstreamRateMultiplierSyncEnabled: true,
+				"upstream_rate_multiplier_sync_enabled": true,
 			},
 		}},
 	}
@@ -148,26 +147,30 @@ func TestAdminService_BulkUpdateAccounts_RejectsManualMultiplierForUpstreamManag
 		RateMultiplier: &multiplier,
 	})
 
-	require.Nil(t, result)
-	require.EqualError(t, err, "rate_multiplier is managed by upstream rate multiplier sync; edit the account to disable sync first")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.Success)
 	require.True(t, repo.getByIDsCalled)
-	require.Empty(t, repo.bulkUpdateIDs)
+	require.Equal(t, []int64{1}, repo.bulkUpdateIDs)
 }
 
-func TestAdminService_BulkUpdateAccounts_RejectsUpstreamSyncConfiguration(t *testing.T) {
+func TestAdminService_BulkUpdateAccounts_DropsRetiredUpstreamSyncConfiguration(t *testing.T) {
 	repo := &accountRepoStubForBulkUpdate{}
 	svc := &adminServiceImpl{accountRepo: repo}
 
-	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+	input := &BulkUpdateAccountsInput{
 		AccountIDs: []int64{1},
 		Extra: map[string]any{
-			AccountExtraUpstreamRateMultiplierSyncEnabled: true,
+			"upstream_rate_multiplier_sync_enabled": true,
 		},
-	})
+	}
+	result, err := svc.BulkUpdateAccounts(context.Background(), input)
 
-	require.Nil(t, result)
-	require.EqualError(t, err, "upstream rate multiplier sync must be configured per account")
-	require.Empty(t, repo.bulkUpdateIDs)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 1, result.Success)
+	require.Equal(t, []int64{1}, repo.bulkUpdateIDs)
+	require.NotContains(t, input.Extra, "upstream_rate_multiplier_sync_enabled")
 }
 
 func TestAdminService_BulkUpdateAccounts_PartialFailureIDs(t *testing.T) {

@@ -961,6 +961,89 @@ func TestUpstreamConnectionInspectorSub2APIRejectsTruncatedKeyListing(t *testing
 	require.Equal(t, int32(1), listCalls.Load())
 }
 
+func TestUpstreamConnectionInspectorSub2APIReusesCredentialUserAgent(t *testing.T) {
+	const expectedUserAgent = "Mozilla/5.0 exact-login-agent"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		require.Equal(t, expectedUserAgent, request.Header.Get("User-Agent"))
+		require.Equal(t, "Bearer management-token", request.Header.Get("Authorization"))
+		switch request.URL.Path {
+		case "/api/v1/user/profile":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 42.75}})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
+				map[string]any{"id": 2, "name": "grok"},
+			}}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"2": 0.18}})
+		case "/api/v1/keys":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
+				map[string]any{"id": 17, "name": "codex", "key": "sub2-secret-key", "group_id": 2},
+			}}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	credential := upstreamConnectionCredential{
+		Version: 1, AccessToken: "management-token", UserAgent: expectedUserAgent,
+	}
+	connection := &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL,
+	}
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), connection, credential)
+	require.NoError(t, err)
+	require.Equal(t, 0.18, *snapshot.Groups[0].RateMultiplier)
+	connection.Groups = snapshot.Groups
+
+	binding, err := inspector.ResolveKey(context.Background(), connection, credential, "sub2-secret-key")
+	require.NoError(t, err)
+	require.Equal(t, "grok", binding.RemoteGroupName)
+	require.Equal(t, 0.18, *binding.ObservedMultiplier)
+}
+
+func TestUpstreamConnectionInspectorNewAPIReusesCredentialUserAgent(t *testing.T) {
+	const expectedUserAgent = "Mozilla/5.0 exact-login-agent"
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		require.Equal(t, expectedUserAgent, request.Header.Get("User-Agent"))
+		require.Equal(t, "Bearer management-token", request.Header.Get("Authorization"))
+		switch request.URL.Path {
+		case "/api/user/self":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{
+				"id": 7, "group": "vip", "quota": 500_000,
+			}})
+		case "/api/user/self/groups":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{
+				"group_ratio": map[string]any{"vip": 0.3},
+			}})
+		case "/api/status":
+			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{
+				"quota_per_unit": 500_000, "quota_display_type": "USD",
+			}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	snapshot, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderNewAPI, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL, RemoteUserID: "7",
+	}, upstreamConnectionCredential{
+		Version: 1, AccessToken: "management-token", UserAgent: expectedUserAgent,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "7", snapshot.RemoteUserID)
+	require.Equal(t, 1.0, *snapshot.Wallet.USD)
+	require.Equal(t, 0.3, *snapshot.Groups[0].RateMultiplier)
+}
+
 func writeProbeJSON(t *testing.T, writer http.ResponseWriter, payload any) {
 	t.Helper()
 	require.NoError(t, json.NewEncoder(writer).Encode(payload))

@@ -15,8 +15,6 @@ import {
   bindAccount,
   getAccountBinding,
   listAll,
-  migrateLegacy,
-  previewLegacyMigration,
   unbindAccount
 } from '@/api/admin/upstreamConnections'
 
@@ -41,18 +39,6 @@ describe('admin upstream connections API', () => {
     expect(get).toHaveBeenCalledWith('/admin/upstream-connections/bindings/by-account/12')
     expect(put).toHaveBeenCalledWith('/admin/upstream-connections/7/bindings/12')
     expect(remove).toHaveBeenCalledWith('/admin/upstream-connections/7/bindings/12')
-  })
-
-  it('keeps legacy preview and apply as separate explicit operations', async () => {
-    const preview = { dry_run: true, summary: { planned_accounts: 2 }, items: [], warnings: [] }
-    const applied = { ...preview, dry_run: false, summary: { planned_accounts: 0, migrated_accounts: 2 } }
-    post.mockResolvedValueOnce({ data: preview }).mockResolvedValueOnce({ data: applied })
-
-    await expect(previewLegacyMigration()).resolves.toEqual(preview)
-    await expect(migrateLegacy()).resolves.toEqual(applied)
-
-    expect(post).toHaveBeenNthCalledWith(1, '/admin/upstream-connections/migrate-legacy/preview')
-    expect(post).toHaveBeenNthCalledWith(2, '/admin/upstream-connections/migrate-legacy')
   })
 
   it('loads every page for account binding selectors', async () => {

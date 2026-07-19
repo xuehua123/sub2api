@@ -2872,7 +2872,6 @@ var (
 		{Name: "forwarding_base_url", Type: field.TypeString, Size: 500, Default: ""},
 		{Name: "credential_encrypted", Type: field.TypeString, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "credential_fingerprint", Type: field.TypeString, Size: 128, Default: ""},
-		{Name: "legacy_migration_key", Type: field.TypeString, Unique: true, Nullable: true, Size: 128},
 		{Name: "credential_hint", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "remote_user_id", Type: field.TypeString, Size: 128, Default: ""},
 		{Name: "capabilities", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
@@ -2903,7 +2902,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "upstream_connections_proxies_proxy",
-				Columns:    []*schema.Column{UpstreamConnectionsColumns[31]},
+				Columns:    []*schema.Column{UpstreamConnectionsColumns[30]},
 				RefColumns: []*schema.Column{ProxiesColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -2912,12 +2911,12 @@ var (
 			{
 				Name:    "upstreamconnection_sync_enabled_next_sync_at",
 				Unique:  false,
-				Columns: []*schema.Column{UpstreamConnectionsColumns[16], UpstreamConnectionsColumns[30]},
+				Columns: []*schema.Column{UpstreamConnectionsColumns[15], UpstreamConnectionsColumns[29]},
 			},
 			{
 				Name:    "upstreamconnection_status",
 				Unique:  false,
-				Columns: []*schema.Column{UpstreamConnectionsColumns[14]},
+				Columns: []*schema.Column{UpstreamConnectionsColumns[13]},
 			},
 			{
 				Name:    "upstreamconnection_management_base_url",
@@ -2937,12 +2936,12 @@ var (
 			{
 				Name:    "upstreamconnection_remote_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UpstreamConnectionsColumns[12]},
+				Columns: []*schema.Column{UpstreamConnectionsColumns[11]},
 			},
 			{
 				Name:    "upstreamconnection_proxy_id",
 				Unique:  false,
-				Columns: []*schema.Column{UpstreamConnectionsColumns[31]},
+				Columns: []*schema.Column{UpstreamConnectionsColumns[30]},
 			},
 		},
 	}

@@ -20,9 +20,7 @@ import type {
   CodexSessionImportResult,
   OpenAICodexPATCreateRequest,
   CheckMixedChannelRequest,
-  CheckMixedChannelResponse,
-  UpstreamBillingProbeResult,
-  UpstreamBillingProbeSettings
+  CheckMixedChannelResponse
 } from '@/types'
 
 /**
@@ -202,46 +200,6 @@ export async function checkMixedChannelRisk(
   payload: CheckMixedChannelRequest
 ): Promise<CheckMixedChannelResponse> {
   const { data } = await apiClient.post<CheckMixedChannelResponse>('/admin/accounts/check-mixed-channel', payload)
-  return data
-}
-
-export interface UpstreamRateMultiplierGroup {
-  id?: number
-  name: string
-  rate_multiplier: number
-}
-
-export interface UpstreamRateMultiplierDiscoveryRequest {
-  account_id?: number
-  base_url?: string
-  management_base_url?: string
-  upstream_api_key?: string
-  proxy_id?: number | null
-  auth_mode: 'password' | 'access_token'
-  remote_user_id?: number
-  upstream_management_auth?: {
-    username?: string
-    password?: string
-    access_token?: string
-    refresh_token?: string
-  }
-}
-
-export interface UpstreamRateMultiplierDiscoveryResponse {
-  provider: 'newapi' | 'rixapi' | 'shellapi' | 'sub2api'
-  auth_mode: 'password' | 'access_token'
-  remote_user_id?: number
-  groups: UpstreamRateMultiplierGroup[]
-  matched_group?: UpstreamRateMultiplierGroup
-}
-
-export async function discoverUpstreamRateMultiplierGroups(
-  payload: UpstreamRateMultiplierDiscoveryRequest
-): Promise<UpstreamRateMultiplierDiscoveryResponse> {
-  const { data } = await apiClient.post<UpstreamRateMultiplierDiscoveryResponse>(
-    '/admin/accounts/upstream-rate-sync/discover',
-    payload
-  )
   return data
 }
 
@@ -902,38 +860,6 @@ export async function createSparkShadow(parentId: number, payload: SparkShadowCr
   return data
 }
 
-export async function getUpstreamBillingProbeSettings(): Promise<UpstreamBillingProbeSettings> {
-  const { data } = await apiClient.get<UpstreamBillingProbeSettings>('/admin/accounts/upstream-billing-probe/settings')
-  return data
-}
-
-export async function updateUpstreamBillingProbeSettings(
-  settings: UpstreamBillingProbeSettings
-): Promise<UpstreamBillingProbeSettings> {
-  const { data } = await apiClient.put<UpstreamBillingProbeSettings>(
-    '/admin/accounts/upstream-billing-probe/settings',
-    settings
-  )
-  return data
-}
-
-export async function setUpstreamBillingProbeEnabled(id: number, enabled: boolean): Promise<void> {
-  await apiClient.put(`/admin/accounts/${id}/upstream-billing-probe`, { enabled })
-}
-
-export async function probeUpstreamBilling(id: number): Promise<UpstreamBillingProbeResult> {
-  const { data } = await apiClient.post<UpstreamBillingProbeResult>(`/admin/accounts/${id}/upstream-billing-probe`)
-  return data
-}
-
-export async function probeUpstreamBillingBatch(accountIds: number[]): Promise<UpstreamBillingProbeResult[]> {
-  const { data } = await apiClient.post<{ results: UpstreamBillingProbeResult[] }>(
-    '/admin/accounts/upstream-billing-probe/batch',
-    { account_ids: accountIds }
-  )
-  return data.results
-}
-
 export const accountsAPI = {
   list,
   listWithEtag,
@@ -942,7 +868,6 @@ export const accountsAPI = {
   duplicate,
   update,
   checkMixedChannelRisk,
-  discoverUpstreamRateMultiplierGroups,
   delete: deleteAccount,
   toggleStatus,
   testAccount,
@@ -982,12 +907,7 @@ export const accountsAPI = {
   revertProxyFallback,
   queryOpenAIQuota,
   resetOpenAIQuota,
-  createSparkShadow,
-  getUpstreamBillingProbeSettings,
-  updateUpstreamBillingProbeSettings,
-  setUpstreamBillingProbeEnabled,
-  probeUpstreamBilling,
-  probeUpstreamBillingBatch
+  createSparkShadow
 }
 
 export default accountsAPI

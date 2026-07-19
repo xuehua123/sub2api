@@ -54,27 +54,12 @@ func (r *upstreamConnectionRepository) Create(ctx context.Context, connection *s
 		SetNillableLastDiscoveredAt(connection.LastDiscoveredAt).
 		SetNillableLastSyncedAt(connection.LastSyncedAt).
 		SetNillableNextSyncAt(connection.NextSyncAt)
-	if connection.LegacyMigrationKey != "" {
-		builder = builder.SetLegacyMigrationKey(connection.LegacyMigrationKey)
-	}
-
 	created, err := builder.Save(ctx)
 	if err != nil {
 		return translateUpstreamConnectionPersistenceError(err)
 	}
 	applyEntUpstreamConnection(connection, created, false)
 	return nil
-}
-
-func (r *upstreamConnectionRepository) GetByLegacyMigrationKey(ctx context.Context, key string) (*service.UpstreamConnection, error) {
-	client := clientFromContext(ctx, r.client)
-	row, err := client.UpstreamConnection.Query().
-		Where(upstreamconnection.LegacyMigrationKeyEQ(strings.TrimSpace(key))).
-		Only(ctx)
-	if err != nil {
-		return nil, translateUpstreamConnectionPersistenceError(err)
-	}
-	return entUpstreamConnectionToService(row, false), nil
 }
 
 func (r *upstreamConnectionRepository) GetByID(ctx context.Context, id int64) (*service.UpstreamConnection, error) {
@@ -121,7 +106,9 @@ func (r *upstreamConnectionRepository) List(ctx context.Context, params service.
 			groupQuery.Select(upstreamgroup.FieldID)
 		}).
 		WithAccountBindings(func(bindingQuery *dbent.UpstreamAccountBindingQuery) {
-			bindingQuery.Select(upstreamaccountbinding.FieldID)
+			bindingQuery.
+				Select(upstreamaccountbinding.FieldID, upstreamaccountbinding.FieldAccountID, upstreamaccountbinding.FieldConnectionID).
+				Order(dbent.Asc(upstreamaccountbinding.FieldAccountID), dbent.Asc(upstreamaccountbinding.FieldID))
 		}).
 		Order(dbent.Desc(upstreamconnection.FieldID)).
 		Offset((params.Page - 1) * params.PageSize).
@@ -192,11 +179,6 @@ func updateUpstreamConnectionWithClient(
 		SetWalletSource(connection.WalletSource).
 		SetWalletReliability(connection.WalletReliability).
 		SetWalletRaw(nonNilJSONMap(connection.WalletRaw))
-	if connection.LegacyMigrationKey != "" {
-		updater = updater.SetLegacyMigrationKey(connection.LegacyMigrationKey)
-	} else {
-		updater = updater.ClearLegacyMigrationKey()
-	}
 
 	if connection.ProxyID != nil {
 		updater = updater.SetProxyID(*connection.ProxyID)
@@ -726,10 +708,6 @@ func applyEntUpstreamConnection(connection *service.UpstreamConnection, row *dbe
 	connection.ForwardingBaseURL = row.ForwardingBaseURL
 	connection.CredentialEncrypted = row.CredentialEncrypted
 	connection.CredentialFingerprint = row.CredentialFingerprint
-	connection.LegacyMigrationKey = ""
-	if row.LegacyMigrationKey != nil {
-		connection.LegacyMigrationKey = *row.LegacyMigrationKey
-	}
 	connection.CredentialHint = row.CredentialHint
 	connection.RemoteUserID = row.RemoteUserID
 	connection.ProxyID = cloneInt64(row.ProxyID)
@@ -755,6 +733,10 @@ func applyEntUpstreamConnection(connection *service.UpstreamConnection, row *dbe
 	connection.UpdatedAt = row.UpdatedAt
 	connection.GroupCount = len(row.Edges.Groups)
 	connection.BindingCount = len(row.Edges.AccountBindings)
+	connection.BoundAccountIDs = make([]int64, 0, len(row.Edges.AccountBindings))
+	for _, binding := range row.Edges.AccountBindings {
+		connection.BoundAccountIDs = append(connection.BoundAccountIDs, binding.AccountID)
+	}
 	connection.Groups = []service.UpstreamGroup{}
 	connection.Bindings = []service.UpstreamAccountBinding{}
 	if !includeDetails {

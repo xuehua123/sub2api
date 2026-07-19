@@ -8,13 +8,17 @@ const {
   listWithEtag,
   getBatchTodayStats,
   getAllProxies,
-  getAllGroups
+  getAllGroups,
+  listUpstreamConnections,
+  probeUpstreamConnection
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getAllProxies: vi.fn(),
-  getAllGroups: vi.fn()
+  getAllGroups: vi.fn(),
+  listUpstreamConnections: vi.fn(),
+  probeUpstreamConnection: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -23,7 +27,6 @@ vi.mock('@/api/admin', () => ({
       list: listAccounts,
       listWithEtag,
       getBatchTodayStats,
-      getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -34,6 +37,10 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getAllGroups
+    },
+    upstreamConnections: {
+      listAll: listUpstreamConnections,
+      probe: probeUpstreamConnection
     }
   }
 }))
@@ -83,11 +90,12 @@ const DataTableStub = {
   template: `
     <div data-test="data-table">
       <template v-for="column in columns" :key="column.key">
+        <span :data-column-key="column.key">{{ column.label }}</span>
         <div v-if="column.key === 'usage'" data-test="usage-header">
           <slot :name="'header-' + column.key" :column="column" />
         </div>
-        <div v-if="column.key === 'upstream_billing_rate'" data-test="upstream-billing-header">
-          <slot :name="'header-' + column.key" :column="column" />
+        <div v-if="column.key === 'account_balance' && data.length" data-test="upstream-connection-balance-cell">
+          <slot name="cell-account_balance" :row="data[0]" />
         </div>
       </template>
     </div>
@@ -149,6 +157,8 @@ describe('admin AccountsView usage windows hint', () => {
     getBatchTodayStats.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
+    listUpstreamConnections.mockReset()
+    probeUpstreamConnection.mockReset()
 
     listAccounts.mockResolvedValue({
       items: [],
@@ -165,6 +175,7 @@ describe('admin AccountsView usage windows hint', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    listUpstreamConnections.mockResolvedValue([])
   })
 
   it('renders an explanatory tooltip next to the usage windows column header', async () => {
@@ -181,15 +192,65 @@ describe('admin AccountsView usage windows hint', () => {
     expect(hint.text()).toBe('admin.accounts.usageWindowsHint')
   })
 
-  it('renders the upstream billing trust warning next to the declared-rate column', async () => {
+  it('does not expose the legacy declared-rate column', async () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const header = wrapper.find('[data-test="upstream-billing-header"]')
-    expect(header.exists()).toBe(true)
-    expect(header.text()).toContain('admin.accounts.columns.upstreamBillingRate')
-    expect(wrapper.findAll('[data-test="usage-windows-hint"]').some(node =>
-      node.text() === 'admin.accounts.upstreamBilling.trustWarning'
-    )).toBe(true)
+    expect(wrapper.find('[data-column-key="upstream_billing_rate"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('admin.accounts.columns.upstreamBillingRate')
+  })
+
+  it('maps one shared wallet to its bound account and refreshes by connection id', async () => {
+    listAccounts.mockResolvedValue({
+      items: [{ id: 17, name: 'bound account', platform: 'openai', type: 'apikey' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    const sharedConnection = {
+      id: 7,
+      name: 'Primary upstream',
+      status: 'ready',
+      last_error: '',
+      wallet_amount: 12.5,
+      wallet_currency: 'USD',
+      wallet_usd: 12.5,
+      wallet_unlimited: false,
+      bound_account_ids: [17],
+      bindings: []
+    }
+    listUpstreamConnections.mockResolvedValue([sharedConnection])
+    probeUpstreamConnection.mockResolvedValue({ ...sharedConnection, wallet_amount: 11.25, wallet_usd: 11.25 })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.get('[data-testid="upstream-connection-balance"]').text()).toBe('$12.50')
+    await wrapper.get('[data-testid="upstream-connection-balance-refresh"]').trigger('click')
+    await flushPromises()
+
+    expect(probeUpstreamConnection).toHaveBeenCalledWith(7)
+    expect(wrapper.get('[data-testid="upstream-connection-balance"]').text()).toBe('$11.25')
+  })
+
+  it('distinguishes a shared-connection load failure from an unbound account', async () => {
+    listAccounts.mockResolvedValue({
+      items: [{ id: 17, name: 'unknown binding', platform: 'openai', type: 'apikey' }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    listUpstreamConnections.mockRejectedValue(new Error('network unavailable'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('admin.accounts.upstreamConnectionBalance.loadFailed')
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 })

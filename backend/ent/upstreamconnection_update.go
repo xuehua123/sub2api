@@ -135,26 +135,6 @@ func (_u *UpstreamConnectionUpdate) SetNillableCredentialFingerprint(v *string) 
 	return _u
 }
 
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (_u *UpstreamConnectionUpdate) SetLegacyMigrationKey(v string) *UpstreamConnectionUpdate {
-	_u.mutation.SetLegacyMigrationKey(v)
-	return _u
-}
-
-// SetNillableLegacyMigrationKey sets the "legacy_migration_key" field if the given value is not nil.
-func (_u *UpstreamConnectionUpdate) SetNillableLegacyMigrationKey(v *string) *UpstreamConnectionUpdate {
-	if v != nil {
-		_u.SetLegacyMigrationKey(*v)
-	}
-	return _u
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (_u *UpstreamConnectionUpdate) ClearLegacyMigrationKey() *UpstreamConnectionUpdate {
-	_u.mutation.ClearLegacyMigrationKey()
-	return _u
-}
-
 // SetCredentialHint sets the "credential_hint" field.
 func (_u *UpstreamConnectionUpdate) SetCredentialHint(v string) *UpstreamConnectionUpdate {
 	_u.mutation.SetCredentialHint(v)
@@ -671,11 +651,6 @@ func (_u *UpstreamConnectionUpdate) check() error {
 			return &ValidationError{Name: "credential_fingerprint", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.credential_fingerprint": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.LegacyMigrationKey(); ok {
-		if err := upstreamconnection.LegacyMigrationKeyValidator(v); err != nil {
-			return &ValidationError{Name: "legacy_migration_key", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.legacy_migration_key": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.CredentialHint(); ok {
 		if err := upstreamconnection.CredentialHintValidator(v); err != nil {
 			return &ValidationError{Name: "credential_hint", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.credential_hint": %w`, err)}
@@ -759,12 +734,6 @@ func (_u *UpstreamConnectionUpdate) sqlSave(ctx context.Context) (_node int, err
 	}
 	if value, ok := _u.mutation.CredentialFingerprint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialFingerprint, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.LegacyMigrationKey(); ok {
-		_spec.SetField(upstreamconnection.FieldLegacyMigrationKey, field.TypeString, value)
-	}
-	if _u.mutation.LegacyMigrationKeyCleared() {
-		_spec.ClearField(upstreamconnection.FieldLegacyMigrationKey, field.TypeString)
 	}
 	if value, ok := _u.mutation.CredentialHint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialHint, field.TypeString, value)
@@ -1099,26 +1068,6 @@ func (_u *UpstreamConnectionUpdateOne) SetNillableCredentialFingerprint(v *strin
 	if v != nil {
 		_u.SetCredentialFingerprint(*v)
 	}
-	return _u
-}
-
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (_u *UpstreamConnectionUpdateOne) SetLegacyMigrationKey(v string) *UpstreamConnectionUpdateOne {
-	_u.mutation.SetLegacyMigrationKey(v)
-	return _u
-}
-
-// SetNillableLegacyMigrationKey sets the "legacy_migration_key" field if the given value is not nil.
-func (_u *UpstreamConnectionUpdateOne) SetNillableLegacyMigrationKey(v *string) *UpstreamConnectionUpdateOne {
-	if v != nil {
-		_u.SetLegacyMigrationKey(*v)
-	}
-	return _u
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (_u *UpstreamConnectionUpdateOne) ClearLegacyMigrationKey() *UpstreamConnectionUpdateOne {
-	_u.mutation.ClearLegacyMigrationKey()
 	return _u
 }
 
@@ -1651,11 +1600,6 @@ func (_u *UpstreamConnectionUpdateOne) check() error {
 			return &ValidationError{Name: "credential_fingerprint", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.credential_fingerprint": %w`, err)}
 		}
 	}
-	if v, ok := _u.mutation.LegacyMigrationKey(); ok {
-		if err := upstreamconnection.LegacyMigrationKeyValidator(v); err != nil {
-			return &ValidationError{Name: "legacy_migration_key", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.legacy_migration_key": %w`, err)}
-		}
-	}
 	if v, ok := _u.mutation.CredentialHint(); ok {
 		if err := upstreamconnection.CredentialHintValidator(v); err != nil {
 			return &ValidationError{Name: "credential_hint", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.credential_hint": %w`, err)}
@@ -1756,12 +1700,6 @@ func (_u *UpstreamConnectionUpdateOne) sqlSave(ctx context.Context) (_node *Upst
 	}
 	if value, ok := _u.mutation.CredentialFingerprint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialFingerprint, field.TypeString, value)
-	}
-	if value, ok := _u.mutation.LegacyMigrationKey(); ok {
-		_spec.SetField(upstreamconnection.FieldLegacyMigrationKey, field.TypeString, value)
-	}
-	if _u.mutation.LegacyMigrationKeyCleared() {
-		_spec.ClearField(upstreamconnection.FieldLegacyMigrationKey, field.TypeString)
 	}
 	if value, ok := _u.mutation.CredentialHint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialHint, field.TypeString, value)

@@ -362,6 +362,8 @@ const (
 
 	// SettingKeyOpsAlertRuntimeSettings stores JSON config for ops alert evaluator runtime settings.
 	SettingKeyOpsAlertRuntimeSettings = "ops_alert_runtime_settings"
+	// SettingKeyOpsUpstreamConnectionBalance stores shared-connection balance alert settings.
+	SettingKeyOpsUpstreamConnectionBalance = "ops_upstream_connection_balance_settings"
 
 	// SettingKeyOpsMetricsIntervalSeconds controls the ops metrics collector interval (>=60).
 	SettingKeyOpsMetricsIntervalSeconds = "ops_metrics_interval_seconds"
@@ -388,10 +390,6 @@ const (
 	// user-facing aggregate view. When false: user endpoint returns an empty list and the
 	// sidebar entry is hidden. Defaults to false (opt-in feature).
 	SettingKeyAvailableChannelsEnabled = "available_channels_enabled"
-
-	// SettingKeyUpstreamBillingProbeSettings stores the global enable switch and interval
-	// for probing remote Sub2API API-key billing metadata.
-	SettingKeyUpstreamBillingProbeSettings = "upstream_billing_probe_settings"
 
 	// =========================
 	// Overload Cooldown (529)

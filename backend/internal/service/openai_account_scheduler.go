@@ -2550,11 +2550,11 @@ func newOpenAILegacyUpstreamRateOrder(accounts []*Account, now time.Time, oauthS
 	return openAILegacyUpstreamRateOrder{enabled: len(rates) >= 2 && distinct, rates: rates}
 }
 
-func openAISchedulingRate(account *Account, now time.Time, oauthSchedulingRateMultiplier float64) (float64, bool) {
+func openAISchedulingRate(account *Account, _ time.Time, oauthSchedulingRateMultiplier float64) (float64, bool) {
 	if account != nil && account.IsOpenAIOAuth() {
 		return oauthSchedulingRateMultiplier, true
 	}
-	return openAIFreshUpstreamBillingRate(account, now)
+	return 0, false
 }
 
 // compare returns -1 when a should be selected before b, 1 when b should be
@@ -2578,29 +2578,6 @@ func (o openAILegacyUpstreamRateOrder) compare(a, b *Account) int {
 		return -1
 	}
 	return 1
-}
-
-func openAIFreshUpstreamBillingRate(account *Account, now time.Time) (float64, bool) {
-	if !isUpstreamBillingProbeAccount(account) {
-		return 0, false
-	}
-	snapshot := decodeUpstreamBillingProbeSnapshot(account.Extra)
-	if snapshot == nil || (snapshot.Status != UpstreamBillingProbeStatusOK && snapshot.Status != UpstreamBillingProbeStatusFailed) ||
-		snapshot.ReceivedAt == nil || snapshot.ReceivedAt.IsZero() {
-		return 0, false
-	}
-	receivedAt := *snapshot.ReceivedAt
-	freshUntil := snapshot.FreshUntil
-	if freshUntil == nil && snapshot.Status == UpstreamBillingProbeStatusOK {
-		interval := snapshot.NextProbeAt.Sub(receivedAt)
-		if interval > 0 {
-			freshUntil = probeTimePtr(receivedAt.Add(2 * interval))
-		}
-	}
-	if freshUntil == nil || !freshUntil.After(receivedAt) || now.Before(receivedAt) || now.After(*freshUntil) {
-		return 0, false
-	}
-	return upstreamBillingRateAt(snapshot.Data, now)
 }
 
 func openAIQuotaHeadroomFactor(account *Account, now time.Time) float64 {

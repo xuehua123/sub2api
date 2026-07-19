@@ -948,69 +948,6 @@ export interface TempUnschedulableStatus {
   state?: TempUnschedulableState
 }
 
-export type AccountBalanceProbeMethod = 'auto' | 'disabled' | 'upstream_management' | 'newapi_token_usage' | 'sub2api_usage' | 'openai_billing'
-
-export interface AccountBalanceProbeState {
-  account_id: number
-  method: AccountBalanceProbeMethod | string
-  enabled: boolean
-  threshold_usd?: number | null
-  detected_method?: AccountBalanceProbeMethod | string
-  status: 'unknown' | 'ok' | 'failed' | 'unsupported' | 'skipped' | string
-  error?: string
-  balance_usd?: number | null
-  balance_amount?: number | null
-  balance_currency?: string
-  unlimited: boolean
-  endpoint?: string
-  total_used_usd?: number | null
-  total_granted_usd?: number | null
-  checked_at?: string | null
-  notified_at?: string | null
-}
-
-export interface UpstreamBillingData {
-  object: 'sub2api.key_billing'
-  schema_version: 1
-  billing_scope: 'token'
-  group_rate_multiplier: number
-  user_rate_multiplier?: number
-  resolved_rate_multiplier: number
-  peak_rate_enabled: boolean
-  peak_start?: string
-  peak_end?: string
-  peak_rate_multiplier?: number
-  applied_peak_multiplier?: number
-  effective_rate_multiplier: number
-  timezone?: string
-  observed_at: string
-}
-
-export type UpstreamBillingProbeStatus = 'ok' | 'unsupported' | 'failed'
-
-export interface UpstreamBillingProbeSnapshot {
-  status: UpstreamBillingProbeStatus
-  data?: UpstreamBillingData
-  received_at?: string
-  fresh_until?: string
-  last_attempt_at: string
-  next_probe_at: string
-  failure_count?: number
-  http_status?: number
-  last_error?: string
-}
-
-export interface UpstreamBillingProbeSettings {
-  enabled: boolean
-  interval_minutes: number
-}
-
-export interface UpstreamBillingProbeResult {
-  account_id: number
-  snapshot?: UpstreamBillingProbeSnapshot
-  error?: string
-}
-
 export interface Account {
   id: number
   name: string
@@ -1023,15 +960,12 @@ export interface Account {
   // 改为通过 credentials_status.has_<key> 暴露存在性。
   credentials?: Record<string, unknown>
   credentials_status?: Record<string, boolean>
-  balance_probe?: AccountBalanceProbeState | null
   // Extra fields including Codex usage, OpenAI compact capability, and model-level rate limits.
   extra?: (CodexUsageSnapshot & OpenAICompactState & {
     upstream_gzip_enabled?: boolean
     anthropic_cached_tokens_in_input?: boolean
     model_rate_limits?: Record<string, { rate_limited_at: string; rate_limit_reset_at: string }>
     antigravity_credits_overages?: Record<string, { activated_at: string; active_until: string }>
-    upstream_billing_probe_enabled?: boolean
-    upstream_billing_probe?: UpstreamBillingProbeSnapshot
   } & Record<string, unknown>)
   proxy_id: number | null
   proxy_fallback_origin_id?: number | null
@@ -1298,14 +1232,6 @@ export interface OpenAIResponsesState {
   openai_responses_supported?: boolean
 }
 
-export interface UpstreamManagementAuthRequest {
-  clear?: boolean
-  username?: string
-  password?: string
-  access_token?: string
-  refresh_token?: string
-}
-
 export interface CreateAccountRequest {
   name: string
   notes?: string | null
@@ -1313,8 +1239,6 @@ export interface CreateAccountRequest {
   type: AccountType
   credentials: Record<string, unknown>
   extra?: Record<string, unknown>
-  upstream_management_auth?: UpstreamManagementAuthRequest
-  upstream_management_base_url?: string
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null
@@ -1332,8 +1256,6 @@ export interface UpdateAccountRequest {
   type?: AccountType
   credentials?: Record<string, unknown>
   extra?: Record<string, unknown>
-  upstream_management_auth?: UpstreamManagementAuthRequest
-  upstream_management_base_url?: string
   proxy_id?: number | null
   concurrency?: number
   load_factor?: number | null

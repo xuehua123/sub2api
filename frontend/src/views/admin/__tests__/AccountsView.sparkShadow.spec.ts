@@ -15,6 +15,7 @@ const {
   getBatchTodayStats,
   getAllProxies,
   getAllGroups,
+  listUpstreamConnections,
   duplicateAccount,
   createSparkShadow,
   showSuccess,
@@ -25,6 +26,7 @@ const {
   getBatchTodayStats: vi.fn(),
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
+  listUpstreamConnections: vi.fn().mockResolvedValue([]),
   duplicateAccount: vi.fn(),
   createSparkShadow: vi.fn(),
   showSuccess: vi.fn(),
@@ -38,7 +40,6 @@ vi.mock('@/api/admin', () => ({
       listWithEtag,
       getBatchTodayStats,
       duplicate: duplicateAccount,
-      getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       createSparkShadow,
       delete: vi.fn(),
       batchClearError: vi.fn(),
@@ -46,7 +47,8 @@ vi.mock('@/api/admin', () => ({
       toggleSchedulable: vi.fn()
     },
     proxies: { getAll: getAllProxies },
-    groups: { getAll: getAllGroups }
+    groups: { getAll: getAllGroups },
+    upstreamConnections: { listAll: listUpstreamConnections }
   }
 }))
 
@@ -112,7 +114,7 @@ const mountView = () =>
 describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
   beforeEach(() => {
     localStorage.clear()
-    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, showSuccess, showError]) {
+    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, listUpstreamConnections, duplicateAccount, createSparkShadow, showSuccess, showError]) {
       fn.mockReset()
     }
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
@@ -120,6 +122,7 @@ describe('admin AccountsView — 外审 F2:spark 影子创建接线', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    listUpstreamConnections.mockResolvedValue([])
     duplicateAccount.mockResolvedValue({ id: 998, name: 'parent-acc (Copy)' })
     createSparkShadow.mockResolvedValue({ id: 999, name: 'parent-acc (Spark)' })
   })
@@ -264,13 +267,14 @@ const mountViewWithRow = () =>
 describe('admin AccountsView — 账号行展示', () => {
   beforeEach(() => {
     localStorage.clear()
-    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, duplicateAccount, createSparkShadow, showSuccess, showError]) {
+    for (const fn of [listAccounts, listWithEtag, getBatchTodayStats, getAllProxies, getAllGroups, listUpstreamConnections, duplicateAccount, createSparkShadow, showSuccess, showError]) {
       fn.mockReset()
     }
     listWithEtag.mockResolvedValue({ notModified: true, etag: null, data: null })
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    listUpstreamConnections.mockResolvedValue([])
     vi.stubGlobal('confirm', vi.fn(() => true))
   })
 

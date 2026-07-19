@@ -4,6 +4,7 @@ package dto
 import (
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -237,32 +238,17 @@ func groupFromServiceBase(g *service.Group) Group {
 	}
 }
 
-func AccountBalanceProbeFromService(state service.OpsAccountBalanceState) *AccountBalanceProbeState {
-	return &AccountBalanceProbeState{
-		AccountID:       state.AccountID,
-		Method:          state.Method,
-		Enabled:         state.Enabled,
-		ThresholdUSD:    state.ThresholdUSD,
-		DetectedMethod:  state.DetectedMethod,
-		Status:          state.Status,
-		Error:           state.Error,
-		BalanceUSD:      state.BalanceUSD,
-		BalanceAmount:   state.BalanceAmount,
-		BalanceCurrency: state.BalanceCurrency,
-		Unlimited:       state.Unlimited,
-		Endpoint:        state.Endpoint,
-		TotalUsedUSD:    state.TotalUsedUSD,
-		TotalGrantedUSD: state.TotalGrantedUSD,
-		CheckedAt:       state.CheckedAt,
-		NotifiedAt:      state.NotifiedAt,
-	}
-}
-
 func AccountFromServiceShallow(a *service.Account) *Account {
 	if a == nil {
 		return nil
 	}
 	redactedCreds, credsStatus := RedactCredentials(a.Credentials)
+	delete(redactedCreds, "upstream_management_auth")
+	delete(redactedCreds, "upstream_management_base_url")
+	delete(credsStatus, "has_upstream_management_auth")
+	if len(credsStatus) == 0 {
+		credsStatus = nil
+	}
 	out := &Account{
 		ID:                      a.ID,
 		Name:                    a.Name,
@@ -271,8 +257,7 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		Type:                    a.Type,
 		Credentials:             redactedCreds,
 		CredentialsStatus:       credsStatus,
-		Extra:                   a.Extra,
-		BalanceProbe:            AccountBalanceProbeFromService(service.AccountBalanceStateFromAccount(a)),
+		Extra:                   accountExtraForAPI(a.Extra),
 		ProxyID:                 a.ProxyID,
 		ProxyFallbackOriginID:   a.ProxyFallbackOriginID,
 		ProxyFallbackOriginName: a.ProxyFallbackOriginName,
@@ -428,6 +413,22 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 	}
 
 	return out
+}
+
+func accountExtraForAPI(extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return extra
+	}
+	filtered := make(map[string]any, len(extra))
+	for key, value := range extra {
+		if strings.HasPrefix(key, "balance_probe_") ||
+			strings.HasPrefix(key, "upstream_billing_probe") ||
+			strings.HasPrefix(key, "upstream_rate_multiplier_sync_") {
+			continue
+		}
+		filtered[key] = value
+	}
+	return filtered
 }
 
 func AccountFromService(a *service.Account) *Account {

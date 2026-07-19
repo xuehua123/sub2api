@@ -55,7 +55,6 @@ type UpstreamConnection struct {
 	ForwardingBaseURL     string
 	CredentialEncrypted   string
 	CredentialFingerprint string
-	LegacyMigrationKey    string
 	CredentialHint        string
 	RemoteUserID          string
 	ProxyID               *int64
@@ -81,6 +80,7 @@ type UpstreamConnection struct {
 	UpdatedAt             time.Time
 	GroupCount            int
 	BindingCount          int
+	BoundAccountIDs       []int64
 	Groups                []UpstreamGroup
 	Bindings              []UpstreamAccountBinding
 }
@@ -139,11 +139,10 @@ type UpstreamConnectionCredentialInput struct {
 	Password     string `json:"password,omitempty"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
-	// ExpiresAt and LegacyManaged are internal migration metadata. They are
-	// deliberately excluded from admin request decoding so callers cannot
-	// forge credential ownership or token lifetime state.
-	ExpiresAt     int64 `json:"-"`
-	LegacyManaged bool  `json:"-"`
+	UserAgent    string `json:"-"`
+	// ExpiresAt is internal token lifetime state and is deliberately excluded
+	// from admin request decoding so callers cannot forge it.
+	ExpiresAt int64 `json:"-"`
 }
 
 type UpstreamConnectionCreateParams struct {
@@ -212,44 +211,12 @@ type UpstreamConnectionCredentialPersistence struct {
 	Version               int64
 }
 
-type UpstreamLegacyMigrationSummary struct {
-	ScannedAccounts   int
-	EligibleAccounts  int
-	UniqueConnections int
-	PlannedAccounts   int
-	MigratedAccounts  int
-	AlreadyMigrated   int
-	SkippedAccounts   int
-	FailedAccounts    int
-}
-
-type UpstreamLegacyMigrationItem struct {
-	AccountID         int64
-	AccountName       string
-	Provider          string
-	AuthMode          string
-	ManagementBaseURL string
-	ForwardingBaseURL string
-	ProxyID           *int64
-	LegacyGroup       string
-	Action            string
-	ConnectionID      *int64
-	Message           string
-}
-
-type UpstreamLegacyMigrationResult struct {
-	DryRun   bool
-	Summary  UpstreamLegacyMigrationSummary
-	Items    []UpstreamLegacyMigrationItem
-	Warnings []string
-}
-
 type upstreamConnectionCredential struct {
-	Version       int    `json:"version"`
-	Username      string `json:"username,omitempty"`
-	Password      string `json:"password,omitempty"`
-	AccessToken   string `json:"access_token,omitempty"`
-	RefreshToken  string `json:"refresh_token,omitempty"`
-	ExpiresAt     int64  `json:"expires_at,omitempty"`
-	LegacyManaged bool   `json:"legacy_managed,omitempty"`
+	Version      int    `json:"version"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"password,omitempty"`
+	AccessToken  string `json:"access_token,omitempty"`
+	RefreshToken string `json:"refresh_token,omitempty"`
+	UserAgent    string `json:"user_agent,omitempty"`
+	ExpiresAt    int64  `json:"expires_at,omitempty"`
 }

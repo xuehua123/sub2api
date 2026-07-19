@@ -8,13 +8,15 @@ const {
   listWithEtag,
   getBatchTodayStats,
   getAllProxies,
-  getAllGroups
+  getAllGroups,
+  listUpstreamConnections
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
   getBatchTodayStats: vi.fn(),
   getAllProxies: vi.fn(),
-  getAllGroups: vi.fn()
+  getAllGroups: vi.fn(),
+  listUpstreamConnections: vi.fn().mockResolvedValue([])
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -23,7 +25,6 @@ vi.mock('@/api/admin', () => ({
       list: listAccounts,
       listWithEtag,
       getBatchTodayStats,
-      getUpstreamBillingProbeSettings: vi.fn().mockResolvedValue({ enabled: true, interval_minutes: 30 }),
       delete: vi.fn(),
       batchClearError: vi.fn(),
       batchRefresh: vi.fn(),
@@ -34,6 +35,9 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getAllGroups
+    },
+    upstreamConnections: {
+      listAll: listUpstreamConnections
     }
   }
 }))
@@ -153,6 +157,7 @@ describe('admin AccountsView scheduler score column', () => {
     getBatchTodayStats.mockReset()
     getAllProxies.mockReset()
     getAllGroups.mockReset()
+    listUpstreamConnections.mockReset()
 
     listAccounts.mockResolvedValue({
       items: [
@@ -206,6 +211,7 @@ describe('admin AccountsView scheduler score column', () => {
     getBatchTodayStats.mockResolvedValue({ stats: {} })
     getAllProxies.mockResolvedValue([])
     getAllGroups.mockResolvedValue([])
+    listUpstreamConnections.mockResolvedValue([])
   })
 
   it('falls back to the base score for ungrouped accounts instead of showing a dash', async () => {

@@ -1350,6 +1350,6 @@ export default {
       deleteFailed: 'Failed to delete profile'
     },
   notificationRobots: {
-    title: 'Notification Robots',
+    title: 'Alert Rules & Notifications',
   },
 }

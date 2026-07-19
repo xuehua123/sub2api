@@ -8,6 +8,8 @@ export default {
     search: '搜索连接',
     allProviders: '全部上游类型',
     allStatuses: '全部状态',
+    openHomepage: '打开上游网站首页',
+    lowBalanceHint: '余额低于 $50',
     probe: '立即探测',
     probeSuccess: '上游观测数据已刷新',
     probeFailed: '上游探测失败',
@@ -29,10 +31,22 @@ export default {
       name: '连接',
       provider: '上游类型',
       wallet: '总余额',
+      todayRequests: '今日请求',
       observations: '观测范围',
       lastSync: '最近同步',
       status: '状态',
       actions: '操作'
+    },
+    sort: {
+      todayRequestsDesc: '今日请求最多',
+      balanceAsc: '余额从低到高',
+      lastSyncDesc: '最近同步优先',
+      nameAsc: '名称排序'
+    },
+    summary: {
+      connections: '连接总数',
+      lowBalance: '余额低于 $50',
+      todayRequests: '今日请求总数'
     },
     fields: {
       name: '连接名称',
@@ -100,43 +114,6 @@ export default {
       noBindings: '暂未绑定本地账号',
       observeOnly: '观测结果不会修改本地计费。'
     },
-    migration: {
-      open: '迁移旧配置',
-      title: '迁移旧版账号监控',
-      loading: '正在分析旧配置…',
-      safety: '迁移只会创建共享上游连接和观测绑定，不会修改账号倍率、套餐分组、订阅或任何计费公式。',
-      compatibility: '旧凭据和旧同步开关会完整保留。请先核对 V2 观测结果，再自行停用旧同步。',
-      apply: '确认迁移',
-      applied: '迁移完成：{count} 个账号已绑定',
-      previewFailed: '分析旧版监控配置失败',
-      applyFailed: '迁移旧版监控配置失败',
-      empty: '没有找到旧版账号级监控配置',
-      summary: {
-        eligible: '可迁移账号',
-        connections: '共享身份',
-        planned: '计划绑定',
-        migrated: '已迁移',
-        skipped: '跳过或失败'
-      },
-      columns: {
-        account: '本地账号',
-        upstream: '上游身份',
-        group: '旧配置分组',
-        action: '处理方式',
-        note: '说明'
-      },
-      actions: {
-        create_and_bind: '新建并绑定',
-        reuse_and_bind: '复用并绑定',
-        migrated: '已新建并绑定',
-        reused_and_bound: '已复用并绑定',
-        already_migrated: '已经迁移',
-        skip_disabled: '旧监控未启用',
-        skip_invalid: '配置无效',
-        skip_existing_binding: '保留现有绑定',
-        failed: '迁移失败'
-      }
-    },
     binding: {
       title: '共享上游连接',
       description: '选择实际拥有这个转发 Key 的上游管理连接。',
@@ -146,7 +123,6 @@ export default {
       observeOnly: '这里只监控余额、分组和 Key 归属，不修改本地模型价格或账号计费倍率。',
       group: '解析到的分组',
       observedMultiplier: '观测到的上游倍率',
-      legacyAdvanced: '旧版账号级监控（高级兼容）',
       savedButBindingFailed: '账号已经保存，但上游连接绑定失败，可在编辑账号时重试。',
       loadFailed: '加载上游连接选项失败'
     }

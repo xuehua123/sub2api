@@ -1,20 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 
 const {
   updateAccountMock,
   checkMixedChannelRiskMock,
   getWebSearchEmulationConfigMock,
   getSettingsMock,
-  discoverUpstreamRateMultiplierGroupsMock,
   authIsSimpleMode,
 } = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   getWebSearchEmulationConfigMock: vi.fn(),
   getSettingsMock: vi.fn(),
-  discoverUpstreamRateMultiplierGroupsMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
 
@@ -38,8 +36,7 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
-      checkMixedChannelRisk: checkMixedChannelRiskMock,
-      discoverUpstreamRateMultiplierGroups: discoverUpstreamRateMultiplierGroupsMock
+      checkMixedChannelRisk: checkMixedChannelRiskMock
     },
     settings: {
       getSettings: getSettingsMock,
@@ -328,17 +325,8 @@ describe('EditAccountModal', () => {
     authIsSimpleMode.value = true
   })
 
-  it('preserves an existing upstream sync configuration without overwriting its managed multiplier', async () => {
+  it('uses shared upstream connections without legacy account management controls', async () => {
     const account = buildAccount()
-    account.extra = {
-      upstream_rate_multiplier_sync_enabled: true,
-      upstream_rate_multiplier_sync_group: 'plus',
-      upstream_rate_multiplier_sync_provider: 'newapi',
-      upstream_rate_multiplier_sync_auth_mode: 'access_token',
-      upstream_rate_multiplier_sync_remote_user_id: 42
-    }
-    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
-    account.credentials.upstream_management_base_url = 'https://console.example.com'
     account.rate_multiplier = 0.5
     updateAccountMock.mockReset().mockResolvedValue(account)
     checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
@@ -349,73 +337,12 @@ describe('EditAccountModal', () => {
     await wrapper.get('form#edit-account-form').trigger('submit.prevent')
 
     const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.rate_multiplier).toBeUndefined()
-    expect(payload.extra).toMatchObject({
-      upstream_rate_multiplier_sync_enabled: true,
-      upstream_rate_multiplier_sync_group: 'plus',
-      upstream_rate_multiplier_sync_auth_mode: 'access_token',
-      upstream_rate_multiplier_sync_remote_user_id: 42
-    })
+    expect(wrapper.find('[data-testid="edit-upstream-rate-sync-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="edit-upstream-management-base-url"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="upstream-connection-binding-select"]').exists()).toBe(true)
+    expect(payload.rate_multiplier).toBe(0.5)
     expect(payload.upstream_management_auth).toBeUndefined()
-    expect(payload.upstream_management_base_url).toBe('https://console.example.com')
-  })
-
-  it('does not submit an exact discovered group multiplier as a manual multiplier', async () => {
-    const account = buildAccount()
-    account.extra = {
-      upstream_rate_multiplier_sync_enabled: true,
-      upstream_rate_multiplier_sync_group: 'plus',
-      upstream_rate_multiplier_sync_provider: 'sub2api',
-      upstream_rate_multiplier_sync_auth_mode: 'password'
-    }
-    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
-    account.credentials.upstream_management_base_url = 'https://console.example.com'
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    getSettingsMock.mockReset().mockResolvedValue({ account_quota_notify_enabled: false })
-    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
-    discoverUpstreamRateMultiplierGroupsMock.mockReset().mockResolvedValue({
-      provider: 'sub2api',
-      auth_mode: 'password',
-      groups: [{ id: 7, name: 'plus', rate_multiplier: 0.5 }],
-      matched_group: { id: 7, name: 'plus', rate_multiplier: 0.5 }
-    })
-
-    const wrapper = mountModal(account)
-    await flushPromises()
-    await wrapper.get('[data-testid="edit-upstream-rate-sync-discover"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    const payload = updateAccountMock.mock.calls[0]?.[1]
-    expect(payload.extra.upstream_rate_multiplier_sync_group).toBe('plus')
-    expect(payload.rate_multiplier).toBeUndefined()
-  })
-
-  it('submits a replacement access token and refresh token for an upstream sync account', async () => {
-    const account = buildAccount()
-    account.extra = {
-      upstream_rate_multiplier_sync_enabled: true,
-      upstream_rate_multiplier_sync_group: 'plus',
-      upstream_rate_multiplier_sync_provider: 'sub2api',
-      upstream_rate_multiplier_sync_auth_mode: 'access_token'
-    }
-    account.credentials_status = { has_api_key: true, has_upstream_management_auth: true }
-    updateAccountMock.mockReset().mockResolvedValue(account)
-    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
-    getSettingsMock.mockReset().mockResolvedValue({ account_quota_notify_enabled: false })
-    getWebSearchEmulationConfigMock.mockReset().mockResolvedValue({ enabled: false, providers: [] })
-
-    const wrapper = mountModal(account)
-    await wrapper.get('[data-testid="edit-upstream-rate-sync-token"]').setValue('replacement-access-token')
-    await wrapper.get('[data-testid="edit-upstream-rate-sync-refresh-token"]').setValue('replacement-refresh-token')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-    expect(updateAccountMock.mock.calls[0]?.[1]?.upstream_management_auth).toEqual({
-      access_token: 'replacement-access-token',
-      refresh_token: 'replacement-refresh-token'
-    })
+    expect(payload.upstream_management_base_url).toBeUndefined()
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {
@@ -692,24 +619,6 @@ describe('EditAccountModal', () => {
     expect(updateAccountMock).toHaveBeenCalledTimes(1)
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_mode).toBe('force_responses')
     expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.openai_responses_supported).toBe(false)
-  })
-
-  it('submits the account upstream billing auto-probe setting', async () => {
-    const account = buildAccount()
-    updateAccountMock.mockReset()
-    checkMixedChannelRiskMock.mockReset()
-    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
-    updateAccountMock.mockResolvedValue(account)
-
-    const wrapper = mountModal(account)
-    const toggle = wrapper.get('[data-testid="upstream-billing-auto-probe"]')
-    expect(toggle.attributes('aria-checked')).toBe('false')
-
-    await toggle.trigger('click')
-    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
-
-    expect(updateAccountMock).toHaveBeenCalledTimes(1)
-    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.upstream_billing_probe_enabled).toBe(true)
   })
 
   it('clears OpenAI APIKey Responses override when set back to auto', async () => {

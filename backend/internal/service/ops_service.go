@@ -37,7 +37,7 @@ type OpsService struct {
 	geminiCompatService       *GeminiMessagesCompatService
 	antigravityGatewayService *AntigravityGatewayService
 	systemLogSink             *OpsSystemLogSink
-	upstreamBalanceFetcher    upstreamAccountBalanceFetcher
+	upstreamConnectionBalance upstreamConnectionBalanceSource
 
 	// cleanupReloader 由 wire 在 OpsCleanupService 构造完成后通过 SetCleanupReloader 注入。
 	// 解耦避免 OpsService -> OpsCleanupService 的硬依赖（cleanup 也读 settings，会循环）。
@@ -49,14 +49,13 @@ type OpsService struct {
 	quotaAutoPauseSink func(OpsOpenAIAccountQuotaAutoPauseSettings)
 }
 
-// SetUpstreamAccountBalanceFetcher keeps the ops monitor independent of a
-// concrete upstream implementation while allowing it to reuse the same
-// encrypted management identity as rate-multiplier synchronization.
-func (s *OpsService) SetUpstreamAccountBalanceFetcher(fetcher upstreamAccountBalanceFetcher) {
+// SetUpstreamConnectionBalanceSource wires the shared upstream-connection
+// wallet source without coupling OpsService to repository implementations.
+func (s *OpsService) SetUpstreamConnectionBalanceSource(source upstreamConnectionBalanceSource) {
 	if s == nil {
 		return
 	}
-	s.upstreamBalanceFetcher = fetcher
+	s.upstreamConnectionBalance = source
 }
 
 // CleanupReloader 由 OpsCleanupService 实现。

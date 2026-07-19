@@ -87,14 +87,6 @@ func (r *upstreamConnectionTestRepo) GetByID(_ context.Context, _ int64) (*Upstr
 	return &copy, nil
 }
 
-func (r *upstreamConnectionTestRepo) GetByLegacyMigrationKey(_ context.Context, key string) (*UpstreamConnection, error) {
-	if r.connection == nil || r.connection.LegacyMigrationKey != key {
-		return nil, ErrUpstreamConnectionNotFound
-	}
-	copy := *r.connection
-	return &copy, nil
-}
-
 func (r *upstreamConnectionTestRepo) List(_ context.Context, _ UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error) {
 	return r.items, int64(len(r.items)), nil
 }
@@ -279,6 +271,46 @@ func TestUpstreamConnectionServiceCreateEncryptsAndRedactsCredential(t *testing.
 	require.Equal(t, "do-not-return", credential.Password)
 }
 
+func TestUpstreamConnectionServiceEncryptsCredentialUserAgent(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{}
+	connectionService := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+
+	connection, err := connectionService.Create(context.Background(), UpstreamConnectionCreateParams{
+		Name:              "UA-bound upstream",
+		Provider:          UpstreamConnectionProviderSub2API,
+		AuthMode:          string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: "https://sub2api.example.com",
+		Credential: UpstreamConnectionCredentialInput{
+			AccessToken: "management-token",
+			UserAgent:   "Mozilla/5.0 exact-login-agent",
+		},
+		SyncEnabled: true,
+	})
+	require.NoError(t, err)
+	require.Empty(t, connection.CredentialEncrypted)
+	require.NotContains(t, repo.connection.CredentialEncrypted, "exact-login-agent")
+
+	credential, err := connectionService.loadCredential(repo.connection)
+	require.NoError(t, err)
+	require.Equal(t, "Mozilla/5.0 exact-login-agent", credential.UserAgent)
+}
+
+func TestUpstreamConnectionCredentialRejectsUnsafeUserAgent(t *testing.T) {
+	for _, userAgent := range []string{
+		"Mozilla/5.0\r\nX-Injected: true",
+		"Mozilla/5.0\x00suffix",
+		strings.Repeat("a", 513),
+		string([]byte{'M', 'o', 'z', 0xff}),
+	} {
+		_, _, _, err := upstreamConnectionCredentialIdentity(
+			string(UpstreamManagementAuthModeAccessToken),
+			"https://sub2api.example.com",
+			UpstreamConnectionCredentialInput{AccessToken: "management-token", UserAgent: userAgent},
+		)
+		require.Error(t, err)
+	}
+}
+
 func TestUpstreamConnectionCredentialIdentityBoundsDisplayHint(t *testing.T) {
 	username := strings.Repeat("用", 120) + "@example.com"
 	_, _, hint, err := upstreamConnectionCredentialIdentity(
@@ -355,7 +387,7 @@ func TestUpstreamConnectionServiceUpdateIdentityClearsStaleObservations(t *testi
 		ID: 8, Name: "Old", Provider: UpstreamConnectionProviderNewAPI,
 		AuthMode:          string(UpstreamManagementAuthModePassword),
 		ManagementBaseURL: "https://old.example.com", CredentialEncrypted: ciphertext,
-		CredentialFingerprint: fingerprint, CredentialHint: hint, LegacyMigrationKey: "legacy-key",
+		CredentialFingerprint: fingerprint, CredentialHint: hint,
 		Status: UpstreamConnectionStatusReady, SyncEnabled: true, SyncIntervalSeconds: 300,
 		Version: 4, WalletAmount: &wallet, WalletCurrency: "USD", WalletUSD: &wallet,
 		WalletRaw: map[string]any{"balance": wallet}, WalletObservedAt: &now,
@@ -381,7 +413,6 @@ func TestUpstreamConnectionServiceUpdateIdentityClearsStaleObservations(t *testi
 	require.Equal(t, int64(5), updated.Version)
 	require.Equal(t, ciphertext, repo.connection.CredentialEncrypted)
 	require.NotEqual(t, fingerprint, repo.connection.CredentialFingerprint)
-	require.Empty(t, repo.connection.LegacyMigrationKey)
 	require.Equal(t, UpstreamBindingStatusPending, repo.binding.Status)
 	require.Equal(t, UpstreamBindingResolutionUnresolved, repo.binding.ResolutionKind)
 	require.Nil(t, repo.binding.ObservedMultiplier)
@@ -443,31 +474,6 @@ func TestUpstreamConnectionServiceUpdateReschedulesWhenIntervalChanges(t *testin
 	require.Less(t, updated.NextSyncAt.Sub(started), time.Second)
 }
 
-func TestUpstreamConnectionServicePasswordRotationPreservesLegacyMigrationIdentity(t *testing.T) {
-	repo := &upstreamConnectionTestRepo{}
-	service := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
-	ciphertext, fingerprint, hint, err := service.encryptCredential(
-		string(UpstreamManagementAuthModePassword), "https://upstream.example.com",
-		UpstreamConnectionCredentialInput{Username: "alice", Password: "old-password"},
-	)
-	require.NoError(t, err)
-	repo.connection = &UpstreamConnection{
-		ID: 18, Name: "Migrated", Provider: UpstreamConnectionProviderNewAPI,
-		AuthMode: string(UpstreamManagementAuthModePassword), ManagementBaseURL: "https://upstream.example.com",
-		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
-		LegacyMigrationKey: "legacy-key", SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
-	}
-	replacement := UpstreamConnectionCredentialInput{Username: "alice", Password: "new-password"}
-
-	_, err = service.Update(context.Background(), 18, UpstreamConnectionUpdateParams{ExpectedVersion: 1, Credential: &replacement})
-	require.NoError(t, err)
-	require.Equal(t, "legacy-key", repo.connection.LegacyMigrationKey)
-	require.Equal(t, fingerprint, repo.connection.CredentialFingerprint)
-	credential, err := service.loadCredential(repo.connection)
-	require.NoError(t, err)
-	require.Equal(t, "new-password", credential.Password)
-}
-
 func TestUpstreamConnectionServiceUpdateAuthModeRequiresReplacementCredential(t *testing.T) {
 	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{
 		ID: 9, Name: "Upstream", Provider: UpstreamConnectionProviderNewAPI,
@@ -520,7 +526,7 @@ func TestUpstreamConnectionServiceAuthenticationProbeFailureIsAuthError(t *testi
 
 func TestUpstreamConnectionServiceListNeverReturnsStoredSecrets(t *testing.T) {
 	repo := &upstreamConnectionTestRepo{items: []*UpstreamConnection{{
-		ID: 1, CredentialEncrypted: "ciphertext", CredentialFingerprint: "fingerprint", LegacyMigrationKey: "migration-key",
+		ID: 1, CredentialEncrypted: "ciphertext", CredentialFingerprint: "fingerprint",
 		Bindings: []UpstreamAccountBinding{{ID: 2, KeyFingerprint: "key-fingerprint"}},
 	}}}
 	service := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
@@ -529,7 +535,6 @@ func TestUpstreamConnectionServiceListNeverReturnsStoredSecrets(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, items[0].CredentialEncrypted)
 	require.Empty(t, items[0].CredentialFingerprint)
-	require.Empty(t, items[0].LegacyMigrationKey)
 	require.Empty(t, items[0].Bindings[0].KeyFingerprint)
 }
 
@@ -701,119 +706,44 @@ func TestUpstreamConnectionServiceRefreshBindingRejectsStaleConnectionVersion(t 
 	require.Nil(t, repo.binding.ObservedMultiplier)
 }
 
-func TestUpstreamConnectionCredentialHandoffFollowsEnabledLegacySourceWithoutRefreshing(t *testing.T) {
-	managementURL := "https://sub2.example.com"
-	legacySecret := upstreamManagementAuthSecret{
-		AccessToken: "legacy-current-access", RefreshToken: "legacy-current-refresh",
-		ExpiresAt: time.Now().Add(time.Hour).Unix(),
-	}
-	legacyCiphertext, err := encryptUpstreamManagementAuthSecret(upstreamConnectionTestEncryptor{}, legacySecret)
-	require.NoError(t, err)
-
-	account := upstreamConnectionLegacyHandoffAccount(55, managementURL, legacyCiphertext, true)
-	billingMultiplier := 1.75
-	account.RateMultiplier = &billingMultiplier
-	accountRepo := &upstreamBindingAccountRepo{account: &account}
-	repo := &upstreamConnectionTestRepo{}
-	connectionService := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
-	connectionService.accountRepo = accountRepo
-	ciphertext, fingerprint, hint, err := connectionService.encryptCredential(
-		string(UpstreamManagementAuthModeAccessToken), managementURL,
-		UpstreamConnectionCredentialInput{
-			AccessToken: "stale-access", RefreshToken: "stale-refresh",
-			ExpiresAt: time.Now().Add(-time.Hour).Unix(), LegacyManaged: true,
-		},
-	)
-	require.NoError(t, err)
-	repo.connection = &UpstreamConnection{
-		ID: 9, Provider: UpstreamConnectionProviderSub2API,
-		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: managementURL,
-		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
-		LegacyMigrationKey: "legacy", Version: 3,
-		Bindings: []UpstreamAccountBinding{{ID: 1, AccountID: account.ID, ConnectionID: 9}},
-	}
-	credential, err := connectionService.loadCredential(repo.connection)
-	require.NoError(t, err)
-
-	_, prepared, err := connectionService.prepareConnectionCredential(context.Background(), repo.connection, credential)
-	require.NoError(t, err)
-	require.Equal(t, "legacy-current-access", prepared.AccessToken)
-	require.Equal(t, "legacy-current-refresh", prepared.RefreshToken)
-	require.True(t, prepared.LegacyManaged)
-	require.Equal(t, int64(4), repo.connection.Version)
-	require.Zero(t, accountRepo.updateCalls)
-	require.Equal(t, 1.75, *accountRepo.account.RateMultiplier)
-}
-
-func TestUpstreamConnectionCredentialHandoffRefreshesAfterLegacySourceIsDisabled(t *testing.T) {
+func TestUpstreamConnectionCredentialRefreshesAutoDetectedSub2API(t *testing.T) {
 	var refreshCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		require.Equal(t, "/api/v1/auth/refresh", request.URL.Path)
 		refreshCalls.Add(1)
 		writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{
-			"access_token": "v2-access", "refresh_token": "v2-refresh", "expires_in": 3600,
+			"access_token": "next-access", "refresh_token": "next-refresh", "expires_in": 3600,
 		}})
 	}))
 	defer server.Close()
 
-	legacySecret := upstreamManagementAuthSecret{
-		AccessToken: "handoff-access", RefreshToken: "handoff-refresh", ExpiresAt: time.Now().Add(-time.Minute).Unix(),
-	}
-	legacyCiphertext, err := encryptUpstreamManagementAuthSecret(upstreamConnectionTestEncryptor{}, legacySecret)
-	require.NoError(t, err)
-	account := upstreamConnectionLegacyHandoffAccount(77, server.URL, legacyCiphertext, false)
-	delete(account.Extra, AccountExtraUpstreamRateMultiplierSyncEnabled)
-	delete(account.Extra, AccountExtraUpstreamRateMultiplierSyncGroup)
-	delete(account.Extra, AccountExtraUpstreamRateMultiplierSyncProvider)
-	delete(account.Extra, AccountExtraUpstreamRateMultiplierSyncAuthMode)
-	billingMultiplier := 1.25
-	account.RateMultiplier = &billingMultiplier
-	accountRepo := &upstreamBindingAccountRepo{account: &account}
 	repo := &upstreamConnectionTestRepo{}
 	connectionService := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
-	connectionService.accountRepo = accountRepo
 	connectionService.inspector = newUpstreamConnectionInspector(nil, nil, server.Client())
 	ciphertext, fingerprint, hint, err := connectionService.encryptCredential(
 		string(UpstreamManagementAuthModeAccessToken), server.URL,
 		UpstreamConnectionCredentialInput{
-			AccessToken: "older-access", RefreshToken: "older-refresh",
-			ExpiresAt: time.Now().Add(-time.Hour).Unix(), LegacyManaged: true,
+			AccessToken: "old-access", RefreshToken: "old-refresh", ExpiresAt: time.Now().Add(-time.Minute).Unix(),
 		},
 	)
 	require.NoError(t, err)
 	repo.connection = &UpstreamConnection{
-		ID: 12, Provider: UpstreamConnectionProviderSub2API,
+		ID: 13, Provider: UpstreamConnectionProviderAuto,
 		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: server.URL,
-		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
-		LegacyMigrationKey: "legacy", Version: 5,
-		Bindings: []UpstreamAccountBinding{{ID: 2, AccountID: account.ID, ConnectionID: 12}},
+		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint, Version: 4,
+		Capabilities: map[string]any{"detected_provider": UpstreamConnectionProviderSub2API},
 	}
 	credential, err := connectionService.loadCredential(repo.connection)
 	require.NoError(t, err)
 
-	_, prepared, err := connectionService.prepareConnectionCredential(context.Background(), repo.connection, credential)
+	updated, refreshed, err := connectionService.prepareConnectionCredential(context.Background(), repo.connection, credential)
+
 	require.NoError(t, err)
 	require.Equal(t, int32(1), refreshCalls.Load())
-	require.Equal(t, "v2-access", prepared.AccessToken)
-	require.Equal(t, "v2-refresh", prepared.RefreshToken)
-	require.Greater(t, prepared.ExpiresAt, time.Now().Unix())
-	require.False(t, prepared.LegacyManaged)
-	// One write hands off ownership, one claims the rotating token, and one
-	// persists the refreshed pair.
-	require.Equal(t, int64(8), repo.connection.Version)
-	require.Zero(t, accountRepo.updateCalls)
-	require.Equal(t, 1.25, *accountRepo.account.RateMultiplier)
-
-	// Re-enabling the old owner after V2 has rotated would create a dual-token
-	// race. The connection must stop before either side consumes another token.
-	accountRepo.account.Extra[AccountExtraUpstreamRateMultiplierSyncEnabled] = true
-	accountRepo.account.Extra[AccountExtraUpstreamRateMultiplierSyncGroup] = "Grok"
-	accountRepo.account.Extra[AccountExtraUpstreamRateMultiplierSyncProvider] = string(UpstreamManagementProviderSub2API)
-	accountRepo.account.Extra[AccountExtraUpstreamRateMultiplierSyncAuthMode] = string(UpstreamManagementAuthModeAccessToken)
-	_, _, err = connectionService.prepareConnectionCredential(context.Background(), repo.connection, prepared)
-	require.ErrorIs(t, err, errUpstreamLegacyOwnershipConflict)
-	require.Equal(t, int32(1), refreshCalls.Load())
-	require.Zero(t, accountRepo.updateCalls)
+	require.Equal(t, "next-access", refreshed.AccessToken)
+	require.Equal(t, "next-refresh", refreshed.RefreshToken)
+	require.Greater(t, refreshed.ExpiresAt, time.Now().Unix())
+	require.Equal(t, int64(6), updated.Version)
 }
 
 func TestUpstreamConnectionCredentialRefreshStopsWhenDistributedLockIsHeld(t *testing.T) {
@@ -856,22 +786,4 @@ func TestUpstreamConnectionCredentialRefreshStopsWhenDistributedLockIsHeld(t *te
 	require.ErrorIs(t, err, ErrUpstreamCredentialRefreshBusy)
 	require.Zero(t, refreshCalls.Load())
 	require.Equal(t, int64(1), repo.connection.Version)
-}
-
-func upstreamConnectionLegacyHandoffAccount(id int64, managementURL, ciphertext string, enabled bool) Account {
-	return Account{
-		ID: id, Name: "legacy source", Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true,
-		UpdatedAt: time.Now().UTC(),
-		Credentials: map[string]any{
-			"api_key": "sk-forwarding", "base_url": managementURL,
-			UpstreamManagementBaseURLCredentialKey: managementURL,
-			UpstreamManagementAuthCredentialKey:    ciphertext,
-		},
-		Extra: map[string]any{
-			AccountExtraUpstreamRateMultiplierSyncEnabled:  enabled,
-			AccountExtraUpstreamRateMultiplierSyncGroup:    "Grok",
-			AccountExtraUpstreamRateMultiplierSyncProvider: string(UpstreamManagementProviderSub2API),
-			AccountExtraUpstreamRateMultiplierSyncAuthMode: string(UpstreamManagementAuthModeAccessToken),
-		},
-	}
 }

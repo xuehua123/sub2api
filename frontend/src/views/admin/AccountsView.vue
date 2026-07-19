@@ -158,41 +158,6 @@
                     </button>
 
                     <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
-                    <div class="space-y-2 px-3 py-2">
-                      <div class="flex items-center justify-between gap-3">
-                        <span class="text-sm font-medium text-gray-700 dark:text-gray-200">
-                          {{ t('admin.accounts.upstreamBilling.autoProbeSettings') }}
-                        </span>
-                        <Toggle
-                          v-model="upstreamBillingProbeSettings.enabled"
-                          :aria-label="t('admin.accounts.upstreamBilling.autoProbeSettings')"
-                        />
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <label class="flex-1 text-xs text-gray-500 dark:text-gray-400" for="upstream-billing-probe-interval">
-                          {{ t('admin.accounts.upstreamBilling.intervalMinutes') }}
-                        </label>
-                        <input
-                          id="upstream-billing-probe-interval"
-                          v-model.number="upstreamBillingProbeSettings.interval_minutes"
-                          type="number"
-                          min="5"
-                          max="1440"
-                          class="input h-8 w-20 px-2 text-sm"
-                        />
-                        <button
-                          type="button"
-                          class="btn btn-secondary h-8 px-2"
-                          :disabled="upstreamBillingSettingsLoading || upstreamBillingSettingsSaving"
-                          :title="t('common.save')"
-                          @click="saveUpstreamBillingProbeSettings"
-                        >
-                          <Icon name="check" size="sm" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
                     <div class="px-2 py-2">
                       <div class="flex items-center justify-between gap-3">
                         <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
@@ -237,7 +202,6 @@
           @delete="handleBulkDelete"
           @reset-status="handleBulkResetStatus"
           @refresh-token="handleBulkRefreshToken"
-          @probe-upstream-billing="handleBulkProbeUpstreamBilling"
           @edit-selected="openBulkEditSelected"
           @edit-filtered="openBulkEditFiltered"
           @clear="clearSelection"
@@ -381,42 +345,13 @@
             />
           </template>
           <template #cell-account_balance="{ row }">
-            <div class="grid min-w-[16rem] max-w-[18rem] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
-              <div class="min-w-0">
-                <div class="flex min-w-0 items-center gap-2">
-                  <span class="truncate text-sm font-semibold leading-5" :class="accountBalanceClass(row)">
-                    {{ accountBalanceText(row) }}
-                  </span>
-                  <span class="shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold" :class="accountBalanceStatusClass(row)">
-                    {{ accountBalanceStatusText(row) }}
-                  </span>
-                </div>
-                <div class="mt-0.5 flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 text-[11px] leading-4 text-gray-400 dark:text-dark-400">
-                  <span v-if="accountBalanceState(row)?.checked_at">{{ formatRelativeTime(accountBalanceState(row)?.checked_at) }}</span>
-                  <span v-if="accountBalanceDetectedMethod(row)">命中 {{ accountBalanceMethodLabel(accountBalanceDetectedMethod(row)) }}</span>
-                  <span v-if="accountBalanceState(row)?.unlimited">额度未设上限</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                class="btn btn-secondary h-8 w-8 shrink-0 p-0"
-                :disabled="accountBalanceProbeIds.has(row.id)"
-                title="探测余额"
-                @click="probeAccountBalance(row)"
-              >
-                <Icon name="beaker" size="xs" :class="accountBalanceProbeIds.has(row.id) ? 'animate-pulse' : ''" />
-              </button>
-              <select
-                class="input col-span-2 h-8 w-full text-xs"
-                :value="accountBalanceMethod(row)"
-                @change="onAccountBalanceMethodChange(row, $event)"
-              >
-                <option v-for="method in accountBalanceMethodOptions" :key="method.value" :value="method.value">{{ method.label }}</option>
-              </select>
-              <div v-if="accountBalanceError(row)" class="col-span-2 max-w-[18rem] truncate text-[11px] text-red-500" :title="accountBalanceError(row)">
-                {{ accountBalanceError(row) }}
-              </div>
-            </div>
+            <UpstreamConnectionBalanceCell
+              :connection="upstreamConnectionForAccount(row.id)"
+              :loading="upstreamConnectionsLoading"
+              :load-failed="upstreamConnectionsLoadFailed"
+              :refreshing="isUpstreamConnectionRefreshing(row.id)"
+              @refresh="refreshUpstreamConnectionForAccount(row.id)"
+            />
           </template>
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
@@ -460,21 +395,6 @@
             <span class="text-sm font-mono text-gray-700 dark:text-gray-300">
               {{ (row.rate_multiplier ?? 1).toFixed(2) }}x
             </span>
-          </template>
-          <template #header-upstream_billing_rate="{ column }">
-            <div class="flex items-center">
-              <span>{{ column.label }}</span>
-              <HelpTooltip :content="t('admin.accounts.upstreamBilling.trustWarning')" width-class="w-80" />
-            </div>
-          </template>
-          <template #cell-upstream_billing_rate="{ row }">
-            <UpstreamBillingRateCell
-              :account="row"
-              :interval-minutes="upstreamBillingProbeSettings.interval_minutes"
-              :now="upstreamBillingNow"
-              :probing="probingUpstreamBilling.has(row.id)"
-              @probe="handleProbeUpstreamBilling(row)"
-            />
           </template>
           <template #cell-priority="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
@@ -598,7 +518,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import { opsAPI, type OpsAccountBalanceProbeMethod, type OpsAccountBalanceProbeState, type OpsAccountHealthItem } from '@/api/admin/ops'
+import { opsAPI, type OpsAccountHealthItem } from '@/api/admin/ops'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -629,7 +549,7 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import RateMultiplierPriorityConfigModal from '@/components/account/RateMultiplierPriorityConfigModal.vue'
 import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
-import UpstreamBillingRateCell from '@/components/account/UpstreamBillingRateCell.vue'
+import UpstreamConnectionBalanceCell from '@/components/account/UpstreamConnectionBalanceCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRulesModal.vue'
@@ -639,8 +559,9 @@ import { formatDateTime, formatRelativeTime } from '@/utils/format'
 import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel, UpstreamBillingProbeSettings, UpstreamBillingProbeSnapshot } from '@/types'
+import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 import type { RateMultiplierPrioritySettings } from '@/api/admin/settings'
+import type { UpstreamConnection } from '@/api/admin/upstreamConnections'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -745,15 +666,6 @@ const scheduleModelOptions = ref<SelectOption[]>([])
 const togglingSchedulable = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, pos:{top:number, left:number}|null}>({ show: false, acc: null, pos: null })
 const exportingData = ref(false)
-const upstreamBillingProbeSettings = reactive<UpstreamBillingProbeSettings>({
-  enabled: true,
-  interval_minutes: 30
-})
-const upstreamBillingSettingsLoading = ref(false)
-const upstreamBillingSettingsSaving = ref(false)
-const probingUpstreamBilling = reactive(new Set<number>())
-const upstreamBillingNow = ref(Date.now())
-useIntervalFn(() => { upstreamBillingNow.value = Date.now() }, 60_000)
 
 // Account tools dropdown
 const showAccountToolsDropdown = ref(false)
@@ -836,15 +748,14 @@ const accountHealthReqSeq = ref(0)
 const pendingAccountHealthRefresh = ref(false)
 const accountHealthLastLoadedAt = ref(0)
 const ACCOUNT_HEALTH_REFRESH_MIN_MS = 30_000
-const accountBalanceProbeIds = ref(new Set<number>())
+const upstreamConnections = ref<UpstreamConnection[]>([])
+const upstreamConnectionsLoading = ref(false)
+const upstreamConnectionsLoadFailed = ref(false)
+const upstreamConnectionsReqSeq = ref(0)
+const upstreamConnectionsLastLoadedAt = ref(0)
+const upstreamConnectionRefreshIds = ref(new Set<number>())
+const UPSTREAM_CONNECTION_REFRESH_MIN_MS = 30_000
 const usageManualRefreshToken = ref(0)
-const accountBalanceMethodOptions: Array<{ value: OpsAccountBalanceProbeMethod; label: string }> = [
-  { value: 'auto', label: '智能' },
-  { value: 'upstream_management', label: '上游账户' },
-  { value: 'sub2api_usage', label: 'Sub2API' },
-  { value: 'openai_billing', label: 'OpenAI' },
-  { value: 'disabled', label: '禁用' }
-]
 
 const buildDefaultTodayStats = (): WindowStats => ({
   requests: 0,
@@ -899,7 +810,7 @@ const refreshTodayStatsBatch = async () => {
 }
 
 const refreshAccountHealthBatch = async (force = false) => {
-  if (hiddenColumns.has('account_health') && hiddenColumns.has('account_balance')) {
+  if (hiddenColumns.has('account_health')) {
     accountHealthLoading.value = false
     accountHealthError.value = null
     return
@@ -932,112 +843,70 @@ const refreshAccountHealthBatch = async (force = false) => {
   }
 }
 
-function accountBalanceState(row: Account): OpsAccountBalanceProbeState | null {
-  return accountHealthByAccountId.value[String(row.id)]?.balance_probe ?? row.balance_probe ?? null
-}
-
-function syncAccountBalanceState(row: Account, state: OpsAccountBalanceProbeState) {
-  row.balance_probe = state
-  const key = String(row.id)
-  const healthItem = accountHealthByAccountId.value[key]
-  if (healthItem) {
-    healthItem.balance_probe = state
+const upstreamConnectionByAccountID = computed(() => {
+  const mapping = new Map<number, UpstreamConnection>()
+  for (const connection of upstreamConnections.value) {
+    for (const accountID of connection.bound_account_ids || []) {
+      mapping.set(accountID, connection)
+    }
   }
+  return mapping
+})
+
+const upstreamConnectionForAccount = (accountID: number) => upstreamConnectionByAccountID.value.get(accountID) ?? null
+
+const isUpstreamConnectionRefreshing = (accountID: number) => {
+  const connection = upstreamConnectionForAccount(accountID)
+  return connection ? upstreamConnectionRefreshIds.value.has(connection.id) : false
 }
 
-function accountBalanceText(row: Account): string {
-  const state = accountBalanceState(row)
-  if (!state) return '-'
-  if (state.balance_amount != null) return formatAccountBalanceAmount(state.balance_amount, state.balance_currency)
-  if (state.balance_usd != null) return `$${Number(state.balance_usd).toFixed(2)}`
-  if (state.unlimited) return '额度未设上限'
-  return '未知'
-}
-
-function formatAccountBalanceAmount(amount: number, currency?: string): string {
-  const value = Number(amount).toFixed(2)
-  const unit = String(currency || 'USD').toUpperCase()
-  if (unit === 'USD') return `$${value}`
-  if (unit === 'CNY') return `¥${value}`
-  return `${unit} ${value}`
-}
-
-function accountBalanceClass(row: Account): string {
-  const state = accountBalanceState(row)
-  if (!state) return 'text-gray-500 dark:text-gray-400'
-  if (state.balance_amount != null && state.balance_currency !== 'USD') return 'text-emerald-600 dark:text-emerald-300'
-  if (state.balance_usd == null) return state.unlimited ? 'text-sky-600 dark:text-sky-300' : 'text-gray-500 dark:text-gray-400'
-  const threshold = state.threshold_usd ?? 0
-  if (threshold > 0 && state.balance_usd <= threshold) return 'text-amber-600 dark:text-amber-300'
-  return 'text-emerald-600 dark:text-emerald-300'
-}
-
-function accountBalanceStatusText(row: Account): string {
-  const status = accountBalanceState(row)?.status ?? 'unknown'
-  if (status === 'ok') return '正常'
-  if (status === 'failed') return '失败'
-  if (status === 'unsupported') return '不支持'
-  if (status === 'skipped') return '跳过'
-  return '未知'
-}
-
-function accountBalanceStatusClass(row: Account): string {
-  const status = accountBalanceState(row)?.status ?? 'unknown'
-  if (status === 'ok') return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-  if (status === 'failed' || status === 'unsupported') return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
-  if (status === 'skipped') return 'bg-gray-100 text-gray-600 dark:bg-dark-600 dark:text-gray-300'
-  return 'bg-slate-100 text-slate-600 dark:bg-dark-600 dark:text-slate-300'
-}
-
-function accountBalanceMethod(row: Account): OpsAccountBalanceProbeMethod {
-  return (accountBalanceState(row)?.method ?? 'auto') as OpsAccountBalanceProbeMethod
-}
-
-function accountBalanceDetectedMethod(row: Account): string {
-  return accountBalanceState(row)?.detected_method ?? ''
-}
-
-function accountBalanceError(row: Account): string {
-  return accountBalanceState(row)?.error ?? ''
-}
-
-function accountBalanceMethodLabel(method?: string): string {
-  if (method === 'newapi_token_usage') return 'API Key 用量（非账户余额）'
-  return accountBalanceMethodOptions.find(option => option.value === method)?.label ?? method ?? '智能'
-}
-
-async function updateAccountBalanceMethod(row: Account, method: string) {
-  try {
-    const state = await opsAPI.updateAccountBalanceProbeConfig(row.id, { method })
-    syncAccountBalanceState(row, state)
-    appStore.showSuccess('余额查询方式已更新')
-  } catch (error) {
-    console.error('Failed to update account balance method:', error)
-    appStore.showError('余额查询方式更新失败')
+const refreshUpstreamConnections = async (force = false) => {
+  if (hiddenColumns.has('account_balance')) {
+    upstreamConnectionsLoading.value = false
+    upstreamConnectionsLoadFailed.value = false
+    return
   }
-}
-
-function onAccountBalanceMethodChange(row: Account, event: Event) {
-  const target = event.target as HTMLSelectElement | null
-  if (!target) return
-  void updateAccountBalanceMethod(row, target.value)
-}
-
-async function probeAccountBalance(row: Account) {
-  const next = new Set(accountBalanceProbeIds.value)
-  next.add(row.id)
-  accountBalanceProbeIds.value = next
+  if (!force && upstreamConnectionsLastLoadedAt.value > 0 && Date.now() - upstreamConnectionsLastLoadedAt.value < UPSTREAM_CONNECTION_REFRESH_MIN_MS) {
+    return
+  }
+  const reqSeq = ++upstreamConnectionsReqSeq.value
+  upstreamConnectionsLoading.value = true
   try {
-    const result = await opsAPI.runAccountBalanceProbe(row.id, { force: true })
-    syncAccountBalanceState(row, result.state)
-    appStore.showSuccess('余额探测完成')
+    const connections = await adminAPI.upstreamConnections.listAll()
+    if (reqSeq !== upstreamConnectionsReqSeq.value) return
+    upstreamConnections.value = connections
+    upstreamConnectionsLoadFailed.value = false
+    upstreamConnectionsLastLoadedAt.value = Date.now()
   } catch (error) {
-    console.error('Failed to probe account balance:', error)
-    appStore.showError('余额探测失败')
+    if (reqSeq !== upstreamConnectionsReqSeq.value) return
+    upstreamConnections.value = []
+    upstreamConnectionsLoadFailed.value = true
+    console.error('Failed to load shared upstream connections:', error)
   } finally {
-    const done = new Set(accountBalanceProbeIds.value)
-    done.delete(row.id)
-    accountBalanceProbeIds.value = done
+    if (reqSeq === upstreamConnectionsReqSeq.value) {
+      upstreamConnectionsLoading.value = false
+    }
+  }
+}
+
+const refreshUpstreamConnectionForAccount = async (accountID: number) => {
+  const connection = upstreamConnectionForAccount(accountID)
+  if (!connection || upstreamConnectionRefreshIds.value.has(connection.id)) return
+  const pending = new Set(upstreamConnectionRefreshIds.value)
+  pending.add(connection.id)
+  upstreamConnectionRefreshIds.value = pending
+  try {
+    const updated = await adminAPI.upstreamConnections.probe(connection.id)
+    upstreamConnections.value = upstreamConnections.value.map(item => item.id === updated.id ? updated : item)
+    upstreamConnectionsLastLoadedAt.value = Date.now()
+    appStore.showSuccess(t('admin.accounts.upstreamConnectionBalance.refreshSuccess'))
+  } catch (error) {
+    console.error('Failed to refresh shared upstream connection:', error)
+    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamConnectionBalance.refreshFailed')))
+  } finally {
+    const done = new Set(upstreamConnectionRefreshIds.value)
+    done.delete(connection.id)
+    upstreamConnectionRefreshIds.value = done
   }
 }
 
@@ -1234,6 +1103,11 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account health after showing column:', error)
     })
   }
+  if (key === 'account_balance' && wasHidden) {
+    refreshUpstreamConnections(true).catch((error) => {
+      console.error('Failed to load shared upstream balances after showing column:', error)
+    })
+  }
   if (key === 'scheduler_score') {
     // The server only returns scheduler scores when this column is visible, so reload the current page immediately.
     syncAccountListDerivedParams()
@@ -1313,7 +1187,7 @@ const resetAutoRefreshCache = () => {
 
 const isFirstLoad = ref(true)
 
-const load = async () => {
+const load = async (options: { forceUpstreamConnections?: boolean } = {}) => {
   const requestParams = params as any
   syncAccountListDerivedParams()
   hasPendingListSync.value = false
@@ -1330,6 +1204,7 @@ const load = async () => {
   }
   await refreshTodayStatsBatch()
   await refreshAccountHealthBatch()
+  await refreshUpstreamConnections(options.forceUpstreamConnections === true)
 }
 
 const reload = async () => {
@@ -1341,6 +1216,7 @@ const reload = async () => {
   await baseReload()
   await refreshTodayStatsBatch()
   await refreshAccountHealthBatch()
+  await refreshUpstreamConnections(true)
 }
 
 const debouncedReload = () => {
@@ -1515,6 +1391,7 @@ const refreshAccountsIncrementally = async () => {
 
     await refreshTodayStatsBatch()
     await refreshAccountHealthBatch()
+    await refreshUpstreamConnections()
   } catch (error) {
     console.error('Auto refresh failed:', error)
   } finally {
@@ -1523,7 +1400,7 @@ const refreshAccountsIncrementally = async () => {
 }
 
 const handleManualRefresh = async () => {
-  await load()
+  await load({ forceUpstreamConnections: true })
   await refreshAccountHealthBatch(true)
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
@@ -1556,31 +1433,6 @@ const openErrorPassthrough = () => {
 const openTLSFingerprintProfiles = () => {
   closeAccountToolsDropdown()
   showTLSFingerprintProfiles.value = true
-}
-
-const loadUpstreamBillingProbeSettings = async () => {
-  upstreamBillingSettingsLoading.value = true
-  try {
-    Object.assign(upstreamBillingProbeSettings, await adminAPI.accounts.getUpstreamBillingProbeSettings())
-  } catch (error) {
-    console.error('Failed to load upstream billing probe settings:', error)
-  } finally {
-    upstreamBillingSettingsLoading.value = false
-  }
-}
-
-const saveUpstreamBillingProbeSettings = async () => {
-  upstreamBillingSettingsSaving.value = true
-  try {
-    const saved = await adminAPI.accounts.updateUpstreamBillingProbeSettings({ ...upstreamBillingProbeSettings })
-    Object.assign(upstreamBillingProbeSettings, saved)
-    appStore.showSuccess(t('admin.accounts.upstreamBilling.settingsSaved'))
-  } catch (error) {
-    console.error('Failed to save upstream billing probe settings:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamBilling.settingsFailed')))
-  } finally {
-    upstreamBillingSettingsSaving.value = false
-  }
 }
 
 const syncPendingListChanges = async () => {
@@ -1783,7 +1635,7 @@ const allColumns = computed(() => {
     { key: 'schedulable', label: t('admin.accounts.columns.schedulable'), sortable: true },
     { key: 'today_stats', label: t('admin.accounts.columns.todayStats'), sortable: false },
     { key: 'account_health', label: '健康', sortable: false },
-    { key: 'account_balance', label: '上游余额', sortable: false }
+    { key: 'account_balance', label: t('admin.accounts.columns.upstreamBalance'), sortable: false }
   ]
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
@@ -1794,7 +1646,6 @@ const allColumns = computed(() => {
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
     { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
-    { key: 'upstream_billing_rate', label: t('admin.accounts.columns.upstreamBillingRate'), sortable: false },
     { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
     { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
@@ -1903,35 +1754,6 @@ const handleBulkRefreshToken = async () => {
   } catch (error) {
     console.error('Failed to bulk refresh token:', error)
     appStore.showError(String(error))
-  }
-}
-const handleBulkProbeUpstreamBilling = async () => {
-  const accountIDs = [...selIds.value]
-  if (accountIDs.length === 0) {
-    appStore.showError(t('admin.accounts.upstreamBilling.noEligibleAccounts'))
-    return
-  }
-  if (accountIDs.length > 20) {
-    appStore.showError(t('admin.accounts.upstreamBilling.batchLimit'))
-    return
-  }
-  accountIDs.forEach(id => probingUpstreamBilling.add(id))
-  try {
-    const results = await adminAPI.accounts.probeUpstreamBillingBatch(accountIDs)
-    results.forEach(result => {
-      if (result.snapshot) patchUpstreamBillingSnapshot(result.account_id, result.snapshot)
-    })
-    const failed = results.filter(result => result.error).length
-    if (failed > 0) {
-      appStore.showError(t('admin.accounts.upstreamBilling.batchPartial', { success: results.length - failed, failed }))
-    } else {
-      appStore.showSuccess(t('admin.accounts.upstreamBilling.batchCompleted', { count: results.length }))
-    }
-  } catch (error) {
-    console.error('Failed to probe upstream billing in batch:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamBilling.probeFailed')))
-  } finally {
-    accountIDs.forEach(id => probingUpstreamBilling.delete(id))
   }
 }
 const updateSchedulableInList = (accountIds: number[], schedulable: boolean) => {
@@ -2229,30 +2051,12 @@ const patchAccountInList = (updatedAccount: Account) => {
   accounts.value = nextAccounts
   syncAccountRefs(mergedAccount)
 }
-const patchUpstreamBillingSnapshot = (accountID: number, snapshot: UpstreamBillingProbeSnapshot) => {
-  const account = accounts.value.find(item => item.id === accountID)
-  if (!account) return
-  patchAccountInList({
-    ...account,
-    extra: { ...account.extra, upstream_billing_probe: snapshot }
-  })
-}
-const handleProbeUpstreamBilling = async (account: Account) => {
-  if (probingUpstreamBilling.has(account.id)) return
-  probingUpstreamBilling.add(account.id)
-  try {
-    const result = await adminAPI.accounts.probeUpstreamBilling(account.id)
-    if (result.snapshot) patchUpstreamBillingSnapshot(account.id, result.snapshot)
-  } catch (error) {
-    console.error('Failed to probe upstream billing:', error)
-    appStore.showError(extractApiErrorMessage(error, t('admin.accounts.upstreamBilling.probeFailed')))
-  } finally {
-    probingUpstreamBilling.delete(account.id)
-  }
-}
 const handleAccountUpdated = (updatedAccount: Account) => {
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
+  refreshUpstreamConnections(true).catch((error) => {
+    console.error('Failed to refresh shared upstream bindings after account update:', error)
+  })
 }
 const formatExportTimestamp = () => {
   const now = new Date()
@@ -2506,7 +2310,6 @@ const handleClickOutside = (event: MouseEvent) => {
 onMounted(async () => {
   applyRouteAccountFocus()
   load()
-  loadUpstreamBillingProbeSettings()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
     proxies.value = p

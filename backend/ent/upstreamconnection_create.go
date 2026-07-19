@@ -119,20 +119,6 @@ func (_c *UpstreamConnectionCreate) SetNillableCredentialFingerprint(v *string) 
 	return _c
 }
 
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (_c *UpstreamConnectionCreate) SetLegacyMigrationKey(v string) *UpstreamConnectionCreate {
-	_c.mutation.SetLegacyMigrationKey(v)
-	return _c
-}
-
-// SetNillableLegacyMigrationKey sets the "legacy_migration_key" field if the given value is not nil.
-func (_c *UpstreamConnectionCreate) SetNillableLegacyMigrationKey(v *string) *UpstreamConnectionCreate {
-	if v != nil {
-		_c.SetLegacyMigrationKey(*v)
-	}
-	return _c
-}
-
 // SetCredentialHint sets the "credential_hint" field.
 func (_c *UpstreamConnectionCreate) SetCredentialHint(v string) *UpstreamConnectionCreate {
 	_c.mutation.SetCredentialHint(v)
@@ -623,11 +609,6 @@ func (_c *UpstreamConnectionCreate) check() error {
 			return &ValidationError{Name: "credential_fingerprint", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.credential_fingerprint": %w`, err)}
 		}
 	}
-	if v, ok := _c.mutation.LegacyMigrationKey(); ok {
-		if err := upstreamconnection.LegacyMigrationKeyValidator(v); err != nil {
-			return &ValidationError{Name: "legacy_migration_key", err: fmt.Errorf(`ent: validator failed for field "UpstreamConnection.legacy_migration_key": %w`, err)}
-		}
-	}
 	if _, ok := _c.mutation.CredentialHint(); !ok {
 		return &ValidationError{Name: "credential_hint", err: errors.New(`ent: missing required field "UpstreamConnection.credential_hint"`)}
 	}
@@ -777,10 +758,6 @@ func (_c *UpstreamConnectionCreate) createSpec() (*UpstreamConnection, *sqlgraph
 	if value, ok := _c.mutation.CredentialFingerprint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialFingerprint, field.TypeString, value)
 		_node.CredentialFingerprint = value
-	}
-	if value, ok := _c.mutation.LegacyMigrationKey(); ok {
-		_spec.SetField(upstreamconnection.FieldLegacyMigrationKey, field.TypeString, value)
-		_node.LegacyMigrationKey = &value
 	}
 	if value, ok := _c.mutation.CredentialHint(); ok {
 		_spec.SetField(upstreamconnection.FieldCredentialHint, field.TypeString, value)
@@ -1056,24 +1033,6 @@ func (u *UpstreamConnectionUpsert) SetCredentialFingerprint(v string) *UpstreamC
 // UpdateCredentialFingerprint sets the "credential_fingerprint" field to the value that was provided on create.
 func (u *UpstreamConnectionUpsert) UpdateCredentialFingerprint() *UpstreamConnectionUpsert {
 	u.SetExcluded(upstreamconnection.FieldCredentialFingerprint)
-	return u
-}
-
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsert) SetLegacyMigrationKey(v string) *UpstreamConnectionUpsert {
-	u.Set(upstreamconnection.FieldLegacyMigrationKey, v)
-	return u
-}
-
-// UpdateLegacyMigrationKey sets the "legacy_migration_key" field to the value that was provided on create.
-func (u *UpstreamConnectionUpsert) UpdateLegacyMigrationKey() *UpstreamConnectionUpsert {
-	u.SetExcluded(upstreamconnection.FieldLegacyMigrationKey)
-	return u
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsert) ClearLegacyMigrationKey() *UpstreamConnectionUpsert {
-	u.SetNull(upstreamconnection.FieldLegacyMigrationKey)
 	return u
 }
 
@@ -1555,27 +1514,6 @@ func (u *UpstreamConnectionUpsertOne) SetCredentialFingerprint(v string) *Upstre
 func (u *UpstreamConnectionUpsertOne) UpdateCredentialFingerprint() *UpstreamConnectionUpsertOne {
 	return u.Update(func(s *UpstreamConnectionUpsert) {
 		s.UpdateCredentialFingerprint()
-	})
-}
-
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsertOne) SetLegacyMigrationKey(v string) *UpstreamConnectionUpsertOne {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.SetLegacyMigrationKey(v)
-	})
-}
-
-// UpdateLegacyMigrationKey sets the "legacy_migration_key" field to the value that was provided on create.
-func (u *UpstreamConnectionUpsertOne) UpdateLegacyMigrationKey() *UpstreamConnectionUpsertOne {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.UpdateLegacyMigrationKey()
-	})
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsertOne) ClearLegacyMigrationKey() *UpstreamConnectionUpsertOne {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.ClearLegacyMigrationKey()
 	})
 }
 
@@ -2277,27 +2215,6 @@ func (u *UpstreamConnectionUpsertBulk) SetCredentialFingerprint(v string) *Upstr
 func (u *UpstreamConnectionUpsertBulk) UpdateCredentialFingerprint() *UpstreamConnectionUpsertBulk {
 	return u.Update(func(s *UpstreamConnectionUpsert) {
 		s.UpdateCredentialFingerprint()
-	})
-}
-
-// SetLegacyMigrationKey sets the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsertBulk) SetLegacyMigrationKey(v string) *UpstreamConnectionUpsertBulk {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.SetLegacyMigrationKey(v)
-	})
-}
-
-// UpdateLegacyMigrationKey sets the "legacy_migration_key" field to the value that was provided on create.
-func (u *UpstreamConnectionUpsertBulk) UpdateLegacyMigrationKey() *UpstreamConnectionUpsertBulk {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.UpdateLegacyMigrationKey()
-	})
-}
-
-// ClearLegacyMigrationKey clears the value of the "legacy_migration_key" field.
-func (u *UpstreamConnectionUpsertBulk) ClearLegacyMigrationKey() *UpstreamConnectionUpsertBulk {
-	return u.Update(func(s *UpstreamConnectionUpsert) {
-		s.ClearLegacyMigrationKey()
 	})
 }
 

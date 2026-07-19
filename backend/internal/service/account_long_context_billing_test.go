@@ -77,6 +77,7 @@ type longContextBillingRepoStub struct {
 	accounts         []*Account
 	createdAccount   *Account
 	updateExtraCalls int
+	lastExtraUpdates map[string]any
 	bulkUpdateCalls  int
 }
 
@@ -106,8 +107,9 @@ func (r *longContextBillingRepoStub) Update(_ context.Context, account *Account)
 	return nil
 }
 
-func (r *longContextBillingRepoStub) UpdateExtra(_ context.Context, _ int64, _ map[string]any) error {
+func (r *longContextBillingRepoStub) UpdateExtra(_ context.Context, _ int64, updates map[string]any) error {
 	r.updateExtraCalls++
+	r.lastExtraUpdates = updates
 	return nil
 }
 
@@ -242,6 +244,22 @@ func TestAdminServiceUpdateAccountExtraAllowsProviderOwnedValueForNonOpenAIAccou
 
 	require.NoError(t, err)
 	require.Equal(t, 1, repo.updateExtraCalls)
+}
+
+func TestAdminServiceUpdateAccountExtraDropsRetiredProbeFields(t *testing.T) {
+	repo := &longContextBillingRepoStub{account: &Account{ID: 1, Platform: PlatformOpenAI}}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	err := svc.UpdateAccountExtra(context.Background(), 1, map[string]any{
+		"custom":                                "kept",
+		"balance_probe_enabled":                 true,
+		"upstream_billing_probe":                map[string]any{"status": "ok"},
+		"upstream_rate_multiplier_sync_enabled": true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.updateExtraCalls)
+	require.Equal(t, map[string]any{"custom": "kept"}, repo.lastExtraUpdates)
 }
 
 func TestAdminServiceBulkUpdateAccountsRejectsMalformedOpenAILongContextBillingValue(t *testing.T) {

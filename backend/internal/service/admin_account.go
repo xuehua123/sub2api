@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -394,63 +393,6 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 	return normalized, nil
 }
 
-// NormalizeUpstreamRateMultiplierSyncExtra validates the account-level mapping
-// to one upstream group. It deliberately does not inspect local account groups:
-// the source ratio belongs to the upstream service, not Sub2API pricing.
-func NormalizeUpstreamRateMultiplierSyncExtra(extra map[string]any) (map[string]any, error) {
-	if extra == nil {
-		return nil, nil
-	}
-
-	normalized := make(map[string]any, len(extra))
-	for key, value := range extra {
-		normalized[key] = value
-	}
-
-	rawEnabled, hasEnabled := normalized[AccountExtraUpstreamRateMultiplierSyncEnabled]
-	rawGroup, hasGroup := normalized[AccountExtraUpstreamRateMultiplierSyncGroup]
-	if !hasEnabled {
-		if hasGroup || normalized[AccountExtraUpstreamRateMultiplierSyncProvider] != nil || normalized[AccountExtraUpstreamRateMultiplierSyncAuthMode] != nil || normalized[AccountExtraUpstreamRateMultiplierSyncRemoteUserID] != nil {
-			return nil, errors.New("upstream rate multiplier sync requires an enabled flag")
-		}
-		return normalized, nil
-	}
-
-	enabled, ok := rawEnabled.(bool)
-	if !ok {
-		return nil, errors.New("upstream rate multiplier sync enabled must be a boolean")
-	}
-	if !enabled {
-		delete(normalized, AccountExtraUpstreamRateMultiplierSyncGroup)
-		delete(normalized, AccountExtraUpstreamRateMultiplierSyncProvider)
-		delete(normalized, AccountExtraUpstreamRateMultiplierSyncAuthMode)
-		delete(normalized, AccountExtraUpstreamRateMultiplierSyncRemoteUserID)
-		return normalized, nil
-	}
-
-	group, ok := rawGroup.(string)
-	if !ok {
-		return nil, errors.New("upstream rate multiplier sync group is required")
-	}
-	group = strings.TrimSpace(group)
-	if group == "" || len(group) > 128 || strings.ContainsAny(group, "\r\n\x00") {
-		return nil, errors.New("upstream rate multiplier sync group must be 1-128 characters without line breaks")
-	}
-	normalized[AccountExtraUpstreamRateMultiplierSyncGroup] = group
-	config, err := upstreamRateMultiplierSyncConfigFromExtra(normalized)
-	if err != nil {
-		return nil, err
-	}
-	normalized[AccountExtraUpstreamRateMultiplierSyncProvider] = string(config.Provider)
-	normalized[AccountExtraUpstreamRateMultiplierSyncAuthMode] = string(config.AuthMode)
-	if config.RemoteUserID > 0 {
-		normalized[AccountExtraUpstreamRateMultiplierSyncRemoteUserID] = config.RemoteUserID
-	} else {
-		delete(normalized, AccountExtraUpstreamRateMultiplierSyncRemoteUserID)
-	}
-	return normalized, nil
-}
-
 // ValidateGrokMediaEligibilityExtra validates the optional media-routing
 // override. null removes the override and returns the account to automatic
 // provider-observation based routing.
@@ -509,16 +451,37 @@ func normalizeGrokMediaEligibilityUpdateExtra(account *Account, input *UpdateAcc
 	return normalized, nil
 }
 
+func stripRetiredAccountProbeExtra(extra map[string]any) {
+	for key := range extra {
+		if strings.HasPrefix(key, "balance_probe_") || strings.HasPrefix(key, "upstream_billing_probe") || strings.HasPrefix(key, "upstream_rate_multiplier_sync_") {
+			delete(extra, key)
+		}
+	}
+}
+
+func stripRetiredUpstreamManagementCredentials(credentials map[string]any) {
+	delete(credentials, "upstream_management_auth")
+	delete(credentials, "upstream_management_base_url")
+}
+
+func withoutRetiredUpstreamManagementCredentials(credentials map[string]any) map[string]any {
+	if credentials == nil {
+		return nil
+	}
+	cleaned := maps.Clone(credentials)
+	stripRetiredUpstreamManagementCredentials(cleaned)
+	return cleaned
+}
+
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
-	// Probe state is system-managed. New accounts always start with auto probe disabled.
-	delete(accountExtra, UpstreamBillingProbeEnabledExtraKey)
-	delete(accountExtra, UpstreamBillingProbeExtraKey)
+	stripRetiredAccountProbeExtra(accountExtra)
+	credentials := withoutRetiredUpstreamManagementCredentials(input.Credentials)
 	account := &Account{
 		Name:        input.Name,
 		Notes:       normalizeAccountNotes(input.Notes),
 		Platform:    input.Platform,
 		Type:        input.Type,
-		Credentials: input.Credentials,
+		Credentials: credentials,
 		Extra:       accountExtra,
 		ProxyID:     input.ProxyID,
 		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
@@ -563,28 +526,7 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	if err != nil {
 		return nil, err
 	}
-	accountExtra, err = NormalizeUpstreamRateMultiplierSyncExtra(accountExtra)
-	if err != nil {
-		return nil, err
-	}
-	config, err := upstreamRateMultiplierSyncConfigFromExtraIfEnabled(accountExtra)
-	if err != nil {
-		return nil, err
-	}
-	if config.Group != "" && !supportsUpstreamRateMultiplierSyncAccountType(input.Type) {
-		return nil, errors.New("upstream rate multiplier sync only supports apikey and upstream accounts")
-	}
-	if config.Group != "" && input.RateMultiplier != nil {
-		return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync")
-	}
-	credentials, err := applyUpstreamManagementAuthInput(input.Credentials, config, input.UpstreamManagementAuth, s.encryptor)
-	if err != nil {
-		return nil, err
-	}
-	credentials = applyUpstreamManagementBaseURLInput(credentials, input.ManagementBaseURL)
-	if accountExtra[AccountExtraUpstreamRateMultiplierSyncEnabled] == true && upstreamManagementAuthCiphertext(credentials) == "" {
-		return nil, errors.New("upstream rate multiplier sync requires management credentials")
-	}
+	credentials := withoutRetiredUpstreamManagementCredentials(input.Credentials)
 	accountExtra, err = normalizeGrokMediaEligibilityExtra(input.Platform, accountExtra)
 	if err != nil {
 		return nil, err
@@ -663,31 +605,25 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	return account, nil
 }
 
-type accountProbeEnabledAtomicUpdater interface {
-	UpdateWithUpstreamBillingProbeEnabled(context.Context, *Account, bool) error
-}
-
 func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *UpdateAccountInput) (*Account, error) {
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
+	stripRetiredAccountProbeExtra(account.Extra)
+	stripRetiredUpstreamManagementCredentials(account.Credentials)
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
 		}
-		normalizedExtra, err = NormalizeUpstreamRateMultiplierSyncExtra(normalizedExtra)
-		if err != nil {
-			return nil, err
-		}
+		stripRetiredAccountProbeExtra(normalizedExtra)
 		normalizedExtra, err = normalizeGrokMediaEligibilityUpdateExtra(account, input, normalizedExtra)
 		if err != nil {
 			return nil, err
 		}
 	}
-	previousProbeIdentity := upstreamBillingProbeIdentity(account)
 	// 安全/身份不变量(影子账号):通用更新路径被 edit/re-auth/refresh/batch 共用,
 	// 必须在此守住,否则仅在创建时的保证可被这些路径绕过。
 	if account.IsCredentialShadow() {
@@ -728,10 +664,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	if account.IsCredentialShadow() && input.Credentials != nil {
 		account.Credentials = sanitizeSparkShadowCredentials(input.Credentials)
-	} else if len(input.Credentials) > 0 {
+	} else if credentials := withoutRetiredUpstreamManagementCredentials(input.Credentials); len(credentials) > 0 {
 		// 敏感子键采用"incoming 没提供就保留"的合并语义：前端响应已脱敏，
 		// 全对象 PUT 编辑时不会再带回 token，避免覆盖时清空已有凭证。
-		account.Credentials = MergePreservingSensitiveCreds(account.Credentials, input.Credentials)
+		existingCredentials := account.Credentials
+		account.Credentials = MergePreservingSensitiveCreds(existingCredentials, credentials)
 		// 校验并规范化请求头覆写配置（header 名小写化、格式检查）
 		if err := NormalizeHeaderOverrideCredentials(account.Credentials); err != nil {
 			return nil, err
@@ -739,18 +676,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	// Extra 使用 map：需要区分“未提供(nil)”与“显式清空({})”。
 	// 关闭配额限制时前端会删除 quota_* 键并提交 extra:{}，此时也必须落库。
-	var requestedProbeEnabledUpdate *bool
 	if input.Extra != nil {
-		requestedProbeEnabled, hasRequestedProbeEnabled := normalizedExtra[UpstreamBillingProbeEnabledExtraKey]
-		if hasRequestedProbeEnabled {
-			enabled, ok := requestedProbeEnabled.(bool)
-			if !ok {
-				return nil, infraerrors.BadRequest("INVALID_UPSTREAM_BILLING_PROBE_ENABLED", "upstream_billing_probe_enabled must be a boolean")
-			}
-			requestedProbeEnabledUpdate = &enabled
-		}
-		delete(normalizedExtra, UpstreamBillingProbeEnabledExtraKey)
-		delete(normalizedExtra, UpstreamBillingProbeExtraKey)
 		// 保留配额用量字段，防止编辑账号时意外重置
 		for _, key := range []string{
 			"quota_used",
@@ -759,18 +685,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			"quota_weekly_used",
 			"quota_weekly_start",
 			grokBillingExtraKey,
-			UpstreamBillingProbeEnabledExtraKey,
-			UpstreamBillingProbeExtraKey,
 		} {
 			if v, ok := account.Extra[key]; ok {
 				normalizedExtra[key] = v
-			}
-		}
-		if hasRequestedProbeEnabled {
-			if isUpstreamBillingProbeAccount(account) {
-				normalizedExtra[UpstreamBillingProbeEnabledExtraKey] = requestedProbeEnabled
-			} else {
-				delete(normalizedExtra, UpstreamBillingProbeEnabledExtraKey)
 			}
 		}
 		account.Extra = normalizedExtra
@@ -792,34 +709,8 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		ComputeQuotaResetAt(account.Extra)
 		NormalizeFixedQuotaWindows(account.Extra)
 	}
-	// Turning synchronization off also retires the separately encrypted
-	// management identity. Retaining it would provide no benefit and makes an
-	// accidental re-enable silently reuse an old credential.
-	if input.Extra != nil && !account.IsUpstreamRateMultiplierSyncEnabled() {
-		delete(account.Credentials, upstreamManagementAuthCredentialKey)
-	}
 	// 影子代理恒继承母账号(由 propagateProxyToShadows 同步),不接受独立编辑——外审 B/P1;
 	// 否则要等母账号下次改 proxy 才被覆盖,期间影子会出现"有时继承、有时独立"的漂移。
-	if input.UpstreamManagementAuth != nil {
-		if account.IsCredentialShadow() {
-			return nil, errors.New("spark shadow accounts cannot store upstream management credentials")
-		}
-		config, configErr := account.UpstreamRateMultiplierSyncConfig()
-		if configErr != nil {
-			return nil, configErr
-		}
-		credentials, credentialErr := applyUpstreamManagementAuthInput(account.Credentials, config, input.UpstreamManagementAuth, s.encryptor)
-		if credentialErr != nil {
-			return nil, credentialErr
-		}
-		account.Credentials = credentials
-	}
-	if input.ManagementBaseURL != nil {
-		account.Credentials = applyUpstreamManagementBaseURLInput(account.Credentials, input.ManagementBaseURL)
-	}
-	if err := validateConfiguredUpstreamManagementAuth(account, s.encryptor); err != nil {
-		return nil, err
-	}
 	if input.ProxyID != nil && !account.IsCredentialShadow() {
 		// 0 表示清除代理（前端发送 0 而不是 null 来表达清除意图）
 		if *input.ProxyID == 0 {
@@ -828,12 +719,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			account.ProxyID = input.ProxyID
 		}
 		account.Proxy = nil // 清除关联对象，防止 GORM Save 时根据 Proxy.ID 覆盖 ProxyID
-	}
-	if !reflect.DeepEqual(previousProbeIdentity, upstreamBillingProbeIdentity(account)) && account.Extra != nil {
-		delete(account.Extra, UpstreamBillingProbeExtraKey)
-		if !isUpstreamBillingProbeAccount(account) {
-			delete(account.Extra, UpstreamBillingProbeEnabledExtraKey)
-		}
 	}
 	// 只在指针非 nil 时更新 Concurrency（支持设置为 0）
 	if input.Concurrency != nil {
@@ -844,9 +729,6 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Priority = *input.Priority
 	}
 	if input.RateMultiplier != nil {
-		if account.IsUpstreamRateMultiplierSyncEnabled() {
-			return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync")
-		}
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
@@ -890,26 +772,8 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 	}
 
-	probeEnabledAppliedAtomically := false
-	if requestedProbeEnabledUpdate != nil && isUpstreamBillingProbeAccount(account) {
-		if updater, ok := s.accountRepo.(accountProbeEnabledAtomicUpdater); ok {
-			if err := updater.UpdateWithUpstreamBillingProbeEnabled(ctx, account, *requestedProbeEnabledUpdate); err != nil {
-				return nil, err
-			}
-			probeEnabledAppliedAtomically = true
-		}
-	}
-	if !probeEnabledAppliedAtomically {
-		if err := s.accountRepo.Update(ctx, account); err != nil {
-			return nil, err
-		}
-		if requestedProbeEnabledUpdate != nil && isUpstreamBillingProbeAccount(account) {
-			if err := s.accountRepo.UpdateExtra(ctx, account.ID, map[string]any{
-				UpstreamBillingProbeEnabledExtraKey: *requestedProbeEnabledUpdate,
-			}); err != nil {
-				return nil, err
-			}
-		}
+	if err := s.accountRepo.Update(ctx, account); err != nil {
+		return nil, err
 	}
 
 	// 将 proxy 变更传播到 spark 影子账号（同步；Update 内部已触发调度快照）。
@@ -938,6 +802,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	stripRetiredAccountProbeExtra(updates)
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -956,9 +821,8 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
-	// Probe state is updated only through its dedicated endpoints.
-	delete(input.Extra, UpstreamBillingProbeEnabledExtraKey)
-	delete(input.Extra, UpstreamBillingProbeExtraKey)
+	stripRetiredAccountProbeExtra(input.Extra)
+	input.Credentials = withoutRetiredUpstreamManagementCredentials(input.Credentials)
 
 	if len(input.AccountIDs) == 0 && input.Filters != nil {
 		accountIDs, err := s.resolveBulkUpdateTargetIDs(ctx, input.Filters)
@@ -976,17 +840,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	if len(input.AccountIDs) == 0 {
 		return result, nil
-	}
-	for _, key := range []string{
-		AccountExtraUpstreamRateMultiplierSyncEnabled,
-		AccountExtraUpstreamRateMultiplierSyncGroup,
-		AccountExtraUpstreamRateMultiplierSyncProvider,
-		AccountExtraUpstreamRateMultiplierSyncAuthMode,
-		AccountExtraUpstreamRateMultiplierSyncRemoteUserID,
-	} {
-		if _, configured := input.Extra[key]; configured {
-			return nil, errors.New("upstream rate multiplier sync must be configured per account")
-		}
 	}
 	if input.GroupIDs != nil {
 		if err := s.validateGroupIDsExist(ctx, *input.GroupIDs); err != nil {
@@ -1068,11 +921,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		if *input.RateMultiplier < 0 {
 			return nil, errors.New("rate_multiplier must be >= 0")
 		}
-		for _, account := range cachedTargets {
-			if account != nil && account.IsUpstreamRateMultiplierSyncEnabled() {
-				return nil, errors.New("rate_multiplier is managed by upstream rate multiplier sync; edit the account to disable sync first")
-			}
-		}
 	}
 
 	// 校验并规范化请求头覆写配置（批量路径为 JSONB 顶层 key 合并，直接校验增量即可）
@@ -1084,14 +932,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	repoUpdates := AccountBulkUpdate{
 		Credentials: input.Credentials,
 		Extra:       input.Extra,
-	}
-	if updatesUpstreamBillingProbeIdentity(input.Credentials) || input.ProxyID != nil {
-		if repoUpdates.Extra == nil {
-			repoUpdates.Extra = make(map[string]any)
-		}
-		// JSON null makes every reader treat the old snapshot as absent and lets the
-		// next enabled runner cycle probe the new upstream identity immediately.
-		repoUpdates.Extra[UpstreamBillingProbeExtraKey] = nil
 	}
 	if input.Name != "" {
 		repoUpdates.Name = &input.Name
@@ -1164,31 +1004,6 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
-}
-
-func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
-		if _, ok := credentials[key]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func upstreamBillingProbeIdentity(account *Account) map[string]any {
-	if account == nil {
-		return nil
-	}
-	identity := map[string]any{"platform": account.Platform, "type": account.Type, "proxy_id": nil}
-	if account.ProxyID != nil {
-		identity["proxy_id"] = *account.ProxyID
-	}
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
-		if value, ok := account.Credentials[key]; ok {
-			identity[key] = value
-		}
-	}
-	return identity
 }
 
 func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {

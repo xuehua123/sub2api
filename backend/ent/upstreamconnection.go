@@ -37,8 +37,6 @@ type UpstreamConnection struct {
 	CredentialEncrypted string `json:"-"`
 	// CredentialFingerprint holds the value of the "credential_fingerprint" field.
 	CredentialFingerprint string `json:"-"`
-	// LegacyMigrationKey holds the value of the "legacy_migration_key" field.
-	LegacyMigrationKey *string `json:"-"`
 	// CredentialHint holds the value of the "credential_hint" field.
 	CredentialHint string `json:"credential_hint,omitempty"`
 	// RemoteUserID holds the value of the "remote_user_id" field.
@@ -142,7 +140,7 @@ func (*UpstreamConnection) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case upstreamconnection.FieldID, upstreamconnection.FieldProxyID, upstreamconnection.FieldSyncIntervalSeconds, upstreamconnection.FieldSyncFailures, upstreamconnection.FieldVersion:
 			values[i] = new(sql.NullInt64)
-		case upstreamconnection.FieldName, upstreamconnection.FieldProvider, upstreamconnection.FieldAuthMode, upstreamconnection.FieldManagementBaseURL, upstreamconnection.FieldForwardingBaseURL, upstreamconnection.FieldCredentialEncrypted, upstreamconnection.FieldCredentialFingerprint, upstreamconnection.FieldLegacyMigrationKey, upstreamconnection.FieldCredentialHint, upstreamconnection.FieldRemoteUserID, upstreamconnection.FieldStatus, upstreamconnection.FieldLastError, upstreamconnection.FieldWalletCurrency, upstreamconnection.FieldWalletSource, upstreamconnection.FieldWalletReliability:
+		case upstreamconnection.FieldName, upstreamconnection.FieldProvider, upstreamconnection.FieldAuthMode, upstreamconnection.FieldManagementBaseURL, upstreamconnection.FieldForwardingBaseURL, upstreamconnection.FieldCredentialEncrypted, upstreamconnection.FieldCredentialFingerprint, upstreamconnection.FieldCredentialHint, upstreamconnection.FieldRemoteUserID, upstreamconnection.FieldStatus, upstreamconnection.FieldLastError, upstreamconnection.FieldWalletCurrency, upstreamconnection.FieldWalletSource, upstreamconnection.FieldWalletReliability:
 			values[i] = new(sql.NullString)
 		case upstreamconnection.FieldCreatedAt, upstreamconnection.FieldUpdatedAt, upstreamconnection.FieldWalletObservedAt, upstreamconnection.FieldLastDiscoveredAt, upstreamconnection.FieldLastSyncedAt, upstreamconnection.FieldNextSyncAt:
 			values[i] = new(sql.NullTime)
@@ -220,13 +218,6 @@ func (_m *UpstreamConnection) assignValues(columns []string, values []any) error
 				return fmt.Errorf("unexpected type %T for field credential_fingerprint", values[i])
 			} else if value.Valid {
 				_m.CredentialFingerprint = value.String
-			}
-		case upstreamconnection.FieldLegacyMigrationKey:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field legacy_migration_key", values[i])
-			} else if value.Valid {
-				_m.LegacyMigrationKey = new(string)
-				*_m.LegacyMigrationKey = value.String
 			}
 		case upstreamconnection.FieldCredentialHint:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -440,8 +431,6 @@ func (_m *UpstreamConnection) String() string {
 	builder.WriteString("credential_encrypted=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("credential_fingerprint=<sensitive>")
-	builder.WriteString(", ")
-	builder.WriteString("legacy_migration_key=<sensitive>")
 	builder.WriteString(", ")
 	builder.WriteString("credential_hint=")
 	builder.WriteString(_m.CredentialHint)
