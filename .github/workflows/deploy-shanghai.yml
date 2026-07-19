@@ -65,24 +65,37 @@ jobs:
 
       - name: Deploy to stable with restricted deployment user
         if: inputs.target == 'stable'
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ secrets.NEW_STABLE_HOST }}
-          username: ${{ secrets.NEW_STABLE_USER }}
-          key: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
-          port: ${{ secrets.NEW_STABLE_PORT }}
-          envs: STABLE_DEPLOY_PAYLOAD
-          script_stop: true
-          command_timeout: 10m
-          script: |
-            set -eu
-            if [ -z "${STABLE_DEPLOY_PAYLOAD:-}" ]; then
-              echo "Stable deployment payload is unavailable" >&2
-              exit 2
-            fi
-            printf '%s' "$STABLE_DEPLOY_PAYLOAD" |
-              base64 --decode |
-              sudo -n /usr/local/sbin/sub2api-deploy-stable
+        shell: bash
+        env:
+          STABLE_HOST: ${{ secrets.NEW_STABLE_HOST }}
+          STABLE_USER: ${{ secrets.NEW_STABLE_USER }}
+          STABLE_PORT: ${{ secrets.NEW_STABLE_PORT }}
+          STABLE_DEPLOY_KEY: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+
+          key_file="$(mktemp)"
+          known_hosts_file="$(mktemp)"
+          cleanup() {
+            rm -f "$key_file" "$known_hosts_file"
+          }
+          trap cleanup EXIT
+
+          printf '%s\n' "$STABLE_DEPLOY_KEY" > "$key_file"
+          chmod 600 "$key_file"
+
+          # The deployment account is constrained by an SSH forced command. It
+          # ignores remote shell text and consumes this session's stdin directly.
+          # Use the OpenSSH client so the protected script receives the payload.
+          printf '%s' "$STABLE_DEPLOY_PAYLOAD" |
+            base64 --decode |
+            ssh -T \
+              -i "$key_file" \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="$known_hosts_file" \
+              -p "$STABLE_PORT" \
+              "$STABLE_USER@$STABLE_HOST"
 
       - name: Deploy to pipixia
         if: inputs.target == 'pipixia'
