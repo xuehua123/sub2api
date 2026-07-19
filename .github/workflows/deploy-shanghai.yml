@@ -234,7 +234,95 @@ jobs:
               fi
             done
 
+            # Keep exactly the instance Nginx is actively routing to.  Do not
+            # infer the active slot from compose ordering: a stale file or a
+            # partial deployment must fail closed instead of creating a 502.
+            active_ports="$(nginx -T 2>&1 | grep -Eo '127\\.0\\.0\\.1:(18080|28080)' | sort -u || true)"
+            active_port_count="$(printf '%s\\n' "$active_ports" | sed '/^$/d' | wc -l | tr -d ' ')"
+            if [ "$active_port_count" -ne 1 ]; then
+              echo "Expected Nginx to reference exactly one Sub2API blue-green port; found: ${active_ports:-none}" >&2
+              false
+            fi
+            active_port="${active_ports#127.0.0.1:}"
+
+            active_service=""
+            active_container=""
+            for service in $services; do
+              container_id="$(docker compose -f "$compose_file" ps -q "$service")"
+              [ -n "$container_id" ] || false
+              host_ports="$(docker inspect --format '{{range $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{println .HostPort}}{{end}}{{end}}' "$container_id")"
+              if printf '%s\\n' "$host_ports" | grep -Fxq "$active_port"; then
+                if [ -n "$active_service" ]; then
+                  echo "More than one Sub2API service exposes Nginx active port $active_port" >&2
+                  false
+                fi
+                active_service="$service"
+                active_container="$container_id"
+              fi
+            done
+            if [ -z "$active_service" ]; then
+              echo "No Sub2API compose service exposes Nginx active port $active_port" >&2
+              false
+            fi
+            active_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$active_container")"
+            if [ -z "$active_project" ] || [ "$active_project" = '<no value>' ]; then
+              echo "Nginx active Sub2API container is not managed by Docker Compose" >&2
+              false
+            fi
+            active_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$active_container")"
+            if [ "$active_health" != healthy ] || [ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${active_port}/health")" != 200 ]; then
+              echo "Nginx active Sub2API service $active_service is not healthy" >&2
+              false
+            fi
+
+            # From this point the active instance is healthy and serving the
+            # configured Nginx port.  Do not roll it back merely because an
+            # inactive-container removal reports an operational error.
+            trap - ERR
+            for service in $services; do
+              if [ "$service" != "$active_service" ]; then
+                docker compose -f "$compose_file" stop "$service"
+                docker compose -f "$compose_file" rm -f "$service"
+              fi
+            done
+
+            # Clean up only stale application containers belonging to this
+            # compose project; databases, Redis, and unrelated containers are
+            # deliberately outside this scope.
+            for container_id in $(docker ps -aq); do
+              container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
+              container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+              if [ "$container_id" != "$active_container" ] && \
+                [ "$container_project" = "$active_project" ] && \
+                { [ "$container_image" = "$IMAGE_NAME" ] || \
+                  [ "${container_image#${IMAGE_NAME}:}" != "$container_image" ] || \
+                  [ "${container_image#${IMAGE_NAME}@}" != "$container_image" ]; }; then
+                docker rm -f "$container_id"
+              fi
+            done
+
+            running_app_containers=0
+            for container_id in $(docker ps -q); do
+              container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
+              container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
+              if [ "$container_project" = "$active_project" ] && \
+                { [ "$container_image" = "$IMAGE_NAME" ] || \
+                [ "${container_image#${IMAGE_NAME}:}" != "$container_image" ] || \
+                [ "${container_image#${IMAGE_NAME}@}" != "$container_image" ]; }; then
+                running_app_containers=$((running_app_containers + 1))
+                [ "$container_id" = "$active_container" ] || {
+                  echo "Unexpected additional running Sub2API container: $container_id" >&2
+                  exit 1
+                }
+              fi
+            done
+            if [ "$running_app_containers" -ne 1 ]; then
+              echo "Expected one running Sub2API container after cleanup; found $running_app_containers" >&2
+              exit 1
+            fi
+
             trap - ERR
             docker compose -f "$compose_file" ps
+            echo "Active Sub2API service: $active_service (project=$active_project, 127.0.0.1:$active_port)"
             echo "Rollback state: $deploy_dir/$rollback_state"
             echo "Compose backup: $deploy_dir/$backup"
