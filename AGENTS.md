@@ -16,6 +16,48 @@
 - Production deployment must use prebuilt images from local build, CI, or a dedicated build machine. A production host may only `docker pull`, switch image tags, restart services, run health checks, and roll back.
 - Before restarting production services, record the currently running image tag/container state and keep a tested rollback path. If a build is needed, stop and move it off the production host.
 
+## Mandatory Production Deployment Runbook
+
+Apply this sequence for **every** production update. Do not skip, reorder, or
+replace steps with unverified cleanup automation.
+
+1. Confirm the merge branch's staged tree, version, conflict resolution, and
+   working tree are clean. Commit and push the merge branch.
+2. Merge the reviewed branch into the latest `origin/main` and push `main`.
+3. Wait for every configured CI gate to complete. Deploy only a CI-built,
+   immutable image SHA. A known baseline failure must be identified explicitly;
+   it is never silently treated as a green gate.
+4. On both production targets, record the running container names, image SHAs,
+   published ports, compose state, and active proxy upstream as the rollback
+   point.
+5. Deploy **稳如狗 first**. The host only pulls the prebuilt SHA image. Start
+   the inactive blue-green slot, wait for application health and migrations,
+   atomically switch Nginx/proxy traffic to the healthy new slot, confirm no
+   502s, then stop the old slot. Keep the old image as a rollback point, but do
+   not leave two application instances running long term.
+6. Observe 稳如狗 for about five minutes before touching the second target.
+   Check migrations, `UsageLog` writes, balance/package-group/subscription
+   entitlement billing, Grok/OpenAI errors, 5xx responses, and container logs.
+7. Only when 稳如狗 is healthy, deploy **皮皮虾** with the same blue-green
+   sequence: start the inactive slot, health check, atomically switch traffic,
+   verify the new slot, stop the old slot, retain its image for rollback, and
+   leave exactly one application instance running.
+8. Any failed health check, migration, billing smoke test, elevated error rate,
+   or unexpected 5xx requires immediate traffic rollback to the recorded old
+   SHA. Do not continue the rollout.
+
+Additional non-negotiable rules:
+
+- Do not build images on either production server.
+- Do not deploy a floating tag. Use an immutable SHA image only.
+- Do not assume both targets share the same proxy implementation. Read and
+  verify the target's existing cutover mechanism before operating it.
+- Do not add generic Docker cleanup, container-ID matching, port inference, or
+  topology-changing deployment logic directly in production. Such changes need
+  an isolated test and an explicit user-approved rollout.
+- Prompt Audit remains disabled by default. Do not configure audit nodes or
+  blocking, and do not enable raw prompt storage in production.
+
 ## Exact Commands
 
 ### Backend (run from `backend/`)

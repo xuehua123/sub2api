@@ -264,11 +264,6 @@ jobs:
               echo "No Sub2API compose service exposes Nginx active port $active_port" >&2
               false
             fi
-            active_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$active_container")"
-            if [ -z "$active_project" ] || [ "$active_project" = '<no value>' ]; then
-              echo "Nginx active Sub2API container is not managed by Docker Compose" >&2
-              false
-            fi
             active_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$active_container")"
             if [ "$active_health" != healthy ] || [ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${active_port}/health")" != 200 ]; then
               echo "Nginx active Sub2API service $active_service is not healthy" >&2
@@ -286,45 +281,14 @@ jobs:
               fi
             done
 
-            # Clean up only stale application containers belonging to this
-            # compose project; databases, Redis, and unrelated containers are
-            # deliberately outside this scope.
-            # Compose returns full container IDs. Use the same form here so
-            # the active instance cannot be mistaken for a stale container.
-            for container_id in $(docker ps -aq --no-trunc); do
-              container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
-              container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-              if [ "$container_id" != "$active_container" ] && \
-                [ "$container_project" = "$active_project" ] && \
-                { [ "$container_image" = "$IMAGE_NAME" ] || \
-                  [ "${container_image#${IMAGE_NAME}:}" != "$container_image" ] || \
-                  [ "${container_image#${IMAGE_NAME}@}" != "$container_image" ]; }; then
-                docker rm -f "$container_id"
-              fi
-            done
-
-            running_app_containers=0
-            for container_id in $(docker ps -q --no-trunc); do
-              container_project="$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")"
-              container_image="$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-              if [ "$container_project" = "$active_project" ] && \
-                { [ "$container_image" = "$IMAGE_NAME" ] || \
-                [ "${container_image#${IMAGE_NAME}:}" != "$container_image" ] || \
-                [ "${container_image#${IMAGE_NAME}@}" != "$container_image" ]; }; then
-                running_app_containers=$((running_app_containers + 1))
-                [ "$container_id" = "$active_container" ] || {
-                  echo "Unexpected additional running Sub2API container: $container_id" >&2
-                  exit 1
-                }
-              fi
-            done
-            if [ "$running_app_containers" -ne 1 ]; then
-              echo "Expected one running Sub2API container after cleanup; found $running_app_containers" >&2
-              exit 1
-            fi
+            # Re-check the only service that is allowed to remain running.
+            # Do not scan or delete arbitrary Docker containers here.
+            [ "$(docker inspect --format '{{.State.Running}}' "$active_container")" = true ] || false
+            [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$active_container")" = healthy ] || false
+            [ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${active_port}/health")" = 200 ] || false
 
             trap - ERR
             docker compose -f "$compose_file" ps
-            echo "Active Sub2API service: $active_service (project=$active_project, 127.0.0.1:$active_port)"
+            echo "Active Sub2API service: $active_service (127.0.0.1:$active_port)"
             echo "Rollback state: $deploy_dir/$rollback_state"
             echo "Compose backup: $deploy_dir/$backup"
