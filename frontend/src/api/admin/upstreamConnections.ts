@@ -98,6 +98,7 @@ export interface UpstreamConnectionListFilters {
   provider?: string
   status?: string
   search?: string
+  includeBindings?: boolean
 }
 
 export interface CreateUpstreamConnectionRequest {
@@ -171,8 +172,14 @@ export async function list(
   pageSize = 20,
   filters?: UpstreamConnectionListFilters
 ): Promise<PaginatedResponse<UpstreamConnection>> {
+  const { includeBindings, ...queryFilters } = filters ?? {}
   const { data } = await apiClient.get<PaginatedResponse<UpstreamConnection>>('/admin/upstream-connections', {
-    params: { page, page_size: pageSize, ...filters }
+    params: {
+      page,
+      page_size: pageSize,
+      ...queryFilters,
+      ...(includeBindings ? { include_bindings: true } : {})
+    }
   })
   return data
 }

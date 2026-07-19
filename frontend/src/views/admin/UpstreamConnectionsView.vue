@@ -21,6 +21,20 @@
           <div class="w-full sm:w-48">
             <Select v-model="filters.sort" :options="sortOptions" @change="applySortAndPage(1)" />
           </div>
+          <label class="flex h-10 items-center gap-2 border border-gray-300 bg-white px-3 text-sm text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300">
+            <span class="whitespace-nowrap">{{ t('admin.upstreamConnections.walletHighlightThreshold') }}</span>
+            <input
+              v-model.number="walletHighlightThreshold"
+              class="w-16 bg-transparent text-right tabular-nums outline-none"
+              type="number"
+              min="0"
+              max="1000000"
+              step="1"
+              inputmode="decimal"
+              :aria-label="t('admin.upstreamConnections.walletHighlightThreshold')"
+            />
+            <span class="text-xs text-gray-400">USD</span>
+          </label>
           <div class="flex flex-1 items-center justify-end gap-2">
             <button class="btn btn-secondary" :title="t('common.refresh')" :disabled="loading" @click="loadConnections()">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
@@ -40,7 +54,7 @@
             <p class="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{{ connectionSummary.total }}</p>
           </div>
           <div class="px-4 py-3">
-            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.lowBalance') }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.lowBalanceSummary', { threshold: walletHighlightThresholdValue }) }}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.lowBalance > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-900 dark:text-white'">{{ connectionSummary.lowBalance }}</p>
           </div>
           <div class="px-4 py-3">
@@ -52,7 +66,16 @@
             <p data-testid="today-requests-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ todayStatsAvailable ? connectionSummary.todayRequests.toLocaleString() : '-' }}</p>
           </div>
         </div>
-        <DataTable :columns="columns" :data="connections" :loading="loading">
+        <DataTable
+          :key="filters.sort"
+          :columns="columns"
+          :data="connections"
+          :loading="loading"
+          server-side-sort
+          :default-sort-key="tableSort.key"
+          :default-sort-order="tableSort.order"
+          @sort="handleTableSort"
+        >
           <template #cell-name="{ row }">
             <button class="text-left" @click="openDetails(row)">
               <span class="block font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400">
@@ -73,7 +96,7 @@
             <div class="flex flex-col" :class="isLowWallet(row) ? 'border-l-2 border-amber-500 pl-2' : ''">
               <span class="font-medium" :class="isLowWallet(row) ? 'text-amber-700 dark:text-amber-300' : 'text-gray-800 dark:text-gray-100'">{{ formatWallet(row) }}</span>
               <span class="text-xs" :class="isLowWallet(row) ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500'">
-                {{ isLowWallet(row) ? t('admin.upstreamConnections.lowBalanceHint') : reliabilityLabel(row.wallet_reliability) }}
+                {{ isLowWallet(row) ? t('admin.upstreamConnections.walletHighlightHint', { threshold: walletHighlightThresholdValue }) : reliabilityLabel(row.wallet_reliability) }}
               </span>
             </div>
           </template>
@@ -298,7 +321,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type {
@@ -349,6 +372,8 @@ let detailsGeneration = 0
 
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 const filters = reactive({ search: '', provider: '', status: '', sort: 'today_requests_desc' })
+const walletHighlightStorageKey = 'admin.upstreamConnections.walletHighlightThreshold'
+const walletHighlightThreshold = ref(readWalletHighlightThreshold())
 const form = reactive({
   name: '', provider: 'auto' as UpstreamConnectionProvider,
   auth_mode: 'password' as UpstreamConnectionAuthMode,
@@ -359,12 +384,12 @@ const form = reactive({
 })
 
 const columns = computed<Column[]>(() => [
-  { key: 'name', label: t('admin.upstreamConnections.columns.name') },
+  { key: 'name', label: t('admin.upstreamConnections.columns.name'), sortable: true },
   { key: 'provider', label: t('admin.upstreamConnections.columns.provider') },
-  { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet') },
-  { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayUsage') },
-  { key: 'observations', label: t('admin.upstreamConnections.columns.observations') },
-  { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync') },
+  { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet'), sortable: true },
+  { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayUsage'), sortable: true },
+  { key: 'observations', label: t('admin.upstreamConnections.columns.observations'), sortable: true },
+  { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync'), sortable: true },
   { key: 'status', label: t('admin.upstreamConnections.columns.status') },
   { key: 'actions', label: t('admin.upstreamConnections.columns.actions') }
 ])
@@ -376,9 +401,19 @@ const statusValues = ['pending', 'ready', 'degraded', 'auth_error', 'needs_input
 const statusFilterOptions = computed(() => [{ value: '', label: t('admin.upstreamConnections.allStatuses') }, ...statusValues.map(value => ({ value, label: statusLabel(value) }))])
 const sortOptions = computed(() => [
   { value: 'today_requests_desc', label: t('admin.upstreamConnections.sort.todayRequestsDesc') },
+  { value: 'today_requests_asc', label: t('admin.upstreamConnections.sort.todayRequestsAsc') },
+  { value: 'today_cost_desc', label: t('admin.upstreamConnections.sort.todayCostDesc') },
+  { value: 'today_cost_asc', label: t('admin.upstreamConnections.sort.todayCostAsc') },
   { value: 'balance_asc', label: t('admin.upstreamConnections.sort.balanceAsc') },
+  { value: 'balance_desc', label: t('admin.upstreamConnections.sort.balanceDesc') },
+  { value: 'group_count_desc', label: t('admin.upstreamConnections.sort.groupCountDesc') },
+  { value: 'group_count_asc', label: t('admin.upstreamConnections.sort.groupCountAsc') },
+  { value: 'binding_count_desc', label: t('admin.upstreamConnections.sort.bindingCountDesc') },
+  { value: 'binding_count_asc', label: t('admin.upstreamConnections.sort.bindingCountAsc') },
   { value: 'last_sync_desc', label: t('admin.upstreamConnections.sort.lastSyncDesc') },
-  { value: 'name_asc', label: t('admin.upstreamConnections.sort.nameAsc') }
+  { value: 'last_sync_asc', label: t('admin.upstreamConnections.sort.lastSyncAsc') },
+  { value: 'name_asc', label: t('admin.upstreamConnections.sort.nameAsc') },
+  { value: 'name_desc', label: t('admin.upstreamConnections.sort.nameDesc') }
 ])
 const authModeOptions = computed(() => [
   { value: 'password', label: t('admin.upstreamConnections.authModes.password') },
@@ -392,6 +427,8 @@ const connectionSummary = computed(() => ({
   todayCost: allConnections.value.reduce((total, row) => total + (row.today_cost ?? 0), 0),
   todayRequests: allConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
 }))
+const walletHighlightThresholdValue = computed(() => normalizeWalletHighlightThreshold(walletHighlightThreshold.value))
+const tableSort = computed(() => tableSortFor(filters.sort))
 
 function providerLabel(provider: string): string { return provider ? t(`admin.upstreamConnections.providers.${provider}`, provider) : '-' }
 function statusLabel(status: string): string { return t(`admin.upstreamConnections.statuses.${status}`, status) }
@@ -414,7 +451,45 @@ function formatCost(value: number): string {
   return Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })
 }
 function isLowWallet(connection: UpstreamConnection): boolean {
-  return !connection.wallet_unlimited && connection.wallet_usd !== null && connection.wallet_usd < 50
+  return !connection.wallet_unlimited && connection.wallet_usd !== null && connection.wallet_usd < walletHighlightThresholdValue.value
+}
+function readWalletHighlightThreshold(): number {
+  if (typeof window === 'undefined') return 50
+  const stored = window.localStorage.getItem(walletHighlightStorageKey)
+  return stored === null ? 50 : normalizeWalletHighlightThreshold(Number(stored))
+}
+function normalizeWalletHighlightThreshold(value: number): number {
+  return Number.isFinite(value) && value >= 0 && value <= 1_000_000 ? value : 50
+}
+function tableSortFor(sort: string): { key: string; order: 'asc' | 'desc' } {
+  const [field, order] = sort.split(/_(?=[^_]+$)/)
+  const keyByField: Record<string, string> = {
+    today_requests: 'today_requests',
+    balance: 'wallet',
+    group_count: 'observations',
+    last_sync: 'last_synced_at',
+    name: 'name'
+  }
+  return { key: keyByField[field] || 'today_requests', order: order === 'asc' ? 'asc' : 'desc' }
+}
+function handleTableSort(key: string, order: 'asc' | 'desc'): void {
+  const fieldByKey: Record<string, string> = {
+    name: 'name',
+    wallet: 'balance',
+    today_requests: 'today_requests',
+    observations: 'group_count',
+    last_synced_at: 'last_sync'
+  }
+  const field = fieldByKey[key]
+  if (!field) return
+  filters.sort = `${field}_${order}`
+  applySortAndPage(1)
+}
+function compareNullableNumber(left: number | null, right: number | null, order: 'asc' | 'desc'): number {
+  if (left === null && right === null) return 0
+  if (left === null) return 1
+  if (right === null) return -1
+  return order === 'asc' ? left - right : right - left
 }
 function homepageUrl(value: string): string {
   try {
@@ -476,22 +551,25 @@ function changePageSize(size: number): void { pagination.page_size = size; apply
 function applySortAndPage(page = pagination.page): void {
   const rows = [...allConnections.value]
   rows.sort((a, b) => {
-    if (filters.sort === 'balance_asc') {
-      const aBalance = a.wallet_unlimited || a.wallet_usd === null ? Number.POSITIVE_INFINITY : a.wallet_usd
-      const bBalance = b.wallet_unlimited || b.wallet_usd === null ? Number.POSITIVE_INFINITY : b.wallet_usd
-      if (aBalance !== bBalance) return aBalance - bBalance
-    } else if (filters.sort === 'last_sync_desc') {
-      const aTime = a.last_synced_at ? Date.parse(a.last_synced_at) : 0
-      const bTime = b.last_synced_at ? Date.parse(b.last_synced_at) : 0
-      if (aTime !== bTime) return bTime - aTime
-    } else if (filters.sort === 'name_asc') {
-      const nameOrder = a.name.localeCompare(b.name)
-      if (nameOrder !== 0) return nameOrder
-    } else {
-      const aRequests = a.today_requests ?? -1
-      const bRequests = b.today_requests ?? -1
-      if (aRequests !== bRequests) return bRequests - aRequests
+    const [field, sortOrder] = filters.sort.split(/_(?=[^_]+$)/)
+    const order = sortOrder === 'asc' ? 'asc' : 'desc'
+    let comparison = 0
+    if (field === 'balance') {
+      comparison = compareNullableNumber(a.wallet_unlimited ? null : a.wallet_usd, b.wallet_unlimited ? null : b.wallet_usd, order)
+    } else if (field === 'today_cost') {
+      comparison = compareNullableNumber(a.today_cost, b.today_cost, order)
+    } else if (field === 'today_requests') {
+      comparison = compareNullableNumber(a.today_requests, b.today_requests, order)
+    } else if (field === 'group_count') {
+      comparison = order === 'asc' ? a.group_count - b.group_count : b.group_count - a.group_count
+    } else if (field === 'binding_count') {
+      comparison = order === 'asc' ? a.binding_count - b.binding_count : b.binding_count - a.binding_count
+    } else if (field === 'last_sync') {
+      comparison = compareNullableNumber(a.last_synced_at ? Date.parse(a.last_synced_at) : null, b.last_synced_at ? Date.parse(b.last_synced_at) : null, order)
+    } else if (field === 'name') {
+      comparison = order === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
     }
+    if (comparison !== 0) return comparison
     return b.id - a.id
   })
   const maxPage = Math.max(1, Math.ceil(rows.length / pagination.page_size))
@@ -499,6 +577,12 @@ function applySortAndPage(page = pagination.page): void {
   const start = (pagination.page - 1) * pagination.page_size
   connections.value = rows.slice(start, start + pagination.page_size)
 }
+
+watch(walletHighlightThreshold, value => {
+  const normalized = normalizeWalletHighlightThreshold(value)
+  if (value !== normalized) walletHighlightThreshold.value = normalized
+  if (typeof window !== 'undefined') window.localStorage.setItem(walletHighlightStorageKey, String(normalized))
+})
 function resetForm(): void {
   Object.assign(form, { name: '', provider: 'auto', auth_mode: 'password', management_base_url: '', forwarding_base_url: '', remote_user_id: '', username: '', password: '', access_token: '', refresh_token: '', proxy_id: null, not_in_cn_confirmed: false, sync_enabled: true, sync_interval_seconds: 300 })
 }

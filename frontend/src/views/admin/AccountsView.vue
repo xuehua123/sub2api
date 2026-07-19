@@ -889,7 +889,7 @@ const refreshUpstreamConnections = async (force = false) => {
   const reqSeq = ++upstreamConnectionsReqSeq.value
   upstreamConnectionsLoading.value = true
   try {
-    const connections = await adminAPI.upstreamConnections.listAll()
+    const connections = await adminAPI.upstreamConnections.listAll({ includeBindings: true })
     if (reqSeq !== upstreamConnectionsReqSeq.value) return
     upstreamConnections.value = connections
     upstreamConnectionsLoadFailed.value = false

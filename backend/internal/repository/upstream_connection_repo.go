@@ -106,9 +106,10 @@ func (r *upstreamConnectionRepository) List(ctx context.Context, params service.
 			groupQuery.Select(upstreamgroup.FieldID)
 		}).
 		WithAccountBindings(func(bindingQuery *dbent.UpstreamAccountBindingQuery) {
-			bindingQuery.
-				Select(upstreamaccountbinding.FieldID, upstreamaccountbinding.FieldAccountID, upstreamaccountbinding.FieldConnectionID).
-				Order(dbent.Asc(upstreamaccountbinding.FieldAccountID), dbent.Asc(upstreamaccountbinding.FieldID))
+			if !params.IncludeBindings {
+				bindingQuery.Select(upstreamaccountbinding.FieldID, upstreamaccountbinding.FieldAccountID, upstreamaccountbinding.FieldConnectionID)
+			}
+			bindingQuery.Order(dbent.Asc(upstreamaccountbinding.FieldAccountID), dbent.Asc(upstreamaccountbinding.FieldID))
 		}).
 		Order(dbent.Desc(upstreamconnection.FieldID)).
 		Offset((params.Page - 1) * params.PageSize).
@@ -119,7 +120,7 @@ func (r *upstreamConnectionRepository) List(ctx context.Context, params service.
 	}
 	items := make([]*service.UpstreamConnection, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, entUpstreamConnectionToService(row, false))
+		items = append(items, entUpstreamConnectionToService(row, params.IncludeBindings))
 	}
 	return items, int64(total), nil
 }

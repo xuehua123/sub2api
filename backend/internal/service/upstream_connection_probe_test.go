@@ -474,7 +474,7 @@ func TestUpstreamConnectionInspectorSub2APIKeepsMissingRateUnknown(t *testing.T)
 		writer.Header().Set("Content-Type", "application/json")
 		require.Equal(t, "Bearer management-token", request.Header.Get("Authorization"))
 		switch request.URL.Path {
-		case "/api/v1/user/profile":
+		case "/api/v1/auth/me":
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 42.75}})
 		case "/api/v1/groups/available":
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
@@ -511,7 +511,7 @@ func TestUpstreamConnectionInspectorSub2APIMarksAvailableRatesAsFallbackWhenOver
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
-		case "/api/v1/user/profile":
+		case "/api/v1/auth/me":
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 42.75}})
 		case "/api/v1/groups/available":
 			writeProbeJSON(t, writer, map[string]any{"data": []any{
@@ -542,7 +542,7 @@ func TestUpstreamConnectionInspectorAutoRejectsGenericSub2APIJSON(t *testing.T) 
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
 		switch request.URL.Path {
-		case "/api/v1/user/profile", "/api/v1/groups/available":
+		case "/api/v1/auth/me", "/api/v1/groups/available":
 			writeProbeJSON(t, writer, map[string]any{"success": true, "data": map[string]any{}})
 		default:
 			http.NotFound(writer, request)
@@ -1001,7 +1001,7 @@ func TestUpstreamConnectionInspectorSub2APIReusesCredentialUserAgent(t *testing.
 		require.Equal(t, expectedUserAgent, request.Header.Get("User-Agent"))
 		require.Equal(t, "Bearer management-token", request.Header.Get("Authorization"))
 		switch request.URL.Path {
-		case "/api/v1/user/profile":
+		case "/api/v1/auth/me":
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 42.75}})
 		case "/api/v1/groups/available":
 			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{

@@ -658,7 +658,9 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		Groups: []UpstreamGroup{}, Warnings: []string{},
 	}
 	successfulRequests := 0
-	profileEndpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/user/profile", false)
+	// Current Sub2API deployments expose the authenticated account through
+	// auth/me. The historical user/profile route is not implemented by them.
+	profileEndpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/me", false)
 	profile, profileErr := management.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
 	if profileErr == nil {
 		profileData := upstreamConnectionDataObject(profile.payload)
@@ -673,7 +675,7 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		if balance != nil {
 			amount := *balance
 			snapshot.Wallet = &upstreamConnectionWalletObservation{
-				Amount: &amount, Currency: "USD", USD: &amount, Source: "sub2api:user_profile",
+				Amount: &amount, Currency: "USD", USD: &amount, Source: "sub2api:auth_me",
 				Reliability: "exact", Raw: map[string]any{"balance": amount},
 			}
 			snapshot.Capabilities["wallet"] = true

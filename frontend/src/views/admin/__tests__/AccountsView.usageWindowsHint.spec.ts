@@ -97,6 +97,9 @@ const DataTableStub = {
         <div v-if="column.key === 'account_balance' && data.length" data-test="upstream-connection-balance-cell">
           <slot name="cell-account_balance" :row="data[0]" />
         </div>
+        <div v-if="column.key === 'rate_multiplier' && data.length" data-test="upstream-multiplier-sync-cell">
+          <slot name="cell-rate_multiplier" :row="data[0]" />
+        </div>
       </template>
     </div>
   `
@@ -142,6 +145,10 @@ function mountView() {
         AccountTodayStatsCell: true,
         AccountGroupsCell: true,
         AccountUsageCell: true,
+        UpstreamMultiplierSyncCell: {
+          props: ['binding', 'connectionName'],
+          template: '<div data-test="upstream-multiplier-sync-status">{{ binding?.status ?? "unbound" }}|{{ connectionName ?? "" }}</div>'
+        },
         Icon: true
       }
     }
@@ -232,6 +239,35 @@ describe('admin AccountsView usage windows hint', () => {
 
     expect(probeUpstreamConnection).toHaveBeenCalledWith(7)
     expect(wrapper.get('[data-testid="upstream-connection-balance"]').text()).toBe('$11.25')
+  })
+
+  it('passes requested binding details to the multiplier sync cell', async () => {
+    localStorage.setItem('account-hidden-columns', JSON.stringify([]))
+    listAccounts.mockResolvedValue({
+      items: [{ id: 17, name: 'bound account', platform: 'openai', type: 'apikey', rate_multiplier: 0.08 }],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1
+    })
+    listUpstreamConnections.mockResolvedValue([{
+      id: 7,
+      name: 'Primary upstream',
+      status: 'ready',
+      last_error: '',
+      wallet_amount: 12.5,
+      wallet_currency: 'USD',
+      wallet_usd: 12.5,
+      wallet_unlimited: false,
+      bound_account_ids: [17],
+      bindings: [{ account_id: 17, connection_id: 7, status: 'ready', observed_multiplier: 0.08, fresh_until: '2099-01-01T00:00:00Z' }]
+    }])
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(listUpstreamConnections).toHaveBeenCalledWith({ includeBindings: true })
+    expect(wrapper.get('[data-test="upstream-multiplier-sync-status"]').text()).toBe('ready|Primary upstream')
   })
 
   it('distinguishes a shared-connection load failure from an unbound account', async () => {

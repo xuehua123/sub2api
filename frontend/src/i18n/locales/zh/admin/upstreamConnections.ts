@@ -1,5 +1,8 @@
 export default {
   upstreamConnections: {
+    walletHighlightThreshold: '余额高亮阈值',
+    walletHighlightHint: '余额低于 {threshold}',
+    lowBalanceSummary: '余额低于 {threshold}',
     title: '上游连接',
     description: '统一监控上游总余额、分组倍率以及 API Key 所属分组。',
     create: '新增连接',
@@ -40,9 +43,19 @@ export default {
     },
     sort: {
       todayRequestsDesc: '今日请求最多',
+      todayRequestsAsc: '今日请求最少',
+      todayCostDesc: '今日成本最高',
+      todayCostAsc: '今日成本最低',
       balanceAsc: '余额从低到高',
+      balanceDesc: '余额从高到低',
+      groupCountDesc: '分组数最多',
+      groupCountAsc: '分组数最少',
+      bindingCountDesc: '绑定账号最多',
+      bindingCountAsc: '绑定账号最少',
       lastSyncDesc: '最近同步优先',
-      nameAsc: '名称排序'
+      lastSyncAsc: '最早同步优先',
+      nameAsc: '名称正序',
+      nameDesc: '名称倒序'
     },
     summary: {
       connections: '连接总数',

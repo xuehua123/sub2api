@@ -133,6 +133,9 @@ type UpstreamConnectionListParams struct {
 	Provider string
 	Status   string
 	Search   string
+	// IncludeBindings is opt-in because connection list views normally only need
+	// bound account IDs. The account table requests the observation details.
+	IncludeBindings bool
 }
 
 type UpstreamConnectionCredentialInput struct {

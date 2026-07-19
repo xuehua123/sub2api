@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 
 const {
@@ -84,8 +84,27 @@ const BaseDialogStub = defineComponent({
 })
 
 const DataTableStub = defineComponent({
-  props: { data: { type: Array, default: () => [] } },
-  template: '<div><div v-for="row in data" :key="row.id"><span class="row-name">{{ row.name }}</span><slot name="cell-wallet" :row="row" /><slot name="cell-today_requests" :row="row" /><slot name="cell-actions" :row="row" /></div></div>'
+  props: {
+    data: { type: Array, default: () => [] },
+    columns: { type: Array, default: () => [] }
+  },
+  emits: ['sort'],
+  template: `
+    <div>
+      <button
+        v-for="column in columns.filter(column => column.sortable)"
+        :key="column.key"
+        :data-testid="'sort-' + column.key"
+        @click="$emit('sort', column.key, 'asc')"
+      >{{ column.label }}</button>
+      <div v-for="row in data" :key="row.id">
+        <span class="row-name">{{ row.name }}</span>
+        <slot name="cell-wallet" :row="row" />
+        <slot name="cell-today_requests" :row="row" />
+        <slot name="cell-actions" :row="row" />
+      </div>
+    </div>
+  `
 })
 
 function mountView() {
@@ -122,6 +141,7 @@ function deferred<T>() {
 describe('UpstreamConnectionsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     listAllConnectionsMock.mockResolvedValue([])
     getBatchTodayStatsMock.mockResolvedValue({ stats: {} })
     getProxiesMock.mockResolvedValue([])
@@ -273,7 +293,7 @@ describe('UpstreamConnectionsView', () => {
     expect(wrapper.get('a[aria-label="admin.upstreamConnections.openHomepage"]').attributes('href')).toBe('https://console.example.com')
     expect(wrapper.text()).toContain('123')
     expect(wrapper.get('[data-testid="today-cost-summary"]').text()).toContain('7.50')
-    expect(wrapper.text()).toContain('admin.upstreamConnections.lowBalanceHint')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.walletHighlightHint')
   })
 
   it('loads the connection usage snapshot when details open', async () => {
@@ -348,6 +368,44 @@ describe('UpstreamConnectionsView', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.row-name').map(node => node.text())).toEqual(['Higher traffic', 'Lower traffic'])
+  })
+
+  it('sorts by a clicked wallet column and keeps unknown balances last', async () => {
+    const base = {
+      provider: 'newapi', auth_mode: 'password', management_base_url: 'https://console.example.com',
+      forwarding_base_url: '', remote_user_id: '', proxy_id: null, sync_enabled: true,
+      sync_interval_seconds: 300, version: 1, wallet_currency: 'USD', wallet_unlimited: false,
+      wallet_reliability: 'exact', binding_count: 0, bound_account_ids: []
+    }
+    listAllConnectionsMock.mockResolvedValue([
+      { ...base, id: 61, name: 'Unknown', wallet_amount: null, wallet_usd: null, group_count: 0 },
+      { ...base, id: 62, name: 'High', wallet_amount: 300, wallet_usd: 300, group_count: 0 },
+      { ...base, id: 63, name: 'Low', wallet_amount: 20, wallet_usd: 20, group_count: 0 }
+    ])
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-testid="sort-wallet"]').trigger('click')
+
+    expect(wrapper.findAll('.row-name').map(node => node.text())).toEqual(['Low', 'High', 'Unknown'])
+  })
+
+  it('uses the configurable wallet threshold only for display highlighting', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 71, name: 'Threshold wallet', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 49, wallet_currency: 'USD', wallet_usd: 49, wallet_unlimited: false,
+      wallet_reliability: 'exact', group_count: 0, binding_count: 0, bound_account_ids: []
+    }])
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.find('.border-l-2').exists()).toBe(true)
+
+    await wrapper.get('input[aria-label="admin.upstreamConnections.walletHighlightThreshold"]').setValue('40')
+    await nextTick()
+    expect(wrapper.find('.border-l-2').exists()).toBe(false)
   })
 
   it('ignores a stale today-stats failure after a newer refresh succeeds', async () => {

@@ -2,6 +2,9 @@ export default {
   upstreamConnections: {
     title: 'Upstream Connections',
     description: 'Monitor shared upstream wallets, group multipliers, and API-key group assignments.',
+    walletHighlightThreshold: 'Highlight below',
+    walletHighlightHint: 'Balance below {threshold}',
+    lowBalanceSummary: 'Balance below {threshold}',
     create: 'Add connection',
     edit: 'Edit connection',
     delete: 'Delete connection',
@@ -40,9 +43,19 @@ export default {
     },
     sort: {
       todayRequestsDesc: 'Most requests today',
+      todayRequestsAsc: 'Fewest requests today',
+      todayCostDesc: 'Highest cost today',
+      todayCostAsc: 'Lowest cost today',
       balanceAsc: 'Lowest balance first',
+      balanceDesc: 'Highest balance first',
+      groupCountDesc: 'Most groups',
+      groupCountAsc: 'Fewest groups',
+      bindingCountDesc: 'Most bound accounts',
+      bindingCountAsc: 'Fewest bound accounts',
       lastSyncDesc: 'Latest sync first',
-      nameAsc: 'Name'
+      lastSyncAsc: 'Earliest sync first',
+      nameAsc: 'Name A-Z',
+      nameDesc: 'Name Z-A'
     },
     summary: {
       connections: 'Connections',

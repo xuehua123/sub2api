@@ -57,6 +57,16 @@ describe('admin upstream connections API', () => {
     })
   })
 
+  it('uses the snake-case binding-details query parameter only', async () => {
+    get.mockResolvedValueOnce({ data: { items: [], total: 0, page: 1, page_size: 200 } })
+
+    await expect(listAll({ includeBindings: true })).resolves.toEqual([])
+
+    expect(get).toHaveBeenCalledWith('/admin/upstream-connections', {
+      params: { page: 1, page_size: 200, include_bindings: true }
+    })
+  })
+
   it('loads one connection today-usage snapshot', async () => {
     const usage = {
       connection_id: 9,

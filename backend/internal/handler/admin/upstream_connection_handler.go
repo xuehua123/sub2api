@@ -136,6 +136,7 @@ func (h *UpstreamConnectionHandler) List(c *gin.Context) {
 	}
 	items, total, err := h.service.List(c.Request.Context(), service.UpstreamConnectionListParams{
 		Page: page, PageSize: pageSize, Provider: c.Query("provider"), Status: c.Query("status"), Search: c.Query("search"),
+		IncludeBindings: c.Query("include_bindings") == "true",
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
