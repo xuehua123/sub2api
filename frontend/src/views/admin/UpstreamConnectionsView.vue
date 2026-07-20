@@ -503,6 +503,58 @@ function errorMessage(error: unknown, fallback: string): string {
   return response.response?.data?.message || response.response?.data?.detail || response.message || fallback
 }
 
+function setProbing(connectionId: number, probing: boolean): void {
+  // Reassign Set so Vue reliably re-renders row refresh spinners.
+  const next = new Set(probingIds.value)
+  if (probing) next.add(connectionId)
+  else next.delete(connectionId)
+  probingIds.value = next
+}
+
+/** Merge a probe/get payload into the current table rows without wiping today usage stats. */
+function patchConnectionRow(updated: UpstreamConnection): void {
+  const merge = (row: UpstreamConnectionRow): UpstreamConnectionRow => {
+    if (row.id !== updated.id) return row
+    return {
+      ...row,
+      ...updated,
+      today_requests: row.today_requests,
+      today_cost: row.today_cost
+    }
+  }
+  allConnections.value = allConnections.value.map(merge)
+  // Re-sort/page so balance / last-sync ordered lists move the refreshed row immediately.
+  applySortAndPage(pagination.page)
+}
+
+/** True when the local row is a newer probe/sync snapshot than the list payload. */
+function isLocalConnectionFresher(local: UpstreamConnection, remote: UpstreamConnection): boolean {
+  const localVersion = Number(local.version) || 0
+  const remoteVersion = Number(remote.version) || 0
+  if (localVersion !== remoteVersion) return localVersion > remoteVersion
+  const localSync = local.last_synced_at ? Date.parse(local.last_synced_at) : NaN
+  const remoteSync = remote.last_synced_at ? Date.parse(remote.last_synced_at) : NaN
+  return Number.isFinite(localSync) && Number.isFinite(remoteSync) && localSync > remoteSync
+}
+
+/**
+ * Apply list rows without letting a stale in-flight list wipe a just-probed local snapshot.
+ * Today usage always comes from the list path (client-joined stats).
+ */
+function mergeListRowsWithLocal(remoteRows: UpstreamConnectionRow[]): UpstreamConnectionRow[] {
+  if (allConnections.value.length === 0) return remoteRows
+  const localById = new Map(allConnections.value.map(row => [row.id, row]))
+  return remoteRows.map(remote => {
+    const local = localById.get(remote.id)
+    if (!local || !isLocalConnectionFresher(local, remote)) return remote
+    return {
+      ...local,
+      today_requests: remote.today_requests,
+      today_cost: remote.today_cost
+    }
+  })
+}
+
 async function loadConnections(page = pagination.page): Promise<void> {
   const generation = ++loadGeneration
   loading.value = true
@@ -531,7 +583,7 @@ async function loadConnections(page = pagination.page): Promise<void> {
     }))
     if (generation === loadGeneration) {
       todayStatsAvailable.value = statsAvailable
-      allConnections.value = rows
+      allConnections.value = mergeListRowsWithLocal(rows)
       pagination.total = rows.length
       applySortAndPage(page)
     }
@@ -658,19 +710,23 @@ async function saveConnection(): Promise<void> {
   }
 }
 async function probeConnection(connection: UpstreamConnection): Promise<void> {
-  probingIds.value.add(connection.id)
+  if (probingIds.value.has(connection.id)) return
+  setProbing(connection.id, true)
   try {
     const result = await adminAPI.upstreamConnections.probe(connection.id)
+    // Apply probe payload immediately. Do NOT call loadConnections() here — a follow-up
+    // list GET can race or return a cached/stale page and wipe the just-probed wallet/status.
+    // Probe Get already returns the full connection (counts, groups, bindings, wallet).
+    patchConnectionRow(result)
     appStore.showSuccess(t('admin.upstreamConnections.probeSuccess'))
     if (details.value?.id === result.id) {
       details.value = result
       await loadDetailsUsage(result.id)
     }
-    await loadConnections()
   } catch (error: unknown) {
     appStore.showError(errorMessage(error, t('admin.upstreamConnections.probeFailed')))
   } finally {
-    probingIds.value.delete(connection.id)
+    setProbing(connection.id, false)
   }
 }
 async function openDetails(connection: UpstreamConnection): Promise<void> {

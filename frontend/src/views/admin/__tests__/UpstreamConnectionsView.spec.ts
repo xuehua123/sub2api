@@ -97,10 +97,11 @@ const DataTableStub = defineComponent({
         :data-testid="'sort-' + column.key"
         @click="$emit('sort', column.key, 'asc')"
       >{{ column.label }}</button>
-      <div v-for="row in data" :key="row.id">
+      <div v-for="row in data" :key="row.id" class="data-row">
         <span class="row-name">{{ row.name }}</span>
         <slot name="cell-wallet" :row="row" />
         <slot name="cell-today_requests" :row="row" />
+        <slot name="cell-status" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
     </div>
@@ -406,6 +407,167 @@ describe('UpstreamConnectionsView', () => {
     await wrapper.get('input[aria-label="admin.upstreamConnections.walletHighlightThreshold"]').setValue('40')
     await nextTick()
     expect(wrapper.find('.border-l-2').exists()).toBe(false)
+  })
+
+  it('updates wallet and status in-place after a single-row probe succeeds', async () => {
+    const connection = {
+      id: 31,
+      name: 'Probe target',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      status: 'pending',
+      last_error: '',
+      wallet_amount: 10,
+      wallet_currency: 'USD',
+      wallet_usd: 10,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      last_synced_at: '2026-01-01T00:00:00Z',
+      group_count: 1,
+      bound_account_ids: [9],
+      binding_count: 1
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+    getBatchTodayStatsMock.mockResolvedValue({ stats: { '9': { requests: 5, tokens: 50, cost: 1.5 } } })
+    probeConnectionMock.mockResolvedValue({
+      ...connection,
+      version: 2,
+      status: 'ready',
+      wallet_amount: 88.5,
+      wallet_usd: 88.5,
+      last_synced_at: '2026-07-21T12:00:00Z',
+      group_count: 2
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('10')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.statuses.pending')
+
+    listAllConnectionsMock.mockClear()
+    await wrapper.get('button[title="admin.upstreamConnections.probe"]').trigger('click')
+    await flushPromises()
+
+    expect(probeConnectionMock).toHaveBeenCalledWith(31)
+    const row = wrapper.get('.data-row')
+    // Immediate local patch — no full-table reload required for the new wallet value.
+    expect(row.text()).toContain('88.5')
+    expect(row.text()).toContain('admin.upstreamConnections.statuses.ready')
+    // Today usage joined client-side must survive the probe merge.
+    expect(wrapper.get('[data-testid="today-requests-summary"]').text()).toBe('5')
+    // Must not re-list after probe (avoids wiping fresh probe data with a stale list).
+    expect(listAllConnectionsMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores a second probe click while the first probe is still in flight', async () => {
+    const connection = {
+      id: 32,
+      name: 'Busy probe target',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      status: 'ready',
+      wallet_amount: 10,
+      wallet_currency: 'USD',
+      wallet_usd: 10,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      bound_account_ids: [],
+      binding_count: 0
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+    const pendingProbe = deferred<typeof connection>()
+    probeConnectionMock.mockReturnValueOnce(pendingProbe.promise)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const probeButton = wrapper.get('button[title="admin.upstreamConnections.probe"]')
+    await probeButton.trigger('click')
+    await probeButton.trigger('click')
+    await flushPromises()
+
+    expect(probeConnectionMock).toHaveBeenCalledTimes(1)
+
+    pendingProbe.resolve({
+      ...connection,
+      version: 2,
+      wallet_amount: 42,
+      wallet_usd: 42
+    })
+    await flushPromises()
+    expect(wrapper.get('.data-row').text()).toContain('42')
+  })
+
+  it('keeps a fresher probe snapshot when a stale in-flight list finishes afterward', async () => {
+    const connection = {
+      id: 33,
+      name: 'Race target',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      status: 'pending',
+      wallet_amount: 10,
+      wallet_currency: 'USD',
+      wallet_usd: 10,
+      wallet_unlimited: false,
+      wallet_reliability: 'exact',
+      last_synced_at: '2026-01-01T00:00:00Z',
+      bound_account_ids: [9],
+      binding_count: 1
+    }
+    const staleList = deferred<typeof connection[]>()
+    listAllConnectionsMock
+      .mockResolvedValueOnce([connection])
+      .mockReturnValueOnce(staleList.promise)
+    getBatchTodayStatsMock.mockResolvedValue({ stats: { '9': { requests: 5, tokens: 50, cost: 1.5 } } })
+    probeConnectionMock.mockResolvedValue({
+      ...connection,
+      version: 2,
+      status: 'ready',
+      wallet_amount: 99,
+      wallet_usd: 99,
+      last_synced_at: '2026-07-21T12:00:00Z'
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    // Start a full-table refresh that will resolve after probe with the old version.
+    await wrapper.get('button[title="common.refresh"]').trigger('click')
+    await wrapper.get('button[title="admin.upstreamConnections.probe"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('.data-row').text()).toContain('99')
+    expect(wrapper.get('.data-row').text()).toContain('admin.upstreamConnections.statuses.ready')
+
+    staleList.resolve([{ ...connection, version: 1, wallet_amount: 10, wallet_usd: 10, status: 'pending' }])
+    await flushPromises()
+
+    // Local probe version 2 must win over the stale list version 1.
+    expect(wrapper.get('.data-row').text()).toContain('99')
+    expect(wrapper.get('.data-row').text()).toContain('admin.upstreamConnections.statuses.ready')
+    expect(wrapper.get('[data-testid="today-requests-summary"]').text()).toBe('5')
   })
 
   it('ignores a stale today-stats failure after a newer refresh succeeds', async () => {
