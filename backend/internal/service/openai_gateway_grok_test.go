@@ -2561,6 +2561,101 @@ func TestHandleGrokAccountUpstreamErrorTempUnschedulesNonRateLimitStates(t *test
 	}
 }
 
+func TestHandleGrokAccountUpstreamErrorPoolModeHonorsExplicitPolicies(t *testing.T) {
+	tests := []struct {
+		name        string
+		credentials map[string]any
+		status      int
+		body        []byte
+		wantError   int
+		wantTemp    int
+	}{
+		{
+			name: "custom error code",
+			credentials: map[string]any{
+				"pool_mode":                  true,
+				"custom_error_codes_enabled": true,
+				"custom_error_codes":         []any{float64(http.StatusServiceUnavailable)},
+			},
+			status:    http.StatusServiceUnavailable,
+			body:      []byte(`{"error":{"message":"maintenance"}}`),
+			wantError: 1,
+		},
+		{
+			name: "temporary unschedulable rule",
+			credentials: map[string]any{
+				"pool_mode":                  true,
+				"temp_unschedulable_enabled": true,
+				"temp_unschedulable_rules": []any{map[string]any{
+					"error_code":       float64(http.StatusServiceUnavailable),
+					"keywords":         []any{"maintenance"},
+					"duration_minutes": float64(30),
+				}},
+			},
+			status:   http.StatusServiceUnavailable,
+			body:     []byte(`{"error":{"message":"maintenance"}}`),
+			wantTemp: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &errorPolicyRepoStub{}
+			rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			svc := &OpenAIGatewayService{accountRepo: repo, rateLimitService: rateLimitService}
+			rateLimitService.SetAccountRuntimeBlocker(svc)
+			account := &Account{
+				ID:          612,
+				Platform:    PlatformGrok,
+				Type:        AccountTypeAPIKey,
+				Credentials: tt.credentials,
+			}
+
+			svc.handleGrokAccountUpstreamError(context.Background(), account, tt.status, http.Header{}, tt.body)
+
+			require.Equal(t, tt.wantError, repo.setErrCalls)
+			require.Equal(t, tt.wantTemp, repo.tempCalls)
+			require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+		})
+	}
+}
+
+func TestHandleGrokAccountUpstreamErrorPoolModeDoesNotMutateSchedulingState(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+	}{
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden},
+		{name: "rate limited", status: http.StatusTooManyRequests},
+		{name: "upstream error", status: http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{
+				ID:       611,
+				Platform: PlatformGrok,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"pool_mode": true,
+				},
+			}
+			repo := &grokQuotaAccountRepo{}
+			rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+			svc := &OpenAIGatewayService{accountRepo: repo, rateLimitService: rateLimitService}
+			rateLimitService.SetAccountRuntimeBlocker(svc)
+
+			svc.handleGrokAccountUpstreamError(context.Background(), account, tt.status, nil, nil)
+
+			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+			require.Zero(t, repo.tempUnschedCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.Zero(t, repo.updateCalls)
+		})
+	}
+}
+
 func TestHandleGrokAccountUpstreamError429SetsRateLimitedFromRetryAfter(t *testing.T) {
 	account := &Account{ID: 61, Platform: PlatformGrok, Type: AccountTypeOAuth}
 	repo := &grokQuotaAccountRepo{}

@@ -62,17 +62,20 @@ func setupFakeAnthropic(t *testing.T, handler *captureHandler) string {
 type openAICaptureHandler struct {
 	lastBody                  map[string]any
 	lastHeaders               http.Header
+	requestHeaders            []http.Header
 	lastPath                  string
 	status                    int
 	rawResponse               string
 	responsesLeadingReasoning bool
 	requestCount              int
 	emptyResponsesBeforeOK    int
+	selectedAccountIDs        []int64
 }
 
 func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.requestCount++
 	h.lastHeaders = r.Header.Clone()
+	h.requestHeaders = append(h.requestHeaders, r.Header.Clone())
 	h.lastPath = r.URL.Path
 	defer func() { _ = r.Body.Close() }()
 	var parsed map[string]any
@@ -83,6 +86,9 @@ func (h *openAICaptureHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		h.status = http.StatusOK
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if attempt := h.requestCount - 1; attempt >= 0 && attempt < len(h.selectedAccountIDs) && h.selectedAccountIDs[attempt] > 0 {
+		w.Header().Set(ChannelMonitorProbeSelectedAccountHeaderName, strconv.FormatInt(h.selectedAccountIDs[attempt], 10))
+	}
 	w.WriteHeader(h.status)
 	if h.rawResponse != "" {
 		_, _ = w.Write([]byte(h.rawResponse))
@@ -241,6 +247,52 @@ func TestRunCheckForModel_OpenAI_DefaultChatRequest(t *testing.T) {
 	}
 }
 
+func TestRunCheckForModel_AnthropicNonEmptyResponseIsOperationalWithoutChallengeMatch(t *testing.T) {
+	h := &captureHandler{respondText: "Hi! How can I help you today?"}
+	endpoint := setupFakeAnthropic(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderAnthropic, endpoint, "sk-fake", "claude-x", nil)
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("non-empty 2xx model response should be operational, got status=%s message=%q", res.Status, res.Message)
+	}
+}
+
+func TestRunCheckForModel_EmptyResponseRemainsError(t *testing.T) {
+	h := &openAICaptureHandler{emptyResponsesBeforeOK: monitorCheckMaxAttempts + 1}
+	endpoint := setupFakeOpenAI(t, h)
+
+	startedAt := time.Now()
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", nil)
+	elapsed := time.Since(startedAt)
+
+	if res.Status != MonitorStatusError {
+		t.Fatalf("empty 2xx model response should remain an error, got status=%s", res.Status)
+	}
+	if h.requestCount != monitorCheckMaxAttempts {
+		t.Fatalf("expected %d attempts for empty responses, got %d", monitorCheckMaxAttempts, h.requestCount)
+	}
+	if elapsed < 1400*time.Millisecond {
+		t.Fatalf("monitor retries should be backed off instead of firing immediately, elapsed=%s", elapsed)
+	}
+}
+
+func TestRunCheckForModel_RetryBackoffHonorsContextCancellation(t *testing.T) {
+	h := &openAICaptureHandler{emptyResponsesBeforeOK: monitorCheckMaxAttempts + 1}
+	endpoint := setupFakeOpenAI(t, h)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	res := runCheckForModel(ctx, MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", nil)
+
+	if h.requestCount != 1 {
+		t.Fatalf("canceled retry backoff should stop after one request, got %d", h.requestCount)
+	}
+	if !strings.Contains(res.Message, "canceled after 1 attempt") {
+		t.Fatalf("expected cancellation context in monitor result, got %q", res.Message)
+	}
+}
+
 func TestGrokMonitorConfiguration(t *testing.T) {
 	if err := validateProvider(MonitorProviderGrok); err != nil {
 		t.Fatalf("grok provider should be supported: %v", err)
@@ -390,6 +442,29 @@ func TestRunCheckForModel_RetriesMonitorLevelChallengeMismatch(t *testing.T) {
 	}
 	if h.requestCount != 2 {
 		t.Fatalf("expected exactly 2 monitor attempts, got %d", h.requestCount)
+	}
+}
+
+func TestRunCheckForModel_EmptyResponseRetriesWithSelectedAccountExcluded(t *testing.T) {
+	h := &openAICaptureHandler{
+		emptyResponsesBeforeOK: 1,
+		selectedAccountIDs:     []int64{41, 42},
+	}
+	endpoint := setupFakeOpenAI(t, h)
+
+	res := runCheckForModel(context.Background(), MonitorProviderOpenAI, endpoint, "sk-openai", "gpt-test", nil)
+
+	if res.Status != MonitorStatusOperational {
+		t.Fatalf("second account response should recover monitor, got status=%s message=%q", res.Status, res.Message)
+	}
+	if h.requestCount != 2 {
+		t.Fatalf("expected one retry after empty response, got %d request(s)", h.requestCount)
+	}
+	if got := h.requestHeaders[0].Get(ChannelMonitorProbeExcludedAccountsHeaderName); got != "" {
+		t.Fatalf("first attempt should not exclude an account, got %q", got)
+	}
+	if got := h.requestHeaders[1].Get(ChannelMonitorProbeExcludedAccountsHeaderName); got != "41" {
+		t.Fatalf("retry should exclude first selected account, got %q", got)
 	}
 }
 
@@ -549,14 +624,5 @@ func TestExtractAnthropicMonitorText(t *testing.T) {
 				t.Fatalf("extractAnthropicMonitorText() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestValidateChallenge_AnthropicTextAfterThinking(t *testing.T) {
-	body := []byte(`{"content":[{"type":"thinking","thinking":""},{"type":"text","text":"答案是 2"}]}`)
-	respText := extractAnthropicMonitorText(body)
-
-	if !validateChallenge(respText, "2") {
-		t.Fatalf("validateChallenge(%q, %q) = false, want true", respText, "2")
 	}
 }

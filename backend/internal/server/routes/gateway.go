@@ -42,7 +42,9 @@ func RegisterGatewayRoutes(
 			c.GetHeader(service.ChannelMonitorProbeSigHeaderName),
 			time.Now(),
 		) {
-			c.Request = c.Request.WithContext(service.WithChannelMonitorProbe(c.Request.Context()))
+			ctx := service.WithChannelMonitorProbe(c.Request.Context())
+			excludedAccountIDs := service.ParseChannelMonitorProbeExcludedAccounts(c.GetHeader(service.ChannelMonitorProbeExcludedAccountsHeaderName))
+			c.Request = c.Request.WithContext(service.WithChannelMonitorProbeExcludedAccounts(ctx, excludedAccountIDs))
 		}
 		c.Next()
 	}

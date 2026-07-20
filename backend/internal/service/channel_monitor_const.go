@@ -113,8 +113,11 @@ const (
 
 	// monitorCheckMaxAttempts 是监控层对单个模型的判定重试次数。
 	// 每次请求内部仍由网关按 ChannelMonitorProbeMaxAccountSwitches 做账号切换；
-	// 这里覆盖的是监控层失败，如响应超时、2xx 但 challenge 为空/不匹配。
+	// 这里覆盖的是监控层失败，如响应超时、瞬态 DNS 故障或 2xx 但响应文本为空。
 	monitorCheckMaxAttempts = 3
+	// monitorCheckRetryBaseDelay 避免瞬态故障被连续三次立即采样。
+	// 第一次失败等待 500ms，第二次失败等待 1s。
+	monitorCheckRetryBaseDelay = 500 * time.Millisecond
 
 	// monitorDialTimeout 自定义 dialer 单次连接超时。
 	monitorDialTimeout = 10 * time.Second

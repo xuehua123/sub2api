@@ -1296,6 +1296,18 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	if s == nil || account == nil {
 		return
 	}
+	// A pool-mode account represents an upstream-managed key pool. An error from
+	// one backing key must not trigger this Grok-specific default quarantine.
+	// Explicit administrator error policies still take precedence, consistent
+	// with the generic pool-mode contract.
+	if account.IsPoolMode() {
+		if s.rateLimitService != nil {
+			stateCtx, cancel := openAIAccountStateContext(ctx)
+			defer cancel()
+			_ = s.rateLimitService.HandleUpstreamError(stateCtx, account, statusCode, headers, responseBody)
+		}
+		return
+	}
 	now := time.Now()
 	s.updateGrokUsageSnapshot(ctx, account, parseGrokQuotaSnapshot(headers, statusCode, now))
 	switch statusCode {

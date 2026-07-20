@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,7 @@ type CheckOptions struct {
 // opts 承载模板 / 监控快照带来的自定义配置。nil 等同于 "off + 无 extra headers"。
 func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions) *CheckResult {
 	var last *CheckResult
+	excludedAccountIDs := make(map[int64]struct{})
 	for attempt := 1; attempt <= monitorCheckMaxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			if last != nil {
@@ -67,11 +69,18 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 			return monitorCheckContextError(model, err)
 		}
 
-		res := runCheckForModelAttempt(ctx, provider, endpoint, apiKey, model, opts)
+		res, selectedAccountID := runCheckForModelAttempt(ctx, provider, endpoint, apiKey, model, opts, excludedAccountIDs)
 		if res.Status == MonitorStatusOperational {
 			return res
 		}
+		if selectedAccountID > 0 {
+			excludedAccountIDs[selectedAccountID] = struct{}{}
+		}
 		last = res
+		if attempt < monitorCheckMaxAttempts && !waitForMonitorCheckRetry(ctx, attempt) {
+			last.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("monitor check canceled after %d attempt(s); last: %s", attempt, last.Message)))
+			return last
+		}
 	}
 	if last != nil && monitorCheckMaxAttempts > 1 {
 		last.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("all %d monitor attempts failed; last: %s", monitorCheckMaxAttempts, last.Message)))
@@ -79,7 +88,19 @@ func runCheckForModel(ctx context.Context, provider, endpoint, apiKey, model str
 	return last
 }
 
-func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions) *CheckResult {
+func waitForMonitorCheckRetry(ctx context.Context, failedAttempt int) bool {
+	delay := monitorCheckRetryBaseDelay * time.Duration(failedAttempt)
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, model string, opts *CheckOptions, excludedAccountIDs map[int64]struct{}) (*CheckResult, int64) {
 	res := &CheckResult{
 		Model:     model,
 		Status:    MonitorStatusError,
@@ -90,7 +111,7 @@ func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, mo
 	mode := bodyOverrideMode(opts)
 
 	start := time.Now()
-	respText, rawBody, statusCode, err := callProvider(ctx, provider, endpoint, apiKey, model, challenge.Prompt, opts)
+	respText, rawBody, statusCode, selectedAccountID, err := callProvider(ctx, provider, endpoint, apiKey, model, challenge.Prompt, opts, excludedAccountIDs)
 	latency := time.Since(start)
 	latencyMs := int(latency / time.Millisecond)
 	res.LatencyMs = &latencyMs
@@ -98,7 +119,7 @@ func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, mo
 	if err != nil {
 		res.Status = MonitorStatusError
 		res.Message = truncateMessage(sanitizeErrorMessage(err.Error()))
-		return res
+		return res, selectedAccountID
 	}
 	if statusCode < 200 || statusCode >= 300 {
 		// 错误路径：用 rawBody 而非 respText（gjson textPath 抽取在错误响应里通常为空，
@@ -106,28 +127,25 @@ func runCheckForModelAttempt(ctx context.Context, provider, endpoint, apiKey, mo
 		res.Status = MonitorStatusError
 		bodySnippet := truncateForErrorBody(rawBody)
 		res.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("upstream HTTP %d: %s", statusCode, bodySnippet)))
-		return res
+		return res, selectedAccountID
 	}
 
-	// Replace 模式：跳过 challenge 校验（用户 body 是静态的，challenge 没法嵌入）。
-	// 改用「HTTP 2xx + 响应文本（adapter.textPath 抽取）非空」作为 operational 判定。
-	// 响应文本为空则记为 error（视为上游回了 200 但没实际内容）。
-	if mode == MonitorBodyOverrideModeReplace {
-		if strings.TrimSpace(respText) == "" {
+	// Channel availability is defined by a successfully parsed, non-empty 2xx
+	// model response. Exact challenge matching is intentionally not required:
+	// some compatible Claude gateways return a valid fixed greeting instead of
+	// following the arithmetic instruction, but the channel is still usable.
+	if strings.TrimSpace(respText) == "" {
+		if mode == MonitorBodyOverrideModeReplace {
 			res.Status = MonitorStatusError
 			res.Message = truncateMessage("replace-mode: upstream returned 2xx with empty text")
-			return res
+			return res, selectedAccountID
 		}
-		return finalizeOperational(res)
-	}
-
-	if !validateChallenge(respText, challenge.Expected) {
 		res.Status = MonitorStatusError
-		res.Message = truncateMessage(sanitizeErrorMessage(fmt.Sprintf("challenge mismatch (expected %s, got %q)", challenge.Expected, respText)))
-		return res
+		res.Message = truncateMessage("upstream returned 2xx with empty text")
+		return res, selectedAccountID
 	}
 
-	return finalizeOperational(res)
+	return finalizeOperational(res), selectedAccountID
 }
 
 func monitorCheckContextError(model string, err error) *CheckResult {
@@ -302,31 +320,36 @@ func isSupportedProvider(p string) bool {
 //   - rawBody: 完整响应体的字符串形式（已被 monitorResponseMaxBytes 截断），用于错误路径保留上游真实回包
 //   - status: HTTP 状态码
 //   - err: 网络 / 序列化错误
-func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt string, opts *CheckOptions) (extractedText, rawBody string, status int, err error) {
+func callProvider(ctx context.Context, provider, endpoint, apiKey, model, prompt string, opts *CheckOptions, excludedAccountIDs map[int64]struct{}) (extractedText, rawBody string, status int, selectedAccountID int64, err error) {
 	requestedAPIMode := checkAPIMode(opts)
 	if err := validateAPIMode(provider, requestedAPIMode); err != nil {
-		return "", "", 0, err
+		return "", "", 0, 0, err
 	}
 	adapter, apiMode, ok := providerAdapterFor(provider, requestedAPIMode)
 	if !ok {
-		return "", "", 0, fmt.Errorf("unsupported provider %q", provider)
+		return "", "", 0, 0, fmt.Errorf("unsupported provider %q", provider)
 	}
 	body, err := buildRequestBody(adapter, provider, apiMode, model, prompt, opts)
 	if err != nil {
-		return "", "", 0, err
+		return "", "", 0, 0, err
 	}
 	headers := mergeHeaders(adapter.buildHeaders(apiKey), opts)
 	path := adapter.buildPath(model)
 	full := joinURL(endpoint, path)
 	AddChannelMonitorProbeHeaders(headers, http.MethodPost, monitorProbePathFromURL(full, path), time.Now())
-	respBytes, status, err := postRawJSON(ctx, full, body, headers)
+	AddChannelMonitorProbeExcludedAccounts(headers, excludedAccountIDs)
+	respBytes, responseHeaders, status, err := postRawJSON(ctx, full, body, headers)
 	if err != nil {
-		return "", "", status, err
+		return "", "", status, 0, err
+	}
+	selectedAccountID, _ = strconv.ParseInt(responseHeaders.Get(ChannelMonitorProbeSelectedAccountHeaderName), 10, 64)
+	if selectedAccountID < 0 {
+		selectedAccountID = 0
 	}
 	if provider == MonitorProviderOpenAI && apiMode == MonitorAPIModeResponses {
-		return extractOpenAIResponsesText(respBytes), string(respBytes), status, nil
+		return extractOpenAIResponsesText(respBytes), string(respBytes), status, selectedAccountID, nil
 	}
-	return extractMonitorResponseText(adapter, respBytes), string(respBytes), status, nil
+	return extractMonitorResponseText(adapter, respBytes), string(respBytes), status, selectedAccountID, nil
 }
 
 func extractMonitorResponseText(adapter providerAdapter, respBytes []byte) string {
@@ -542,12 +565,12 @@ func hasNonEmptyBodyValue(v any) bool {
 	}
 }
 
-// postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、HTTP status、错误。
+// postRawJSON 发送 POST + 已序列化好的 JSON 字节，限制响应体大小，返回响应字节、响应头、HTTP status、错误。
 // adapter 自行 marshal 是为了精确控制字段顺序与类型，所以这里直接收 []byte 而不是 any。
-func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers map[string]string) ([]byte, int, error) {
+func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers map[string]string) ([]byte, http.Header, int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader(payload))
 	if err != nil {
-		return nil, 0, fmt.Errorf("build request: %w", err)
+		return nil, nil, 0, fmt.Errorf("build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -557,15 +580,15 @@ func postRawJSON(ctx context.Context, fullURL string, payload []byte, headers ma
 
 	resp, err := monitorHTTPClient.Do(req)
 	if err != nil {
-		return nil, 0, fmt.Errorf("do request: %w", err)
+		return nil, nil, 0, fmt.Errorf("do request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, monitorResponseMaxBytes))
 	if err != nil {
-		return nil, resp.StatusCode, fmt.Errorf("read body: %w", err)
+		return nil, resp.Header.Clone(), resp.StatusCode, fmt.Errorf("read body: %w", err)
 	}
-	return respBody, resp.StatusCode, nil
+	return respBody, resp.Header.Clone(), resp.StatusCode, nil
 }
 
 // joinURL 把 base origin 与 path 拼成完整 URL。

@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,9 +21,15 @@ const (
 	ChannelMonitorProbeHeaderName    = "X-Sub2API-Channel-Monitor-Probe"
 	ChannelMonitorProbeTSHeaderName  = "X-Sub2API-Channel-Monitor-Probe-Ts"
 	ChannelMonitorProbeSigHeaderName = "X-Sub2API-Channel-Monitor-Probe-Sig"
-	channelMonitorProbeHeaderValue   = "1"
-	channelMonitorProbeSecretBytes   = 32
-	channelMonitorProbeSignatureTTL  = 5 * time.Minute
+	// ChannelMonitorProbeExcludedAccountsHeaderName carries account IDs that
+	// returned an unusable 2xx response in an earlier monitor attempt.
+	ChannelMonitorProbeExcludedAccountsHeaderName = "X-Sub2API-Channel-Monitor-Excluded-Accounts"
+	// ChannelMonitorProbeSelectedAccountHeaderName is returned only on a valid
+	// monitor probe so the checker can exclude an unusable account on retry.
+	ChannelMonitorProbeSelectedAccountHeaderName = "X-Sub2API-Channel-Monitor-Selected-Account"
+	channelMonitorProbeHeaderValue               = "1"
+	channelMonitorProbeSecretBytes               = 32
+	channelMonitorProbeSignatureTTL              = 5 * time.Minute
 
 	// ChannelMonitorProbeMaxAccountSwitches lets monitor probes try all accounts
 	// in normal-sized groups before reporting a channel failure.
@@ -30,6 +37,7 @@ const (
 )
 
 type channelMonitorProbeContextKey struct{}
+type channelMonitorProbeExcludedAccountsContextKey struct{}
 
 //nolint:gochecknoglobals // Signing key is process-wide; configured from server secret for multi-instance validation.
 var (
@@ -74,6 +82,48 @@ func AddChannelMonitorProbeHeaders(headers map[string]string, method, path strin
 	headers[ChannelMonitorProbeHeaderName] = ChannelMonitorProbeHeaderValue()
 	headers[ChannelMonitorProbeTSHeaderName] = ts
 	headers[ChannelMonitorProbeSigHeaderName] = hex.EncodeToString(sig)
+}
+
+// AddChannelMonitorProbeExcludedAccounts adds the prior monitor-attempt account
+// exclusions. The gateway accepts this header only after validating the signed
+// monitor marker, so regular clients cannot influence account selection.
+func AddChannelMonitorProbeExcludedAccounts(headers map[string]string, accountIDs map[int64]struct{}) {
+	if headers == nil || len(accountIDs) == 0 {
+		return
+	}
+	ids := make([]int64, 0, min(len(accountIDs), ChannelMonitorProbeMaxAccountSwitches))
+	for id := range accountIDs {
+		if id > 0 {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	if len(ids) > ChannelMonitorProbeMaxAccountSwitches {
+		ids = ids[:ChannelMonitorProbeMaxAccountSwitches]
+	}
+	parts := make([]string, len(ids))
+	for i, id := range ids {
+		parts[i] = strconv.FormatInt(id, 10)
+	}
+	if len(parts) > 0 {
+		headers[ChannelMonitorProbeExcludedAccountsHeaderName] = strings.Join(parts, ",")
+	}
+}
+
+// ParseChannelMonitorProbeExcludedAccounts parses the bounded account list
+// supplied by a previously validated monitor probe.
+func ParseChannelMonitorProbeExcludedAccounts(raw string) map[int64]struct{} {
+	accountIDs := make(map[int64]struct{})
+	for _, part := range strings.Split(raw, ",") {
+		if len(accountIDs) >= ChannelMonitorProbeMaxAccountSwitches {
+			break
+		}
+		id, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && id > 0 {
+			accountIDs[id] = struct{}{}
+		}
+	}
+	return accountIDs
 }
 
 // IsValidChannelMonitorProbe verifies that a monitor probe marker was produced
@@ -146,6 +196,36 @@ func WithChannelMonitorProbe(ctx context.Context) context.Context {
 		ctx = context.Background()
 	}
 	return context.WithValue(ctx, channelMonitorProbeContextKey{}, true)
+}
+
+// WithChannelMonitorProbeExcludedAccounts carries request-local account
+// exclusions between monitor retries. Copy the set so callers cannot mutate the
+// context after it is attached.
+func WithChannelMonitorProbeExcludedAccounts(ctx context.Context, accountIDs map[int64]struct{}) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	copyIDs := make(map[int64]struct{}, len(accountIDs))
+	for id := range accountIDs {
+		if id > 0 && len(copyIDs) < ChannelMonitorProbeMaxAccountSwitches {
+			copyIDs[id] = struct{}{}
+		}
+	}
+	return context.WithValue(ctx, channelMonitorProbeExcludedAccountsContextKey{}, copyIDs)
+}
+
+// ChannelMonitorProbeExcludedAccounts returns a fresh exclusion set for the
+// current signed monitor request.
+func ChannelMonitorProbeExcludedAccounts(ctx context.Context) map[int64]struct{} {
+	if ctx == nil {
+		return make(map[int64]struct{})
+	}
+	stored, _ := ctx.Value(channelMonitorProbeExcludedAccountsContextKey{}).(map[int64]struct{})
+	accountIDs := make(map[int64]struct{}, len(stored))
+	for id := range stored {
+		accountIDs[id] = struct{}{}
+	}
+	return accountIDs
 }
 
 // IsChannelMonitorProbe reports whether the current request is a synthetic monitor probe.

@@ -161,8 +161,10 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 3. Account selection + failover loop
 	fs := NewFailoverState(service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitches), false)
+	seedChannelMonitorProbeFailedAccounts(c, fs.FailedAccountIDs)
 	if groupPlatform == service.PlatformGemini {
 		fs = NewFailoverState(service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitchesGemini), false)
+		seedChannelMonitorProbeFailedAccounts(c, fs.FailedAccountIDs)
 	}
 
 	for {
@@ -196,6 +198,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		recordChannelMonitorSelectedAccount(c, account.ID)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 4. Acquire account concurrency slot

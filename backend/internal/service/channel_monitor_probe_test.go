@@ -118,6 +118,24 @@ func TestChannelMonitorProbeConfiguredSecretValidatesAcrossInstances(t *testing.
 	))
 }
 
+func TestChannelMonitorProbeExcludedAccountsRoundTripAndContextCopy(t *testing.T) {
+	headers := map[string]string{}
+	input := map[int64]struct{}{8: {}, 3: {}, -1: {}, 11: {}}
+
+	AddChannelMonitorProbeExcludedAccounts(headers, input)
+	require.Equal(t, "3,8,11", headers[ChannelMonitorProbeExcludedAccountsHeaderName])
+
+	parsed := ParseChannelMonitorProbeExcludedAccounts("3, invalid, 8, 0, 11")
+	require.Equal(t, map[int64]struct{}{3: {}, 8: {}, 11: {}}, parsed)
+
+	ctx := WithChannelMonitorProbeExcludedAccounts(context.Background(), parsed)
+	delete(parsed, 3)
+	fromContext := ChannelMonitorProbeExcludedAccounts(ctx)
+	require.Contains(t, fromContext, int64(3))
+	delete(fromContext, 8)
+	require.Contains(t, ChannelMonitorProbeExcludedAccounts(ctx), int64(8))
+}
+
 func snapshotChannelMonitorProbeSigningKey(t *testing.T) func() {
 	t.Helper()
 	channelMonitorProbeSigningKeyMu.RLock()

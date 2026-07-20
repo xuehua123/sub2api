@@ -137,7 +137,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	maxAccountSwitches := service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
-	failedAccountIDs := make(map[int64]struct{})
+	failedAccountIDs := channelMonitorProbeFailedAccounts(c)
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -199,6 +199,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 			return
 		}
 		account := selection.Account
+		recordChannelMonitorSelectedAccount(c, account.ID)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_chat_completions.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		_ = scheduleDecision

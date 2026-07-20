@@ -158,6 +158,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 
 	// 3. Account selection + failover loop
 	fs := NewFailoverState(service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitches), false)
+	seedChannelMonitorProbeFailedAccounts(c, fs.FailedAccountIDs)
 
 	for {
 		if requestCtx.Err() != nil {
@@ -190,6 +191,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			}
 		}
 		account := selection.Account
+		recordChannelMonitorSelectedAccount(c, account.ID)
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
 		// 4. Acquire account concurrency slot

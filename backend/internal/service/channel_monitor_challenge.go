@@ -3,8 +3,6 @@ package service
 import (
 	"fmt"
 	"math/rand/v2"
-	"regexp"
-	"strconv"
 )
 
 // monitorChallengePromptTemplate 1:1 复刻 BingZi-233/check-cx 的 few-shot 模板。
@@ -19,13 +17,9 @@ A: 5
 Q: %d %s %d = ?
 A:`
 
-// monitorChallengeNumberRegex 提取响应中的所有整数（含负号）。
-var monitorChallengeNumberRegex = regexp.MustCompile(`-?\d+`)
-
-// monitorChallenge 一次 challenge 的 prompt + 期望答案。
+// monitorChallenge 是一次用于确认模型能生成文本的轻量请求。
 type monitorChallenge struct {
-	Prompt   string
-	Expected string
+	Prompt string
 }
 
 // generateChallenge 生成一次随机算术 challenge：
@@ -39,11 +33,7 @@ func generateChallenge() monitorChallenge {
 	b := randIntInRange(monitorChallengeMin, monitorChallengeMax)
 
 	if rand.IntN(2) == 0 { //nolint:gosec // 仅用于生成测试问题，无安全影响
-		// 加法
-		return monitorChallenge{
-			Prompt:   fmt.Sprintf(monitorChallengePromptTemplate, a, "+", b),
-			Expected: strconv.Itoa(a + b),
-		}
+		return monitorChallenge{Prompt: fmt.Sprintf(monitorChallengePromptTemplate, a, "+", b)}
 	}
 
 	// 减法，保证非负
@@ -51,10 +41,7 @@ func generateChallenge() monitorChallenge {
 	if lo > hi {
 		hi, lo = lo, hi
 	}
-	return monitorChallenge{
-		Prompt:   fmt.Sprintf(monitorChallengePromptTemplate, hi, "-", lo),
-		Expected: strconv.Itoa(hi - lo),
-	}
+	return monitorChallenge{Prompt: fmt.Sprintf(monitorChallengePromptTemplate, hi, "-", lo)}
 }
 
 // randIntInRange 返回 [min, max] 闭区间的随机整数。
@@ -63,18 +50,4 @@ func randIntInRange(minVal, maxVal int) int {
 		return minVal
 	}
 	return minVal + rand.IntN(maxVal-minVal+1) //nolint:gosec
-}
-
-// validateChallenge 在响应文本中查找 expected 整数答案，返回是否通过校验。
-func validateChallenge(responseText, expected string) bool {
-	if responseText == "" || expected == "" {
-		return false
-	}
-	matches := monitorChallengeNumberRegex.FindAllString(responseText, -1)
-	for _, m := range matches {
-		if m == expected {
-			return true
-		}
-	}
-	return false
 }

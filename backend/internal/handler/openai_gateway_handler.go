@@ -364,7 +364,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	maxAccountSwitches := service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
 	firstOutputTimeoutSwitchCount := 0
-	failedAccountIDs := make(map[int64]struct{})
+	failedAccountIDs := channelMonitorProbeFailedAccounts(c)
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -449,6 +449,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
 		account := selection.Account
+		recordChannelMonitorSelectedAccount(c, account.ID)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
@@ -918,7 +919,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	maxAccountSwitches := service.AccountSwitchLimitForContext(c.Request.Context(), h.maxAccountSwitches)
 	switchCount := 0
-	failedAccountIDs := make(map[int64]struct{})
+	failedAccountIDs := channelMonitorProbeFailedAccounts(c)
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
@@ -983,6 +984,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			return
 		}
 		account := selection.Account
+		recordChannelMonitorSelectedAccount(c, account.ID)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai_messages.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		_ = scheduleDecision
