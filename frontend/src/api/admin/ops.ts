@@ -488,6 +488,17 @@ export interface OpsAccountHealthFirstTokenStats {
   avg_ms?: number | null
 }
 
+export type OpsAccountHealthTrendDirection = 'up' | 'down' | 'flat' | 'unknown' | string
+
+export interface OpsAccountHealthTrend {
+  direction: OpsAccountHealthTrendDirection
+  delta_percent: number
+  current_success_rate_percent: number
+  previous_success_rate_percent: number
+  current_request_count: number
+  previous_request_count: number
+}
+
 export interface OpsAccountHealthSample {
   kind: 'success' | 'error' | string
   created_at: string
@@ -528,6 +539,7 @@ export interface OpsAccountHealthItem extends AccountAvailability {
   recent: OpsAccountHealthSample[]
   first_token_5m?: OpsAccountHealthFirstTokenStats | null
   first_token_windows?: Record<OpsAccountHealthWindow | '5m' | string, OpsAccountHealthFirstTokenStats> | null
+  success_rate_trend_1m?: OpsAccountHealthTrend | null
   probe?: OpsAccountHealthProbe | null
   recommendation: OpsAccountHealthRecommendation
 }
@@ -635,6 +647,7 @@ export async function getAccountHealth(params: {
   platform?: string
   group_id?: number | null
   recent_limit?: number
+  account_ids?: number[] | string
 } = {}): Promise<OpsAccountHealthResponse> {
   const query: Record<string, any> = {}
   if (params.platform) {
@@ -645,6 +658,11 @@ export async function getAccountHealth(params: {
   }
   if (typeof params.recent_limit === 'number' && params.recent_limit > 0) {
     query.recent_limit = params.recent_limit
+  }
+  if (Array.isArray(params.account_ids) && params.account_ids.length > 0) {
+    query.account_ids = params.account_ids.join(',')
+  } else if (typeof params.account_ids === 'string' && params.account_ids.trim()) {
+    query.account_ids = params.account_ids.trim()
   }
   const { data } = await apiClient.get<OpsAccountHealthResponse>('/admin/ops/account-health', { params: query })
   return data

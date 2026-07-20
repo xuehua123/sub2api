@@ -8,6 +8,9 @@ const (
 	OpsAccountHealthWindow10m = "10m"
 	OpsAccountHealthWindow30m = "30m"
 	OpsAccountHealthWindow1h  = "1h"
+	// OpsAccountHealthWindowPrev1m is the exclusive prior minute [now-2m, now-1m),
+	// used only to compute success-rate trend against the current 1m window.
+	OpsAccountHealthWindowPrev1m = "prev_1m"
 )
 
 const (
@@ -29,11 +32,25 @@ const (
 type OpsAccountHealthFilter struct {
 	Platform string
 	GroupID  *int64
+	// AccountIDs scopes metrics/availability to the given accounts when non-empty.
+	// Used by the accounts management health column to avoid full-fleet recompute.
+	AccountIDs []int64
 
 	RecentLimit int
 
 	StartTime time.Time
 	EndTime   time.Time
+}
+
+// OpsAccountHealthTrend describes short-window success-rate direction.
+// Direction is one of: up | down | flat | unknown.
+type OpsAccountHealthTrend struct {
+	Direction            string  `json:"direction"`
+	DeltaPercent         float64 `json:"delta_percent"`
+	CurrentSuccessRate   float64 `json:"current_success_rate_percent"`
+	PreviousSuccessRate  float64 `json:"previous_success_rate_percent"`
+	CurrentRequestCount  int64   `json:"current_request_count"`
+	PreviousRequestCount int64   `json:"previous_request_count"`
 }
 
 type OpsAccountHealthWindowStats struct {
@@ -137,8 +154,10 @@ type OpsAccountHealthItem struct {
 	Recent            []*OpsAccountHealthSample                   `json:"recent"`
 	FirstToken5m      *OpsAccountHealthFirstTokenStats            `json:"first_token_5m,omitempty"`
 	FirstTokenWindows map[string]*OpsAccountHealthFirstTokenStats `json:"first_token_windows,omitempty"`
-	Probe             *OpsAccountHealthProbe                      `json:"probe,omitempty"`
-	Recommendation    OpsAccountHealthRecommendation              `json:"recommendation"`
+	// SuccessRateTrend1m compares the last 60s success rate against the prior 60s.
+	SuccessRateTrend1m *OpsAccountHealthTrend         `json:"success_rate_trend_1m,omitempty"`
+	Probe              *OpsAccountHealthProbe         `json:"probe,omitempty"`
+	Recommendation     OpsAccountHealthRecommendation `json:"recommendation"`
 }
 
 type OpsAccountHealthResponse struct {

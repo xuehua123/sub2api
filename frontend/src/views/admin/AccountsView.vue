@@ -341,6 +341,7 @@
             <AccountHealthSummaryCell
               :item="accountHealthByAccountId[String(row.id)] ?? null"
               :loading="accountHealthLoading"
+              :probe-interval-minutes="accountHealthSettings?.probe?.interval_minutes ?? null"
               @open="openAccountHealth(row)"
             />
           </template>
@@ -488,6 +489,21 @@
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
+    <AccountHealthDetailDrawer
+      :show="showAccountHealthDrawer"
+      :account-id="healthDrawerAccountId"
+      :item="healthDrawerItem"
+      :settings="accountHealthSettings"
+      :generated-at="accountHealthGeneratedAt"
+      :loading="accountHealthLoading"
+      :probing="accountHealthProbing"
+      :saving-settings="accountHealthSavingSettings"
+      :toggling-probe="accountHealthTogglingProbe"
+      @close="closeAccountHealthDrawer"
+      @probe="runHealthProbeForDrawer"
+      @update-probe-auto="updateHealthProbeAutoForDrawer"
+      @save-probe-interval="saveHealthProbeInterval"
+    />
     <BulkEditAccountModal
       :show="showBulkEdit"
       :account-ids="selIds"
@@ -516,13 +532,13 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import { opsAPI, type OpsAccountHealthItem } from '@/api/admin/ops'
+import { opsAPI, type OpsAccountHealthItem, type OpsAccountHealthSettings } from '@/api/admin/ops'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -553,6 +569,14 @@ import AccountGroupsCell from '@/components/account/AccountGroupsCell.vue'
 import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import RateMultiplierPriorityConfigModal from '@/components/account/RateMultiplierPriorityConfigModal.vue'
 import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
+import AccountHealthDetailDrawer from '@/components/admin/account/AccountHealthDetailDrawer.vue'
+import {
+  accountHealthScopeKey,
+  routeWantsHealthDrawer,
+  shouldSkipAccountHealthWhenColumnHidden,
+  shouldThrottleAccountHealthRefresh,
+  shouldUpdateAccountHealthPageThrottle
+} from '@/utils/accountHealthRefresh'
 import UpstreamConnectionBalanceCell from '@/components/account/UpstreamConnectionBalanceCell.vue'
 import UpstreamMultiplierSyncCell from '@/components/account/UpstreamMultiplierSyncCell.vue'
 import PlatformTypeBadge from '@/components/common/PlatformTypeBadge.vue'
@@ -572,7 +596,6 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const route = useRoute()
-const router = useRouter()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
@@ -752,7 +775,15 @@ const accountHealthError = ref<string | null>(null)
 const accountHealthReqSeq = ref(0)
 const pendingAccountHealthRefresh = ref(false)
 const accountHealthLastLoadedAt = ref(0)
-const ACCOUNT_HEALTH_REFRESH_MIN_MS = 30_000
+const accountHealthGeneratedAt = ref<string | null>(null)
+const accountHealthSettings = ref<OpsAccountHealthSettings | null>(null)
+const showAccountHealthDrawer = ref(false)
+const healthDrawerAccountId = ref<number | null>(null)
+const accountHealthProbing = ref(false)
+const accountHealthSavingSettings = ref(false)
+const accountHealthTogglingProbe = ref(false)
+// Page-scoped health is cheaper; keep a short client throttle for auto-refresh only.
+const ACCOUNT_HEALTH_REFRESH_MIN_MS = 15_000
 const upstreamConnections = ref<UpstreamConnection[]>([])
 const upstreamConnectionsLoading = ref(false)
 const upstreamConnectionsLoadFailed = ref(false)
@@ -814,29 +845,82 @@ const refreshTodayStatsBatch = async () => {
   }
 }
 
-const refreshAccountHealthBatch = async (force = false) => {
-  if (hiddenColumns.has('account_health')) {
+const currentPageAccountIDs = () =>
+  (accounts.value || [])
+    .map((account) => Number(account?.id))
+    .filter((id) => Number.isFinite(id) && id > 0)
+
+const accountHealthLastScopeKey = ref('')
+
+const refreshAccountHealthBatch = async (force = false, accountIDsOverride?: number[]) => {
+  const isPartial = Array.isArray(accountIDsOverride) && accountIDsOverride.length > 0
+  if (
+    shouldSkipAccountHealthWhenColumnHidden({
+      columnHidden: hiddenColumns.has('account_health'),
+      hasAccountIDsOverride: isPartial,
+      drawerOpen: showAccountHealthDrawer.value,
+      drawerAccountId: healthDrawerAccountId.value,
+      // Old /admin/ops/account-health bookmarks redirect with health=1 (often without account_id).
+      routeHealthDeepLink: routeWantsHealthDrawer(route.query.health)
+    })
+  ) {
     accountHealthLoading.value = false
     accountHealthError.value = null
     return
   }
-  if (!force && accountHealthLastLoadedAt.value > 0 && Date.now() - accountHealthLastLoadedAt.value < ACCOUNT_HEALTH_REFRESH_MIN_MS) {
+
+  const accountIDs = isPartial
+    ? accountIDsOverride.filter((id) => Number.isFinite(id) && id > 0)
+    : currentPageAccountIDs()
+  const scopeKey = accountHealthScopeKey(accountIDs)
+  // Throttle only applies to the same account set (auto-refresh). Page/filter/sort
+  // changes produce a new scopeKey and must always fetch.
+  if (
+    shouldThrottleAccountHealthRefresh({
+      force,
+      scopeKey,
+      lastScopeKey: accountHealthLastScopeKey.value,
+      lastLoadedAt: accountHealthLastLoadedAt.value,
+      minIntervalMs: ACCOUNT_HEALTH_REFRESH_MIN_MS
+    })
+  ) {
     return
   }
 
+  // Still load settings even when the page is empty so probe interval remains available.
   const reqSeq = ++accountHealthReqSeq.value
   accountHealthLoading.value = true
   accountHealthError.value = null
 
   try {
-    const result = await opsAPI.getAccountHealth({ recent_limit: 60 })
+    // Window request/success/first-token counts are full SQL aggregates for each time range
+    // (same as the former Account Health page). recent_limit only caps the timeline samples.
+    const result = await opsAPI.getAccountHealth({
+      recent_limit: 60,
+      ...(accountIDs.length > 0 ? { account_ids: accountIDs } : {})
+    })
     if (reqSeq !== accountHealthReqSeq.value) return
-    const next: Record<string, OpsAccountHealthItem> = {}
+    const next: Record<string, OpsAccountHealthItem> = { ...accountHealthByAccountId.value }
+    if (!isPartial) {
+      // Drop stale IDs not on the current page so pagination does not keep old cards forever.
+      const pageSet = new Set(accountIDs.map(String))
+      for (const key of Object.keys(next)) {
+        if (!pageSet.has(key) && healthDrawerAccountId.value !== Number(key)) {
+          delete next[key]
+        }
+      }
+    }
     for (const item of result.items || []) {
       next[String(item.account_id)] = item
     }
     accountHealthByAccountId.value = next
-    accountHealthLastLoadedAt.value = Date.now()
+    accountHealthGeneratedAt.value = result.generated_at || null
+    accountHealthSettings.value = result.settings || null
+    // Partial (single-account / drawer) fetches must not pollute page-scope throttle state.
+    if (shouldUpdateAccountHealthPageThrottle({ isPartialFetch: isPartial })) {
+      accountHealthLastLoadedAt.value = Date.now()
+      accountHealthLastScopeKey.value = scopeKey
+    }
   } catch (error) {
     if (reqSeq !== accountHealthReqSeq.value) return
     accountHealthError.value = 'Failed'
@@ -847,6 +931,12 @@ const refreshAccountHealthBatch = async (force = false) => {
     }
   }
 }
+
+const healthDrawerItem = computed(() => {
+  const id = healthDrawerAccountId.value
+  if (!id) return null
+  return accountHealthByAccountId.value[String(id)] ?? null
+})
 
 const upstreamConnectionByAccountID = computed(() => {
   const mapping = new Map<number, UpstreamConnection>()
@@ -1220,7 +1310,8 @@ const load = async (options: { forceUpstreamConnections?: boolean } = {}) => {
     delete requestParams.lite
   }
   await refreshTodayStatsBatch()
-  await refreshAccountHealthBatch()
+  // Account set just changed (initial load / filter / search); always force health refresh.
+  await refreshAccountHealthBatch(true)
   await refreshUpstreamConnections(options.forceUpstreamConnections === true)
 }
 
@@ -1232,7 +1323,7 @@ const reload = async () => {
   pendingAccountHealthRefresh.value = false
   await baseReload()
   await refreshTodayStatsBatch()
-  await refreshAccountHealthBatch()
+  await refreshAccountHealthBatch(true)
   await refreshUpstreamConnections(true)
 }
 
@@ -1287,7 +1378,8 @@ watch(loading, (isLoading, wasLoading) => {
   }
   if (wasLoading && !isLoading && pendingAccountHealthRefresh.value) {
     pendingAccountHealthRefresh.value = false
-    refreshAccountHealthBatch().catch((error) => {
+    // Page/filter/sort finished loading a new account set — never throttle this path.
+    refreshAccountHealthBatch(true).catch((error) => {
       console.error('Failed to refresh account health after table load:', error)
     })
   }
@@ -1417,8 +1509,8 @@ const refreshAccountsIncrementally = async () => {
 }
 
 const handleManualRefresh = async () => {
+  // load() already force-refreshes account health for the current page.
   await load({ forceUpstreamConnections: true })
-  await refreshAccountHealthBatch(true)
   // Force usage cells to refetch /usage on explicit user refresh.
   usageManualRefreshToken.value += 1
 }
@@ -1961,7 +2053,114 @@ const applyRouteAccountFocus = () => {
 }
 
 const openAccountHealth = (account: Account) => {
-  router.push({ path: '/admin/ops/account-health', query: { account_id: String(account.id) } }).catch(() => {})
+  healthDrawerAccountId.value = account.id
+  showAccountHealthDrawer.value = true
+  // Force a single-account refresh so drawer metrics are current without rescanning the whole page.
+  refreshAccountHealthBatch(true, [account.id]).catch((error) => {
+    console.error('Failed to load account health for drawer:', error)
+  })
+}
+
+const closeAccountHealthDrawer = () => {
+  showAccountHealthDrawer.value = false
+  healthDrawerAccountId.value = null
+}
+
+const runHealthProbeForDrawer = async () => {
+  const id = healthDrawerAccountId.value
+  if (!id || accountHealthProbing.value) return
+  accountHealthProbing.value = true
+  try {
+    const probe = await opsAPI.runAccountHealthProbe(id)
+    const key = String(id)
+    const current = accountHealthByAccountId.value[key]
+    if (current) {
+      accountHealthByAccountId.value = {
+        ...accountHealthByAccountId.value,
+        [key]: { ...current, probe }
+      }
+    }
+    await refreshAccountHealthBatch(true, [id])
+    appStore.showSuccess('探测完成')
+  } catch (error) {
+    console.error('Failed to run account health probe:', error)
+    appStore.showError('探测失败')
+  } finally {
+    accountHealthProbing.value = false
+  }
+}
+
+const updateHealthProbeAutoForDrawer = async (enabled: boolean) => {
+  const id = healthDrawerAccountId.value
+  if (!id || accountHealthTogglingProbe.value) return
+  accountHealthTogglingProbe.value = true
+  try {
+    const state = await opsAPI.updateAccountHealthProbeAuto(id, enabled)
+    const key = String(id)
+    const current = accountHealthByAccountId.value[key]
+    if (current) {
+      accountHealthByAccountId.value = {
+        ...accountHealthByAccountId.value,
+        [key]: { ...current, probe_auto_disabled: state.probe_auto_disabled }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to update probe auto state:', error)
+    appStore.showError('更新自动探测失败')
+  } finally {
+    accountHealthTogglingProbe.value = false
+  }
+}
+
+const saveHealthProbeInterval = async (minutes: number) => {
+  if (!accountHealthSettings.value || accountHealthSavingSettings.value) return
+  accountHealthSavingSettings.value = true
+  try {
+    const next: OpsAccountHealthSettings = {
+      ...accountHealthSettings.value,
+      probe: {
+        ...accountHealthSettings.value.probe,
+        interval_minutes: minutes
+      }
+    }
+    const saved = await opsAPI.updateAccountHealthSettings(next)
+    accountHealthSettings.value = saved
+    appStore.showSuccess('探测间隔已保存')
+  } catch (error) {
+    console.error('Failed to save probe interval:', error)
+    appStore.showError('保存探测间隔失败')
+  } finally {
+    accountHealthSavingSettings.value = false
+  }
+}
+
+const routeQueryScalar = (value: unknown): string => {
+  if (Array.isArray(value)) return String(value[0] ?? '')
+  if (value == null) return ''
+  return String(value)
+}
+
+/** Ensure the health column is visible for deep-links from the retired Account Health page. */
+const ensureAccountHealthColumnVisible = () => {
+  if (!hiddenColumns.has('account_health')) return false
+  hiddenColumns.delete('account_health')
+  saveColumnsToStorage()
+  return true
+}
+
+const openHealthDrawerFromRoute = async () => {
+  if (!routeWantsHealthDrawer(route.query.health)) return
+  // Bookmarks like /admin/ops/account-health (no account_id) only make sense if the column is shown.
+  ensureAccountHealthColumnVisible()
+  const accountID = accountIDFromRoute()
+  if (accountID) {
+    healthDrawerAccountId.value = accountID
+    showAccountHealthDrawer.value = true
+    await refreshAccountHealthBatch(true, [accountID])
+    return
+  }
+  // health=1 without account_id: page-scoped load with route-deep-link bypass + column restored.
+  await refreshAccountHealthBatch(true)
 }
 
 const accountMatchesCurrentFilters = (account: Account) => {
@@ -2326,7 +2525,7 @@ const handleClickOutside = (event: MouseEvent) => {
 
 onMounted(async () => {
   applyRouteAccountFocus()
-  load()
+  await load()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
     proxies.value = p
@@ -2335,6 +2534,7 @@ onMounted(async () => {
     console.error('Failed to load proxies/groups:', error)
   }
   await loadRateMultiplierPrioritySettings()
+  await openHealthDrawerFromRoute()
   window.addEventListener('scroll', handleScroll, true)
   document.addEventListener('click', handleClickOutside)
 
@@ -2346,12 +2546,20 @@ onMounted(async () => {
   }
 })
 
+// Deep-links from /admin/ops/account-health redirect here with health=1&account_id=.
+// When AccountsView is already mounted, the component is reused — watch query and open the drawer
+// after the focused list finishes loading.
 watch(
-  () => route.query.account_id,
-  () => {
-    if (applyRouteAccountFocus()) {
-      load()
+  () => [routeQueryScalar(route.query.account_id), routeQueryScalar(route.query.health)] as const,
+  async ([accountId, health], previous) => {
+    const [prevAccountId, prevHealth] = previous ?? [undefined, undefined]
+    if (accountId === prevAccountId && health === prevHealth) return
+
+    const focused = applyRouteAccountFocus()
+    if (focused) {
+      await load()
     }
+    await openHealthDrawerFromRoute()
   }
 )
 

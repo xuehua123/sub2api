@@ -786,7 +786,7 @@ func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, ac
 	return r.accountsToService(ctx, accounts)
 }
 
-func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platformFilter string, groupIDFilter *int64) ([]service.Account, error) {
+func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platformFilter string, groupIDFilter *int64, accountIDs []int64) ([]service.Account, error) {
 	if r == nil || r.client == nil {
 		return []service.Account{}, nil
 	}
@@ -797,6 +797,24 @@ func (r *accountRepository) ListOpsAccountsForStats(ctx context.Context, platfor
 	}
 	if groupIDFilter != nil && *groupIDFilter > 0 {
 		q = q.Where(dbaccount.HasAccountGroupsWith(dbaccountgroup.GroupIDEQ(*groupIDFilter)))
+	}
+	if len(accountIDs) > 0 {
+		ids := make([]int64, 0, len(accountIDs))
+		seen := make(map[int64]struct{}, len(accountIDs))
+		for _, id := range accountIDs {
+			if id <= 0 {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			return []service.Account{}, nil
+		}
+		q = q.Where(dbaccount.IDIn(ids...))
 	}
 
 	accounts, err := q.

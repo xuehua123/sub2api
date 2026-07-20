@@ -327,7 +327,7 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 	settings := runtimeCfg.AccountHealth
 	normalizeOpsAccountHealthSettings(&settings)
 
-	_, _, availabilityByAccount, _, err := s.GetAccountAvailabilityStats(ctx, filter.Platform, filter.GroupID)
+	_, _, availabilityByAccount, _, err := s.GetAccountAvailabilityStats(ctx, filter.Platform, filter.GroupID, filter.AccountIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -407,8 +407,12 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 			Recent:                 metrics.Recent,
 			FirstToken5m:           metrics.FirstToken5m,
 			FirstTokenWindows:      metrics.FirstTokenWindows,
-			Probe:                  availability.HealthProbe,
+			// Trend uses full SQL window aggregates (1m vs prev_1m), not the capped recent sample list.
+			SuccessRateTrend1m: computeSuccessRateTrend1mFromWindows(metrics.Windows),
+			Probe:              availability.HealthProbe,
 		}
+		// prev_1m is an internal comparison bucket; do not expose it as a primary UI window.
+		stripInternalAccountHealthWindows(item.Windows)
 		item.ProbeModelID = accountHealthProbeConfiguredModelIDFromAvailability(availability)
 		item.ProbeModelEffective = resolveOpsAccountHealthProbeModelID(item.ProbeModelID, settings.Probe.ModelID)
 		item.Recommendation = decideOpsAccountHealth(item, settings)
@@ -422,6 +426,48 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 		Items:       items,
 		Settings:    responseSettings,
 	}, nil
+}
+
+// stripInternalAccountHealthWindows removes non-public comparison buckets from API payloads.
+func stripInternalAccountHealthWindows(windows map[string]*OpsAccountHealthWindowStats) {
+	if windows == nil {
+		return
+	}
+	delete(windows, OpsAccountHealthWindowPrev1m)
+}
+
+// computeSuccessRateTrend1mFromWindows compares full-window aggregates for
+// [now-1m, now) vs [now-2m, now-1m). Counts come from usage_logs ∪ ops_error_logs
+// SQL (same source as the multi-window matrix), never from the capped recent sample list.
+func computeSuccessRateTrend1mFromWindows(windows map[string]*OpsAccountHealthWindowStats) *OpsAccountHealthTrend {
+	const (
+		minSamples    int64   = 5
+		flatThreshold float64 = 2.0 // percentage points
+	)
+	cur := windows[OpsAccountHealthWindow1m]
+	prev := windows[OpsAccountHealthWindowPrev1m]
+	trend := &OpsAccountHealthTrend{Direction: "unknown"}
+	if cur != nil {
+		trend.CurrentRequestCount = cur.RequestCount
+		trend.CurrentSuccessRate = cur.SuccessRatePercent
+	}
+	if prev != nil {
+		trend.PreviousRequestCount = prev.RequestCount
+		trend.PreviousSuccessRate = prev.SuccessRatePercent
+	}
+	if trend.CurrentRequestCount < minSamples || trend.PreviousRequestCount < minSamples {
+		return trend
+	}
+	trend.DeltaPercent = trend.CurrentSuccessRate - trend.PreviousSuccessRate
+	switch {
+	case trend.DeltaPercent >= flatThreshold:
+		trend.Direction = "up"
+	case trend.DeltaPercent <= -flatThreshold:
+		trend.Direction = "down"
+	default:
+		trend.Direction = "flat"
+	}
+	return trend
 }
 
 func (s *OpsService) UpdateAccountHealthProbeAuto(ctx context.Context, accountID int64, enabled bool) (*OpsAccountHealthProbeAutoState, error) {

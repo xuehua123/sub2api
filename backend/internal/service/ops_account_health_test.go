@@ -20,6 +20,74 @@ func TestValidateOpsEnterpriseWeChatWebhookURL(t *testing.T) {
 	require.Error(t, validateOpsEnterpriseWeChatWebhookURL("https://qyapi.weixin.qq.com/other?key=abc"))
 }
 
+func TestStripInternalAccountHealthWindows(t *testing.T) {
+	t.Parallel()
+
+	windows := map[string]*OpsAccountHealthWindowStats{
+		OpsAccountHealthWindow1m:     {Window: OpsAccountHealthWindow1m, RequestCount: 10},
+		OpsAccountHealthWindowPrev1m: {Window: OpsAccountHealthWindowPrev1m, RequestCount: 8},
+		OpsAccountHealthWindow5m:     {Window: OpsAccountHealthWindow5m, RequestCount: 40},
+	}
+	// Trend must still see prev_1m before strip.
+	trend := computeSuccessRateTrend1mFromWindows(windows)
+	require.Equal(t, int64(10), trend.CurrentRequestCount)
+	require.Equal(t, int64(8), trend.PreviousRequestCount)
+
+	stripInternalAccountHealthWindows(windows)
+	require.NotContains(t, windows, OpsAccountHealthWindowPrev1m)
+	require.Contains(t, windows, OpsAccountHealthWindow1m)
+	require.Contains(t, windows, OpsAccountHealthWindow5m)
+	stripInternalAccountHealthWindows(nil) // no panic
+}
+
+func TestComputeSuccessRateTrend1mFromWindows(t *testing.T) {
+	t.Parallel()
+
+	// Full-window aggregates (as produced by SQL), not capped recent samples.
+	windows := map[string]*OpsAccountHealthWindowStats{
+		OpsAccountHealthWindow1m: {
+			Window:             OpsAccountHealthWindow1m,
+			RequestCount:       20,
+			SuccessCount:       12,
+			SuccessRatePercent: 60,
+		},
+		OpsAccountHealthWindowPrev1m: {
+			Window:             OpsAccountHealthWindowPrev1m,
+			RequestCount:       20,
+			SuccessCount:       19,
+			SuccessRatePercent: 95,
+		},
+	}
+	trend := computeSuccessRateTrend1mFromWindows(windows)
+	require.NotNil(t, trend)
+	require.Equal(t, "down", trend.Direction)
+	require.Equal(t, int64(20), trend.CurrentRequestCount)
+	require.Equal(t, int64(20), trend.PreviousRequestCount)
+	require.InDelta(t, -35.0, trend.DeltaPercent, 0.01)
+
+	// High volume still works — trend uses full counts, not a 60-sample cap.
+	busy := map[string]*OpsAccountHealthWindowStats{
+		OpsAccountHealthWindow1m: {
+			RequestCount:       5000,
+			SuccessRatePercent: 99.2,
+		},
+		OpsAccountHealthWindowPrev1m: {
+			RequestCount:       4800,
+			SuccessRatePercent: 97.0,
+		},
+	}
+	up := computeSuccessRateTrend1mFromWindows(busy)
+	require.Equal(t, "up", up.Direction)
+	require.Equal(t, int64(5000), up.CurrentRequestCount)
+
+	// too few samples => unknown
+	sparse := computeSuccessRateTrend1mFromWindows(map[string]*OpsAccountHealthWindowStats{
+		OpsAccountHealthWindow1m:     {RequestCount: 2, SuccessRatePercent: 50},
+		OpsAccountHealthWindowPrev1m: {RequestCount: 2, SuccessRatePercent: 100},
+	})
+	require.Equal(t, "unknown", sparse.Direction)
+}
+
 func TestMaskAndPreserveOpsAccountHealthWebhook(t *testing.T) {
 	t.Parallel()
 

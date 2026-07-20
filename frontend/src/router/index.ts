@@ -491,9 +491,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    // Merged into Accounts management health column; preserve deep-links.
     path: '/admin/ops/account-health',
     name: 'AdminAccountHealth',
-    component: () => import('@/views/admin/ops/AccountHealthView.vue'),
+    redirect: (to) => ({
+      path: '/admin/accounts',
+      query: {
+        ...to.query,
+        health: '1',
+        ...(to.query.account_id ? { account_id: to.query.account_id } : {})
+      }
+    }),
     meta: {
       requiresAuth: true,
       requiresAdmin: true,

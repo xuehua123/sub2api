@@ -675,7 +675,7 @@ func (s *AccountRepoSuite) TestListOpsAccountsForStats_PreservesHealthFields() {
 	reason := `{"rule":"401","matched_keyword":"invalid token"}`
 	s.Require().NoError(s.repo.SetTempUnschedulable(s.ctx, account.ID, until, reason))
 
-	accounts, err := s.repo.ListOpsAccountsForStats(s.ctx, service.PlatformOpenAI, nil)
+	accounts, err := s.repo.ListOpsAccountsForStats(s.ctx, service.PlatformOpenAI, nil, nil)
 	s.Require().NoError(err)
 
 	var got *service.Account
