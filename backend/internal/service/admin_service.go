@@ -583,6 +583,14 @@ var proxyQualityTargets = []proxyQualityTarget{
 			http.StatusOK: {},
 		},
 	},
+	{
+		Target: "grok",
+		URL:    "https://api.x.ai/v1/models",
+		Method: http.MethodGet,
+		AllowedStatuses: map[int]struct{}{
+			http.StatusUnauthorized: {},
+		},
+	},
 }
 
 const (
@@ -603,6 +611,7 @@ type adminServiceImpl struct {
 	accountDuplicateRepo AccountDuplicateRepository
 	proxyRepo            ProxyRepository
 	apiKeyRepo           APIKeyRepository
+	apiKeyService        *APIKeyService
 	redeemCodeRepo       RedeemCodeRepository
 	userGroupRateRepo    UserGroupRateRepository
 	userRPMCache         UserRPMCache
@@ -635,6 +644,7 @@ func NewAdminService(
 	accountRepo AdminAccountRepository,
 	proxyRepo ProxyRepository,
 	apiKeyRepo APIKeyRepository,
+	apiKeyService *APIKeyService,
 	redeemCodeRepo RedeemCodeRepository,
 	userGroupRateRepo UserGroupRateRepository,
 	userRPMCache UserRPMCache,
@@ -659,6 +669,7 @@ func NewAdminService(
 		accountDuplicateRepo: accountRepo,
 		proxyRepo:            proxyRepo,
 		apiKeyRepo:           apiKeyRepo,
+		apiKeyService:        apiKeyService,
 		redeemCodeRepo:       redeemCodeRepo,
 		userGroupRateRepo:    userGroupRateRepo,
 		userRPMCache:         userRPMCache,

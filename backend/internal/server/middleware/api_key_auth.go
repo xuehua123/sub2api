@@ -191,7 +191,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		if !skipBilling {
 			if status, code, message, blocked := apiKeyStatusBlock(apiKey); blocked {
-				AbortWithError(c, status, code, message)
+				if code == "API_KEY_QUOTA_EXHAUSTED" {
+					abortWithAPIKeyQuotaError(c, message)
+				} else {
+					AbortWithError(c, status, code, message)
+				}
 				return
 			}
 		}
@@ -220,7 +224,11 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		if !skipBilling {
 			if status, code, message, blocked := apiKeyBillingBlock(apiKey); blocked {
-				AbortWithError(c, status, code, message)
+				if code == "API_KEY_QUOTA_EXHAUSTED" {
+					abortWithAPIKeyQuotaError(c, message)
+				} else {
+					AbortWithError(c, status, code, message)
+				}
 				return
 			}
 		}
@@ -494,6 +502,33 @@ func hasAPIKeyCredentialInput(c *gin.Context) bool {
 	return c.GetHeader("Authorization") != "" ||
 		c.GetHeader("x-api-key") != "" ||
 		c.GetHeader("x-goog-api-key") != ""
+}
+
+func abortWithAPIKeyQuotaError(c *gin.Context, message string) {
+	if isOpenAICompatibleAPIKeyRequest(c) {
+		abortWithOpenAIQuotaError(c, http.StatusTooManyRequests, message)
+		return
+	}
+	AbortWithError(c, http.StatusTooManyRequests, "API_KEY_QUOTA_EXHAUSTED", message)
+}
+
+func isOpenAICompatibleAPIKeyRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+
+	path := strings.TrimRight(c.Request.URL.Path, "/")
+	for _, root := range []string{
+		"/v1/responses",
+		"/openai/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		if path == root || strings.HasPrefix(path, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func isAsyncImageTaskRead(method, path string) bool {

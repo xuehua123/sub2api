@@ -873,6 +873,7 @@ func TestAPIContracts(t *testing.T) {
 						"site_subtitle": "Subtitle",
 						"api_base_url": "https://api.example.com",
 						"api_key_acl_trust_forwarded_ip": false,
+					"forwarded_client_ip_headers": [],
 					"contact_info": "support",
 					"doc_url": "https://docs.example.com",
 					"auth_source_default_email_balance": 0,
@@ -1222,6 +1223,7 @@ func TestAPIContracts(t *testing.T) {
 					"site_subtitle": "Subscription to API Conversion Platform",
 					"api_base_url": "",
 					"api_key_acl_trust_forwarded_ip": false,
+					"forwarded_client_ip_headers": [],
 					"contact_info": "",
 					"doc_url": "",
 					"home_content": "",
@@ -1736,7 +1738,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, apiKeyService, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)

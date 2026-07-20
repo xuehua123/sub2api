@@ -141,6 +141,7 @@ import { normalizePlanValidityUnit } from '@/utils/subscriptionTime'
 import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { currencySymbol } from '@/components/payment/currency'
 import {
   platformAccentBarClass,
   platformBadgeLightClass,
@@ -207,16 +208,7 @@ const pLabel = computed(() => (
 ))
 
 const planCurrency = computed(() => props.plan.currency?.trim().toUpperCase() || 'CNY')
-const planCurrencySymbol = computed(() => {
-  switch (planCurrency.value) {
-    case 'CNY': return '¥'
-    case 'USD': return '$'
-    case 'EUR': return '€'
-    case 'GBP': return '£'
-    case 'JPY': return '¥'
-    default: return planCurrency.value
-  }
-})
+const planCurrencySymbol = computed(() => currencySymbol(planCurrency.value))
 
 const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''

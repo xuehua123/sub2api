@@ -41,6 +41,14 @@ func TestOpenAIRecordUsageInputsCarryQuotaPlatform(t *testing.T) {
 	}
 }
 
+func TestOpenAICountTokensUsesEntitlementAwareBillingEligibility(t *testing.T) {
+	source := stripGoComments(goFunctionSource(t, "openai_gateway_count_tokens.go", "CountTokens"))
+
+	require.Contains(t, source, "subscriptionEntitlementUsageContext(c)")
+	require.Contains(t, source, "CheckBillingEligibilityWithEntitlement(")
+	require.NotContains(t, source, ".CheckBillingEligibility(")
+}
+
 func isOpenAIRecordUsageInputLiteral(expr ast.Expr) bool {
 	selector, ok := expr.(*ast.SelectorExpr)
 	if !ok {

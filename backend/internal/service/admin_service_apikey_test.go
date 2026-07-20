@@ -290,6 +290,21 @@ func (s *userSubRepoStubForGroupUpdate) GetActiveByUserIDAndGroupID(_ context.Co
 	return &clone, nil
 }
 
+func newAdminV2GroupBindingFixture(t *testing.T, now time.Time, key *APIKey, entitlements ...*SubscriptionEntitlement) (*adminServiceImpl, *apiKeyBindingRepo, *apiKeyBindingGroupRepo, *apiKeyBindingUserRepo) {
+	t.Helper()
+	apiKeyService, apiKeyRepo, _ := newAPIKeyEntitlementBindingFixtureWithKeys(t, now, true, []*APIKey{key}, entitlements...)
+	groupRepo, ok := apiKeyService.groupRepo.(*apiKeyBindingGroupRepo)
+	require.True(t, ok)
+	userRepo, ok := apiKeyService.userRepo.(*apiKeyBindingUserRepo)
+	require.True(t, ok)
+	return &adminServiceImpl{
+		apiKeyRepo:    apiKeyRepo,
+		apiKeyService: apiKeyService,
+		groupRepo:     groupRepo,
+		userRepo:      userRepo,
+	}, apiKeyRepo, groupRepo, userRepo
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -315,7 +330,14 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_NilGroupID_NoOp(t *testing.T) {
 }
 
 func TestAdminService_AdminUpdateAPIKeyGroupID_Unbind(t *testing.T) {
-	existing := &APIKey{ID: 1, Key: "sk-test", GroupID: int64Ptr(5), Group: &Group{ID: 5, Name: "Old"}}
+	existing := &APIKey{
+		ID:                        1,
+		Key:                       "sk-test",
+		GroupID:                   int64Ptr(5),
+		Group:                     &Group{ID: 5, Name: "Old"},
+		AccessSource:              APIKeyAccessSourceEntitlement,
+		SubscriptionEntitlementID: int64Ptr(99),
+	}
 	repo := &apiKeyRepoStubForGroupUpdate{key: existing}
 	cache := &authCacheInvalidatorStub{}
 	svc := &adminServiceImpl{apiKeyRepo: repo, authCacheInvalidator: cache}
@@ -326,7 +348,126 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_Unbind(t *testing.T) {
 	require.Nil(t, got.APIKey.Group, "group object should be nil after unbind")
 	require.NotNil(t, repo.updated, "Update should have been called")
 	require.Nil(t, repo.updated.GroupID)
+	require.Equal(t, APIKeyAccessSourceBalance, repo.updated.AccessSource)
+	require.Nil(t, repo.updated.SubscriptionEntitlementID)
 	require.Equal(t, []string{"sk-test"}, cache.keys, "cache should be invalidated")
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupID_V2MoveToBalanceClearsEntitlement(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	key := &APIKey{
+		ID:                        1,
+		UserID:                    1,
+		Key:                       "sk-admin-v2-balance",
+		GroupID:                   int64Ptr(20),
+		AccessSource:              APIKeyAccessSourceEntitlement,
+		SubscriptionEntitlementID: int64Ptr(101),
+	}
+	svc, repo, _, _ := newAdminV2GroupBindingFixture(t, now, key,
+		testBindingEntitlement(101, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20}),
+	)
+
+	got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(10))
+
+	require.NoError(t, err)
+	require.Equal(t, APIKeyAccessSourceBalance, got.APIKey.AccessSource)
+	require.Nil(t, got.APIKey.SubscriptionEntitlementID)
+	require.Equal(t, APIKeyAccessSourceBalance, repo.updated.AccessSource)
+	require.Nil(t, repo.updated.SubscriptionEntitlementID)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupID_V2MoveToSubscriptionResolvesEntitlement(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-entitlement", GroupID: int64Ptr(10), AccessSource: APIKeyAccessSourceBalance}
+	svc, repo, _, _ := newAdminV2GroupBindingFixture(t, now, key,
+		testBindingEntitlement(102, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20}),
+	)
+
+	got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(20))
+
+	require.NoError(t, err)
+	require.Equal(t, APIKeyAccessSourceEntitlement, got.APIKey.AccessSource)
+	require.NotNil(t, got.APIKey.SubscriptionEntitlementID)
+	require.Equal(t, int64(102), *got.APIKey.SubscriptionEntitlementID)
+	require.Equal(t, APIKeyAccessSourceEntitlement, repo.updated.AccessSource)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupID_V2MoveWithoutEntitlementDoesNotPersist(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-no-entitlement", GroupID: int64Ptr(10), AccessSource: APIKeyAccessSourceBalance}
+	svc, repo, _, _ := newAdminV2GroupBindingFixture(t, now, key)
+
+	_, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(20))
+
+	require.ErrorIs(t, err, ErrGroupNotAllowed)
+	require.Nil(t, repo.updated)
+	stored, getErr := repo.GetByID(context.Background(), 1)
+	require.NoError(t, getErr)
+	require.Equal(t, int64(10), *stored.GroupID)
+	require.Equal(t, APIKeyAccessSourceBalance, stored.AccessSource)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupID_V2DualModePreservesAccessSource(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+
+	t.Run("balance", func(t *testing.T) {
+		key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-dual-balance", GroupID: int64Ptr(10), AccessSource: APIKeyAccessSourceBalance}
+		svc, repo, groups, _ := newAdminV2GroupBindingFixture(t, now, key)
+		groups.groups[40] = &Group{ID: 40, Name: "dual", Status: StatusActive, SubscriptionType: SubscriptionTypeStandard, BalanceEnabled: true, SubscriptionEnabled: true}
+
+		got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(40))
+
+		require.NoError(t, err)
+		require.Equal(t, APIKeyAccessSourceBalance, got.APIKey.AccessSource)
+		require.Nil(t, repo.updated.SubscriptionEntitlementID)
+	})
+
+	t.Run("entitlement", func(t *testing.T) {
+		key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-dual-entitlement", GroupID: int64Ptr(20), AccessSource: APIKeyAccessSourceEntitlement, SubscriptionEntitlementID: int64Ptr(103)}
+		svc, repo, groups, _ := newAdminV2GroupBindingFixture(t, now, key,
+			testBindingEntitlement(103, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20, 40}),
+		)
+		groups.groups[40] = &Group{ID: 40, Name: "dual", Status: StatusActive, SubscriptionType: SubscriptionTypeStandard, BalanceEnabled: true, SubscriptionEnabled: true}
+
+		got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(40))
+
+		require.NoError(t, err)
+		require.Equal(t, APIKeyAccessSourceEntitlement, got.APIKey.AccessSource)
+		require.NotNil(t, repo.updated.SubscriptionEntitlementID)
+		require.Equal(t, int64(103), *repo.updated.SubscriptionEntitlementID)
+	})
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupID_V2ExclusiveAutoGrantUsesResolvedSource(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+
+	t.Run("entitlement does not grant balance access", func(t *testing.T) {
+		key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-exclusive-entitlement", GroupID: int64Ptr(20), AccessSource: APIKeyAccessSourceEntitlement, SubscriptionEntitlementID: int64Ptr(104)}
+		svc, _, groups, users := newAdminV2GroupBindingFixture(t, now, key,
+			testBindingEntitlement(104, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20, 50}),
+		)
+		groups.groups[50] = &Group{ID: 50, Name: "exclusive-subscription", Status: StatusActive, IsExclusive: true, SubscriptionType: SubscriptionTypeStandard, SubscriptionEnabled: true}
+
+		got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(50))
+
+		require.NoError(t, err)
+		require.Equal(t, APIKeyAccessSourceEntitlement, got.APIKey.AccessSource)
+		require.False(t, users.addGroupCalled)
+		require.False(t, got.AutoGrantedGroupAccess)
+	})
+
+	t.Run("balance grants exclusive access", func(t *testing.T) {
+		key := &APIKey{ID: 1, UserID: 1, Key: "sk-admin-v2-exclusive-balance", GroupID: int64Ptr(10), AccessSource: APIKeyAccessSourceBalance}
+		svc, _, groups, users := newAdminV2GroupBindingFixture(t, now, key)
+		groups.groups[60] = &Group{ID: 60, Name: "exclusive-balance", Status: StatusActive, IsExclusive: true, SubscriptionType: SubscriptionTypeStandard, BalanceEnabled: true}
+
+		got, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(60))
+
+		require.NoError(t, err)
+		require.Equal(t, APIKeyAccessSourceBalance, got.APIKey.AccessSource)
+		require.True(t, users.addGroupCalled)
+		require.True(t, got.AutoGrantedGroupAccess)
+	})
 }
 
 func TestAdminService_AdminUpdateAPIKeyGroupID_BindActiveGroup(t *testing.T) {

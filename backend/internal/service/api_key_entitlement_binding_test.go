@@ -399,6 +399,59 @@ func TestAPIKeyService_UpdateSubscriptionEntitlementBindings(t *testing.T) {
 	})
 }
 
+func TestAPIKeyService_UpdateIPRestrictionsPreservesEntitlementBinding(t *testing.T) {
+	now := time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC)
+	newFixture := func() (*APIKeyService, *apiKeyBindingRepo) {
+		existing := &APIKey{
+			ID:                        16,
+			UserID:                    1,
+			Key:                       "sk-existing-ip-restrictions",
+			Name:                      "existing",
+			GroupID:                   cloneInt64PtrValue(20),
+			SubscriptionEntitlementID: cloneInt64PtrValue(1),
+			AccessSource:              APIKeyAccessSourceEntitlement,
+			Status:                    StatusActive,
+			IPWhitelist:               []string{"10.0.0.0/8"},
+			IPBlacklist:               []string{"10.0.0.9"},
+		}
+		svc, repo, _ := newAPIKeyEntitlementBindingFixtureWithKeys(t, now, true, []*APIKey{existing},
+			testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(24*time.Hour), SubscriptionStatusActive, []int64{20}),
+		)
+		return svc, repo
+	}
+
+	t.Run("omitted lists do not modify restrictions", func(t *testing.T) {
+		svc, repo := newFixture()
+
+		updated, err := svc.Update(context.Background(), 16, 1, UpdateAPIKeyRequest{})
+
+		require.NoError(t, err)
+		require.Equal(t, []string{"10.0.0.0/8"}, updated.IPWhitelist)
+		require.Equal(t, []string{"10.0.0.9"}, updated.IPBlacklist)
+		require.Equal(t, APIKeyAccessSourceEntitlement, updated.AccessSource)
+		require.Equal(t, int64(1), *updated.SubscriptionEntitlementID)
+		require.Equal(t, int64(1), *repo.updated.SubscriptionEntitlementID)
+	})
+
+	t.Run("empty lists clear restrictions without clearing entitlement", func(t *testing.T) {
+		svc, repo := newFixture()
+		emptyWhitelist := []string{}
+		emptyBlacklist := []string{}
+
+		updated, err := svc.Update(context.Background(), 16, 1, UpdateAPIKeyRequest{
+			IPWhitelist: &emptyWhitelist,
+			IPBlacklist: &emptyBlacklist,
+		})
+
+		require.NoError(t, err)
+		require.Empty(t, updated.IPWhitelist)
+		require.Empty(t, updated.IPBlacklist)
+		require.Equal(t, APIKeyAccessSourceEntitlement, updated.AccessSource)
+		require.Equal(t, int64(1), *updated.SubscriptionEntitlementID)
+		require.Equal(t, int64(1), *repo.updated.SubscriptionEntitlementID)
+	})
+}
+
 func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthExplicitAndDefault(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true,
@@ -433,6 +486,35 @@ func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthExplicitAndDefault(t *test
 	require.NoError(t, err)
 	require.NotNil(t, defaultResolved)
 	require.Equal(t, int64(2), defaultResolved.Entitlement.ID)
+}
+
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSupportsCapabilityGroup(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true,
+		testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{20}),
+	)
+	entitlementID := int64(1)
+	group := &Group{
+		ID:                  20,
+		Status:              StatusActive,
+		SubscriptionType:    SubscriptionTypeStandard,
+		SubscriptionEnabled: true,
+	}
+
+	resolved, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                        12,
+		UserID:                    1,
+		User:                      &User{ID: 1, Status: StatusActive},
+		GroupID:                   cloneInt64PtrValue(20),
+		Group:                     group,
+		SubscriptionEntitlementID: &entitlementID,
+		AccessSource:              APIKeyAccessSourceEntitlement,
+		Status:                    StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	require.Equal(t, entitlementID, resolved.Entitlement.ID)
 }
 
 func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSwitchesOnlyWithinSameEntitlement(t *testing.T) {

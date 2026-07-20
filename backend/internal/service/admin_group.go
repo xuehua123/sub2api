@@ -221,7 +221,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 	// 校验无效请求兜底分组
 	if fallbackOnInvalidRequest != nil {
-		if err := s.validateFallbackGroupOnInvalidRequest(ctx, 0, platform, subscriptionType, *fallbackOnInvalidRequest); err != nil {
+		if err := s.validateFallbackGroupOnInvalidRequest(ctx, 0, platform, subscriptionEnabled, *fallbackOnInvalidRequest); err != nil {
 			return nil, err
 		}
 	}
@@ -410,13 +410,13 @@ func (s *adminServiceImpl) validateFallbackGroup(ctx context.Context, currentGro
 
 // validateFallbackGroupOnInvalidRequest 校验无效请求兜底分组的有效性
 // currentGroupID: 当前分组 ID（新建时为 0）
-// platform/subscriptionType: 当前分组的有效平台/订阅类型
+// platform/subscriptionEnabled: 当前分组的有效平台/订阅能力
 // fallbackGroupID: 兜底分组 ID
-func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Context, currentGroupID int64, platform, subscriptionType string, fallbackGroupID int64) error {
+func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Context, currentGroupID int64, platform string, subscriptionEnabled bool, fallbackGroupID int64) error {
 	if platform != PlatformAnthropic && platform != PlatformAntigravity {
 		return fmt.Errorf("invalid request fallback only supported for anthropic or antigravity groups")
 	}
-	if subscriptionType == SubscriptionTypeSubscription {
+	if subscriptionEnabled {
 		return fmt.Errorf("subscription groups cannot set invalid request fallback")
 	}
 	if currentGroupID > 0 && currentGroupID == fallbackGroupID {
@@ -430,7 +430,7 @@ func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Con
 	if fallbackGroup.Platform != PlatformAnthropic {
 		return fmt.Errorf("fallback group must be anthropic platform")
 	}
-	if fallbackGroup.SubscriptionType == SubscriptionTypeSubscription {
+	if fallbackGroup.SupportsSubscriptionAccess() {
 		return fmt.Errorf("fallback group cannot be subscription type")
 	}
 	if fallbackGroup.FallbackGroupIDOnInvalidRequest != nil {
@@ -597,7 +597,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		}
 	}
 	if fallbackOnInvalidRequest != nil {
-		if err := s.validateFallbackGroupOnInvalidRequest(ctx, id, group.Platform, group.SubscriptionType, *fallbackOnInvalidRequest); err != nil {
+		if err := s.validateFallbackGroupOnInvalidRequest(ctx, id, group.Platform, group.SupportsSubscriptionAccess(), *fallbackOnInvalidRequest); err != nil {
 			return nil, err
 		}
 	}
@@ -857,6 +857,8 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		// 0 表示解绑分组（不修改 user_allowed_groups，避免影响用户其他 Key）
 		apiKey.GroupID = nil
 		apiKey.Group = nil
+		apiKey.AccessSource = APIKeyAccessSourceBalance
+		apiKey.SubscriptionEntitlementID = nil
 	} else {
 		// 验证目标分组存在且状态为 active
 		group, err := s.groupRepo.GetByID(ctx, *groupID)
@@ -866,8 +868,21 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
 		}
-		// 订阅类型分组：用户须持有该分组的有效订阅才可绑定
-		if group.IsSubscriptionType() {
+
+		entitlementsRuntime := SubscriptionEntitlementsRuntime{}
+		if s.apiKeyService != nil {
+			entitlementsRuntime = s.apiKeyService.subscriptionEntitlementsRuntime(ctx)
+		}
+		entitlementsV2Enabled := entitlementsRuntime.Enabled
+		resolvedAccessSource := apiKey.AccessSource
+		resolvedEntitlementID := cloneInt64Ptr(apiKey.SubscriptionEntitlementID)
+		if entitlementsV2Enabled {
+			resolvedAccessSource, resolvedEntitlementID, err = s.apiKeyService.resolveAdminGroupAccessBinding(ctx, apiKey, group, entitlementsRuntime)
+			if err != nil {
+				return nil, err
+			}
+		} else if group.IsSubscriptionType() {
+			// Legacy subscription mode keeps the existing subscription validation.
 			if s.userSubRepo == nil {
 				return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
 			}
@@ -882,9 +897,14 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		gid := *groupID
 		apiKey.GroupID = &gid
 		apiKey.Group = group
+		if entitlementsV2Enabled {
+			apiKey.AccessSource = resolvedAccessSource
+			apiKey.SubscriptionEntitlementID = resolvedEntitlementID
+		}
 
-		// 专属标准分组：使用事务保证「添加分组权限」与「更新 API Key」的原子性
-		if group.IsExclusive && !group.IsSubscriptionType() {
+		// Only balance-backed exclusive bindings need an allowed-group grant.
+		autoGrantBalanceAccess := group.IsExclusive && ((!entitlementsV2Enabled && !group.IsSubscriptionType()) || (entitlementsV2Enabled && resolvedAccessSource == APIKeyAccessSourceBalance))
+		if autoGrantBalanceAccess {
 			opCtx := ctx
 			var tx *dbent.Tx
 			if s.entClient == nil {

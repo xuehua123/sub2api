@@ -142,6 +142,57 @@ func TestAPIKeyAuthEntitlementV2StandardGroupUsesBalance(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAPIKeyAuthEntitlementV2CapabilityGroupUsesEntitlement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	group := service.Group{
+		ID:                    20,
+		Name:                  "capability-subscription",
+		Platform:              service.PlatformOpenAI,
+		Status:                service.StatusActive,
+		SubscriptionType:      service.SubscriptionTypeStandard,
+		SubscriptionEnabled:   true,
+		AllowMessagesDispatch: true,
+	}
+	entitlementID := int64(100)
+	apiKey := middlewareAPIKey("capability-entitlement-key", group, &entitlementID, 0)
+	apiKey.AccessSource = service.APIKeyAccessSourceEntitlement
+	ent := middlewareEntitlement(entitlementID, 1, now, []service.Group{group})
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
+	router := newEntitlementAuthRouter(apiKeyService, func(c *gin.Context) {
+		resolved, ok := GetSubscriptionEntitlementFromContext(c)
+		require.True(t, ok)
+		require.Equal(t, entitlementID, resolved.ID)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPIKeyAuthEntitlementV2RejectsEntitlementSourceOnBalanceOnlyGroup(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	group := middlewareStandardGroup(10)
+	entitlementID := int64(100)
+	apiKey := middlewareAPIKey("stale-entitlement-group-key", group, &entitlementID, 100)
+	apiKey.AccessSource = service.APIKeyAccessSourceEntitlement
+	ent := middlewareEntitlement(entitlementID, 1, now, []service.Group{group})
+	apiKeyService := newMiddlewareEntitlementAPIKeyService(t, apiKey, true, nil, ent)
+	router := newEntitlementAuthRouter(apiKeyService, nil)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/v1/messages", nil)
+	req.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusForbidden, w.Code)
+}
+
 func TestAPIKeyAuthEntitlementV2BalanceSourceOnDualModeGroupSkipsEntitlement(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)

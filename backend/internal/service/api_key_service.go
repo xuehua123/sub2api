@@ -204,15 +204,15 @@ type CreateAPIKeyRequest struct {
 
 // UpdateAPIKeyRequest 更新API Key请求
 type UpdateAPIKeyRequest struct {
-	Name                         *string  `json:"name"`
-	GroupID                      *int64   `json:"group_id"`
-	ClearGroup                   bool     `json:"-"`
-	SubscriptionEntitlementID    *int64   `json:"subscription_entitlement_id"`
-	SubscriptionEntitlementIDSet bool     `json:"-"`
-	AccessSource                 *string  `json:"access_source"`
-	Status                       *string  `json:"status"`
-	IPWhitelist                  []string `json:"ip_whitelist"` // IP 白名单（空数组清空）
-	IPBlacklist                  []string `json:"ip_blacklist"` // IP 黑名单（空数组清空）
+	Name                         *string   `json:"name"`
+	GroupID                      *int64    `json:"group_id"`
+	ClearGroup                   bool      `json:"-"`
+	SubscriptionEntitlementID    *int64    `json:"subscription_entitlement_id"`
+	SubscriptionEntitlementIDSet bool      `json:"-"`
+	AccessSource                 *string   `json:"access_source"`
+	Status                       *string   `json:"status"`
+	IPWhitelist                  *[]string `json:"ip_whitelist"` // IP 白名单（nil 不修改，空数组清空）
+	IPBlacklist                  *[]string `json:"ip_blacklist"` // IP 黑名单（nil 不修改，空数组清空）
 
 	// Quota fields
 	Quota           *float64   `json:"quota"`       // Quota limit in USD (nil = no change, 0 = unlimited)
@@ -496,6 +496,68 @@ func (s *APIKeyService) resolveUpdateAccessSourceBinding(ctx context.Context, us
 	default:
 		return nil, ErrInvalidAccessSource
 	}
+}
+
+// resolveAdminGroupAccessBinding keeps admin-initiated group moves consistent
+// with the same access-source and entitlement rules used by user updates.
+func (s *APIKeyService) resolveAdminGroupAccessBinding(ctx context.Context, apiKey *APIKey, group *Group, runtime SubscriptionEntitlementsRuntime) (string, *int64, error) {
+	if s == nil || apiKey == nil || group == nil {
+		return "", nil, ErrGroupNotAllowed
+	}
+
+	if !runtime.Enabled {
+		return apiKey.AccessSource, cloneInt64Ptr(apiKey.SubscriptionEntitlementID), nil
+	}
+
+	var accessSource string
+	switch {
+	case group.SupportsBalanceAccess() && !group.SupportsSubscriptionAccess():
+		accessSource = APIKeyAccessSourceBalance
+	case !group.SupportsBalanceAccess() && group.SupportsSubscriptionAccess():
+		accessSource = APIKeyAccessSourceEntitlement
+	case group.SupportsBalanceAccess() && group.SupportsSubscriptionAccess():
+		accessSource = apiKey.AccessSource
+		var err error
+		if accessSource == "" {
+			accessSource, err = normalizeAPIKeyAccessSource(nil, apiKey.SubscriptionEntitlementID)
+		} else {
+			accessSource, err = normalizeAPIKeyAccessSource(&accessSource, nil)
+		}
+		if err != nil {
+			return "", nil, err
+		}
+	default:
+		return "", nil, ErrGroupNotAllowed
+	}
+
+	if s.userRepo == nil {
+		return "", nil, fmt.Errorf("get user: repository is not configured")
+	}
+	user, err := s.userRepo.GetByID(ctx, apiKey.UserID)
+	if err != nil {
+		return "", nil, fmt.Errorf("get user: %w", err)
+	}
+	if accessSource == APIKeyAccessSourceBalance && group.IsExclusive && !user.CanBindGroup(group.ID, true) {
+		userCopy := *user
+		userCopy.AllowedGroups = append(append([]int64(nil), user.AllowedGroups...), group.ID)
+		user = &userCopy
+	}
+
+	entitlementID, err := s.resolveUpdateAccessSourceBinding(
+		ctx,
+		user,
+		group,
+		accessSource,
+		apiKey.SubscriptionEntitlementID,
+		nil,
+		false,
+		true,
+		runtime,
+	)
+	if err != nil {
+		return "", nil, err
+	}
+	return accessSource, entitlementID, nil
 }
 
 func (s *APIKeyService) resolveCreateSubscriptionEntitlementID(ctx context.Context, user *User, group *Group, explicitEntitlementID *int64, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
@@ -1019,15 +1081,15 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 	}
 
 	// 验证 IP 白名单格式
-	if len(req.IPWhitelist) > 0 {
-		if invalid := ip.ValidateIPPatterns(req.IPWhitelist); len(invalid) > 0 {
+	if req.IPWhitelist != nil && len(*req.IPWhitelist) > 0 {
+		if invalid := ip.ValidateIPPatterns(*req.IPWhitelist); len(invalid) > 0 {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidIPPattern, invalid)
 		}
 	}
 
 	// 验证 IP 黑名单格式
-	if len(req.IPBlacklist) > 0 {
-		if invalid := ip.ValidateIPPatterns(req.IPBlacklist); len(invalid) > 0 {
+	if req.IPBlacklist != nil && len(*req.IPBlacklist) > 0 {
+		if invalid := ip.ValidateIPPatterns(*req.IPBlacklist); len(invalid) > 0 {
 			return nil, fmt.Errorf("%w: %v", ErrInvalidIPPattern, invalid)
 		}
 	}
@@ -1139,9 +1201,13 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		}
 	}
 
-	// 更新 IP 限制（空数组会清空设置）
-	apiKey.IPWhitelist = req.IPWhitelist
-	apiKey.IPBlacklist = req.IPBlacklist
+	// 更新 IP 限制（nil 不修改，空数组清空设置）
+	if req.IPWhitelist != nil {
+		apiKey.IPWhitelist = *req.IPWhitelist
+	}
+	if req.IPBlacklist != nil {
+		apiKey.IPBlacklist = *req.IPBlacklist
+	}
 
 	// Update rate limit configuration
 	if req.RateLimit5h != nil {
