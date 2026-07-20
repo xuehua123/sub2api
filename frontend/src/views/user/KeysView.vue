@@ -1768,6 +1768,16 @@ function entitlementAccessSourcesForGroup(option: GroupOption): AvailableGroupAc
   return activeAccessSourcesForGroup(option, 'entitlement').filter((source) => Number(source.entitlement_id) > 0)
 }
 
+function entitlementHasUsableStructuredSource(option: GroupOption, entitlementID: number): boolean {
+  const matchingSources = option.accessSources.filter((source) =>
+    source.type === 'entitlement' && Number(source.entitlement_id) === entitlementID
+  )
+  // Older / partially rolled-out servers can return entitlement metadata before
+  // they include the corresponding access source. Missing metadata must not
+  // hide a valid plan group; an explicit disabled source still takes priority.
+  return matchingSources.length === 0 || matchingSources.some((source) => !source.disabled)
+}
+
 function accessSourceHasStructuredSources(option: GroupOption): boolean {
   return option.accessSources.length > 0
 }
@@ -1794,7 +1804,9 @@ function entitlementFromAccessSource(source: AvailableGroupAccessSource): Availa
 function entitlementsForGroupOption(option: GroupOption): AvailableGroupEntitlement[] {
   const byID = new Map<number, AvailableGroupEntitlement>()
   for (const entitlement of option.entitlements) {
-    byID.set(entitlement.id, entitlement)
+    if (entitlementHasUsableStructuredSource(option, entitlement.id)) {
+      byID.set(entitlement.id, entitlement)
+    }
   }
   for (const source of entitlementAccessSourcesForGroup(option)) {
     const entitlement = entitlementFromAccessSource(source)
@@ -1846,7 +1858,7 @@ function groupSupportsBalanceSource(option: GroupOption): boolean {
 
 function groupSupportsEntitlementSource(option: GroupOption): boolean {
   if (accessSourceHasStructuredSources(option)) {
-    return entitlementAccessSourcesForGroup(option).length > 0
+    return entitlementsForGroupOption(option).length > 0
   }
   if (option.subscriptionEnabled !== undefined) return option.subscriptionEnabled && option.entitlements.length > 0
   return option.subscriptionType === 'subscription' && option.entitlements.length > 0

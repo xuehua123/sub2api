@@ -468,6 +468,52 @@ describe('KeysView entitlement group binding', () => {
     }))
   })
 
+  it('keeps entitlement groups selectable when access source metadata is incomplete', async () => {
+    const wrapper = await mountView([
+      subscriptionGroup([401], {
+        access_sources: [
+          { type: 'balance', label: 'Balance access', name: 'Balance access' },
+        ],
+      }),
+    ])
+    const vm = setupState(wrapper)
+
+    vm.editKey(keyFixture({
+      group_id: 20,
+      access_source: 'entitlement',
+      subscription_entitlement_id: 401,
+    }))
+    await nextTick()
+
+    expect(vm.formGroupOptions.map((option: { value: number }) => option.value)).toEqual([20])
+  })
+
+  it('keeps explicitly disabled entitlement sources unavailable', async () => {
+    const wrapper = await mountView([
+      subscriptionGroup([402], {
+        access_sources: [
+          {
+            type: 'entitlement',
+            label: 'Disabled plan',
+            name: 'Disabled plan',
+            entitlement_id: 402,
+            disabled: true,
+          },
+        ],
+      }),
+    ])
+    const vm = setupState(wrapper)
+
+    vm.editKey(keyFixture({
+      group_id: 20,
+      access_source: 'entitlement',
+      subscription_entitlement_id: 402,
+    }))
+    await nextTick()
+
+    expect(vm.formGroupOptions).toEqual([])
+  })
+
   it('requires explicit selection when multiple entitlements cover the group', async () => {
     const wrapper = await mountView([subscriptionGroup([201, 202])])
     const vm = setupState(wrapper)
