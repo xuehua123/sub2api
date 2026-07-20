@@ -14,15 +14,33 @@ const (
 )
 
 type opsAccountStatsRepository interface {
-	ListOpsAccountsForStats(ctx context.Context, platformFilter string, groupIDFilter *int64) ([]Account, error)
+	ListOpsAccountsForStats(ctx context.Context, platformFilter string, groupIDFilter *int64, accountIDs []int64) ([]Account, error)
 }
 
-func (s *OpsService) listAllAccountsForOps(ctx context.Context, platformFilter string, groupIDFilter *int64) ([]Account, error) {
+func (s *OpsService) listAllAccountsForOps(ctx context.Context, platformFilter string, groupIDFilter *int64, accountIDs []int64) ([]Account, error) {
 	if s == nil || s.accountRepo == nil {
 		return []Account{}, nil
 	}
 	if repo, ok := s.accountRepo.(opsAccountStatsRepository); ok {
-		return repo.ListOpsAccountsForStats(ctx, platformFilter, groupIDFilter)
+		return repo.ListOpsAccountsForStats(ctx, platformFilter, groupIDFilter, accountIDs)
+	}
+	if len(accountIDs) > 0 {
+		// Fallback path without the optimized stats selector: still respect ID scope.
+		out := make([]Account, 0, len(accountIDs))
+		for _, id := range accountIDs {
+			if id <= 0 {
+				continue
+			}
+			acc, err := s.accountRepo.GetByID(ctx, id)
+			if err != nil || acc == nil {
+				continue
+			}
+			if platformFilter != "" && acc.Platform != platformFilter {
+				continue
+			}
+			out = append(out, *acc)
+		}
+		return out, nil
 	}
 
 	out := make([]Account, 0, 128)
@@ -123,7 +141,7 @@ func (s *OpsService) GetConcurrencyStats(
 		return nil, nil, nil, nil, err
 	}
 
-	accounts, err := s.listAllAccountsForOps(ctx, platformFilter, groupIDFilter)
+	accounts, err := s.listAllAccountsForOps(ctx, platformFilter, groupIDFilter, nil)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

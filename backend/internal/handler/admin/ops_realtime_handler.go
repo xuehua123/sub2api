@@ -146,7 +146,7 @@ func (h *OpsHandler) GetAccountAvailability(c *gin.Context) {
 		groupID = &id
 	}
 
-	platformStats, groupStats, accountStats, collectedAt, err := h.opsService.GetAccountAvailabilityStats(c.Request.Context(), platform, groupID)
+	platformStats, groupStats, accountStats, collectedAt, err := h.opsService.GetAccountAvailabilityStats(c.Request.Context(), platform, groupID, nil)
 	if err != nil {
 		if isOpsRealtimeRequestCanceled(c, err) {
 			return

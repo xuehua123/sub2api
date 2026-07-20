@@ -8,8 +8,9 @@ import (
 
 // GetAccountAvailabilityStats returns current account availability stats.
 //
-// Query-level filtering is intentionally limited to platform/group to match the dashboard scope.
-func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFilter string, groupIDFilter *int64) (
+// Filtering: platform/group for dashboard scope; optional accountIDs for page-scoped health.
+// Pass nil/empty accountIDs for the full fleet (ops dashboard).
+func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFilter string, groupIDFilter *int64, accountIDs []int64) (
 	map[string]*PlatformAvailability,
 	map[int64]*GroupAvailability,
 	map[int64]*AccountAvailability,
@@ -20,7 +21,7 @@ func (s *OpsService) GetAccountAvailabilityStats(ctx context.Context, platformFi
 		return nil, nil, nil, nil, err
 	}
 
-	accounts, err := s.listAllAccountsForOps(ctx, platformFilter, groupIDFilter)
+	accounts, err := s.listAllAccountsForOps(ctx, platformFilter, groupIDFilter, accountIDs)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -179,7 +180,7 @@ func (s *OpsService) GetAccountAvailability(ctx context.Context, platformFilter 
 		return s.getAccountAvailability(ctx, platformFilter, groupIDFilter)
 	}
 
-	_, groupStats, accountStats, collectedAt, err := s.GetAccountAvailabilityStats(ctx, platformFilter, groupIDFilter)
+	_, groupStats, accountStats, collectedAt, err := s.GetAccountAvailabilityStats(ctx, platformFilter, groupIDFilter, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *service.OpsAccountHealthFilter) (map[int64]*service.OpsAccountHealthMetrics, error) {
@@ -20,6 +21,7 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 		endTime = filter.EndTime.UTC()
 	}
 	start1m := endTime.Add(-1 * time.Minute)
+	startPrev1m := endTime.Add(-2 * time.Minute) // exclusive prior minute [now-2m, now-1m)
 	start5m := endTime.Add(-5 * time.Minute)
 	start10m := endTime.Add(-10 * time.Minute)
 	start30m := endTime.Add(-30 * time.Minute)
@@ -28,6 +30,7 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 	platform := ""
 	groupID := int64(0)
 	limit := 60
+	accountIDs := []int64{}
 	if filter != nil {
 		platform = strings.TrimSpace(strings.ToLower(filter.Platform))
 		if filter.GroupID != nil && *filter.GroupID > 0 {
@@ -36,19 +39,32 @@ func (r *opsRepository) GetAccountHealthMetrics(ctx context.Context, filter *ser
 		if filter.RecentLimit > 0 {
 			limit = filter.RecentLimit
 		}
+		if len(filter.AccountIDs) > 0 {
+			seen := make(map[int64]struct{}, len(filter.AccountIDs))
+			for _, id := range filter.AccountIDs {
+				if id <= 0 {
+					continue
+				}
+				if _, ok := seen[id]; ok {
+					continue
+				}
+				seen[id] = struct{}{}
+				accountIDs = append(accountIDs, id)
+			}
+		}
 	}
 	if limit > 120 {
 		limit = 120
 	}
 
 	out := map[int64]*service.OpsAccountHealthMetrics{}
-	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID); err != nil {
+	if err := r.loadAccountHealthWindowStats(ctx, out, endTime, start1m, startPrev1m, start5m, start10m, start30m, start1h, platform, groupID, accountIDs); err != nil {
 		return nil, err
 	}
-	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID); err != nil {
+	if err := r.loadAccountHealthFirstTokenStats(ctx, out, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID, accountIDs); err != nil {
 		return nil, err
 	}
-	if err := r.loadAccountHealthRecentSamples(ctx, out, endTime, start1h, platform, groupID, limit); err != nil {
+	if err := r.loadAccountHealthRecentSamples(ctx, out, endTime, start1h, platform, groupID, limit, accountIDs); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -59,13 +75,17 @@ func (r *opsRepository) loadAccountHealthWindowStats(
 	out map[int64]*service.OpsAccountHealthMetrics,
 	endTime time.Time,
 	start1m time.Time,
+	startPrev1m time.Time,
 	start5m time.Time,
 	start10m time.Time,
 	start30m time.Time,
 	start1h time.Time,
 	platform string,
 	groupID int64,
+	accountIDs []int64,
 ) error {
+	// All window counts are full aggregates from usage_logs ∪ ops_error_logs (not sample-capped).
+	// prev_1m is exclusive [now-2m, now-1m); other windows are [start, end).
 	query := `
 WITH combined AS (
   SELECT
@@ -82,6 +102,7 @@ WITH combined AS (
     AND ul.account_id IS NOT NULL
     AND ($7 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
     AND ($8::BIGINT <= 0 OR ul.group_id = $8)
+    AND (cardinality($9::BIGINT[]) = 0 OR ul.account_id = ANY($9))
 
   UNION ALL
 
@@ -100,14 +121,16 @@ WITH combined AS (
     AND COALESCE(o.upstream_status_code, o.status_code, 0) >= 400
     AND ($7 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
     AND ($8::BIGINT <= 0 OR o.group_id = $8)
+    AND (cardinality($9::BIGINT[]) = 0 OR o.account_id = ANY($9))
 ),
-windows(label, start_at) AS (
+windows(label, start_at, end_at) AS (
   VALUES
-    ('1m'::TEXT, $2::TIMESTAMPTZ),
-    ('5m'::TEXT, $3::TIMESTAMPTZ),
-    ('10m'::TEXT, $4::TIMESTAMPTZ),
-    ('30m'::TEXT, $5::TIMESTAMPTZ),
-    ('1h'::TEXT, $6::TIMESTAMPTZ)
+    ('1m'::TEXT, $2::TIMESTAMPTZ, $1::TIMESTAMPTZ),
+    ('5m'::TEXT, $3::TIMESTAMPTZ, $1::TIMESTAMPTZ),
+    ('10m'::TEXT, $4::TIMESTAMPTZ, $1::TIMESTAMPTZ),
+    ('30m'::TEXT, $5::TIMESTAMPTZ, $1::TIMESTAMPTZ),
+    ('1h'::TEXT, $6::TIMESTAMPTZ, $1::TIMESTAMPTZ),
+    ('prev_1m'::TEXT, $10::TIMESTAMPTZ, $2::TIMESTAMPTZ)
 )
 SELECT
   c.account_id,
@@ -120,12 +143,12 @@ SELECT
   COUNT(*) FILTER (WHERE c.status_code = 529) AS status_529_count,
   AVG(c.duration_ms)::DOUBLE PRECISION AS avg_duration_ms
 FROM combined c
-JOIN windows w ON c.created_at >= w.start_at
+JOIN windows w ON c.created_at >= w.start_at AND c.created_at < w.end_at
 GROUP BY c.account_id, w.label
 ORDER BY c.account_id, w.label
 `
 
-	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID)
+	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID, pq.Array(accountIDs), startPrev1m)
 	if err != nil {
 		return fmt.Errorf("query account health windows: %w", err)
 	}
@@ -176,6 +199,7 @@ func (r *opsRepository) loadAccountHealthFirstTokenStats(
 	start1h time.Time,
 	platform string,
 	groupID int64,
+	accountIDs []int64,
 ) error {
 	query := `
 WITH windows(label, start_at) AS (
@@ -200,11 +224,12 @@ WHERE ul.created_at >= $6 AND ul.created_at < $1
   AND ul.first_token_ms IS NOT NULL
   AND ($7 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $7)
   AND ($8::BIGINT <= 0 OR ul.group_id = $8)
+  AND (cardinality($9::BIGINT[]) = 0 OR ul.account_id = ANY($9))
 GROUP BY ul.account_id, w.label
 ORDER BY ul.account_id, w.label
 `
 
-	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID)
+	rows, err := r.db.QueryContext(ctx, query, endTime, start1m, start5m, start10m, start30m, start1h, platform, groupID, pq.Array(accountIDs))
 	if err != nil {
 		return fmt.Errorf("query account health first token stats: %w", err)
 	}
@@ -248,6 +273,7 @@ func (r *opsRepository) loadAccountHealthRecentSamples(
 	platform string,
 	groupID int64,
 	limit int,
+	accountIDs []int64,
 ) error {
 	query := `
 WITH combined AS (
@@ -267,6 +293,7 @@ WITH combined AS (
     AND ul.account_id IS NOT NULL
     AND ($3 = '' OR LOWER(COALESCE(NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $3)
     AND ($4::BIGINT <= 0 OR ul.group_id = $4)
+    AND (cardinality($6::BIGINT[]) = 0 OR ul.account_id = ANY($6))
 
   UNION ALL
 
@@ -287,6 +314,7 @@ WITH combined AS (
     AND COALESCE(o.upstream_status_code, o.status_code, 0) >= 400
     AND ($3 = '' OR LOWER(COALESCE(NULLIF(o.platform, ''), NULLIF(g.platform, ''), NULLIF(a.platform, ''), '')) = $3)
     AND ($4::BIGINT <= 0 OR o.group_id = $4)
+    AND (cardinality($6::BIGINT[]) = 0 OR o.account_id = ANY($6))
 ),
 ranked AS (
   SELECT
@@ -308,7 +336,7 @@ WHERE rn <= $5
 ORDER BY account_id, created_at DESC
 `
 
-	rows, err := r.db.QueryContext(ctx, query, endTime, startTime, platform, groupID, limit)
+	rows, err := r.db.QueryContext(ctx, query, endTime, startTime, platform, groupID, limit, pq.Array(accountIDs))
 	if err != nil {
 		return fmt.Errorf("query account health recent samples: %w", err)
 	}
