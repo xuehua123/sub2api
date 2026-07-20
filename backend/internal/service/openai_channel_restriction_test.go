@@ -86,6 +86,39 @@ func TestOpenAISelectAccountForModelWithExclusions_UpstreamRestrictionSkipsDisal
 	require.Equal(t, int64(2), account.ID)
 }
 
+func TestOpenAIValidateChannelModelForAccount_UpstreamRestrictionMatchesScheduler(t *testing.T) {
+	t.Parallel()
+
+	channelSvc := newTestChannelService(makeStandardRepo(Channel{
+		ID:                 1,
+		Status:             StatusActive,
+		GroupIDs:           []int64{10},
+		RestrictModels:     true,
+		BillingModelSource: BillingModelSourceUpstream,
+		ModelPricing: []ChannelModelPricing{
+			{Platform: PlatformOpenAI, Models: []string{"o3-mini"}},
+		},
+	}, map[int64]string{10: PlatformOpenAI}))
+	svc := &OpenAIGatewayService{channelService: channelSvc}
+	groupID := int64(10)
+
+	disallowed := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-4.1": "gpt-4o"},
+		},
+	}
+	require.ErrorIs(t, svc.ValidateChannelModelForAccount(context.Background(), &groupID, disallowed, "gpt-4.1"), ErrUnsupportedModel)
+
+	allowed := &Account{
+		Platform: PlatformOpenAI,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{"gpt-4.1": "o3-mini"},
+		},
+	}
+	require.NoError(t, svc.ValidateChannelModelForAccount(context.Background(), &groupID, allowed, "gpt-4.1"))
+}
+
 func TestOpenAISelectAccountForModelWithExclusions_StickyRestrictedUpstreamFallsBack(t *testing.T) {
 	t.Parallel()
 

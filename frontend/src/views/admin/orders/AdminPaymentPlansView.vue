@@ -187,7 +187,7 @@ const planColumns = computed((): Column[] => [
   { key: 'access_scope', label: t('payment.admin.accessScope') },
   { key: 'groups', label: t('payment.admin.authorizedGroups') },
   { key: 'price', label: t('payment.admin.price') },
-  { key: 'validity_days', label: t('payment.admin.validityDays') },
+  { key: 'validity_days', label: t('payment.admin.validity') },
   { key: 'for_sale', label: t('payment.admin.forSale') },
   { key: 'sort_order', label: t('payment.admin.sortOrder') },
   { key: 'actions', label: t('common.actions') },

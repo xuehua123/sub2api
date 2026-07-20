@@ -356,17 +356,38 @@ type AssignSubscriptionInput struct {
 	Notes        string
 }
 
+type subscriptionAssignmentOutcome uint8
+
+const (
+	subscriptionAssignmentCreated subscriptionAssignmentOutcome = iota
+	subscriptionAssignmentReused
+	subscriptionAssignmentRenewed
+)
+
+func (o subscriptionAssignmentOutcome) changed() bool {
+	return o == subscriptionAssignmentCreated || o == subscriptionAssignmentRenewed
+}
+
+func (o subscriptionAssignmentOutcome) reused() bool {
+	return o != subscriptionAssignmentCreated
+}
+
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
 	if s.shouldAssignPlanEntitlementAlias(ctx, input) {
-		var sub *UserSubscription
+		var (
+			sub            *UserSubscription
+			outcome        subscriptionAssignmentOutcome
+			aliasMayChange bool
+		)
 		err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
 			var innerErr error
-			sub, _, innerErr = s.assignSubscriptionWithReuse(txCtx, input)
+			sub, outcome, innerErr = s.assignSubscriptionWithReuse(txCtx, input, true)
 			if innerErr != nil {
 				return innerErr
 			}
-			return s.assignPlanEntitlementAlias(txCtx, input, sub)
+			aliasMayChange = planEntitlementAliasMayChange(sub, outcome)
+			return s.assignPlanEntitlementAlias(txCtx, input, sub, outcome)
 		})
 		if err != nil {
 			if shouldFallbackToEntitlementOnlyAssign(err) {
@@ -374,14 +395,17 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 			}
 			return nil, err
 		}
+		if outcome.changed() || aliasMayChange {
+			s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, false)
+		}
 		return sub, nil
 	}
 
-	sub, _, err := s.assignSubscriptionWithReuse(ctx, input)
+	sub, outcome, err := s.assignSubscriptionWithReuse(ctx, input, false)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.assignPlanEntitlementAlias(ctx, input, sub); err != nil {
+	if err := s.assignPlanEntitlementAlias(ctx, input, sub, outcome); err != nil {
 		return nil, err
 	}
 	return sub, nil
@@ -488,21 +512,24 @@ func (s *SubscriptionService) maybeInvalidateAssignmentCaches(userID, groupID in
 		return
 	}
 
-	s.InvalidateSubCache(userID, groupID)
-	if s.billingCacheService != nil {
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
-		}()
-	}
+	s.bestEffortInvalidateSubscriptionCachesBefore("assign subscription", userID, groupID, 0)
 }
 
-func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput, sub *UserSubscription) error {
+func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput, sub *UserSubscription, outcome subscriptionAssignmentOutcome) error {
 	if s == nil || input == nil || sub == nil || input.PlanID <= 0 || !s.ShouldUseSubscriptionEntitlementAliases(ctx) {
 		return nil
 	}
+	if !planEntitlementAliasMayChange(sub, outcome) {
+		return nil
+	}
 	sourceExternalID := adminAssignEntitlementSourceExternalID(sub.ID, input.PlanID)
+	assignNow := time.Time{}
+	if shouldRenewPlanEntitlementAlias(sub, outcome) {
+		sourceExternalID = adminAssignEntitlementRenewalSourceExternalID(sub.ID, input.PlanID, sub.StartsAt)
+		assignNow = sub.StartsAt
+	} else if outcome == subscriptionAssignmentReused && sub.EntitlementLink == nil {
+		assignNow = sub.StartsAt
+	}
 	legacySubscriptionID := sub.ID
 	_, _, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
 		UserID:               input.UserID,
@@ -513,6 +540,7 @@ func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, in
 		ValidityDaysOverride: input.ValidityDays,
 		AssignedBy:           input.AssignedBy,
 		Notes:                input.Notes,
+		Now:                  assignNow,
 	})
 	if err != nil {
 		return fmt.Errorf("assign subscription entitlement alias: %w", err)
@@ -543,6 +571,36 @@ func (s *SubscriptionService) assignPlanEntitlementOnly(ctx context.Context, inp
 
 func adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID int64) string {
 	return fmt.Sprintf("%s:%d:plan:%d", SubscriptionEntitlementSourceAdminAssign, legacySubscriptionID, planID)
+}
+
+func adminAssignEntitlementRenewalSourceExternalID(legacySubscriptionID, planID int64, startsAt time.Time) string {
+	return fmt.Sprintf("%s:term:%d", adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID), startsAt.UTC().UnixNano())
+}
+
+func planEntitlementAliasMayChange(sub *UserSubscription, outcome subscriptionAssignmentOutcome) bool {
+	if sub == nil {
+		return false
+	}
+	switch outcome {
+	case subscriptionAssignmentCreated:
+		return true
+	case subscriptionAssignmentRenewed:
+		return shouldRenewPlanEntitlementAlias(sub, outcome)
+	case subscriptionAssignmentReused:
+		return sub.EntitlementLink == nil
+	default:
+		return false
+	}
+}
+
+func shouldRenewPlanEntitlementAlias(sub *UserSubscription, outcome subscriptionAssignmentOutcome) bool {
+	if sub == nil || outcome != subscriptionAssignmentRenewed {
+		return false
+	}
+	if sub.EntitlementLink == nil {
+		return true
+	}
+	return sub.EntitlementLink.Status == SubscriptionStatusExpired || !sub.EntitlementLink.ExpiresAt.After(sub.StartsAt)
 }
 
 func (s *SubscriptionService) updateExistingSubscriptionTerm(
@@ -712,13 +770,13 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 	}
 
 	for _, userID := range input.UserIDs {
-		sub, reused, err := s.assignSubscriptionWithReuse(ctx, &AssignSubscriptionInput{
+		sub, outcome, err := s.assignSubscriptionWithReuse(ctx, &AssignSubscriptionInput{
 			UserID:       userID,
 			GroupID:      input.GroupID,
 			ValidityDays: input.ValidityDays,
 			AssignedBy:   input.AssignedBy,
 			Notes:        input.Notes,
-		})
+		}, false)
 		if err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, fmt.Sprintf("user %d: %v", userID, err))
@@ -726,7 +784,7 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 		} else {
 			result.SuccessCount++
 			result.Subscriptions = append(result.Subscriptions, *sub)
-			if reused {
+			if outcome.reused() {
 				result.ReusedCount++
 				result.Statuses[userID] = "reused"
 			} else {
@@ -739,51 +797,77 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 	return result, nil
 }
 
-func (s *SubscriptionService) assignSubscriptionWithReuse(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
+func (s *SubscriptionService) assignSubscriptionWithReuse(ctx context.Context, input *AssignSubscriptionInput, deferCacheInvalidation bool) (*UserSubscription, subscriptionAssignmentOutcome, error) {
 	// 检查分组是否存在且为订阅类型
 	group, err := s.groupRepo.GetByID(ctx, input.GroupID)
 	if err != nil {
-		return nil, false, fmt.Errorf("group not found: %w", err)
+		return nil, subscriptionAssignmentCreated, fmt.Errorf("group not found: %w", err)
 	}
 	if !group.IsSubscriptionType() {
-		return nil, false, ErrGroupNotSubscriptionType
+		return nil, subscriptionAssignmentCreated, ErrGroupNotSubscriptionType
 	}
 
 	// 检查是否已存在订阅；若已存在，则按幂等成功返回现有订阅
 	exists, err := s.userSubRepo.ExistsByUserIDAndGroupID(ctx, input.UserID, input.GroupID)
 	if err != nil {
-		return nil, false, err
+		return nil, subscriptionAssignmentCreated, err
 	}
 	if exists {
 		sub, getErr := s.userSubRepo.GetByUserIDAndGroupID(ctx, input.UserID, input.GroupID)
 		if getErr != nil {
-			return nil, false, getErr
+			return nil, subscriptionAssignmentCreated, getErr
 		}
-		if conflictReason, conflict := detectAssignSemanticConflict(sub, input); conflict {
-			return nil, false, ErrSubscriptionAssignConflict.WithMetadata(map[string]string{
+		if conflictReason, conflict := detectAssignPlanConflict(sub, input); conflict {
+			return nil, subscriptionAssignmentCreated, ErrSubscriptionAssignConflict.WithMetadata(map[string]string{
 				"conflict_reason": conflictReason,
 			})
 		}
-		return sub, true, nil
+		now := time.Now()
+		if sub.Status == SubscriptionStatusExpired ||
+			(sub.Status != SubscriptionStatusSuspended && !sub.ExpiresAt.After(now)) {
+			validityDays := normalizeAssignValidityDays(input.ValidityDays)
+			newExpiresAt := now.AddDate(0, 0, validityDays)
+			if newExpiresAt.After(MaxExpiresAt) {
+				newExpiresAt = MaxExpiresAt
+			}
+			renewalNotes := input.Notes
+			if strings.TrimSpace(sub.Notes) == strings.TrimSpace(input.Notes) {
+				renewalNotes = ""
+			}
+			if err := s.updateExistingSubscriptionTerm(ctx, sub, renewalNotes, now, newExpiresAt, true); err != nil {
+				return nil, subscriptionAssignmentCreated, err
+			}
+			s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, deferCacheInvalidation)
+			renewed, getErr := s.userSubRepo.GetByID(ctx, sub.ID)
+			return renewed, subscriptionAssignmentRenewed, getErr
+		}
+		if conflictReason, conflict := detectAssignSemanticConflict(sub, input); conflict {
+			return nil, subscriptionAssignmentCreated, ErrSubscriptionAssignConflict.WithMetadata(map[string]string{
+				"conflict_reason": conflictReason,
+			})
+		}
+		return sub, subscriptionAssignmentReused, nil
 	}
 
 	sub, err := s.createSubscription(ctx, input)
 	if err != nil {
-		return nil, false, err
+		return nil, subscriptionAssignmentCreated, err
 	}
 
 	// 失效订阅缓存
-	s.InvalidateSubCache(input.UserID, input.GroupID)
-	if s.billingCacheService != nil {
-		userID, groupID := input.UserID, input.GroupID
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
-		}()
-	}
+	s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, deferCacheInvalidation)
 
-	return sub, false, nil
+	return sub, subscriptionAssignmentCreated, nil
+}
+
+func detectAssignPlanConflict(existing *UserSubscription, input *AssignSubscriptionInput) (string, bool) {
+	if existing == nil || input == nil || input.PlanID <= 0 || existing.EntitlementLink == nil {
+		return "", false
+	}
+	if existing.EntitlementLink.PlanID == nil || *existing.EntitlementLink.PlanID != input.PlanID {
+		return "plan_id_mismatch", true
+	}
+	return "", false
 }
 
 func detectAssignSemanticConflict(existing *UserSubscription, input *AssignSubscriptionInput) (string, bool) {
@@ -791,10 +875,8 @@ func detectAssignSemanticConflict(existing *UserSubscription, input *AssignSubsc
 		return "", false
 	}
 
-	if input.PlanID > 0 && existing.EntitlementLink != nil {
-		if existing.EntitlementLink.PlanID == nil || *existing.EntitlementLink.PlanID != input.PlanID {
-			return "plan_id_mismatch", true
-		}
+	if conflictReason, conflict := detectAssignPlanConflict(existing, input); conflict {
+		return conflictReason, true
 	}
 
 	normalizedDays := normalizeAssignValidityDays(input.ValidityDays)

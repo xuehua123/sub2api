@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
@@ -30,6 +31,23 @@ func TestClientRequestIDGeneratesAndExposesID(t *testing.T) {
 	require.Equal(t, w.Body.String(), w.Header().Get(clientRequestIDHeader))
 }
 
+func TestClientRequestIDBoundsExistingContextID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ClientRequestID())
+	router.GET("/", func(c *gin.Context) {
+		value, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+		c.String(http.StatusOK, value)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxkey.ClientRequestID, strings.Repeat("x", 200)))
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Len(t, w.Body.String(), 36)
+	require.NotEqual(t, strings.Repeat("x", maxPersistentRequestIDBytes), w.Body.String())
+	require.Equal(t, w.Body.String(), w.Header().Get(clientRequestIDHeader))
+}
+
 func TestClientRequestIDPreservesExistingContextID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -47,4 +65,47 @@ func TestClientRequestIDPreservesExistingContextID(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, "existing-client-request-id", w.Body.String())
 	require.Equal(t, "existing-client-request-id", w.Header().Get(clientRequestIDHeader))
+}
+
+func TestClientRequestIDBoundsOversizedHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ClientRequestID())
+	router.GET("/", func(c *gin.Context) {
+		value, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+		c.String(http.StatusOK, value)
+	})
+
+	oversized := strings.Repeat("h", maxPersistentRequestIDBytes+1)
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(clientRequestIDHeader, oversized)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	got := w.Body.String()
+	require.Len(t, got, 36, "oversized header must be replaced with a UUID")
+	require.NotEqual(t, oversized, got)
+	require.Equal(t, got, w.Header().Get(clientRequestIDHeader))
+	require.LessOrEqual(t, len(got), maxPersistentRequestIDBytes)
+}
+
+func TestClientRequestIDPreservesValidHeader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ClientRequestID())
+	router.GET("/", func(c *gin.Context) {
+		value, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string)
+		c.String(http.StatusOK, value)
+	})
+
+	const want = "client-provided-req-id-ok"
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(clientRequestIDHeader, want)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, want, w.Body.String())
+	require.Equal(t, want, w.Header().Get(clientRequestIDHeader))
 }

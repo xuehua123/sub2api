@@ -24,13 +24,27 @@ func ClientRequestID() gin.HandlerFunc {
 		}
 
 		if v, _ := c.Request.Context().Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(v) != "" {
-			c.Header(clientRequestIDHeader, strings.TrimSpace(v))
+			var valid bool
+			v, valid = normalizeCorrelationID(v)
+			if !valid {
+				v = uuid.New().String()
+			}
+			c.Header(clientRequestIDHeader, v)
+			ctx := context.WithValue(c.Request.Context(), ctxkey.ClientRequestID, v)
+			c.Request = c.Request.WithContext(ctx)
 			c.Next()
 			return
 		}
 
+		// Accept client-provided X-Client-Request-ID, but apply the same
+		// length/validity bounds as the context path so oversized IDs cannot
+		// poison Ops persistence (e.g. VARCHAR(64) client_request_id columns).
 		id := strings.TrimSpace(c.GetHeader(clientRequestIDHeader))
 		if id == "" {
+			id = uuid.New().String()
+		} else if normalized, valid := normalizeCorrelationID(id); valid {
+			id = normalized
+		} else {
 			id = uuid.New().String()
 		}
 		c.Header(clientRequestIDHeader, id)

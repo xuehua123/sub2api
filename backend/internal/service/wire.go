@@ -570,6 +570,8 @@ func ProvideOpsService(
 	systemLogSink *OpsSystemLogSink,
 	settingService *SettingService,
 	upstreamConnectionService *UpstreamConnectionService,
+	authCacheInvalidationWorker *AuthCacheInvalidationWorker,
+	apiKeyService *APIKeyService,
 ) *OpsService {
 	svc := NewOpsService(
 		opsRepo,
@@ -593,7 +595,23 @@ func ProvideOpsService(
 	if upstreamConnectionService != nil {
 		svc.SetUpstreamConnectionBalanceSource(upstreamConnectionService)
 	}
+	svc.authCacheInvalidationWorker = authCacheInvalidationWorker
+	svc.apiKeyService = apiKeyService
+	svc.StartRuntimeSettingsRefresh(context.Background())
 	return svc
+}
+
+// ProvideOpsIngressRejectAggregator starts the bounded security aggregation
+// runtime and attaches it to OpsService, which is the middleware recorder.
+func ProvideOpsIngressRejectAggregator(opsRepo OpsRepository, opsService *OpsService) *OpsIngressRejectAggregator {
+	repo, ok := opsRepo.(OpsIngressRejectRepository)
+	if !ok {
+		return nil
+	}
+	aggregator := NewOpsIngressRejectAggregator(repo)
+	aggregator.Start()
+	opsService.SetIngressRejectAggregator(aggregator)
+	return aggregator
 }
 
 // ProvideSettingService wires SettingService with group reader and proxy repo.
@@ -710,6 +728,7 @@ var ProviderSet = wire.NewSet(
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
+	ProvideAuthCacheInvalidationWorker,
 	NewGroupService,
 	NewAccountService,
 	NewProxyService,
@@ -759,6 +778,7 @@ var ProviderSet = wire.NewSet(
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
 	ProvideOpsService,
+	ProvideOpsIngressRejectAggregator,
 	ProvideAuditLogService,
 	ProvideOpsMetricsCollector,
 	ProvideOpsAggregationService,

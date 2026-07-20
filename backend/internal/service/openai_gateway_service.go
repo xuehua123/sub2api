@@ -566,6 +566,19 @@ func (s *OpenAIGatewayService) checkChannelPricingRestriction(ctx context.Contex
 	return s.channelService.IsModelRestricted(ctx, *groupID, billingModel)
 }
 
+// ValidateChannelModelForAccount applies the same channel pricing restrictions
+// used during account scheduling to a later request on an already selected account.
+func (s *OpenAIGatewayService) ValidateChannelModelForAccount(ctx context.Context, groupID *int64, account *Account, requestedModel string) error {
+	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
+		return unsupportedModelError(requestedModel)
+	}
+	if groupID != nil && s.needsUpstreamChannelRestrictionCheck(ctx, groupID) &&
+		s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, false) {
+		return unsupportedModelError(requestedModel)
+	}
+	return nil
+}
+
 func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context, groupID int64, account *Account, requestedModel string, requireCompact bool) bool {
 	if s.channelService == nil {
 		return false

@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -28,18 +29,23 @@ import (
 
 // OpenAIGatewayHandler handles OpenAI API gateway requests
 type OpenAIGatewayHandler struct {
-	gatewayService           *service.OpenAIGatewayService
-	billingCacheService      *service.BillingCacheService
-	apiKeyService            *service.APIKeyService
-	usageRecordWorkerPool    *service.UsageRecordWorkerPool
-	errorPassthroughService  *service.ErrorPassthroughService
-	contentModerationService *service.ContentModerationService
-	securityAuditCoordinator *securityaudit.Coordinator
-	opsService               *service.OpsService
-	concurrencyHelper        *ConcurrencyHelper
-	imageLimiter             *imageConcurrencyLimiter
-	maxAccountSwitches       int
-	cfg                      *config.Config
+	gatewayService             *service.OpenAIGatewayService
+	billingCacheService        *service.BillingCacheService
+	apiKeyService              *service.APIKeyService
+	usageRecordWorkerPool      *service.UsageRecordWorkerPool
+	errorPassthroughService    *service.ErrorPassthroughService
+	contentModerationService   *service.ContentModerationService
+	securityAuditCoordinator   *securityaudit.Coordinator
+	grokMediaEligibilityProber grokMediaEligibilityProber
+	opsService                 *service.OpsService
+	concurrencyHelper          *ConcurrencyHelper
+	imageLimiter               *imageConcurrencyLimiter
+	maxAccountSwitches         int
+	cfg                        *config.Config
+}
+
+type grokMediaEligibilityProber interface {
+	ProbeMediaEligibility(ctx context.Context, accountID int64) (bool, string, error)
 }
 
 const maxOpenAIFirstOutputTimeoutSwitches = 1
@@ -1513,6 +1519,74 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// 解析渠道级模型映射
 	channelMappingWS, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, reqModel)
+	type wsTurnUsageContext struct {
+		requestedModel string
+		channelMapping service.ChannelMappingResult
+		payloadHash    string
+	}
+	var turnUsageMu sync.Mutex
+	turnUsageContexts := map[int]wsTurnUsageContext{
+		1: {
+			requestedModel: reqModel,
+			channelMapping: channelMappingWS,
+		},
+	}
+	latestRequestedModel := reqModel
+	setTurnUsageContext := func(turn int, turnCtx wsTurnUsageContext) {
+		turnUsageMu.Lock()
+		turnUsageContexts[turn] = turnCtx
+		if strings.TrimSpace(turnCtx.requestedModel) != "" {
+			latestRequestedModel = turnCtx.requestedModel
+		}
+		turnUsageMu.Unlock()
+	}
+	takeTurnUsageContext := func(turn int) wsTurnUsageContext {
+		turnUsageMu.Lock()
+		defer turnUsageMu.Unlock()
+		if turnCtx, ok := turnUsageContexts[turn]; ok {
+			if turn > 1 {
+				delete(turnUsageContexts, turn)
+			}
+			return turnCtx
+		}
+		return turnUsageContexts[1]
+	}
+	requestedModelForTurn := func(payload []byte, fallback string) string {
+		if model := strings.TrimSpace(gjson.GetBytes(payload, "model").String()); model != "" {
+			return model
+		}
+		if fallback = strings.TrimSpace(fallback); fallback != "" {
+			return fallback
+		}
+		turnUsageMu.Lock()
+		model := latestRequestedModel
+		turnUsageMu.Unlock()
+		if model != "" {
+			return model
+		}
+		return reqModel
+	}
+	transformTurnRequest := func(account *service.Account, turn int, payload []byte, originalModel string) ([]byte, error) {
+		requestedModel := requestedModelForTurn(payload, originalModel)
+		if err := h.gatewayService.ValidateChannelModelForAccount(ctx, apiKey.GroupID, account, requestedModel); err != nil {
+			return nil, service.NewOpenAIWSClientCloseError(
+				coderws.StatusPolicyViolation,
+				"model is not available for this channel",
+				err,
+			)
+		}
+		mapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(ctx, apiKey.GroupID, requestedModel)
+		transformed := payload
+		if mapping.Mapped {
+			transformed = h.gatewayService.ReplaceModelInBody(payload, mapping.MappedModel)
+		}
+		setTurnUsageContext(turn, wsTurnUsageContext{
+			requestedModel: requestedModel,
+			channelMapping: mapping,
+			payloadHash:    service.HashUsageRequestPayload(transformed),
+		})
+		return transformed, nil
+	}
 
 	var currentUserRelease func()
 	var currentAccountRelease func()
@@ -1727,7 +1801,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("candidate_count", scheduleDecision.CandidateCount),
 		)
 
-		var requestPayloadHash string
 		hooks := &service.OpenAIWSIngressHooks{
 			InitialRequestModel: reqModel,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
@@ -1737,18 +1810,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if !gjson.ValidBytes(payload) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 				}
-				model := strings.TrimSpace(originalModel)
-				if model == "" {
-					model = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
-				}
-				if model == "" {
-					model = reqModel
-				}
+				model := requestedModelForTurn(payload, originalModel)
 				if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, "subsequent_turn"); decision != nil && !decision.AllowNextStage {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
 				}
 				return nil
+			},
+			TransformRequest: func(turn int, payload []byte, originalModel string) ([]byte, error) {
+				return transformTurnRequest(account, turn, payload, originalModel)
 			},
 			BeforeTurn: func(turn int) error {
 				// turn==1 的会话屏蔽已由握手层检查覆盖；连接内 flag 只拦截后续 turn。
@@ -1791,7 +1861,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				// 届时 defer 已清除标记）。
 				defer clearCyberPolicyTurnState(c)
 				releaseTurnSlots()
-				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, reqModel, turnErr != nil, cyberBlockKey, channelMappingWS.ToUsageFields(reqModel, ""), requestPayloadHash)
+				turnUsage := takeTurnUsageContext(turn)
+				turnRequestedModel := strings.TrimSpace(turnUsage.requestedModel)
+				if turnRequestedModel == "" {
+					turnRequestedModel = reqModel
+				}
+				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, turnRequestedModel, turnErr != nil, cyberBlockKey, turnUsage.channelMapping.ToUsageFields(turnRequestedModel, ""), turnUsage.payloadHash)
 				if service.GetOpsCyberPolicy(c) != nil {
 					cyberBlockedThisConn = true
 				}
@@ -1813,11 +1888,25 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if result == nil {
 					return
 				}
+				usageResult := *result
+				routedModel := turnRequestedModel
+				if turnUsage.channelMapping.Mapped {
+					routedModel = turnUsage.channelMapping.MappedModel
+				}
+				usageResult.Model = routedModel
+				if strings.TrimSpace(usageResult.UpstreamModel) == "" {
+					usageResult.UpstreamModel = account.GetMappedModel(routedModel)
+				}
+				result = &usageResult
 				// 排除 spark 影子:其 codex_* 仅由 QueryUsage(/wham/usage bengalfox)更新(外审第7轮 P1)。
 				if account.Type == service.AccountTypeOAuth && !account.IsShadow() {
 					h.gatewayService.UpdateCodexUsageSnapshotFromHeaders(ctx, account.ID, result.ResponseHeaders)
 				}
-				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
+				scheduleModel := turnRequestedModel
+				if turnUsage.channelMapping.Mapped {
+					scheduleModel = turnUsage.channelMapping.MappedModel
+				}
+				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(scheduleModel), openAIForwardSucceededForScheduling(result), result.FirstTokenMs)
 				inboundEndpoint := GetInboundEndpoint(c)
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
@@ -1836,10 +1925,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						UpstreamEndpoint:           upstreamEndpoint,
 						UserAgent:                  userAgent,
 						IPAddress:                  clientIP,
-						RequestPayloadHash:         requestPayloadHash,
+						RequestPayloadHash:         turnUsage.payloadHash,
 						APIKeyService:              h.apiKeyService,
 						QuotaPlatform:              quotaPlatform,
-						ChannelUsageFields:         channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
+						ChannelUsageFields:         turnUsage.channelMapping.ToUsageFields(turnRequestedModel, result.UpstreamModel),
 						CyberBlocked:               cyberBlocked,
 					}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
@@ -1870,7 +1959,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
-		requestPayloadHash = service.HashUsageRequestPayload(wsFirstMessage)
+		setTurnUsageContext(1, wsTurnUsageContext{
+			requestedModel: reqModel,
+			channelMapping: channelMappingWS,
+			payloadHash:    service.HashUsageRequestPayload(wsFirstMessage),
+		})
 
 		if err := h.gatewayService.ProxyResponsesWebSocketFromClient(ctx, c, wsConn, account, token, wsFirstMessage, hooks); err != nil {
 			var failoverErr *service.UpstreamFailoverError
@@ -2243,12 +2336,29 @@ func (h *OpenAIGatewayHandler) mapUpstreamError(statusCode int) (int, string, st
 
 // handleStreamingAwareError handles errors that may occur after streaming has started
 func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status int, errType, message string, streamStarted bool) {
+	h.handleStreamingAwareErrorWithCode(c, status, errType, "", message, streamStarted, false)
+}
+
+func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
+	c *gin.Context,
+	status int,
+	errType string,
+	code string,
+	message string,
+	streamStarted bool,
+	countTowardsSLA bool,
+) {
 	// body-signal compact 心跳可能已把响应头提交为 200：先停心跳（建立
 	// happens-before，接管 ResponseWriter），并升级为流内错误处理。
 	if service.StopOpenAICompactSSEKeepaliveCommitted(c) {
 		streamStarted = true
 	}
 	if streamStarted {
+		if countTowardsSLA {
+			service.MarkOpsStreamFailure(c, errType, code, message, status)
+		} else {
+			service.MarkOpsStreamError(c, errType, message, status)
+		}
 		// /v1/responses 的严格 SDK（Codex CLI）要求终止事件必须属于
 		// response.completed/failed/incomplete/cancelled 集合。
 		// 通用 `event: error` 帧不被识别为终止事件，会导致
@@ -2261,8 +2371,15 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 		// Stream already started, send error as SSE event then close
 		flusher, ok := c.Writer.(http.Flusher)
 		if ok {
-			// SSE 错误事件固定 schema，使用 Quote 直拼可避免额外 Marshal 分配。
-			errorEvent := "event: error\ndata: " + `{"error":{"type":` + strconv.Quote(errType) + `,"message":` + strconv.Quote(message) + `}}` + "\n\n"
+			errorObject := gin.H{"type": errType, "message": message}
+			if code != "" {
+				errorObject["code"] = code
+			}
+			payload, err := json.Marshal(gin.H{"error": errorObject})
+			if err != nil {
+				payload = []byte(`{"error":{"type":"upstream_error","message":"Upstream request failed"}}`)
+			}
+			errorEvent := "event: error\ndata: " + string(payload) + "\n\n"
 			if _, err := fmt.Fprint(c.Writer, errorEvent); err != nil {
 				_ = c.Error(err)
 			}
@@ -2272,7 +2389,27 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareError(c *gin.Context, status 
 	}
 
 	// Normal case: return JSON response with proper status code
-	h.errorResponse(c, status, errType, message)
+	if code == "" {
+		h.errorResponse(c, status, errType, message)
+		return
+	}
+	c.JSON(status, gin.H{"error": gin.H{
+		"type": errType, "code": code, "message": message,
+	}})
+}
+
+func (h *OpenAIGatewayHandler) ensureOpenAIStreamReadErrorResponse(c *gin.Context, err error, streamStarted bool) bool {
+	code, message, ok := service.OpenAIUpstreamStreamReadErrorDetails(err)
+	if !ok || c == nil || c.Writer == nil || service.IsResponseCommitted(c) {
+		return false
+	}
+	if c.Writer.Written() {
+		streamStarted = true
+	}
+	h.handleStreamingAwareErrorWithCode(
+		c, http.StatusBadGateway, "upstream_error", code, message, streamStarted, true,
+	)
+	return true
 }
 
 // ensureForwardErrorResponse 在 Forward 返回错误但尚未写响应时补写统一错误响应。

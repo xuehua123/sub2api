@@ -36,6 +36,7 @@ type fakeSubscriptionEntitlementRepo struct {
 	createCount     int
 	updateTermCount int
 	eventCount      int
+	beforeExtend    func()
 	resetCalls      []fakeEntitlementResetCall
 	createGroups    [][]int64
 }
@@ -277,6 +278,9 @@ func (r *fakeSubscriptionEntitlementRepo) UpdateTermAndSource(_ context.Context,
 }
 
 func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef, fulfillment *SubscriptionEntitlementFulfillment, resetUsage bool, resetWindowStart time.Time) error {
+	if r.beforeExtend != nil {
+		r.beforeExtend()
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	ent, ok := r.entitlements[id]
