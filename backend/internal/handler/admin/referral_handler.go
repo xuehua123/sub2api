@@ -220,15 +220,40 @@ func (h *ReferralHandler) ListWithdrawals(c *gin.Context) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
 	userID, _ := strconv.ParseInt(strings.TrimSpace(c.Query("user_id")), 10, 64)
 	items, paginationResult, err := h.adminService.ListWithdrawals(c.Request.Context(), params, service.AdminCommissionWithdrawalFilter{
-		UserID: userID,
-		Status: strings.TrimSpace(c.Query("status")),
-		Search: strings.TrimSpace(c.Query("search")),
+		UserID:       userID,
+		Status:       strings.TrimSpace(c.Query("status")),
+		Search:       strings.TrimSpace(c.Query("search")),
+		PayoutMethod: strings.TrimSpace(c.Query("payout_method")),
+		Kind:         strings.TrimSpace(c.Query("kind")),
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
+	// List payloads must not include decrypted account numbers.
+	if h.withdrawalService != nil {
+		h.withdrawalService.SanitizeAdminWithdrawalPayoutSnapshotsForList(items)
+	}
 	response.Paginated(c, items, paginationResult.Total, page, pageSize)
+}
+
+func (h *ReferralHandler) GetWithdrawal(c *gin.Context) {
+	withdrawalID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid withdrawal ID")
+		return
+	}
+	item, err := h.adminService.GetWithdrawal(c.Request.Context(), withdrawalID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	// Single-record detail path: decrypt for operators who opened the detail view.
+	// Access is recorded by auditSensitiveReads (admin.referral.withdrawal.payout_account.read).
+	if h.withdrawalService != nil {
+		h.withdrawalService.EnrichAdminWithdrawalPayoutSnapshot(item)
+	}
+	response.Success(c, item)
 }
 
 func (h *ReferralHandler) GetWithdrawalItems(c *gin.Context) {

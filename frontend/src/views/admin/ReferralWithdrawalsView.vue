@@ -9,7 +9,7 @@
               {{ t('admin.referral.withdrawalReviewTitle', '提现管理') }}
             </h1>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.referral.withdrawalReviewDescription', '审核和处理用户的佣金提现申请') }}
+              {{ t('admin.referral.withdrawalReviewDescription', '审核现金提现，并查看用户转余额记录（转余额无需审核）。') }}
             </p>
           </div>
           <div class="flex items-center gap-3">
@@ -27,16 +27,43 @@
               :disabled="loading"
               @click="loadAll"
             >
-              <svg v-if="loading" class="mr-2 h-4 w-4 animate-spin text-white" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-              </svg>
-              <svg v-else class="mr-2 h-4 w-4 text-primary-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
               {{ loading ? t('common.loading', '加载中') : t('common.refresh', '刷新') }}
             </button>
           </div>
+        </div>
+      </template>
+
+      <template #filters>
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-gray-500">类型</span>
+            <select v-model="filters.kind" class="input h-10 min-w-[9rem]" @change="reloadFromFirstPage">
+              <option value="">全部类型</option>
+              <option value="cash">现金提现</option>
+              <option value="credit">转平台余额</option>
+            </select>
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-gray-500">状态</span>
+            <select v-model="filters.status" class="input h-10 min-w-[9rem]" @change="reloadFromFirstPage">
+              <option value="">全部状态</option>
+              <option value="pending_review">待审核</option>
+              <option value="approved">已通过·待打款</option>
+              <option value="paid">已完成 (含打款/转余额)</option>
+              <option value="rejected">已驳回</option>
+            </select>
+          </label>
+          <label class="block min-w-[14rem] flex-1">
+            <span class="mb-1 block text-xs font-medium text-gray-500">搜索用户</span>
+            <input
+              v-model="filters.search"
+              class="input h-10 w-full"
+              type="search"
+              placeholder="邮箱 / 用户名"
+              @keyup.enter="reloadFromFirstPage"
+            />
+          </label>
+          <button class="btn btn-secondary h-10" type="button" @click="reloadFromFirstPage">查询</button>
         </div>
       </template>
 
@@ -55,7 +82,7 @@
                 <th>{{ t('admin.referral.withdrawalUser', '用户') }}</th>
                 <th class="text-right">{{ t('admin.referral.withdrawalAmount', '申请金额') }}</th>
                 <th class="text-right">{{ t('admin.referral.withdrawalFee', '手续费') }}</th>
-                <th class="text-right">{{ t('admin.referral.withdrawalNet', '实付金额') }}</th>
+                <th class="text-right">{{ t('admin.referral.withdrawalNet', '实付/到账') }}</th>
                 <th>{{ t('admin.referral.withdrawalPayoutMethod', '收款方式') }}</th>
                 <th>{{ t('common.status', '状态') }}</th>
                 <th>{{ t('common.createdAt', '申请时间') }}</th>
@@ -76,10 +103,10 @@
                 <td>
                   <span
                     class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
-                    :class="statusBadgeClass(record.status)"
+                    :class="withdrawalStatusBadgeClass(record.status, record.payout_method)"
                   >
-                    <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(record.status)" />
-                    {{ formatStatus(record.status) }}
+                    <span class="h-1.5 w-1.5 rounded-full" :class="withdrawalStatusDotClass(record.status, record.payout_method)" />
+                    {{ formatWithdrawalStatus(record.status, record.payout_method) }}
                   </span>
                 </td>
                 <td class="text-gray-500">{{ formatDate(record.created_at) }}</td>
@@ -88,21 +115,15 @@
                     class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-primary-600 transition hover:bg-primary-50 dark:text-primary-400 dark:hover:bg-primary-900/20"
                     @click="openWithdrawalDrawer(record)"
                   >
-                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    {{ t('admin.referral.viewDetails', '审核') }}
+                    {{ isCreditConversion(record.payout_method) ? t('common.view', '查看') : t('admin.referral.viewDetails', '审核') }}
                   </button>
                 </td>
               </tr>
               <tr v-if="!withdrawals.items.length">
                 <td colspan="9" class="py-16 text-center">
                   <div class="flex flex-col items-center">
-                    <svg class="mb-3 h-10 w-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
                     <h3 class="text-sm font-medium text-gray-900 dark:text-white">{{ t('common.noData', '暂无数据') }}</h3>
-                    <p class="mt-1 text-xs text-gray-500">{{ t('admin.referral.noWithdrawalText', '当前没有提现申请需要处理') }}</p>
+                    <p class="mt-1 text-xs text-gray-500">{{ t('admin.referral.noWithdrawalText', '当前没有匹配的记录') }}</p>
                   </div>
                 </td>
               </tr>
@@ -111,7 +132,6 @@
         </div>
       </template>
 
-      <!-- Pagination -->
       <template #pagination>
         <Pagination
           v-if="withdrawals.total > 0"
@@ -124,7 +144,6 @@
       </template>
     </TablePageLayout>
 
-    <!-- Drawer -->
     <WithdrawalAuditDrawer
       :show="drawerOpen"
       :loading="drawerLoading"
@@ -137,8 +156,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute, useRouter } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
@@ -151,42 +171,108 @@ import type {
   BasePaginationResponse,
   CommissionWithdrawalItem
 } from '@/types'
+import {
+  formatPayoutMethod,
+  formatWithdrawalStatus,
+  isCreditConversion,
+  withdrawalStatusBadgeClass,
+  withdrawalStatusDotClass
+} from '@/utils/referralWithdrawalDisplay'
 
 const { t } = useI18n()
 const appStore = useAppStore()
+const route = useRoute()
+const router = useRouter()
 
-// State
 const loading = ref(true)
 const currentPage = ref(1)
 const pageSize = ref(20)
 const withdrawals = ref<BasePaginationResponse<AdminCommissionWithdrawal>>({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
+const filters = reactive({ kind: '', status: '', search: '' })
 
-// Drawer details
 const drawerOpen = ref(false)
 const drawerLoading = ref(false)
 const selectedWithdrawal = ref<AdminCommissionWithdrawal | null>(null)
 const withdrawalItems = ref<CommissionWithdrawalItem[]>([])
 
+const allowedKinds = new Set(['', 'cash', 'credit'])
+const allowedStatuses = new Set(['', 'pending_review', 'approved', 'paid', 'rejected'])
+/** Drop stale list responses when a newer load supersedes an in-flight one. */
+let loadSeq = 0
+
+function normalizeRouteFilters(query: typeof route.query): { kind: string; status: string; search: string } {
+  const kind = String(query.kind ?? '').trim()
+  const status = String(query.status ?? '').trim()
+  const search = String(query.search ?? '').trim()
+  return {
+    kind: allowedKinds.has(kind) ? kind : '',
+    status: allowedStatuses.has(status) ? status : '',
+    search
+  }
+}
+
+function seedFiltersFromRoute(): void {
+  const next = normalizeRouteFilters(route.query)
+  filters.kind = next.kind
+  filters.status = next.status
+  filters.search = next.search
+}
+
+function buildQueryFromFilters(): Record<string, string> {
+  const query: Record<string, string> = {}
+  if (filters.kind) query.kind = filters.kind
+  if (filters.status) query.status = filters.status
+  if (filters.search.trim()) query.search = filters.search.trim()
+  return query
+}
+
+function filtersMatchRoute(): boolean {
+  const next = normalizeRouteFilters(route.query)
+  return next.kind === filters.kind && next.status === filters.status && next.search === filters.search.trim()
+}
+
 async function loadAll() {
+  const seq = ++loadSeq
   loading.value = true
   try {
-    withdrawals.value = await referralAdminAPI.listWithdrawals(currentPage.value, pageSize.value)
+    const data = await referralAdminAPI.listWithdrawals(currentPage.value, pageSize.value, {
+      kind: filters.kind || undefined,
+      status: filters.status || undefined,
+      search: filters.search.trim() || undefined
+    })
+    if (seq !== loadSeq) return
+    withdrawals.value = data
   } catch (error) {
+    if (seq !== loadSeq) return
     appStore.showError((error as Error).message || t('common.operationFailed', '操作失败'))
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
+}
+
+/**
+ * Single load owner for filter changes:
+ * - route differs → only router.replace; watch seeds + loads once
+ * - route already matches → load here (replace would be a no-op and watch may not fire)
+ */
+function reloadFromFirstPage() {
+  currentPage.value = 1
+  if (filtersMatchRoute()) {
+    void loadAll()
+    return
+  }
+  void router.replace({ query: buildQueryFromFilters() })
 }
 
 function handlePageChange(page: number) {
   currentPage.value = page
-  loadAll()
+  void loadAll()
 }
 
 function handlePageSizeChange(size: number) {
   pageSize.value = size
   currentPage.value = 1
-  loadAll()
+  void loadAll()
 }
 
 async function openWithdrawalDrawer(record: AdminCommissionWithdrawal) {
@@ -194,7 +280,13 @@ async function openWithdrawalDrawer(record: AdminCommissionWithdrawal) {
   drawerOpen.value = true
   drawerLoading.value = true
   try {
-    withdrawalItems.value = await referralAdminAPI.getWithdrawalItems(record.id)
+    // Detail fetch decrypts payout account for audit; list responses stay masked-only.
+    const [detail, items] = await Promise.all([
+      referralAdminAPI.getWithdrawal(record.id),
+      referralAdminAPI.getWithdrawalItems(record.id)
+    ])
+    selectedWithdrawal.value = detail
+    withdrawalItems.value = items
   } catch (error) {
     appStore.showError((error as Error).message || t('common.operationFailed', '操作失败'))
   } finally {
@@ -211,52 +303,24 @@ function formatCurrency(value: number) {
   return '\uFFE5' + Number(value || 0).toFixed(2)
 }
 
-function formatStatus(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: '待审核',
-    approved: '已通过',
-    rejected: '已驳回',
-    paid: '已打款',
-    frozen: '冻结中'
-  }
-  return map[status] || status
-}
-
-function formatPayoutMethod(method: string): string {
-  const map: Record<string, string> = {
-    alipay: '支付宝',
-    wechat: '微信',
-    bank: '银行卡'
-  }
-  return map[method] || method || '-'
-}
-
-function statusBadgeClass(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400',
-    approved: 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',
-    paid: 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400',
-    rejected: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-    frozen: 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400'
-  }
-  return map[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400'
-}
-
-function statusDotClass(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: 'bg-yellow-500 animate-pulse',
-    approved: 'bg-blue-500',
-    paid: 'bg-green-500',
-    rejected: 'bg-red-500',
-    frozen: 'bg-gray-500'
-  }
-  return map[status] || 'bg-gray-500'
-}
-
 function formatDate(value?: string | Date | null) {
   if (!value) return '-'
   return new Date(value).toLocaleString()
 }
 
-onMounted(loadAll)
+onMounted(() => {
+  seedFiltersFromRoute()
+  void loadAll()
+})
+
+// External navigation (overview deep-links, browser back/forward) re-seeds and loads once.
+// Local filter apply uses router.replace only when the query changes, so this is the sole load path then.
+watch(
+  () => route.query,
+  () => {
+    seedFiltersFromRoute()
+    currentPage.value = 1
+    void loadAll()
+  }
+)
 </script>

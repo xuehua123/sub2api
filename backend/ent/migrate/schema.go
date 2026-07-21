@@ -1040,6 +1040,12 @@ var (
 				Unique:  false,
 				Columns: []*schema.Column{CommissionRewardsColumns[10]},
 			},
+			{
+				// Keep in sync with ent/schema StorageKey and migration 185.
+				Name:    "idx_commission_rewards_status_available_at_id",
+				Unique:  false,
+				Columns: []*schema.Column{CommissionRewardsColumns[9], CommissionRewardsColumns[10], CommissionRewardsColumns[0]},
+			},
 		},
 	}
 	// CommissionWithdrawalsColumns holds the columns for the "commission_withdrawals" table.

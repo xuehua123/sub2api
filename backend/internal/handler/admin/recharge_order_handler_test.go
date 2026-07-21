@@ -241,7 +241,11 @@ func (s *rechargeOrderHandlerCommissionRepoStub) ListRewardsByRechargeOrder(ctx 
 	return result, nil
 }
 
-func (s *rechargeOrderHandlerCommissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]service.CommissionReward, error) {
+func (s *rechargeOrderHandlerCommissionRepoStub) ListRewardsByRechargeOrderForUpdate(ctx context.Context, rechargeOrderID int64) ([]service.CommissionReward, error) {
+	return s.ListRewardsByRechargeOrder(ctx, rechargeOrderID)
+}
+
+func (s *rechargeOrderHandlerCommissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]service.CommissionReward, error) {
 	return nil, nil
 }
 
@@ -300,8 +304,12 @@ func (s *rechargeOrderHandlerCommissionRepoStub) UpdateWithdrawalItem(ctx contex
 	return nil
 }
 
-func (s *rechargeOrderHandlerCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
+func (s *rechargeOrderHandlerCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time, kind string) (int, error) {
 	return 0, nil
+}
+
+func (s *rechargeOrderHandlerCommissionRepoStub) ListPendingRewardsReadyForUser(ctx context.Context, userID int64, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]service.CommissionReward, error) {
+	return s.ListPendingRewardsReady(ctx, readyAt, afterAvailableAt, afterID, limit)
 }
 
 func (s *rechargeOrderHandlerCommissionRepoStub) ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]service.CommissionPayoutAccount, error) {
@@ -321,7 +329,7 @@ func newRechargeOrderHandlerForTest() (*RechargeOrderHandler, *rechargeOrderHand
 	userRepo := &rechargeOrderHandlerUserRepoStub{balances: map[int64]float64{123: 0}}
 	rechargeRepo := &rechargeOrderHandlerRechargeRepoStub{orders: make(map[string]*service.RechargeOrder)}
 	commissionRepo := &rechargeOrderHandlerCommissionRepoStub{}
-	settlementService := service.NewReferralSettlementService(commissionRepo, rechargeRepo, nil)
+	settlementService := service.NewReferralSettlementService(commissionRepo, rechargeRepo, nil, nil)
 	rewardService := service.NewReferralRewardService(rechargeRepo, commissionRepo, userRepo, newReferralRepositoryStubForHandler(), nil, settingSvc, settlementService)
 	return NewRechargeOrderHandler(rewardService), userRepo, rechargeRepo, commissionRepo
 }

@@ -283,7 +283,8 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 	if settings.ReferralWithdrawMaxAmount > 0 && input.Amount > settings.ReferralWithdrawMaxAmount {
 		return nil, ErrCommissionWithdrawAmountInvalid
 	}
-	if err := s.checkDailyWithdrawalLimit(ctx, input.UserID, settings.ReferralWithdrawDailyLimit); err != nil {
+	// Daily limit is a single shared quota for all outflows (cash + credit conversion).
+	if err := s.checkDailyWithdrawalLimit(ctx, input.UserID, settings.ReferralWithdrawDailyLimit, WithdrawalCountKindAll); err != nil {
 		return nil, err
 	}
 
@@ -308,7 +309,7 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 	result := &ReferralWithdrawalResult{}
 	apply := func(txCtx context.Context) error {
 		if s.settlementSvc != nil {
-			if _, err := s.settlementSvc.SettlePendingRewards(txCtx, time.Now()); err != nil {
+			if _, err := s.settlementSvc.SettlePendingRewardsForUser(txCtx, input.UserID, time.Now()); err != nil {
 				return err
 			}
 		}
@@ -325,7 +326,7 @@ func (s *ReferralWithdrawalService) CreateWithdrawal(ctx context.Context, input 
 		if totalAvailable < input.Amount {
 			return ErrCommissionWithdrawInsufficient
 		}
-		if err := s.checkDailyWithdrawalLimit(txCtx, input.UserID, settings.ReferralWithdrawDailyLimit); err != nil {
+		if err := s.checkDailyWithdrawalLimit(txCtx, input.UserID, settings.ReferralWithdrawDailyLimit, WithdrawalCountKindAll); err != nil {
 			return err
 		}
 
@@ -757,11 +758,11 @@ func (s *ReferralWithdrawalService) getWithdrawalByIDForUpdate(ctx context.Conte
 	return s.commissionRepo.GetWithdrawalByID(ctx, withdrawalID)
 }
 
-func (s *ReferralWithdrawalService) checkDailyWithdrawalLimit(ctx context.Context, userID int64, dailyLimit int) error {
+func (s *ReferralWithdrawalService) checkDailyWithdrawalLimit(ctx context.Context, userID int64, dailyLimit int, kind string) error {
 	if dailyLimit <= 0 {
 		return nil
 	}
-	count, err := s.commissionRepo.CountWithdrawalsByUserSince(ctx, userID, startOfLocalDay(time.Now()))
+	count, err := s.commissionRepo.CountWithdrawalsByUserSince(ctx, userID, startOfLocalDay(time.Now()), kind)
 	if err != nil {
 		return err
 	}
@@ -769,6 +770,87 @@ func (s *ReferralWithdrawalService) checkDailyWithdrawalLimit(ctx context.Contex
 		return ErrCommissionWithdrawDailyLimitExceeded
 	}
 	return nil
+}
+
+// SanitizeAdminWithdrawalPayoutSnapshotsForList strips ciphertext and plaintext
+// account numbers from list payloads. Operators only see masked account fields
+// until they open a single-record detail view.
+func (s *ReferralWithdrawalService) SanitizeAdminWithdrawalPayoutSnapshotsForList(items []AdminCommissionWithdrawal) {
+	for i := range items {
+		items[i].PayoutAccountSnapshotJSON = sanitizePayoutSnapshotJSONForAdminList(items[i].PayoutAccountSnapshotJSON)
+	}
+}
+
+// EnrichAdminWithdrawalPayoutSnapshot decrypts one withdrawal snapshot for the
+// single-record admin detail path (audited via middleware sensitive-read map).
+func (s *ReferralWithdrawalService) EnrichAdminWithdrawalPayoutSnapshot(item *AdminCommissionWithdrawal) {
+	if item == nil {
+		return
+	}
+	item.PayoutAccountSnapshotJSON = enrichPayoutSnapshotJSONForAdmin(s.encryptor, item.PayoutAccountSnapshotJSON)
+}
+
+func sanitizePayoutSnapshotJSONForAdminList(snapshotJSON *string) *string {
+	if snapshotJSON == nil || strings.TrimSpace(*snapshotJSON) == "" {
+		return snapshotJSON
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(*snapshotJSON), &payload); err != nil {
+		// Never return opaque/corrupt snapshots that may contain plaintext account numbers.
+		return stringValuePtr("{}")
+	}
+	delete(payload, "account_no")
+	delete(payload, "account_no_encrypted")
+	// Keep account_name, account_no_masked, bank_name, qr_image_url, method.
+	if encoded, err := json.Marshal(payload); err == nil {
+		return stringValuePtr(string(encoded))
+	}
+	return stringValuePtr("{}")
+}
+
+func enrichPayoutSnapshotJSONForAdmin(encryptor SecretEncryptor, snapshotJSON *string) *string {
+	if snapshotJSON == nil || strings.TrimSpace(*snapshotJSON) == "" {
+		return snapshotJSON
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(*snapshotJSON), &payload); err != nil {
+		return snapshotJSON
+	}
+	// Prefer already-present plaintext; still strip ciphertext from admin response.
+	if plain, ok := payload["account_no"].(string); ok && strings.TrimSpace(plain) != "" {
+		delete(payload, "account_no_encrypted")
+		if encoded, err := json.Marshal(payload); err == nil {
+			return stringValuePtr(string(encoded))
+		}
+		return snapshotJSON
+	}
+	encrypted, _ := payload["account_no_encrypted"].(string)
+	encrypted = strings.TrimSpace(encrypted)
+	if encrypted == "" {
+		return snapshotJSON
+	}
+	if encryptor != nil {
+		if decrypted, err := encryptor.Decrypt(encrypted); err == nil && strings.TrimSpace(decrypted) != "" {
+			payload["account_no"] = decrypted
+			delete(payload, "account_no_encrypted")
+			if encoded, err := json.Marshal(payload); err == nil {
+				return stringValuePtr(string(encoded))
+			}
+		}
+		// Decrypt failed: never leak ciphertext — keep masked only.
+		delete(payload, "account_no_encrypted")
+		if encoded, err := json.Marshal(payload); err == nil {
+			return stringValuePtr(string(encoded))
+		}
+		return snapshotJSON
+	}
+	// Legacy / nil encryptor: treat stored value as plaintext for admin ops.
+	payload["account_no"] = encrypted
+	delete(payload, "account_no_encrypted")
+	if encoded, err := json.Marshal(payload); err == nil {
+		return stringValuePtr(string(encoded))
+	}
+	return snapshotJSON
 }
 
 func startOfLocalDay(now time.Time) time.Time {
@@ -847,17 +929,27 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 	if err := s.checkReferralEnabledForUser(ctx, settings, userID); err != nil {
 		return err
 	}
+	if amount < settings.ReferralWithdrawMinAmount {
+		minimumAmount := fmt.Sprintf("%.2f", settings.ReferralWithdrawMinAmount)
+		return infraerrors.BadRequest(
+			"COMMISSION_WITHDRAW_AMOUNT_INVALID",
+			fmt.Sprintf("minimum withdrawal amount is ¥%s", minimumAmount),
+		).WithMetadata(map[string]string{
+			"minimum_amount": minimumAmount,
+			"currency":       ReferralSettlementCurrencyCNY,
+		})
+	}
 	if settings.ReferralWithdrawMaxAmount > 0 && amount > settings.ReferralWithdrawMaxAmount {
 		return ErrCommissionWithdrawAmountInvalid
 	}
 
-	if err := s.checkDailyWithdrawalLimit(ctx, userID, settings.ReferralWithdrawDailyLimit); err != nil {
+	if err := s.checkDailyWithdrawalLimit(ctx, userID, settings.ReferralWithdrawDailyLimit, WithdrawalCountKindAll); err != nil {
 		return err
 	}
 
 	apply := func(txCtx context.Context) error {
 		if s.settlementSvc != nil {
-			if _, err := s.settlementSvc.SettlePendingRewards(txCtx, time.Now()); err != nil {
+			if _, err := s.settlementSvc.SettlePendingRewardsForUser(txCtx, userID, time.Now()); err != nil {
 				return err
 			}
 		}
@@ -873,7 +965,7 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 		if totalAvailable < amount {
 			return ErrCommissionWithdrawInsufficient
 		}
-		if err := s.checkDailyWithdrawalLimit(txCtx, userID, settings.ReferralWithdrawDailyLimit); err != nil {
+		if err := s.checkDailyWithdrawalLimit(txCtx, userID, settings.ReferralWithdrawDailyLimit, WithdrawalCountKindAll); err != nil {
 			return err
 		}
 
@@ -887,7 +979,7 @@ func (s *ReferralWithdrawalService) ConvertCommissionToCredit(ctx context.Contex
 			NetAmount:    creditAmount,
 			Currency:     ReferralSettlementCurrencyCNY,
 			Status:       CommissionWithdrawalStatusPaid,
-			PayoutMethod: "credit_conversion",
+			PayoutMethod: CommissionPayoutMethodCreditConversion,
 			PaidBy:       int64ValuePtr(userID),
 			PaidAt:       timeValuePtr(now),
 		}

@@ -10,11 +10,8 @@ import (
 )
 
 func (s *ReferralAdminService) GetOverview(ctx context.Context) (*AdminReferralOverview, error) {
-	if s.settlementSvc != nil {
-		if _, err := s.settlementSvc.SettlePendingRewards(ctx, time.Now()); err != nil {
-			return nil, err
-		}
-	}
+	// Intentionally do NOT run global SettlePendingRewards here — pure read path.
+	// Settlement runs on withdraw/convert/recharge and user-scoped overview.
 
 	relations, err := s.collectAllRelations(ctx)
 	if err != nil {
@@ -129,13 +126,43 @@ func (s *ReferralAdminService) GetOverview(ctx context.Context) (*AdminReferralO
 	}
 	overview.RecentTrend = buildAdminReferralTrend(rewards, withdrawals, time.Now())
 
-	for _, withdrawal := range withdrawals {
-		if withdrawal.Status != CommissionWithdrawalStatusPendingReview {
-			continue
+	// Negative available across users = refund debt after paid/converted commission.
+	for _, amount := range availableByUser {
+		if amount < 0 {
+			overview.NegativeCommissionDebt = roundMoney(overview.NegativeCommissionDebt + (-amount))
 		}
-		overview.PendingWithdrawalCount++
-		overview.PendingWithdrawalAmount = roundMoney(overview.PendingWithdrawalAmount + withdrawal.NetAmount)
 	}
+
+	recentCredits := make([]AdminCommissionWithdrawal, 0, 5)
+	for _, withdrawal := range withdrawals {
+		switch withdrawal.Status {
+		case CommissionWithdrawalStatusPendingReview:
+			if IsCreditConversionPayout(withdrawal.PayoutMethod) {
+				continue // auto-paid conversions never need cash review
+			}
+			overview.PendingWithdrawalCount++
+			overview.PendingWithdrawalAmount = roundMoney(overview.PendingWithdrawalAmount + withdrawal.NetAmount)
+		case CommissionWithdrawalStatusApproved:
+			if IsCreditConversionPayout(withdrawal.PayoutMethod) {
+				continue
+			}
+			overview.ApprovedWithdrawalCount++
+			overview.ApprovedWithdrawalAmount = roundMoney(overview.ApprovedWithdrawalAmount + withdrawal.NetAmount)
+		case CommissionWithdrawalStatusPaid:
+			if IsCreditConversionPayout(withdrawal.PayoutMethod) {
+				// Commission deducted from wallet (rate may make net credit differ).
+				overview.CreditConvertedCommission = roundMoney(overview.CreditConvertedCommission + withdrawal.Amount)
+				if len(recentCredits) < 5 {
+					recentCredits = append(recentCredits, withdrawal)
+				}
+			} else {
+				// Cash actually paid out to the user after fees.
+				overview.CashPaidCommission = roundMoney(overview.CashPaidCommission + withdrawal.NetAmount)
+			}
+		}
+	}
+	// withdrawals are newest-first from collect (desc by id/created); keep first 5 credits.
+	overview.RecentCreditConversions = recentCredits
 	return overview, nil
 }
 

@@ -99,7 +99,9 @@ func (s *ReferralRefundService) ApplyRefund(ctx context.Context, input *Recharge
 			return nil, err
 		}
 
-		rewards, err := s.commissionRepo.ListRewardsByRechargeOrder(txCtx, order.ID)
+		// Lock commission_rewards BEFORE any commission_ledgers FOR UPDATE so lock
+		// order matches the settlement runner (reward → ledger) and avoids deadlocks.
+		rewards, err := s.commissionRepo.ListRewardsByRechargeOrderForUpdate(txCtx, order.ID)
 		if err != nil {
 			return nil, err
 		}

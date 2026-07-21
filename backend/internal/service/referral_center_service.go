@@ -86,7 +86,8 @@ func NewReferralCenterService(
 
 func (s *ReferralCenterService) GetOverview(ctx context.Context, userID int64) (*ReferralCenterOverview, error) {
 	if s.settlementSvc != nil {
-		if _, err := s.settlementSvc.SettlePendingRewards(ctx, time.Now()); err != nil {
+		// User-scoped settle only — avoid global FOR UPDATE on every dashboard open.
+		if _, err := s.settlementSvc.SettlePendingRewardsForUser(ctx, userID, time.Now()); err != nil {
 			return nil, err
 		}
 	}

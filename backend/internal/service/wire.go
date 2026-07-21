@@ -858,7 +858,7 @@ var ProviderSet = wire.NewSet(
 	NewReferralWithdrawalService,
 	NewReferralAdminService,
 	NewReferralRewardService,
-	NewReferralSettlementService,
+	ProvideReferralSettlementService,
 	NewReferralRefundService,
 
 	ProvideBalanceNotifyService,

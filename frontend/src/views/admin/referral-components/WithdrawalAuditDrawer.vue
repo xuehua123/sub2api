@@ -1,7 +1,7 @@
 <template>
   <BaseDialog
     :show="show"
-    :title="t('admin.referral.withdrawalItemsTitle', '提现审核')"
+    :title="isCredit ? t('admin.referral.creditConversionTitle', '转余额详情') : t('admin.referral.withdrawalItemsTitle', '提现审核')"
     width="wide"
     @close="emit('close')"
   >
@@ -20,13 +20,13 @@
         <div class="flex items-center gap-4">
           <span
             class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold"
-            :class="statusBadgeClass(withdrawal?.status || '')"
+            :class="withdrawalStatusBadgeClass(withdrawal?.status || '', withdrawal?.payout_method)"
           >
-            <span class="h-1.5 w-1.5 rounded-full" :class="statusDotClass(withdrawal?.status || '')" />
-            {{ formatStatus(withdrawal?.status || '') }}
+            <span class="h-1.5 w-1.5 rounded-full" :class="withdrawalStatusDotClass(withdrawal?.status || '', withdrawal?.payout_method)" />
+            {{ formatWithdrawalStatus(withdrawal?.status || '', withdrawal?.payout_method) }}
           </span>
           <div class="text-right">
-            <div class="text-xs text-gray-500">{{ t('admin.referral.withdrawalNet', '实付金额') }}</div>
+            <div class="text-xs text-gray-500">{{ isCredit ? t('admin.referral.creditAmount', '到账余额') : t('admin.referral.withdrawalNet', '实付金额') }}</div>
             <div class="mt-0.5 font-mono text-xl font-bold text-primary-600 dark:text-primary-400">
               {{ formatCurrency(withdrawal?.net_amount || 0) }}
             </div>
@@ -54,40 +54,42 @@
         <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.withdrawalDetails', '提现详情') }}</h3>
         <div class="mt-3 grid grid-cols-3 gap-4 text-sm">
           <div>
-            <div class="text-xs text-gray-500">{{ t('admin.referral.withdrawalAmount', '申请金额') }}</div>
+            <div class="text-xs text-gray-500">{{ isCredit ? t('admin.referral.commissionDeducted', '扣减佣金') : t('admin.referral.withdrawalAmount', '申请金额') }}</div>
             <div class="mt-1 font-mono font-medium text-gray-900 dark:text-white">{{ formatCurrency(withdrawal?.amount || 0) }}</div>
           </div>
-          <div>
+          <div v-if="!isCredit">
             <div class="text-xs text-gray-500">{{ t('admin.referral.withdrawalFee', '手续费') }}</div>
             <div class="mt-1 font-mono text-red-500">{{ formatCurrency(withdrawal?.fee_amount || 0) }}</div>
           </div>
           <div>
-            <div class="text-xs text-gray-500">{{ t('admin.referral.withdrawalNet', '实付金额') }}</div>
+            <div class="text-xs text-gray-500">{{ isCredit ? t('admin.referral.creditAmount', '到账余额') : t('admin.referral.withdrawalNet', '实付金额') }}</div>
             <div class="mt-1 font-mono font-semibold text-green-600 dark:text-green-400">{{ formatCurrency(withdrawal?.net_amount || 0) }}</div>
           </div>
         </div>
 
-        <!-- Payout method + account -->
+        <!-- Payout method + account (cash only for account fields) -->
         <div class="mt-4 border-t border-gray-100 pt-4 dark:border-dark-700">
           <div class="grid grid-cols-2 gap-4 text-sm">
             <div>
               <div class="text-xs text-gray-500">{{ t('referral.payoutMethod', '收款方式') }}</div>
               <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ formatPayoutMethod(withdrawal?.payout_method || '') }}</div>
             </div>
-            <div v-if="payoutSnapshot?.account_name">
-              <div class="text-xs text-gray-500">{{ t('referral.accountName', '收款人名称') }}</div>
-              <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ payoutSnapshot.account_name }}</div>
-            </div>
-            <div v-if="payoutSnapshot?.account_no_encrypted">
-              <div class="text-xs text-gray-500">{{ t('admin.referral.payoutAccountNo', '收款账号') }}</div>
-              <div class="mt-1 font-mono text-gray-900 dark:text-white">{{ payoutSnapshot.account_no_encrypted }}</div>
-            </div>
-            <div v-if="payoutSnapshot?.bank_name">
-              <div class="text-xs text-gray-500">{{ t('referral.bankName', '开户银行') }}</div>
-              <div class="mt-1 text-gray-900 dark:text-white">{{ payoutSnapshot.bank_name }}</div>
-            </div>
+            <template v-if="!isCredit">
+              <div v-if="payoutSnapshot?.account_name">
+                <div class="text-xs text-gray-500">{{ t('referral.accountName', '收款人名称') }}</div>
+                <div class="mt-1 font-medium text-gray-900 dark:text-white">{{ payoutSnapshot.account_name }}</div>
+              </div>
+              <div v-if="payoutAccountNo">
+                <div class="text-xs text-gray-500">{{ t('admin.referral.payoutAccountNo', '收款账号') }}</div>
+                <div class="mt-1 font-mono text-gray-900 dark:text-white">{{ payoutAccountNo }}</div>
+              </div>
+              <div v-if="payoutSnapshot?.bank_name">
+                <div class="text-xs text-gray-500">{{ t('referral.bankName', '开户银行') }}</div>
+                <div class="mt-1 text-gray-900 dark:text-white">{{ payoutSnapshot.bank_name }}</div>
+              </div>
+            </template>
           </div>
-          <div v-if="payoutSnapshot?.qr_image_url" class="mt-3 text-sm">
+          <div v-if="!isCredit && payoutSnapshot?.qr_image_url" class="mt-3 text-sm">
             <div class="text-xs text-gray-500">{{ t('referral.qrCode', '收款二维码') }}</div>
             <img
               :src="payoutSnapshot.qr_image_url"
@@ -106,12 +108,12 @@
               <div class="text-xs text-gray-500">{{ t('admin.referral.submitTime', '申请时间') }}</div>
               <div class="mt-1 text-gray-700 dark:text-gray-300">{{ formatDate(withdrawal?.created_at) }}</div>
             </div>
-            <div>
+            <div v-if="!isCredit">
               <div class="text-xs text-gray-500">{{ t('admin.referral.reviewTime', '审核时间') }}</div>
               <div class="mt-1 text-gray-700 dark:text-gray-300">{{ formatDate(withdrawal?.reviewed_at) }}</div>
             </div>
             <div>
-              <div class="text-xs text-gray-500">{{ t('admin.referral.paymentTime', '打款时间') }}</div>
+              <div class="text-xs text-gray-500">{{ isCredit ? t('admin.referral.creditedAt', '到账时间') : t('admin.referral.paymentTime', '打款时间') }}</div>
               <div class="mt-1 text-gray-700 dark:text-gray-300">{{ formatDate(withdrawal?.paid_at) }}</div>
             </div>
           </div>
@@ -196,7 +198,10 @@
         </div>
 
         <!-- Normal action buttons -->
-        <div v-else-if="withdrawal?.status === 'pending_review' || withdrawal?.status === 'approved'" class="flex gap-3">
+        <div
+          v-else-if="!isCredit && (withdrawal?.status === 'pending_review' || withdrawal?.status === 'approved')"
+          class="flex gap-3"
+        >
           <button
             v-if="withdrawal?.status === 'pending_review'"
             class="flex-1 inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-red-700 bg-red-100 hover:bg-red-200 transition dark:bg-red-500/20 dark:text-red-400 dark:hover:bg-red-500/30"
@@ -241,6 +246,13 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import referralAdminAPI from '@/api/admin/referral'
 import { useAppStore } from '@/stores'
 import type { AdminCommissionWithdrawal, CommissionWithdrawalItem } from '@/types'
+import {
+  formatPayoutMethod,
+  formatWithdrawalStatus,
+  isCreditConversion,
+  withdrawalStatusBadgeClass,
+  withdrawalStatusDotClass
+} from '@/utils/referralWithdrawalDisplay'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -262,6 +274,8 @@ const acting = ref(false)
 const showRejectInput = ref(false)
 const rejectReason = ref('')
 
+const isCredit = computed(() => isCreditConversion(props.withdrawal?.payout_method))
+
 const payoutSnapshot = computed(() => {
   const raw = props.withdrawal?.payout_account_snapshot_json
   if (!raw) return null
@@ -269,6 +283,8 @@ const payoutSnapshot = computed(() => {
     return JSON.parse(raw) as {
       method?: string
       account_name?: string
+      account_no?: string
+      account_no_masked?: string
       account_no_encrypted?: string
       bank_name?: string
       qr_image_url?: string
@@ -276,6 +292,15 @@ const payoutSnapshot = computed(() => {
   } catch {
     return null
   }
+})
+
+/** Prefer admin-decrypted plaintext, then masked; never show raw ciphertext as account. */
+const payoutAccountNo = computed(() => {
+  const snap = payoutSnapshot.value
+  if (!snap) return ''
+  if (snap.account_no && String(snap.account_no).trim()) return String(snap.account_no).trim()
+  if (snap.account_no_masked && String(snap.account_no_masked).trim()) return String(snap.account_no_masked).trim()
+  return ''
 })
 
 async function approveWithdrawal() {
@@ -324,48 +349,6 @@ async function markPaid() {
 
 function formatCurrency(value: number) {
   return '\uFFE5' + Number(value || 0).toFixed(2)
-}
-
-function formatStatus(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: '待审核',
-    approved: '已通过',
-    rejected: '已驳回',
-    paid: '已打款',
-    frozen: '冻结中'
-  }
-  return map[status] || status
-}
-
-function formatPayoutMethod(method: string): string {
-  const map: Record<string, string> = {
-    alipay: '支付宝',
-    wechat: '微信',
-    bank: '银行卡'
-  }
-  return map[method] || method || '-'
-}
-
-function statusBadgeClass(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400',
-    approved: 'bg-blue-100 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400',
-    paid: 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400',
-    rejected: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-    frozen: 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400'
-  }
-  return map[status] || 'bg-gray-100 text-gray-700 dark:bg-gray-500/10 dark:text-gray-400'
-}
-
-function statusDotClass(status: string): string {
-  const map: Record<string, string> = {
-    pending_review: 'bg-yellow-500 animate-pulse',
-    approved: 'bg-blue-500',
-    paid: 'bg-green-500',
-    rejected: 'bg-red-500',
-    frozen: 'bg-gray-500'
-  }
-  return map[status] || 'bg-gray-500'
 }
 
 function formatDate(value?: string | Date | null) {

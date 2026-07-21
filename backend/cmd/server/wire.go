@@ -113,6 +113,7 @@ func provideCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	rateMultiplierPriority *service.RateMultiplierPriorityService,
 	upstreamConnectionSync *service.UpstreamConnectionSyncService,
+	referralSettlement *service.ReferralSettlementService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) func() {
@@ -336,6 +337,12 @@ func provideCleanup(
 			{"UpstreamConnectionSyncService", func() error {
 				if upstreamConnectionSync != nil {
 					upstreamConnectionSync.Stop()
+				}
+				return nil
+			}},
+			{"ReferralSettlementRunner", func() error {
+				if referralSettlement != nil {
+					referralSettlement.StopBackgroundRunner()
 				}
 				return nil
 			}},

@@ -68,22 +68,30 @@
         <!-- Card 3 -->
         <div class="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 p-5 shadow-sm">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.referral.frozenCommissionTitle', '涉案冻结资金') }}</span>
+            <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('admin.referral.frozenCommissionTitle', '提现冻结中') }}</span>
           </div>
           <div class="text-3xl font-bold text-gray-900 dark:text-white">￥{{ formatMoney(overview.frozen_commission) }}</div>
-          <div class="mt-2 text-xs text-amber-600 dark:text-amber-500 font-medium">{{ t('admin.referral.pendingQueueCount', { count: overview.pending_withdrawal_count }) }}</div>
+          <div class="mt-2 text-xs text-amber-600 dark:text-amber-500 font-medium">
+            {{ t('admin.referral.pendingQueueCount', { count: overview.pending_withdrawal_count }) }}
+            · 待打款 {{ overview.approved_withdrawal_count || 0 }}
+          </div>
         </div>
         <!-- Card 4 -->
         <div class="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 p-5 shadow-sm">
-          <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">{{ t('admin.referral.withdrawnCommission', '已清算提现金额') }}</div>
+          <div class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">{{ t('admin.referral.withdrawnCommission', '已清算佣金 (合计)') }}</div>
           <div class="text-3xl font-bold text-gray-900 dark:text-white">￥{{ formatMoney(overview.withdrawn_commission) }}</div>
-           <div class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.referral.historicalPaidOut') }}</div>
+          <div class="mt-2 space-y-0.5 text-xs text-gray-500 dark:text-gray-400">
+            <div title="用户实际到账（已扣手续费）">现金已打款(净额) ￥{{ formatMoney(overview.cash_paid_commission || 0) }}</div>
+            <div title="从佣金账户扣减的金额">已转余额(扣佣) ￥{{ formatMoney(overview.credit_converted_commission || 0) }}</div>
+            <div v-if="(overview.negative_commission_debt || 0) > 0" class="font-medium text-red-600 dark:text-red-400">
+              负佣金欠账 ￥{{ formatMoney(overview.negative_commission_debt || 0) }}
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Row 2: Chart & Pending List -->
+      <!-- Row 2: Chart & Pending List + recent credit conversions -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Real Chart! -->
         <div class="lg:col-span-2 bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 p-5 shadow-sm flex flex-col">
           <div class="mb-4">
             <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.trendTitle', '近 7 天收支走势') }}</h2>
@@ -93,31 +101,53 @@
           </div>
         </div>
 
-        <!-- Pending list -->
-        <div class="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 shadow-sm flex flex-col">
-          <div class="p-5 border-b border-gray-200 dark:border-dark-800 flex justify-between items-center">
-            <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.pendingWithdrawalsTitle', '快速审核通道') }}</h2>
-            <router-link to="/admin/referral/withdrawals" class="text-sm text-primary-600 hover:underline">{{ t('admin.referral.viewAll') }} &rarr;</router-link>
-          </div>
-          <div class="p-0 overflow-y-auto max-h-[320px]">
-            <div v-if="pendingWithdrawals?.items?.length" class="divide-y divide-gray-100 dark:divide-dark-800">
-              <div v-for="item in pendingWithdrawals.items" :key="item.id" class="p-4 hover:bg-gray-50 dark:hover:bg-dark-800/50 transition-colors">
-                <div class="flex justify-between items-center">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.user_email }}</p>
-                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">ID: {{ item.withdrawal_no }}</p>
-                  </div>
-                  <div class="text-right ml-4">
-                    <p class="text-sm font-bold text-gray-900 dark:text-white">￥{{ formatMoney(item.net_amount) }}</p>
-                    <button class="mt-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 bg-primary-50 dark:bg-primary-900/30 px-2 py-1 rounded" @click="emit('openWorkspaceFromWithdrawal', item)">
-                      {{ t('admin.referral.goToProcess') }}
-                    </button>
+        <div class="space-y-6">
+          <div class="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 shadow-sm flex flex-col">
+            <div class="p-5 border-b border-gray-200 dark:border-dark-800 flex justify-between items-center">
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.pendingWithdrawalsTitle', '待审现金提现') }}</h2>
+              <router-link to="/admin/referral/withdrawals?kind=cash&status=pending_review" class="text-sm text-primary-600 hover:underline">{{ t('admin.referral.viewAll') }} &rarr;</router-link>
+            </div>
+            <div class="p-0 overflow-y-auto max-h-[200px]">
+              <div v-if="pendingWithdrawals?.items?.length" class="divide-y divide-gray-100 dark:divide-dark-800">
+                <div v-for="item in pendingWithdrawals.items" :key="item.id" class="p-4 hover:bg-gray-50 dark:hover:bg-dark-800/50 transition-colors">
+                  <div class="flex justify-between items-center">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ item.user_email }}</p>
+                      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1 font-mono">{{ item.withdrawal_no }}</p>
+                    </div>
+                    <div class="text-right ml-4">
+                      <p class="text-sm font-bold text-gray-900 dark:text-white">￥{{ formatMoney(item.net_amount) }}</p>
+                      <button class="mt-2 text-xs font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 bg-primary-50 dark:bg-primary-900/30 px-2 py-1 rounded" @click="emit('openWorkspaceFromWithdrawal', item)">
+                        {{ t('admin.referral.goToProcess') }}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
+              <div v-else class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.referral.noPendingRecords') }}
+              </div>
             </div>
-            <div v-else class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.referral.noPendingRecords') }}
+          </div>
+
+          <div class="bg-white dark:bg-dark-900 rounded-xl border border-gray-200 dark:border-dark-800 shadow-sm flex flex-col">
+            <div class="p-5 border-b border-gray-200 dark:border-dark-800 flex justify-between items-center">
+              <h2 class="text-base font-semibold text-gray-900 dark:text-white">最近转余额</h2>
+              <router-link to="/admin/referral/withdrawals?kind=credit" class="text-sm text-primary-600 hover:underline">全部 &rarr;</router-link>
+            </div>
+            <div class="p-0 overflow-y-auto max-h-[160px]">
+              <div v-if="overview.recent_credit_conversions?.length" class="divide-y divide-gray-100 dark:divide-dark-800">
+                <div v-for="item in overview.recent_credit_conversions" :key="item.id" class="p-4">
+                  <div class="flex justify-between items-center gap-3">
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-medium text-gray-900 dark:text-white">{{ item.user_email || item.username || '-' }}</p>
+                      <p class="mt-0.5 text-xs text-gray-500">{{ item.paid_at || item.created_at }}</p>
+                    </div>
+                    <p class="shrink-0 text-sm font-semibold text-indigo-600 dark:text-indigo-300">￥{{ formatMoney(item.amount) }}</p>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="p-6 text-center text-sm text-gray-500">暂无转余额记录</div>
             </div>
           </div>
         </div>
@@ -153,8 +183,9 @@
                   <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Code: {{ item.referral_code || t('admin.referral.notSet') }}</div>
                 </td>
                 <td class="px-5 py-4 text-center">
-                  <div class="flex items-center justify-center text-xs">
+                  <div class="flex flex-col items-center justify-center gap-0.5 text-xs">
                     <span class="text-gray-600 dark:text-gray-400">{{ t('admin.referral.directInvitees', '直接邀请') }} <strong class="text-gray-900 dark:text-gray-200">{{ item.direct_invitees }}</strong></span>
+                    <span class="text-[10px] text-gray-400" :title="'二级仅统计人数，不产生返利'">二级人数 {{ item.second_level_invitees || 0 }}（无返利）</span>
                   </div>
                 </td>
                 <td class="px-5 py-4 text-right">

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -56,11 +57,30 @@ func (s *withdrawalCommissionRepoStub) ListRewardsByRechargeOrder(ctx context.Co
 	return nil, nil
 }
 
-func (s *withdrawalCommissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]CommissionReward, error) {
+func (s *withdrawalCommissionRepoStub) ListRewardsByRechargeOrderForUpdate(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error) {
+	return s.ListRewardsByRechargeOrder(ctx, rechargeOrderID)
+}
+
+func (s *withdrawalCommissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error) {
+	if limit <= 0 {
+		limit = 100
+	}
 	var result []CommissionReward
 	for _, reward := range s.rewards {
-		if reward.Status == CommissionRewardStatusPending && reward.AvailableAt != nil && !reward.AvailableAt.After(readyAt) {
-			result = append(result, reward)
+		if reward.Status != CommissionRewardStatusPending || reward.AvailableAt == nil || reward.AvailableAt.After(readyAt) {
+			continue
+		}
+		if afterAvailableAt != nil {
+			if reward.AvailableAt.Before(*afterAvailableAt) {
+				continue
+			}
+			if reward.AvailableAt.Equal(*afterAvailableAt) && reward.ID <= afterID {
+				continue
+			}
+		}
+		result = append(result, reward)
+		if len(result) >= limit {
+			break
 		}
 	}
 	return result, nil
@@ -209,7 +229,7 @@ func (s *withdrawalCommissionRepoStub) ListPayoutAccountsByUser(ctx context.Cont
 	return result, nil
 }
 
-func (s *withdrawalCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
+func (s *withdrawalCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time, kind string) (int, error) {
 	if s.countWithdrawalsCalls < len(s.countWithdrawalsResults) {
 		result := s.countWithdrawalsResults[s.countWithdrawalsCalls]
 		s.countWithdrawalsCalls++
@@ -218,11 +238,36 @@ func (s *withdrawalCommissionRepoStub) CountWithdrawalsByUserSince(ctx context.C
 	s.countWithdrawalsCalls++
 	count := 0
 	for _, withdrawal := range s.withdrawals {
-		if withdrawal.UserID == userID && !withdrawal.CreatedAt.Before(since) {
-			count++
+		if withdrawal.UserID != userID || withdrawal.CreatedAt.Before(since) {
+			continue
 		}
+		switch kind {
+		case WithdrawalCountKindCredit:
+			if !IsCreditConversionPayout(withdrawal.PayoutMethod) {
+				continue
+			}
+		case WithdrawalCountKindCash:
+			if IsCreditConversionPayout(withdrawal.PayoutMethod) {
+				continue
+			}
+		}
+		count++
 	}
 	return count, nil
+}
+
+func (s *withdrawalCommissionRepoStub) ListPendingRewardsReadyForUser(ctx context.Context, userID int64, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error) {
+	all, err := s.ListPendingRewardsReady(ctx, readyAt, afterAvailableAt, afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CommissionReward, 0, len(all))
+	for _, reward := range all {
+		if reward.UserID == userID {
+			out = append(out, reward)
+		}
+	}
+	return out, nil
 }
 
 func (s *withdrawalCommissionRepoStub) UpsertPayoutAccount(ctx context.Context, account *CommissionPayoutAccount) error {
@@ -389,7 +434,7 @@ func newReferralWithdrawalServiceForTest(repo *withdrawalCommissionRepoStub, set
 		rechargeRepo = newRechargeOrderRepoStub()
 	}
 	settingService := NewSettingService(&settingRepoStub{values: settings}, cfg)
-	settlementService := NewReferralSettlementService(repo, rechargeRepo, nil)
+	settlementService := NewReferralSettlementService(repo, rechargeRepo, nil, nil)
 	return NewReferralWithdrawalService(
 		repo,
 		&withdrawalUserRepoStub{},
@@ -1151,7 +1196,7 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_DoesNotRequireWithd
 	require.Equal(t, 10.0, userRepo.balanceUpdates[200])
 }
 
-func TestReferralWithdrawalService_ConvertCommissionToCredit_AllowsAmountBelowCashWithdrawalMinimum(t *testing.T) {
+func TestReferralWithdrawalService_ConvertCommissionToCredit_EnforcesCashWithdrawalMinimum(t *testing.T) {
 	repo := newWithdrawalCommissionRepoStub()
 	repo.rewards = []CommissionReward{
 		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 8.4, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
@@ -1166,13 +1211,36 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_AllowsAmountBelowCa
 		SettingKeyReferralCreditConversionRate:    "10",
 		SettingKeyReferralWithdrawMinAmount:       "10",
 	}, nil)
-	userRepo := svc.userRepo.(*withdrawalUserRepoStub)
 
 	err := svc.ConvertCommissionToCredit(context.Background(), 200, 8.4)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.Empty(t, repo.withdrawals)
+}
+
+func TestReferralWithdrawalService_ConvertCommissionToCredit_SharesDailyLimitWithCash(t *testing.T) {
+	repo := newWithdrawalCommissionRepoStub()
+	repo.rewards = []CommissionReward{
+		{ID: 1, UserID: 200, RechargeOrderID: 11, RewardAmount: 50, Currency: ReferralSettlementCurrencyCNY, Status: CommissionRewardStatusAvailable},
+	}
+	repo.ledgers = []CommissionLedger{
+		{ID: 1, UserID: 200, RewardID: int64ValuePtr(1), RechargeOrderID: int64ValuePtr(11), Bucket: CommissionLedgerBucketAvailable, Amount: 50, Currency: ReferralSettlementCurrencyCNY},
+	}
+	// Existing cash withdrawal today counts toward the shared daily limit.
+	repo.withdrawals = []CommissionWithdrawal{{
+		ID: 9, UserID: 200, Amount: 10, Status: CommissionWithdrawalStatusPaid,
+		PayoutMethod: CommissionPayoutMethodAlipay, CreatedAt: time.Now(),
+	}}
+
+	svc := newReferralWithdrawalServiceForTest(repo, map[string]string{
+		SettingKeyReferralEnabled:                 "true",
+		SettingKeyReferralCreditConversionEnabled: "true",
+		SettingKeyReferralWithdrawMinAmount:       "10",
+		SettingKeyReferralWithdrawDailyLimit:      "1",
+	}, nil)
+
+	err := svc.ConvertCommissionToCredit(context.Background(), 200, 10)
+	require.ErrorIs(t, err, ErrCommissionWithdrawDailyLimitExceeded)
 	require.Len(t, repo.withdrawals, 1)
-	require.Equal(t, 84.0, repo.withdrawals[0].NetAmount)
-	require.Equal(t, 84.0, userRepo.balanceUpdates[200])
 }
 
 func TestReferralWithdrawalService_ConvertCommissionToCredit_AppliesConversionRate(t *testing.T) {
@@ -1286,4 +1354,64 @@ func TestReferralWithdrawalService_ConvertCommissionToCredit_RechecksDailyLimitI
 	require.Len(t, repo.withdrawals, 0)
 	require.Empty(t, userRepo.balanceUpdates)
 	require.Equal(t, 2, repo.countWithdrawalsCalls)
+}
+
+type stubSecretEncryptor struct {
+	decryptFn func(string) (string, error)
+}
+
+func (s stubSecretEncryptor) Encrypt(plaintext string) (string, error) { return "enc:" + plaintext, nil }
+func (s stubSecretEncryptor) Decrypt(ciphertext string) (string, error) {
+	if s.decryptFn != nil {
+		return s.decryptFn(ciphertext)
+	}
+	return strings.TrimPrefix(ciphertext, "enc:"), nil
+}
+
+func TestEnrichPayoutSnapshotJSONForAdmin_DecryptsAndStripsCiphertext(t *testing.T) {
+	raw := `{"account_name":"Alice","account_no_encrypted":"enc:alipay@example.com","account_no_masked":"ali***"}`
+	out := enrichPayoutSnapshotJSONForAdmin(stubSecretEncryptor{}, stringValuePtr(raw))
+	require.NotNil(t, out)
+	require.Contains(t, *out, `"account_no":"alipay@example.com"`)
+	require.NotContains(t, *out, "account_no_encrypted")
+	require.Contains(t, *out, "account_no_masked")
+}
+
+func TestEnrichPayoutSnapshotJSONForAdmin_DecryptFailureStripsCiphertext(t *testing.T) {
+	raw := `{"account_name":"Alice","account_no_encrypted":"broken","account_no_masked":"ali***"}`
+	out := enrichPayoutSnapshotJSONForAdmin(stubSecretEncryptor{
+		decryptFn: func(string) (string, error) { return "", errors.New("bad key") },
+	}, stringValuePtr(raw))
+	require.NotNil(t, out)
+	require.NotContains(t, *out, "account_no_encrypted")
+	require.NotContains(t, *out, `"account_no":`)
+	require.Contains(t, *out, "account_no_masked")
+}
+
+func TestEnrichPayoutSnapshotJSONForAdmin_NilEncryptorTreatsValueAsPlaintext(t *testing.T) {
+	raw := `{"account_no_encrypted":"alipay@example.com"}`
+	out := enrichPayoutSnapshotJSONForAdmin(nil, stringValuePtr(raw))
+	require.NotNil(t, out)
+	require.Contains(t, *out, `"account_no":"alipay@example.com"`)
+	require.NotContains(t, *out, "account_no_encrypted")
+}
+
+func TestSanitizePayoutSnapshotJSONForAdminList_StripsSecrets(t *testing.T) {
+	raw := `{"account_name":"Alice","account_no":"secret","account_no_encrypted":"enc","account_no_masked":"ali***","qr_image_url":"https://x"}`
+	out := sanitizePayoutSnapshotJSONForAdminList(stringValuePtr(raw))
+	require.NotNil(t, out)
+	require.Contains(t, *out, "account_name")
+	require.Contains(t, *out, "account_no_masked")
+	require.Contains(t, *out, "qr_image_url")
+	require.NotContains(t, *out, `"account_no":`)
+	require.NotContains(t, *out, "account_no_encrypted")
+}
+
+func TestSanitizePayoutSnapshotJSONForAdminList_ParseFailureReturnsEmptyObject(t *testing.T) {
+	// Corrupt / non-JSON historical snapshots must never pass through plaintext.
+	raw := `{"account_no":"secret-plaintext",not-json`
+	out := sanitizePayoutSnapshotJSONForAdminList(stringValuePtr(raw))
+	require.NotNil(t, out)
+	require.Equal(t, "{}", *out)
+	require.NotContains(t, *out, "secret-plaintext")
 }

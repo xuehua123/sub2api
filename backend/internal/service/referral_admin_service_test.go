@@ -302,6 +302,16 @@ func (s *adminCommissionRepoStub) ListAdminWithdrawals(ctx context.Context, para
 	return filtered, &pagination.PaginationResult{Total: int64(len(filtered)), Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
 }
 
+func (s *adminCommissionRepoStub) GetAdminWithdrawal(ctx context.Context, withdrawalID int64) (*AdminCommissionWithdrawal, error) {
+	for i := range s.withdrawalRows {
+		if s.withdrawalRows[i].ID == withdrawalID {
+			row := s.withdrawalRows[i]
+			return &row, nil
+		}
+	}
+	return nil, ErrCommissionWithdrawalNotFound
+}
+
 func (s *adminCommissionRepoStub) ListWithdrawalItemsByWithdrawal(ctx context.Context, withdrawalID int64) ([]CommissionWithdrawalItem, error) {
 	return s.withdrawalItems, nil
 }

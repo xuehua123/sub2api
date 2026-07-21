@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 )
 
 type rechargeOrderRepoStub struct {
+	mu              sync.Mutex
 	orders          map[string]*RechargeOrder
 	paidOrderCounts map[int64]int
 	nextID          int64
@@ -27,6 +29,8 @@ func newRechargeOrderRepoStub() *rechargeOrderRepoStub {
 }
 
 func (s *rechargeOrderRepoStub) GetByProviderAndExternalOrderID(ctx context.Context, provider, externalOrderID string) (*RechargeOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if order, ok := s.orders[provider+"::"+externalOrderID]; ok {
 		cloned := *order
 		return &cloned, nil
@@ -35,6 +39,8 @@ func (s *rechargeOrderRepoStub) GetByProviderAndExternalOrderID(ctx context.Cont
 }
 
 func (s *rechargeOrderRepoStub) GetByID(ctx context.Context, id int64) (*RechargeOrder, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, order := range s.orders {
 		if order.ID == id {
 			cloned := *order
@@ -45,6 +51,8 @@ func (s *rechargeOrderRepoStub) GetByID(ctx context.Context, id int64) (*Recharg
 }
 
 func (s *rechargeOrderRepoStub) Create(ctx context.Context, order *RechargeOrder) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if order.ID == 0 {
 		order.ID = s.nextID
 		s.nextID++
@@ -63,6 +71,8 @@ func (s *rechargeOrderRepoStub) Create(ctx context.Context, order *RechargeOrder
 }
 
 func (s *rechargeOrderRepoStub) Update(ctx context.Context, order *RechargeOrder) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.orders[order.Provider+"::"+order.ExternalOrderID]; ok {
 		cloned := *order
 		s.orders[order.Provider+"::"+order.ExternalOrderID] = &cloned
@@ -72,6 +82,8 @@ func (s *rechargeOrderRepoStub) Update(ctx context.Context, order *RechargeOrder
 }
 
 func (s *rechargeOrderRepoStub) CountPaidOrdersByUser(ctx context.Context, userID int64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.paidOrderCounts[userID], nil
 }
 
@@ -84,11 +96,14 @@ func (s *rechargeOrderRepoStub) HasRefundOrChargeback(ctx context.Context, recha
 }
 
 type commissionRepoStub struct {
+	mu      sync.Mutex
 	rewards []CommissionReward
 	ledgers []CommissionLedger
 }
 
 func (s *commissionRepoStub) CreateReward(ctx context.Context, reward *CommissionReward) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	reward.ID = int64(len(s.rewards) + 1)
 	cloned := *reward
 	s.rewards = append(s.rewards, cloned)
@@ -96,6 +111,8 @@ func (s *commissionRepoStub) CreateReward(ctx context.Context, reward *Commissio
 }
 
 func (s *commissionRepoStub) GetRewardByID(ctx context.Context, rewardID int64) (*CommissionReward, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i := range s.rewards {
 		if s.rewards[i].ID == rewardID {
 			cloned := s.rewards[i]
@@ -106,6 +123,8 @@ func (s *commissionRepoStub) GetRewardByID(ctx context.Context, rewardID int64) 
 }
 
 func (s *commissionRepoStub) ListRewardsByRechargeOrder(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var result []CommissionReward
 	for _, reward := range s.rewards {
 		if reward.RechargeOrderID == rechargeOrderID {
@@ -115,17 +134,46 @@ func (s *commissionRepoStub) ListRewardsByRechargeOrder(ctx context.Context, rec
 	return result, nil
 }
 
-func (s *commissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]CommissionReward, error) {
-	var result []CommissionReward
+func (s *commissionRepoStub) ListRewardsByRechargeOrderForUpdate(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error) {
+	return s.ListRewardsByRechargeOrder(ctx, rechargeOrderID)
+}
+
+func (s *commissionRepoStub) ListPendingRewardsReady(ctx context.Context, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if limit <= 0 {
+		limit = 100
+	}
+	// Collect then sort by (available_at, id) so keyset matches production ordering.
+	candidates := make([]CommissionReward, 0, len(s.rewards))
 	for _, reward := range s.rewards {
 		if reward.AvailableAt == nil || reward.AvailableAt.After(readyAt) {
 			continue
 		}
+		if afterAvailableAt != nil {
+			if reward.AvailableAt.Before(*afterAvailableAt) {
+				continue
+			}
+			if reward.AvailableAt.Equal(*afterAvailableAt) && reward.ID <= afterID {
+				continue
+			}
+		}
 		if reward.Status == CommissionRewardStatusPending || reward.Status == CommissionRewardStatusPartiallyReversed {
-			result = append(result, reward)
+			candidates = append(candidates, reward)
 		}
 	}
-	return result, nil
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			ai, aj := candidates[i].AvailableAt, candidates[j].AvailableAt
+			if aj.Before(*ai) || (aj.Equal(*ai) && candidates[j].ID < candidates[i].ID) {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
+		}
+	}
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	return candidates, nil
 }
 
 func (s *commissionRepoStub) ListRewardsByUser(ctx context.Context, userID int64, statuses []string) ([]CommissionReward, error) {
@@ -149,6 +197,8 @@ func (s *commissionRepoStub) ListRewardsByUser(ctx context.Context, userID int64
 }
 
 func (s *commissionRepoStub) UpdateReward(ctx context.Context, reward *CommissionReward) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for i := range s.rewards {
 		if s.rewards[i].ID == reward.ID {
 			s.rewards[i] = *reward
@@ -159,6 +209,8 @@ func (s *commissionRepoStub) UpdateReward(ctx context.Context, reward *Commissio
 }
 
 func (s *commissionRepoStub) CreateLedgerEntries(ctx context.Context, entries []CommissionLedger) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, entry := range entries {
 		cloned := entry
 		cloned.ID = int64(len(s.ledgers) + 1)
@@ -168,6 +220,8 @@ func (s *commissionRepoStub) CreateLedgerEntries(ctx context.Context, entries []
 }
 
 func (s *commissionRepoStub) SumRewardBucketAmount(ctx context.Context, rewardID int64, bucket string) (float64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	total := 0.0
 	for _, ledger := range s.ledgers {
 		if ledger.RewardID != nil && *ledger.RewardID == rewardID && ledger.Bucket == bucket {
@@ -206,8 +260,30 @@ func (s *commissionRepoStub) UpdateWithdrawalItem(ctx context.Context, item *Com
 	return nil
 }
 
-func (s *commissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
+func (s *commissionRepoStub) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time, kind string) (int, error) {
 	return 0, nil
+}
+
+func (s *commissionRepoStub) ListPendingRewardsReadyForUser(ctx context.Context, userID int64, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	// Reuse global list with a high cap then filter — stub data sets are tiny.
+	all, err := s.ListPendingRewardsReady(ctx, readyAt, afterAvailableAt, afterID, len(s.rewards)+1)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]CommissionReward, 0, limit)
+	for _, reward := range all {
+		if reward.UserID != userID {
+			continue
+		}
+		out = append(out, reward)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (s *commissionRepoStub) ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]CommissionPayoutAccount, error) {
@@ -339,7 +415,7 @@ func newReferralRewardServiceForTest(
 		},
 	}
 	settingService := NewSettingService(&settingRepoStub{values: settings}, cfg)
-	settlementService := NewReferralSettlementService(commissionRepo, rechargeRepo, nil)
+	settlementService := NewReferralSettlementService(commissionRepo, rechargeRepo, nil, nil)
 	return NewReferralRewardService(
 		rechargeRepo,
 		commissionRepo,

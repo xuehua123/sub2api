@@ -208,32 +208,35 @@
 
         <section id="withdrawal-records-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
           <div class="mb-4">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.withdrawalRecords', '提现记录') }}</h2>
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.withdrawalRecords', '提现与转余额记录') }}</h2>
+            <p class="mt-1 text-xs text-gray-500">含现金提现与「转平台余额」；转余额显示为已转余额，不是银行卡打款。</p>
           </div>
           <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
             <table class="min-w-full text-sm">
               <thead class="bg-gray-50 dark:bg-dark-800/50">
                 <tr class="text-left text-gray-500 dark:text-gray-400">
-                  <th class="px-4 py-3 font-medium">{{ t('referral.withdrawalNo', '提现单号') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('referral.withdrawalNo', '单号') }}</th>
+                  <th class="px-4 py-3 font-medium">类型</th>
                   <th class="px-4 py-3 font-medium">{{ t('common.amount', '金额') }}</th>
                   <th class="px-4 py-3 font-medium">{{ t('common.status', '状态') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('common.createdAt', '申请时间') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('common.createdAt', '时间') }}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
                 <tr v-for="record in withdrawals.items" :key="record.id" class="text-gray-700 dark:text-gray-300">
                   <td class="px-4 py-4 font-mono text-xs">{{ record.withdrawal_no }}</td>
+                  <td class="px-4 py-4">{{ formatPayoutMethod(record.payout_method || record.method) }}</td>
                   <td class="px-4 py-4 font-medium text-gray-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</td>
                   <td class="px-4 py-4">
                     <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-dark-800 dark:text-gray-300">
-                      {{ formatStatus(record.status) }}
+                      {{ formatWithdrawalStatus(record.status, record.payout_method || record.method) }}
                     </span>
                   </td>
                   <td class="px-4 py-4 text-gray-500">{{ formatDate(record.created_at) }}</td>
                 </tr>
                 <tr v-if="!withdrawals.items.length">
-                  <td colspan="4" class="px-4 py-8 text-center text-gray-500">
-                    {{ t('common.noData', '暂无提现记录') }}
+                  <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                    {{ t('common.noData', '暂无记录') }}
                   </td>
                 </tr>
               </tbody>
@@ -530,6 +533,7 @@ import type {
   ReferralInvitee,
   UserInviteeReward
 } from '@/types'
+import { formatPayoutMethod, formatWithdrawalStatus } from '@/utils/referralWithdrawalDisplay'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -773,7 +777,7 @@ function formatEntryType(entryType: string): string {
     reward_pending_to_available: t('referral.rewardSettled', '佣金结算'),
     withdraw_freeze: t('referral.withdrawFreeze', '提现冻结'),
     withdraw_return: t('referral.withdrawReturn', '提现退回'),
-    withdraw_paid: t('referral.withdrawPaid', '提现打款'),
+    withdraw_paid: t('referral.withdrawPaid', '提现/转余额完成'),
     admin_add: t('referral.adminAdd', '管理员调增'),
     admin_subtract: t('referral.adminSubtract', '管理员扣减')
   }

@@ -56,10 +56,26 @@ const (
 	CommissionWithdrawalItemStatusReturned = "returned"
 	CommissionWithdrawalItemStatusPaid     = "paid"
 
-	CommissionPayoutMethodAlipay = "alipay"
-	CommissionPayoutMethodWechat = "wechat"
-	CommissionPayoutMethodBank   = "bank"
+	CommissionPayoutMethodAlipay           = "alipay"
+	CommissionPayoutMethodWechat           = "wechat"
+	CommissionPayoutMethodBank             = "bank"
+	CommissionPayoutMethodCreditConversion = "credit_conversion"
+
+	// Withdrawal count scopes for daily limits (cash vs platform-credit conversion).
+	WithdrawalCountKindAll    = ""
+	WithdrawalCountKindCash   = "cash"
+	WithdrawalCountKindCredit = "credit"
+
+	// SettlementBlocked marks rewards that must not settle because the source
+	// order is fully refunded/chargebacked. Status-only; no ledger movement.
+	CommissionRewardStatusSettlementBlocked = "settlement_blocked"
 )
+
+// IsCreditConversionPayout reports whether a withdrawal is an in-platform
+// credit conversion rather than an external cash payout.
+func IsCreditConversionPayout(method string) bool {
+	return strings.TrimSpace(method) == CommissionPayoutMethodCreditConversion
+}
 
 var (
 	ErrRechargeOrderNotFound                    = infraerrors.NotFound("RECHARGE_ORDER_NOT_FOUND", "recharge order not found")
@@ -246,7 +262,16 @@ type RechargeOrderRepository interface {
 type CommissionRepository interface {
 	CreateReward(ctx context.Context, reward *CommissionReward) error
 	ListRewardsByRechargeOrder(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error)
-	ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]CommissionReward, error)
+	// ListRewardsByRechargeOrderForUpdate locks matching reward rows (FOR UPDATE)
+	// ordered by id before ledger mutations. Refund paths must use this so lock
+	// order matches settlement: commission_rewards → commission_ledgers.
+	ListRewardsByRechargeOrderForUpdate(ctx context.Context, rechargeOrderID int64) ([]CommissionReward, error)
+	// ListPendingRewardsReady returns ready pending rewards after the keyset cursor
+	// (afterAvailableAt, afterID), ordered by available_at ASC, id ASC. Paired with
+	// index (status, available_at, id) for filtering; status IN may still merge
+	// scans. Uses FOR UPDATE SKIP LOCKED. afterAvailableAt=nil starts from the
+	// beginning; limit<=0 uses a safe default.
+	ListPendingRewardsReady(ctx context.Context, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error)
 	ListRewardsByUser(ctx context.Context, userID int64, statuses []string) ([]CommissionReward, error)
 	UpdateReward(ctx context.Context, reward *CommissionReward) error
 	CreateLedgerEntries(ctx context.Context, entries []CommissionLedger) error
@@ -259,7 +284,11 @@ type CommissionRepository interface {
 	CreateWithdrawalItems(ctx context.Context, items []CommissionWithdrawalItem) error
 	ListWithdrawalItemsByWithdrawal(ctx context.Context, withdrawalID int64) ([]CommissionWithdrawalItem, error)
 	UpdateWithdrawalItem(ctx context.Context, item *CommissionWithdrawalItem) error
-	CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error)
+	// CountWithdrawalsByUserSince counts withdrawals since `since`.
+	// kind: "" (all), "cash" (non-credit), or "credit" (credit_conversion only).
+	CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time, kind string) (int, error)
+	// ListPendingRewardsReadyForUser is the per-user counterpart of ListPendingRewardsReady.
+	ListPendingRewardsReadyForUser(ctx context.Context, userID int64, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]CommissionReward, error)
 	ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]CommissionPayoutAccount, error)
 	UpsertPayoutAccount(ctx context.Context, account *CommissionPayoutAccount) error
 }
@@ -396,11 +425,9 @@ func (s *ReferralRewardService) CreditRechargeOrder(ctx context.Context, input *
 				return nil, err
 			}
 		}
-		if s.settlementSvc != nil {
-			if _, err := s.settlementSvc.SettlePendingRewards(txCtx, now); err != nil {
-				return nil, err
-			}
-		}
+		// Newly created rewards use a future available_at, so they are not settleable
+		// yet. Global settle is handled by the background runner — never lock the
+		// full ready queue inside a fulfillment transaction.
 		return &RechargeCreditResult{
 			RechargeOrder:     order,
 			CommissionRewards: rewards,

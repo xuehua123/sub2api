@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/commissionledger"
 	"github.com/Wei-Shaw/sub2api/ent/commissionpayoutaccount"
@@ -16,6 +17,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+// Default batch size when callers pass limit <= 0. Keeps accidental unbounded
+// scans from reappearing while remaining large enough for single-user drains.
+const commissionPendingReadyDefaultLimit = 100
 
 type commissionRepository struct {
 	client *dbent.Client
@@ -72,10 +77,23 @@ func (r *commissionRepository) CreateReward(ctx context.Context, reward *service
 }
 
 func (r *commissionRepository) ListRewardsByRechargeOrder(ctx context.Context, rechargeOrderID int64) ([]service.CommissionReward, error) {
-	models, err := clientFromContext(ctx, r.client).CommissionReward.Query().
+	return r.listRewardsByRechargeOrder(ctx, rechargeOrderID, false)
+}
+
+func (r *commissionRepository) ListRewardsByRechargeOrderForUpdate(ctx context.Context, rechargeOrderID int64) ([]service.CommissionReward, error) {
+	return r.listRewardsByRechargeOrder(ctx, rechargeOrderID, true)
+}
+
+func (r *commissionRepository) listRewardsByRechargeOrder(ctx context.Context, rechargeOrderID int64, forUpdate bool) ([]service.CommissionReward, error) {
+	query := clientFromContext(ctx, r.client).CommissionReward.Query().
 		Where(commissionreward.RechargeOrderIDEQ(rechargeOrderID)).
-		Order(dbent.Asc(commissionreward.FieldLevel)).
-		All(ctx)
+		// Lock/process in id order so concurrent refund/settlement never reverse
+		// row-lock acquisition relative to ledger locks on the same reward.
+		Order(dbent.Asc(commissionreward.FieldID))
+	if forUpdate {
+		query = query.ForUpdate()
+	}
+	models, err := query.All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -88,17 +106,37 @@ func (r *commissionRepository) ListRewardsByRechargeOrder(ctx context.Context, r
 	return result, nil
 }
 
-func (r *commissionRepository) ListPendingRewardsReady(ctx context.Context, readyAt time.Time) ([]service.CommissionReward, error) {
-	models, err := clientFromContext(ctx, r.client).CommissionReward.Query().
+func (r *commissionRepository) ListPendingRewardsReady(ctx context.Context, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]service.CommissionReward, error) {
+	if limit <= 0 {
+		limit = commissionPendingReadyDefaultLimit
+	}
+	query := clientFromContext(ctx, r.client).CommissionReward.Query().
 		Where(
 			commissionreward.StatusIn(
 				service.CommissionRewardStatusPending,
 				service.CommissionRewardStatusPartiallyReversed,
 			),
 			commissionreward.AvailableAtLTE(readyAt),
-		).
-		ForUpdate().
-		Order(dbent.Asc(commissionreward.FieldAvailableAt)).
+		)
+	// Keyset on (available_at, id) for stable multi-batch drains; index
+	// (status, available_at, id) helps filter, but status IN may merge ranges.
+	if afterAvailableAt != nil {
+		query = query.Where(
+			commissionreward.Or(
+				commissionreward.AvailableAtGT(*afterAvailableAt),
+				commissionreward.And(
+					commissionreward.AvailableAtEQ(*afterAvailableAt),
+					commissionreward.IDGT(afterID),
+				),
+			),
+		)
+	}
+	// SKIP LOCKED lets concurrent settlement / withdrawal paths proceed without
+	// waiting on this batch.
+	models, err := query.
+		Order(dbent.Asc(commissionreward.FieldAvailableAt), dbent.Asc(commissionreward.FieldID)).
+		Limit(limit).
+		ForUpdate(entsql.WithLockAction(entsql.SkipLocked)).
 		All(ctx)
 	if err != nil {
 		return nil, err
@@ -507,13 +545,63 @@ func (r *commissionRepository) UpdateWithdrawalItem(ctx context.Context, item *s
 	return nil
 }
 
-func (r *commissionRepository) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time) (int, error) {
-	return clientFromContext(ctx, r.client).CommissionWithdrawal.Query().
+func (r *commissionRepository) CountWithdrawalsByUserSince(ctx context.Context, userID int64, since time.Time, kind string) (int, error) {
+	query := clientFromContext(ctx, r.client).CommissionWithdrawal.Query().
 		Where(
 			commissionwithdrawal.UserIDEQ(userID),
 			commissionwithdrawal.CreatedAtGTE(since),
-		).
-		Count(ctx)
+		)
+	switch strings.TrimSpace(kind) {
+	case service.WithdrawalCountKindCredit:
+		query = query.Where(commissionwithdrawal.PayoutMethodEQ(service.CommissionPayoutMethodCreditConversion))
+	case service.WithdrawalCountKindCash:
+		query = query.Where(commissionwithdrawal.PayoutMethodNEQ(service.CommissionPayoutMethodCreditConversion))
+	}
+	return query.Count(ctx)
+}
+
+func (r *commissionRepository) ListPendingRewardsReadyForUser(ctx context.Context, userID int64, readyAt time.Time, afterAvailableAt *time.Time, afterID int64, limit int) ([]service.CommissionReward, error) {
+	if userID <= 0 {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = commissionPendingReadyDefaultLimit
+	}
+	query := clientFromContext(ctx, r.client).CommissionReward.Query().
+		Where(
+			commissionreward.UserIDEQ(userID),
+			commissionreward.StatusIn(
+				service.CommissionRewardStatusPending,
+				service.CommissionRewardStatusPartiallyReversed,
+			),
+			commissionreward.AvailableAtLTE(readyAt),
+		)
+	if afterAvailableAt != nil {
+		query = query.Where(
+			commissionreward.Or(
+				commissionreward.AvailableAtGT(*afterAvailableAt),
+				commissionreward.And(
+					commissionreward.AvailableAtEQ(*afterAvailableAt),
+					commissionreward.IDGT(afterID),
+				),
+			),
+		)
+	}
+	models, err := query.
+		Order(dbent.Asc(commissionreward.FieldAvailableAt), dbent.Asc(commissionreward.FieldID)).
+		Limit(limit).
+		ForUpdate(entsql.WithLockAction(entsql.SkipLocked)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]service.CommissionReward, 0, len(models))
+	for _, model := range models {
+		if reward := commissionRewardEntityToService(model); reward != nil {
+			result = append(result, *reward)
+		}
+	}
+	return result, nil
 }
 
 func (r *commissionRepository) ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]service.CommissionPayoutAccount, error) {
@@ -924,6 +1012,35 @@ func (r *commissionRepository) ListCommissionLedgers(ctx context.Context, params
 	return items, paginationResultFrom(total, params), nil
 }
 
+func (r *commissionRepository) GetAdminWithdrawal(ctx context.Context, withdrawalID int64) (*service.AdminCommissionWithdrawal, error) {
+	if withdrawalID <= 0 {
+		return nil, service.ErrCommissionWithdrawalNotFound
+	}
+	model, err := clientFromContext(ctx, r.client).CommissionWithdrawal.Get(ctx, withdrawalID)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrCommissionWithdrawalNotFound, nil)
+	}
+	withdrawal := commissionWithdrawalEntityToService(model)
+	if withdrawal == nil {
+		return nil, service.ErrCommissionWithdrawalNotFound
+	}
+	item := service.AdminCommissionWithdrawal{CommissionWithdrawal: *withdrawal}
+	usersByID, err := r.loadUsersByID(ctx, []int64{model.UserID})
+	if err != nil {
+		return nil, err
+	}
+	if userModel := usersByID[model.UserID]; userModel != nil {
+		item.UserEmail = userModel.Email
+		item.Username = userModel.Username
+	}
+	counts, err := r.loadWithdrawalItemCounts(ctx, []int64{model.ID})
+	if err != nil {
+		return nil, err
+	}
+	item.ItemCount = counts[model.ID]
+	return &item, nil
+}
+
 func (r *commissionRepository) ListAdminWithdrawals(ctx context.Context, params pagination.PaginationParams, filter service.AdminCommissionWithdrawalFilter) ([]service.AdminCommissionWithdrawal, *pagination.PaginationResult, error) {
 	query := clientFromContext(ctx, r.client).CommissionWithdrawal.Query()
 	if filter.UserID > 0 {
@@ -931,6 +1048,15 @@ func (r *commissionRepository) ListAdminWithdrawals(ctx context.Context, params 
 	}
 	if strings.TrimSpace(filter.Status) != "" {
 		query = query.Where(commissionwithdrawal.StatusEQ(strings.TrimSpace(filter.Status)))
+	}
+	if method := strings.TrimSpace(filter.PayoutMethod); method != "" {
+		query = query.Where(commissionwithdrawal.PayoutMethodEQ(method))
+	}
+	switch strings.TrimSpace(strings.ToLower(filter.Kind)) {
+	case "credit":
+		query = query.Where(commissionwithdrawal.PayoutMethodEQ(service.CommissionPayoutMethodCreditConversion))
+	case "cash":
+		query = query.Where(commissionwithdrawal.PayoutMethodNEQ(service.CommissionPayoutMethodCreditConversion))
 	}
 	if ids, ok, err := r.searchUserIDs(ctx, filter.Search); err != nil {
 		return nil, nil, err

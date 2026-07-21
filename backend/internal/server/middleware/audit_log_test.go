@@ -145,3 +145,10 @@ func TestPromptAuditMutationAuditRoutesHaveStableActionsAndOmitBodies(t *testing
 		require.Truef(t, omitted, "%s must not persist its credential or confirmation-bearing body", route)
 	}
 }
+
+func TestAuditSensitiveReads_IncludeReferralWithdrawalDetail(t *testing.T) {
+	const route = "GET /api/v1/admin/referral/withdrawals/:id"
+	action, ok := auditSensitiveReads[route]
+	require.True(t, ok, "withdrawal detail decrypt path must be audited")
+	require.Equal(t, "admin.referral.withdrawal.payout_account.read", action)
+}

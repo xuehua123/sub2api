@@ -807,6 +807,7 @@ func registerReferralAdminRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		withdrawals := referral.Group("/withdrawals")
 		{
 			withdrawals.GET("", h.Admin.Referral.ListWithdrawals)
+			withdrawals.GET("/:id", h.Admin.Referral.GetWithdrawal)
 			withdrawals.GET("/:id/items", h.Admin.Referral.GetWithdrawalItems)
 			withdrawals.POST("/:id/approve", h.Admin.Referral.ApproveWithdrawal)
 			withdrawals.POST("/:id/reject", h.Admin.Referral.RejectWithdrawal)

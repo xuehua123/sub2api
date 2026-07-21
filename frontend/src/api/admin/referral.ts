@@ -125,6 +125,13 @@ export async function listWithdrawals(
   return data
 }
 
+export async function getWithdrawal(id: number): Promise<AdminCommissionWithdrawal> {
+  const { data } = await apiClient.get<AdminCommissionWithdrawal>(
+    `/admin/referral/withdrawals/${id}`
+  )
+  return data
+}
+
 export async function getWithdrawalItems(id: number): Promise<CommissionWithdrawalItem[]> {
   const { data } = await apiClient.get<CommissionWithdrawalItem[]>(
     `/admin/referral/withdrawals/${id}/items`
@@ -159,6 +166,7 @@ const referralAPI = {
   listCommissionLedgers,
   createCommissionAdjustment,
   listWithdrawals,
+  getWithdrawal,
   getWithdrawalItems,
   approveWithdrawal,
   rejectWithdrawal,

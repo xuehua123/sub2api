@@ -2403,15 +2403,18 @@ export interface CommissionWithdrawal {
   withdrawal_no: string
   user_id: number
   amount: number
+  fee_amount?: number
   net_amount: number
   settlement_currency: string
-  method: string
+  method?: string
+  payout_method?: string
   payout_account_snapshot: Record<string, unknown>
   status: string
   admin_note: string
   requested_at: string
   created_at: string
   processed_at: string | null
+  paid_at?: string | null
 }
 
 export interface CommissionWithdrawalItem {
@@ -2532,18 +2535,26 @@ export interface AdminReferralOverview {
   total_referral_users: number
   total_relations: number
   total_bound_users: number
+  total_accounts?: number
   total_commission: number
   available_commission: number
   pending_commission: number
   frozen_commission: number
   withdrawn_commission: number
+  cash_paid_commission?: number
+  credit_converted_commission?: number
   total_withdrawn: number
   pending_withdrawals: number
   pending_withdrawal_count: number
+  pending_withdrawal_amount?: number
+  approved_withdrawal_count?: number
+  approved_withdrawal_amount?: number
+  negative_commission_debt?: number
   settlement_currency: string
   ranking: AdminReferralRankingItem[]
   recent_trend: AdminReferralTrendPoint[]
   recent_withdrawals: AdminCommissionWithdrawal[]
+  recent_credit_conversions?: AdminCommissionWithdrawal[]
 }
 
 export interface AdminReferralTreeNode {

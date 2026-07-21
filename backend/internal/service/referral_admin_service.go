@@ -32,16 +32,22 @@ type AdminReferralAccountOption struct {
 }
 
 type AdminReferralOverview struct {
-	TotalAccounts           int                        `json:"total_accounts"`
-	TotalBoundUsers         int                        `json:"total_bound_users"`
-	PendingCommission       float64                    `json:"pending_commission"`
-	AvailableCommission     float64                    `json:"available_commission"`
-	FrozenCommission        float64                    `json:"frozen_commission"`
-	WithdrawnCommission     float64                    `json:"withdrawn_commission"`
-	PendingWithdrawalCount  int                        `json:"pending_withdrawal_count"`
-	PendingWithdrawalAmount float64                    `json:"pending_withdrawal_amount"`
-	RecentTrend             []AdminReferralTrendPoint  `json:"recent_trend"`
-	Ranking                 []AdminReferralRankingItem `json:"ranking"`
+	TotalAccounts               int                        `json:"total_accounts"`
+	TotalBoundUsers             int                        `json:"total_bound_users"`
+	PendingCommission           float64                    `json:"pending_commission"`
+	AvailableCommission         float64                    `json:"available_commission"`
+	FrozenCommission            float64                    `json:"frozen_commission"`
+	WithdrawnCommission         float64                    `json:"withdrawn_commission"` // settled bucket (cash + credit conversion)
+	CashPaidCommission          float64                    `json:"cash_paid_commission"`
+	CreditConvertedCommission   float64                    `json:"credit_converted_commission"`
+	PendingWithdrawalCount      int                        `json:"pending_withdrawal_count"`
+	PendingWithdrawalAmount     float64                    `json:"pending_withdrawal_amount"`
+	ApprovedWithdrawalCount     int                        `json:"approved_withdrawal_count"`
+	ApprovedWithdrawalAmount    float64                    `json:"approved_withdrawal_amount"`
+	NegativeCommissionDebt      float64                    `json:"negative_commission_debt"` // sum of negative available buckets
+	RecentTrend                 []AdminReferralTrendPoint  `json:"recent_trend"`
+	Ranking                     []AdminReferralRankingItem `json:"ranking"`
+	RecentCreditConversions     []AdminCommissionWithdrawal `json:"recent_credit_conversions"`
 }
 
 type AdminReferralTrendPoint struct {
@@ -113,9 +119,12 @@ type AdminCommissionLedgerFilter struct {
 }
 
 type AdminCommissionWithdrawalFilter struct {
-	UserID int64
-	Status string
-	Search string
+	UserID       int64
+	Status       string
+	Search       string
+	PayoutMethod string // exact match when set
+	// Kind: "" (all), "cash" (exclude credit_conversion), "credit" (credit_conversion only).
+	Kind string
 }
 
 type AdminUpdateReferralRelationInput struct {
@@ -159,6 +168,7 @@ type ReferralAdminCommissionRepository interface {
 	ListCommissionRewards(ctx context.Context, params pagination.PaginationParams, filter AdminCommissionRewardFilter) ([]AdminCommissionReward, *pagination.PaginationResult, error)
 	ListCommissionLedgers(ctx context.Context, params pagination.PaginationParams, filter AdminCommissionLedgerFilter) ([]AdminCommissionLedger, *pagination.PaginationResult, error)
 	ListAdminWithdrawals(ctx context.Context, params pagination.PaginationParams, filter AdminCommissionWithdrawalFilter) ([]AdminCommissionWithdrawal, *pagination.PaginationResult, error)
+	GetAdminWithdrawal(ctx context.Context, withdrawalID int64) (*AdminCommissionWithdrawal, error)
 	ListWithdrawalItemsByWithdrawal(ctx context.Context, withdrawalID int64) ([]CommissionWithdrawalItem, error)
 }
 
@@ -375,6 +385,10 @@ func (s *ReferralAdminService) ListCommissionLedgers(ctx context.Context, params
 
 func (s *ReferralAdminService) ListWithdrawals(ctx context.Context, params pagination.PaginationParams, filter AdminCommissionWithdrawalFilter) ([]AdminCommissionWithdrawal, *pagination.PaginationResult, error) {
 	return s.commissionRepo.ListAdminWithdrawals(ctx, params, filter)
+}
+
+func (s *ReferralAdminService) GetWithdrawal(ctx context.Context, withdrawalID int64) (*AdminCommissionWithdrawal, error) {
+	return s.commissionRepo.GetAdminWithdrawal(ctx, withdrawalID)
 }
 
 func (s *ReferralAdminService) ListWithdrawalItems(ctx context.Context, withdrawalID int64) ([]CommissionWithdrawalItem, error) {

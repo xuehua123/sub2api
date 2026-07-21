@@ -5,6 +5,7 @@ import ReferralWithdrawalsView from '../ReferralWithdrawalsView.vue'
 
 const {
   listWithdrawals,
+  getWithdrawal,
   getWithdrawalItems,
   approveWithdrawal,
   rejectWithdrawal,
@@ -13,6 +14,7 @@ const {
   showSuccess
 } = vi.hoisted(() => ({
   listWithdrawals: vi.fn(),
+  getWithdrawal: vi.fn(),
   getWithdrawalItems: vi.fn(),
   approveWithdrawal: vi.fn(),
   rejectWithdrawal: vi.fn(),
@@ -24,12 +26,14 @@ const {
 vi.mock('@/api/admin/referral', () => ({
   default: {
     listWithdrawals,
+    getWithdrawal,
     getWithdrawalItems,
     approveWithdrawal,
     rejectWithdrawal,
     markWithdrawalPaid
   },
   listWithdrawals,
+  getWithdrawal,
   getWithdrawalItems,
   approveWithdrawal,
   rejectWithdrawal,
@@ -53,6 +57,11 @@ vi.mock('vue-i18n', async () => {
   }
 })
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ replace: vi.fn() })
+}))
+
 describe('admin ReferralWithdrawalsView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -71,7 +80,8 @@ describe('admin ReferralWithdrawalsView', () => {
         payout_account_snapshot_json: JSON.stringify({
           method: 'alipay',
           account_name: 'Alice',
-          account_no_encrypted: 'alipay@example.com',
+          // List path is mask-only (no plaintext account_no).
+          account_no_masked: 'ali***',
           qr_image_url: 'https://example.com/qr.png'
         }),
         user_email: 'user@example.com',
@@ -85,6 +95,29 @@ describe('admin ReferralWithdrawalsView', () => {
       page: 1,
       page_size: 20,
       pages: 1
+    })
+    getWithdrawal.mockResolvedValue({
+      id: 1,
+      user_id: 7,
+      withdrawal_no: 'WD001',
+      amount: 20,
+      fee_amount: 1,
+      net_amount: 19,
+      currency: 'CNY',
+      status: 'pending_review',
+      payout_method: 'alipay',
+      payout_account_snapshot_json: JSON.stringify({
+        method: 'alipay',
+        account_name: 'Alice',
+        account_no: 'alipay@example.com',
+        account_no_masked: 'ali***',
+        qr_image_url: 'https://example.com/qr.png'
+      }),
+      user_email: 'user@example.com',
+      username: 'user',
+      item_count: 2,
+      created_at: '2026-04-09T00:00:00Z',
+      updated_at: '2026-04-09T00:00:00Z'
     })
     getWithdrawalItems.mockResolvedValue([
       {
@@ -125,6 +158,7 @@ describe('admin ReferralWithdrawalsView', () => {
     await link!.trigger('click')
     await flushPromises()
 
+    expect(getWithdrawal).toHaveBeenCalledWith(1)
     expect(getWithdrawalItems).toHaveBeenCalledWith(1)
     expect(document.body.textContent).toContain('admin.referral.withdrawalItemsTitle')
     expect(document.body.textContent).toContain('12.00')

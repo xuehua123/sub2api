@@ -81,7 +81,7 @@ async function loadAll() {
   try {
     const [overviewData, pendingWithdrawalData] = await Promise.all([
       referralAdminAPI.getOverview(),
-      referralAdminAPI.listWithdrawals(1, 5, { status: 'pending_review' })
+      referralAdminAPI.listWithdrawals(1, 5, { status: 'pending_review', kind: 'cash' })
     ])
     overview.value = overviewData
     pendingWithdrawals.value = pendingWithdrawalData

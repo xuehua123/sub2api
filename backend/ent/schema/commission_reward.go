@@ -113,5 +113,11 @@ func (CommissionReward) Indexes() []ent.Index {
 		index.Fields("source_user_id"),
 		index.Fields("status"),
 		index.Fields("available_at"),
+		// Settlement runner: status IN + available_at <= readyAt, ORDER BY available_at, id,
+		// keyset (available_at, id). Helps filter the ready set; status IN may still
+		// require merging per-status scans (not a strict single-index ordered read).
+		// StorageKey must match SQL migration 185 (production runs migrations only).
+		index.Fields("status", "available_at", "id").
+			StorageKey("idx_commission_rewards_status_available_at_id"),
 	}
 }

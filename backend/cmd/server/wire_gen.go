@@ -226,7 +226,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	proxyHandler := admin.NewProxyHandler(adminService)
 	rechargeOrderRepository := repository.NewRechargeOrderRepository(client)
 	commissionRepository := repository.NewCommissionRepository(client)
-	referralSettlementService := service.NewReferralSettlementService(commissionRepository, rechargeOrderRepository, client)
+	referralSettlementService := service.ProvideReferralSettlementService(commissionRepository, rechargeOrderRepository, client, settingService, leaderLockCache, db)
 	referralRewardService := service.NewReferralRewardService(rechargeOrderRepository, commissionRepository, userRepository, referralRepository, client, settingService, referralSettlementService)
 	adminRedeemHandler := admin.NewRedeemHandler(adminService, redeemService, referralRewardService)
 	promoHandler := admin.NewPromoHandler(promoService)
@@ -358,7 +358,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	userPlatformQuotaUsageFlusher := service.ProvideUserPlatformQuotaUsageFlusher(configConfig, billingCache, serviceUserPlatformQuotaRepository, timingWheelService)
 	rateMultiplierPriorityService := service.ProvideRateMultiplierPriorityService(accountRepository, settingService)
 	upstreamConnectionSyncService := service.ProvideUpstreamConnectionSyncService(upstreamConnectionRepository, upstreamConnectionService, leaderLockCache, db)
-	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, subscriptionEntitlementService, subscriptionPlanExternalMappingService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, rateMultiplierPriorityService, upstreamConnectionSyncService, auditLogService, promptService)
+	v := provideCleanup(client, redisClient, opsMetricsCollector, opsAggregationService, opsAlertEvaluatorService, opsCleanupService, opsScheduledReportService, opsSystemLogSink, opsService, opsIngressRejectAggregator, apiKeyService, authCacheInvalidationWorker, schedulerSnapshotService, tokenRefreshService, accountExpiryService, proxyExpiryService, subscriptionExpiryService, usageCleanupService, idempotencyCleanupService, batchImageCleanupService, batchImageWorkerRuntime, pricingService, emailQueueService, billingCacheService, usageRecordWorkerPool, subscriptionService, subscriptionEntitlementService, subscriptionPlanExternalMappingService, oAuthService, openAIOAuthService, geminiOAuthService, antigravityOAuthService, grokOAuthService, openAIGatewayService, scheduledTestRunnerService, backupService, paymentOrderExpiryService, channelMonitorRunner, userPlatformQuotaUsageFlusher, rateMultiplierPriorityService, upstreamConnectionSyncService, referralSettlementService, auditLogService, promptService)
 	application := &Application{
 		Server:      httpServer,
 		PromptAudit: promptService,
@@ -428,6 +428,7 @@ func provideCleanup(
 	quotaFlusher *service.UserPlatformQuotaUsageFlusher,
 	rateMultiplierPriority *service.RateMultiplierPriorityService,
 	upstreamConnectionSync *service.UpstreamConnectionSyncService,
+	referralSettlement *service.ReferralSettlementService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) func() {
@@ -650,6 +651,12 @@ func provideCleanup(
 			{"UpstreamConnectionSyncService", func() error {
 				if upstreamConnectionSync != nil {
 					upstreamConnectionSync.Stop()
+				}
+				return nil
+			}},
+			{"ReferralSettlementRunner", func() error {
+				if referralSettlement != nil {
+					referralSettlement.StopBackgroundRunner()
 				}
 				return nil
 			}},

@@ -91,6 +91,7 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // quotaFlusher
 		nil, // rateMultiplierPriority
 		nil, // upstreamConnectionSync
+		nil, // referralSettlement
 		nil, // auditLog
 		nil, // promptAudit
 	)
