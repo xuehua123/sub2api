@@ -37,6 +37,10 @@ type upstreamConnectionTestRepo struct {
 	items                 []*UpstreamConnection
 	deleteErr             error
 	updateApplyResult     *bool
+	updateCredential      bool
+	updateRuntimeState    bool
+	updateRemoteUserID    bool
+	beforeUpdate          func()
 	lastResetBindings     bool
 	credentialCAS         *UpstreamConnectionCredentialPersistence
 	applyProbeResult      *bool
@@ -119,8 +123,14 @@ func (r *upstreamConnectionTestRepo) List(_ context.Context, _ UpstreamConnectio
 	return r.items, int64(len(r.items)), nil
 }
 
-func (r *upstreamConnectionTestRepo) UpdateIfVersion(_ context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings bool) (bool, error) {
+func (r *upstreamConnectionTestRepo) UpdateIfVersion(_ context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID bool) (bool, error) {
 	r.lastResetBindings = resetBindings
+	r.updateCredential = updateCredential
+	r.updateRuntimeState = updateRuntimeState
+	r.updateRemoteUserID = updateRemoteUserID
+	if r.beforeUpdate != nil {
+		r.beforeUpdate()
+	}
 	if r.updateApplyResult != nil && !*r.updateApplyResult {
 		return false, nil
 	}
@@ -128,6 +138,31 @@ func (r *upstreamConnectionTestRepo) UpdateIfVersion(_ context.Context, connecti
 		return false, nil
 	}
 	copy := *connection
+	if !updateCredential {
+		copy.CredentialEncrypted = r.connection.CredentialEncrypted
+		copy.CredentialFingerprint = r.connection.CredentialFingerprint
+		copy.CredentialHint = r.connection.CredentialHint
+	}
+	if !updateRemoteUserID {
+		copy.RemoteUserID = r.connection.RemoteUserID
+	}
+	if !updateRuntimeState {
+		copy.Capabilities = r.connection.Capabilities
+		copy.Status = r.connection.Status
+		copy.LastError = r.connection.LastError
+		copy.SyncFailures = r.connection.SyncFailures
+		copy.WalletAmount = r.connection.WalletAmount
+		copy.WalletCurrency = r.connection.WalletCurrency
+		copy.WalletUSD = r.connection.WalletUSD
+		copy.WalletUnlimited = r.connection.WalletUnlimited
+		copy.WalletSource = r.connection.WalletSource
+		copy.WalletReliability = r.connection.WalletReliability
+		copy.WalletRaw = r.connection.WalletRaw
+		copy.WalletObservedAt = r.connection.WalletObservedAt
+		copy.LastDiscoveredAt = r.connection.LastDiscoveredAt
+		copy.LastSyncedAt = r.connection.LastSyncedAt
+		copy.NextSyncAt = r.connection.NextSyncAt
+	}
 	if resetBindings {
 		copy.Groups = []UpstreamGroup{}
 		copy.GroupCount = 0
@@ -150,18 +185,6 @@ func (r *upstreamConnectionTestRepo) DeleteIfUnbound(_ context.Context, _ int64)
 	return r.deleteErr
 }
 
-func (r *upstreamConnectionTestRepo) UpdateCredentialIfVersion(_ context.Context, _ int64, expectedVersion int64, update UpstreamConnectionCredentialPersistence) (bool, error) {
-	if r.connection == nil || r.connection.Version != expectedVersion {
-		return false, nil
-	}
-	r.credentialCAS = &update
-	r.connection.CredentialEncrypted = update.CredentialEncrypted
-	r.connection.CredentialFingerprint = update.CredentialFingerprint
-	r.connection.CredentialHint = update.CredentialHint
-	r.connection.Version = update.Version
-	return true, nil
-}
-
 func (r *upstreamConnectionTestRepo) FinalizeCredentialRefresh(
 	_ context.Context,
 	_ int64,
@@ -179,7 +202,6 @@ func (r *upstreamConnectionTestRepo) FinalizeCredentialRefresh(
 	r.connection.CredentialEncrypted = update.CredentialEncrypted
 	r.connection.CredentialFingerprint = update.CredentialFingerprint
 	r.connection.CredentialHint = update.CredentialHint
-	r.connection.Version++
 	return true, nil
 }
 
@@ -194,7 +216,6 @@ func (r *upstreamConnectionTestRepo) ApplyProbeSuccess(_ context.Context, _ int6
 		r.connection.Status = update.Status
 		r.connection.LastError = update.LastError
 		r.connection.SyncFailures = update.SyncFailures
-		r.connection.Version = update.Version
 		r.connection.Groups = append([]UpstreamGroup{}, update.Groups...)
 		if update.WalletObserved {
 			r.connection.WalletAmount = update.WalletAmount
@@ -367,6 +388,139 @@ func TestUpstreamConnectionCredentialIdentityMasksUnicodeTokenAsValidUTF8(t *tes
 	require.Equal(t, "令牌令牌...令牌令牌", hint)
 }
 
+func TestUpstreamConnectionCredentialIdentityDerivesExpiryFromJWT(t *testing.T) {
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	payload, err := json.Marshal(map[string]int64{"exp": expiresAt})
+	require.NoError(t, err)
+	accessToken := strings.Join([]string{
+		base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`)),
+		base64.RawURLEncoding.EncodeToString(payload),
+		"signature",
+	}, ".")
+
+	credential, _, _, err := upstreamConnectionCredentialIdentity(
+		string(UpstreamManagementAuthModeAccessToken),
+		"https://console.example.com",
+		UpstreamConnectionCredentialInput{AccessToken: accessToken, RefreshToken: "refresh-token"},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, expiresAt, credential.ExpiresAt)
+	require.False(t, shouldRefreshSub2APIManagementToken(upstreamManagementAuthSecret{
+		AccessToken: credential.AccessToken, RefreshToken: credential.RefreshToken, ExpiresAt: credential.ExpiresAt,
+	}))
+}
+
+func TestUpstreamConnectionCredentialIdentityPreservesExplicitExpiry(t *testing.T) {
+	credential, _, _, err := upstreamConnectionCredentialIdentity(
+		string(UpstreamManagementAuthModeAccessToken),
+		"https://console.example.com",
+		UpstreamConnectionCredentialInput{
+			AccessToken: "not-a-jwt", RefreshToken: "refresh-token", ExpiresAt: 123,
+		},
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(123), credential.ExpiresAt)
+}
+
+func TestUpstreamManagementJWTExpiryAcceptsPaddedFractionalNumericDate(t *testing.T) {
+	payload := base64.URLEncoding.EncodeToString([]byte(`{"exp":1234567890.9}`))
+	token := strings.Join([]string{
+		base64.URLEncoding.EncodeToString([]byte(`{"alg":"HS256"}`)), payload, "signature",
+	}, ".")
+
+	require.Equal(t, int64(1234567890), upstreamManagementJWTExpiry(token))
+}
+
+func TestPrepareConnectionCredentialSkipsRefreshForPersistedJWTExpiry(t *testing.T) {
+	var refreshCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/v1/auth/refresh" {
+			refreshCalls.Add(1)
+		}
+		writer.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	service := NewUpstreamConnectionService(nil, upstreamConnectionTestEncryptor{}, nil)
+	credential, _, _, err := upstreamConnectionCredentialIdentity(
+		string(UpstreamManagementAuthModeAccessToken), server.URL,
+		UpstreamConnectionCredentialInput{AccessToken: testUpstreamManagementJWT(time.Now().Add(time.Hour).Unix()), RefreshToken: "refresh-token"},
+	)
+	require.NoError(t, err)
+	ciphertext, fingerprint, hint, err := service.encryptCredential(
+		string(UpstreamManagementAuthModeAccessToken), server.URL, upstreamConnectionCredentialInput(credential),
+	)
+	require.NoError(t, err)
+	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{
+		ID: 17, Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL, CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		Version: 9,
+	}}
+	service.repo = repo
+	service.inspector = newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	connection, err := repo.GetByID(context.Background(), 17)
+	require.NoError(t, err)
+	stored, err := service.loadCredential(connection)
+	require.NoError(t, err)
+	prepared, _, err := service.prepareConnectionCredential(context.Background(), connection, stored)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(9), prepared.Version)
+	require.Zero(t, refreshCalls.Load())
+	require.Nil(t, repo.credentialCAS)
+}
+
+func TestPrepareConnectionCredentialPersistsOnlySuccessfulRefresh(t *testing.T) {
+	var refreshCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		require.Equal(t, "/api/v1/auth/refresh", request.URL.Path)
+		refreshCalls.Add(1)
+		writeProbeJSON(t, writer, map[string]any{"data": map[string]any{
+			"access_token":  testUpstreamManagementJWT(time.Now().Add(time.Hour).Unix()),
+			"refresh_token": "next-refresh-token", "expires_in": 3600,
+		}})
+	}))
+	defer server.Close()
+
+	service := NewUpstreamConnectionService(nil, upstreamConnectionTestEncryptor{}, nil)
+	ciphertext, fingerprint, hint, err := service.encryptCredential(
+		string(UpstreamManagementAuthModeAccessToken), server.URL,
+		UpstreamConnectionCredentialInput{AccessToken: testUpstreamManagementJWT(time.Now().Add(-time.Hour).Unix()), RefreshToken: "current-refresh-token"},
+	)
+	require.NoError(t, err)
+	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{
+		ID: 18, Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModeAccessToken),
+		ManagementBaseURL: server.URL, CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint,
+		Version: 11,
+	}}
+	service.repo = repo
+	service.inspector = newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	connection, err := repo.GetByID(context.Background(), 18)
+	require.NoError(t, err)
+	stored, err := service.loadCredential(connection)
+	require.NoError(t, err)
+	prepared, refreshed, err := service.prepareConnectionCredential(context.Background(), connection, stored)
+
+	require.NoError(t, err)
+	require.Equal(t, int64(11), prepared.Version)
+	require.Equal(t, "next-refresh-token", refreshed.RefreshToken)
+	require.Equal(t, int32(1), refreshCalls.Load())
+	require.NotNil(t, repo.credentialCAS)
+	require.Equal(t, int64(11), repo.connection.Version)
+}
+
+func testUpstreamManagementJWT(expiresAt int64) string {
+	payload, _ := json.Marshal(map[string]int64{"exp": expiresAt})
+	return strings.Join([]string{
+		base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"HS256","typ":"JWT"}`)),
+		base64.RawURLEncoding.EncodeToString(payload), "signature",
+	}, ".")
+}
+
 func TestUpstreamConnectionServiceCreateRejectsSecretsAndQueriesInBaseURL(t *testing.T) {
 	service := NewUpstreamConnectionService(&upstreamConnectionTestRepo{}, upstreamConnectionTestEncryptor{}, nil)
 	base := UpstreamConnectionCreateParams{
@@ -464,6 +618,41 @@ func TestUpstreamConnectionServiceUpdateRejectsConcurrentProbeWrite(t *testing.T
 	require.ErrorIs(t, err, ErrUpstreamConnectionChanged)
 	require.Equal(t, "before", repo.connection.Name)
 	require.Equal(t, int64(4), repo.connection.Version)
+}
+
+func TestUpstreamConnectionServiceUpdatePreservesCredentialRefreshedDuringConfigurationSave(t *testing.T) {
+	refreshedWallet := 42.5
+	repo := &upstreamConnectionTestRepo{connection: &UpstreamConnection{
+		ID: 10, Name: "before", Provider: UpstreamConnectionProviderSub2API,
+		AuthMode: string(UpstreamManagementAuthModeAccessToken), ManagementBaseURL: "https://example.com",
+		CredentialEncrypted: "old-ciphertext", CredentialFingerprint: "old-fingerprint", CredentialHint: "old-hint",
+		SyncEnabled: true, SyncIntervalSeconds: 300, Version: 4,
+	}}
+	repo.beforeUpdate = func() {
+		repo.connection.CredentialEncrypted = "refreshed-ciphertext"
+		repo.connection.CredentialFingerprint = "refreshed-fingerprint"
+		repo.connection.CredentialHint = "refreshed-hint"
+		repo.connection.Status = UpstreamConnectionStatusReady
+		repo.connection.LastError = ""
+		repo.connection.WalletAmount = &refreshedWallet
+		repo.connection.WalletCurrency = "USD"
+		repo.connection.Capabilities = map[string]any{"wallet": true}
+	}
+	service := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+	name := "after"
+
+	updated, err := service.Update(context.Background(), 10, UpstreamConnectionUpdateParams{ExpectedVersion: 4, Name: &name})
+
+	require.NoError(t, err)
+	require.False(t, repo.updateCredential)
+	require.False(t, repo.updateRuntimeState)
+	require.Equal(t, "refreshed-ciphertext", repo.connection.CredentialEncrypted)
+	require.Equal(t, "refreshed-fingerprint", repo.connection.CredentialFingerprint)
+	require.Equal(t, "refreshed-hint", repo.connection.CredentialHint)
+	require.Equal(t, UpstreamConnectionStatusReady, repo.connection.Status)
+	require.Equal(t, &refreshedWallet, repo.connection.WalletAmount)
+	require.Equal(t, map[string]any{"wallet": true}, repo.connection.Capabilities)
+	require.Equal(t, "after", updated.Name)
 }
 
 func TestUpstreamConnectionServiceUpdateRejectsStaleClientVersionBeforeMutation(t *testing.T) {

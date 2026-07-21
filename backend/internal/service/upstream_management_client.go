@@ -101,9 +101,10 @@ func (s *upstreamManagementClient) refreshSub2APIManagementToken(ctx context.Con
 	if expiresIn := int64FromMap(data, "expires_in"); expiresIn > 0 {
 		secret.ExpiresAt = time.Now().Add(time.Duration(expiresIn) * time.Second).Unix()
 	} else {
-		// Force a refresh on the next reconciliation when the upstream does not
-		// disclose a lifetime, rather than incorrectly treating the JWT as durable.
-		secret.ExpiresAt = 0
+		// Some Sub2API variants omit expires_in but return a standard JWT. Use
+		// its exp claim when available so a successful refresh is not immediately
+		// repeated with a rotation-sensitive refresh token.
+		secret.ExpiresAt = upstreamManagementJWTExpiry(nextAccessToken)
 	}
 	return secret, nil
 }

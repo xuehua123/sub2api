@@ -1,15 +1,18 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,9 +38,8 @@ type UpstreamConnectionRepository interface {
 	Create(ctx context.Context, connection *UpstreamConnection) error
 	GetByID(ctx context.Context, id int64) (*UpstreamConnection, error)
 	List(ctx context.Context, params UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error)
-	UpdateIfVersion(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings bool) (bool, error)
+	UpdateIfVersion(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID bool) (bool, error)
 	DeleteIfUnbound(ctx context.Context, id int64) error
-	UpdateCredentialIfVersion(ctx context.Context, id, expectedVersion int64, update UpstreamConnectionCredentialPersistence) (bool, error)
 	FinalizeCredentialRefresh(ctx context.Context, id int64, expectedCiphertext, expectedProvider, expectedAuthMode, expectedManagementBaseURL string, update UpstreamConnectionCredentialPersistence) (bool, error)
 	ApplyProbeSuccess(ctx context.Context, id, expectedVersion int64, update UpstreamConnectionProbePersistence) (bool, error)
 	RecordProbeFailure(ctx context.Context, id, expectedVersion int64, failure UpstreamConnectionProbeFailure) (bool, error)
@@ -177,6 +179,8 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	previousSyncInterval := connection.SyncIntervalSeconds
 	identityChanged := false
 	managementURLChanged := false
+	credentialChanged := false
+	remoteUserIDChanged := false
 	if params.Name != nil {
 		connection.Name = strings.TrimSpace(*params.Name)
 	}
@@ -215,7 +219,8 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		if normalizeErr != nil {
 			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_REMOTE_USER_ID", normalizeErr.Error())
 		}
-		identityChanged = identityChanged || next != connection.RemoteUserID
+		remoteUserIDChanged = next != connection.RemoteUserID
+		identityChanged = identityChanged || remoteUserIDChanged
 		connection.RemoteUserID = next
 	}
 	if params.ClearProxy {
@@ -266,6 +271,7 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		connection.CredentialHint = hint
 		connection.NotInCNConfirmed = credentialInput.NotInCNConfirmed
 		identityChanged = true
+		credentialChanged = true
 	} else if managementURLChanged {
 		credential, credentialErr := s.loadCredential(connection)
 		if credentialErr != nil {
@@ -280,6 +286,7 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 		}
 		connection.CredentialFingerprint = fingerprint
 		connection.CredentialHint = hint
+		credentialChanged = connection.AuthMode == string(UpstreamManagementAuthModePassword)
 	}
 	if err := validateUpstreamConnection(connection); err != nil {
 		return nil, err
@@ -295,11 +302,12 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	} else if connection.Status == UpstreamConnectionStatusDisabled {
 		connection.Status = UpstreamConnectionStatusPending
 	}
-	if connection.SyncEnabled && (identityChanged || !previousSyncEnabled || connection.SyncIntervalSeconds != previousSyncInterval) {
+	runtimeStateChanged := identityChanged || !previousSyncEnabled || connection.SyncIntervalSeconds != previousSyncInterval
+	if connection.SyncEnabled && runtimeStateChanged {
 		now := time.Now().UTC()
 		connection.NextSyncAt = &now
 	}
-	applied, err := s.repo.UpdateIfVersion(ctx, connection, expectedVersion, identityChanged)
+	applied, err := s.repo.UpdateIfVersion(ctx, connection, expectedVersion, identityChanged, credentialChanged, runtimeStateChanged, remoteUserIDChanged)
 	if err != nil {
 		return nil, fmt.Errorf("update upstream connection: %w", err)
 	}
@@ -605,7 +613,7 @@ func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*Upstr
 			return nil, err
 		}
 		s.recordProbeFailure(ctx, connection, connection.Version, err)
-		return nil, infraerrors.New(502, "UPSTREAM_CONNECTION_CREDENTIAL_REFRESH_FAILED", "upstream connection credential refresh failed").WithCause(err)
+		return nil, upstreamCredentialRefreshProbeError(err)
 	}
 	if s.inspector == nil {
 		return nil, errors.New("upstream connection inspector is unavailable")
@@ -645,7 +653,7 @@ func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*Upstr
 	}
 	update := UpstreamConnectionProbePersistence{
 		RemoteUserID: remoteUserID, Capabilities: capabilities, Status: status, LastError: lastError,
-		SyncFailures: 0, Version: expectedVersion + 1,
+		SyncFailures:   0,
 		WalletObserved: snapshot.WalletObserved, GroupsObserved: snapshot.GroupsObserved,
 		Groups: snapshot.Groups, LastDiscoveredAt: &now, LastSyncedAt: &now,
 	}
@@ -730,15 +738,10 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 		return connection, credential, nil
 	}
 
-	// Claim the refresh by advancing the row version before the network call.
-	// This prevents concurrent manual probes or another node from consuming the
-	// same rotating refresh token twice.
-	claimedInput := upstreamConnectionCredentialInput(credential)
-	claimed, err := s.persistConnectionCredential(ctx, connection, claimedInput)
-	if err != nil {
-		return connection, credential, err
-	}
-	credential = claimed
+	// The singleton lock prevents concurrent refreshes. Do not persist a
+	// pre-refresh "claim": a rotating refresh token may be consumed even when
+	// the upstream response is lost, and that extra write only creates version
+	// conflicts without making the ambiguous network outcome recoverable.
 	claimedCiphertext := connection.CredentialEncrypted
 
 	client, err := s.inspector.clientForConnection(ctx, connection)
@@ -782,36 +785,6 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 	return connection, credential, err
 }
 
-func (s *UpstreamConnectionService) persistConnectionCredential(
-	ctx context.Context,
-	connection *UpstreamConnection,
-	input UpstreamConnectionCredentialInput,
-) (upstreamConnectionCredential, error) {
-	if connection == nil {
-		return upstreamConnectionCredential{}, errors.New("upstream connection is required")
-	}
-	ciphertext, fingerprint, hint, err := s.encryptCredential(connection.AuthMode, connection.ManagementBaseURL, input)
-	if err != nil {
-		return upstreamConnectionCredential{}, err
-	}
-	expectedVersion := connection.Version
-	nextVersion := expectedVersion + 1
-	applied, err := s.repo.UpdateCredentialIfVersion(ctx, connection.ID, expectedVersion, UpstreamConnectionCredentialPersistence{
-		CredentialEncrypted: ciphertext, CredentialFingerprint: fingerprint, CredentialHint: hint, Version: nextVersion,
-	})
-	if err != nil {
-		return upstreamConnectionCredential{}, fmt.Errorf("persist upstream connection credential: %w", err)
-	}
-	if !applied {
-		return upstreamConnectionCredential{}, ErrUpstreamConnectionChanged
-	}
-	connection.CredentialEncrypted = ciphertext
-	connection.CredentialFingerprint = fingerprint
-	connection.CredentialHint = hint
-	connection.Version = nextVersion
-	return s.loadCredential(connection)
-}
-
 func upstreamConnectionCredentialInput(credential upstreamConnectionCredential) UpstreamConnectionCredentialInput {
 	return UpstreamConnectionCredentialInput{
 		Username: credential.Username, Password: credential.Password,
@@ -843,8 +816,15 @@ func (s *UpstreamConnectionService) recordProbeFailure(ctx context.Context, conn
 	}
 	_, _ = s.repo.RecordProbeFailure(ctx, connection.ID, expectedVersion, UpstreamConnectionProbeFailure{
 		Status: status, LastError: truncateUpstreamConnectionError(probeErr.Error()), SyncFailures: failures,
-		Version: expectedVersion + 1, NextSyncAt: next,
+		NextSyncAt: next,
 	})
+}
+
+func upstreamCredentialRefreshProbeError(err error) error {
+	if errors.Is(err, ErrUpstreamConnectionAuthentication) {
+		return infraerrors.New(401, "UPSTREAM_CONNECTION_CREDENTIAL_REAUTH_REQUIRED", "upstream connection credentials were rejected; sign in again").WithCause(err)
+	}
+	return infraerrors.New(502, "UPSTREAM_CONNECTION_CREDENTIAL_REFRESH_FAILED", "upstream connection credential refresh failed; retry the probe").WithCause(err)
 }
 
 func upstreamConnectionFailureBackoff(failures int) time.Duration {
@@ -956,6 +936,9 @@ func upstreamConnectionCredentialIdentity(authMode, managementBaseURL string, in
 		AccessToken: strings.TrimSpace(input.AccessToken), RefreshToken: strings.TrimSpace(input.RefreshToken),
 		NotInCNConfirmed: input.NotInCNConfirmed, UserAgent: userAgent, ExpiresAt: input.ExpiresAt,
 	}
+	if credential.ExpiresAt == 0 && credential.RefreshToken != "" {
+		credential.ExpiresAt = upstreamManagementJWTExpiry(credential.AccessToken)
+	}
 	var fingerprintSource, hint string
 	switch authMode {
 	case string(UpstreamManagementAuthModePassword):
@@ -975,6 +958,36 @@ func upstreamConnectionCredentialIdentity(authMode, managementBaseURL string, in
 	}
 	digest := sha256.Sum256([]byte(fingerprintSource))
 	return credential, "sha256:v1:" + hex.EncodeToString(digest[:]), hint, nil
+}
+
+// upstreamManagementJWTExpiry extracts the standard exp claim only to schedule
+// a later refresh. The upstream still validates the token on every request.
+func upstreamManagementJWTExpiry(accessToken string) int64 {
+	parts := strings.Split(strings.TrimSpace(accessToken), ".")
+	if len(parts) != 3 || parts[1] == "" {
+		return 0
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		payload, err = base64.URLEncoding.DecodeString(parts[1])
+		if err != nil {
+			return 0
+		}
+	}
+	var claims struct {
+		ExpiresAt json.Number `json:"exp"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&claims); err != nil || claims.ExpiresAt == "" {
+		return 0
+	}
+	expiresAt, err := strconv.ParseFloat(claims.ExpiresAt.String(), 64)
+	const maxUnixSeconds = int64(1<<63 - 1)
+	if err != nil || math.IsNaN(expiresAt) || math.IsInf(expiresAt, 0) || expiresAt <= 0 || expiresAt > float64(maxUnixSeconds) {
+		return 0
+	}
+	return int64(expiresAt)
 }
 
 func truncateUpstreamCredentialHint(value string) string {

@@ -208,7 +208,6 @@ type UpstreamConnectionProbePersistence struct {
 	Status            string
 	LastError         string
 	SyncFailures      int
-	Version           int64
 	WalletObserved    bool
 	WalletAmount      *float64
 	WalletCurrency    string
@@ -229,7 +228,6 @@ type UpstreamConnectionProbeFailure struct {
 	Status       string
 	LastError    string
 	SyncFailures int
-	Version      int64
 	NextSyncAt   *time.Time
 }
 
@@ -237,7 +235,6 @@ type UpstreamConnectionCredentialPersistence struct {
 	CredentialEncrypted   string
 	CredentialFingerprint string
 	CredentialHint        string
-	Version               int64
 }
 
 type upstreamConnectionCredential struct {

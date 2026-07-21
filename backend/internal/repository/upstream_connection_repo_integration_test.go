@@ -42,7 +42,7 @@ func TestUpstreamConnectionRepositoryIdentityResetClearsGroups(t *testing.T) {
 	loaded.ManagementBaseURL = "https://new.example.com"
 	loaded.Version = 2
 
-	applied, err := repo.UpdateIfVersion(txCtx, loaded, 1, true)
+	applied, err := repo.UpdateIfVersion(txCtx, loaded, 1, true, true, true, false)
 	require.NoError(t, err)
 	require.True(t, applied)
 	count, err := tx.Client().UpstreamGroup.Query().

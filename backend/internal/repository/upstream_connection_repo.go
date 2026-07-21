@@ -130,17 +130,17 @@ func (r *upstreamConnectionRepository) UpdateIfVersion(
 	ctx context.Context,
 	connection *service.UpstreamConnection,
 	expectedVersion int64,
-	resetBindings bool,
+	resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID bool,
 ) (bool, error) {
 	if existingTx := dbent.TxFromContext(ctx); existingTx != nil {
-		return updateUpstreamConnectionWithClient(ctx, existingTx.Client(), connection, expectedVersion, resetBindings)
+		return updateUpstreamConnectionWithClient(ctx, existingTx.Client(), connection, expectedVersion, resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID)
 	}
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return false, fmt.Errorf("begin upstream connection update: %w", err)
 	}
 	txCtx := dbent.NewTxContext(ctx, tx)
-	applied, err := updateUpstreamConnectionWithClient(txCtx, tx.Client(), connection, expectedVersion, resetBindings)
+	applied, err := updateUpstreamConnectionWithClient(txCtx, tx.Client(), connection, expectedVersion, resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID)
 	if err != nil {
 		_ = tx.Rollback()
 		return false, err
@@ -156,7 +156,7 @@ func updateUpstreamConnectionWithClient(
 	client *dbent.Client,
 	connection *service.UpstreamConnection,
 	expectedVersion int64,
-	resetBindings bool,
+	resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID bool,
 ) (bool, error) {
 	updater := client.UpstreamConnection.Update().
 		Where(upstreamconnection.IDEQ(connection.ID), upstreamconnection.VersionEQ(expectedVersion)).
@@ -165,57 +165,48 @@ func updateUpstreamConnectionWithClient(
 		SetAuthMode(connection.AuthMode).
 		SetManagementBaseURL(connection.ManagementBaseURL).
 		SetForwardingBaseURL(connection.ForwardingBaseURL).
-		SetCredentialEncrypted(connection.CredentialEncrypted).
-		SetCredentialFingerprint(connection.CredentialFingerprint).
-		SetCredentialHint(connection.CredentialHint).
-		SetRemoteUserID(connection.RemoteUserID).
-		SetCapabilities(nonNilJSONMap(connection.Capabilities)).
-		SetStatus(connection.Status).
-		SetLastError(connection.LastError).
 		SetSyncEnabled(connection.SyncEnabled).
 		SetSyncIntervalSeconds(connection.SyncIntervalSeconds).
-		SetSyncFailures(connection.SyncFailures).
-		SetVersion(connection.Version).
-		SetWalletCurrency(connection.WalletCurrency).
-		SetWalletUnlimited(connection.WalletUnlimited).
-		SetWalletSource(connection.WalletSource).
-		SetWalletReliability(connection.WalletReliability).
-		SetWalletRaw(nonNilJSONMap(connection.WalletRaw))
+		SetVersion(connection.Version)
+	if updateRemoteUserID {
+		updater = updater.SetRemoteUserID(connection.RemoteUserID)
+	}
+	if updateCredential {
+		updater = updater.
+			SetCredentialEncrypted(connection.CredentialEncrypted).
+			SetCredentialFingerprint(connection.CredentialFingerprint).
+			SetCredentialHint(connection.CredentialHint)
+	}
 
 	if connection.ProxyID != nil {
 		updater = updater.SetProxyID(*connection.ProxyID)
 	} else {
 		updater = updater.ClearProxyID()
 	}
-	if connection.WalletAmount != nil {
-		updater = updater.SetWalletAmount(*connection.WalletAmount)
-	} else {
-		updater = updater.ClearWalletAmount()
+	if updateRuntimeState {
+		updater = updater.
+			SetStatus(connection.Status).
+			SetLastError(connection.LastError).
+			SetSyncFailures(connection.SyncFailures)
+		if connection.NextSyncAt != nil {
+			updater = updater.SetNextSyncAt(*connection.NextSyncAt)
+		} else {
+			updater = updater.ClearNextSyncAt()
+		}
 	}
-	if connection.WalletUSD != nil {
-		updater = updater.SetWalletUsd(*connection.WalletUSD)
-	} else {
-		updater = updater.ClearWalletUsd()
-	}
-	if connection.WalletObservedAt != nil {
-		updater = updater.SetWalletObservedAt(*connection.WalletObservedAt)
-	} else {
-		updater = updater.ClearWalletObservedAt()
-	}
-	if connection.LastDiscoveredAt != nil {
-		updater = updater.SetLastDiscoveredAt(*connection.LastDiscoveredAt)
-	} else {
-		updater = updater.ClearLastDiscoveredAt()
-	}
-	if connection.LastSyncedAt != nil {
-		updater = updater.SetLastSyncedAt(*connection.LastSyncedAt)
-	} else {
-		updater = updater.ClearLastSyncedAt()
-	}
-	if connection.NextSyncAt != nil {
-		updater = updater.SetNextSyncAt(*connection.NextSyncAt)
-	} else {
-		updater = updater.ClearNextSyncAt()
+	if resetBindings {
+		updater = updater.
+			SetCapabilities(nonNilJSONMap(connection.Capabilities)).
+			SetWalletCurrency(connection.WalletCurrency).
+			SetWalletUnlimited(connection.WalletUnlimited).
+			SetWalletSource(connection.WalletSource).
+			SetWalletReliability(connection.WalletReliability).
+			SetWalletRaw(nonNilJSONMap(connection.WalletRaw)).
+			ClearWalletAmount().
+			ClearWalletUsd().
+			ClearWalletObservedAt().
+			ClearLastDiscoveredAt().
+			ClearLastSyncedAt()
 	}
 
 	affected, err := updater.Save(ctx)
@@ -288,25 +279,6 @@ func (r *upstreamConnectionRepository) DeleteIfUnbound(ctx context.Context, id i
 	return service.ErrUpstreamConnectionInUse
 }
 
-func (r *upstreamConnectionRepository) UpdateCredentialIfVersion(
-	ctx context.Context,
-	id, expectedVersion int64,
-	update service.UpstreamConnectionCredentialPersistence,
-) (bool, error) {
-	client := clientFromContext(ctx, r.client)
-	affected, err := client.UpstreamConnection.Update().
-		Where(upstreamconnection.IDEQ(id), upstreamconnection.VersionEQ(expectedVersion)).
-		SetCredentialEncrypted(update.CredentialEncrypted).
-		SetCredentialFingerprint(update.CredentialFingerprint).
-		SetCredentialHint(update.CredentialHint).
-		SetVersion(update.Version).
-		Save(ctx)
-	if err != nil {
-		return false, translateUpstreamConnectionPersistenceError(err)
-	}
-	return affected == 1, nil
-}
-
 func (r *upstreamConnectionRepository) FinalizeCredentialRefresh(
 	ctx context.Context,
 	id int64,
@@ -325,7 +297,6 @@ func (r *upstreamConnectionRepository) FinalizeCredentialRefresh(
 		SetCredentialEncrypted(update.CredentialEncrypted).
 		SetCredentialFingerprint(update.CredentialFingerprint).
 		SetCredentialHint(update.CredentialHint).
-		AddVersion(1).
 		Save(ctx)
 	if err != nil {
 		return false, translateUpstreamConnectionPersistenceError(err)
@@ -369,8 +340,7 @@ func applyUpstreamProbeSuccessWithClient(
 		SetCapabilities(nonNilJSONMap(update.Capabilities)).
 		SetStatus(update.Status).
 		SetLastError(update.LastError).
-		SetSyncFailures(update.SyncFailures).
-		SetVersion(update.Version)
+		SetSyncFailures(update.SyncFailures)
 	if update.LastDiscoveredAt != nil {
 		updater = updater.SetLastDiscoveredAt(*update.LastDiscoveredAt)
 	}
@@ -451,8 +421,7 @@ func (r *upstreamConnectionRepository) RecordProbeFailure(
 		Where(upstreamconnection.IDEQ(id), upstreamconnection.VersionEQ(expectedVersion)).
 		SetStatus(failure.Status).
 		SetLastError(failure.LastError).
-		SetSyncFailures(failure.SyncFailures).
-		SetVersion(failure.Version)
+		SetSyncFailures(failure.SyncFailures)
 	if failure.NextSyncAt != nil {
 		updater = updater.SetNextSyncAt(*failure.NextSyncAt)
 	} else {

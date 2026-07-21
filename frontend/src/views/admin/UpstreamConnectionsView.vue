@@ -679,7 +679,8 @@ async function saveConnection(): Promise<void> {
         expected_version: editing.value.version,
         name: form.name, provider: form.provider, auth_mode: form.auth_mode,
         management_base_url: form.management_base_url, forwarding_base_url: form.forwarding_base_url,
-        remote_user_id: form.remote_user_id, sync_enabled: form.sync_enabled,
+        ...(form.remote_user_id !== editing.value.remote_user_id ? { remote_user_id: form.remote_user_id } : {}),
+        sync_enabled: form.sync_enabled,
         sync_interval_seconds: form.sync_interval_seconds,
         ...(form.auth_mode === 'password' && form.not_in_cn_confirmed !== (editing.value.not_in_cn_confirmed ?? false)
           ? { not_in_cn_confirmed: form.not_in_cn_confirmed }
