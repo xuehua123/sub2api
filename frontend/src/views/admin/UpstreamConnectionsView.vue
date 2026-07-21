@@ -545,21 +545,22 @@ function homepageUrl(value: string): string {
   }
 }
 function runtimeAccountUsage(account: UpstreamConnectionRuntimeAccount): { cost: number; requests: number } {
-  return account.groups.reduce((total, group) => ({
+  return (account.groups ?? []).reduce((total, group) => ({
     cost: total.cost + Number(group.today.account_cost || 0),
     requests: total.requests + Number(group.today.requests || 0)
   }), { cost: 0, requests: 0 })
 }
 function runtimeCompactConcurrencyLabel(row: UpstreamConnectionRow): string {
-  const known = row.runtime_accounts.filter(account => account.current_concurrency !== null)
+  const runtimeAccounts = row.runtime_accounts ?? []
+  const known = runtimeAccounts.filter(account => account.current_concurrency !== null)
   if (known.length === 0) return t('admin.upstreamConnections.runtime.compactConcurrencyUnavailable')
   const total = known.reduce((sum, account) => sum + Number(account.current_concurrency || 0), 0)
-  return known.length === row.runtime_accounts.length
+  return known.length === runtimeAccounts.length
     ? t('admin.upstreamConnections.runtime.compactConcurrency', { count: total })
     : t('admin.upstreamConnections.runtime.compactPartialConcurrency', { count: total })
 }
 function runtimeUsage(row: UpstreamConnectionRow): { cost: number; requests: number } {
-  return row.runtime_accounts.reduce((total, account) => {
+  return (row.runtime_accounts ?? []).reduce((total, account) => {
     const accountUsage = runtimeAccountUsage(account)
     return { cost: total.cost + accountUsage.cost, requests: total.requests + accountUsage.requests }
   }, { cost: 0, requests: 0 })
@@ -570,8 +571,8 @@ function runtimeTodayUsageLabel(row: UpstreamConnectionRow): string {
 }
 function runtimeGroups(row: UpstreamConnectionRow): UpstreamConnectionRuntimeGroup[] {
   const groupsByID = new Map<number, UpstreamConnectionRuntimeGroup>()
-  for (const account of row.runtime_accounts) {
-    for (const group of account.groups) {
+  for (const account of row.runtime_accounts ?? []) {
+    for (const group of account.groups ?? []) {
       const existing = groupsByID.get(group.group_id)
       if (!existing) {
         groupsByID.set(group.group_id, { ...group, today: { ...group.today } })

@@ -2152,7 +2152,7 @@ function recentTimelineTitle(item: OpsAccountHealthItem): string {
 function sampleClass(sample: OpsAccountHealthSample | null): string {
   if (!sample) return 'bg-gray-200 dark:bg-dark-700'
   if (sample.kind === 'success') return 'bg-emerald-500'
-  if (sample.status_code === 429 || sample.status_code === 529) return 'bg-amber-500'
+  if (sample.status_code === 429 || sample.status_code === 529) return 'bg-violet-500'
   return 'bg-red-500'
 }
 

@@ -17,7 +17,7 @@
         >
           <span class="flex items-baseline justify-between gap-1 leading-4">
             <span class="shrink-0 text-[11px] font-bold text-gray-700 dark:text-gray-200">{{ windowLabel(window) }}</span>
-            <span class="shrink-0 tabular-nums text-[10px] text-gray-500 dark:text-gray-400">{{ t('admin.accounts.accountHealth.requestCount', { count: formatCount(stats(window)?.request_count) }) }}</span>
+            <span class="shrink-0 tabular-nums text-[10px] text-gray-500 dark:text-gray-400">{{ t('admin.accountHealth.requestCount', { count: formatCount(stats(window)?.request_count) }) }}</span>
           </span>
           <span class="flex items-baseline justify-between gap-1 leading-3 tabular-nums">
             <span class="min-w-0 truncate text-[11px] font-semibold" :class="successClass(stats(window)?.success_rate_percent)">{{ successText(window) }}</span>
@@ -94,7 +94,7 @@ const title = computed(() => {
     trend?.direction && trend.direction !== 'unknown'
       ? ` | 1m趋势 ${trendArrow(trend)} ${formatPercent(trend.delta_percent, 1)}`
       : ''
-  return `${item.account_name || item.account_id}${trendPart} | 绿=请求 蓝=探测成功 紫=探测失败 | 点击详情`
+  return `${item.account_name || item.account_id}${trendPart} | 绿=成功 红=失败 紫=429/529 | 点击详情`
 })
 
 const probeLine = computed(() => {
@@ -122,10 +122,10 @@ function firstTokenText(window: OpsAccountHealthWindow): string {
 }
 
 function windowLabel(window: OpsAccountHealthWindow): string {
-  return t(`admin.accounts.accountHealth.windows.${window}`)
+  return t(`admin.accountHealth.windows.${window}`)
 }
 
 function windowTitle(window: OpsAccountHealthWindow): string {
-  return t('admin.accounts.accountHealth.windowTitle', { window: windowLabel(window) })
+  return t('admin.accountHealth.windowTitle', { window: windowLabel(window) })
 }
 </script>

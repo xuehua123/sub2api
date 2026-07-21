@@ -339,6 +339,25 @@ describe('UpstreamConnectionsView', () => {
     expect(routerPushMock).toHaveBeenCalledWith({ name: 'AdminAccounts', query: { group: '7', upstream_connection_id: '22' } })
   })
 
+  it('keeps the connection list usable when a runtime account omits groups', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 221, name: 'Missing runtime groups', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 0
+    }])
+    getRuntimeOverviewMock.mockResolvedValue({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 2, waiting_count: 0
+    }] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Missing runtime groups')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:2')
+  })
+
   it('keeps the runtime column fixed-height while showing each group in a single scrolling line', async () => {
     listAllConnectionsMock.mockResolvedValue([{
       id: 23, name: 'Dense runtime', provider: 'newapi', auth_mode: 'password',

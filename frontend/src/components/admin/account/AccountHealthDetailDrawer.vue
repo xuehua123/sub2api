@@ -40,7 +40,7 @@
                   近 {{ timelineSamples.length }} 次（请求 + 探测）
                 </h3>
                 <span class="text-[10px] text-gray-400">
-                  绿请求 · 蓝探测成功 · 紫探测失败 · 黄429/529 · 红错误
+                  绿成功 · 红失败 · 紫429/529（请求与探测同色）
                 </span>
               </div>
               <div class="grid grid-cols-[repeat(60,minmax(2px,1fr))] gap-0.5">

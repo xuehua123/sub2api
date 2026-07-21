@@ -7,13 +7,13 @@ vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string, params?: Record<string, string | number>) => {
       const messages: Record<string, string> = {
-        'admin.accounts.accountHealth.requestCount': '{count} 次',
-        'admin.accounts.accountHealth.windowTitle': '{window}：请求数、成功率、首 Token 延迟',
-        'admin.accounts.accountHealth.windows.1m': '近1分钟',
-        'admin.accounts.accountHealth.windows.5m': '近5分钟',
-        'admin.accounts.accountHealth.windows.10m': '近10分钟',
-        'admin.accounts.accountHealth.windows.30m': '近30分钟',
-        'admin.accounts.accountHealth.windows.1h': '近1小时'
+        'admin.accountHealth.requestCount': '{count} 次',
+        'admin.accountHealth.windowTitle': '{window}：请求数、成功率、首 Token 延迟',
+        'admin.accountHealth.windows.1m': '近1分钟',
+        'admin.accountHealth.windows.5m': '近5分钟',
+        'admin.accountHealth.windows.10m': '近10分钟',
+        'admin.accountHealth.windows.30m': '近30分钟',
+        'admin.accountHealth.windows.1h': '近1小时'
       }
       return (messages[key] ?? key).replace(/\{(\w+)\}/g, (_, name: string) => String(params?.[name] ?? ''))
     }
@@ -150,7 +150,8 @@ describe('AccountHealthSummaryCell', () => {
 
     expect(wrapper.text()).toContain('—')
     expect(wrapper.text()).toContain('探OK')
-    // Probe success uses sky bars
-    expect(wrapper.html()).toContain('bg-sky-500')
+    // Probe success shares the same green bars as traffic success
+    expect(wrapper.html()).toContain('bg-emerald-500')
+    expect(wrapper.html()).not.toContain('bg-sky-500')
   })
 })

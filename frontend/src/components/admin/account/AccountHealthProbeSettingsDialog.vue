@@ -98,7 +98,7 @@
             <p class="rounded-lg bg-gray-50 px-3 py-2 text-[11px] leading-relaxed text-gray-500 dark:bg-dark-800 dark:text-gray-400">
               说明：自动探测约每分钟调度一轮，每轮最多探测「每轮数量」个账号，按<strong>最久未探测优先</strong>轮转。
               覆盖范围：已关闭账号、以及已打开但当前不可调度的账号。间隔是同一账号的冷却时间。
-              列底部色条：绿=请求成功，蓝=探测成功，紫=探测失败。
+              列底部色条：绿=成功，红=失败，紫=429/529（请求与探测同色）。
             </p>
           </template>
         </div>
