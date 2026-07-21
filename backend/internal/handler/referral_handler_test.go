@@ -94,6 +94,11 @@ func (s *referralHandlerCommissionRepoStub) ListRewardsByUserAndSource(_ context
 	return s.rewards, nil
 }
 
+func (s *referralHandlerCommissionRepoStub) ListRewardsByUserPaginated(_ context.Context, userID int64, params pagination.PaginationParams) ([]service.UserInviteeReward, *pagination.PaginationResult, error) {
+	s.userID = userID
+	return s.rewards, &pagination.PaginationResult{Total: int64(len(s.rewards)), Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func TestReferralHandler_GetInviteeRewards_UsesRouteSourceUserID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -128,4 +133,57 @@ func TestReferralHandler_GetInviteeRewards_UsesRouteSourceUserID(t *testing.T) {
 	require.Equal(t, 0, resp.Code)
 	require.Len(t, resp.Data, 1)
 	require.Equal(t, int64(9), resp.Data[0].ID)
+}
+
+func TestReferralHandler_GetRewards_ScopesToAuthUser(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	settingService := service.NewSettingService(&referralHandlerSettingRepoStub{values: map[string]string{
+		service.SettingKeyReferralEnabled:            "true",
+		service.SettingKeyReferralSettlementCurrency: service.ReferralSettlementCurrencyCNY,
+	}}, nil)
+	baseService := service.NewReferralService(nil, nil, nil, settingService)
+	commissionRepo := &referralHandlerCommissionRepoStub{
+		rewards: []service.UserInviteeReward{
+			{ID: 9, RechargeOrderID: 11, ExternalOrderID: "ORD-1", RewardAmount: 10},
+		},
+	}
+	centerService := service.NewReferralCenterService(baseService, &referralHandlerRelationRepoStub{}, commissionRepo, nil)
+	h := NewReferralHandler(nil, centerService, nil)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/user/referral/rewards?page=1&page_size=15", nil)
+	c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: 42})
+
+	h.GetRewards(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, int64(42), commissionRepo.userID)
+
+	var resp struct {
+		Code int `json:"code"`
+		Data struct {
+			Items []service.UserInviteeReward `json:"items"`
+			Total int64                       `json:"total"`
+			Page  int                         `json:"page"`
+		} `json:"data"`
+	}
+	// Paginated responses may wrap differently — accept either items envelope or flat list.
+	raw := rec.Body.Bytes()
+	require.NoError(t, json.Unmarshal(raw, &resp))
+	require.Equal(t, 0, resp.Code)
+	if len(resp.Data.Items) == 0 {
+		var alt struct {
+			Code int                         `json:"code"`
+			Data []service.UserInviteeReward `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(raw, &alt))
+		require.Len(t, alt.Data, 1)
+		require.Equal(t, int64(9), alt.Data[0].ID)
+		return
+	}
+	require.Len(t, resp.Data.Items, 1)
+	require.Equal(t, int64(9), resp.Data.Items[0].ID)
+	require.Equal(t, "ORD-1", resp.Data.Items[0].ExternalOrderID)
 }

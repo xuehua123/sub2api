@@ -48,19 +48,28 @@ type ReferralCenterCommissionRepository interface {
 	ListWithdrawalsByUser(ctx context.Context, userID int64, params pagination.PaginationParams) ([]CommissionWithdrawal, *pagination.PaginationResult, error)
 	ListPayoutAccountsByUser(ctx context.Context, userID int64) ([]CommissionPayoutAccount, error)
 	ListRewardsByUserAndSource(ctx context.Context, userID int64, sourceUserID int64) ([]UserInviteeReward, error)
+	// ListRewardsByUserPaginated returns the current user's commission booking rows
+	// (one row per invitee paid recharge that generated commission).
+	ListRewardsByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams) ([]UserInviteeReward, *pagination.PaginationResult, error)
 }
 
 // UserInviteeReward is a user-facing view of a commission reward with enriched order info.
 type UserInviteeReward struct {
-	ID              int64     `json:"id"`
-	RechargeOrderID int64     `json:"recharge_order_id"`
-	ExternalOrderID string    `json:"external_order_id,omitempty"`
-	OrderPaidAmount float64   `json:"order_paid_amount"`
-	RateSnapshot    float64   `json:"rate_snapshot"`
-	RewardAmount    float64   `json:"reward_amount"`
-	Currency        string    `json:"currency"`
-	Status          string    `json:"status"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              int64      `json:"id"`
+	SourceUserID    int64      `json:"source_user_id,omitempty"`
+	SourceUserEmail string     `json:"source_user_email,omitempty"`
+	SourceUsername  string     `json:"source_user_username,omitempty"`
+	InviteeEmail    string     `json:"invitee_email,omitempty"` // alias of source_user_email for older UI
+	RechargeOrderID int64      `json:"recharge_order_id"`
+	ExternalOrderID string     `json:"external_order_id,omitempty"`
+	OrderPaidAmount float64    `json:"order_paid_amount"`
+	RateSnapshot    float64    `json:"rate_snapshot"`
+	RewardAmount    float64    `json:"reward_amount"`
+	Level           int        `json:"level"`
+	Currency        string     `json:"currency"`
+	Status          string     `json:"status"`
+	CreatedAt       time.Time  `json:"created_at"`
+	AvailableAt     *time.Time `json:"available_at,omitempty"`
 }
 
 type ReferralCenterService struct {
@@ -174,6 +183,14 @@ func (s *ReferralCenterService) ListInviteeRewards(ctx context.Context, userID i
 		return nil, err
 	}
 	return s.commissionRepo.ListRewardsByUserAndSource(ctx, userID, sourceUserID)
+}
+
+// ListRewards returns the caller's full commission booking ledger (invitee recharge → reward).
+func (s *ReferralCenterService) ListRewards(ctx context.Context, userID int64, params pagination.PaginationParams) ([]UserInviteeReward, *pagination.PaginationResult, error) {
+	if err := s.checkReferralEnabled(ctx, userID); err != nil {
+		return nil, nil, err
+	}
+	return s.commissionRepo.ListRewardsByUserPaginated(ctx, userID, params)
 }
 
 func (s *ReferralCenterService) checkReferralEnabled(ctx context.Context, userID int64) error {

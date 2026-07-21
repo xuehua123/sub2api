@@ -860,6 +860,7 @@ const adminNavItems = computed((): NavItem[] => {
       icon: ReferralIcon,
       children: [
         { path: '/admin/referral', label: t('nav.referralOverview'), icon: ChartIcon },
+        { path: '/admin/referral-rewards', label: t('nav.referralRewards'), icon: OrderListIcon },
         { path: '/admin/referral-withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon },
       ],
     },

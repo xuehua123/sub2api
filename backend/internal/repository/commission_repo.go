@@ -1214,13 +1214,51 @@ func (r *commissionRepository) ListRewardsByUserAndSource(ctx context.Context, u
 	if err != nil {
 		return nil, err
 	}
+	return r.mapUserInviteeRewards(ctx, models)
+}
 
-	// Collect order IDs for batch loading
+func (r *commissionRepository) ListRewardsByUserPaginated(
+	ctx context.Context,
+	userID int64,
+	params pagination.PaginationParams,
+) ([]service.UserInviteeReward, *pagination.PaginationResult, error) {
+	query := clientFromContext(ctx, r.client).CommissionReward.Query().
+		Where(commissionreward.UserIDEQ(userID))
+	total, err := query.Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	models, err := query.
+		Order(dbent.Desc(commissionreward.FieldCreatedAt)).
+		Offset(params.Offset()).
+		Limit(params.Limit()).
+		All(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	items, err := r.mapUserInviteeRewards(ctx, models)
+	if err != nil {
+		return nil, nil, err
+	}
+	return items, paginationResultFrom(total, params), nil
+}
+
+func (r *commissionRepository) mapUserInviteeRewards(ctx context.Context, models []*dbent.CommissionReward) ([]service.UserInviteeReward, error) {
+	if len(models) == 0 {
+		return []service.UserInviteeReward{}, nil
+	}
+
 	orderIDs := make([]int64, 0, len(models))
+	sourceIDs := make([]int64, 0, len(models))
 	for _, model := range models {
 		orderIDs = append(orderIDs, model.RechargeOrderID)
+		sourceIDs = append(sourceIDs, model.SourceUserID)
 	}
 	ordersByID, err := r.loadOrdersByID(ctx, orderIDs)
+	if err != nil {
+		return nil, err
+	}
+	usersByID, err := r.loadUsersByID(ctx, sourceIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1229,13 +1267,24 @@ func (r *commissionRepository) ListRewardsByUserAndSource(ctx context.Context, u
 	for _, model := range models {
 		item := service.UserInviteeReward{
 			ID:              model.ID,
+			SourceUserID:    model.SourceUserID,
 			RechargeOrderID: model.RechargeOrderID,
 			OrderPaidAmount: model.BaseAmountSnapshot,
 			RateSnapshot:    model.RateSnapshot,
 			RewardAmount:    model.RewardAmount,
+			Level:           model.Level,
 			Currency:        model.Currency,
 			Status:          model.Status,
 			CreatedAt:       model.CreatedAt,
+		}
+		if model.AvailableAt != nil {
+			t := *model.AvailableAt
+			item.AvailableAt = &t
+		}
+		if source := usersByID[model.SourceUserID]; source != nil {
+			item.SourceUserEmail = source.Email
+			item.SourceUsername = source.Username
+			item.InviteeEmail = source.Email
 		}
 		if order := ordersByID[model.RechargeOrderID]; order != nil {
 			item.ExternalOrderID = order.ExternalOrderID

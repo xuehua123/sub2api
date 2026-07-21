@@ -39,7 +39,10 @@
         <router-link to="/admin/referral" class="border-primary-500 text-primary-600 dark:text-primary-400 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium">
           {{ t('admin.referral.menuCommission', '数据总览') }}
         </router-link>
-        <router-link to="/admin/referral/withdrawals" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors">
+        <router-link to="/admin/referral-rewards" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors">
+          {{ t('admin.referral.menuRewards', '佣金明细') }}
+        </router-link>
+        <router-link to="/admin/referral-withdrawals" class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 whitespace-nowrap border-b-2 py-4 px-1 text-sm font-medium transition-colors">
           {{ t('admin.referral.menuWithdrawals', '批量提现审核') }}
         </router-link>
       </nav>

@@ -3,25 +3,16 @@
     <TablePageLayout>
       <!-- Header + Actions -->
       <template #actions>
-        <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-          <div>
-            <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-              {{ t('admin.referral.withdrawalReviewTitle', '提现管理') }}
-            </h1>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.referral.withdrawalReviewDescription', '审核现金提现，并查看用户转余额记录（转余额无需审核）。') }}
-            </p>
-          </div>
-          <div class="flex items-center gap-3">
-            <router-link
-              to="/admin/referral"
-              class="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 transition hover:bg-gray-50 dark:bg-dark-800 dark:text-gray-200 dark:ring-dark-600 dark:hover:bg-dark-700"
-            >
-              <svg class="mr-2 h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              {{ t('admin.referral.menuCommission', '返回全景概览') }}
-            </router-link>
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+                {{ t('admin.referral.withdrawalReviewTitle', '提现管理') }}
+              </h1>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t('admin.referral.withdrawalReviewDescription', '审核现金提现，并查看用户转余额记录（转余额无需审核）。') }}
+              </p>
+            </div>
             <button
               class="inline-flex items-center justify-center rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 dark:bg-primary-500 dark:hover:bg-primary-400"
               :disabled="loading"
@@ -30,6 +21,26 @@
               {{ loading ? t('common.loading', '加载中') : t('common.refresh', '刷新') }}
             </button>
           </div>
+          <nav class="flex space-x-4 border-b border-gray-200 dark:border-dark-800 pb-px" aria-label="Tabs">
+            <router-link
+              to="/admin/referral"
+              class="whitespace-nowrap border-b-2 border-transparent px-1 py-3 text-sm font-medium text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            >
+              {{ t('admin.referral.menuCommission', '数据总览') }}
+            </router-link>
+            <router-link
+              to="/admin/referral-rewards"
+              class="whitespace-nowrap border-b-2 border-transparent px-1 py-3 text-sm font-medium text-gray-500 transition-colors hover:border-gray-300 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+            >
+              {{ t('admin.referral.menuRewards', '佣金明细') }}
+            </router-link>
+            <router-link
+              to="/admin/referral-withdrawals"
+              class="whitespace-nowrap border-b-2 border-primary-500 px-1 py-3 text-sm font-medium text-primary-600 dark:text-primary-400"
+            >
+              {{ t('admin.referral.menuWithdrawals', '批量提现审核') }}
+            </router-link>
+          </nav>
         </div>
       </template>
 

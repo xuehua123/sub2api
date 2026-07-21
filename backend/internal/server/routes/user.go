@@ -151,6 +151,7 @@ func RegisterUserRoutes(
 		{
 			referral.GET("/overview", h.Referral.GetOverview)
 			referral.GET("/ledger", h.Referral.GetLedger)
+			referral.GET("/rewards", h.Referral.GetRewards)
 			referral.GET("/invitees", h.Referral.GetInvitees)
 			referral.GET("/invitees/:source_user_id/rewards", h.Referral.GetInviteeRewards)
 			referral.GET("/withdrawals", h.Referral.GetWithdrawals)

@@ -40,6 +40,18 @@ export async function getInvitees(
   return data
 }
 
+/** Full commission booking list (invitee paid recharge → reward row). */
+export async function getRewards(
+  page: number = 1,
+  pageSize: number = 20
+): Promise<BasePaginationResponse<UserInviteeReward>> {
+  const { data } = await apiClient.get<BasePaginationResponse<UserInviteeReward>>(
+    '/user/referral/rewards',
+    { params: { page, page_size: pageSize } }
+  )
+  return data
+}
+
 export async function convertToCredit(amount: number) {
   const { data } = await apiClient.post('/user/referral/convert-to-credit', { amount })
   return data
@@ -108,6 +120,7 @@ const referralAPI = {
   getOverview,
   getLedger,
   getInvitees,
+  getRewards,
   getInviteeRewards,
   convertToCredit,
   validateCode,

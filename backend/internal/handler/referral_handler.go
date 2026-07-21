@@ -110,6 +110,23 @@ func (h *ReferralHandler) GetInvitees(c *gin.Context) {
 	response.Paginated(c, invitees, paginationResult.Total, page, pageSize)
 }
 
+// GetRewards lists commission booking rows for the current user (invitee paid recharge → reward).
+func (h *ReferralHandler) GetRewards(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	rewards, paginationResult, err := h.centerService.ListRewards(c.Request.Context(), subject.UserID, params)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, rewards, paginationResult.Total, page, pageSize)
+}
+
 func (h *ReferralHandler) CreateWithdrawal(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {

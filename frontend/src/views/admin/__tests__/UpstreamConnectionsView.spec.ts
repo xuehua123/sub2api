@@ -111,7 +111,7 @@ const DataTableStub = defineComponent({
         @click="$emit('sort', column.key, 'asc')"
       >{{ column.label }}</button>
       <div v-for="row in data" :key="row.id" class="data-row">
-        <span class="row-name">{{ row.name }}</span>
+        <slot name="cell-name" :row="row"><button class="row-name"><span class="row-name-label">{{ row.name }}</span></button></slot>
         <slot name="cell-wallet" :row="row" />
         <slot name="cell-today_requests" :row="row" />
         <slot name="cell-runtime" :row="row" />
@@ -312,7 +312,7 @@ describe('UpstreamConnectionsView', () => {
     expect(wrapper.text()).toContain('admin.upstreamConnections.walletHighlightHint')
   })
 
-  it('renders a compact per-group runtime success rate and opens its account group', async () => {
+  it('renders a readable runtime summary and opens its account group', async () => {
     listAllConnectionsMock.mockResolvedValue([{
       id: 22, name: 'Runtime upstream', provider: 'newapi', auth_mode: 'password',
       management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
@@ -331,12 +331,92 @@ describe('UpstreamConnectionsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('runtime.compactOverview:1,admin.upstreamConnections.runtime.compactConcurrency:4')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.accountsUnit')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:4')
+    // 5m volume must be visible in the list (not only the detail dialog).
+    expect(wrapper.find('[data-testid="runtime-group-5m-count"]').text()).toContain(
+      'admin.upstreamConnections.runtime.fiveMinuteRequestsCompact:4'
+    )
+    expect(wrapper.text()).toContain('75.0%')
     expect(wrapper.text()).not.toContain('admin.upstreamConnections.runtime.unavailable')
     const groupButton = wrapper.findAll('button').find(button => button.text().includes('VIP'))
     expect(groupButton).toBeDefined()
     await groupButton!.trigger('click')
-    expect(routerPushMock).toHaveBeenCalledWith({ name: 'AdminAccounts', query: { group: '7', upstream_connection_id: '22' } })
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'AdminAccounts',
+      query: { group: '7', upstream_connection_id: '22', runtime_traffic: '1' }
+    })
+  })
+
+  it('does not map log ungrouped traffic to membership ungrouped filter', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 25, name: 'Ungrouped traffic', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 0
+    }])
+    getRuntimeOverviewMock.mockResolvedValue({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 1, waiting_count: 0,
+      groups: [{
+        group_id: 0, group_name: '', today: { requests: 3, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 },
+        five_minute_requests: 2, five_minute_success_count: 2, five_minute_error_count: 0, five_minute_success_rate: 100
+      }]
+    }] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.ungroupedTraffic')
+    const groupButton = wrapper.findAll('button').find(button => button.text().includes('runtime.ungroupedTraffic'))
+    expect(groupButton).toBeDefined()
+    await groupButton!.trigger('click')
+    expect(routerPushMock).toHaveBeenCalledWith({
+      name: 'AdminAccounts',
+      query: { upstream_connection_id: '25', runtime_traffic: '1' }
+    })
+  })
+
+  it('retries runtime for only the unavailable row connection', async () => {
+    listAllConnectionsMock.mockResolvedValue([
+      {
+        id: 31, name: 'Broken runtime', provider: 'newapi', auth_mode: 'password',
+        management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+        proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+        wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+        wallet_reliability: 'exact', bound_account_ids: [8, 9], binding_count: 2, group_count: 0
+      },
+      {
+        id: 32, name: 'Healthy runtime', provider: 'newapi', auth_mode: 'password',
+        management_base_url: 'https://other.example.com', forwarding_base_url: '', remote_user_id: '',
+        proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+        wallet_amount: 50, wallet_currency: 'USD', wallet_usd: 50, wallet_unlimited: false,
+        wallet_reliability: 'exact', bound_account_ids: [99], binding_count: 1, group_count: 0
+      }
+    ])
+    // Initial overview fails for both paths that load runtime with all ids.
+    getRuntimeOverviewMock.mockRejectedValueOnce(new Error('runtime down'))
+
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.unavailable')
+
+    getRuntimeOverviewMock.mockClear()
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [
+      { account_id: 8, account_name: 'A', current_concurrency: 1, waiting_count: 0, groups: [] },
+      { account_id: 9, account_name: 'B', current_concurrency: 0, waiting_count: 0, groups: [] }
+    ] })
+
+    // Higher id sorts first; locate the broken row's retry by sibling text.
+    const brokenRow = wrapper.findAll('.data-row').find(row => row.text().includes('Broken runtime'))
+    expect(brokenRow).toBeDefined()
+    await brokenRow!.get('[data-testid="runtime-row-retry"]').trigger('click')
+    await flushPromises()
+
+    // Only the broken connection's bound accounts — not account 99 from the other row.
+    expect(getRuntimeOverviewMock).toHaveBeenCalledTimes(1)
+    expect(getRuntimeOverviewMock).toHaveBeenCalledWith([8, 9])
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:1')
   })
 
   it('keeps the connection list usable when a runtime account omits groups', async () => {
@@ -358,7 +438,7 @@ describe('UpstreamConnectionsView', () => {
     expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:2')
   })
 
-  it('keeps the runtime column fixed-height while showing each group in a single scrolling line', async () => {
+  it('shows the two busiest groups in the table and every group in runtime details', async () => {
     listAllConnectionsMock.mockResolvedValue([{
       id: 23, name: 'Dense runtime', provider: 'newapi', auth_mode: 'password',
       management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
@@ -376,10 +456,15 @@ describe('UpstreamConnectionsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const text = wrapper.text()
-    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:B,100.0')
-    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:C,100.0')
-    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:D,0.0')
+    expect(wrapper.text()).toContain('B')
+    expect(wrapper.text()).toContain('C')
+    // Compact cell shows top-2 by cost (B, C). Account "Lower" / group D appear only after details open.
+    expect(wrapper.text()).not.toContain('Lower')
+    const moreGroups = wrapper.findAll('button').find(button => button.text().includes('runtime.moreGroups:2'))
+    expect(moreGroups).toBeDefined()
+    await moreGroups!.trigger('click')
+    expect(wrapper.text()).toContain('Lower')
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.successFailure')
   })
 
   it('refreshes only the runtime snapshot without reloading connections', async () => {
@@ -408,6 +493,158 @@ describe('UpstreamConnectionsView', () => {
     expect(getRuntimeOverviewMock).toHaveBeenLastCalledWith([8])
     expect(listAllConnectionsMock).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:2')
+  })
+
+  it('refreshes runtime from the open detail dialog without wiping groups/bindings or other connections', async () => {
+    listAllConnectionsMock.mockResolvedValue([
+      {
+        id: 26, name: 'Dialog refresh', provider: 'newapi', auth_mode: 'password',
+        management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+        proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+        wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+        wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1,
+        groups: [], bindings: []
+      },
+      {
+        id: 27, name: 'Other connection', provider: 'newapi', auth_mode: 'password',
+        management_base_url: 'https://other.example.com', forwarding_base_url: '', remote_user_id: '',
+        proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+        wallet_amount: 50, wallet_currency: 'USD', wallet_usd: 50, wallet_unlimited: false,
+        wallet_reliability: 'exact', bound_account_ids: [99], binding_count: 1, group_count: 0,
+        groups: [], bindings: []
+      }
+    ])
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [
+      {
+        account_id: 8, account_name: 'Primary', current_concurrency: 1, waiting_count: 0,
+        groups: [{
+          group_id: 7, group_name: 'VIP', today: { requests: 2, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 },
+          five_minute_requests: 1, five_minute_success_count: 1, five_minute_error_count: 0, five_minute_success_rate: 100
+        }]
+      },
+      {
+        account_id: 99, account_name: 'Other', current_concurrency: 0, waiting_count: 0, groups: []
+      }
+    ] })
+    getConnectionMock.mockResolvedValue({
+      id: 26, name: 'Dialog refresh', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1,
+      groups: [{ id: 1, remote_id: 'g1', name: 'VIP', rate_multiplier: 1.2, source: 'probe', confidence: 'exact', metadata: {}, observed_at: null, fresh_until: null }],
+      bindings: [{ id: 1, account_id: 8, connection_id: 26, remote_token_id: 't1', remote_token_name: 'key', resolution_kind: 'fixed', remote_group_id: 'g1', remote_group_name: 'VIP', fallback_groups: [], observed_multiplier: 1.2, confidence: 'exact', source: 'probe', apply_policy: 'observe_only', status: 'ready', sync_failures: 0, last_error: '', resolution_details: {}, observed_at: null, fresh_until: null }]
+    })
+    getTodayUsageMock.mockResolvedValue({
+      timezone: 'Asia/Shanghai',
+      start_at: '2026-07-21T00:00:00Z',
+      end_at: '2026-07-21T12:00:00Z',
+      summary: { requests: 2, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 },
+      trend: [],
+      accounts: []
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    // Default sort puts higher id first; open the connection under test by label.
+    const nameButton = wrapper.findAll('.row-name').find(button => button.text().includes('Dialog refresh'))
+    expect(nameButton).toBeDefined()
+    await nameButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('1.2x')
+    expect(wrapper.text()).toContain('VIP')
+
+    getRuntimeOverviewMock.mockClear()
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 5, waiting_count: 2,
+      groups: [{
+        group_id: 7, group_name: 'VIP', today: { requests: 9, tokens: 0, account_cost: 3, standard_cost: 0, user_cost: 0 },
+        five_minute_requests: 7, five_minute_success_count: 6, five_minute_error_count: 1, five_minute_success_rate: 85.7
+      }]
+    }] })
+
+    await wrapper.get('[data-testid="runtime-detail-refresh"]').trigger('click')
+    await flushPromises()
+
+    // Scoped to the open connection only — not account 99 from the other connection.
+    expect(getRuntimeOverviewMock).toHaveBeenCalledTimes(1)
+    expect(getRuntimeOverviewMock).toHaveBeenCalledWith([8])
+
+    // Runtime metrics update in place.
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:5')
+    expect(wrapper.find('[data-testid="runtime-group-5m-count"]').text()).toContain(
+      'admin.upstreamConnections.runtime.fiveMinuteRequestsCompact:7'
+    )
+    // Full detail groups/bindings must survive runtime-only merge.
+    expect(wrapper.text()).toContain('1.2x')
+    expect(wrapper.text()).not.toContain('admin.upstreamConnections.detail.noGroups')
+  })
+
+  it('keeps a mid-flight detail refresh when the open GET returns later', async () => {
+    let resolveGet: ((value: unknown) => void) | undefined
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 28, name: 'Race connection', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1,
+      groups: [], bindings: []
+    }])
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 1, waiting_count: 0,
+      groups: [{
+        group_id: 7, group_name: 'VIP', today: { requests: 2, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 },
+        five_minute_requests: 1, five_minute_success_count: 1, five_minute_error_count: 0, five_minute_success_rate: 100
+      }]
+    }] })
+    getConnectionMock.mockImplementation(() => new Promise(resolve => {
+      resolveGet = resolve
+    }))
+    getTodayUsageMock.mockResolvedValue({
+      timezone: 'Asia/Shanghai',
+      start_at: '2026-07-21T00:00:00Z',
+      end_at: '2026-07-21T12:00:00Z',
+      summary: { requests: 2, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 },
+      trend: [],
+      accounts: []
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('.row-name').trigger('click')
+    await flushPromises()
+
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 9, waiting_count: 0,
+      groups: [{
+        group_id: 7, group_name: 'VIP', today: { requests: 20, tokens: 0, account_cost: 5, standard_cost: 0, user_cost: 0 },
+        five_minute_requests: 15, five_minute_success_count: 15, five_minute_error_count: 0, five_minute_success_rate: 100
+      }]
+    }] })
+    await wrapper.get('[data-testid="runtime-detail-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="runtime-group-5m-count"]').text()).toContain(
+      'admin.upstreamConnections.runtime.fiveMinuteRequestsCompact:15'
+    )
+
+    resolveGet?.({
+      id: 28, name: 'Race connection', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1,
+      groups: [{ id: 1, remote_id: 'g1', name: 'VIP', rate_multiplier: 1.5, source: 'probe', confidence: 'exact', metadata: {}, observed_at: null, fresh_until: null }],
+      bindings: []
+    })
+    await flushPromises()
+
+    // Late GET must not roll runtime back to the open-time snapshot (5m 1 / concurrency 1).
+    expect(wrapper.find('[data-testid="runtime-group-5m-count"]').text()).toContain(
+      'admin.upstreamConnections.runtime.fiveMinuteRequestsCompact:15'
+    )
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:9')
+    expect(wrapper.text()).toContain('1.5x')
   })
 
   it('loads the connection usage snapshot when details open', async () => {
@@ -444,7 +681,7 @@ describe('UpstreamConnectionsView', () => {
 
     const wrapper = mountView()
     await flushPromises()
-    await wrapper.get('button[title="common.view"]').trigger('click')
+    await wrapper.get('.row-name').trigger('click')
     await flushPromises()
 
     expect(getTodayUsageMock).toHaveBeenCalledWith(51)
@@ -481,7 +718,7 @@ describe('UpstreamConnectionsView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.findAll('.row-name').map(node => node.text())).toEqual(['Higher traffic', 'Lower traffic'])
+    expect(wrapper.findAll('.row-name-label').map(node => node.text())).toEqual(['Higher traffic', 'Lower traffic'])
   })
 
   it('sorts by a clicked wallet column and keeps unknown balances last', async () => {
@@ -501,7 +738,7 @@ describe('UpstreamConnectionsView', () => {
     await flushPromises()
     await wrapper.get('[data-testid="sort-wallet"]').trigger('click')
 
-    expect(wrapper.findAll('.row-name').map(node => node.text())).toEqual(['Low', 'High', 'Unknown'])
+    expect(wrapper.findAll('.row-name-label').map(node => node.text())).toEqual(['Low', 'High', 'Unknown'])
   })
 
   it('uses the configurable wallet threshold only for display highlighting', async () => {

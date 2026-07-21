@@ -849,6 +849,21 @@ const routes: RouteRecordRaw[] = [
     redirect: '/admin/referral-withdrawals'
   },
   {
+    path: '/admin/referral/rewards',
+    redirect: '/admin/referral-rewards'
+  },
+  {
+    path: '/admin/referral-rewards',
+    name: 'AdminReferralRewards',
+    component: () => import('@/views/admin/ReferralRewardsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Referral Rewards',
+      titleKey: 'admin.referral.rewardsTitle'
+    }
+  },
+  {
     path: '/admin/referral-withdrawals',
     name: 'AdminReferralWithdrawals',
     component: () => import('@/views/admin/ReferralWithdrawalsView.vue'),

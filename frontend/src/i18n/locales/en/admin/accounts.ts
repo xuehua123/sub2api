@@ -2,6 +2,11 @@ export default {
     accounts: {
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
+      upstreamConnectionFilterChip: 'Upstream connection: {name}',
+      clearUpstreamConnectionFilter: 'Clear upstream connection filter',
+      runtimeTrafficFilterChip: 'From runtime traffic (current membership)',
+      runtimeTrafficFilterHint: 'Runtime groups come from today\'s request logs; the account list filters by current group membership. After rebinding or group deletion, the list may omit accounts that produced that traffic.',
+      clearRuntimeTrafficFilterHint: 'Dismiss this note',
       createAccount: 'Create Account',
       autoRefresh: 'Auto Refresh',
       autoRateMultiplierPriority: 'Auto-sort by rate',

@@ -57,6 +57,10 @@ func (s *referralCenterRepoStub) ListRewardsByUserAndSource(ctx context.Context,
 	return nil, nil
 }
 
+func (s *referralCenterRepoStub) ListRewardsByUserPaginated(ctx context.Context, userID int64, params pagination.PaginationParams) ([]UserInviteeReward, *pagination.PaginationResult, error) {
+	return nil, &pagination.PaginationResult{Total: 0, Page: params.Page, PageSize: params.PageSize, Pages: 1}, nil
+}
+
 func newReferralCenterServiceForTest(repo *referralCenterRepoStub, settings map[string]string) *ReferralCenterService {
 	cfg := &config.Config{
 		Default: config.DefaultConfig{

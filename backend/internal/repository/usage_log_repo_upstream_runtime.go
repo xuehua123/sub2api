@@ -58,7 +58,8 @@ WITH events AS (
 SELECT
   e.account_id,
   e.group_id,
-  COALESCE(NULLIF(g.name, ''), CASE WHEN e.group_id = 0 THEN '未分组' ELSE '已删除分组' END) AS group_name,
+  -- Empty name is localized on the client (ungrouped vs deleted group).
+  COALESCE(NULLIF(g.name, ''), '') AS group_name,
   COUNT(*) FILTER (WHERE NOT e.is_error) AS today_requests,
   COALESCE(SUM(e.tokens) FILTER (WHERE NOT e.is_error), 0) AS today_tokens,
   COALESCE(SUM(e.account_cost) FILTER (WHERE NOT e.is_error), 0) AS today_account_cost,

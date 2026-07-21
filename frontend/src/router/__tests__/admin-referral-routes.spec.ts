@@ -50,4 +50,13 @@ describe('admin referral routes', () => {
 
     expect(route?.redirect).toBe('/admin/referral-withdrawals')
   })
+
+  it('registers commission rewards list page and legacy rewards redirect', async () => {
+    const { default: router } = await import('@/router')
+    const canonical = router.getRoutes().find((record) => record.path === '/admin/referral-rewards')
+    const legacy = router.getRoutes().find((record) => record.path === '/admin/referral/rewards')
+
+    expect(canonical?.name).toBe('AdminReferralRewards')
+    expect(legacy?.redirect).toBe('/admin/referral-rewards')
+  })
 })

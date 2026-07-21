@@ -46,7 +46,13 @@ func (s *UpstreamConnectionService) GetRuntimeOverview(ctx context.Context, acco
 		now = s.now().In(timezone.Location())
 	}
 	start := timezone.StartOfDay(now)
-	metrics, err := s.runtimeReader.GetUpstreamConnectionRuntimeGroups(ctx, accountIDs, start, now, now.Add(-5*time.Minute))
+	// Clip the 5m window to local start-of-day so early-morning rates are not
+	// diluted by pre-midnight traffic that is outside the "today" snapshot.
+	fiveMinuteStart := now.Add(-5 * time.Minute)
+	if fiveMinuteStart.Before(start) {
+		fiveMinuteStart = start
+	}
+	metrics, err := s.runtimeReader.GetUpstreamConnectionRuntimeGroups(ctx, accountIDs, start, now, fiveMinuteStart)
 	if err != nil {
 		return nil, fmt.Errorf("get upstream connection runtime groups: %w", err)
 	}

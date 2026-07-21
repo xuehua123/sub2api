@@ -2455,16 +2455,22 @@ export interface ReferralInvitee {
 
 export interface UserInviteeReward {
   id: number
-  invitee_email: string
-  external_order_id: string
-  order_amount: number
+  source_user_id?: number
+  source_user_email?: string
+  source_user_username?: string
+  invitee_email?: string
+  external_order_id?: string
+  recharge_order_id?: number
+  order_amount?: number
   order_paid_amount: number
-  commission_amount: number
+  commission_amount?: number
   reward_amount: number
   rate_snapshot: number
-  level: number
+  level?: number
+  currency?: string
   status: string
   created_at: string
+  available_at?: string | null
 }
 
 export interface ValidateReferralCodeResponse {
@@ -2586,24 +2592,34 @@ export interface AdminCommissionLedger {
 
 export interface AdminCommissionReward {
   id: number
-  referrer_user_id: number
-  referrer_email: string
-  invitee_user_id: number
-  invitee_email: string
+  user_id: number
+  user_email: string
+  username?: string
+  source_user_id: number
   source_user_email: string
-  order_id: number
-  external_order_id: string
+  source_username?: string
+  recharge_order_id: number
+  external_order_id?: string | null
   level: number
-  order_amount: number
   base_amount_snapshot: number
-  commission_rate: number
   rate_snapshot: number
-  commission_amount: number
   reward_amount: number
-  settlement_currency: string
+  currency?: string
   status: string
+  available_at?: string | null
+  paid_at?: string | null
   created_at: string
-  settled_at: string | null
+  // legacy aliases kept optional for older call sites
+  referrer_user_id?: number
+  referrer_email?: string
+  invitee_user_id?: number
+  invitee_email?: string
+  order_id?: number
+  order_amount?: number
+  commission_rate?: number
+  commission_amount?: number
+  settlement_currency?: string
+  settled_at?: string | null
 }
 
 export interface AdminCommissionWithdrawal {

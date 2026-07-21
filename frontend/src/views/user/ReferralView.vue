@@ -252,6 +252,82 @@
           </div>
         </section>
 
+        <!-- 返佣记账明细（邀请充值成功 → 一行佣金） -->
+        <section id="rewards-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+          <div class="mb-4">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.rewardsTitle') }}</h2>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('referral.rewardsDescription') }}
+            </p>
+          </div>
+          <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
+            <table class="min-w-full text-sm">
+              <thead class="bg-gray-50 dark:bg-dark-800/50">
+                <tr class="text-left text-gray-500 dark:text-gray-400">
+                  <th class="px-4 py-3 font-medium">{{ t('referral.rewardDate') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('referral.sourceUser') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('referral.orderNo') }}</th>
+                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.orderAmount') }}</th>
+                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.commissionRate') }}</th>
+                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.commission') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('common.status') }}</th>
+                  <th class="px-4 py-3 font-medium">{{ t('referral.availableAt') }}</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                <tr v-for="reward in rewards.items" :key="reward.id" class="text-gray-700 dark:text-gray-300">
+                  <td class="px-4 py-3 text-gray-500">{{ formatDate(reward.created_at) }}</td>
+                  <td class="px-4 py-3">
+                    <div class="font-medium text-gray-900 dark:text-white">
+                      {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
+                    </div>
+                    <div v-if="reward.source_user_email || reward.invitee_email" class="text-xs text-gray-500">
+                      {{ reward.source_user_email || reward.invitee_email }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-3 font-mono text-xs">{{ reward.external_order_id || (reward.recharge_order_id ? ('#' + reward.recharge_order_id) : '-') }}</td>
+                  <td class="px-4 py-3 text-right tabular-nums">{{ formatMoney(reward.order_paid_amount) }}</td>
+                  <td class="px-4 py-3 text-right tabular-nums">
+                    {{ reward.rate_snapshot != null ? ((Number(reward.rate_snapshot) * 100).toFixed(1) + '%') : '-' }}
+                  </td>
+                  <td class="px-4 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">
+                    +{{ formatMoney(reward.reward_amount) }}
+                  </td>
+                  <td class="px-4 py-3">
+                    <span
+                      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
+                      :class="reward.status === 'available' || reward.status === 'paid' || reward.status === 'settled'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                        : reward.status === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                          : 'bg-gray-100 text-gray-800 dark:bg-dark-800 dark:text-gray-300'"
+                    >
+                      {{ formatStatus(reward.status) }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-gray-500">
+                    <template v-if="reward.status === 'pending' && reward.available_at">{{ formatDate(reward.available_at) }}</template>
+                    <template v-else>-</template>
+                  </td>
+                </tr>
+                <tr v-if="!rewards.items.length">
+                  <td colspan="8" class="px-4 py-8 text-center text-gray-500">
+                    {{ t('referral.noRewards') }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-if="rewards.pages > 1" class="mt-4 flex items-center justify-between text-sm">
+            <span class="text-gray-500 dark:text-gray-400">{{ t('common.totalPrefix', '共') }} {{ rewards.total }} {{ t('common.totalSuffix', '条') }}</span>
+            <div class="flex gap-1">
+              <button class="btn btn-secondary btn-sm" :disabled="rewards.page <= 1" @click="loadRewardsPage(rewards.page - 1)">{{ t('common.prevPage', '上一页') }}</button>
+              <span class="px-3 py-1.5 text-gray-700 dark:text-gray-300">{{ rewards.page }}/{{ rewards.pages }}</span>
+              <button class="btn btn-secondary btn-sm" :disabled="rewards.page >= rewards.pages" @click="loadRewardsPage(rewards.page + 1)">{{ t('common.nextPage', '下一页') }}</button>
+            </div>
+          </div>
+        </section>
+
         <!-- Logs section -->
         <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <!-- 邀请记录 -->
@@ -544,6 +620,7 @@ const creatingWithdrawal = ref(false)
 
 const overview = ref<ReferralCenterOverview | null>(null)
 const invitees = ref<BasePaginationResponse<ReferralInvitee>>({ items: [], total: 0, page: 1, page_size: 10, pages: 1 })
+const rewards = ref<BasePaginationResponse<UserInviteeReward>>({ items: [], total: 0, page: 1, page_size: 15, pages: 1 })
 const ledger = ref<BasePaginationResponse<CommissionLedgerEntry>>({ items: [], total: 0, page: 1, page_size: 15, pages: 1 })
 const withdrawals = ref<BasePaginationResponse<CommissionWithdrawal>>({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
 const payoutAccounts = ref<CommissionPayoutAccount[]>([])
@@ -646,6 +723,7 @@ async function loadAll() {
 
     if (!overview.value?.referral_enabled) {
       invitees.value = { items: [], total: 0, page: 1, page_size: 10, pages: 1 }
+      rewards.value = { items: [], total: 0, page: 1, page_size: 15, pages: 1 }
       ledger.value = { items: [], total: 0, page: 1, page_size: 15, pages: 1 }
       withdrawals.value = { items: [], total: 0, page: 1, page_size: 20, pages: 1 }
       expandedInviteeId.value = null
@@ -653,16 +731,35 @@ async function loadAll() {
       return
     }
 
-    const [inviteesData, ledgerData, withdrawalsData] = await Promise.all([
+    // Isolate failures so one section (e.g. rewards) cannot blank the rest.
+    const results = await Promise.allSettled([
       referralAPI.getInvitees(1, 10),
+      referralAPI.getRewards(1, 15),
       referralAPI.getLedger(1, 15),
       referralAPI.getWithdrawals()
     ])
-    invitees.value = inviteesData
-    ledger.value = ledgerData
-    withdrawals.value = withdrawalsData
+    const labels = [
+      t('referral.invitees'),
+      t('referral.rewardsTitle'),
+      t('referral.ledger'),
+      t('referral.withdrawalRecords')
+    ]
+    const failures: string[] = []
+    if (results[0].status === 'fulfilled') invitees.value = results[0].value
+    else failures.push(labels[0])
+    if (results[1].status === 'fulfilled') rewards.value = results[1].value
+    else failures.push(labels[1])
+    if (results[2].status === 'fulfilled') ledger.value = results[2].value
+    else failures.push(labels[2])
+    if (results[3].status === 'fulfilled') withdrawals.value = results[3].value
+    else failures.push(labels[3])
+    if (failures.length) {
+      appStore.showError(
+        t('referral.partialLoadFailed', { sections: failures.join(', ') })
+      )
+    }
   } catch (error) {
-    appStore.showError((error as Error).message || t('common.operationFailed', '加载失败'))
+    appStore.showError((error as Error).message || t('common.operationFailed'))
   } finally {
     loading.value = false
   }
@@ -681,6 +778,14 @@ async function loadInviteesPage(page: number) {
 async function loadLedgerPage(page: number) {
   try {
     ledger.value = await referralAPI.getLedger(page, 15)
+  } catch (error) {
+    appStore.showError((error as Error).message || t('common.operationFailed', '加载失败'))
+  }
+}
+
+async function loadRewardsPage(page: number) {
+  try {
+    rewards.value = await referralAPI.getRewards(page, 15)
   } catch (error) {
     appStore.showError((error as Error).message || t('common.operationFailed', '加载失败'))
   }
@@ -785,25 +890,10 @@ function formatEntryType(entryType: string): string {
 }
 
 function formatStatus(status: string): string {
-  const map: Record<string, string> = {
-    'pending': '待处理',
-    'pending_review': '待审核',
-    'approved': '已批准',
-    'rejected': '已拒绝',
-    'paid': '已打款',
-    'available': '可用',
-    'frozen': '已冻结',
-    'reversed': '已撤销',
-    'partially_reversed': '部分撤销',
-    'partially_frozen': '部分冻结',
-    'partially_paid': '部分打款',
-    'credited': '已入账',
-    'refunded': '已退款',
-    'active': '正常',
-    'settled': '已结算',
-    'withdrawn': '已提现',
-  }
-  return map[status] || status
+  if (!status) return '-'
+  const key = `referral.status.${status}`
+  const translated = t(key)
+  return translated === key ? status : translated
 }
 
 function formatDate(value?: string | Date | null) {

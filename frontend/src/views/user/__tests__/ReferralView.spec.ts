@@ -6,6 +6,7 @@ import ReferralView from '../ReferralView.vue'
 const {
   getOverview,
   getInvitees,
+  getRewards,
   getLedger,
   getWithdrawals,
   getPayoutAccounts,
@@ -19,6 +20,7 @@ const {
 } = vi.hoisted(() => ({
   getOverview: vi.fn(),
   getInvitees: vi.fn(),
+  getRewards: vi.fn(),
   getLedger: vi.fn(),
   getWithdrawals: vi.fn(),
   getPayoutAccounts: vi.fn(),
@@ -39,6 +41,7 @@ vi.mock('@/api/referral', () => ({
   default: {
     getOverview,
     getInvitees,
+    getRewards,
     getLedger,
     getWithdrawals,
     getPayoutAccounts,
@@ -49,6 +52,7 @@ vi.mock('@/api/referral', () => ({
   },
   getOverview,
   getInvitees,
+  getRewards,
   getLedger,
   getWithdrawals,
   getPayoutAccounts,
@@ -100,6 +104,22 @@ describe('user ReferralView', () => {
       total_commission: 69
     })
     getInvitees.mockResolvedValue({ items: [{ user_id: 10, email: 'invitee@example.com', username: 'invitee', bound_at: '2026-04-09T00:00:00Z', second_level_num: 1, total_recharge: 0 }], total: 1, page: 1, page_size: 20, pages: 1 })
+    getRewards.mockResolvedValue({
+      items: [{
+        id: 9,
+        source_user_email: 'invitee@example.com',
+        external_order_id: 'ORD-1',
+        order_paid_amount: 100,
+        rate_snapshot: 0.1,
+        reward_amount: 10,
+        status: 'available',
+        created_at: '2026-04-09T00:00:00Z'
+      }],
+      total: 1,
+      page: 1,
+      page_size: 15,
+      pages: 1
+    })
     getLedger.mockResolvedValue({ items: [{ id: 1, user_id: 7, entry_type: 'reward_pending_credit', bucket: 'pending', amount: 12, currency: 'CNY', created_at: '2026-04-09T00:00:00Z' }], total: 1, page: 1, page_size: 20, pages: 1 })
     getWithdrawals.mockResolvedValue({ items: [{ id: 1, user_id: 7, withdrawal_no: 'WD001', amount: 20, fee_amount: 1, net_amount: 19, currency: 'CNY', status: 'paid', payout_method: 'alipay', created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' }], total: 1, page: 1, page_size: 20, pages: 1 })
     getPayoutAccounts.mockResolvedValue([{ id: 1, user_id: 7, method: 'alipay', account_name: 'Alice', account_no_masked: 'alice@example.com', is_default: true, status: 'active', created_at: '2026-04-01T00:00:00Z', updated_at: '2026-04-01T00:00:00Z' }])
@@ -121,6 +141,8 @@ describe('user ReferralView', () => {
     expect(wrapper.text()).toContain('69.00')
     expect(wrapper.text()).toContain('invitee@example.com')
     expect(wrapper.text()).toContain('WD001')
+    expect(wrapper.text()).toContain('ORD-1')
+    expect(wrapper.text()).toContain('10.00')
   })
 
   it('calls API endpoints on mount', async () => {
@@ -135,9 +157,28 @@ describe('user ReferralView', () => {
 
     expect(getOverview).toHaveBeenCalled()
     expect(getInvitees).toHaveBeenCalled()
+    expect(getRewards).toHaveBeenCalled()
     expect(getLedger).toHaveBeenCalled()
     expect(getWithdrawals).toHaveBeenCalled()
     expect(getPayoutAccounts).toHaveBeenCalled()
+  })
+
+  it('keeps invitees and withdrawals when getRewards fails', async () => {
+    getRewards.mockRejectedValueOnce(new Error('rewards down'))
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('invitee@example.com')
+    expect(wrapper.text()).toContain('WD001')
+    expect(wrapper.text()).not.toContain('ORD-1')
+    expect(showError).toHaveBeenCalled()
   })
 
   it('displays commission summary cards', async () => {

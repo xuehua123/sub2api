@@ -201,6 +201,7 @@ export default {
     notificationRobots: '告警规则与通知',
     referral: '推荐返佣',
     referralOverview: '推荐概览',
+    referralRewards: '佣金明细',
     referralWithdrawals: '提现管理',
     securityAudit: '安全审计',
     contentModeration: '内容审核',

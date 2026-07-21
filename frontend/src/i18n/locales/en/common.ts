@@ -201,6 +201,7 @@ export default {
     notificationRobots: 'Alert Rules & Notifications',
     referral: 'Referral',
     referralOverview: 'Referral Overview',
+    referralRewards: 'Commission Details',
     referralWithdrawals: 'Withdrawals',
     securityAudit: 'Security Audit',
     contentModeration: 'Content Moderation',

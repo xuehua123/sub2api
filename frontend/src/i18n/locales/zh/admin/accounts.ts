@@ -2,6 +2,11 @@ export default {
     accounts: {
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
+      upstreamConnectionFilterChip: '上游连接：{name}',
+      clearUpstreamConnectionFilter: '清除上游连接筛选',
+      runtimeTrafficFilterChip: '来自运行流量（按当前分组成员）',
+      runtimeTrafficFilterHint: '运行列分组来自今日请求日志；账号列表按当前所属分组筛选。账号改组或分组删除后，列表可能不包含产生该流量的账号。',
+      clearRuntimeTrafficFilterHint: '关闭此提示',
       createAccount: '添加账号',
       autoRefresh: '自动刷新',
       autoRateMultiplierPriority: '自动按倍率排序',

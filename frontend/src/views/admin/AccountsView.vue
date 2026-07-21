@@ -3,14 +3,53 @@
     <TablePageLayout>
       <template #filters>
         <div class="flex flex-wrap-reverse items-start justify-between gap-3">
-          <AccountTableFilters
-            v-model:searchQuery="params.search"
-            :filters="params"
-            :groups="visibleAccountGroups"
-            @update:filters="(newFilters) => Object.assign(params, newFilters)"
-            @change="debouncedReload"
-            @update:searchQuery="debouncedReload"
-          />
+          <div class="min-w-0 flex-1 space-y-2">
+            <AccountTableFilters
+              v-model:searchQuery="params.search"
+              :filters="params"
+              :groups="visibleAccountGroups"
+              @update:filters="(newFilters) => Object.assign(params, newFilters)"
+              @change="debouncedReload"
+              @update:searchQuery="debouncedReload"
+            />
+            <!-- Visible chips for deep-linked upstream connection scope (otherwise sticky & invisible). -->
+            <div
+              v-if="params.upstream_connection_id || runtimeTrafficHint"
+              class="flex flex-wrap items-center gap-2"
+            >
+              <span
+                v-if="params.upstream_connection_id"
+                class="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 py-1 pl-2.5 pr-1 text-xs font-medium text-sky-800 dark:border-sky-900/50 dark:bg-sky-950/40 dark:text-sky-200"
+              >
+                <span class="max-w-[18rem] truncate">
+                  {{ t('admin.accounts.upstreamConnectionFilterChip', { name: upstreamConnectionFilterLabel }) }}
+                </span>
+                <button
+                  type="button"
+                  class="rounded-full p-0.5 text-sky-600 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900/50"
+                  :title="t('admin.accounts.clearUpstreamConnectionFilter')"
+                  @click="clearUpstreamConnectionFilter"
+                >
+                  <Icon name="x" size="sm" />
+                </button>
+              </span>
+              <span
+                v-if="runtimeTrafficHint"
+                class="inline-flex max-w-full items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 py-1 pl-2.5 pr-1 text-xs font-medium text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200"
+                :title="t('admin.accounts.runtimeTrafficFilterHint')"
+              >
+                <span class="truncate">{{ t('admin.accounts.runtimeTrafficFilterChip') }}</span>
+                <button
+                  type="button"
+                  class="rounded-full p-0.5 text-amber-700 hover:bg-amber-100 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                  :title="t('admin.accounts.clearRuntimeTrafficFilterHint')"
+                  @click="clearRuntimeTrafficHint"
+                >
+                  <Icon name="x" size="sm" />
+                </button>
+              </span>
+            </div>
+          </div>
           <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
@@ -548,7 +587,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -618,6 +657,7 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const route = useRoute()
+const router = useRouter()
 
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
@@ -978,6 +1018,31 @@ const upstreamConnectionByAccountID = computed(() => {
 })
 
 const upstreamConnectionForAccount = (accountID: number) => upstreamConnectionByAccountID.value.get(accountID) ?? null
+
+const upstreamConnectionFilterLabel = computed(() => {
+  const raw = String(params.upstream_connection_id || '').trim()
+  const id = Number(raw)
+  if (!Number.isFinite(id) || id <= 0) return raw || '-'
+  const connection = upstreamConnections.value.find((item) => item.id === id)
+  return connection?.name ? `${connection.name} (#${id})` : `#${id}`
+})
+
+const runtimeTrafficHint = computed(() => routeQueryScalar(route.query.runtime_traffic) === '1')
+
+const clearUpstreamConnectionFilter = () => {
+  params.upstream_connection_id = ''
+  const nextQuery = { ...route.query } as Record<string, string | string[] | undefined>
+  delete nextQuery.upstream_connection_id
+  delete nextQuery.runtime_traffic
+  void router.replace({ query: nextQuery })
+  void reload()
+}
+
+const clearRuntimeTrafficHint = () => {
+  const nextQuery = { ...route.query } as Record<string, string | string[] | undefined>
+  delete nextQuery.runtime_traffic
+  void router.replace({ query: nextQuery })
+}
 
 const upstreamBindingByAccountID = computed(() => {
   const mapping = new Map<number, UpstreamAccountBinding>()

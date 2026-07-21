@@ -43,7 +43,7 @@
               class="btn btn-secondary"
               :title="t('admin.upstreamConnections.runtime.refreshTitle')"
               :disabled="loading || runtimeRefreshing"
-              @click="refreshRuntimeOverview"
+              @click="handlePageRuntimeRefresh"
             >
               <Icon name="refresh" size="md" :class="runtimeRefreshing ? 'animate-spin' : ''" />
               <span class="ml-2">{{ t('admin.upstreamConnections.runtime.refresh') }}</span>
@@ -86,8 +86,8 @@
           @sort="handleTableSort"
         >
           <template #cell-name="{ row }">
-            <button class="text-left" @click="openDetails(row)">
-              <span class="block font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400">
+            <button class="row-name text-left" :title="t('admin.upstreamConnections.detail.connectionAndUsage')" @click="openDetails(row)">
+              <span class="row-name-label block font-medium text-gray-900 hover:text-primary-600 dark:text-white dark:hover:text-primary-400">
                 {{ row.name }}
               </span>
               <span class="block max-w-[280px] truncate text-xs text-gray-500 dark:text-gray-400">
@@ -120,27 +120,85 @@
             </div>
           </template>
           <template #cell-runtime="{ row }">
-            <div class="w-[152px] overflow-hidden text-xs" :title="runtimeSummaryTitle(row)">
-              <template v-if="row.runtime_available">
-                <div class="truncate tabular-nums text-gray-600 dark:text-gray-300">
-                  {{ t('admin.upstreamConnections.runtime.compactOverview', { accounts: row.binding_count, concurrency: runtimeCompactConcurrencyLabel(row) }) }}
-                </div>
-                <div v-if="runtimeGroups(row).length" class="mt-0.5 flex gap-1 overflow-x-auto whitespace-nowrap pb-px text-[11px] tabular-nums">
+            <!-- Compact list cell: accounts|concurrency + group rows with cost / 5m volume / rate -->
+            <div class="w-[292px] min-w-[292px]">
+              <div
+                v-if="row.runtime_available"
+                class="rounded-md border border-gray-200/90 bg-white dark:border-dark-600 dark:bg-dark-800/70"
+              >
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-1 border-b border-gray-100 px-2 py-1 text-left transition hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/50"
+                  :title="runtimeSummaryTitle(row)"
+                  @click="openDetails(row)"
+                >
+                  <div class="min-w-0 flex-1 truncate text-[11px] tabular-nums text-gray-700 dark:text-gray-200">
+                    <span class="font-semibold text-gray-900 dark:text-gray-100">{{ row.binding_count }}</span>
+                    <span class="text-gray-500 dark:text-gray-400"> {{ t('admin.upstreamConnections.runtime.accountsUnit') }}</span>
+                    <span class="mx-1 text-gray-300 dark:text-dark-500">|</span>
+                    <span class="text-gray-600 dark:text-gray-300">{{ runtimeCompactConcurrencyLabel(row) }}</span>
+                  </div>
+                  <Icon name="chevronRight" size="sm" class="shrink-0 text-gray-400" />
+                </button>
+
+                <div v-if="runtimeGroups(row).length" class="px-1.5 py-0.5">
                   <button
-                    v-for="group in runtimeGroups(row)"
+                    v-for="group in runtimeSummaryGroups(row)"
                     :key="group.group_id"
-                    class="shrink-0 text-primary-700 hover:underline dark:text-primary-300"
+                    type="button"
+                    data-testid="runtime-group-row"
+                    class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-2 rounded px-1 py-0.5 text-left transition hover:bg-gray-50 dark:hover:bg-dark-700/40"
                     :title="runtimeGroupTitle(group)"
                     @click="openAccountGroup(row.id, group.group_id)"
                   >
-                    {{ runtimeCompactGroupLabel(group) }}
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="runtimeSuccessDotClass(group)" />
+                      <span class="truncate text-[11px] font-medium text-gray-800 dark:text-gray-100">
+                        {{ runtimeGroupDisplayName(group) }}
+                      </span>
+                    </span>
+                    <span class="flex shrink-0 items-center gap-1.5 text-[10px] tabular-nums">
+                      <span class="font-medium text-emerald-600 dark:text-emerald-400">{{ runtimeGroupCostLabel(group) }}</span>
+                      <span class="text-gray-300 dark:text-dark-500">·</span>
+                      <!-- 5m volume must stay list-visible (1/1 vs 1000/1000). -->
+                      <span class="font-semibold text-gray-600 dark:text-gray-300" data-testid="runtime-group-5m-count">
+                        {{ runtimeGroupRequestLabel(group) }}
+                      </span>
+                      <span class="text-gray-300 dark:text-dark-500">·</span>
+                      <span class="font-bold" :class="runtimeSuccessTextClass(group)">{{ runtimeGroupRateLabel(group) }}</span>
+                    </span>
+                  </button>
+                  <button
+                    v-if="runtimeHiddenGroupCount(row) > 0"
+                    type="button"
+                    class="w-full rounded px-1 py-0.5 text-left text-[10px] font-medium text-sky-600 hover:text-sky-700 dark:text-sky-400"
+                    @click="openDetails(row)"
+                  >
+                    {{ t('admin.upstreamConnections.runtime.moreGroups', { count: runtimeHiddenGroupCount(row) }) }} →
                   </button>
                 </div>
-                <p v-else class="mt-0.5 truncate text-gray-400 dark:text-gray-500">{{ t('admin.upstreamConnections.runtime.noTraffic') }}</p>
-              </template>
-              <div v-else class="flex items-center gap-1 text-amber-600 dark:text-amber-300">
-                <span class="truncate" :title="row.runtime_error">{{ t('admin.upstreamConnections.runtime.unavailable') }}</span>
-                <button class="rounded p-0.5 hover:bg-amber-50 dark:hover:bg-amber-900/20" :title="t('admin.upstreamConnections.runtime.retry')" @click="refreshRuntimeOverview">
+                <button
+                  v-else
+                  type="button"
+                  class="w-full px-2 py-1 text-left text-[11px] text-gray-400 hover:bg-gray-50 dark:text-gray-500 dark:hover:bg-dark-700/40"
+                  @click="openDetails(row)"
+                >
+                  {{ t('admin.upstreamConnections.runtime.noTraffic') }}
+                </button>
+              </div>
+
+              <div
+                v-else
+                class="flex items-center gap-1.5 rounded-md border border-amber-200/80 bg-amber-50/70 px-2 py-1 text-xs text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300"
+              >
+                <span class="min-w-0 flex-1 truncate" :title="row.runtime_error">{{ t('admin.upstreamConnections.runtime.unavailable') }}</span>
+                <button
+                  type="button"
+                  class="rounded p-0.5 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                  :title="t('admin.upstreamConnections.runtime.retryRow')"
+                  data-testid="runtime-row-retry"
+                  @click="handleRowRuntimeRefresh(row.id)"
+                >
                   <Icon name="refresh" size="sm" :class="runtimeRefreshing ? 'animate-spin' : ''" />
                 </button>
               </div>
@@ -176,9 +234,6 @@
               </a>
               <button class="rounded p-1.5 text-gray-500 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/20" :title="t('admin.upstreamConnections.probe')" :disabled="probingIds.has(row.id)" @click="probeConnection(row)">
                 <Icon name="refresh" size="sm" :class="probingIds.has(row.id) ? 'animate-spin' : ''" />
-              </button>
-              <button class="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700" :title="t('common.view')" @click="openDetails(row)">
-                <Icon name="eye" size="sm" />
               </button>
               <button class="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700" :title="t('common.edit')" @click="openEdit(row)">
                 <Icon name="edit" size="sm" />
@@ -319,6 +374,119 @@
           </div>
         </div>
 
+        <section class="rounded-xl border border-gray-200 bg-slate-50/60 p-4 dark:border-dark-600 dark:bg-dark-800/50">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.upstreamConnections.runtime.detailTitle') }}</h3>
+              <p class="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.runtime.detailHint') }}</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <span
+                v-if="details.runtime_fetched_at"
+                class="rounded-full bg-white px-2.5 py-1 text-[11px] text-gray-500 shadow-sm dark:bg-dark-700 dark:text-gray-400"
+              >
+                {{ t('admin.upstreamConnections.runtime.updatedAt', { time: formatDateTime(details.runtime_fetched_at) }) }}
+              </span>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-[11px] font-medium text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:opacity-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-200 dark:hover:bg-dark-700"
+                :title="t('admin.upstreamConnections.runtime.refreshTitle')"
+                :disabled="runtimeRefreshing"
+                data-testid="runtime-detail-refresh"
+                @click="handleDetailRuntimeRefresh"
+              >
+                <Icon name="refresh" size="sm" :class="runtimeRefreshing ? 'animate-spin' : ''" />
+                {{ t('admin.upstreamConnections.runtime.refresh') }}
+              </button>
+            </div>
+          </div>
+          <div class="mt-3 grid gap-3 sm:grid-cols-4">
+            <div class="rounded-xl border border-gray-200/80 bg-white px-3 py-2.5 shadow-sm dark:border-dark-600 dark:bg-dark-800">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.runtime.boundAccounts', { count: details.binding_count }) }}</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ details.binding_count }}</p>
+            </div>
+            <div class="rounded-xl border border-gray-200/80 bg-white px-3 py-2.5 shadow-sm dark:border-dark-600 dark:bg-dark-800">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.runtime.currentConcurrency') }}</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ runtimeConcurrencyTotal(details) }}</p>
+            </div>
+            <div class="rounded-xl border border-gray-200/80 bg-white px-3 py-2.5 shadow-sm dark:border-dark-600 dark:bg-dark-800">
+              <p class="text-[11px] text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.runtime.waiting') }}</p>
+              <p class="mt-1 text-xl font-semibold tabular-nums text-gray-900 dark:text-white">{{ runtimeWaitingTotal(details) }}</p>
+            </div>
+            <div class="rounded-xl border border-emerald-200/70 bg-emerald-50/50 px-3 py-2.5 shadow-sm dark:border-emerald-900/40 dark:bg-emerald-950/20">
+              <p class="text-[11px] text-emerald-700/80 dark:text-emerald-300/80">{{ t('admin.upstreamConnections.runtime.todayUsageLabel') }}</p>
+              <p class="mt-1 text-sm font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{{ runtimeTodayUsageLabel(details) }}</p>
+            </div>
+          </div>
+          <div class="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-dark-600">
+            <div class="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
+              {{ t('admin.upstreamConnections.runtime.groupRuntime') }}
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-100 text-sm dark:divide-dark-700">
+                <thead class="bg-white text-left text-[11px] uppercase tracking-wide text-gray-400 dark:bg-dark-900 dark:text-gray-500">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">{{ t('admin.upstreamConnections.detail.groupName') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.fiveMinuteRequests') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.successFailure') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.successRate') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.todayCost') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.todayRequests') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+                  <tr v-for="group in runtimeGroups(details)" :key="group.group_id" class="bg-white hover:bg-slate-50 dark:bg-dark-900 dark:hover:bg-dark-800">
+                    <td class="px-3 py-2.5">
+                      <button class="inline-flex items-center gap-2 font-medium text-primary-700 hover:underline dark:text-primary-300" @click="openAccountGroup(details.id, group.group_id)">
+                        <span class="h-2 w-2 rounded-full" :class="runtimeSuccessDotClass(group)" />
+                        {{ runtimeGroupDisplayName(group) }}
+                      </button>
+                    </td>
+                    <td class="px-3 py-2.5 text-right tabular-nums">{{ group.five_minute_requests.toLocaleString() }}</td>
+                    <td class="px-3 py-2.5 text-right tabular-nums">{{ group.five_minute_success_count.toLocaleString() }} / {{ group.five_minute_error_count.toLocaleString() }}</td>
+                    <td class="px-3 py-2.5 text-right">
+                      <span class="inline-flex rounded-md px-1.5 py-0.5 text-xs font-bold tabular-nums" :class="runtimeSuccessBadgeClass(group)">{{ runtimeGroupRateLabel(group) }}</span>
+                    </td>
+                    <td class="px-3 py-2.5 text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-300">${{ formatCost(group.today.account_cost) }}</td>
+                    <td class="px-3 py-2.5 text-right tabular-nums">{{ group.today.requests.toLocaleString() }}</td>
+                  </tr>
+                  <tr v-if="runtimeGroups(details).length === 0">
+                    <td colspan="6" class="px-3 py-8 text-center text-gray-500">{{ t('admin.upstreamConnections.runtime.noTraffic') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="mt-4 overflow-hidden rounded-xl border border-gray-200 dark:border-dark-600">
+            <div class="border-b border-gray-100 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 dark:border-dark-700 dark:bg-dark-800 dark:text-gray-300">
+              {{ t('admin.upstreamConnections.runtime.accountRuntime') }}
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-100 text-sm dark:divide-dark-700">
+                <thead class="bg-white text-left text-[11px] uppercase tracking-wide text-gray-400 dark:bg-dark-900 dark:text-gray-500">
+                  <tr>
+                    <th class="px-3 py-2 font-medium">{{ t('admin.upstreamConnections.runtime.account') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.currentConcurrency') }}</th>
+                    <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.waiting') }}</th>
+                    <th class="px-3 py-2 font-medium">{{ t('admin.upstreamConnections.runtime.activeGroups') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
+                  <tr v-for="account in (details.runtime_accounts || [])" :key="account.account_id" class="bg-white dark:bg-dark-900">
+                    <td class="px-3 py-2.5 font-medium text-gray-900 dark:text-white">{{ account.account_name || `#${account.account_id}` }}</td>
+                    <td class="px-3 py-2.5 text-right tabular-nums">{{ account.current_concurrency ?? '-' }}</td>
+                    <td class="px-3 py-2.5 text-right tabular-nums">{{ account.waiting_count ?? '-' }}</td>
+                    <td class="px-3 py-2.5 text-xs text-gray-600 dark:text-gray-300">{{ runtimeAccountGroupsLabel(account) }}</td>
+                  </tr>
+                  <tr v-if="!(details.runtime_accounts || []).length">
+                    <td colspan="4" class="px-3 py-8 text-center text-gray-500">{{ t('admin.upstreamConnections.runtime.noBoundAccounts') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
         <section>
           <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.upstreamConnections.detail.groups') }}</h3>
           <div class="mt-2 overflow-x-auto border-y border-gray-200 dark:border-dark-600">
@@ -327,8 +495,8 @@
                 <tr><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.groupName') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.multiplier') }}</th><th class="px-3 py-2">{{ t('admin.upstreamConnections.detail.source') }}</th></tr>
               </thead>
               <tbody class="divide-y divide-gray-100 dark:divide-dark-700">
-                <tr v-for="group in details.groups" :key="group.id"><td class="px-3 py-2">{{ group.name }}</td><td class="px-3 py-2">{{ group.rate_multiplier === null ? t('admin.upstreamConnections.unknown') : `${group.rate_multiplier}x` }}</td><td class="px-3 py-2 text-xs text-gray-500">{{ group.source }}</td></tr>
-                <tr v-if="details.groups.length === 0"><td colspan="3" class="px-3 py-6 text-center text-gray-500">{{ t('admin.upstreamConnections.detail.noGroups') }}</td></tr>
+                <tr v-for="group in (details.groups || [])" :key="group.id"><td class="px-3 py-2">{{ group.name }}</td><td class="px-3 py-2">{{ group.rate_multiplier === null ? t('admin.upstreamConnections.unknown') : `${group.rate_multiplier}x` }}</td><td class="px-3 py-2 text-xs text-gray-500">{{ group.source }}</td></tr>
+                <tr v-if="!(details.groups || []).length"><td colspan="3" class="px-3 py-6 text-center text-gray-500">{{ t('admin.upstreamConnections.detail.noGroups') }}</td></tr>
               </tbody>
             </table>
           </div>
@@ -336,7 +504,7 @@
 
         <UpstreamConnectionUsagePanel
           :usage="detailsUsage"
-          :bindings="details.bindings"
+          :bindings="details.bindings || []"
           :loading="detailsUsageLoading"
           :error="detailsUsageError"
           @retry="loadDetailsUsage(details.id)"
@@ -404,7 +572,7 @@ const todayStatsAvailable = ref(true)
 const runtimeRefreshing = ref(false)
 const proxies = ref<Proxy[]>([])
 const probingIds = ref(new Set<number>())
-const details = ref<UpstreamConnection | null>(null)
+const details = ref<UpstreamConnectionRow | null>(null)
 const detailsUsage = ref<UpstreamConnectionTodayUsage | null>(null)
 const detailsUsageLoading = ref(false)
 const detailsUsageError = ref('')
@@ -433,7 +601,7 @@ const columns = computed<Column[]>(() => [
   { key: 'provider', label: t('admin.upstreamConnections.columns.provider') },
   { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet'), sortable: true },
   { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayUsage'), sortable: true },
-  { key: 'runtime', label: t('admin.upstreamConnections.columns.runtime'), class: 'w-[152px] min-w-[152px]' },
+  { key: 'runtime', label: t('admin.upstreamConnections.columns.runtime'), class: 'w-[292px] min-w-[292px]' },
   { key: 'observations', label: t('admin.upstreamConnections.columns.observations'), sortable: true },
   { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync'), sortable: true },
   { key: 'status', label: t('admin.upstreamConnections.columns.status') },
@@ -552,12 +720,26 @@ function runtimeAccountUsage(account: UpstreamConnectionRuntimeAccount): { cost:
 }
 function runtimeCompactConcurrencyLabel(row: UpstreamConnectionRow): string {
   const runtimeAccounts = row.runtime_accounts ?? []
-  const known = runtimeAccounts.filter(account => account.current_concurrency !== null)
+  const known = runtimeAccounts.filter(account => account.current_concurrency !== null && account.current_concurrency !== undefined)
   if (known.length === 0) return t('admin.upstreamConnections.runtime.compactConcurrencyUnavailable')
   const total = known.reduce((sum, account) => sum + Number(account.current_concurrency || 0), 0)
-  return known.length === runtimeAccounts.length
-    ? t('admin.upstreamConnections.runtime.compactConcurrency', { count: total })
-    : t('admin.upstreamConnections.runtime.compactPartialConcurrency', { count: total })
+  // Treat missing bound accounts or null concurrency fields as partial visibility.
+  const partial =
+    known.length < runtimeAccounts.length ||
+    runtimeAccounts.length < Number(row.binding_count || 0)
+  return partial
+    ? t('admin.upstreamConnections.runtime.compactPartialConcurrency', { count: total })
+    : t('admin.upstreamConnections.runtime.compactConcurrency', { count: total })
+}
+function runtimeConcurrencyTotal(row: UpstreamConnectionRow): string {
+  const known = (row.runtime_accounts ?? []).filter(account => account.current_concurrency !== null)
+  if (known.length === 0) return '-'
+  return known.reduce((sum, account) => sum + Number(account.current_concurrency || 0), 0).toLocaleString()
+}
+function runtimeWaitingTotal(row: UpstreamConnectionRow): string {
+  const known = (row.runtime_accounts ?? []).filter(account => account.waiting_count !== null)
+  if (known.length === 0) return '-'
+  return known.reduce((sum, account) => sum + Number(account.waiting_count || 0), 0).toLocaleString()
 }
 function runtimeUsage(row: UpstreamConnectionRow): { cost: number; requests: number } {
   return (row.runtime_accounts ?? []).reduce((total, account) => {
@@ -592,16 +774,81 @@ function runtimeGroups(row: UpstreamConnectionRow): UpstreamConnectionRuntimeGro
     }
   }
   return [...groupsByID.values()].sort((left, right) => {
-    if (left.five_minute_requests !== right.five_minute_requests) return right.five_minute_requests - left.five_minute_requests
     if (left.today.account_cost !== right.today.account_cost) return right.today.account_cost - left.today.account_cost
+    if (left.five_minute_requests !== right.five_minute_requests) return right.five_minute_requests - left.five_minute_requests
     if (left.today.requests !== right.today.requests) return right.today.requests - left.today.requests
     return left.group_name.localeCompare(right.group_name)
   })
 }
+function runtimeGroupDisplayName(group: UpstreamConnectionRuntimeGroup): string {
+  const name = String(group.group_name || '').trim()
+  if (name) return name
+  // group_id=0 is log-level ungrouped traffic; positive missing join is a deleted group.
+  if (Number(group.group_id) === 0) return t('admin.upstreamConnections.runtime.ungroupedTraffic')
+  return t('admin.upstreamConnections.runtime.deletedGroup')
+}
 function runtimeCompactGroupLabel(group: UpstreamConnectionRuntimeGroup): string {
+  const name = runtimeGroupDisplayName(group)
   return group.five_minute_requests > 0
-    ? t('admin.upstreamConnections.runtime.compactGroupSuccessRate', { name: group.group_name, rate: (group.five_minute_success_count * 100 / group.five_minute_requests).toFixed(1) })
-    : t('admin.upstreamConnections.runtime.compactGroupNoRecentRequests', { name: group.group_name })
+    ? t('admin.upstreamConnections.runtime.compactGroupSuccessRate', { name, rate: (group.five_minute_success_count * 100 / group.five_minute_requests).toFixed(1) })
+    : t('admin.upstreamConnections.runtime.compactGroupNoRecentRequests', { name })
+}
+function runtimeSummaryGroups(row: UpstreamConnectionRow): UpstreamConnectionRuntimeGroup[] {
+  return runtimeGroups(row).slice(0, 2)
+}
+function runtimeHiddenGroupCount(row: UpstreamConnectionRow): number {
+  return Math.max(0, runtimeGroups(row).length - runtimeSummaryGroups(row).length)
+}
+function runtimeGroupRateLabel(group: UpstreamConnectionRuntimeGroup): string {
+  if (group.five_minute_requests <= 0) return '—'
+  return `${(group.five_minute_success_count * 100 / group.five_minute_requests).toFixed(1)}%`
+}
+function runtimeGroupRequestLabel(group: UpstreamConnectionRuntimeGroup): string {
+  // Keep short so list column always shows 5m volume next to success rate.
+  return group.five_minute_requests > 0
+    ? t('admin.upstreamConnections.runtime.fiveMinuteRequestsCompact', {
+        count: group.five_minute_requests.toLocaleString()
+      })
+    : t('admin.upstreamConnections.runtime.noRecentRequests')
+}
+function runtimeGroupCostLabel(group: UpstreamConnectionRuntimeGroup): string {
+  return `$${formatCost(group.today.account_cost)}`
+}
+function runtimeSuccessTier(group: UpstreamConnectionRuntimeGroup): 'none' | 'good' | 'warn' | 'bad' {
+  if (group.five_minute_requests <= 0) return 'none'
+  const rate = group.five_minute_success_count * 100 / group.five_minute_requests
+  if (rate >= 98) return 'good'
+  if (rate >= 90) return 'warn'
+  return 'bad'
+}
+function runtimeSuccessDotClass(group: UpstreamConnectionRuntimeGroup): string {
+  switch (runtimeSuccessTier(group)) {
+    case 'good': return 'bg-emerald-500'
+    case 'warn': return 'bg-amber-500'
+    case 'bad': return 'bg-red-500'
+    default: return 'bg-gray-300 dark:bg-dark-500'
+  }
+}
+function runtimeSuccessBadgeClass(group: UpstreamConnectionRuntimeGroup): string {
+  switch (runtimeSuccessTier(group)) {
+    case 'good': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+    case 'warn': return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+    case 'bad': return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+    default: return 'bg-gray-100 text-gray-500 dark:bg-dark-700 dark:text-gray-400'
+  }
+}
+function runtimeSuccessTextClass(group: UpstreamConnectionRuntimeGroup): string {
+  switch (runtimeSuccessTier(group)) {
+    case 'good': return 'text-emerald-600 dark:text-emerald-400'
+    case 'warn': return 'text-amber-600 dark:text-amber-400'
+    case 'bad': return 'text-red-600 dark:text-red-400'
+    default: return 'text-gray-400 dark:text-gray-500'
+  }
+}
+function runtimeAccountGroupsLabel(account: UpstreamConnectionRuntimeAccount): string {
+  const groups = account.groups ?? []
+  if (groups.length === 0) return t('admin.upstreamConnections.runtime.noTraffic')
+  return groups.map(group => runtimeGroupDisplayName(group)).join(' · ')
 }
 function runtimeGroupTitle(group: UpstreamConnectionRuntimeGroup): string {
   return `${runtimeCompactGroupLabel(group)} · ${t('admin.upstreamConnections.runtime.todayUsage', { cost: formatCost(group.today.account_cost), count: group.today.requests.toLocaleString() })}`
@@ -614,17 +861,21 @@ function runtimeSummaryTitle(row: UpstreamConnectionRow): string {
     runtimeCompactConcurrencyLabel(row),
     runtimeTodayUsageLabel(row),
     groupSummary,
-    row.runtime_fetched_at ? t('admin.upstreamConnections.runtime.updatedAt', { time: formatDateTime(row.runtime_fetched_at) }) : ''
+    row.runtime_fetched_at ? t('admin.upstreamConnections.runtime.updatedAt', { time: formatDateTime(row.runtime_fetched_at) }) : '',
+    t('admin.upstreamConnections.runtime.fiveMinuteWindowHint')
   ].filter(Boolean).join('\n')
 }
 function openAccountGroup(connectionID: number, groupID: number): void {
-	void router.push({
-		name: 'AdminAccounts',
-		query: {
-			group: groupID > 0 ? String(groupID) : 'ungrouped',
-			upstream_connection_id: String(connectionID)
-		}
-	})
+  // Runtime groups come from today's usage/error logs. Account list filters by
+  // current membership — they can diverge after rebinding. Flag the source so
+  // Accounts can show an explainable chip.
+  // group_id=0 is log-level ungrouped traffic, NOT membership "ungrouped".
+  const query: Record<string, string> = {
+    upstream_connection_id: String(connectionID),
+    runtime_traffic: '1'
+  }
+  if (groupID > 0) query.group = String(groupID)
+  void router.push({ name: 'AdminAccounts', query })
 }
 function errorMessage(error: unknown, fallback: string): string {
   const response = (error as { response?: { data?: { message?: string; detail?: string } }; message?: string })
@@ -657,6 +908,26 @@ function patchConnectionRow(updated: UpstreamConnection): void {
   allConnections.value = allConnections.value.map(merge)
   // Re-sort/page so balance / last-sync ordered lists move the refreshed row immediately.
   applySortAndPage(pagination.page)
+}
+
+function withRuntimeSnapshot(connection: UpstreamConnection, snapshot: UpstreamConnectionRow): UpstreamConnectionRow {
+  return {
+    ...connection,
+    id: snapshot.id,
+    wallet_amount: connection.wallet_amount ?? snapshot.wallet_amount,
+    wallet_currency: connection.wallet_currency || snapshot.wallet_currency,
+    wallet_usd: connection.wallet_usd ?? snapshot.wallet_usd,
+    wallet_unlimited: connection.wallet_unlimited ?? snapshot.wallet_unlimited,
+    wallet_reliability: connection.wallet_reliability || snapshot.wallet_reliability,
+    groups: connection.groups ?? snapshot.groups ?? [],
+    bindings: connection.bindings ?? snapshot.bindings ?? [],
+    today_requests: snapshot.today_requests,
+    today_cost: snapshot.today_cost,
+    runtime_available: snapshot.runtime_available,
+    runtime_error: snapshot.runtime_error,
+    runtime_fetched_at: snapshot.runtime_fetched_at,
+    runtime_accounts: snapshot.runtime_accounts
+  }
 }
 
 /** True when the local row is a newer probe/sync snapshot than the list payload. */
@@ -755,36 +1026,90 @@ async function loadConnections(page = pagination.page): Promise<void> {
 function boundRuntimeAccountIDs(rows: UpstreamConnectionRow[]): number[] {
   return [...new Set(rows.flatMap(row => row.bound_account_ids ?? []))]
 }
-async function refreshRuntimeOverview(): Promise<void> {
+
+/** Only runtime snapshot fields — never overwrite groups/bindings from full get(). */
+function mergeRuntimeSnapshot(
+  row: UpstreamConnectionRow,
+  snapshot: Pick<UpstreamConnectionRow, 'runtime_available' | 'runtime_error' | 'runtime_fetched_at' | 'runtime_accounts'>
+): UpstreamConnectionRow {
+  return {
+    ...row,
+    runtime_available: snapshot.runtime_available,
+    runtime_error: snapshot.runtime_error,
+    runtime_fetched_at: snapshot.runtime_fetched_at,
+    runtime_accounts: snapshot.runtime_accounts
+  }
+}
+
+function syncOpenDetailsRuntime(): void {
+  // Keep the open dialog's concurrency/traffic in sync without wiping groups/bindings.
+  if (!details.value) return
+  const listRow = allConnections.value.find(row => row.id === details.value!.id)
+  if (!listRow) return
+  details.value = mergeRuntimeSnapshot(details.value, {
+    runtime_available: listRow.runtime_available,
+    runtime_error: listRow.runtime_error,
+    runtime_fetched_at: listRow.runtime_fetched_at,
+    runtime_accounts: listRow.runtime_accounts
+  })
+}
+
+/** Click wrappers — never pass native Event into options-typed refresh. */
+function handlePageRuntimeRefresh(): void {
+  void refreshRuntimeOverview()
+}
+function handleRowRuntimeRefresh(connectionId: number): void {
+  void refreshRuntimeOverview({ connectionId })
+}
+function handleDetailRuntimeRefresh(): void {
+  if (!details.value) return
+  void refreshRuntimeOverview({ connectionId: details.value.id })
+}
+
+async function refreshRuntimeOverview(options?: { connectionId?: number }): Promise<void> {
   if (runtimeRefreshing.value) return
-  const accountIDs = boundRuntimeAccountIDs(allConnections.value)
+
+  // Page-level refresh: all listed connections. Detail button: only the open connection.
+  const connectionId = options?.connectionId
+  const targetRows =
+    connectionId != null
+      ? allConnections.value.filter(row => row.id === connectionId)
+      : allConnections.value
+  const accountIDs = boundRuntimeAccountIDs(targetRows)
   if (accountIDs.length === 0) return
 
+  const targetIds = new Set(targetRows.map(row => row.id))
   runtimeRefreshing.value = true
   try {
     const overview = await adminAPI.upstreamConnections.getRuntimeOverview(accountIDs)
     const accountsByID = new Map(overview.accounts.map(account => [account.account_id, account]))
     const fetchedAt = new Date().toISOString()
-    allConnections.value = allConnections.value.map(row => ({
-      ...row,
-      runtime_available: true,
-      runtime_error: '',
-      runtime_fetched_at: fetchedAt,
-      runtime_accounts: (row.bound_account_ids ?? [])
-        .map(accountID => accountsByID.get(accountID))
-        .filter((account): account is UpstreamConnectionRuntimeAccount => account !== undefined)
-    }))
+    allConnections.value = allConnections.value.map(row => {
+      if (!targetIds.has(row.id)) return row
+      return mergeRuntimeSnapshot(row, {
+        runtime_available: true,
+        runtime_error: '',
+        runtime_fetched_at: fetchedAt,
+        runtime_accounts: (row.bound_account_ids ?? [])
+          .map(accountID => accountsByID.get(accountID))
+          .filter((account): account is UpstreamConnectionRuntimeAccount => account !== undefined)
+      })
+    })
     applySortAndPage(pagination.page)
+    syncOpenDetailsRuntime()
   } catch (error: unknown) {
     const message = errorMessage(error, t('admin.upstreamConnections.runtime.unavailable'))
-    allConnections.value = allConnections.value.map(row => ({
-      ...row,
-      runtime_available: false,
-      runtime_error: message,
-      runtime_fetched_at: null,
-      runtime_accounts: []
-    }))
+    allConnections.value = allConnections.value.map(row => {
+      if (!targetIds.has(row.id)) return row
+      return mergeRuntimeSnapshot(row, {
+        runtime_available: false,
+        runtime_error: message,
+        runtime_fetched_at: null,
+        runtime_accounts: []
+      })
+    })
     applySortAndPage(pagination.page)
+    syncOpenDetailsRuntime()
     appStore.showError(t('admin.upstreamConnections.runtime.refreshFailed'))
   } finally {
     runtimeRefreshing.value = false
@@ -916,7 +1241,7 @@ async function probeConnection(connection: UpstreamConnection): Promise<void> {
     patchConnectionRow(result)
     appStore.showSuccess(t('admin.upstreamConnections.probeSuccess'))
     if (details.value?.id === result.id) {
-      details.value = result
+      details.value = withRuntimeSnapshot(result, details.value)
       await loadDetailsUsage(result.id)
     }
   } catch (error: unknown) {
@@ -925,20 +1250,25 @@ async function probeConnection(connection: UpstreamConnection): Promise<void> {
     setProbing(connection.id, false)
   }
 }
-async function openDetails(connection: UpstreamConnection): Promise<void> {
+async function openDetails(connection: UpstreamConnectionRow): Promise<void> {
   const generation = ++detailsGeneration
-  details.value = connection
+  const connectionId = connection.id
+  details.value = withRuntimeSnapshot(connection, connection)
   detailsUsage.value = null
   detailsUsageError.value = ''
   detailsUsageLoading.value = true
   try {
     const [connectionResult, usageResult] = await Promise.allSettled([
-      adminAPI.upstreamConnections.get(connection.id),
-      adminAPI.upstreamConnections.getTodayUsage(connection.id)
+      adminAPI.upstreamConnections.get(connectionId),
+      adminAPI.upstreamConnections.getTodayUsage(connectionId)
     ])
     if (generation !== detailsGeneration) return
     if (connectionResult.status === 'rejected') throw connectionResult.reason
-    details.value = connectionResult.value
+    // Prefer the latest list-row runtime snapshot so a mid-flight "刷新运行"
+    // is not overwritten by the GET that started at open time.
+    const latestRuntime =
+      allConnections.value.find(row => row.id === connectionId) ?? connection
+    details.value = withRuntimeSnapshot(connectionResult.value, latestRuntime)
     if (usageResult.status === 'fulfilled') {
       detailsUsage.value = usageResult.value
     } else {
