@@ -18,13 +18,16 @@ export function shouldSkipAccountHealthWhenColumnHidden(options: {
   drawerAccountId: number | null | undefined
   /** True when route has health=1 from old /ops/account-health bookmarks (may lack account_id). */
   routeHealthDeepLink?: boolean
+  /** True when loading solely to open global probe settings (must work with column hidden). */
+  forceSettingsLoad?: boolean
 }): boolean {
   if (!options.columnHidden) return false
-  // Drawer / deep-link must still load data when the column itself is hidden.
+  // Drawer / deep-link / settings dialog must still load data when the column itself is hidden.
   if (options.hasAccountIDsOverride) return false
   if (options.drawerOpen) return false
   if (options.drawerAccountId != null) return false
   if (options.routeHealthDeepLink) return false
+  if (options.forceSettingsLoad) return false
   return true
 }
 

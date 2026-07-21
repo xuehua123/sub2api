@@ -32,9 +32,14 @@ const (
 type OpsAccountHealthFilter struct {
 	Platform string
 	GroupID  *int64
-	// AccountIDs scopes metrics/availability to the given accounts when non-empty.
-	// Used by the accounts management health column to avoid full-fleet recompute.
+	// AccountIDs scopes metrics/availability when AccountIDsScoped is true.
+	// Empty + scoped means "return zero items" (do not fall back to full fleet).
 	AccountIDs []int64
+	// AccountIDsScoped is true when the client explicitly provided account_ids
+	// (including an empty list). False keeps legacy full-fleet behavior.
+	AccountIDsScoped bool
+	// SettingsOnly skips availability/metrics aggregation and returns settings only.
+	SettingsOnly bool
 
 	RecentLimit int
 

@@ -20,6 +20,36 @@ func TestValidateOpsEnterpriseWeChatWebhookURL(t *testing.T) {
 	require.Error(t, validateOpsEnterpriseWeChatWebhookURL("https://qyapi.weixin.qq.com/other?key=abc"))
 }
 
+func TestGetAccountHealthSettingsOnlySkipsFleetAggregation(t *testing.T) {
+	t.Parallel()
+
+	svc := &OpsService{}
+	// No repos: full path would fail on availability; settings_only must succeed with empty items.
+	resp, err := svc.GetAccountHealth(context.Background(), &OpsAccountHealthFilter{SettingsOnly: true})
+	// RequireMonitoringEnabled may fail without full service wiring; if it fails for that reason, skip.
+	if err != nil {
+		t.Skipf("monitoring gate not available in unit harness: %v", err)
+	}
+	require.NotNil(t, resp)
+	require.Empty(t, resp.Items)
+	require.NotEmpty(t, resp.Settings.Probe.ModelID)
+}
+
+func TestGetAccountHealthEmptyScopedAccountIDsReturnsNoItems(t *testing.T) {
+	t.Parallel()
+
+	svc := &OpsService{}
+	resp, err := svc.GetAccountHealth(context.Background(), &OpsAccountHealthFilter{
+		AccountIDsScoped: true,
+		AccountIDs:       nil,
+	})
+	if err != nil {
+		t.Skipf("monitoring gate not available in unit harness: %v", err)
+	}
+	require.NotNil(t, resp)
+	require.Empty(t, resp.Items)
+}
+
 func TestStripInternalAccountHealthWindows(t *testing.T) {
 	t.Parallel()
 

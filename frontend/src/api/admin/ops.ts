@@ -647,7 +647,13 @@ export async function getAccountHealth(params: {
   platform?: string
   group_id?: number | null
   recent_limit?: number
+  /**
+   * When provided (including empty array), the request is scoped and never falls back
+   * to full-fleet aggregation. Omit entirely only for legacy full-fleet consumers.
+   */
   account_ids?: number[] | string
+  /** Skip availability/metrics; return settings only (cheap path for probe settings UI). */
+  settings_only?: boolean
 } = {}): Promise<OpsAccountHealthResponse> {
   const query: Record<string, any> = {}
   if (params.platform) {
@@ -659,10 +665,14 @@ export async function getAccountHealth(params: {
   if (typeof params.recent_limit === 'number' && params.recent_limit > 0) {
     query.recent_limit = params.recent_limit
   }
-  if (Array.isArray(params.account_ids) && params.account_ids.length > 0) {
+  if (params.settings_only) {
+    query.settings_only = '1'
+  }
+  if (Array.isArray(params.account_ids)) {
+    // Always send the key when scoped, even if empty → zero items, no full-fleet scan.
     query.account_ids = params.account_ids.join(',')
-  } else if (typeof params.account_ids === 'string' && params.account_ids.trim()) {
-    query.account_ids = params.account_ids.trim()
+  } else if (typeof params.account_ids === 'string') {
+    query.account_ids = params.account_ids
   }
   const { data } = await apiClient.get<OpsAccountHealthResponse>('/admin/ops/account-health', { params: query })
   return data

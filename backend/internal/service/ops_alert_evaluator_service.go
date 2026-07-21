@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -819,7 +820,9 @@ func shouldDigestOpsAccountHealthNotification(item *OpsAccountHealthItem) bool {
 }
 
 func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx context.Context, items []*OpsAccountHealthItem, settings OpsAccountHealthSettings) int {
-	if s == nil || s.accountTestService == nil || !settings.Probe.Enabled || !settings.Recovery.Enabled {
+	// Auto-probe is controlled solely by Probe settings (interval / max_per_run / enabled).
+	// Recovery.Enabled only governs reopen recommendations & notifications — not probing itself.
+	if s == nil || s.accountTestService == nil || !settings.Probe.Enabled {
 		return 0
 	}
 	maxPerRun := settings.Probe.MaxPerRun
@@ -834,13 +837,21 @@ func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx conte
 		timeout = 20 * time.Second
 	}
 
-	runs := 0
+	candidates := make([]*OpsAccountHealthItem, 0, len(items))
 	for _, item := range items {
+		if shouldProbeAccountHealthRecovery(item, settings) {
+			candidates = append(candidates, item)
+		}
+	}
+	// Prefer accounts that never probed / probed longest ago so rotation is fair under max_per_run.
+	sort.SliceStable(candidates, func(i, j int) bool {
+		return accountHealthProbePriority(candidates[i]) < accountHealthProbePriority(candidates[j])
+	})
+
+	runs := 0
+	for _, item := range candidates {
 		if runs >= maxPerRun {
 			break
-		}
-		if !shouldProbeAccountHealthRecovery(item, settings) {
-			continue
 		}
 		if !s.tryAcquireAccountHealthProbeSlot(ctx, item.AccountID, settings) {
 			continue
@@ -853,6 +864,17 @@ func (s *OpsAlertEvaluatorService) scheduleAccountHealthRecoveryProbes(ctx conte
 		go s.runAccountHealthRecoveryProbe(accountID, modelID, prompt, mode, timeout)
 	}
 	return runs
+}
+
+// accountHealthProbePriority lower = probe sooner. Never-probed accounts rank first.
+func accountHealthProbePriority(item *OpsAccountHealthItem) int64 {
+	if item == nil {
+		return time.Now().UnixNano()
+	}
+	if item.Probe == nil || item.Probe.CheckedAt == nil || item.Probe.CheckedAt.IsZero() {
+		return 0
+	}
+	return item.Probe.CheckedAt.UTC().UnixNano()
 }
 
 func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64, modelID string, prompt string, mode string, timeout time.Duration) {
@@ -870,15 +892,21 @@ func (s *OpsAlertEvaluatorService) runAccountHealthRecoveryProbe(accountID int64
 }
 
 func shouldProbeAccountHealthRecovery(item *OpsAccountHealthItem, settings OpsAccountHealthSettings) bool {
-	if item == nil || item.AccountID <= 0 || item.IsOpened || item.ProbeAutoDisabled {
+	if item == nil || item.AccountID <= 0 || item.ProbeAutoDisabled {
 		return false
 	}
-	switch item.Recommendation.Action {
-	case OpsAccountHealthActionCanOpen, OpsAccountHealthActionNeedsProbe, OpsAccountHealthActionKeepClosed, OpsAccountHealthActionUnavailable:
+	if !settings.Probe.Enabled {
+		return false
+	}
+	// Closed accounts always need probes when auto-probe is on — they have little/no live
+	// traffic for quality judgment. Opened-but-unavailable accounts also get connectivity checks.
+	if !item.IsOpened {
 		return true
-	default:
-		return false
 	}
+	if !item.IsAvailable {
+		return true
+	}
+	return false
 }
 
 func (s *OpsAlertEvaluatorService) tryAcquireAccountHealthProbeSlot(ctx context.Context, accountID int64, settings OpsAccountHealthSettings) bool {

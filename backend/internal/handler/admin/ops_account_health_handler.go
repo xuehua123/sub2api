@@ -60,11 +60,24 @@ func (h *OpsHandler) GetAccountHealth(c *gin.Context) {
 		filter.RecentLimit = n
 	}
 
-	if v := strings.TrimSpace(c.Query("account_ids")); v != "" {
-		parts := strings.Split(v, ",")
-		ids := make([]int64, 0, len(parts))
-		seen := make(map[int64]struct{}, len(parts))
-		for _, part := range parts {
+	if v := strings.TrimSpace(c.Query("settings_only")); v != "" {
+		switch strings.ToLower(v) {
+		case "1", "true", "yes":
+			filter.SettingsOnly = true
+		case "0", "false", "no":
+			filter.SettingsOnly = false
+		default:
+			response.BadRequest(c, "Invalid settings_only")
+			return
+		}
+	}
+
+	// Presence of account_ids (even empty) means the client wants a scoped response.
+	if raw, ok := c.GetQuery("account_ids"); ok {
+		filter.AccountIDsScoped = true
+		ids := make([]int64, 0)
+		seen := make(map[int64]struct{})
+		for _, part := range strings.Split(raw, ",") {
 			part = strings.TrimSpace(part)
 			if part == "" {
 				continue
@@ -74,7 +87,7 @@ func (h *OpsHandler) GetAccountHealth(c *gin.Context) {
 				response.BadRequest(c, "Invalid account_ids")
 				return
 			}
-			if _, ok := seen[id]; ok {
+			if _, exists := seen[id]; exists {
 				continue
 			}
 			seen[id] = struct{}{}

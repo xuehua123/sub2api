@@ -99,6 +99,17 @@ describe('accountHealthRefresh', () => {
         routeHealthDeepLink: true
       })
     ).toBe(false)
+
+    // Global probe settings must load even when health column is hidden.
+    expect(
+      shouldSkipAccountHealthWhenColumnHidden({
+        columnHidden: true,
+        hasAccountIDsOverride: false,
+        drawerOpen: false,
+        drawerAccountId: null,
+        forceSettingsLoad: true
+      })
+    ).toBe(false)
   })
 
   it('does not update page throttle state after partial (single-account) fetches', () => {

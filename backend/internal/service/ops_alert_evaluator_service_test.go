@@ -323,6 +323,55 @@ func TestShouldProbeAccountHealthRecoverySkipsAccountDisabledAutoProbe(t *testin
 	require.False(t, shouldProbeAccountHealthRecovery(item, settings))
 }
 
+func TestShouldProbeAccountHealthRecoveryDoesNotRequireRecoveryEnabled(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Probe.Enabled = true
+	settings.Recovery.Enabled = false
+	item := &OpsAccountHealthItem{
+		AccountID: 1,
+		IsOpened:  false,
+	}
+	require.True(t, shouldProbeAccountHealthRecovery(item, settings))
+}
+
+func TestShouldProbeAccountHealthRecoveryOpenedUnavailable(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Probe.Enabled = true
+	item := &OpsAccountHealthItem{
+		AccountID:   2,
+		IsOpened:    true,
+		IsAvailable: false,
+	}
+	require.True(t, shouldProbeAccountHealthRecovery(item, settings))
+	item.IsAvailable = true
+	require.False(t, shouldProbeAccountHealthRecovery(item, settings))
+}
+
+func TestScheduleAccountHealthRecoveryProbesWorksWhenRecoveryDisabled(t *testing.T) {
+	t.Parallel()
+
+	settings := defaultOpsAccountHealthSettings()
+	settings.Probe.Enabled = true
+	settings.Probe.MaxPerRun = 3
+	settings.Probe.TimeoutSeconds = 1
+	settings.Recovery.Enabled = false
+
+	svc := &OpsAlertEvaluatorService{
+		accountTestService:   &AccountTestService{},
+		accountHealthProbeAt: map[int64]time.Time{},
+	}
+	items := []*OpsAccountHealthItem{
+		{AccountID: 1, IsOpened: false},
+		{AccountID: 2, IsOpened: false},
+	}
+	scheduled := svc.scheduleAccountHealthRecoveryProbes(context.Background(), items, settings)
+	require.Equal(t, 2, scheduled)
+}
+
 func TestBuildOpsAccountHealthDigestWeComTextIncludesSustainedWindows(t *testing.T) {
 	t.Parallel()
 

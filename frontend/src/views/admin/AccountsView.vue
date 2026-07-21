@@ -17,6 +17,15 @@
             @create="showCreate = true"
           >
             <template #after>
+              <button
+                type="button"
+                class="btn btn-secondary px-2 md:px-3"
+                title="全局探测设置：间隔、模型、开关（所有账号）"
+                @click="openGlobalProbeSettings"
+              >
+                <Icon name="sync" size="sm" />
+                <span class="hidden md:inline">探测设置</span>
+              </button>
               <div
                 class="flex h-10 items-center gap-2 rounded-md border border-gray-200 bg-white px-2.5 dark:border-gray-700 dark:bg-dark-800"
                 :class="rateMultiplierPrioritySaving || rateMultiplierPriorityLoading ? 'pointer-events-none opacity-60' : ''"
@@ -502,7 +511,14 @@
       @close="closeAccountHealthDrawer"
       @probe="runHealthProbeForDrawer"
       @update-probe-auto="updateHealthProbeAutoForDrawer"
-      @save-probe-interval="saveHealthProbeInterval"
+      @open-global-probe-settings="openGlobalProbeSettings"
+    />
+    <AccountHealthProbeSettingsDialog
+      :show="showHealthProbeSettings"
+      :settings="accountHealthSettings"
+      :saving="accountHealthSavingSettings"
+      @close="showHealthProbeSettings = false"
+      @save="saveGlobalProbeSettings"
     />
     <BulkEditAccountModal
       :show="showBulkEdit"
@@ -538,7 +554,12 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { adminAPI } from '@/api/admin'
-import { opsAPI, type OpsAccountHealthItem, type OpsAccountHealthSettings } from '@/api/admin/ops'
+import {
+  opsAPI,
+  type OpsAccountHealthItem,
+  type OpsAccountHealthProbeSettings,
+  type OpsAccountHealthSettings
+} from '@/api/admin/ops'
 import { useTableLoader } from '@/composables/useTableLoader'
 import { useSwipeSelect, type SwipeSelectVirtualContext } from '@/composables/useSwipeSelect'
 import { useTableSelection } from '@/composables/useTableSelection'
@@ -570,6 +591,7 @@ import AccountCapacityCell from '@/components/account/AccountCapacityCell.vue'
 import RateMultiplierPriorityConfigModal from '@/components/account/RateMultiplierPriorityConfigModal.vue'
 import AccountHealthSummaryCell from '@/components/admin/account/AccountHealthSummaryCell.vue'
 import AccountHealthDetailDrawer from '@/components/admin/account/AccountHealthDetailDrawer.vue'
+import AccountHealthProbeSettingsDialog from '@/components/admin/account/AccountHealthProbeSettingsDialog.vue'
 import {
   accountHealthScopeKey,
   routeWantsHealthDrawer,
@@ -778,6 +800,7 @@ const accountHealthLastLoadedAt = ref(0)
 const accountHealthGeneratedAt = ref<string | null>(null)
 const accountHealthSettings = ref<OpsAccountHealthSettings | null>(null)
 const showAccountHealthDrawer = ref(false)
+const showHealthProbeSettings = ref(false)
 const healthDrawerAccountId = ref<number | null>(null)
 const accountHealthProbing = ref(false)
 const accountHealthSavingSettings = ref(false)
@@ -852,7 +875,11 @@ const currentPageAccountIDs = () =>
 
 const accountHealthLastScopeKey = ref('')
 
-const refreshAccountHealthBatch = async (force = false, accountIDsOverride?: number[]) => {
+const refreshAccountHealthBatch = async (
+  force = false,
+  accountIDsOverride?: number[],
+  options: { forceSettingsLoad?: boolean } = {}
+) => {
   const isPartial = Array.isArray(accountIDsOverride) && accountIDsOverride.length > 0
   if (
     shouldSkipAccountHealthWhenColumnHidden({
@@ -861,7 +888,8 @@ const refreshAccountHealthBatch = async (force = false, accountIDsOverride?: num
       drawerOpen: showAccountHealthDrawer.value,
       drawerAccountId: healthDrawerAccountId.value,
       // Old /admin/ops/account-health bookmarks redirect with health=1 (often without account_id).
-      routeHealthDeepLink: routeWantsHealthDrawer(route.query.health)
+      routeHealthDeepLink: routeWantsHealthDrawer(route.query.health),
+      forceSettingsLoad: options.forceSettingsLoad === true
     })
   ) {
     accountHealthLoading.value = false
@@ -893,11 +921,11 @@ const refreshAccountHealthBatch = async (force = false, accountIDsOverride?: num
   accountHealthError.value = null
 
   try {
-    // Window request/success/first-token counts are full SQL aggregates for each time range
-    // (same as the former Account Health page). recent_limit only caps the timeline samples.
+    // Always scope by account_ids (even empty) so empty filter pages never trigger a full-fleet scan.
+    // Window counts are full SQL aggregates for the scoped IDs; recent_limit only caps timeline samples.
     const result = await opsAPI.getAccountHealth({
       recent_limit: 60,
-      ...(accountIDs.length > 0 ? { account_ids: accountIDs } : {})
+      account_ids: accountIDs
     })
     if (reqSeq !== accountHealthReqSeq.value) return
     const next: Record<string, OpsAccountHealthItem> = { ...accountHealthByAccountId.value }
@@ -1399,6 +1427,8 @@ const isAnyModalOpen = computed(() => {
     showTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
+    showAccountHealthDrawer.value ||
+    showHealthProbeSettings.value ||
     showErrorPassthrough.value ||
     showTLSFingerprintProfiles.value
   )
@@ -2112,23 +2142,51 @@ const updateHealthProbeAutoForDrawer = async (enabled: boolean) => {
   }
 }
 
-const saveHealthProbeInterval = async (minutes: number) => {
-  if (!accountHealthSettings.value || accountHealthSavingSettings.value) return
+/** Load account-health settings even when the health column is hidden (settings dialog path). */
+const ensureAccountHealthSettingsLoaded = async (): Promise<boolean> => {
+  if (accountHealthSettings.value) return true
+  try {
+    // Cheap path: never aggregates fleet metrics (avoids empty-filter full-table scan).
+    const result = await opsAPI.getAccountHealth({ settings_only: true })
+    accountHealthSettings.value = result.settings || null
+  } catch (error) {
+    console.error('Failed to load account health settings:', error)
+  }
+  return !!accountHealthSettings.value
+}
+
+const openGlobalProbeSettings = async () => {
+  const ok = await ensureAccountHealthSettingsLoaded()
+  if (!ok) {
+    appStore.showError('无法加载探测设置，请确认运维监控已启用后重试')
+    return
+  }
+  showHealthProbeSettings.value = true
+}
+
+const saveGlobalProbeSettings = async (probe: OpsAccountHealthProbeSettings) => {
+  if (accountHealthSavingSettings.value) return
+  if (!accountHealthSettings.value) {
+    appStore.showError('探测设置未加载，请关闭后重试')
+    return
+  }
   accountHealthSavingSettings.value = true
   try {
     const next: OpsAccountHealthSettings = {
       ...accountHealthSettings.value,
       probe: {
         ...accountHealthSettings.value.probe,
-        interval_minutes: minutes
+        ...probe
       }
     }
     const saved = await opsAPI.updateAccountHealthSettings(next)
+    // Probe interval captions bind to accountHealthSettings — no metrics re-aggregation needed.
     accountHealthSettings.value = saved
-    appStore.showSuccess('探测间隔已保存')
+    showHealthProbeSettings.value = false
+    appStore.showSuccess('全局探测设置已保存')
   } catch (error) {
-    console.error('Failed to save probe interval:', error)
-    appStore.showError('保存探测间隔失败')
+    console.error('Failed to save global probe settings:', error)
+    appStore.showError('保存全局探测设置失败')
   } finally {
     accountHealthSavingSettings.value = false
   }

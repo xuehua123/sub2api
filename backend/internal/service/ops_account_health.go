@@ -326,8 +326,36 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 	}
 	settings := runtimeCfg.AccountHealth
 	normalizeOpsAccountHealthSettings(&settings)
+	responseSettings := maskOpsAccountHealthSettings(settings)
 
-	_, _, availabilityByAccount, _, err := s.GetAccountAvailabilityStats(ctx, filter.Platform, filter.GroupID, filter.AccountIDs)
+	// settings_only: used by Accounts "探测设置" so an empty filter page never triggers fleet-wide SQL.
+	if filter.SettingsOnly {
+		return &OpsAccountHealthResponse{
+			Enabled:     true,
+			GeneratedAt: now,
+			Items:       []*OpsAccountHealthItem{},
+			Settings:    responseSettings,
+		}, nil
+	}
+
+	// Explicit empty account_ids scope (Accounts column with no rows) must not scan the fleet.
+	if filter.AccountIDsScoped && len(filter.AccountIDs) == 0 {
+		return &OpsAccountHealthResponse{
+			Enabled:     true,
+			GeneratedAt: now,
+			Items:       []*OpsAccountHealthItem{},
+			Settings:    responseSettings,
+		}, nil
+	}
+
+	var scopeIDs []int64
+	if filter.AccountIDsScoped {
+		scopeIDs = filter.AccountIDs
+	} else {
+		scopeIDs = nil // full fleet (legacy ops / alert evaluator)
+	}
+
+	_, _, availabilityByAccount, _, err := s.GetAccountAvailabilityStats(ctx, filter.Platform, filter.GroupID, scopeIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -419,7 +447,6 @@ func (s *OpsService) GetAccountHealth(ctx context.Context, filter *OpsAccountHea
 		items = append(items, item)
 	}
 
-	responseSettings := maskOpsAccountHealthSettings(settings)
 	return &OpsAccountHealthResponse{
 		Enabled:     true,
 		GeneratedAt: now,
