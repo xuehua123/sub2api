@@ -19,7 +19,8 @@
 ## Mandatory Production Deployment Runbook
 
 Apply this sequence for **every** production update. Do not skip, reorder, or
-replace steps with unverified cleanup automation.
+replace steps with unverified cleanup automation, except for the narrowly
+defined emergency Pipixia-first procedure below.
 
 1. Confirm the merge branch's staged tree, version, conflict resolution, and
    working tree are clean. Commit and push the merge branch.
@@ -45,6 +46,24 @@ replace steps with unverified cleanup automation.
 8. Any failed health check, migration, billing smoke test, elevated error rate,
    or unexpected 5xx requires immediate traffic rollback to the recorded old
    SHA. Do not continue the rollout.
+
+### Emergency Pipixia-First Procedure
+
+The normal 稳如狗-first order may be waived only when the project owner explicitly
+authorizes an emergency, Pipixia-only rollout in the current task. This exception
+does not relax any other production safeguards:
+
+1. All configured CI gates must be green and the image must be the CI-built,
+   immutable SHA for the reviewed `main` commit.
+2. Before touching Pipixia, record its active container, image SHA, ports,
+   compose state, Nginx upstream, and rollback configuration.
+3. Use Pipixia's existing blue-green mechanism: start only the inactive slot,
+   validate local and public health plus migrations, atomically cut Nginx over,
+   verify no 502s, then stop the old slot. Retain its image and configuration
+   backup as the rollback point; leave exactly one application instance running.
+4. Check the requested billing and error paths after cutover. On any failed
+   health check, migration, billing smoke test, elevated error rate, or 5xx,
+   immediately restore the recorded old slot and proxy configuration.
 
 Additional non-negotiable rules:
 
