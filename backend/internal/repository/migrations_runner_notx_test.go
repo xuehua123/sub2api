@@ -59,6 +59,7 @@ func TestCommissionRewardsSettlementReadyIndexMigrationExecutionMode(t *testing.
 	nonTx, err := validateMigrationExecutionMode(commissionRewardsSettlementReadyIndexMigration, string(content))
 	require.True(t, nonTx)
 	require.NoError(t, err)
+	require.Len(t, splitSQLStatements(string(content)), 1)
 }
 
 func TestApplyMigrationsFS_NonTransactionalMigration(t *testing.T) {
