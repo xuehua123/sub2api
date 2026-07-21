@@ -625,7 +625,7 @@ func TestReferralRewardService_CreditRechargeOrder_RejectsDifferentUserForSameOr
 	require.ErrorIs(t, err, ErrRechargeOrderConflict)
 }
 
-func TestReferralRewardService_CreditRechargeOrder_SettlesPreviouslyReadyPendingRewards(t *testing.T) {
+func TestReferralRewardService_CreditRechargeOrder_DefersReadyPendingRewardsToBackgroundRunner(t *testing.T) {
 	rechargeRepo := newRechargeOrderRepoStub()
 	readyAt := time.Now().Add(-time.Hour)
 	rechargeRepo.orders["provider::old-order"] = &RechargeOrder{
@@ -682,8 +682,6 @@ func TestReferralRewardService_CreditRechargeOrder_SettlesPreviouslyReadyPending
 		CreditedBalanceAmount: 10,
 	})
 	require.NoError(t, err)
-	require.Equal(t, CommissionRewardStatusAvailable, commissionRepo.rewards[0].Status)
-	require.Len(t, commissionRepo.ledgers, 3)
-	require.Equal(t, CommissionLedgerEntryRewardPendingToAvailable, commissionRepo.ledgers[1].EntryType)
-	require.Equal(t, CommissionLedgerBucketAvailable, commissionRepo.ledgers[2].Bucket)
+	require.Equal(t, CommissionRewardStatusPending, commissionRepo.rewards[0].Status)
+	require.Len(t, commissionRepo.ledgers, 1)
 }

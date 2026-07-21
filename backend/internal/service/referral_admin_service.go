@@ -32,22 +32,22 @@ type AdminReferralAccountOption struct {
 }
 
 type AdminReferralOverview struct {
-	TotalAccounts               int                        `json:"total_accounts"`
-	TotalBoundUsers             int                        `json:"total_bound_users"`
-	PendingCommission           float64                    `json:"pending_commission"`
-	AvailableCommission         float64                    `json:"available_commission"`
-	FrozenCommission            float64                    `json:"frozen_commission"`
-	WithdrawnCommission         float64                    `json:"withdrawn_commission"` // settled bucket (cash + credit conversion)
-	CashPaidCommission          float64                    `json:"cash_paid_commission"`
-	CreditConvertedCommission   float64                    `json:"credit_converted_commission"`
-	PendingWithdrawalCount      int                        `json:"pending_withdrawal_count"`
-	PendingWithdrawalAmount     float64                    `json:"pending_withdrawal_amount"`
-	ApprovedWithdrawalCount     int                        `json:"approved_withdrawal_count"`
-	ApprovedWithdrawalAmount    float64                    `json:"approved_withdrawal_amount"`
-	NegativeCommissionDebt      float64                    `json:"negative_commission_debt"` // sum of negative available buckets
-	RecentTrend                 []AdminReferralTrendPoint  `json:"recent_trend"`
-	Ranking                     []AdminReferralRankingItem `json:"ranking"`
-	RecentCreditConversions     []AdminCommissionWithdrawal `json:"recent_credit_conversions"`
+	TotalAccounts             int                         `json:"total_accounts"`
+	TotalBoundUsers           int                         `json:"total_bound_users"`
+	PendingCommission         float64                     `json:"pending_commission"`
+	AvailableCommission       float64                     `json:"available_commission"`
+	FrozenCommission          float64                     `json:"frozen_commission"`
+	WithdrawnCommission       float64                     `json:"withdrawn_commission"` // settled bucket (cash + credit conversion)
+	CashPaidCommission        float64                     `json:"cash_paid_commission"`
+	CreditConvertedCommission float64                     `json:"credit_converted_commission"`
+	PendingWithdrawalCount    int                         `json:"pending_withdrawal_count"`
+	PendingWithdrawalAmount   float64                     `json:"pending_withdrawal_amount"`
+	ApprovedWithdrawalCount   int                         `json:"approved_withdrawal_count"`
+	ApprovedWithdrawalAmount  float64                     `json:"approved_withdrawal_amount"`
+	NegativeCommissionDebt    float64                     `json:"negative_commission_debt"` // sum of negative available buckets
+	RecentTrend               []AdminReferralTrendPoint   `json:"recent_trend"`
+	Ranking                   []AdminReferralRankingItem  `json:"ranking"`
+	RecentCreditConversions   []AdminCommissionWithdrawal `json:"recent_credit_conversions"`
 }
 
 type AdminReferralTrendPoint struct {

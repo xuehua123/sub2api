@@ -7,6 +7,7 @@ import (
 	"testing/fstest"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,6 +50,15 @@ DROP INDEX CONCURRENTLY IF EXISTS idx_b;
 		require.True(t, nonTx)
 		require.NoError(t, err)
 	})
+}
+
+func TestCommissionRewardsSettlementReadyIndexMigrationExecutionMode(t *testing.T) {
+	content, err := migrations.FS.ReadFile(commissionRewardsSettlementReadyIndexMigration)
+	require.NoError(t, err)
+
+	nonTx, err := validateMigrationExecutionMode(commissionRewardsSettlementReadyIndexMigration, string(content))
+	require.True(t, nonTx)
+	require.NoError(t, err)
 }
 
 func TestApplyMigrationsFS_NonTransactionalMigration(t *testing.T) {
