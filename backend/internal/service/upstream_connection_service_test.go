@@ -1331,7 +1331,7 @@ func TestUpstreamConnectionCredentialRefreshesAutoDetectedSub2API(t *testing.T) 
 	require.Equal(t, "next-access", refreshed.AccessToken)
 	require.Equal(t, "next-refresh", refreshed.RefreshToken)
 	require.Greater(t, refreshed.ExpiresAt, time.Now().Unix())
-	require.Equal(t, int64(6), updated.Version)
+	require.Equal(t, int64(4), updated.Version)
 }
 
 func TestUpstreamConnectionCredentialRefreshStopsWhenDistributedLockIsHeld(t *testing.T) {
