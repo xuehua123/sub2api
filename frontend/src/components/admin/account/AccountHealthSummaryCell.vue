@@ -7,24 +7,26 @@
   >
     <span v-if="loading" class="h-10 w-full animate-pulse rounded bg-gray-200 dark:bg-dark-700"></span>
     <template v-else-if="item">
-      <!-- Compact 2x2 tiles: shorter than 4 stacked rows -->
-      <span class="grid grid-cols-2 gap-x-1.5 gap-y-0.5">
+      <!-- Each time window keeps its label, traffic, rate, and latency together. -->
+      <span class="grid grid-cols-2 gap-x-2 gap-y-1">
         <span
           v-for="window in windows"
           :key="window"
-          class="flex items-baseline justify-between gap-1 text-[10px] leading-4"
+          class="min-w-0 border-l-2 border-gray-200 pl-1.5 dark:border-dark-600"
+          :title="windowTitle(window)"
         >
-          <span class="shrink-0 font-semibold text-gray-500 dark:text-gray-400">{{ window }}</span>
-          <span class="min-w-0 truncate text-right tabular-nums text-gray-800 dark:text-gray-100">
-            <span class="text-gray-600 dark:text-gray-300">{{ formatCount(stats(window)?.request_count) }}</span>
-            <span class="mx-0.5 text-gray-300 dark:text-dark-500">·</span>
-            <span class="font-medium" :class="successClass(stats(window)?.success_rate_percent)">{{ successText(window) }}</span>
+          <span class="flex items-baseline justify-between gap-1 leading-4">
+            <span class="shrink-0 text-[11px] font-bold text-gray-700 dark:text-gray-200">{{ windowLabel(window) }}</span>
+            <span class="shrink-0 tabular-nums text-[10px] text-gray-500 dark:text-gray-400">{{ t('admin.accounts.accountHealth.requestCount', { count: formatCount(stats(window)?.request_count) }) }}</span>
+          </span>
+          <span class="flex items-baseline justify-between gap-1 leading-3 tabular-nums">
+            <span class="min-w-0 truncate text-[11px] font-semibold" :class="successClass(stats(window)?.success_rate_percent)">{{ successText(window) }}</span>
             <span
               v-if="window === '1m' && trendArrow(item.success_rate_trend_1m)"
               class="ml-0.5 text-[9px] font-bold"
               :class="trendClass(item.success_rate_trend_1m)"
             >{{ trendArrow(item.success_rate_trend_1m) }}</span>
-            <span class="ml-0.5 text-gray-400 dark:text-gray-500">{{ firstTokenText(window) }}</span>
+            <span class="ml-auto shrink-0 text-[10px] text-gray-400 dark:text-gray-500">{{ firstTokenText(window) }}</span>
           </span>
         </span>
       </span>
@@ -52,6 +54,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import type { OpsAccountHealthItem, OpsAccountHealthWindow } from '@/api/admin/ops'
 import {
   ACCOUNT_HEALTH_PRIMARY_WINDOWS,
@@ -79,6 +82,7 @@ defineEmits<{
   open: []
 }>()
 
+const { t } = useI18n()
 const windows = ACCOUNT_HEALTH_PRIMARY_WINDOWS
 const timelineBars = computed(() => paddedTimelineSamples(props.item, 24))
 
@@ -115,5 +119,13 @@ function firstTokenText(window: OpsAccountHealthWindow): string {
   const ft = firstTokenStats(props.item, window)
   if (!ft || !ft.sample_count || ft.avg_ms == null) return '—'
   return formatMs(ft.avg_ms)
+}
+
+function windowLabel(window: OpsAccountHealthWindow): string {
+  return t(`admin.accounts.accountHealth.windows.${window}`)
+}
+
+function windowTitle(window: OpsAccountHealthWindow): string {
+  return t('admin.accounts.accountHealth.windowTitle', { window: windowLabel(window) })
 }
 </script>

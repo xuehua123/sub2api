@@ -167,6 +167,30 @@ export interface UpstreamConnectionTodayUsage {
   accounts: UpstreamConnectionAccountUsage[]
 }
 
+export interface UpstreamConnectionRuntimeGroup {
+  group_id: number
+  group_name: string
+  today: UpstreamConnectionUsageStats
+  five_minute_requests: number
+  five_minute_success_count: number
+  five_minute_error_count: number
+  five_minute_success_rate: number | null
+}
+
+export interface UpstreamConnectionRuntimeAccount {
+  account_id: number
+  account_name: string
+  current_concurrency: number | null
+  waiting_count: number | null
+  groups: UpstreamConnectionRuntimeGroup[]
+}
+
+export interface UpstreamConnectionRuntimeOverview {
+  accounts: UpstreamConnectionRuntimeAccount[]
+}
+
+const runtimeOverviewBatchSize = 5000
+
 export async function list(
   page = 1,
   pageSize = 20,
@@ -205,6 +229,20 @@ export async function getTodayUsage(id: number): Promise<UpstreamConnectionToday
     `/admin/upstream-connections/${id}/usage/today`
   )
   return data
+}
+
+export async function getRuntimeOverview(accountIds: number[]): Promise<UpstreamConnectionRuntimeOverview> {
+  if (accountIds.length === 0) return { accounts: [] }
+
+  const accounts: UpstreamConnectionRuntimeAccount[] = []
+  for (let start = 0; start < accountIds.length; start += runtimeOverviewBatchSize) {
+    const { data } = await apiClient.post<UpstreamConnectionRuntimeOverview>(
+      '/admin/upstream-connections/runtime-overview',
+      { account_ids: accountIds.slice(start, start + runtimeOverviewBatchSize) }
+    )
+    accounts.push(...data.accounts)
+  }
+  return { accounts }
 }
 
 export async function create(payload: CreateUpstreamConnectionRequest): Promise<UpstreamConnection> {
@@ -249,6 +287,7 @@ export default {
   listAll,
   get,
   getTodayUsage,
+  getRuntimeOverview,
   create,
   update,
   remove,

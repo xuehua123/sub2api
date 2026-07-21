@@ -128,6 +128,9 @@ export type {
   UpstreamConnection,
   UpstreamAccountBinding,
   UpstreamGroupObservation,
+  UpstreamConnectionRuntimeOverview,
+  UpstreamConnectionRuntimeAccount,
+  UpstreamConnectionRuntimeGroup,
   CreateUpstreamConnectionRequest,
   UpdateUpstreamConnectionRequest
 } from './upstreamConnections'

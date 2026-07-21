@@ -36,6 +36,7 @@ export default {
       wallet: 'Wallet',
       todayRequests: 'Today requests',
       todayUsage: 'Today usage',
+      runtime: 'Runtime',
       observations: 'Observed scope',
       lastSync: 'Last sync',
       status: 'Status',
@@ -140,6 +141,24 @@ export default {
       requestCount: '{count} requests',
       retry: 'Retry',
       loadFailed: 'Failed to load connection usage for today'
+    },
+    runtime: {
+      boundAccounts: '{count} accounts',
+      todayUsage: 'Today ${cost} / {count} requests',
+      updatedAt: 'Updated {time}',
+      noTraffic: 'No group traffic today',
+      noBoundAccounts: 'No bound accounts',
+      unavailable: 'Runtime data unavailable',
+      compactOverview: '{accounts} accounts · {concurrency}',
+      compactConcurrency: '{count} concurrent',
+      compactPartialConcurrency: 'At least {count}',
+      compactConcurrencyUnavailable: 'Concurrency -',
+      compactGroupSuccessRate: '{name} 5m {rate}%',
+      compactGroupNoRecentRequests: '{name} 5m -',
+      refresh: 'Refresh runtime',
+      refreshTitle: 'Refresh local concurrency and group runtime data without probing upstream balances or groups',
+      refreshFailed: 'Failed to refresh runtime data',
+      retry: 'Retry runtime data'
     },
     binding: {
       title: 'Shared upstream connection',

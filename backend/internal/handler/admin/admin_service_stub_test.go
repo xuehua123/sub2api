@@ -43,15 +43,16 @@ type stubAdminService struct {
 		groupIDs  []int64
 	}
 	lastListAccounts struct {
-		platform    string
-		accountType string
-		status      string
-		search      string
-		groupID     int64
-		privacyMode string
-		sortBy      string
-		sortOrder   string
-		calls       int
+		platform             string
+		accountType          string
+		status               string
+		search               string
+		groupID              int64
+		upstreamConnectionID int64
+		privacyMode          string
+		sortBy               string
+		sortOrder            string
+		calls                int
 	}
 	lastListUsers struct {
 		page      int
@@ -368,12 +369,22 @@ func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int,
 	return accounts[start:end], int64(total), nil
 }
 
+func (s *stubAdminService) ListAccountsByUpstreamConnection(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string, sortBy, sortOrder string) ([]service.Account, int64, error) {
+	s.lastListAccounts.upstreamConnectionID = upstreamConnectionID
+	return s.ListAccounts(ctx, page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+}
+
 func (s *stubAdminService) ListAccountsForSchedulerScoreFilter(_ context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
 	s.schedulerScoreFilterCalls++
 	if s.accountSchedulerScoreFilterAccounts != nil {
 		return s.accountSchedulerScoreFilterAccounts, nil
 	}
 	return s.accounts, nil
+}
+
+func (s *stubAdminService) ListAccountsForSchedulerScoreFilterByUpstreamConnection(ctx context.Context, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]service.Account, error) {
+	s.lastListAccounts.upstreamConnectionID = upstreamConnectionID
+	return s.ListAccountsForSchedulerScoreFilter(ctx, platform, accountType, status, search, groupID, privacyMode)
 }
 
 func (s *stubAdminService) ListOpenAISchedulableAccountsForSchedulerScore(_ context.Context, groupID *int64) ([]service.Account, error) {

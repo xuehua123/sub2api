@@ -157,12 +157,13 @@ type BulkUpdateAccountsRequest struct {
 }
 
 type BulkUpdateAccountFilters struct {
-	Platform    string `json:"platform"`
-	Type        string `json:"type"`
-	Status      string `json:"status"`
-	Group       string `json:"group"`
-	Search      string `json:"search"`
-	PrivacyMode string `json:"privacy_mode"`
+	Platform             string `json:"platform"`
+	Type                 string `json:"type"`
+	Status               string `json:"status"`
+	Group                string `json:"group"`
+	Search               string `json:"search"`
+	PrivacyMode          string `json:"privacy_mode"`
+	UpstreamConnectionID int64  `json:"upstream_connection_id"`
 }
 
 // CheckMixedChannelRequest represents check mixed channel risk request
@@ -457,6 +458,7 @@ func (h *AccountHandler) listAccountSchedulerScoreFilterPool(
 	ctx context.Context,
 	platform, accountType, status, search string,
 	groupID int64,
+	upstreamConnectionID int64,
 	privacyMode string,
 ) []service.Account {
 	if h.adminService == nil || (platform != "" && platform != service.PlatformOpenAI) {
@@ -464,7 +466,7 @@ func (h *AccountHandler) listAccountSchedulerScoreFilterPool(
 	}
 	// 池只用于 OpenAI 分数计算（非 OpenAI 账号会在打分时被丢弃），
 	// 无论列表页平台过滤为何，查询一律限定 openai，避免无过滤时全表扫描。
-	accounts, err := h.adminService.ListAccountsForSchedulerScoreFilter(ctx, service.PlatformOpenAI, accountType, status, search, groupID, privacyMode)
+	accounts, err := h.adminService.ListAccountsForSchedulerScoreFilterByUpstreamConnection(ctx, service.PlatformOpenAI, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
 	if err != nil {
 		slog.Warn("openai_scheduler_filter_score_pool_failed", "error", err)
 		return nil
@@ -510,7 +512,17 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 
-	accounts, total, err := h.adminService.ListAccounts(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	var upstreamConnectionID int64
+	if rawConnectionID := c.Query("upstream_connection_id"); rawConnectionID != "" {
+		parsedConnectionID, parseErr := strconv.ParseInt(rawConnectionID, 10, 64)
+		if parseErr != nil || parsedConnectionID <= 0 {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_FILTER", "invalid upstream connection filter"))
+			return
+		}
+		upstreamConnectionID = parsedConnectionID
+	}
+
+	accounts, total, err := h.adminService.ListAccountsByUpstreamConnection(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode, sortBy, sortOrder)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -537,7 +549,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 	if includeSchedulerScore && pageHasOpenAIAccounts {
-		schedulerFilterPool := h.listAccountSchedulerScoreFilterPool(c.Request.Context(), platform, accountType, status, search, groupID, privacyMode)
+		schedulerFilterPool := h.listAccountSchedulerScoreFilterPool(c.Request.Context(), platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
 		schedulerScores, schedulerGroupScores = h.buildOpenAIAccountSchedulerScores(c.Request.Context(), accounts, schedulerFilterPool)
 	}
 
@@ -1885,6 +1897,10 @@ func (h *AccountHandler) BulkUpdate(c *gin.Context) {
 		response.BadRequest(c, "account_ids or filters is required")
 		return
 	}
+	if req.Filters != nil && req.Filters.UpstreamConnectionID < 0 {
+		response.BadRequest(c, "upstream_connection_id must be positive")
+		return
+	}
 	// base_rpm 输入校验：负值归零，超过 10000 截断
 	sanitizeExtraBaseRPM(req.Extra)
 
@@ -1951,12 +1967,13 @@ func toServiceBulkUpdateAccountFilters(filters *BulkUpdateAccountFilters) *servi
 		return nil
 	}
 	return &service.BulkUpdateAccountFilters{
-		Platform:    filters.Platform,
-		Type:        filters.Type,
-		Status:      filters.Status,
-		Group:       filters.Group,
-		Search:      filters.Search,
-		PrivacyMode: filters.PrivacyMode,
+		Platform:             filters.Platform,
+		Type:                 filters.Type,
+		Status:               filters.Status,
+		Group:                filters.Group,
+		Search:               filters.Search,
+		PrivacyMode:          filters.PrivacyMode,
+		UpstreamConnectionID: filters.UpstreamConnectionID,
 	}
 }
 

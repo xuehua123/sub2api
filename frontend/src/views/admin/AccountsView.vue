@@ -662,6 +662,7 @@ type AccountBulkEditTarget =
         type?: string
         status?: string
         group?: string
+        upstream_connection_id?: number
         search?: string
         privacy_mode?: string
         sort_by?: string
@@ -1278,6 +1279,7 @@ const {
     status: '',
     privacy_mode: '',
     group: '',
+    upstream_connection_id: '',
     search: '',
     include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
     sort_by: sortState.sort_by,
@@ -1510,10 +1512,10 @@ const refreshAccountsIncrementally = async () => {
         status?: string
         privacy_mode?: string
         group?: string
+        upstream_connection_id?: string
         search?: string
         sort_by?: string
         sort_order?: AccountSortOrder
-
       },
       { etag: autoRefreshETag.value }
     )
@@ -2005,6 +2007,9 @@ const buildBulkEditFilterSnapshot = () => {
     type: typeof rawParams.type === 'string' ? rawParams.type : '',
     status: typeof rawParams.status === 'string' ? rawParams.status : '',
     group: typeof rawParams.group === 'string' ? rawParams.group : '',
+    upstream_connection_id: typeof rawParams.upstream_connection_id === 'string' && /^\d+$/.test(rawParams.upstream_connection_id)
+      ? Number(rawParams.upstream_connection_id)
+      : undefined,
     search: typeof rawParams.search === 'string' ? rawParams.search : '',
     privacy_mode: typeof rawParams.privacy_mode === 'string' ? rawParams.privacy_mode : '',
     sort_by: typeof rawParams.sort_by === 'string' ? rawParams.sort_by : '',
@@ -2056,6 +2061,7 @@ const buildAccountQueryFilters = () => ({
   type: params.type || '',
   status: params.status || '',
   group: params.group || '',
+  upstream_connection_id: params.upstream_connection_id || '',
   privacy_mode: params.privacy_mode || '',
   search: params.search || '',
   sort_by: sortState.sort_by,
@@ -2076,11 +2082,30 @@ const applyRouteAccountFocus = () => {
   params.type = ''
   params.status = ''
   params.group = ''
+  params.upstream_connection_id = ''
   params.privacy_mode = ''
   params.search = String(accountID)
   pagination.page = 1
   return true
 }
+
+const applyRouteGroupFilter = () => {
+  const group = routeQueryScalar(route.query.group)
+  if (group !== ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE && !/^\d+$/.test(group)) return false
+  const upstreamConnectionID = routeQueryScalar(route.query.upstream_connection_id)
+  if (upstreamConnectionID !== '' && (!/^\d+$/.test(upstreamConnectionID) || Number(upstreamConnectionID) <= 0)) return false
+  params.platform = ''
+  params.type = ''
+  params.status = ''
+  params.group = group
+  params.upstream_connection_id = upstreamConnectionID
+  params.privacy_mode = ''
+  params.search = ''
+  pagination.page = 1
+  return true
+}
+
+const applyRouteFocus = () => applyRouteAccountFocus() || applyRouteGroupFilter()
 
 const openAccountHealth = (account: Account) => {
   healthDrawerAccountId.value = account.id
@@ -2326,6 +2351,13 @@ const patchAccountInList = (updatedAccount: Account) => {
   syncAccountRefs(mergedAccount)
 }
 const handleAccountUpdated = (updatedAccount: Account) => {
+  // The account DTO does not carry its shared upstream connection binding.
+  // Reload the server-scoped result after an edit so a rebinding cannot leave
+  // an account from another connection visible in this deep-linked view.
+  if (params.upstream_connection_id) {
+    void reload()
+    return
+  }
   patchAccountInList(updatedAccount)
   enterAutoRefreshSilentWindow()
   refreshUpstreamConnections(true).catch((error) => {
@@ -2582,7 +2614,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
-  applyRouteAccountFocus()
+  applyRouteFocus()
   await load()
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
@@ -2608,12 +2640,12 @@ onMounted(async () => {
 // When AccountsView is already mounted, the component is reused — watch query and open the drawer
 // after the focused list finishes loading.
 watch(
-  () => [routeQueryScalar(route.query.account_id), routeQueryScalar(route.query.health)] as const,
-  async ([accountId, health], previous) => {
-    const [prevAccountId, prevHealth] = previous ?? [undefined, undefined]
-    if (accountId === prevAccountId && health === prevHealth) return
+  () => [routeQueryScalar(route.query.account_id), routeQueryScalar(route.query.health), routeQueryScalar(route.query.group), routeQueryScalar(route.query.upstream_connection_id)] as const,
+  async ([accountId, health, group, upstreamConnectionID], previous) => {
+    const [prevAccountId, prevHealth, prevGroup, prevUpstreamConnectionID] = previous ?? [undefined, undefined, undefined, undefined]
+    if (accountId === prevAccountId && health === prevHealth && group === prevGroup && upstreamConnectionID === prevUpstreamConnectionID) return
 
-    const focused = applyRouteAccountFocus()
+    const focused = applyRouteFocus()
     if (focused) {
       await load()
     }

@@ -55,18 +55,27 @@ type upstreamConnectionUsageReader interface {
 	GetUpstreamAccountUsageBuckets(ctx context.Context, accountIDs []int64, startTime, endTime time.Time, timezoneName string) ([]UpstreamConnectionAccountUsageBucket, error)
 }
 
+// upstreamConnectionRuntimeReader is intentionally separate from the detail-page
+// reader. The list page needs a compact, group-level snapshot rather than an
+// hourly series for each bound account.
+type upstreamConnectionRuntimeReader interface {
+	GetUpstreamConnectionRuntimeGroups(ctx context.Context, accountIDs []int64, startTime, endTime, fiveMinuteStart time.Time) ([]UpstreamConnectionRuntimeGroupMetric, error)
+}
+
 type UpstreamConnectionService struct {
-	repo        UpstreamConnectionRepository
-	encryptor   SecretEncryptor
-	cfg         *config.Config
-	inspector   *upstreamConnectionInspector
-	accountRepo AccountRepository
-	usageReader upstreamConnectionUsageReader
-	lockCache   LeaderLockCache
-	db          *sql.DB
-	instanceID  string
-	now         func() time.Time
-	refreshMu   sync.Mutex
+	repo               UpstreamConnectionRepository
+	encryptor          SecretEncryptor
+	cfg                *config.Config
+	inspector          *upstreamConnectionInspector
+	accountRepo        AccountRepository
+	usageReader        upstreamConnectionUsageReader
+	runtimeReader      upstreamConnectionRuntimeReader
+	concurrencyService *ConcurrencyService
+	lockCache          LeaderLockCache
+	db                 *sql.DB
+	instanceID         string
+	now                func() time.Time
+	refreshMu          sync.Mutex
 }
 
 func NewUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config) *UpstreamConnectionService {
@@ -78,13 +87,17 @@ func NewUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor S
 	}
 }
 
-func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, usageLogRepo UsageLogRepository, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
+func ProvideUpstreamConnectionService(repo UpstreamConnectionRepository, encryptor SecretEncryptor, cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository, usageLogRepo UsageLogRepository, concurrencyService *ConcurrencyService, lockCache LeaderLockCache, db *sql.DB) *UpstreamConnectionService {
 	service := NewUpstreamConnectionService(repo, encryptor, cfg)
 	service.inspector = newUpstreamConnectionInspector(cfg, proxyRepo, nil)
 	service.accountRepo = accountRepo
 	if reader, ok := usageLogRepo.(upstreamConnectionUsageReader); ok {
 		service.usageReader = reader
 	}
+	if reader, ok := usageLogRepo.(upstreamConnectionRuntimeReader); ok {
+		service.runtimeReader = reader
+	}
+	service.concurrencyService = concurrencyService
 	service.lockCache = lockCache
 	service.db = db
 	return service

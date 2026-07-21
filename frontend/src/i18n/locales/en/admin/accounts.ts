@@ -1373,5 +1373,14 @@ export default {
     // Scheduled Tests,
   accountHealth: {
     title: 'Account Health',
+    requestCount: '{count} requests',
+    windowTitle: '{window}: requests, success rate, first-token latency',
+    windows: {
+      '1m': 'Last 1m',
+      '5m': 'Last 5m',
+      '10m': 'Last 10m',
+      '30m': 'Last 30m',
+      '1h': 'Last 1h'
+    }
   },
 }

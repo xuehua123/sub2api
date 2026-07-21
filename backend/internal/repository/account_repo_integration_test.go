@@ -620,6 +620,46 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 	}
 }
 
+func (s *AccountRepoSuite) TestListWithUpstreamConnectionFilterScopesSameGroupAccounts() {
+	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "shared-local-group"})
+	matching := mustCreateAccount(s.T(), s.client, &service.Account{Name: "matching-account"})
+	nonMatching := mustCreateAccount(s.T(), s.client, &service.Account{Name: "other-connection-account"})
+	mustBindAccountToGroup(s.T(), s.client, matching.ID, group.ID, 1)
+	mustBindAccountToGroup(s.T(), s.client, nonMatching.ID, group.ID, 1)
+
+	connectionOne, err := s.client.UpstreamConnection.Create().
+		SetName("connection-one").
+		SetProvider(service.UpstreamConnectionProviderSub2API).
+		SetAuthMode("access_token").
+		SetManagementBaseURL("https://one.example.com").
+		SetCredentialEncrypted("encrypted-one").
+		Save(s.ctx)
+	s.Require().NoError(err)
+	connectionTwo, err := s.client.UpstreamConnection.Create().
+		SetName("connection-two").
+		SetProvider(service.UpstreamConnectionProviderSub2API).
+		SetAuthMode("access_token").
+		SetManagementBaseURL("https://two.example.com").
+		SetCredentialEncrypted("encrypted-two").
+		Save(s.ctx)
+	s.Require().NoError(err)
+
+	_, err = s.client.UpstreamAccountBinding.Create().SetAccountID(matching.ID).SetConnectionID(connectionOne.ID).Save(s.ctx)
+	s.Require().NoError(err)
+	_, err = s.client.UpstreamAccountBinding.Create().SetAccountID(nonMatching.ID).SetConnectionID(connectionTwo.ID).Save(s.ctx)
+	s.Require().NoError(err)
+
+	accounts, page, err := s.repo.ListWithUpstreamConnectionFilter(
+		s.ctx,
+		pagination.PaginationParams{Page: 1, PageSize: 10},
+		"", "", "", "", group.ID, connectionOne.ID, "",
+	)
+	s.Require().NoError(err)
+	s.Require().Equal(int64(1), page.Total)
+	s.Require().Len(accounts, 1)
+	s.Require().Equal(matching.ID, accounts[0].ID)
+}
+
 // --- ListByGroup / ListActive / ListByPlatform ---
 
 func (s *AccountRepoSuite) TestListByGroup() {

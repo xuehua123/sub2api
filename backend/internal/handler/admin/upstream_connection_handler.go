@@ -15,6 +15,10 @@ type UpstreamConnectionHandler struct {
 	service *service.UpstreamConnectionService
 }
 
+type upstreamConnectionRuntimeOverviewRequest struct {
+	AccountIDs []int64 `json:"account_ids" binding:"required"`
+}
+
 func NewUpstreamConnectionHandler(connectionService *service.UpstreamConnectionService) *UpstreamConnectionHandler {
 	return &UpstreamConnectionHandler{service: connectionService}
 }
@@ -175,6 +179,27 @@ func (h *UpstreamConnectionHandler) GetTodayUsage(c *gin.Context) {
 	response.Success(c, usage)
 }
 
+// GetRuntimeOverview returns the compact, local runtime snapshot used by the
+// upstream connection list. Account IDs use a JSON body so a large bound-account
+// set does not exceed browser or proxy URL limits.
+func (h *UpstreamConnectionHandler) GetRuntimeOverview(c *gin.Context) {
+	var request upstreamConnectionRuntimeOverviewRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+		return
+	}
+	accountIDs, ok := validateUpstreamRuntimeAccountIDs(c, request.AccountIDs)
+	if !ok {
+		return
+	}
+	overview, err := h.service.GetRuntimeOverview(c.Request.Context(), accountIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, overview)
+}
+
 func (h *UpstreamConnectionHandler) Create(c *gin.Context) {
 	var request upstreamConnectionCreateRequest
 	if err := c.ShouldBindJSON(&request); err != nil {
@@ -311,6 +336,27 @@ func parseUpstreamConnectionID(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func validateUpstreamRuntimeAccountIDs(c *gin.Context, accountIDs []int64) ([]int64, bool) {
+	if len(accountIDs) > 5000 {
+		response.ErrorFrom(c, infraerrors.BadRequest("TOO_MANY_UPSTREAM_RUNTIME_ACCOUNTS", "too many account ids"))
+		return nil, false
+	}
+	seen := make(map[int64]struct{}, len(accountIDs))
+	ids := make([]int64, 0, len(accountIDs))
+	for _, id := range accountIDs {
+		if id <= 0 {
+			response.ErrorFrom(c, infraerrors.BadRequest("INVALID_UPSTREAM_RUNTIME_ACCOUNT_ID", "invalid account id"))
+			return nil, false
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, true
 }
 
 func parseUpstreamBindingAccountID(c *gin.Context) (int64, bool) {

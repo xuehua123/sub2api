@@ -64,6 +64,29 @@ type upstreamConnectionUsageReaderStub struct {
 	accountIDs []int64
 }
 
+type upstreamConnectionRuntimeReaderStub struct {
+	metrics    []UpstreamConnectionRuntimeGroupMetric
+	accountIDs []int64
+}
+
+func (r *upstreamConnectionRuntimeReaderStub) GetUpstreamConnectionRuntimeGroups(
+	_ context.Context,
+	accountIDs []int64,
+	_, _, _ time.Time,
+) ([]UpstreamConnectionRuntimeGroupMetric, error) {
+	r.accountIDs = append([]int64(nil), accountIDs...)
+	return append([]UpstreamConnectionRuntimeGroupMetric(nil), r.metrics...), nil
+}
+
+type upstreamConnectionRuntimeConcurrencyCache struct {
+	ConcurrencyCache
+	loads map[int64]*AccountLoadInfo
+}
+
+func (c upstreamConnectionRuntimeConcurrencyCache) GetAccountsLoadBatch(_ context.Context, _ []AccountWithConcurrency) (map[int64]*AccountLoadInfo, error) {
+	return c.loads, nil
+}
+
 func (r *upstreamConnectionUsageReaderStub) GetUpstreamAccountUsageBuckets(
 	_ context.Context,
 	accountIDs []int64,
@@ -1519,4 +1542,36 @@ func TestUpstreamConnectionTodayUsageAggregatesBoundAccountsAndFillsHourlyGaps(t
 	require.Equal(t, int64(2), usage.Accounts[0].Trend[9].Requests)
 	require.Equal(t, "Backup account", usage.Accounts[1].AccountName)
 	require.Zero(t, usage.Accounts[1].Stats.Requests)
+}
+
+func TestUpstreamConnectionRuntimeOverviewSeparatesAccountConcurrencyFromGroupTraffic(t *testing.T) {
+	reader := &upstreamConnectionRuntimeReaderStub{metrics: []UpstreamConnectionRuntimeGroupMetric{
+		{AccountID: 11, GroupID: 7, GroupName: "VIP", Today: UpstreamConnectionUsageStats{Requests: 9, Tokens: 800, AccountCost: 1}, FiveMinuteRequests: 4, FiveMinuteSuccessCount: 3, FiveMinuteErrorCount: 1},
+		{AccountID: 11, GroupID: 8, GroupName: "Default", Today: UpstreamConnectionUsageStats{Requests: 2, AccountCost: 2}, FiveMinuteRequests: 0},
+	}}
+	svc := NewUpstreamConnectionService(nil, upstreamConnectionTestEncryptor{}, nil)
+	svc.accountRepo = &upstreamConnectionUsageAccountRepo{accounts: []*Account{{ID: 11, Name: "Primary", Concurrency: 8}}}
+	svc.runtimeReader = reader
+	svc.concurrencyService = NewConcurrencyService(upstreamConnectionRuntimeConcurrencyCache{loads: map[int64]*AccountLoadInfo{
+		11: {AccountID: 11, CurrentConcurrency: 4, WaitingCount: 1},
+	}})
+	svc.now = func() time.Time { return time.Date(2026, time.July, 21, 10, 0, 0, 0, time.Local) }
+
+	overview, err := svc.GetRuntimeOverview(context.Background(), []int64{11, 11, -1})
+
+	require.NoError(t, err)
+	require.Equal(t, []int64{11}, reader.accountIDs)
+	require.Len(t, overview.Accounts, 1)
+	account := overview.Accounts[0]
+	require.Equal(t, "Primary", account.AccountName)
+	require.NotNil(t, account.CurrentConcurrency)
+	require.Equal(t, 4, *account.CurrentConcurrency)
+	require.NotNil(t, account.WaitingCount)
+	require.Equal(t, 1, *account.WaitingCount)
+	require.Len(t, account.Groups, 2)
+	require.Equal(t, "Default", account.Groups[0].GroupName)
+	require.Nil(t, account.Groups[0].FiveMinuteSuccessRate)
+	require.Equal(t, "VIP", account.Groups[1].GroupName)
+	require.NotNil(t, account.Groups[1].FiveMinuteSuccessRate)
+	require.InDelta(t, 75, *account.Groups[1].FiveMinuteSuccessRate, 0.000001)
 }

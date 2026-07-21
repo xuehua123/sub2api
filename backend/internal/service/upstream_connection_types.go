@@ -294,3 +294,38 @@ type UpstreamConnectionTodayUsage struct {
 	Trend        []UpstreamConnectionUsagePoint   `json:"trend"`
 	Accounts     []UpstreamConnectionAccountUsage `json:"accounts"`
 }
+
+// UpstreamConnectionRuntimeGroupMetric is the repository projection for the
+// connection-list runtime snapshot. It is local, read-only telemetry; it does
+// not represent an upstream provider's groups or mutate billing state.
+type UpstreamConnectionRuntimeGroupMetric struct {
+	AccountID              int64
+	GroupID                int64
+	GroupName              string
+	Today                  UpstreamConnectionUsageStats
+	FiveMinuteRequests     int64
+	FiveMinuteSuccessCount int64
+	FiveMinuteErrorCount   int64
+}
+
+type UpstreamConnectionRuntimeGroup struct {
+	GroupID                int64                        `json:"group_id"`
+	GroupName              string                       `json:"group_name"`
+	Today                  UpstreamConnectionUsageStats `json:"today"`
+	FiveMinuteRequests     int64                        `json:"five_minute_requests"`
+	FiveMinuteSuccessCount int64                        `json:"five_minute_success_count"`
+	FiveMinuteErrorCount   int64                        `json:"five_minute_error_count"`
+	FiveMinuteSuccessRate  *float64                     `json:"five_minute_success_rate"`
+}
+
+type UpstreamConnectionRuntimeAccount struct {
+	AccountID          int64                            `json:"account_id"`
+	AccountName        string                           `json:"account_name"`
+	CurrentConcurrency *int                             `json:"current_concurrency"`
+	WaitingCount       *int                             `json:"waiting_count"`
+	Groups             []UpstreamConnectionRuntimeGroup `json:"groups"`
+}
+
+type UpstreamConnectionRuntimeOverview struct {
+	Accounts []UpstreamConnectionRuntimeAccount `json:"accounts"`
+}

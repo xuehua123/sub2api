@@ -14,6 +14,7 @@ vi.mock('@/api/client', () => ({
 import {
   bindAccount,
   getAccountBinding,
+  getRuntimeOverview,
   getTodayUsage,
   listAll,
   unbindAccount
@@ -78,5 +79,27 @@ describe('admin upstream connections API', () => {
 
     await expect(getTodayUsage(9)).resolves.toEqual(usage)
     expect(get).toHaveBeenCalledWith('/admin/upstream-connections/9/usage/today')
+  })
+
+  it('loads the batched runtime overview for bound accounts', async () => {
+    const overview = { accounts: [{ account_id: 8, account_name: 'Primary', groups: [] }] }
+    post.mockResolvedValueOnce({ data: overview })
+
+    await expect(getRuntimeOverview([8, 12])).resolves.toEqual(overview)
+    expect(post).toHaveBeenCalledWith('/admin/upstream-connections/runtime-overview', { account_ids: [8, 12] })
+  })
+
+  it('splits a large runtime overview into bounded requests', async () => {
+    const accountIds = Array.from({ length: 5001 }, (_, index) => index + 1)
+    post
+      .mockResolvedValueOnce({ data: { accounts: [{ account_id: 1, account_name: 'First', groups: [] }] } })
+      .mockResolvedValueOnce({ data: { accounts: [{ account_id: 5001, account_name: 'Last', groups: [] }] } })
+
+    await expect(getRuntimeOverview(accountIds)).resolves.toEqual({
+      accounts: [{ account_id: 1, account_name: 'First', groups: [] }, { account_id: 5001, account_name: 'Last', groups: [] }]
+    })
+    expect(post).toHaveBeenCalledTimes(2)
+    expect(post.mock.calls[0]?.[1].account_ids).toHaveLength(5000)
+    expect(post.mock.calls[1]?.[1]).toEqual({ account_ids: [5001] })
   })
 })

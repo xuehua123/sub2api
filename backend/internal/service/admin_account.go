@@ -28,11 +28,38 @@ func (s *adminServiceImpl) ListAccounts(ctx context.Context, page, pageSize int,
 	return accounts, result.Total, nil
 }
 
+func (s *adminServiceImpl) ListAccountsByUpstreamConnection(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string, sortBy, sortOrder string) ([]Account, int64, error) {
+	if upstreamConnectionID <= 0 {
+		return s.ListAccounts(ctx, page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	}
+	repo, ok := s.accountRepo.(AccountUpstreamConnectionFilterRepository)
+	if !ok {
+		return nil, 0, fmt.Errorf("account repository does not support upstream connection filters")
+	}
+	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
+	accounts, result, err := repo.ListWithUpstreamConnectionFilter(ctx, params, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
+	if err != nil {
+		return nil, 0, err
+	}
+	return accounts, result.Total, nil
+}
+
 func (s *adminServiceImpl) ListAccountsForSchedulerScoreFilter(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
 	if s == nil || s.accountRepo == nil {
 		return nil, nil
 	}
 	return s.accountRepo.ListAllWithFilters(ctx, platform, accountType, status, search, groupID, privacyMode)
+}
+
+func (s *adminServiceImpl) ListAccountsForSchedulerScoreFilterByUpstreamConnection(ctx context.Context, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]Account, error) {
+	if upstreamConnectionID <= 0 {
+		return s.ListAccountsForSchedulerScoreFilter(ctx, platform, accountType, status, search, groupID, privacyMode)
+	}
+	repo, ok := s.accountRepo.(AccountUpstreamConnectionFilterRepository)
+	if !ok {
+		return nil, fmt.Errorf("account repository does not support upstream connection filters")
+	}
+	return repo.ListAllWithUpstreamConnectionFilter(ctx, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
 }
 
 func (s *adminServiceImpl) ListOpenAISchedulableAccountsForSchedulerScore(ctx context.Context, groupID *int64) ([]Account, error) {
@@ -1029,7 +1056,7 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 	accountIDs := make([]int64, 0, pageSize)
 
 	for {
-		accounts, total, err := s.ListAccounts(
+		accounts, total, err := s.ListAccountsByUpstreamConnection(
 			ctx,
 			page,
 			pageSize,
@@ -1038,6 +1065,7 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 			filters.Status,
 			filters.Search,
 			groupID,
+			filters.UpstreamConnectionID,
 			filters.PrivacyMode,
 			"",
 			"",

@@ -121,6 +121,15 @@ type AccountRepository interface {
 	ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error)
 }
 
+// AccountUpstreamConnectionFilterRepository is implemented by repositories
+// that can scope the admin account list to one shared upstream connection.
+// It is intentionally separate from AccountRepository so existing account
+// service consumers do not need this UI-only filter capability.
+type AccountUpstreamConnectionFilterRepository interface {
+	ListWithUpstreamConnectionFilter(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error)
+	ListAllWithUpstreamConnectionFilter(ctx context.Context, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]Account, error)
+}
+
 type AccountDuplicateRepository interface {
 	// CreateWithAccountGroups atomically persists an account, its exact group priorities,
 	// and the scheduler outbox event for the new routing snapshot.

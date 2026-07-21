@@ -26,6 +26,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
+	dbupstreamaccountbinding "github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -633,7 +634,7 @@ func (r *accountRepository) List(ctx context.Context, params pagination.Paginati
 	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
 }
 
-func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID int64, privacyMode string) *dbent.AccountQuery {
+func (r *accountRepository) accountListFilteredQuery(platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) *dbent.AccountQuery {
 	q := r.client.Account.Query()
 
 	if platform != "" {
@@ -717,6 +718,9 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 	} else if groupID > 0 {
 		q = q.Where(dbaccount.HasAccountGroupsWith(dbaccountgroup.GroupIDEQ(groupID)))
 	}
+	if upstreamConnectionID > 0 {
+		q = q.Where(dbaccount.HasUpstreamBindingWith(dbupstreamaccountbinding.ConnectionIDEQ(upstreamConnectionID)))
+	}
 	if privacyMode != "" {
 		q = q.Where(dbpredicate.Account(func(s *entsql.Selector) {
 			path := sqljson.Path("privacy_mode")
@@ -736,7 +740,15 @@ func (r *accountRepository) accountListFilteredQuery(platform, accountType, stat
 }
 
 func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
-	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode)
+	return r.listWithUpstreamConnectionFilter(ctx, params, platform, accountType, status, search, groupID, 0, privacyMode)
+}
+
+func (r *accountRepository) ListWithUpstreamConnectionFilter(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
+	return r.listWithUpstreamConnectionFilter(ctx, params, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
+}
+
+func (r *accountRepository) listWithUpstreamConnectionFilter(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
+	q := r.accountListFilteredQuery(platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode)
 	// Clone before Count so interceptor-appended predicates (SoftDeleteMixin's
 	// deleted_at IS NULL) don't accumulate on the shared builder and pollute the
 	// subsequent list query. Same pattern used in group_repo/promo_code_repo/user_repo
@@ -779,7 +791,11 @@ func parseAccountSearchID(search string) (int64, bool) {
 }
 
 func (r *accountRepository) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, error) {
-	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, privacyMode).All(ctx)
+	return r.ListAllWithUpstreamConnectionFilter(ctx, platform, accountType, status, search, groupID, 0, privacyMode)
+}
+
+func (r *accountRepository) ListAllWithUpstreamConnectionFilter(ctx context.Context, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode string) ([]service.Account, error) {
+	accounts, err := r.accountListFilteredQuery(platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode).All(ctx)
 	if err != nil {
 		return nil, err
 	}

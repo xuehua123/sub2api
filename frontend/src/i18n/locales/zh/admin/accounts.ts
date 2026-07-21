@@ -1387,5 +1387,14 @@ export default {
     // Scheduled Tests,
   accountHealth: {
     title: '账号健康',
+    requestCount: '{count} 次',
+    windowTitle: '{window}：请求数、成功率、首 Token 延迟',
+    windows: {
+      '1m': '近1分钟',
+      '5m': '近5分钟',
+      '10m': '近10分钟',
+      '30m': '近30分钟',
+      '1h': '近1小时'
+    }
   },
 }

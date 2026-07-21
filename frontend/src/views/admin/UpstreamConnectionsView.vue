@@ -39,6 +39,15 @@
             <button class="btn btn-secondary" :title="t('common.refresh')" :disabled="loading" @click="loadConnections()">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
+            <button
+              class="btn btn-secondary"
+              :title="t('admin.upstreamConnections.runtime.refreshTitle')"
+              :disabled="loading || runtimeRefreshing"
+              @click="refreshRuntimeOverview"
+            >
+              <Icon name="refresh" size="md" :class="runtimeRefreshing ? 'animate-spin' : ''" />
+              <span class="ml-2">{{ t('admin.upstreamConnections.runtime.refresh') }}</span>
+            </button>
             <button class="btn btn-primary" @click="openCreate">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.upstreamConnections.create') }}
@@ -108,6 +117,33 @@
               <span class="text-xs tabular-nums text-gray-500 dark:text-gray-400">
                 {{ row.today_requests === null ? '-' : t('admin.upstreamConnections.usage.requestCount', { count: row.today_requests.toLocaleString() }) }}
               </span>
+            </div>
+          </template>
+          <template #cell-runtime="{ row }">
+            <div class="w-[152px] overflow-hidden text-xs" :title="runtimeSummaryTitle(row)">
+              <template v-if="row.runtime_available">
+                <div class="truncate tabular-nums text-gray-600 dark:text-gray-300">
+                  {{ t('admin.upstreamConnections.runtime.compactOverview', { accounts: row.binding_count, concurrency: runtimeCompactConcurrencyLabel(row) }) }}
+                </div>
+                <div v-if="runtimeGroups(row).length" class="mt-0.5 flex gap-1 overflow-x-auto whitespace-nowrap pb-px text-[11px] tabular-nums">
+                  <button
+                    v-for="group in runtimeGroups(row)"
+                    :key="group.group_id"
+                    class="shrink-0 text-primary-700 hover:underline dark:text-primary-300"
+                    :title="runtimeGroupTitle(group)"
+                    @click="openAccountGroup(row.id, group.group_id)"
+                  >
+                    {{ runtimeCompactGroupLabel(group) }}
+                  </button>
+                </div>
+                <p v-else class="mt-0.5 truncate text-gray-400 dark:text-gray-500">{{ t('admin.upstreamConnections.runtime.noTraffic') }}</p>
+              </template>
+              <div v-else class="flex items-center gap-1 text-amber-600 dark:text-amber-300">
+                <span class="truncate" :title="row.runtime_error">{{ t('admin.upstreamConnections.runtime.unavailable') }}</span>
+                <button class="rounded p-0.5 hover:bg-amber-50 dark:hover:bg-amber-900/20" :title="t('admin.upstreamConnections.runtime.retry')" @click="refreshRuntimeOverview">
+                  <Icon name="refresh" size="sm" :class="runtimeRefreshing ? 'animate-spin' : ''" />
+                </button>
+              </div>
             </div>
           </template>
           <template #cell-observations="{ row }">
@@ -323,12 +359,15 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { adminAPI } from '@/api/admin'
 import type {
   CreateUpstreamConnectionRequest,
   UpstreamConnection,
   UpstreamConnectionAuthMode,
   UpstreamConnectionProvider,
+  UpstreamConnectionRuntimeAccount,
+  UpstreamConnectionRuntimeGroup,
   UpstreamConnectionTodayUsage,
   UpdateUpstreamConnectionRequest
 } from '@/api/admin/upstreamConnections'
@@ -347,16 +386,22 @@ import Icon from '@/components/icons/Icon.vue'
 import UpstreamConnectionUsagePanel from '@/components/admin/UpstreamConnectionUsagePanel.vue'
 
 const { t } = useI18n()
+const router = useRouter()
 const appStore = useAppStore()
 const loading = ref(false)
 const saving = ref(false)
 type UpstreamConnectionRow = UpstreamConnection & {
   today_requests: number | null
   today_cost: number | null
+  runtime_available: boolean
+  runtime_error: string
+  runtime_fetched_at: string | null
+  runtime_accounts: UpstreamConnectionRuntimeAccount[]
 }
 const allConnections = ref<UpstreamConnectionRow[]>([])
 const connections = ref<UpstreamConnectionRow[]>([])
 const todayStatsAvailable = ref(true)
+const runtimeRefreshing = ref(false)
 const proxies = ref<Proxy[]>([])
 const probingIds = ref(new Set<number>())
 const details = ref<UpstreamConnection | null>(null)
@@ -388,6 +433,7 @@ const columns = computed<Column[]>(() => [
   { key: 'provider', label: t('admin.upstreamConnections.columns.provider') },
   { key: 'wallet', label: t('admin.upstreamConnections.columns.wallet'), sortable: true },
   { key: 'today_requests', label: t('admin.upstreamConnections.columns.todayUsage'), sortable: true },
+  { key: 'runtime', label: t('admin.upstreamConnections.columns.runtime'), class: 'w-[152px] min-w-[152px]' },
   { key: 'observations', label: t('admin.upstreamConnections.columns.observations'), sortable: true },
   { key: 'last_synced_at', label: t('admin.upstreamConnections.columns.lastSync'), sortable: true },
   { key: 'status', label: t('admin.upstreamConnections.columns.status') },
@@ -498,6 +544,87 @@ function homepageUrl(value: string): string {
     return value
   }
 }
+function runtimeAccountUsage(account: UpstreamConnectionRuntimeAccount): { cost: number; requests: number } {
+  return account.groups.reduce((total, group) => ({
+    cost: total.cost + Number(group.today.account_cost || 0),
+    requests: total.requests + Number(group.today.requests || 0)
+  }), { cost: 0, requests: 0 })
+}
+function runtimeCompactConcurrencyLabel(row: UpstreamConnectionRow): string {
+  const known = row.runtime_accounts.filter(account => account.current_concurrency !== null)
+  if (known.length === 0) return t('admin.upstreamConnections.runtime.compactConcurrencyUnavailable')
+  const total = known.reduce((sum, account) => sum + Number(account.current_concurrency || 0), 0)
+  return known.length === row.runtime_accounts.length
+    ? t('admin.upstreamConnections.runtime.compactConcurrency', { count: total })
+    : t('admin.upstreamConnections.runtime.compactPartialConcurrency', { count: total })
+}
+function runtimeUsage(row: UpstreamConnectionRow): { cost: number; requests: number } {
+  return row.runtime_accounts.reduce((total, account) => {
+    const accountUsage = runtimeAccountUsage(account)
+    return { cost: total.cost + accountUsage.cost, requests: total.requests + accountUsage.requests }
+  }, { cost: 0, requests: 0 })
+}
+function runtimeTodayUsageLabel(row: UpstreamConnectionRow): string {
+  const usage = runtimeUsage(row)
+  return t('admin.upstreamConnections.runtime.todayUsage', { cost: formatCost(usage.cost), count: usage.requests.toLocaleString() })
+}
+function runtimeGroups(row: UpstreamConnectionRow): UpstreamConnectionRuntimeGroup[] {
+  const groupsByID = new Map<number, UpstreamConnectionRuntimeGroup>()
+  for (const account of row.runtime_accounts) {
+    for (const group of account.groups) {
+      const existing = groupsByID.get(group.group_id)
+      if (!existing) {
+        groupsByID.set(group.group_id, { ...group, today: { ...group.today } })
+        continue
+      }
+      existing.today.requests += group.today.requests
+      existing.today.tokens += group.today.tokens
+      existing.today.account_cost += group.today.account_cost
+      existing.today.standard_cost += group.today.standard_cost
+      existing.today.user_cost += group.today.user_cost
+      existing.five_minute_requests += group.five_minute_requests
+      existing.five_minute_success_count += group.five_minute_success_count
+      existing.five_minute_error_count += group.five_minute_error_count
+      existing.five_minute_success_rate = existing.five_minute_requests > 0
+        ? existing.five_minute_success_count * 100 / existing.five_minute_requests
+        : null
+    }
+  }
+  return [...groupsByID.values()].sort((left, right) => {
+    if (left.five_minute_requests !== right.five_minute_requests) return right.five_minute_requests - left.five_minute_requests
+    if (left.today.account_cost !== right.today.account_cost) return right.today.account_cost - left.today.account_cost
+    if (left.today.requests !== right.today.requests) return right.today.requests - left.today.requests
+    return left.group_name.localeCompare(right.group_name)
+  })
+}
+function runtimeCompactGroupLabel(group: UpstreamConnectionRuntimeGroup): string {
+  return group.five_minute_requests > 0
+    ? t('admin.upstreamConnections.runtime.compactGroupSuccessRate', { name: group.group_name, rate: (group.five_minute_success_count * 100 / group.five_minute_requests).toFixed(1) })
+    : t('admin.upstreamConnections.runtime.compactGroupNoRecentRequests', { name: group.group_name })
+}
+function runtimeGroupTitle(group: UpstreamConnectionRuntimeGroup): string {
+  return `${runtimeCompactGroupLabel(group)} · ${t('admin.upstreamConnections.runtime.todayUsage', { cost: formatCost(group.today.account_cost), count: group.today.requests.toLocaleString() })}`
+}
+function runtimeSummaryTitle(row: UpstreamConnectionRow): string {
+  if (!row.runtime_available) return row.runtime_error || t('admin.upstreamConnections.runtime.unavailable')
+  const groupSummary = runtimeGroups(row).map(runtimeGroupTitle).join('\n') || t('admin.upstreamConnections.runtime.noTraffic')
+  return [
+    t('admin.upstreamConnections.runtime.boundAccounts', { count: row.binding_count }),
+    runtimeCompactConcurrencyLabel(row),
+    runtimeTodayUsageLabel(row),
+    groupSummary,
+    row.runtime_fetched_at ? t('admin.upstreamConnections.runtime.updatedAt', { time: formatDateTime(row.runtime_fetched_at) }) : ''
+  ].filter(Boolean).join('\n')
+}
+function openAccountGroup(connectionID: number, groupID: number): void {
+	void router.push({
+		name: 'AdminAccounts',
+		query: {
+			group: groupID > 0 ? String(groupID) : 'ungrouped',
+			upstream_connection_id: String(connectionID)
+		}
+	})
+}
 function errorMessage(error: unknown, fallback: string): string {
   const response = (error as { response?: { data?: { message?: string; detail?: string } }; message?: string })
   return response.response?.data?.message || response.response?.data?.detail || response.message || fallback
@@ -519,7 +646,11 @@ function patchConnectionRow(updated: UpstreamConnection): void {
       ...row,
       ...updated,
       today_requests: row.today_requests,
-      today_cost: row.today_cost
+      today_cost: row.today_cost,
+      runtime_available: row.runtime_available,
+      runtime_error: row.runtime_error,
+      runtime_fetched_at: row.runtime_fetched_at,
+      runtime_accounts: row.runtime_accounts
     }
   }
   allConnections.value = allConnections.value.map(merge)
@@ -550,7 +681,11 @@ function mergeListRowsWithLocal(remoteRows: UpstreamConnectionRow[]): UpstreamCo
     return {
       ...local,
       today_requests: remote.today_requests,
-      today_cost: remote.today_cost
+      today_cost: remote.today_cost,
+      runtime_available: remote.runtime_available,
+      runtime_error: remote.runtime_error,
+      runtime_fetched_at: remote.runtime_fetched_at,
+      runtime_accounts: remote.runtime_accounts
     }
   })
 }
@@ -565,11 +700,26 @@ async function loadConnections(page = pagination.page): Promise<void> {
     const accountIds = [...new Set(items.flatMap(item => item.bound_account_ids ?? []))]
     let stats: Record<string, WindowStats> = {}
     let statsAvailable = true
+    let runtimeAvailable = true
+    let runtimeError = ''
+    let runtimeFetchedAt: string | null = null
+    let runtimeAccountsByID = new Map<number, UpstreamConnectionRuntimeAccount>()
     if (accountIds.length > 0) {
-      try {
-        stats = (await adminAPI.accounts.getBatchTodayStats(accountIds)).stats
-      } catch {
+      const [statsResult, runtimeResult] = await Promise.allSettled([
+        adminAPI.accounts.getBatchTodayStats(accountIds),
+        adminAPI.upstreamConnections.getRuntimeOverview(accountIds)
+      ])
+      if (statsResult.status === 'fulfilled') {
+        stats = statsResult.value.stats
+      } else {
         statsAvailable = false
+      }
+      if (runtimeResult.status === 'fulfilled') {
+        runtimeAccountsByID = new Map(runtimeResult.value.accounts.map(account => [account.account_id, account]))
+        runtimeFetchedAt = new Date().toISOString()
+      } else {
+        runtimeAvailable = false
+        runtimeError = errorMessage(runtimeResult.reason, t('admin.upstreamConnections.runtime.unavailable'))
       }
     }
     const rows: UpstreamConnectionRow[] = items.map(item => ({
@@ -579,7 +729,13 @@ async function loadConnections(page = pagination.page): Promise<void> {
         : null,
       today_cost: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.cost ?? 0), 0)
-        : null
+        : null,
+        runtime_available: runtimeAvailable,
+        runtime_error: runtimeError,
+        runtime_fetched_at: runtimeFetchedAt,
+        runtime_accounts: (item.bound_account_ids ?? [])
+        .map(accountID => runtimeAccountsByID.get(accountID))
+        .filter((account): account is UpstreamConnectionRuntimeAccount => account !== undefined)
     }))
     if (generation === loadGeneration) {
       todayStatsAvailable.value = statsAvailable
@@ -593,6 +749,44 @@ async function loadConnections(page = pagination.page): Promise<void> {
     }
   } finally {
     if (generation === loadGeneration) loading.value = false
+  }
+}
+function boundRuntimeAccountIDs(rows: UpstreamConnectionRow[]): number[] {
+  return [...new Set(rows.flatMap(row => row.bound_account_ids ?? []))]
+}
+async function refreshRuntimeOverview(): Promise<void> {
+  if (runtimeRefreshing.value) return
+  const accountIDs = boundRuntimeAccountIDs(allConnections.value)
+  if (accountIDs.length === 0) return
+
+  runtimeRefreshing.value = true
+  try {
+    const overview = await adminAPI.upstreamConnections.getRuntimeOverview(accountIDs)
+    const accountsByID = new Map(overview.accounts.map(account => [account.account_id, account]))
+    const fetchedAt = new Date().toISOString()
+    allConnections.value = allConnections.value.map(row => ({
+      ...row,
+      runtime_available: true,
+      runtime_error: '',
+      runtime_fetched_at: fetchedAt,
+      runtime_accounts: (row.bound_account_ids ?? [])
+        .map(accountID => accountsByID.get(accountID))
+        .filter((account): account is UpstreamConnectionRuntimeAccount => account !== undefined)
+    }))
+    applySortAndPage(pagination.page)
+  } catch (error: unknown) {
+    const message = errorMessage(error, t('admin.upstreamConnections.runtime.unavailable'))
+    allConnections.value = allConnections.value.map(row => ({
+      ...row,
+      runtime_available: false,
+      runtime_error: message,
+      runtime_fetched_at: null,
+      runtime_accounts: []
+    }))
+    applySortAndPage(pagination.page)
+    appStore.showError(t('admin.upstreamConnections.runtime.refreshFailed'))
+  } finally {
+    runtimeRefreshing.value = false
   }
 }
 function scheduleSearch(): void {

@@ -51,3 +51,33 @@ func TestGetUpstreamAccountUsageBucketsSkipsQueryWithoutAccounts(t *testing.T) {
 	require.Empty(t, rows)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestGetUpstreamConnectionRuntimeGroupsCombinesUsageAndErrors(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, time.July, 21, 0, 0, 0, 0, time.FixedZone("CST", 8*60*60))
+	end := start.Add(10 * time.Hour)
+	fiveMinutesAgo := end.Add(-5 * time.Minute)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM ops_error_logs o")).
+		WithArgs(sqlmock.AnyArg(), start, end, fiveMinutesAgo).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"account_id", "group_id", "group_name", "today_requests", "today_tokens", "today_account_cost", "today_standard_cost", "today_user_cost",
+			"five_minute_requests", "five_minute_success_count", "five_minute_error_count",
+		}).AddRow(int64(11), int64(7), "VIP", int64(9), int64(800), 2.5, 2.0, 3.0, int64(4), int64(3), int64(1)))
+
+	rows, err := repo.GetUpstreamConnectionRuntimeGroups(context.Background(), []int64{11, 11, 0}, start, end, fiveMinutesAgo)
+
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(11), rows[0].AccountID)
+	require.Equal(t, int64(7), rows[0].GroupID)
+	require.Equal(t, "VIP", rows[0].GroupName)
+	require.Equal(t, int64(9), rows[0].Today.Requests)
+	require.Equal(t, int64(800), rows[0].Today.Tokens)
+	require.InDelta(t, 2.5, rows[0].Today.AccountCost, 0.000001)
+	require.Equal(t, int64(4), rows[0].FiveMinuteRequests)
+	require.Equal(t, int64(3), rows[0].FiveMinuteSuccessCount)
+	require.Equal(t, int64(1), rows[0].FiveMinuteErrorCount)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

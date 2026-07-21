@@ -8,6 +8,7 @@ const {
   listAllConnectionsMock,
   getConnectionMock,
   getTodayUsageMock,
+  getRuntimeOverviewMock,
   probeConnectionMock,
   getBatchTodayStatsMock,
   getProxiesMock,
@@ -18,17 +19,28 @@ const {
   listAllConnectionsMock: vi.fn(),
   getConnectionMock: vi.fn(),
   getTodayUsageMock: vi.fn(),
+  getRuntimeOverviewMock: vi.fn(),
   probeConnectionMock: vi.fn(),
   getBatchTodayStatsMock: vi.fn(),
   getProxiesMock: vi.fn(),
   showErrorMock: vi.fn()
 }))
 
+const routerPushMock = vi.hoisted(() => vi.fn())
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: routerPushMock })
+}))
+
 vi.mock('vue-i18n', async importOriginal => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
   return {
     ...actual,
-    useI18n: () => ({ t: (key: string) => key })
+    useI18n: () => ({
+      t: (key: string, params?: Record<string, string | number>) => params
+        ? `${key}:${Object.values(params).join(',')}`
+        : key
+    })
   }
 })
 
@@ -46,6 +58,7 @@ vi.mock('@/api/admin', () => ({
       listAll: listAllConnectionsMock,
       get: getConnectionMock,
       getTodayUsage: getTodayUsageMock,
+      getRuntimeOverview: getRuntimeOverviewMock,
       create: createConnectionMock,
       update: updateConnectionMock,
       probe: probeConnectionMock
@@ -101,6 +114,7 @@ const DataTableStub = defineComponent({
         <span class="row-name">{{ row.name }}</span>
         <slot name="cell-wallet" :row="row" />
         <slot name="cell-today_requests" :row="row" />
+        <slot name="cell-runtime" :row="row" />
         <slot name="cell-status" :row="row" />
         <slot name="cell-actions" :row="row" />
       </div>
@@ -156,6 +170,7 @@ describe('UpstreamConnectionsView', () => {
       trend: [],
       accounts: []
     })
+    getRuntimeOverviewMock.mockResolvedValue({ accounts: [] })
   })
 
   it('accepts an optional remote user ID and refresh token in auto access-token mode', async () => {
@@ -295,6 +310,85 @@ describe('UpstreamConnectionsView', () => {
     expect(wrapper.text()).toContain('123')
     expect(wrapper.get('[data-testid="today-cost-summary"]').text()).toContain('7.50')
     expect(wrapper.text()).toContain('admin.upstreamConnections.walletHighlightHint')
+  })
+
+  it('renders a compact per-group runtime success rate and opens its account group', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 22, name: 'Runtime upstream', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1
+    }])
+    getRuntimeOverviewMock.mockResolvedValue({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 4, waiting_count: 1,
+      groups: [{
+        group_id: 7, group_name: 'VIP', today: { requests: 12, tokens: 300, account_cost: 0, standard_cost: 0, user_cost: 0 },
+        five_minute_requests: 4, five_minute_success_count: 3, five_minute_error_count: 1, five_minute_success_rate: 75
+      }]
+    }] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('runtime.compactOverview:1,admin.upstreamConnections.runtime.compactConcurrency:4')
+    expect(wrapper.text()).not.toContain('admin.upstreamConnections.runtime.unavailable')
+    const groupButton = wrapper.findAll('button').find(button => button.text().includes('VIP'))
+    expect(groupButton).toBeDefined()
+    await groupButton!.trigger('click')
+    expect(routerPushMock).toHaveBeenCalledWith({ name: 'AdminAccounts', query: { group: '7', upstream_connection_id: '22' } })
+  })
+
+  it('keeps the runtime column fixed-height while showing each group in a single scrolling line', async () => {
+    listAllConnectionsMock.mockResolvedValue([{
+      id: 23, name: 'Dense runtime', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [1, 2, 3, 4], binding_count: 4, group_count: 1
+    }])
+    getRuntimeOverviewMock.mockResolvedValue({ accounts: [
+      { account_id: 1, account_name: 'Lowest', current_concurrency: 0, waiting_count: 0, groups: [{ group_id: 1, group_name: 'A', today: { requests: 100, tokens: 0, account_cost: 1, standard_cost: 0, user_cost: 0 }, five_minute_requests: 0, five_minute_success_count: 0, five_minute_error_count: 0, five_minute_success_rate: null }] },
+      { account_id: 2, account_name: 'Highest', current_concurrency: 3, waiting_count: 0, groups: [{ group_id: 2, group_name: 'B', today: { requests: 1, tokens: 0, account_cost: 8, standard_cost: 0, user_cost: 0 }, five_minute_requests: 1, five_minute_success_count: 1, five_minute_error_count: 0, five_minute_success_rate: 100 }] },
+      { account_id: 3, account_name: 'Middle', current_concurrency: 1, waiting_count: 0, groups: [{ group_id: 3, group_name: 'C', today: { requests: 2, tokens: 0, account_cost: 5, standard_cost: 0, user_cost: 0 }, five_minute_requests: 1, five_minute_success_count: 1, five_minute_error_count: 0, five_minute_success_rate: 100 }] },
+      { account_id: 4, account_name: 'Lower', current_concurrency: 0, waiting_count: 0, groups: [{ group_id: 4, group_name: 'D', today: { requests: 3, tokens: 0, account_cost: 2, standard_cost: 0, user_cost: 0 }, five_minute_requests: 1, five_minute_success_count: 0, five_minute_error_count: 1, five_minute_success_rate: 0 }] }
+    ] })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const text = wrapper.text()
+    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:B,100.0')
+    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:C,100.0')
+    expect(text).toContain('admin.upstreamConnections.runtime.compactGroupSuccessRate:D,0.0')
+  })
+
+  it('refreshes only the runtime snapshot without reloading connections', async () => {
+    const connection = {
+      id: 24, name: 'Runtime refresh', provider: 'newapi', auth_mode: 'password',
+      management_base_url: 'https://console.example.com', forwarding_base_url: '', remote_user_id: '',
+      proxy_id: null, sync_enabled: true, sync_interval_seconds: 300, version: 1,
+      wallet_amount: 100, wallet_currency: 'USD', wallet_usd: 100, wallet_unlimited: false,
+      wallet_reliability: 'exact', bound_account_ids: [8], binding_count: 1, group_count: 1
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 1, waiting_count: 0, groups: []
+    }] })
+
+    const wrapper = mountView()
+    await flushPromises()
+    listAllConnectionsMock.mockClear()
+    getRuntimeOverviewMock.mockResolvedValueOnce({ accounts: [{
+      account_id: 8, account_name: 'Primary', current_concurrency: 2, waiting_count: 0, groups: []
+    }] })
+
+    await wrapper.get('button[title="admin.upstreamConnections.runtime.refreshTitle"]').trigger('click')
+    await flushPromises()
+
+    expect(getRuntimeOverviewMock).toHaveBeenLastCalledWith([8])
+    expect(listAllConnectionsMock).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('admin.upstreamConnections.runtime.compactConcurrency:2')
   })
 
   it('loads the connection usage snapshot when details open', async () => {

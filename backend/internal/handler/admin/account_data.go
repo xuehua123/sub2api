@@ -502,12 +502,12 @@ func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, e
 	return out, nil
 }
 
-func (h *AccountHandler) listAccountsFiltered(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode, sortBy, sortOrder string) ([]service.Account, error) {
+func (h *AccountHandler) listAccountsFiltered(ctx context.Context, platform, accountType, status, search string, groupID, upstreamConnectionID int64, privacyMode, sortBy, sortOrder string) ([]service.Account, error) {
 	page := 1
 	pageSize := dataPageCap
 	var out []service.Account
 	for {
-		items, total, err := h.adminService.ListAccounts(ctx, page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+		items, total, err := h.adminService.ListAccountsByUpstreamConnection(ctx, page, pageSize, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode, sortBy, sortOrder)
 		if err != nil {
 			return nil, err
 		}
@@ -560,7 +560,16 @@ func (h *AccountHandler) resolveExportAccounts(ctx context.Context, ids []int64,
 		}
 	}
 
-	return h.listAccountsFiltered(ctx, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	upstreamConnectionID := int64(0)
+	if rawConnectionID := strings.TrimSpace(c.Query("upstream_connection_id")); rawConnectionID != "" {
+		parsedConnectionID, parseErr := strconv.ParseInt(rawConnectionID, 10, 64)
+		if parseErr != nil || parsedConnectionID <= 0 {
+			return nil, infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_FILTER", "invalid upstream connection filter")
+		}
+		upstreamConnectionID = parsedConnectionID
+	}
+
+	return h.listAccountsFiltered(ctx, platform, accountType, status, search, groupID, upstreamConnectionID, privacyMode, sortBy, sortOrder)
 }
 
 func (h *AccountHandler) resolveExportProxies(ctx context.Context, accounts []service.Account) ([]service.Proxy, error) {

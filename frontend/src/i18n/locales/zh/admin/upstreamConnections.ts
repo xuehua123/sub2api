@@ -36,6 +36,7 @@ export default {
       wallet: '总余额',
       todayRequests: '今日请求',
       todayUsage: '今日用量',
+      runtime: '运行情况',
       observations: '观测范围',
       lastSync: '最近同步',
       status: '状态',
@@ -140,6 +141,24 @@ export default {
       requestCount: '{count} 次请求',
       retry: '重试',
       loadFailed: '加载连接今日用量失败'
+    },
+    runtime: {
+      boundAccounts: '{count} 个账号',
+      todayUsage: '今日 ${cost} / {count} 次',
+      updatedAt: '更新于 {time}',
+      noTraffic: '暂无今日分组流量',
+      noBoundAccounts: '暂无绑定账号',
+      unavailable: '运行数据暂不可用',
+      compactOverview: '{accounts} 账号 · {concurrency}',
+      compactConcurrency: '{count} 并发',
+      compactPartialConcurrency: '至少 {count} 并发',
+      compactConcurrencyUnavailable: '并发 -',
+      compactGroupSuccessRate: '{name} 5m {rate}%',
+      compactGroupNoRecentRequests: '{name} 5m -',
+      refresh: '刷新运行',
+      refreshTitle: '刷新本地并发与分组运行数据，不探测上游余额或分组',
+      refreshFailed: '刷新运行数据失败',
+      retry: '重试运行数据'
     },
     binding: {
       title: '共享上游连接',

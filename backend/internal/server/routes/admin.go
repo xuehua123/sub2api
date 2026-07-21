@@ -769,6 +769,7 @@ func registerUpstreamConnectionRoutes(admin *gin.RouterGroup, h *handler.Handler
 	{
 		connections.GET("", h.Admin.UpstreamConnection.List)
 		connections.POST("", h.Admin.UpstreamConnection.Create)
+		connections.POST("/runtime-overview", h.Admin.UpstreamConnection.GetRuntimeOverview)
 		connections.GET("/bindings/by-account/:account_id", h.Admin.UpstreamConnection.GetAccountBinding)
 		connections.GET("/:id/usage/today", h.Admin.UpstreamConnection.GetTodayUsage)
 		connections.GET("/:id", h.Admin.UpstreamConnection.Get)

@@ -166,7 +166,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	opsSystemLogSink := service.ProvideOpsSystemLogSink(opsRepository)
 	upstreamConnectionRepository := repository.NewUpstreamConnectionRepository(client)
 	leaderLockCache := repository.NewLeaderLockCache(redisClient)
-	upstreamConnectionService := service.ProvideUpstreamConnectionService(upstreamConnectionRepository, secretEncryptor, configConfig, proxyRepository, accountRepository, usageLogRepository, leaderLockCache, db)
+	upstreamConnectionService := service.ProvideUpstreamConnectionService(upstreamConnectionRepository, secretEncryptor, configConfig, proxyRepository, accountRepository, usageLogRepository, concurrencyService, leaderLockCache, db)
 	authCacheInvalidationOutboxRepository := repository.NewAuthCacheInvalidationOutboxRepository(db)
 	authCacheInvalidationWorker := service.ProvideAuthCacheInvalidationWorker(authCacheInvalidationOutboxRepository, apiKeyCache, apiKeyService)
 	opsService := service.ProvideOpsService(opsRepository, settingRepository, configConfig, accountRepository, userRepository, concurrencyService, gatewayService, openAIGatewayService, geminiMessagesCompatService, antigravityGatewayService, opsSystemLogSink, settingService, upstreamConnectionService, authCacheInvalidationWorker, apiKeyService)
