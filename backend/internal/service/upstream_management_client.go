@@ -37,6 +37,22 @@ type upstreamManagementClient struct {
 	client *http.Client
 }
 
+type upstreamManagementHTTPStatusError struct {
+	statusCode int
+}
+
+func (e *upstreamManagementHTTPStatusError) Error() string {
+	if e == nil {
+		return "upstream management request returned an unknown HTTP status"
+	}
+	return fmt.Sprintf("upstream management request returned HTTP %d", e.statusCode)
+}
+
+func isUpstreamManagementHTTPStatus(err error, statusCode int) bool {
+	var statusErr *upstreamManagementHTTPStatusError
+	return errors.As(err, &statusErr) && statusErr.statusCode == statusCode
+}
+
 type upstreamManagementHTTPSession struct {
 	remoteUserID int64
 	accessToken  string
@@ -194,10 +210,11 @@ func (s *upstreamManagementClient) managementJSON(ctx context.Context, client *h
 		return managementJSONResponse{}, ErrUpstreamManagementLocationConfirmationRequired
 	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		statusErr := &upstreamManagementHTTPStatusError{statusCode: response.StatusCode}
 		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-			return managementJSONResponse{}, fmt.Errorf("%w: upstream management request returned HTTP %d", ErrUpstreamConnectionAuthentication, response.StatusCode)
+			return managementJSONResponse{}, fmt.Errorf("%w: %w", ErrUpstreamConnectionAuthentication, statusErr)
 		}
-		return managementJSONResponse{}, fmt.Errorf("upstream management request returned HTTP %d", response.StatusCode)
+		return managementJSONResponse{}, statusErr
 	}
 	if decodeErr != nil {
 		return managementJSONResponse{}, errors.New("upstream management response is not valid JSON")

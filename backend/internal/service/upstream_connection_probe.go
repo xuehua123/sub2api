@@ -623,6 +623,65 @@ func safeUpstreamWalletCurrency(value, fallback string) string {
 	return value
 }
 
+const (
+	sub2APIManagementV1Prefix   = "/api/v1"
+	sub2APIManagementRootPrefix = ""
+)
+
+func sub2APIManagementPath(prefix, path string) string {
+	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
+	path = "/" + strings.TrimLeft(path, "/")
+	return prefix + path
+}
+
+func sub2APIManagementEndpoint(baseURL, prefix, path string) string {
+	requestPath, rawQuery, _ := strings.Cut(path, "?")
+	endpoint := upstreamConnectionJoinEndpoint(baseURL, sub2APIManagementPath(prefix, requestPath), false)
+	if rawQuery == "" {
+		return endpoint
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	parsed.RawQuery = rawQuery
+	return parsed.String()
+}
+
+func sub2APIManagementPrefixCandidates(preferred string) []string {
+	if preferred == sub2APIManagementRootPrefix {
+		return []string{sub2APIManagementRootPrefix, sub2APIManagementV1Prefix}
+	}
+	return []string{sub2APIManagementV1Prefix, sub2APIManagementRootPrefix}
+}
+
+// sub2APIManagementJSON keeps modern Sub2API deployments on /api/v1 while
+// supporting the compatible root-path API used by a small number of forks.
+// Only an explicit 404 advances to the alternate prefix: authentication and
+// transport errors must remain visible to operators as-is.
+func sub2APIManagementJSON(
+	ctx context.Context,
+	management *upstreamManagementClient,
+	client *http.Client,
+	method, baseURL, path, preferredPrefix string,
+	headers http.Header,
+	body any,
+) (managementJSONResponse, string, error) {
+	prefixes := sub2APIManagementPrefixCandidates(preferredPrefix)
+	for index, prefix := range prefixes {
+		response, err := management.managementJSON(ctx, client, method,
+			sub2APIManagementEndpoint(baseURL, prefix, path), headers, body)
+		if err == nil {
+			return response, prefix, nil
+		}
+		if index == 0 && isUpstreamManagementHTTPStatus(err, http.StatusNotFound) {
+			continue
+		}
+		return managementJSONResponse{}, prefix, err
+	}
+	return managementJSONResponse{}, preferredPrefix, errors.New("Sub2API management endpoint prefix resolution failed")
+}
+
 func (i *upstreamConnectionInspector) inspectSub2API(
 	ctx context.Context,
 	client *http.Client,
@@ -632,13 +691,14 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
 	headers := upstreamManagementRequestHeaders(credential.UserAgent)
+	pathPrefix := sub2APIManagementV1Prefix
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
-		login, err := management.managementJSON(ctx, client, http.MethodPost,
-			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
-			sub2APIManagementLoginBody(credential))
+		login, resolvedPrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodPost,
+			connection.ManagementBaseURL, "/auth/login", pathPrefix, headers, sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}
+		pathPrefix = resolvedPrefix
 		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
 	}
 	if accessToken == "" {
@@ -656,9 +716,10 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	successfulRequests := 0
 	// Current Sub2API deployments expose the authenticated account through
 	// auth/me. The historical user/profile route is not implemented by them.
-	profileEndpoint := upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/me", false)
-	profile, profileErr := management.managementJSON(ctx, client, http.MethodGet, profileEndpoint, headers, nil)
+	profile, profilePrefix, profileErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		connection.ManagementBaseURL, "/auth/me", pathPrefix, headers, nil)
 	if profileErr == nil {
+		pathPrefix = profilePrefix
 		profileData := upstreamConnectionDataObject(profile.payload)
 		discoveredID := int64FromMap(profileData, "id", "user_id")
 		balance := upstreamConnectionNumber(profileData, "balance")
@@ -683,7 +744,7 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		snapshot.Warnings = append(snapshot.Warnings, "wallet: "+profileErr.Error())
 	}
 
-	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, management, client, connection.ManagementBaseURL, headers, now)
+	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, management, client, connection.ManagementBaseURL, pathPrefix, headers, now)
 	if groupsErr == nil {
 		successfulRequests++
 		snapshot.GroupsObserved = true
@@ -712,11 +773,12 @@ func inspectSub2APIGroups(
 	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
+	pathPrefix string,
 	headers http.Header,
 	now time.Time,
 ) ([]UpstreamGroup, string, error) {
-	availableEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/available", false)
-	available, err := management.managementJSON(ctx, client, http.MethodGet, availableEndpoint, headers, nil)
+	available, availablePrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		baseURL, "/groups/available", pathPrefix, headers, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -730,8 +792,8 @@ func inspectSub2APIGroups(
 	}
 	warning := ""
 	ratesOK := false
-	ratesEndpoint := upstreamConnectionJoinEndpoint(baseURL, "/api/v1/groups/rates", false)
-	if rates, ratesErr := management.managementJSON(ctx, client, http.MethodGet, ratesEndpoint, headers, nil); ratesErr == nil {
+	if rates, _, ratesErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		baseURL, "/groups/rates", availablePrefix, headers, nil); ratesErr == nil {
 		// ratesOK requires an explicit rates object: either data:{} / data:{id:rate},
 		// or a bare rate map. Generic success envelopes without data (e.g.
 		// {"success":true}) must NOT promote available defaults to auto-sync.
@@ -1259,20 +1321,21 @@ func (i *upstreamConnectionInspector) prepareSub2APIKeyResolver(
 	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
 	headers := upstreamManagementRequestHeaders(credential.UserAgent)
+	pathPrefix := sub2APIManagementV1Prefix
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
-		login, err := management.managementJSON(ctx, client, http.MethodPost,
-			upstreamConnectionJoinEndpoint(connection.ManagementBaseURL, "/api/v1/auth/login", false), headers,
-			sub2APIManagementLoginBody(credential))
+		login, resolvedPrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodPost,
+			connection.ManagementBaseURL, "/auth/login", pathPrefix, headers, sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}
+		pathPrefix = resolvedPrefix
 		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
 	}
 	if accessToken == "" {
 		return nil, errors.New("Sub2API management login did not return an access token")
 	}
 	headers.Set("Authorization", "Bearer "+accessToken)
-	rows, err := listSub2APIKeyRows(ctx, management, client, connection.ManagementBaseURL, headers)
+	rows, err := listSub2APIKeyRows(ctx, management, client, connection.ManagementBaseURL, pathPrefix, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -1381,6 +1444,7 @@ func listSub2APIKeyRows(
 	management *upstreamManagementClient,
 	client *http.Client,
 	baseURL string,
+	pathPrefix string,
 	headers http.Header,
 ) (map[string]map[string]any, error) {
 	const (
@@ -1390,18 +1454,15 @@ func listSub2APIKeyRows(
 	rows := make(map[string]map[string]any)
 	complete := false
 	for page := 1; page <= maxPages; page++ {
-		endpoint, err := url.Parse(upstreamConnectionJoinEndpoint(baseURL, "/api/v1/keys", false))
-		if err != nil {
-			return nil, err
-		}
-		query := endpoint.Query()
+		query := url.Values{}
 		query.Set("page", strconv.Itoa(page))
 		query.Set("page_size", strconv.Itoa(pageSize))
-		endpoint.RawQuery = query.Encode()
-		response, err := management.managementJSON(ctx, client, http.MethodGet, endpoint.String(), headers, nil)
+		response, resolvedPrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+			baseURL, "/keys?"+query.Encode(), pathPrefix, headers, nil)
 		if err != nil {
 			return nil, err
 		}
+		pathPrefix = resolvedPrefix
 		data := envelopeData(response.payload)
 		items := upstreamManagementItems(data)
 		for _, item := range items {

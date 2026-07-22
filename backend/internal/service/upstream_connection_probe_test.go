@@ -543,6 +543,85 @@ func TestUpstreamConnectionInspectorSub2APIMarksAvailableRatesUnavailableWhenRat
 	require.Contains(t, snapshot.Warnings, "groups: user-specific rates unavailable; showing available-group default rates for reference only")
 }
 
+func TestUpstreamConnectionInspectorSub2APIFallsBackToRootManagementPaths(t *testing.T) {
+	var legacyPathCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/login", "/api/v1/auth/me", "/api/v1/groups/available", "/api/v1/groups/rates", "/api/v1/keys":
+			legacyPathCalls.Add(1)
+			http.NotFound(writer, request)
+		case "/auth/login":
+			require.Equal(t, http.MethodPost, request.Method)
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"access_token": "root-token"}})
+		case "/auth/me":
+			require.Equal(t, "Bearer root-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"id": 11, "balance": 42.75}})
+		case "/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 2, "name": "plus", "rate_multiplier": 0.5},
+			}})
+		case "/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"2": 0.25}})
+		case "/keys":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
+				map[string]any{"id": 17, "name": "plus-key", "key": "sub2-secret-key", "group_id": 2},
+			}}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	connection := &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModePassword),
+		ManagementBaseURL: server.URL,
+	}
+	credential := upstreamConnectionCredential{Version: 1, Username: "alice@example.com", Password: "secret"}
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	snapshot, err := inspector.Inspect(context.Background(), connection, credential)
+	require.NoError(t, err)
+	require.Equal(t, "11", snapshot.RemoteUserID)
+	require.Equal(t, 42.75, *snapshot.Wallet.USD)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
+
+	connection.Groups = snapshot.Groups
+	binding, err := inspector.ResolveKey(context.Background(), connection, credential, "sub2-secret-key")
+	require.NoError(t, err)
+	require.Equal(t, "plus", binding.RemoteGroupName)
+	require.Equal(t, 0.25, *binding.ObservedMultiplier)
+	require.Greater(t, legacyPathCalls.Load(), int32(0))
+}
+
+func TestUpstreamConnectionInspectorSub2APIRootPathFallbackDoesNotRetryAuthenticationFailure(t *testing.T) {
+	var rootLoginCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/login":
+			writer.WriteHeader(http.StatusUnauthorized)
+			writeProbeJSON(t, writer, map[string]any{"message": "invalid credentials"})
+		case "/auth/login":
+			rootLoginCalls.Add(1)
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"access_token": "must-not-be-used"}})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+	_, err := inspector.Inspect(context.Background(), &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModePassword),
+		ManagementBaseURL: server.URL,
+	}, upstreamConnectionCredential{Version: 1, Username: "alice@example.com", Password: "wrong"})
+
+	require.ErrorIs(t, err, ErrUpstreamConnectionAuthentication)
+	require.Zero(t, rootLoginCalls.Load())
+}
+
 func TestUpstreamConnectionInspectorSub2APIPartialRatesMarkMissingGroupsAsDefault(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "application/json")
