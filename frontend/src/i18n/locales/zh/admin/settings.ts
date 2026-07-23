@@ -12,7 +12,7 @@ export default {
         email: '邮件设置',
         backup: '数据备份',
         payment: '支付设置',
-        referral: '推荐返佣',
+        referral: '邀请有礼',
         lobehub: 'LobeHub',
       },
       features: {

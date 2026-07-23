@@ -572,6 +572,84 @@
     @apply hover:bg-primary-100 dark:hover:bg-primary-900/30;
   }
 
+  /* Campaign-style nav entry (e.g. 邀请有礼) — soft dual-tone ring, not a rainbow. */
+  .sidebar-link-promo {
+    position: relative;
+    border: 1px solid rgba(0, 113, 227, 0.28);
+    background: linear-gradient(
+      135deg,
+      rgba(0, 113, 227, 0.06) 0%,
+      rgba(255, 255, 255, 0.9) 55%,
+      rgba(0, 113, 227, 0.04) 100%
+    );
+    color: #0071e3;
+    box-shadow:
+      0 0 0 1px rgba(0, 113, 227, 0.06),
+      0 4px 14px -6px rgba(0, 113, 227, 0.35);
+  }
+
+  .sidebar-link-promo:hover {
+    border-color: rgba(0, 113, 227, 0.42);
+    background: linear-gradient(
+      135deg,
+      rgba(0, 113, 227, 0.1) 0%,
+      rgba(255, 255, 255, 0.95) 55%,
+      rgba(0, 113, 227, 0.06) 100%
+    );
+    color: #0060c0;
+    box-shadow:
+      0 0 0 1px rgba(0, 113, 227, 0.1),
+      0 6px 18px -6px rgba(0, 113, 227, 0.4);
+  }
+
+  .sidebar-link-promo.sidebar-link-active {
+    border-color: rgba(0, 113, 227, 0.5);
+    background: linear-gradient(
+      135deg,
+      rgba(0, 113, 227, 0.14) 0%,
+      rgba(219, 234, 254, 0.85) 100%
+    );
+    color: #0071e3;
+  }
+
+  .dark .sidebar-link-promo {
+    border-color: rgba(10, 132, 255, 0.35);
+    background: linear-gradient(
+      135deg,
+      rgba(10, 132, 255, 0.14) 0%,
+      rgba(28, 28, 30, 0.95) 55%,
+      rgba(10, 132, 255, 0.08) 100%
+    );
+    color: #6cb6ff;
+    box-shadow:
+      0 0 0 1px rgba(10, 132, 255, 0.08),
+      0 4px 16px -6px rgba(10, 132, 255, 0.45);
+  }
+
+  .dark .sidebar-link-promo:hover,
+  .dark .sidebar-link-promo.sidebar-link-active {
+    border-color: rgba(10, 132, 255, 0.55);
+    background: linear-gradient(
+      135deg,
+      rgba(10, 132, 255, 0.2) 0%,
+      rgba(28, 28, 30, 0.98) 100%
+    );
+    color: #8ec8ff;
+  }
+
+  .sidebar-promo-pill {
+    @apply ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5;
+    @apply text-[10px] font-bold leading-none tracking-wide text-white;
+    background: linear-gradient(135deg, #0071e3 0%, #0a84ff 100%);
+    box-shadow: 0 2px 6px -1px rgba(0, 113, 227, 0.45);
+  }
+
+  .sidebar-promo-dot {
+    @apply ml-1 h-1.5 w-1.5 shrink-0 rounded-full;
+    background: #0071e3;
+    box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.18);
+  }
+
   .sidebar-section {
     @apply mb-6;
   }

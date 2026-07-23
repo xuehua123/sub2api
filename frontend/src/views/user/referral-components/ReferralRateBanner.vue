@@ -11,7 +11,7 @@
 
         <div class="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-semibold text-[#0071e3]">
           <ReferralIcon name="gift" :size="14" />
-          {{ t('referral.rateBanner.live') }}
+          {{ t('referral.rateBanner.live', '邀请有礼进行中') }}
         </div>
 
         <h1 class="relative mt-4 max-w-xl text-[32px] font-semibold leading-[1.15] tracking-tight text-[#1d1d1f] sm:text-[40px] dark:text-white">

@@ -43,7 +43,8 @@
                 class="sidebar-link mb-1 w-full"
                 :class="{
                   'sidebar-link-active': isGroupActive(item) && !isGroupExpanded(item),
-                  'sidebar-link-collapsed': sidebarCollapsed
+                  'sidebar-link-collapsed': sidebarCollapsed,
+                  'sidebar-link-promo': item.promo
                 }"
                 :title="sidebarCollapsed ? item.label : undefined"
                 @click="handleGroupClick(item)"
@@ -55,6 +56,7 @@
                   :aria-hidden="sidebarCollapsed ? 'true' : 'false'"
                 >
                   <span class="min-w-0 truncate">{{ item.label }}</span>
+                  <span v-if="item.promo && !sidebarCollapsed" class="sidebar-promo-dot" aria-hidden="true" />
                   <ChevronDownIcon
                     class="h-4 w-4 flex-shrink-0 transition-transform duration-200"
                     :class="isGroupExpanded(item) ? 'rotate-180' : ''"
@@ -117,7 +119,11 @@
             :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{
+              'sidebar-link-active': isActive(item.path),
+              'sidebar-link-collapsed': sidebarCollapsed,
+              'sidebar-link-promo': item.promo
+            }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -126,6 +132,7 @@
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
               <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span v-if="item.promo && !sidebarCollapsed" class="sidebar-promo-pill">{{ t('nav.promoHot', '礼') }}</span>
               <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
             </span>
           </router-link>
@@ -140,7 +147,11 @@
             :key="item.path"
             :to="item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{
+              'sidebar-link-active': isActive(item.path),
+              'sidebar-link-collapsed': sidebarCollapsed,
+              'sidebar-link-promo': item.promo
+            }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -149,6 +160,7 @@
             <component v-else :is="item.icon" class="h-5 w-5 flex-shrink-0" />
             <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
               <span class="min-w-0 truncate">{{ item.label }}</span>
+              <span v-if="item.promo && !sidebarCollapsed" class="sidebar-promo-pill">{{ t('nav.promoHot', '礼') }}</span>
               <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
             </span>
           </router-link>
@@ -218,6 +230,8 @@ interface NavItem {
   expandOnly?: boolean
   featureFlag?: () => boolean
   badgeCount?: number
+  /** Soft promo chrome for campaign-style entries (e.g. 邀请有礼). */
+  promo?: boolean
 }
 
 function applyFeatureFlags(items: NavItem[]): NavItem[] {
@@ -749,7 +763,7 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     ...((appStore.cachedPublicSettings?.referral_enabled || authStore.user?.referral_enabled)
-      ? [{ path: '/referral', label: t('nav.referral'), icon: ReferralIcon }]
+      ? [{ path: '/referral', label: t('nav.referral'), icon: ReferralIcon, promo: true }]
       : []),
     { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
@@ -858,6 +872,7 @@ const adminNavItems = computed((): NavItem[] => {
       path: '/admin/referral',
       label: t('nav.referral'),
       icon: ReferralIcon,
+      promo: true,
       children: [
         { path: '/admin/referral', label: t('nav.referralOverview'), icon: ChartIcon },
         { path: '/admin/referral-rewards', label: t('nav.referralRewards'), icon: OrderListIcon },
@@ -1166,6 +1181,7 @@ onBeforeUnmount(() => {
 
 .sidebar-label {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;

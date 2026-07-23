@@ -12,7 +12,7 @@ export default {
         email: 'Email',
         backup: 'Backup',
         payment: 'Payment',
-        referral: 'Referral',
+        referral: 'Invite & Rewards',
         lobehub: 'LobeHub',
       },
       features: {

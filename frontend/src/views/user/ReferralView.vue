@@ -4,10 +4,10 @@
       <div class="flex items-center justify-between">
         <div>
           <h1 class="text-[28px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
-            {{ t('referral.title', '邀请') }}
+            {{ t('referral.title', '邀请有礼') }}
           </h1>
           <p class="mt-0.5 text-[14px] text-[#86868b]">
-            {{ t('referral.description', '分享链接，好友充值获得佣金') }}
+            {{ t('referral.description', '分享链接邀好友，充值成功享礼金') }}
           </p>
         </div>
         <button
