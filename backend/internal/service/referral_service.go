@@ -70,24 +70,24 @@ type ReferralRelationHistory struct {
 }
 
 type ReferralOverview struct {
-	ReferralEnabled                 bool              `json:"referral_enabled"`
-	AllowManualInput                bool              `json:"allow_manual_input"`
-	BindBeforeFirstPaidOnly         bool              `json:"bind_before_first_paid_only"`
-	ReferralWithdrawEnabled         bool              `json:"referral_withdraw_enabled"`
-	ReferralCreditConversionEnabled bool              `json:"referral_credit_conversion_enabled"`
-	ReferralCreditConversionRate    float64           `json:"referral_credit_conversion_rate"`
-	SettlementCurrency              string            `json:"settlement_currency"`
+	ReferralEnabled                 bool    `json:"referral_enabled"`
+	AllowManualInput                bool    `json:"allow_manual_input"`
+	BindBeforeFirstPaidOnly         bool    `json:"bind_before_first_paid_only"`
+	ReferralWithdrawEnabled         bool    `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled bool    `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate    float64 `json:"referral_credit_conversion_rate"`
+	SettlementCurrency              string  `json:"settlement_currency"`
 	// Marketing / rule display fields (read-only from settings).
 	// Level1Rate is 0 when Level1Enabled is false so clients never advertise a dead rate.
-	Level1Enabled       bool    `json:"level1_enabled"`
-	Level1Rate          float64 `json:"level1_rate"`
-	RewardMode          string  `json:"reward_mode"`
-	SettlementDelayDays int     `json:"settlement_delay_days"`
-	DefaultCode                     *ReferralCode     `json:"default_code,omitempty"`
-	Relation                        *ReferralRelation `json:"relation,omitempty"`
-	CanBind                         bool              `json:"can_bind"`
-	HasPaidRecharge                 bool              `json:"has_paid_recharge"`
-	ReferralWithdrawMethods         []string          `json:"withdraw_methods_enabled,omitempty"`
+	Level1Enabled           bool              `json:"level1_enabled"`
+	Level1Rate              float64           `json:"level1_rate"`
+	RewardMode              string            `json:"reward_mode"`
+	SettlementDelayDays     int               `json:"settlement_delay_days"`
+	DefaultCode             *ReferralCode     `json:"default_code,omitempty"`
+	Relation                *ReferralRelation `json:"relation,omitempty"`
+	CanBind                 bool              `json:"can_bind"`
+	HasPaidRecharge         bool              `json:"has_paid_recharge"`
+	ReferralWithdrawMethods []string          `json:"withdraw_methods_enabled,omitempty"`
 }
 
 type ReferralCodePreview struct {
