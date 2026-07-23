@@ -204,8 +204,19 @@ func (s *upstreamManagementClient) managementJSON(ctx context.Context, client *h
 	if len(payload) > upstreamManagementResponseLimit {
 		return managementJSONResponse{}, fmt.Errorf("upstream management response exceeds %d bytes", upstreamManagementResponseLimit)
 	}
-	decoded := make(map[string]any)
-	decodeErr := json.Unmarshal(payload, &decoded)
+	var decodedValue any
+	decodeErr := json.Unmarshal(payload, &decodedValue)
+	decoded, decodedObject := decodedValue.(map[string]any)
+	if !decodedObject {
+		// A few compatible management APIs return resource collections as a
+		// top-level JSON array. Preserve the established envelope contract for
+		// callers while accepting that valid response shape.
+		if list, ok := decodedValue.([]any); ok {
+			decoded = map[string]any{"data": list}
+		} else if decodeErr == nil {
+			decodeErr = errors.New("upstream management JSON response must be an object or array")
+		}
+	}
 	if decodeErr == nil && isUpstreamLocationConfirmationRejection(decoded) {
 		return managementJSONResponse{}, ErrUpstreamManagementLocationConfirmationRequired
 	}

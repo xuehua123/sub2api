@@ -656,6 +656,64 @@ func TestUpstreamConnectionInspectorSub2APIUsesV1ResourcesAfterRootLogin(t *test
 	require.Zero(t, rootResourceCalls.Load())
 }
 
+func TestUpstreamConnectionInspectorSub2APISupportsLCodexRootProfileAndRawGroups(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/login":
+			http.NotFound(writer, request)
+		case "/auth/login":
+			require.Equal(t, http.MethodPost, request.Method)
+			writeProbeJSON(t, writer, map[string]any{"access_token": "lcodex-token", "refresh_token": "refresh-token"})
+		case "/auth/me":
+			require.Equal(t, "Bearer lcodex-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, map[string]any{"user": map[string]any{"id": 58}})
+		case "/user/profile":
+			require.Equal(t, "Bearer lcodex-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, map[string]any{"id": 58, "credit_balance": 34.5})
+		case "/api/v1/groups/available":
+			require.Equal(t, "Bearer lcodex-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, []any{
+				map[string]any{"id": 3, "name": "vip", "rate_multiplier": 0.5},
+			})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"3": 0.25})
+		case "/api/v1/keys":
+			require.Equal(t, "Bearer lcodex-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, map[string]any{"items": []any{
+				map[string]any{"id": 18, "name": "vip-key", "key": "lcodex-secret-key", "group_id": 3},
+			}, "page": 1, "page_size": 100, "pages": 1})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	connection := &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModePassword),
+		ManagementBaseURL: server.URL,
+	}
+	credential := upstreamConnectionCredential{Version: 1, Username: "alice@example.com", Password: "secret"}
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	snapshot, err := inspector.Inspect(context.Background(), connection, credential)
+	require.NoError(t, err)
+	require.Equal(t, "58", snapshot.RemoteUserID)
+	require.NotNil(t, snapshot.Wallet)
+	require.Equal(t, 34.5, *snapshot.Wallet.USD)
+	require.Equal(t, "sub2api:user_profile", snapshot.Wallet.Source)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, "vip", snapshot.Groups[0].Name)
+	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
+	require.Equal(t, upstreamGroupRateConfidenceOverride, snapshot.Groups[0].Confidence)
+
+	connection.Groups = snapshot.Groups
+	binding, err := inspector.ResolveKey(context.Background(), connection, credential, "lcodex-secret-key")
+	require.NoError(t, err)
+	require.Equal(t, "vip", binding.RemoteGroupName)
+	require.Equal(t, 0.25, *binding.ObservedMultiplier)
+}
+
 func TestUpstreamConnectionInspectorSub2APIRootPathFallbackDoesNotRetryAuthenticationFailure(t *testing.T) {
 	var rootLoginCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

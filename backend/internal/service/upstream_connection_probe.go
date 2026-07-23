@@ -781,27 +781,34 @@ func inspectSub2APIProfile(
 ) (managementJSONResponse, string, error) {
 	profile, _, profileErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
 		baseURL, "/auth/me", authPrefix, headers, nil)
+	if authPrefix != sub2APIManagementRootPrefix {
+		if profileErr == nil {
+			return profile, "auth_me", nil
+		}
+		return managementJSONResponse{}, "", profileErr
+	}
+
+	// LCodex root-path auth/me is valid but only returns a shallow user object.
+	// Its user/profile endpoint exposes the id and credit balance required by a
+	// connection snapshot. Keep auth/me as a fallback for other root-path forks
+	// that do not implement user/profile.
+	profileDetail, _, profileDetailErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		baseURL, "/user/profile", sub2APIManagementRootPrefix, headers, nil)
+	if profileDetailErr == nil {
+		return profileDetail, "user_profile", nil
+	}
 	if profileErr == nil {
 		return profile, "auth_me", nil
 	}
-
-	// A successful root-path login proves the credential is usable. LCodex does
-	// not implement auth/me, and its authenticated profile is /user/profile.
-	if authPrefix != sub2APIManagementRootPrefix ||
-		(!isUpstreamManagementHTTPStatus(profileErr, http.StatusNotFound) &&
-			!isUpstreamManagementHTTPStatus(profileErr, http.StatusUnauthorized) &&
-			!isUpstreamManagementHTTPStatus(profileErr, http.StatusForbidden)) {
+	if !isUpstreamManagementHTTPStatus(profileErr, http.StatusNotFound) &&
+		!isUpstreamManagementHTTPStatus(profileErr, http.StatusUnauthorized) &&
+		!isUpstreamManagementHTTPStatus(profileErr, http.StatusForbidden) {
 		return managementJSONResponse{}, "", profileErr
 	}
-	profile, _, lcodexErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
-		baseURL, "/user/profile", sub2APIManagementRootPrefix, headers, nil)
-	if lcodexErr != nil {
-		return managementJSONResponse{}, "", errors.Join(
-			fmt.Errorf("auth/me: %w", profileErr),
-			fmt.Errorf("user/profile: %w", lcodexErr),
-		)
-	}
-	return profile, "user_profile", nil
+	return managementJSONResponse{}, "", errors.Join(
+		fmt.Errorf("auth/me: %w", profileErr),
+		fmt.Errorf("user/profile: %w", profileDetailErr),
+	)
 }
 
 func inspectSub2APIGroups(
