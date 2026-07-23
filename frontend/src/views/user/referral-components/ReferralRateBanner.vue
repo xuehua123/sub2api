@@ -20,9 +20,11 @@
             <span class="text-[#0071e3]">{{ ratePct }}%</span>
             {{ t('referral.rateBanner.headlineAfter') }}
           </template>
+          <template v-else-if="!level1On">
+            {{ t('referral.rateBanner.titleDisabled') }}
+          </template>
           <template v-else>
-            {{ t('referral.rateBanner.title') }}
-            <span class="text-[#0071e3]">{{ t('referral.rateBanner.titleEarn') }}</span>
+            {{ t('referral.rateBanner.titleNoRate') }}
           </template>
         </h1>
 

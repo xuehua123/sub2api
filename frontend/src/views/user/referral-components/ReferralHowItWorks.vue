@@ -89,8 +89,9 @@ const steps = computed(() => {
   const days = Number(props.settlementDelayDays || 0)
   const pct = ratePctText.value
 
-  let earnTitle = t('referral.howItWorks.step2Title')
-  let earnDesc = t('referral.howItWorks.step2')
+  // Only promise booking when L1 is on AND rate > 0 (matches reward service rate<=0 skip).
+  let earnTitle = t('referral.howItWorks.step2TitleNoCommission')
+  let earnDesc = t('referral.howItWorks.step2NoCommission')
   if (!level1On.value) {
     earnTitle = t('referral.howItWorks.step2TitleDisabled')
     earnDesc = t('referral.howItWorks.step2Disabled')
@@ -108,8 +109,6 @@ const steps = computed(() => {
     earnDesc = isEveryPaid.value
       ? t('referral.howItWorks.step2EveryWithRate', { pct })
       : t('referral.howItWorks.step2FirstWithRate', { pct })
-  } else if (days > 0) {
-    earnDesc = t('referral.howItWorks.step2WithDelay', { days })
   }
 
   let cashTitle = t('referral.howItWorks.step3PendingTitle')

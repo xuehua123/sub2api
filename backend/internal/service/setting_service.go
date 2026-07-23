@@ -710,14 +710,21 @@ func parseReferralLevel1RateForDisplay(settings map[string]string) float64 {
 	return parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate])
 }
 
+// parseReferralRewardModePublic normalizes reward mode the same way as
+// GetAllSettings / settlement, so marketing copy never claims every-order
+// while booking only honors first-paid (or vice versa).
 func parseReferralRewardModePublic(raw string) string {
 	mode := strings.TrimSpace(raw)
-	if mode == "" {
+	switch mode {
+	case ReferralRewardModeEveryPaidOrder, ReferralRewardModeFirstPaidOrder:
+		return mode
+	default:
 		return ReferralRewardModeFirstPaidOrder
 	}
-	return mode
 }
 
+// parseReferralSettlementDelayDaysPublic matches settlement clamping:
+// invalid or negative → default 7 (never advertise a negative settle window).
 func parseReferralSettlementDelayDaysPublic(raw string) int {
 	days, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || days < 0 {

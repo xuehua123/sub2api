@@ -10,11 +10,10 @@
       <div>
         <p class="text-[13px] font-medium text-[#86868b]">{{ t('referral.walletCardEyebrow') }}</p>
         <h2 class="mt-0.5 text-[22px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
-          {{ t('referral.walletCardTitle') }}
+          {{ walletTitle }}
         </h2>
         <p class="mt-1 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
-          <template v-if="ratePct">{{ t('referral.walletCardDescWithRate', { pct: ratePct }) }}</template>
-          <template v-else>{{ t('referral.walletCardDesc') }}</template>
+          {{ walletDesc }}
         </p>
       </div>
     </div>
@@ -147,6 +146,28 @@ const ratePct = computed(() => {
   if (rate <= 0) return ''
   const pct = rate * 100
   return pct % 1 === 0 ? String(pct) : pct.toFixed(1)
+})
+
+const walletTitle = computed(() => {
+  if (props.withdrawEnabled) return t('referral.walletCardTitle')
+  if (props.creditConversionEnabled) return t('referral.walletCardTitleConvertOnly')
+  return t('referral.walletCardTitleBalanceOnly')
+})
+
+const walletDesc = computed(() => {
+  if (ratePct.value && props.withdrawEnabled && props.creditConversionEnabled) {
+    return t('referral.walletCardDescWithRate', { pct: ratePct.value })
+  }
+  if (ratePct.value && props.withdrawEnabled) {
+    return t('referral.walletCardDescWithRateWithdrawOnly', { pct: ratePct.value })
+  }
+  if (ratePct.value && props.creditConversionEnabled) {
+    return t('referral.walletCardDescWithRateConvertOnly', { pct: ratePct.value })
+  }
+  if (props.withdrawEnabled && props.creditConversionEnabled) return t('referral.walletCardDesc')
+  if (props.withdrawEnabled) return t('referral.walletCardDescWithdrawOnly')
+  if (props.creditConversionEnabled) return t('referral.walletCardDescConvertOnly')
+  return t('referral.walletCardDescDisabled')
 })
 
 const conversionMultiplier = computed(() => {

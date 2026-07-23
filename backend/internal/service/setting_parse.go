@@ -861,15 +861,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	// Same parser as public overview/marketing so display never diverges from booking.
 	result.ReferralLevel1Rate = parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate])
-	result.ReferralRewardMode = settings[SettingKeyReferralRewardMode]
-	if result.ReferralRewardMode == "" {
-		result.ReferralRewardMode = ReferralRewardModeFirstPaidOrder
-	}
-	if v, err := strconv.Atoi(settings[SettingKeyReferralSettlementDelayDays]); err == nil {
-		result.ReferralSettlementDelayDays = v
-	} else {
-		result.ReferralSettlementDelayDays = 7
-	}
+	// Same normalizers as public/marketing so display and booking never diverge.
+	result.ReferralRewardMode = parseReferralRewardModePublic(settings[SettingKeyReferralRewardMode])
+	result.ReferralSettlementDelayDays = parseReferralSettlementDelayDaysPublic(settings[SettingKeyReferralSettlementDelayDays])
 	if v, ok := settings[SettingKeyReferralBindBeforeFirstPaidOnly]; ok {
 		result.ReferralBindBeforeFirstPaidOnly = v == "true"
 	} else {

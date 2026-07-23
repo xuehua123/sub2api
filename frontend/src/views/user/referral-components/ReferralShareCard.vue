@@ -100,7 +100,8 @@ const ratePct = computed(() => {
 })
 
 const shareDesc = computed(() => {
-  if (!ratePct.value) return t('referral.shareCardDesc')
+  // Only promise commission when L1 is on and rate > 0 (same gate as reward booking).
+  if (!ratePct.value) return t('referral.shareCardDescNoCommission')
   if (props.rewardMode === 'every_paid_order') {
     return t('referral.shareCardDescWithRateEvery', { pct: ratePct.value })
   }

@@ -336,8 +336,48 @@ describe('user ReferralView', () => {
     await amountInput.setValue(100)
     await flushPromises()
 
-    // 100 commission × 1.5 = 150 credit (money path independent of i18n mock)
-    expect(wrapper.find('[data-test="convert-expected-credit"]').text()).toMatch(/150\.00/)
+    // 100 commission × 1.5 = 150 credit (precise display may omit trailing zeros)
+    expect(wrapper.find('[data-test="convert-expected-credit"]').text()).toMatch(/150(\.0+)?/)
+  })
+
+  it('does not fall back to public-settings cache when overview level1_rate is explicitly 0', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: true,
+      allow_manual_input: true,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: true,
+      referral_credit_conversion_enabled: false,
+      referral_credit_conversion_rate: 1,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: true,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: ['alipay'],
+      direct_invitees: 0,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 0,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 0,
+      level1_enabled: true,
+      // Explicit zero must win over any stale public cache.
+      level1_rate: 0,
+      reward_mode: 'every_paid_order',
+      settlement_delay_days: 7
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: { AppLayout: { template: '<div><slot /></div>' } }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="referral-rate-examples"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="referral-rate-pct"]').text()).not.toMatch(/15/)
+    expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/—|–|-/)
   })
 
   it('hides fake rate examples when level1_rate is missing', async () => {

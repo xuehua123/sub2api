@@ -124,10 +124,10 @@
               </p>
               <div class="mt-2 flex flex-wrap gap-1.5">
                 <span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
-                  待审 {{ overview.pending_withdrawal_count || 0 }}
+                  {{ t('admin.referral.chipPendingReview', '待审') }} {{ overview.pending_withdrawal_count || 0 }}
                 </span>
                 <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-200">
-                  待打款 {{ overview.approved_withdrawal_count || 0 }}
+                  {{ t('admin.referral.chipPendingPayout', '待打款') }} {{ overview.approved_withdrawal_count || 0 }}
                 </span>
               </div>
             </div>
@@ -148,7 +148,7 @@
               </p>
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <div class="rounded-xl bg-white/80 px-2.5 py-2 ring-1 ring-emerald-100 dark:bg-dark-800/80 dark:ring-emerald-900/40">
-                  <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">现金净额</p>
+                  <p class="text-[10px] font-medium text-gray-500 dark:text-gray-400">{{ t('admin.referral.cashNetLabel', '现金净额') }}</p>
                   <p class="mt-0.5 text-sm font-bold tabular-nums text-emerald-700 dark:text-emerald-300">￥{{ formatMoney(overview.cash_paid_commission || 0) }}</p>
                 </div>
                 <div class="rounded-xl bg-white/80 px-2.5 py-2 ring-1 ring-indigo-100 dark:bg-dark-800/80 dark:ring-indigo-900/40">
@@ -160,7 +160,7 @@
                 v-if="(overview.negative_commission_debt || 0) > 0"
                 class="mt-2 inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300"
               >
-                负佣金欠账 ￥{{ formatMoney(overview.negative_commission_debt || 0) }}
+                {{ t('admin.referral.negativeDebtLabel', '负佣金欠账') }} ￥{{ formatMoney(overview.negative_commission_debt || 0) }}
               </p>
             </div>
           </div>
@@ -173,7 +173,7 @@
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.trendTitle', '近 7 天收支走势') }}</h2>
-              <p class="mt-0.5 text-xs text-gray-500">返佣入账 vs 提现/转余额流出</p>
+              <p class="mt-0.5 text-xs text-gray-500">{{ t('admin.referral.trendSubtitle', '返佣入账 vs 提现/转余额流出') }}</p>
             </div>
           </div>
           <div class="min-h-0 flex-1">
@@ -268,7 +268,7 @@
                 </div>
               </div>
               <div v-else class="flex flex-col items-center px-4 py-8 text-center">
-                <p class="text-sm text-gray-500">暂无转余额记录</p>
+                <p class="text-sm text-gray-500">{{ t('admin.referral.noCreditConversionRecords', '暂无转余额记录') }}</p>
               </div>
             </div>
           </section>
@@ -280,7 +280,7 @@
         <div class="flex items-center justify-between gap-3 border-b border-gray-100 px-5 py-4 dark:border-dark-700">
           <div>
             <h2 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.referral.rankingTitle', '返佣代理排行榜') }}</h2>
-            <p class="mt-0.5 text-xs text-gray-500">按累计佣金排序 · 二级人数仅统计不产生返利</p>
+            <p class="mt-0.5 text-xs text-gray-500">{{ t('admin.referral.rankingSubtitle', '按累计佣金排序 · 二级人数仅统计不产生返利') }}</p>
           </div>
         </div>
         <div class="overflow-x-auto">
@@ -318,10 +318,10 @@
                 <td class="px-5 py-4 text-center">
                   <div class="inline-flex flex-col items-center gap-1">
                     <span class="rounded-full bg-primary-50 px-2.5 py-0.5 text-xs font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
-                      直邀 {{ item.direct_invitees }}
+                      {{ t('admin.referral.directInviteesShort', '直邀') }} {{ item.direct_invitees }}
                     </span>
-                    <span class="text-[11px] text-gray-400" title="二级仅统计人数，不产生返利">
-                      二级 {{ item.second_level_invitees || 0 }} · 无返利
+                    <span class="text-[11px] text-gray-400" :title="t('admin.referral.secondLevelNoRebateHint', '二级仅统计人数，不产生返利')">
+                      {{ t('admin.referral.secondLevelShort', '二级') }} {{ item.second_level_invitees || 0 }} · {{ t('admin.referral.noRebateTag', '无返利') }}
                     </span>
                   </div>
                 </td>

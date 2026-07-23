@@ -644,7 +644,7 @@
           </div>
           <p class="mt-2 text-[13px] text-[#6e6e73] dark:text-[#a1a1a6]" data-test="convert-expected-credit">
             {{ t('referral.convertModalExpected') }}
-            <span class="font-semibold tabular-nums text-[#1d1d1f] dark:text-white">¥{{ formatMoney(convertCreditAmount) }}</span>
+            <span class="font-semibold tabular-nums text-[#1d1d1f] dark:text-white">¥{{ formatMoneyPrecise(convertCreditAmount) }}</span>
           </p>
         </div>
 
@@ -837,27 +837,35 @@ const displayLevel1Enabled = computed(() => {
 })
 
 /**
- * Prefer overview; fall back to public settings.
- * Rate is 0 when level-1 is disabled (backend also zeros it).
+ * Prefer overview when loaded. Only fall back to public settings when the
+ * overview field is absent (older backends). A present 0 means "no rate" and
+ * must NOT be replaced by stale public-settings cache.
  */
 const displayLevel1Rate = computed(() => {
   if (!displayLevel1Enabled.value) return 0
-  const fromOverview = Number(overview.value?.level1_rate || 0)
-  if (fromOverview > 0) return fromOverview
-  const fromPublic = Number(appStore.cachedPublicSettings?.referral_level1_rate || 0)
-  return fromPublic > 0 ? fromPublic : 0
+  if (overview.value && Object.prototype.hasOwnProperty.call(overview.value, 'level1_rate')) {
+    const rate = Number(overview.value.level1_rate)
+    return Number.isFinite(rate) && rate > 0 ? rate : 0
+  }
+  const fromPublic = Number(appStore.cachedPublicSettings?.referral_level1_rate)
+  return Number.isFinite(fromPublic) && fromPublic > 0 ? fromPublic : 0
 })
 
 const displayRewardMode = computed(() => {
-  const fromOverview = (overview.value?.reward_mode || '').trim()
-  if (fromOverview) return fromOverview
+  if (overview.value && Object.prototype.hasOwnProperty.call(overview.value, 'reward_mode')) {
+    const mode = String(overview.value.reward_mode || '').trim()
+    return mode || 'first_paid_order'
+  }
   const fromPublic = (appStore.cachedPublicSettings?.referral_reward_mode || '').trim()
   return fromPublic || 'first_paid_order'
 })
 
 const displaySettlementDelayDays = computed(() => {
-  const fromOverview = overview.value?.settlement_delay_days
-  if (fromOverview != null && Number(fromOverview) >= 0) return Number(fromOverview)
+  if (overview.value && Object.prototype.hasOwnProperty.call(overview.value, 'settlement_delay_days')) {
+    const days = Number(overview.value.settlement_delay_days)
+    // Match settlement clamp: negative / NaN → 0 for display honesty (no fake "7 days").
+    return Number.isFinite(days) && days >= 0 ? days : 0
+  }
   const fromPublic = Number(appStore.cachedPublicSettings?.referral_settlement_delay_days)
   return Number.isFinite(fromPublic) && fromPublic >= 0 ? fromPublic : 0
 })
@@ -1170,6 +1178,14 @@ async function copy(text: string) {
 
 function formatMoney(value: number) {
   return `${Number(value || 0).toFixed(2)}`
+}
+
+/** Up to 8 decimals, trim trailing zeros — matches convert credit display. */
+function formatMoneyPrecise(value: number) {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n)) return '0'
+  if (n % 1 === 0) return String(n)
+  return n.toFixed(8).replace(/\.?0+$/, '')
 }
 
 function formatEntryType(entryType: string): string {

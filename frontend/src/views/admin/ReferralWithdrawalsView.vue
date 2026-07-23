@@ -129,10 +129,10 @@
                 <tr class="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/60 dark:text-gray-400">
                   <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalNo', '提现单号') }}</th>
                   <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalUser', '用户') }}</th>
-                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalAmount', '申请') }}</th>
+                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalAmount', '申请金额') }}</th>
                   <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalFee', '手续费') }}</th>
-                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalNet', '实付/到账') }}</th>
-                  <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalMethod', '方式') }}</th>
+                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalNet', '实付金额') }}</th>
+                  <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalPayoutMethod', '收款方式') }}</th>
                   <th class="px-4 py-3.5">{{ t('common.status', '状态') }}</th>
                   <th class="px-4 py-3.5">{{ t('common.createdAt', '时间') }}</th>
                   <th class="px-4 py-3.5 text-right">{{ t('common.actions', '操作') }}</th>
