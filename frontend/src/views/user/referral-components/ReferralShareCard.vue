@@ -11,7 +11,7 @@
         <div>
           <p class="text-[13px] font-medium text-[#86868b]">{{ t('referral.shareCardEyebrow') }}</p>
           <h2 class="mt-0.5 text-[22px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
-            {{ t('referral.shareCardTitle') }}
+            {{ shareTitle }}
           </h2>
           <p class="mt-1 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
             {{ shareDesc }}
@@ -98,6 +98,10 @@ const ratePct = computed(() => {
   const pct = rate * 100
   return pct % 1 === 0 ? String(pct) : pct.toFixed(1)
 })
+
+const shareTitle = computed(() =>
+  ratePct.value ? t('referral.shareCardTitle') : t('referral.shareCardTitleNoCommission')
+)
 
 const shareDesc = computed(() => {
   // Only promise commission when L1 is on and rate > 0 (same gate as reward booking).

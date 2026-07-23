@@ -18,7 +18,8 @@ const {
   validateReferralCode,
   showError,
   showSuccess,
-  showInfo
+  showInfo,
+  storeState
 } = vi.hoisted(() => ({
   getOverview: vi.fn(),
   getInvitees: vi.fn(),
@@ -34,7 +35,10 @@ const {
   validateReferralCode: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
-  showInfo: vi.fn()
+  showInfo: vi.fn(),
+  storeState: {
+    cachedPublicSettings: null as null | Record<string, unknown>
+  }
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -73,7 +77,9 @@ vi.mock('@/stores', () => ({
     showError,
     showSuccess,
     showInfo,
-    cachedPublicSettings: null
+    get cachedPublicSettings() {
+      return storeState.cachedPublicSettings
+    }
   })
 }))
 
@@ -99,6 +105,7 @@ vi.mock('vue-i18n', async () => {
 describe('user ReferralView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    storeState.cachedPublicSettings = null
     getOverview.mockResolvedValue({
       referral_enabled: true,
       allow_manual_input: true,
@@ -291,13 +298,15 @@ describe('user ReferralView', () => {
   })
 
   it('shows conversion multiplier and expected credit for non-1 rate', async () => {
+    // Use a rate whose product is NOT equal after toFixed(2), so 2-decimal formatting would fail.
+    // 1 * 1.2345 = 1.2345 → toFixed(2) => "1.23", precise => "1.2345"
     getOverview.mockResolvedValueOnce({
       referral_enabled: true,
       allow_manual_input: true,
       bind_before_first_paid_only: true,
       referral_withdraw_enabled: false,
       referral_credit_conversion_enabled: true,
-      referral_credit_conversion_rate: 1.5,
+      referral_credit_conversion_rate: 1.2345,
       settlement_currency: 'CNY',
       default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
       relation: null,
@@ -307,11 +316,13 @@ describe('user ReferralView', () => {
       direct_invitees: 1,
       second_level_invitees: 0,
       pending_commission: 0,
-      available_commission: 100,
+      available_commission: 10,
       frozen_commission: 0,
       withdrawn_commission: 0,
-      total_commission: 100,
+      total_commission: 10,
+      level1_enabled: true,
       level1_rate: 0.15,
+      reward_mode: 'every_paid_order',
       settlement_delay_days: 7
     })
     convertToCredit.mockResolvedValueOnce({})
@@ -326,21 +337,29 @@ describe('user ReferralView', () => {
     await flushPromises()
 
     expect(wrapper.find('[data-test="credit-conversion-rate-hint"]').attributes('data-conversion-rate')).toMatch(
-      /^1\.5/
+      /1\.2345/
     )
     await wrapper.find('[data-test="open-convert-credit"]').trigger('click')
     await flushPromises()
 
     const amountInput = wrapper.find('[data-test="convert-amount-input"]')
     expect(amountInput.exists()).toBe(true)
-    await amountInput.setValue(100)
+    await amountInput.setValue(1)
     await flushPromises()
 
-    // 100 commission × 1.5 = 150 credit (precise display may omit trailing zeros)
-    expect(wrapper.find('[data-test="convert-expected-credit"]').text()).toMatch(/150(\.0+)?/)
+    const expectedText = wrapper.find('[data-test="convert-expected-credit"]').text()
+    expect(expectedText).toMatch(/1\.2345/)
+    expect(expectedText).not.toMatch(/¥1\.23(?!45)/)
   })
 
   it('does not fall back to public-settings cache when overview level1_rate is explicitly 0', async () => {
+    // Stale public cache still advertises 15% — must not win over explicit overview 0.
+    storeState.cachedPublicSettings = {
+      referral_level1_enabled: true,
+      referral_level1_rate: 0.15,
+      referral_reward_mode: 'every_paid_order',
+      referral_settlement_delay_days: 7
+    }
     getOverview.mockResolvedValueOnce({
       referral_enabled: true,
       allow_manual_input: true,
@@ -362,7 +381,6 @@ describe('user ReferralView', () => {
       withdrawn_commission: 0,
       total_commission: 0,
       level1_enabled: true,
-      // Explicit zero must win over any stale public cache.
       level1_rate: 0,
       reward_mode: 'every_paid_order',
       settlement_delay_days: 7
@@ -378,6 +396,50 @@ describe('user ReferralView', () => {
     expect(wrapper.find('[data-test="referral-rate-examples"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="referral-rate-pct"]').text()).not.toMatch(/15/)
     expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/—|–|-/)
+    // Must not reuse the "earn commission" marketing fallback subtitle either.
+    expect(wrapper.text()).not.toMatch(/马上开赚/)
+  })
+
+  it('does not promise auto-credit when level1 is on but rate is zero', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: true,
+      allow_manual_input: true,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: true,
+      referral_credit_conversion_enabled: false,
+      referral_credit_conversion_rate: 1,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: true,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: ['alipay'],
+      direct_invitees: 0,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 0,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 0,
+      level1_enabled: true,
+      level1_rate: 0,
+      reward_mode: 'first_paid_order',
+      settlement_delay_days: 7
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: { AppLayout: { template: '<div><slot /></div>' } }
+      }
+    })
+    await flushPromises()
+
+    const banner = wrapper.find('[data-test="referral-rate-banner"]')
+    expect(banner.exists()).toBe(true)
+    // Fallback marketing that implies earning must not appear.
+    expect(banner.text()).not.toMatch(/你获得佣金|earn commission|titleEarn/)
+    expect(banner.text()).not.toMatch(/首次成功充值记佣|每笔成功充值记佣|bulletAutoFirst|bulletAutoEvery/)
+    expect(wrapper.find('[data-test="referral-share-card"]').text()).not.toMatch(/马上开赚/)
   })
 
   it('hides fake rate examples when level1_rate is missing', async () => {

@@ -450,7 +450,15 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyLobeHubRuntimeConfigVersion] = settings.LobeHubRuntimeConfigVersion
 	updates[SettingKeyHideLobeHubImportButton] = strconv.FormatBool(settings.HideLobeHubImportButton)
 
-	// Referral system
+	// Referral system — normalize so write path matches read/settlement parsers.
+	if settings.ReferralLevel1Rate < 0 || math.IsNaN(settings.ReferralLevel1Rate) || math.IsInf(settings.ReferralLevel1Rate, 0) {
+		settings.ReferralLevel1Rate = 0
+	}
+	settings.ReferralRewardMode = parseReferralRewardModePublic(settings.ReferralRewardMode)
+	if settings.ReferralSettlementDelayDays < 0 {
+		settings.ReferralSettlementDelayDays = 7
+	}
+
 	updates[SettingKeyReferralEnabled] = strconv.FormatBool(settings.ReferralEnabled)
 	updates[SettingKeyReferralLevel1Enabled] = strconv.FormatBool(settings.ReferralLevel1Enabled)
 	updates[SettingKeyReferralLevel1Rate] = strconv.FormatFloat(settings.ReferralLevel1Rate, 'f', 8, 64)

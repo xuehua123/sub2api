@@ -135,13 +135,14 @@ const rechargePayLabel = computed(() =>
     : t('referral.rateBanner.friendPaysFirst')
 )
 
-const rechargeBullet = computed(() =>
-  !level1On.value
-    ? t('referral.rateBanner.bulletDisabled')
-    : isEveryPaid.value
-      ? t('referral.rateBanner.bulletAutoEvery')
-      : t('referral.rateBanner.bulletAutoFirst')
-)
+const rechargeBullet = computed(() => {
+  if (!level1On.value) return t('referral.rateBanner.bulletDisabled')
+  // rate=0 also means no booking — do not claim auto-credit.
+  if (!hasRate.value) return t('referral.rateBanner.bulletNoRate')
+  return isEveryPaid.value
+    ? t('referral.rateBanner.bulletAutoEvery')
+    : t('referral.rateBanner.bulletAutoFirst')
+})
 
 const ratePendingLabel = computed(() =>
   !level1On.value
@@ -164,7 +165,8 @@ const subtitle = computed(() => {
       ? t('referral.rateBanner.subtitleEvery', { pct: ratePct.value })
       : t('referral.rateBanner.subtitleFirst', { pct: ratePct.value })
   }
-  return t('referral.rateBanner.subtitle')
+  // L1 on but rate 0 / unset — never fall back to "recharge and earn".
+  return t('referral.rateBanner.subtitleNoRate')
 })
 
 const cashoutChip = computed(() => {
