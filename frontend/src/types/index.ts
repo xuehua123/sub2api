@@ -240,6 +240,9 @@ export interface PublicSettings {
   referral_credit_conversion_rate: number
   referral_settlement_currency: string
   referral_withdraw_methods_enabled: string[]
+  /** Direct invite commission rate (0-1), when exposed by public settings. */
+  referral_level1_rate?: number
+  referral_settlement_delay_days?: number
   // LobeHub public settings
   lobehub_enabled: boolean
   lobehub_chat_url: string
@@ -2355,6 +2358,7 @@ export interface ReferralCenterOverview {
   default_code: { code: string } | null
   total_invitees: number
   direct_invitees: number
+  second_level_invitees?: number
   total_commission: number
   total_commission_earned: number
   available_commission: number
@@ -2368,6 +2372,10 @@ export interface ReferralCenterOverview {
   referral_withdraw_enabled: boolean
   referral_credit_conversion_enabled: boolean
   referral_credit_conversion_rate: number
+  /** Commission rate for direct invitees (0-1), from settings. */
+  level1_rate?: number
+  /** Days before pending commission becomes available. */
+  settlement_delay_days?: number
 }
 
 export interface CommissionLedgerEntry {

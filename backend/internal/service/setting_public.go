@@ -224,6 +224,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyReferralCreditConversionRate,
 		SettingKeyReferralSettlementCurrency,
 		SettingKeyReferralWithdrawMethodsEnabled,
+		SettingKeyReferralLevel1Rate,
+		SettingKeyReferralSettlementDelayDays,
 		SettingKeyGitHubOAuthEnabled,
 		SettingKeyGitHubOAuthClientID,
 		SettingKeyGitHubOAuthClientSecret,
@@ -373,6 +375,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ReferralCreditConversionRate:    parseReferralCreditConversionRate(settings[SettingKeyReferralCreditConversionRate]),
 		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
 		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
+		ReferralLevel1Rate:              parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate]),
+		ReferralSettlementDelayDays:     parseReferralSettlementDelayDaysPublic(settings[SettingKeyReferralSettlementDelayDays]),
 		ChannelMonitorEnabled:           !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(
 			settings[SettingKeyChannelMonitorDefaultIntervalSeconds],
@@ -538,6 +542,8 @@ type PublicSettingsInjectionPayload struct {
 	ReferralCreditConversionRate     float64                  `json:"referral_credit_conversion_rate"`
 	ReferralSettlementCurrency       string                   `json:"referral_settlement_currency"`
 	ReferralWithdrawMethodsEnabled   []string                 `json:"referral_withdraw_methods_enabled"`
+	ReferralLevel1Rate               float64                  `json:"referral_level1_rate"`
+	ReferralSettlementDelayDays      int                      `json:"referral_settlement_delay_days"`
 	LobeHubEnabled                   bool                     `json:"lobehub_enabled"`
 	LobeHubChatURL                   string                   `json:"lobehub_chat_url"`
 	LobeHubOIDCIssuer                string                   `json:"lobehub_oidc_issuer"`
@@ -622,6 +628,8 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralCreditConversionRate:     settings.ReferralCreditConversionRate,
 		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
+		ReferralLevel1Rate:               settings.ReferralLevel1Rate,
+		ReferralSettlementDelayDays:      settings.ReferralSettlementDelayDays,
 		LobeHubEnabled:                   settings.LobeHubEnabled,
 		LobeHubChatURL:                   settings.LobeHubChatURL,
 		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,

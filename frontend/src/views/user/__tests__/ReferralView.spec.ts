@@ -14,6 +14,7 @@ const {
   createWithdrawal,
   createPayoutAccount,
   updatePayoutAccount,
+  convertToCredit,
   validateReferralCode,
   showError,
   showSuccess
@@ -28,6 +29,7 @@ const {
   createWithdrawal: vi.fn(),
   createPayoutAccount: vi.fn(),
   updatePayoutAccount: vi.fn(),
+  convertToCredit: vi.fn(),
   validateReferralCode: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn()
@@ -48,7 +50,8 @@ vi.mock('@/api/referral', () => ({
     bindReferralCode,
     createWithdrawal,
     createPayoutAccount,
-    updatePayoutAccount
+    updatePayoutAccount,
+    convertToCredit
   },
   getOverview,
   getInvitees,
@@ -59,13 +62,15 @@ vi.mock('@/api/referral', () => ({
   bindReferralCode,
   createWithdrawal,
   createPayoutAccount,
-  updatePayoutAccount
+  updatePayoutAccount,
+  convertToCredit
 }))
 
 vi.mock('@/stores', () => ({
   useAppStore: () => ({
     showError,
-    showSuccess
+    showSuccess,
+    cachedPublicSettings: null
   })
 }))
 
@@ -74,7 +79,16 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string, fallback?: string) => fallback || key
+      t: (key: string, arg?: string | Record<string, unknown>) => {
+        if (typeof arg === 'string') return arg
+        if (arg && typeof arg === 'object') {
+          return Object.entries(arg).reduce(
+            (msg, [k, v]) => msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v)),
+            key
+          )
+        }
+        return key
+      }
     })
   }
 })
@@ -101,7 +115,9 @@ describe('user ReferralView', () => {
       available_commission: 34,
       frozen_commission: 5,
       withdrawn_commission: 18,
-      total_commission: 69
+      total_commission: 69,
+      level1_rate: 0.15,
+      settlement_delay_days: 7
     })
     getInvitees.mockResolvedValue({ items: [{ user_id: 10, email: 'invitee@example.com', username: 'invitee', bound_at: '2026-04-09T00:00:00Z', second_level_num: 1, total_recharge: 0 }], total: 1, page: 1, page_size: 20, pages: 1 })
     getRewards.mockResolvedValue({
@@ -143,6 +159,9 @@ describe('user ReferralView', () => {
     expect(wrapper.text()).toContain('WD001')
     expect(wrapper.text()).toContain('ORD-1')
     expect(wrapper.text()).toContain('10.00')
+    // Rate banner must show how much users earn
+    expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/15/)
+    expect(wrapper.find('[data-test="referral-rate-banner"]').exists()).toBe(true)
   })
 
   it('calls API endpoints on mount', async () => {
@@ -258,8 +277,96 @@ describe('user ReferralView', () => {
     })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('将佣金转储为平台余额')
+    expect(wrapper.find('[data-test="open-convert-credit"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="credit-conversion-rate-hint"]').exists()).toBe(true)
     expect(wrapper.find('form[data-test="withdrawal-form"]').exists()).toBe(false)
+  })
+
+  it('shows conversion multiplier and expected credit for non-1 rate', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: true,
+      allow_manual_input: true,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: false,
+      referral_credit_conversion_enabled: true,
+      referral_credit_conversion_rate: 1.5,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: true,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: [],
+      direct_invitees: 1,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 100,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 100,
+      level1_rate: 0.15,
+      settlement_delay_days: 7
+    })
+    convertToCredit.mockResolvedValueOnce({})
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="credit-conversion-rate-hint"]').attributes('data-conversion-rate')).toMatch(
+      /^1\.5/
+    )
+    await wrapper.find('[data-test="open-convert-credit"]').trigger('click')
+    await flushPromises()
+
+    const amountInput = wrapper.find('[data-test="convert-amount-input"]')
+    expect(amountInput.exists()).toBe(true)
+    await amountInput.setValue(100)
+    await flushPromises()
+
+    // 100 commission × 1.5 = 150 credit (money path independent of i18n mock)
+    expect(wrapper.find('[data-test="convert-expected-credit"]').text()).toMatch(/150\.00/)
+  })
+
+  it('hides fake rate examples when level1_rate is missing', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: true,
+      allow_manual_input: true,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: true,
+      referral_credit_conversion_enabled: false,
+      referral_credit_conversion_rate: 1,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: true,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: ['alipay'],
+      direct_invitees: 0,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 0,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 0
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="referral-rate-examples"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="referral-rate-pending"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/—|–|-/)
   })
 
   it('renders disabled state instead of referral center when referral is disabled', async () => {
@@ -295,7 +402,7 @@ describe('user ReferralView', () => {
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('邀请功能未开启')
+    expect(wrapper.text()).toMatch(/邀请功能未开启|referral\.disabledTitle/)
     expect(wrapper.text()).not.toContain('REF-007')
     expect(wrapper.find('form[data-test="withdrawal-form"]').exists()).toBe(false)
     expect(getInvitees).not.toHaveBeenCalled()

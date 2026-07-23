@@ -77,6 +77,9 @@ type ReferralOverview struct {
 	ReferralCreditConversionEnabled bool              `json:"referral_credit_conversion_enabled"`
 	ReferralCreditConversionRate    float64           `json:"referral_credit_conversion_rate"`
 	SettlementCurrency              string            `json:"settlement_currency"`
+	// Marketing / rule display fields (read-only from settings).
+	Level1Rate          float64 `json:"level1_rate"`
+	SettlementDelayDays int     `json:"settlement_delay_days"`
 	DefaultCode                     *ReferralCode     `json:"default_code,omitempty"`
 	Relation                        *ReferralRelation `json:"relation,omitempty"`
 	CanBind                         bool              `json:"can_bind"`
@@ -171,6 +174,8 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		ReferralCreditConversionEnabled: settings.ReferralCreditConversionEnabled,
 		ReferralCreditConversionRate:    settings.ReferralCreditConversionRate,
 		SettlementCurrency:              settings.ReferralSettlementCurrency,
+		Level1Rate:                      settings.ReferralLevel1Rate,
+		SettlementDelayDays:             settings.ReferralSettlementDelayDays,
 		DefaultCode:                     defaultCode,
 		Relation:                        relation,
 		CanBind:                         canBind,

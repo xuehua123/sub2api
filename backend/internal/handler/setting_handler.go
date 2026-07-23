@@ -93,6 +93,8 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ReferralCreditConversionRate:     settings.ReferralCreditConversionRate,
 		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
+		ReferralLevel1Rate:               settings.ReferralLevel1Rate,
+		ReferralSettlementDelayDays:      settings.ReferralSettlementDelayDays,
 		LobeHubEnabled:                   settings.LobeHubEnabled,
 		LobeHubChatURL:                   settings.LobeHubChatURL,
 		LobeHubOIDCIssuer:                settings.LobeHubOIDCIssuer,

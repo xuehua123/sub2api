@@ -859,9 +859,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.ReferralLevel1Enabled = true // default enabled
 	}
-	if v, err := strconv.ParseFloat(settings[SettingKeyReferralLevel1Rate], 64); err == nil {
-		result.ReferralLevel1Rate = v
-	}
+	// Same parser as public overview/marketing so display never diverges from booking.
+	result.ReferralLevel1Rate = parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate])
 	result.ReferralRewardMode = settings[SettingKeyReferralRewardMode]
 	if result.ReferralRewardMode == "" {
 		result.ReferralRewardMode = ReferralRewardModeFirstPaidOrder

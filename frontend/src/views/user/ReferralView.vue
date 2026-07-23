@@ -1,157 +1,121 @@
 <template>
   <AppLayout>
-    <div class="space-y-6">
-      <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+    <div class="mx-auto w-full max-w-[1080px] space-y-5 px-1 sm:px-0">
+      <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">
-            {{ t('referral.title', '邀请中心') }}
+          <h1 class="text-[28px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+            {{ t('referral.title', '邀请') }}
           </h1>
-          <p class="text-sm text-gray-500 dark:text-gray-400">
-            {{ t('referral.description', '查看推广码、邀请关系、返佣流水和提现记录。') }}
+          <p class="mt-0.5 text-[14px] text-[#86868b]">
+            {{ t('referral.description', '分享链接，好友充值获得佣金') }}
           </p>
         </div>
-        <button class="btn btn-secondary" @click="loadAll" :disabled="loading">
+        <button
+          type="button"
+          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#f5f5f7] px-4 text-[13px] font-medium text-[#1d1d1f] transition hover:bg-[#e8e8ed] disabled:opacity-50 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          :disabled="loading"
+          @click="loadAll"
+        >
+          <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
           {{ t('common.refresh', '刷新') }}
         </button>
       </div>
 
-      <div v-if="loading" class="flex items-center justify-center py-12 text-sm text-gray-500">
+      <div v-if="loading && !overview" class="flex items-center justify-center py-20 text-sm text-slate-500">
         <LoadingSpinner />
         <span class="ml-2">{{ t('common.loading', '加载中') }}</span>
       </div>
 
       <template v-else-if="overview && !overview.referral_enabled">
-        <section class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-8 text-center shadow-sm dark:border-dark-700 dark:bg-dark-900">
-          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
+        <section class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center dark:border-dark-700 dark:bg-dark-900">
+          <h2 class="text-xl font-semibold text-slate-900 dark:text-white">
             {{ t('referral.disabledTitle', '邀请功能未开启') }}
           </h2>
-          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+          <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
             {{ t('referral.disabledDescription', '当前账号未开启邀请功能。') }}
           </p>
         </section>
       </template>
 
       <template v-else-if="overview">
-        <!-- Dashboard Stats -->
-        <div class="rounded-3xl border border-gray-200 bg-gradient-to-br from-primary-50 to-white p-5 shadow-sm dark:from-primary-900/10 dark:to-dark-900">
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('referral.totalCommission', '累计已结算佣金') }}</div>
-              <div class="mt-2 text-3xl font-bold tracking-tight text-gray-900 dark:text-white">
-                <span class="text-xl font-normal text-gray-500">￥</span>{{ formatMoney(overview.total_commission) }}
-              </div>
-            </div>
-            <div class="inline-flex items-center gap-1.5 rounded-full bg-white/80 px-3 py-1.5 text-sm font-medium text-gray-700 dark:bg-dark-800/80 dark:text-gray-300">
-              <svg viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 text-primary-500"><path d="M10 9a3 3 0 100-6 3 3 0 000 6zM6 8a2 2 0 11-4 0 2 2 0 014 0zM1.49 15.326a.78.78 0 01-.358-.442 3 3 0 014.308-3.516 6.484 6.484 0 00-1.905 3.959c-.023.222-.014.442.025.654a4.97 4.97 0 01-2.07-.655zM16.44 15.98a4.97 4.97 0 002.07-.654.78.78 0 00.357-.442 3 3 0 00-4.308-3.517 6.484 6.484 0 011.907 3.96 2.32 2.32 0 01-.026.654zM18 8a2 2 0 11-4 0 2 2 0 014 0zM5.304 16.19a.844.844 0 01-.277-.71 5 5 0 019.947 0 .843.843 0 01-.277.71A6.975 6.975 0 0110 18a6.974 6.974 0 01-4.696-1.81z"/></svg>
-              {{ t('referral.directInvitees', '邀请用户') }}: {{ overview.direct_invitees || 0 }} {{ t('referral.peopleCount', '人') }}
-            </div>
-          </div>
-          <div class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <button
-              type="button"
-              class="group flex flex-col items-start rounded-2xl border border-gray-100 bg-white/60 p-3 text-left transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-800/60 dark:hover:border-primary-600"
-              @click="openBucketDetail('available', t('referral.availableCommission', '可提现佣金明细'))"
-            >
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('referral.availableCommission', '可提现') }}</span>
-              <span class="mt-1 text-lg font-semibold text-primary-600 dark:text-primary-400">￥{{ formatMoney(overview.available_commission) }}</span>
-              <span class="mt-1 text-[10px] text-gray-400 group-hover:text-primary-500">{{ t('referral.clickToViewDetail', '点击查看明细 →') }}</span>
-            </button>
-            <button
-              type="button"
-              class="group flex flex-col items-start rounded-2xl border border-gray-100 bg-white/60 p-3 text-left transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-800/60 dark:hover:border-primary-600"
-              @click="openBucketDetail('processing', t('referral.processingCommission', '处理中佣金明细'))"
-            >
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('referral.processingCommission', '处理中') }}</span>
-              <span class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">￥{{ formatMoney((overview.pending_commission || 0) + (overview.frozen_commission || 0)) }}</span>
-              <span class="mt-1 text-[10px] text-gray-400 group-hover:text-primary-500">{{ t('referral.clickToViewDetail', '点击查看明细 →') }}</span>
-            </button>
-            <button
-              type="button"
-              class="group flex flex-col items-start rounded-2xl border border-gray-100 bg-white/60 p-3 text-left transition hover:border-primary-300 hover:shadow-sm dark:border-dark-700 dark:bg-dark-800/60 dark:hover:border-primary-600"
-              @click="openBucketDetail('settled', t('referral.withdrawnCommission', '已提现佣金明细'))"
-            >
-              <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('referral.withdrawnCommission', '已提现') }}</span>
-              <span class="mt-1 text-lg font-semibold text-gray-900 dark:text-white">￥{{ formatMoney(overview.withdrawn_commission) }}</span>
-              <span class="mt-1 text-[10px] text-gray-400 group-hover:text-primary-500">{{ t('referral.clickToViewDetail', '点击查看明细 →') }}</span>
-            </button>
-          </div>
-          <!-- Convert to Credit Action -->
-          <div v-if="creditConversionEnabled" class="mt-4 border-t border-gray-200 pt-4 dark:border-dark-800">
-            <button
-              class="btn btn-primary btn-sm flex items-center gap-1 bg-gradient-to-r from-primary-500 to-indigo-500 hover:from-primary-600 hover:to-indigo-600 border-none px-4"
-              @click="showConvertModal = true"
-              :disabled="!maxWithdrawable"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="h-4 w-4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3v18"/><path d="M3 17l4 4 4-4"/><path d="M13 7l4-4 4 4"/><path d="M7 21V3"/></svg>
-              {{ t('referral.convertToCredit', '将佣金转储为平台余额') }}
-            </button>
-          </div>
+        <!-- Rate-first marketing banner -->
+        <ReferralRateBanner
+          :level1-rate="displayLevel1Rate"
+          :settlement-delay-days="displaySettlementDelayDays"
+          :withdraw-enabled="withdrawEnabled"
+          :credit-conversion-enabled="creditConversionEnabled"
+          :credit-conversion-rate="creditConversionRate"
+        />
+
+        <!-- Dual primary cards -->
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <ReferralShareCard
+            :code="overview.default_code?.code || ''"
+            :invite-link="inviteLink"
+            :invite-count="overview.direct_invitees || 0"
+            :level1-rate="displayLevel1Rate"
+            @copy="copy"
+          />
+          <ReferralWalletCard
+            :available="overview.available_commission || 0"
+            :processing="(overview.pending_commission || 0) + (overview.frozen_commission || 0)"
+            :withdrawn="overview.withdrawn_commission || 0"
+            :total="overview.total_commission || 0"
+            :withdraw-enabled="withdrawEnabled"
+            :credit-conversion-enabled="creditConversionEnabled"
+            :credit-conversion-rate="creditConversionRate"
+            :level1-rate="displayLevel1Rate"
+            @open-bucket="openBucketDetail"
+            @open-convert="showConvertModal = true"
+            @scroll-withdraw="scrollToWithdraw"
+          />
         </div>
 
-        <!-- 邀请码及关系 -->
-        <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.myInviteCodeTitle', '我的推广入口') }}</h2>
-              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.myInviteCodeDesc', '将您的专属链接或固定推广码发给朋友。') }}</p>
-            </div>
-          </div>
+        <ReferralHowItWorks
+          :level1-rate="displayLevel1Rate"
+          :settlement-delay-days="displaySettlementDelayDays"
+          :withdraw-enabled="withdrawEnabled"
+          :credit-conversion-enabled="creditConversionEnabled"
+          :credit-conversion-rate="creditConversionRate"
+        />
 
-          <div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
-              <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('referral.defaultCode', '固定推广码') }}</div>
-              <div class="mt-2 flex items-center justify-between">
-                <div class="text-xl font-semibold tracking-wider text-gray-900 dark:text-white">
-                  {{ overview.default_code?.code || '-' }}
-                </div>
-                <button class="btn btn-secondary btn-sm" @click="copy(overview.default_code?.code || '')" :disabled="!overview.default_code?.code">
-                  {{ t('common.copy', '复制') }}
-                </button>
-              </div>
-            </div>
-
-            <div class="rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
-              <div class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('referral.inviteLink', '邀请注册链接') }}</div>
-              <div class="mt-2 flex items-center gap-3">
-                <input
-                  class="block w-full rounded-xl border border-transparent bg-transparent py-1.5 text-sm outline-none focus:border-transparent dark:text-gray-300"
-                  :value="inviteLink"
-                  readonly
-                />
-                <button class="btn btn-primary btn-sm shrink-0" @click="copy(inviteLink)" :disabled="!inviteLink">
-                  {{ t('referral.copyInviteLink', '复制链接') }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div v-if="withdrawEnabled" id="withdrawal-form-section" class="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_1.5fr]">
-          <!-- 收款账户组件 -->
+        <!-- Withdrawal zone -->
+        <div v-if="withdrawEnabled" id="withdrawal-form-section" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_1.35fr]">
           <PayoutAccountBinder
             :accounts="payoutAccounts"
             :enabled-methods="withdrawMethods"
             @refresh="loadPayoutAccountsAndOverview"
           />
 
-          <!-- 提现申请 -->
-          <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.withdrawal', '申请提现') }}</h2>
-            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.withdrawalHint', '可提现佣金将进行打款处理，发起后锁定金额，后台审核后即时打款。') }}</p>
-            
-            <div class="mt-5 rounded-2xl bg-gray-50 p-4 dark:bg-dark-800">
+          <section class="rounded-[28px] border border-black/[0.06] bg-white p-7 dark:border-white/10 dark:bg-[#1c1c1e]">
+            <h2 class="text-[17px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+              {{ t('referral.withdrawal', '申请提现') }}
+            </h2>
+            <p class="mt-1 text-[14px] text-[#6e6e73] dark:text-[#a1a1a6]">
+              {{ t('referral.withdrawalHint', '发起后锁定金额，审核通过后打款。') }}
+            </p>
+
+            <div class="mt-5 rounded-[16px] bg-[#f5f5f7] px-4 py-3.5 dark:bg-[#2c2c2e]">
               <div class="flex items-center justify-between">
-                <span class="text-sm font-medium text-gray-500 dark:text-gray-400">{{ t('referral.availableToWithdraw', '当前最大可提现额度') }}</span>
-                <span class="text-xl font-bold tracking-tight text-primary-600 dark:text-primary-400">￥{{ formatMoney(maxWithdrawable) }}</span>
+                <span class="text-[13px] font-medium text-[#86868b]">
+                  {{ t('referral.availableToWithdraw', '可提现额度') }}
+                </span>
+                <span class="text-[20px] font-semibold tabular-nums tracking-tight text-[#1d1d1f] dark:text-white">
+                  ¥{{ formatMoney(maxWithdrawable) }}
+                </span>
               </div>
             </div>
 
             <form class="mt-6 space-y-4" data-test="withdrawal-form" @submit.prevent="handleCreateWithdrawal">
               <div>
-                <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.withdrawAmount', '提现金额') }}</label>
+                <label class="mb-1 block text-sm text-slate-600 dark:text-slate-400">
+                  {{ t('referral.withdrawAmount', '提现金额') }}
+                </label>
                 <div class="relative">
                   <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                    <span class="text-gray-500 sm:text-sm">￥</span>
+                    <span class="text-slate-500 sm:text-sm">￥</span>
                   </div>
                   <input
                     v-model.number="withdrawForm.amount"
@@ -164,30 +128,44 @@
                     placeholder="0.00"
                   />
                   <div class="absolute inset-y-0 right-1 flex items-center">
-                    <button type="button" class="rounded bg-white px-2 py-1 text-xs font-medium text-primary-600 outline-none hover:bg-primary-50 dark:bg-dark-900 dark:text-primary-400 dark:hover:bg-primary-900/20" @click="withdrawForm.amount = maxWithdrawable">
+                    <button
+                      type="button"
+                      class="rounded bg-white px-2 py-1 text-xs font-medium text-primary-600 outline-none hover:bg-primary-50 dark:bg-dark-900 dark:text-primary-400 dark:hover:bg-primary-900/20"
+                      @click="withdrawForm.amount = maxWithdrawable"
+                    >
                       {{ t('referral.withdrawAll', '全部提现') }}
                     </button>
                   </div>
                 </div>
               </div>
-              
+
               <div>
-                <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.selectPayoutAccount', '入账账户') }}</label>
+                <label class="mb-1 block text-sm text-slate-600 dark:text-slate-400">
+                  {{ t('referral.selectPayoutAccount', '入账账户') }}
+                </label>
                 <select v-model="withdrawForm.payout_account_id" class="input" :disabled="!payoutAccounts.length">
-                  <option v-if="!payoutAccounts.length" :value="0">{{ t('referral.noPayoutAccountHint', '请先在左侧添加收款账户') }}</option>
+                  <option v-if="!payoutAccounts.length" :value="0">
+                    {{ t('referral.noPayoutAccountHint', '请先在左侧添加收款账户') }}
+                  </option>
                   <option v-for="account in payoutAccounts" :key="account.id" :value="account.id">
-                    {{ account.account_name }} ({{ account.method }}) - {{ account.account_no_masked || account.bank_name || t('referral.hasQrCode', '收款二维码') }}
+                    {{ account.account_name }} ({{ account.method }}) -
+                    {{ account.account_no_masked || account.bank_name || t('referral.hasQrCode', '收款二维码') }}
                   </option>
                 </select>
               </div>
 
               <div>
-                <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.withdrawRemark', '留言备注 (选填)') }}</label>
-                <textarea v-model="withdrawForm.remark" class="input min-h-24"></textarea>
+                <label class="mb-1 block text-sm text-slate-600 dark:text-slate-400">
+                  {{ t('referral.withdrawRemark', '留言备注 (选填)') }}
+                </label>
+                <textarea v-model="withdrawForm.remark" class="input min-h-24" />
               </div>
-              
-              <button class="btn btn-primary w-full py-2.5" :disabled="creatingWithdrawal || !withdrawForm.amount || !withdrawForm.payout_account_id || withdrawForm.amount > maxWithdrawable">
-                {{ creatingWithdrawal ? t('common.saving', '处理中...') : t('referral.submitWithdrawal', '确认发起提现') }}
+
+              <button
+                class="h-12 w-full rounded-full bg-[#0071e3] text-[15px] font-medium text-white transition hover:bg-[#0077ed] disabled:opacity-40"
+                :disabled="creatingWithdrawal || !withdrawForm.amount || !withdrawForm.payout_account_id || withdrawForm.amount > maxWithdrawable"
+              >
+                {{ creatingWithdrawal ? t('common.saving', '处理中...') : t('referral.submitWithdrawal', '确认提现') }}
               </button>
             </form>
           </section>
@@ -195,151 +173,55 @@
 
         <section
           v-if="!withdrawEnabled && !creditConversionEnabled"
-          class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500 shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400"
+          class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
         >
           {{ t('referral.monetizationDisabledMessage', '推广佣金转余额和提现当前均未开启。') }}
         </section>
         <section
           v-else-if="!withdrawEnabled"
-          class="rounded-3xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500 shadow-sm dark:border-dark-700 dark:bg-dark-900 dark:text-gray-400"
+          class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
         >
           {{ t('referral.withdrawDisabledMessage', '推广佣金提现当前未开启。') }}
         </section>
 
-        <section id="withdrawal-records-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-          <div class="mb-4">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.withdrawalRecords', '提现与转余额记录') }}</h2>
-            <p class="mt-1 text-xs text-gray-500">含现金提现与「转平台余额」；转余额显示为已转余额，不是银行卡打款。</p>
-          </div>
-          <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
-            <table class="min-w-full text-sm">
-              <thead class="bg-gray-50 dark:bg-dark-800/50">
-                <tr class="text-left text-gray-500 dark:text-gray-400">
-                  <th class="px-4 py-3 font-medium">{{ t('referral.withdrawalNo', '单号') }}</th>
-                  <th class="px-4 py-3 font-medium">类型</th>
-                  <th class="px-4 py-3 font-medium">{{ t('common.amount', '金额') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('common.status', '状态') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('common.createdAt', '时间') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                <tr v-for="record in withdrawals.items" :key="record.id" class="text-gray-700 dark:text-gray-300">
-                  <td class="px-4 py-4 font-mono text-xs">{{ record.withdrawal_no }}</td>
-                  <td class="px-4 py-4">{{ formatPayoutMethod(record.payout_method || record.method) }}</td>
-                  <td class="px-4 py-4 font-medium text-gray-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</td>
-                  <td class="px-4 py-4">
-                    <span class="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-dark-800 dark:text-gray-300">
-                      {{ formatWithdrawalStatus(record.status, record.payout_method || record.method) }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-4 text-gray-500">{{ formatDate(record.created_at) }}</td>
-                </tr>
-                <tr v-if="!withdrawals.items.length">
-                  <td colspan="5" class="px-4 py-8 text-center text-gray-500">
-                    {{ t('common.noData', '暂无记录') }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="withdrawals.pages > 1" class="mt-4 flex items-center justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('common.totalPrefix', '共') }} {{ withdrawals.total }} {{ t('common.totalSuffix', '条') }}</span>
-            <div class="flex gap-1">
-              <button class="btn btn-secondary btn-sm" :disabled="withdrawals.page <= 1" @click="loadWithdrawalsPage(withdrawals.page - 1)">{{ t('common.prevPage', '上一页') }}</button>
-              <span class="px-3 py-1.5 text-gray-700 dark:text-gray-300">{{ withdrawals.page }}/{{ withdrawals.pages }}</span>
-              <button class="btn btn-secondary btn-sm" :disabled="withdrawals.page >= withdrawals.pages" @click="loadWithdrawalsPage(withdrawals.page + 1)">{{ t('common.nextPage', '下一页') }}</button>
+        <!-- Records tabs -->
+        <section class="rounded-[28px] border border-black/[0.06] bg-white p-6 dark:border-white/10 dark:bg-[#1c1c1e] sm:p-7">
+          <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-[17px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+                {{ t('referral.recordsTitle', '明细') }}
+              </h2>
+              <p class="mt-0.5 text-[13px] text-[#86868b]">
+                {{ t('referral.recordsSubtitle', '邀请、返佣、流水与提现') }}
+              </p>
             </div>
+            <nav class="flex gap-1 overflow-x-auto rounded-full bg-[#f5f5f7] p-1 dark:bg-[#2c2c2e]">
+              <button
+                v-for="tab in recordTabs"
+                :key="tab.key"
+                type="button"
+                class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition"
+                :class="
+                  activeRecordTab === tab.key
+                    ? 'bg-white text-[#1d1d1f] shadow-sm dark:bg-[#3a3a3c] dark:text-white'
+                    : 'text-[#6e6e73] hover:text-[#1d1d1f] dark:text-[#a1a1a6] dark:hover:text-white'
+                "
+                @click="activeRecordTab = tab.key"
+              >
+                {{ tab.label }}
+                <span v-if="tab.count != null" class="ml-0.5 tabular-nums text-[#86868b]">{{ tab.count }}</span>
+              </button>
+            </nav>
           </div>
-        </section>
 
-        <!-- 返佣记账明细（邀请充值成功 → 一行佣金） -->
-        <section id="rewards-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-          <div class="mb-4">
-            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ t('referral.rewardsTitle') }}</h2>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('referral.rewardsDescription') }}
-            </p>
-          </div>
-          <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
-            <table class="min-w-full text-sm">
-              <thead class="bg-gray-50 dark:bg-dark-800/50">
-                <tr class="text-left text-gray-500 dark:text-gray-400">
-                  <th class="px-4 py-3 font-medium">{{ t('referral.rewardDate') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('referral.sourceUser') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('referral.orderNo') }}</th>
-                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.orderAmount') }}</th>
-                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.commissionRate') }}</th>
-                  <th class="px-4 py-3 font-medium text-right">{{ t('referral.commission') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('common.status') }}</th>
-                  <th class="px-4 py-3 font-medium">{{ t('referral.availableAt') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
-                <tr v-for="reward in rewards.items" :key="reward.id" class="text-gray-700 dark:text-gray-300">
-                  <td class="px-4 py-3 text-gray-500">{{ formatDate(reward.created_at) }}</td>
-                  <td class="px-4 py-3">
-                    <div class="font-medium text-gray-900 dark:text-white">
-                      {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
-                    </div>
-                    <div v-if="reward.source_user_email || reward.invitee_email" class="text-xs text-gray-500">
-                      {{ reward.source_user_email || reward.invitee_email }}
-                    </div>
-                  </td>
-                  <td class="px-4 py-3 font-mono text-xs">{{ reward.external_order_id || (reward.recharge_order_id ? ('#' + reward.recharge_order_id) : '-') }}</td>
-                  <td class="px-4 py-3 text-right tabular-nums">{{ formatMoney(reward.order_paid_amount) }}</td>
-                  <td class="px-4 py-3 text-right tabular-nums">
-                    {{ reward.rate_snapshot != null ? ((Number(reward.rate_snapshot) * 100).toFixed(1) + '%') : '-' }}
-                  </td>
-                  <td class="px-4 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">
-                    +{{ formatMoney(reward.reward_amount) }}
-                  </td>
-                  <td class="px-4 py-3">
-                    <span
-                      class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                      :class="reward.status === 'available' || reward.status === 'paid' || reward.status === 'settled'
-                        ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                        : reward.status === 'pending'
-                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                          : 'bg-gray-100 text-gray-800 dark:bg-dark-800 dark:text-gray-300'"
-                    >
-                      {{ formatStatus(reward.status) }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-gray-500">
-                    <template v-if="reward.status === 'pending' && reward.available_at">{{ formatDate(reward.available_at) }}</template>
-                    <template v-else>-</template>
-                  </td>
-                </tr>
-                <tr v-if="!rewards.items.length">
-                  <td colspan="8" class="px-4 py-8 text-center text-gray-500">
-                    {{ t('referral.noRewards') }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div v-if="rewards.pages > 1" class="mt-4 flex items-center justify-between text-sm">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('common.totalPrefix', '共') }} {{ rewards.total }} {{ t('common.totalSuffix', '条') }}</span>
-            <div class="flex gap-1">
-              <button class="btn btn-secondary btn-sm" :disabled="rewards.page <= 1" @click="loadRewardsPage(rewards.page - 1)">{{ t('common.prevPage', '上一页') }}</button>
-              <span class="px-3 py-1.5 text-gray-700 dark:text-gray-300">{{ rewards.page }}/{{ rewards.pages }}</span>
-              <button class="btn btn-secondary btn-sm" :disabled="rewards.page >= rewards.pages" @click="loadRewardsPage(rewards.page + 1)">{{ t('common.nextPage', '下一页') }}</button>
-            </div>
-          </div>
-        </section>
-
-        <!-- Logs section -->
-        <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <!-- 邀请记录 -->
-          <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-            <div class="mb-4">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.invitees', '我邀请的用户列表') }}</h2>
-            </div>
-            <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
+          <!-- Invitees -->
+          <div v-show="activeRecordTab === 'invitees'" id="invitees-section">
+            <!-- Desktop table -->
+            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
-                <thead class="bg-gray-50 dark:bg-dark-800/50">
-                  <tr class="text-left text-gray-500 dark:text-gray-400">
-                    <th class="w-8 px-2 py-3"></th>
+                <thead class="bg-slate-50 dark:bg-dark-800/50">
+                  <tr class="text-left text-slate-500 dark:text-slate-400">
+                    <th class="w-8 px-2 py-3" />
                     <th class="px-4 py-3 font-medium">{{ t('common.username', '用户') }}</th>
                     <th class="px-4 py-3 font-medium">{{ t('referral.totalRecharge', '充值总额') }}</th>
                     <th class="px-4 py-3 font-medium">{{ t('referral.orderCount', '订单数') }}</th>
@@ -348,45 +230,59 @@
                     <th class="px-4 py-3 font-medium">{{ t('referral.bindTime', '绑定时间') }}</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
                   <template v-for="invitee in invitees.items" :key="invitee.user_id">
-                    <tr class="cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-dark-800/50" @click="toggleInviteeExpand(invitee.user_id)">
-                      <td class="px-2 py-3 text-center text-gray-400">
-                        <svg class="inline-block h-4 w-4 transition-transform" :class="{ 'rotate-90': expandedInviteeId === invitee.user_id }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+                    <tr
+                      class="cursor-pointer transition-colors hover:bg-slate-50 dark:hover:bg-dark-800/50"
+                      @click="toggleInviteeExpand(invitee.user_id)"
+                    >
+                      <td class="px-2 py-3 text-center text-slate-400">
+                        <svg
+                          class="inline-block h-4 w-4 transition-transform"
+                          :class="{ 'rotate-90': expandedInviteeId === invitee.user_id }"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path d="M9 18l6-6-6-6" />
+                        </svg>
                       </td>
                       <td class="px-4 py-3">
-                        <div class="font-medium text-gray-900 dark:text-white">{{ invitee.username || '-' }}</div>
-                        <div class="text-xs text-gray-500">{{ invitee.email }}</div>
+                        <div class="font-medium text-slate-900 dark:text-white">{{ invitee.username || '-' }}</div>
+                        <div class="text-xs text-slate-500">{{ invitee.email }}</div>
                       </td>
-                      <td class="px-4 py-3 font-medium" :class="invitee.total_recharge > 0 ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'">
+                      <td
+                        class="px-4 py-3 font-medium"
+                        :class="invitee.total_recharge > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'"
+                      >
                         {{ formatMoney(invitee.total_recharge) }}
                       </td>
                       <td class="px-4 py-3">
-                        <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-dark-800 dark:text-gray-300">
+                        <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-dark-800 dark:text-slate-300">
                           {{ invitee.order_count || 0 }}
                         </span>
                       </td>
-                      <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                      <td class="px-4 py-3 font-medium text-slate-900 dark:text-white">
                         {{ formatMoney(invitee.total_commission) }}
                       </td>
-                      <td class="px-4 py-3 text-gray-500">
+                      <td class="px-4 py-3 text-slate-500">
                         {{ invitee.latest_paid_at ? formatDate(invitee.latest_paid_at) : t('referral.notPaid', '未充值') }}
                       </td>
-                      <td class="px-4 py-3 text-gray-500">{{ formatDate(invitee.bound_at) }}</td>
+                      <td class="px-4 py-3 text-slate-500">{{ formatDate(invitee.bound_at) }}</td>
                     </tr>
-                    <!-- Expanded reward details -->
                     <tr v-if="expandedInviteeId === invitee.user_id">
-                      <td :colspan="7" class="bg-gray-50/50 px-4 py-3 dark:bg-dark-800/30">
-                        <div v-if="inviteeRewardsLoading" class="flex items-center justify-center py-4 text-sm text-gray-500">
+                      <td colspan="7" class="bg-slate-50/50 px-4 py-3 dark:bg-dark-800/30">
+                        <div v-if="inviteeRewardsLoading" class="flex items-center justify-center py-4 text-sm text-slate-500">
                           <LoadingSpinner />
                           <span class="ml-2">{{ t('common.loading', '加载中') }}</span>
                         </div>
-                        <div v-else-if="inviteeRewards.length === 0" class="py-4 text-center text-sm text-gray-500">
+                        <div v-else-if="inviteeRewards.length === 0" class="py-4 text-center text-sm text-slate-500">
                           {{ t('referral.noRewards', '暂无返佣明细') }}
                         </div>
                         <table v-else class="min-w-full text-xs">
                           <thead>
-                            <tr class="text-left text-gray-500 dark:text-gray-400">
+                            <tr class="text-left text-slate-500">
                               <th class="px-3 py-2 font-medium">{{ t('referral.rewardDate', '返佣时间') }}</th>
                               <th class="px-3 py-2 font-medium">{{ t('referral.orderNo', '订单号') }}</th>
                               <th class="px-3 py-2 font-medium">{{ t('referral.orderAmount', '订单金额') }}</th>
@@ -395,16 +291,15 @@
                               <th class="px-3 py-2 font-medium">{{ t('common.status', '状态') }}</th>
                             </tr>
                           </thead>
-                          <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                          <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
                             <tr v-for="reward in inviteeRewards" :key="reward.id">
-                              <td class="px-3 py-2 text-gray-500">{{ formatDate(reward.created_at) }}</td>
-                              <td class="px-3 py-2 font-mono text-gray-700 dark:text-gray-300">{{ reward.external_order_id || '-' }}</td>
-                              <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ formatMoney(reward.order_paid_amount) }}</td>
-                              <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ (reward.rate_snapshot * 100).toFixed(1) }}%</td>
-                              <td class="px-3 py-2 font-medium text-green-600 dark:text-green-400">+{{ formatMoney(reward.reward_amount) }}</td>
+                              <td class="px-3 py-2 text-slate-500">{{ formatDate(reward.created_at) }}</td>
+                              <td class="px-3 py-2 font-mono">{{ reward.external_order_id || '-' }}</td>
+                              <td class="px-3 py-2">{{ formatMoney(reward.order_paid_amount) }}</td>
+                              <td class="px-3 py-2">{{ (reward.rate_snapshot * 100).toFixed(1) }}%</td>
+                              <td class="px-3 py-2 font-medium text-emerald-600">+{{ formatMoney(reward.reward_amount) }}</td>
                               <td class="px-3 py-2">
-                                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
-                                  :class="reward.status === 'settled' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' : reward.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' : 'bg-gray-100 text-gray-800 dark:bg-dark-800 dark:text-gray-300'">
+                                <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusBadgeClass(reward.status)">
                                   {{ formatStatus(reward.status) }}
                                 </span>
                               </td>
@@ -415,32 +310,141 @@
                     </tr>
                   </template>
                   <tr v-if="!invitees.items.length">
-                    <td colspan="7" class="px-4 py-6 text-center text-gray-500">
-                      {{ t('common.noData', '暂无数据') }}
+                    <td colspan="7" class="px-4 py-10 text-center">
+                      <EmptyInviteState @copy-link="copy(inviteLink)" />
                     </td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div v-if="invitees.pages > 1" class="mt-4 flex items-center justify-between text-sm">
-              <span class="text-gray-500 dark:text-gray-400">{{ t('common.totalPrefix', '共') }} {{ invitees.total }} {{ t('common.totalSuffix', '条') }}</span>
-              <div class="flex gap-1">
-                <button class="btn btn-secondary btn-sm" :disabled="invitees.page <= 1" @click="loadInviteesPage(invitees.page - 1)">{{ t('common.prevPage', '上一页') }}</button>
-                <span class="px-3 py-1.5 text-gray-700 dark:text-gray-300">{{ invitees.page }}/{{ invitees.pages }}</span>
-                <button class="btn btn-secondary btn-sm" :disabled="invitees.page >= invitees.pages" @click="loadInviteesPage(invitees.page + 1)">{{ t('common.nextPage', '下一页') }}</button>
+            <!-- Mobile cards -->
+            <div class="space-y-3 md:hidden">
+              <button
+                v-for="invitee in invitees.items"
+                :key="invitee.user_id"
+                type="button"
+                class="w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-left dark:border-dark-800 dark:bg-dark-800/40"
+                @click="toggleInviteeExpand(invitee.user_id)"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <p class="font-semibold text-slate-900 dark:text-white">{{ invitee.username || invitee.email }}</p>
+                    <p class="text-xs text-slate-500">{{ invitee.email }}</p>
+                  </div>
+                  <span class="text-sm font-bold text-emerald-600">￥{{ formatMoney(invitee.total_commission) }}</span>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <span>{{ t('referral.totalRecharge', '充值') }} ￥{{ formatMoney(invitee.total_recharge) }}</span>
+                  <span>·</span>
+                  <span>{{ invitee.order_count || 0 }} {{ t('referral.orderCount', '单') }}</span>
+                </div>
+              </button>
+              <div v-if="!invitees.items.length" class="py-8">
+                <EmptyInviteState @copy-link="copy(inviteLink)" />
               </div>
             </div>
-          </section>
+            <PaginationBar
+              v-if="invitees.pages > 1"
+              :page="invitees.page"
+              :pages="invitees.pages"
+              :total="invitees.total"
+              @prev="loadInviteesPage(invitees.page - 1)"
+              @next="loadInviteesPage(invitees.page + 1)"
+            />
+          </div>
 
-          <!-- 佣金流水 -->
-          <section id="ledger-section" class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-dark-700 dark:bg-dark-900">
-            <div class="mb-4">
-              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.ledger', '佣金入账流水') }}</h2>
-            </div>
-            <div class="overflow-x-auto rounded-2xl border border-gray-100 dark:border-dark-800">
+          <!-- Rewards -->
+          <div v-show="activeRecordTab === 'rewards'" id="rewards-section">
+            <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">{{ t('referral.rewardsDescription') }}</p>
+            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
-                <thead class="bg-gray-50 dark:bg-dark-800/50">
-                  <tr class="text-left text-gray-500 dark:text-gray-400">
+                <thead class="bg-slate-50 dark:bg-dark-800/50">
+                  <tr class="text-left text-slate-500 dark:text-slate-400">
+                    <th class="px-4 py-3 font-medium">{{ t('referral.rewardDate') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('referral.sourceUser') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('referral.orderNo') }}</th>
+                    <th class="px-4 py-3 font-medium text-right">{{ t('referral.orderAmount') }}</th>
+                    <th class="px-4 py-3 font-medium text-right">{{ t('referral.commissionRate') }}</th>
+                    <th class="px-4 py-3 font-medium text-right">{{ t('referral.commission') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('common.status') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('referral.availableAt') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
+                  <tr v-for="reward in rewards.items" :key="reward.id" class="text-slate-700 dark:text-slate-300">
+                    <td class="px-4 py-3 text-slate-500">{{ formatDate(reward.created_at) }}</td>
+                    <td class="px-4 py-3">
+                      <div class="font-medium text-slate-900 dark:text-white">
+                        {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
+                      </div>
+                      <div v-if="reward.source_user_email || reward.invitee_email" class="text-xs text-slate-500">
+                        {{ reward.source_user_email || reward.invitee_email }}
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 font-mono text-xs">
+                      {{ reward.external_order_id || (reward.recharge_order_id ? '#' + reward.recharge_order_id : '-') }}
+                    </td>
+                    <td class="px-4 py-3 text-right tabular-nums">{{ formatMoney(reward.order_paid_amount) }}</td>
+                    <td class="px-4 py-3 text-right tabular-nums">
+                      {{ reward.rate_snapshot != null ? (Number(reward.rate_snapshot) * 100).toFixed(1) + '%' : '-' }}
+                    </td>
+                    <td class="px-4 py-3 text-right font-medium text-emerald-600 dark:text-emerald-400">
+                      +{{ formatMoney(reward.reward_amount) }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" :class="statusBadgeClass(reward.status)">
+                        {{ formatStatus(reward.status) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-500">
+                      <template v-if="reward.status === 'pending' && reward.available_at">{{ formatDate(reward.available_at) }}</template>
+                      <template v-else>-</template>
+                    </td>
+                  </tr>
+                  <tr v-if="!rewards.items.length">
+                    <td colspan="8" class="px-4 py-10 text-center text-slate-500">{{ t('referral.noRewards') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="space-y-3 md:hidden">
+              <div
+                v-for="reward in rewards.items"
+                :key="reward.id"
+                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+              >
+                <div class="flex items-start justify-between">
+                  <div>
+                    <p class="font-medium text-slate-900 dark:text-white">
+                      {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
+                    </p>
+                    <p class="text-xs text-slate-500">{{ formatDate(reward.created_at) }}</p>
+                  </div>
+                  <span class="font-bold text-emerald-600">+{{ formatMoney(reward.reward_amount) }}</span>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                  <span>{{ reward.external_order_id || '—' }}</span>
+                  <span class="rounded-full px-2 py-0.5" :class="statusBadgeClass(reward.status)">{{ formatStatus(reward.status) }}</span>
+                </div>
+              </div>
+              <p v-if="!rewards.items.length" class="py-8 text-center text-sm text-slate-500">{{ t('referral.noRewards') }}</p>
+            </div>
+            <PaginationBar
+              v-if="rewards.pages > 1"
+              :page="rewards.page"
+              :pages="rewards.pages"
+              :total="rewards.total"
+              @prev="loadRewardsPage(rewards.page - 1)"
+              @next="loadRewardsPage(rewards.page + 1)"
+            />
+          </div>
+
+          <!-- Ledger -->
+          <div v-show="activeRecordTab === 'ledger'" id="ledger-section">
+            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 dark:bg-dark-800/50">
+                  <tr class="text-left text-slate-500 dark:text-slate-400">
                     <th class="px-4 py-3 font-medium">{{ t('referral.entryType', '类型') }}</th>
                     <th class="px-4 py-3 font-medium">{{ t('referral.sourceUser', '来源') }}</th>
                     <th class="px-4 py-3 font-medium">{{ t('referral.orderAmount', '订单金额') }}</th>
@@ -449,65 +453,168 @@
                     <th class="px-4 py-3 font-medium">{{ t('common.createdAt', '时间') }}</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-100 dark:divide-dark-800">
+                <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
                   <tr v-for="entry in ledger.items" :key="entry.id">
                     <td class="px-4 py-3">
-                      <div class="font-medium text-gray-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
-                      <div class="text-xs text-gray-500">{{ formatStatus(entry.bucket) }}</div>
-                      <div v-if="entry.external_order_id" class="mt-0.5 text-xs font-mono text-gray-400 dark:text-gray-500">{{ entry.external_order_id }}</div>
+                      <div class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
+                      <div class="text-xs text-slate-500">{{ formatStatus(entry.bucket) }}</div>
+                      <div v-if="entry.external_order_id" class="mt-0.5 font-mono text-xs text-slate-400">{{ entry.external_order_id }}</div>
                     </td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                    <td class="px-4 py-3 text-slate-700 dark:text-slate-300">
                       {{ entry.source_user_email || entry.source_user_username || '-' }}
                     </td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                    <td class="px-4 py-3 text-slate-700 dark:text-slate-300">
                       <template v-if="entry.order_paid_amount && entry.order_paid_amount > 0">
                         {{ formatMoney(entry.order_paid_amount) }}
                       </template>
                       <template v-else>-</template>
                     </td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                    <td class="px-4 py-3 text-slate-700 dark:text-slate-300">
                       <template v-if="entry.reward_rate_snapshot && entry.reward_rate_snapshot > 0">
                         {{ (entry.reward_rate_snapshot * 100).toFixed(1) }}%
                       </template>
                       <template v-else>-</template>
                     </td>
-                    <td class="px-4 py-3 font-medium" :class="entry.amount > 0 ? 'text-green-600 dark:text-green-400' : entry.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'">
+                    <td
+                      class="px-4 py-3 font-medium"
+                      :class="entry.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : entry.amount < 0 ? 'text-red-600' : 'text-slate-900 dark:text-white'"
+                    >
                       {{ entry.amount > 0 ? '+' : '' }}{{ formatMoney(entry.amount) }}
                     </td>
-                    <td class="px-4 py-3 text-gray-500">{{ formatDate(entry.created_at) }}</td>
+                    <td class="px-4 py-3 text-slate-500">{{ formatDate(entry.created_at) }}</td>
                   </tr>
                   <tr v-if="!ledger.items.length">
-                    <td colspan="6" class="px-4 py-6 text-center text-gray-500">
-                      {{ t('common.noData', '暂无数据') }}
-                    </td>
+                    <td colspan="6" class="px-4 py-10 text-center text-slate-500">{{ t('common.noData', '暂无数据') }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
-            <div v-if="ledger.pages > 1" class="mt-4 flex items-center justify-between text-sm">
-              <span class="text-gray-500 dark:text-gray-400">{{ t('common.totalPrefix', '共') }} {{ ledger.total }} {{ t('common.totalSuffix', '条') }}</span>
-              <div class="flex gap-1">
-                <button class="btn btn-secondary btn-sm" :disabled="ledger.page <= 1" @click="loadLedgerPage(ledger.page - 1)">{{ t('common.prevPage', '上一页') }}</button>
-                <span class="px-3 py-1.5 text-gray-700 dark:text-gray-300">{{ ledger.page }}/{{ ledger.pages }}</span>
-                <button class="btn btn-secondary btn-sm" :disabled="ledger.page >= ledger.pages" @click="loadLedgerPage(ledger.page + 1)">{{ t('common.nextPage', '下一页') }}</button>
+            <div class="space-y-3 md:hidden">
+              <div
+                v-for="entry in ledger.items"
+                :key="entry.id"
+                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+              >
+                <div class="flex justify-between gap-2">
+                  <div>
+                    <p class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</p>
+                    <p class="text-xs text-slate-500">{{ formatDate(entry.created_at) }}</p>
+                  </div>
+                  <span
+                    class="font-bold"
+                    :class="entry.amount > 0 ? 'text-emerald-600' : entry.amount < 0 ? 'text-red-600' : 'text-slate-700'"
+                  >
+                    {{ entry.amount > 0 ? '+' : '' }}{{ formatMoney(entry.amount) }}
+                  </span>
+                </div>
               </div>
+              <p v-if="!ledger.items.length" class="py-8 text-center text-sm text-slate-500">{{ t('common.noData', '暂无数据') }}</p>
             </div>
-          </section>
-        </div>
+            <PaginationBar
+              v-if="ledger.pages > 1"
+              :page="ledger.page"
+              :pages="ledger.pages"
+              :total="ledger.total"
+              @prev="loadLedgerPage(ledger.page - 1)"
+              @next="loadLedgerPage(ledger.page + 1)"
+            />
+          </div>
+
+          <!-- Withdrawals -->
+          <div v-show="activeRecordTab === 'withdrawals'" id="withdrawal-records-section">
+            <p class="mb-3 text-xs text-slate-500">
+              {{ t('referral.withdrawalRecordsHint', '含现金提现与「转平台余额」；转余额显示为已转余额，不是银行卡打款。') }}
+            </p>
+            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 dark:bg-dark-800/50">
+                  <tr class="text-left text-slate-500 dark:text-slate-400">
+                    <th class="px-4 py-3 font-medium">{{ t('referral.withdrawalNo', '单号') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('referral.typeLabel', '类型') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('common.amount', '金额') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('common.status', '状态') }}</th>
+                    <th class="px-4 py-3 font-medium">{{ t('common.createdAt', '时间') }}</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
+                  <tr v-for="record in withdrawals.items" :key="record.id" class="text-slate-700 dark:text-slate-300">
+                    <td class="px-4 py-4 font-mono text-xs">{{ record.withdrawal_no }}</td>
+                    <td class="px-4 py-4">{{ formatPayoutMethod(record.payout_method || record.method) }}</td>
+                    <td class="px-4 py-4 font-medium text-slate-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</td>
+                    <td class="px-4 py-4">
+                      <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-dark-800 dark:text-slate-300">
+                        {{ formatWithdrawalStatus(record.status, record.payout_method || record.method) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-4 text-slate-500">{{ formatDate(record.created_at) }}</td>
+                  </tr>
+                  <tr v-if="!withdrawals.items.length">
+                    <td colspan="5" class="px-4 py-10 text-center text-slate-500">{{ t('common.noData', '暂无记录') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="space-y-3 md:hidden">
+              <div
+                v-for="record in withdrawals.items"
+                :key="record.id"
+                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+              >
+                <div class="flex justify-between">
+                  <span class="font-mono text-xs text-slate-500">{{ record.withdrawal_no }}</span>
+                  <span class="font-bold text-slate-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</span>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                  <span>{{ formatPayoutMethod(record.payout_method || record.method) }}</span>
+                  <span>{{ formatWithdrawalStatus(record.status, record.payout_method || record.method) }}</span>
+                </div>
+              </div>
+              <p v-if="!withdrawals.items.length" class="py-8 text-center text-sm text-slate-500">{{ t('common.noData', '暂无记录') }}</p>
+            </div>
+            <PaginationBar
+              v-if="withdrawals.pages > 1"
+              :page="withdrawals.page"
+              :pages="withdrawals.pages"
+              :total="withdrawals.total"
+              @prev="loadWithdrawalsPage(withdrawals.page - 1)"
+              @next="loadWithdrawalsPage(withdrawals.page + 1)"
+            />
+          </div>
+        </section>
       </template>
     </div>
 
     <!-- Convert Modal -->
-    <div v-if="showConvertModal" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm" @click.self="showConvertModal = false" @keydown.esc="showConvertModal = false" tabindex="0" ref="convertModalBackdrop">
-      <div class="w-full max-w-sm rounded-3xl border border-gray-200 bg-white p-6 shadow-xl dark:border-dark-700 dark:bg-dark-900">
-        <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.convertToCredit', '将佣金转储为平台余额') }}</h3>
-        <p class="mt-2 text-sm text-gray-500">{{ t('referral.convertDesc', '实时到账平台账户余额，可用于抵扣消费。') }}</p>
-        
+    <div
+      v-if="showConvertModal"
+      ref="convertModalBackdrop"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
+      tabindex="0"
+      @click.self="showConvertModal = false"
+      @keydown.esc="showConvertModal = false"
+    >
+      <div class="w-full max-w-sm rounded-[24px] border border-black/[0.06] bg-white p-7 shadow-2xl dark:border-white/10 dark:bg-[#1c1c1e]">
+        <h3 class="text-[20px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+          {{ t('referral.convertToCredit', '转入平台余额') }}
+        </h3>
+        <p class="mt-2 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
+          {{ convertModalRateHint }}
+        </p>
+
+        <div class="mt-5 rounded-[14px] bg-[#f5f5f7] px-4 py-3 dark:bg-[#2c2c2e]">
+          <p class="text-[12px] font-medium text-[#86868b]">{{ t('referral.convertModalRateTitle') }}</p>
+          <p class="mt-0.5 text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
+            {{ convertModalRateLine }}
+          </p>
+        </div>
+
         <div class="mt-4">
-          <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.convertAmount', '转入金额') }}</label>
+          <label class="mb-1.5 block text-[13px] font-medium text-[#86868b]">
+            {{ t('referral.convertAmount') }}
+          </label>
           <div class="relative">
-            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <span class="text-gray-500 sm:text-sm">￥</span>
+            <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+              <span class="text-[15px] text-[#86868b]">¥</span>
             </div>
             <input
               v-model="convertAmount"
@@ -515,75 +622,90 @@
               min="0"
               :max="maxWithdrawable"
               step="0.01"
-              class="input pl-8 w-full"
+              class="input w-full rounded-[14px] pl-8"
               placeholder="0.00"
+              data-test="convert-amount-input"
             />
-            <div class="absolute inset-y-0 right-1 flex items-center">
-               <button type="button" class="rounded bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700 outline-none hover:bg-gray-200 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700" @click="convertAmount = String(maxWithdrawable)">
-                 {{ t('referral.withdrawAll', '全部转出') }}
-               </button>
+            <div class="absolute inset-y-0 right-1.5 flex items-center">
+              <button
+                type="button"
+                class="rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-[#0071e3] outline-none dark:bg-[#3a3a3c]"
+                @click="convertAmount = String(maxWithdrawable)"
+              >
+                {{ t('referral.convertModalAll') }}
+              </button>
             </div>
           </div>
-          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('referral.creditConversionRate', '转余额倍数') }}: {{ creditConversionRate }}，{{
-              t('referral.expectedCreditAmount', '预计到账额度')
-            }} {{ formatMoney(convertCreditAmount) }}
+          <p class="mt-2 text-[13px] text-[#6e6e73] dark:text-[#a1a1a6]" data-test="convert-expected-credit">
+            {{ t('referral.convertModalExpected') }}
+            <span class="font-semibold tabular-nums text-[#1d1d1f] dark:text-white">¥{{ formatMoney(convertCreditAmount) }}</span>
           </p>
         </div>
 
-        <div class="mt-6 flex gap-3">
-          <button class="btn btn-secondary flex-1" @click="showConvertModal = false">{{ t('common.cancel', '取消') }}</button>
-          <button 
-            class="btn btn-primary flex-1 bg-gradient-to-r from-primary-500 to-indigo-500 border-none" 
+        <div class="mt-6 flex gap-2.5">
+          <button
+            class="h-11 flex-1 rounded-full bg-[#f5f5f7] text-[15px] font-medium text-[#1d1d1f] dark:bg-white/10 dark:text-white"
+            @click="showConvertModal = false"
+          >
+            {{ t('common.cancel', '取消') }}
+          </button>
+          <button
+            class="h-11 flex-1 rounded-full bg-[#0071e3] text-[15px] font-medium text-white transition hover:bg-[#0077ed] disabled:opacity-40"
             :disabled="converting || !Number(convertAmount) || Number(convertAmount) <= 0 || Number(convertAmount) > maxWithdrawable"
             @click="handleConvertToCredit"
           >
-            {{ converting ? t('common.processing', '转换中...') : t('common.confirm', '确认转换') }}
+            {{ converting ? t('common.processing', '处理中...') : t('common.confirm', '确认转入') }}
           </button>
         </div>
       </div>
     </div>
 
     <!-- Bucket Detail Modal -->
-    <div v-if="bucketDetailVisible" class="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm" @click.self="bucketDetailVisible = false" @keydown.esc="bucketDetailVisible = false" tabindex="0">
-      <div class="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-900">
-        <div class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-800">
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ bucketDetailTitle }}</h3>
-          <button class="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-800" @click="bucketDetailVisible = false">
-            <svg viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+    <div
+      v-if="bucketDetailVisible"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
+      tabindex="0"
+      @click.self="bucketDetailVisible = false"
+      @keydown.esc="bucketDetailVisible = false"
+    >
+      <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-900">
+        <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-dark-800">
+          <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ bucketDetailTitle }}</h3>
+          <button class="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-800" @click="bucketDetailVisible = false">
+            <svg viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
+              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+            </svg>
           </button>
         </div>
         <div class="flex-1 overflow-y-auto px-6 py-4">
-          <div v-if="bucketDetailLoading" class="flex items-center justify-center py-8 text-sm text-gray-500">
+          <div v-if="bucketDetailLoading" class="flex items-center justify-center py-8 text-sm text-slate-500">
             <LoadingSpinner /><span class="ml-2">{{ t('common.loading', '加载中') }}</span>
           </div>
-          <div v-else-if="!bucketDetailItems.length" class="py-12 text-center text-sm text-gray-500">
+          <div v-else-if="!bucketDetailItems.length" class="py-12 text-center text-sm text-slate-500">
             {{ t('common.noData', '暂无数据') }}
           </div>
           <div v-else class="space-y-3">
-            <div v-for="entry in bucketDetailItems" :key="entry.id" class="rounded-2xl border border-gray-100 p-4 dark:border-dark-800">
+            <div v-for="entry in bucketDetailItems" :key="entry.id" class="rounded-2xl border border-slate-100 p-4 dark:border-dark-800">
               <div class="flex items-start justify-between">
                 <div>
-                  <div class="font-medium text-gray-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
-                  <div class="mt-0.5 text-xs text-gray-500">{{ formatStatus(entry.bucket) }}</div>
-                  <div v-if="entry.external_order_id" class="mt-0.5 text-xs font-mono text-gray-400">{{ entry.external_order_id }}</div>
+                  <div class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
+                  <div class="mt-0.5 text-xs text-slate-500">{{ formatStatus(entry.bucket) }}</div>
+                  <div v-if="entry.external_order_id" class="mt-0.5 font-mono text-xs text-slate-400">{{ entry.external_order_id }}</div>
                 </div>
                 <div class="text-right">
-                  <div class="font-semibold" :class="entry.amount > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                  <div
+                    class="font-semibold"
+                    :class="entry.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'"
+                  >
                     {{ entry.amount > 0 ? '+' : '' }}￥{{ formatMoney(entry.amount) }}
                   </div>
-                  <div class="mt-0.5 text-xs text-gray-500">{{ formatDate(entry.created_at) }}</div>
+                  <div class="mt-0.5 text-xs text-slate-500">{{ formatDate(entry.created_at) }}</div>
                 </div>
-              </div>
-              <div v-if="entry.source_user_email || entry.order_paid_amount" class="mt-2 flex flex-wrap gap-3 text-xs text-gray-500">
-                <span v-if="entry.source_user_email">{{ t('referral.sourceUser', '来源') }}: {{ entry.source_user_email }}</span>
-                <span v-if="entry.order_paid_amount">{{ t('referral.orderAmount', '订单金额') }}: ￥{{ formatMoney(entry.order_paid_amount) }}</span>
-                <span v-if="entry.reward_rate_snapshot">{{ t('referral.commissionRate', '比例') }}: {{ (entry.reward_rate_snapshot * 100).toFixed(1) }}%</span>
               </div>
             </div>
           </div>
         </div>
-        <div v-if="bucketDetailItems.length" class="border-t border-gray-100 px-6 py-3 text-center text-xs text-gray-500 dark:border-dark-800">
+        <div v-if="bucketDetailItems.length" class="border-t border-slate-100 px-6 py-3 text-center text-xs text-slate-500 dark:border-dark-800">
           {{ t('common.totalPrefix', '共') }} {{ bucketDetailItems.length }} {{ t('common.totalSuffix', '条') }}
         </div>
       </div>
@@ -592,11 +714,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PayoutAccountBinder from './referral-components/PayoutAccountBinder.vue'
+import ReferralShareCard from './referral-components/ReferralShareCard.vue'
+import ReferralWalletCard from './referral-components/ReferralWalletCard.vue'
+import ReferralHowItWorks from './referral-components/ReferralHowItWorks.vue'
+import ReferralRateBanner from './referral-components/ReferralRateBanner.vue'
 import { useAppStore } from '@/stores'
 import referralAPI from '@/api/referral'
 import type {
@@ -614,9 +740,9 @@ import { formatPayoutMethod, formatWithdrawalStatus } from '@/utils/referralWith
 const { t } = useI18n()
 const appStore = useAppStore()
 
-// State
 const loading = ref(true)
 const creatingWithdrawal = ref(false)
+const activeRecordTab = ref<'invitees' | 'rewards' | 'ledger' | 'withdrawals'>('invitees')
 
 const overview = ref<ReferralCenterOverview | null>(null)
 const invitees = ref<BasePaginationResponse<ReferralInvitee>>({ items: [], total: 0, page: 1, page_size: 10, pages: 1 })
@@ -625,22 +751,148 @@ const ledger = ref<BasePaginationResponse<CommissionLedgerEntry>>({ items: [], t
 const withdrawals = ref<BasePaginationResponse<CommissionWithdrawal>>({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
 const payoutAccounts = ref<CommissionPayoutAccount[]>([])
 
-// Invitee expand
 const expandedInviteeId = ref<number | null>(null)
 const inviteeRewards = ref<UserInviteeReward[]>([])
 const inviteeRewardsLoading = ref(false)
 
-// Convert Modal
 const showConvertModal = ref(false)
 const converting = ref(false)
 const convertAmount = ref('')
 const convertModalBackdrop = ref<HTMLDivElement | null>(null)
 
-// Bucket detail modal
 const bucketDetailVisible = ref(false)
 const bucketDetailTitle = ref('')
 const bucketDetailLoading = ref(false)
 const bucketDetailItems = ref<CommissionLedgerEntry[]>([])
+
+const withdrawForm = reactive({
+  amount: 0 as number,
+  payout_account_id: 0,
+  remark: ''
+})
+
+const withdrawMethods = computed(() =>
+  overview.value?.withdraw_methods_enabled?.length ? overview.value.withdraw_methods_enabled : ['alipay', 'wechat', 'bank']
+)
+const maxWithdrawable = computed(() => Number(overview.value?.available_commission || 0))
+const withdrawEnabled = computed(() => Boolean(overview.value?.referral_withdraw_enabled))
+const creditConversionEnabled = computed(() => Boolean(overview.value?.referral_credit_conversion_enabled))
+/**
+ * 转余额倍数来源（唯一）：
+ *   DB settings 键 referral_credit_conversion_rate
+ *   → SettingService → GET /user/referral/overview
+ *     字段 overview.referral_credit_conversion_rate
+ *   实际入账：credit = commission * rate（见 referral_withdrawal_service ConvertToCredit）
+ * 管理端可在「系统设置 → 邀请返佣 → 转余额倍数」修改。
+ */
+const creditConversionRate = computed(() => {
+  const rate = Number(overview.value?.referral_credit_conversion_rate || 1)
+  return rate > 0 ? rate : 1
+})
+const convertCreditAmount = computed(() =>
+  Number((Number(convertAmount.value || 0) * creditConversionRate.value).toFixed(2))
+)
+
+const convertModalRateLine = computed(() => {
+  const m = creditConversionRate.value
+  const mText = m % 1 === 0 ? String(m) : m.toFixed(2)
+  if (m === 1) return t('referral.creditConversionRateOneToOne')
+  return t('referral.creditConversionRateMulti', { rate: mText })
+})
+
+const convertModalRateHint = computed(() => {
+  return `${t('referral.convertDesc')} ${convertModalRateLine.value}`
+})
+
+const inviteLink = computed(() => {
+  if (!overview.value?.default_code?.code) return ''
+  return `${window.location.origin}/register?ref=${overview.value.default_code.code}`
+})
+
+/** Prefer overview (user API); fall back to public settings so rate still shows on older backends. */
+const displayLevel1Rate = computed(() => {
+  const fromOverview = Number(overview.value?.level1_rate || 0)
+  if (fromOverview > 0) return fromOverview
+  const fromPublic = Number(appStore.cachedPublicSettings?.referral_level1_rate || 0)
+  return fromPublic > 0 ? fromPublic : 0
+})
+
+const displaySettlementDelayDays = computed(() => {
+  const fromOverview = overview.value?.settlement_delay_days
+  if (fromOverview != null && Number(fromOverview) >= 0) return Number(fromOverview)
+  const fromPublic = Number(appStore.cachedPublicSettings?.referral_settlement_delay_days)
+  return Number.isFinite(fromPublic) && fromPublic >= 0 ? fromPublic : 0
+})
+
+const recordTabs = computed(() => [
+  { key: 'invitees' as const, label: t('referral.tabs.invitees', '邀请'), count: invitees.value.total },
+  { key: 'rewards' as const, label: t('referral.tabs.rewards', '返佣'), count: rewards.value.total },
+  { key: 'ledger' as const, label: t('referral.tabs.ledger', '流水'), count: ledger.value.total },
+  { key: 'withdrawals' as const, label: t('referral.tabs.withdrawals', '提现'), count: withdrawals.value.total }
+])
+
+const EmptyInviteState = defineComponent({
+  name: 'EmptyInviteState',
+  emits: ['copyLink'],
+  setup(_, { emit }) {
+    return () =>
+      h('div', { class: 'mx-auto max-w-sm space-y-3 py-2 text-center' }, [
+        h('p', { class: 'text-sm font-semibold text-slate-800 dark:text-slate-100' }, t('referral.empty.inviteTitle', '还没有邀请记录')),
+        h('p', { class: 'text-xs text-slate-500' }, t('referral.empty.inviteHint', '复制上方邀请链接发给好友，完成注册充值后这里会出现明细。')),
+        h(
+          'button',
+          {
+            type: 'button',
+            class:
+              'inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-primary-500 to-cyan-500 px-4 py-2 text-xs font-bold text-slate-950 shadow-md',
+            onClick: () => emit('copyLink')
+          },
+          t('referral.empty.inviteCta', '去复制邀请链接')
+        )
+      ])
+  }
+})
+
+const PaginationBar = defineComponent({
+  name: 'PaginationBar',
+  props: {
+    page: { type: Number, required: true },
+    pages: { type: Number, required: true },
+    total: { type: Number, required: true }
+  },
+  emits: ['prev', 'next'],
+  setup(props, { emit }) {
+    return () =>
+      h('div', { class: 'mt-4 flex items-center justify-between text-sm' }, [
+        h(
+          'span',
+          { class: 'text-slate-500 dark:text-slate-400' },
+          `${t('common.totalPrefix', '共')} ${props.total} ${t('common.totalSuffix', '条')}`
+        ),
+        h('div', { class: 'flex gap-1' }, [
+          h(
+            'button',
+            {
+              class: 'btn btn-secondary btn-sm',
+              disabled: props.page <= 1,
+              onClick: () => emit('prev')
+            },
+            t('common.prevPage', '上一页')
+          ),
+          h('span', { class: 'px-3 py-1.5 text-slate-700 dark:text-slate-300' }, `${props.page}/${props.pages}`),
+          h(
+            'button',
+            {
+              class: 'btn btn-secondary btn-sm',
+              disabled: props.page >= props.pages,
+              onClick: () => emit('next')
+            },
+            t('common.nextPage', '下一页')
+          )
+        ])
+      ])
+  }
+})
 
 async function openBucketDetail(bucket: string, title: string) {
   bucketDetailTitle.value = title
@@ -648,7 +900,6 @@ async function openBucketDetail(bucket: string, title: string) {
   bucketDetailLoading.value = true
   bucketDetailItems.value = []
   try {
-    // Load a large page of ledger entries and filter by bucket on the client side
     const data = await referralAPI.getLedger(1, 200)
     const bucketMap: Record<string, string[]> = {
       available: ['available'],
@@ -664,34 +915,14 @@ async function openBucketDetail(bucket: string, title: string) {
   }
 }
 
+function scrollToWithdraw() {
+  document.getElementById('withdrawal-form-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 watch(showConvertModal, (val) => {
   if (val) {
     nextTick(() => convertModalBackdrop.value?.focus())
   }
-})
-
-// Withdraw Form
-const withdrawForm = reactive({
-  amount: 0 as number,
-  payout_account_id: 0,
-  remark: ''
-})
-
-const withdrawMethods = computed(() => overview.value?.withdraw_methods_enabled?.length ? overview.value.withdraw_methods_enabled : ['alipay', 'wechat', 'bank'])
-const maxWithdrawable = computed(() => Number(overview.value?.available_commission || 0))
-const withdrawEnabled = computed(() => Boolean(overview.value?.referral_withdraw_enabled))
-const creditConversionEnabled = computed(() => Boolean(overview.value?.referral_credit_conversion_enabled))
-const creditConversionRate = computed(() => {
-  const rate = Number(overview.value?.referral_credit_conversion_rate || 1)
-  return rate > 0 ? rate : 1
-})
-const convertCreditAmount = computed(() =>
-  Number((Number(convertAmount.value || 0) * creditConversionRate.value).toFixed(2))
-)
-
-const inviteLink = computed(() => {
-  if (!overview.value?.default_code?.code) return ''
-  return `${window.location.origin}/register?ref=${overview.value.default_code.code}`
 })
 
 async function loadPayoutAccountsAndOverview() {
@@ -708,8 +939,12 @@ async function loadPayoutAccountsAndOverview() {
     const payoutAccountsData = await referralAPI.getPayoutAccounts()
     payoutAccounts.value = payoutAccountsData
 
-    if (payoutAccounts.value.length > 0 && (!withdrawForm.payout_account_id || !payoutAccounts.value.find(a => a.id === withdrawForm.payout_account_id))) {
-      withdrawForm.payout_account_id = payoutAccounts.value.find((item) => item.is_default)?.id || payoutAccounts.value[0].id
+    if (
+      payoutAccounts.value.length > 0 &&
+      (!withdrawForm.payout_account_id || !payoutAccounts.value.find((a) => a.id === withdrawForm.payout_account_id))
+    ) {
+      withdrawForm.payout_account_id =
+        payoutAccounts.value.find((item) => item.is_default)?.id || payoutAccounts.value[0].id
     }
   } catch (error) {
     appStore.showError((error as Error).message || t('common.operationFailed', '操作失败'))
@@ -731,7 +966,6 @@ async function loadAll() {
       return
     }
 
-    // Isolate failures so one section (e.g. rewards) cannot blank the rest.
     const results = await Promise.allSettled([
       referralAPI.getInvitees(1, 10),
       referralAPI.getRewards(1, 15),
@@ -754,9 +988,7 @@ async function loadAll() {
     if (results[3].status === 'fulfilled') withdrawals.value = results[3].value
     else failures.push(labels[3])
     if (failures.length) {
-      appStore.showError(
-        t('referral.partialLoadFailed', { sections: failures.join(', ') })
-      )
+      appStore.showError(t('referral.partialLoadFailed', { sections: failures.join(', ') }))
     }
   } catch (error) {
     appStore.showError((error as Error).message || t('common.operationFailed'))
@@ -820,7 +1052,7 @@ async function toggleInviteeExpand(userId: number) {
 async function handleConvertToCredit() {
   const amountToConvert = Number(convertAmount.value)
   if (amountToConvert <= 0 || amountToConvert > maxWithdrawable.value) return
-  
+
   converting.value = true
   try {
     await referralAPI.convertToCredit(amountToConvert)
@@ -894,6 +1126,16 @@ function formatStatus(status: string): string {
   const key = `referral.status.${status}`
   const translated = t(key)
   return translated === key ? status : translated
+}
+
+function statusBadgeClass(status: string): string {
+  if (status === 'available' || status === 'paid' || status === 'settled') {
+    return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400'
+  }
+  if (status === 'pending') {
+    return 'bg-amber-100 text-amber-800 dark:bg-amber-900/20 dark:text-amber-400'
+  }
+  return 'bg-slate-100 text-slate-800 dark:bg-dark-800 dark:text-slate-300'
 }
 
 function formatDate(value?: string | Date | null) {

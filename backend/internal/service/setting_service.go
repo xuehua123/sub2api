@@ -681,6 +681,26 @@ func parseReferralCreditConversionRate(raw string) float64 {
 	return rate
 }
 
+// parseReferralLevel1RatePublic parses the stored level-1 commission rate as a
+// raw fraction (typically 0–1), matching settlement (GetAllSettings). Do NOT
+// invent percent→fraction conversion here — that would make marketing UI lie
+// relative to reward booking (PaidAmount * raw rate).
+func parseReferralLevel1RatePublic(raw string) float64 {
+	rate, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || rate < 0 {
+		return 0
+	}
+	return rate
+}
+
+func parseReferralSettlementDelayDaysPublic(raw string) int {
+	days, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || days < 0 {
+		return 7
+	}
+	return days
+}
+
 func positiveModelPriceValue(value *float64) *float64 {
 	if !modelPricePositiveFloatPtr(value) {
 		return nil
