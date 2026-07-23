@@ -595,6 +595,67 @@ func TestUpstreamConnectionInspectorSub2APIFallsBackToRootManagementPaths(t *tes
 	require.Greater(t, legacyPathCalls.Load(), int32(0))
 }
 
+func TestUpstreamConnectionInspectorSub2APIUsesV1ResourcesAfterRootLogin(t *testing.T) {
+	var rootResourceCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/api/v1/auth/login":
+			http.NotFound(writer, request)
+		case "/auth/login":
+			writeProbeJSON(t, writer, map[string]any{
+				"access_token": "hybrid-token", "refresh_token": "refresh-token",
+			})
+		case "/auth/me":
+			writer.WriteHeader(http.StatusUnauthorized)
+			writeProbeJSON(t, writer, map[string]any{"message": "route requires a different profile endpoint"})
+		case "/user/profile":
+			require.Equal(t, "Bearer hybrid-token", request.Header.Get("Authorization"))
+			writeProbeJSON(t, writer, map[string]any{"id": 58, "credit_balance": 34.5})
+		case "/api/v1/groups/available":
+			writeProbeJSON(t, writer, map[string]any{"data": []any{
+				map[string]any{"id": 3, "name": "vip", "rate_multiplier": 0.5},
+			}})
+		case "/api/v1/groups/rates":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"3": 0.25}})
+		case "/api/v1/keys":
+			writeProbeJSON(t, writer, map[string]any{"data": map[string]any{"items": []any{
+				map[string]any{"id": 18, "name": "vip-key", "key": "hybrid-secret-key", "group_id": 3},
+			}}})
+		case "/groups/available", "/keys":
+			rootResourceCalls.Add(1)
+			writer.WriteHeader(http.StatusUnauthorized)
+			writeProbeJSON(t, writer, map[string]any{"message": "v1 resource endpoint required"})
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	connection := &UpstreamConnection{
+		Provider: UpstreamConnectionProviderSub2API, AuthMode: string(UpstreamManagementAuthModePassword),
+		ManagementBaseURL: server.URL,
+	}
+	credential := upstreamConnectionCredential{Version: 1, Username: "alice@example.com", Password: "secret"}
+	inspector := newUpstreamConnectionInspector(nil, nil, server.Client())
+
+	snapshot, err := inspector.Inspect(context.Background(), connection, credential)
+	require.NoError(t, err)
+	require.Equal(t, "58", snapshot.RemoteUserID)
+	require.Equal(t, 34.5, *snapshot.Wallet.USD)
+	require.Equal(t, "sub2api:user_profile", snapshot.Wallet.Source)
+	require.Len(t, snapshot.Groups, 1)
+	require.Equal(t, 0.25, *snapshot.Groups[0].RateMultiplier)
+	require.Empty(t, snapshot.Warnings)
+
+	connection.Groups = snapshot.Groups
+	binding, err := inspector.ResolveKey(context.Background(), connection, credential, "hybrid-secret-key")
+	require.NoError(t, err)
+	require.Equal(t, "vip", binding.RemoteGroupName)
+	require.Equal(t, 0.25, *binding.ObservedMultiplier)
+	require.Zero(t, rootResourceCalls.Load())
+}
+
 func TestUpstreamConnectionInspectorSub2APIRootPathFallbackDoesNotRetryAuthenticationFailure(t *testing.T) {
 	var rootLoginCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

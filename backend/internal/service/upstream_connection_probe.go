@@ -691,14 +691,14 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
 	headers := upstreamManagementRequestHeaders(credential.UserAgent)
-	pathPrefix := sub2APIManagementV1Prefix
+	authPrefix := sub2APIManagementV1Prefix
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
 		login, resolvedPrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodPost,
-			connection.ManagementBaseURL, "/auth/login", pathPrefix, headers, sub2APIManagementLoginBody(credential))
+			connection.ManagementBaseURL, "/auth/login", authPrefix, headers, sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}
-		pathPrefix = resolvedPrefix
+		authPrefix = resolvedPrefix
 		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
 	}
 	if accessToken == "" {
@@ -715,14 +715,14 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 	}
 	successfulRequests := 0
 	// Current Sub2API deployments expose the authenticated account through
-	// auth/me. The historical user/profile route is not implemented by them.
-	profile, profilePrefix, profileErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
-		connection.ManagementBaseURL, "/auth/me", pathPrefix, headers, nil)
+	// auth/me. LCodex uses root-path login but exposes this data through
+	// /user/profile instead.
+	profile, profileSource, profileErr := inspectSub2APIProfile(ctx, management, client,
+		connection.ManagementBaseURL, authPrefix, headers)
 	if profileErr == nil {
-		pathPrefix = profilePrefix
 		profileData := upstreamConnectionDataObject(profile.payload)
 		discoveredID := int64FromMap(profileData, "id", "user_id")
-		balance := upstreamConnectionNumber(profileData, "balance")
+		balance := upstreamConnectionNumber(profileData, "balance", "credit_balance")
 		if discoveredID > 0 || balance != nil {
 			successfulRequests++
 		}
@@ -732,7 +732,7 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		if balance != nil {
 			amount := *balance
 			snapshot.Wallet = &upstreamConnectionWalletObservation{
-				Amount: &amount, Currency: "USD", USD: &amount, Source: "sub2api:auth_me",
+				Amount: &amount, Currency: "USD", USD: &amount, Source: "sub2api:" + profileSource,
 				Reliability: "exact", Raw: map[string]any{"balance": amount},
 			}
 			snapshot.Capabilities["wallet"] = true
@@ -744,7 +744,11 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		snapshot.Warnings = append(snapshot.Warnings, "wallet: "+profileErr.Error())
 	}
 
-	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, management, client, connection.ManagementBaseURL, pathPrefix, headers, now)
+	// Some compatible deployments (including LCodex) use root-path auth while
+	// retaining /api/v1 for groups and keys. Start resource discovery at v1;
+	// inspectSub2APIGroups still falls back to root-path resources on a 404.
+	groups, groupsWarning, groupsErr := inspectSub2APIGroups(ctx, management, client,
+		connection.ManagementBaseURL, sub2APIManagementV1Prefix, headers, now)
 	if groupsErr == nil {
 		successfulRequests++
 		snapshot.GroupsObserved = true
@@ -766,6 +770,38 @@ func (i *upstreamConnectionInspector) inspectSub2API(
 		return nil, errors.New("Sub2API management endpoints rejected the access token")
 	}
 	return snapshot, nil
+}
+
+func inspectSub2APIProfile(
+	ctx context.Context,
+	management *upstreamManagementClient,
+	client *http.Client,
+	baseURL, authPrefix string,
+	headers http.Header,
+) (managementJSONResponse, string, error) {
+	profile, _, profileErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		baseURL, "/auth/me", authPrefix, headers, nil)
+	if profileErr == nil {
+		return profile, "auth_me", nil
+	}
+
+	// A successful root-path login proves the credential is usable. LCodex does
+	// not implement auth/me, and its authenticated profile is /user/profile.
+	if authPrefix != sub2APIManagementRootPrefix ||
+		(!isUpstreamManagementHTTPStatus(profileErr, http.StatusNotFound) &&
+			!isUpstreamManagementHTTPStatus(profileErr, http.StatusUnauthorized) &&
+			!isUpstreamManagementHTTPStatus(profileErr, http.StatusForbidden)) {
+		return managementJSONResponse{}, "", profileErr
+	}
+	profile, _, lcodexErr := sub2APIManagementJSON(ctx, management, client, http.MethodGet,
+		baseURL, "/user/profile", sub2APIManagementRootPrefix, headers, nil)
+	if lcodexErr != nil {
+		return managementJSONResponse{}, "", errors.Join(
+			fmt.Errorf("auth/me: %w", profileErr),
+			fmt.Errorf("user/profile: %w", lcodexErr),
+		)
+	}
+	return profile, "user_profile", nil
 }
 
 func inspectSub2APIGroups(
@@ -1321,21 +1357,19 @@ func (i *upstreamConnectionInspector) prepareSub2APIKeyResolver(
 	management := &upstreamManagementClient{client: client}
 	accessToken := strings.TrimSpace(credential.AccessToken)
 	headers := upstreamManagementRequestHeaders(credential.UserAgent)
-	pathPrefix := sub2APIManagementV1Prefix
 	if connection.AuthMode == string(UpstreamManagementAuthModePassword) {
-		login, resolvedPrefix, err := sub2APIManagementJSON(ctx, management, client, http.MethodPost,
-			connection.ManagementBaseURL, "/auth/login", pathPrefix, headers, sub2APIManagementLoginBody(credential))
+		login, _, err := sub2APIManagementJSON(ctx, management, client, http.MethodPost,
+			connection.ManagementBaseURL, "/auth/login", sub2APIManagementV1Prefix, headers, sub2APIManagementLoginBody(credential))
 		if err != nil {
 			return nil, err
 		}
-		pathPrefix = resolvedPrefix
 		accessToken = firstString(envelopeData(login.payload), "access_token", "token", "jwt")
 	}
 	if accessToken == "" {
 		return nil, errors.New("Sub2API management login did not return an access token")
 	}
 	headers.Set("Authorization", "Bearer "+accessToken)
-	rows, err := listSub2APIKeyRows(ctx, management, client, connection.ManagementBaseURL, pathPrefix, headers)
+	rows, err := listSub2APIKeyRows(ctx, management, client, connection.ManagementBaseURL, sub2APIManagementV1Prefix, headers)
 	if err != nil {
 		return nil, err
 	}
