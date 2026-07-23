@@ -1041,7 +1041,6 @@ var (
 				Columns: []*schema.Column{CommissionRewardsColumns[10]},
 			},
 			{
-				// Keep in sync with ent/schema StorageKey and migration 185.
 				Name:    "idx_commission_rewards_status_available_at_id",
 				Unique:  false,
 				Columns: []*schema.Column{CommissionRewardsColumns[9], CommissionRewardsColumns[10], CommissionRewardsColumns[0]},
@@ -1265,6 +1264,8 @@ var (
 		{Name: "messages_dispatch_model_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "models_list_config", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "rpm_limit", Type: field.TypeInt, Default: 0},
+		{Name: "max_reasoning_effort", Type: field.TypeString, Size: 20, Default: ""},
+		{Name: "reasoning_effort_mappings", Type: field.TypeJSON, SchemaType: map[string]string{"postgres": "jsonb"}},
 	}
 	// GroupsTable holds the schema information for the "groups" table.
 	GroupsTable = &schema.Table{

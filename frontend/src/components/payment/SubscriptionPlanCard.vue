@@ -137,10 +137,10 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { SubscriptionPlan, SubscriptionPlanGroupInfo } from '@/types/payment'
 import type { UserSubscription } from '@/types'
-import { normalizePlanValidityUnit } from '@/utils/subscriptionTime'
 import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
+import { planValiditySuffix } from './validity'
 import { currencySymbol } from '@/components/payment/currency'
 import {
   platformAccentBarClass,
@@ -283,13 +283,7 @@ const modelScopeLabels = computed(() => {
   return Array.from(new Set(scopes)).map(scope => MODEL_SCOPE_LABELS[scope] || scope)
 })
 
-const validitySuffix = computed(() => {
-  const unit = normalizePlanValidityUnit(props.plan.validity_unit)
-  if (unit === 'week') return `${props.plan.validity_days}${t('payment.admin.weeks')}`
-  if (unit === 'month') return `${props.plan.validity_days}${t('payment.months')}`
-  if (unit === 'year') return `${props.plan.validity_days}${t('payment.years')}`
-  return `${props.plan.validity_days}${t('payment.days')}`
-})
+const validitySuffix = computed(() => planValiditySuffix(props.plan, t))
 
 function formatAmount(value: number | null | undefined): string {
   const amount = value ?? 0

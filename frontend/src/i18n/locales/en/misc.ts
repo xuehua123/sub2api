@@ -539,6 +539,7 @@ export default {
       priceUnavailable: 'Price pending sync',
     },
     days: 'days',
+    weeks: 'weeks',
     months: 'months',
     years: 'years',
     oneMonth: '1 Month',

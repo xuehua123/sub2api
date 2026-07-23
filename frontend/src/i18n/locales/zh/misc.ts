@@ -563,6 +563,7 @@ export default {
       priceUnavailable: '价格待同步',
     },
     days: '天',
+    weeks: '周',
     months: '个月',
     years: '年',
     oneMonth: '1 个月',

@@ -858,11 +858,12 @@ import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { DEFAULT_PAYMENT_CURRENCY, formatPaymentAmount, normalizePaymentCurrency } from '@/components/payment/currency'
+import { planValiditySuffix } from '@/components/payment/validity'
 import type { PaymentMethodOption } from '@/components/payment/PaymentMethodSelector.vue'
 import type { UserSubscription } from '@/types'
 import { buildPaymentErrorToastMessage, describePaymentScenarioError, paymentMethodI18nKey } from './paymentUx'
 import { hasWechatResumeQuery, parseWechatResumeRoute, stripWechatResumeQuery } from './paymentWechatResume'
-import { formatRemainingDurationCompact, normalizePlanValidityUnit } from '@/utils/subscriptionTime'
+import { formatRemainingDurationCompact } from '@/utils/subscriptionTime'
 import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 import alipayIcon from '@/assets/icons/alipay.svg'
 import wxpayIcon from '@/assets/icons/wxpay.svg'
@@ -1552,11 +1553,7 @@ function planCardSummaryText(plan: SubscriptionPlan): string {
 }
 
 function validitySuffixForPlan(plan: SubscriptionPlan): string {
-  const unit = normalizePlanValidityUnit(plan.validity_unit)
-  if (unit === 'week') return `${plan.validity_days}${t('payment.admin.weeks')}`
-  if (unit === 'month') return t('payment.perMonth')
-  if (unit === 'year') return t('payment.perYear')
-  return `${plan.validity_days}${t('payment.days')}`
+  return planValiditySuffix(plan, t)
 }
 function paymentMethodLabel(method: string | PaymentMethodOption): string {
   if (typeof method !== 'string' && method.display_name) return method.display_name
