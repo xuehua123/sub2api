@@ -7,7 +7,7 @@
             <div>
               <div class="inline-flex items-center gap-2 rounded-full bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
                 <span class="h-1.5 w-1.5 rounded-full bg-primary-500" />
-                出金审核
+                {{ t('admin.referral.payoutReviewBadge', '出金审核') }}
               </div>
               <h1 class="mt-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
                 {{ t('admin.referral.withdrawalReviewTitle', '提现管理') }}
@@ -56,7 +56,7 @@
         <div class="space-y-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-dark-700 dark:bg-dark-900">
           <!-- Kind chips -->
           <div>
-            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">类型</p>
+            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('admin.referral.filterKindLabel', '类型') }}</p>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="opt in kindOptions"
@@ -75,7 +75,7 @@
 
           <!-- Status chips -->
           <div>
-            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">状态</p>
+            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">{{ t('admin.referral.filterStatusLabel', '状态') }}</p>
             <div class="flex flex-wrap gap-2">
               <button
                 v-for="opt in statusOptions"
@@ -101,7 +101,7 @@
                 v-model="filters.search"
                 class="input h-11 w-full rounded-xl border-gray-200 pl-10 dark:border-dark-600"
                 type="search"
-                placeholder="搜索邮箱 / 用户名"
+                :placeholder="t('admin.referral.searchPlaceholder', '搜索邮箱 / 用户名')"
                 @keyup.enter="reloadFromFirstPage"
               />
             </div>
@@ -110,7 +110,7 @@
               class="inline-flex h-11 items-center justify-center rounded-xl bg-gray-900 px-5 text-sm font-semibold text-white transition hover:bg-gray-800 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100"
               @click="reloadFromFirstPage"
             >
-              查询
+              {{ t('common.search', '查询') }}
             </button>
           </div>
         </div>
@@ -129,12 +129,12 @@
                 <tr class="border-b border-gray-100 bg-gray-50/90 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:border-dark-700 dark:bg-dark-800/60 dark:text-gray-400">
                   <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalNo', '提现单号') }}</th>
                   <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalUser', '用户') }}</th>
-                  <th class="px-4 py-3.5 text-right">申请</th>
-                  <th class="px-4 py-3.5 text-right">手续费</th>
-                  <th class="px-4 py-3.5 text-right">实付/到账</th>
-                  <th class="px-4 py-3.5">方式</th>
+                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalAmount', '申请') }}</th>
+                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalFee', '手续费') }}</th>
+                  <th class="px-4 py-3.5 text-right">{{ t('admin.referral.withdrawalNet', '实付/到账') }}</th>
+                  <th class="px-4 py-3.5">{{ t('admin.referral.withdrawalMethod', '方式') }}</th>
                   <th class="px-4 py-3.5">{{ t('common.status', '状态') }}</th>
-                  <th class="px-4 py-3.5">时间</th>
+                  <th class="px-4 py-3.5">{{ t('common.createdAt', '时间') }}</th>
                   <th class="px-4 py-3.5 text-right">{{ t('common.actions', '操作') }}</th>
                 </tr>
               </thead>

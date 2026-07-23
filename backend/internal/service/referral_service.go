@@ -78,7 +78,10 @@ type ReferralOverview struct {
 	ReferralCreditConversionRate    float64           `json:"referral_credit_conversion_rate"`
 	SettlementCurrency              string            `json:"settlement_currency"`
 	// Marketing / rule display fields (read-only from settings).
+	// Level1Rate is 0 when Level1Enabled is false so clients never advertise a dead rate.
+	Level1Enabled       bool    `json:"level1_enabled"`
 	Level1Rate          float64 `json:"level1_rate"`
+	RewardMode          string  `json:"reward_mode"`
 	SettlementDelayDays int     `json:"settlement_delay_days"`
 	DefaultCode                     *ReferralCode     `json:"default_code,omitempty"`
 	Relation                        *ReferralRelation `json:"relation,omitempty"`
@@ -166,6 +169,17 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		canBind = false
 	}
 
+	level1Enabled := settings.ReferralLevel1Enabled
+	level1Rate := settings.ReferralLevel1Rate
+	if !level1Enabled {
+		// Do not advertise a commission rate that will never book.
+		level1Rate = 0
+	}
+	rewardMode := settings.ReferralRewardMode
+	if rewardMode == "" {
+		rewardMode = ReferralRewardModeFirstPaidOrder
+	}
+
 	return &ReferralOverview{
 		ReferralEnabled:                 userReferralEnabled,
 		AllowManualInput:                settings.ReferralAllowManualInput,
@@ -174,7 +188,9 @@ func (s *ReferralService) GetOverview(ctx context.Context, userID int64) (*Refer
 		ReferralCreditConversionEnabled: settings.ReferralCreditConversionEnabled,
 		ReferralCreditConversionRate:    settings.ReferralCreditConversionRate,
 		SettlementCurrency:              settings.ReferralSettlementCurrency,
-		Level1Rate:                      settings.ReferralLevel1Rate,
+		Level1Enabled:                   level1Enabled,
+		Level1Rate:                      level1Rate,
+		RewardMode:                      rewardMode,
 		SettlementDelayDays:             settings.ReferralSettlementDelayDays,
 		DefaultCode:                     defaultCode,
 		Relation:                        relation,

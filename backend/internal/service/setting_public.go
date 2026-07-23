@@ -224,7 +224,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyReferralCreditConversionRate,
 		SettingKeyReferralSettlementCurrency,
 		SettingKeyReferralWithdrawMethodsEnabled,
+		SettingKeyReferralLevel1Enabled,
 		SettingKeyReferralLevel1Rate,
+		SettingKeyReferralRewardMode,
 		SettingKeyReferralSettlementDelayDays,
 		SettingKeyGitHubOAuthEnabled,
 		SettingKeyGitHubOAuthClientID,
@@ -375,7 +377,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ReferralCreditConversionRate:    parseReferralCreditConversionRate(settings[SettingKeyReferralCreditConversionRate]),
 		ReferralSettlementCurrency:      s.getReferralCurrencyPublic(settings),
 		ReferralWithdrawMethodsEnabled:  s.getReferralWithdrawMethodsPublic(settings),
-		ReferralLevel1Rate:              parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate]),
+		ReferralLevel1Enabled:           parseReferralLevel1EnabledPublic(settings),
+		ReferralLevel1Rate:              parseReferralLevel1RateForDisplay(settings),
+		ReferralRewardMode:              parseReferralRewardModePublic(settings[SettingKeyReferralRewardMode]),
 		ReferralSettlementDelayDays:     parseReferralSettlementDelayDaysPublic(settings[SettingKeyReferralSettlementDelayDays]),
 		ChannelMonitorEnabled:           !isFalseSettingValue(settings[SettingKeyChannelMonitorEnabled]),
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(
@@ -542,7 +546,9 @@ type PublicSettingsInjectionPayload struct {
 	ReferralCreditConversionRate     float64                  `json:"referral_credit_conversion_rate"`
 	ReferralSettlementCurrency       string                   `json:"referral_settlement_currency"`
 	ReferralWithdrawMethodsEnabled   []string                 `json:"referral_withdraw_methods_enabled"`
+	ReferralLevel1Enabled            bool                     `json:"referral_level1_enabled"`
 	ReferralLevel1Rate               float64                  `json:"referral_level1_rate"`
+	ReferralRewardMode               string                   `json:"referral_reward_mode"`
 	ReferralSettlementDelayDays      int                      `json:"referral_settlement_delay_days"`
 	LobeHubEnabled                   bool                     `json:"lobehub_enabled"`
 	LobeHubChatURL                   string                   `json:"lobehub_chat_url"`
@@ -628,7 +634,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ReferralCreditConversionRate:     settings.ReferralCreditConversionRate,
 		ReferralSettlementCurrency:       settings.ReferralSettlementCurrency,
 		ReferralWithdrawMethodsEnabled:   settings.ReferralWithdrawMethodsEnabled,
+		ReferralLevel1Enabled:            settings.ReferralLevel1Enabled,
 		ReferralLevel1Rate:               settings.ReferralLevel1Rate,
+		ReferralRewardMode:               settings.ReferralRewardMode,
 		ReferralSettlementDelayDays:      settings.ReferralSettlementDelayDays,
 		LobeHubEnabled:                   settings.LobeHubEnabled,
 		LobeHubChatURL:                   settings.LobeHubChatURL,

@@ -693,6 +693,31 @@ func parseReferralLevel1RatePublic(raw string) float64 {
 	return rate
 }
 
+func parseReferralLevel1EnabledPublic(settings map[string]string) bool {
+	if v, ok := settings[SettingKeyReferralLevel1Enabled]; ok {
+		return v == "true"
+	}
+	// Match GetAllSettings default: level-1 on when unset.
+	return true
+}
+
+// parseReferralLevel1RateForDisplay zeros the rate when level-1 rewards are
+// disabled so public marketing never promises commission that will not book.
+func parseReferralLevel1RateForDisplay(settings map[string]string) float64 {
+	if !parseReferralLevel1EnabledPublic(settings) {
+		return 0
+	}
+	return parseReferralLevel1RatePublic(settings[SettingKeyReferralLevel1Rate])
+}
+
+func parseReferralRewardModePublic(raw string) string {
+	mode := strings.TrimSpace(raw)
+	if mode == "" {
+		return ReferralRewardModeFirstPaidOrder
+	}
+	return mode
+}
+
 func parseReferralSettlementDelayDaysPublic(raw string) int {
 	days, err := strconv.Atoi(strings.TrimSpace(raw))
 	if err != nil || days < 0 {

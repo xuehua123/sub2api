@@ -43,6 +43,8 @@
         <!-- Rate-first marketing banner -->
         <ReferralRateBanner
           :level1-rate="displayLevel1Rate"
+          :level1-enabled="displayLevel1Enabled"
+          :reward-mode="displayRewardMode"
           :settlement-delay-days="displaySettlementDelayDays"
           :withdraw-enabled="withdrawEnabled"
           :credit-conversion-enabled="creditConversionEnabled"
@@ -56,6 +58,8 @@
             :invite-link="inviteLink"
             :invite-count="overview.direct_invitees || 0"
             :level1-rate="displayLevel1Rate"
+            :level1-enabled="displayLevel1Enabled"
+            :reward-mode="displayRewardMode"
             @copy="copy"
           />
           <ReferralWalletCard
@@ -75,6 +79,8 @@
 
         <ReferralHowItWorks
           :level1-rate="displayLevel1Rate"
+          :level1-enabled="displayLevel1Enabled"
+          :reward-mode="displayRewardMode"
           :settlement-delay-days="displaySettlementDelayDays"
           :withdraw-enabled="withdrawEnabled"
           :credit-conversion-enabled="creditConversionEnabled"
@@ -789,19 +795,32 @@ const creditConversionRate = computed(() => {
   const rate = Number(overview.value?.referral_credit_conversion_rate || 1)
   return rate > 0 ? rate : 1
 })
+/** Match backend roundMoney (8 decimal places). */
+function roundMoney8(value: number): number {
+  return Math.round(value * 1e8) / 1e8
+}
+
+/** Format rate for display: up to 8 decimals, trim trailing zeros. */
+function formatRateDisplay(rate: number): string {
+  if (rate % 1 === 0) return String(rate)
+  return rate
+    .toFixed(8)
+    .replace(/\.?0+$/, '')
+}
+
 const convertCreditAmount = computed(() =>
-  Number((Number(convertAmount.value || 0) * creditConversionRate.value).toFixed(2))
+  roundMoney8(Number(convertAmount.value || 0) * creditConversionRate.value)
 )
 
 const convertModalRateLine = computed(() => {
   const m = creditConversionRate.value
-  const mText = m % 1 === 0 ? String(m) : m.toFixed(2)
+  const mText = formatRateDisplay(m)
   if (m === 1) return t('referral.creditConversionRateOneToOne')
   return t('referral.creditConversionRateMulti', { rate: mText })
 })
 
 const convertModalRateHint = computed(() => {
-  return `${t('referral.convertDesc')} ${convertModalRateLine.value}`
+  return `${t('referral.convertDesc')} ${convertModalRateLine.value} ${t('referral.convertPrecisionNote')}`
 })
 
 const inviteLink = computed(() => {
@@ -809,12 +828,31 @@ const inviteLink = computed(() => {
   return `${window.location.origin}/register?ref=${overview.value.default_code.code}`
 })
 
-/** Prefer overview (user API); fall back to public settings so rate still shows on older backends. */
+const displayLevel1Enabled = computed(() => {
+  if (overview.value?.level1_enabled === false) return false
+  if (overview.value?.level1_enabled === true) return true
+  if (appStore.cachedPublicSettings?.referral_level1_enabled === false) return false
+  // Default true when unset (matches backend).
+  return true
+})
+
+/**
+ * Prefer overview; fall back to public settings.
+ * Rate is 0 when level-1 is disabled (backend also zeros it).
+ */
 const displayLevel1Rate = computed(() => {
+  if (!displayLevel1Enabled.value) return 0
   const fromOverview = Number(overview.value?.level1_rate || 0)
   if (fromOverview > 0) return fromOverview
   const fromPublic = Number(appStore.cachedPublicSettings?.referral_level1_rate || 0)
   return fromPublic > 0 ? fromPublic : 0
+})
+
+const displayRewardMode = computed(() => {
+  const fromOverview = (overview.value?.reward_mode || '').trim()
+  if (fromOverview) return fromOverview
+  const fromPublic = (appStore.cachedPublicSettings?.referral_reward_mode || '').trim()
+  return fromPublic || 'first_paid_order'
 })
 
 const displaySettlementDelayDays = computed(() => {
@@ -900,14 +938,40 @@ async function openBucketDetail(bucket: string, title: string) {
   bucketDetailLoading.value = true
   bucketDetailItems.value = []
   try {
-    const data = await referralAPI.getLedger(1, 200)
     const bucketMap: Record<string, string[]> = {
       available: ['available'],
       processing: ['pending', 'frozen'],
-      settled: ['settled']
+      settled: ['settled'],
+      // All buckets that sum into total_commission on overview.
+      all: ['pending', 'available', 'frozen', 'settled']
     }
     const matchBuckets = bucketMap[bucket] || [bucket]
-    bucketDetailItems.value = data.items.filter((entry) => matchBuckets.includes(entry.bucket))
+    // Page through ledger until we cover all matching rows (cap pages to avoid runaway).
+    const pageSize = 100
+    const maxPages = 20
+    const collected: CommissionLedgerEntry[] = []
+    let page = 1
+    let totalPages = 1
+    while (page <= totalPages && page <= maxPages) {
+      const data = await referralAPI.getLedger(page, pageSize)
+      totalPages = Math.max(1, Number(data.pages || 1))
+      for (const entry of data.items) {
+        if (matchBuckets.includes(entry.bucket)) {
+          collected.push(entry)
+        }
+      }
+      // Early exit when a full page has no matches and we're past known data — still
+      // continue if pages remain because buckets are not sorted server-side.
+      page += 1
+    }
+    bucketDetailItems.value = collected
+    if (totalPages > maxPages) {
+      appStore.showInfo(
+        t('referral.bucketDetailTruncated', {
+          max: maxPages * pageSize
+        })
+      )
+    }
   } catch (error) {
     appStore.showError((error as Error).message || t('common.operationFailed', '加载失败'))
   } finally {

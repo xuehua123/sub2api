@@ -37,7 +37,7 @@
           </span>
           <span class="inline-flex items-center gap-1.5">
             <ReferralIcon name="check" :size="16" class="text-[#0071e3]" />
-            {{ t('referral.rateBanner.bulletAuto') }}
+            {{ rechargeBullet }}
           </span>
           <span v-if="cashoutChip" class="inline-flex items-center gap-1.5">
             <ReferralIcon name="check" :size="16" class="text-[#0071e3]" />
@@ -57,8 +57,8 @@
         >
           {{ ratePct }}<span class="text-[28px] font-medium text-[#86868b]">%</span>
         </p>
-        <p class="mt-2 text-[13px] text-[#86868b]">
-          {{ t('referral.rateBanner.perRecharge') }}
+        <p class="mt-2 text-[13px] text-[#86868b]" data-test="referral-rate-scope">
+          {{ rechargeScopeLabel }}
         </p>
 
         <div v-if="hasRate" class="mt-7 space-y-0" data-test="referral-rate-examples">
@@ -69,7 +69,7 @@
           >
             <span class="inline-flex items-center gap-2 text-[14px] text-[#6e6e73] dark:text-[#a1a1a6]">
               <ReferralIcon name="users" :size="15" class="opacity-60" />
-              {{ t('referral.rateBanner.friendPays') }} ¥{{ ex.pay }}
+              {{ rechargePayLabel }} ¥{{ ex.pay }}
             </span>
             <span class="inline-flex items-center gap-1 text-[15px] font-semibold tabular-nums text-[#0071e3]">
               <ReferralIcon name="arrow" :size="14" />
@@ -78,7 +78,7 @@
           </div>
         </div>
         <p v-else class="mt-7 text-[13px] text-[#86868b]" data-test="referral-rate-pending">
-          {{ t('referral.rateBanner.ratePending') }}
+          {{ ratePendingLabel }}
         </p>
 
         <p class="mt-5 text-[12px] leading-relaxed text-[#86868b]">
@@ -96,6 +96,8 @@ import ReferralIcon from './ReferralIcons.vue'
 
 const props = defineProps<{
   level1Rate?: number
+  level1Enabled?: boolean
+  rewardMode?: string
   settlementDelayDays?: number
   withdrawEnabled?: boolean
   creditConversionEnabled?: boolean
@@ -104,7 +106,12 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const hasRate = computed(() => Number(props.level1Rate || 0) > 0)
+const level1On = computed(() => props.level1Enabled !== false)
+const isEveryPaid = computed(() => props.rewardMode === 'every_paid_order')
+
+const hasRate = computed(
+  () => level1On.value && Number(props.level1Rate || 0) > 0
+)
 const rateFraction = computed(() => (hasRate.value ? Number(props.level1Rate) : 0))
 
 const ratePct = computed(() => {
@@ -113,13 +120,47 @@ const ratePct = computed(() => {
   return pct % 1 === 0 ? String(pct) : pct.toFixed(1)
 })
 
+const rechargeScopeLabel = computed(() => {
+  if (!hasRate.value) return t('referral.rateBanner.perRechargeDisabled')
+  return isEveryPaid.value
+    ? t('referral.rateBanner.perRechargeEvery')
+    : t('referral.rateBanner.perRechargeFirst')
+})
+
+const rechargePayLabel = computed(() =>
+  isEveryPaid.value
+    ? t('referral.rateBanner.friendPaysEvery')
+    : t('referral.rateBanner.friendPaysFirst')
+)
+
+const rechargeBullet = computed(() =>
+  !level1On.value
+    ? t('referral.rateBanner.bulletDisabled')
+    : isEveryPaid.value
+      ? t('referral.rateBanner.bulletAutoEvery')
+      : t('referral.rateBanner.bulletAutoFirst')
+)
+
+const ratePendingLabel = computed(() =>
+  !level1On.value
+    ? t('referral.rateBanner.rateDisabled')
+    : t('referral.rateBanner.ratePending')
+)
+
 const subtitle = computed(() => {
   const days = Number(props.settlementDelayDays || 0)
+  if (!level1On.value) {
+    return t('referral.rateBanner.subtitleDisabled')
+  }
   if (hasRate.value && days > 0) {
-    return t('referral.rateBanner.subtitleWithRateAndDelay', { pct: ratePct.value, days })
+    return isEveryPaid.value
+      ? t('referral.rateBanner.subtitleEveryWithDelay', { pct: ratePct.value, days })
+      : t('referral.rateBanner.subtitleFirstWithDelay', { pct: ratePct.value, days })
   }
   if (hasRate.value) {
-    return t('referral.rateBanner.subtitleWithRate', { pct: ratePct.value })
+    return isEveryPaid.value
+      ? t('referral.rateBanner.subtitleEvery', { pct: ratePct.value })
+      : t('referral.rateBanner.subtitleFirst', { pct: ratePct.value })
   }
   return t('referral.rateBanner.subtitle')
 })

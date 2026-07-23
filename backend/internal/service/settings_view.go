@@ -388,8 +388,10 @@ type PublicSettings struct {
 	ReferralCreditConversionRate    float64
 	ReferralSettlementCurrency      string
 	ReferralWithdrawMethodsEnabled  []string
-	// Marketing display (rate is public policy, not a secret)
+	// Marketing display (rate/mode are public policy, not secrets)
+	ReferralLevel1Enabled       bool
 	ReferralLevel1Rate          float64
+	ReferralRewardMode          string
 	ReferralSettlementDelayDays int
 
 	// LobeHub (public)

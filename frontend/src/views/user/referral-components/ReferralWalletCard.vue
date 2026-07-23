@@ -58,7 +58,7 @@
       <button
         type="button"
         class="rounded-[16px] bg-[#f5f5f7] px-3 py-3 text-left transition hover:bg-[#ebebed] dark:bg-[#2c2c2e] dark:hover:bg-[#3a3a3c]"
-        @click="$emit('openBucket', 'available', t('referral.totalCommission'))"
+        @click="$emit('openBucket', 'all', t('referral.totalCommission'))"
       >
         <p class="text-[11px] font-medium text-[#86868b]">{{ t('referral.totalCommission') }}</p>
         <p class="mt-1 text-[15px] font-semibold tabular-nums text-[#1d1d1f] dark:text-white">
@@ -154,10 +154,16 @@ const conversionMultiplier = computed(() => {
   return rate > 0 ? rate : 1
 })
 
-const conversionMultiplierText = computed(() => {
-  const m = conversionMultiplier.value
-  return m % 1 === 0 ? String(m) : m.toFixed(2)
-})
+function formatRateDisplay(rate: number): string {
+  if (rate % 1 === 0) return String(rate)
+  return rate.toFixed(8).replace(/\.?0+$/, '')
+}
+
+function roundMoney8(value: number): number {
+  return Math.round(value * 1e8) / 1e8
+}
+
+const conversionMultiplierText = computed(() => formatRateDisplay(conversionMultiplier.value))
 
 const conversionRateLabel = computed(() => {
   const m = conversionMultiplier.value
@@ -168,8 +174,9 @@ const conversionRateLabel = computed(() => {
 const conversionExample = computed(() => {
   const m = conversionMultiplier.value
   const sample = 100
-  const out = (sample * m).toFixed(m % 1 === 0 ? 0 : 2)
-  return t('referral.creditConversionExample', { in: sample, out })
+  const out = roundMoney8(sample * m)
+  const outText = out % 1 === 0 ? String(out) : out.toFixed(8).replace(/\.?0+$/, '')
+  return t('referral.creditConversionExample', { in: sample, out: outText })
 })
 
 const convertButtonLabel = computed(() => {

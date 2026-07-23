@@ -17,7 +17,8 @@ const {
   convertToCredit,
   validateReferralCode,
   showError,
-  showSuccess
+  showSuccess,
+  showInfo
 } = vi.hoisted(() => ({
   getOverview: vi.fn(),
   getInvitees: vi.fn(),
@@ -32,7 +33,8 @@ const {
   convertToCredit: vi.fn(),
   validateReferralCode: vi.fn(),
   showError: vi.fn(),
-  showSuccess: vi.fn()
+  showSuccess: vi.fn(),
+  showInfo: vi.fn()
 }))
 
 vi.mock('@/api/auth', () => ({
@@ -70,6 +72,7 @@ vi.mock('@/stores', () => ({
   useAppStore: () => ({
     showError,
     showSuccess,
+    showInfo,
     cachedPublicSettings: null
   })
 }))
@@ -116,7 +119,9 @@ describe('user ReferralView', () => {
       frozen_commission: 5,
       withdrawn_commission: 18,
       total_commission: 69,
+      level1_enabled: true,
       level1_rate: 0.15,
+      reward_mode: 'every_paid_order',
       settlement_delay_days: 7
     })
     getInvitees.mockResolvedValue({ items: [{ user_id: 10, email: 'invitee@example.com', username: 'invitee', bound_at: '2026-04-09T00:00:00Z', second_level_num: 1, total_recharge: 0 }], total: 1, page: 1, page_size: 20, pages: 1 })
@@ -159,9 +164,12 @@ describe('user ReferralView', () => {
     expect(wrapper.text()).toContain('WD001')
     expect(wrapper.text()).toContain('ORD-1')
     expect(wrapper.text()).toContain('10.00')
-    // Rate banner must show how much users earn
+    // Rate banner must show how much users earn (every-paid mode copy)
     expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/15/)
     expect(wrapper.find('[data-test="referral-rate-banner"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="referral-rate-scope"]').text()).toMatch(
+      /每笔|every|perRechargeEvery/i
+    )
   })
 
   it('calls API endpoints on mount', async () => {
@@ -352,7 +360,10 @@ describe('user ReferralView', () => {
       available_commission: 0,
       frozen_commission: 0,
       withdrawn_commission: 0,
-      total_commission: 0
+      total_commission: 0,
+      level1_enabled: true,
+      level1_rate: 0,
+      reward_mode: 'first_paid_order'
     })
 
     const wrapper = mount(ReferralView, {
@@ -367,6 +378,84 @@ describe('user ReferralView', () => {
     expect(wrapper.find('[data-test="referral-rate-examples"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="referral-rate-pending"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/—|–|-/)
+  })
+
+  it('hides commission promise when level1 is disabled even if rate is non-zero', async () => {
+    getOverview.mockResolvedValueOnce({
+      referral_enabled: true,
+      allow_manual_input: true,
+      bind_before_first_paid_only: true,
+      referral_withdraw_enabled: true,
+      referral_credit_conversion_enabled: false,
+      referral_credit_conversion_rate: 1,
+      settlement_currency: 'CNY',
+      default_code: { id: 1, user_id: 7, code: 'REF-007', status: 'active', is_default: true, created_at: '2026-04-09T00:00:00Z', updated_at: '2026-04-09T00:00:00Z' },
+      relation: null,
+      can_bind: true,
+      has_paid_recharge: false,
+      withdraw_methods_enabled: ['alipay'],
+      direct_invitees: 0,
+      second_level_invitees: 0,
+      pending_commission: 0,
+      available_commission: 0,
+      frozen_commission: 0,
+      withdrawn_commission: 0,
+      total_commission: 0,
+      // Backend should zero rate when disabled; simulate client-side gate too.
+      level1_enabled: false,
+      level1_rate: 0,
+      reward_mode: 'every_paid_order'
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="referral-rate-examples"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="referral-rate-pct"]').text()).toMatch(/—|–|-/)
+    expect(wrapper.find('[data-test="referral-rate-scope"]').text()).toMatch(
+      /未开启|disabled|perRechargeDisabled|rateDisabled/i
+    )
+  })
+
+  it('opens total commission detail with all buckets not only available', async () => {
+    getLedger.mockResolvedValue({
+      items: [
+        { id: 1, bucket: 'available', amount: 10, entry_type: 'reward_pending_to_available', created_at: '2026-04-09T00:00:00Z' },
+        { id: 2, bucket: 'pending', amount: 5, entry_type: 'reward_pending_credit', created_at: '2026-04-09T00:00:00Z' },
+        { id: 3, bucket: 'settled', amount: 8, entry_type: 'withdraw_paid', created_at: '2026-04-09T00:00:00Z' }
+      ],
+      total: 3,
+      page: 1,
+      page_size: 100,
+      pages: 1
+    })
+
+    const wrapper = mount(ReferralView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' }
+        }
+      }
+    })
+    await flushPromises()
+
+    // Third metric button is total commission → openBucket('all', ...)
+    const metricButtons = wrapper.findAll('[data-test="referral-wallet-card"] button')
+    const totalBtn = metricButtons.find((b) => b.text().includes('累计') || b.text().includes('totalCommission') || b.text().includes('Total'))
+    expect(totalBtn).toBeTruthy()
+    await totalBtn!.trigger('click')
+    await flushPromises()
+
+    expect(getLedger).toHaveBeenCalled()
+    // Modal should include pending/settled amounts, not only available
+    expect(wrapper.text()).toMatch(/5\.00/)
+    expect(wrapper.text()).toMatch(/8\.00/)
   })
 
   it('renders disabled state instead of referral center when referral is disabled', async () => {

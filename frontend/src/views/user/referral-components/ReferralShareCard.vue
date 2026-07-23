@@ -14,8 +14,7 @@
             {{ t('referral.shareCardTitle') }}
           </h2>
           <p class="mt-1 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
-            <template v-if="ratePct">{{ t('referral.shareCardDescWithRate', { pct: ratePct }) }}</template>
-            <template v-else>{{ t('referral.shareCardDesc') }}</template>
+            {{ shareDesc }}
           </p>
         </div>
       </div>
@@ -82,6 +81,8 @@ const props = defineProps<{
   inviteLink: string
   inviteCount: number
   level1Rate?: number
+  level1Enabled?: boolean
+  rewardMode?: string
 }>()
 
 defineEmits<{
@@ -91,9 +92,18 @@ defineEmits<{
 const { t } = useI18n()
 
 const ratePct = computed(() => {
+  if (props.level1Enabled === false) return ''
   const rate = Number(props.level1Rate || 0)
   if (rate <= 0) return ''
   const pct = rate * 100
   return pct % 1 === 0 ? String(pct) : pct.toFixed(1)
+})
+
+const shareDesc = computed(() => {
+  if (!ratePct.value) return t('referral.shareCardDesc')
+  if (props.rewardMode === 'every_paid_order') {
+    return t('referral.shareCardDescWithRateEvery', { pct: ratePct.value })
+  }
+  return t('referral.shareCardDescWithRateFirst', { pct: ratePct.value })
 })
 </script>

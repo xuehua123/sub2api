@@ -401,7 +401,9 @@ type PublicSettings struct {
 	ReferralCreditConversionRate     float64                  `json:"referral_credit_conversion_rate"`
 	ReferralSettlementCurrency       string                   `json:"referral_settlement_currency"`
 	ReferralWithdrawMethodsEnabled   []string                 `json:"referral_withdraw_methods_enabled"`
+	ReferralLevel1Enabled            bool                     `json:"referral_level1_enabled"`
 	ReferralLevel1Rate               float64                  `json:"referral_level1_rate"`
+	ReferralRewardMode               string                   `json:"referral_reward_mode"`
 	ReferralSettlementDelayDays      int                      `json:"referral_settlement_delay_days"`
 	LobeHubEnabled                   bool                     `json:"lobehub_enabled"`
 	LobeHubChatURL                   string                   `json:"lobehub_chat_url"`

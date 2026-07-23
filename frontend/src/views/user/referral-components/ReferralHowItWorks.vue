@@ -47,6 +47,8 @@ import ReferralIcon from './ReferralIcons.vue'
 
 const props = defineProps<{
   level1Rate?: number
+  level1Enabled?: boolean
+  rewardMode?: string
   settlementDelayDays?: number
   withdrawEnabled?: boolean
   creditConversionEnabled?: boolean
@@ -55,7 +57,11 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
+const level1On = computed(() => props.level1Enabled !== false)
+const isEveryPaid = computed(() => props.rewardMode === 'every_paid_order')
+
 const ratePctText = computed(() => {
+  if (!level1On.value) return ''
   const rate = Number(props.level1Rate || 0)
   if (rate <= 0) return ''
   const pct = rate * 100
@@ -66,10 +72,15 @@ const rateLabel = computed(() =>
   ratePctText.value ? t('referral.rateChip', { pct: ratePctText.value }) : ''
 )
 
+function formatRateDisplay(rate: number): string {
+  if (rate % 1 === 0) return String(rate)
+  return rate.toFixed(8).replace(/\.?0+$/, '')
+}
+
 const convertHint = computed(() => {
   if (!props.creditConversionEnabled) return ''
   const m = Number(props.creditConversionRate || 1)
-  const mText = m % 1 === 0 ? String(m) : m.toFixed(2)
+  const mText = formatRateDisplay(m)
   if (m === 1) return t('referral.howItWorks.step3Credit')
   return t('referral.howItWorks.step3CreditMulti', { rate: mText })
 })
@@ -80,12 +91,23 @@ const steps = computed(() => {
 
   let earnTitle = t('referral.howItWorks.step2Title')
   let earnDesc = t('referral.howItWorks.step2')
-  if (pct && days > 0) {
-    earnTitle = t('referral.howItWorks.step2TitleWithRate', { pct })
-    earnDesc = t('referral.howItWorks.step2WithRateAndDelay', { pct, days })
+  if (!level1On.value) {
+    earnTitle = t('referral.howItWorks.step2TitleDisabled')
+    earnDesc = t('referral.howItWorks.step2Disabled')
+  } else if (pct && days > 0) {
+    earnTitle = isEveryPaid.value
+      ? t('referral.howItWorks.step2TitleEveryWithRate', { pct })
+      : t('referral.howItWorks.step2TitleFirstWithRate', { pct })
+    earnDesc = isEveryPaid.value
+      ? t('referral.howItWorks.step2EveryWithRateAndDelay', { pct, days })
+      : t('referral.howItWorks.step2FirstWithRateAndDelay', { pct, days })
   } else if (pct) {
-    earnTitle = t('referral.howItWorks.step2TitleWithRate', { pct })
-    earnDesc = t('referral.howItWorks.step2WithRate', { pct })
+    earnTitle = isEveryPaid.value
+      ? t('referral.howItWorks.step2TitleEveryWithRate', { pct })
+      : t('referral.howItWorks.step2TitleFirstWithRate', { pct })
+    earnDesc = isEveryPaid.value
+      ? t('referral.howItWorks.step2EveryWithRate', { pct })
+      : t('referral.howItWorks.step2FirstWithRate', { pct })
   } else if (days > 0) {
     earnDesc = t('referral.howItWorks.step2WithDelay', { days })
   }
