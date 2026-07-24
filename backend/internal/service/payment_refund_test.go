@@ -14,8 +14,47 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/dgraph-io/ristretto"
 	"github.com/stretchr/testify/require"
 )
+
+func TestInvalidateFinalizedRefundSubscriptionCaches(t *testing.T) {
+	cache, err := ristretto.NewCache(&ristretto.Config{
+		NumCounters: 100,
+		MaxCost:     100,
+		BufferItems: 64,
+	})
+	require.NoError(t, err)
+	t.Cleanup(cache.Close)
+
+	const (
+		userID  = int64(41)
+		groupID = int64(73)
+	)
+	subscription := &UserSubscription{
+		ID:        19,
+		UserID:    userID,
+		GroupID:   groupID,
+		UpdatedAt: time.Now(),
+	}
+	require.True(t, cache.Set(subCacheKey(userID, groupID), subscription, 1))
+	require.True(t, cache.Set(activeSubscriptionsCacheKey(userID), []*UserSubscription{subscription}, 1))
+	cache.Wait()
+
+	subscriptionSvc := &SubscriptionService{subCacheL1: cache}
+	paymentSvc := &PaymentService{subscriptionSvc: subscriptionSvc}
+	paymentSvc.invalidateFinalizedRefundSubscriptionCaches(&RefundPlan{
+		DeductionType:        payment.DeductionTypeSubscription,
+		SubDaysToDeduct:      3,
+		SubscriptionID:       subscription.ID,
+		SubscriptionSnapshot: subscription,
+	})
+
+	_, subscriptionCached := cache.Get(subCacheKey(userID, groupID))
+	_, activeListCached := cache.Get(activeSubscriptionsCacheKey(userID))
+	require.False(t, subscriptionCached)
+	require.False(t, activeListCached)
+}
 
 type refundProviderStub struct{}
 
@@ -804,7 +843,10 @@ func TestFinishRefundPendingMarksOrderPendingAndRollsBackDeduction(t *testing.T)
 		BalanceToDeduct: 40,
 	}
 
-	result, err := svc.finishRefund(ctx, plan, &payment.RefundResponse{Status: payment.ProviderStatusPending})
+	result, err := svc.finishRefund(ctx, plan, &payment.RefundResponse{
+		RefundID: "refund_stub_trade_no",
+		Status:   payment.ProviderStatusPending,
+	})
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.False(t, result.Success)
@@ -830,6 +872,16 @@ func TestFinishRefundPendingMarksOrderPendingAndRollsBackDeduction(t *testing.T)
 		Count(ctx)
 	require.NoError(t, err)
 	require.Zero(t, successAudits)
+
+	_, err = client.PaymentAuditLog.Delete().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_PENDING")).
+		Exec(ctx)
+	require.NoError(t, err)
+	pendingDetail := svc.latestRefundPendingDetail(ctx, reloaded)
+	require.Equal(t, "refund_stub_trade_no", pendingDetail.RefundID)
+	require.True(t, pendingDetail.DeductionRollbackOK)
+	require.NotNil(t, pendingDetail.BalanceRolledBack)
+	require.Equal(t, 40.0, *pendingDetail.BalanceRolledBack)
 }
 
 func TestFinishRefundSuccessStatusesFinalize(t *testing.T) {
@@ -942,6 +994,185 @@ func TestQueryAndFinalizeRefundFinalizesProviderStatuses(t *testing.T) {
 			require.Equal(t, tc.wantStatus, reloaded.Status)
 		})
 	}
+}
+
+func TestQueryAndFinalizeRefundDeductsSubscriptionEntitlementDays(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	now := time.Now().Truncate(time.Second)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("pending-entitlement-refund-provider").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	placeholder, err := client.SubscriptionEntitlement.Create().
+		SetUserID(user.ID).
+		SetName("pending refund entitlement").
+		SetSourceType("test").
+		SetStatus(SubscriptionStatusActive).
+		SetStartsAt(now.Add(-24 * time.Hour)).
+		SetExpiresAt(now.Add(30 * 24 * time.Hour)).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetPlanSnapshot(map[string]any{}).
+		SetAssignedAt(now).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(90).
+		SetPayAmount(90).
+		SetRechargeCode("pending-entitlement-refund").
+		SetOutTradeNo("pending_entitlement_refund_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("pi_pending_entitlement_refund").
+		SetOrderType(payment.OrderTypeSubscription).
+		SetStatus(OrderStatusRefundPending).
+		SetPlanID(9904).
+		SetSubscriptionEntitlementID(placeholder.ID).
+		SetSubscriptionDays(30).
+		SetRefundAmount(45).
+		SetRefundReason("pending partial entitlement refund").
+		SetExpiresAt(now.Add(time.Hour)).
+		SetPaidAt(now.Add(-time.Hour)).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeStripe).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("REFUND_PENDING").
+		SetOperator("admin").
+		SetDetail(`{"refundID":"rf_test","deductionRollbackOK":true,"subDaysRolledBack":15}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	originalExpiry := now.Add(30 * 24 * time.Hour)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[placeholder.ID] = &SubscriptionEntitlement{
+		ID:        placeholder.ID,
+		UserID:    user.ID,
+		PlanID:    int64ValuePtr(9904),
+		Name:      "pending refund entitlement",
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+	}
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{})
+	entSvc.SetNowFunc(func() time.Time { return now })
+	svc := &PaymentService{
+		entClient:                  client,
+		loadBalancer:               &captureLoadBalancer{},
+		subscriptionEntitlementSvc: entSvc,
+	}
+	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
+		refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: payment.ProviderStatusSuccess},
+	})
+	defer restore()
+
+	result, err := svc.QueryAndFinalizeRefund(ctx, order.ID)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 15, result.SubDaysDeducted)
+
+	ent, err := entRepo.GetByID(ctx, placeholder.ID)
+	require.NoError(t, err)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), ent.ExpiresAt, time.Second)
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+}
+
+func TestQueryAndFinalizeRefundUsesPendingRollbackBalanceAmount(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPendingRefundOrderForTest(t, ctx, client, "query-finalize-balance-rollback")
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetRefundAmount(60).
+		Save(ctx)
+	require.NoError(t, err)
+	pendingAudit, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_PENDING")).
+		Only(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.UpdateOneID(pendingAudit.ID).
+		SetDetail(`{"refundID":"rf_test","deductionRollbackOK":true,"balanceRolledBack":20}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	var deducted float64
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: &captureLoadBalancer{},
+		userRepo: &mockUserRepo{deductBalanceFn: func(_ context.Context, _ int64, amount float64) error {
+			deducted += amount
+			return nil
+		}},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
+		refundResponse: &payment.RefundResponse{RefundID: "rf_test", Status: payment.ProviderStatusSuccess},
+	})
+	defer restore()
+
+	result, err := svc.QueryAndFinalizeRefund(ctx, order.ID)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 20.0, result.BalanceDeducted)
+	require.Equal(t, 20.0, deducted)
+}
+
+func TestApplyRefundFinalDeductionShortensSubscriptionEntitlement(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().
+		SetEmail("pending-entitlement-refund@example.com").
+		SetPasswordHash("hash").
+		SetUsername("pending-entitlement-refund").
+		Save(ctx)
+	require.NoError(t, err)
+
+	entitlementID := int64(71)
+	originalExpiry := now.AddDate(0, 0, 30)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+		ID:        entitlementID,
+		UserID:    user.ID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: originalExpiry,
+	}
+	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{})
+	entSvc.SetNowFunc(func() time.Time { return now })
+
+	svc := &PaymentService{entClient: client, subscriptionEntitlementSvc: entSvc}
+	plan := &RefundPlan{
+		OrderID:         9876,
+		Order:           &dbent.PaymentOrder{UserID: user.ID, OrderType: payment.OrderTypeSubscription},
+		DeductionType:   payment.DeductionTypeSubscription,
+		EntitlementID:   entitlementID,
+		SubDaysToDeduct: 10,
+	}
+
+	require.NoError(t, svc.applyRefundFinalDeduction(ctx, plan))
+	entitlement, err := entRepo.GetByID(ctx, entitlementID)
+	require.NoError(t, err)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -10), entitlement.ExpiresAt, time.Second)
 }
 
 func TestPrepareRefundRejectsPendingRefundOrder(t *testing.T) {

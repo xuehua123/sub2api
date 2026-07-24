@@ -14,12 +14,16 @@
           <div class="mx-auto max-w-2xl rounded-2xl border border-slate-200/70 bg-white/90 p-6 shadow-2xl shadow-slate-200/70 backdrop-blur-xl dark:border-white/5 dark:bg-[#090f1d]/60 dark:shadow-black/30">
             <PaymentStatusPanel
               :order-id="paymentState.orderId"
+              :amount="paymentState.amount"
+              :pay-amount="paymentState.payAmount"
               :qr-code="paymentState.qrCode"
               :expires-at="paymentState.expiresAt"
               :payment-type="paymentState.paymentType"
               :pay-url="paymentState.payUrl"
               :order-type="paymentState.orderType"
               :currency="paymentState.currency || selectedCurrency"
+              :out-trade-no="paymentState.outTradeNo"
+              :mobile-alipay-deep-link="paymentState.alipayMobilePrecreateDeepLink"
               @done="onPaymentDone"
               @success="onPaymentSuccess"
               @settled="onPaymentSettled"
@@ -715,7 +719,7 @@
                       {{ activeSubscriptionDisplayName(sub) }}
                     </span>
                     <span :class="['shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider', platformBadgeLightClass(activeSubscriptionPlatform(sub))]">
-                      {{ platformLabel(activeSubscriptionPlatform(sub)) }}
+                      {{ activeSubscriptionPlatformLabel(sub) }}
                     </span>
                   </div>
                   <div class="flex flex-wrap gap-x-3 text-[10px] text-slate-500 dark:text-slate-400">
@@ -749,7 +753,14 @@
               {{ t('payment.selectPlan') }}
             </h3>
             <div class="space-y-4">
-              <SubscriptionPlanCard v-for="plan in renewalPlans" :key="plan.id" :plan="plan" :active-subscriptions="activeSubscriptions" @select="selectPlanFromModal" />
+              <SubscriptionPlanCard
+                v-for="plan in renewalPlans"
+                :key="plan.id"
+                :plan="plan"
+                :active-subscriptions="activeSubscriptions"
+                :subscription-usd-to-cny-rate="subscriptionUsdToCnyRate"
+                @select="selectPlanFromModal"
+              />
             </div>
           </div>
         </div>
@@ -853,7 +864,11 @@ import {
   writePaymentRecoverySnapshot,
 } from '@/components/payment/paymentFlow'
 import { platformAccentBarClass, platformBadgeLightClass, platformLabel } from '@/utils/platformColors'
-import { subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
+import {
+  activeSubscriptionDisplayRecords,
+  subscriptionDisplayName,
+  subscriptionPlanGroupIDs,
+} from '@/utils/subscriptionPlanDisplay'
 import SubscriptionPlanCard from '@/components/payment/SubscriptionPlanCard.vue'
 import PaymentStatusPanel from '@/components/payment/PaymentStatusPanel.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -882,7 +897,15 @@ const subscriptionStore = useSubscriptionStore()
 const appStore = useAppStore()
 
 const user = computed(() => authStore.user)
-const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
+const activeSubscriptions = computed(() => activeSubscriptionDisplayRecords(
+  subscriptionStore.activeSubscriptions,
+  subscriptionStore.entitlements,
+))
+
+function refreshSubscriptionDisplays(force = false) {
+  subscriptionStore.fetchActiveSubscriptions(force).catch(() => {})
+  subscriptionStore.fetchEntitlements(force).catch(() => {})
+}
 
 function formatSubscriptionRemaining(expiresAt: string): string {
   return formatRemainingDurationCompact(expiresAt) || t('userSubscriptions.status.expired')
@@ -893,7 +916,22 @@ function positiveSubscriptionLimit(value: number | null | undefined): number | n
 }
 
 function activeSubscriptionPlatform(subscription: UserSubscription): string {
-  return subscription.groups?.[0]?.platform || subscription.group?.platform || ''
+  const platforms = activeSubscriptionPlatforms(subscription)
+  return platforms.length === 1 ? platforms[0] : ''
+}
+
+function activeSubscriptionPlatformLabel(subscription: UserSubscription): string {
+  const platforms = activeSubscriptionPlatforms(subscription)
+  if (platforms.length > 1) return '多平台'
+  return platformLabel(platforms[0] || '')
+}
+
+function activeSubscriptionPlatforms(subscription: UserSubscription): string[] {
+  const platforms = [
+    ...(subscription.groups || []).map(group => group.platform),
+    subscription.group?.platform,
+  ].filter((platform): platform is string => Boolean(platform?.trim()))
+  return [...new Set(platforms)]
 }
 
 function activeSubscriptionDisplayName(subscription: UserSubscription): string {
@@ -980,6 +1018,7 @@ function emptyPaymentState(): PaymentRecoverySnapshot {
     orderType: '',
     paymentMode: '',
     resumeToken: '',
+    alipayMobilePrecreateDeepLink: false,
     createdAt: 0,
   }
 }
@@ -1096,16 +1135,18 @@ function onPaymentDone() {
   resetPayment()
   selectedPlan.value = null
   if (wasSubscription) {
-    subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
+    refreshSubscriptionDisplays(true)
   }
 }
 
-function onPaymentSuccess() {
+async function onPaymentSuccess() {
+  const completedPayment = { ...paymentState.value }
   removeRecoverySnapshot()
   authStore.refreshUser()
   if (paymentState.value.orderType === 'subscription') {
-    subscriptionStore.fetchActiveSubscriptions(true).catch(() => {})
+    refreshSubscriptionDisplays(true)
   }
+  await redirectToPaymentResult(completedPayment)
 }
 
 function onPaymentSettled() {
@@ -1500,7 +1541,8 @@ function planQuotaText(plan: SubscriptionPlan): string {
 function unitCost(plan: SubscriptionPlan): number | null {
   const quota = quotaMetric(plan)?.value
   if (!quota || quota <= 0 || plan.price <= 0) return null
-  return plan.price / quota
+  const rate = subscriptionUsdToCnyRate.value > 0 ? subscriptionUsdToCnyRate.value : 1
+  return (plan.price * rate) / quota
 }
 
 function unitCostText(plan: SubscriptionPlan): string {
@@ -1692,7 +1734,7 @@ const showRenewalModal = ref(false)
 const renewGroupId = ref<number | null>(null)
 const renewalPlans = computed(() => {
   if (renewGroupId.value == null) return []
-  return checkout.value.plans.filter(p => p.group_id === renewGroupId.value)
+  return checkout.value.plans.filter((plan) => subscriptionPlanGroupIDs(plan).includes(renewGroupId.value!))
 })
 
 function setActiveTab(tab: 'recharge' | 'subscription') {
@@ -1760,6 +1802,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
       forceQRCode: !!(checkout.value.alipay_force_qrcode && normalizeVisibleMethod(requestType) === 'alipay'),
+      mobilePrecreateDeepLink: checkout.value.alipay_mobile_precreate_deep_link === true,
     })
     if (options.openid) {
       payload.openid = options.openid
@@ -1808,6 +1851,7 @@ async function createOrder(orderAmount: number, orderType: OrderType, planId?: n
       isMobile: isMobileDevice(),
       isWechatBrowser: typeof window !== 'undefined' && /MicroMessenger/i.test(window.navigator.userAgent),
       forceQRCode: !!(checkout.value.alipay_force_qrcode && visibleMethod === 'alipay'),
+      mobilePrecreateDeepLink: checkout.value.alipay_mobile_precreate_deep_link === true,
       stripePopupUrl: stripeRouteUrl,
       stripeRouteUrl,
       airwallexRouteUrl,
@@ -2124,7 +2168,7 @@ onMounted(async () => {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)
-        const groupPlans = checkout.value.plans.filter(p => p.group_id === groupId)
+        const groupPlans = checkout.value.plans.filter((plan) => subscriptionPlanGroupIDs(plan).includes(groupId))
         if (groupPlans.length === 1) {
           selectedPlan.value = groupPlans[0]
         } else if (groupPlans.length > 1) {
@@ -2135,8 +2179,8 @@ onMounted(async () => {
     }
   } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
   finally { loading.value = false }
-  // Fetch active subscriptions (uses cache, non-blocking)
-  subscriptionStore.fetchActiveSubscriptions().catch(() => {})
+  // Fetch active legacy subscriptions and pure V2 entitlements.
+  refreshSubscriptionDisplays()
 })
 </script>
 

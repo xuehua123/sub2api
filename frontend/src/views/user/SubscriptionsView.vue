@@ -1029,11 +1029,6 @@ function formatRateMultiplier(rate: number | null | undefined): string {
   return Number(normalized.toPrecision(10)).toString()
 }
 
-function entitlementCurrency(entitlement: UserEntitlement): string {
-  const currency = (entitlement.purchase_currency || 'CNY').trim().toUpperCase()
-  return currency === 'RMB' ? 'CNY' : currency
-}
-
 function entitlementGroupEstimatedCost(
   entitlement: UserEntitlement,
   group: UserEntitlement['groups'][number]
@@ -1044,7 +1039,7 @@ function entitlementGroupEstimatedCost(
   }
   const rate = group.rate_multiplier && group.rate_multiplier > 0 ? group.rate_multiplier : 1
   return t('userSubscriptions.entitlements.groupUnitCost', {
-    amount: formatCurrency(unitCost * rate, entitlementCurrency(entitlement))
+    amount: formatCurrency(unitCost * rate, 'CNY')
   })
 }
 

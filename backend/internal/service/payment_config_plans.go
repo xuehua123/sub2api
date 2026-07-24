@@ -443,7 +443,7 @@ func (s *PaymentConfigService) UpdatePlan(ctx context.Context, id int64, req Upd
 	if err != nil {
 		return nil, err
 	}
-	if groupIDsExplicit {
+	if syncGroups && (groupIDsExplicit || scope != PlanAccessScopeExplicit) {
 		if err := replacePlanGroupsTx(ctx, tx, id, access.PersistGroupIDs); err != nil {
 			return nil, err
 		}
@@ -831,7 +831,9 @@ func (s *PaymentConfigService) loadGroupsByID(ctx context.Context, ids []int64, 
 	if len(ids) == 0 {
 		return out, nil
 	}
-	groups, err := s.entClient.Group.Query().Where(group.IDIn(ids...)).All(ctx)
+	groups, err := s.entClient.Group.Query().
+		Where(group.IDIn(ids...), group.DeletedAtIsNil()).
+		All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -866,6 +868,7 @@ func subscriptionPlanAutoGrantGroupPredicates() []predicate.Group {
 		group.SubscriptionEnabledEQ(true),
 		group.PlanAutoGrantEnabledEQ(true),
 		group.IsExclusiveEQ(false),
+		group.DeletedAtIsNil(),
 		group.Not(group.NameContainsFold("test")),
 		group.Not(group.NameContainsFold("private")),
 		group.Not(group.NameContains("测试")),
@@ -1011,12 +1014,18 @@ func planAutoGrantSyncPlatformsForGroupChange(before, after *Group) []string {
 	beforeQualifies := groupQualifiesForPlanAutoGrantSync(before)
 	afterQualifies := groupQualifiesForPlanAutoGrantSync(after)
 	platforms := make([]string, 0, 2)
+	// A previously eligible group must also trigger a re-sync when it stops
+	// qualifying. Otherwise turning off automatic plan grants leaves its
+	// existing dynamic plan entitlement bindings behind.
+	if beforeQualifies {
+		platforms = append(platforms, before.Platform)
+	}
 	if afterQualifies {
 		platforms = append(platforms, after.Platform)
 	}
-	if beforeQualifies && afterQualifies && normalizePlanAutoGrantPlatform(before.Platform) != normalizePlanAutoGrantPlatform(after.Platform) {
-		platforms = append(platforms, before.Platform, after.Platform)
-	}
+	// Retain the upstream status-transition trigger. It also drives its
+	// existing explicit-plan cleanup path for disabled groups that were never
+	// eligible for dynamic auto-granting.
 	if before != nil && after != nil && before.Status == StatusActive && after.Status != StatusActive {
 		platforms = append(platforms, before.Platform)
 	}
@@ -1036,6 +1045,10 @@ func explicitPlanAutoGrantGroupChangeIDs(before, after *Group) (int64, int64) {
 		addGroupID = after.ID
 	}
 	var removeGroupID int64
+	// Explicit plan links have no durable marker that distinguishes an
+	// auto-added group from a group an administrator selected manually. Keep
+	// the upstream destructive cleanup limited to a group being disabled; a
+	// capability-only change must only re-sync dynamic plan scopes.
 	if before != nil && after != nil && before.Status == StatusActive && after.Status != StatusActive {
 		removeGroupID = before.ID
 	}
@@ -1052,6 +1065,10 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 		platformSet[platform] = struct{}{}
 	}
 
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return syncDynamicPlanAutoGrantScopesForPlatformsTx(ctx, tx, platformSet, addGroupID, removeGroupID)
+	}
+
 	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("start dynamic plan auto-grant sync transaction: %w", err)
@@ -1063,6 +1080,20 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 		}
 	}()
 
+	if err := syncDynamicPlanAutoGrantScopesForPlatformsTx(ctx, tx, platformSet, addGroupID, removeGroupID); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit dynamic plan auto-grant sync transaction: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+func syncDynamicPlanAutoGrantScopesForPlatformsTx(ctx context.Context, tx *dbent.Tx, platformSet map[string]struct{}, addGroupID, removeGroupID int64) error {
+	if tx == nil {
+		return nil
+	}
 	plans, err := tx.SubscriptionPlan.Query().
 		Where(subscriptionplan.AccessScopeIn(PlanAccessScopeAllSubscriptionGroups, PlanAccessScopePlatformSubscriptionGroups)).
 		All(ctx)
@@ -1094,10 +1125,6 @@ func syncDynamicPlanAutoGrantScopesForPlatforms(ctx context.Context, client *dbe
 	if err := syncExplicitPlanAutoGrantEntitlementsForGroupChange(ctx, tx, addGroupID, removeGroupID); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit dynamic plan auto-grant sync transaction: %w", err)
-	}
-	committed = true
 	return nil
 }
 

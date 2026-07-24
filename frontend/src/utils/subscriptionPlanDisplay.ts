@@ -1,4 +1,4 @@
-import type { UserSubscription } from '@/types'
+import type { UserEntitlement, UserSubscription } from '@/types'
 import type { PlanAccessScope, PlanOveragePolicy, SubscriptionPlan } from '@/types/payment'
 
 type PlanGroupCarrier = {
@@ -63,6 +63,80 @@ export function subscriptionPlanGroupIDs(plan: PlanGroupCarrier | null | undefin
   ].filter((id): id is number => typeof id === 'number' && id > 0)
 
   return [...new Set(ids)]
+}
+
+// V2 entitlements without a legacy subscription alias still need to appear in
+// compact subscription surfaces. These records are display-only.
+export function activeSubscriptionDisplayRecords(
+  activeSubscriptions: readonly UserSubscription[] | null | undefined,
+  entitlements: readonly UserEntitlement[] | null | undefined,
+  now = new Date()
+): UserSubscription[] {
+  const records = [...(activeSubscriptions ?? [])]
+  const entitlementIDs = new Set(
+    records
+      .map((subscription) => subscription.entitlement_id)
+      .filter((id): id is number => typeof id === 'number' && id > 0)
+  )
+  const legacySubscriptionIDs = new Set(
+    records
+      .map((subscription) => subscription.id)
+      .filter((id) => id > 0)
+  )
+
+  for (const entitlement of entitlements ?? []) {
+    if (!isActiveDisplayEntitlement(entitlement, now)) continue
+    if (entitlementIDs.has(entitlement.id)) continue
+    if (
+      entitlement.legacy_subscription_id != null &&
+      legacySubscriptionIDs.has(entitlement.legacy_subscription_id)
+    ) {
+      continue
+    }
+
+    records.push(entitlementDisplaySubscription(entitlement))
+    entitlementIDs.add(entitlement.id)
+  }
+
+  return records
+}
+
+function isActiveDisplayEntitlement(entitlement: UserEntitlement, now: Date): boolean {
+  if (entitlement.status !== 'active') return false
+  const startsAt = Date.parse(entitlement.starts_at)
+  if (!Number.isNaN(startsAt) && startsAt > now.getTime()) return false
+  const expiresAt = Date.parse(entitlement.expires_at)
+  return Number.isNaN(expiresAt) || expiresAt > now.getTime()
+}
+
+function entitlementDisplaySubscription(entitlement: UserEntitlement): UserSubscription {
+  const primaryGroupID = entitlement.groups.find((group) => group.id > 0)?.id ?? 0
+
+  return {
+    id: -entitlement.id,
+    user_id: 0,
+    group_id: primaryGroupID,
+    status: 'active',
+    starts_at: entitlement.starts_at,
+    expires_at: entitlement.expires_at,
+    daily_usage_usd: entitlement.daily_usage_usd,
+    weekly_usage_usd: entitlement.weekly_usage_usd,
+    monthly_usage_usd: entitlement.monthly_usage_usd,
+    daily_limit_usd: entitlement.daily_limit_usd,
+    weekly_limit_usd: entitlement.weekly_limit_usd,
+    monthly_limit_usd: entitlement.monthly_limit_usd,
+    daily_window_start: entitlement.daily_window_start,
+    weekly_window_start: entitlement.weekly_window_start,
+    monthly_window_start: entitlement.monthly_window_start,
+    created_at: entitlement.starts_at,
+    updated_at: entitlement.starts_at,
+    entitlement_only: true,
+    entitlement_id: entitlement.id,
+    plan_id: entitlement.plan_id,
+    plan_name: entitlement.plan_name || entitlement.name,
+    groups: [...entitlement.groups],
+    overage_policy: entitlement.overage_policy,
+  }
 }
 
 export function subscriptionMatchesPlan(

@@ -189,6 +189,26 @@ func TestBuildPaymentOrderProviderSnapshot_IncludesProviderCurrency(t *testing.T
 	require.Equal(t, "acct-78", airwallexSnapshot["merchant_id"])
 }
 
+func TestPaymentOrderSnapshot_PreservesUSDSubscriptionReferralSettlementRate(t *testing.T) {
+	t.Parallel()
+
+	sel := &payment.InstanceSelection{
+		InstanceID:  "79",
+		ProviderKey: payment.TypeStripe,
+		Config: map[string]string{
+			"currency": "USD",
+		},
+	}
+	snapshot := buildPaymentOrderProviderSnapshot(sel, CreateOrderRequest{OrderType: payment.OrderTypeSubscription})
+	snapshot = withSubscriptionReferralSettlementRate(snapshot, CreateOrderRequest{OrderType: payment.OrderTypeSubscription}, sel, &PaymentConfig{SubscriptionUSDToCNYRate: 7.25})
+	require.Equal(t, 7.25, snapshot[paymentOrderSnapshotSubscriptionUSDToCNYRate])
+
+	cnySelection := &payment.InstanceSelection{ProviderKey: payment.TypeStripe, Config: map[string]string{"currency": "CNY"}}
+	cnySnapshot := buildPaymentOrderProviderSnapshot(cnySelection, CreateOrderRequest{OrderType: payment.OrderTypeSubscription})
+	cnySnapshot = withSubscriptionReferralSettlementRate(cnySnapshot, CreateOrderRequest{OrderType: payment.OrderTypeSubscription}, cnySelection, &PaymentConfig{SubscriptionUSDToCNYRate: 7.25})
+	require.NotContains(t, cnySnapshot, paymentOrderSnapshotSubscriptionUSDToCNYRate)
+}
+
 func valueOrEmpty(v *string) string {
 	if v == nil {
 		return ""

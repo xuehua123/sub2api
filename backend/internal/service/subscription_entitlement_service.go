@@ -15,9 +15,11 @@ type SubscriptionEntitlementService struct {
 }
 
 type AssignEntitlementFromPlanInput struct {
-	UserID               int64
-	PlanID               int64
-	LegacySubscriptionID *int64
+	UserID                int64
+	PlanID                int64
+	LegacySubscriptionID  *int64
+	RequireEligibleGroups bool
+	PlanSnapshot          *SubscriptionEntitlementPlan
 
 	OrderID int64
 
@@ -26,12 +28,13 @@ type AssignEntitlementFromPlanInput struct {
 	SourceExternalID   *string
 	SourceRedeemCodeID *int64
 
-	ValidityDaysOverride int
-	AssignedBy           int64
-	AssignedAt           time.Time
-	Notes                string
-	PurchasePrice        *float64
-	PurchaseCurrency     string
+	ValidityDaysOverride  int
+	AssignedBy            int64
+	AssignedAt            time.Time
+	Notes                 string
+	PurchasePrice         *float64
+	PurchaseCurrency      string
+	PurchaseCNYPerUSDRate *float64
 
 	Now time.Time
 }
@@ -71,13 +74,24 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 		return existing, found, err
 	}
 
-	plan, err := s.planRepo.GetEntitlementPlan(ctx, input.PlanID)
-	if err != nil {
-		return nil, false, err
+	plan := input.PlanSnapshot
+	if plan != nil {
+		if plan.ID != input.PlanID {
+			return nil, false, ErrSubscriptionEntitlementPlanInvalid
+		}
+	} else {
+		var err error
+		plan, err = s.planRepo.GetEntitlementPlan(ctx, input.PlanID)
+		if err != nil {
+			return nil, false, err
+		}
 	}
 	groupIDs, err := entitlementPlanGroupIDs(plan)
 	if err != nil {
 		return nil, false, err
+	}
+	if input.RequireEligibleGroups && len(groupIDs) == 0 {
+		return nil, false, ErrSubscriptionEntitlementPlanInvalid
 	}
 	validityDays := entitlementValidityDays(plan, input.ValidityDaysOverride)
 
@@ -96,7 +110,7 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 	}
 
 	ent := newEntitlementFromPlan(plan, input.UserID, entitlementPrimaryGroupID(plan, groupIDs), validityDays, input.Notes, source, now, input.LegacySubscriptionID)
-	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency)
+	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency, input.PurchaseCNYPerUSDRate)
 	fulfillment := newEntitlementFulfillment(ent, validityDays, source)
 	if err := s.entitlementRepo.CreateWithFulfillment(ctx, ent, groupIDs, fulfillment); err != nil {
 		if errors.Is(err, ErrSubscriptionEntitlementAlreadyExists) {
@@ -418,10 +432,8 @@ func entitlementPlanGroupIDs(plan *SubscriptionEntitlementPlan) ([]int64, error)
 		if !grant.Enabled || grant.GroupID <= 0 {
 			continue
 		}
-		if grant.Group != nil {
-			if !grant.Group.IsActive() || !grant.Group.SupportsSubscriptionAccess() {
-				continue
-			}
+		if grant.Group == nil || !grant.Group.IsActive() || !grant.Group.SupportsSubscriptionAccess() {
+			continue
 		}
 		if _, ok := seen[grant.GroupID]; ok {
 			continue
@@ -518,11 +530,15 @@ func entitlementPlanSnapshot(plan *SubscriptionEntitlementPlan) map[string]any {
 			groupIDs = append(groupIDs, grant.GroupID)
 		}
 	}
+	currency := strings.ToUpper(strings.TrimSpace(plan.Currency))
+	if currency == "" {
+		currency = "CNY"
+	}
 	return map[string]any{
 		"plan_id":           plan.ID,
 		"name":              plan.Name,
 		"price":             plan.Price,
-		"currency":          "CNY",
+		"currency":          currency,
 		"validity_days":     plan.ValidityDays,
 		"validity_unit":     normalizeValidityUnit(plan.ValidityUnit),
 		"access_scope":      plan.AccessScope,
@@ -534,13 +550,16 @@ func entitlementPlanSnapshot(plan *SubscriptionEntitlementPlan) map[string]any {
 	}
 }
 
-func applyEntitlementPurchaseSnapshot(snapshot map[string]any, purchasePrice *float64, purchaseCurrency string) {
+func applyEntitlementPurchaseSnapshot(snapshot map[string]any, purchasePrice *float64, purchaseCurrency string, cnyPerUSDRate *float64) {
 	if snapshot == nil || purchasePrice == nil || *purchasePrice <= 0 {
 		return
 	}
 	snapshot["purchase_price"] = *purchasePrice
 	if currency := strings.ToUpper(strings.TrimSpace(purchaseCurrency)); currency != "" {
 		snapshot["purchase_currency"] = currency
+		if currency == "USD" && cnyPerUSDRate != nil && *cnyPerUSDRate > 0 {
+			snapshot["purchase_cny_per_usd_rate"] = *cnyPerUSDRate
+		}
 	}
 }
 

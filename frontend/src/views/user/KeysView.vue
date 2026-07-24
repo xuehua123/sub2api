@@ -2029,6 +2029,8 @@ function entitlementUnitCost(entitlement: AvailableGroupEntitlement | null | und
   const purchasePrice = positiveNumber(entitlement.purchase_price)
   const quotaUSD = positiveNumber(entitlement.quota_usd)
   if (purchasePrice === null || quotaUSD === null) return null
+  const purchaseCurrency = (entitlement.purchase_currency || 'CNY').trim().toUpperCase()
+  if (purchaseCurrency !== 'CNY' && purchaseCurrency !== 'RMB') return null
   return purchasePrice / quotaUSD
 }
 
@@ -2058,7 +2060,7 @@ function entitlementActualCostText(
   const multiplier = positiveNumber(rate) ?? 1
   return t('keys.actualRmbCostHint', {
     rate: formatRateMultiplier(multiplier),
-    amount: formatMoneyAmount(unitCost * multiplier, entitlement?.purchase_currency),
+    amount: formatMoneyAmount(unitCost * multiplier, 'CNY'),
   })
 }
 

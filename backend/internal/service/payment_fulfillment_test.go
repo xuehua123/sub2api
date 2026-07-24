@@ -315,6 +315,126 @@ func newPaymentEntitlementsSettingService(enabled bool) *SettingService {
 	return NewSettingService(repo, &config.Config{})
 }
 
+func TestShouldUseSubscriptionEntitlementV2HonorsCheckoutSnapshot(t *testing.T) {
+	planID := int64(101)
+	service := &PaymentService{settingSvc: newPaymentEntitlementsSettingService(false)}
+
+	require.True(t, service.shouldUseSubscriptionEntitlementV2(context.Background(), &dbent.PaymentOrder{
+		PlanID:           &planID,
+		ProviderSnapshot: map[string]any{paymentOrderSnapshotEntitlementV2Enabled: true},
+	}))
+
+	service.settingSvc = newPaymentEntitlementsSettingService(true)
+	require.False(t, service.shouldUseSubscriptionEntitlementV2(context.Background(), &dbent.PaymentOrder{
+		PlanID:           &planID,
+		ProviderSnapshot: map[string]any{paymentOrderSnapshotEntitlementV2Enabled: false},
+	}))
+
+	require.True(t, service.shouldUseSubscriptionEntitlementV2(context.Background(), &dbent.PaymentOrder{PlanID: &planID}), "historical orders without a snapshot retain the legacy runtime fallback")
+}
+
+func TestResolveReferralSettlementUsesConfiguredUSDSubscriptionRate(t *testing.T) {
+	svc := &PaymentService{configService: &PaymentConfigService{settingRepo: &paymentFulfillmentSettingRepoStub{values: map[string]string{
+		SettingSubscriptionUSDToCNYRate: "7.2",
+	}}}}
+	order := &dbent.PaymentOrder{
+		OrderType: payment.OrderTypeSubscription,
+		ProviderSnapshot: map[string]any{
+			"currency": "USD",
+		},
+	}
+
+	settlement, skipReason, err := svc.resolveReferralSettlement(context.Background(), order)
+	require.NoError(t, err)
+	require.Empty(t, skipReason)
+	require.Equal(t, "USD", settlement.sourceCurrency)
+	require.InDelta(t, 7.2, settlement.rate, 0.000001)
+	require.InDelta(t, 71.28, settlement.amount(9.9), 0.000001)
+}
+
+func TestResolveReferralSettlementPrefersOrderSnapshotRate(t *testing.T) {
+	svc := &PaymentService{configService: &PaymentConfigService{settingRepo: &paymentFulfillmentSettingRepoStub{values: map[string]string{
+		SettingSubscriptionUSDToCNYRate: "8.0",
+	}}}}
+	order := &dbent.PaymentOrder{
+		OrderType: payment.OrderTypeSubscription,
+		ProviderSnapshot: map[string]any{
+			"currency": "USD",
+			paymentOrderSnapshotSubscriptionUSDToCNYRate: 7.25,
+		},
+	}
+
+	settlement, skipReason, err := svc.resolveReferralSettlement(context.Background(), order)
+	require.NoError(t, err)
+	require.Empty(t, skipReason)
+	require.InDelta(t, 7.25, settlement.rate, 0.000001)
+}
+
+func TestSyncSubscriptionReferralRewardSettlesUSDPaymentInCNY(t *testing.T) {
+	ctx := context.Background()
+	rechargeRepo := newRechargeOrderRepoStub()
+	rewardSvc := newReferralRewardServiceForTest(rechargeRepo, &commissionRepoStub{}, newRewardUserRepoStub(), newReferralRepoStub(), map[string]string{
+		SettingKeyReferralEnabled: "false",
+	})
+	svc := &PaymentService{
+		referralRewardSvc: rewardSvc,
+		configService: &PaymentConfigService{settingRepo: &paymentFulfillmentSettingRepoStub{values: map[string]string{
+			SettingSubscriptionUSDToCNYRate: "8.0",
+		}}},
+	}
+	order := &dbent.PaymentOrder{
+		ID:          71,
+		UserID:      100,
+		OutTradeNo:  "usd-subscription-referral",
+		PaymentType: payment.TypeStripe,
+		OrderType:   payment.OrderTypeSubscription,
+		Amount:      10,
+		PayAmount:   10,
+		ProviderSnapshot: map[string]any{
+			"currency": "USD",
+			paymentOrderSnapshotSubscriptionUSDToCNYRate: 7.25,
+		},
+	}
+
+	require.NoError(t, svc.syncReferralReward(ctx, order))
+	rechargeOrder, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeStripe, order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, ReferralSettlementCurrencyCNY, rechargeOrder.Currency)
+	require.InDelta(t, 72.5, rechargeOrder.GrossAmount, 0.000001)
+	require.InDelta(t, 72.5, rechargeOrder.PaidAmount, 0.000001)
+	require.NotNil(t, rechargeOrder.MetadataJSON)
+	require.Contains(t, *rechargeOrder.MetadataJSON, `"settlement_rate":7.25`)
+}
+
+func TestResolveReferralSettlementSkipsUnsupportedForeignCurrency(t *testing.T) {
+	svc := &PaymentService{configService: &PaymentConfigService{settingRepo: &paymentFulfillmentSettingRepoStub{values: map[string]string{
+		SettingSubscriptionUSDToCNYRate: "7.2",
+	}}}}
+	order := &dbent.PaymentOrder{
+		OrderType: payment.OrderTypeSubscription,
+		ProviderSnapshot: map[string]any{
+			"currency": "EUR",
+		},
+	}
+
+	settlement, skipReason, err := svc.resolveReferralSettlement(context.Background(), order)
+	require.NoError(t, err)
+	require.Empty(t, settlement.sourceCurrency)
+	require.Contains(t, skipReason, "EUR")
+}
+
+func TestReferralSettlementReversalAmountUsesPersistedCNYRatio(t *testing.T) {
+	order := &dbent.PaymentOrder{
+		PayAmount: 10,
+		ProviderSnapshot: map[string]any{
+			"currency": "USD",
+		},
+	}
+	rechargeOrder := &RechargeOrder{PaidAmount: 72.5}
+
+	require.InDelta(t, 36.25, referralSettlementReversalAmount(order, rechargeOrder, 5), 0.000001)
+}
+
 func createPaymentOrderForRefundTest(t *testing.T, ctx context.Context, client *dbent.Client, user *dbent.User, amount float64, payAmount float64, refundAmount float64, status string, outTradeNo string, paymentTradeNo string) *dbent.PaymentOrder {
 	t.Helper()
 
@@ -716,8 +836,29 @@ func TestExecuteSubscriptionFulfillment_V2FlagDisabledKeepsLegacyPlanOrder(t *te
 	client := newPaymentServiceEntClient(t)
 	user := createPaymentRefundTestUser(t, ctx, client, 0)
 	now := time.Now().Truncate(time.Second)
-	groupID := int64(711)
-	planID := int64(811)
+	primaryGroup := createPaymentConfigPlanTestGroup(t, client, "legacy-v2-off-primary", PlatformOpenAI, 0)
+	secondGroup := createPaymentConfigPlanTestGroup(t, client, "legacy-v2-off-second", PlatformAnthropic, 1)
+	plan, err := client.SubscriptionPlan.Create().
+		SetGroupID(primaryGroup.ID).
+		SetName("legacy-v2-off-multi-group-plan").
+		SetDescription("paid before V2 rollout").
+		SetPrice(9.90).
+		SetValidityDays(30).
+		SetValidityUnit("day").
+		SetAccessScope(PlanAccessScopeExplicit).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+	for sortOrder, groupID := range []int64{primaryGroup.ID, secondGroup.ID} {
+		_, err = client.SubscriptionPlanGroup.Create().
+			SetPlanID(plan.ID).
+			SetGroupID(groupID).
+			SetSortOrder(sortOrder).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
 
 	order, err := client.PaymentOrder.Create().
 		SetUserID(user.ID).
@@ -731,8 +872,8 @@ func TestExecuteSubscriptionFulfillment_V2FlagDisabledKeepsLegacyPlanOrder(t *te
 		SetPaymentTradeNo("trade-sub-legacy-flag-off").
 		SetOrderType(payment.OrderTypeSubscription).
 		SetStatus(OrderStatusPaid).
-		SetPlanID(planID).
-		SetSubscriptionGroupID(groupID).
+		SetPlanID(plan.ID).
+		SetSubscriptionGroupID(primaryGroup.ID).
 		SetSubscriptionDays(30).
 		SetExpiresAt(now.Add(time.Hour)).
 		SetPaidAt(now).
@@ -741,12 +882,12 @@ func TestExecuteSubscriptionFulfillment_V2FlagDisabledKeepsLegacyPlanOrder(t *te
 		Save(ctx)
 	require.NoError(t, err)
 
-	groupRepo := &paymentGroupRepoStub{group: &Group{ID: groupID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}}
+	groupRepo := &paymentGroupRepoStub{group: &Group{ID: primaryGroup.ID, Status: payment.EntityStatusActive, SubscriptionType: SubscriptionTypeSubscription}}
 	subRepo := newSubscriptionUserSubRepoStub()
 	entRepo := newFakeSubscriptionEntitlementRepo(now)
 	entSvc := NewSubscriptionEntitlementService(entRepo, &fakeSubscriptionEntitlementPlanRepo{
 		plans: map[int64]*SubscriptionEntitlementPlan{
-			planID: testEntitlementPlan(planID, []int64{groupID, 712}, nil),
+			plan.ID: testEntitlementPlan(plan.ID, []int64{primaryGroup.ID, secondGroup.ID}, nil),
 		},
 	})
 	entSvc.SetNowFunc(func() time.Time { return now })
@@ -755,6 +896,7 @@ func TestExecuteSubscriptionFulfillment_V2FlagDisabledKeepsLegacyPlanOrder(t *te
 		groupRepo:                  groupRepo,
 		subscriptionSvc:            NewSubscriptionService(groupRepo, subRepo, nil, nil, nil),
 		subscriptionEntitlementSvc: entSvc,
+		configService:              &PaymentConfigService{entClient: client},
 		settingSvc:                 newPaymentEntitlementsSettingService(false),
 	}
 
@@ -808,6 +950,10 @@ func TestExecuteSubscriptionFulfillment_V2AssignsEntitlementWithPlanGroups(t *te
 		SetPlanID(planID).
 		SetSubscriptionGroupID(groupIDs[0]).
 		SetSubscriptionDays(30).
+		SetProviderSnapshot(map[string]any{
+			"currency": "USD",
+			paymentOrderSnapshotSubscriptionUSDToCNYRate: 7.2,
+		}).
 		SetExpiresAt(now.Add(time.Hour)).
 		SetPaidAt(now).
 		SetClientIP("127.0.0.1").
@@ -838,6 +984,11 @@ func TestExecuteSubscriptionFulfillment_V2AssignsEntitlementWithPlanGroups(t *te
 	require.Equal(t, int64(1), *updatedOrder.SubscriptionEntitlementID)
 	require.Len(t, entRepo.createGroups, 1)
 	require.Equal(t, groupIDs, entRepo.createGroups[0])
+	entitlement, err := entRepo.GetByID(ctx, *updatedOrder.SubscriptionEntitlementID)
+	require.NoError(t, err)
+	require.Equal(t, "USD", entitlement.PlanSnapshot["purchase_currency"])
+	require.Equal(t, 90.0, entitlement.PlanSnapshot["purchase_price"])
+	require.Equal(t, 7.2, entitlement.PlanSnapshot["purchase_cny_per_usd_rate"])
 	require.Len(t, entRepo.fulfillments, 1)
 	for _, fulfillment := range entRepo.fulfillments {
 		require.NotNil(t, fulfillment.SourceID)
@@ -2082,6 +2233,72 @@ func TestExecuteBalanceFulfillmentRecoversAfterRedeemWithoutCreditingAgain(t *te
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+}
+
+func TestDuplicatePaymentNotificationDoesNotReprocessCompletedBalanceOrder(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusCompleted, time.Now())
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetOrderType(payment.OrderTypeBalance).
+		ClearPlanID().
+		ClearSubscriptionGroupID().
+		ClearSubscriptionDays().
+		Save(ctx)
+	require.NoError(t, err)
+
+	redeemRepo := &redeemCodeRepoStub{codesByCode: map[string]*RedeemCode{
+		order.RechargeCode: {
+			ID:     102,
+			Code:   order.RechargeCode,
+			Type:   RedeemTypeBalance,
+			Value:  order.Amount,
+			Status: StatusUnused,
+		},
+	}}
+	svc := &PaymentService{
+		entClient:     client,
+		redeemService: &RedeemService{redeemRepo: redeemRepo},
+	}
+	notification := &payment.PaymentNotification{
+		TradeNo: "alipay-trade-replayed",
+		OrderID: order.OutTradeNo,
+		Amount:  order.PayAmount,
+		Status:  payment.NotificationStatusSuccess,
+	}
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeAlipay))
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeAlipay))
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Empty(t, redeemRepo.useCalls, "a duplicate notification must not redeem the balance code again")
+}
+
+func TestPaymentNotificationRejectsAmountMismatchBeforeFulfillment(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPaymentFulfillmentSubscriptionOrder(t, ctx, client, OrderStatusPending, time.Now())
+	order, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetOrderType(payment.OrderTypeBalance).
+		ClearPlanID().
+		ClearSubscriptionGroupID().
+		ClearSubscriptionDays().
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	err = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		TradeNo: "alipay-trade-wrong-amount",
+		OrderID: order.OutTradeNo,
+		Amount:  order.PayAmount - 1,
+		Status:  payment.NotificationStatusSuccess,
+	}, payment.TypeAlipay)
+	require.ErrorContains(t, err, "amount mismatch")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPending, reloaded.Status)
 }
 
 func TestExecuteSubscriptionFulfillmentRecoversCommittedAssignmentWithoutExtendingAgain(t *testing.T) {

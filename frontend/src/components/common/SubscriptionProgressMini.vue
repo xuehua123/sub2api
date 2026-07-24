@@ -18,7 +18,7 @@
           ></div>
         </div>
         <span class="text-xs font-medium text-purple-700 dark:text-purple-300">
-          {{ activeSubscriptions.length }}
+          {{ displaySubscriptions.length }}
         </span>
       </div>
     </button>
@@ -34,7 +34,7 @@
             {{ t('subscriptionProgress.title') }}
           </h3>
           <p class="mt-0.5 text-xs text-gray-500 dark:text-dark-400">
-            {{ t('subscriptionProgress.activeCount', { count: activeSubscriptions.length }) }}
+            {{ t('subscriptionProgress.activeCount', { count: displaySubscriptions.length }) }}
           </p>
         </div>
 
@@ -186,7 +186,11 @@ import { paymentAPI } from '@/api/payment'
 import type { UserSubscription } from '@/types'
 import type { SubscriptionPlan } from '@/types/payment'
 import { formatRemainingDurationCompact, getRemainingHours } from '@/utils/subscriptionTime'
-import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
+import {
+  activeSubscriptionDisplayRecords,
+  normalizeSubscriptionPlans,
+  subscriptionDisplayName,
+} from '@/utils/subscriptionPlanDisplay'
 
 const { t } = useI18n()
 
@@ -198,16 +202,19 @@ const subscriptionPlans = ref<SubscriptionPlan[]>([])
 
 // Use store data instead of local state
 const activeSubscriptions = computed(() => subscriptionStore.activeSubscriptions)
-const hasActiveSubscriptions = computed(() => subscriptionStore.hasActiveSubscriptions)
 
 const displaySubscriptions = computed(() => {
   // Sort by most usage (highest percentage first)
-  return [...activeSubscriptions.value].sort((a, b) => {
+  return activeSubscriptionDisplayRecords(
+    activeSubscriptions.value,
+    subscriptionStore.entitlements,
+  ).sort((a, b) => {
     const aMax = getMaxUsagePercentage(a)
     const bMax = getMaxUsagePercentage(b)
     return bMax - aMax
   })
 })
+const hasActiveSubscriptions = computed(() => displaySubscriptions.value.length > 0)
 
 function getMaxUsagePercentage(sub: UserSubscription): number {
   const percentages: number[] = []
@@ -332,10 +339,11 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  // Trigger initial fetch if not already loaded
-  // The actual data loading is handled by App.vue globally
-  subscriptionStore.fetchActiveSubscriptions()
-    .then(loadSubscriptionPlansForSubscriptions)
+  void Promise.allSettled([
+    subscriptionStore.fetchActiveSubscriptions(),
+    subscriptionStore.fetchEntitlements(),
+  ])
+    .then(() => loadSubscriptionPlansForSubscriptions(displaySubscriptions.value))
     .catch((error) => {
       console.error('Failed to load subscriptions in SubscriptionProgressMini:', error)
     })

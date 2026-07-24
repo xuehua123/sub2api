@@ -46,6 +46,7 @@ func subscriptionPlanEntityToEntitlementPlan(ctx context.Context, client *dbent.
 		Name:             plan.Name,
 		Description:      plan.Description,
 		Price:            plan.Price,
+		Currency:         plan.Currency,
 		ValidityDays:     plan.ValidityDays,
 		ValidityUnit:     plan.ValidityUnit,
 		AccessScope:      plan.AccessScope,
@@ -67,23 +68,25 @@ func subscriptionPlanEntityToEntitlementPlan(ctx context.Context, client *dbent.
 		out.Groups = append(out.Groups, subscriptionEntitlementPlanGroupsFromEnt(loadEntitlementPlanAutoGrantGroups(ctx, client, plan.AllowedPlatforms))...)
 	}
 
-	for _, grant := range plan.Edges.SubscriptionPlanGroups {
-		if grant == nil || !grant.Enabled {
-			continue
+	if plan.AccessScope == "" || plan.AccessScope == service.PlanAccessScopeExplicit {
+		for _, grant := range plan.Edges.SubscriptionPlanGroups {
+			if grant == nil || !grant.Enabled {
+				continue
+			}
+			groupOut := groupEntityToService(grant.Edges.Group)
+			if groupOut == nil {
+				continue
+			}
+			out.Groups = append(out.Groups, service.SubscriptionEntitlementPlanGroup{
+				GroupID:   grant.GroupID,
+				SortOrder: grant.SortOrder,
+				Enabled:   grant.Enabled,
+				Group:     groupOut,
+			})
 		}
-		var groupOut *service.Group
-		if sg := groupEntityToService(grant.Edges.Group); sg != nil {
-			groupOut = sg
-		}
-		out.Groups = append(out.Groups, service.SubscriptionEntitlementPlanGroup{
-			GroupID:   grant.GroupID,
-			SortOrder: grant.SortOrder,
-			Enabled:   grant.Enabled,
-			Group:     groupOut,
-		})
 	}
 
-	if len(out.Groups) == 0 && plan.GroupID > 0 {
+	if (plan.AccessScope == "" || plan.AccessScope == service.PlanAccessScopeExplicit) && len(out.Groups) == 0 && plan.GroupID > 0 {
 		if group, err := client.Group.Get(ctx, plan.GroupID); err == nil {
 			if groupOut := groupEntityToService(group); groupOut != nil {
 				out.Groups = append(out.Groups, service.SubscriptionEntitlementPlanGroup{

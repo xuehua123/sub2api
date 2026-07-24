@@ -32,6 +32,7 @@ var ErrOrderNotFound = errors.New("payment order not found")
 const (
 	paymentAuditActionReferralRewardSyncFailed    = "REFERRAL_REWARD_SYNC_FAILED"
 	paymentAuditActionReferralRewardSyncRecovered = "REFERRAL_REWARD_SYNC_RECOVERED"
+	paymentAuditActionReferralRewardSkipped       = "REFERRAL_REWARD_SKIPPED"
 	paymentAuditActionSubscriptionAssigned        = "SUBSCRIPTION_ASSIGNED"
 	paymentAuditActionSubscriptionSuccess         = "SUBSCRIPTION_SUCCESS"
 
@@ -211,7 +212,7 @@ func (s *PaymentService) syncExternalReferralReversal(ctx context.Context, o *db
 		return err
 	}
 
-	reversalAmount := roundMoney(amount)
+	reversalAmount := referralSettlementReversalAmount(o, rechargeOrder, amount)
 	if reversalAmount <= 0 {
 		return nil
 	}
@@ -803,12 +804,20 @@ func (s *PaymentService) syncReferralReward(ctx context.Context, o *dbent.Paymen
 	if s.referralRewardSvc == nil || o == nil {
 		return nil
 	}
+	settlement, skipReason, err := s.resolveReferralSettlement(ctx, o)
+	if err != nil {
+		return err
+	}
+	if skipReason != "" {
+		s.recordReferralRewardSkip(ctx, o, skipReason)
+		return nil
+	}
 
 	switch o.OrderType {
 	case payment.OrderTypeBalance:
-		return s.syncBalanceReferralReward(ctx, o)
+		return s.syncBalanceReferralReward(ctx, o, settlement)
 	case payment.OrderTypeSubscription:
-		return s.syncSubscriptionReferralReward(ctx, o)
+		return s.syncSubscriptionReferralReward(ctx, o, settlement)
 	default:
 		return nil
 	}
@@ -825,7 +834,106 @@ func paymentReferralProviderKey(o *dbent.PaymentOrder) string {
 	return providerKey
 }
 
-func (s *PaymentService) syncBalanceReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
+type referralSettlement struct {
+	sourceCurrency string
+	rate           float64
+}
+
+func (s referralSettlement) amount(value float64) float64 {
+	return roundMoney(value * s.rate)
+}
+
+// resolveReferralSettlement translates a payment into the CNY-only referral
+// ledger. USD subscription payments use the explicitly configured subscription
+// rate; other foreign-currency orders are skipped rather than being recorded as
+// a numerically identical CNY amount.
+func (s *PaymentService) resolveReferralSettlement(ctx context.Context, o *dbent.PaymentOrder) (referralSettlement, string, error) {
+	currency := PaymentOrderCurrency(o)
+	if currency == ReferralSettlementCurrencyCNY {
+		return referralSettlement{sourceCurrency: currency, rate: 1}, "", nil
+	}
+	if currency != "USD" {
+		return referralSettlement{}, "referral settlement supports CNY and configured USD subscription payments only (payment currency " + currency + ")", nil
+	}
+	if o == nil || o.OrderType != payment.OrderTypeSubscription {
+		return referralSettlement{}, "USD balance orders have no configured CNY referral settlement rate", nil
+	}
+	if rate, snapshotted := subscriptionReferralSettlementRateFromOrder(o); snapshotted {
+		if rate <= 0 {
+			return referralSettlement{}, "USD subscription payment had referral CNY settlement disabled when the order was created", nil
+		}
+		return referralSettlement{sourceCurrency: currency, rate: rate}, "", nil
+	}
+	if s == nil || s.configService == nil {
+		return referralSettlement{}, "USD subscription payment has no payment configuration for CNY referral settlement", nil
+	}
+	cfg, err := s.configService.GetPaymentConfig(ctx)
+	if err != nil {
+		return referralSettlement{}, "", fmt.Errorf("load referral settlement payment config: %w", err)
+	}
+	rate := normalizeSubscriptionUSDToCNYRate(cfg.SubscriptionUSDToCNYRate)
+	if rate <= 0 {
+		return referralSettlement{}, "USD subscription payment requires subscription_usd_to_cny_rate before CNY referral settlement", nil
+	}
+	return referralSettlement{sourceCurrency: currency, rate: rate}, "", nil
+}
+
+func subscriptionReferralSettlementRateFromOrder(o *dbent.PaymentOrder) (float64, bool) {
+	if o == nil || o.ProviderSnapshot == nil {
+		return 0, false
+	}
+	raw, ok := o.ProviderSnapshot[paymentOrderSnapshotSubscriptionUSDToCNYRate]
+	if !ok {
+		return 0, false
+	}
+	rate, ok := snapshotPositiveFloat(raw)
+	if !ok {
+		return 0, true
+	}
+	return normalizeSubscriptionUSDToCNYRate(rate), true
+}
+
+func (s *PaymentService) recordReferralRewardSkip(ctx context.Context, o *dbent.PaymentOrder, reason string) {
+	if s == nil || s.entClient == nil || o == nil {
+		return
+	}
+	if s.hasAuditLog(ctx, o.ID, paymentAuditActionReferralRewardSkipped) {
+		return
+	}
+	s.writeAuditLog(ctx, o.ID, paymentAuditActionReferralRewardSkipped, "system", map[string]any{
+		"reason":              reason,
+		"payment_currency":    PaymentOrderCurrency(o),
+		"settlement_currency": ReferralSettlementCurrencyCNY,
+	})
+}
+
+func referralSettlementMetadata(base map[string]any, settlement referralSettlement) (string, error) {
+	base["payment_currency"] = settlement.sourceCurrency
+	base["settlement_currency"] = ReferralSettlementCurrencyCNY
+	base["settlement_rate"] = settlement.rate
+	encoded, err := json.Marshal(base)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func referralSettlementReversalAmount(order *dbent.PaymentOrder, rechargeOrder *RechargeOrder, amount float64) float64 {
+	amount = roundMoney(amount)
+	if amount <= 0 || order == nil || rechargeOrder == nil || PaymentOrderCurrency(order) == ReferralSettlementCurrencyCNY {
+		return amount
+	}
+	if order.PayAmount <= 0 || rechargeOrder.PaidAmount <= 0 {
+		return amount
+	}
+	rate := rechargeOrder.PaidAmount / order.PayAmount
+	if math.IsNaN(rate) || math.IsInf(rate, 0) || rate <= 0 {
+		return amount
+	}
+	return roundMoney(amount * rate)
+}
+
+func (s *PaymentService) syncBalanceReferralReward(ctx context.Context, o *dbent.PaymentOrder, settlement referralSettlement) error {
 	paidAmount := roundMoney(o.PayAmount)
 	if paidAmount <= 0 {
 		paidAmount = roundMoney(o.Amount)
@@ -840,26 +948,34 @@ func (s *PaymentService) syncBalanceReferralReward(ctx context.Context, o *dbent
 	} else if paidAmount > creditedBalanceAmount {
 		grossAmount = paidAmount
 	}
+	metadataJSON, err := referralSettlementMetadata(map[string]any{
+		"order_type":       payment.OrderTypeBalance,
+		"payment_order_id": o.ID,
+	}, settlement)
+	if err != nil {
+		return err
+	}
 
-	_, err := s.referralRewardSvc.CreditRechargeOrder(ctx, &RechargeCreditInput{
+	_, err = s.referralRewardSvc.CreditRechargeOrder(ctx, &RechargeCreditInput{
 		UserID:                o.UserID,
 		ExternalOrderID:       o.OutTradeNo,
 		Provider:              paymentReferralProviderKey(o),
 		Channel:               o.PaymentType,
 		Currency:              ReferralSettlementCurrencyCNY,
-		GrossAmount:           grossAmount,
-		DiscountAmount:        discountAmount,
-		PaidAmount:            paidAmount,
-		GiftBalanceAmount:     giftBalanceAmount,
-		CreditedBalanceAmount: creditedBalanceAmount,
+		GrossAmount:           settlement.amount(grossAmount),
+		DiscountAmount:        settlement.amount(discountAmount),
+		PaidAmount:            settlement.amount(paidAmount),
+		GiftBalanceAmount:     settlement.amount(giftBalanceAmount),
+		CreditedBalanceAmount: settlement.amount(creditedBalanceAmount),
 		SkipBalanceCredit:     true,
 		PaidAt:                o.PaidAt,
+		MetadataJSON:          metadataJSON,
 		Notes:                 fmt.Sprintf("payment order %d", o.ID),
 	})
 	return err
 }
 
-func (s *PaymentService) syncSubscriptionReferralReward(ctx context.Context, o *dbent.PaymentOrder) error {
+func (s *PaymentService) syncSubscriptionReferralReward(ctx context.Context, o *dbent.PaymentOrder, settlement referralSettlement) error {
 	paidAmount := roundMoney(o.PayAmount)
 	if paidAmount <= 0 {
 		paidAmount = roundMoney(o.Amount)
@@ -887,7 +1003,7 @@ func (s *PaymentService) syncSubscriptionReferralReward(ctx context.Context, o *
 	if o.SubscriptionDays != nil {
 		metadata["subscription_days"] = *o.SubscriptionDays
 	}
-	metadataJSON, err := json.Marshal(metadata)
+	metadataJSON, err := referralSettlementMetadata(metadata, settlement)
 	if err != nil {
 		return err
 	}
@@ -898,14 +1014,14 @@ func (s *PaymentService) syncSubscriptionReferralReward(ctx context.Context, o *
 		Provider:              paymentReferralProviderKey(o),
 		Channel:               o.PaymentType,
 		Currency:              ReferralSettlementCurrencyCNY,
-		GrossAmount:           grossAmount,
+		GrossAmount:           settlement.amount(grossAmount),
 		DiscountAmount:        0,
-		PaidAmount:            paidAmount,
+		PaidAmount:            settlement.amount(paidAmount),
 		GiftBalanceAmount:     0,
 		CreditedBalanceAmount: 0,
 		SkipBalanceCredit:     true,
 		PaidAt:                o.PaidAt,
-		MetadataJSON:          string(metadataJSON),
+		MetadataJSON:          metadataJSON,
 		Notes:                 fmt.Sprintf("subscription payment order %d", o.ID),
 	})
 	return err
@@ -958,7 +1074,7 @@ func (s *PaymentService) RetryFailedSubscriptionReferralRewards(ctx context.Cont
 			continue
 		}
 
-		if err := s.syncSubscriptionReferralReward(ctx, order); err != nil {
+		if err := s.syncReferralReward(ctx, order); err != nil {
 			slog.Warn("retry subscription referral reward sync failed", "orderID", orderID, "error", err)
 			continue
 		}
@@ -1116,10 +1232,119 @@ func (s *PaymentService) shouldUseSubscriptionEntitlementV2(ctx context.Context,
 	if s == nil || o == nil || o.PlanID == nil {
 		return false
 	}
+	if enabled, snapshotted := paymentOrderEntitlementV2Mode(o); snapshotted {
+		return enabled
+	}
 	if s.settingSvc == nil {
 		return false
 	}
 	return s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled
+}
+
+func paymentOrderEntitlementV2Mode(o *dbent.PaymentOrder) (bool, bool) {
+	if o == nil || o.ProviderSnapshot == nil {
+		return false, false
+	}
+	raw, ok := o.ProviderSnapshot[paymentOrderSnapshotEntitlementV2Enabled]
+	if !ok {
+		return false, false
+	}
+	switch value := raw.(type) {
+	case bool:
+		return value, true
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(value))
+		if err == nil {
+			return parsed, true
+		}
+	}
+	return false, false
+}
+
+func paymentOrderEntitlementPlanSnapshot(o *dbent.PaymentOrder) (*SubscriptionEntitlementPlan, bool, error) {
+	if o == nil || o.ProviderSnapshot == nil {
+		return nil, false, nil
+	}
+	raw, ok := o.ProviderSnapshot[paymentOrderSnapshotEntitlementPlan]
+	if !ok {
+		return nil, false, nil
+	}
+	encoded, err := json.Marshal(raw)
+	if err != nil {
+		return nil, true, fmt.Errorf("encode subscription entitlement plan snapshot: %w", err)
+	}
+	var snapshot paymentOrderEntitlementPlanSnapshotPayload
+	if err := json.Unmarshal(encoded, &snapshot); err != nil {
+		return nil, true, fmt.Errorf("decode subscription entitlement plan snapshot: %w", err)
+	}
+	if snapshot.PlanID <= 0 || o.PlanID == nil || snapshot.PlanID != *o.PlanID {
+		return nil, true, errors.New("subscription entitlement plan snapshot does not match order")
+	}
+	groupIDs := uniquePositiveInt64s(snapshot.GroupIDs)
+	if len(groupIDs) == 0 {
+		return nil, true, errors.New("subscription entitlement plan snapshot has no groups")
+	}
+	groups := make([]SubscriptionEntitlementPlanGroup, 0, len(groupIDs))
+	for index, groupID := range groupIDs {
+		groups = append(groups, SubscriptionEntitlementPlanGroup{
+			GroupID:   groupID,
+			SortOrder: index,
+			Enabled:   true,
+		})
+	}
+	return &SubscriptionEntitlementPlan{
+		ID:               snapshot.PlanID,
+		GroupID:          snapshot.PrimaryGroupID,
+		Name:             snapshot.Name,
+		Description:      snapshot.Description,
+		Price:            snapshot.Price,
+		Currency:         snapshot.Currency,
+		ValidityDays:     snapshot.ValidityDays,
+		ValidityUnit:     snapshot.ValidityUnit,
+		AccessScope:      snapshot.AccessScope,
+		AllowedPlatforms: append([]string(nil), snapshot.AllowedPlatforms...),
+		DailyLimitUSD:    cloneFloat64Ptr(snapshot.DailyLimitUSD),
+		WeeklyLimitUSD:   cloneFloat64Ptr(snapshot.WeeklyLimitUSD),
+		MonthlyLimitUSD:  cloneFloat64Ptr(snapshot.MonthlyLimitUSD),
+		OveragePolicy:    snapshot.OveragePolicy,
+		Features:         snapshot.Features,
+		ProductName:      snapshot.ProductName,
+		ForSale:          true,
+		Groups:           groups,
+	}, true, nil
+}
+
+func uniquePositiveInt64s(values []int64) []int64 {
+	seen := make(map[int64]struct{}, len(values))
+	result := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func (s *PaymentService) validatePaymentEntitlementPlanSnapshotGroups(ctx context.Context, plan *SubscriptionEntitlementPlan) error {
+	if plan == nil || len(plan.Groups) == 0 {
+		return ErrSubscriptionEntitlementPlanInvalid
+	}
+	if s == nil || s.groupRepo == nil {
+		return errors.New("subscription entitlement group repository is not configured")
+	}
+	for index := range plan.Groups {
+		group, err := s.groupRepo.GetByID(ctx, plan.Groups[index].GroupID)
+		if err != nil || group == nil || !group.IsActive() || !group.SupportsSubscriptionAccess() {
+			return fmt.Errorf("subscription entitlement group %d is no longer available", plan.Groups[index].GroupID)
+		}
+		plan.Groups[index].Group = group
+	}
+	return nil
 }
 
 func (s *PaymentService) doSubV2(ctx context.Context, o *dbent.PaymentOrder, lease *paymentFulfillmentLease) error {
@@ -1129,15 +1354,31 @@ func (s *PaymentService) doSubV2(ctx context.Context, o *dbent.PaymentOrder, lea
 	if o == nil || o.PlanID == nil {
 		return infraerrors.BadRequest("INVALID_STATUS", "missing subscription plan")
 	}
+	planSnapshot, snapshotted, err := paymentOrderEntitlementPlanSnapshot(o)
+	if err != nil {
+		return err
+	}
+	if snapshotted {
+		if err := s.validatePaymentEntitlementPlanSnapshotGroups(ctx, planSnapshot); err != nil {
+			return err
+		}
+	}
 
 	input := AssignEntitlementFromPlanInput{
-		UserID:           o.UserID,
-		PlanID:           *o.PlanID,
-		OrderID:          o.ID,
-		SourceType:       SubscriptionEntitlementSourcePaymentOrder,
-		Notes:            subscriptionAssignmentMarker(o.ID),
-		PurchasePrice:    &o.PayAmount,
-		PurchaseCurrency: PaymentOrderCurrency(o),
+		UserID:                o.UserID,
+		PlanID:                *o.PlanID,
+		RequireEligibleGroups: true,
+		PlanSnapshot:          planSnapshot,
+		OrderID:               o.ID,
+		SourceType:            SubscriptionEntitlementSourcePaymentOrder,
+		Notes:                 subscriptionAssignmentMarker(o.ID),
+		PurchasePrice:         &o.PayAmount,
+		PurchaseCurrency:      PaymentOrderCurrency(o),
+	}
+	if input.PurchaseCurrency == "USD" {
+		if rate, snapshotted := subscriptionReferralSettlementRateFromOrder(o); snapshotted && rate > 0 {
+			input.PurchaseCNYPerUSDRate = &rate
+		}
 	}
 	if o.SubscriptionDays != nil && *o.SubscriptionDays > 0 {
 		input.ValidityDaysOverride = *o.SubscriptionDays
@@ -1341,7 +1582,7 @@ func hasPaymentSubscriptionAssignmentAudit(ctx context.Context, client *dbent.Cl
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {
 	oid := strconv.FormatInt(orderID, 10)
-	c, _ := s.entClient.PaymentAuditLog.Query().
+	c, _ := s.paymentOrderClient(ctx).PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(oid), paymentauditlog.ActionEQ(action)).
 		Limit(1).Count(ctx)
 	return c > 0

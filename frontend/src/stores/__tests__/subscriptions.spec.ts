@@ -103,6 +103,48 @@ describe('useSubscriptionStore', () => {
       expect(mockGetActiveSubscriptions).toHaveBeenCalledTimes(1)
       expect(mockGetEntitlements).toHaveBeenCalledTimes(1)
     })
+
+    it('does not restore entitlements after logout clears an in-flight request', async () => {
+      let resolveRequest!: (value: any[]) => void
+      mockGetEntitlements.mockImplementation(
+        () => new Promise<any[]>((resolve) => { resolveRequest = resolve })
+      )
+      const store = useSubscriptionStore()
+
+      const request = store.fetchEntitlements()
+      store.clear()
+      resolveRequest([{
+        id: 10,
+        plan_id: 2,
+        plan_name: 'Shared Pro',
+        name: 'Shared Pro',
+        status: 'active',
+        starts_at: '2026-01-01T00:00:00Z',
+        expires_at: '2026-02-01T00:00:00Z',
+        groups: [],
+        daily_limit_usd: null,
+        daily_usage_usd: 0,
+        daily_window_start: null,
+        daily_resets_at: null,
+        daily_resets_in_seconds: null,
+        weekly_limit_usd: null,
+        weekly_usage_usd: 0,
+        weekly_window_start: null,
+        weekly_resets_at: null,
+        weekly_resets_in_seconds: null,
+        monthly_limit_usd: null,
+        monthly_usage_usd: 0,
+        monthly_window_start: null,
+        monthly_resets_at: null,
+        monthly_resets_in_seconds: null,
+        overage_policy: 'block',
+        legacy_subscription_id: null,
+      }])
+      await request
+
+      expect(store.entitlements).toEqual([])
+      expect(store.entitlementsLoading).toBe(false)
+    })
   })
 
   // --- fetchActiveSubscriptions ---
@@ -271,6 +313,7 @@ describe('useSubscriptionStore', () => {
       // 推进5分钟只触发一次
       vi.advanceTimersByTime(5 * 60 * 1000)
       expect(mockGetActiveSubscriptions).toHaveBeenCalledTimes(1)
+      expect(mockGetEntitlements).toHaveBeenCalledTimes(1)
 
       store.stopPolling()
     })
@@ -284,6 +327,7 @@ describe('useSubscriptionStore', () => {
 
       vi.advanceTimersByTime(10 * 60 * 1000)
       expect(mockGetActiveSubscriptions).not.toHaveBeenCalled()
+      expect(mockGetEntitlements).not.toHaveBeenCalled()
     })
   })
 })
