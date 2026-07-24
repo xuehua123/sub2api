@@ -143,7 +143,26 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	if err != nil {
 		return nil, nil, err
 	}
+	if access == nil || len(access.GroupIDs) == 0 {
+		return nil, nil, infraerrors.NotFound("PLAN_NOT_AVAILABLE", "plan has no active subscription groups")
+	}
+	if err := s.requireSubscriptionEntitlementsV2ForPlanAccess(ctx, access); err != nil {
+		return nil, nil, err
+	}
 	return plan, access, nil
+}
+
+// requireSubscriptionEntitlementsV2ForPlanAccess prevents a multi-group plan
+// from being sold through the legacy fulfillment path, which can only assign
+// the primary group recorded on payment_orders.
+func (s *PaymentService) requireSubscriptionEntitlementsV2ForPlanAccess(ctx context.Context, access *SubscriptionPlanOrderAccess) error {
+	if access == nil || len(access.GroupIDs) <= 1 {
+		return nil
+	}
+	if s != nil && s.settingSvc != nil && s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled {
+		return nil
+	}
+	return infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENTS_V2_REQUIRED", "multi-group subscription plans require subscription entitlements v2")
 }
 
 func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, planAccess *SubscriptionPlanOrderAccess, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
@@ -168,6 +187,8 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	providerSnapshot = withSubscriptionReferralSettlementRate(providerSnapshot, req, sel, cfg)
+	providerSnapshot = s.withSubscriptionEntitlementModeSnapshot(ctx, providerSnapshot, plan, planAccess)
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -316,6 +337,93 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 	return snapshot
 }
 
+const (
+	paymentOrderSnapshotSubscriptionUSDToCNYRate = "subscription_usd_to_cny_rate"
+	paymentOrderSnapshotEntitlementV2Enabled     = "subscription_entitlements_v2_enabled"
+	paymentOrderSnapshotEntitlementPlan          = "subscription_entitlement_plan"
+)
+
+type paymentOrderEntitlementPlanSnapshotPayload struct {
+	PlanID           int64    `json:"plan_id"`
+	PrimaryGroupID   int64    `json:"primary_group_id"`
+	GroupIDs         []int64  `json:"group_ids"`
+	Name             string   `json:"name"`
+	Description      string   `json:"description"`
+	Price            float64  `json:"price"`
+	Currency         string   `json:"currency"`
+	ValidityDays     int      `json:"validity_days"`
+	ValidityUnit     string   `json:"validity_unit"`
+	AccessScope      string   `json:"access_scope"`
+	AllowedPlatforms []string `json:"allowed_platforms"`
+	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	OveragePolicy    string   `json:"overage_policy"`
+	Features         string   `json:"features"`
+	ProductName      string   `json:"product_name"`
+}
+
+// withSubscriptionEntitlementModeSnapshot records the entitlement mode that
+// applied when the customer created a subscription order. Fulfillment must not
+// silently change a paid order from multi-group entitlements to the legacy
+// single-group path if an administrator later changes the runtime switch.
+func (s *PaymentService) withSubscriptionEntitlementModeSnapshot(ctx context.Context, snapshot map[string]any, plan *dbent.SubscriptionPlan, access *SubscriptionPlanOrderAccess) map[string]any {
+	if plan == nil {
+		return snapshot
+	}
+	if snapshot == nil {
+		snapshot = make(map[string]any, 1)
+	}
+	enabled := false
+	if s != nil && s.settingSvc != nil {
+		enabled = s.settingSvc.GetSubscriptionEntitlementsRuntime(ctx).Enabled
+	}
+	snapshot[paymentOrderSnapshotEntitlementV2Enabled] = enabled
+	if enabled && access != nil && len(access.GroupIDs) > 0 {
+		snapshot[paymentOrderSnapshotEntitlementPlan] = paymentOrderEntitlementPlanSnapshotPayload{
+			PlanID:           plan.ID,
+			PrimaryGroupID:   access.PrimaryGroupID,
+			GroupIDs:         append([]int64(nil), access.GroupIDs...),
+			Name:             plan.Name,
+			Description:      plan.Description,
+			Price:            plan.Price,
+			Currency:         plan.Currency,
+			ValidityDays:     plan.ValidityDays,
+			ValidityUnit:     plan.ValidityUnit,
+			AccessScope:      plan.AccessScope,
+			AllowedPlatforms: append([]string(nil), plan.AllowedPlatforms...),
+			DailyLimitUSD:    cloneFloat64Ptr(plan.DailyLimitUsd),
+			WeeklyLimitUSD:   cloneFloat64Ptr(plan.WeeklyLimitUsd),
+			MonthlyLimitUSD:  cloneFloat64Ptr(plan.MonthlyLimitUsd),
+			OveragePolicy:    plan.OveragePolicy,
+			Features:         plan.Features,
+			ProductName:      plan.ProductName,
+		}
+	}
+	return snapshot
+}
+
+// withSubscriptionReferralSettlementRate records the rate used to settle a
+// USD subscription referral in the CNY-only ledger. It is an order-time
+// financial snapshot, so later configuration changes cannot alter a payment
+// that has already been created.
+func withSubscriptionReferralSettlementRate(snapshot map[string]any, req CreateOrderRequest, sel *payment.InstanceSelection, cfg *PaymentConfig) map[string]any {
+	if snapshot == nil || sel == nil || req.OrderType != payment.OrderTypeSubscription {
+		return snapshot
+	}
+	if paymentProviderConfigCurrency(sel.ProviderKey, sel.Config) != "USD" {
+		return snapshot
+	}
+	rate := 0.0
+	if cfg != nil {
+		rate = normalizeSubscriptionUSDToCNYRate(cfg.SubscriptionUSDToCNYRate)
+	}
+	// Store zero as well: it is the explicit "conversion disabled" state for
+	// this order and must not be replaced by a later configuration change.
+	snapshot[paymentOrderSnapshotSubscriptionUSDToCNYRate] = rate
+	return snapshot
+}
+
 func paymentOrderSnapshotWxpayAppID(sel *payment.InstanceSelection, req CreateOrderRequest) string {
 	if sel == nil || strings.TrimSpace(sel.ProviderKey) != payment.TypeWxpay {
 		return ""
@@ -454,6 +562,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	if sel.ProviderKey == payment.TypeWxpay {
 		providerReq.NotifyURL = buildNotifyURLWithInstanceHint(providerReq.NotifyURL, sel.InstanceID)
 	}
+	providerReq.AlipayMobilePrecreate = shouldUseAlipayMobilePrecreate(req, cfg, sel)
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
 	pr, err := prov.CreatePayment(ctx, providerReq)
 	finishProviderCall()
@@ -489,7 +598,16 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 	}
 	resp := buildCreateOrderResponse(order, req, payAmount, sel, pr, resultType)
 	resp.ResumeToken = resumeToken
+	resp.AlipayMobilePrecreateDeepLink = providerReq.AlipayMobilePrecreate && strings.TrimSpace(pr.QRCode) != ""
 	return resp, nil
+}
+
+func shouldUseAlipayMobilePrecreate(req CreateOrderRequest, cfg *PaymentConfig, sel *payment.InstanceSelection) bool {
+	return cfg != nil &&
+		cfg.AlipayMobilePrecreateDeepLink &&
+		req.IsMobile &&
+		sel != nil &&
+		strings.EqualFold(strings.TrimSpace(sel.ProviderKey), payment.TypeAlipay)
 }
 
 func sanitizeCreatePaymentResponseDetails(pr *payment.CreatePaymentResponse) {

@@ -14,6 +14,7 @@ import (
 
 type EntitlementHandler struct {
 	entitlementService *service.SubscriptionEntitlementService
+	runtimeProvider    service.SubscriptionEntitlementsRuntimeProvider
 	nowFunc            func() time.Time
 }
 
@@ -27,9 +28,13 @@ type AdvanceEntitlementMonthlyCycleResponse struct {
 	NewMonthlyWindowStart time.Time            `json:"new_monthly_window_start"`
 }
 
-func NewEntitlementHandler(entitlementService *service.SubscriptionEntitlementService) *EntitlementHandler {
+func NewEntitlementHandler(
+	entitlementService *service.SubscriptionEntitlementService,
+	runtimeProvider service.SubscriptionEntitlementsRuntimeProvider,
+) *EntitlementHandler {
 	return &EntitlementHandler{
 		entitlementService: entitlementService,
+		runtimeProvider:    runtimeProvider,
 		nowFunc:            time.Now,
 	}
 }
@@ -44,6 +49,10 @@ func (h *EntitlementHandler) List(c *gin.Context) {
 	subject, ok := middleware2.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not found in context")
+		return
+	}
+	if !h.entitlementsEnabled(c) {
+		response.Success(c, []dto.UserEntitlement{})
 		return
 	}
 
@@ -61,6 +70,10 @@ func (h *EntitlementHandler) GetActive(c *gin.Context) {
 		response.Unauthorized(c, "User not found in context")
 		return
 	}
+	if !h.entitlementsEnabled(c) {
+		response.Success(c, []dto.UserEntitlement{})
+		return
+	}
 
 	entitlements, err := h.entitlementService.ListActiveUserEntitlements(c.Request.Context(), subject.UserID, h.now())
 	if err != nil {
@@ -68,6 +81,12 @@ func (h *EntitlementHandler) GetActive(c *gin.Context) {
 		return
 	}
 	response.Success(c, dto.UserEntitlementsFromService(entitlements, h.now()))
+}
+
+func (h *EntitlementHandler) entitlementsEnabled(c *gin.Context) bool {
+	return h != nil &&
+		h.runtimeProvider != nil &&
+		h.runtimeProvider.GetSubscriptionEntitlementsRuntime(c.Request.Context()).Enabled
 }
 
 func (h *EntitlementHandler) GetProgress(c *gin.Context) {

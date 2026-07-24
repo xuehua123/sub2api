@@ -249,6 +249,40 @@ func (r *subscriptionEntitlementRepository) UpdateTermAndSource(ctx context.Cont
 	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
 }
 
+func (r *subscriptionEntitlementRepository) CompareAndSwapTerm(
+	ctx context.Context,
+	id int64,
+	expectedUpdatedAt time.Time,
+	startsAt time.Time,
+	expiresAt time.Time,
+	status string,
+	notes string,
+) (time.Time, bool, error) {
+	client := clientFromContext(ctx, r.client)
+	updatedAt := time.Now()
+	if !updatedAt.After(expectedUpdatedAt) {
+		updatedAt = expectedUpdatedAt.Add(time.Microsecond)
+	}
+	update := client.SubscriptionEntitlement.Update().
+		Where(
+			subscriptionentitlement.IDEQ(id),
+			subscriptionentitlement.UpdatedAtEQ(expectedUpdatedAt),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		SetStartsAt(startsAt).
+		SetExpiresAt(expiresAt).
+		SetNotes(notes).
+		SetUpdatedAt(updatedAt)
+	if status != "" {
+		update.SetStatus(status)
+	}
+	affected, err := update.Save(ctx)
+	if err != nil {
+		return time.Time{}, false, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
+	}
+	return updatedAt, affected == 1, nil
+}
+
 func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, fulfillment *service.SubscriptionEntitlementFulfillment, resetUsage bool, resetWindowStart time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
 		if err := updateSubscriptionEntitlementTermAndSourceWithClient(txCtx, txClient, id, startsAt, expiresAt, status, notes, source, resetUsage, resetWindowStart); err != nil {

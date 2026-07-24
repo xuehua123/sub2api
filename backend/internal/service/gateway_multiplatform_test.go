@@ -19,6 +19,44 @@ func testConfig() *config.Config {
 	return &config.Config{RunMode: config.RunModeStandard}
 }
 
+func TestCompositeRouteSchedulingUsesItsResolvedPlatformStrictly(t *testing.T) {
+	groupID := int64(99)
+	accounts := []Account{
+		{ID: 1, Platform: PlatformAnthropic, Priority: 2, Status: StatusActive, Schedulable: true},
+		{ID: 2, Platform: PlatformAntigravity, Priority: 1, Status: StatusActive, Schedulable: true, Extra: map[string]any{"mixed_scheduling": true}},
+	}
+	accountRepo := &mockAccountRepoForPlatform{accounts: accounts, accountsByID: map[int64]*Account{}}
+	for i := range accountRepo.accounts {
+		accountRepo.accountsByID[accountRepo.accounts[i].ID] = &accountRepo.accounts[i]
+	}
+	groupRepo := &mockGroupRepoForGateway{groups: map[int64]*Group{
+		groupID: {ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true},
+	}}
+	resolver := NewCompositeRouteResolver(compositeRouteRepoStub{routes: []CompositeModelRoute{{
+		ID:             1,
+		GroupID:        groupID,
+		PublicModel:    "router/claude",
+		MatchType:      CompositeRouteMatchExact,
+		TargetPlatform: PlatformAnthropic,
+		UpstreamModel:  "claude-sonnet-4-6",
+		Endpoint:       CompositeRouteEndpointAny,
+		Enabled:        true,
+	}}})
+	svc := &GatewayService{
+		accountRepo:       accountRepo,
+		groupRepo:         groupRepo,
+		cache:             &mockGatewayCacheForPlatform{},
+		cfg:               testConfig(),
+		compositeResolver: resolver,
+	}
+
+	account, err := svc.SelectAccountForModelWithExclusions(context.Background(), &groupID, "", "router/claude", nil)
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(1), account.ID)
+	require.Equal(t, PlatformAnthropic, account.Platform)
+}
+
 // mockAccountRepoForPlatform 单平台测试用的 mock
 type mockAccountRepoForPlatform struct {
 	accounts         []Account

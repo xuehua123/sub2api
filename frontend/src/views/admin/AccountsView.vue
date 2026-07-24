@@ -1883,8 +1883,8 @@ const allColumns = computed(() => {
   if (!authStore.isSimpleMode) {
     c.push({ key: 'groups', label: t('admin.accounts.columns.groups'), sortable: false })
   }
+  c.push({ key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false })
   c.push(
-    { key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false },
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
     { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
@@ -2721,6 +2721,12 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
+  // Register DOM listeners before asynchronous initialization. Tests and route
+  // changes can unmount the view while the initial requests are still pending.
+  window.addEventListener('scroll', handleScroll, true)
+  window.addEventListener('resize', handleViewportResize)
+  document.addEventListener('click', handleClickOutside)
+
   applyRouteFocus()
   await load()
   try {
@@ -2732,9 +2738,6 @@ onMounted(async () => {
   }
   await loadRateMultiplierPrioritySettings()
   await openHealthDrawerFromRoute()
-  window.addEventListener('scroll', handleScroll, true)
-  window.addEventListener('resize', handleViewportResize)
-  document.addEventListener('click', handleClickOutside)
 
   if (autoRefreshEnabled.value) {
     autoRefreshCountdown.value = autoRefreshIntervalSeconds.value

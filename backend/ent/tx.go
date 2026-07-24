@@ -52,6 +52,8 @@ type Tx struct {
 	CommissionWithdrawal *CommissionWithdrawalClient
 	// CommissionWithdrawalItem is the client for interacting with the CommissionWithdrawalItem builders.
 	CommissionWithdrawalItem *CommissionWithdrawalItemClient
+	// CompositeModelRoute is the client for interacting with the CompositeModelRoute builders.
+	CompositeModelRoute *CompositeModelRouteClient
 	// ErrorPassthroughRule is the client for interacting with the ErrorPassthroughRule builders.
 	ErrorPassthroughRule *ErrorPassthroughRuleClient
 	// Group is the client for interacting with the Group builders.
@@ -284,6 +286,7 @@ func (tx *Tx) init() {
 	tx.CommissionReward = NewCommissionRewardClient(tx.config)
 	tx.CommissionWithdrawal = NewCommissionWithdrawalClient(tx.config)
 	tx.CommissionWithdrawalItem = NewCommissionWithdrawalItemClient(tx.config)
+	tx.CompositeModelRoute = NewCompositeModelRouteClient(tx.config)
 	tx.ErrorPassthroughRule = NewErrorPassthroughRuleClient(tx.config)
 	tx.Group = NewGroupClient(tx.config)
 	tx.IdempotencyRecord = NewIdempotencyRecordClient(tx.config)

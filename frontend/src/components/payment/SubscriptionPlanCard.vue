@@ -142,6 +142,7 @@ import { useAppStore } from '@/stores/app'
 import { hasPeakRate as groupHasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { planValiditySuffix } from './validity'
 import { currencySymbol } from '@/components/payment/currency'
+import { subscriptionMatchesPlan } from '@/utils/subscriptionPlanDisplay'
 import {
   platformAccentBarClass,
   platformBadgeLightClass,
@@ -153,7 +154,14 @@ import {
   platformLabel,
 } from '@/utils/platformColors'
 
-const props = defineProps<{ plan: SubscriptionPlan; activeSubscriptions?: UserSubscription[] }>()
+const props = withDefaults(defineProps<{
+  plan: SubscriptionPlan
+  activeSubscriptions?: UserSubscription[]
+  subscriptionUsdToCnyRate?: number
+}>(), {
+  activeSubscriptions: () => [],
+  subscriptionUsdToCnyRate: 0,
+})
 const emit = defineEmits<{ select: [plan: SubscriptionPlan] }>()
 const { t, locale } = useI18n()
 
@@ -192,8 +200,14 @@ const platform = computed(() => {
   return primaryGroup.value?.platform || props.plan.group_platform || ''
 })
 const planGroupIDs = computed(() => new Set(includedGroups.value.map(group => group.id)))
+function subscriptionCoversPlan(subscription: UserSubscription): boolean {
+  if (subscription.status !== 'active') return false
+  if (subscription.plan_id) return subscriptionMatchesPlan(subscription, props.plan)
+  if (planGroupIDs.value.has(subscription.group_id)) return true
+  return subscription.groups?.some((group) => planGroupIDs.value.has(group.id)) ?? false
+}
 const isRenewal = computed(() =>
-  props.activeSubscriptions?.some(sub => sub.status === 'active' && planGroupIDs.value.has(sub.group_id)) ?? false
+  props.activeSubscriptions?.some(subscriptionCoversPlan) ?? false
 )
 
 const accentClass = computed(() => platformAccentBarClass(platform.value))
@@ -238,12 +252,13 @@ const quotaMetricValue = computed(() => {
 const unitCost = computed(() => {
   const quota = quotaMetric.value?.value
   if (!quota || quota <= 0 || props.plan.price <= 0) return null
-  return props.plan.price / quota
+  const rate = props.subscriptionUsdToCnyRate > 0 ? props.subscriptionUsdToCnyRate : 1
+  return (props.plan.price * rate) / quota
 })
 
 const unitCostText = computed(() => {
   if (!unitCost.value) return t('payment.planCard.priceUnavailable')
-  return t('payment.planCard.unitCostValue', { amount: formatPlanCurrency(unitCost.value) })
+  return t('payment.planCard.unitCostValue', { amount: formatCNY(unitCost.value) })
 })
 
 const overagePolicyText = computed(() => {
@@ -293,10 +308,10 @@ function formatAmount(value: number | null | undefined): string {
   }).format(amount)
 }
 
-function formatPlanCurrency(value: number): string {
+function formatCNY(value: number): string {
   return new Intl.NumberFormat(locale.value, {
     style: 'currency',
-    currency: planCurrency.value,
+    currency: 'CNY',
     maximumFractionDigits: value > 0 && value < 1 ? 4 : 2,
     minimumFractionDigits: value > 0 && value < 1 ? 4 : 2,
   }).format(value)
@@ -313,7 +328,7 @@ function rateText(rate: number | null | undefined): string {
 function groupUnitCostText(rate: number | null | undefined): string {
   if (!unitCost.value) return t('payment.planCard.priceUnavailable')
   return t('payment.planCard.unitCostValue', {
-    amount: formatPlanCurrency(unitCost.value * normalizedRate(rate))
+    amount: formatCNY(unitCost.value * normalizedRate(rate))
   })
 }
 </script>

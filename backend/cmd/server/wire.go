@@ -114,6 +114,7 @@ func provideCleanup(
 	rateMultiplierPriority *service.RateMultiplierPriorityService,
 	upstreamConnectionSync *service.UpstreamConnectionSyncService,
 	referralSettlement *service.ReferralSettlementService,
+	ollamaCloudUsage *service.OllamaCloudUsageService,
 	auditLog *service.AuditLogService,
 	promptAudit *securityaudit.PromptService,
 ) func() {
@@ -343,6 +344,12 @@ func provideCleanup(
 			{"ReferralSettlementRunner", func() error {
 				if referralSettlement != nil {
 					referralSettlement.StopBackgroundRunner()
+				}
+				return nil
+			}},
+			{"OllamaCloudUsageService", func() error {
+				if ollamaCloudUsage != nil {
+					ollamaCloudUsage.Stop()
 				}
 				return nil
 			}},

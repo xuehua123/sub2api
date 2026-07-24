@@ -28,6 +28,7 @@ var (
 	ErrSubscriptionEntitlementPlanRequired  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_REQUIRED", "subscription plan is required")
 	ErrSubscriptionEntitlementPlanInvalid   = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_INVALID", "subscription plan cannot grant an entitlement")
 	ErrSubscriptionEntitlementPlanNotFound  = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_PLAN_NOT_FOUND", "subscription plan not found")
+	ErrSubscriptionEntitlementTermConflict  = infraerrors.Conflict("SUBSCRIPTION_ENTITLEMENT_TERM_CONFLICT", "subscription entitlement term changed concurrently")
 )
 
 type SubscriptionEntitlement struct {
@@ -127,6 +128,7 @@ type SubscriptionEntitlementPlan struct {
 	Name         string
 	Description  string
 	Price        float64
+	Currency     string
 	ValidityDays int
 	ValidityUnit string
 	AccessScope  string

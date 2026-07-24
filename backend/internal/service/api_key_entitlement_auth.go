@@ -27,7 +27,7 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 	if s == nil || !s.subscriptionEntitlementsRuntime(ctx).Enabled {
 		return nil, nil
 	}
-	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil || !apiKey.Group.SupportsSubscriptionAccess() {
+	if apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
 		return nil, ErrGroupNotAllowed
 	}
 	if s.subscriptionEntitlementSvc == nil {
@@ -36,10 +36,24 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 
 	fromGroup := apiKey.Group
 	fromGroupID := fromGroup.ID
+	if !fromGroup.SupportsSubscriptionAccess() {
+		currentGroupUnavailable = true
+	}
 	currentErr := entitlementCurrentGroupError(fromGroup, req, currentGroupUnavailable)
 	resolution, err := s.resolveEntitlementAuthBinding(ctx, apiKey.User.ID, fromGroupID, apiKey.SubscriptionEntitlementID)
 	if err != nil {
-		return nil, err
+		if !apiKey.AutoSwitchGroupEnabled || apiKey.SubscriptionEntitlementID == nil || !errors.Is(err, ErrGroupNotAllowed) {
+			return nil, err
+		}
+		entitlement, bindingErr := s.subscriptionEntitlementSvc.resolveExplicitBinding(ctx, apiKey.User.ID, *apiKey.SubscriptionEntitlementID, time.Time{})
+		if bindingErr != nil {
+			return nil, bindingErr
+		}
+		switchGroup := selectEntitlementSwitchGroup(entitlement, fromGroup, fromGroupID, req)
+		if switchGroup == nil {
+			return nil, err
+		}
+		return s.entitlementAuthResult(ctx, entitlement, switchGroup, true, fromGroupID, switchGroup.ID, entitlementSwitchReason(err), apiKey.User.ID), nil
 	}
 	if currentErr == nil {
 		return s.entitlementAuthResult(ctx, resolution.Entitlement, resolution.Group, false, fromGroupID, fromGroupID, "", apiKey.User.ID), nil

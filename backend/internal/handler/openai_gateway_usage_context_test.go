@@ -44,6 +44,31 @@ func TestOpenAISubmitUsageRecordTaskCopiesRequestContext(t *testing.T) {
 	require.Equal(t, "openai-request-456", gotRequestID)
 }
 
+func TestOpenAISubmitUsageRecordTaskCopiesCompositeRouteContext(t *testing.T) {
+	parent := context.WithValue(context.Background(), ctxkey.ResolvedTargetPlatform, service.PlatformGemini)
+	parent = context.WithValue(parent, ctxkey.ResolvedUpstreamModel, "gemini-2.5-pro")
+	parent = context.WithValue(parent, ctxkey.RequestedPublicModel, "router/pro")
+	parent = context.WithValue(parent, ctxkey.CompositeRouteSource, "route")
+
+	values := map[ctxkey.Key]string{}
+	h := &OpenAIGatewayHandler{}
+	h.submitUsageRecordTask(parent, func(ctx context.Context) {
+		for _, key := range []ctxkey.Key{
+			ctxkey.ResolvedTargetPlatform,
+			ctxkey.ResolvedUpstreamModel,
+			ctxkey.RequestedPublicModel,
+			ctxkey.CompositeRouteSource,
+		} {
+			values[key], _ = ctx.Value(key).(string)
+		}
+	})
+
+	require.Equal(t, service.PlatformGemini, values[ctxkey.ResolvedTargetPlatform])
+	require.Equal(t, "gemini-2.5-pro", values[ctxkey.ResolvedUpstreamModel])
+	require.Equal(t, "router/pro", values[ctxkey.RequestedPublicModel])
+	require.Equal(t, "route", values[ctxkey.CompositeRouteSource])
+}
+
 func TestSubscriptionEntitlementUsageContextReadsMiddlewareResult(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()

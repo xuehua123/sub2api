@@ -45,6 +45,17 @@ func (s *ProxyExpirySuite) mkAccountWithProxy(proxyID int64) int64 {
 	return id
 }
 
+func (s *ProxyExpirySuite) mkOllamaUsageAccountWithProxy(proxyID int64) int64 {
+	var id int64
+	err := scanSingleRow(s.ctx, s.tx, `
+		INSERT INTO accounts (name, platform, type, credentials, extra, status, proxy_id, created_at, updated_at)
+		VALUES ($1, 'openai', 'apikey', '{}', '{"ollama_cloud_usage_snapshot":{"remaining":10}}', 'active', $2, NOW(), NOW())
+		RETURNING id`,
+		[]any{"ollama-usage-acc-" + time.Now().Format("150405.000000"), proxyID}, &id)
+	s.Require().NoError(err)
+	return id
+}
+
 func (s *ProxyExpirySuite) accountProxyID(id int64) *int64 {
 	var pid *int64
 	err := scanSingleRow(s.ctx, s.tx, `SELECT proxy_id FROM accounts WHERE id=$1`, []any{id}, &pid)
@@ -137,4 +148,34 @@ func (s *ProxyExpirySuite) TestSweep_NoneMode_KeepsAccount() {
 	err = scanSingleRow(s.ctx, s.tx, `SELECT proxy_fallback_origin_id FROM accounts WHERE id=$1`, []any{aid}, &origin)
 	s.Require().NoError(err)
 	s.Require().Nil(origin)
+}
+
+func (s *ProxyExpirySuite) TestSweep_NoneModeInvalidatesOllamaUsageSnapshot() {
+	past := time.Now().Add(-time.Hour)
+	proxyID := s.mkProxy("p-none-ollama-usage", service.FallbackModeNone, &past, nil)
+	accountID := s.mkOllamaUsageAccountWithProxy(proxyID)
+
+	changed, err := s.repo.SweepExpiredProxies(s.ctx, time.Now())
+	s.Require().NoError(err)
+	s.Require().Zero(changed, "no-fallback mode keeps the proxy binding")
+	s.Require().Equal(proxyID, *s.accountProxyID(accountID))
+
+	var hasSnapshot bool
+	err = scanSingleRow(s.ctx, s.tx,
+		"SELECT extra ? 'ollama_cloud_usage_snapshot' FROM accounts WHERE id=$1", []any{accountID}, &hasSnapshot)
+	s.Require().NoError(err)
+	s.Require().False(hasSnapshot)
+
+	var payloadRaw []byte
+	err = scanSingleRow(s.ctx, s.tx, `
+		SELECT payload FROM scheduler_outbox
+		WHERE event_type=$1
+		ORDER BY id DESC
+		LIMIT 1`, []any{service.SchedulerOutboxEventAccountBulkChanged}, &payloadRaw)
+	s.Require().NoError(err)
+	var payload struct {
+		AccountIDs []int64 `json:"account_ids"`
+	}
+	s.Require().NoError(json.Unmarshal(payloadRaw, &payload))
+	s.Require().Equal([]int64{accountID}, payload.AccountIDs)
 }

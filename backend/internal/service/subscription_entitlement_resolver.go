@@ -84,6 +84,32 @@ func (s *SubscriptionEntitlementService) ValidateBindingForGroup(ctx context.Con
 	return s.resolveBindingCandidate(ent, groupID, s.inputNow(now), "explicit_entitlement")
 }
 
+// resolveExplicitBinding verifies an explicitly selected entitlement before an
+// API key is moved to another group that the same entitlement still covers.
+func (s *SubscriptionEntitlementService) resolveExplicitBinding(ctx context.Context, userID, entitlementID int64, now time.Time) (*SubscriptionEntitlement, error) {
+	if s == nil || s.entitlementRepo == nil || userID <= 0 || entitlementID <= 0 {
+		return nil, ErrGroupNotAllowed
+	}
+	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if ent.UserID != userID {
+		return nil, ErrGroupNotAllowed
+	}
+	resolvedNow := s.inputNow(now)
+	if err := validateEntitlementAvailabilityAt(ent, resolvedNow); err != nil {
+		return nil, err
+	}
+	if err := s.CheckAndResetWindows(ctx, ent, resolvedNow); err != nil {
+		return nil, err
+	}
+	if _, err := s.ValidateAndCheckLimits(ent, 0, resolvedNow); err != nil {
+		return nil, err
+	}
+	return ent, nil
+}
+
 func (s *SubscriptionEntitlementService) ResolveBindingForGroup(ctx context.Context, userID, groupID int64, now time.Time) (*EntitlementResolution, error) {
 	if s == nil || s.entitlementRepo == nil {
 		return nil, ErrSubscriptionEntitlementNotFound

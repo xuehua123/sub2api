@@ -11,6 +11,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplangroup"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
@@ -459,12 +460,14 @@ func TestPaymentConfigUpdatePlanSyncsActiveEntitlementGroups(t *testing.T) {
 
 func TestPlanAutoGrantSyncPlatformsForGroupChangeRules(t *testing.T) {
 	activeAuto := &Group{
+		ID:                   11,
 		Platform:             PlatformOpenAI,
 		Status:               StatusActive,
 		SubscriptionEnabled:  true,
 		PlanAutoGrantEnabled: true,
 	}
 	activeManual := &Group{
+		ID:                   activeAuto.ID,
 		Platform:             PlatformOpenAI,
 		Status:               StatusActive,
 		SubscriptionEnabled:  true,
@@ -472,11 +475,21 @@ func TestPlanAutoGrantSyncPlatformsForGroupChangeRules(t *testing.T) {
 	}
 	disabled := *activeAuto
 	disabled.Status = StatusDisabled
+	disabledManual := *activeManual
+	disabledManual.Status = StatusDisabled
 
 	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeManual, activeAuto))
 	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeAuto, activeAuto), "saving an already auto-granted group should re-sync current dynamic scopes")
-	require.Empty(t, planAutoGrantSyncPlatformsForGroupChange(activeAuto, activeManual), "unchecking auto-grant must not remove existing entitlement scopes")
+	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeAuto, activeManual), "unchecking auto-grant must remove existing entitlement scopes")
 	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeAuto, &disabled), "disabling the group should remove it from dynamic scopes")
+	require.Equal(t, []string{PlatformOpenAI}, planAutoGrantSyncPlatformsForGroupChange(activeManual, &disabledManual), "disabling a non-auto-grant group must retain the upstream cleanup trigger")
+
+	addID, removeID := explicitPlanAutoGrantGroupChangeIDs(activeAuto, activeManual)
+	require.Zero(t, addID)
+	require.Zero(t, removeID, "capability-only changes must not delete an administrator's explicit plan membership")
+
+	_, removeID = explicitPlanAutoGrantGroupChangeIDs(activeAuto, &disabled)
+	require.Equal(t, activeAuto.ID, removeID)
 }
 
 func TestDynamicPlanAutoGrantGroupSyncAddsNewGroupToActiveEntitlements(t *testing.T) {
@@ -551,10 +564,12 @@ func TestDynamicPlanAutoGrantGroupSyncAddsNewGroupToActiveEntitlements(t *testin
 	require.Equal(t, newGroup.ID, activeGroups[1].GroupID)
 
 	_, err = client.Group.UpdateOneID(newGroup.ID).
-		SetStatus(StatusDisabled).
+		SetPlanAutoGrantEnabled(false).
 		Save(ctx)
 	require.NoError(t, err)
-	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), serviceGroup(newGroup, StatusDisabled)))
+	manualNewGroup := serviceGroup(newGroup, StatusActive)
+	manualNewGroup.PlanAutoGrantEnabled = false
+	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), manualNewGroup))
 
 	activeGroups, err = client.SubscriptionEntitlementGroup.Query().
 		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
@@ -657,26 +672,33 @@ func TestExplicitPlanAutoGrantGroupSaveSyncsActiveEntitlements(t *testing.T) {
 	require.Equal(t, newGroup.ID, activeGroups[1].GroupID)
 
 	_, err = client.Group.UpdateOneID(newGroup.ID).
-		SetStatus(StatusDisabled).
+		SetPlanAutoGrantEnabled(false).
 		Save(ctx)
 	require.NoError(t, err)
-	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), serviceGroup(newGroup, StatusDisabled)))
+	manualNewGroup := serviceGroup(newGroup, StatusActive)
+	manualNewGroup.PlanAutoGrantEnabled = false
+	require.NoError(t, syncDynamicPlanAutoGrantScopesForGroupChange(ctx, client, serviceGroup(newGroup, StatusActive), manualNewGroup))
 
 	planGroups, err = client.SubscriptionPlanGroup.Query().
 		Where(subscriptionplangroup.PlanIDEQ(created.ID)).
 		Order(subscriptionplangroup.BySortOrder()).
 		All(ctx)
 	require.NoError(t, err)
-	require.Len(t, planGroups, 1)
+	// An explicit plan has no provenance marker for auto-added groups. Turning
+	// off auto-grant must therefore preserve an administrator's explicit plan
+	// membership rather than deleting a potentially manual selection.
+	require.Len(t, planGroups, 2)
 	require.Equal(t, oldGroup.ID, planGroups[0].GroupID)
+	require.Equal(t, newGroup.ID, planGroups[1].GroupID)
 
 	activeGroups, err = client.SubscriptionEntitlementGroup.Query().
 		Where(subscriptionentitlementgroup.EntitlementIDEQ(activeEnt.ID)).
 		Order(subscriptionentitlementgroup.BySortOrder()).
 		All(ctx)
 	require.NoError(t, err)
-	require.Len(t, activeGroups, 1)
+	require.Len(t, activeGroups, 2)
 	require.Equal(t, oldGroup.ID, activeGroups[0].GroupID)
+	require.Equal(t, newGroup.ID, activeGroups[1].GroupID)
 }
 
 func TestPaymentConfigUpdatePlanRejectsLimitPeriodLongerThanValidity(t *testing.T) {
@@ -772,6 +794,60 @@ func TestPaymentConfigUpdatePlanAllowsForSalePatchWhenExistingGroupIsDisabled(t 
 	require.Equal(t, group.ID, access.PrimaryGroupID)
 	require.Empty(t, access.GroupIDs)
 	require.Empty(t, access.Groups)
+}
+
+func TestPaymentServiceValidateSubOrderRejectsPlanWithoutActiveGroups(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	configSvc := &PaymentConfigService{entClient: client}
+	group := createPaymentConfigPlanTestGroup(t, client, "no-active-groups", PlatformOpenAI, 0)
+	created, err := configSvc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "No Active Groups",
+		GroupIDs:     []int64{group.ID},
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+		ForSale:      true,
+	})
+	require.NoError(t, err)
+
+	_, err = client.Group.UpdateOneID(group.ID).SetSubscriptionEnabled(false).Save(ctx)
+	require.NoError(t, err)
+
+	paymentSvc := &PaymentService{configService: configSvc}
+	_, _, err = paymentSvc.validateSubOrder(ctx, CreateOrderRequest{PlanID: created.ID})
+	require.Error(t, err)
+	require.Equal(t, "PLAN_NOT_AVAILABLE", infraerrors.Reason(err))
+}
+
+func TestPaymentConfigUpdatePlanToDynamicScopeClearsExplicitGroupRows(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{entClient: client}
+	oldGroup := createPaymentConfigPlanTestGroup(t, client, "legacy-explicit", PlatformOpenAI, 0)
+	_, err := client.Group.UpdateOneID(oldGroup.ID).SetPlanAutoGrantEnabled(false).Save(ctx)
+	require.NoError(t, err)
+	newGroup := createPaymentConfigPlanTestGroup(t, client, "dynamic-target", PlatformAnthropic, 1)
+
+	created, err := svc.CreatePlan(ctx, CreatePlanRequest{
+		Name:         "Dynamic Scope",
+		GroupIDs:     []int64{oldGroup.ID},
+		Price:        9.99,
+		ValidityDays: 30,
+		ValidityUnit: "day",
+	})
+	require.NoError(t, err)
+
+	scope := PlanAccessScopeAllSubscriptionGroups
+	updated, err := svc.UpdatePlan(ctx, created.ID, UpdatePlanRequest{AccessScope: &scope})
+	require.NoError(t, err)
+	require.Equal(t, []int64{newGroup.ID}, updated.GroupIDs)
+
+	persisted, err := client.SubscriptionPlanGroup.Query().
+		Where(subscriptionplangroup.PlanIDEQ(created.ID)).
+		All(ctx)
+	require.NoError(t, err)
+	require.Empty(t, persisted)
 }
 
 func createPaymentConfigPlanTestGroup(t *testing.T, client *dbent.Client, name, platform string, sortOrder int) *dbent.Group {

@@ -544,6 +544,58 @@ func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSwitchesOnlyWithinSameEnti
 	require.Equal(t, int64(1), resolved.Entitlement.ID)
 }
 
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSwitchesAfterCurrentGroupLeavesPlanScope(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	ent := testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{30})
+	ent.GroupGrants[0].Group = &Group{ID: 30, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: true}
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true, ent)
+	entitlementID := int64(1)
+
+	resolved, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                        10,
+		UserID:                    1,
+		User:                      &User{ID: 1, Status: StatusActive},
+		GroupID:                   cloneInt64PtrValue(20),
+		Group:                     &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: true},
+		SubscriptionEntitlementID: &entitlementID,
+		AutoSwitchGroupEnabled:    true,
+		Status:                    StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	require.True(t, resolved.Switched)
+	require.Equal(t, int64(20), resolved.FromGroupID)
+	require.Equal(t, int64(30), resolved.ToGroupID)
+	require.Equal(t, entitlementID, resolved.Entitlement.ID)
+}
+
+func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthSwitchesAfterCurrentGroupLosesSubscriptionCapability(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	ent := testBindingEntitlement(1, 1, now.Add(-time.Hour), now.Add(48*time.Hour), SubscriptionStatusActive, []int64{30})
+	ent.GroupGrants[0].Group = &Group{ID: 30, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: true}
+	svc, _, _ := newAPIKeyEntitlementBindingFixture(t, now, true, ent)
+	entitlementID := int64(1)
+
+	resolved, err := svc.ResolveEntitlementForAPIKeyAuth(context.Background(), &APIKey{
+		ID:                        10,
+		UserID:                    1,
+		User:                      &User{ID: 1, Status: StatusActive},
+		GroupID:                   cloneInt64PtrValue(20),
+		Group:                     &Group{ID: 20, Platform: PlatformOpenAI, Status: StatusActive, SubscriptionType: SubscriptionTypeStandard, BalanceEnabled: true},
+		SubscriptionEntitlementID: &entitlementID,
+		AutoSwitchGroupEnabled:    true,
+		Status:                    StatusAPIKeyActive,
+	}, SubscriptionSwitchRequest{}, false)
+
+	require.NoError(t, err)
+	require.NotNil(t, resolved)
+	require.True(t, resolved.Switched)
+	require.Equal(t, int64(20), resolved.FromGroupID)
+	require.Equal(t, int64(30), resolved.ToGroupID)
+	require.Equal(t, entitlementID, resolved.Entitlement.ID)
+}
+
 func TestAPIKeyService_ResolveEntitlementForAPIKeyAuthQuotaExceededDoesNotUseAnotherEntitlement(t *testing.T) {
 	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
 	limit := 5.0

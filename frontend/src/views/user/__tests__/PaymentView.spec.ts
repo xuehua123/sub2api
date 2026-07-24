@@ -16,6 +16,7 @@ const routerResolve = vi.hoisted(() => vi.fn(() => ({ href: '/payment/stripe?moc
 const createOrder = vi.hoisted(() => vi.fn())
 const refreshUser = vi.hoisted(() => vi.fn())
 const fetchActiveSubscriptions = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
+const fetchEntitlements = vi.hoisted(() => vi.fn().mockResolvedValue(undefined))
 const showError = vi.hoisted(() => vi.fn())
 const showInfo = vi.hoisted(() => vi.fn())
 const showWarning = vi.hoisted(() => vi.fn())
@@ -23,6 +24,7 @@ const getCheckoutInfo = vi.hoisted(() => vi.fn())
 const bridgeInvoke = vi.hoisted(() => vi.fn())
 const subscriptionState = vi.hoisted(() => ({
   activeSubscriptions: [] as any[],
+  entitlements: [] as any[],
 }))
 
 vi.mock('vue-router', async () => {
@@ -67,7 +69,9 @@ vi.mock('@/stores/payment', () => ({
 vi.mock('@/stores/subscriptions', () => ({
   useSubscriptionStore: () => ({
     activeSubscriptions: subscriptionState.activeSubscriptions,
+    entitlements: subscriptionState.entitlements,
     fetchActiveSubscriptions,
+    fetchEntitlements,
   }),
 }))
 
@@ -340,6 +344,9 @@ describe('PaymentView payment recovery', () => {
     createOrder.mockReset()
     refreshUser.mockReset()
     fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    fetchEntitlements.mockReset().mockResolvedValue(undefined)
+    subscriptionState.activeSubscriptions = []
+    subscriptionState.entitlements = []
     showError.mockReset()
     showInfo.mockReset()
     showWarning.mockReset()
@@ -654,6 +661,9 @@ describe('PaymentView active subscription summary', () => {
     createOrder.mockReset()
     refreshUser.mockReset()
     fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+    fetchEntitlements.mockReset().mockResolvedValue(undefined)
+    subscriptionState.activeSubscriptions = []
+    subscriptionState.entitlements = []
     showError.mockReset()
     showInfo.mockReset()
     showWarning.mockReset()
@@ -746,5 +756,91 @@ describe('PaymentView active subscription summary', () => {
     expect(wrapper.text()).toContain('额度: $2,400 / 月')
     expect(wrapper.text()).not.toContain('plus pro分组')
     expect(wrapper.text()).not.toContain('额度: 无限制')
+  })
+
+  it('shows a pure V2 entitlement in the current subscription summary', async () => {
+    getCheckoutInfo.mockResolvedValue(checkoutInfoFixture())
+    subscriptionState.entitlements = [{
+      id: 2264,
+      plan_id: 3,
+      plan_name: '多分组畅享月卡',
+      name: '多分组畅享月卡',
+      status: 'active',
+      starts_at: '2026-06-16T00:35:51+08:00',
+      expires_at: '2099-07-16T00:35:51+08:00',
+      groups: [
+        { id: 33, name: 'OpenAI 主分组', platform: 'openai', rate_multiplier: 1.5 },
+        { id: 34, name: 'Claude 分组', platform: 'anthropic', rate_multiplier: 1.2 },
+      ],
+      daily_limit_usd: null,
+      daily_usage_usd: 0,
+      daily_window_start: null,
+      daily_resets_at: null,
+      daily_resets_in_seconds: null,
+      weekly_limit_usd: null,
+      weekly_usage_usd: 0,
+      weekly_window_start: null,
+      weekly_resets_at: null,
+      weekly_resets_in_seconds: null,
+      monthly_limit_usd: 2400,
+      monthly_usage_usd: 58.64,
+      monthly_window_start: null,
+      monthly_resets_at: null,
+      monthly_resets_in_seconds: null,
+      overage_policy: 'block',
+      legacy_subscription_id: null,
+      purchase_price: 168,
+      purchase_currency: 'CNY',
+      quota_usd: 2400,
+      quota_period: 'monthly',
+      unit_cost_per_usd: 0.07,
+    }]
+    fetchEntitlements.mockResolvedValue(subscriptionState.entitlements)
+
+    const wrapper = mount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          'app-layout': { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('多分组畅享月卡')
+    expect(wrapper.text()).toContain('额度: $2,400 / 月')
+    expect(wrapper.text()).toContain('多平台')
+  })
+
+  it('selects a multi-group plan when renewal targets a non-primary group', async () => {
+    routeState.query = { tab: 'subscription', group: '34' }
+    getCheckoutInfo.mockResolvedValue(checkoutInfoWithPlansFixture({
+      plan: {
+        name: '多分组畅享月卡',
+        group_id: 33,
+        group_ids: [33, 34],
+        groups: [
+          { id: 33, name: 'OpenAI 主分组', platform: 'openai', rate_multiplier: 1, sort_order: 0 },
+          { id: 34, name: 'Claude 分组', platform: 'anthropic', rate_multiplier: 1.2, sort_order: 1 },
+        ],
+      },
+    }))
+
+    const wrapper = mount(PaymentView, {
+      global: {
+        stubs: {
+          AppLayout: { template: '<div><slot /></div>' },
+          'app-layout': { template: '<div><slot /></div>' },
+          Teleport: true,
+          Transition: false,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('多分组畅享月卡')
+    expect(wrapper.text()).not.toContain('选择更稳的')
   })
 })

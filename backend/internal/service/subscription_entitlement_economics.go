@@ -21,7 +21,7 @@ func (s *SubscriptionEntitlementService) attachEntitlementEconomics(ctx context.
 	}
 	if purchasePrice == nil && plan != nil && plan.Price > 0 {
 		purchasePrice = &plan.Price
-		purchaseCurrency = "CNY"
+		purchaseCurrency = plan.Currency
 	}
 	if purchasePrice != nil && strings.TrimSpace(purchaseCurrency) == "" {
 		purchaseCurrency = "CNY"
@@ -33,8 +33,26 @@ func (s *SubscriptionEntitlementService) attachEntitlementEconomics(ctx context.
 	ent.QuotaUSD = cloneFloat64Ptr(quotaUSD)
 	ent.QuotaPeriod = quotaPeriod
 	if purchasePrice != nil && *purchasePrice > 0 && quotaUSD != nil && *quotaUSD > 0 {
-		unitCost := *purchasePrice / *quotaUSD
-		ent.UnitCostPerUSD = &unitCost
+		purchaseCNY, ok := entitlementPurchaseCNY(*purchasePrice, ent.PurchaseCurrency, ent.PlanSnapshot)
+		if ok {
+			unitCost := purchaseCNY / *quotaUSD
+			ent.UnitCostPerUSD = &unitCost
+		}
+	}
+}
+
+func entitlementPurchaseCNY(purchasePrice float64, purchaseCurrency string, snapshot map[string]any) (float64, bool) {
+	switch strings.ToUpper(strings.TrimSpace(purchaseCurrency)) {
+	case "", "CNY", "RMB":
+		return purchasePrice, true
+	case "USD":
+		rate, ok := snapshotPositiveFloat(snapshot["purchase_cny_per_usd_rate"])
+		if !ok {
+			return 0, false
+		}
+		return purchasePrice * rate, true
+	default:
+		return 0, false
 	}
 }
 

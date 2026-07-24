@@ -62,6 +62,7 @@ type CyberPolicyUsageInput struct {
 	IPAddress          string
 	RequestPayloadHash string
 	APIKeyService      APIKeyQuotaUpdater
+	QuotaPlatform      string
 	ChannelUsageFields
 }
 
@@ -99,6 +100,7 @@ func (s *OpenAIGatewayService) RecordCyberPolicyUsageLog(ctx context.Context, in
 		IPAddress:                  in.IPAddress,
 		RequestPayloadHash:         in.RequestPayloadHash,
 		APIKeyService:              in.APIKeyService,
+		QuotaPlatform:              in.QuotaPlatform,
 		ChannelUsageFields:         in.ChannelUsageFields,
 		CyberBlocked:               true,
 	}); err != nil {

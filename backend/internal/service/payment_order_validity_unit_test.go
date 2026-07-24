@@ -1,3 +1,5 @@
+//go:build unit
+
 package service
 
 import (
@@ -52,6 +54,38 @@ func TestValidateSubOrder_RejectsPlanWithInvalidValidityUnit(t *testing.T) {
 		},
 	}
 
+	result, access, err := svc.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
+
+	require.Nil(t, result)
+	require.Nil(t, access)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "PLAN_NOT_AVAILABLE")
+}
+
+func TestValidateSubOrderRejectsPlanWithoutActiveSubscriptionGroups(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderValidityUnitTestClient(t)
+
+	group, err := client.Group.Create().
+		SetName("unavailable-subscription-group").
+		SetStatus(StatusDisabled).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	plan, err := client.SubscriptionPlan.Create().
+		SetGroupID(group.ID).
+		SetName("Unavailable Group Plan").
+		SetDescription("must not be purchasable").
+		SetPrice(9.9).
+		SetValidityDays(30).
+		SetValidityUnit("day").
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{configService: &PaymentConfigService{entClient: client}}
 	result, access, err := svc.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
 
 	require.Nil(t, result)
@@ -119,7 +153,11 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 		Save(ctx)
 	require.NoError(t, err)
 
-	svc := &PaymentService{entClient: client, configService: &PaymentConfigService{entClient: client}}
+	svc := &PaymentService{
+		entClient:     client,
+		configService: &PaymentConfigService{entClient: client},
+		settingSvc:    newPaymentEntitlementsSettingService(true),
+	}
 	validPlan, access, err := svc.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
 	require.NoError(t, err)
 	require.Equal(t, plan.ID, validPlan.ID)
@@ -156,6 +194,79 @@ func TestCreateSubscriptionOrderUsesEffectivePlanGroupAsLegacyAnchor(t *testing.
 	require.NotNil(t, order.SubscriptionGroupID)
 	require.Equal(t, firstGroup.ID, *order.SubscriptionGroupID)
 	require.NotEqual(t, legacyGroup.ID, *order.SubscriptionGroupID)
+	require.NotNil(t, order.ProviderSnapshot)
+	require.Equal(t, true, order.ProviderSnapshot[paymentOrderSnapshotEntitlementV2Enabled])
+	snapshot, found, err := paymentOrderEntitlementPlanSnapshot(order)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, plan.ID, snapshot.ID)
+	snapshotGroupIDs := make([]int64, 0, len(snapshot.Groups))
+	for _, group := range snapshot.Groups {
+		snapshotGroupIDs = append(snapshotGroupIDs, group.GroupID)
+	}
+	require.Equal(t, []int64{firstGroup.ID, secondGroup.ID}, snapshotGroupIDs)
+	require.Equal(t, plan.Price, snapshot.Price)
+}
+
+func TestValidateSubOrderRequiresEntitlementsV2ForMultiGroupPlans(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentOrderValidityUnitTestClient(t)
+
+	firstGroup, err := client.Group.Create().
+		SetName("v2-required-first-group").
+		SetStatus(payment.EntityStatusActive).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	secondGroup, err := client.Group.Create().
+		SetName("v2-required-second-group").
+		SetStatus(payment.EntityStatusActive).
+		SetSubscriptionType(SubscriptionTypeSubscription).
+		SetSubscriptionEnabled(true).
+		SetPlanAutoGrantEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	plan, err := client.SubscriptionPlan.Create().
+		SetGroupID(firstGroup.ID).
+		SetName("V2 Required Plan").
+		SetDescription("multi-group plan").
+		SetPrice(19.9).
+		SetValidityDays(30).
+		SetValidityUnit("day").
+		SetAccessScope(PlanAccessScopeExplicit).
+		SetOveragePolicy(SubscriptionEntitlementOverageBlock).
+		SetForSale(true).
+		Save(ctx)
+	require.NoError(t, err)
+	for index, groupID := range []int64{firstGroup.ID, secondGroup.ID} {
+		_, err = client.SubscriptionPlanGroup.Create().
+			SetPlanID(plan.ID).
+			SetGroupID(groupID).
+			SetSortOrder(index).
+			SetEnabled(true).
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	disabled := &PaymentService{
+		configService: &PaymentConfigService{entClient: client},
+		settingSvc:    newPaymentEntitlementsSettingService(false),
+	}
+	_, _, err = disabled.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "SUBSCRIPTION_ENTITLEMENTS_V2_REQUIRED")
+	require.NoError(t, disabled.requireSubscriptionEntitlementsV2ForPlanAccess(ctx, &SubscriptionPlanOrderAccess{GroupIDs: []int64{firstGroup.ID}}))
+
+	enabled := &PaymentService{
+		configService: &PaymentConfigService{entClient: client},
+		settingSvc:    newPaymentEntitlementsSettingService(true),
+	}
+	_, access, err := enabled.validateSubOrder(ctx, CreateOrderRequest{PlanID: plan.ID})
+	require.NoError(t, err)
+	require.Equal(t, []int64{firstGroup.ID, secondGroup.ID}, access.GroupIDs)
 }
 
 func newPaymentOrderValidityUnitTestClient(t *testing.T) *dbent.Client {

@@ -23,6 +23,8 @@ type proxyRepository struct {
 	sql    sqlExecutor
 }
 
+const ollamaCloudUsageOutboxAccountChunkSize = 500
+
 func NewProxyRepository(client *dbent.Client, sqlDB *sql.DB) service.ProxyRepository {
 	return newProxyRepositoryWithSQL(client, sqlDB)
 }
@@ -108,7 +110,7 @@ func (r *proxyRepository) Update(ctx context.Context, proxyIn *service.Proxy) er
 		}
 	}
 
-	updated, err := updateProxy(ctx, client, proxyIn)
+	updated, err := updateProxyAndInvalidateOllamaCloudUsageSnapshots(ctx, client, proxyIn)
 	if err != nil {
 		return err
 	}
@@ -121,7 +123,31 @@ func (r *proxyRepository) Update(ctx context.Context, proxyIn *service.Proxy) er
 	return nil
 }
 
-func updateProxy(ctx context.Context, client *dbent.Client, proxyIn *service.Proxy) (*dbent.Proxy, error) {
+type ollamaCloudUsageProxyIdentity struct {
+	protocol string
+	host     string
+	port     int
+	username string
+	password string
+	status   string
+}
+
+func ollamaCloudUsageProxyIdentityFromService(proxyIn *service.Proxy) ollamaCloudUsageProxyIdentity {
+	return ollamaCloudUsageProxyIdentity{
+		protocol: proxyIn.Protocol,
+		host:     proxyIn.Host,
+		port:     proxyIn.Port,
+		username: proxyIn.Username,
+		password: proxyIn.Password,
+		status:   proxyIn.Status,
+	}
+}
+
+func updateProxyAndInvalidateOllamaCloudUsageSnapshots(ctx context.Context, client *dbent.Client, proxyIn *service.Proxy) (*dbent.Proxy, error) {
+	currentIdentity, err := lockOllamaCloudUsageProxyIdentity(ctx, client, proxyIn.ID)
+	if err != nil {
+		return nil, err
+	}
 	builder := client.Proxy.UpdateOneID(proxyIn.ID).
 		SetName(proxyIn.Name).
 		SetProtocol(proxyIn.Protocol).
@@ -155,7 +181,91 @@ func updateProxy(ctx context.Context, client *dbent.Client, proxyIn *service.Pro
 	if dbent.IsNotFound(err) {
 		return nil, service.ErrProxyNotFound
 	}
-	return updated, err
+	if err != nil {
+		return nil, err
+	}
+	if currentIdentity == ollamaCloudUsageProxyIdentityFromService(proxyIn) {
+		return updated, nil
+	}
+	accountIDs, err := invalidateProxyOllamaCloudUsageSnapshots(ctx, client, proxyIn.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := enqueueOllamaCloudUsageAccountChanges(ctx, client, accountIDs); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+func lockOllamaCloudUsageProxyIdentity(ctx context.Context, client *dbent.Client, proxyID int64) (ollamaCloudUsageProxyIdentity, error) {
+	rows, err := client.QueryContext(ctx, `
+		SELECT protocol, host, port, COALESCE(username, ''), COALESCE(password, ''), status
+		FROM proxies
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR NO KEY UPDATE
+	`, proxyID)
+	if err != nil {
+		return ollamaCloudUsageProxyIdentity{}, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return ollamaCloudUsageProxyIdentity{}, err
+		}
+		return ollamaCloudUsageProxyIdentity{}, service.ErrProxyNotFound
+	}
+	var identity ollamaCloudUsageProxyIdentity
+	if err := rows.Scan(&identity.protocol, &identity.host, &identity.port, &identity.username, &identity.password, &identity.status); err != nil {
+		return ollamaCloudUsageProxyIdentity{}, err
+	}
+	return identity, rows.Err()
+}
+
+func invalidateProxyOllamaCloudUsageSnapshots(ctx context.Context, exec sqlExecutor, proxyID int64) ([]int64, error) {
+	rows, err := exec.QueryContext(ctx, `
+		UPDATE accounts
+		SET extra = COALESCE(extra, '{}'::jsonb)
+				- 'ollama_cloud_usage_snapshot',
+			updated_at = NOW()
+		WHERE proxy_id = $1
+			AND platform IN ('openai', 'anthropic')
+			AND type = 'apikey'
+			AND extra ? 'ollama_cloud_usage_snapshot'
+			AND extra -> 'ollama_cloud_usage_snapshot' <> 'null'::jsonb
+			AND deleted_at IS NULL
+		RETURNING id
+	`, proxyID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	accountIDs := make([]int64, 0)
+	for rows.Next() {
+		var accountID int64
+		if err := rows.Scan(&accountID); err != nil {
+			return nil, err
+		}
+		accountIDs = append(accountIDs, accountID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return accountIDs, nil
+}
+
+func enqueueOllamaCloudUsageAccountChanges(ctx context.Context, exec sqlExecutor, accountIDs []int64) error {
+	accountIDs = sortedUniqueAccountIDs(accountIDs)
+	for start := 0; start < len(accountIDs); start += ollamaCloudUsageOutboxAccountChunkSize {
+		end := start + ollamaCloudUsageOutboxAccountChunkSize
+		if end > len(accountIDs) {
+			end = len(accountIDs)
+		}
+		payload := map[string]any{"account_ids": accountIDs[start:end]}
+		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *proxyRepository) Delete(ctx context.Context, id int64) error {
@@ -614,6 +724,13 @@ func (r *proxyRepository) sweepOneExpiredProxyOnExec(ctx context.Context, exec s
 		return nil, err
 	}
 	if !change {
+		accountIDs, err := invalidateProxyOllamaCloudUsageSnapshots(ctx, exec, proxyID)
+		if err != nil {
+			return nil, err
+		}
+		if err := enqueueOllamaCloudUsageAccountChanges(ctx, exec, accountIDs); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
 	var (

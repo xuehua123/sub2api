@@ -13,6 +13,7 @@ const CACHE_TTL_MS = 60_000
 
 // Request generation counter to invalidate stale in-flight responses
 let requestGeneration = 0
+let entitlementRequestGeneration = 0
 
 export const useSubscriptionStore = defineStore('subscriptions', () => {
   // State
@@ -108,13 +109,16 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
       return entitlementPromise
     }
 
+    const currentGeneration = ++entitlementRequestGeneration
     entitlementsLoading.value = true
     const requestPromise = subscriptionsAPI
       .getEntitlements()
       .then((data) => {
-        entitlements.value = data
-        entitlementsLoaded.value = true
-        entitlementsLastFetchedAt.value = Date.now()
+        if (currentGeneration === entitlementRequestGeneration) {
+          entitlements.value = data
+          entitlementsLoaded.value = true
+          entitlementsLastFetchedAt.value = Date.now()
+        }
         return data
       })
       .catch((error) => {
@@ -143,6 +147,9 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
       fetchActiveSubscriptions(true).catch((error) => {
         console.error('Subscription polling failed:', error)
       })
+      fetchEntitlements(true).catch((error) => {
+        console.error('Entitlement polling failed:', error)
+      })
     }, 5 * 60 * 1000)
   }
 
@@ -161,8 +168,11 @@ export const useSubscriptionStore = defineStore('subscriptions', () => {
    */
   function clear() {
     requestGeneration++
+    entitlementRequestGeneration++
     activePromise = null
     entitlementPromise = null
+    loading.value = false
+    entitlementsLoading.value = false
     activeSubscriptions.value = []
     entitlements.value = []
     loaded.value = false

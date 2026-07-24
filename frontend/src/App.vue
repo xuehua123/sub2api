@@ -74,9 +74,12 @@ watch(
         })
       }
 
-      // User logged in: preload subscriptions and start polling
+      // User logged in: preload legacy subscriptions and V2 entitlements.
       subscriptionStore.fetchActiveSubscriptions().catch((error) => {
         console.error('Failed to preload subscriptions:', error)
+      })
+      subscriptionStore.fetchEntitlements().catch((error) => {
+        console.error('Failed to preload entitlements:', error)
       })
       subscriptionStore.startPolling()
 

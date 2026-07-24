@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -368,6 +369,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformAnthropic, targetType, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -503,6 +505,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformAnthropic, AccountTypeAPIKey, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -657,6 +660,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformOpenAI, AccountTypeOAuth, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -807,6 +811,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformOpenAI, AccountTypeAPIKey, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -936,6 +941,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformGemini, AccountTypeOAuth, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -1065,6 +1071,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
 		stripRetiredCRSAccountState(credentials, extra)
+		reconcileCRSOllamaCloudUsageExtra(existing, PlatformGemini, AccountTypeAPIKey, credentials, extra)
 		if existing == nil {
 			if !shouldCreateAccount(src.ID, selectedSet) {
 				item.Action = "skipped"
@@ -1147,6 +1154,36 @@ func mergeMap(existing map[string]any, updates map[string]any) map[string]any {
 	return out
 }
 
+func reconcileCRSOllamaCloudUsageExtra(
+	existing *Account,
+	targetPlatform, targetType string,
+	targetCredentials map[string]any,
+	extra map[string]any,
+) {
+	for _, key := range []string{
+		OllamaCloudUsageSessionExtraKey,
+		OllamaCloudUsageAutoRefreshExtraKey,
+		OllamaCloudUsageSnapshotExtraKey,
+	} {
+		delete(extra, key)
+	}
+	if existing == nil {
+		return
+	}
+	target := &Account{Platform: targetPlatform, Type: targetType, Credentials: targetCredentials}
+	if IsOllamaCloudUsageAccount(existing) && IsOllamaCloudUsageAccount(target) &&
+		reflect.DeepEqual(ollamaCloudUsageIdentity(existing), ollamaCloudUsageIdentity(target)) {
+		if session, ok := existing.Extra[OllamaCloudUsageSessionExtraKey]; ok {
+			extra[OllamaCloudUsageSessionExtraKey] = session
+		}
+		if enabled, ok := existing.Extra[OllamaCloudUsageAutoRefreshExtraKey]; ok {
+			extra[OllamaCloudUsageAutoRefreshExtraKey] = enabled
+		}
+		if snapshot, ok := existing.Extra[OllamaCloudUsageSnapshotExtraKey]; ok {
+			extra[OllamaCloudUsageSnapshotExtraKey] = snapshot
+		}
+	}
+}
 func mergeCRSOpenAILongContextBillingExtra(existing, updates map[string]any) (map[string]any, error) {
 	return normalizeOpenAILongContextBillingExtra(PlatformOpenAI, mergeMap(existing, updates))
 }

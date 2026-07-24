@@ -18,15 +18,19 @@ import (
 )
 
 type checkoutInfoConfigServiceStub struct {
-	plansErr      error
-	planResponses []service.SubscriptionPlanResponse
+	plansErr                       error
+	planResponses                  []service.SubscriptionPlanResponse
+	alipayMobilePrecreateDeepLink  bool
+	officialAlipayVisibleMethod    bool
+	officialAlipayVisibleMethodErr error
 }
 
 func (s *checkoutInfoConfigServiceStub) GetPaymentConfig(_ context.Context) (*service.PaymentConfig, error) {
 	return &service.PaymentConfig{
-		BalanceDisabled:           false,
-		BalanceRechargeMultiplier: 1,
-		RechargeFeeRate:           0,
+		BalanceDisabled:               false,
+		BalanceRechargeMultiplier:     1,
+		RechargeFeeRate:               0,
+		AlipayMobilePrecreateDeepLink: s.alipayMobilePrecreateDeepLink,
 	}, nil
 }
 
@@ -56,6 +60,10 @@ func (s *checkoutInfoConfigServiceStub) GetGroupPlatformMap(_ context.Context, _
 
 func (s *checkoutInfoConfigServiceStub) GetUserRefundEligibleInstanceIDs(_ context.Context) ([]string, error) {
 	return nil, nil
+}
+
+func (s *checkoutInfoConfigServiceStub) UsesOfficialAlipayVisibleMethod(_ context.Context) (bool, error) {
+	return s.officialAlipayVisibleMethod, s.officialAlipayVisibleMethodErr
 }
 
 func TestGetCheckoutInfoReturnsErrorWhenListPlansForSaleFails(t *testing.T) {
@@ -133,6 +141,31 @@ func TestGetCheckoutInfoReturnsFullPlanGroups(t *testing.T) {
 	require.Len(t, resp.Data.Plans[0].Groups, 2)
 	require.Equal(t, "B", resp.Data.Plans[0].Groups[1].Name)
 	require.Empty(t, resp.Data.Plans[0].Features)
+}
+
+func TestGetCheckoutInfoExposesAlipayMobilePrecreateDeepLinkForOfficialMethod(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	h := NewPaymentHandler(nil, &checkoutInfoConfigServiceStub{
+		alipayMobilePrecreateDeepLink: true,
+		officialAlipayVisibleMethod:   true,
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/payment/checkout-info", nil)
+
+	h.GetCheckoutInfo(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var resp struct {
+		Data struct {
+			AlipayMobilePrecreateDeepLink bool `json:"alipay_mobile_precreate_deep_link"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.True(t, resp.Data.AlipayMobilePrecreateDeepLink)
 }
 
 func ptrFloat(value float64) *float64 { return &value }

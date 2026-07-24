@@ -158,6 +158,28 @@ func TestEntitlementHandler_ActiveFiltersByStatusAndWindow(t *testing.T) {
 	require.Equal(t, float64(activeID), data[0]["id"])
 }
 
+func TestEntitlementHandler_ListHidesHistoricalEntitlementsWhenRuntimeDisabled(t *testing.T) {
+	fx := newEntitlementHandlerFixture(t)
+	h := NewEntitlementHandler(
+		service.NewSubscriptionEntitlementService(fx.repo, nil),
+		apiKeyHandlerRuntimeStub{runtime: service.SubscriptionEntitlementsRuntime{Enabled: false}},
+	)
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{UserID: fx.userID, Concurrency: 5})
+		c.Set(string(middleware.ContextKeyUserRole), service.RoleUser)
+		c.Next()
+	})
+	router.GET("/entitlements", h.List)
+	router.GET("/entitlements/active", h.GetActive)
+
+	for _, path := range []string{"/entitlements", "/entitlements/active"} {
+		resp := performJSONRequest(router, http.MethodGet, path, nil)
+		require.Equal(t, http.StatusOK, resp.Code)
+		require.Empty(t, decodeEntitlementSlice(t, resp.Body.Bytes()))
+	}
+}
+
 func TestEntitlementHandler_GetProgressOwnerAndUnlimited(t *testing.T) {
 	fx := newEntitlementHandlerFixture(t)
 	entitlementID := mustCreateEntitlementForHandler(t, fx.repo, service.SubscriptionEntitlement{
@@ -227,7 +249,7 @@ func newEntitlementHandlerFixture(t *testing.T) entitlementHandlerFixture {
 	svc := service.NewSubscriptionEntitlementService(repo, nil)
 	now := time.Now().UTC().Truncate(time.Second)
 	svc.SetNowFunc(func() time.Time { return now })
-	h := NewEntitlementHandler(svc)
+	h := NewEntitlementHandler(svc, apiKeyHandlerRuntimeStub{runtime: service.SubscriptionEntitlementsRuntime{Enabled: true}})
 	h.SetNowFunc(func() time.Time { return now })
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -486,7 +508,7 @@ func TestEntitlementHandler_AdvanceMonthlyCycleUsesSubjectOwnerAndPublicDTO(t *t
 	}}
 	svc := service.NewSubscriptionEntitlementService(repo, nil)
 	svc.SetNowFunc(func() time.Time { return now })
-	h := NewEntitlementHandler(svc)
+	h := NewEntitlementHandler(svc, apiKeyHandlerRuntimeStub{runtime: service.SubscriptionEntitlementsRuntime{Enabled: true}})
 	h.SetNowFunc(func() time.Time { return now })
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -534,7 +556,7 @@ func TestEntitlementHandler_AdvanceMonthlyCycleCrossUserReturnsNotFound(t *testi
 	}}
 	svc := service.NewSubscriptionEntitlementService(repo, nil)
 	svc.SetNowFunc(func() time.Time { return now })
-	h := NewEntitlementHandler(svc)
+	h := NewEntitlementHandler(svc, apiKeyHandlerRuntimeStub{runtime: service.SubscriptionEntitlementsRuntime{Enabled: true}})
 	h.SetNowFunc(func() time.Time { return now })
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

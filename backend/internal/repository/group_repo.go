@@ -46,15 +46,6 @@ func normalizeGroupAccessCapabilities(groupIn *service.Group) {
 	if groupIn == nil {
 		return
 	}
-	if !groupIn.BalanceEnabled && !groupIn.SubscriptionEnabled && !groupIn.PlanAutoGrantEnabled {
-		switch groupIn.SubscriptionType {
-		case service.SubscriptionTypeSubscription:
-			groupIn.SubscriptionEnabled = true
-			groupIn.PlanAutoGrantEnabled = groupIn.Status == service.StatusActive && !groupIn.IsExclusive
-		default:
-			groupIn.BalanceEnabled = true
-		}
-	}
 	if !groupIn.SubscriptionEnabled || groupIn.IsExclusive || groupIn.Status != service.StatusActive {
 		groupIn.PlanAutoGrantEnabled = false
 	}
@@ -248,7 +239,13 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
 	normalizeGroupAccessCapabilities(groupIn)
-	builder := r.client.Group.UpdateOneID(groupIn.ID).
+	client := r.client
+	outboxExec := r.sql
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		client = tx.Client()
+		outboxExec = client
+	}
+	builder := client.Group.UpdateOneID(groupIn.ID).
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
@@ -374,7 +371,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
 	}
 	groupIn.UpdatedAt = updated.UpdatedAt
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
+	if err := enqueueSchedulerOutbox(ctx, outboxExec, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
 	}
 	return nil
@@ -861,7 +858,12 @@ func (r *groupRepository) DeleteCascade(ctx context.Context, id int64) ([]int64,
 		return nil, err
 	}
 
-	// 4. Soft-delete group itself.
+	// 4. Soft-delete composite model routes owned by this group.
+	if _, err := exec.ExecContext(ctx, "UPDATE composite_model_routes SET deleted_at = NOW() WHERE group_id = $1 AND deleted_at IS NULL", id); err != nil {
+		return nil, err
+	}
+
+	// 5. Soft-delete group itself.
 	if _, err := txClient.Group.Delete().Where(group.IDEQ(id)).Exec(ctx); err != nil {
 		return nil, err
 	}

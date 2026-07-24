@@ -41,6 +41,22 @@ type fakeSubscriptionEntitlementRepo struct {
 	createGroups    [][]int64
 }
 
+type conflictingSubscriptionEntitlementRepo struct {
+	*fakeSubscriptionEntitlementRepo
+}
+
+func (r *conflictingSubscriptionEntitlementRepo) CompareAndSwapTerm(
+	context.Context,
+	int64,
+	time.Time,
+	time.Time,
+	time.Time,
+	string,
+	string,
+) (time.Time, bool, error) {
+	return time.Time{}, false, nil
+}
+
 type fakeEntitlementResetCall struct {
 	id           int64
 	resetDaily   bool
@@ -238,6 +254,37 @@ func (r *fakeSubscriptionEntitlementRepo) ListActiveCoveringGroupForUser(_ conte
 
 func (r *fakeSubscriptionEntitlementRepo) UpdateTerm(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string) error {
 	return r.UpdateTermAndSource(ctx, id, startsAt, expiresAt, status, notes, SubscriptionEntitlementSourceRef{})
+}
+
+func (r *fakeSubscriptionEntitlementRepo) CompareAndSwapTerm(
+	_ context.Context,
+	id int64,
+	expectedUpdatedAt time.Time,
+	startsAt time.Time,
+	expiresAt time.Time,
+	status string,
+	notes string,
+) (time.Time, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	ent, ok := r.entitlements[id]
+	if !ok {
+		return time.Time{}, false, ErrSubscriptionEntitlementNotFound
+	}
+	if !ent.UpdatedAt.Equal(expectedUpdatedAt) {
+		return time.Time{}, false, nil
+	}
+	updatedAt := r.now
+	if !updatedAt.After(expectedUpdatedAt) {
+		updatedAt = expectedUpdatedAt.Add(time.Microsecond)
+	}
+	ent.StartsAt = startsAt
+	ent.ExpiresAt = expiresAt
+	ent.Status = status
+	ent.Notes = notes
+	ent.UpdatedAt = updatedAt
+	r.updateTermCount++
+	return updatedAt, true, nil
 }
 
 func (r *fakeSubscriptionEntitlementRepo) UpdateTermAndSource(_ context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef) error {
@@ -509,6 +556,215 @@ func TestSubscriptionEntitlementService_AssignOrExtendFromPlanAllowsHiddenPlanGr
 	require.Empty(t, repo.createGroups[0])
 	require.NotNil(t, ent.PrimaryGroupID)
 	require.Equal(t, int64(101), *ent.PrimaryGroupID)
+}
+
+func TestSubscriptionEntitlementService_AssignOrExtendFromPlanRejectsPaymentWithoutEligibleGroups(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		1: {
+			ID:           1,
+			GroupID:      101,
+			Name:         "Disabled Group Plan",
+			ValidityDays: 30,
+			ValidityUnit: validityUnitDay,
+			ForSale:      true,
+			Groups: []SubscriptionEntitlementPlanGroup{{
+				GroupID: 101,
+				Enabled: true,
+				Group:   &Group{ID: 101, Status: StatusDisabled, SubscriptionType: SubscriptionTypeSubscription, SubscriptionEnabled: false},
+			}},
+		},
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	ent, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:                42,
+		PlanID:                1,
+		OrderID:               9003,
+		RequireEligibleGroups: true,
+	})
+
+	require.Nil(t, ent)
+	require.False(t, reused)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementPlanInvalid)
+	require.Zero(t, repo.createCount)
+}
+
+func TestSubscriptionEntitlementService_AssignOrExtendFromPlanRejectsMissingGroupEntity(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		1: {
+			ID:           1,
+			GroupID:      101,
+			Name:         "Deleted Group Plan",
+			ValidityDays: 30,
+			ValidityUnit: validityUnitDay,
+			ForSale:      true,
+			Groups: []SubscriptionEntitlementPlanGroup{{
+				GroupID: 101,
+				Enabled: true,
+				Group:   nil,
+			}},
+		},
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	ent, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:                42,
+		PlanID:                1,
+		OrderID:               9004,
+		RequireEligibleGroups: true,
+	})
+
+	require.Nil(t, ent)
+	require.False(t, reused)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementPlanInvalid)
+	require.Zero(t, repo.createCount)
+}
+
+func TestSubscriptionEntitlementService_AssignOrExtendFromPlanUsesOrderSnapshot(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	paidMonthlyLimit := 100.0
+	changedMonthlyLimit := 10.0
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		1: testEntitlementPlan(1, []int64{303}, &changedMonthlyLimit),
+	}}
+	paidPlan := testEntitlementPlan(1, []int64{101, 202}, &paidMonthlyLimit)
+	paidPlan.Name = "Paid Snapshot"
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	ent, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:                42,
+		PlanID:                1,
+		OrderID:               9005,
+		RequireEligibleGroups: true,
+		PlanSnapshot:          paidPlan,
+	})
+
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.Equal(t, []int64{101, 202}, repo.createGroups[0])
+	require.Equal(t, "Paid Snapshot", ent.Name)
+	require.NotNil(t, ent.MonthlyLimitUSD)
+	require.Equal(t, paidMonthlyLimit, *ent.MonthlyLimitUSD)
+}
+
+func TestEntitlementPlanSnapshotAndEconomicsUsePlanCurrency(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	plan := testEntitlementPlan(1, []int64{101}, nil)
+	plan.Price = 12.5
+	plan.Currency = "usd"
+
+	snapshot := entitlementPlanSnapshot(plan)
+	require.Equal(t, "USD", snapshot["currency"])
+
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{1: plan}})
+	planID := int64(1)
+	ent := &SubscriptionEntitlement{PlanID: &planID, PlanSnapshot: map[string]any{}}
+	svc.attachEntitlementEconomics(context.Background(), ent)
+
+	require.NotNil(t, ent.PurchasePrice)
+	require.Equal(t, 12.5, *ent.PurchasePrice)
+	require.Equal(t, "USD", ent.PurchaseCurrency)
+}
+
+func TestEntitlementEconomicsConvertsUSDPurchaseWithOrderRate(t *testing.T) {
+	quota := 1000.0
+	ent := &SubscriptionEntitlement{
+		MonthlyLimitUSD: &quota,
+		PlanSnapshot: map[string]any{
+			"purchase_price":            10.0,
+			"purchase_currency":         "USD",
+			"purchase_cny_per_usd_rate": 7.2,
+			"monthly_limit_usd":         quota,
+		},
+	}
+	svc := NewSubscriptionEntitlementService(nil, nil)
+
+	svc.attachEntitlementEconomics(context.Background(), ent)
+
+	require.Equal(t, "USD", ent.PurchaseCurrency)
+	require.NotNil(t, ent.UnitCostPerUSD)
+	require.InDelta(t, 0.072, *ent.UnitCostPerUSD, 1e-12)
+}
+
+func TestEntitlementEconomicsDoesNotMislabelUSDWithoutOrderRate(t *testing.T) {
+	quota := 1000.0
+	ent := &SubscriptionEntitlement{
+		MonthlyLimitUSD: &quota,
+		PlanSnapshot: map[string]any{
+			"purchase_price":    10.0,
+			"purchase_currency": "USD",
+			"monthly_limit_usd": quota,
+		},
+	}
+	svc := NewSubscriptionEntitlementService(nil, nil)
+
+	svc.attachEntitlementEconomics(context.Background(), ent)
+
+	require.Nil(t, ent.UnitCostPerUSD)
+}
+
+func TestSubscriptionEntitlementService_ShortenForRefundRejectsConcurrentTermChange(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	baseRepo := newFakeSubscriptionEntitlementRepo(now)
+	baseRepo.entitlements[1] = &SubscriptionEntitlement{
+		ID:        1,
+		UserID:    42,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.AddDate(0, 0, -1),
+		ExpiresAt: now.AddDate(0, 0, 30),
+		UpdatedAt: now.Add(-time.Minute),
+	}
+	svc := NewSubscriptionEntitlementService(
+		&conflictingSubscriptionEntitlementRepo{fakeSubscriptionEntitlementRepo: baseRepo},
+		nil,
+	)
+
+	adjustment, err := svc.ShortenForRefund(context.Background(), 1, 10, now)
+
+	require.Nil(t, adjustment)
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementTermConflict)
+	require.Equal(t, now.AddDate(0, 0, 30), baseRepo.entitlements[1].ExpiresAt)
+}
+
+func TestSubscriptionEntitlementService_RestoreRefundSnapshotRejectsConcurrentRenewal(t *testing.T) {
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	originalExpiry := now.AddDate(0, 0, 30)
+	repo.entitlements[1] = &SubscriptionEntitlement{
+		ID:        1,
+		UserID:    42,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.AddDate(0, 0, -1),
+		ExpiresAt: originalExpiry,
+		UpdatedAt: now.Add(-time.Minute),
+	}
+	svc := NewSubscriptionEntitlementService(repo, nil)
+
+	adjustment, err := svc.ShortenForRefund(context.Background(), 1, 10, now)
+	require.NoError(t, err)
+	require.NotNil(t, adjustment)
+
+	renewedExpiry := originalExpiry.AddDate(0, 0, 30)
+	repo.mu.Lock()
+	repo.entitlements[1].ExpiresAt = renewedExpiry
+	repo.entitlements[1].UpdatedAt = adjustment.UpdatedAt.Add(time.Second)
+	repo.mu.Unlock()
+
+	err = svc.RestoreRefundSnapshot(context.Background(), adjustment.Snapshot, adjustment.UpdatedAt)
+
+	require.ErrorIs(t, err, ErrSubscriptionEntitlementTermConflict)
+	current, getErr := repo.GetByID(context.Background(), 1)
+	require.NoError(t, getErr)
+	require.Equal(t, renewedExpiry, current.ExpiresAt)
 }
 
 func TestSubscriptionEntitlementService_SourceRedeemCodeReplayDoesNotExtendTwice(t *testing.T) {

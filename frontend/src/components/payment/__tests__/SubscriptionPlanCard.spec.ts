@@ -16,6 +16,7 @@ const i18n = createI18n({
         days: "days",
         weeks: "weeks",
         months: "months",
+        years: "years",
         perMonth: "month",
         models: "Models",
         planCard: {
@@ -38,6 +39,7 @@ const i18n = createI18n({
           monthlyLimit: "Monthly",
         },
         subscribeNow: "Subscribe now",
+        renewNow: "Renew now",
       },
     },
   },
@@ -128,6 +130,7 @@ describe("SubscriptionPlanCard", () => {
     expect(mountPlanCard("openai", { validity_days: 1, validity_unit: "months" }).text()).toContain("/ payment.perMonth");
     expect(mountPlanCard("openai", { validity_days: 3, validity_unit: "months" }).text()).toContain("/ 3payment.months");
     expect(mountPlanCard("openai", { validity_days: 2, validity_unit: "weeks" }).text()).toContain("/ 2payment.weeks");
+    expect(mountPlanCard("openai", { validity_days: 1, validity_unit: "years" }).text()).toContain("/ 1payment.years");
     expect(mountPlanCard("openai", { validity_days: 30, validity_unit: "day" }).text()).toContain("/ 30payment.days");
   });
 
@@ -139,5 +142,100 @@ describe("SubscriptionPlanCard", () => {
     expect(mountPlanCard("openai", { currency: "USD" }).text()).toContain("$10USD");
     expect(mountPlanCard("openai", { currency: "HKD" }).text()).toContain("HK$10HKD");
     expect(mountPlanCard("openai", { currency: "" }).text()).toContain("¥10");
+  });
+
+  it("marks a plan as renewal when its non-primary group is covered by an entitlement", () => {
+    const wrapper = mount(SubscriptionPlanCard, {
+      props: {
+        plan: {
+          id: 3,
+          group_id: 10,
+          groups: [
+            { id: 10, name: "OpenAI", platform: "openai", rate_multiplier: 1 },
+            { id: 11, name: "Claude", platform: "anthropic", rate_multiplier: 1 },
+          ],
+          name: "Multi",
+          description: "",
+          price: 10,
+          features: [],
+          rate_multiplier: 1,
+          validity_days: 30,
+          validity_unit: "day",
+          access_scope: "explicit",
+          is_active: true,
+        },
+        activeSubscriptions: [{
+          id: -99,
+          user_id: 0,
+          group_id: 10,
+          status: "active",
+          starts_at: "2026-06-01T00:00:00Z",
+          expires_at: "2099-07-01T00:00:00Z",
+          daily_usage_usd: 0,
+          weekly_usage_usd: 0,
+          monthly_usage_usd: 0,
+          daily_window_start: null,
+          weekly_window_start: null,
+          monthly_window_start: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-01T00:00:00Z",
+          entitlement_only: true,
+          entitlement_id: 99,
+          plan_id: 3,
+          plan_name: "Multi",
+          groups: [
+            { id: 10, name: "OpenAI", platform: "openai", rate_multiplier: 1 },
+            { id: 11, name: "Claude", platform: "anthropic", rate_multiplier: 1 },
+          ],
+        }],
+      },
+      global: { plugins: [i18n, createPinia()] },
+    });
+
+    expect(wrapper.text()).toContain("payment.renewNow");
+  });
+
+  it("does not mark a different plan as renewal just because a group overlaps", () => {
+    const wrapper = mount(SubscriptionPlanCard, {
+      props: {
+        plan: {
+          id: 3,
+          group_id: 10,
+          groups: [{ id: 10, name: "OpenAI", platform: "openai", rate_multiplier: 1 }],
+          name: "Target",
+          price: 10,
+          features: [],
+          rate_multiplier: 1,
+          validity_days: 30,
+          validity_unit: "day",
+          access_scope: "explicit",
+          is_active: true,
+        },
+        activeSubscriptions: [{
+          id: -99,
+          user_id: 0,
+          group_id: 10,
+          status: "active",
+          starts_at: "2026-06-01T00:00:00Z",
+          expires_at: "2099-07-01T00:00:00Z",
+          daily_usage_usd: 0,
+          weekly_usage_usd: 0,
+          monthly_usage_usd: 0,
+          daily_window_start: null,
+          weekly_window_start: null,
+          monthly_window_start: null,
+          created_at: "2026-06-01T00:00:00Z",
+          updated_at: "2026-06-01T00:00:00Z",
+          entitlement_only: true,
+          entitlement_id: 99,
+          plan_id: 4,
+          groups: [{ id: 10, name: "OpenAI", platform: "openai", rate_multiplier: 1 }],
+        }],
+      },
+      global: { plugins: [i18n, createPinia()] },
+    });
+
+    expect(wrapper.text()).toContain("payment.subscribeNow");
+    expect(wrapper.text()).not.toContain("payment.renewNow");
   });
 });
