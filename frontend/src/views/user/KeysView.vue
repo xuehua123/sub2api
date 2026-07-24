@@ -2184,7 +2184,7 @@ function groupEntitlementScopeText(
 function reconcileFormEntitlementSelection() {
   if (groups.value.length === 0) return
 
-  const selectedEntitlementID = formData.value.subscription_entitlement_id
+  let selectedEntitlementID = formData.value.subscription_entitlement_id
   const group = selectedGroupOption.value
 
   if (formData.value.access_source === 'balance') {
@@ -2193,6 +2193,13 @@ function reconcileFormEntitlementSelection() {
       formData.value.group_id = null
     }
     return
+  }
+
+  if (selectedEntitlementID && !entitlementByID(selectedEntitlementID)) {
+    selectedEntitlementID = availableEntitlements.value.length === 1
+      ? availableEntitlements.value[0].id
+      : null
+    formData.value.subscription_entitlement_id = selectedEntitlementID
   }
 
   if (

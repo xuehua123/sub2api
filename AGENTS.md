@@ -77,6 +77,27 @@ Additional non-negotiable rules:
 - Prompt Audit remains disabled by default. Do not configure audit nodes or
   blocking, and do not enable raw prompt storage in production.
 
+## Release Version Integrity
+
+Treat the release tag, source version, CI image metadata, and runtime version
+as one deployable unit. A successful build is not sufficient when these values
+disagree.
+
+1. Before merging an upstream release, record its tag, exact commit SHA, and
+   declared semantic version.
+2. After conflict resolution, verify `backend/cmd/server/VERSION` exactly
+   matches the target release version. If the upstream tag itself contains a
+   stale version file, explicitly include the upstream version-sync commit or a
+   narrowly scoped fork version-sync commit **after** the target tag content is
+   present; never pre-bump a branch that has not yet merged the release.
+3. Before production deployment, verify the CI-built immutable image reports
+   the same version and source revision in its OCI labels/build metadata, and
+   that the server runtime displays that version after startup.
+4. A mismatch among the target tag, `VERSION`, CI image metadata, release
+   notes, or runtime display is a release blocker. State the discrepancy and
+   its resolution in the final review/deployment report, together with the
+   merge commit and immutable image digest.
+
 ## Exact Commands
 
 ### Backend (run from `backend/`)

@@ -594,6 +594,39 @@ describe('KeysView entitlement group binding', () => {
     expect(vm.formData.subscription_entitlement_id).toBe(202)
   })
 
+  it('replaces a stale entitlement id when only one current plan card is available', async () => {
+    const wrapper = await mountView([subscriptionGroup([302])])
+    const vm = setupState(wrapper)
+
+    vm.editKey(keyFixture({
+      group_id: 20,
+      access_source: 'entitlement',
+      subscription_entitlement_id: 301,
+    }))
+    await nextTick()
+
+    expect(vm.formData.group_id).toBe(20)
+    expect(vm.formData.subscription_entitlement_id).toBe(302)
+    expect(vm.formGroupOptions.map((option: { value: number }) => option.value)).toEqual([20])
+  })
+
+  it('clears a stale entitlement id when multiple current plan cards need an explicit choice', async () => {
+    const wrapper = await mountView([subscriptionGroup([302, 303])])
+    const vm = setupState(wrapper)
+
+    vm.editKey(keyFixture({
+      group_id: 20,
+      access_source: 'entitlement',
+      subscription_entitlement_id: 301,
+    }))
+    await nextTick()
+
+    expect(vm.formData.group_id).toBe(20)
+    expect(vm.formData.subscription_entitlement_id).toBeNull()
+    expect(vm.requiresEntitlementSelection).toBe(true)
+    expect(vm.formGroupOptions.map((option: { value: number }) => option.value)).toEqual([20])
+  })
+
   it('quick switch keeps balance keys on balance groups and entitlement keys on the same entitlement', async () => {
     const wrapper = await mountView([subscriptionGroup([101])])
     const vm = setupState(wrapper)
