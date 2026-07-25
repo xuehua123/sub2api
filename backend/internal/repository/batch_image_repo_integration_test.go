@@ -241,6 +241,52 @@ func TestBatchImageRepository_ReplaceBatchImageItemsForJob(t *testing.T) {
 	require.Equal(t, 1, job.FailCount)
 }
 
+func TestBatchImageRepository_MarkBatchImageBillingCapturedIsIdempotent(t *testing.T) {
+	ctx := context.Background()
+	tx := testTx(t)
+	repo := newBatchImageRepositoryWithSQL(tx)
+	batchID := batchImageTestID(t, "billing-captured")
+	now := time.Date(2026, 7, 25, 10, 0, 0, 0, time.UTC)
+
+	_, err := repo.CreateBatchImageJob(ctx, service.CreateBatchImageJobParams{
+		BatchID:      batchID,
+		UserID:       1001,
+		Provider:     service.BatchImageProviderGeminiAPI,
+		Model:        "gemini-image",
+		Status:       service.BatchImageJobStatusSettling,
+		ItemCount:    1,
+		SuccessCount: 0,
+		FailCount:    1,
+	})
+	require.NoError(t, err)
+
+	params := service.MarkBatchImageBillingCapturedParams{
+		BatchID:      batchID,
+		ActualCost:   0,
+		ManifestHash: "manifest-hash",
+		EventPayload: map[string]any{"request_id": "batch_image_capture:" + batchID},
+		Now:          &now,
+	}
+	require.NoError(t, repo.MarkBatchImageBillingCaptured(ctx, params))
+	require.NoError(t, repo.MarkBatchImageBillingCaptured(ctx, params))
+
+	job, err := repo.GetBatchImageJobByBatchID(ctx, batchID)
+	require.NoError(t, err)
+	require.Equal(t, service.BatchImageJobStatusSettling, job.Status)
+	require.NotNil(t, job.ActualCost)
+	require.Zero(t, *job.ActualCost)
+	require.Equal(t, "manifest-hash", batchImageDerefTest(job.ManifestHash))
+	require.Nil(t, job.SettledAt)
+
+	var eventCount int
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM batch_image_events WHERE job_id = $1 AND event_type = 'billing_captured'`, batchID).Scan(&eventCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, eventCount)
+
+	params.ActualCost = 0.25
+	require.ErrorIs(t, repo.MarkBatchImageBillingCaptured(ctx, params), service.ErrBatchImageSettlementManifestConflict)
+}
+
 func TestBatchImageRepository_MarkBatchImageJobSettled(t *testing.T) {
 	ctx := context.Background()
 	tx := testTx(t)

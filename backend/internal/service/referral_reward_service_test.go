@@ -308,6 +308,9 @@ func newRewardUserRepoStub() *rewardUserRepoStub {
 func (s *rewardUserRepoStub) Create(ctx context.Context, user *User) error {
 	panic("unexpected Create")
 }
+func (s *rewardUserRepoStub) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	return s.Create(ctx, user)
+}
 func (s *rewardUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
 	return s.users[id], nil
 }
@@ -363,6 +366,9 @@ func (s *rewardUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *
 }
 func (s *rewardUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail")
+}
+func (s *rewardUserRepoStub) ExistsByEmailAlias(ctx context.Context, email string) (bool, error) {
+	panic("unexpected ExistsByEmailAlias")
 }
 func (s *rewardUserRepoStub) RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected RemoveGroupFromAllowedGroups")

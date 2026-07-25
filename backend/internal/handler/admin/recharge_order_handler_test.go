@@ -70,6 +70,9 @@ type rechargeOrderHandlerUserRepoStub struct {
 func (s *rechargeOrderHandlerUserRepoStub) Create(ctx context.Context, user *service.User) error {
 	panic("unexpected Create")
 }
+func (s *rechargeOrderHandlerUserRepoStub) CreateWithEmailAliasGuard(ctx context.Context, user *service.User) error {
+	return s.Create(ctx, user)
+}
 func (s *rechargeOrderHandlerUserRepoStub) GetByID(ctx context.Context, id int64) (*service.User, error) {
 	return &service.User{ID: id, Balance: s.balances[id]}, nil
 }
@@ -124,6 +127,9 @@ func (s *rechargeOrderHandlerUserRepoStub) BatchUpdateLimits(context.Context, []
 }
 func (s *rechargeOrderHandlerUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	panic("unexpected ExistsByEmail")
+}
+func (s *rechargeOrderHandlerUserRepoStub) ExistsByEmailAlias(ctx context.Context, email string) (bool, error) {
+	panic("unexpected ExistsByEmailAlias")
 }
 func (s *rechargeOrderHandlerUserRepoStub) RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error) {
 	panic("unexpected RemoveGroupFromAllowedGroups")

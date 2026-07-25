@@ -300,6 +300,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+		sessionID := service.ExtractClientSessionID(c)
 		usageInput := &service.RecordUsageInput{
 			Result:                     result,
 			QuotaPlatform:              quotaPlatform,
@@ -314,6 +315,7 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			UpstreamEndpoint:           upstreamEndpoint,
 			UserAgent:                  userAgent,
 			IPAddress:                  clientIP,
+			SessionID:                  sessionID,
 			RequestPayloadHash:         requestPayloadHash,
 			APIKeyService:              h.apiKeyService,
 			ChannelUsageFields:         clientRequestedUsageFields(c, channelMapping, reqModel, result.UpstreamModel),

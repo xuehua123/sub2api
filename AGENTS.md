@@ -141,8 +141,8 @@ Without `-tags embed`, the binary will NOT serve the frontend UI.
 
 ## Go Version
 
-- `go.mod` declares **go 1.26.4** (source of truth)
-- CI verifies `go1.26.4` exactly
+- `go.mod` declares **go 1.26.5** (source of truth)
+- CI verifies `go1.26.5` exactly
 - README badge says 1.25.7 — **stale**, ignore it
 
 ## Testing Quirks

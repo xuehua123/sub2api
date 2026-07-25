@@ -18,6 +18,9 @@ type adminSearchUserRepoStub struct {
 }
 
 func (s *adminSearchUserRepoStub) Create(context.Context, *User) error { panic("unexpected") }
+func (s *adminSearchUserRepoStub) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	return s.Create(ctx, user)
+}
 func (s *adminSearchUserRepoStub) GetByID(_ context.Context, id int64) (*User, error) {
 	for i := range s.users {
 		if s.users[i].ID == id {
@@ -77,6 +80,9 @@ func (s *adminSearchUserRepoStub) BatchUpdateLimits(context.Context, []int64, *i
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) ExistsByEmail(context.Context, string) (bool, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) ExistsByEmailAlias(context.Context, string) (bool, error) {
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
