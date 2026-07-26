@@ -496,10 +496,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		group.AllowLive = false
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
-	if err := s.groupRepo.Create(ctx, group); err != nil {
-		return nil, err
-	}
-	if err := syncDynamicPlanAutoGrantScopesForGroupChange(ctx, s.entClient, nil, group); err != nil {
+	if err := s.createGroupAndSyncPlanAutoGrantScopes(ctx, group); err != nil {
 		return nil, err
 	}
 
@@ -533,6 +530,35 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	return group, nil
+}
+
+func (s *adminServiceImpl) createGroupAndSyncPlanAutoGrantScopes(ctx context.Context, group *Group) error {
+	if s.entClient == nil || len(planAutoGrantSyncPlatformsForGroupChange(nil, group)) == 0 {
+		return s.groupRepo.Create(ctx, group)
+	}
+	apply := func(txCtx context.Context) error {
+		if err := s.groupRepo.Create(txCtx, group); err != nil {
+			return err
+		}
+		return syncDynamicPlanAutoGrantScopesForGroupChange(txCtx, s.entClient, nil, group)
+	}
+	if dbent.TxFromContext(ctx) != nil {
+		return apply(ctx)
+	}
+
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin group create transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := apply(txCtx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit group create transaction: %w", err)
+	}
+	return nil
 }
 
 // normalizeLimit 将负数转换为 nil（表示无限制），0 保留（表示限额为零）
