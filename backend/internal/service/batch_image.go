@@ -146,6 +146,7 @@ type BatchImageJob struct {
 	IdempotencyKey *string
 	RequestHash    *string
 	ManifestHash   *string
+	SessionID      *string
 
 	RetryCount int
 	Version    int
@@ -214,6 +215,7 @@ type CreateBatchImageJobParams struct {
 	IdempotencyKey *string
 	RequestHash    *string
 	ManifestHash   *string
+	SessionID      *string
 
 	RetryCount int
 
@@ -309,6 +311,14 @@ type MarkBatchImageJobSettledParams struct {
 	OutputExpiresAt *time.Time
 }
 
+type MarkBatchImageBillingCapturedParams struct {
+	BatchID      string
+	ActualCost   float64
+	ManifestHash string
+	EventPayload any
+	Now          *time.Time
+}
+
 type BatchImageEvent struct {
 	ID        int64
 	JobID     string
@@ -336,6 +346,7 @@ type BatchImageRepository interface {
 	UpdateBatchImageJobProviderOutputRef(ctx context.Context, batchID, providerOutputRef string) error
 	UpdateBatchImageJobProviderSubmit(ctx context.Context, params UpdateBatchImageJobProviderSubmitParams) error
 	RecordBatchImageJobSubmitFailure(ctx context.Context, batchID, code, message string, markFailed bool) error
+	MarkBatchImageBillingCaptured(ctx context.Context, params MarkBatchImageBillingCapturedParams) error
 	MarkBatchImageJobSettled(ctx context.Context, params MarkBatchImageJobSettledParams) error
 	SetBatchImageJobSettlementFailed(ctx context.Context, batchID, code, message string) (int, error)
 	CreateBatchImageItem(ctx context.Context, params CreateBatchImageItemParams) (*BatchImageItem, error)

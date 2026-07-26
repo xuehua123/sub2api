@@ -300,6 +300,9 @@ type withdrawalUserRepoStub struct {
 func (s *withdrawalUserRepoStub) Create(ctx context.Context, user *User) error {
 	return nil
 }
+func (s *withdrawalUserRepoStub) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	return s.Create(ctx, user)
+}
 
 func (s *withdrawalUserRepoStub) GetByID(ctx context.Context, id int64) (*User, error) {
 	if s.user != nil {
@@ -378,6 +381,9 @@ func (s *withdrawalUserRepoStub) BatchUpdateLimits(context.Context, []int64, *in
 
 func (s *withdrawalUserRepoStub) ExistsByEmail(ctx context.Context, email string) (bool, error) {
 	return false, nil
+}
+func (s *withdrawalUserRepoStub) ExistsByEmailAlias(ctx context.Context, email string) (bool, error) {
+	return s.ExistsByEmail(ctx, email)
 }
 
 func (s *withdrawalUserRepoStub) RemoveGroupFromAllowedGroups(ctx context.Context, groupID int64) (int64, error) {
@@ -1360,7 +1366,9 @@ type stubSecretEncryptor struct {
 	decryptFn func(string) (string, error)
 }
 
-func (s stubSecretEncryptor) Encrypt(plaintext string) (string, error) { return "enc:" + plaintext, nil }
+func (s stubSecretEncryptor) Encrypt(plaintext string) (string, error) {
+	return "enc:" + plaintext, nil
+}
 func (s stubSecretEncryptor) Decrypt(ciphertext string) (string, error) {
 	if s.decryptFn != nil {
 		return s.decryptFn(ciphertext)

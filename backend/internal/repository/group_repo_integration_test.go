@@ -10,8 +10,10 @@ import (
 	"testing"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	entgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -45,6 +47,33 @@ func (s *GroupRepoSuite) SetupTest() {
 
 func TestGroupRepoSuite(t *testing.T) {
 	suite.Run(t, new(GroupRepoSuite))
+}
+
+func TestGroupRepositoryCreateUsesContextTransaction(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	name := uniqueTestValue(t, "create-context-transaction")
+	t.Cleanup(func() {
+		_, _ = client.Group.Delete().Where(entgroup.NameEQ(name)).Exec(context.Background())
+	})
+
+	tx, err := client.Tx(ctx)
+	require.NoError(t, err)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	repo := newGroupRepositoryWithSQL(client, integrationDB)
+	created := &service.Group{
+		Name:             name,
+		Platform:         service.PlatformOpenAI,
+		RateMultiplier:   1,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	}
+	require.NoError(t, repo.Create(txCtx, created))
+	require.NoError(t, tx.Rollback())
+
+	count, err := client.Group.Query().Where(entgroup.NameEQ(name)).Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, count, "repository Create must participate in the caller transaction")
 }
 
 // --- Create / GetByID / Update / Delete ---

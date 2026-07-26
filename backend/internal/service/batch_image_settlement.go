@@ -75,7 +75,7 @@ type BatchImageSettlementResult struct {
 }
 
 func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string) (*BatchImageSettlementResult, error) {
-	if s == nil || s.Repo == nil || s.BillingRepo == nil || s.Pricing == nil {
+	if s == nil || s.Repo == nil {
 		return nil, ErrBatchImageSettlementBillingFailed.WithCause(errors.New("batch image settlement service is not configured"))
 	}
 	job, err := s.Repo.GetBatchImageJobByBatchID(ctx, batchID)
@@ -106,6 +106,18 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	}
 	if job.AccountID == nil || *job.AccountID <= 0 {
 		return nil, ErrBatchImageSettlementMissingAccountID
+	}
+	if job.ActualCost != nil {
+		persistedManifestHash := strings.TrimSpace(batchImageDerefString(job.ManifestHash))
+		if persistedManifestHash == "" || persistedManifestHash != manifestHash {
+			return nil, ErrBatchImageSettlementManifestConflict
+		}
+		result.ActualCost = *job.ActualCost
+		result.ManifestHash = persistedManifestHash
+		return s.finishCapturedSettlement(ctx, job, result)
+	}
+	if s.BillingRepo == nil || s.Pricing == nil {
+		return nil, ErrBatchImageSettlementBillingFailed.WithCause(errors.New("batch image settlement billing is not configured"))
 	}
 	// 重试耗尽检查必须先于各类可重复失败的校验（counts/manifest/定价/超冻结），
 	// 否则这些错误路径会绕过耗尽出口，settling job 无限 requeue、冻结余额永不释放。
@@ -160,13 +172,11 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 	s.invalidateAuthCache(ctx, job.UserID)
 
 	now := time.Now()
-	outputExpiresAt := now.Add(s.outputRetentionAfterTerminal())
-	if err := s.Repo.MarkBatchImageJobSettled(ctx, MarkBatchImageJobSettledParams{
-		BatchID:         job.BatchID,
-		ActualCost:      actualCost,
-		ManifestHash:    manifestHash,
-		Now:             &now,
-		OutputExpiresAt: &outputExpiresAt,
+	if err := s.Repo.MarkBatchImageBillingCaptured(ctx, MarkBatchImageBillingCapturedParams{
+		BatchID:      job.BatchID,
+		ActualCost:   actualCost,
+		ManifestHash: manifestHash,
+		Now:          &now,
 		EventPayload: map[string]any{
 			"batch_id":      job.BatchID,
 			"request_id":    result.RequestID,
@@ -176,11 +186,16 @@ func (s *BatchImageSettlementService) Settle(ctx context.Context, batchID string
 			"manifest_hash": manifestHash,
 		},
 	}); err != nil {
-		return nil, err
+		if errors.Is(err, ErrBatchImageAlreadySettled) {
+			result.AlreadySettled = true
+			return result, nil
+		}
+		return nil, ErrBatchImageSettlementBillingFailed.WithCause(fmt.Errorf("persist batch image billing checkpoint: %w", err))
 	}
-	s.recordUsageLog(ctx, job, actualCost, result.RequestID, now)
+	job.ActualCost = &actualCost
+	job.ManifestHash = batchImageStringPtr(manifestHash)
 
-	return result, nil
+	return s.finishCapturedSettlement(ctx, job, result)
 }
 
 // isBatchImageSettlementRetryExhausted 判断 settling job 是否已达重试上限。
@@ -218,6 +233,9 @@ func (s *BatchImageSettlementService) failExhaustedSettlement(ctx context.Contex
 	if s == nil || s.Repo == nil {
 		return ErrBatchImageSettlementBillingFailed
 	}
+	if job != nil && job.ActualCost != nil {
+		return ErrBatchImageSettlementBillingFailed.WithCause(errors.New("refusing to release an already captured batch image hold"))
+	}
 	// 释放指纹必须与其余所有释放点（processor/Cancel/recovery）一致地使用 RequestHash：
 	// 它们共享同一 request id，payloadHash 不同会触发 ErrUsageBillingRequestConflict，
 	// 导致后续 Cancel/重试永远失败、terminal job 变成毒消息。
@@ -250,9 +268,88 @@ func (s *BatchImageSettlementService) failExhaustedSettlement(ctx context.Contex
 	return ErrBatchImageSettlementBillingFailed
 }
 
-func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *BatchImageJob, actualCost float64, requestID string, createdAt time.Time) {
+func (s *BatchImageSettlementService) finishCapturedSettlement(ctx context.Context, job *BatchImageJob, result *BatchImageSettlementResult) (*BatchImageSettlementResult, error) {
+	now := time.Now()
+	if err := s.recordUsageLog(ctx, job, result.ActualCost, result.RequestID, now); err != nil {
+		return s.handleCapturedUsageLogFailure(ctx, job, result, err, now)
+	}
+	if err := s.markCapturedSettlementCompleted(ctx, job, result, true, "", now); err != nil {
+		if errors.Is(err, ErrBatchImageAlreadySettled) {
+			result.AlreadySettled = true
+			return result, nil
+		}
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *BatchImageSettlementService) handleCapturedUsageLogFailure(
+	ctx context.Context,
+	job *BatchImageJob,
+	result *BatchImageSettlementResult,
+	usageLogErr error,
+	now time.Time,
+) (*BatchImageSettlementResult, error) {
+	const errorCode = "SETTLEMENT_USAGE_LOG_FAILED_AFTER_CAPTURE"
+	message := truncateBatchImageMessage(usageLogErr.Error(), batchImageMaxErrorMessageLength)
+	retryCount, recordErr := s.Repo.SetBatchImageJobSettlementFailed(ctx, job.BatchID, errorCode, message)
+	if recordErr != nil {
+		return nil, ErrBatchImageSettlementBillingFailed.WithCause(errors.Join(usageLogErr, recordErr))
+	}
+	job.RetryCount = retryCount
+	job.LastErrorCode = batchImageStringPtr(errorCode)
+	job.LastErrorMessage = batchImageStringPtr(message)
+	if retryCount < batchImageSettlementMaxRetries {
+		return nil, ErrBatchImageSettlementBillingFailed.WithCause(fmt.Errorf("persist batch image usage log: %w", usageLogErr))
+	}
+
+	logger.L().Error("batch_image.usage_log_retry_exhausted_after_capture",
+		zap.String("batch_id", job.BatchID),
+		zap.Int("retry_count", retryCount),
+		zap.Error(usageLogErr),
+	)
+	if err := s.markCapturedSettlementCompleted(ctx, job, result, false, message, now); err != nil {
+		if errors.Is(err, ErrBatchImageAlreadySettled) {
+			result.AlreadySettled = true
+			return result, nil
+		}
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *BatchImageSettlementService) markCapturedSettlementCompleted(
+	ctx context.Context,
+	job *BatchImageJob,
+	result *BatchImageSettlementResult,
+	usageLogPersisted bool,
+	usageLogError string,
+	now time.Time,
+) error {
+	outputExpiresAt := now.Add(s.outputRetentionAfterTerminal())
+	return s.Repo.MarkBatchImageJobSettled(ctx, MarkBatchImageJobSettledParams{
+		BatchID:         job.BatchID,
+		ActualCost:      result.ActualCost,
+		ManifestHash:    result.ManifestHash,
+		Now:             &now,
+		OutputExpiresAt: &outputExpiresAt,
+		EventPayload: map[string]any{
+			"batch_id":            job.BatchID,
+			"request_id":          result.RequestID,
+			"success_count":       job.SuccessCount,
+			"fail_count":          job.FailCount,
+			"actual_cost":         result.ActualCost,
+			"manifest_hash":       result.ManifestHash,
+			"usage_log_persisted": usageLogPersisted,
+			"usage_log_error":     strings.TrimSpace(usageLogError),
+			"retry_count":         job.RetryCount,
+		},
+	})
+}
+
+func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *BatchImageJob, actualCost float64, requestID string, createdAt time.Time) error {
 	if s == nil || s.UsageLogRepo == nil || job == nil || job.APIKeyID == nil || job.AccountID == nil {
-		return
+		return nil
 	}
 	billingMode := string(BillingModeImage)
 	billingSource := strings.TrimSpace(job.BillingSource)
@@ -283,9 +380,10 @@ func (s *BatchImageSettlementService) recordUsageLog(ctx context.Context, job *B
 		RequestType:           RequestTypeSync,
 		BillingMode:           &billingMode,
 		ImageSize:             &imageSize,
+		SessionID:             job.SessionID,
 		CreatedAt:             createdAt,
 	}
-	writeUsageLogBestEffort(ctx, s.UsageLogRepo, usageLog, "service.batch_image_settlement")
+	return writeUsageLogBestEffort(ctx, s.UsageLogRepo, usageLog, "service.batch_image_settlement")
 }
 
 func (s *BatchImageSettlementService) invalidateAuthCache(ctx context.Context, userID int64) {

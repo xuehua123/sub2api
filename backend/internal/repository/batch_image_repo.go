@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -275,6 +277,80 @@ WHERE batch_id = $1`, batchID, code, message, now)
 		eventType = "queue_failed"
 	}
 	return appendBatchImageEventWithSQL(ctx, r.sql, batchID, eventType, map[string]any{"error_code": code})
+}
+
+func (r *batchImageRepository) MarkBatchImageBillingCaptured(ctx context.Context, params service.MarkBatchImageBillingCapturedParams) error {
+	if r.db == nil {
+		return r.markBatchImageBillingCapturedWithSQL(ctx, r.sql, params)
+	}
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	if err := r.markBatchImageBillingCapturedWithSQL(ctx, tx, params); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *batchImageRepository) markBatchImageBillingCapturedWithSQL(ctx context.Context, sqlq batchImageSQLExecutor, params service.MarkBatchImageBillingCapturedParams) error {
+	var (
+		status       string
+		actualCost   sql.NullFloat64
+		manifestHash sql.NullString
+	)
+	if err := sqlq.QueryRowContext(ctx, `
+SELECT status, actual_cost, manifest_hash
+FROM batch_image_jobs
+WHERE batch_id = $1
+FOR UPDATE`, params.BatchID).Scan(&status, &actualCost, &manifestHash); err != nil {
+		return translatePersistenceError(err, service.ErrBatchImageJobNotFound, nil)
+	}
+
+	persistedHash := strings.TrimSpace(manifestHash.String)
+	requestedHash := strings.TrimSpace(params.ManifestHash)
+	if status == service.BatchImageJobStatusCompleted {
+		if actualCost.Valid &&
+			math.Abs(actualCost.Float64-params.ActualCost) <= 0.00000001 &&
+			persistedHash == requestedHash {
+			return service.ErrBatchImageAlreadySettled
+		}
+		return service.ErrBatchImageSettlementManifestConflict
+	}
+	if status != service.BatchImageJobStatusSettling {
+		return service.ErrBatchImageSettlementInvalidStatus
+	}
+	if actualCost.Valid {
+		if math.Abs(actualCost.Float64-params.ActualCost) > 0.00000001 || persistedHash != requestedHash {
+			return service.ErrBatchImageSettlementManifestConflict
+		}
+		return nil
+	}
+	if persistedHash != "" && persistedHash != requestedHash {
+		return service.ErrBatchImageSettlementManifestConflict
+	}
+
+	now := time.Now()
+	if params.Now != nil {
+		now = *params.Now
+	}
+	if _, err := sqlq.ExecContext(ctx, `
+UPDATE batch_image_jobs
+SET actual_cost = $2,
+    manifest_hash = $3,
+    updated_at = $4,
+    version = version + 1
+WHERE batch_id = $1
+  AND status = 'settling'
+  AND actual_cost IS NULL`, params.BatchID, params.ActualCost, requestedHash, now); err != nil {
+		return err
+	}
+	return appendBatchImageEventWithSQL(ctx, sqlq, params.BatchID, "billing_captured", params.EventPayload)
 }
 
 func (r *batchImageRepository) MarkBatchImageJobSettled(ctx context.Context, params service.MarkBatchImageJobSettledParams) error {
@@ -756,7 +832,7 @@ INSERT INTO batch_image_jobs (
     batch_discount_multiplier, hold_multiplier, billable_unit_price, hold_unit_price,
     pricing_snapshot_version,
     currency, hold_id,
-    idempotency_key, request_hash, manifest_hash, retry_count, output_expires_at
+    idempotency_key, request_hash, manifest_hash, retry_count, session_id, output_expires_at
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     $8, $9, $10,
@@ -769,7 +845,7 @@ INSERT INTO batch_image_jobs (
     $34, $35, $36, $37,
     $38,
     $39, $40,
-    $41, $42, $43, $44, $45
+    $41, $42, $43, $44, $45, $46
 )
 RETURNING `+batchImageJobColumns,
 		params.BatchID, params.UserID, params.APIKeyID, params.AccountID, params.GroupID, params.SubscriptionID, params.EntitlementID,
@@ -783,7 +859,7 @@ RETURNING `+batchImageJobColumns,
 		params.BatchDiscountMultiplier, params.HoldMultiplier, params.BillableUnitPrice, params.HoldUnitPrice,
 		params.PricingSnapshotVersion,
 		params.Currency, params.HoldID,
-		params.IdempotencyKey, params.RequestHash, params.ManifestHash, params.RetryCount, params.OutputExpiresAt,
+		params.IdempotencyKey, params.RequestHash, params.ManifestHash, params.RetryCount, params.SessionID, params.OutputExpiresAt,
 	))
 }
 
@@ -840,7 +916,7 @@ batch_discount_multiplier, hold_multiplier, billable_unit_price, hold_unit_price
 pricing_snapshot_version,
 currency, hold_id,
 idempotency_key, request_hash, manifest_hash,
-retry_count, version, output_expires_at, input_deleted_at, output_deleted_at, downloaded_at, user_deleted_at,
+retry_count, version, session_id, output_expires_at, input_deleted_at, output_deleted_at, downloaded_at, user_deleted_at,
 last_error_code, last_error_message,
 created_at, updated_at, submitted_at, started_at, finished_at, settled_at`
 
@@ -854,6 +930,7 @@ func scanBatchImageJob(row rowScanner) (*service.BatchImageJob, error) {
 	var parentBatchID sql.NullString
 	var holdAmount, actualCost sql.NullFloat64
 	var holdID, idempotencyKey, requestHash, manifestHash sql.NullString
+	var sessionID sql.NullString
 	var outputExpiresAt, inputDeletedAt, outputDeletedAt, downloadedAt, userDeletedAt sql.NullTime
 	var lastErrorCode, lastErrorMessage sql.NullString
 	var submittedAt, startedAt, finishedAt, settledAt sql.NullTime
@@ -871,7 +948,7 @@ func scanBatchImageJob(row rowScanner) (*service.BatchImageJob, error) {
 		&job.PricingSnapshotVersion,
 		&job.Currency, &holdID,
 		&idempotencyKey, &requestHash, &manifestHash,
-		&job.RetryCount, &job.Version, &outputExpiresAt, &inputDeletedAt, &outputDeletedAt, &downloadedAt, &userDeletedAt,
+		&job.RetryCount, &job.Version, &sessionID, &outputExpiresAt, &inputDeletedAt, &outputDeletedAt, &downloadedAt, &userDeletedAt,
 		&lastErrorCode, &lastErrorMessage,
 		&job.CreatedAt, &job.UpdatedAt, &submittedAt, &startedAt, &finishedAt, &settledAt,
 	)
@@ -899,6 +976,7 @@ func scanBatchImageJob(row rowScanner) (*service.BatchImageJob, error) {
 	job.IdempotencyKey = batchImageNullStringPtr(idempotencyKey)
 	job.RequestHash = batchImageNullStringPtr(requestHash)
 	job.ManifestHash = batchImageNullStringPtr(manifestHash)
+	job.SessionID = batchImageNullStringPtr(sessionID)
 	job.OutputExpiresAt = batchImageNullTimePtr(outputExpiresAt)
 	job.InputDeletedAt = batchImageNullTimePtr(inputDeletedAt)
 	job.OutputDeletedAt = batchImageNullTimePtr(outputDeletedAt)

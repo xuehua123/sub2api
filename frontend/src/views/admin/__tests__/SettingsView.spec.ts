@@ -43,6 +43,7 @@ const {
   getOllamaCloudUsageSettings: vi.fn().mockResolvedValue({
     enabled: false,
     interval_minutes: 60,
+    debounce_minutes: 1,
   }),
   updateOllamaCloudUsageSettings: vi.fn().mockImplementation(async (payload) => payload),
   getGroups: vi.fn(),
@@ -623,6 +624,7 @@ describe("admin SettingsView payment visible method controls", () => {
     getOllamaCloudUsageSettings.mockResolvedValue({
       enabled: false,
       interval_minutes: 60,
+      debounce_minutes: 1,
     });
     updateOllamaCloudUsageSettings.mockImplementation(async (payload) => payload);
     getGroups.mockResolvedValue([]);
@@ -951,6 +953,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(card.find('[data-testid="ollama-cloud-usage-global-interval"]').exists()).toBe(false);
 
     await card.get('[data-testid="ollama-cloud-usage-global-enabled"]').setValue(true);
+    await card.get('[data-testid="ollama-cloud-usage-global-debounce"]').setValue(3);
     await card.get('[data-testid="ollama-cloud-usage-global-interval"]').setValue(90);
     await card.get('[data-testid="ollama-cloud-usage-global-save"]').trigger("click");
     await flushPromises();
@@ -958,6 +961,7 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateOllamaCloudUsageSettings).toHaveBeenCalledWith({
       enabled: true,
       interval_minutes: 90,
+      debounce_minutes: 3,
     });
   });
   it("places and explains rate controls for both scheduling modes", async () => {

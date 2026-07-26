@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -434,6 +435,7 @@ func (r *fakeBatchImageRepository) CreateBatchImageJob(_ context.Context, params
 		Currency:                   params.Currency,
 		IdempotencyKey:             params.IdempotencyKey,
 		RequestHash:                params.RequestHash,
+		SessionID:                  params.SessionID,
 		CreatedAt:                  time.Now(),
 	}
 	r.jobs[job.BatchID] = job
@@ -618,6 +620,30 @@ func (r *fakeBatchImageRepository) RecordBatchImageJobSubmitFailure(_ context.Co
 		eventType = "queue_failed"
 	}
 	r.events[batchID] = append(r.events[batchID], eventType)
+	return nil
+}
+
+func (r *fakeBatchImageRepository) MarkBatchImageBillingCaptured(_ context.Context, params MarkBatchImageBillingCapturedParams) error {
+	job, ok := r.jobs[params.BatchID]
+	if !ok {
+		return ErrBatchImageJobNotFound
+	}
+	if job.Status != BatchImageJobStatusSettling {
+		return ErrBatchImageSettlementInvalidStatus
+	}
+	if job.ActualCost != nil {
+		if math.Abs(*job.ActualCost-params.ActualCost) > batchImageCostEpsilon ||
+			batchImageDerefString(job.ManifestHash) != params.ManifestHash {
+			return ErrBatchImageSettlementManifestConflict
+		}
+		return nil
+	}
+	if batchImageDerefString(job.ManifestHash) != "" && batchImageDerefString(job.ManifestHash) != params.ManifestHash {
+		return ErrBatchImageSettlementManifestConflict
+	}
+	job.ActualCost = &params.ActualCost
+	job.ManifestHash = &params.ManifestHash
+	r.events[params.BatchID] = append(r.events[params.BatchID], "billing_captured")
 	return nil
 }
 

@@ -263,6 +263,14 @@ func (s *paymentRefundUserRepoStub) DeductBalance(ctx context.Context, id int64,
 	return nil
 }
 
+func (s *paymentRefundUserRepoStub) CreateWithEmailAliasGuard(ctx context.Context, user *User) error {
+	return s.Create(ctx, user)
+}
+
+func (s *paymentRefundUserRepoStub) ExistsByEmailAlias(context.Context, string) (bool, error) {
+	panic("unexpected ExistsByEmailAlias")
+}
+
 func (s *paymentRefundUserRepoStub) BatchUpdateLimits(context.Context, []int64, *int, *int) (int, error) {
 	panic("unexpected BatchUpdateLimits")
 }

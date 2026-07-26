@@ -10,6 +10,7 @@ const {
   getModelsListCandidates,
   getUsageSummary,
   getCapacitySummary,
+  getLiveCapability,
   listAccounts,
   showError,
   showSuccess,
@@ -21,6 +22,7 @@ const {
   getModelsListCandidates: vi.fn(),
   getUsageSummary: vi.fn(),
   getCapacitySummary: vi.fn(),
+  getLiveCapability: vi.fn(),
   listAccounts: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -51,6 +53,7 @@ vi.mock('@/api/admin', () => ({
       getModelsListCandidates,
       getUsageSummary,
       getCapacitySummary,
+      getLiveCapability,
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -152,6 +155,12 @@ const DataTableStub = {
   `,
 }
 
+const PaginationStub = {
+  props: ['page', 'total', 'pageSize'],
+  emits: ['update:page', 'update:pageSize'],
+  template: '<button data-test="go-page-3" @click="$emit(\'update:page\', 3)">Page 3</button>',
+}
+
 const SelectStub = {
   props: ['modelValue', 'options', 'placeholder'],
   emits: ['update:modelValue', 'change'],
@@ -184,7 +193,7 @@ const mountView = async () => {
         AppLayout: AppLayoutStub,
         TablePageLayout: TablePageLayoutStub,
         DataTable: DataTableStub,
-        Pagination: true,
+        Pagination: PaginationStub,
         BaseDialog: BaseDialogStub,
         ConfirmDialog: true,
         EmptyState: true,
@@ -227,6 +236,7 @@ describe('admin GroupsView column settings', () => {
     getModelsListCandidates.mockReset()
     getUsageSummary.mockReset()
     getCapacitySummary.mockReset()
+    getLiveCapability.mockReset()
     listAccounts.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
@@ -244,6 +254,7 @@ describe('admin GroupsView column settings', () => {
     getModelsListCandidates.mockResolvedValue([])
     getUsageSummary.mockResolvedValue([])
     getCapacitySummary.mockResolvedValue([])
+    getLiveCapability.mockResolvedValue({ supported: false })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
     isCurrentStep.mockReturnValue(false)
   })
@@ -269,6 +280,32 @@ describe('admin GroupsView column settings', () => {
     ])
     expect(localStorage.getItem('group-hidden-columns')).toBe(JSON.stringify(['id']))
     expect(localStorage.getItem('group-column-settings-version')).toBe('2')
+  })
+
+  it('returns to the first page when a group filter changes', async () => {
+    const unfiltered = Array.from({ length: 41 }, (_, index) =>
+      createGroup({ id: index + 1, name: `Group ${index + 1}` }),
+    )
+    const filtered = createGroup({ id: 100, name: 'Filtered Group', platform: 'openai' })
+    listGroups.mockImplementation(
+      async (_page: number, _pageSize: number, filters: { platform?: string }) => ({
+        items: filters.platform ? [filtered] : unfiltered,
+        total: filters.platform ? 1 : unfiltered.length,
+        page: 1,
+        page_size: 1000,
+        pages: 1,
+      }),
+    )
+    const wrapper = await mountView()
+
+    await wrapper.get('[data-test="go-page-3"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="rows"]').text()).toBe('Group 41')
+
+    await wrapper.findAll('select')[0].setValue('openai')
+    await flushPromises()
+
+    expect(wrapper.get('[data-test="rows"]').text()).toBe('Filtered Group')
   })
 
   it('applies saved hidden columns on mount and ignores unknown keys', async () => {
