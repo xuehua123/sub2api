@@ -71,4 +71,17 @@ describe("admin groups access source capabilities", () => {
     expect(groupsViewSource).toContain(":disabled=\"!canEnablePlanAutoGrant(createForm)\"");
     expect(groupsViewSource).toContain(":disabled=\"!canEnablePlanAutoGrant(editForm)\"");
   });
+
+  it("keeps public visibility selectable for subscription-enabled groups", () => {
+    expect(groupsViewSource).toContain('data-tour="group-form-exclusive"');
+    expect(groupsViewSource).toContain("createForm.is_exclusive = !createForm.is_exclusive");
+    expect(groupsViewSource).toContain("editForm.is_exclusive = !editForm.is_exclusive");
+    expect(groupsViewSource).not.toContain(
+      "v-if=\"createForm.subscription_type !== 'subscription'\"",
+    );
+    expect(groupsViewSource).not.toContain(
+      "v-if=\"editForm.subscription_type !== 'subscription'\"",
+    );
+    expect(groupsViewSource).not.toContain("createForm.is_exclusive = true");
+  });
 });
