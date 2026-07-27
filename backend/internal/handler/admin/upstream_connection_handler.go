@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"errors"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -17,6 +19,11 @@ type UpstreamConnectionHandler struct {
 
 type upstreamConnectionRuntimeOverviewRequest struct {
 	AccountIDs []int64 `json:"account_ids" binding:"required"`
+}
+
+type upstreamConnectionDeleteRequest struct {
+	UnbindAccounts          bool     `json:"unbind_accounts"`
+	ExpectedBoundAccountIDs *[]int64 `json:"expected_bound_account_ids"`
 }
 
 func NewUpstreamConnectionHandler(connectionService *service.UpstreamConnectionService) *UpstreamConnectionHandler {
@@ -263,7 +270,24 @@ func (h *UpstreamConnectionHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.service.Delete(c.Request.Context(), id); err != nil {
+	var request upstreamConnectionDeleteRequest
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&request); err != nil && !errors.Is(err, io.EOF) {
+			response.ErrorFrom(c, infraerrors.BadRequest("VALIDATION_ERROR", err.Error()))
+			return
+		}
+	}
+	// Keep accepting the old query flag, but active bindings still require the
+	// confirmed account-ID snapshot from the JSON body.
+	if c.Query("unbind_accounts") == "true" {
+		request.UnbindAccounts = true
+	}
+	params := service.UpstreamConnectionDeleteParams{UnbindAccounts: request.UnbindAccounts}
+	if request.ExpectedBoundAccountIDs != nil {
+		params.HasExpectedBoundAccountIDs = true
+		params.ExpectedBoundAccountIDs = append([]int64(nil), (*request.ExpectedBoundAccountIDs)...)
+	}
+	if err := h.service.Delete(c.Request.Context(), id, params); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}

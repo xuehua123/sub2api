@@ -20,6 +20,10 @@ type upstreamConnectionRepository struct {
 	client *dbent.Client
 }
 
+func onlyActiveUpstreamAccountBindings(query *dbent.UpstreamAccountBindingQuery) {
+	query.Where(upstreamaccountbinding.HasAccountWith(dbaccount.DeletedAtIsNil()))
+}
+
 func NewUpstreamConnectionRepository(client *dbent.Client) service.UpstreamConnectionRepository {
 	return &upstreamConnectionRepository{client: client}
 }
@@ -71,6 +75,7 @@ func (r *upstreamConnectionRepository) GetByID(ctx context.Context, id int64) (*
 			query.Order(dbent.Asc(upstreamgroup.FieldName), dbent.Asc(upstreamgroup.FieldID))
 		}).
 		WithAccountBindings(func(query *dbent.UpstreamAccountBindingQuery) {
+			onlyActiveUpstreamAccountBindings(query)
 			query.Order(dbent.Asc(upstreamaccountbinding.FieldAccountID), dbent.Asc(upstreamaccountbinding.FieldID))
 		}).
 		Only(ctx)
@@ -107,6 +112,7 @@ func (r *upstreamConnectionRepository) List(ctx context.Context, params service.
 			groupQuery.Select(upstreamgroup.FieldID)
 		}).
 		WithAccountBindings(func(bindingQuery *dbent.UpstreamAccountBindingQuery) {
+			onlyActiveUpstreamAccountBindings(bindingQuery)
 			if !params.IncludeBindings {
 				bindingQuery.Select(upstreamaccountbinding.FieldID, upstreamaccountbinding.FieldAccountID, upstreamaccountbinding.FieldConnectionID)
 			}
@@ -257,26 +263,109 @@ func updateUpstreamConnectionWithClient(
 	return true, nil
 }
 
-func (r *upstreamConnectionRepository) DeleteIfUnbound(ctx context.Context, id int64) error {
-	client := clientFromContext(ctx, r.client)
-	deleted, err := client.UpstreamConnection.Delete().Where(
-		upstreamconnection.IDEQ(id),
-		upstreamconnection.Not(upstreamconnection.HasAccountBindings()),
-	).Exec(ctx)
+func (r *upstreamConnectionRepository) Delete(ctx context.Context, id int64, params service.UpstreamConnectionDeleteParams) error {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return deleteUpstreamConnection(ctx, tx.Client(), id, params)
+	}
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin upstream connection delete: %w", err)
+	}
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := deleteUpstreamConnection(txCtx, tx.Client(), id, params); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upstream connection delete: %w", err)
+	}
+	return nil
+}
+
+func deleteUpstreamConnection(ctx context.Context, client *dbent.Client, id int64, params service.UpstreamConnectionDeleteParams) error {
+	// Binding upserts lock this same connection row, so the lock keeps a new
+	// binding from appearing between the in-use check and deletion.
+	if _, err := client.UpstreamConnection.Query().
+		Where(upstreamconnection.IDEQ(id)).
+		ForUpdate().
+		Only(ctx); err != nil {
+		if dbent.IsNotFound(err) {
+			return service.ErrUpstreamConnectionNotFound
+		}
+		return translateUpstreamConnectionPersistenceError(err)
+	}
+
+	activeBindings, err := client.UpstreamAccountBinding.Query().
+		Where(
+			upstreamaccountbinding.ConnectionIDEQ(id),
+			upstreamaccountbinding.HasAccountWith(dbaccount.DeletedAtIsNil()),
+		).
+		Order(dbent.Asc(upstreamaccountbinding.FieldAccountID)).
+		All(ctx)
 	if err != nil {
 		return translateUpstreamConnectionPersistenceError(err)
 	}
-	if deleted == 1 {
-		return nil
+	activeAccountIDs := make([]int64, 0, len(activeBindings))
+	for _, binding := range activeBindings {
+		activeAccountIDs = append(activeAccountIDs, binding.AccountID)
 	}
-	exists, err := client.UpstreamConnection.Query().Where(upstreamconnection.IDEQ(id)).Exist(ctx)
-	if err != nil {
-		return err
+	if len(activeAccountIDs) > 0 && !params.UnbindAccounts {
+		return service.ErrUpstreamConnectionInUse
 	}
-	if !exists {
-		return service.ErrUpstreamConnectionNotFound
+	if params.UnbindAccounts && len(activeAccountIDs) > 0 && !params.HasExpectedBoundAccountIDs {
+		return service.ErrUpstreamConnectionConfirmationRequired
 	}
-	return service.ErrUpstreamConnectionInUse
+	if params.UnbindAccounts && params.HasExpectedBoundAccountIDs && !sameAccountIDSets(params.ExpectedBoundAccountIDs, activeAccountIDs) {
+		return service.ErrUpstreamConnectionBindingsChanged
+	}
+
+	if params.UnbindAccounts {
+		if _, err := client.UpstreamAccountBinding.Delete().
+			Where(upstreamaccountbinding.ConnectionIDEQ(id)).
+			Exec(ctx); err != nil {
+			return translateUpstreamConnectionPersistenceError(err)
+		}
+	} else {
+		// Soft-deleted accounts are invisible and cannot be scheduled. Their stale
+		// bindings must never leave a connection impossible to remove from the UI.
+		if _, err := client.UpstreamAccountBinding.Delete().
+			Where(
+				upstreamaccountbinding.ConnectionIDEQ(id),
+				upstreamaccountbinding.HasAccountWith(dbaccount.DeletedAtNotNil()),
+			).
+			Exec(ctx); err != nil {
+			return translateUpstreamConnectionPersistenceError(err)
+		}
+	}
+
+	if err := client.UpstreamConnection.DeleteOneID(id).Exec(ctx); err != nil {
+		return translateUpstreamConnectionPersistenceError(err)
+	}
+	return nil
+}
+
+func sameAccountIDSets(expected, actual []int64) bool {
+	if len(expected) != len(actual) {
+		return false
+	}
+	remaining := make(map[int64]struct{}, len(expected))
+	for _, id := range expected {
+		if id <= 0 {
+			return false
+		}
+		if _, exists := remaining[id]; exists {
+			return false
+		}
+		remaining[id] = struct{}{}
+	}
+	for _, id := range actual {
+		if _, exists := remaining[id]; !exists {
+			return false
+		}
+		delete(remaining, id)
+	}
+	return len(remaining) == 0
 }
 
 func (r *upstreamConnectionRepository) FinalizeCredentialRefresh(
@@ -468,6 +557,7 @@ func (r *upstreamConnectionRepository) ListDueAccountBindings(ctx context.Contex
 	rows, err := client.UpstreamAccountBinding.Query().
 		Where(
 			upstreamaccountbinding.ConnectionIDEQ(connectionID),
+			upstreamaccountbinding.HasAccountWith(dbaccount.DeletedAtIsNil()),
 			upstreamaccountbinding.Or(
 				upstreamaccountbinding.NextSyncAtIsNil(),
 				upstreamaccountbinding.NextSyncAtLTE(now),
@@ -710,7 +800,10 @@ func applyObservedAccountRateMultiplier(ctx context.Context, client *dbent.Clien
 func (r *upstreamConnectionRepository) GetAccountBinding(ctx context.Context, accountID int64) (*service.UpstreamAccountBinding, error) {
 	client := clientFromContext(ctx, r.client)
 	row, err := client.UpstreamAccountBinding.Query().
-		Where(upstreamaccountbinding.AccountIDEQ(accountID)).
+		Where(
+			upstreamaccountbinding.AccountIDEQ(accountID),
+			upstreamaccountbinding.HasAccountWith(dbaccount.DeletedAtIsNil()),
+		).
 		Only(ctx)
 	if dbent.IsNotFound(err) {
 		return nil, service.ErrUpstreamAccountBindingNotFound.WithCause(err)

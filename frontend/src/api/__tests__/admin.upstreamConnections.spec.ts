@@ -17,6 +17,7 @@ import {
   getRuntimeOverview,
   getTodayUsage,
   listAll,
+  remove as removeConnection,
   unbindAccount
 } from '@/api/admin/upstreamConnections'
 
@@ -41,6 +42,24 @@ describe('admin upstream connections API', () => {
     expect(get).toHaveBeenCalledWith('/admin/upstream-connections/bindings/by-account/12')
     expect(put).toHaveBeenCalledWith('/admin/upstream-connections/7/bindings/12')
     expect(remove).toHaveBeenCalledWith('/admin/upstream-connections/7/bindings/12')
+  })
+
+  it('sends the confirmed bound-account snapshot before deleting bound accounts', async () => {
+    remove.mockResolvedValue({})
+
+    await expect(removeConnection(7)).resolves.toBeUndefined()
+    await expect(removeConnection(8, {
+      unbindAccounts: true,
+      expectedBoundAccountIds: [12, 24]
+    })).resolves.toBeUndefined()
+
+    expect(remove).toHaveBeenNthCalledWith(1, '/admin/upstream-connections/7')
+    expect(remove).toHaveBeenNthCalledWith(2, '/admin/upstream-connections/8', {
+      data: {
+        unbind_accounts: true,
+        expected_bound_account_ids: [12, 24]
+      }
+    })
   })
 
   it('loads every page for account binding selectors', async () => {

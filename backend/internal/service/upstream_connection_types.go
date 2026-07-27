@@ -160,6 +160,15 @@ type UpstreamConnectionListParams struct {
 	IncludeBindings bool
 }
 
+// UpstreamConnectionDeleteParams carries the binding set explicitly confirmed
+// by the caller. The repository compares it under the connection row lock so a
+// stale dialog cannot silently unbind an account added by another administrator.
+type UpstreamConnectionDeleteParams struct {
+	UnbindAccounts             bool
+	HasExpectedBoundAccountIDs bool
+	ExpectedBoundAccountIDs    []int64
+}
+
 type UpstreamConnectionCredentialInput struct {
 	Username         string `json:"username,omitempty"`
 	Password         string `json:"password,omitempty"`

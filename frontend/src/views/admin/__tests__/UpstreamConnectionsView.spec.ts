@@ -10,6 +10,7 @@ const {
   getTodayUsageMock,
   getRuntimeOverviewMock,
   probeConnectionMock,
+  removeConnectionMock,
   getBatchTodayStatsMock,
   getProxiesMock,
   showErrorMock
@@ -21,6 +22,7 @@ const {
   getTodayUsageMock: vi.fn(),
   getRuntimeOverviewMock: vi.fn(),
   probeConnectionMock: vi.fn(),
+  removeConnectionMock: vi.fn(),
   getBatchTodayStatsMock: vi.fn(),
   getProxiesMock: vi.fn(),
   showErrorMock: vi.fn()
@@ -61,7 +63,8 @@ vi.mock('@/api/admin', () => ({
       getRuntimeOverview: getRuntimeOverviewMock,
       create: createConnectionMock,
       update: updateConnectionMock,
-      probe: probeConnectionMock
+      probe: probeConnectionMock,
+      remove: removeConnectionMock
     },
     accounts: { getBatchTodayStats: getBatchTodayStatsMock },
     proxies: { getAll: getProxiesMock }
@@ -94,6 +97,18 @@ const SelectStub = defineComponent({
 const BaseDialogStub = defineComponent({
   props: { show: Boolean },
   template: '<div v-if="show"><slot /><slot name="footer" /></div>'
+})
+
+const ConfirmDialogStub = defineComponent({
+  props: { show: Boolean, message: { type: String, default: '' } },
+  emits: ['confirm', 'cancel'],
+  template: `
+    <div v-if="show" data-testid="delete-confirm-dialog">
+      <span data-testid="delete-confirm-message">{{ message }}</span>
+      <button data-testid="confirm-delete" @click="$emit('confirm')">confirm</button>
+      <button data-testid="cancel-delete" @click="$emit('cancel')">cancel</button>
+    </div>
+  `
 })
 
 const DataTableStub = defineComponent({
@@ -131,7 +146,7 @@ function mountView() {
         DataTable: DataTableStub,
         Pagination: true,
         BaseDialog: BaseDialogStub,
-        ConfirmDialog: true,
+        ConfirmDialog: ConfirmDialogStub,
         Select: SelectStub,
         Icon: true,
         UpstreamConnectionUsagePanel: {
@@ -163,6 +178,7 @@ describe('UpstreamConnectionsView', () => {
     createConnectionMock.mockResolvedValue({ id: 12 })
     updateConnectionMock.mockResolvedValue({ id: 12 })
     probeConnectionMock.mockResolvedValue({ id: 12 })
+    removeConnectionMock.mockResolvedValue(undefined)
     getConnectionMock.mockResolvedValue({ id: 12, bindings: [] })
     getTodayUsageMock.mockResolvedValue({
       connection_id: 12,
@@ -278,6 +294,115 @@ describe('UpstreamConnectionsView', () => {
 
     expect(updateConnectionMock).toHaveBeenCalledWith(12, expect.objectContaining({ expected_version: 17 }))
     expect(updateConnectionMock.mock.calls[0]?.[1]).not.toHaveProperty('not_in_cn_confirmed')
+  })
+
+  it('submits the confirmed active account IDs before deleting a connection', async () => {
+    const connection = {
+      id: 27,
+      name: 'Shared upstream',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: null,
+      wallet_currency: '',
+      wallet_usd: null,
+      wallet_unlimited: false,
+      wallet_reliability: 'unknown',
+      bound_account_ids: [101, 202],
+      binding_count: 2
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('button[title="common.delete"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(removeConnectionMock).toHaveBeenCalledWith(27, {
+      unbindAccounts: true,
+      expectedBoundAccountIds: [101, 202]
+    })
+  })
+
+  it('refreshes instead of retrying a stale binding deletion confirmation', async () => {
+    const connection = {
+      id: 28,
+      name: 'Changed upstream',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: null,
+      wallet_currency: '',
+      wallet_usd: null,
+      wallet_unlimited: false,
+      wallet_reliability: 'unknown',
+      bound_account_ids: [101],
+      binding_count: 1
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+    removeConnectionMock.mockRejectedValueOnce({
+      code: 'UPSTREAM_CONNECTION_BINDINGS_CHANGED'
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('button[title="common.delete"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(listAllConnectionsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="delete-confirm-dialog"]').exists()).toBe(false)
+    expect(showErrorMock).toHaveBeenCalledWith('admin.upstreamConnections.deleteBindingsChanged')
+  })
+
+  it('refreshes when an account is bound after an unbound delete dialog opens', async () => {
+    const connection = {
+      id: 29,
+      name: 'Newly bound upstream',
+      provider: 'newapi',
+      auth_mode: 'password',
+      management_base_url: 'https://console.example.com',
+      forwarding_base_url: '',
+      remote_user_id: '',
+      proxy_id: null,
+      sync_enabled: true,
+      sync_interval_seconds: 300,
+      version: 1,
+      wallet_amount: null,
+      wallet_currency: '',
+      wallet_usd: null,
+      wallet_unlimited: false,
+      wallet_reliability: 'unknown',
+      bound_account_ids: [],
+      binding_count: 0
+    }
+    listAllConnectionsMock.mockResolvedValue([connection])
+    removeConnectionMock.mockRejectedValueOnce({
+      code: 'UPSTREAM_CONNECTION_IN_USE'
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('button[title="common.delete"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-delete"]').trigger('click')
+    await flushPromises()
+
+    expect(listAllConnectionsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-testid="delete-confirm-dialog"]').exists()).toBe(false)
+    expect(showErrorMock).toHaveBeenCalledWith('admin.upstreamConnections.deleteBindingsChanged')
   })
 
   it('shows the upstream homepage, today requests, and low-balance state', async () => {

@@ -516,7 +516,8 @@
     <ConfirmDialog
       :show="Boolean(deleting)"
       :title="t('admin.upstreamConnections.delete')"
-      :message="t('admin.upstreamConnections.deleteConfirm', { name: deleting?.name || '' })"
+      :message="deleteConfirmMessage"
+      :confirm-text="t('admin.upstreamConnections.delete')"
       :danger="true"
       @confirm="confirmDelete"
       @cancel="deleting = null"
@@ -629,6 +630,16 @@ const sortOptions = computed(() => [
   { value: 'name_asc', label: t('admin.upstreamConnections.sort.nameAsc') },
   { value: 'name_desc', label: t('admin.upstreamConnections.sort.nameDesc') }
 ])
+const deleteConfirmMessage = computed(() => {
+  if (!deleting.value) return ''
+  if (deleting.value.binding_count > 0) {
+    return t('admin.upstreamConnections.deleteConfirmWithUnbind', {
+      name: deleting.value.name,
+      count: deleting.value.binding_count
+    })
+  }
+  return t('admin.upstreamConnections.deleteConfirm', { name: deleting.value.name })
+})
 const authModeOptions = computed(() => [
   { value: 'password', label: t('admin.upstreamConnections.authModes.password') },
   { value: 'access_token', label: t('admin.upstreamConnections.authModes.access_token') }
@@ -880,6 +891,17 @@ function openAccountGroup(connectionID: number, groupID: number): void {
 function errorMessage(error: unknown, fallback: string): string {
   const response = (error as { response?: { data?: { message?: string; detail?: string } }; message?: string })
   return response.response?.data?.message || response.response?.data?.detail || response.message || fallback
+}
+
+function isStaleDeleteConfirmation(error: unknown): boolean {
+  const candidate = error as {
+    code?: string
+    response?: { data?: { code?: string } }
+  }
+  const code = candidate.code ?? candidate.response?.data?.code
+  return code === 'UPSTREAM_CONNECTION_IN_USE' ||
+    code === 'UPSTREAM_CONNECTION_BINDINGS_CHANGED' ||
+    code === 'UPSTREAM_CONNECTION_BINDING_CONFIRMATION_REQUIRED'
 }
 
 function setProbing(connectionId: number, probing: boolean): void {
@@ -1308,13 +1330,26 @@ function closeDetails(): void {
   detailsUsageLoading.value = false
 }
 async function confirmDelete(): Promise<void> {
-  if (!deleting.value) return
+  const connection = deleting.value
+  if (!connection) return
   try {
-    await adminAPI.upstreamConnections.remove(deleting.value.id)
+    const boundAccountIDs = connection.bound_account_ids ?? []
+    await adminAPI.upstreamConnections.remove(
+      connection.id,
+      boundAccountIDs.length > 0
+        ? { unbindAccounts: true, expectedBoundAccountIds: [...boundAccountIDs] }
+        : undefined
+    )
     appStore.showSuccess(t('admin.upstreamConnections.deleted'))
     deleting.value = null
     await loadConnections(1)
   } catch (error: unknown) {
+    if (isStaleDeleteConfirmation(error)) {
+      deleting.value = null
+      await loadConnections(pagination.page)
+      appStore.showError(t('admin.upstreamConnections.deleteBindingsChanged'))
+      return
+    }
     appStore.showError(errorMessage(error, t('admin.upstreamConnections.deleteFailed')))
   }
 }

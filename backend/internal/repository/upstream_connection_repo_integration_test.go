@@ -5,8 +5,11 @@ package repository
 import (
 	"context"
 	"testing"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
+	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamgroup"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -184,4 +187,224 @@ func TestUpstreamConnectionRepositoryBindingSyncsAccountRateMultiplier(t *testin
 	updatedAccount, err = tx.Client().Account.Get(txCtx, account.ID)
 	require.NoError(t, err)
 	require.Equal(t, 0.25, updatedAccount.RateMultiplier)
+}
+
+func TestUpstreamConnectionRepositoryDeleteCleansSoftDeletedAccountBindings(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	deletedAt := time.Now().UTC()
+	account, err := tx.Client().Account.Create().
+		SetName("soft-deleted upstream binding").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		SetDeletedAt(deletedAt).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := mustCreateUpstreamConnectionForDelete(t, txCtx, repo, "soft-delete cleanup")
+	_, err = tx.Client().UpstreamAccountBinding.Create().
+		SetAccountID(account.ID).
+		SetConnectionID(connection.ID).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Delete(txCtx, connection.ID, service.UpstreamConnectionDeleteParams{}))
+	connectionExists, err := tx.Client().UpstreamConnection.Query().
+		Where(upstreamconnection.IDEQ(connection.ID)).
+		Exist(txCtx)
+	require.NoError(t, err)
+	require.False(t, connectionExists)
+	bindingCount, err := tx.Client().UpstreamAccountBinding.Query().
+		Where(upstreamaccountbinding.AccountIDEQ(account.ID)).
+		Count(txCtx)
+	require.NoError(t, err)
+	require.Zero(t, bindingCount)
+	_, err = tx.Client().Account.Get(txCtx, account.ID)
+	require.NoError(t, err)
+}
+
+func TestUpstreamConnectionRepositoryDeleteRequiresExplicitUnbindForActiveAccounts(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	account, err := tx.Client().Account.Create().
+		SetName("active upstream binding").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := mustCreateUpstreamConnectionForDelete(t, txCtx, repo, "active-binding cleanup")
+	_, err = tx.Client().UpstreamAccountBinding.Create().
+		SetAccountID(account.ID).
+		SetConnectionID(connection.ID).
+		Save(txCtx)
+	require.NoError(t, err)
+	softDeletedAt := time.Now().UTC()
+	softDeletedAccount, err := tx.Client().Account.Create().
+		SetName("hidden binding beside active account").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		SetDeletedAt(softDeletedAt).
+		Save(txCtx)
+	require.NoError(t, err)
+	_, err = tx.Client().UpstreamAccountBinding.Create().
+		SetAccountID(softDeletedAccount.ID).
+		SetConnectionID(connection.ID).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	err = repo.Delete(txCtx, connection.ID, service.UpstreamConnectionDeleteParams{})
+	require.ErrorIs(t, err, service.ErrUpstreamConnectionInUse)
+	err = repo.Delete(txCtx, connection.ID, service.UpstreamConnectionDeleteParams{UnbindAccounts: true})
+	require.ErrorIs(t, err, service.ErrUpstreamConnectionConfirmationRequired)
+	bindingCountBeforeConfirmation, err := tx.Client().UpstreamAccountBinding.Query().
+		Where(upstreamaccountbinding.ConnectionIDEQ(connection.ID)).
+		Count(txCtx)
+	require.NoError(t, err)
+	require.Equal(t, 2, bindingCountBeforeConfirmation)
+
+	require.NoError(t, repo.Delete(txCtx, connection.ID, service.UpstreamConnectionDeleteParams{
+		UnbindAccounts:             true,
+		HasExpectedBoundAccountIDs: true,
+		ExpectedBoundAccountIDs:    []int64{account.ID},
+	}))
+	connectionExists, err := tx.Client().UpstreamConnection.Query().
+		Where(upstreamconnection.IDEQ(connection.ID)).
+		Exist(txCtx)
+	require.NoError(t, err)
+	require.False(t, connectionExists)
+	bindingCount, err := tx.Client().UpstreamAccountBinding.Query().
+		Where(upstreamaccountbinding.AccountIDEQ(account.ID)).
+		Count(txCtx)
+	require.NoError(t, err)
+	require.Zero(t, bindingCount)
+	_, err = tx.Client().Account.Get(txCtx, account.ID)
+	require.NoError(t, err)
+}
+
+func TestUpstreamConnectionRepositoryDeleteRejectsChangedActiveBindingSet(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	firstAccount, err := tx.Client().Account.Create().
+		SetName("first active upstream binding").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		Save(txCtx)
+	require.NoError(t, err)
+	secondAccount, err := tx.Client().Account.Create().
+		SetName("second active upstream binding").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := mustCreateUpstreamConnectionForDelete(t, txCtx, repo, "stale binding confirmation")
+	for _, accountID := range []int64{firstAccount.ID, secondAccount.ID} {
+		_, err = tx.Client().UpstreamAccountBinding.Create().
+			SetAccountID(accountID).
+			SetConnectionID(connection.ID).
+			Save(txCtx)
+		require.NoError(t, err)
+	}
+
+	err = repo.Delete(txCtx, connection.ID, service.UpstreamConnectionDeleteParams{
+		UnbindAccounts:             true,
+		HasExpectedBoundAccountIDs: true,
+		ExpectedBoundAccountIDs:    []int64{firstAccount.ID},
+	})
+	require.ErrorIs(t, err, service.ErrUpstreamConnectionBindingsChanged)
+
+	connectionExists, err := tx.Client().UpstreamConnection.Query().
+		Where(upstreamconnection.IDEQ(connection.ID)).
+		Exist(txCtx)
+	require.NoError(t, err)
+	require.True(t, connectionExists)
+	bindingCount, err := tx.Client().UpstreamAccountBinding.Query().
+		Where(upstreamaccountbinding.ConnectionIDEQ(connection.ID)).
+		Count(txCtx)
+	require.NoError(t, err)
+	require.Equal(t, 2, bindingCount)
+}
+
+func TestUpstreamConnectionRepositoryExcludesSoftDeletedBindingsFromVisibleAndDueLists(t *testing.T) {
+	ctx := context.Background()
+	tx, err := integrationEntClient.Tx(ctx)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = tx.Rollback() })
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	deletedAt := time.Now().UTC()
+	account, err := tx.Client().Account.Create().
+		SetName("hidden upstream binding").
+		SetPlatform("openai").
+		SetType(service.AccountTypeAPIKey).
+		SetDeletedAt(deletedAt).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	repo := NewUpstreamConnectionRepository(integrationEntClient)
+	connection := mustCreateUpstreamConnectionForDelete(t, txCtx, repo, "hidden binding list")
+	_, err = tx.Client().UpstreamAccountBinding.Create().
+		SetAccountID(account.ID).
+		SetConnectionID(connection.ID).
+		Save(txCtx)
+	require.NoError(t, err)
+
+	loaded, err := repo.GetByID(txCtx, connection.ID)
+	require.NoError(t, err)
+	require.Zero(t, loaded.BindingCount)
+	require.Empty(t, loaded.BoundAccountIDs)
+	require.Empty(t, loaded.Bindings)
+
+	items, _, err := repo.List(txCtx, service.UpstreamConnectionListParams{Page: 1, PageSize: 100, IncludeBindings: true})
+	require.NoError(t, err)
+	var listed *service.UpstreamConnection
+	for _, item := range items {
+		if item.ID == connection.ID {
+			listed = item
+			break
+		}
+	}
+	require.NotNil(t, listed)
+	require.Zero(t, listed.BindingCount)
+	require.Empty(t, listed.BoundAccountIDs)
+	require.Empty(t, listed.Bindings)
+
+	due, err := repo.ListDueAccountBindings(txCtx, connection.ID, time.Now().UTC(), 10)
+	require.NoError(t, err)
+	require.Empty(t, due)
+}
+
+func mustCreateUpstreamConnectionForDelete(
+	t *testing.T,
+	ctx context.Context,
+	repo service.UpstreamConnectionRepository,
+	name string,
+) *service.UpstreamConnection {
+	t.Helper()
+	connection := &service.UpstreamConnection{
+		Name: name, Provider: service.UpstreamConnectionProviderSub2API,
+		AuthMode: "access_token", ManagementBaseURL: "https://upstream.example.com",
+		CredentialEncrypted: "encrypted", CredentialFingerprint: "sha256:v1:delete-test",
+		Capabilities: map[string]any{}, Status: service.UpstreamConnectionStatusReady,
+		SyncEnabled: true, SyncIntervalSeconds: 300, Version: 1,
+		WalletReliability: "unknown", WalletRaw: map[string]any{},
+	}
+	require.NoError(t, repo.Create(ctx, connection))
+	return connection
 }

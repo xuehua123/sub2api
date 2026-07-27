@@ -36,6 +36,8 @@ type upstreamConnectionTestRepo struct {
 	createCalls           int
 	items                 []*UpstreamConnection
 	deleteErr             error
+	deleteCalls           int
+	deleteParams          UpstreamConnectionDeleteParams
 	updateApplyResult     *bool
 	updateCredential      bool
 	updateRuntimeState    bool
@@ -204,7 +206,9 @@ func (r *upstreamConnectionTestRepo) UpdateIfVersion(_ context.Context, connecti
 	return true, nil
 }
 
-func (r *upstreamConnectionTestRepo) DeleteIfUnbound(_ context.Context, _ int64) error {
+func (r *upstreamConnectionTestRepo) Delete(_ context.Context, _ int64, params UpstreamConnectionDeleteParams) error {
+	r.deleteCalls++
+	r.deleteParams = params
 	return r.deleteErr
 }
 
@@ -785,9 +789,24 @@ func TestUpstreamConnectionServiceDeletePreservesInUseConflict(t *testing.T) {
 	repo := &upstreamConnectionTestRepo{deleteErr: ErrUpstreamConnectionInUse}
 	service := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
 
-	err := service.Delete(context.Background(), 5)
+	err := service.Delete(context.Background(), 5, UpstreamConnectionDeleteParams{})
 	require.Error(t, err)
 	require.True(t, errors.Is(err, ErrUpstreamConnectionInUse))
+	require.False(t, repo.deleteParams.UnbindAccounts)
+}
+
+func TestUpstreamConnectionServiceDeletePassesExplicitUnbindAcknowledgement(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{}
+	service := NewUpstreamConnectionService(repo, upstreamConnectionTestEncryptor{}, nil)
+
+	params := UpstreamConnectionDeleteParams{
+		UnbindAccounts:             true,
+		HasExpectedBoundAccountIDs: true,
+		ExpectedBoundAccountIDs:    []int64{12, 24},
+	}
+	require.NoError(t, service.Delete(context.Background(), 5, params))
+	require.Equal(t, 1, repo.deleteCalls)
+	require.Equal(t, params, repo.deleteParams)
 }
 
 func TestUpstreamConnectionServiceBindAccountAppliesObservedBillingMultiplier(t *testing.T) {

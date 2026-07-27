@@ -255,7 +255,21 @@ export async function update(id: number, payload: UpdateUpstreamConnectionReques
   return data
 }
 
-export async function remove(id: number): Promise<void> {
+export interface DeleteUpstreamConnectionOptions {
+  unbindAccounts: true
+  expectedBoundAccountIds: number[]
+}
+
+export async function remove(id: number, options?: DeleteUpstreamConnectionOptions): Promise<void> {
+  if (options?.unbindAccounts) {
+    await apiClient.delete(`/admin/upstream-connections/${id}`, {
+      data: {
+        unbind_accounts: true,
+        expected_bound_account_ids: options.expectedBoundAccountIds
+      }
+    })
+    return
+  }
   await apiClient.delete(`/admin/upstream-connections/${id}`)
 }
 

@@ -25,13 +25,15 @@ import (
 )
 
 var (
-	ErrUpstreamConnectionNotFound         = infraerrors.NotFound("UPSTREAM_CONNECTION_NOT_FOUND", "upstream connection not found")
-	ErrUpstreamConnectionInUse            = infraerrors.Conflict("UPSTREAM_CONNECTION_IN_USE", "upstream connection is still bound to accounts")
-	ErrUpstreamConnectionInvalidReference = infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_REFERENCE", "referenced proxy or account does not exist")
-	ErrUpstreamConnectionChanged          = infraerrors.Conflict("UPSTREAM_CONNECTION_CHANGED", "upstream connection changed; reload and retry")
-	ErrUpstreamCredentialRefreshBusy      = infraerrors.Conflict("UPSTREAM_CREDENTIAL_REFRESH_BUSY", "another upstream credential refresh is already in progress")
-	ErrUpstreamAccountBindingNotFound     = infraerrors.NotFound("UPSTREAM_ACCOUNT_BINDING_NOT_FOUND", "upstream account binding not found")
-	ErrUpstreamConnectionAuthentication   = errors.New("upstream management authentication failed")
+	ErrUpstreamConnectionNotFound             = infraerrors.NotFound("UPSTREAM_CONNECTION_NOT_FOUND", "upstream connection not found")
+	ErrUpstreamConnectionInUse                = infraerrors.Conflict("UPSTREAM_CONNECTION_IN_USE", "upstream connection is still bound to accounts")
+	ErrUpstreamConnectionBindingsChanged      = infraerrors.Conflict("UPSTREAM_CONNECTION_BINDINGS_CHANGED", "upstream connection bindings changed; reload and confirm again")
+	ErrUpstreamConnectionConfirmationRequired = infraerrors.Conflict("UPSTREAM_CONNECTION_BINDING_CONFIRMATION_REQUIRED", "bound accounts must be reloaded and confirmed before deletion")
+	ErrUpstreamConnectionInvalidReference     = infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_REFERENCE", "referenced proxy or account does not exist")
+	ErrUpstreamConnectionChanged              = infraerrors.Conflict("UPSTREAM_CONNECTION_CHANGED", "upstream connection changed; reload and retry")
+	ErrUpstreamCredentialRefreshBusy          = infraerrors.Conflict("UPSTREAM_CREDENTIAL_REFRESH_BUSY", "another upstream credential refresh is already in progress")
+	ErrUpstreamAccountBindingNotFound         = infraerrors.NotFound("UPSTREAM_ACCOUNT_BINDING_NOT_FOUND", "upstream account binding not found")
+	ErrUpstreamConnectionAuthentication       = errors.New("upstream management authentication failed")
 )
 
 type UpstreamConnectionRepository interface {
@@ -39,7 +41,7 @@ type UpstreamConnectionRepository interface {
 	GetByID(ctx context.Context, id int64) (*UpstreamConnection, error)
 	List(ctx context.Context, params UpstreamConnectionListParams) ([]*UpstreamConnection, int64, error)
 	UpdateIfVersion(ctx context.Context, connection *UpstreamConnection, expectedVersion int64, resetBindings, updateCredential, updateRuntimeState, updateRemoteUserID bool) (bool, error)
-	DeleteIfUnbound(ctx context.Context, id int64) error
+	Delete(ctx context.Context, id int64, params UpstreamConnectionDeleteParams) error
 	FinalizeCredentialRefresh(ctx context.Context, id int64, expectedCiphertext, expectedProvider, expectedAuthMode, expectedManagementBaseURL string, update UpstreamConnectionCredentialPersistence) (bool, error)
 	ApplyProbeSuccess(ctx context.Context, id, expectedVersion int64, update UpstreamConnectionProbePersistence) (bool, error)
 	RecordProbeFailure(ctx context.Context, id, expectedVersion int64, failure UpstreamConnectionProbeFailure) (bool, error)
@@ -332,8 +334,11 @@ func (s *UpstreamConnectionService) Update(ctx context.Context, id int64, params
 	return connection, nil
 }
 
-func (s *UpstreamConnectionService) Delete(ctx context.Context, id int64) error {
-	if err := s.repo.DeleteIfUnbound(ctx, id); err != nil {
+// Delete removes a shared upstream connection. Bindings for already soft-deleted
+// accounts are always cleaned up. Bindings for existing accounts require the
+// caller to explicitly acknowledge unbinding them.
+func (s *UpstreamConnectionService) Delete(ctx context.Context, id int64, params UpstreamConnectionDeleteParams) error {
+	if err := s.repo.Delete(ctx, id, params); err != nil {
 		return fmt.Errorf("delete upstream connection: %w", err)
 	}
 	return nil
