@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/schema/mixins"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamconnection"
 	"github.com/Wei-Shaw/sub2api/ent/upstreamgroup"
@@ -224,7 +225,7 @@ func TestUpstreamConnectionRepositoryDeleteCleansSoftDeletedAccountBindings(t *t
 		Count(txCtx)
 	require.NoError(t, err)
 	require.Zero(t, bindingCount)
-	_, err = tx.Client().Account.Get(txCtx, account.ID)
+	_, err = tx.Client().Account.Get(mixins.SkipSoftDelete(txCtx), account.ID)
 	require.NoError(t, err)
 }
 
