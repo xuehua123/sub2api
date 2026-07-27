@@ -209,3 +209,67 @@ describe('RegisterView referral input visibility', () => {
     expect(validateReferralCode).toHaveBeenCalledWith('REF123')
   })
 })
+
+function mountRegister() {
+  return mount(RegisterView, {
+    global: {
+      stubs: {
+        AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+        Icon: true,
+        TurnstileWidget: { template: '<div data-testid="turnstile-widget" />' },
+        LoginAgreementPrompt: true,
+        EmailOAuthButtons: true,
+        LinuxDoOAuthSection: true,
+        WechatOAuthSection: true,
+        OidcOAuthSection: true,
+        RouterLink: true,
+        transition: false
+      }
+    }
+  })
+}
+
+describe('RegisterView invitation layout', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    routeQuery.value = {}
+    getPublicSettings.mockResolvedValue({
+      ...baseSettings,
+      affiliate_enabled: true,
+      turnstile_enabled: true,
+      turnstile_site_key: 'site-key'
+    })
+    isWeChatWebOAuthEnabled.mockReturnValue(false)
+  })
+
+  it('keeps the optional affiliate invitation field before Turnstile', async () => {
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    const invitationField = wrapper.get('[data-testid="affiliate-invitation-field"]')
+    const turnstile = wrapper.get('[data-testid="registration-turnstile"]')
+
+    expect(invitationField.get('input').attributes('id')).toBe('affiliate_code')
+    expect(invitationField.text()).toContain('common.optional')
+    expect(
+      invitationField.element.compareDocumentPosition(turnstile.element) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('uses the mandatory invitation field without duplicating the affiliate field', async () => {
+    getPublicSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      affiliate_enabled: true,
+      turnstile_enabled: true,
+      turnstile_site_key: 'site-key',
+      invitation_code_enabled: true
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="affiliate-invitation-field"]').exists()).toBe(false)
+    expect(wrapper.get('#invitation_code').exists()).toBe(true)
+  })
+})

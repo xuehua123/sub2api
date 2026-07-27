@@ -722,6 +722,9 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
 	billingModel := concreteBillingModel
+	if input.BillingModelSource == BillingModelSourceUpstream && strings.TrimSpace(result.UpstreamModel) != "" {
+		billingModel = result.UpstreamModel
+	}
 	if input.BillingModelSource == BillingModelSourceChannelMapped && input.ChannelMappedModel != "" {
 		billingModel = input.ChannelMappedModel
 	}
@@ -1028,7 +1031,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		RequestID:             requestID,
 		Model:                 result.Model,
 		RequestedModel:        requestedModel,
-		UpstreamModel:         optionalNonEqualStringPtr(result.UpstreamModel, result.Model),
+		UpstreamModel:         optionalTrimmedStringPtr(result.UpstreamModel),
 		ReasoningEffort:       result.ReasoningEffort,
 		InboundEndpoint:       optionalTrimmedStringPtr(input.InboundEndpoint),
 		UpstreamEndpoint:      optionalTrimmedStringPtr(input.UpstreamEndpoint),
