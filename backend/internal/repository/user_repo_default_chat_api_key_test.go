@@ -75,29 +75,24 @@ func TestUserRepositoryCreatePersistsDefaultChatAPIKeyID(t *testing.T) {
 	require.Equal(t, defaultKeyID, *got.DefaultChatAPIKeyID)
 }
 
-func TestUserRepositoryUpdatePersistsAndClearsDefaultChatAPIKeyID(t *testing.T) {
+func TestUserRepositoryUpdateDoesNotTouchDefaultChatAPIKeyID(t *testing.T) {
 	repo, client := newUserRepoSQLite(t)
 	ctx := context.Background()
 	apiKeyHolder := mustCreateDefaultChatRepoUser(t, ctx, repo, "api-owner-update@test.com", nil)
 	defaultKeyID := mustCreateDefaultChatRepoAPIKey(t, ctx, client, apiKeyHolder.ID)
-	user := mustCreateDefaultChatRepoUser(t, ctx, repo, "update-default-chat@test.com", nil)
+	user := mustCreateDefaultChatRepoUser(t, ctx, repo, "update-default-chat@test.com", &defaultKeyID)
 
 	got, err := repo.GetByID(ctx, user.ID)
 	require.NoError(t, err)
-	got.DefaultChatAPIKeyID = &defaultKeyID
-	require.NoError(t, repo.Update(ctx, got))
+	got.DefaultChatAPIKeyID = nil
+	got.Username = "updated-name"
+	require.NoError(t, repo.Update(ctx, got, service.UserUpdateFields{Username: true}))
 
 	updated, err := repo.GetByID(ctx, user.ID)
 	require.NoError(t, err)
+	require.Equal(t, "updated-name", updated.Username)
 	require.NotNil(t, updated.DefaultChatAPIKeyID)
 	require.Equal(t, defaultKeyID, *updated.DefaultChatAPIKeyID)
-
-	updated.DefaultChatAPIKeyID = nil
-	require.NoError(t, repo.Update(ctx, updated))
-
-	cleared, err := repo.GetByID(ctx, user.ID)
-	require.NoError(t, err)
-	require.Nil(t, cleared.DefaultChatAPIKeyID)
 }
 
 func TestUserRepositoryUpdateDefaultChatAPIKeyID(t *testing.T) {

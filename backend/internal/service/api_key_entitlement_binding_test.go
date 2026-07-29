@@ -25,6 +25,7 @@ type apiKeyBindingRepo struct {
 	keys    map[int64]*APIKey
 	created *APIKey
 	updated *APIKey
+	fields  APIKeyUpdateFields
 }
 
 func newAPIKeyBindingRepo(keys ...*APIKey) *apiKeyBindingRepo {
@@ -61,13 +62,14 @@ func (r *apiKeyBindingRepo) GetByID(_ context.Context, id int64) (*APIKey, error
 	return cloneAPIKeyForBindingTest(key), nil
 }
 
-func (r *apiKeyBindingRepo) Update(_ context.Context, key *APIKey) error {
+func (r *apiKeyBindingRepo) Update(_ context.Context, key *APIKey, fields APIKeyUpdateFields) error {
 	if _, ok := r.keys[key.ID]; !ok {
 		return ErrAPIKeyNotFound
 	}
 	cp := cloneAPIKeyForBindingTest(key)
 	r.keys[key.ID] = cp
 	r.updated = cloneAPIKeyForBindingTest(key)
+	r.fields = fields
 	return nil
 }
 
@@ -353,6 +355,7 @@ func TestAPIKeyService_UpdateSubscriptionEntitlementBindings(t *testing.T) {
 		require.NotNil(t, updated.SubscriptionEntitlementID)
 		require.Equal(t, int64(1), *updated.SubscriptionEntitlementID)
 		require.Equal(t, int64(1), *apiRepo.updated.SubscriptionEntitlementID)
+		require.Equal(t, APIKeyUpdateFields{GroupID: true, AccessBinding: true}, apiRepo.fields)
 	})
 
 	t.Run("re-resolves when current entitlement does not cover new group", func(t *testing.T) {
@@ -431,6 +434,7 @@ func TestAPIKeyService_UpdateIPRestrictionsPreservesEntitlementBinding(t *testin
 		require.Equal(t, APIKeyAccessSourceEntitlement, updated.AccessSource)
 		require.Equal(t, int64(1), *updated.SubscriptionEntitlementID)
 		require.Equal(t, int64(1), *repo.updated.SubscriptionEntitlementID)
+		require.Equal(t, APIKeyUpdateFields{}, repo.fields)
 	})
 
 	t.Run("empty lists clear restrictions without clearing entitlement", func(t *testing.T) {
@@ -449,6 +453,7 @@ func TestAPIKeyService_UpdateIPRestrictionsPreservesEntitlementBinding(t *testin
 		require.Equal(t, APIKeyAccessSourceEntitlement, updated.AccessSource)
 		require.Equal(t, int64(1), *updated.SubscriptionEntitlementID)
 		require.Equal(t, int64(1), *repo.updated.SubscriptionEntitlementID)
+		require.Equal(t, APIKeyUpdateFields{IPRules: true}, repo.fields)
 	})
 }
 

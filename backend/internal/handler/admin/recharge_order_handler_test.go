@@ -85,7 +85,7 @@ func (s *rechargeOrderHandlerUserRepoStub) GetByEmail(ctx context.Context, email
 func (s *rechargeOrderHandlerUserRepoStub) GetFirstAdmin(ctx context.Context) (*service.User, error) {
 	panic("unexpected GetFirstAdmin")
 }
-func (s *rechargeOrderHandlerUserRepoStub) Update(ctx context.Context, user *service.User) error {
+func (s *rechargeOrderHandlerUserRepoStub) Update(ctx context.Context, user *service.User, fields service.UserUpdateFields) error {
 	panic("unexpected Update")
 }
 func (s *rechargeOrderHandlerUserRepoStub) Delete(ctx context.Context, id int64) error {
@@ -112,6 +112,28 @@ func (s *rechargeOrderHandlerUserRepoStub) UpdateBalance(ctx context.Context, id
 }
 func (s *rechargeOrderHandlerUserRepoStub) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	panic("unexpected DeductBalance")
+}
+func (s *rechargeOrderHandlerUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta float64) (service.BalanceChange, error) {
+	old, ok := s.balances[id]
+	if !ok {
+		return service.BalanceChange{}, service.ErrUserNotFound
+	}
+	if old+delta < 0 {
+		return service.BalanceChange{Old: old, New: old + delta}, service.ErrBalanceNegative
+	}
+	s.balances[id] = old + delta
+	return service.BalanceChange{Old: old, New: old + delta}, nil
+}
+func (s *rechargeOrderHandlerUserRepoStub) SetBalance(ctx context.Context, id int64, value float64) (service.BalanceChange, error) {
+	old, ok := s.balances[id]
+	if !ok {
+		return service.BalanceChange{}, service.ErrUserNotFound
+	}
+	if value < 0 {
+		return service.BalanceChange{Old: old, New: value}, service.ErrBalanceNegative
+	}
+	s.balances[id] = value
+	return service.BalanceChange{Old: old, New: value}, nil
 }
 func (s *rechargeOrderHandlerUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, amount int) error {
 	panic("unexpected UpdateConcurrency")

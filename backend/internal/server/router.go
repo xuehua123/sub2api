@@ -22,6 +22,7 @@ func SetupRouter(
 	r *gin.Engine,
 	handlers *handler.Handlers,
 	jwtAuth middleware2.JWTAuthMiddleware,
+	optionalJWTAuth middleware2.OptionalJWTAuthMiddleware,
 	adminAuth middleware2.AdminAuthMiddleware,
 	apiKeyAuth middleware2.APIKeyAuthMiddleware,
 	auditLog middleware2.AuditLogMiddleware,
@@ -70,7 +71,7 @@ func SetupRouter(
 	configureFrontendServing(r, settingService, refreshFrameOrigins)
 
 	// 注册路由
-	registerRoutes(r, handlers, jwtAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient)
+	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient)
 
 	return r
 }
@@ -80,6 +81,7 @@ func registerRoutes(
 	r *gin.Engine,
 	h *handler.Handlers,
 	jwtAuth middleware2.JWTAuthMiddleware,
+	optionalJWTAuth middleware2.OptionalJWTAuthMiddleware,
 	adminAuth middleware2.AdminAuthMiddleware,
 	apiKeyAuth middleware2.APIKeyAuthMiddleware,
 	auditLog middleware2.AuditLogMiddleware,
@@ -107,6 +109,7 @@ func registerRoutes(
 	routes.RegisterUserRoutes(v1, h, jwtAuth, auditLog, settingService, panelRateLimiter)
 	routes.RegisterLobeHubRoutes(v1, h, jwtAuth, settingService)
 	routes.RegisterIssueRoutes(v1, h, jwtAuth, adminAuth, settingService)
+	routes.RegisterModelPlazaRoutes(v1, h, optionalJWTAuth, settingService, panelRateLimiter)
 	routes.RegisterAdminRoutes(v1, h, adminAuth, auditLog, stepUpAuth, settingService, panelRateLimiter)
 	routes.RegisterGatewayRoutes(r, h, apiKeyAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg)
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)

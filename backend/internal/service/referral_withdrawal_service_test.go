@@ -323,7 +323,7 @@ func (s *withdrawalUserRepoStub) GetFirstAdmin(ctx context.Context) (*User, erro
 	return nil, ErrUserNotFound
 }
 
-func (s *withdrawalUserRepoStub) Update(ctx context.Context, user *User) error {
+func (s *withdrawalUserRepoStub) Update(ctx context.Context, user *User, fields UserUpdateFields) error {
 	return nil
 }
 
@@ -361,6 +361,34 @@ func (s *withdrawalUserRepoStub) UpdateBalance(ctx context.Context, id int64, am
 
 func (s *withdrawalUserRepoStub) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	return nil
+}
+
+func (s *withdrawalUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
+	old := 0.0
+	if s.user != nil && s.user.ID == id {
+		old = s.user.Balance
+	}
+	if old+delta < 0 {
+		return BalanceChange{Old: old, New: old + delta}, ErrBalanceNegative
+	}
+	if s.user != nil && s.user.ID == id {
+		s.user.Balance = old + delta
+	}
+	return BalanceChange{Old: old, New: old + delta}, nil
+}
+
+func (s *withdrawalUserRepoStub) SetBalance(ctx context.Context, id int64, value float64) (BalanceChange, error) {
+	old := 0.0
+	if s.user != nil && s.user.ID == id {
+		old = s.user.Balance
+	}
+	if value < 0 {
+		return BalanceChange{Old: old, New: value}, ErrBalanceNegative
+	}
+	if s.user != nil && s.user.ID == id {
+		s.user.Balance = value
+	}
+	return BalanceChange{Old: old, New: value}, nil
 }
 
 func (s *withdrawalUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, concurrency int) error {

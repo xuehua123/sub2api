@@ -37,8 +37,10 @@ func (s *adminSearchUserRepoStub) GetByEmail(context.Context, string) (*User, er
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) GetFirstAdmin(context.Context) (*User, error) { panic("unexpected") }
-func (s *adminSearchUserRepoStub) Update(context.Context, *User) error          { panic("unexpected") }
-func (s *adminSearchUserRepoStub) Delete(context.Context, int64) error          { panic("unexpected") }
+func (s *adminSearchUserRepoStub) Update(context.Context, *User, UserUpdateFields) error {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) Delete(context.Context, int64) error { panic("unexpected") }
 func (s *adminSearchUserRepoStub) GetUserAvatar(context.Context, int64) (*UserAvatar, error) {
 	panic("unexpected")
 }
@@ -65,6 +67,12 @@ func (s *adminSearchUserRepoStub) UpdateBalance(context.Context, int64, float64)
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) DeductBalance(context.Context, int64, float64) error {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) AdjustBalance(context.Context, int64, float64) (BalanceChange, error) {
+	panic("unexpected")
+}
+func (s *adminSearchUserRepoStub) SetBalance(context.Context, int64, float64) (BalanceChange, error) {
 	panic("unexpected")
 }
 func (s *adminSearchUserRepoStub) UpdateConcurrency(context.Context, int64, int) error {

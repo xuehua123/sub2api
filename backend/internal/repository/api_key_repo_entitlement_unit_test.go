@@ -65,13 +65,13 @@ func TestAPIKeyRepository_SubscriptionEntitlementIDRoundTrip_SQLite(t *testing.T
 	require.Equal(t, entitlement.ID, *list[0].SubscriptionEntitlementID)
 
 	key.SubscriptionEntitlementID = nil
-	require.NoError(t, repo.Update(ctx, key))
+	require.NoError(t, repo.Update(ctx, key, service.APIKeyUpdateFields{AccessBinding: true}))
 	cleared, err := repo.GetByID(ctx, key.ID)
 	require.NoError(t, err)
 	require.Nil(t, cleared.SubscriptionEntitlementID)
 
 	key.SubscriptionEntitlementID = &entitlement.ID
-	require.NoError(t, repo.Update(ctx, key))
+	require.NoError(t, repo.Update(ctx, key, service.APIKeyUpdateFields{AccessBinding: true}))
 	restored, err := repo.GetByID(ctx, key.ID)
 	require.NoError(t, err)
 	require.NotNil(t, restored.SubscriptionEntitlementID)

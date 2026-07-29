@@ -323,7 +323,7 @@ func (s *rewardUserRepoStub) GetByEmail(ctx context.Context, email string) (*Use
 func (s *rewardUserRepoStub) GetFirstAdmin(ctx context.Context) (*User, error) {
 	panic("unexpected GetFirstAdmin")
 }
-func (s *rewardUserRepoStub) Update(ctx context.Context, user *User) error {
+func (s *rewardUserRepoStub) Update(ctx context.Context, user *User, fields UserUpdateFields) error {
 	panic("unexpected Update")
 }
 func (s *rewardUserRepoStub) Delete(ctx context.Context, id int64) error { panic("unexpected Delete") }
@@ -351,6 +351,30 @@ func (s *rewardUserRepoStub) UpdateBalance(ctx context.Context, id int64, amount
 }
 func (s *rewardUserRepoStub) DeductBalance(ctx context.Context, id int64, amount float64) error {
 	panic("unexpected DeductBalance")
+}
+func (s *rewardUserRepoStub) AdjustBalance(ctx context.Context, id int64, delta float64) (BalanceChange, error) {
+	user, ok := s.users[id]
+	if !ok {
+		return BalanceChange{}, ErrUserNotFound
+	}
+	old := user.Balance
+	if old+delta < 0 {
+		return BalanceChange{Old: old, New: old + delta}, ErrBalanceNegative
+	}
+	user.Balance += delta
+	return BalanceChange{Old: old, New: user.Balance}, nil
+}
+func (s *rewardUserRepoStub) SetBalance(ctx context.Context, id int64, value float64) (BalanceChange, error) {
+	user, ok := s.users[id]
+	if !ok {
+		return BalanceChange{}, ErrUserNotFound
+	}
+	if value < 0 {
+		return BalanceChange{Old: user.Balance, New: value}, ErrBalanceNegative
+	}
+	old := user.Balance
+	user.Balance = value
+	return BalanceChange{Old: old, New: value}, nil
 }
 func (s *rewardUserRepoStub) UpdateConcurrency(ctx context.Context, id int64, amount int) error {
 	panic("unexpected UpdateConcurrency")

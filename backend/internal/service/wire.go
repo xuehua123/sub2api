@@ -739,6 +739,7 @@ func ProvideLobeHubUserPreferenceStore(userRepo UserRepository) LobeHubUserPrefe
 var ProviderSet = wire.NewSet(
 	// Core services
 	NewAuthService,
+	NewPasskeyService,
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,

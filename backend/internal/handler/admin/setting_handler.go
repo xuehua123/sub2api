@@ -123,6 +123,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 	if paymentCfg == nil {
 		paymentCfg = &service.PaymentConfig{}
 	}
+	passkeyConfigured, passkeyRPID, passkeyRPOrigins := h.settingService.PasskeyConfiguration()
 
 	payload := dto.SystemSettings{
 		RegistrationEnabled:                                    settings.RegistrationEnabled,
@@ -134,6 +135,10 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		InvitationCodeEnabled:                                  settings.InvitationCodeEnabled,
 		TotpEnabled:                                            settings.TotpEnabled,
 		TotpEncryptionKeyConfigured:                            h.settingService.IsTotpEncryptionKeyConfigured(),
+		PasskeyEnabled:                                         settings.PasskeyEnabled,
+		PasskeyConfigured:                                      passkeyConfigured,
+		PasskeyRPID:                                            passkeyRPID,
+		PasskeyRPOrigins:                                       passkeyRPOrigins,
 		SessionBindingEnabled:                                  settings.SessionBindingEnabled,
 		StepUpEnabled:                                          settings.StepUpEnabled,
 		AuditLogRetentionDays:                                  settings.AuditLogRetentionDays,
@@ -382,7 +387,11 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		LobeHubEnabledModels:                 settings.LobeHubEnabledModels,
 		LobeHubRuntimeConfigVersion:          settings.LobeHubRuntimeConfigVersion,
 		HideLobeHubImportButton:              settings.HideLobeHubImportButton,
-		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
+		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
+		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		ModelPlazaDescription:                settings.ModelPlazaDescription,
+
+		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
