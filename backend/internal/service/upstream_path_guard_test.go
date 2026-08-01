@@ -12,6 +12,10 @@ import (
 func TestSanitizedUpstreamPathSuffixRejectsNonConformingSegments(t *testing.T) {
 	// 到达业务代码的 URL.Path 已是百分号解码后的结果，因此用例按解码后的形态书写。
 	rejected := []string{
+		" /compact",
+		"/compact ",
+		"\t/compact",
+		"/compact\t",
 		"/..",
 		"/../..",
 		"/../../x/y",
@@ -26,7 +30,7 @@ func TestSanitizedUpstreamPathSuffixRejectsNonConformingSegments(t *testing.T) {
 		"/100%",
 		"//double",
 		"/compact//detail",
-		"/compact/",
+		"/compact//",
 		"/ compact",
 		"/compact\x00",
 		"/compact\nX-Injected: 1",
@@ -68,7 +72,9 @@ func TestSanitizedUpstreamPathSuffixRejectsNonConformingSegments(t *testing.T) {
 
 	accepted := map[string]string{
 		"":                          "",
+		"/":                         "",
 		"/compact":                  "/compact",
+		"/compact/":                 "/compact",
 		"/compact/detail":           "/compact/detail",
 		"/resp_68f0a1b2c3d4/cancel": "/resp_68f0a1b2c3d4/cancel",
 		"/gemini-2.5-pro_v1.2":      "/gemini-2.5-pro_v1.2",
@@ -115,6 +121,16 @@ func TestOpenAIResponsesRequestPathSuffixRejectsNonConformingSubpaths(t *testing
 		"/v1/responses/%3fa=b",
 		"/v1/responses/x%23frag",
 		"/v1/responses//double",
+		"/v1/responses/prefix/responses/%2e%2e/x",
+	}
+	for _, root := range []string{
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
+	} {
+		for _, encodedSuffix := range []string{"compact%20", "compact%09", "compact%00"} {
+			nonConformingPaths = append(nonConformingPaths, root+"/"+encodedSuffix)
+		}
 	}
 	for _, path := range nonConformingPaths {
 		t.Run(path, func(t *testing.T) {
@@ -132,10 +148,14 @@ func TestOpenAIResponsesRequestPathSuffixRejectsNonConformingSubpaths(t *testing
 
 	// 合法子路径必须保持原样转发。
 	for path, want := range map[string]string{
-		"/v1/responses":                        "",
-		"/v1/responses/compact":                "/compact",
-		"/responses/compact/":                  "/compact",
-		"/backend-api/codex/responses/compact": "/compact",
+		"/v1/responses":                                         "",
+		"/v1/responses/compact":                                 "/compact",
+		"/responses/compact/":                                   "/compact",
+		"/backend-api/codex/responses/compact":                  "/compact",
+		"/openai/v1/responses/compact/detail":                   "/compact/detail",
+		"/v1/responses/prefix/responses/compact":                "/prefix/responses/compact",
+		"/responses/prefix/responses/compact":                   "/prefix/responses/compact",
+		"/backend-api/codex/responses/prefix/responses/compact": "/prefix/responses/compact",
 	} {
 		t.Run("forwardable_"+path, func(t *testing.T) {
 			c := newResponsesSuffixTestContext(t, path)
@@ -143,6 +163,12 @@ func TestOpenAIResponsesRequestPathSuffixRejectsNonConformingSubpaths(t *testing
 			require.Equal(t, want, openAIResponsesRequestPathSuffix(c))
 		})
 	}
+
+	t.Run("unrecognized path", func(t *testing.T) {
+		c := newResponsesSuffixTestContext(t, "/v1/chat/completions")
+		require.False(t, IsForwardableOpenAIResponsesRequestPath(c))
+		require.Empty(t, openAIResponsesRequestPathSuffix(c))
+	})
 }
 
 func TestAppendOpenAIResponsesRequestPathSuffixRefusesUnsafeSuffix(t *testing.T) {

@@ -66,6 +66,9 @@ func TestGatewayRoutesOpenAIResponsesCompactPathIsRegistered(t *testing.T) {
 		"/responses/compact",
 		"/backend-api/codex/responses",
 		"/backend-api/codex/responses/compact",
+		"/v1/responses/prefix/responses/compact",
+		"/responses/prefix/responses/compact",
+		"/backend-api/codex/responses/prefix/responses/compact",
 	} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5"}`))
 		req.Header.Set("Content-Type", "application/json")
@@ -339,7 +342,7 @@ func TestGatewayRoutesGrokAllowsCLICompatibilityEntrypoints(t *testing.T) {
 func TestGatewayRoutesResponsesSubpathRejectsNonConformingSubpaths(t *testing.T) {
 	router := newGatewayRoutesTestRouter()
 
-	for _, path := range []string{
+	nonConformingPaths := []string{
 		"/v1/responses/../../x/y",
 		"/v1/responses/..%2f..%2fx/y",
 		"/v1/responses/%2e%2e/%2e%2e/x",
@@ -349,7 +352,19 @@ func TestGatewayRoutesResponsesSubpathRejectsNonConformingSubpaths(t *testing.T)
 		"/v1/responses/%3fa=b",
 		"/v1/responses/x%23frag",
 		"/v1/responses/compact%2f..",
+		"/v1/responses/prefix/responses/%2e%2e/x",
+	}
+	for _, root := range []string{
+		"/v1/responses",
+		"/responses",
+		"/backend-api/codex/responses",
 	} {
+		for _, encodedSuffix := range []string{"compact%20", "compact%09", "compact%00"} {
+			nonConformingPaths = append(nonConformingPaths, root+"/"+encodedSuffix)
+		}
+	}
+
+	for _, path := range nonConformingPaths {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"model":"gpt-5"}`))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()

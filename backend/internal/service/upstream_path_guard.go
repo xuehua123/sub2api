@@ -64,10 +64,23 @@ func isSafeUpstreamPathSegment(segment string) bool {
 // sanitizedUpstreamPathSuffix 校验 "/a/b" 形态的路径后缀。
 // ok=false 表示后缀不可转发，调用方必须拒绝请求，而不是降级成空后缀——否则
 // /responses/compact 之类的请求语义会被静默改写。空后缀合法，表示"没有子路径"。
+// 为兼容既有客户端，仅单个尾随斜杠会被规范化；其余字符一律只校验、不修正。
 func sanitizedUpstreamPathSuffix(raw string) (string, bool) {
-	suffix := strings.TrimSpace(raw)
+	if raw != strings.TrimSpace(raw) {
+		return "", false
+	}
+	suffix := raw
 	if suffix == "" {
 		return "", true
+	}
+	if strings.HasSuffix(suffix, "/") {
+		if strings.HasSuffix(suffix, "//") {
+			return "", false
+		}
+		suffix = strings.TrimSuffix(suffix, "/")
+		if suffix == "" {
+			return "", true
+		}
 	}
 	if !strings.HasPrefix(suffix, "/") {
 		return "", false

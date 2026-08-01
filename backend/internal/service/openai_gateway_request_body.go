@@ -369,7 +369,11 @@ func resolveOpenAICompactSessionID(c *gin.Context) string {
 // IsForwardableOpenAIResponsesRequestPath 负责。这样即便将来新增路由漏挂守卫，
 // 拼进上游 URL 的也只会是合规片段。
 func openAIResponsesRequestPathSuffix(c *gin.Context) string {
-	suffix, ok := sanitizedUpstreamPathSuffix(rawOpenAIResponsesRequestPathSuffix(c))
+	rawSuffix, recognized := rawOpenAIResponsesRequestPathSuffix(c)
+	if !recognized {
+		return ""
+	}
+	suffix, ok := sanitizedUpstreamPathSuffix(rawSuffix)
 	if !ok {
 		return ""
 	}
@@ -379,31 +383,35 @@ func openAIResponsesRequestPathSuffix(c *gin.Context) string {
 // IsForwardableOpenAIResponsesRequestPath 判断入站请求携带的 /responses 子路径
 // 是否可以安全转发。路由层用它在鉴权后、调度前直接拒绝畸形子路径。
 func IsForwardableOpenAIResponsesRequestPath(c *gin.Context) bool {
-	_, ok := sanitizedUpstreamPathSuffix(rawOpenAIResponsesRequestPathSuffix(c))
+	rawSuffix, recognized := rawOpenAIResponsesRequestPathSuffix(c)
+	if !recognized {
+		return false
+	}
+	_, ok := sanitizedUpstreamPathSuffix(rawSuffix)
 	return ok
 }
 
-// rawOpenAIResponsesRequestPathSuffix 仅做提取，不做任何安全判断。
-func rawOpenAIResponsesRequestPathSuffix(c *gin.Context) string {
+// rawOpenAIResponsesRequestPathSuffix 从已支持的 Responses 路径根提取完整后缀。
+// recognized 用于区分合法的空后缀与不属于 Responses 路由的路径。
+func rawOpenAIResponsesRequestPathSuffix(c *gin.Context) (suffix string, recognized bool) {
 	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return ""
+		return "", false
 	}
-	normalizedPath := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
-	if normalizedPath == "" {
-		return ""
+	path := c.Request.URL.Path
+	for _, root := range [...]string{
+		"/backend-api/codex/responses",
+		"/openai/v1/responses",
+		"/v1/responses",
+		"/responses",
+	} {
+		if path == root {
+			return "", true
+		}
+		if strings.HasPrefix(path, root+"/") {
+			return path[len(root):], true
+		}
 	}
-	idx := strings.LastIndex(normalizedPath, "/responses")
-	if idx < 0 {
-		return ""
-	}
-	suffix := normalizedPath[idx+len("/responses"):]
-	if suffix == "" || suffix == "/" {
-		return ""
-	}
-	if !strings.HasPrefix(suffix, "/") {
-		return ""
-	}
-	return suffix
+	return "", false
 }
 
 func appendOpenAIResponsesRequestPathSuffix(baseURL, suffix string) string {
