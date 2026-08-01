@@ -21,6 +21,8 @@ services:
     image: ${SUB2API_IMAGE:?Set SUB2API_IMAGE to a CI-built immutable ghcr.io/xuehua123/sub2api:sha-* image}
     container_name: sub2api
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ulimits:
       nofile:
         soft: 100000

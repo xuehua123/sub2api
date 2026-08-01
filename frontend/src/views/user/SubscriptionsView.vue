@@ -606,15 +606,16 @@ import type { SubscriptionPlan } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { formatCurrency, formatDateTime } from '@/utils/format'
+import { formatCurrency, formatDateTime, formatDateTimeToMinute } from '@/utils/format'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformBorderClass, platformBadgeClass, platformButtonClass, platformLabel } from '@/utils/platformColors'
-import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
 import {
-  getCycleResetAt,
-  formatRemainingDurationCompact,
-  getRemainingHours,
-} from '@/utils/subscriptionTime'
+  getExpirationDateRelation,
+  getRemainingDurationParts,
+  isOneTimeDailyQuota,
+  type RemainingDurationParts
+} from '@/utils/subscriptionQuota'
+import { getCycleResetAt } from '@/utils/subscriptionTime'
 import { normalizeSubscriptionPlans, subscriptionDisplayName } from '@/utils/subscriptionPlanDisplay'
 import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
 
@@ -849,18 +850,39 @@ function getProgressBarClass(used: number | undefined, limit: number | null | un
 }
 
 function formatExpirationDate(expiresAt: string): string {
-  const relative = formatRemainingDurationCompact(expiresAt)
-  if (!relative) {
+  const now = new Date()
+  const expires = new Date(expiresAt)
+  const diff = expires.getTime() - now.getTime()
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+  const relation = getExpirationDateRelation(expires, now)
+
+  if (relation === null) return ''
+
+  if (relation === 'expired') {
     return t('userSubscriptions.status.expired')
   }
-  return `${relative} (${formatDateTime(expiresAt)})`
+
+  const dateStr = formatDateTimeToMinute(expires)
+
+  if (relation === 'today') {
+    return `${dateStr} (${t('common.today')})`
+  }
+  if (relation === 'tomorrow') {
+    return `${dateStr} (${t('common.tomorrow')})`
+  }
+
+  return t('userSubscriptions.daysRemaining', { days }) + ` (${dateStr})`
 }
 
 function getExpirationClass(expiresAt: string): string {
-  const remainingHours = getRemainingHours(expiresAt)
-  if (remainingHours === null || remainingHours <= 0) return 'text-red-600 dark:text-red-400 font-medium'
-  if (remainingHours <= 72) return 'text-red-600 dark:text-red-400'
-  if (remainingHours <= 168) return 'text-orange-600 dark:text-orange-400'
+  const now = new Date()
+  const expires = new Date(expiresAt)
+  const diff = expires.getTime() - now.getTime()
+  const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+
+  if (diff <= 0) return 'text-red-600 dark:text-red-400 font-medium'
+  if (days <= 3) return 'text-red-600 dark:text-red-400'
+  if (days <= 7) return 'text-orange-600 dark:text-orange-400'
   return 'text-gray-700 dark:text-gray-300'
 }
 

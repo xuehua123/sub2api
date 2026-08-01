@@ -243,6 +243,68 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   return wrapper
 }
 
+async function mountSubscriptionPlanList(planCount: number) {
+  vi.useRealTimers()
+  routeState.path = '/purchase'
+  routeState.query = { tab: 'subscription' }
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  routerResolve.mockClear()
+  createOrder.mockReset()
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  const basePlan = checkoutInfoWithPlansFixture().data.plans[0]
+  const plans = Array.from({ length: planCount }, (_, index) => ({
+    ...basePlan,
+    id: index + 1,
+    name: `Plan ${index + 1}`,
+  }))
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture({ plans }))
+  bridgeInvoke.mockReset()
+  window.localStorage.clear()
+  ;(window as Window & { WeixinJSBridge?: { invoke: typeof bridgeInvoke } }).WeixinJSBridge = undefined
+
+  const wrapper = shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: {
+          template: '<div><slot /></div>',
+        },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  return wrapper
+}
+
+describe('PaymentView subscription plan grid', () => {
+  it.each([3, 4, 6])('keeps %i plans on the existing mobile/tablet/desktop grid', async (planCount) => {
+    const wrapper = await mountSubscriptionPlanList(planCount)
+    const grid = wrapper.findAll('div').find((node) => [
+      'grid',
+      'grid-cols-1',
+      'md:grid-cols-2',
+      'lg:grid-cols-3',
+      'xl:grid-cols-5',
+    ].every((className) => node.classes().includes(className)))
+
+    expect(grid).toBeDefined()
+    expect(grid!.element.children).toHaveLength(planCount)
+    expect(grid!.classes()).toEqual(expect.arrayContaining([
+      'grid-cols-1',
+      'md:grid-cols-2',
+      'lg:grid-cols-3',
+      'xl:grid-cols-5',
+    ]))
+  })
+})
+
 describe('PaymentView subscription confirmation amounts', () => {
   it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {
     const wrapper = await mountSubscriptionConfirm({

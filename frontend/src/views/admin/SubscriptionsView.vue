@@ -360,9 +360,14 @@
               >
                 {{ formatDateTimeToMinute(value) }}
               </span>
-              <div v-if="formatExpirationRemaining(value)" class="text-xs text-gray-500">
-                {{ formatExpirationRemaining(value) }}
-              </div>
+              <template
+                v-for="remainingExpiry in [formatRemainingExpiry(value)]"
+                :key="remainingExpiry ?? 'expired'"
+              >
+                <div v-if="remainingExpiry" class="text-xs text-gray-500">
+                  {{ remainingExpiry }}
+                </div>
+              </template>
             </div>
             <span v-else class="text-sm text-gray-500">{{
               t('admin.subscriptions.noExpiration')
@@ -1059,7 +1064,12 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { getRemainingDurationParts, isOneTimeDailyQuota, type RemainingDurationParts } from '@/utils/subscriptionQuota'
+import {
+  getRemainingDurationParts,
+  getRemainingExpiryDuration,
+  isOneTimeDailyQuota,
+  type RemainingDurationParts
+} from '@/utils/subscriptionQuota'
 import { formatRemainingDurationCompact, getCycleResetAt, getRemainingHours } from '@/utils/subscriptionTime'
 import {
   normalizeSubscriptionPlans,
@@ -2059,6 +2069,21 @@ const buildCycleAdjustmentRequest = (): MonthlyCycleAdjustmentRequest | null => 
 // Helper functions
 const formatExpirationRemaining = (expiresAt: string): string | null => {
   return formatRemainingDurationCompact(expiresAt)
+}
+
+const formatRemainingExpiry = (expiresAt: string): string | null => {
+  const duration = getRemainingExpiryDuration(expiresAt)
+  if (!duration) return null
+  if (duration.unit === 'days') {
+    return t('admin.subscriptions.daysRemaining', { days: duration.days })
+  }
+  if (duration.hours) {
+    return t('admin.subscriptions.hoursMinutesRemaining', {
+      hours: duration.hours,
+      minutes: duration.minutes
+    })
+  }
+  return t('admin.subscriptions.minutesRemaining', { minutes: duration.minutes })
 }
 
 const isExpiringSoon = (expiresAt: string): boolean => {
