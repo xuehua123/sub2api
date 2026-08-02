@@ -71,6 +71,7 @@ type SubscriptionService struct {
 	subCacheJitter int // 抖动百分比
 
 	maintenanceQueue *SubscriptionMaintenanceQueue
+	now              func() time.Time
 }
 
 type SubscriptionSwitchCandidate struct {
@@ -115,6 +116,7 @@ func NewSubscriptionService(groupRepo GroupRepository, userSubRepo UserSubscript
 		userSubRepo:         userSubRepo,
 		billingCacheService: billingCacheService,
 		entClient:           entClient,
+		now:                 time.Now,
 	}
 	svc.initSubCache(cfg)
 	svc.initMaintenanceQueue(cfg)
@@ -2000,20 +2002,24 @@ func (s *SubscriptionService) List(ctx context.Context, page, pageSize int, user
 // normalizeExpiredWindows 将已过期窗口的数据清零（仅影响返回数据，不影响数据库）
 // 这确保前端显示正确的当前窗口状态，而不是过期窗口的历史数据
 func normalizeExpiredWindows(subs []UserSubscription) {
+	normalizeExpiredWindowsAt(subs, time.Now())
+}
+
+func normalizeExpiredWindowsAt(subs []UserSubscription, now time.Time) {
 	for i := range subs {
 		sub := &subs[i]
 		// 日窗口过期：清零展示数据
-		if sub.NeedsDailyReset() {
+		if sub.canAutomaticallyResetDailyAt(now) {
 			sub.DailyWindowStart = nil
 			sub.DailyUsageUSD = 0
 		}
 		// 周窗口过期：清零展示数据
-		if sub.NeedsWeeklyReset() {
+		if sub.canAutomaticallyResetWeeklyAt(now) {
 			sub.WeeklyWindowStart = nil
 			sub.WeeklyUsageUSD = 0
 		}
 		// 月窗口过期：清零展示数据
-		if sub.NeedsMonthlyReset() {
+		if sub.canAutomaticallyResetMonthlyAt(now) {
 			sub.MonthlyWindowStart = nil
 			sub.MonthlyUsageUSD = 0
 		}
@@ -2039,12 +2045,18 @@ func startOfDay(t time.Time) time.Time {
 
 // CheckAndActivateWindow 检查并激活窗口（为历史未初始化订阅补齐窗口）
 func (s *SubscriptionService) CheckAndActivateWindow(ctx context.Context, sub *UserSubscription) error {
+	return s.checkAndActivateWindowAt(ctx, sub, s.now())
+}
+
+func (s *SubscriptionService) checkAndActivateWindowAt(ctx context.Context, sub *UserSubscription, now time.Time) error {
 	if sub.IsWindowActivated() {
 		return nil
 	}
 
-	windowStart := time.Now()
-	if sub != nil && !sub.StartsAt.IsZero() {
+	windowStart := now
+	if !sub.StartsAt.IsZero() {
+		// Fork subscriptions align quota windows with the paid term. This path
+		// only repairs legacy rows whose windows were never initialized.
 		windowStart = sub.StartsAt
 	}
 	if err := s.userSubRepo.ActivateWindows(ctx, sub.ID, windowStart); err != nil {
@@ -2104,7 +2116,7 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 			return nil, ErrSubscriptionMaintenance.WithCause(fmt.Errorf("invalidate subscription billing cache: %w", err))
 		}
 	}
-	windowStart := time.Now()
+	windowStart := s.now()
 	if err := s.userSubRepo.ResetUsageWindows(ctx, sub.ID, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
 		return nil, err
 	}
@@ -2119,9 +2131,13 @@ func (s *SubscriptionService) AdminResetQuota(ctx context.Context, subscriptionI
 
 // CheckAndResetWindows 检查并重置过期的窗口
 func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *UserSubscription) error {
-	now := time.Now()
+	now := s.now()
 	needsInvalidateCache := false
-	needsReset := sub.NeedsDailyReset() || sub.NeedsWeeklyReset() || sub.NeedsMonthlyReset()
+	dailyWindowStart, dailyReset := sub.automaticWindowStartAt(sub.DailyWindowStart, 24*time.Hour, now)
+	dailyReset = dailyReset && !sub.HasOneTimeDailyQuota()
+	weeklyWindowStart, weeklyReset := sub.automaticWindowStartAt(sub.WeeklyWindowStart, 7*24*time.Hour, now)
+	monthlyWindowStart, monthlyReset := sub.automaticWindowStartAt(sub.MonthlyWindowStart, monthlyCycleDuration, now)
+	needsReset := dailyReset || weeklyReset || monthlyReset
 	if needsReset && s.billingCacheService != nil {
 		if err := s.billingCacheService.InvalidateSubscriptionBefore(ctx, sub.UserID, sub.GroupID, subscriptionCacheVersion(sub)); err != nil {
 			return err
@@ -2129,37 +2145,34 @@ func (s *SubscriptionService) CheckAndResetWindows(ctx context.Context, sub *Use
 	}
 
 	// 日窗口重置（24小时）
-	if sub.NeedsDailyReset() {
+	if dailyReset {
 		expectedWindowStart := sub.DailyWindowStart
-		windowStart := resolvedWindowResetStart(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now)
-		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, expectedWindowStart, windowStart); err != nil {
+		if err := s.userSubRepo.ResetDailyUsage(ctx, sub.ID, expectedWindowStart, dailyWindowStart); err != nil {
 			return err
 		}
-		sub.DailyWindowStart = &windowStart
+		sub.DailyWindowStart = &dailyWindowStart
 		sub.DailyUsageUSD = 0
 		needsInvalidateCache = true
 	}
 
 	// 周窗口重置（7天）
-	if sub.NeedsWeeklyReset() {
+	if weeklyReset {
 		expectedWindowStart := sub.WeeklyWindowStart
-		windowStart := resolvedWindowResetStart(sub.WeeklyWindowStart, sub.StartsAt, 7*24*time.Hour, now)
-		if err := s.userSubRepo.ResetWeeklyUsage(ctx, sub.ID, expectedWindowStart, windowStart); err != nil {
+		if err := s.userSubRepo.ResetWeeklyUsage(ctx, sub.ID, expectedWindowStart, weeklyWindowStart); err != nil {
 			return err
 		}
-		sub.WeeklyWindowStart = &windowStart
+		sub.WeeklyWindowStart = &weeklyWindowStart
 		sub.WeeklyUsageUSD = 0
 		needsInvalidateCache = true
 	}
 
 	// 月窗口重置（30天）
-	if sub.NeedsMonthlyReset() {
+	if monthlyReset {
 		expectedWindowStart := sub.MonthlyWindowStart
-		windowStart := resolvedWindowResetStart(sub.MonthlyWindowStart, sub.StartsAt, monthlyCycleDuration, now)
-		if err := s.userSubRepo.ResetMonthlyUsage(ctx, sub.ID, expectedWindowStart, windowStart); err != nil {
+		if err := s.userSubRepo.ResetMonthlyUsage(ctx, sub.ID, expectedWindowStart, monthlyWindowStart); err != nil {
 			return err
 		}
-		sub.MonthlyWindowStart = &windowStart
+		sub.MonthlyWindowStart = &monthlyWindowStart
 		sub.MonthlyUsageUSD = 0
 		needsInvalidateCache = true
 	}
@@ -2242,6 +2255,7 @@ func (s *SubscriptionService) CheckUsageLimits(ctx context.Context, sub *UserSub
 // 仅做内存检查，不触发 DB 写入。调用方必须在放行请求前同步完成窗口维护。
 // 返回 needsMaintenance 表示是否需要执行窗口维护并回读数据库快照。
 func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, group *Group) (needsMaintenance bool, err error) {
+	now := s.now()
 	// 1. 验证订阅状态
 	if sub.Status == SubscriptionStatusExpired {
 		return false, ErrSubscriptionExpired
@@ -2249,21 +2263,21 @@ func (s *SubscriptionService) ValidateAndCheckLimits(sub *UserSubscription, grou
 	if sub.Status == SubscriptionStatusSuspended {
 		return false, ErrSubscriptionSuspended
 	}
-	if sub.IsExpired() {
+	if !sub.ExpiresAt.After(now) {
 		return false, ErrSubscriptionExpired
 	}
 
 	// 2. 内存中修正过期窗口的用量，确保预检查不会误拒绝用户。
 	//    调用方随后同步推进 DB 窗口，并用回读快照重新校验。
-	if sub.NeedsDailyReset() {
+	if sub.canAutomaticallyResetDailyAt(now) {
 		sub.DailyUsageUSD = 0
 		needsMaintenance = true
 	}
-	if sub.NeedsWeeklyReset() {
+	if sub.canAutomaticallyResetWeeklyAt(now) {
 		sub.WeeklyUsageUSD = 0
 		needsMaintenance = true
 	}
-	if sub.NeedsMonthlyReset() {
+	if sub.canAutomaticallyResetMonthlyAt(now) {
 		sub.MonthlyUsageUSD = 0
 		needsMaintenance = true
 	}

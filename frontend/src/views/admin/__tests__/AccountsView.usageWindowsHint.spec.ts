@@ -101,6 +101,9 @@ const DataTableStub = {
           <slot name="cell-rate_multiplier" :row="data[0]" />
         </div>
       </template>
+      <div v-for="row in data" :key="row.id" data-test="account-rate">
+        <slot name="cell-rate_multiplier" :row="row" />
+      </div>
     </div>
   `
 }

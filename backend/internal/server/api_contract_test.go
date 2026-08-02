@@ -337,7 +337,8 @@ func TestAPIContracts(t *testing.T) {
 			name: "GET /api/v1/groups/available",
 			setup: func(t *testing.T, deps *contractDeps) {
 				t.Helper()
-				// 普通用户可见的分组列表不应包含内部字段（如 model_routing/account_count）。
+				// 普通用户可见的分组列表不应包含内部字段（如 model_routing/account_count），
+				// 也不得包含利润控制配置——它与同响应的 rate_multiplier 相乘即可反推上游成本上限。
 				deps.groupRepo.SetActive([]service.Group{
 					{
 						ID:                   10,
@@ -352,6 +353,9 @@ func TestAPIContracts(t *testing.T) {
 						BalanceEnabled:       true,
 						SubscriptionEnabled:  false,
 						PlanAutoGrantEnabled: false,
+						ProfitControlEnabled: true,
+						ProfitMinMargin:      0.3,
+						ProfitSafetyBuffer:   0.05,
 						ModelRoutingEnabled:  true,
 						ModelRouting: map[string][]int64{
 							"claude-3-*": []int64{101, 102},
@@ -992,6 +996,7 @@ func TestAPIContracts(t *testing.T) {
 					"model_price_usd_cny_rate": 7,
 					"model_price_cny_per_quota_usd": 0.068,
 					"model_prices_user_visible": true,
+					"compact_home_enabled": false,
 					"allow_ungrouped_key_scheduling": false,
 					"backend_mode_enabled": false,
 					"enable_cch_signing": false,
@@ -1311,6 +1316,7 @@ func TestAPIContracts(t *testing.T) {
 					"rewrite_message_cache_control": false,
 					"enable_client_dateline_normalization": true,
 					"antigravity_user_agent_version": "",
+					"compact_home_enabled": false,
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
 					"payment_visible_method_wxpay_source": "",

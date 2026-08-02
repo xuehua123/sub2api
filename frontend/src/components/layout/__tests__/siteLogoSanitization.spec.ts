@@ -8,6 +8,7 @@ const dir = dirname(fileURLToPath(import.meta.url))
 const sidebarSource = readFileSync(resolve(dir, '../AppSidebar.vue'), 'utf8')
 const homeViewSource = readFileSync(resolve(dir, '../../../views/HomeView.vue'), 'utf8')
 const keyUsageViewSource = readFileSync(resolve(dir, '../../../views/KeyUsageView.vue'), 'utf8')
+const plazaNavSource = readFileSync(resolve(dir, '../../modelPlaza/PlazaNavBar.vue'), 'utf8')
 
 describe('site_logo sanitization', () => {
   it('AppSidebar imports sanitizeUrl and applies it to siteLogo', () => {
@@ -27,6 +28,13 @@ describe('site_logo sanitization', () => {
     for (const src of [sidebarSource, homeViewSource, keyUsageViewSource]) {
       expect(src).toContain('allowRelative: true')
       expect(src).toContain('allowDataUrl: true')
+    }
+  })
+
+  it('uses the bundled PNG for every default logo fallback', () => {
+    for (const src of [homeViewSource, plazaNavSource]) {
+      expect(src).not.toContain("'/logo.svg'")
+      expect(src).toContain("'/logo.png'")
     }
   })
 })

@@ -375,6 +375,20 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 
+  it('shows the Codex namespace flatten toggle only for OpenAI OAuth accounts', async () => {
+    const wrapper = mountModal()
+    await clickButtonContaining(wrapper, 'OpenAI')
+
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      true
+    )
+
+    await clickButtonContaining(wrapper, 'API Key')
+    expect(wrapper.find('[data-testid="create-openai-flatten-namespaces-toggle"]').exists()).toBe(
+      false
+    )
+  })
+
   it('exposes Agent Identity in the OpenAI authorization methods', async () => {
     const wrapper = mountModal()
     await clickButtonContaining(wrapper, 'OpenAI')

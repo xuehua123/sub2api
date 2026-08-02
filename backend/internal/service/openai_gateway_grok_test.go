@@ -2089,6 +2089,45 @@ func TestAccountTestServiceGrokPoolModePaymentRequiredDoesNotUnscheduleWholePool
 	require.Contains(t, recorder.Body.String(), "Grok Responses API returned 402")
 }
 
+func TestAccountTestServiceGrokPoolModeRateLimitDoesNotLimitWholePool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	account := &Account{
+		ID:       58,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Status:   StatusActive,
+		Credentials: map[string]any{
+			"api_key":   "xai-pool-key",
+			"pool_mode": true,
+		},
+	}
+	repo := &grokQuotaAccountRepo{}
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+			"Retry-After":  []string{"120"},
+		},
+		Body: io.NopCloser(strings.NewReader(`{"error":{"code":"rate_limit_exceeded","message":"one backing key is busy"}}`)),
+	}}
+	svc := &AccountTestService{
+		accountRepo:  repo,
+		httpUpstream: upstream,
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/accounts/58/test", nil)
+
+	err := svc.testGrokAccountConnection(c, account, "grok")
+
+	require.Error(t, err)
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Nil(t, account.RateLimitedAt)
+	require.Nil(t, account.RateLimitResetAt)
+	require.Contains(t, recorder.Body.String(), "Grok Responses API returned 429")
+}
+
 func TestForwardAsChatCompletionsForGrokStreamingUsesRawXAIChatCompletions(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -2821,14 +2860,51 @@ func TestHandleGrokAccountUpstreamErrorPoolModeHonorsExplicitPolicies(t *testing
 	}
 }
 
+func TestHandleGrokAccountUpstreamErrorPoolModeCustomErrorCodesOverrideForbiddenRule(t *testing.T) {
+	repo := &errorPolicyRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{accountRepo: repo, rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{
+		ID:       613,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode":                  true,
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusTooManyRequests)},
+			"temp_unschedulable_enabled": true,
+			"temp_unschedulable_rules": []any{map[string]any{
+				"error_code":       float64(http.StatusForbidden),
+				"keywords":         []any{"entitlement denied"},
+				"duration_minutes": float64(30),
+			}},
+		},
+	}
+
+	shouldDisable := svc.handleGrokAccountUpstreamError(
+		context.Background(),
+		account,
+		http.StatusForbidden,
+		http.Header{},
+		[]byte(`{"error":{"message":"entitlement denied"}}`),
+	)
+
+	require.False(t, shouldDisable)
+	require.Zero(t, repo.setErrCalls)
+	require.Zero(t, repo.tempCalls)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
 func TestHandleGrokAccountUpstreamErrorPoolModeDoesNotMutateSchedulingState(t *testing.T) {
 	tests := []struct {
-		name   string
-		status int
+		name            string
+		status          int
+		wantUpdateCalls int
 	}{
 		{name: "unauthorized", status: http.StatusUnauthorized},
 		{name: "forbidden", status: http.StatusForbidden},
-		{name: "rate limited", status: http.StatusTooManyRequests},
+		{name: "rate limited", status: http.StatusTooManyRequests, wantUpdateCalls: 1},
 		{name: "upstream error", status: http.StatusInternalServerError},
 	}
 
@@ -2852,7 +2928,7 @@ func TestHandleGrokAccountUpstreamErrorPoolModeDoesNotMutateSchedulingState(t *t
 			require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 			require.Zero(t, repo.tempUnschedCalls)
 			require.Zero(t, repo.rateLimitedCalls)
-			require.Zero(t, repo.updateCalls)
+			require.Equal(t, tt.wantUpdateCalls, repo.updateCalls, "429 may persist an observability snapshot but must not block scheduling")
 		})
 	}
 }
@@ -2907,6 +2983,30 @@ func TestHandleGrokAccountUpstreamError429SetsRateLimitedFromRetryAfter(t *testi
 	require.Equal(t, account.ID, repo.lastRateLimitedID)
 	require.WithinDuration(t, before.Add(45*time.Second), repo.lastRateLimitResetAt, time.Second)
 	require.Zero(t, repo.tempUnschedCalls)
+}
+
+func TestHandleGrokAccountUpstreamError429PoolModeKeepsSchedulingState(t *testing.T) {
+	account := &Account{
+		ID:       613,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode": true,
+		},
+	}
+	repo := &grokQuotaAccountRepo{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+
+	svc.handleGrokAccountUpstreamError(
+		context.Background(), account, http.StatusTooManyRequests,
+		http.Header{"Retry-After": []string{"45"}}, nil,
+	)
+
+	require.Equal(t, 1, repo.updateCalls, "pool mode should retain the quota snapshot for observability")
+	require.Zero(t, repo.rateLimitedCalls)
+	require.Zero(t, repo.tempUnschedCalls)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Nil(t, account.RateLimitResetAt)
 }
 
 func TestHandleGrokAccountUpstreamError402RecoversAfterCooldownExpiry(t *testing.T) {

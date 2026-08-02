@@ -42,6 +42,7 @@ type RecordUsageInput struct {
 	User                       *User
 	Account                    *Account
 	Subscription               *UserSubscription // 可选：订阅信息
+	PricingAt                  time.Time         // token 售价固定时刻；零值保持既有的记录时刻语义
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
 	AllowEntitlementOverage    bool
@@ -588,6 +589,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		User:                       input.User,
 		Account:                    input.Account,
 		Subscription:               input.Subscription,
+		PricingAt:                  input.PricingAt,
 		Entitlement:                input.Entitlement,
 		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
 		AllowEntitlementOverage:    input.AllowEntitlementOverage,
@@ -611,6 +613,7 @@ type RecordUsageLongContextInput struct {
 	User                       *User
 	Account                    *Account
 	Subscription               *UserSubscription // 可选：订阅信息
+	PricingAt                  time.Time         // token 售价固定时刻；零值保持既有的记录时刻语义
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
 	AllowEntitlementOverage    bool
@@ -637,6 +640,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		User:                       input.User,
 		Account:                    input.Account,
 		Subscription:               input.Subscription,
+		PricingAt:                  input.PricingAt,
 		Entitlement:                input.Entitlement,
 		EntitlementBalanceFallback: input.EntitlementBalanceFallback,
 		AllowEntitlementOverage:    input.AllowEntitlementOverage,
@@ -663,6 +667,7 @@ type recordUsageCoreInput struct {
 	User                       *User
 	Account                    *Account
 	Subscription               *UserSubscription
+	PricingAt                  time.Time
 	Entitlement                *SubscriptionEntitlement
 	EntitlementBalanceFallback bool
 	AllowEntitlementOverage    bool
@@ -717,7 +722,11 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 	// token 倍率叠加高峰因子（token 计费含图片 token，图片按次倍率不受影响）。高峰因子按请求时刻现算，
 	// 不并入上面的 getUserGroupRateMultiplier，以免污染 user:group 倍率缓存。
-	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, timezone.Now())
+	pricingAt := input.PricingAt
+	if pricingAt.IsZero() {
+		pricingAt = timezone.Now()
+	}
+	multiplier, imageMultiplier := computePeakAwareMultipliers(apiKey, multiplier, pricingAt)
 
 	// 确定计费模型
 	concreteBillingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
