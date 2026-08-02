@@ -150,8 +150,8 @@ services:
   sub2api:
     container_name: sub2api-green
     image: ${deploy_image}
-    ports:
-      - "127.0.0.1:18082:8080"
+    ports: !override
+      - "127.0.0.1:28080:8080"
 
 networks:
   shanghai-net:

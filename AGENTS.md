@@ -18,62 +18,91 @@
 
 ## Mandatory Production Deployment Runbook
 
-Apply this sequence for **every** production update. Do not skip, reorder, or
-replace steps with unverified cleanup automation, except for the narrowly
-defined emergency Pipixia-first procedure below.
+The production topology is role-based. Never treat the three Pipixia hosts as
+three interchangeable application servers:
 
-1. Confirm the merge branch's staged tree, version, conflict resolution, and
-   working tree are clean. Commit and push the merge branch.
-2. Merge the reviewed branch into the latest `origin/main` and push `main`.
-3. Wait for every configured CI gate to complete. Deploy only a CI-built,
-   immutable image SHA. A known baseline failure must be identified explicitly;
-   it is never silently treated as a green gate.
-4. On both production targets, record the running container names, image SHAs,
-   published ports, compose state, and active proxy upstream as the rollback
-   point.
-5. Deploy **稳如狗 first**. The host only pulls the prebuilt SHA image. Start
-   the inactive blue-green slot, wait for application health and migrations,
-   atomically switch Nginx/proxy traffic to the healthy new slot, confirm no
-   502s, then stop the old slot. Keep the old image as a rollback point, but do
-   not leave two application instances running long term.
-6. Observe 稳如狗 for about five minutes before touching the second target.
-   Check migrations, `UsageLog` writes, balance/package-group/subscription
-   entitlement billing, Grok/OpenAI errors, 5xx responses, and container logs.
-7. Only when 稳如狗 is healthy, deploy **皮皮虾** with the same blue-green
-   sequence: start the inactive slot, health check, atomically switch traffic,
-   verify the new slot, stop the old slot, retain its image for rollback, and
-   leave exactly one application instance running.
-8. Any failed health check, migration, billing smoke test, elevated error rate,
-   or unexpected 5xx requires immediate traffic rollback to the recorded old
-   SHA. Do not continue the rollout.
+- **稳如狗** is the independent canary. It has its own data plane and receives
+  the release first.
+- **Canada** is the only active Pipixia application host, PostgreSQL primary,
+  and Redis master. Exactly one blue-green application slot runs after a
+  completed release.
+- **United States** is an edge relay only. It forwards stale-DNS and optimized
+  route traffic to Canada over WireGuard. It must not run Sub2API, PostgreSQL,
+  or Redis and must not receive application/database secrets. Until its known
+  compromise is followed by a verified reinstall and credential rotation,
+  treat it as untrusted and deploy nothing to it.
+- **France** is disaster recovery only. PostgreSQL and Redis remain replicas;
+  the Sub2API application stays stopped. A release may be pre-pulled for future
+  failover, but France must not run application startup migrations.
 
-### Emergency Pipixia-First Procedure
+Apply this sequence for **every** production update:
 
-The normal 稳如狗-first order may be waived only when the project owner explicitly
-authorizes an emergency, Pipixia-only rollout in the current task. This exception
-does not relax any other production safeguards:
+1. Confirm the merge branch, staged tree, target upstream version, conflict
+   resolutions, generated files, and working tree. Complete review and the
+   configured backend/frontend/unit/integration/lint/security checks.
+2. Merge the reviewed branch into the latest `origin/main`, push `main`, and
+   wait for every configured CI gate. Deploy only the CI-built immutable image
+   digest for that exact commit; never build on a production host.
+3. Verify release tag, `backend/cmd/server/VERSION`, source revision, OCI labels,
+   and image digest as one release unit. Any mismatch blocks deployment.
+4. Review database migrations before starting an inactive slot. Blue and green
+   share one database, so every migration must be backward compatible with the
+   still-running old slot. An incompatible migration requires an explicit
+   maintenance/expand-contract plan; blue-green alone cannot make it safe.
+5. Record rollback state before each active deployment: container names and
+   image digests, active/inactive ports, Compose state, Nginx upstream and
+   backup, database migration state, and public health baseline.
+6. Deploy **稳如狗 first** using its blue-green mechanism: pull the prebuilt
+   digest, start only the inactive slot, verify local health/version/migrations,
+   atomically switch Nginx, verify public health, drain old workers and long
+   SSE/WebSocket connections, then stop the old slot. Never keep two slots
+   running long term.
+7. Observe 稳如狗 before touching Canada. Routine app-only releases require at
+   least 5-10 minutes; releases involving migrations, billing, subscriptions,
+   groups, or entitlements require about 30 minutes. Check `UsageLog`, balance
+   and entitlement billing, subscription/group coverage, Grok/OpenAI errors,
+   Nginx transport errors, and container restarts.
+8. Before Canada, confirm Canada is still the writable primary/master, France
+   PostgreSQL/Redis replication is healthy and caught up, the US relay is
+   forwarding successfully, and only one Canada application slot is active.
+9. Deploy **Canada** blue-green with the same immutable digest: prewarm the
+   inactive `18080`/`28080` slot, verify it locally, atomically switch the
+   dedicated Nginx upstream include, validate both direct domains and the US
+   relay path, drain old workers/connections, then stop the old slot.
+10. Observe Canada for 10-15 minutes for routine releases or about 30 minutes
+    for critical business/migration releases. Confirm ongoing `UsageLog`
+    writes, no negative/missing/duplicate billing records, entitlement user and
+    group consistency, healthy PostgreSQL/Redis, and no transport-level 502/504.
+11. Do **not** deploy the application to the US relay. Only verify Nginx/WireGuard
+    forwarding, both old-domain health paths, latency, error rate, and that no
+    Sub2API/PostgreSQL/Redis workload is running there.
+12. On France, only pull/cache the same immutable image and record it as the DR
+    candidate. Re-confirm `pg_is_in_recovery() = true`, WAL receiver streaming,
+    Redis replica link up, and zero running Sub2API applications.
 
-1. All configured CI gates must be green and the image must be the CI-built,
-   immutable SHA for the reviewed `main` commit.
-2. Before touching Pipixia, record its active container, image SHA, ports,
-   compose state, Nginx upstream, and rollback configuration.
-3. Use Pipixia's existing blue-green mechanism: start only the inactive slot,
-   validate local and public health plus migrations, atomically cut Nginx over,
-   verify no 502s, then stop the old slot. Retain its image and configuration
-   backup as the rollback point; leave exactly one application instance running.
-4. Check the requested billing and error paths after cutover. On any failed
-   health check, migration, billing smoke test, elevated error rate, or 5xx,
-   immediately restore the recorded old slot and proxy configuration.
+Rollback rules:
+
+- A canary failure stops the release before Canada.
+- A Canada application failure switches Nginx back to the recorded old slot;
+  do not change DNS or database roles for an ordinary application rollback.
+- A migration incompatibility is not repaired by merely restoring the old
+  image. Use the reviewed forward-fix/database recovery plan.
+- Canada host loss uses the separate France promotion and ingress failover
+  procedure. Disaster-recovery promotion is never part of a normal release.
 
 Additional non-negotiable rules:
 
-- Do not build images on either production server.
-- Do not deploy a floating tag. Use an immutable SHA image only.
-- Do not assume both targets share the same proxy implementation. Read and
-  verify the target's existing cutover mechanism before operating it.
-- Do not add generic Docker cleanup, container-ID matching, port inference, or
-  topology-changing deployment logic directly in production. Such changes need
-  an isolated test and an explicit user-approved rollout.
+- Routine releases do not modify DNS.
+- `.github/workflows/deploy-shanghai.yml` is a 稳如狗 canary workflow only.
+  Canada promotion remains an explicit AI/operator blue-green action until a
+  separately reviewed automation is approved; never add US or France app
+  deployment back to that workflow.
+- Distinguish provider/channel 5xx returned by the application from Nginx,
+  WireGuard, database, Redis, or process transport failures. Provider 5xx are
+  recorded; transport failures block or roll back the release.
+- Do not add generic Docker cleanup, container-ID guessing, port inference, or
+  topology-changing automation directly in production. Test it in isolation
+  and obtain explicit rollout approval first.
 - Prompt Audit remains disabled by default. Do not configure audit nodes or
   blocking, and do not enable raw prompt storage in production.
 

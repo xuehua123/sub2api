@@ -1,15 +1,8 @@
-name: Deploy Sub2API Production
+name: Deploy Sub2API Canary (稳如狗)
 
 on:
   workflow_dispatch:
     inputs:
-      target:
-        description: "Production target"
-        required: true
-        type: choice
-        options:
-          - stable
-          - pipixia
       image_tag:
         description: "Immutable image tag or full image ref"
         required: true
@@ -19,7 +12,7 @@ permissions:
   packages: read
 
 concurrency:
-  group: production-sub2api-${{ inputs.target }}
+  group: production-sub2api-stable
   cancel-in-progress: false
 
 env:
@@ -29,7 +22,7 @@ jobs:
   deploy:
     if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
     runs-on: ubuntu-latest
-    environment: production-${{ inputs.target }}
+    environment: production-stable
 
     steps:
       - name: Validate immutable image tag
@@ -45,7 +38,6 @@ jobs:
           esac
 
       - name: Prepare stable deployment payload
-        if: inputs.target == 'stable'
         shell: bash
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
@@ -64,7 +56,6 @@ jobs:
           printf 'STABLE_DEPLOY_PAYLOAD=%s\n' "$stable_deploy_payload" >> "$GITHUB_ENV"
 
       - name: Deploy to stable with restricted deployment user
-        if: inputs.target == 'stable'
         shell: bash
         env:
           STABLE_HOST: ${{ secrets.NEW_STABLE_HOST }}
@@ -86,7 +77,6 @@ jobs:
 
           # The deployment account is constrained by an SSH forced command. It
           # ignores remote shell text and consumes this session's stdin directly.
-          # Use the OpenSSH client so the protected script receives the payload.
           printf '%s' "$STABLE_DEPLOY_PAYLOAD" |
             base64 --decode |
             ssh -T \
@@ -97,198 +87,3 @@ jobs:
               -p "$STABLE_PORT" \
               "$STABLE_USER@$STABLE_HOST" \
               "sudo -n /usr/local/sbin/sub2api-deploy-stable"
-
-      - name: Deploy to pipixia
-        if: inputs.target == 'pipixia'
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME || github.actor }}
-        with:
-          host: ${{ secrets.NEW_PIPIXIA_HOST }}
-          username: ${{ secrets.NEW_PIPIXIA_USER }}
-          password: ${{ secrets.NEW_PIPIXIA_PASSWORD }}
-          port: ${{ secrets.NEW_PIPIXIA_PORT }}
-          envs: IMAGE_NAME,DEPLOY_IMAGE_TAG,GHCR_TOKEN,GHCR_USERNAME
-          # The remote script already uses set -eu and an ERR rollback trap.
-          # script_stop injects Bash statements after every command and corrupts
-          # the Python heredoc below before it reaches the remote shell.
-          script_stop: false
-          command_timeout: 10m
-          script: |
-            set -eu
-
-            case "$DEPLOY_IMAGE_TAG" in
-              ghcr.io/*) deploy_image="$DEPLOY_IMAGE_TAG" ;;
-              sha256:*) deploy_image="${IMAGE_NAME}@${DEPLOY_IMAGE_TAG}" ;;
-              *) deploy_image="${IMAGE_NAME}:${DEPLOY_IMAGE_TAG}" ;;
-            esac
-
-            if [ -f /srv/sub2api/compose.yml ]; then
-              deploy_dir=/srv/sub2api
-              compose_file=compose.yml
-            elif [ -f /opt/platform/docker-compose.yml ]; then
-              deploy_dir=/opt/platform
-              compose_file=docker-compose.yml
-            else
-              echo "No supported Sub2API compose file found" >&2
-              exit 1
-            fi
-
-            cd "$deploy_dir"
-            services="$(docker compose -f "$compose_file" config --format json | python3 -c '
-            import json, sys
-            config = json.load(sys.stdin)
-            prefixes = ("ghcr.io/xuehua123/sub2api:", "ghcr.io/xuehua123/sub2api@")
-            for name, service in config.get("services", {}).items():
-                image = service.get("image", "")
-                if image == "ghcr.io/xuehua123/sub2api" or image.startswith(prefixes):
-                    print(name)
-            ')"
-            if [ -z "$services" ]; then
-              echo "No Sub2API application services found" >&2
-              exit 1
-            fi
-
-            timestamp="$(date +%Y%m%d-%H%M%S)"
-            safe_tag="$(echo "$DEPLOY_IMAGE_TAG" | tr '/:@' '---')"
-            backup="${compose_file}.bak-${timestamp}-pre-${safe_tag}"
-            rollback_state="rollback-state-${timestamp}-pre-${safe_tag}.txt"
-            cp "$compose_file" "$backup"
-
-            {
-              echo "timestamp=$timestamp"
-              echo "deploy_image=$deploy_image"
-              echo "compose_backup=$backup"
-              for service in $services; do
-                container_id="$(docker compose -f "$compose_file" ps -q "$service" || true)"
-                echo "service=$service"
-                echo "container_id=$container_id"
-                if [ -n "$container_id" ]; then
-                  echo "container_image=$(docker inspect --format '{{.Config.Image}}' "$container_id")"
-                  echo "container_image_id=$(docker inspect --format '{{.Image}}' "$container_id")"
-                fi
-              done
-            } > "$rollback_state"
-
-            rollback() {
-              trap - ERR
-              echo "Deployment failed; restoring $backup" >&2
-              cp "$backup" "$compose_file"
-              for service in $services; do
-                docker compose -f "$compose_file" up -d --no-deps "$service" || true
-              done
-              docker compose -f "$compose_file" ps
-            }
-            trap rollback ERR
-
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "${GHCR_USERNAME:-x-access-token}" --password-stdin
-
-            DEPLOY_IMAGE="$deploy_image" COMPOSE_FILE="$compose_file" python3 - <<'PY'
-            from pathlib import Path
-            import os
-            import re
-
-            path = Path(os.environ["COMPOSE_FILE"])
-            image = os.environ["DEPLOY_IMAGE"]
-            lines = path.read_text().splitlines()
-            pattern = re.compile(r"^(\s*image:\s*)ghcr\.io/xuehua123/sub2api(?::[^\s#]+|@[^\s#]+)?(\s*(?:#.*)?)$")
-            replaced = 0
-            output = []
-            for line in lines:
-                match = pattern.match(line)
-                if match:
-                    line = f"{match.group(1)}{image}{match.group(2)}"
-                    replaced += 1
-                output.append(line)
-            if replaced == 0:
-                raise SystemExit("No Sub2API image entries found in compose file")
-            path.write_text("\n".join(output) + "\n")
-            print(f"Updated {replaced} Sub2API image entries")
-            PY
-
-            docker compose -f "$compose_file" pull $services
-            for service in $services; do
-              docker compose -f "$compose_file" up -d --no-deps "$service"
-              container_id="$(docker compose -f "$compose_file" ps -q "$service")"
-              [ -n "$container_id" ] || false
-
-              attempts=0
-              while [ "$attempts" -lt 60 ]; do
-                running="$(docker inspect --format '{{.State.Running}}' "$container_id")"
-                health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container_id")"
-                if [ "$running" = true ] && { [ "$health" = healthy ] || [ "$health" = none ]; }; then
-                  break
-                fi
-                if [ "$running" != true ] || [ "$health" = unhealthy ]; then
-                  docker logs --tail 100 "$container_id" >&2 || true
-                  false
-                fi
-                attempts=$((attempts + 1))
-                sleep 2
-              done
-              if [ "$attempts" -ge 60 ]; then
-                docker logs --tail 100 "$container_id" >&2 || true
-                false
-              fi
-            done
-
-            # Keep exactly the instance Nginx is actively routing to.  Do not
-            # infer the active slot from compose ordering: a stale file or a
-            # partial deployment must fail closed instead of creating a 502.
-            active_ports="$(nginx -T 2>&1 | grep -Eo '127\.0\.0\.1:(18080|28080)' | sort -u || true)"
-            active_port_count="$(printf '%s\n' "$active_ports" | sed '/^$/d' | wc -l | tr -d ' ')"
-            if [ "$active_port_count" -ne 1 ]; then
-              echo "Expected Nginx to reference exactly one Sub2API blue-green port; found: ${active_ports:-none}" >&2
-              false
-            fi
-            active_port="${active_ports#127.0.0.1:}"
-
-            active_service=""
-            active_container=""
-            for service in $services; do
-              container_id="$(docker compose -f "$compose_file" ps -q "$service")"
-              [ -n "$container_id" ] || false
-              host_ports="$(docker inspect --format '{{range $bindings := .NetworkSettings.Ports}}{{range $bindings}}{{println .HostPort}}{{end}}{{end}}' "$container_id")"
-              if printf '%s\n' "$host_ports" | grep -Fxq "$active_port"; then
-                if [ -n "$active_service" ]; then
-                  echo "More than one Sub2API service exposes Nginx active port $active_port" >&2
-                  false
-                fi
-                active_service="$service"
-                active_container="$container_id"
-              fi
-            done
-            if [ -z "$active_service" ]; then
-              echo "No Sub2API compose service exposes Nginx active port $active_port" >&2
-              false
-            fi
-            active_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$active_container")"
-            if [ "$active_health" != healthy ] || [ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${active_port}/health")" != 200 ]; then
-              echo "Nginx active Sub2API service $active_service is not healthy" >&2
-              false
-            fi
-
-            # From this point the active instance is healthy and serving the
-            # configured Nginx port.  Do not roll it back merely because an
-            # inactive-container removal reports an operational error.
-            trap - ERR
-            for service in $services; do
-              if [ "$service" != "$active_service" ]; then
-                docker compose -f "$compose_file" stop "$service"
-                docker compose -f "$compose_file" rm -f "$service"
-              fi
-            done
-
-            # Re-check the only service that is allowed to remain running.
-            # Do not scan or delete arbitrary Docker containers here.
-            [ "$(docker inspect --format '{{.State.Running}}' "$active_container")" = true ] || false
-            [ "$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$active_container")" = healthy ] || false
-            [ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:${active_port}/health")" = 200 ] || false
-
-            trap - ERR
-            docker compose -f "$compose_file" ps
-            echo "Active Sub2API service: $active_service (127.0.0.1:$active_port)"
-            echo "Rollback state: $deploy_dir/$rollback_state"
-            echo "Compose backup: $deploy_dir/$backup"
