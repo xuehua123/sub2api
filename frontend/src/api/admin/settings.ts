@@ -10,6 +10,7 @@ import type {
   LoginAgreementDocument,
   NotifyEmailEntry,
 } from "@/types";
+import type { ConnectivityGradeThresholds } from "@/features/connectivity/types";
 
 export interface DefaultSubscriptionSetting {
   group_id: number;
@@ -468,6 +469,16 @@ export interface SystemSettings {
   backend_mode_enabled: boolean;
   custom_menu_items: CustomMenuItem[];
   custom_endpoints: CustomEndpoint[];
+  connectivity_test_enabled: boolean;
+  connectivity_client_ip_enabled: boolean;
+  connectivity_grade_thresholds: ConnectivityGradeThresholds;
+  connectivity_probe_samples: number;
+  connectivity_probe_warmup: number;
+  connectivity_probe_max_concurrency: number;
+  connectivity_probe_timeout_ms: number;
+  connectivity_probe_allowed_origins: string[];
+  connectivity_probe_ip_rpm: number;
+  connectivity_probe_burst: number;
   // SMTP settings
   smtp_host: string;
   smtp_port: number;
@@ -816,6 +827,16 @@ export interface UpdateSettingsRequest {
   backend_mode_enabled?: boolean;
   custom_menu_items?: CustomMenuItem[];
   custom_endpoints?: CustomEndpoint[];
+  connectivity_test_enabled?: boolean;
+  connectivity_client_ip_enabled?: boolean;
+  connectivity_grade_thresholds?: ConnectivityGradeThresholds;
+  connectivity_probe_samples?: number;
+  connectivity_probe_warmup?: number;
+  connectivity_probe_max_concurrency?: number;
+  connectivity_probe_timeout_ms?: number;
+  connectivity_probe_allowed_origins?: string[];
+  connectivity_probe_ip_rpm?: number;
+  connectivity_probe_burst?: number;
   smtp_host?: string;
   smtp_port?: number;
   smtp_username?: string;

@@ -75,6 +75,14 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		TablePageSizeOptions:             settings.TablePageSizeOptions,
 		CustomMenuItems:                  dto.ParseUserVisibleMenuItems(settings.CustomMenuItems),
 		CustomEndpoints:                  dto.ParseCustomEndpoints(settings.CustomEndpoints),
+		ConnectivityTestEnabled:          settings.ConnectivityTestEnabled,
+		ConnectivityClientIPEnabled:      settings.ConnectivityClientIPEnabled,
+		ConnectivityGradeThresholds:      settings.ConnectivityGradeThresholds,
+		ConnectivityProbeSamples:         settings.ConnectivityProbeSamples,
+		ConnectivityProbeWarmup:          settings.ConnectivityProbeWarmup,
+		ConnectivityProbeMaxConcurrency:  settings.ConnectivityProbeMaxConcurrency,
+		ConnectivityProbeTimeoutMS:       settings.ConnectivityProbeTimeoutMS,
+		ConnectivityTestEndpoints:        settings.ConnectivityTestEndpoints,
 		DingTalkOAuthEnabled:             settings.DingTalkOAuthEnabled,
 		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
 		WeChatOAuthEnabled:               settings.WeChatOAuthEnabled,
@@ -130,6 +138,22 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		AllowUserViewErrorRequests: settings.AllowUserViewErrorRequests,
 		ModelPriceUSDCNYRate:       settings.ModelPriceUSDCNYRate,
 		ModelPriceCNYPerQuotaUSD:   settings.ModelPriceCNYPerQuotaUSD,
+	})
+}
+
+// EdgeProbe serves a fixed, side-effect-free connectivity response outside all
+// authentication, billing, subscription, usage, and upstream request paths.
+func (h *SettingHandler) EdgeProbe(c *gin.Context) {
+	var clientIP any
+	if h != nil && h.settingService != nil {
+		if verified, ok := h.settingService.ConnectivityProbeClientIP(c.Request); ok {
+			clientIP = verified
+		}
+	}
+	c.Header("Cache-Control", "no-store, max-age=0")
+	c.JSON(http.StatusOK, gin.H{
+		"ok":        true,
+		"client_ip": clientIP,
 	})
 }
 

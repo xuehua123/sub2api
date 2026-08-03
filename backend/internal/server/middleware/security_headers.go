@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/gin-gonic/gin"
 )
 
@@ -120,6 +121,9 @@ func isAPIRoutePath(c *gin.Context) bool {
 		return false
 	}
 	path := c.Request.URL.Path
+	if path == connectivity.ProbePath {
+		return true
+	}
 	if strings.HasPrefix(path, "/api/") {
 		path = strings.TrimPrefix(path, "/api")
 	}

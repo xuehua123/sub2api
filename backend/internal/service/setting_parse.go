@@ -51,6 +51,10 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("marshal default forwarded client IP headers: %w", err)
 	}
+	connectivityThresholdsJSON, err := json.Marshal(DefaultConnectivityGradeThresholds())
+	if err != nil {
+		return fmt.Errorf("marshal default connectivity thresholds: %w", err)
+	}
 
 	// 初始化默认设置
 	defaults := map[string]string{
@@ -75,6 +79,16 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyTablePageSizeOptions:                      "[10,20,50,100]",
 		SettingKeyCustomMenuItems:                           "[]",
 		SettingKeyCustomEndpoints:                           "[]",
+		SettingKeyConnectivityTestEnabled:                   "false",
+		SettingKeyConnectivityClientIPEnabled:               "false",
+		SettingKeyConnectivityGradeThresholds:               string(connectivityThresholdsJSON),
+		SettingKeyConnectivityProbeSamples:                  strconv.Itoa(defaultConnectivityProbeSamples),
+		SettingKeyConnectivityProbeWarmup:                   strconv.Itoa(defaultConnectivityProbeWarmup),
+		SettingKeyConnectivityProbeMaxConcurrency:           strconv.Itoa(defaultConnectivityProbeMaxConcurrency),
+		SettingKeyConnectivityProbeTimeoutMS:                strconv.Itoa(defaultConnectivityProbeTimeoutMS),
+		SettingKeyConnectivityProbeAllowedOrigins:           "[]",
+		SettingKeyConnectivityProbeIPRPM:                    strconv.Itoa(defaultConnectivityProbeIPRPM),
+		SettingKeyConnectivityProbeBurst:                    strconv.Itoa(defaultConnectivityProbeBurst),
 		SettingKeyWeChatConnectEnabled:                      "false",
 		SettingKeyWeChatConnectAppID:                        "",
 		SettingKeyWeChatConnectAppSecret:                    "",
@@ -305,6 +319,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 			forwardedClientIPHeaders = parsed
 		}
 	}
+	connectivitySettings := connectivitySettingsFromMap(settings)
 	result := &SystemSettings{
 		RegistrationEnabled:                 settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:                  emailVerifyEnabled,
@@ -348,6 +363,16 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		Sub2PaymentPageLegacyMappingEnabled: settings[SettingKeySub2PaymentPageLegacyMappingEnabled] == "true",
 		CustomMenuItems:                     settings[SettingKeyCustomMenuItems],
 		CustomEndpoints:                     settings[SettingKeyCustomEndpoints],
+		ConnectivityTestEnabled:             connectivitySettings.Enabled && connectivitySettings.Valid,
+		ConnectivityClientIPEnabled:         connectivitySettings.ClientIPEnabled,
+		ConnectivityGradeThresholds:         connectivitySettings.Thresholds,
+		ConnectivityProbeSamples:            connectivitySettings.Samples,
+		ConnectivityProbeWarmup:             connectivitySettings.Warmup,
+		ConnectivityProbeMaxConcurrency:     connectivitySettings.MaxConcurrency,
+		ConnectivityProbeTimeoutMS:          connectivitySettings.TimeoutMS,
+		ConnectivityProbeAllowedOrigins:     connectivitySettings.AllowedOrigins,
+		ConnectivityProbeIPRPM:              connectivitySettings.IPRPM,
+		ConnectivityProbeBurst:              connectivitySettings.Burst,
 		BackendModeEnabled:                  settings[SettingKeyBackendModeEnabled] == "true",
 	}
 	result.TableDefaultPageSize, result.TablePageSizeOptions = parseTablePreferences(

@@ -135,23 +135,33 @@ type UpdateSettingsRequest struct {
 	GoogleOAuthFrontendRedirectURL string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
-	SiteName                            string                `json:"site_name"`
-	SiteLogo                            string                `json:"site_logo"`
-	SiteSubtitle                        string                `json:"site_subtitle"`
-	APIBaseURL                          string                `json:"api_base_url"`
-	ContactInfo                         string                `json:"contact_info"`
-	DocURL                              string                `json:"doc_url"`
-	HomeContent                         string                `json:"home_content"`
-	CompactHomeEnabled                  bool                  `json:"compact_home_enabled"`
-	HideCcsImportButton                 bool                  `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled         *bool                 `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL             *string               `json:"purchase_subscription_url"`
-	SubscriptionEntitlementsV2Enabled   *bool                 `json:"subscription_entitlements_v2_enabled"`
-	Sub2PaymentPageLegacyMappingEnabled *bool                 `json:"sub2_payment_page_legacy_mapping_enabled"`
-	TableDefaultPageSize                int                   `json:"table_default_page_size"`
-	TablePageSizeOptions                []int                 `json:"table_page_size_options"`
-	CustomMenuItems                     *[]dto.CustomMenuItem `json:"custom_menu_items"`
-	CustomEndpoints                     *[]dto.CustomEndpoint `json:"custom_endpoints"`
+	SiteName                            string                               `json:"site_name"`
+	SiteLogo                            string                               `json:"site_logo"`
+	SiteSubtitle                        string                               `json:"site_subtitle"`
+	APIBaseURL                          string                               `json:"api_base_url"`
+	ContactInfo                         string                               `json:"contact_info"`
+	DocURL                              string                               `json:"doc_url"`
+	HomeContent                         string                               `json:"home_content"`
+	CompactHomeEnabled                  bool                                 `json:"compact_home_enabled"`
+	HideCcsImportButton                 bool                                 `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled         *bool                                `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL             *string                              `json:"purchase_subscription_url"`
+	SubscriptionEntitlementsV2Enabled   *bool                                `json:"subscription_entitlements_v2_enabled"`
+	Sub2PaymentPageLegacyMappingEnabled *bool                                `json:"sub2_payment_page_legacy_mapping_enabled"`
+	TableDefaultPageSize                int                                  `json:"table_default_page_size"`
+	TablePageSizeOptions                []int                                `json:"table_page_size_options"`
+	CustomMenuItems                     *[]dto.CustomMenuItem                `json:"custom_menu_items"`
+	CustomEndpoints                     *[]dto.CustomEndpoint                `json:"custom_endpoints"`
+	ConnectivityTestEnabled             *bool                                `json:"connectivity_test_enabled"`
+	ConnectivityClientIPEnabled         *bool                                `json:"connectivity_client_ip_enabled"`
+	ConnectivityGradeThresholds         *service.ConnectivityGradeThresholds `json:"connectivity_grade_thresholds"`
+	ConnectivityProbeSamples            *int                                 `json:"connectivity_probe_samples"`
+	ConnectivityProbeWarmup             *int                                 `json:"connectivity_probe_warmup"`
+	ConnectivityProbeMaxConcurrency     *int                                 `json:"connectivity_probe_max_concurrency"`
+	ConnectivityProbeTimeoutMS          *int                                 `json:"connectivity_probe_timeout_ms"`
+	ConnectivityProbeAllowedOrigins     *[]string                            `json:"connectivity_probe_allowed_origins"`
+	ConnectivityProbeIPRPM              *int                                 `json:"connectivity_probe_ip_rpm"`
+	ConnectivityProbeBurst              *int                                 `json:"connectivity_probe_burst"`
 
 	// 默认配置
 	DefaultConcurrency                        int                               `json:"default_concurrency"`
@@ -499,6 +509,50 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
+	}
+	connectivityTestEnabled := previousSettings.ConnectivityTestEnabled
+	if req.ConnectivityTestEnabled != nil {
+		connectivityTestEnabled = *req.ConnectivityTestEnabled
+	}
+	connectivityClientIPEnabled := previousSettings.ConnectivityClientIPEnabled
+	if req.ConnectivityClientIPEnabled != nil {
+		connectivityClientIPEnabled = *req.ConnectivityClientIPEnabled
+	}
+	connectivityGradeThresholds := previousSettings.ConnectivityGradeThresholds
+	if req.ConnectivityGradeThresholds != nil {
+		connectivityGradeThresholds = *req.ConnectivityGradeThresholds
+	}
+	connectivityProbeSamples := previousSettings.ConnectivityProbeSamples
+	if req.ConnectivityProbeSamples != nil {
+		connectivityProbeSamples = *req.ConnectivityProbeSamples
+	}
+	connectivityProbeWarmup := previousSettings.ConnectivityProbeWarmup
+	if req.ConnectivityProbeWarmup != nil {
+		connectivityProbeWarmup = *req.ConnectivityProbeWarmup
+	}
+	connectivityProbeMaxConcurrency := previousSettings.ConnectivityProbeMaxConcurrency
+	if req.ConnectivityProbeMaxConcurrency != nil {
+		connectivityProbeMaxConcurrency = *req.ConnectivityProbeMaxConcurrency
+	}
+	connectivityProbeTimeoutMS := previousSettings.ConnectivityProbeTimeoutMS
+	if req.ConnectivityProbeTimeoutMS != nil {
+		connectivityProbeTimeoutMS = *req.ConnectivityProbeTimeoutMS
+	}
+	connectivityProbeAllowedOrigins := append([]string(nil), previousSettings.ConnectivityProbeAllowedOrigins...)
+	if req.ConnectivityProbeAllowedOrigins != nil {
+		connectivityProbeAllowedOrigins = append([]string(nil), (*req.ConnectivityProbeAllowedOrigins)...)
+	}
+	connectivityProbeIPRPM := previousSettings.ConnectivityProbeIPRPM
+	if req.ConnectivityProbeIPRPM != nil {
+		connectivityProbeIPRPM = *req.ConnectivityProbeIPRPM
+	}
+	connectivityProbeBurst := previousSettings.ConnectivityProbeBurst
+	if req.ConnectivityProbeBurst != nil {
+		connectivityProbeBurst = *req.ConnectivityProbeBurst
+	}
+	apiBaseURL := previousSettings.APIBaseURL
+	if _, sent := sentFields["api_base_url"]; sent {
+		apiBaseURL = req.APIBaseURL
 	}
 
 	// 两个安全开关的请求字段为指针：省略字段=保持现值，避免旧客户端/脚本
@@ -1545,7 +1599,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		SiteName:                               req.SiteName,
 		SiteLogo:                               req.SiteLogo,
 		SiteSubtitle:                           req.SiteSubtitle,
-		APIBaseURL:                             req.APIBaseURL,
+		APIBaseURL:                             apiBaseURL,
 		ContactInfo:                            req.ContactInfo,
 		DocURL:                                 req.DocURL,
 		HomeContent:                            req.HomeContent,
@@ -1565,17 +1619,27 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.Sub2PaymentPageLegacyMappingEnabled
 		}(),
-		TableDefaultPageSize:         req.TableDefaultPageSize,
-		TablePageSizeOptions:         req.TablePageSizeOptions,
-		CustomMenuItems:              customMenuJSON,
-		CustomEndpoints:              customEndpointsJSON,
-		DefaultConcurrency:           req.DefaultConcurrency,
-		DefaultBalance:               req.DefaultBalance,
-		AffiliateRebateRate:          affiliateRebateRate,
-		AffiliateRebateFreezeHours:   affiliateRebateFreezeHours,
-		AffiliateRebateDurationDays:  affiliateRebateDurationDays,
-		AffiliateRebatePerInviteeCap: affiliateRebatePerInviteeCap,
-		AdminRechargeRebateEnabled:   adminRechargeRebateEnabled,
+		TableDefaultPageSize:            req.TableDefaultPageSize,
+		TablePageSizeOptions:            req.TablePageSizeOptions,
+		CustomMenuItems:                 customMenuJSON,
+		CustomEndpoints:                 customEndpointsJSON,
+		ConnectivityTestEnabled:         connectivityTestEnabled,
+		ConnectivityClientIPEnabled:     connectivityClientIPEnabled,
+		ConnectivityGradeThresholds:     connectivityGradeThresholds,
+		ConnectivityProbeSamples:        connectivityProbeSamples,
+		ConnectivityProbeWarmup:         connectivityProbeWarmup,
+		ConnectivityProbeMaxConcurrency: connectivityProbeMaxConcurrency,
+		ConnectivityProbeTimeoutMS:      connectivityProbeTimeoutMS,
+		ConnectivityProbeAllowedOrigins: connectivityProbeAllowedOrigins,
+		ConnectivityProbeIPRPM:          connectivityProbeIPRPM,
+		ConnectivityProbeBurst:          connectivityProbeBurst,
+		DefaultConcurrency:              req.DefaultConcurrency,
+		DefaultBalance:                  req.DefaultBalance,
+		AffiliateRebateRate:             affiliateRebateRate,
+		AffiliateRebateFreezeHours:      affiliateRebateFreezeHours,
+		AffiliateRebateDurationDays:     affiliateRebateDurationDays,
+		AffiliateRebatePerInviteeCap:    affiliateRebatePerInviteeCap,
+		AdminRechargeRebateEnabled:      adminRechargeRebateEnabled,
 		AffiliateEnabled: func() bool {
 			if req.AffiliateEnabled != nil {
 				return *req.AffiliateEnabled
@@ -2068,6 +2132,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		},
 		ForceEmailOnThirdPartySignup: boolValueOrDefault(req.ForceEmailOnThirdPartySignup, previousAuthSourceDefaults.ForceEmailOnThirdPartySignup),
 	}
+	if err := h.settingService.ValidateConnectivitySettingsUpdate(c.Request.Context(), previousSettings, settings); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if err := h.settingService.UpdateSettingsWithAuthSourceDefaultsOmitting(c.Request.Context(), settings, authSourceDefaults, omitted); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -2272,6 +2340,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		TablePageSizeOptions:                                   updatedSettings.TablePageSizeOptions,
 		CustomMenuItems:                                        dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
 		CustomEndpoints:                                        dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
+		ConnectivityTestEnabled:                                updatedSettings.ConnectivityTestEnabled,
+		ConnectivityClientIPEnabled:                            updatedSettings.ConnectivityClientIPEnabled,
+		ConnectivityGradeThresholds:                            updatedSettings.ConnectivityGradeThresholds,
+		ConnectivityProbeSamples:                               updatedSettings.ConnectivityProbeSamples,
+		ConnectivityProbeWarmup:                                updatedSettings.ConnectivityProbeWarmup,
+		ConnectivityProbeMaxConcurrency:                        updatedSettings.ConnectivityProbeMaxConcurrency,
+		ConnectivityProbeTimeoutMS:                             updatedSettings.ConnectivityProbeTimeoutMS,
+		ConnectivityProbeAllowedOrigins:                        updatedSettings.ConnectivityProbeAllowedOrigins,
+		ConnectivityProbeIPRPM:                                 updatedSettings.ConnectivityProbeIPRPM,
+		ConnectivityProbeBurst:                                 updatedSettings.ConnectivityProbeBurst,
 		DefaultConcurrency:                                     updatedSettings.DefaultConcurrency,
 		DefaultBalance:                                         updatedSettings.DefaultBalance,
 		AffiliateRebateRate:                                    updatedSettings.AffiliateRebateRate,

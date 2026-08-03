@@ -1,17 +1,21 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import type { CustomEndpoint } from '@/types'
+import ConnectivityTestDialog from './ConnectivityTestDialog.vue'
 
 const props = defineProps<{
   apiBaseUrl: string
   customEndpoints: CustomEndpoint[]
+  connectivityEnabled?: boolean
 }>()
 
 const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
 const copiedEndpoint = ref<string | null>(null)
+const showConnectivityDialog = ref(false)
 
 let copiedResetTimer: number | undefined
 
@@ -50,10 +54,6 @@ function tooltipHint(endpoint: string): string {
   return copiedEndpoint.value === endpoint
     ? t('keys.endpoints.copiedHint')
     : t('keys.endpoints.clickToCopy')
-}
-
-function speedTestUrl(endpoint: string): string {
-  return `https://www.tcptest.cn/http/${encodeURIComponent(endpoint)}`
 }
 
 onBeforeUnmount(() => {
@@ -124,18 +124,23 @@ onBeforeUnmount(() => {
           </svg>
         </button>
 
-        <a
-          :href="speedTestUrl(item.endpoint)"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="rounded p-0.5 text-gray-400 transition-colors hover:text-amber-500 dark:text-gray-500 dark:hover:text-amber-400"
-          :title="t('keys.endpoints.speedTest')"
-        >
-          <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </a>
       </div>
     </div>
+    <button
+      v-if="connectivityEnabled"
+      type="button"
+      data-testid="connectivity-test-button"
+      class="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 dark:border-primary-800 dark:bg-primary-950/30 dark:text-primary-300 dark:hover:border-primary-700 dark:hover:bg-primary-900/40 dark:focus-visible:ring-offset-dark-900"
+      @click="showConnectivityDialog = true"
+    >
+      <Icon name="bolt" size="xs" :stroke-width="2" aria-hidden="true" />
+      {{ t('keys.endpoints.speedTest') }}
+    </button>
+    <ConnectivityTestDialog
+      v-if="showConnectivityDialog"
+      :show="showConnectivityDialog"
+      :fallback-endpoints="allEndpoints.map((item) => ({ name: item.name, apiURL: item.endpoint, isDefault: item.isDefault }))"
+      @close="showConnectivityDialog = false"
+    />
   </div>
 </template>

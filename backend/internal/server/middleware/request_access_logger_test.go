@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
@@ -281,6 +282,37 @@ func TestLogger_HealthPathSkipped(t *testing.T) {
 	}
 	if len(sink.list()) != 0 {
 		t.Fatalf("health endpoint should not write access log")
+	}
+}
+
+func TestLogger_EdgeProbeSkipsOnlySuccessfulRequests(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     int
+		wantEvents int
+	}{
+		{name: "success is skipped", status: http.StatusOK, wantEvents: 0},
+		{name: "rate limit is retained", status: http.StatusTooManyRequests, wantEvents: 1},
+		{name: "server error is retained", status: http.StatusServiceUnavailable, wantEvents: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sink := initMiddlewareTestLogger(t)
+			r := gin.New()
+			r.Use(Logger())
+			r.GET(connectivity.ProbePath, func(c *gin.Context) {
+				c.Status(tt.status)
+			})
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, connectivity.ProbePath, nil)
+			r.ServeHTTP(w, req)
+
+			if got := len(sink.list()); got != tt.wantEvents {
+				t.Fatalf("events=%d, want %d", got, tt.wantEvents)
+			}
+		})
 	}
 }
 

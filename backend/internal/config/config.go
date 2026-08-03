@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"net/netip"
 	"net/textproto"
 	"net/url"
 	"os"
@@ -65,6 +66,7 @@ type Config struct {
 	Server                  ServerConfig                  `mapstructure:"server"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
+	Connectivity            ConnectivityConfig            `mapstructure:"connectivity"`
 	Security                SecurityConfig                `mapstructure:"security"`
 	Billing                 BillingConfig                 `mapstructure:"billing"`
 	Turnstile               TurnstileConfig               `mapstructure:"turnstile"`
@@ -685,6 +687,12 @@ type H2CConfig struct {
 type CORSConfig struct {
 	AllowedOrigins   []string `mapstructure:"allowed_origins"`
 	AllowCredentials bool     `mapstructure:"allow_credentials"`
+}
+
+type ConnectivityConfig struct {
+	ClientIPDeniedCIDRs []string `mapstructure:"client_ip_denied_cidrs"`
+	AllowDirectClientIP bool     `mapstructure:"allow_direct_client_ip"`
+	ClientIPMaxHops     int      `mapstructure:"client_ip_max_hops"`
 }
 
 // WebAuthnConfig configures this deployment as a WebAuthn relying party.
@@ -1673,6 +1681,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	trustedProxiesEnv, trustedProxiesEnvConfigured := os.LookupEnv("SERVER_TRUSTED_PROXIES")
 	forwardedClientIPHeadersEnv, forwardedClientIPHeadersEnvConfigured := os.LookupEnv("SECURITY_FORWARDED_CLIENT_IP_HEADERS")
+	connectivityDeniedCIDRsEnv, connectivityDeniedCIDRsEnvConfigured := os.LookupEnv("CONNECTIVITY_CLIENT_IP_DENIED_CIDRS")
 	trustedProxiesConfigured := viper.InConfig("server.trusted_proxies") ||
 		viper.IsSet("server.trusted_proxies") || trustedProxiesEnvConfigured
 
@@ -1685,6 +1694,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	if forwardedClientIPHeadersEnvConfigured {
 		cfg.Security.ForwardedClientIPHeaders = normalizeStringSlice(strings.Split(forwardedClientIPHeadersEnv, ","))
+	}
+	if connectivityDeniedCIDRsEnvConfigured {
+		cfg.Connectivity.ClientIPDeniedCIDRs = normalizeStringSlice(strings.Split(connectivityDeniedCIDRsEnv, ","))
 	}
 	cfg.Server.TrustedProxiesConfigured = trustedProxiesConfigured
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
@@ -1887,6 +1899,12 @@ func setDefaults() {
 	// CORS
 	viper.SetDefault("cors.allowed_origins", []string{})
 	viper.SetDefault("cors.allow_credentials", true)
+
+	// Browser connectivity probe. Client IP exposure remains unavailable until
+	// operators explicitly configure both trusted proxies and denied node CIDRs.
+	viper.SetDefault("connectivity.client_ip_denied_cidrs", []string{})
+	viper.SetDefault("connectivity.allow_direct_client_ip", false)
+	viper.SetDefault("connectivity.client_ip_max_hops", 8)
 
 	// WebAuthn / Passkeys are opt-in because every deployment must explicitly
 	// declare its relying-party domain and trusted browser origins.
@@ -2482,6 +2500,28 @@ func (c *Config) Validate() error {
 	}
 	c.Security.ForwardedClientIPHeaders = forwardedClientIPHeaders
 	c.SetForwardedClientIPSettings(c.Security.TrustForwardedIPForAPIKeyACL, forwardedClientIPHeaders)
+	if c.Connectivity.ClientIPMaxHops < 2 || c.Connectivity.ClientIPMaxHops > 16 {
+		return fmt.Errorf("connectivity.client_ip_max_hops must be between 2 and 16")
+	}
+	for _, raw := range c.Connectivity.ClientIPDeniedCIDRs {
+		value := strings.TrimSpace(raw)
+		if value == "" {
+			return fmt.Errorf("connectivity.client_ip_denied_cidrs must not contain empty values")
+		}
+		if prefix, err := netip.ParsePrefix(value); err == nil {
+			if prefix.Addr().Zone() != "" {
+				return fmt.Errorf("connectivity.client_ip_denied_cidrs must not contain IPv6 zones")
+			}
+		} else {
+			addr, addrErr := netip.ParseAddr(value)
+			if addrErr != nil {
+				return fmt.Errorf("connectivity.client_ip_denied_cidrs contains invalid CIDR %q", value)
+			}
+			if addr.Zone() != "" {
+				return fmt.Errorf("connectivity.client_ip_denied_cidrs must not contain IPv6 zones")
+			}
+		}
+	}
 	if c.Server.ReadHeaderTimeout < 1 || c.Server.ReadHeaderTimeout > 60 {
 		return fmt.Errorf("server.read_header_timeout must be between 1 and 60 seconds")
 	}

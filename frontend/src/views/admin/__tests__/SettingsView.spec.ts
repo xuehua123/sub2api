@@ -368,6 +368,22 @@ const baseSettingsResponse = {
   backend_mode_enabled: false,
   custom_menu_items: [],
   custom_endpoints: [],
+  connectivity_test_enabled: false,
+  connectivity_client_ip_enabled: false,
+  connectivity_grade_thresholds: {
+    grading_version: "1",
+    minimum_success_rate: 0.8,
+    max_consecutive_timeouts: 2,
+    excellent: { min_success_rate: 1, max_p95_ms: 250, max_mad_ms: 50 },
+    good: { min_success_rate: 0.9, max_p95_ms: 500, max_mad_ms: 120 },
+  },
+  connectivity_probe_samples: 10,
+  connectivity_probe_warmup: 1,
+  connectivity_probe_max_concurrency: 3,
+  connectivity_probe_timeout_ms: 10000,
+  connectivity_probe_allowed_origins: [],
+  connectivity_probe_ip_rpm: 360,
+  connectivity_probe_burst: 250,
   frontend_url: "",
   smtp_host: "",
   smtp_port: 587,
@@ -509,8 +525,9 @@ const baseSettingsResponse = {
   },
 };
 
-function mountView() {
+function mountView(attachTo?: HTMLElement) {
   return mount(SettingsView, {
+    attachTo,
     global: {
       stubs: {
         AppLayout: AppLayoutStub,
@@ -671,6 +688,139 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({ compact_home_enabled: true }),
     );
+  });
+
+  it("loads and submits the complete connectivity testing configuration", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      api_base_url: "https://api.example.com/v1",
+      custom_endpoints: [
+        {
+          name: "备用端点",
+          endpoint: "https://alt.example.com/compatible",
+          description: "",
+        },
+      ],
+      connectivity_test_enabled: true,
+      connectivity_probe_allowed_origins: ["https://api.example.com"],
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    const section = wrapper.get('[data-testid="connectivity-settings"]');
+    expect(
+      (section.get('[data-testid="connectivity-enabled"]').element as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+
+    const originCheckboxes = section.findAll(
+      '[data-testid="connectivity-origin-checkbox"]',
+    );
+    expect(originCheckboxes).toHaveLength(2);
+    expect((originCheckboxes[0].element as HTMLInputElement).value).toBe(
+      "https://api.example.com",
+    );
+    expect((originCheckboxes[0].element as HTMLInputElement).checked).toBe(true);
+    expect((originCheckboxes[1].element as HTMLInputElement).checked).toBe(false);
+
+    await originCheckboxes[1].setValue(true);
+    await section.get('[data-testid="connectivity-advanced-toggle"]').trigger("click");
+    await section.get('[data-testid="connectivity-samples"]').setValue("12");
+    await section.get('[data-testid="connectivity-excellent-p95"]').setValue("300");
+
+    const budget = section.get('[data-testid="connectivity-request-budget"]');
+    expect(budget.attributes("data-request-count")).toBe("26");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    const payload = updateSettings.mock.calls[0]?.[0];
+    expect(payload).toEqual(
+      expect.objectContaining({
+        connectivity_test_enabled: true,
+        connectivity_client_ip_enabled: false,
+        connectivity_probe_allowed_origins: [
+          "https://api.example.com",
+          "https://alt.example.com",
+        ],
+        connectivity_probe_samples: 12,
+        connectivity_probe_warmup: 1,
+        connectivity_probe_max_concurrency: 3,
+        connectivity_probe_timeout_ms: 10000,
+        connectivity_probe_ip_rpm: 360,
+        connectivity_probe_burst: 250,
+      }),
+    );
+    expect(payload.connectivity_grade_thresholds.excellent.max_p95_ms).toBe(300);
+    expect(payload.connectivity_grade_thresholds.grading_version).not.toBe("1");
+  });
+
+  it("blocks saving when more than eleven API URLs would be exposed", async () => {
+    const customEndpoints = Array.from({ length: 11 }, (_, index) => ({
+      name: `端点 ${index + 1}`,
+      endpoint: `https://api${index + 1}.example.com/v1`,
+      description: "",
+    }));
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      api_base_url: "https://api.example.com/v1",
+      custom_endpoints: customEndpoints,
+      connectivity_test_enabled: true,
+      connectivity_probe_samples: 20,
+      connectivity_probe_warmup: 2,
+      connectivity_probe_allowed_origins: [
+        "https://api.example.com",
+        ...customEndpoints.map((endpoint) => new URL(endpoint.endpoint).origin),
+      ],
+    });
+    const wrapper = mountView();
+    await flushPromises();
+
+    expect(
+      wrapper
+        .get('[data-testid="connectivity-request-budget"]')
+        .attributes("data-request-count"),
+    ).toBe("264");
+
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(showError).toHaveBeenCalledWith(
+      "admin.settings.site.connectivity.errors.endpointLimitExceeded",
+    );
+  });
+
+  it("reopens advanced connectivity settings and focuses an invalid P95 field", async () => {
+    const wrapper = mountView(document.body);
+
+    try {
+      await flushPromises();
+      const section = wrapper.get('[data-testid="connectivity-settings"]');
+      const advancedToggle = section.get('[data-testid="connectivity-advanced-toggle"]');
+      await advancedToggle.trigger("click");
+      await section.get('[data-testid="connectivity-excellent-p95"]').setValue("600");
+      await advancedToggle.trigger("click");
+      expect(section.find('[data-testid="connectivity-advanced-settings"]').exists()).toBe(false);
+
+      await wrapper.find("form").trigger("submit.prevent");
+      await flushPromises();
+
+      expect(section.find('[data-testid="connectivity-advanced-settings"]').exists()).toBe(true);
+      const error = section.get('[data-testid="connectivity-validation-error"]');
+      expect(error.attributes("role")).toBe("alert");
+      expect(error.classes()).toContain("sticky");
+      expect(error.text()).toContain("admin.settings.site.connectivity.errors.p95Order");
+
+      const p95Input = section.get('[data-testid="connectivity-excellent-p95"]');
+      expect(p95Input.attributes("aria-invalid")).toBe("true");
+      expect(p95Input.attributes("aria-describedby")).toBe("connectivity-validation-error");
+      expect(p95Input.classes()).toContain("border-red-500");
+      expect(document.activeElement).toBe(p95Input.element);
+      expect(updateSettings).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+    }
   });
 
   it("renders panel rate limit card and saves settings", async () => {

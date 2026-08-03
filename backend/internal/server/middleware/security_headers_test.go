@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -164,6 +165,24 @@ func TestSecurityHeaders(t *testing.T) {
 
 		middleware(c)
 
+		assert.Empty(t, w.Header().Get("Content-Security-Policy"))
+		assert.Empty(t, GetNonceFromContext(c))
+	})
+
+	t.Run("connectivity_probe_skips_csp_nonce_generation", func(t *testing.T) {
+		cfg := config.CSPConfig{
+			Enabled: true,
+			Policy:  "default-src 'self'; script-src 'self' __CSP_NONCE__",
+		}
+		middleware := SecurityHeaders(cfg, nil)
+
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, connectivity.ProbePath, nil)
+
+		middleware(c)
+
+		assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
 		assert.Empty(t, w.Header().Get("Content-Security-Policy"))
 		assert.Empty(t, GetNonceFromContext(c))
 	})

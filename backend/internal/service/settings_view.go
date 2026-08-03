@@ -149,6 +149,16 @@ type SystemSettings struct {
 	TablePageSizeOptions                []int
 	CustomMenuItems                     string // JSON array of custom menu items
 	CustomEndpoints                     string // JSON array of custom endpoints
+	ConnectivityTestEnabled             bool
+	ConnectivityClientIPEnabled         bool
+	ConnectivityGradeThresholds         ConnectivityGradeThresholds
+	ConnectivityProbeSamples            int
+	ConnectivityProbeWarmup             int
+	ConnectivityProbeMaxConcurrency     int
+	ConnectivityProbeTimeoutMS          int
+	ConnectivityProbeAllowedOrigins     []string
+	ConnectivityProbeIPRPM              int
+	ConnectivityProbeBurst              int
 	ModelPriceUSDCNYRate                float64
 	ModelPriceCNYPerQuotaUSD            float64
 	ModelPricesUserVisible              bool
@@ -349,15 +359,23 @@ type PublicSettings struct {
 	CompactHomeEnabled               bool
 	HideCcsImportButton              bool
 
-	PurchaseSubscriptionEnabled bool
-	PurchaseSubscriptionURL     string
-	TableDefaultPageSize        int
-	TablePageSizeOptions        []int
-	CustomMenuItems             string // JSON array of custom menu items
-	CustomEndpoints             string // JSON array of custom endpoints
-	ModelPricesUserVisible      bool
-	ModelPriceUSDCNYRate        float64
-	ModelPriceCNYPerQuotaUSD    float64
+	PurchaseSubscriptionEnabled     bool
+	PurchaseSubscriptionURL         string
+	TableDefaultPageSize            int
+	TablePageSizeOptions            []int
+	CustomMenuItems                 string // JSON array of custom menu items
+	CustomEndpoints                 string // JSON array of custom endpoints
+	ConnectivityTestEnabled         bool
+	ConnectivityClientIPEnabled     bool
+	ConnectivityGradeThresholds     ConnectivityGradeThresholds
+	ConnectivityProbeSamples        int
+	ConnectivityProbeWarmup         int
+	ConnectivityProbeMaxConcurrency int
+	ConnectivityProbeTimeoutMS      int
+	ConnectivityTestEndpoints       []ConnectivityTestEndpoint
+	ModelPricesUserVisible          bool
+	ModelPriceUSDCNYRate            float64
+	ModelPriceCNYPerQuotaUSD        float64
 
 	LinuxDoOAuthEnabled      bool
 	DingTalkOAuthEnabled     bool

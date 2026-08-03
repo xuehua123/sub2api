@@ -290,6 +290,42 @@ func TestCORS_VaryHeader_SetForSpecificOrigin(t *testing.T) {
 		"非通配符允许的 origin 应设置 Vary: Origin")
 }
 
+func TestCORS_EdgeProbeUsesExactOriginWithoutCredentialsAndExposesTiming(t *testing.T) {
+	cfg := config.CORSConfig{
+		AllowedOrigins:   []string{"https://panel.example.com"},
+		AllowCredentials: true,
+	}
+	middleware := CORS(cfg)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/.well-known/sub2api/edge-probe", nil)
+	c.Request.Header.Set("Origin", "https://panel.example.com")
+
+	middleware(c)
+
+	assert.Equal(t, "https://panel.example.com", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, w.Header().Values("Vary"), "Origin")
+	assert.Equal(t, "https://panel.example.com", w.Header().Get("Timing-Allow-Origin"))
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Credentials"))
+}
+
+func TestCORS_EdgeProbeRejectsWildcardCrossOrigin(t *testing.T) {
+	cfg := config.CORSConfig{AllowedOrigins: []string{"*"}}
+	middleware := CORS(cfg)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodOptions, "/.well-known/sub2api/edge-probe", nil)
+	c.Request.Header.Set("Origin", "https://unknown.example.com")
+
+	middleware(c)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Empty(t, w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Empty(t, w.Header().Get("Timing-Allow-Origin"))
+}
+
 func TestNormalizeOrigins(t *testing.T) {
 	tests := []struct {
 		name   string

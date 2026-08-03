@@ -322,6 +322,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		modelPriceCNYPerQuotaUSD = 0.068
 	}
 
+	connectivitySettings := s.connectivityProbeSnapshot()
+
 	return &PublicSettings{
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
@@ -354,6 +356,14 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		TablePageSizeOptions:             tablePageSizeOptions,
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
 		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
+		ConnectivityTestEnabled:          connectivitySettings.Enabled,
+		ConnectivityClientIPEnabled:      connectivitySettings.ClientIPEnabled,
+		ConnectivityGradeThresholds:      connectivitySettings.Thresholds,
+		ConnectivityProbeSamples:         connectivitySettings.Samples,
+		ConnectivityProbeWarmup:          connectivitySettings.Warmup,
+		ConnectivityProbeMaxConcurrency:  connectivitySettings.MaxConcurrency,
+		ConnectivityProbeTimeoutMS:       connectivitySettings.TimeoutMS,
+		ConnectivityTestEndpoints:        connectivitySettings.Endpoints,
 		LinuxDoOAuthEnabled:              linuxDoEnabled,
 		DingTalkOAuthEnabled:             dingTalkEnabled,
 		WeChatOAuthEnabled:               weChatEnabled,
@@ -533,68 +543,76 @@ func (s *SettingService) IsUserErrorViewAllowed(ctx context.Context) bool {
 // A unit test diffs this struct's JSON keys against dto.PublicSettings to catch
 // drift automatically (see setting_service_injection_test.go).
 type PublicSettingsInjectionPayload struct {
-	RegistrationEnabled              bool                     `json:"registration_enabled"`
-	EmailVerifyEnabled               bool                     `json:"email_verify_enabled"`
-	RegistrationEmailSuffixWhitelist []string                 `json:"registration_email_suffix_whitelist"`
-	PromoCodeEnabled                 bool                     `json:"promo_code_enabled"`
-	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
-	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
-	TotpEnabled                      bool                     `json:"totp_enabled"`
-	PasskeyEnabled                   bool                     `json:"passkey_enabled"`
-	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`
-	LoginAgreementMode               string                   `json:"login_agreement_mode"`
-	LoginAgreementUpdatedAt          string                   `json:"login_agreement_updated_at"`
-	LoginAgreementRevision           string                   `json:"login_agreement_revision"`
-	LoginAgreementDocuments          []LoginAgreementDocument `json:"login_agreement_documents"`
-	TurnstileEnabled                 bool                     `json:"turnstile_enabled"`
-	TurnstileSiteKey                 string                   `json:"turnstile_site_key"`
-	SiteName                         string                   `json:"site_name"`
-	SiteLogo                         string                   `json:"site_logo"`
-	SiteSubtitle                     string                   `json:"site_subtitle"`
-	APIBaseURL                       string                   `json:"api_base_url"`
-	ContactInfo                      string                   `json:"contact_info"`
-	DocURL                           string                   `json:"doc_url"`
-	HomeContent                      string                   `json:"home_content"`
-	CompactHomeEnabled               bool                     `json:"compact_home_enabled"`
-	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
-	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
-	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
-	TableDefaultPageSize             int                      `json:"table_default_page_size"`
-	TablePageSizeOptions             []int                    `json:"table_page_size_options"`
-	CustomMenuItems                  json.RawMessage          `json:"custom_menu_items"`
-	CustomEndpoints                  json.RawMessage          `json:"custom_endpoints"`
-	LinuxDoOAuthEnabled              bool                     `json:"linuxdo_oauth_enabled"`
-	DingTalkOAuthEnabled             bool                     `json:"dingtalk_oauth_enabled"`
-	WeChatOAuthEnabled               bool                     `json:"wechat_oauth_enabled"`
-	WeChatOAuthOpenEnabled           bool                     `json:"wechat_oauth_open_enabled"`
-	WeChatOAuthMPEnabled             bool                     `json:"wechat_oauth_mp_enabled"`
-	WeChatOAuthMobileEnabled         bool                     `json:"wechat_oauth_mobile_enabled"`
-	OIDCOAuthEnabled                 bool                     `json:"oidc_oauth_enabled"`
-	OIDCOAuthProviderName            string                   `json:"oidc_oauth_provider_name"`
-	GitHubOAuthEnabled               bool                     `json:"github_oauth_enabled"`
-	GoogleOAuthEnabled               bool                     `json:"google_oauth_enabled"`
-	BackendModeEnabled               bool                     `json:"backend_mode_enabled"`
-	PaymentEnabled                   bool                     `json:"payment_enabled"`
-	ReferralEnabled                  bool                     `json:"referral_enabled"`
-	ReferralAllowManualInput         bool                     `json:"referral_allow_manual_input"`
-	ReferralBindBeforeFirstPaidOnly  bool                     `json:"referral_bind_before_first_paid_only"`
-	ReferralWithdrawEnabled          bool                     `json:"referral_withdraw_enabled"`
-	ReferralCreditConversionEnabled  bool                     `json:"referral_credit_conversion_enabled"`
-	ReferralCreditConversionRate     float64                  `json:"referral_credit_conversion_rate"`
-	ReferralSettlementCurrency       string                   `json:"referral_settlement_currency"`
-	ReferralWithdrawMethodsEnabled   []string                 `json:"referral_withdraw_methods_enabled"`
-	ReferralLevel1Enabled            bool                     `json:"referral_level1_enabled"`
-	ReferralLevel1Rate               float64                  `json:"referral_level1_rate"`
-	ReferralRewardMode               string                   `json:"referral_reward_mode"`
-	ReferralSettlementDelayDays      int                      `json:"referral_settlement_delay_days"`
-	LobeHubEnabled                   bool                     `json:"lobehub_enabled"`
-	LobeHubChatURL                   string                   `json:"lobehub_chat_url"`
-	LobeHubOIDCIssuer                string                   `json:"lobehub_oidc_issuer"`
-	LobeHubDefaultProvider           string                   `json:"lobehub_default_provider"`
-	LobeHubDefaultModel              string                   `json:"lobehub_default_model"`
-	LobeHubRuntimeConfigVersion      string                   `json:"lobehub_runtime_config_version"`
-	HideLobeHubImportButton          bool                     `json:"hide_lobehub_import_button"`
-	Version                          string                   `json:"version"`
+	RegistrationEnabled              bool                        `json:"registration_enabled"`
+	EmailVerifyEnabled               bool                        `json:"email_verify_enabled"`
+	RegistrationEmailSuffixWhitelist []string                    `json:"registration_email_suffix_whitelist"`
+	PromoCodeEnabled                 bool                        `json:"promo_code_enabled"`
+	PasswordResetEnabled             bool                        `json:"password_reset_enabled"`
+	InvitationCodeEnabled            bool                        `json:"invitation_code_enabled"`
+	TotpEnabled                      bool                        `json:"totp_enabled"`
+	PasskeyEnabled                   bool                        `json:"passkey_enabled"`
+	LoginAgreementEnabled            bool                        `json:"login_agreement_enabled"`
+	LoginAgreementMode               string                      `json:"login_agreement_mode"`
+	LoginAgreementUpdatedAt          string                      `json:"login_agreement_updated_at"`
+	LoginAgreementRevision           string                      `json:"login_agreement_revision"`
+	LoginAgreementDocuments          []LoginAgreementDocument    `json:"login_agreement_documents"`
+	TurnstileEnabled                 bool                        `json:"turnstile_enabled"`
+	TurnstileSiteKey                 string                      `json:"turnstile_site_key"`
+	SiteName                         string                      `json:"site_name"`
+	SiteLogo                         string                      `json:"site_logo"`
+	SiteSubtitle                     string                      `json:"site_subtitle"`
+	APIBaseURL                       string                      `json:"api_base_url"`
+	ContactInfo                      string                      `json:"contact_info"`
+	DocURL                           string                      `json:"doc_url"`
+	HomeContent                      string                      `json:"home_content"`
+	CompactHomeEnabled               bool                        `json:"compact_home_enabled"`
+	HideCcsImportButton              bool                        `json:"hide_ccs_import_button"`
+	PurchaseSubscriptionEnabled      bool                        `json:"purchase_subscription_enabled"`
+	PurchaseSubscriptionURL          string                      `json:"purchase_subscription_url"`
+	TableDefaultPageSize             int                         `json:"table_default_page_size"`
+	TablePageSizeOptions             []int                       `json:"table_page_size_options"`
+	CustomMenuItems                  json.RawMessage             `json:"custom_menu_items"`
+	CustomEndpoints                  json.RawMessage             `json:"custom_endpoints"`
+	ConnectivityTestEnabled          bool                        `json:"connectivity_test_enabled"`
+	ConnectivityClientIPEnabled      bool                        `json:"connectivity_client_ip_enabled"`
+	ConnectivityGradeThresholds      ConnectivityGradeThresholds `json:"connectivity_grade_thresholds"`
+	ConnectivityProbeSamples         int                         `json:"connectivity_probe_samples"`
+	ConnectivityProbeWarmup          int                         `json:"connectivity_probe_warmup"`
+	ConnectivityProbeMaxConcurrency  int                         `json:"connectivity_probe_max_concurrency"`
+	ConnectivityProbeTimeoutMS       int                         `json:"connectivity_probe_timeout_ms"`
+	ConnectivityTestEndpoints        []ConnectivityTestEndpoint  `json:"connectivity_test_endpoints"`
+	LinuxDoOAuthEnabled              bool                        `json:"linuxdo_oauth_enabled"`
+	DingTalkOAuthEnabled             bool                        `json:"dingtalk_oauth_enabled"`
+	WeChatOAuthEnabled               bool                        `json:"wechat_oauth_enabled"`
+	WeChatOAuthOpenEnabled           bool                        `json:"wechat_oauth_open_enabled"`
+	WeChatOAuthMPEnabled             bool                        `json:"wechat_oauth_mp_enabled"`
+	WeChatOAuthMobileEnabled         bool                        `json:"wechat_oauth_mobile_enabled"`
+	OIDCOAuthEnabled                 bool                        `json:"oidc_oauth_enabled"`
+	OIDCOAuthProviderName            string                      `json:"oidc_oauth_provider_name"`
+	GitHubOAuthEnabled               bool                        `json:"github_oauth_enabled"`
+	GoogleOAuthEnabled               bool                        `json:"google_oauth_enabled"`
+	BackendModeEnabled               bool                        `json:"backend_mode_enabled"`
+	PaymentEnabled                   bool                        `json:"payment_enabled"`
+	ReferralEnabled                  bool                        `json:"referral_enabled"`
+	ReferralAllowManualInput         bool                        `json:"referral_allow_manual_input"`
+	ReferralBindBeforeFirstPaidOnly  bool                        `json:"referral_bind_before_first_paid_only"`
+	ReferralWithdrawEnabled          bool                        `json:"referral_withdraw_enabled"`
+	ReferralCreditConversionEnabled  bool                        `json:"referral_credit_conversion_enabled"`
+	ReferralCreditConversionRate     float64                     `json:"referral_credit_conversion_rate"`
+	ReferralSettlementCurrency       string                      `json:"referral_settlement_currency"`
+	ReferralWithdrawMethodsEnabled   []string                    `json:"referral_withdraw_methods_enabled"`
+	ReferralLevel1Enabled            bool                        `json:"referral_level1_enabled"`
+	ReferralLevel1Rate               float64                     `json:"referral_level1_rate"`
+	ReferralRewardMode               string                      `json:"referral_reward_mode"`
+	ReferralSettlementDelayDays      int                         `json:"referral_settlement_delay_days"`
+	LobeHubEnabled                   bool                        `json:"lobehub_enabled"`
+	LobeHubChatURL                   string                      `json:"lobehub_chat_url"`
+	LobeHubOIDCIssuer                string                      `json:"lobehub_oidc_issuer"`
+	LobeHubDefaultProvider           string                      `json:"lobehub_default_provider"`
+	LobeHubDefaultModel              string                      `json:"lobehub_default_model"`
+	LobeHubRuntimeConfigVersion      string                      `json:"lobehub_runtime_config_version"`
+	HideLobeHubImportButton          bool                        `json:"hide_lobehub_import_button"`
+	Version                          string                      `json:"version"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移），高峰时段等服务端本地时间窗口的展示标注用
 	ServerTimezone              string  `json:"server_timezone"`
 	ServerUTCOffset             string  `json:"server_utc_offset"`
@@ -655,6 +673,14 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		TablePageSizeOptions:             settings.TablePageSizeOptions,
 		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
 		CustomEndpoints:                  safeRawJSONArray(settings.CustomEndpoints),
+		ConnectivityTestEnabled:          settings.ConnectivityTestEnabled,
+		ConnectivityClientIPEnabled:      settings.ConnectivityClientIPEnabled,
+		ConnectivityGradeThresholds:      settings.ConnectivityGradeThresholds,
+		ConnectivityProbeSamples:         settings.ConnectivityProbeSamples,
+		ConnectivityProbeWarmup:          settings.ConnectivityProbeWarmup,
+		ConnectivityProbeMaxConcurrency:  settings.ConnectivityProbeMaxConcurrency,
+		ConnectivityProbeTimeoutMS:       settings.ConnectivityProbeTimeoutMS,
+		ConnectivityTestEndpoints:        settings.ConnectivityTestEndpoints,
 		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
 		DingTalkOAuthEnabled:             settings.DingTalkOAuthEnabled,
 		WeChatOAuthEnabled:               settings.WeChatOAuthEnabled,

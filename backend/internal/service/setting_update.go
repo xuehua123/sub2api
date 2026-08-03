@@ -44,11 +44,7 @@ func (s *SettingService) UpdateSettingsOmitting(ctx context.Context, settings *S
 	}
 	omitted.dropFrom(updates)
 
-	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
-		return err
-	}
-	s.refreshCachedSettingsAfterWrite(ctx, settings, omitted)
-	return nil
+	return s.persistSystemSettingsUpdates(ctx, updates, settings, omitted)
 }
 
 // UpdateSettingsWithAuthSourceDefaults persists system settings and auth-source defaults in a single write.
@@ -73,6 +69,18 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 		updates[key] = value
 	}
 	omitted.dropFrom(updates)
+
+	return s.persistSystemSettingsUpdates(ctx, updates, settings, omitted)
+}
+
+func (s *SettingService) persistSystemSettingsUpdates(
+	ctx context.Context,
+	updates map[string]string,
+	settings *SystemSettings,
+	omitted OmittedSettingKeys,
+) error {
+	s.connectivityWriteMu.Lock()
+	defer s.connectivityWriteMu.Unlock()
 
 	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
 		return err
@@ -99,6 +107,9 @@ func (s *SettingService) refreshCachedSettingsAfterWrite(ctx context.Context, se
 }
 
 func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, settings *SystemSettings) (map[string]string, error) {
+	if err := normalizeConnectivitySystemSettings(settings); err != nil {
+		return nil, infraerrors.BadRequest("INVALID_CONNECTIVITY_SETTINGS", err.Error())
+	}
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
 		return nil, err
 	}
@@ -341,6 +352,24 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyTablePageSizeOptions] = string(tablePageSizeOptionsJSON)
 	updates[SettingKeyCustomMenuItems] = settings.CustomMenuItems
 	updates[SettingKeyCustomEndpoints] = settings.CustomEndpoints
+	connectivityThresholdsJSON, err := json.Marshal(settings.ConnectivityGradeThresholds)
+	if err != nil {
+		return nil, fmt.Errorf("marshal connectivity grade thresholds: %w", err)
+	}
+	connectivityAllowedOriginsJSON, err := json.Marshal(settings.ConnectivityProbeAllowedOrigins)
+	if err != nil {
+		return nil, fmt.Errorf("marshal connectivity allowed origins: %w", err)
+	}
+	updates[SettingKeyConnectivityTestEnabled] = strconv.FormatBool(settings.ConnectivityTestEnabled)
+	updates[SettingKeyConnectivityClientIPEnabled] = strconv.FormatBool(settings.ConnectivityClientIPEnabled)
+	updates[SettingKeyConnectivityGradeThresholds] = string(connectivityThresholdsJSON)
+	updates[SettingKeyConnectivityProbeSamples] = strconv.Itoa(settings.ConnectivityProbeSamples)
+	updates[SettingKeyConnectivityProbeWarmup] = strconv.Itoa(settings.ConnectivityProbeWarmup)
+	updates[SettingKeyConnectivityProbeMaxConcurrency] = strconv.Itoa(settings.ConnectivityProbeMaxConcurrency)
+	updates[SettingKeyConnectivityProbeTimeoutMS] = strconv.Itoa(settings.ConnectivityProbeTimeoutMS)
+	updates[SettingKeyConnectivityProbeAllowedOrigins] = string(connectivityAllowedOriginsJSON)
+	updates[SettingKeyConnectivityProbeIPRPM] = strconv.Itoa(settings.ConnectivityProbeIPRPM)
+	updates[SettingKeyConnectivityProbeBurst] = strconv.Itoa(settings.ConnectivityProbeBurst)
 	updates[SettingKeyModelPriceUSDCNYRate] = strconv.FormatFloat(parseModelPriceUSDCNYRate(strconv.FormatFloat(settings.ModelPriceUSDCNYRate, 'f', 8, 64)), 'f', 8, 64)
 	updates[SettingKeyModelPriceCNYPerQuotaUSD] = strconv.FormatFloat(parseModelPriceCNYPerQuotaUSD(strconv.FormatFloat(settings.ModelPriceCNYPerQuotaUSD, 'f', 8, 64)), 'f', 8, 64)
 	updates[SettingKeyModelPricesUserVisible] = strconv.FormatBool(settings.ModelPricesUserVisible)
@@ -641,6 +670,11 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if settings == nil {
 		return
 	}
+	connectivityCtx, connectivityCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	s.connectivityMu.Lock()
+	s.refreshConnectivityProbeSnapshot(connectivityCtx, connectivitySettingsFromSystem(settings))
+	s.connectivityMu.Unlock()
+	connectivityCancel()
 
 	// 先使 inflight singleflight 失效，再刷新缓存，缩小旧值覆盖新值的竞态窗口
 	versionBoundsSF.Forget("version_bounds")

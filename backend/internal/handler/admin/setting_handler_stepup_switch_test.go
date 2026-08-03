@@ -208,3 +208,62 @@ func TestUpdateSettingsRejectsInvalidForwardedClientIPHeader(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, rec.Code)
 	require.JSONEq(t, `["X-Existing-IP"]`, repo.values[service.SettingKeyForwardedClientIPHeaders])
 }
+
+func TestUpdateSettingsResponseIncludesConnectivitySettings(t *testing.T) {
+	h, _ := newStepUpSwitchTestHandler(t, map[string]string{})
+	thresholds := service.DefaultConnectivityGradeThresholds()
+	thresholds.GradingVersion = "response-v2"
+
+	rec := doUpdateSettings(t, h, map[string]any{
+		"connectivity_test_enabled":          false,
+		"connectivity_client_ip_enabled":     true,
+		"connectivity_grade_thresholds":      thresholds,
+		"connectivity_probe_samples":         12,
+		"connectivity_probe_warmup":          2,
+		"connectivity_probe_max_concurrency": 2,
+		"connectivity_probe_timeout_ms":      9000,
+		"connectivity_probe_allowed_origins": []string{"https://api.example.com"},
+		"connectivity_probe_ip_rpm":          420,
+		"connectivity_probe_burst":           240,
+	}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var payload struct {
+		Data struct {
+			ConnectivityTestEnabled         bool                                `json:"connectivity_test_enabled"`
+			ConnectivityClientIPEnabled     bool                                `json:"connectivity_client_ip_enabled"`
+			ConnectivityGradeThresholds     service.ConnectivityGradeThresholds `json:"connectivity_grade_thresholds"`
+			ConnectivityProbeSamples        int                                 `json:"connectivity_probe_samples"`
+			ConnectivityProbeWarmup         int                                 `json:"connectivity_probe_warmup"`
+			ConnectivityProbeMaxConcurrency int                                 `json:"connectivity_probe_max_concurrency"`
+			ConnectivityProbeTimeoutMS      int                                 `json:"connectivity_probe_timeout_ms"`
+			ConnectivityProbeAllowedOrigins []string                            `json:"connectivity_probe_allowed_origins"`
+			ConnectivityProbeIPRPM          int                                 `json:"connectivity_probe_ip_rpm"`
+			ConnectivityProbeBurst          int                                 `json:"connectivity_probe_burst"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
+	require.False(t, payload.Data.ConnectivityTestEnabled)
+	require.True(t, payload.Data.ConnectivityClientIPEnabled)
+	require.Equal(t, thresholds, payload.Data.ConnectivityGradeThresholds)
+	require.Equal(t, 12, payload.Data.ConnectivityProbeSamples)
+	require.Equal(t, 2, payload.Data.ConnectivityProbeWarmup)
+	require.Equal(t, 2, payload.Data.ConnectivityProbeMaxConcurrency)
+	require.Equal(t, 9000, payload.Data.ConnectivityProbeTimeoutMS)
+	require.Equal(t, []string{"https://api.example.com"}, payload.Data.ConnectivityProbeAllowedOrigins)
+	require.Equal(t, 420, payload.Data.ConnectivityProbeIPRPM)
+	require.Equal(t, 240, payload.Data.ConnectivityProbeBurst)
+}
+
+func TestUpdateSettingsPartialPayloadKeepsEnabledConnectivityAPIBaseURL(t *testing.T) {
+	h, repo := newStepUpSwitchTestHandler(t, map[string]string{
+		service.SettingKeyConnectivityTestEnabled:         "true",
+		service.SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		service.SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	})
+
+	rec := doUpdateSettings(t, h, map[string]any{"registration_enabled": true}, nil)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "https://8.8.8.8/v1", repo.values[service.SettingKeyAPIBaseURL])
+}

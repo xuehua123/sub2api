@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/gin-gonic/gin"
 )
 
@@ -66,6 +67,31 @@ func CORS(cfg config.CORSConfig) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		origin := strings.TrimSpace(c.GetHeader("Origin"))
+		isConnectivityProbe := c.Request.URL.Path == connectivity.ProbePath
+		if isConnectivityProbe {
+			// The probe is intentionally credential-free and never inherits a
+			// wildcard CORS policy. Cross-origin reads require an exact panel origin.
+			_, originAllowed := allowedSet[origin]
+			originAllowed = origin != "" && !allowAll && originAllowed
+			if originAllowed {
+				c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+				c.Writer.Header().Add("Vary", "Origin")
+				c.Writer.Header().Set("Timing-Allow-Origin", origin)
+				c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+				c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+			}
+			if c.Request.Method == http.MethodOptions {
+				if originAllowed {
+					c.AbortWithStatus(http.StatusNoContent)
+				} else {
+					c.AbortWithStatus(http.StatusForbidden)
+				}
+				return
+			}
+			c.Next()
+			return
+		}
+
 		originAllowed := allowAll
 		if origin != "" && !allowAll {
 			_, originAllowed = allowedSet[origin]

@@ -67,4 +67,38 @@ describe('EndpointPopover', () => {
     expect(wrapper.text()).toContain('已复制到剪贴板')
     expect(wrapper.find('button[aria-label="已复制到剪贴板"]').exists()).toBe(true)
   })
+
+  it('多个端点只渲染一个页内连接检测入口且不打开第三方页面', async () => {
+    const wrapper = mount(EndpointPopover, {
+      props: {
+        apiBaseUrl: 'https://default.example.com/v1',
+        customEndpoints: [
+          {
+            name: '备用线路',
+            endpoint: 'https://backup.example.com/v1',
+            description: '',
+          },
+        ],
+        connectivityEnabled: true,
+      },
+      global: {
+        stubs: {
+          ConnectivityTestDialog: {
+            props: ['show'],
+            template: '<div v-if="show" data-testid="connectivity-dialog-stub" />',
+          },
+        },
+      },
+    })
+
+    const actions = wrapper.findAll('[data-testid="connectivity-test-button"]')
+    expect(actions).toHaveLength(1)
+    expect(actions[0].text()).toContain('测速')
+
+    await actions[0].trigger('click')
+
+    expect(wrapper.find('[data-testid="connectivity-dialog-stub"]').exists()).toBe(true)
+    expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
+    expect(wrapper.html()).not.toContain('tcptest.cn')
+  })
 })

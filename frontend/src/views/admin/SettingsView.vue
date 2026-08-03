@@ -5815,6 +5815,464 @@
                 </button>
               </div>
 
+              <!-- Browser Connectivity Testing -->
+              <div
+                ref="connectivitySettingsRef"
+                data-testid="connectivity-settings"
+                class="border-t border-gray-100 pt-6 dark:border-dark-700"
+              >
+                <div class="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 class="text-sm font-medium text-gray-900 dark:text-white">
+                      {{ t("admin.settings.site.connectivity.title") }}
+                    </h3>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.site.connectivity.description") }}
+                    </p>
+                  </div>
+                  <Toggle
+                    v-model="form.connectivity_test_enabled"
+                    data-testid="connectivity-enabled"
+                    :aria-label="t('admin.settings.site.connectivity.enabled')"
+                  />
+                </div>
+
+                <div
+                  v-if="connectivityValidationError"
+                  id="connectivity-validation-error"
+                  ref="connectivityValidationErrorRef"
+                  data-testid="connectivity-validation-error"
+                  role="alert"
+                  tabindex="-1"
+                  class="sticky top-36 z-10 mt-4 border-l-2 border-red-500 bg-red-50 px-3 py-2.5 text-sm text-red-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:bg-red-950 dark:text-red-300 dark:focus:ring-offset-dark-900"
+                >
+                  {{ connectivityValidationMessage }}
+                </div>
+
+                <div class="mt-5 space-y-5">
+                  <div class="flex items-start justify-between gap-4">
+                    <div>
+                      <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.site.connectivity.clientIpEnabled") }}
+                      </label>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.site.connectivity.clientIpHint") }}
+                      </p>
+                    </div>
+                    <Toggle
+                      v-model="form.connectivity_client_ip_enabled"
+                      data-testid="connectivity-client-ip-enabled"
+                      :aria-label="t('admin.settings.site.connectivity.clientIpEnabled')"
+                    />
+                  </div>
+
+                  <div>
+                    <div class="mb-3 flex items-start justify-between gap-4">
+                      <div>
+                        <label
+                          id="connectivity-origins-label"
+                          class="text-sm font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          {{ t("admin.settings.site.connectivity.allowedOrigins") }}
+                        </label>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          {{ t("admin.settings.site.connectivity.allowedOriginsHint") }}
+                        </p>
+                      </div>
+                      <span class="whitespace-nowrap text-xs text-gray-500 dark:text-gray-400">
+                        {{
+                          t("admin.settings.site.connectivity.selectedOriginCount", {
+                            count: connectivityEligibleOriginCount,
+                          })
+                        }}
+                      </span>
+                    </div>
+
+                    <div
+                      v-if="connectivityOriginOptions.length > 0"
+                      id="connectivity-origins"
+                      role="group"
+                      tabindex="-1"
+                      aria-labelledby="connectivity-origins-label"
+                      v-bind="connectivityValidationAttributes('connectivity-origins')"
+                      class="divide-y divide-gray-100 rounded-lg border border-gray-200 dark:divide-dark-700 dark:border-dark-600"
+                    >
+                      <label
+                        v-for="option in connectivityOriginOptions"
+                        :key="option.origin"
+                        class="flex cursor-pointer items-start gap-3 px-3 py-3 first:rounded-t-lg last:rounded-b-lg hover:bg-gray-50 dark:hover:bg-dark-800"
+                      >
+                        <input
+                          v-model="form.connectivity_probe_allowed_origins"
+                          data-testid="connectivity-origin-checkbox"
+                          type="checkbox"
+                          :value="option.origin"
+                          class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 dark:border-dark-500 dark:bg-dark-700"
+                        />
+                        <span class="min-w-0 flex-1">
+                          <span class="flex flex-wrap items-center gap-2">
+                            <span class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                              {{
+                                option.isDefault
+                                  ? t("admin.settings.site.connectivity.defaultEndpoint")
+                                  : option.name ||
+                                    t("admin.settings.site.connectivity.configuredEndpoint")
+                              }}
+                            </span>
+                            <span
+                              v-if="!option.available"
+                              class="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                            >
+                              {{ t("admin.settings.site.connectivity.unmatchedOrigin") }}
+                            </span>
+                          </span>
+                          <code
+                            class="mt-1 block break-all text-xs text-gray-500 dark:text-gray-400"
+                          >{{ option.origin }}</code>
+                        </span>
+                      </label>
+                    </div>
+                    <div
+                      v-else
+                      id="connectivity-origins"
+                      role="group"
+                      tabindex="-1"
+                      aria-labelledby="connectivity-origins-label"
+                      v-bind="connectivityValidationAttributes('connectivity-origins')"
+                      class="rounded-lg border border-dashed border-gray-300 px-4 py-5 text-center text-sm text-gray-500 dark:border-dark-600 dark:text-gray-400"
+                    >
+                      {{ t("admin.settings.site.connectivity.noOrigins") }}
+                    </div>
+                  </div>
+
+                  <div
+                    data-testid="connectivity-request-budget"
+                    :data-request-count="connectivityEstimatedRequestCount"
+                    class="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm"
+                    :class="
+                      connectivityEstimatedRequestCount > 250
+                        ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300'
+                        : 'border-gray-200 bg-gray-50 text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300'
+                    "
+                  >
+                    <Icon
+                      :name="
+                        connectivityEstimatedRequestCount > 250
+                          ? 'exclamationTriangle'
+                          : 'infoCircle'
+                      "
+                      size="sm"
+                      class="mt-0.5 flex-shrink-0"
+                    />
+                    <span>
+                      {{
+                        t("admin.settings.site.connectivity.requestBudget", {
+                          origins: connectivityEligibleOriginCount,
+                          requests: connectivityEstimatedRequestCount,
+                        })
+                      }}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    data-testid="connectivity-advanced-toggle"
+                    class="flex w-full items-center justify-between border-t border-gray-100 pt-4 text-left text-sm font-medium text-gray-700 hover:text-primary-600 dark:border-dark-700 dark:text-gray-300 dark:hover:text-primary-400"
+                    :aria-expanded="connectivityAdvancedOpen"
+                    @click="connectivityAdvancedOpen = !connectivityAdvancedOpen"
+                  >
+                    <span>{{ t("admin.settings.site.connectivity.advanced") }}</span>
+                    <Icon
+                      :name="connectivityAdvancedOpen ? 'chevronUp' : 'chevronDown'"
+                      size="sm"
+                    />
+                  </button>
+
+                  <div
+                    v-if="connectivityAdvancedOpen"
+                    class="space-y-6"
+                    data-testid="connectivity-advanced-settings"
+                  >
+                    <div>
+                      <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.site.connectivity.samplingTitle") }}
+                      </h4>
+                      <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <label for="connectivity-samples" class="input-label">
+                            {{ t("admin.settings.site.connectivity.samples") }}
+                          </label>
+                          <input
+                            id="connectivity-samples"
+                            v-model.number="form.connectivity_probe_samples"
+                            data-testid="connectivity-samples"
+                            type="number"
+                            min="5"
+                            max="20"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-samples')"
+                          />
+                        </div>
+                        <div>
+                          <label for="connectivity-warmup" class="input-label">
+                            {{ t("admin.settings.site.connectivity.warmup") }}
+                          </label>
+                          <input
+                            id="connectivity-warmup"
+                            v-model.number="form.connectivity_probe_warmup"
+                            type="number"
+                            min="0"
+                            max="2"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-warmup')"
+                          />
+                        </div>
+                        <div>
+                          <label for="connectivity-concurrency" class="input-label">
+                            {{ t("admin.settings.site.connectivity.concurrency") }}
+                          </label>
+                          <input
+                            id="connectivity-concurrency"
+                            v-model.number="form.connectivity_probe_max_concurrency"
+                            type="number"
+                            min="1"
+                            max="3"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-concurrency')"
+                          />
+                        </div>
+                        <div>
+                          <label for="connectivity-timeout" class="input-label">
+                            {{ t("admin.settings.site.connectivity.timeoutMs") }}
+                          </label>
+                          <input
+                            id="connectivity-timeout"
+                            v-model.number="form.connectivity_probe_timeout_ms"
+                            type="number"
+                            min="2000"
+                            max="15000"
+                            step="500"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-timeout')"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.site.connectivity.rateLimitTitle") }}
+                      </h4>
+                      <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label for="connectivity-ip-rpm" class="input-label">
+                            {{ t("admin.settings.site.connectivity.ipRpm") }}
+                          </label>
+                          <input
+                            id="connectivity-ip-rpm"
+                            v-model.number="form.connectivity_probe_ip_rpm"
+                            type="number"
+                            min="1"
+                            max="10000"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-ip-rpm')"
+                          />
+                        </div>
+                        <div>
+                          <label for="connectivity-burst" class="input-label">
+                            {{ t("admin.settings.site.connectivity.burst") }}
+                          </label>
+                          <input
+                            id="connectivity-burst"
+                            v-model.number="form.connectivity_probe_burst"
+                            type="number"
+                            min="1"
+                            max="1000"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-burst')"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h4 class="text-sm font-medium text-gray-900 dark:text-white">
+                        {{ t("admin.settings.site.connectivity.thresholdsTitle") }}
+                      </h4>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t("admin.settings.site.connectivity.thresholdsHint") }}
+                      </p>
+                      <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label for="connectivity-minimum-success" class="input-label">
+                            {{ t("admin.settings.site.connectivity.minimumSuccessRate") }}
+                          </label>
+                          <div class="relative">
+                            <input
+                              id="connectivity-minimum-success"
+                              :value="
+                                connectivitySuccessRatePercent(
+                                  form.connectivity_grade_thresholds.minimum_success_rate,
+                                )
+                              "
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="1"
+                              class="input pr-8"
+                              v-bind="connectivityValidationAttributes('connectivity-minimum-success')"
+                              @input="updateConnectivitySuccessRate('minimum', $event)"
+                            />
+                            <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">%</span>
+                          </div>
+                        </div>
+                        <div>
+                          <label for="connectivity-consecutive-timeouts" class="input-label">
+                            {{ t("admin.settings.site.connectivity.consecutiveTimeouts") }}
+                          </label>
+                          <input
+                            id="connectivity-consecutive-timeouts"
+                            v-model.number="form.connectivity_grade_thresholds.max_consecutive_timeouts"
+                            type="number"
+                            min="1"
+                            max="20"
+                            step="1"
+                            class="input"
+                            v-bind="connectivityValidationAttributes('connectivity-consecutive-timeouts')"
+                          />
+                        </div>
+                      </div>
+
+                      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <div class="rounded-lg border border-emerald-200 p-4 dark:border-emerald-800">
+                          <h5 class="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                            {{ t("admin.settings.site.connectivity.excellent") }}
+                          </h5>
+                          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                            <div>
+                              <label for="connectivity-excellent-success" class="input-label">
+                                {{ t("admin.settings.site.connectivity.successRate") }}
+                              </label>
+                              <div class="relative">
+                                <input
+                                  id="connectivity-excellent-success"
+                                  :value="
+                                    connectivitySuccessRatePercent(
+                                      form.connectivity_grade_thresholds.excellent.min_success_rate,
+                                    )
+                                  "
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="1"
+                                  class="input pr-8"
+                                  v-bind="connectivityValidationAttributes('connectivity-excellent-success')"
+                                  @input="updateConnectivitySuccessRate('excellent', $event)"
+                                />
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">%</span>
+                              </div>
+                            </div>
+                            <div>
+                              <label for="connectivity-excellent-p95" class="input-label">
+                                {{ t("admin.settings.site.connectivity.maxP95") }}
+                              </label>
+                              <input
+                                id="connectivity-excellent-p95"
+                                v-model.number="form.connectivity_grade_thresholds.excellent.max_p95_ms"
+                                data-testid="connectivity-excellent-p95"
+                                type="number"
+                                min="1"
+                                step="1"
+                                class="input"
+                                v-bind="connectivityValidationAttributes('connectivity-excellent-p95')"
+                              />
+                            </div>
+                            <div>
+                              <label for="connectivity-excellent-mad" class="input-label">
+                                {{ t("admin.settings.site.connectivity.maxMad") }}
+                              </label>
+                              <input
+                                id="connectivity-excellent-mad"
+                                v-model.number="form.connectivity_grade_thresholds.excellent.max_mad_ms"
+                                type="number"
+                                min="0"
+                                step="1"
+                                class="input"
+                                v-bind="connectivityValidationAttributes('connectivity-excellent-mad')"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="rounded-lg border border-sky-200 p-4 dark:border-sky-800">
+                          <h5 class="text-sm font-medium text-sky-700 dark:text-sky-300">
+                            {{ t("admin.settings.site.connectivity.good") }}
+                          </h5>
+                          <div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                            <div>
+                              <label for="connectivity-good-success" class="input-label">
+                                {{ t("admin.settings.site.connectivity.successRate") }}
+                              </label>
+                              <div class="relative">
+                                <input
+                                  id="connectivity-good-success"
+                                  :value="
+                                    connectivitySuccessRatePercent(
+                                      form.connectivity_grade_thresholds.good.min_success_rate,
+                                    )
+                                  "
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="1"
+                                  class="input pr-8"
+                                  v-bind="connectivityValidationAttributes('connectivity-good-success')"
+                                  @input="updateConnectivitySuccessRate('good', $event)"
+                                />
+                                <span class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-gray-400">%</span>
+                              </div>
+                            </div>
+                            <div>
+                              <label for="connectivity-good-p95" class="input-label">
+                                {{ t("admin.settings.site.connectivity.maxP95") }}
+                              </label>
+                              <input
+                                id="connectivity-good-p95"
+                                v-model.number="form.connectivity_grade_thresholds.good.max_p95_ms"
+                                type="number"
+                                min="1"
+                                step="1"
+                                class="input"
+                                v-bind="connectivityValidationAttributes('connectivity-good-p95')"
+                              />
+                            </div>
+                            <div>
+                              <label for="connectivity-good-mad" class="input-label">
+                                {{ t("admin.settings.site.connectivity.maxMad") }}
+                              </label>
+                              <input
+                                id="connectivity-good-mad"
+                                v-model.number="form.connectivity_grade_thresholds.good.max_mad_ms"
+                                type="number"
+                                min="0"
+                                step="1"
+                                class="input"
+                                v-bind="connectivityValidationAttributes('connectivity-good-mad')"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Contact Info -->
               <div>
                 <label
@@ -8247,7 +8705,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from "vue";
+import { ref, reactive, computed, nextTick, onMounted, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { adminAPI } from "@/api";
 import {
@@ -8319,6 +8777,18 @@ import {
   defaultFingerprintSignalRows,
   type FingerprintSignalRow,
 } from "./codexFingerprintSignals";
+import {
+  type ConnectivityValidationError,
+  buildConnectivityOriginOptions,
+  connectivityEligibleEndpointCount,
+  connectivityRequestBudget,
+  connectivityThresholdFingerprint,
+  createDefaultConnectivityGradeThresholds,
+  nextConnectivityGradingVersion,
+  normalizeConnectivityAllowedOrigins,
+  normalizeConnectivityGradeThresholds,
+  validateConnectivitySettings,
+} from "@/features/connectivity/admin";
 
 const { t, locale } = useI18n();
 const appStore = useAppStore();
@@ -9097,6 +9567,16 @@ const form = reactive<SettingsForm>({
     endpoint: string;
     description: string;
   }>,
+  connectivity_test_enabled: false,
+  connectivity_client_ip_enabled: false,
+  connectivity_grade_thresholds: createDefaultConnectivityGradeThresholds(),
+  connectivity_probe_samples: 10,
+  connectivity_probe_warmup: 1,
+  connectivity_probe_max_concurrency: 3,
+  connectivity_probe_timeout_ms: 10000,
+  connectivity_probe_allowed_origins: [],
+  connectivity_probe_ip_rpm: 360,
+  connectivity_probe_burst: 250,
   frontend_url: "",
   smtp_host: "",
   smtp_port: 587,
@@ -9281,6 +9761,142 @@ const form = reactive<SettingsForm>({
   // Allow user view error requests
   allow_user_view_error_requests: false,
 });
+
+const connectivityAdvancedOpen = ref(false);
+const connectivitySettingsRef = ref<HTMLElement | null>(null);
+const connectivityValidationErrorRef = ref<HTMLElement | null>(null);
+const connectivityValidationError = ref<ConnectivityValidationError | null>(null);
+const connectivityThresholdBaseline = ref({
+  fingerprint: connectivityThresholdFingerprint(
+    form.connectivity_grade_thresholds,
+  ),
+  gradingVersion: form.connectivity_grade_thresholds.grading_version,
+});
+const connectivityValidationFields: Partial<
+  Record<ConnectivityValidationError, readonly string[]>
+> = {
+  allowedOriginInvalid: ["connectivity-origins"],
+  allowedOriginRequired: ["connectivity-origins"],
+  samplesRange: ["connectivity-samples"],
+  warmupRange: ["connectivity-warmup"],
+  concurrencyRange: ["connectivity-concurrency"],
+  timeoutRange: ["connectivity-timeout"],
+  ipRpmRange: ["connectivity-ip-rpm"],
+  burstRange: ["connectivity-burst"],
+  successRateOrder: [
+    "connectivity-minimum-success",
+    "connectivity-good-success",
+    "connectivity-excellent-success",
+  ],
+  p95Order: ["connectivity-excellent-p95", "connectivity-good-p95"],
+  madOrder: ["connectivity-excellent-mad", "connectivity-good-mad"],
+  consecutiveTimeoutsRange: ["connectivity-consecutive-timeouts"],
+  requestBudgetExceeded: ["connectivity-samples", "connectivity-warmup"],
+  burstBelowRequestBudget: ["connectivity-burst"],
+};
+const connectivityAdvancedFieldIDs = new Set([
+  "connectivity-samples",
+  "connectivity-warmup",
+  "connectivity-concurrency",
+  "connectivity-timeout",
+  "connectivity-ip-rpm",
+  "connectivity-burst",
+  "connectivity-minimum-success",
+  "connectivity-consecutive-timeouts",
+  "connectivity-excellent-success",
+  "connectivity-excellent-p95",
+  "connectivity-excellent-mad",
+  "connectivity-good-success",
+  "connectivity-good-p95",
+  "connectivity-good-mad",
+]);
+const connectivityValidationMessage = computed(() =>
+  connectivityValidationError.value
+    ? t(
+        `admin.settings.site.connectivity.errors.${connectivityValidationError.value}`,
+      )
+    : "",
+);
+const connectivityOriginOptions = computed(() =>
+  buildConnectivityOriginOptions(
+    form.api_base_url,
+    form.custom_endpoints,
+    form.connectivity_probe_allowed_origins,
+  ),
+);
+const connectivityEligibleOriginCount = computed(() => {
+  const selected = new Set(form.connectivity_probe_allowed_origins);
+  return connectivityOriginOptions.value.filter(
+    (option) => option.available && selected.has(option.origin),
+  ).length;
+});
+const connectivityEligibleURLCount = computed(() =>
+  connectivityEligibleEndpointCount(
+    form.api_base_url,
+    form.custom_endpoints,
+    form.connectivity_probe_allowed_origins,
+  ),
+);
+const connectivityEstimatedRequestCount = computed(() =>
+  connectivityRequestBudget(
+    connectivityEligibleOriginCount.value,
+    Number(form.connectivity_probe_samples),
+    Number(form.connectivity_probe_warmup),
+  ),
+);
+
+function connectivityValidationAttributes(fieldID: string): Record<string, string> {
+  const error = connectivityValidationError.value;
+  if (!error || !connectivityValidationFields[error]?.includes(fieldID)) return {};
+  return {
+    "aria-invalid": "true",
+    "aria-describedby": "connectivity-validation-error",
+    class:
+      "border-red-500 focus:border-red-500 focus:ring-red-500 dark:border-red-500",
+  };
+}
+
+function connectivityValidationNeedsAdvanced(error: ConnectivityValidationError): boolean {
+  return Boolean(
+    connectivityValidationFields[error]?.some((fieldID) =>
+      connectivityAdvancedFieldIDs.has(fieldID),
+    ),
+  );
+}
+
+function focusConnectivityValidationError(error: ConnectivityValidationError): void {
+  const fieldID = connectivityValidationFields[error]?.[0];
+  const target = fieldID
+    ? connectivitySettingsRef.value?.querySelector<HTMLElement>(`#${fieldID}`)
+    : null;
+  (target ?? connectivityValidationErrorRef.value)?.focus();
+}
+
+function connectivitySuccessRatePercent(value: number): number | string {
+  return Number.isFinite(value) ? Math.round(value * 10000) / 100 : "";
+}
+
+function updateConnectivitySuccessRate(
+  target: "minimum" | "excellent" | "good",
+  event: Event,
+): void {
+  const value = (event.target as HTMLInputElement).valueAsNumber;
+  const normalized = Number.isFinite(value) ? value / 100 : Number.NaN;
+  if (target === "minimum") {
+    form.connectivity_grade_thresholds.minimum_success_rate = normalized;
+  } else {
+    form.connectivity_grade_thresholds[target].min_success_rate = normalized;
+  }
+}
+
+function setConnectivityThresholdBaseline(): void {
+  connectivityThresholdBaseline.value = {
+    fingerprint: connectivityThresholdFingerprint(
+      form.connectivity_grade_thresholds,
+    ),
+    gradingVersion: form.connectivity_grade_thresholds.grading_version,
+  };
+}
 
 type OpenAIAdvancedSchedulerOverrideKey =
   | "openai_advanced_scheduler_lb_top_k"
@@ -10185,6 +10801,15 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.connectivity_grade_thresholds =
+      normalizeConnectivityGradeThresholds(
+        settings.connectivity_grade_thresholds,
+      );
+    form.connectivity_probe_allowed_origins =
+      normalizeConnectivityAllowedOrigins(
+        settings.connectivity_probe_allowed_origins,
+      );
+    setConnectivityThresholdBaseline();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =
         defaultClaudeOAuthSystemPromptBlocks;
@@ -10436,6 +11061,44 @@ async function saveSettings() {
     form.table_default_page_size = normalizedTableDefaultPageSize;
     form.table_page_size_options = normalizedTablePageSizeOptions;
 
+    const validationError = validateConnectivitySettings({
+      enabled: form.connectivity_test_enabled,
+      thresholds: form.connectivity_grade_thresholds,
+      samples: Number(form.connectivity_probe_samples),
+      warmup: Number(form.connectivity_probe_warmup),
+      maxConcurrency: Number(form.connectivity_probe_max_concurrency),
+      timeoutMs: Number(form.connectivity_probe_timeout_ms),
+      allowedOrigins: form.connectivity_probe_allowed_origins,
+      ipRpm: Number(form.connectivity_probe_ip_rpm),
+      burst: Number(form.connectivity_probe_burst),
+      eligibleOriginCount: connectivityEligibleOriginCount.value,
+      eligibleEndpointCount: connectivityEligibleURLCount.value,
+    });
+    if (validationError) {
+      connectivityValidationError.value = validationError;
+      if (connectivityValidationNeedsAdvanced(validationError)) {
+        connectivityAdvancedOpen.value = true;
+      }
+      await nextTick();
+      focusConnectivityValidationError(validationError);
+      appStore.showError(connectivityValidationMessage.value);
+      return;
+    }
+    connectivityValidationError.value = null;
+    const currentConnectivityThresholdFingerprint =
+      connectivityThresholdFingerprint(form.connectivity_grade_thresholds);
+    if (
+      currentConnectivityThresholdFingerprint !==
+        connectivityThresholdBaseline.value.fingerprint &&
+      form.connectivity_grade_thresholds.grading_version ===
+        connectivityThresholdBaseline.value.gradingVersion
+    ) {
+      form.connectivity_grade_thresholds.grading_version =
+        nextConnectivityGradingVersion(
+          form.connectivity_grade_thresholds.grading_version,
+        );
+    }
+
     const normalizedLoginAgreementDocuments =
       normalizeLoginAgreementDocumentsForSave();
     if (form.login_agreement_enabled && normalizedLoginAgreementDocuments.length === 0) {
@@ -10616,6 +11279,18 @@ async function saveSettings() {
       table_page_size_options: form.table_page_size_options,
       custom_menu_items: form.custom_menu_items,
       custom_endpoints: form.custom_endpoints,
+      connectivity_test_enabled: form.connectivity_test_enabled,
+      connectivity_client_ip_enabled: form.connectivity_client_ip_enabled,
+      connectivity_grade_thresholds: form.connectivity_grade_thresholds,
+      connectivity_probe_samples: form.connectivity_probe_samples,
+      connectivity_probe_warmup: form.connectivity_probe_warmup,
+      connectivity_probe_max_concurrency:
+        form.connectivity_probe_max_concurrency,
+      connectivity_probe_timeout_ms: form.connectivity_probe_timeout_ms,
+      connectivity_probe_allowed_origins:
+        form.connectivity_probe_allowed_origins,
+      connectivity_probe_ip_rpm: form.connectivity_probe_ip_rpm,
+      connectivity_probe_burst: form.connectivity_probe_burst,
       model_prices_user_visible: form.model_prices_user_visible,
       frontend_url: form.frontend_url,
       smtp_host: form.smtp_host,
@@ -10930,6 +11605,15 @@ async function saveSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.connectivity_grade_thresholds =
+      normalizeConnectivityGradeThresholds(
+        updated.connectivity_grade_thresholds,
+      );
+    form.connectivity_probe_allowed_origins =
+      normalizeConnectivityAllowedOrigins(
+        updated.connectivity_probe_allowed_origins,
+      );
+    setConnectivityThresholdBaseline();
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     form.default_platform_quotas = normalizePlatformQuotasMap(updated.default_platform_quotas);
     registrationEmailSuffixWhitelistTags.value =
@@ -12285,6 +12969,25 @@ watch(
       if (form.dingtalk_connect_sync_display_name) form.dingtalk_connect_sync_display_name = false;
       if (form.dingtalk_connect_sync_dept) form.dingtalk_connect_sync_dept = false;
     }
+  },
+);
+
+watch(
+  () => [
+    form.connectivity_test_enabled,
+    form.api_base_url,
+    JSON.stringify(form.custom_endpoints),
+    JSON.stringify(form.connectivity_probe_allowed_origins),
+    form.connectivity_probe_samples,
+    form.connectivity_probe_warmup,
+    form.connectivity_probe_max_concurrency,
+    form.connectivity_probe_timeout_ms,
+    form.connectivity_probe_ip_rpm,
+    form.connectivity_probe_burst,
+    JSON.stringify(form.connectivity_grade_thresholds),
+  ],
+  () => {
+    connectivityValidationError.value = null;
   },
 );
 </script>

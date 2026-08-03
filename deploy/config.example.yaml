@@ -113,6 +113,22 @@ cors:
   allow_credentials: true
 
 # =============================================================================
+# Browser Connectivity Probe Configuration
+# 浏览器连接检测探针配置
+# =============================================================================
+connectivity:
+  # Public addresses belonging to this deployment that must never be returned
+  # as a user's network egress. Keep empty to disable client-IP exposure.
+  # 我方源站、中转和边缘节点公网 CIDR；为空时强制禁用出口 IP 展示。
+  client_ip_denied_cidrs: []
+  # Direct client-IP mode is intended only for deployments with no reverse proxy.
+  # 仅无反向代理直连部署可开启；生产默认关闭。
+  allow_direct_client_ip: false
+  # Maximum X-Forwarded-For chain length including the direct peer (2-16).
+  # XFF 加直接对端的最大完整链长度（2-16）。
+  client_ip_max_hops: 8
+
+# =============================================================================
 # Security Configuration
 # 安全配置
 # =============================================================================

@@ -3,9 +3,11 @@ package middleware
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -25,8 +27,10 @@ func Logger() gin.HandlerFunc {
 		// 处理请求
 		c.Next()
 
-		// 跳过健康检查等高频探针路径的日志
-		if path == "/health" || path == "/setup/status" {
+		statusCode := c.Writer.Status()
+		// 跳过健康检查和成功连接探针；探针限流与服务端错误仍需保留。
+		if path == "/health" || path == "/setup/status" ||
+			(path == connectivity.ProbePath && statusCode >= http.StatusOK && statusCode < http.StatusMultipleChoices) {
 			return
 		}
 
@@ -34,7 +38,6 @@ func Logger() gin.HandlerFunc {
 		latency := endTime.Sub(startTime)
 
 		method := c.Request.Method
-		statusCode := c.Writer.Status()
 		clientIP := ip.GetClientIP(c)
 		protocol := c.Request.Proto
 		accountID, hasAccountID := c.Request.Context().Value(ctxkey.AccountID).(int64)

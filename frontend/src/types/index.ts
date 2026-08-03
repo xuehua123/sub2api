@@ -221,6 +221,14 @@ export interface PublicSettings {
   table_page_size_options: number[]
   custom_menu_items: CustomMenuItem[]
   custom_endpoints: CustomEndpoint[]
+  connectivity_test_enabled?: boolean
+  connectivity_client_ip_enabled?: boolean
+  connectivity_grade_thresholds?: import('@/features/connectivity/types').ConnectivityGradeThresholds
+  connectivity_probe_samples?: number
+  connectivity_probe_warmup?: number
+  connectivity_probe_max_concurrency?: number
+  connectivity_probe_timeout_ms?: number
+  connectivity_test_endpoints?: import('@/features/connectivity/types').ConnectivityTestEndpoint[]
   linuxdo_oauth_enabled: boolean
   dingtalk_oauth_enabled?: boolean
   wechat_oauth_enabled: boolean

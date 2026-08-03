@@ -64,6 +64,55 @@ func TestLoadHTTPIngressSafetyDefaults(t *testing.T) {
 	require.Equal(t, 16384, cfg.APIKeyAuth.InvalidAbuse.Capacity)
 }
 
+func TestLoadConnectivityClientIPSafetyDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Connectivity.ClientIPDeniedCIDRs)
+	require.False(t, cfg.Connectivity.AllowDirectClientIP)
+	require.Equal(t, 8, cfg.Connectivity.ClientIPMaxHops)
+}
+
+func TestLoadConnectivityClientIPConfigFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("CONNECTIVITY_CLIENT_IP_DENIED_CIDRS", " 203.0.113.10/32,198.51.100.0/24 ")
+	t.Setenv("CONNECTIVITY_ALLOW_DIRECT_CLIENT_IP", "true")
+	t.Setenv("CONNECTIVITY_CLIENT_IP_MAX_HOPS", "12")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, []string{"203.0.113.10/32", "198.51.100.0/24"}, cfg.Connectivity.ClientIPDeniedCIDRs)
+	require.True(t, cfg.Connectivity.AllowDirectClientIP)
+	require.Equal(t, 12, cfg.Connectivity.ClientIPMaxHops)
+}
+
+func TestLoadRejectsUnsafeConnectivityClientIPConfig(t *testing.T) {
+	t.Run("invalid denied CIDR", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		viper.Set("connectivity.client_ip_denied_cidrs", []string{"not-a-cidr"})
+
+		_, err := Load()
+		require.ErrorContains(t, err, "connectivity.client_ip_denied_cidrs")
+	})
+
+	t.Run("invalid max hops", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		viper.Set("connectivity.client_ip_max_hops", 17)
+
+		_, err := Load()
+		require.ErrorContains(t, err, "connectivity.client_ip_max_hops")
+	})
+
+	t.Run("scoped denied address", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		viper.Set("connectivity.client_ip_denied_cidrs", []string{"2606:4700:4700::1111%eth0"})
+
+		_, err := Load()
+		require.ErrorContains(t, err, "connectivity.client_ip_denied_cidrs")
+	})
+}
+
 func TestNormalizeForwardedClientIPHeaders(t *testing.T) {
 	headers, err := NormalizeForwardedClientIPHeaders([]string{
 		" x-cdn-client-ip ",

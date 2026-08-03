@@ -2,11 +2,14 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/routes"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -71,7 +74,11 @@ func SetupRouter(
 	configureFrontendServing(r, settingService, refreshFrameOrigins)
 
 	// 注册路由
-	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient)
+	probeLimiter, err := middleware2.NewConnectivityProbeRateLimiter(settingService, connectivityProbeLimiterSecret(cfg))
+	if err != nil {
+		panic("initialize connectivity probe rate limiter: " + err.Error())
+	}
+	registerRoutes(r, handlers, jwtAuth, optionalJWTAuth, adminAuth, apiKeyAuth, auditLog, stepUpAuth, apiKeyService, subscriptionService, opsService, settingService, compositeResolver, cfg, redisClient, probeLimiter)
 
 	return r
 }
@@ -93,7 +100,12 @@ func registerRoutes(
 	compositeResolver *service.CompositeRouteResolver,
 	cfg *config.Config,
 	redisClient *redis.Client,
+	connectivityProbeLimiter gin.HandlerFunc,
 ) {
+	// Connectivity probe is intentionally outside API Key/JWT authentication and
+	// all gateway business middleware.
+	r.GET(connectivity.ProbePath, connectivityProbeLimiter, h.Setting.EdgeProbe)
+
 	// 通用路由（健康检查、状态等）
 	routes.RegisterCommonRoutes(r)
 
@@ -115,4 +127,16 @@ func registerRoutes(
 	routes.RegisterPaymentRoutes(v1, h.Payment, h.PaymentWebhook, h.Admin.Payment, jwtAuth, adminAuth, auditLog, settingService, panelRateLimiter)
 
 	handler.RegisterPageRoutes(v1, cfg.Pricing.DataDir, gin.HandlerFunc(jwtAuth), gin.HandlerFunc(adminAuth), settingService)
+}
+
+func connectivityProbeLimiterSecret(cfg *config.Config) []byte {
+	if cfg != nil && cfg.JWT.Secret != "" {
+		digest := sha256.Sum256([]byte("sub2api-connectivity-probe-rate-limit-v1\x00" + cfg.JWT.Secret))
+		return digest[:]
+	}
+	secret := make([]byte, 32)
+	if _, err := rand.Read(secret); err != nil {
+		panic("generate connectivity probe rate limiter secret: " + err.Error())
+	}
+	return secret
 }
