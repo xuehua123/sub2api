@@ -159,8 +159,9 @@ async function startTest() {
   }
 }
 
-function cancelRun() {
-  runGeneration++
+function cancelRun(options: { preserveActiveResult?: boolean } = {}) {
+  const preserveResult = options.preserveActiveResult && phase.value === 'running' && runController !== null
+  if (!preserveResult) runGeneration++
   runController?.abort()
   runController = null
   removeRunListeners?.()
@@ -175,7 +176,7 @@ function closeDialog() {
 
 function handlePrimaryAction() {
   if (isBusy.value) {
-    cancelRun()
+    cancelRun({ preserveActiveResult: true })
     return
   }
   void startTest()

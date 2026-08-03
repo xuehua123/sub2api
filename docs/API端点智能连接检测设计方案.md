@@ -682,7 +682,7 @@ unique_origin_count × (warmup_count + sample_count) <= 250
 2. 不读取、提交或保存完整 API Key。
 3. 不接受用户提供的任意目标 URL。
 4. 只测试后端返回的 HTTPS 同源探针 URL。
-5. 禁止跨 origin 重定向，任何重定向都视为检测未完成。
+5. 禁止跨 origin 重定向。浏览器会将重定向与 DNS、TCP、TLS、CORS 等 Fetch 网络异常统一处理为 `network_or_cors`；单个样本作为失败样本，只有所有正式样本均为该错误时整轮显示“检测未完成”。
 6. CORS 和 TAO 使用精确面板 Origin，不使用通配符。
 7. 出口 IP 默认关闭，开启后仍必须 fail closed。
 8. 本期不向第三方发送用户 IP，不做地区解析。

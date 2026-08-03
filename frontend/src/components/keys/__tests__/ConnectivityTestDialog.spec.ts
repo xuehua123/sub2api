@@ -317,6 +317,42 @@ describe('ConnectivityTestDialog', () => {
     expect(observedSignal?.aborted).toBe(true)
   })
 
+  it('keeps cancelled endpoint rows when the user cancels an active browser check', async () => {
+    let observedSignal: AbortSignal | undefined
+    runConnectivityTest.mockImplementation((_config, signal: AbortSignal) => {
+      observedSignal = signal
+      return new Promise((resolve) => signal.addEventListener('abort', () => resolve({
+        status: 'cancelled',
+        endpoints: settings.connectivity_test_endpoints.map((endpoint) => ({
+          endpoint,
+          status: 'cancelled' as const,
+        })),
+        testedAt: Date.now(),
+        gradingVersion: '1',
+      }), { once: true }))
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(observedSignal?.aborted).toBe(true)
+    expect(wrapper.text()).toContain('keys.connectivity.incompleteMessage')
+    expect(wrapper.text()).toContain('keys.connectivity.incomplete')
+    expect(wrapper.text()).not.toContain('keys.connectivity.notTested')
+  })
+
   it('does not claim a common exit IP when any configured URL is incomplete', async () => {
     settings.connectivity_client_ip_enabled = true
     const secondEndpoint = {

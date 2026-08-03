@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -699,15 +700,39 @@ func TestFrontendServer_Middleware(t *testing.T) {
 	})
 }
 
-func TestEmbeddedFrontendBypassesBareVideoAPIRoutes(t *testing.T) {
+func TestEmbeddedFrontendBypassesGatewayAndConnectivityRoutes(t *testing.T) {
 	for _, path := range []string{
 		"/videos/generations",
 		"/videos/edits",
 		"/videos/extensions",
 		"/videos/request-123",
+		connectivity.ProbePath,
 	} {
 		require.True(t, shouldBypassEmbeddedFrontend(path), "path=%s", path)
 	}
+}
+
+func TestFrontendMiddlewarePassesConnectivityProbeToRoute(t *testing.T) {
+	server, err := NewFrontendServer(&mockSettingsProvider{
+		settings: map[string]string{"test": "value"},
+	})
+	require.NoError(t, err)
+
+	router := gin.New()
+	router.Use(server.Middleware())
+	called := false
+	router.GET(connectivity.ProbePath, func(c *gin.Context) {
+		called = true
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, connectivity.ProbePath, nil))
+
+	require.True(t, called)
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Header().Get("Content-Type"), "application/json")
+	assert.JSONEq(t, `{"ok":true}`, w.Body.String())
 }
 
 func TestNewFrontendServer(t *testing.T) {

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/connectivity"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/gin-gonic/gin"
 )
@@ -373,6 +374,7 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		strings.HasPrefix(trimmed, "/backend-api/") ||
 		strings.HasPrefix(trimmed, "/antigravity/") ||
 		strings.HasPrefix(trimmed, "/setup/") ||
+		trimmed == connectivity.ProbePath ||
 		trimmed == "/health" ||
 		trimmed == "/models" ||
 		trimmed == "/responses" ||
