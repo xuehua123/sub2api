@@ -19,7 +19,7 @@ export async function probeEndpoint(
   parentSignal?: AbortSignal,
   dependencies: ProbeEndpointDependencies = {},
 ): Promise<ProbeAttempt> {
-  if (parentSignal?.aborted) return { kind: 'cancelled' }
+  if (parentSignal?.aborted) return { kind: 'cancelled', durationMs: 0 }
 
   const fetchImpl = dependencies.fetchImpl ?? fetch
   const now = dependencies.now ?? (() => performance.now())
@@ -33,6 +33,7 @@ export async function probeEndpoint(
   }, timeoutMs)
 
   const start = now()
+  const durationMs = () => Math.max(0, now() - start)
   try {
     const url = new URL(probeURL)
     url.search = ''
@@ -47,29 +48,29 @@ export async function probeEndpoint(
       referrerPolicy: 'no-referrer',
       signal: controller.signal,
     })
-    if (parentSignal?.aborted) return { kind: 'cancelled' }
-    if (response.status === 429) return { kind: 'rate_limited' }
-    if (response.status !== 200) return { kind: 'http_error' }
+    if (parentSignal?.aborted) return { kind: 'cancelled', durationMs: durationMs() }
+    if (response.status === 429) return { kind: 'rate_limited', durationMs: durationMs() }
+    if (response.status !== 200) return { kind: 'http_error', durationMs: durationMs() }
     if (!isJSONContentType(response.headers.get('Content-Type'))) {
-      return { kind: 'protocol_error' }
+      return { kind: 'protocol_error', durationMs: durationMs() }
     }
 
     const body = await readLimitedBody(response, maxProbeResponseBytes)
-    if (body === null) return { kind: 'protocol_error' }
-    if (parentSignal?.aborted) return { kind: 'cancelled' }
+    if (body === null) return { kind: 'protocol_error', durationMs: durationMs() }
+    if (parentSignal?.aborted) return { kind: 'cancelled', durationMs: durationMs() }
     const payload = parseProbePayload(body)
-    if (!payload.valid) return { kind: 'protocol_error' }
+    if (!payload.valid) return { kind: 'protocol_error', durationMs: durationMs() }
 
     return {
       kind: 'success',
-      durationMs: Math.max(0, now() - start),
+      durationMs: durationMs(),
       clientIP: payload.clientIP,
       clientLocation: payload.clientLocation,
     }
   } catch {
-    if (timedOut) return { kind: 'timeout' }
-    if (parentSignal?.aborted) return { kind: 'cancelled' }
-    return { kind: 'network_or_cors' }
+    if (timedOut) return { kind: 'timeout', durationMs: durationMs() }
+    if (parentSignal?.aborted) return { kind: 'cancelled', durationMs: durationMs() }
+    return { kind: 'network_or_cors', durationMs: durationMs() }
   } finally {
     clearTimeout(timeout)
     parentSignal?.removeEventListener('abort', handleParentAbort)

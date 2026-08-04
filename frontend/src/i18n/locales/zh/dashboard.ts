@@ -103,6 +103,7 @@ export default {
       ipLocation: 'IP 归属地：',
       estimated: '（估算）',
       typicalLatency: '典型延迟 {ms} ms',
+      failedLatency: '失败样本耗时 {ms} ms（非可用延迟）',
       noLatency: '暂无可用延迟',
       unknownRegion: '地区未知',
       latencyNote: '结果表示您当前设备和当前网络访问各 API URL 的连接表现。延迟不是模型响应速度，IP 归属地也不是服务器所在地区。',

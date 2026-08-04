@@ -45,6 +45,7 @@ interface DisplayRow {
   clientIP?: string | null
   clientLocation?: ConnectivityClientLocation | null
   typicalLatency?: number | null
+  failureLatency?: number | null
   recommended: boolean
 }
 
@@ -250,6 +251,9 @@ function resultToRow(result: ConnectivityEndpointResult): DisplayRow {
     typicalLatency: result.metrics && result.metrics.successRate > 0
       ? formatTypicalLatency(result.metrics.medianMs)
       : null,
+    failureLatency: result.metrics?.failureMedianMs === undefined
+      ? null
+      : formatTypicalLatency(result.metrics.failureMedianMs),
     recommended: runResult.value?.recommendedAPIURL === result.endpoint.api_url,
   }
 }
@@ -390,9 +394,12 @@ onBeforeUnmount(cancelRun)
             <p v-if="resultMessage(row)" class="mt-1.5 text-xs leading-5 text-gray-600 dark:text-dark-300">{{ resultMessage(row) }}</p>
             <!-- Cached rows (runResult === null) still show their typical latency;
                  live rows only show it when the whole run completed. -->
-            <p v-if="row.status === 'graded' && (runResult === null || runResult?.status === 'complete')" class="mt-1 text-xs text-gray-600 dark:text-dark-300">
+            <p v-if="(row.status === 'graded' && (runResult === null || runResult?.status === 'complete')) || (row.status === 'incomplete' && row.failureLatency !== null && row.failureLatency !== undefined)" class="mt-1 text-xs text-gray-600 dark:text-dark-300">
               <template v-if="row.typicalLatency !== null && row.typicalLatency !== undefined">
                 {{ t('keys.connectivity.typicalLatency', { ms: row.typicalLatency }) }}
+              </template>
+              <template v-else-if="row.failureLatency !== null && row.failureLatency !== undefined">
+                {{ t('keys.connectivity.failedLatency', { ms: row.failureLatency }) }}
               </template>
               <template v-else>
                 {{ t('keys.connectivity.noLatency') }}

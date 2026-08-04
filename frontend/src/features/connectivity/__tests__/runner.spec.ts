@@ -54,13 +54,14 @@ describe('runConnectivityTest', () => {
 
   it('does not turn panel-wide network/CORS failure, rate limiting, or cancellation into a bad grade', async () => {
     const networkResult = await runConnectivityTest(config(), undefined, {
-      probe: vi.fn().mockResolvedValue({ kind: 'network_or_cors' }),
+      probe: vi.fn().mockResolvedValue({ kind: 'network_or_cors', durationMs: 12 }),
     })
     expect(networkResult.status).toBe('incomplete')
     expect(networkResult.endpoints.every((item) => item.status === 'incomplete' && !item.grade)).toBe(true)
+    expect(networkResult.endpoints[0].metrics?.failureMedianMs).toBe(12)
 
     const rateLimitResult = await runConnectivityTest(config(), undefined, {
-      probe: vi.fn().mockResolvedValue({ kind: 'rate_limited' }),
+      probe: vi.fn().mockResolvedValue({ kind: 'rate_limited', durationMs: 12 }),
     })
     expect(rateLimitResult.status).toBe('rate_limited')
     expect(rateLimitResult.endpoints.every((item) => item.status === 'rate_limited')).toBe(true)
@@ -68,7 +69,7 @@ describe('runConnectivityTest', () => {
     const controller = new AbortController()
     controller.abort()
     const cancelledResult = await runConnectivityTest(config(), controller.signal, {
-      probe: vi.fn().mockResolvedValue({ kind: 'cancelled' }),
+      probe: vi.fn().mockResolvedValue({ kind: 'cancelled', durationMs: 12 }),
     })
     expect(cancelledResult.status).toBe('cancelled')
   })

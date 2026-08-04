@@ -30,28 +30,28 @@ describe('connectivity grading', () => {
     expect(gradeConnectivityAttempts(successes([100, 120, 140, 160, 180]), 5, thresholds).grade).toBe('excellent')
 
     const good = successes([220, 250, 270, 300, 320, 340, 360, 380, 400])
-    good.push({ kind: 'http_error' })
+    good.push({ kind: 'http_error', durationMs: 50 })
     expect(gradeConnectivityAttempts(good, 10, thresholds).grade).toBe('good')
 
     const fair = successes([300, 350, 400, 450, 520, 550, 600, 650])
-    fair.push({ kind: 'http_error' }, { kind: 'http_error' })
+    fair.push({ kind: 'http_error', durationMs: 50 }, { kind: 'http_error', durationMs: 50 })
     expect(gradeConnectivityAttempts(fair, 10, thresholds).grade).toBe('fair')
 
     const lowSuccess = successes([100, 100, 100, 100, 100, 100, 100])
-    lowSuccess.push({ kind: 'http_error' }, { kind: 'http_error' }, { kind: 'http_error' })
+    lowSuccess.push({ kind: 'http_error', durationMs: 50 }, { kind: 'http_error', durationMs: 50 }, { kind: 'http_error', durationMs: 50 })
     expect(gradeConnectivityAttempts(lowSuccess, 10, thresholds).grade).toBe('not_recommended')
   })
 
   it('treats protocol, cancellation, incomplete samples, and rate limiting as non-graded', () => {
-    expect(gradeConnectivityAttempts([{ kind: 'protocol_error' }], 1, thresholds).status).toBe('incomplete')
-    expect(gradeConnectivityAttempts([{ kind: 'cancelled' }], 1, thresholds).status).toBe('cancelled')
-    expect(gradeConnectivityAttempts([{ kind: 'rate_limited' }], 1, thresholds).status).toBe('rate_limited')
+    expect(gradeConnectivityAttempts([{ kind: 'protocol_error', durationMs: 50 }], 1, thresholds).status).toBe('incomplete')
+    expect(gradeConnectivityAttempts([{ kind: 'cancelled', durationMs: 50 }], 1, thresholds).status).toBe('cancelled')
+    expect(gradeConnectivityAttempts([{ kind: 'rate_limited', durationMs: 50 }], 1, thresholds).status).toBe('rate_limited')
     expect(gradeConnectivityAttempts(successes([100]), 2, thresholds).status).toBe('incomplete')
   })
 
   it('marks two consecutive timeouts as not recommended even at the minimum success rate', () => {
     const attempts = successes([100, 100, 100, 100, 100, 100, 100, 100])
-    attempts.splice(3, 0, { kind: 'timeout' }, { kind: 'timeout' })
+    attempts.splice(3, 0, { kind: 'timeout', durationMs: 1_000 }, { kind: 'timeout', durationMs: 1_000 })
     expect(gradeConnectivityAttempts(attempts, 10, thresholds).grade).toBe('not_recommended')
   })
 
@@ -99,8 +99,8 @@ describe('connectivity grading', () => {
   it('never grades zero successful samples as fair when the configured minimum is zero', () => {
     const zeroMinimum = { ...thresholds, minimum_success_rate: 0 }
     const result = gradeConnectivityAttempts([
-      { kind: 'http_error' },
-      { kind: 'http_error' },
+      { kind: 'http_error', durationMs: 50 },
+      { kind: 'http_error', durationMs: 50 },
     ], 2, zeroMinimum)
 
     expect(result.grade).toBe('not_recommended')
@@ -109,5 +109,6 @@ describe('connectivity grading', () => {
     // Without a successful sample the latency metrics must not look like a real 0 ms.
     expect(Number.isFinite(result.metrics?.medianMs)).toBe(false)
     expect(Number.isFinite(result.metrics?.p95Ms)).toBe(false)
+    expect(result.metrics?.failureMedianMs).toBe(50)
   })
 })

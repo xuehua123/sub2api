@@ -36,7 +36,7 @@ export interface ConnectivityClientLocation {
 
 export type ProbeAttempt =
   | { kind: 'success'; durationMs: number; clientIP: string | null; clientLocation: ConnectivityClientLocation | null }
-  | { kind: ProbeFailureKind }
+  | { kind: ProbeFailureKind; durationMs: number }
 
 export type ConnectivityGrade = 'excellent' | 'good' | 'fair' | 'not_recommended'
 export type ConnectivityEvaluationStatus = 'graded' | 'incomplete' | 'cancelled' | 'rate_limited'
@@ -45,6 +45,7 @@ export interface ConnectivityMetrics {
   successRate: number
   p95Ms: number
   medianMs: number
+  failureMedianMs?: number
   madMs: number
   maxConsecutiveTimeouts: number
 }

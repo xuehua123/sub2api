@@ -1,4 +1,4 @@
-import { gradeConnectivityAttempts } from './grading'
+import { calculateMedian, gradeConnectivityAttempts } from './grading'
 import { probeEndpoint } from './probe'
 import type {
   ConnectivityEndpointResult,
@@ -60,7 +60,7 @@ export async function runConnectivityTest(
 
   const allAttempts = [...attempts.values()].flat()
   if (allAttempts.length > 0 && allAttempts.every((attempt) => attempt.kind === 'network_or_cors')) {
-    return specialRunResult(config, 'incomplete', now())
+    return incompleteNetworkRunResult(config, attempts, now())
   }
 
   const evaluations = new Map<string, ConnectivityEvaluation>()
@@ -81,6 +81,38 @@ export async function runConnectivityTest(
     endpoints: endpointResults,
     recommendedAPIURL: chooseRecommendedAPIURL(endpointResults),
     testedAt: now(),
+    gradingVersion: config.thresholds.grading_version,
+  }
+}
+
+// A browser cannot distinguish a CORS rejection from some network failures,
+// so this remains an incomplete result rather than a bad grade. Preserve the
+// measured durations nevertheless: they tell the user how long this failed
+// connectivity attempt took, without presenting it as usable API latency.
+function incompleteNetworkRunResult(
+  config: ConnectivityProbeConfig,
+  attempts: Map<string, ProbeAttempt[]>,
+  testedAt: number,
+): ConnectivityRunResult {
+  return {
+    status: 'incomplete',
+    endpoints: config.endpoints.map((endpoint) => {
+      const endpointAttempts = attempts.get(new URL(endpoint.probe_url).origin) ?? []
+      const failedDurations = endpointAttempts.map((attempt) => attempt.durationMs)
+      return {
+        endpoint,
+        status: 'incomplete' as const,
+        metrics: {
+          successRate: 0,
+          p95Ms: Number.NaN,
+          medianMs: Number.NaN,
+          failureMedianMs: failedDurations.length > 0 ? calculateMedian(failedDurations) : undefined,
+          madMs: Number.NaN,
+          maxConsecutiveTimeouts: 0,
+        },
+      }
+    }),
+    testedAt,
     gradingVersion: config.thresholds.grading_version,
   }
 }

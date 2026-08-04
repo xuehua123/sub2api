@@ -37,15 +37,15 @@ describe('probeEndpoint', () => {
   it('classifies HTTP, rate-limit, network, and protocol failures without throwing', async () => {
     await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
       fetchImpl: vi.fn().mockResolvedValue(new Response('', { status: 429 })),
-    })).resolves.toEqual({ kind: 'rate_limited' })
+    })).resolves.toEqual({ kind: 'rate_limited', durationMs: 0 })
 
     await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
       fetchImpl: vi.fn().mockResolvedValue(new Response('', { status: 503 })),
-    })).resolves.toEqual({ kind: 'http_error' })
+    })).resolves.toEqual({ kind: 'http_error', durationMs: 0 })
 
     await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
       fetchImpl: vi.fn().mockRejectedValue(new TypeError('Failed to fetch')),
-    })).resolves.toEqual({ kind: 'network_or_cors' })
+    })).resolves.toEqual({ kind: 'network_or_cors', durationMs: 0 })
 
     for (const response of [
       new Response('{"ok":true,"client_ip":null}', { status: 200, headers: { 'Content-Type': 'text/plain' } }),
@@ -62,7 +62,7 @@ describe('probeEndpoint', () => {
     ]) {
       await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
         fetchImpl: vi.fn().mockResolvedValue(response),
-      })).resolves.toEqual({ kind: 'protocol_error' })
+      })).resolves.toEqual({ kind: 'protocol_error', durationMs: 0 })
     }
   })
 
@@ -81,7 +81,7 @@ describe('probeEndpoint', () => {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       })),
-    })).resolves.toEqual({ kind: 'protocol_error' })
+    })).resolves.toEqual({ kind: 'protocol_error', durationMs: 0 })
   })
 
   it('distinguishes timeout from caller cancellation', async () => {
@@ -92,12 +92,12 @@ describe('probeEndpoint', () => {
 
     const timeoutResult = probeEndpoint('https://api.example.com/probe', 1000, undefined, { fetchImpl })
     await vi.advanceTimersByTimeAsync(1000)
-    await expect(timeoutResult).resolves.toEqual({ kind: 'timeout' })
+    await expect(timeoutResult).resolves.toEqual({ kind: 'timeout', durationMs: 0 })
 
     const controller = new AbortController()
     const cancelledResult = probeEndpoint('https://api.example.com/probe', 1000, controller.signal, { fetchImpl })
     controller.abort()
-    await expect(cancelledResult).resolves.toEqual({ kind: 'cancelled' })
+    await expect(cancelledResult).resolves.toEqual({ kind: 'cancelled', durationMs: 0 })
   })
 
   it('carries a validated client location on success', async () => {
@@ -153,7 +153,7 @@ describe('probeEndpoint', () => {
 
       await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
         fetchImpl,
-      })).resolves.toEqual({ kind: 'protocol_error' })
+      })).resolves.toEqual({ kind: 'protocol_error', durationMs: 0 })
     }
   })
 
@@ -171,6 +171,6 @@ describe('probeEndpoint', () => {
 
     await expect(probeEndpoint('https://api.example.com/probe', 5000, undefined, {
       fetchImpl,
-    })).resolves.toEqual({ kind: 'protocol_error' })
+    })).resolves.toEqual({ kind: 'protocol_error', durationMs: 0 })
   })
 })

@@ -550,6 +550,35 @@ describe('ConnectivityTestDialog', () => {
     expect(wrapper.text()).not.toContain('keys.connectivity.noLatency')
   })
 
+  it('keeps failed-sample duration visible when every probe is blocked by the network or CORS', async () => {
+    runConnectivityTest.mockResolvedValue({
+      status: 'incomplete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'incomplete',
+        metrics: { successRate: 0, p95Ms: Number.NaN, medianMs: Number.NaN, failureMedianMs: 10_000, madMs: Number.NaN, maxConsecutiveTimeouts: 0 },
+      }],
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('keys.connectivity.failedLatency')
+    expect(wrapper.text()).not.toContain('keys.connectivity.typicalLatency')
+  })
+
   it('renders an IPv6 egress address in the common summary', async () => {
     settings.connectivity_client_ip_enabled = true
     runConnectivityTest.mockResolvedValue({
@@ -584,14 +613,14 @@ describe('ConnectivityTestDialog', () => {
     expect(summary.find('code').exists()).toBe(true)
   })
 
-  it('shows "暂无可用延迟" instead of a misleading 0 ms when every sample fails, and caches no median', async () => {
+  it('shows the measured failed-sample duration instead of a misleading 0 ms when every sample fails, and caches no median', async () => {
     runConnectivityTest.mockResolvedValue({
       status: 'complete',
       endpoints: [{
         endpoint: settings.connectivity_test_endpoints[0],
         status: 'graded',
         grade: 'not_recommended',
-        metrics: { successRate: 0, p95Ms: 0, medianMs: 0, madMs: 0, maxConsecutiveTimeouts: 0 },
+        metrics: { successRate: 0, p95Ms: 0, medianMs: 0, failureMedianMs: 10_000, madMs: 0, maxConsecutiveTimeouts: 0 },
       }],
       testedAt: 1234,
       gradingVersion: '1',
@@ -610,7 +639,7 @@ describe('ConnectivityTestDialog', () => {
     await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('keys.connectivity.noLatency')
+    expect(wrapper.text()).toContain('keys.connectivity.failedLatency')
     expect(wrapper.text()).not.toContain('keys.connectivity.typicalLatency')
     const stored = JSON.parse(sessionStorage.getItem('sub2api_connectivity_results')!) as Array<{ median_ms?: number }>
     expect(stored[0]?.median_ms).toBeUndefined()

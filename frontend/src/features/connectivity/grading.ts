@@ -43,6 +43,7 @@ export function gradeConnectivityAttempts(
   }
 
   const durations = attempts.flatMap((attempt) => attempt.kind === 'success' ? [attempt.durationMs] : [])
+  const failedDurations = attempts.flatMap((attempt) => attempt.kind === 'success' ? [] : [attempt.durationMs])
   const successRate = durations.length / plannedSamples
   const hasSuccessfulSample = durations.length > 0
   // With no successful sample there is no median / P95 / MAD: NaN, never a
@@ -51,6 +52,7 @@ export function gradeConnectivityAttempts(
     successRate,
     p95Ms: hasSuccessfulSample ? calculateNearestRankP95(durations) : Number.NaN,
     medianMs: hasSuccessfulSample ? calculateMedian(durations) : Number.NaN,
+    failureMedianMs: failedDurations.length > 0 ? calculateMedian(failedDurations) : undefined,
     madMs: hasSuccessfulSample ? calculateMAD(durations) : Number.NaN,
     maxConsecutiveTimeouts: maxConsecutiveTimeouts(attempts),
   }
