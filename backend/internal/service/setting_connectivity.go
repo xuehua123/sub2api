@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/maphash"
 	"log/slog"
 	"math"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -32,7 +34,88 @@ const (
 	maxConnectivityEndpoints               = 11
 	connectivityProbeRefreshInterval       = 5 * time.Minute
 	connectivityProbeRefreshTimeout        = 10 * time.Second
+	defaultGeoIPFailureCacheTTL            = time.Minute
+	defaultGeoIPFailureCacheCapacity       = 4096
 )
+
+type geoIPFailureCache struct {
+	mu       sync.Mutex
+	seed     maphash.Seed
+	ttl      time.Duration
+	capacity int
+	entries  map[uint64]time.Time
+	now      func() time.Time
+}
+
+func newGeoIPFailureCache(ttl time.Duration, capacity int) *geoIPFailureCache {
+	return &geoIPFailureCache{
+		seed:     maphash.MakeSeed(),
+		ttl:      ttl,
+		capacity: capacity,
+		entries:  make(map[uint64]time.Time),
+		now:      time.Now,
+	}
+}
+
+func (c *geoIPFailureCache) key(addr netip.Addr) uint64 {
+	var hash maphash.Hash
+	hash.SetSeed(c.seed)
+	_, _ = hash.Write(addr.AsSlice())
+	return hash.Sum64()
+}
+
+func (c *geoIPFailureCache) contains(addr netip.Addr) bool {
+	if c == nil || c.ttl <= 0 || c.capacity <= 0 {
+		return false
+	}
+	key := c.key(addr)
+	now := c.now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	expiresAt, ok := c.entries[key]
+	if !ok {
+		return false
+	}
+	if !now.Before(expiresAt) {
+		delete(c.entries, key)
+		return false
+	}
+	return true
+}
+
+func (c *geoIPFailureCache) record(addr netip.Addr) {
+	if c == nil || c.ttl <= 0 || c.capacity <= 0 {
+		return
+	}
+	key := c.key(addr)
+	now := c.now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, exists := c.entries[key]; !exists && len(c.entries) >= c.capacity {
+		for cachedKey, expiresAt := range c.entries {
+			if !now.Before(expiresAt) {
+				delete(c.entries, cachedKey)
+			}
+		}
+	}
+	if _, exists := c.entries[key]; !exists && len(c.entries) >= c.capacity {
+		for cachedKey := range c.entries {
+			delete(c.entries, cachedKey)
+			break
+		}
+	}
+	c.entries[key] = now.Add(c.ttl)
+}
+
+func (c *geoIPFailureCache) clear(addr netip.Addr) {
+	if c == nil {
+		return
+	}
+	key := c.key(addr)
+	c.mu.Lock()
+	delete(c.entries, key)
+	c.mu.Unlock()
+}
 
 type ConnectivityGradeThreshold struct {
 	MinSuccessRate float64 `json:"min_success_rate"`
@@ -279,21 +362,112 @@ func (s *SettingService) ConnectivityProbeSnapshot() *ConnectivityProbeSnapshot 
 	return s.connectivityProbeSnapshot()
 }
 
-// ConnectivityProbeClientIP returns an address only when both the DB-backed
-// feature switch and the deployment-level trust boundary permit exposure.
-func (s *SettingService) ConnectivityProbeClientIP(req *http.Request) (string, bool) {
+// ConnectivityClientLocation is the coarse-grained geographic estimate exposed
+// to the browser. It intentionally excludes coordinates, postal code, timezone,
+// ASN, ISP, internal nodes, and proxy-chain information.
+type ConnectivityClientLocation struct {
+	CountryCode string `json:"country_code"`
+	Country     string `json:"country"`
+	Region      string `json:"region"`
+	City        string `json:"city"`
+}
+
+// ConnectivityClientContext is the aggregated probe result for one request.
+// Location is nil when region lookup is disabled, unconfigured, or failed; the
+// IP is still exposed in that case.
+type ConnectivityClientContext struct {
+	IP       string
+	Location *ConnectivityClientLocation
+}
+
+// ConnectivityProbeClientContext returns an aggregated IP/location context only
+// when the DB-backed feature switch and the deployment-level trust boundary both
+// permit exposure. It resolves the verified public IP via the trusted proxy
+// chain and, when the GeoIP database is ready, attaches a coarse location. A
+// nil context means no verified IP should be shown (fail closed).
+func (s *SettingService) ConnectivityProbeClientContext(req *http.Request) *ConnectivityClientContext {
 	if s == nil || s.connectivityClientIP == nil || !s.connectivityClientIP.CanExposeClientIP() {
-		return "", false
+		return nil
 	}
 	snapshot := s.connectivityProbeSnapshot()
 	if !snapshot.Enabled || !snapshot.ClientIPEnabled {
-		return "", false
+		return nil
 	}
 	verified := s.connectivityClientIP.Resolve(req)
 	if !verified.OK {
+		return nil
+	}
+	ctx := &ConnectivityClientContext{IP: verified.IP.String()}
+	if s.geoipFailureCache != nil && s.geoipFailureCache.contains(verified.IP) {
+		return ctx
+	}
+
+	s.connectivityGeoIPMu.RLock()
+	resolver := s.connectivityGeoIP
+	if resolver != nil && resolver.Ready() {
+		location, geoErr := resolver.Lookup(verified.IP)
+		s.connectivityGeoIPMu.RUnlock()
+		if geoErr != nil {
+			s.geoipFailureCache.record(verified.IP)
+			if s.geoipFailureLimiter != nil {
+				s.geoipFailureLimiter.Warn("connectivity geoip lookup failed", "error", geoErr)
+			}
+		} else if location != nil {
+			s.geoipFailureCache.clear(verified.IP)
+			ctx.Location = &ConnectivityClientLocation{
+				CountryCode: location.CountryCode,
+				Country:     location.Country,
+				Region:      location.Region,
+				City:        location.City,
+			}
+		} else {
+			s.geoipFailureCache.clear(verified.IP)
+		}
+	} else {
+		s.connectivityGeoIPMu.RUnlock()
+	}
+	return ctx
+}
+
+// Close releases the local GeoIP database handle during shutdown. It is safe
+// to call multiple times and is a no-op when no database is open.
+func (s *SettingService) Close() {
+	if s == nil {
+		return
+	}
+	s.connectivityGeoIPMu.Lock()
+	defer s.connectivityGeoIPMu.Unlock()
+	if s.connectivityGeoIP == nil {
+		return
+	}
+	_ = s.connectivityGeoIP.Close()
+	s.connectivityGeoIP = nil
+}
+
+// ConnectivityGeoIPStatus reports the read-only GeoIP runtime status for the
+// admin panel: "ready", "not_configured", or "unavailable". It never exposes
+// the database file path.
+func (s *SettingService) ConnectivityGeoIPStatus() string {
+	if s == nil || !s.connectivityGeoIPConfigured {
+		return "not_configured"
+	}
+	s.connectivityGeoIPMu.RLock()
+	defer s.connectivityGeoIPMu.RUnlock()
+	if s.connectivityGeoIP != nil && s.connectivityGeoIP.Ready() {
+		return "ready"
+	}
+	return "unavailable"
+}
+
+// ConnectivityProbeClientIP returns an address only when both the DB-backed
+// feature switch and the deployment-level trust boundary permit exposure. It is
+// kept for compatibility; new code should use ConnectivityProbeClientContext.
+func (s *SettingService) ConnectivityProbeClientIP(req *http.Request) (string, bool) {
+	ctx := s.ConnectivityProbeClientContext(req)
+	if ctx == nil {
 		return "", false
 	}
-	return verified.IP.String(), true
+	return ctx.IP, true
 }
 
 // ConnectivityProbeRateLimitIP resolves the same verified address without

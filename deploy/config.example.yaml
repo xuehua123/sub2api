@@ -127,6 +127,15 @@ connectivity:
   # Maximum X-Forwarded-For chain length including the direct peer (2-16).
   # XFF 加直接对端的最大完整链长度（2-16）。
   client_ip_max_hops: 8
+  # Local GeoLite2-City MMDB path for coarse region lookup. Empty = region
+  # display disabled; a configured-but-unopenable file fails closed with a
+  # startup warning (application still boots).
+  # 本地 GeoLite2-City MMDB 路径；留空关闭地区展示；配置但打不开时只告警并
+  # 停用地区（不阻断启动）。
+  geoip_database_path: ""
+  # Locale for region names; defaults to zh-CN.
+  # 地区名称语言，默认 zh-CN。
+  geoip_locale: zh-CN
 
 # =============================================================================
 # Security Configuration

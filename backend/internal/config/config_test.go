@@ -104,6 +104,22 @@ func TestLoadRejectsUnsafeConnectivityClientIPConfig(t *testing.T) {
 		require.ErrorContains(t, err, "connectivity.client_ip_max_hops")
 	})
 
+	t.Run("invalid geoip locale", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		viper.Set("connectivity.geoip_locale", "不合法")
+
+		_, err := Load()
+		require.ErrorContains(t, err, "connectivity.geoip_locale")
+	})
+
+	t.Run("invalid geoip locale with bad subtag", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		viper.Set("connectivity.geoip_locale", "zh-")
+
+		_, err := Load()
+		require.ErrorContains(t, err, "connectivity.geoip_locale")
+	})
+
 	t.Run("scoped denied address", func(t *testing.T) {
 		resetViperWithJWTSecret(t)
 		viper.Set("connectivity.client_ip_denied_cidrs", []string{"2606:4700:4700::1111%eth0"})
@@ -111,6 +127,34 @@ func TestLoadRejectsUnsafeConnectivityClientIPConfig(t *testing.T) {
 		_, err := Load()
 		require.ErrorContains(t, err, "connectivity.client_ip_denied_cidrs")
 	})
+}
+
+func TestLoadConnectivityGeoIPDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Empty(t, cfg.Connectivity.GeoIPDatabasePath)
+	require.Equal(t, "zh-CN", cfg.Connectivity.GeoIPLocale)
+}
+
+func TestLoadConnectivityGeoIPFromEnvironment(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("CONNECTIVITY_GEOIP_DATABASE_PATH", "/var/lib/geoip/GeoLite2-City.mmdb")
+	t.Setenv("CONNECTIVITY_GEOIP_LOCALE", "en")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, "/var/lib/geoip/GeoLite2-City.mmdb", cfg.Connectivity.GeoIPDatabasePath)
+	require.Equal(t, "en", cfg.Connectivity.GeoIPLocale)
+}
+
+func TestValidGeoIPLocale(t *testing.T) {
+	for _, valid := range []string{"zh-CN", "zh", "en", "ja", "zh-Hant-TW", "pt-BR"} {
+		require.True(t, validGeoIPLocale(valid), "locale=%s", valid)
+	}
+	for _, invalid := range []string{"", "z", "1zh", "zh-", "zh-CN_", "zh-CN-", "zh中文"} {
+		require.False(t, validGeoIPLocale(invalid), "locale=%s", invalid)
+	}
 }
 
 func TestNormalizeForwardedClientIPHeaders(t *testing.T) {

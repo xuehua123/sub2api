@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"html"
 	"net/http"
 	"strings"
@@ -12,6 +13,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// connectivityMaxProbeResponseBytes is the probe protocol's hard response cap.
+// It mirrors the frontend's limit; the handler must never exceed it.
+const connectivityMaxProbeResponseBytes = 1024
 
 // SettingHandler 公开设置处理器（无需认证）
 type SettingHandler struct {
@@ -145,16 +150,30 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 // authentication, billing, subscription, usage, and upstream request paths.
 func (h *SettingHandler) EdgeProbe(c *gin.Context) {
 	var clientIP any
+	var clientLocation any
 	if h != nil && h.settingService != nil {
-		if verified, ok := h.settingService.ConnectivityProbeClientIP(c.Request); ok {
-			clientIP = verified
+		if context := h.settingService.ConnectivityProbeClientContext(c.Request); context != nil {
+			clientIP = context.IP
+			if context.Location != nil {
+				clientLocation = context.Location
+			}
+		}
+	}
+	payload := gin.H{
+		"ok":              true,
+		"client_ip":       clientIP,
+		"client_location": clientLocation,
+	}
+	// Defend the probe protocol's 1 KiB hard cap: if a malformed database ever
+	// produced an oversized location, drop it and keep the verified IP rather
+	// than returning a response the strict frontend would reject.
+	if clientLocation != nil {
+		if serialized, err := json.Marshal(payload); err != nil || len(serialized) > connectivityMaxProbeResponseBytes {
+			delete(payload, "client_location")
 		}
 	}
 	c.Header("Cache-Control", "no-store, max-age=0")
-	c.JSON(http.StatusOK, gin.H{
-		"ok":        true,
-		"client_ip": clientIP,
-	})
+	c.JSON(http.StatusOK, payload)
 }
 
 // UnsubscribeNotificationEmail handles optional notification email opt-outs.

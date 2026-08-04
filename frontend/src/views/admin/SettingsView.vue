@@ -5866,6 +5866,17 @@
                     />
                   </div>
 
+                  <div class="flex items-start justify-between gap-4" data-testid="connectivity-geoip-status">
+                    <div>
+                      <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        {{ t("admin.settings.site.connectivity.geoipStatus") }}
+                      </p>
+                      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        {{ t(connectivityGeoIPStatusKey) }}
+                      </p>
+                    </div>
+                  </div>
+
                   <div>
                     <div class="mb-3 flex items-start justify-between gap-4">
                       <div>
@@ -9461,6 +9472,13 @@ type SettingsForm = Omit<
   default_platform_quotas: DefaultPlatformQuotasMap;
 };
 
+const connectivityGeoIPStatus = ref<'ready' | 'not_configured' | 'unavailable'>('not_configured');
+const connectivityGeoIPStatusKey = computed(() => {
+  if (connectivityGeoIPStatus.value === 'ready') return 'admin.settings.site.connectivity.geoipStatusReady'
+  if (connectivityGeoIPStatus.value === 'unavailable') return 'admin.settings.site.connectivity.geoipStatusUnavailable'
+  return 'admin.settings.site.connectivity.geoipStatusNotConfigured'
+});
+
 const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
@@ -10809,6 +10827,7 @@ async function loadSettings() {
       normalizeConnectivityAllowedOrigins(
         settings.connectivity_probe_allowed_origins,
       );
+    connectivityGeoIPStatus.value = settings.connectivity_geoip_status ?? 'not_configured';
     setConnectivityThresholdBaseline();
     if (!form.claude_oauth_system_prompt_blocks?.trim()) {
       form.claude_oauth_system_prompt_blocks =

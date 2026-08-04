@@ -16,7 +16,7 @@ const thresholds: ConnectivityGradeThresholds = {
 }
 
 function successes(values: number[]): ProbeAttempt[] {
-  return values.map((durationMs) => ({ kind: 'success', durationMs, clientIP: null }))
+  return values.map((durationMs) => ({ kind: 'success', durationMs, clientIP: null, clientLocation: null }))
 }
 
 describe('connectivity grading', () => {
@@ -57,16 +57,43 @@ describe('connectivity grading', () => {
 
   it('exposes an exit IP only when every successful sample reports the same non-empty value', () => {
     const consistent: ProbeAttempt[] = [
-      { kind: 'success', durationMs: 100, clientIP: '8.8.8.8' },
-      { kind: 'success', durationMs: 110, clientIP: '8.8.8.8' },
+      { kind: 'success', durationMs: 100, clientIP: '8.8.8.8', clientLocation: null },
+      { kind: 'success', durationMs: 110, clientIP: '8.8.8.8', clientLocation: null },
     ]
     expect(gradeConnectivityAttempts(consistent, 2, thresholds).clientIP).toBe('8.8.8.8')
 
     const partiallyHidden: ProbeAttempt[] = [
       consistent[0],
-      { kind: 'success', durationMs: 110, clientIP: null },
+      { kind: 'success', durationMs: 110, clientIP: null, clientLocation: null },
     ]
     expect(gradeConnectivityAttempts(partiallyHidden, 2, thresholds).clientIP).toBeNull()
+  })
+
+  it('exposes a location only when the stable IP carries a consistent location', () => {
+    const shenzhen = { country_code: 'CN', country: '中国', region: '广东', city: '深圳' }
+    const gz = { country_code: 'CN', country: '中国', region: '广东', city: '广州' }
+
+    const consistent: ProbeAttempt[] = [
+      { kind: 'success', durationMs: 100, clientIP: '8.8.8.8', clientLocation: shenzhen },
+      { kind: 'success', durationMs: 110, clientIP: '8.8.8.8', clientLocation: shenzhen },
+    ]
+    const evaluated = gradeConnectivityAttempts(consistent, 2, thresholds)
+    expect(evaluated.clientIP).toBe('8.8.8.8')
+    expect(evaluated.clientLocation).toEqual(shenzhen)
+
+    const disagreeing: ProbeAttempt[] = [
+      { kind: 'success', durationMs: 100, clientIP: '8.8.8.8', clientLocation: shenzhen },
+      { kind: 'success', durationMs: 110, clientIP: '8.8.8.8', clientLocation: gz },
+    ]
+    const disagreeingResult = gradeConnectivityAttempts(disagreeing, 2, thresholds)
+    expect(disagreeingResult.clientIP).toBe('8.8.8.8')
+    expect(disagreeingResult.clientLocation).toBeNull()
+
+    const missingOnOne: ProbeAttempt[] = [
+      { kind: 'success', durationMs: 100, clientIP: '8.8.8.8', clientLocation: shenzhen },
+      { kind: 'success', durationMs: 110, clientIP: '8.8.8.8', clientLocation: null },
+    ]
+    expect(gradeConnectivityAttempts(missingOnOne, 2, thresholds).clientLocation).toBeNull()
   })
 
   it('never grades zero successful samples as fair when the configured minimum is zero', () => {
@@ -77,6 +104,10 @@ describe('connectivity grading', () => {
     ], 2, zeroMinimum)
 
     expect(result.grade).toBe('not_recommended')
-    expect(Object.values(result.metrics ?? {}).every(Number.isFinite)).toBe(true)
+    expect(result.metrics?.successRate).toBe(0)
+    expect(Number.isFinite(result.metrics?.maxConsecutiveTimeouts)).toBe(true)
+    // Without a successful sample the latency metrics must not look like a real 0 ms.
+    expect(Number.isFinite(result.metrics?.medianMs)).toBe(false)
+    expect(Number.isFinite(result.metrics?.p95Ms)).toBe(false)
   })
 })

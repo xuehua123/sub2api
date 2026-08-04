@@ -162,6 +162,7 @@ type SystemSettings struct {
 	ConnectivityProbeAllowedOrigins     []string                            `json:"connectivity_probe_allowed_origins"`
 	ConnectivityProbeIPRPM              int                                 `json:"connectivity_probe_ip_rpm"`
 	ConnectivityProbeBurst              int                                 `json:"connectivity_probe_burst"`
+	ConnectivityGeoIPStatus             string                              `json:"connectivity_geoip_status"`
 
 	DefaultConcurrency           int                          `json:"default_concurrency"`
 	DefaultBalance               float64                      `json:"default_balance"`

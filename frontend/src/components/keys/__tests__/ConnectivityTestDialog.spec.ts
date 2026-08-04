@@ -353,7 +353,7 @@ describe('ConnectivityTestDialog', () => {
     expect(wrapper.text()).not.toContain('keys.connectivity.notTested')
   })
 
-  it('does not claim a common exit IP when any configured URL is incomplete', async () => {
+  it('does not render an egress banner at all when any configured URL is incomplete', async () => {
     settings.connectivity_client_ip_enabled = true
     const secondEndpoint = {
       name: '备用端点',
@@ -394,8 +394,251 @@ describe('ConnectivityTestDialog', () => {
     await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="connectivity-exit-summary"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('8.8.8.8')
+  })
+
+  it('shows the typical latency line and never exposes P95 or MAD to users', async () => {
+    runConnectivityTest.mockResolvedValue({
+      status: 'complete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'graded',
+        grade: 'excellent',
+        metrics: { successRate: 1, p95Ms: 240, medianMs: 86, madMs: 30, maxConsecutiveTimeouts: 0 },
+      }],
+      recommendedAPIURL: 'https://api.example.com/v1',
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('keys.connectivity.typicalLatency')
+    expect(wrapper.text()).not.toContain('keys.connectivity.noLatency')
+    expect(wrapper.text()).not.toContain('240')
+    expect(wrapper.text()).not.toContain('30')
+  })
+
+  it('shows the common egress IP and estimated region once at the top', async () => {
+    settings.connectivity_client_ip_enabled = true
+    runConnectivityTest.mockResolvedValue({
+      status: 'complete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'graded',
+        grade: 'excellent',
+        clientIP: '8.8.8.8',
+        clientLocation: { country_code: 'CN', country: '中国', region: '广东', city: '深圳' },
+      }],
+      recommendedAPIURL: 'https://api.example.com/v1',
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
     const summary = wrapper.get('[data-testid="connectivity-exit-summary"]')
-    expect(summary.text()).toContain('keys.connectivity.unknownExit')
-    expect(summary.text()).not.toContain('8.8.8.8')
+    expect(summary.text()).toContain('keys.connectivity.publicEgress')
+    expect(summary.text()).toContain('8.8.8.8')
+    expect(summary.text()).toContain('keys.connectivity.ipLocation')
+    expect(summary.text()).toContain('keys.connectivity.estimated')
+  })
+
+  it('shows the split hint and each row egress when URLs use different egresses', async () => {
+    settings.connectivity_client_ip_enabled = true
+    const secondEndpoint = {
+      name: '备用端点',
+      api_url: 'https://alt.example.com/v1',
+      probe_url: 'https://alt.example.com/.well-known/sub2api/edge-probe',
+      is_default: false,
+    }
+    settings.connectivity_test_endpoints = [settings.connectivity_test_endpoints[0], secondEndpoint]
+    runConnectivityTest.mockResolvedValue({
+      status: 'complete',
+      endpoints: [
+        {
+          endpoint: settings.connectivity_test_endpoints[0],
+          status: 'graded',
+          grade: 'excellent',
+          clientIP: '8.8.8.8',
+          clientLocation: { country_code: 'CN', country: '中国', region: '广东', city: '深圳' },
+        },
+        {
+          endpoint: secondEndpoint,
+          status: 'graded',
+          grade: 'good',
+          clientIP: '45.77.18.20',
+          clientLocation: { country_code: 'HK', country: '中国香港', region: '', city: '' },
+        },
+      ],
+      recommendedAPIURL: 'https://api.example.com/v1',
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('keys.connectivity.splitExit')
+    expect(wrapper.text()).toContain('8.8.8.8')
+    expect(wrapper.text()).toContain('45.77.18.20')
+  })
+
+  it('hides egress details and latency when the run is incomplete', async () => {
+    settings.connectivity_client_ip_enabled = true
+    runConnectivityTest.mockResolvedValue({
+      status: 'incomplete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'incomplete',
+        clientIP: '8.8.8.8',
+        metrics: { successRate: 0, p95Ms: 0, medianMs: 0, madMs: 0, maxConsecutiveTimeouts: 0 },
+      }],
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="connectivity-exit-summary"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('8.8.8.8')
+    expect(wrapper.text()).not.toContain('keys.connectivity.typicalLatency')
+    expect(wrapper.text()).not.toContain('keys.connectivity.noLatency')
+  })
+
+  it('renders an IPv6 egress address in the common summary', async () => {
+    settings.connectivity_client_ip_enabled = true
+    runConnectivityTest.mockResolvedValue({
+      status: 'complete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'graded',
+        grade: 'excellent',
+        clientIP: '2001:4860:4860::8888',
+        clientLocation: { country_code: 'US', country: '美国', region: '', city: '' },
+      }],
+      recommendedAPIURL: 'https://api.example.com/v1',
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    const summary = wrapper.get('[data-testid="connectivity-exit-summary"]')
+    expect(summary.text()).toContain('2001:4860:4860::8888')
+    expect(summary.find('code').exists()).toBe(true)
+  })
+
+  it('shows "暂无可用延迟" instead of a misleading 0 ms when every sample fails, and caches no median', async () => {
+    runConnectivityTest.mockResolvedValue({
+      status: 'complete',
+      endpoints: [{
+        endpoint: settings.connectivity_test_endpoints[0],
+        status: 'graded',
+        grade: 'not_recommended',
+        metrics: { successRate: 0, p95Ms: 0, medianMs: 0, madMs: 0, maxConsecutiveTimeouts: 0 },
+      }],
+      testedAt: 1234,
+      gradingVersion: '1',
+    })
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: { show: true, fallbackEndpoints: [] },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    await wrapper.get('[data-test="start-connectivity-test"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('keys.connectivity.noLatency')
+    expect(wrapper.text()).not.toContain('keys.connectivity.typicalLatency')
+    const stored = JSON.parse(sessionStorage.getItem('sub2api_connectivity_results')!) as Array<{ median_ms?: number }>
+    expect(stored[0]?.median_ms).toBeUndefined()
+  })
+
+  it('shows the latency note when restoring cached results', () => {
+    sessionStorage.setItem('sub2api_connectivity_results', JSON.stringify([{
+      url: 'https://api.example.com/v1',
+      grade: 'good',
+      tested_at: Date.now(),
+      grading_version: '1',
+      median_ms: 85.5,
+    }]))
+    const wrapper = mount(ConnectivityTestDialog, {
+      props: {
+        show: true,
+        fallbackEndpoints: [{ name: '默认端点', apiURL: 'https://api.example.com/v1', isDefault: true }],
+      },
+      global: {
+        stubs: {
+          Teleport: true,
+          BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('keys.connectivity.latencyNote')
+    expect(wrapper.text()).toContain('keys.connectivity.typicalLatency')
   })
 })

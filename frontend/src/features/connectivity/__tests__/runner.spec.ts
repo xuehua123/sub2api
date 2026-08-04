@@ -36,7 +36,7 @@ describe('runConnectivityTest', () => {
       await Promise.resolve()
       active--
       const durationMs = new URL(url).hostname === 'a.example' ? 100 : 180
-      return { kind: 'success', durationMs, clientIP: null }
+      return { kind: 'success', durationMs, clientIP: null, clientLocation: null }
     })
 
     const result = await runConnectivityTest(config(), undefined, { probe, now: () => 1234 })
@@ -78,12 +78,12 @@ describe('runConnectivityTest', () => {
     cfg.warmup = 0
     const attempts = new Map<string, ProbeAttempt[]>([
       ['a.example', [
-        { kind: 'success', durationMs: 200, clientIP: null },
-        { kind: 'success', durationMs: 220, clientIP: null },
+        { kind: 'success', durationMs: 200, clientIP: null, clientLocation: null },
+        { kind: 'success', durationMs: 220, clientIP: null, clientLocation: null },
       ]],
       ['b.example', [
-        { kind: 'success', durationMs: 100, clientIP: null },
-        { kind: 'success', durationMs: 110, clientIP: null },
+        { kind: 'success', durationMs: 100, clientIP: null, clientLocation: null },
+        { kind: 'success', durationMs: 110, clientIP: null, clientLocation: null },
       ]],
     ])
     const probe = vi.fn(async (url: string) => attempts.get(new URL(url).hostname)!.shift()!)

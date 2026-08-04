@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geoip"
 	clientip "github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"golang.org/x/sync/singleflight"
 )
@@ -84,12 +86,17 @@ type SettingService struct {
 	openAIQuotaAutoPauseSettingsCache atomic.Value // *cachedOpenAIQuotaAutoPauseSettings
 	openAIQuotaAutoPauseSettingsSF    singleflight.Group
 
-	connectivitySnapshot atomic.Value // *ConnectivityProbeSnapshot
-	connectivityResolver connectivityResolverFunc
-	connectivityClientIP *clientip.VerifiedClientIPResolver
-	connectivityWriteMu  sync.Mutex
-	connectivityMu       sync.Mutex
-	connectivityRefresh  sync.Once
+	connectivitySnapshot        atomic.Value // *ConnectivityProbeSnapshot
+	connectivityResolver        connectivityResolverFunc
+	connectivityClientIP        *clientip.VerifiedClientIPResolver
+	connectivityGeoIP           geoip.Resolver
+	connectivityGeoIPConfigured bool
+	connectivityGeoIPMu         sync.RWMutex
+	geoipFailureCache           *geoIPFailureCache
+	geoipFailureLimiter         *geoip.LogLookupFailure
+	connectivityWriteMu         sync.Mutex
+	connectivityMu              sync.Mutex
+	connectivityRefresh         sync.Once
 }
 
 // DefaultPlatformQuotaSetting 单 platform 三档限额（nil = 沿用上层；0 = 显式禁用；>0 = 上限）
@@ -235,6 +242,17 @@ func NewSettingService(settingRepo SettingRepository, cfg *config.Config) *Setti
 			AllowDirect:              cfg.Connectivity.AllowDirectClientIP,
 			MaxHops:                  cfg.Connectivity.ClientIPMaxHops,
 		})
+	}
+	s.geoipFailureLimiter = geoip.NewLogLookupFailure(100)
+	s.geoipFailureCache = newGeoIPFailureCache(defaultGeoIPFailureCacheTTL, defaultGeoIPFailureCacheCapacity)
+	if cfg != nil && strings.TrimSpace(cfg.Connectivity.GeoIPDatabasePath) != "" {
+		s.connectivityGeoIPConfigured = true
+		geoReader, geoErr := geoip.Open(cfg.Connectivity.GeoIPDatabasePath, cfg.Connectivity.GeoIPLocale)
+		if geoErr != nil {
+			slog.Warn("connectivity geoip database unavailable; region lookup disabled", "error", geoErr)
+		} else {
+			s.connectivityGeoIP = geoReader
+		}
 	}
 	s.connectivitySnapshot.Store(defaultConnectivityProbeSnapshot())
 	return s

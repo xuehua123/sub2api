@@ -479,6 +479,7 @@ export interface SystemSettings {
   connectivity_probe_allowed_origins: string[];
   connectivity_probe_ip_rpm: number;
   connectivity_probe_burst: number;
+  connectivity_geoip_status?: 'ready' | 'not_configured' | 'unavailable';
   // SMTP settings
   smtp_host: string;
   smtp_port: number;

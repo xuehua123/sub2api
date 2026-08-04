@@ -7,8 +7,10 @@ import { useClipboard } from '@/composables/useClipboard'
 import { useAppStore } from '@/stores/app'
 import { clearConnectivityCache, loadConnectivityCache, saveConnectivityCache } from '@/features/connectivity/cache'
 import { parseConnectivityProbeConfig } from '@/features/connectivity/config'
+import { formatClientLocation, formatTypicalLatency, summarizeNetworkExit } from '@/features/connectivity/format'
 import { runConnectivityTest } from '@/features/connectivity/runner'
 import type {
+  ConnectivityClientLocation,
   ConnectivityEndpointResult,
   ConnectivityGrade,
   ConnectivityProbeConfig,
@@ -41,6 +43,8 @@ interface DisplayRow {
   status: RowStatus
   grade?: ConnectivityGrade
   clientIP?: string | null
+  clientLocation?: ConnectivityClientLocation | null
+  typicalLatency?: number | null
   recommended: boolean
 }
 
@@ -51,6 +55,7 @@ const phase = ref<Phase>('idle')
 const config = ref<ConnectivityProbeConfig | null>(null)
 const runResult = ref<ConnectivityRunResult | null>(null)
 const cachedGrades = ref(new Map<string, ConnectivityGrade>())
+const cachedLatencies = ref(new Map<string, number>())
 const cachedTestedAt = ref<number | null>(null)
 let runController: AbortController | null = null
 let removeRunListeners: (() => void) | null = null
@@ -64,13 +69,18 @@ const rows = computed<DisplayRow[]>(() => {
     return config.value.endpoints.map((endpoint) => endpointToRow(endpoint, phase.value === 'running' ? 'testing' : 'untested'))
   }
   return props.fallbackEndpoints.map((endpoint) => {
-    const grade = cachedGrades.value.get(connectivityCacheURLKey(endpoint.apiURL))
+    const key = connectivityCacheURLKey(endpoint.apiURL)
+    const grade = cachedGrades.value.get(key)
+    const cachedLatency = cachedLatencies.value.get(key)
     return {
       name: endpoint.name,
       apiURL: endpoint.apiURL,
       isDefault: endpoint.isDefault,
       status: grade ? 'graded' : 'untested',
       grade,
+      // Round again so a pre-upgrade cache with a fractional median still
+      // renders as an integer typical latency.
+      typicalLatency: cachedLatency === undefined ? null : formatTypicalLatency(cachedLatency),
       recommended: false,
     }
   })
@@ -91,20 +101,9 @@ const phaseAnnouncement = computed(() => {
   return ''
 })
 
-const exitIPSummary = computed(() => {
-  if (!config.value?.clientIPEnabled || !runResult.value) return null
-  const results = runResult.value.endpoints
-  if (
-    results.length === 0
-    || results.some((item) => item.status !== 'graded' || !item.clientIP)
-  ) return { mode: 'unknown' as const }
-  const addresses = results.map((item) => item.clientIP as string)
-  const unique = [...new Set(addresses)]
-  if (unique.length === 1) {
-    return { mode: 'common' as const, address: unique[0] }
-  }
-  return { mode: 'split' as const }
-})
+const exitIPSummary = computed(() =>
+  summarizeNetworkExit(config.value?.clientIPEnabled === true, runResult.value?.endpoints ?? []),
+)
 
 watch(() => props.show, (show) => {
   if (show) {
@@ -119,6 +118,7 @@ async function startTest() {
   const generation = ++runGeneration
   clearConnectivityCache()
   cachedGrades.value = new Map()
+  cachedLatencies.value = new Map()
   cachedTestedAt.value = null
   runResult.value = null
   config.value = null
@@ -206,6 +206,9 @@ function restoreCachedGrades() {
   if (!settings?.connectivity_test_enabled || !thresholds?.grading_version) return
   const cached = loadConnectivityCache(thresholds.grading_version)
   cachedGrades.value = new Map(cached.map((item) => [connectivityCacheURLKey(item.url), item.grade]))
+  cachedLatencies.value = new Map(
+    cached.flatMap((item) => (item.median_ms === undefined ? [] : [[connectivityCacheURLKey(item.url), item.median_ms]] as const)),
+  )
   cachedTestedAt.value = cached[0]?.tested_at ?? null
 }
 
@@ -241,6 +244,12 @@ function resultToRow(result: ConnectivityEndpointResult): DisplayRow {
     status: result.status,
     grade: result.grade,
     clientIP: result.clientIP,
+    clientLocation: result.clientLocation,
+    // grading.ts reports medianMs = 0 when there is no successful sample; a zero
+    // is not a real latency, so only expose it when at least one sample succeeded.
+    typicalLatency: result.metrics && result.metrics.successRate > 0
+      ? formatTypicalLatency(result.metrics.medianMs)
+      : null,
     recommended: runResult.value?.recommendedAPIURL === result.endpoint.api_url,
   }
 }
@@ -310,21 +319,27 @@ onBeforeUnmount(cancelRun)
       </p>
 
       <div
-        v-if="exitIPSummary"
+        v-if="exitIPSummary && exitIPSummary.mode !== 'none'"
         data-testid="connectivity-exit-summary"
         class="border-l-2 border-sky-400 bg-sky-50 px-3 py-2.5 text-sm text-sky-900 dark:border-sky-500 dark:bg-sky-950/30 dark:text-sky-200"
       >
         <template v-if="exitIPSummary.mode === 'common'">
-          {{ t('keys.connectivity.exitIP') }}
-          <code class="ml-1 font-mono">{{ exitIPSummary.address }}</code>
+          <p class="font-medium">{{ t('keys.connectivity.networkSection') }}</p>
+          <p class="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <span>{{ t('keys.connectivity.publicEgress') }}</span>
+            <code class="min-w-0 break-all font-mono">{{ exitIPSummary.ip }}</code>
+          </p>
+          <p v-if="exitIPSummary.location && formatClientLocation(exitIPSummary.location) !== ''" class="mt-0.5 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+            <span>{{ t('keys.connectivity.ipLocation') }}</span>
+            <span class="min-w-0 break-words">{{ formatClientLocation(exitIPSummary.location) }}</span>
+            <span class="shrink-0 text-xs">{{ t('keys.connectivity.estimated') }}</span>
+          </p>
+          <p v-else class="mt-0.5">
+            {{ t('keys.connectivity.ipLocation') }} {{ t('keys.connectivity.unknownRegion') }}
+          </p>
         </template>
-        <template v-else-if="exitIPSummary.mode === 'split'">
-          {{ t('keys.connectivity.splitExit') }}
-        </template>
-        <template v-else>{{ t('keys.connectivity.unknownExit') }}</template>
-        <p class="mt-1 text-xs leading-5 text-sky-700 dark:text-sky-300">
-          {{ t('keys.connectivity.exitIPHint') }}
-        </p>
+        <p v-else-if="exitIPSummary.mode === 'split'" class="leading-6">{{ t('keys.connectivity.splitExit') }}</p>
+        <p v-else>{{ t('keys.connectivity.unknownExit') }}</p>
       </div>
 
       <div
@@ -373,8 +388,26 @@ onBeforeUnmount(cancelRun)
               </button>
             </div>
             <p v-if="resultMessage(row)" class="mt-1.5 text-xs leading-5 text-gray-600 dark:text-dark-300">{{ resultMessage(row) }}</p>
-            <p v-if="config?.clientIPEnabled && exitIPSummary?.mode !== 'common' && row.status === 'graded'" class="mt-1 font-mono text-[11px] text-gray-500 dark:text-dark-400">
-              {{ row.clientIP || t('keys.connectivity.unknownExit') }}
+            <!-- Cached rows (runResult === null) still show their typical latency;
+                 live rows only show it when the whole run completed. -->
+            <p v-if="row.status === 'graded' && (runResult === null || runResult?.status === 'complete')" class="mt-1 text-xs text-gray-600 dark:text-dark-300">
+              <template v-if="row.typicalLatency !== null && row.typicalLatency !== undefined">
+                {{ t('keys.connectivity.typicalLatency', { ms: row.typicalLatency }) }}
+              </template>
+              <template v-else>
+                {{ t('keys.connectivity.noLatency') }}
+              </template>
+            </p>
+            <p
+              v-if="config?.clientIPEnabled && runResult?.status === 'complete' && exitIPSummary?.mode !== 'common' && row.status === 'graded'"
+              class="mt-1 break-all font-mono text-[11px] leading-5 text-gray-500 dark:text-dark-400"
+            >
+              <template v-if="row.clientIP">
+                {{ row.clientIP }}<template v-if="row.clientLocation && formatClientLocation(row.clientLocation) !== ''"> · {{ formatClientLocation(row.clientLocation) }}<span class="ml-1 text-gray-600 dark:text-dark-300">{{ t('keys.connectivity.estimated') }}</span></template><template v-else> · {{ t('keys.connectivity.unknownRegion') }}</template>
+              </template>
+              <template v-else>
+                {{ t('keys.connectivity.unknownExit') }}
+              </template>
             </p>
           </div>
           <span class="inline-flex h-7 w-fit items-center gap-1.5 rounded px-2 text-xs font-semibold" :class="statusClass(row)">
@@ -389,6 +422,9 @@ onBeforeUnmount(cancelRun)
         </div>
       </div>
 
+      <p v-if="hasDisplayedResults" class="text-xs leading-5 text-gray-500 dark:text-dark-400">
+        {{ t('keys.connectivity.latencyNote') }}
+      </p>
       <p v-if="testedAt" class="text-right text-xs text-gray-500 dark:text-dark-400">
         {{ t('keys.connectivity.testedAt', { time: formatTestedAt(testedAt) }) }}
       </p>

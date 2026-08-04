@@ -693,6 +693,8 @@ type ConnectivityConfig struct {
 	ClientIPDeniedCIDRs []string `mapstructure:"client_ip_denied_cidrs"`
 	AllowDirectClientIP bool     `mapstructure:"allow_direct_client_ip"`
 	ClientIPMaxHops     int      `mapstructure:"client_ip_max_hops"`
+	GeoIPDatabasePath   string   `mapstructure:"geoip_database_path"`
+	GeoIPLocale         string   `mapstructure:"geoip_locale"`
 }
 
 // WebAuthnConfig configures this deployment as a WebAuthn relying party.
@@ -1682,6 +1684,8 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	trustedProxiesEnv, trustedProxiesEnvConfigured := os.LookupEnv("SERVER_TRUSTED_PROXIES")
 	forwardedClientIPHeadersEnv, forwardedClientIPHeadersEnvConfigured := os.LookupEnv("SECURITY_FORWARDED_CLIENT_IP_HEADERS")
 	connectivityDeniedCIDRsEnv, connectivityDeniedCIDRsEnvConfigured := os.LookupEnv("CONNECTIVITY_CLIENT_IP_DENIED_CIDRS")
+	connectivityGeoIPPathEnv, connectivityGeoIPPathEnvConfigured := os.LookupEnv("CONNECTIVITY_GEOIP_DATABASE_PATH")
+	connectivityGeoIPLocaleEnv, connectivityGeoIPLocaleEnvConfigured := os.LookupEnv("CONNECTIVITY_GEOIP_LOCALE")
 	trustedProxiesConfigured := viper.InConfig("server.trusted_proxies") ||
 		viper.IsSet("server.trusted_proxies") || trustedProxiesEnvConfigured
 
@@ -1697,6 +1701,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 	if connectivityDeniedCIDRsEnvConfigured {
 		cfg.Connectivity.ClientIPDeniedCIDRs = normalizeStringSlice(strings.Split(connectivityDeniedCIDRsEnv, ","))
+	}
+	if connectivityGeoIPPathEnvConfigured {
+		cfg.Connectivity.GeoIPDatabasePath = strings.TrimSpace(connectivityGeoIPPathEnv)
+	}
+	if connectivityGeoIPLocaleEnvConfigured {
+		cfg.Connectivity.GeoIPLocale = strings.TrimSpace(connectivityGeoIPLocaleEnv)
 	}
 	cfg.Server.TrustedProxiesConfigured = trustedProxiesConfigured
 	if cfg.Gateway.OpenAIScheduler.StickyEscapeTTFTMs == 0 {
@@ -1905,6 +1915,9 @@ func setDefaults() {
 	viper.SetDefault("connectivity.client_ip_denied_cidrs", []string{})
 	viper.SetDefault("connectivity.allow_direct_client_ip", false)
 	viper.SetDefault("connectivity.client_ip_max_hops", 8)
+	// GeoIP region lookup is local-only and off by default (empty path = disabled).
+	viper.SetDefault("connectivity.geoip_database_path", "")
+	viper.SetDefault("connectivity.geoip_locale", "zh-CN")
 
 	// WebAuthn / Passkeys are opt-in because every deployment must explicitly
 	// declare its relying-party domain and trusted browser origins.
@@ -2521,6 +2534,9 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("connectivity.client_ip_denied_cidrs must not contain IPv6 zones")
 			}
 		}
+	}
+	if locale := strings.TrimSpace(c.Connectivity.GeoIPLocale); locale != "" && !validGeoIPLocale(locale) {
+		return fmt.Errorf("connectivity.geoip_locale must be a BCP-47-like tag such as zh-CN or en")
 	}
 	if c.Server.ReadHeaderTimeout < 1 || c.Server.ReadHeaderTimeout > 60 {
 		return fmt.Errorf("server.read_header_timeout must be between 1 and 60 seconds")
@@ -3541,6 +3557,38 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("dingtalk_connect: %w", err)
 	}
 	return nil
+}
+
+// validGeoIPLocale accepts a BCP-47-like tag whose base language is 2-3 ASCII
+// letters and whose subtags are 2-8 ASCII alphanumerics (e.g. zh-CN, en, ja).
+func validGeoIPLocale(value string) bool {
+	if value == "" || len(value) > 32 {
+		return false
+	}
+	parts := strings.Split(value, "-")
+	if len(parts[0]) < 2 || len(parts[0]) > 3 {
+		return false
+	}
+	for _, r := range parts[0] {
+		if !isASCIIAlpha(r) {
+			return false
+		}
+	}
+	for _, subtag := range parts[1:] {
+		if subtag == "" || len(subtag) < 2 || len(subtag) > 8 {
+			return false
+		}
+		for _, r := range subtag {
+			if !isASCIIAlpha(r) && (r < '0' || r > '9') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isASCIIAlpha(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
 }
 
 func normalizeStringSlice(values []string) []string {

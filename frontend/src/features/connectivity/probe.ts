@@ -1,6 +1,12 @@
-import type { ProbeAttempt } from './types'
+import type { ConnectivityClientLocation, ProbeAttempt } from './types'
 
-const maxProbeResponseBytes = 128
+// The probe response may now carry an optional client_location object. The
+// hard cap is 1 KiB; anything larger is treated as a protocol error.
+const maxProbeResponseBytes = 1024
+
+const maxLocationFieldBytes = 96
+const maxCountryCodeBytes = 8
+const utf8Encoder = new TextEncoder()
 
 interface ProbeEndpointDependencies {
   fetchImpl?: typeof fetch
@@ -58,6 +64,7 @@ export async function probeEndpoint(
       kind: 'success',
       durationMs: Math.max(0, now() - start),
       clientIP: payload.clientIP,
+      clientLocation: payload.clientLocation,
     }
   } catch {
     if (timedOut) return { kind: 'timeout' }
@@ -124,7 +131,13 @@ function decodeProbeBody(body: Uint8Array): string | null {
   }
 }
 
-function parseProbePayload(body: string): { valid: true; clientIP: string | null } | { valid: false } {
+interface ProbePayload {
+  valid: true
+  clientIP: string | null
+  clientLocation: ConnectivityClientLocation | null
+}
+
+function parseProbePayload(body: string): ProbePayload | { valid: false } {
   let value: unknown
   try {
     value = JSON.parse(body)
@@ -136,10 +149,79 @@ function parseProbePayload(body: string): { valid: true; clientIP: string | null
   if (payload.ok !== true || !Object.prototype.hasOwnProperty.call(payload, 'client_ip')) {
     return { valid: false }
   }
-  if (payload.client_ip === null) return { valid: true, clientIP: null }
-  if (typeof payload.client_ip !== 'string') return { valid: false }
-  const normalized = normalizeIPAddress(payload.client_ip)
-  return normalized ? { valid: true, clientIP: normalized } : { valid: false }
+
+  let clientIP: string | null = null
+  if (payload.client_ip !== null) {
+    if (typeof payload.client_ip !== 'string') return { valid: false }
+    const normalized = normalizeIPAddress(payload.client_ip)
+    if (!normalized) return { valid: false }
+    clientIP = normalized
+  }
+
+  let clientLocation: ConnectivityClientLocation | null = null
+  if (Object.prototype.hasOwnProperty.call(payload, 'client_location')) {
+    if (payload.client_location !== null) {
+      const parsedLocation = parseClientLocation(payload.client_location)
+      if (parsedLocation === null) return { valid: false }
+      clientLocation = parsedLocation
+    }
+  }
+
+  return { valid: true, clientIP, clientLocation }
+}
+
+// parseClientLocation returns null when the value is present but malformed:
+// wrong type, over-length fields, or abnormal Unicode control characters. An
+// absent/empty location is represented by null (region unknown), never by a
+// malformed object.
+function parseClientLocation(value: unknown): ConnectivityClientLocation | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  const countryCode = locationString(record.country_code, maxCountryCodeBytes)
+  const country = locationString(record.country, maxLocationFieldBytes)
+  const region = locationString(record.region, maxLocationFieldBytes)
+  const city = locationString(record.city, maxLocationFieldBytes)
+  if (countryCode === null || country === null || region === null || city === null) return null
+  return { country_code: countryCode, country, region, city }
+}
+
+// locationString returns '' for missing/null fields, the trimmed value for a
+// valid bounded string, and null when the field is the wrong type, over-length,
+// or contains abnormal control characters.
+function locationString(value: unknown, maxBytes: number): string | null {
+  if (value === undefined || value === null) return ''
+  if (typeof value !== 'string') return null
+  if (hasAbnormalControlCharacters(value)) return null
+  const trimmed = value.trim()
+  if (utf8Encoder.encode(trimmed).byteLength > maxBytes) return null
+  return trimmed
+}
+
+// hasAbnormalControlCharacters rejects C0/C1 controls and Unicode bidirectional
+// controls that could break layout or be used for spoofing.
+function hasAbnormalControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.codePointAt(index) ?? 0
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return true
+    switch (code) {
+      case 0x061c: // Arabic Letter Mark
+      case 0x200e: // LRM
+      case 0x200f: // RLM
+      case 0x202a: // LRE
+      case 0x202b: // RLE
+      case 0x202c: // PDF
+      case 0x202d: // LRO
+      case 0x202e: // RLO
+      case 0x2028: // Line Separator
+      case 0x2029: // Paragraph Separator
+      case 0x2066: // LRI
+      case 0x2067: // RLI
+      case 0x2068: // FSI
+      case 0x2069: // PDI
+        return true
+    }
+  }
+  return false
 }
 
 function normalizeIPAddress(value: string): string | null {

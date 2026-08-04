@@ -38,6 +38,9 @@ services:
     volumes:
       # Local directory mapping for easy migration
       - ./data:/app/data:Z
+      # Optional: mount a read-only GeoLite2-City MMDB for the connectivity region lookup,
+      # then set CONNECTIVITY_GEOIP_DATABASE_PATH=/app/geoip/GeoLite2-City.mmdb.
+      # - ./geolite2/GeoLite2-City.mmdb:/app/geoip/GeoLite2-City.mmdb:ro
       # Optional: Mount custom config.yaml (uncomment and create the file first)
       # Copy config.example.yaml to config.yaml, modify it, then uncomment:
       # - ./config.yaml:/app/data/config.yaml
@@ -57,6 +60,8 @@ services:
       - CONNECTIVITY_CLIENT_IP_DENIED_CIDRS=${CONNECTIVITY_CLIENT_IP_DENIED_CIDRS:-}
       - CONNECTIVITY_ALLOW_DIRECT_CLIENT_IP=${CONNECTIVITY_ALLOW_DIRECT_CLIENT_IP:-false}
       - CONNECTIVITY_CLIENT_IP_MAX_HOPS=${CONNECTIVITY_CLIENT_IP_MAX_HOPS:-8}
+      - CONNECTIVITY_GEOIP_DATABASE_PATH=${CONNECTIVITY_GEOIP_DATABASE_PATH:-}
+      - CONNECTIVITY_GEOIP_LOCALE=${CONNECTIVITY_GEOIP_LOCALE:-zh-CN}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
 

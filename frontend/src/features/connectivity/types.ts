@@ -27,8 +27,15 @@ export type ProbeFailureKind =
   | 'cancelled'
   | 'rate_limited'
 
+export interface ConnectivityClientLocation {
+  country_code: string
+  country: string
+  region: string
+  city: string
+}
+
 export type ProbeAttempt =
-  | { kind: 'success'; durationMs: number; clientIP: string | null }
+  | { kind: 'success'; durationMs: number; clientIP: string | null; clientLocation: ConnectivityClientLocation | null }
   | { kind: ProbeFailureKind }
 
 export type ConnectivityGrade = 'excellent' | 'good' | 'fair' | 'not_recommended'
@@ -47,6 +54,7 @@ export interface ConnectivityEvaluation {
   grade?: ConnectivityGrade
   metrics?: ConnectivityMetrics
   clientIP?: string | null
+  clientLocation?: ConnectivityClientLocation | null
 }
 
 export interface ConnectivityProbeConfig {

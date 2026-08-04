@@ -419,7 +419,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		payload.DefaultPlatformQuotas = platformQuotas
 	}
 
-	response.Success(c, systemSettingsResponseData(payload, authSourceDefaults))
+	data := systemSettingsResponseData(payload, authSourceDefaults)
+	data["connectivity_geoip_status"] = h.settingService.ConnectivityGeoIPStatus()
+	response.Success(c, data)
 }
 
 // openaiFastPolicySettingsToDTO converts service -> dto for OpenAI fast policy.

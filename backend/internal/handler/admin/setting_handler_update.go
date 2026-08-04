@@ -2512,7 +2512,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	} else {
 		payload.DefaultPlatformQuotas = platformQuotas
 	}
-	response.Success(c, systemSettingsResponseData(payload, updatedAuthSourceDefaults))
+	data := systemSettingsResponseData(payload, updatedAuthSourceDefaults)
+	data["connectivity_geoip_status"] = h.settingService.ConnectivityGeoIPStatus()
+	response.Success(c, data)
 }
 
 // hasPaymentFields returns true if any payment-related field was explicitly provided.

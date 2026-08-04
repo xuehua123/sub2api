@@ -13,9 +13,17 @@
 1. 将“纯前端 MVP”更名为“无持久化 MVP”。本期仍需新增后端探针路由和公开设置，只有测量与评分在浏览器本地完成。
 2. 明确本期不建设管理端诊断数据层。
 3. 取消单独的 `client-info` 路由，由每个真实 API URL 的探针按严格可信代理规则返回可选的用户出口 IP。
-4. 取消本期第三方 IP 地区解析，不向 `ip-api.com` 或其他第三方发送用户 IP。
+4. 本期地区解析改为**本地 GeoIP MMDB 方案**（`connectivity.geoip_database_path`），仍不向 `ip-api.com` 或其他第三方发送用户 IP；数据库缺失/损坏时地区功能 fail closed，仅停用地区、不影响探针与 IP。
 5. 浏览器评分只使用可稳定获得的成功率、总耗时、P95 和抖动；DNS、TCP、TLS 等阶段耗时仅作本地尽力采集，不参与评分。
 6. 增加 URL 安全校验、固定探针路径、禁止重定向、跨域要求、限流、日志降噪和配置边界。
+
+### 1.2 v8 修订重点
+
+1. **展示“典型延迟”**：四档等级仍是核心，但每行补充成功样本 `medianMs` 的整数毫秒值（“典型延迟 {ms} ms”），无成功样本时显示“暂无可用延迟”。
+2. **展示已验证出口 IP 与粗粒度地区**：沿用严格可信代理链解析的出口 IP；地区由本地 GeoIP MMDB 提供（国家/一级行政区/城市），文案使用“估算”，地区不可用时显示“地区未知”。
+3. **探针响应扩展 `client_location`**：`{"ok":true,"client_ip":...,"client_location":{country_code,country,region,city}}`；响应体硬上限从 128 字节提高到 1 KiB，前端严格校验新字段（超长/错误类型/异常控制字符判 protocol_error）。
+4. **不持久化**：出口 IP、地区、原始样本、P95/MAD 均不进入任何缓存或日志；浏览器 30 分钟缓存只新增 `median_ms`（向后兼容旧记录）。
+5. **管理后台只读状态**：在 IP 开关旁显示 GeoIP 就绪/未配置/数据不可用，不暴露数据库路径。
 
 > **MVP 能力边界：本期不满足管理员诊断需求。**
 >
@@ -39,11 +47,12 @@
 1. 在 API 密钥页面内完成检测，不打开第三方页面。
 2. 使用用户当前设备、浏览器和网络环境访问真实 API URL。
 3. 用户选择和复制的对象始终是 URL，不是物理服务器。
-4. 用户只看到四档连接结果、推荐结论和必要的网络环境信息。
-5. 浏览器本地完成采样、评分和 30 分钟会话级缓存。
-6. 后端提供一个固定的无鉴权、无业务副作用探针。
-7. 功能开关、阈值和采样参数通过现有系统设置管理。
-8. 功能默认关闭，按端点完成验收后逐步开启。
+4. 用户以四档连接结果和推荐结论为核心，并看到每个端点的“典型延迟”（成功样本 `medianMs` 整数毫秒）。
+5. 可选展示已验证出口 IP 与本地 GeoIP 估算地区（受 `connectivity_client_ip_enabled` 与 GeoIP 就绪状态双重约束）。
+6. 浏览器本地完成采样、评分和 30 分钟会话级缓存（缓存含 `median_ms`，不含 IP/地区/样本）。
+7. 后端提供一个固定的无鉴权、无业务副作用探针。
+8. 功能开关、阈值和采样参数通过现有系统设置管理。
+9. 功能默认关闭，按端点完成验收后逐步开启。
 
 ### 3.2 本期明确不交付
 
@@ -145,14 +154,20 @@ https://api.example-c.com
 
 ### 5.3 展示内容
 
+所有 URL 使用同一出口 IP 时，顶部展示一次网络出口：
+
 ```text
-默认端点
-https://api.example-a.com       优秀       推荐
+当前设备网络
+公网出口：113.110.12.34
+IP 归属地：中国 · 广东 · 深圳（估算）
 
-备用端点
-https://api.example-b.com       良好       可以使用
+默认端点                                  优秀
+https://api.psydo.top
+典型延迟 86 ms                            推荐使用
 
-https://api.example-c.com       不推荐     建议选择其他端点
+CF 优选端点                               良好
+https://api.ppx-ai.com
+典型延迟 142 ms
 ```
 
 | 状态 | 颜色 | 用户文案 |
@@ -165,18 +180,21 @@ https://api.example-c.com       不推荐     建议选择其他端点
 
 颜色不能作为唯一信息载体，必须同时显示文字和状态图标。
 
-用户界面不展示延迟、P95、抖动、失败率、DNS、TLS、HTTP 状态、评分版本或内部错误。
+- 每行展示“典型延迟 {medianMs 四舍五入} ms”；无成功样本时显示“暂无可用延迟”。文案必须叫“典型延迟”，不得叫 Ping、网络延迟或模型响应时间。
+- 不向普通用户展示 P95、MAD、成功率、原始样本、DNS/TLS/HTTP 状态、评分版本或内部错误。
+- 底部固定说明：延迟不是模型响应速度，IP 归属地也不是服务器所在地区。
 
-### 5.4 用户出口 IP
+### 5.4 用户出口 IP 与估算地区
 
-出口 IP 是网络环境信息，不是第五种评分参数。
+出口 IP 是网络环境信息，不是第五种评分参数。地区是可选增强（依赖本地 GeoIP 就绪），同样不参与评级和推荐。
 
-1. `connectivity_client_ip_enabled=false` 时完全不展示。
-2. 只有探针通过严格可信代理链确认最终用户公网 IP 时才返回。
-3. 所有 URL 返回相同出口 IP 时，在对话框顶部显示一次。
-4. 不同 URL 返回不同出口 IP 时，提示“不同 API URL 使用了不同网络出口，可能存在代理/VPN 分流”，并在对应 URL 下显示其自身出口 IP。
+1. `connectivity_client_ip_enabled=false` 时出口 IP 与地区完全不展示。
+2. 只有探针通过严格可信代理链确认最终用户公网 IP 时才返回 IP；IP 不可用时地区一并隐藏。
+3. 所有 URL 返回相同出口 IP 时，在对话框顶部显示一次 IP 与估算地区。
+4. 不同 URL 返回不同出口 IP 时，提示“不同 API URL 使用了不同网络出口，可能存在代理/VPN 分流”，并在对应 URL 下显示其自身出口 IP 与估算地区。
 5. 任意 URL 无法安全确认时显示“当前网络出口无法识别”，不得猜测。
-6. 不显示地区、运营商、ASN、我方节点 IP 或内部地址。
+6. 地区仅为粗粒度估算，文案必须使用“估算”并允许“地区未知”；同一 IP 的多端点多地区不一致时隐藏地区、保留 IP。不显示运营商、ASN、坐标、邮编、时区、我方节点 IP 或内部地址。
+7. IP 与地区均不参与端点推荐和评级；未完成检测时不展示误导性的 IP、地区或延迟。
 
 固定提示：
 
@@ -186,8 +204,9 @@ https://api.example-c.com       不推荐     建议选择其他端点
 
 最近一次等级和测试时间最多在当前标签页或 `sessionStorage` 保存 30 分钟：
 
-- 只保存 URL、等级、测试时间和 `grading_version`
-- 不保存逐次样本、错误详情或出口 IP
+- 保存 URL、等级、`median_ms`（典型延迟）、测试时间和 `grading_version`
+- 不保存逐次样本、错误详情、出口 IP、地区、P95/MAD 或代理链
+- 旧缓存记录（无 `median_ms`）仍可读取，仅缺失典型延迟；新缓存字段必须校验有限、非负、有合理上限
 - 页面关闭或超过 30 分钟后失效
 - 重新检测时立即清除旧结果
 
@@ -325,7 +344,7 @@ GET {origin}/.well-known/sub2api/edge-probe?nonce={128-bit随机值}
 
 不得携带 Cookie、Authorization、API Key、自定义用户标识或业务参数。
 
-计时从调用 `fetch()` 前开始，不能在收到响应头时结束。只有在完整读取响应体、确认不超过 128 字节、解析 JSON 并通过 §8.2 协议校验后才停止计时并记为成功样本。
+计时从调用 `fetch()` 前开始，不能在收到响应头时结束。只有在完整读取响应体、确认不超过 1 KiB、解析 JSON 并通过 §8.2 协议校验后才停止计时并记为成功样本。
 
 ### 8.2 响应
 
@@ -334,28 +353,37 @@ GET {origin}/.well-known/sub2api/edge-probe?nonce={128-bit随机值}
 ```json
 {
   "ok": true,
-  "client_ip": null
+  "client_ip": "113.110.12.34",
+  "client_location": {
+    "country_code": "CN",
+    "country": "中国",
+    "region": "广东",
+    "city": "深圳"
+  }
 }
 ```
 
 要求：
 
-- 响应体不超过 128 字节
+- 响应体硬上限为 1 KiB（`client_location` 可选，超出则视为协议错误）
 - `Content-Type: application/json; charset=utf-8`
 - `Cache-Control: no-store, max-age=0`
 - 不设置 Cookie
 - 不返回服务器 ID、内部主机名、源站 IP、中转 IP 或拓扑信息
 - `client_ip` 仅在 §9 的严格规则通过时返回，否则必须为 `null`
+- `client_location` 为对象或 `null`：IP 展示关闭、可信解析失败或安全条件不满足时两者均为 `null`；GeoIP 缺失/损坏/查询失败/无匹配时允许返回已验证 `client_ip` 而 `client_location: null`
+- `client_location` 只含国家代码、国家、一级行政区和城市；不返回经纬度、邮编、时区、ASN、运营商、内部节点或代理链
 
 客户端成功样本必须同时满足：
 
 1. Fetch 未超时、未取消且未发生重定向。
 2. HTTP 状态严格为 200。
 3. Content-Type 的媒体类型严格为 `application/json`，允许标准 charset 参数。
-4. 完整响应体不超过 128 字节。
+4. 完整响应体不超过 1 KiB。
 5. JSON 是对象且 `ok === true`。
 6. `client_ip` 为 `null` 或可规范解析的 IPv4/IPv6 字符串。
-7. 所有必需字段完整且类型正确；额外字段不影响 MVP，但不得被前端作为安全或评分依据。
+7. `client_location` 为 `null` 或严格校验通过的 `{country_code,country,region,city}`（各字段为有界字符串、无异常 Unicode 控制字符）；超长、错误类型或控制字符判 `protocol_error`。
+8. 所有必需字段完整且类型正确；额外字段不影响 MVP，但不得被前端作为安全或评分依据。
 
 状态为 200 但响应超限、JSON 无法解析或 schema 不匹配时归类为 `protocol_error`，该 origin 本轮显示“检测未完成”，不得计入连接质量等级。
 
@@ -426,6 +454,18 @@ type VerifiedClientIP struct {
 
 出口 IP 来自每个 URL 自己的探针响应，而不是只访问面板域名的单独接口。这样 PAC、VPN 和按域名分流场景不会把一个 URL 的出口误当成所有 URL 的出口。
 
+### 9.4 本地 GeoIP 地区解析
+
+地区解析使用应用服务器本地 MMDB（推荐 MaxMind GeoLite2 City 兼容库），`internal/pkg/geoip` 提供小接口 `Lookup(netip.Addr) (*Location, error)` / `Ready()` / `Close()`，`Location` 只含 `CountryCode / Country / Region / City`。
+
+约束：
+
+1. 不调用 `ip-api.com`、`ipinfo.io` 等第三方接口；用户 IP 不发送给任何第三方。
+2. `connectivity.geoip_database_path` 为空表示未配置（地区关闭）；配置了路径但文件打不开/损坏时记录明确告警、地区 fail closed，不影响 Sub2API 启动，也不影响探针 200 与出口 IP。
+3. MMDB 启动时打开一次，不在每个探针请求中重新打开；查询只接受已通过 §9.2 验证的公网 IP，非公网不查询。
+4. 查询失败按 IP 短时缓存 + 限频告警，避免日志刷屏；国家/地区名称优先中文（`geoip_locale`，默认 `zh-CN`），缺失时按 base locale → en → 任意稳定回退；保留 ISO country code 供前端格式化。
+5. 数据库更新属于部署运维流程，不在应用请求路径实现在线下载。
+
 ## 10. 浏览器测量
 
 ### 10.1 评分使用的可靠指标
@@ -439,6 +479,8 @@ type VerifiedClientIP struct {
 - 中位数总耗时
 - 抖动
 - 连续超时次数
+
+其中**中位数总耗时（`medianMs`）同时用于界面展示“典型延迟”**（四舍五入整数毫秒）；P95/抖动/成功率只用于内部评级，不向用户展示。
 
 ### 10.2 尽力采集指标
 
@@ -566,8 +608,10 @@ GET /api/v1/settings/public
 | `connectivity.client_ip_denied_cidrs` | `[]` | 我方公网节点、中转、源站及其他绝不允许返回的地址 |
 | `connectivity.allow_direct_client_ip` | `false` | 是否允许把非代理直接对端视为用户，生产默认禁止 |
 | `connectivity.client_ip_max_hops` | `8` | XFF 加直接对端允许的最大完整链长度，范围 2 到 16 |
+| `connectivity.geoip_database_path` | `` | 本地 GeoLite2-City MMDB 路径；空=地区关闭；配置但打不开时告警并 fail closed，不影响启动 |
+| `connectivity.geoip_locale` | `zh-CN` | 地区名称语言（BCP-47 风格，如 `zh-CN`、`en`） |
 
-管理员设置页面只提供功能配置和校验反馈，不提供测试历史、用户 IP 查询或诊断数据入口。
+管理员设置页面只提供功能配置和校验反馈，不提供测试历史、用户 IP 查询或诊断数据入口。IP 展示开关旁提供**只读 GeoIP 状态提示**（已就绪 / 未配置 / 数据不可用），不暴露 MMDB 文件路径。该状态只出现在管理员 DTO，不出现在公开 DTO。
 
 ### 12.2 刷新语义
 
@@ -612,9 +656,10 @@ GET /.well-known/sub2api/edge-probe
 
 ### 13.3 IP 解析归属
 
-新增专用可信 IP 解析器应位于 `internal/pkg/ip` 或由 `service` 定义接口、基础设施层实现。不得从 `service` 导入 `repository`。
+新增专用可信 IP 解析器位于 `internal/pkg/ip`（`VerifiedClientIPResolver`），由 `service` 定义聚合结果并注入 `internal/pkg/geoip` 的 `Resolver`。`service` 不得导入 `repository`、gorm 或 redis。
 
-本期不复用或扩展 `repository/proxy_probe_service.go` 的 `parseIPAPI`，也不新增第三方地区查询。
+- `SettingService.ConnectivityProbeClientContext(req)` 聚合“已验证公网 IP + 可选本地 GeoIP 地区”，供探针 handler 使用；`ConnectivityProbeClientIP` 保留为兼容委托。
+- 地区解析使用**本地** `internal/pkg/geoip`（MMDB），不复用 `repository/proxy_probe_service.go` 的 `parseIPAPI`，不调用任何第三方接口。
 
 ### 13.4 生成代码
 
@@ -685,11 +730,12 @@ unique_origin_count × (warmup_count + sample_count) <= 250
 5. 禁止跨 origin 重定向。浏览器会将重定向与 DNS、TCP、TLS、CORS 等 Fetch 网络异常统一处理为 `network_or_cors`；单个样本作为失败样本，只有所有正式样本均为该错误时整轮显示“检测未完成”。
 6. CORS 和 TAO 使用精确面板 Origin，不使用通配符。
 7. 出口 IP 默认关闭，开启后仍必须 fail closed。
-8. 本期不向第三方发送用户 IP，不做地区解析。
-9. 响应不包含内部主机名、源站 IP、中转 IP、容器名或拓扑信息。
+8. 不向第三方发送用户 IP；地区解析使用本地 GeoIP MMDB（配置路径后启用，未配置/不可用时地区关闭）。
+9. 响应不包含内部主机名、源站 IP、中转 IP、容器名或拓扑信息；IP/地区不进入业务日志与缓存。
 10. 探针不得反射请求参数、放大响应或访问外部资源。
 11. CSP 的 `connect-src` 必须允许已审核 HTTPS API URL；不得为此放开 HTTP 或任意危险 scheme。
 12. 任一安全校验失败时只禁用检测，不影响普通 API 调用。
+13. 探针响应硬上限 1 KiB；前端对 `client_location` 做严格校验（超长/错误类型/异常控制字符判 `protocol_error`）。
 
 ## 16. 错误归因
 
@@ -719,19 +765,23 @@ unique_origin_count × (warmup_count + sample_count) <= 250
    - 交错采样
    - AbortController 超时与取消
    - 本地评分
-   - `sessionStorage` 最小缓存
-4. 新增中文和英文语言键。
-5. 使用现有图标库，不新增手绘 SVG。
-6. 用户组件只接收公开 DTO，不能获得内部服务器字段。
-7. 组件卸载和页面隐藏时必须取消请求，避免悬挂任务。
+   - `sessionStorage` 最小缓存（含 `median_ms`，不含 IP/地区）
+4. 展示“典型延迟”（`medianMs` 整数毫秒），无成功样本显示“暂无可用延迟”。
+5. 展示已验证出口 IP 与估算地区（顶部汇总/分流逐行/无法识别三种形态），地区文案带“估算”并允许“地区未知”。
+6. 新增中文和英文语言键（不得漏 key）。
+7. 使用现有图标库，不新增手绘 SVG。
+8. 用户组件只接收公开 DTO，不能获得内部服务器字段。
+9. 组件卸载和页面隐藏时必须取消请求，避免悬挂任务。
+10. IPv6 出口地址完整显示并允许换行，桌面端与手机端不重叠、不横向溢出。
 
 ### 17.2 管理端设置
 
 1. 在现有系统设置页面增加功能总开关和出口 IP 开关。
-2. 增加允许探测 origin 列表，必须从现有公开 API URL 中选择或经过同等严格校验。
-3. 采样数、并发、超时和评分阈值放入“高级设置”，普通用户不可见。
-4. 保存前展示预计单轮最大请求数，超过 250 时拒绝保存；后端必须执行相同的跨字段校验。
-5. 不增加“测试记录”“用户 IP”“地区分布”或“诊断详情”等入口。
+2. 出口 IP 开关旁增加**只读 GeoIP 状态**（已就绪 / 未配置 / 数据不可用），不暴露数据库路径。
+3. 增加允许探测 origin 列表，必须从现有公开 API URL 中选择或经过同等严格校验。
+4. 采样数、并发、超时和评分阈值放入“高级设置”，普通用户不可见。
+5. 保存前展示预计单轮最大请求数，超过 250 时拒绝保存；后端必须执行相同的跨字段校验。
+6. 不增加“测试记录”“用户 IP”“地区分布”或“诊断详情”等入口。
 
 ## 18. 测试要求
 
@@ -751,6 +801,10 @@ unique_origin_count × (warmup_count + sample_count) <= 250
 - 开关与所有数值范围校验
 - 单轮请求预算的后端跨字段校验和启动 fail closed
 - 429 不进入业务错误分类
+- GeoIP：有结果、无匹配、文件缺失、损坏数据库、IPv4/IPv6 查询、非公网 IP 不查询
+- IP 展示关闭时 `client_ip` 与 `client_location` 均为空；可信代理链未完整配置时 fail closed
+- 探针 handler 响应协议含 `client_location`、`no-store`、不返回内部信息
+- embed 构建下探针不返回 SPA HTML；CORS 精确 Origin 与 OPTIONS；限流不回归
 
 ### 18.2 前端单元测试
 
@@ -798,10 +852,11 @@ unique_origin_count × (warmup_count + sample_count) <= 250
 
 1. 用户检测时不离开 API 密钥页面。
 2. 请求由用户当前浏览器直接发往真实 API URL 的固定探针。
-3. 用户性能结论只有“优秀、良好、一般、不推荐”四档。
+3. 用户性能结论只有“优秀、良好、一般、不推荐”四档，每行补充“典型延迟”（`medianMs` 整数毫秒），无成功样本显示“暂无可用延迟”。
 4. 文案始终限定为“当前设备和当前网络访问该 URL 的本次表现”。
 5. 用户界面和探针响应不额外展示服务器国家、物理角色、我方内部 IP 或中转拓扑。
-6. 出口 IP关闭时完全不返回；开启后无法确认即返回空。
+6. 出口 IP关闭时完全不返回；开启后无法确认即返回空；地区仅由本地 GeoIP 提供，估算并允许“地区未知”。
+7. IP/地区/原始样本/P95/MAD 不进入缓存与业务日志；缓存只含 URL/等级/`median_ms`/时间/版本。
 7. 不接收或保存 API Key。
 8. 不建立测试会话、测试表、管理员诊断页或 7 天数据。
 9. 管理员明确知道 MVP 无法查看用户测试详情。
@@ -838,10 +893,14 @@ unique_origin_count × (warmup_count + sample_count) <= 250
 5. MVP 评分在浏览器本地完成。
 6. MVP 不保存测试数据，不提供管理员诊断和 7 天历史。
 7. 管理员诊断、完整 IP 保存 7 天和匿名聚合明确推迟到二期。
-8. 用户性能结果只有四档，不展示内部指标。
+8. 用户性能结果只有四档，不展示内部指标（P95/MAD/成功率/原始样本）。
 9. 出口 IP 是可选环境信息，默认关闭并严格 fail closed。
-10. 本期不调用 `ip-api.com`，不向第三方发送用户 IP。
+10. 不向第三方发送用户 IP；地区解析使用本地 GeoIP MMDB（`connectivity.geoip_database_path`），未配置/不可用时地区关闭。
 11. 探针使用固定同 origin HTTPS 路径，不接受任意目标或重定向。
 12. 中转是否需要配置以实际验收为准，不作无条件“零改动”承诺。
 13. 测试与计费、订阅、UsageLog、渠道监控和账号状态完全隔离。
 14. 功能总开关默认关闭，按端点逐步放量。
+15. 每行展示“典型延迟”（成功样本 `medianMs` 整数毫秒），延迟不是模型响应速度。
+16. 出口 IP 与估算地区是网络环境信息，不参与端点评级和推荐；地区一致性要求同 IP 才展示。
+17. 探针响应硬上限 1 KiB；`client_location` 严格校验，超长/错误类型/控制字符判 `protocol_error`。
+18. 浏览器 30 分钟缓存只新增 `median_ms`，向后兼容旧记录；IP、地区、P95/MAD、样本与代理链一律不入缓存。

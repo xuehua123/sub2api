@@ -135,8 +135,8 @@ func TestSettingHandler_EdgeProbeReturnsFixedNoStorePayloadWithoutSettingsLookup
 	require.Equal(t, "application/json; charset=utf-8", recorder.Header().Get("Content-Type"))
 	require.Equal(t, "no-store, max-age=0", recorder.Header().Get("Cache-Control"))
 	require.Empty(t, recorder.Header().Values("Set-Cookie"))
-	require.LessOrEqual(t, recorder.Body.Len(), 128)
-	require.JSONEq(t, `{"ok":true,"client_ip":null}`, recorder.Body.String())
+	require.LessOrEqual(t, recorder.Body.Len(), 1024)
+	require.JSONEq(t, `{"ok":true,"client_ip":null,"client_location":null}`, recorder.Body.String())
 }
 
 func TestSettingHandler_EdgeProbeReturnsVerifiedClientIPWhenExplicitlyEnabled(t *testing.T) {
@@ -170,7 +170,7 @@ func TestSettingHandler_EdgeProbeReturnsVerifiedClientIPWhenExplicitlyEnabled(t 
 	h.EdgeProbe(c)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
-	require.JSONEq(t, `{"ok":true,"client_ip":"8.8.4.4"}`, recorder.Body.String())
+	require.JSONEq(t, `{"ok":true,"client_ip":"8.8.4.4","client_location":null}`, recorder.Body.String())
 }
 
 type panicSettingRepository struct{}

@@ -10,10 +10,12 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/geoip"
 	"github.com/stretchr/testify/require"
 )
 
@@ -664,4 +666,309 @@ func mustMarshalConnectivityThresholds(t *testing.T, thresholds ConnectivityGrad
 	payload, err := json.Marshal(thresholds)
 	require.NoError(t, err)
 	return string(payload)
+}
+
+type geoipResolverStub struct {
+	location *geoip.Location
+	err      error
+	ready    bool
+	lookedUp []netip.Addr
+}
+
+type blockingGeoIPResolver struct {
+	lookupStarted chan struct{}
+	releaseLookup chan struct{}
+	closeCalled   chan struct{}
+	closed        atomic.Bool
+}
+
+func (s *blockingGeoIPResolver) Lookup(netip.Addr) (*geoip.Location, error) {
+	close(s.lookupStarted)
+	<-s.releaseLookup
+	if s.closed.Load() {
+		return nil, errors.New("resolver closed during lookup")
+	}
+	return &geoip.Location{CountryCode: "CN", Country: "中国"}, nil
+}
+
+func (s *blockingGeoIPResolver) Ready() bool { return !s.closed.Load() }
+
+func (s *blockingGeoIPResolver) Close() error {
+	s.closed.Store(true)
+	close(s.closeCalled)
+	return nil
+}
+
+func (s *geoipResolverStub) Lookup(addr netip.Addr) (*geoip.Location, error) {
+	s.lookedUp = append(s.lookedUp, addr)
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.location == nil {
+		return nil, nil
+	}
+	copied := *s.location
+	return &copied, nil
+}
+
+func (s *geoipResolverStub) Ready() bool  { return s.ready }
+func (s *geoipResolverStub) Close() error { return nil }
+
+func newConnectivityClientContextTestService(t *testing.T, cfg *config.Config, values map[string]string) *SettingService {
+	t.Helper()
+	svc := NewSettingService(&settingPublicRepoStub{values: values}, cfg)
+	require.NoError(t, svc.LoadConnectivityProbeSettings(context.Background()))
+	return svc
+}
+
+func safeConnectivityClientConfig() *config.Config {
+	return &config.Config{
+		Server: config.ServerConfig{
+			TrustedProxiesConfigured: true,
+			TrustedProxies:           []string{"203.0.113.0/24"},
+		},
+		Connectivity: config.ConnectivityConfig{
+			ClientIPDeniedCIDRs: []string{"9.9.9.0/24"},
+			ClientIPMaxHops:     8,
+		},
+	}
+}
+
+func connectivityProbeRequest() *httptest.ResponseRecorder {
+	// unused; kept for symmetry
+	return nil
+}
+
+func TestConnectivityProbeClientContextReturnsIPAndLocation(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), values)
+	stub := &geoipResolverStub{
+		ready:    true,
+		location: &geoip.Location{CountryCode: "CN", Country: "中国", Region: "广东", City: "深圳"},
+	}
+	svc.connectivityGeoIP = stub
+
+	req := httptest.NewRequest("GET", "/.well-known/sub2api/edge-probe", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+
+	ctx := svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Equal(t, "8.8.4.4", ctx.IP)
+	require.NotNil(t, ctx.Location)
+	require.Equal(t, "CN", ctx.Location.CountryCode)
+	require.Equal(t, "中国", ctx.Location.Country)
+	require.Equal(t, "广东", ctx.Location.Region)
+	require.Equal(t, "深圳", ctx.Location.City)
+	require.Len(t, stub.lookedUp, 1)
+	require.Equal(t, netip.MustParseAddr("8.8.4.4"), stub.lookedUp[0])
+}
+
+func TestConnectivityProbeClientContextKeepsIPWhenGeoIPFails(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), values)
+	svc.connectivityGeoIP = &geoipResolverStub{ready: true, err: errors.New("boom")}
+	now := time.Unix(1000, 0)
+	svc.geoipFailureCache.now = func() time.Time { return now }
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+
+	ctx := svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Equal(t, "8.8.4.4", ctx.IP)
+	require.Nil(t, ctx.Location)
+
+	ctx = svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Equal(t, "8.8.4.4", ctx.IP)
+	require.Nil(t, ctx.Location)
+	stub := svc.connectivityGeoIP.(*geoipResolverStub)
+	require.Len(t, stub.lookedUp, 1, "the same failing IP should be short-cached")
+
+	now = now.Add(defaultGeoIPFailureCacheTTL)
+	ctx = svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Nil(t, ctx.Location)
+	require.Len(t, stub.lookedUp, 2, "the lookup should be retried after the failure cache expires")
+}
+
+func TestConnectivityProbeClientContextKeepsIPWhenGeoIPHasNoMatch(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), values)
+	svc.connectivityGeoIP = &geoipResolverStub{ready: true, location: nil}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+
+	ctx := svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Equal(t, "8.8.4.4", ctx.IP)
+	require.Nil(t, ctx.Location)
+
+	ctx = svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Nil(t, ctx.Location)
+	stub := svc.connectivityGeoIP.(*geoipResolverStub)
+	require.Len(t, stub.lookedUp, 2, "a database miss is not a read failure and must not be cached")
+}
+
+func TestGeoIPFailureCacheIsBoundedAndClearable(t *testing.T) {
+	cache := newGeoIPFailureCache(time.Minute, 2)
+	cache.record(netip.MustParseAddr("8.8.8.8"))
+	cache.record(netip.MustParseAddr("1.1.1.1"))
+	cache.record(netip.MustParseAddr("9.9.9.9"))
+	cache.mu.Lock()
+	entryCount := len(cache.entries)
+	cache.mu.Unlock()
+	require.LessOrEqual(t, entryCount, 2)
+
+	addr := netip.MustParseAddr("9.9.9.9")
+	require.True(t, cache.contains(addr))
+	cache.clear(addr)
+	require.False(t, cache.contains(addr))
+}
+
+func TestSettingServiceCloseWaitsForInFlightGeoIPLookup(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), values)
+	resolver := &blockingGeoIPResolver{
+		lookupStarted: make(chan struct{}),
+		releaseLookup: make(chan struct{}),
+		closeCalled:   make(chan struct{}),
+	}
+	svc.connectivityGeoIPConfigured = true
+	svc.connectivityGeoIP = resolver
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+	contextDone := make(chan *ConnectivityClientContext, 1)
+	go func() { contextDone <- svc.ConnectivityProbeClientContext(req) }()
+	<-resolver.lookupStarted
+
+	closeDone := make(chan struct{})
+	go func() {
+		svc.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-resolver.closeCalled:
+		t.Fatal("service closed the GeoIP resolver while a lookup was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(resolver.releaseLookup)
+	ctx := <-contextDone
+	require.NotNil(t, ctx)
+	require.NotNil(t, ctx.Location)
+	<-closeDone
+	require.Equal(t, "unavailable", svc.ConnectivityGeoIPStatus())
+}
+
+func TestConnectivityProbeClientContextReturnsIPOnlyWhenGeoIPUnconfigured(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), values)
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+
+	ctx := svc.ConnectivityProbeClientContext(req)
+	require.NotNil(t, ctx)
+	require.Equal(t, "8.8.4.4", ctx.IP)
+	require.Nil(t, ctx.Location)
+}
+
+func TestConnectivityProbeClientContextFailClosed(t *testing.T) {
+	values := map[string]string{
+		SettingKeyConnectivityTestEnabled:         "true",
+		SettingKeyConnectivityClientIPEnabled:     "true",
+		SettingKeyConnectivityProbeAllowedOrigins: `["https://8.8.8.8"]`,
+		SettingKeyAPIBaseURL:                      "https://8.8.8.8/v1",
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "203.0.113.10:443"
+	req.Header.Set("X-Forwarded-For", "8.8.4.4")
+
+	t.Run("ip display disabled", func(t *testing.T) {
+		off := map[string]string{}
+		for key, value := range values {
+			off[key] = value
+		}
+		off[SettingKeyConnectivityClientIPEnabled] = "false"
+		svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), off)
+		require.Nil(t, svc.ConnectivityProbeClientContext(req))
+	})
+
+	t.Run("denied cidrs missing", func(t *testing.T) {
+		unsafe := &config.Config{
+			Server: config.ServerConfig{
+				TrustedProxiesConfigured: true,
+				TrustedProxies:           []string{"203.0.113.0/24"},
+			},
+			Connectivity: config.ConnectivityConfig{ClientIPMaxHops: 8},
+		}
+		svc := newConnectivityClientContextTestService(t, unsafe, values)
+		require.Nil(t, svc.ConnectivityProbeClientContext(req))
+	})
+
+	t.Run("feature disabled", func(t *testing.T) {
+		off := map[string]string{}
+		for key, value := range values {
+			off[key] = value
+		}
+		off[SettingKeyConnectivityTestEnabled] = "false"
+		svc := newConnectivityClientContextTestService(t, safeConnectivityClientConfig(), off)
+		require.Nil(t, svc.ConnectivityProbeClientContext(req))
+	})
+}
+
+func TestConnectivityGeoIPStatus(t *testing.T) {
+	t.Run("not configured", func(t *testing.T) {
+		svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{})
+		require.Equal(t, "not_configured", svc.ConnectivityGeoIPStatus())
+	})
+
+	t.Run("configured and ready", func(t *testing.T) {
+		svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{
+			Connectivity: config.ConnectivityConfig{GeoIPDatabasePath: "/x.mmdb"},
+		})
+		// Open fails (no such file), so status must reflect that.
+		require.Equal(t, "unavailable", svc.ConnectivityGeoIPStatus())
+	})
+
+	t.Run("ready after successful open", func(t *testing.T) {
+		svc := NewSettingService(&settingPublicRepoStub{values: map[string]string{}}, &config.Config{})
+		svc.connectivityGeoIPConfigured = true
+		svc.connectivityGeoIP = &geoipResolverStub{ready: true}
+		require.Equal(t, "ready", svc.ConnectivityGeoIPStatus())
+	})
 }
