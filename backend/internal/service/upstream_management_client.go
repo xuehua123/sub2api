@@ -15,7 +15,11 @@ import (
 )
 
 const (
-	upstreamManagementRequestTimeout = 8 * time.Second
+	// Management endpoints may perform password verification and session
+	// initialization through a remote control plane. Keep this separate from
+	// user-facing gateway timeouts and allow slower upstreams enough time to
+	// complete without being classified as unreachable.
+	upstreamManagementRequestTimeout = 20 * time.Second
 	upstreamManagementResponseLimit  = 1 << 20
 )
 
