@@ -24,7 +24,6 @@ const (
 const (
 	alipayFundChangeYes    = "Y"
 	alipayErrTradeNotExist = "ACQ.TRADE_NOT_EXIST"
-	alipayRefundSuffix     = "-refund"
 )
 
 var (
@@ -315,6 +314,7 @@ func (a *Alipay) VerifyNotification(ctx context.Context, rawBody string, _ map[s
 		return &payment.PaymentNotification{
 			TradeNo:        notification.TradeNo,
 			OrderID:        notification.OutTradeNo,
+			RefundID:       notification.OutRequestNo,
 			Amount:         refundedAmount,
 			AmountSemantic: payment.NotificationAmountDelta,
 			Status:         status,
@@ -362,11 +362,12 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		return nil, err
 	}
 
+	outRequestNo := fmt.Sprintf("%s-refund-%d", req.OrderID, time.Now().UnixNano())
 	result, err := client.TradeRefund(ctx, alipay.TradeRefund{
 		OutTradeNo:   req.OrderID,
 		RefundAmount: req.Amount,
 		RefundReason: req.Reason,
-		OutRequestNo: fmt.Sprintf("%s-refund-%d", req.OrderID, time.Now().UnixNano()),
+		OutRequestNo: outRequestNo,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("alipay TradeRefund: %w", err)
@@ -377,13 +378,8 @@ func (a *Alipay) Refund(ctx context.Context, req payment.RefundRequest) (*paymen
 		refundStatus = payment.ProviderStatusSuccess
 	}
 
-	refundID := result.TradeNo
-	if refundID == "" {
-		refundID = req.OrderID + alipayRefundSuffix
-	}
-
 	return &payment.RefundResponse{
-		RefundID: refundID,
+		RefundID: outRequestNo,
 		Status:   refundStatus,
 	}, nil
 }

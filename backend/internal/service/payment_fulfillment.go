@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,11 +100,30 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 
 	reversalAmount := normalizeExternalReversalAmount(o, n.Amount)
 	apply := func(txCtx context.Context) error {
-		currentOrder, err := s.getPaymentOrderByID(txCtx, o.ID)
+		currentOrder, err := s.getPaymentOrderByIDForUpdate(txCtx, o.ID)
 		if err != nil {
 			return err
 		}
-		refundAmountTotal := computeExternalRefundAmountTotal(currentOrder, reversalAmount, n.AmountSemantic)
+		fingerprint := refundNotificationFingerprint(n, pk, chargeback)
+		eventAuditAction := refundNotificationAuditAction(fingerprint, chargeback)
+		if refundNotificationAlreadyProcessed(currentOrder.ProviderSnapshot, fingerprint) ||
+			(eventAuditAction != "" && s.hasAuditLog(txCtx, currentOrder.ID, eventAuditAction)) {
+			return nil
+		}
+		baselineOrder, deductionOrder, inFlightDetail, hasInFlight, confirmsInFlight := externalRefundReconciliationOrders(currentOrder, n, reversalAmount, chargeback)
+		refundAmountTotal := computeExternalRefundAmountTotal(baselineOrder, reversalAmount, n.AmountSemantic)
+		if confirmsInFlight && psIsSuccessfulRefundStatus(currentOrder.Status) && currentOrder.RefundAmount > refundAmountTotal {
+			refundAmountTotal = roundMoney(currentOrder.RefundAmount)
+		}
+		if hasInFlight && confirmsInFlight && !psIsSuccessfulRefundStatus(currentOrder.Status) &&
+			refundAmountTotal+paymentAmountToleranceForCurrency(PaymentOrderCurrency(currentOrder)) < inFlightDetail.RefundAmount {
+			return fmt.Errorf("refund notification amount %.8f is below in-flight refund target %.8f", refundAmountTotal, inFlightDetail.RefundAmount)
+		}
+		if !chargeback && psSuccessfulRefundCovers(currentOrder, refundAmountTotal) &&
+			(!hasInFlight || confirmsInFlight) &&
+			!s.hasAuditLog(txCtx, currentOrder.ID, "REFUND_REFERRAL_SYNC_FAILED") {
+			return s.recordExternalRefundConfirmation(txCtx, currentOrder, n, pk, refundAmountTotal, fingerprint)
+		}
 		creditedDelta := 0.0
 
 		switch currentOrder.OrderType {
@@ -111,7 +131,14 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 			if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
 				return err
 			}
-			creditedDelta, refundAmountTotal = computeExternalCreditedRefund(currentOrder, reversalAmount, n.AmountSemantic)
+			if hasInFlight && confirmsInFlight {
+				creditedDelta = roundMoney(refundAmountTotal - roundMoney(deductionOrder.RefundAmount))
+				if creditedDelta < 0 {
+					creditedDelta = 0
+				}
+			} else {
+				creditedDelta, refundAmountTotal = computeExternalCreditedRefund(deductionOrder, reversalAmount, n.AmountSemantic)
+			}
 			if creditedDelta > 0 {
 				if err := s.userRepo.DeductBalance(txCtx, currentOrder.UserID, creditedDelta); err != nil {
 					return err
@@ -121,7 +148,7 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 			if err := s.syncExternalReferralReversal(txCtx, currentOrder, reversalAmount, n.AmountSemantic, chargeback); err != nil {
 				return err
 			}
-			if err := s.syncExternalSubscriptionReversal(txCtx, currentOrder, refundAmountTotal); err != nil {
+			if err := s.syncExternalSubscriptionReversal(txCtx, deductionOrder, refundAmountTotal); err != nil {
 				return err
 			}
 		default:
@@ -133,10 +160,15 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 			status = OrderStatusPartiallyRefunded
 		}
 		now := time.Now()
+		providerSnapshot := refundSnapshotAfterExternalFinalization(currentOrder.ProviderSnapshot, fingerprint)
+		if hasInFlight && !confirmsInFlight {
+			providerSnapshot = refundSnapshotWithNotificationFingerprint(currentOrder.ProviderSnapshot, fingerprint)
+		}
 		if _, err := s.paymentOrderClient(txCtx).PaymentOrder.UpdateOneID(currentOrder.ID).
 			SetStatus(status).
 			SetRefundAmount(refundAmountTotal).
 			SetRefundAt(now).
+			SetProviderSnapshot(providerSnapshot).
 			Save(txCtx); err != nil {
 			return err
 		}
@@ -145,15 +177,20 @@ func (s *PaymentService) handleExternalRefundOrChargeback(ctx context.Context, n
 		if chargeback {
 			action = "EXTERNAL_CHARGEBACK_SYNCED"
 		}
-		s.writeAuditLog(txCtx, currentOrder.ID, action, pk, map[string]any{
+		detail := map[string]any{
 			"gatewayAmount":     reversalAmount,
 			"amountSemantic":    n.AmountSemantic,
 			"creditedDelta":     creditedDelta,
 			"refundAmountTotal": refundAmountTotal,
-			"subscriptionDays":  subscriptionDaysRefundDelta(currentOrder, refundAmountTotal),
+			"subscriptionDays":  subscriptionDaysRefundDelta(deductionOrder, refundAmountTotal),
 			"tradeNo":           n.TradeNo,
 			"status":            n.Status,
-		})
+		}
+		s.writeAuditLog(txCtx, currentOrder.ID, action, pk, detail)
+		if eventAuditAction != "" {
+			detail["fingerprint"] = fingerprint
+			s.writeAuditLog(txCtx, currentOrder.ID, eventAuditAction, pk, detail)
+		}
 		return nil
 	}
 
@@ -233,8 +270,232 @@ func (s *PaymentService) syncExternalReferralReversal(ctx context.Context, o *db
 	return err
 }
 
-func (s *PaymentService) getPaymentOrderByID(ctx context.Context, orderID int64) (*dbent.PaymentOrder, error) {
-	return s.paymentOrderClient(ctx).PaymentOrder.Get(ctx, orderID)
+func (s *PaymentService) getPaymentOrderByIDForUpdate(ctx context.Context, orderID int64) (*dbent.PaymentOrder, error) {
+	client := s.paymentOrderClient(ctx)
+	query := client.PaymentOrder.Query().Where(paymentorder.IDEQ(orderID))
+	if client.Driver().Dialect() == dialect.Postgres {
+		query = query.ForUpdate()
+	}
+	return query.Only(ctx)
+}
+
+func externalRefundReconciliationOrders(order *dbent.PaymentOrder, n *payment.PaymentNotification, reversalAmount float64, chargeback bool) (*dbent.PaymentOrder, *dbent.PaymentOrder, refundInFlightDetail, bool, bool) {
+	if order == nil || chargeback {
+		return order, order, refundInFlightDetail{}, false, false
+	}
+	detail, ok := refundInFlightDetailFromOrder(order)
+	if ok {
+		confirmsInFlight := !psIsSuccessfulRefundStatus(order.Status) || refundNotificationMatchesInFlight(n, detail)
+		if !confirmsInFlight && n != nil && n.AmountSemantic == payment.NotificationAmountTotal {
+			baseline := *order
+			baseline.RefundAmount = roundMoney(detail.PreviousSettledRefundAmount)
+			candidateTotal := computeExternalRefundAmountTotal(&baseline, reversalAmount, n.AmountSemantic)
+			confirmsInFlight = psSuccessfulRefundCovers(order, candidateTotal)
+		}
+		if !confirmsInFlight {
+			settled := settledRefundReconciliationOrder(order)
+			return settled, settled, detail, true, false
+		}
+		baseline := *order
+		baseline.RefundAmount = roundMoney(detail.PreviousSettledRefundAmount)
+		deduction := *order
+		deduction.RefundAmount = roundMoney(detail.RefundAmount)
+		if psIsSuccessfulRefundStatus(order.Status) && order.RefundAmount > deduction.RefundAmount {
+			deduction.RefundAmount = roundMoney(order.RefundAmount)
+		}
+		return &baseline, &deduction, detail, true, true
+	}
+	pending, ok := refundPendingDetailFromOrder(order)
+	if !ok {
+		settled := settledRefundReconciliationOrder(order)
+		return settled, settled, refundInFlightDetail{}, false, false
+	}
+	targetRefundAmount := pending.RefundAmount
+	if targetRefundAmount <= 0 {
+		targetRefundAmount = order.RefundAmount
+	}
+	baseline := *order
+	baseline.RefundAmount = roundMoney(pending.PreviousSettledRefundAmount)
+	deduction := baseline
+	deductRequested := true
+	if pending.DeductBalance != nil {
+		deductRequested = *pending.DeductBalance
+	}
+	if !deductRequested || !pending.DeductionRollbackOK {
+		deduction.RefundAmount = roundMoney(targetRefundAmount)
+	}
+	return &baseline, &deduction, refundInFlightDetail{
+		RefundAmount:     targetRefundAmount,
+		ProviderRefundID: pending.RefundID,
+	}, true, true
+}
+
+func settledRefundReconciliationOrder(order *dbent.PaymentOrder) *dbent.PaymentOrder {
+	if order == nil {
+		return nil
+	}
+	settled := *order
+	settled.RefundAmount = settledRefundAmount(order)
+	return &settled
+}
+
+func refundNotificationMatchesInFlight(n *payment.PaymentNotification, detail refundInFlightDetail) bool {
+	if n == nil {
+		return false
+	}
+	expectedID := strings.TrimSpace(detail.ProviderRefundID)
+	if expectedID == "" {
+		return false
+	}
+	if expectedID == strings.TrimSpace(n.RefundID) || expectedID == strings.TrimSpace(n.TradeNo) {
+		return true
+	}
+	return strings.Contains(n.RawData, expectedID)
+}
+
+func refundInFlightDetailFromOrder(order *dbent.PaymentOrder) (refundInFlightDetail, bool) {
+	if order == nil || order.ProviderSnapshot == nil {
+		return refundInFlightDetail{}, false
+	}
+	raw, ok := order.ProviderSnapshot[paymentOrderSnapshotRefundInFlight]
+	if !ok {
+		return refundInFlightDetail{}, false
+	}
+	detail := refundInFlightDetail{}
+	encoded, err := json.Marshal(raw)
+	if err != nil || json.Unmarshal(encoded, &detail) != nil || detail.RefundAmount <= 0 {
+		return refundInFlightDetail{}, false
+	}
+	return detail, true
+}
+
+func psIsSuccessfulRefundStatus(status string) bool {
+	return status == OrderStatusPartiallyRefunded || status == OrderStatusRefunded
+}
+
+func psSuccessfulRefundCovers(order *dbent.PaymentOrder, refundAmount float64) bool {
+	if order == nil || !psIsSuccessfulRefundStatus(order.Status) {
+		return false
+	}
+	return roundMoney(order.RefundAmount)+paymentAmountToleranceForCurrency(PaymentOrderCurrency(order)) >= roundMoney(refundAmount)
+}
+
+const paymentOrderSnapshotRefundNotificationFingerprints = "refund_notification_fingerprints"
+
+func refundNotificationFingerprint(n *payment.PaymentNotification, providerKey string, chargeback bool) string {
+	if n == nil {
+		return ""
+	}
+	payload := strings.Join([]string{
+		strings.TrimSpace(providerKey),
+		strconv.FormatBool(chargeback),
+		strings.TrimSpace(n.Status),
+		strings.TrimSpace(n.AmountSemantic),
+		strconv.FormatFloat(n.Amount, 'g', -1, 64),
+		strings.TrimSpace(n.OrderID),
+		strings.TrimSpace(n.TradeNo),
+		strings.TrimSpace(n.RawData),
+	}, "|")
+	sum := sha256.Sum256([]byte(payload))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func refundNotificationAuditAction(fingerprint string, chargeback bool) string {
+	fingerprint = strings.TrimSpace(fingerprint)
+	if fingerprint == "" {
+		return ""
+	}
+	prefix := "REFUND_EVENT_"
+	if chargeback {
+		prefix = "CHARGEBACK_EVENT_"
+	}
+	maxFingerprintLength := 50 - len(prefix)
+	if len(fingerprint) > maxFingerprintLength {
+		fingerprint = fingerprint[:maxFingerprintLength]
+	}
+	return prefix + fingerprint
+}
+
+func refundNotificationAlreadyProcessed(snapshot map[string]any, fingerprint string) bool {
+	if snapshot == nil || fingerprint == "" {
+		return false
+	}
+	raw, ok := snapshot[paymentOrderSnapshotRefundNotificationFingerprints]
+	if !ok {
+		return false
+	}
+	var fingerprints []string
+	encoded, err := json.Marshal(raw)
+	if err != nil || json.Unmarshal(encoded, &fingerprints) != nil {
+		return false
+	}
+	for _, existing := range fingerprints {
+		if existing == fingerprint {
+			return true
+		}
+	}
+	return false
+}
+
+func refundSnapshotWithNotificationFingerprint(snapshot map[string]any, fingerprint string) map[string]any {
+	out := copyMap(snapshot)
+	if out == nil {
+		out = make(map[string]any)
+	}
+	var fingerprints []string
+	if raw, ok := out[paymentOrderSnapshotRefundNotificationFingerprints]; ok {
+		encoded, err := json.Marshal(raw)
+		if err == nil {
+			_ = json.Unmarshal(encoded, &fingerprints)
+		}
+	}
+	if fingerprint != "" {
+		fingerprints = append(fingerprints, fingerprint)
+	}
+	const maxRefundNotificationFingerprints = 32
+	if len(fingerprints) > maxRefundNotificationFingerprints {
+		fingerprints = fingerprints[len(fingerprints)-maxRefundNotificationFingerprints:]
+	}
+	out[paymentOrderSnapshotRefundNotificationFingerprints] = fingerprints
+	return out
+}
+
+func (s *PaymentService) recordExternalRefundConfirmation(
+	ctx context.Context,
+	order *dbent.PaymentOrder,
+	n *payment.PaymentNotification,
+	providerKey string,
+	refundAmountTotal float64,
+	fingerprint string,
+) error {
+	if order == nil {
+		return nil
+	}
+	if _, err := s.paymentOrderClient(ctx).PaymentOrder.UpdateOneID(order.ID).
+		SetProviderSnapshot(refundSnapshotAfterExternalFinalization(order.ProviderSnapshot, fingerprint)).
+		Save(ctx); err != nil {
+		return err
+	}
+	s.writeAuditLog(ctx, order.ID, "EXTERNAL_REFUND_SYNCED", providerKey, map[string]any{
+		"gatewayAmount":     n.Amount,
+		"amountSemantic":    n.AmountSemantic,
+		"creditedDelta":     0,
+		"refundAmountTotal": refundAmountTotal,
+		"tradeNo":           n.TradeNo,
+		"status":            n.Status,
+	})
+	if eventAction := refundNotificationAuditAction(fingerprint, false); eventAction != "" {
+		s.writeAuditLog(ctx, order.ID, eventAction, providerKey, map[string]any{
+			"gatewayAmount":     n.Amount,
+			"amountSemantic":    n.AmountSemantic,
+			"creditedDelta":     0,
+			"refundAmountTotal": refundAmountTotal,
+			"tradeNo":           n.TradeNo,
+			"status":            n.Status,
+			"fingerprint":       fingerprint,
+		})
+	}
+	return nil
 }
 
 func (s *PaymentService) paymentOrderClient(ctx context.Context) *dbent.Client {

@@ -179,6 +179,7 @@ type QueryOrderResponse struct {
 type PaymentNotification struct {
 	TradeNo        string
 	OrderID        string
+	RefundID       string
 	Amount         float64
 	AmountSemantic string // "delta" or "total"
 	Status         string // "success" or "failed"

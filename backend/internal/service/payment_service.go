@@ -127,6 +127,7 @@ type RefundPlan struct {
 	Order                *dbent.PaymentOrder
 	RefundAmount         float64
 	GatewayAmount        float64
+	ProviderRefundID     string
 	Reason               string
 	Force                bool
 	DeductBalance        bool

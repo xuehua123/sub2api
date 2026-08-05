@@ -186,7 +186,14 @@ func (s *PaymentService) currentClient(ctx context.Context) *dbent.Client {
 
 func (s *PaymentService) writeAuditLog(ctx context.Context, oid int64, action, op string, detail map[string]any) {
 	dj, _ := json.Marshal(detail)
-	_, err := s.currentClient(ctx).PaymentAuditLog.Create().SetOrderID(strconv.FormatInt(oid, 10)).SetAction(action).SetDetail(string(dj)).SetOperator(op).Save(ctx)
+	err := s.currentClient(ctx).PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(oid, 10)).
+		SetAction(action).
+		SetDetail(string(dj)).
+		SetOperator(op).
+		OnConflictColumns(paymentauditlog.FieldOrderID, paymentauditlog.FieldAction).
+		Ignore().
+		Exec(ctx)
 	if err != nil {
 		slog.Error("audit log failed", "orderID", oid, "action", action, "error", err)
 	}

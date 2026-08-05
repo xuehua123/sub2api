@@ -123,4 +123,11 @@ func TestAssignSubscriptionConcurrentExpiredPlanRenewsEntitlementOnce(t *testing
 		Count(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 2, fulfillmentCount, "initial grant plus one renewed term must be recorded")
+
+	renewedSubscription, err := client.UserSubscription.Get(ctx, initial.ID)
+	require.NoError(t, err)
+	renewedEntitlement, err := client.SubscriptionEntitlement.Get(ctx, entitlement.ID)
+	require.NoError(t, err)
+	require.WithinDuration(t, renewedSubscription.ExpiresAt, renewedEntitlement.ExpiresAt, time.Second,
+		"concurrent idempotent assignment must keep the legacy subscription and entitlement term aligned")
 }

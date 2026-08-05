@@ -474,6 +474,7 @@ func (w *Wxpay) VerifyNotification(ctx context.Context, rawBody string, headers 
 		return &payment.PaymentNotification{
 			TradeNo:        wxSV(refund.TransactionId),
 			OrderID:        wxSV(refund.OutTradeNo),
+			RefundID:       wxSV(refund.OutRefundNo),
 			Amount:         amt,
 			AmountSemantic: payment.NotificationAmountDelta,
 			Status:         payment.NotificationStatusRefunded,

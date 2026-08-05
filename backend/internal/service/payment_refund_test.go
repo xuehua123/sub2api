@@ -108,6 +108,39 @@ func (s *failingRefundProviderStub) Refund(context.Context, payment.RefundReques
 	return nil, errors.New("gateway unavailable")
 }
 
+type callbackRefundProviderStub struct {
+	onRefund func()
+	response *payment.RefundResponse
+	err      error
+}
+
+func (s *callbackRefundProviderStub) Name() string { return "refund-callback-stub" }
+
+func (s *callbackRefundProviderStub) ProviderKey() string { return payment.TypeStripe }
+
+func (s *callbackRefundProviderStub) SupportedTypes() []payment.PaymentType {
+	return []payment.PaymentType{payment.TypeStripe}
+}
+
+func (s *callbackRefundProviderStub) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	return nil, errors.New("unexpected CreatePayment")
+}
+
+func (s *callbackRefundProviderStub) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
+	return nil, errors.New("unexpected QueryOrder")
+}
+
+func (s *callbackRefundProviderStub) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
+	return nil, errors.New("unexpected VerifyNotification")
+}
+
+func (s *callbackRefundProviderStub) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
+	if s.onRefund != nil {
+		s.onRefund()
+	}
+	return s.response, s.err
+}
+
 type refundRollbackSubscriptionRepoStub struct {
 	userSubRepoNoop
 
@@ -293,6 +326,238 @@ func TestExecuteRefund_PartialSubscriptionRefundDeductsProportionalDays(t *testi
 	updatedSub, err := subRepo.GetByID(ctx, 701)
 	require.NoError(t, err)
 	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -15), updatedSub.ExpiresAt, time.Second)
+}
+
+type refundWebhookRaceFixture struct {
+	ctx              context.Context
+	client           *dbent.Client
+	svc              *PaymentService
+	order            *dbent.PaymentOrder
+	plan             *RefundPlan
+	webhookErr       error
+	initialDeducted  float64
+	webhookDeducted  float64
+	rollbackRestored float64
+}
+
+func newRefundWebhookRaceFixture(
+	t *testing.T,
+	response *payment.RefundResponse,
+	refundErr error,
+	amountSemantic string,
+	rawData string,
+) *refundWebhookRaceFixture {
+	t.Helper()
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	user, err := client.User.Create().
+		SetEmail("refund-webhook-race@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-webhook-race").
+		SetBalance(100).
+		Save(ctx)
+	require.NoError(t, err)
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeStripe).
+		SetName("stripe-refund-webhook-race").
+		SetConfig("{}").
+		SetSupportedTypes("stripe").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(100).
+		SetPayAmount(100).
+		SetRechargeCode("refund-webhook-race").
+		SetOutTradeNo("refund_webhook_race_order").
+		SetPaymentType(payment.TypeStripe).
+		SetPaymentTradeNo("trade_refund_webhook_race").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(strconv.FormatInt(inst.ID, 10)).
+		Save(ctx)
+	require.NoError(t, err)
+
+	fixture := &refundWebhookRaceFixture{ctx: ctx, client: client, order: order}
+	userRepo := &mockUserRepo{
+		getByIDUser: &User{ID: user.ID, Balance: 100},
+		deductAvailableBalanceFn: func(_ context.Context, _ int64, amount float64) (float64, error) {
+			fixture.initialDeducted += amount
+			return amount, nil
+		},
+		deductBalanceFn: func(_ context.Context, _ int64, amount float64) error {
+			fixture.webhookDeducted += amount
+			return nil
+		},
+		updateBalanceFn: func(_ context.Context, _ int64, amount float64) error {
+			fixture.rollbackRestored += amount
+			return nil
+		},
+	}
+	svc := &PaymentService{
+		entClient:    client,
+		loadBalancer: newWebhookProviderTestLoadBalancer(client),
+		userRepo:     userRepo,
+	}
+	fixture.svc = svc
+	provider := &callbackRefundProviderStub{
+		response: response,
+		err:      refundErr,
+		onRefund: func() {
+			fixture.webhookErr = svc.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+				OrderID:        order.OutTradeNo,
+				TradeNo:        order.PaymentTradeNo,
+				Amount:         50,
+				AmountSemantic: amountSemantic,
+				Status:         payment.NotificationStatusRefunded,
+				RawData:        rawData,
+			}, payment.TypeStripe)
+		},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restore)
+
+	plan, early, err := svc.PrepareRefund(ctx, order.ID, 50, "webhook race", false, true)
+	require.NoError(t, err)
+	require.Nil(t, early)
+	fixture.plan = plan
+	return fixture
+}
+
+func TestExecuteRefundWebhookSuccessDoesNotDeductBalanceTwice(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		&payment.RefundResponse{RefundID: "rf_race", Status: payment.ProviderStatusSuccess},
+		nil,
+		payment.NotificationAmountTotal,
+		"stripe-total-refund-event",
+	)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.True(t, result.Success)
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Zero(t, fixture.webhookDeducted, "the webhook must not repeat a deduction already applied by the admin refund")
+	require.Zero(t, fixture.rollbackRestored)
+
+	reloaded, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 50.0, reloaded.RefundAmount)
+}
+
+func TestExecuteRefundDeltaWebhookDoesNotDeductBalanceTwice(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		&payment.RefundResponse{RefundID: "rf_delta_race", Status: payment.ProviderStatusSuccess},
+		nil,
+		payment.NotificationAmountDelta,
+		"alipay-like-delta-refund-event",
+	)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.True(t, result.Success)
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Zero(t, fixture.webhookDeducted, "a delta webhook must confirm the in-flight admin refund without deducting it again")
+	require.Zero(t, fixture.rollbackRestored)
+
+	reloaded, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 50.0, reloaded.RefundAmount)
+}
+
+func TestExecuteRefundWebhookSuccessWinsOverPendingProviderResponse(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		&payment.RefundResponse{RefundID: "rf_race", Status: payment.ProviderStatusPending},
+		nil,
+		payment.NotificationAmountTotal,
+		"stripe-pending-race-event",
+	)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Zero(t, fixture.webhookDeducted)
+	require.Zero(t, fixture.rollbackRestored, "a late pending response must not restore a refund already confirmed by webhook")
+
+	reloaded, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 50.0, reloaded.RefundAmount)
+}
+
+func TestMarkRefundPendingRequiresExternalCompletionAudit(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		100,
+		100,
+		50,
+		OrderStatusPartiallyRefunded,
+		"refund_pending_requires_external_audit",
+		"trade_refund_pending_requires_external_audit",
+	)
+	svc := &PaymentService{entClient: client}
+	plan := &RefundPlan{
+		OrderID:       order.ID,
+		Order:         order,
+		RefundAmount:  50,
+		GatewayAmount: 50,
+		Reason:        "late pending response",
+	}
+
+	result, err := svc.markRefundPending(ctx, plan, &payment.RefundResponse{
+		RefundID: "rf_without_external_confirmation",
+		Status:   payment.ProviderStatusPending,
+	})
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, "REFUND_PENDING_CONFLICT", infraerrors.Reason(err))
+}
+
+func TestExecuteRefundWebhookSuccessWinsOverProviderError(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		nil,
+		errors.New("provider response lost"),
+		payment.NotificationAmountTotal,
+		"stripe-error-race-event",
+	)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Zero(t, fixture.webhookDeducted)
+	require.Zero(t, fixture.rollbackRestored, "a late transport error must not restore a refund already confirmed by webhook")
+
+	reloaded, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 50.0, reloaded.RefundAmount)
 }
 
 func TestExecuteRefund_DeductsSubscriptionEntitlementDays(t *testing.T) {
@@ -973,9 +1238,9 @@ func TestQueryAndFinalizeRefundFinalizesProviderStatuses(t *testing.T) {
 			svc := &PaymentService{
 				entClient:    client,
 				loadBalancer: &captureLoadBalancer{},
-				userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+				userRepo: &mockUserRepo{deductAvailableBalanceFn: func(ctx context.Context, id int64, amount float64) (float64, error) {
 					deducted += amount
-					return nil
+					return amount, nil
 				}},
 			}
 			restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
@@ -1118,9 +1383,9 @@ func TestQueryAndFinalizeRefundUsesPendingRollbackBalanceAmount(t *testing.T) {
 	svc := &PaymentService{
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
-		userRepo: &mockUserRepo{deductBalanceFn: func(_ context.Context, _ int64, amount float64) error {
+		userRepo: &mockUserRepo{deductAvailableBalanceFn: func(_ context.Context, _ int64, amount float64) (float64, error) {
 			deducted += amount
-			return nil
+			return amount, nil
 		}},
 	}
 	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
@@ -1221,9 +1486,9 @@ func TestQueryAndFinalizeRefundDoesNotDeductWhenFinalizeClaimLost(t *testing.T) 
 	svc := &PaymentService{
 		entClient:    client,
 		loadBalancer: &captureLoadBalancer{},
-		userRepo: &mockUserRepo{deductBalanceFn: func(ctx context.Context, id int64, amount float64) error {
+		userRepo: &mockUserRepo{deductAvailableBalanceFn: func(ctx context.Context, id int64, amount float64) (float64, error) {
 			deducted += amount
-			return nil
+			return amount, nil
 		}},
 	}
 	restore := replacePaymentProviderFactoryForTest(t, &refundQueryProviderTestDouble{
@@ -1247,6 +1512,74 @@ func TestQueryAndFinalizeRefundDoesNotDeductWhenFinalizeClaimLost(t *testing.T) 
 	require.Equal(t, OrderStatusRefunding, reloaded.Status)
 }
 
+func TestFinalizePendingRefundSuccessRejectsStaleCallerBeforeSecondDeduction(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPendingRefundOrderForTest(t, ctx, client, "finalize-stale")
+
+	deductions := 0
+	svc := &PaymentService{
+		entClient: client,
+		userRepo: &mockUserRepo{deductAvailableBalanceFn: func(ctx context.Context, id int64, amount float64) (float64, error) {
+			require.NotNil(t, dbent.TxFromContext(ctx))
+			deductions++
+			return amount, nil
+		}},
+	}
+
+	first, err := svc.finalizePendingRefundSuccess(ctx, svc.refundFinalizePlan(order))
+	require.NoError(t, err)
+	require.True(t, first.Success)
+
+	second, err := svc.finalizePendingRefundSuccess(ctx, svc.refundFinalizePlan(order))
+	require.Nil(t, second)
+	require.Error(t, err)
+	require.Equal(t, "REFUND_FINALIZE_CONFLICT", infraerrors.Reason(err))
+	require.Equal(t, 1, deductions)
+
+	successAudits, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, successAudits)
+}
+
+func TestFinalizePendingRefundSuccessRollsBackPostDeductionFailure(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	order := createPendingRefundOrderForTest(t, ctx, client, "finalize-rollback")
+	_, err := client.User.UpdateOneID(order.UserID).SetBalance(100).Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{
+		entClient: client,
+		userRepo: &mockUserRepo{deductAvailableBalanceFn: func(ctx context.Context, id int64, amount float64) (float64, error) {
+			tx := dbent.TxFromContext(ctx)
+			require.NotNil(t, tx)
+			if _, updateErr := tx.Client().User.UpdateOneID(id).AddBalance(-amount).Save(ctx); updateErr != nil {
+				return 0, updateErr
+			}
+			return 0, errors.New("injected failure after deduction")
+		}},
+	}
+
+	result, err := svc.finalizePendingRefundSuccess(ctx, svc.refundFinalizePlan(order))
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "injected failure after deduction")
+
+	user, err := client.User.Get(ctx, order.UserID)
+	require.NoError(t, err)
+	require.Equal(t, 100.0, user.Balance)
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefundPending, reloaded.Status)
+	successAudits, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ("REFUND_SUCCESS")).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Zero(t, successAudits)
+}
+
 func TestQueryAndFinalizeRefundUnsupportedProviderReturnsClearError(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -1259,6 +1592,157 @@ func TestQueryAndFinalizeRefundUnsupportedProviderReturnsClearError(t *testing.T
 	require.Nil(t, result)
 	require.Error(t, err)
 	require.Equal(t, "REFUND_QUERY_UNSUPPORTED", infraerrors.Reason(err))
+}
+
+func TestMarkRefundOkExistingTxRollsBackPartialReferralSyncBeforeWarning(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		50,
+		50,
+		0,
+		OrderStatusRefunding,
+		"mark_refund_ok_savepoint",
+		"trade_mark_refund_ok_savepoint",
+	)
+	recharge, err := client.RechargeOrder.Create().
+		SetUserID(user.ID).
+		SetExternalOrderID(order.OutTradeNo).
+		SetProvider(payment.TypeStripe).
+		SetCurrency(ReferralSettlementCurrencyCNY).
+		SetPaidAmount(50).
+		SetStatus(RechargeOrderStatusCredited).
+		Save(ctx)
+	require.NoError(t, err)
+
+	rechargeRepo := &txAwareRefundRechargeRepo{client: client, orderID: recharge.ID}
+	commissionRepo := &failingRefundCommissionRepo{
+		commissionRepoStub: &commissionRepoStub{},
+		err:                errors.New("reward lookup failed after recharge update"),
+	}
+	svc := &PaymentService{
+		entClient: client,
+		referralRefundSvc: NewReferralRefundService(
+			rechargeRepo,
+			commissionRepo,
+			nil,
+			nil,
+		),
+	}
+
+	tx, err := client.Tx(ctx)
+	require.NoError(t, err)
+	txCtx := dbent.NewTxContext(ctx, tx)
+	result, err := svc.markRefundOk(txCtx, &RefundPlan{
+		OrderID:       order.ID,
+		Order:         order,
+		RefundAmount:  50,
+		GatewayAmount: 50,
+		Reason:        "gateway success",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Success)
+	require.Contains(t, result.Warning, "referral sync failed")
+	require.NoError(t, tx.Commit())
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, updatedOrder.Status)
+
+	updatedRecharge, err := client.RechargeOrder.Get(ctx, recharge.ID)
+	require.NoError(t, err)
+	require.Equal(t, RechargeOrderStatusCredited, updatedRecharge.Status)
+	require.Zero(t, updatedRecharge.RefundedAmount)
+	require.Nil(t, updatedRecharge.RefundedAt)
+	requireAuditActionsForOrder(t, ctx, client, order.ID, "REFUND_SUCCESS", "REFUND_REFERRAL_SYNC_FAILED")
+}
+
+type txAwareRefundRechargeRepo struct {
+	client  *dbent.Client
+	orderID int64
+}
+
+func (r *txAwareRefundRechargeRepo) currentClient(ctx context.Context) *dbent.Client {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return tx.Client()
+	}
+	return r.client
+}
+
+func (r *txAwareRefundRechargeRepo) GetByProviderAndExternalOrderID(ctx context.Context, _, _ string) (*RechargeOrder, error) {
+	return r.GetByID(ctx, r.orderID)
+}
+
+func (r *txAwareRefundRechargeRepo) GetByID(ctx context.Context, id int64) (*RechargeOrder, error) {
+	order, err := r.currentClient(ctx).RechargeOrder.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &RechargeOrder{
+		ID:                    order.ID,
+		UserID:                order.UserID,
+		ExternalOrderID:       order.ExternalOrderID,
+		Provider:              order.Provider,
+		Currency:              order.Currency,
+		GrossAmount:           order.GrossAmount,
+		DiscountAmount:        order.DiscountAmount,
+		PaidAmount:            order.PaidAmount,
+		GiftBalanceAmount:     order.GiftBalanceAmount,
+		CreditedBalanceAmount: order.CreditedBalanceAmount,
+		RefundedAmount:        order.RefundedAmount,
+		ChargebackAmount:      order.ChargebackAmount,
+		Status:                order.Status,
+		PaidAt:                order.PaidAt,
+		CreditedAt:            order.CreditedAt,
+		RefundedAt:            order.RefundedAt,
+		ChargebackAt:          order.ChargebackAt,
+	}, nil
+}
+
+func (r *txAwareRefundRechargeRepo) Create(context.Context, *RechargeOrder) error {
+	panic("unexpected Create call")
+}
+
+func (r *txAwareRefundRechargeRepo) Update(ctx context.Context, order *RechargeOrder) error {
+	update := r.currentClient(ctx).RechargeOrder.UpdateOneID(order.ID).
+		SetStatus(order.Status).
+		SetRefundedAmount(order.RefundedAmount).
+		SetChargebackAmount(order.ChargebackAmount)
+	if order.RefundedAt != nil {
+		update.SetRefundedAt(*order.RefundedAt)
+	} else {
+		update.ClearRefundedAt()
+	}
+	if order.ChargebackAt != nil {
+		update.SetChargebackAt(*order.ChargebackAt)
+	} else {
+		update.ClearChargebackAt()
+	}
+	_, err := update.Save(ctx)
+	return err
+}
+
+func (r *txAwareRefundRechargeRepo) CountPaidOrdersByUser(context.Context, int64) (int, error) {
+	panic("unexpected CountPaidOrdersByUser call")
+}
+
+func (r *txAwareRefundRechargeRepo) HasRefundOrChargeback(context.Context, int64) (bool, error) {
+	panic("unexpected HasRefundOrChargeback call")
+}
+
+type failingRefundCommissionRepo struct {
+	*commissionRepoStub
+	err error
+}
+
+func (r *failingRefundCommissionRepo) ListRewardsByRechargeOrderForUpdate(context.Context, int64) ([]CommissionReward, error) {
+	return nil, r.err
 }
 
 func createPendingRefundOrderForTest(t *testing.T, ctx context.Context, client *dbent.Client, suffix string) *dbent.PaymentOrder {

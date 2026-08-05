@@ -627,7 +627,8 @@ func requireAuditActionsForOrder(t *testing.T, ctx context.Context, client *dben
 
 	logs, err := client.PaymentAuditLog.Query().
 		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10))).
-		Order(paymentauditlog.ByCreatedAt()).
+		Where(paymentauditlog.ActionIn(expectedActions...)).
+		Order(paymentauditlog.ByCreatedAt(), paymentauditlog.ByID()).
 		All(ctx)
 	require.NoError(t, err)
 	require.Len(t, logs, len(expectedActions))
@@ -1751,6 +1752,111 @@ func TestHandlePaymentNotification_RefundedTotalSyncsOrderBalanceAndReferralStat
 	require.Contains(t, logs[0].Detail, `"amountSemantic":"total"`)
 }
 
+func TestHandlePaymentNotification_RefundRequestedDoesNotTreatRequestedAmountAsSettled(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 100, OrderStatusRefundRequested, "refund_requested_baseline", "trade_refund_requested_baseline")
+	userRepo := newPaymentRefundUserRepoStub()
+	service := &PaymentService{entClient: client, userRepo: userRepo}
+
+	err := service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         20,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        "refund-requested-provider-event",
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+	require.Equal(t, 20.0, userRepo.deductedBalances[user.ID])
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 20.0, reloaded.RefundAmount)
+}
+
+func TestHandlePaymentNotification_DifferentRefundIDAfterSuccessfulRefundIsApplied(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 50, OrderStatusPartiallyRefunded, "refund_new_id_order", "trade_refund_new_id")
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetProviderSnapshot(map[string]any{
+			paymentOrderSnapshotRefundInFlight: map[string]any{
+				"refundAmount":                50,
+				"providerRefundID":            "old-refund-id",
+				"previousSettledRefundAmount": 0,
+			},
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := newPaymentRefundUserRepoStub()
+	service := &PaymentService{entClient: client, userRepo: userRepo}
+	err = service.HandlePaymentNotification(ctx, &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		RefundID:       "new-refund-id",
+		Amount:         25,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        "new-refund-provider-event",
+	}, payment.TypeStripe)
+	require.NoError(t, err)
+	require.Equal(t, 25.0, userRepo.deductedBalances[user.ID])
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+	require.Equal(t, 75.0, reloaded.RefundAmount)
+}
+
+func TestHandlePaymentNotification_EventAuditRemainsIdempotentAfterSnapshotEviction(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 0, OrderStatusCompleted, "refund_event_audit_order", "trade_refund_event_audit")
+	notification := &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         25,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        "evicted-refund-provider-event",
+	}
+	fingerprint := refundNotificationFingerprint(notification, payment.TypeStripe, false)
+	_, err := client.PaymentOrder.UpdateOneID(order.ID).
+		SetProviderSnapshot(map[string]any{
+			paymentOrderSnapshotRefundNotificationFingerprints: []string{
+				"old-01", "old-02", "old-03", "old-04", "old-05", "old-06", "old-07", "old-08",
+				"old-09", "old-10", "old-11", "old-12", "old-13", "old-14", "old-15", "old-16",
+				"old-17", "old-18", "old-19", "old-20", "old-21", "old-22", "old-23", "old-24",
+				"old-25", "old-26", "old-27", "old-28", "old-29", "old-30", "old-31", "old-32",
+			},
+		}).
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction(refundNotificationAuditAction(fingerprint, false)).
+		SetOperator(payment.TypeStripe).
+		SetDetail(`{"fingerprint":"` + fingerprint + `"}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := newPaymentRefundUserRepoStub()
+	service := &PaymentService{entClient: client, userRepo: userRepo}
+	require.NoError(t, service.HandlePaymentNotification(ctx, notification, payment.TypeStripe))
+	require.Zero(t, userRepo.deductedBalances[user.ID])
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusCompleted, reloaded.Status)
+	require.Equal(t, 0.0, reloaded.RefundAmount)
+}
+
 func TestHandlePaymentNotification_ChargebackDeltaSyncsOrderBalanceAndReferralState(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentServiceEntClient(t)
@@ -1846,6 +1952,101 @@ func TestHandlePaymentNotification_RefundedFallsBackToTradeNoLookup(t *testing.T
 
 	logs := requireAuditActionsForOrder(t, ctx, client, order.ID, "EXTERNAL_REFUND_SYNCED")
 	require.Contains(t, logs[0].Detail, `"tradeNo":"trade_refund_lookup"`)
+}
+
+func TestHandlePaymentNotification_PendingRefundDeductionFollowsRollbackOutcome(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		deductBalance        bool
+		deductionRollbackOK  bool
+		expectedDeductionUSD float64
+	}{
+		{name: "rollback succeeded", deductBalance: true, deductionRollbackOK: true, expectedDeductionUSD: 50},
+		{name: "rollback failed", deductBalance: true, deductionRollbackOK: false, expectedDeductionUSD: 0},
+		{name: "deduction disabled", deductBalance: false, deductionRollbackOK: true, expectedDeductionUSD: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newPaymentServiceEntClient(t)
+			user := createPaymentRefundTestUser(t, ctx, client, 0)
+			order := createPaymentOrderForRefundTest(
+				t,
+				ctx,
+				client,
+				user,
+				100,
+				100,
+				50,
+				OrderStatusRefundPending,
+				"pending_refund_"+strings.ReplaceAll(tc.name, " ", "_"),
+				"trade_pending_refund_"+strings.ReplaceAll(tc.name, " ", "_"),
+			)
+			_, err := client.PaymentOrder.UpdateOneID(order.ID).
+				SetProviderSnapshot(map[string]any{
+					paymentOrderSnapshotRefundPending: map[string]any{
+						"refundID":                    "rf_pending",
+						"refundAmount":                50,
+						"gatewayAmount":               50,
+						"deductBalance":               tc.deductBalance,
+						"deductionType":               payment.DeductionTypeBalance,
+						"deductionRollbackOK":         tc.deductionRollbackOK,
+						"previousSettledRefundAmount": 0,
+					},
+				}).
+				Save(ctx)
+			require.NoError(t, err)
+
+			userRepo := newPaymentRefundUserRepoStub()
+			svc := &PaymentService{entClient: client, userRepo: userRepo}
+			notification := &payment.PaymentNotification{
+				OrderID:        order.OutTradeNo,
+				TradeNo:        order.PaymentTradeNo,
+				Amount:         50,
+				AmountSemantic: payment.NotificationAmountDelta,
+				Status:         payment.NotificationStatusRefunded,
+				RawData:        "pending-refund-event-" + tc.name,
+			}
+
+			require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeAlipay))
+			require.Equal(t, tc.expectedDeductionUSD, userRepo.deductedBalances[user.ID])
+
+			reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+			require.NoError(t, err)
+			require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
+			require.Equal(t, 50.0, reloaded.RefundAmount)
+		})
+	}
+}
+
+func TestHandlePaymentNotification_DeltaRefundRetriesAreIdempotent(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 0, OrderStatusCompleted, "delta_retry_order", "trade_delta_retry")
+	userRepo := newPaymentRefundUserRepoStub()
+	svc := &PaymentService{entClient: client, userRepo: userRepo}
+
+	first := &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         50,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        "provider-refund-event-1",
+	}
+	require.NoError(t, svc.HandlePaymentNotification(ctx, first, payment.TypeAlipay))
+	require.NoError(t, svc.HandlePaymentNotification(ctx, first, payment.TypeAlipay))
+	require.Equal(t, 50.0, userRepo.deductedBalances[user.ID], "the same delta webhook retry must be applied once")
+
+	second := *first
+	second.RawData = "provider-refund-event-2"
+	require.NoError(t, svc.HandlePaymentNotification(ctx, &second, payment.TypeAlipay))
+	require.Equal(t, 100.0, userRepo.deductedBalances[user.ID], "a distinct equal-sized provider refund must still be applied")
+
+	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusRefunded, reloaded.Status)
+	require.Equal(t, 100.0, reloaded.RefundAmount)
 }
 
 func TestMarkRefundOk_PersistsSuccessWhenReferralSyncFails(t *testing.T) {

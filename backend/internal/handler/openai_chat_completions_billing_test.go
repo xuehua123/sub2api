@@ -194,5 +194,7 @@ func TestOpenAIChatCompletionsNonStreamBillingFailureReplacesBufferedSuccess(t *
 	require.NotContains(t, rec.Body.String(), "upstream ok")
 	require.Equal(t, 1, upstream.calls)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 0, usageRepo.calls)
+	// Upstream preserves a zero-cost usage row when post-upstream billing is
+	// rejected, so failed billing remains auditable without charging the user.
+	require.Equal(t, 1, usageRepo.calls)
 }

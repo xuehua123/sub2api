@@ -251,10 +251,12 @@ func TestGatewayServiceRecordUsage_LegacyBillingCommandShapeUnchanged(t *testing
 	})
 }
 
-func TestGatewayServiceRecordUsage_BillingErrorDoesNotWriteUsageLog(t *testing.T) {
+func TestGatewayServiceRecordUsage_BillingErrorWritesZeroCostUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrSubscriptionEntitlementQuotaExceeded}
-	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
 
 	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
@@ -274,11 +276,19 @@ func TestGatewayServiceRecordUsage_BillingErrorDoesNotWriteUsageLog(t *testing.T
 
 	require.ErrorIs(t, err, ErrSubscriptionEntitlementQuotaExceeded)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 0, usageRepo.calls)
-	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.Equal(t, 10, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 6, usageRepo.lastLog.OutputTokens)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
 }
 
-func TestGatewayServiceRecordUsage_EntitlementFingerprintConflictDoesNotWriteUsageLog(t *testing.T) {
+func TestGatewayServiceRecordUsage_EntitlementFingerprintConflictWritesZeroCostUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrUsageBillingRequestConflict}
 	userRepo := &openAIRecordUsageUserRepoStub{}
@@ -301,8 +311,14 @@ func TestGatewayServiceRecordUsage_EntitlementFingerprintConflictDoesNotWriteUsa
 
 	require.ErrorIs(t, err, ErrUsageBillingRequestConflict)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 0, usageRepo.calls)
-	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementBalanceFallback, *usageRepo.lastLog.BillingSource)
 	require.Equal(t, 0, userRepo.deductCalls)
 	require.Equal(t, 0, subRepo.incrementCalls)
 }
@@ -348,10 +364,12 @@ func TestGatewayServiceRecordUsage_EntitlementFallbackSuccessWritesUsageLogAndQu
 	require.Equal(t, int64(0), atomic.LoadInt64(&cache.subscriptionUpdates))
 }
 
-func TestGatewayServiceRecordUsage_EntitlementFallbackInsufficientBalanceDoesNotWriteUsageLog(t *testing.T) {
+func TestGatewayServiceRecordUsage_EntitlementFallbackInsufficientBalanceWritesZeroCostUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{err: ErrInsufficientBalance}
-	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	subRepo := &openAIRecordUsageSubRepoStub{}
+	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
 
 	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
@@ -369,8 +387,16 @@ func TestGatewayServiceRecordUsage_EntitlementFallbackInsufficientBalanceDoesNot
 
 	require.ErrorIs(t, err, ErrInsufficientBalance)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 0, usageRepo.calls)
-	require.Nil(t, usageRepo.lastLog)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.NotNil(t, usageRepo.lastLog.EntitlementID)
+	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
+	require.NotNil(t, usageRepo.lastLog.BillingSource)
+	require.Equal(t, BillingSourceEntitlementBalanceFallback, *usageRepo.lastLog.BillingSource)
+	require.Equal(t, 0, userRepo.deductCalls)
+	require.Equal(t, 0, subRepo.incrementCalls)
 }
 
 func TestGatewayServiceRecordUsage_EntitlementStreamingPartialDisconnectStillBillsUsage(t *testing.T) {
@@ -1207,9 +1233,10 @@ func TestGatewayServiceRecordUsage_DroppedUsageLogFallsBackToSyncCreate(t *testi
 	require.NoError(t, usageRepo.lastCtxErr)
 }
 
-func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) {
+func TestGatewayServiceRecordUsage_BillingErrorWritesUnsettledUsageLog(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
-	billingRepo := &openAIRecordUsageBillingRepoStub{err: context.DeadlineExceeded}
+	billingErr := errors.New("billing tx failed")
+	billingRepo := &openAIRecordUsageBillingRepoStub{err: billingErr}
 	userRepo := &openAIRecordUsageUserRepoStub{}
 	subRepo := &openAIRecordUsageSubRepoStub{}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, userRepo, subRepo)
@@ -1229,9 +1256,16 @@ func TestGatewayServiceRecordUsage_BillingErrorSkipsUsageLogWrite(t *testing.T) 
 		Account: &Account{ID: 705},
 	})
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, billingErr)
 	require.Equal(t, 1, billingRepo.calls)
-	require.Equal(t, 0, usageRepo.calls)
+	require.Equal(t, 1, usageRepo.calls)
+	require.NotNil(t, usageRepo.lastLog)
+	require.Equal(t, 10, usageRepo.lastLog.InputTokens)
+	require.Equal(t, 6, usageRepo.lastLog.OutputTokens)
+	require.Greater(t, usageRepo.lastLog.InputCost, 0.0)
+	require.Greater(t, usageRepo.lastLog.OutputCost, 0.0)
+	require.Greater(t, usageRepo.lastLog.TotalCost, 0.0)
+	require.Zero(t, usageRepo.lastLog.ActualCost)
 }
 
 func TestGatewayServiceRecordUsage_EntitlementDoesNotForgeLegacySubscriptionID(t *testing.T) {

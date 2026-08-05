@@ -3476,6 +3476,34 @@ func TestFailoverOpenAIUpstreamHTTPErrorUsesOnlyGrokRateLimitPolicy(t *testing.T
 	require.Zero(t, repo.tempUnschedCalls)
 }
 
+func TestFailoverOpenAIUpstreamHTTPErrorPreservesGrokPoolExplicitPolicyResult(t *testing.T) {
+	repo := &errorPolicyRepoStub{}
+	rateLimitService := NewRateLimitService(repo, nil, &config.Config{}, nil, nil)
+	svc := &OpenAIGatewayService{accountRepo: repo, rateLimitService: rateLimitService}
+	rateLimitService.SetAccountRuntimeBlocker(svc)
+	account := &Account{
+		ID:       71,
+		Platform: PlatformGrok,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			"pool_mode":                  true,
+			"custom_error_codes_enabled": true,
+			"custom_error_codes":         []any{float64(http.StatusServiceUnavailable)},
+		},
+	}
+	resp := &http.Response{StatusCode: http.StatusServiceUnavailable, Header: http.Header{}}
+
+	failoverErr := svc.failoverOpenAIUpstreamHTTPError(
+		context.Background(), nil, account, resp,
+		[]byte(`{"error":{"message":"maintenance"}}`), "maintenance", "grok-4.3",
+	)
+
+	require.NotNil(t, failoverErr)
+	require.False(t, failoverErr.RetryableOnSameAccount)
+	require.Equal(t, 1, repo.setErrCalls)
+	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+}
+
 func TestPatchGrokResponsesBody_StripsReasoningContentNull(t *testing.T) {
 	t.Parallel()
 

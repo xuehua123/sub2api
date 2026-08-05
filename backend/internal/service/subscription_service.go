@@ -465,24 +465,7 @@ func (s *SubscriptionService) assignOrExtendSubscription(ctx context.Context, in
 
 	// 已有订阅，执行续期（在事务中完成所有更新）
 	if existingSub != nil {
-		now := time.Now()
-		var newExpiresAt time.Time
-
-		isExpired := !existingSub.ExpiresAt.After(now)
-		if !isExpired {
-			// 未过期：从当前过期时间累加
-			newExpiresAt = existingSub.ExpiresAt.AddDate(0, 0, validityDays)
-		} else {
-			// 已过期：从当前时间开始计算
-			newExpiresAt = now.AddDate(0, 0, validityDays)
-		}
-
-		// 确保不超过最大过期时间
-		if newExpiresAt.After(MaxExpiresAt) {
-			newExpiresAt = MaxExpiresAt
-		}
-
-		if err := s.updateExistingSubscriptionTerm(ctx, existingSub, input.Notes, now, newExpiresAt, isExpired); err != nil {
+		if _, err := s.updateExistingSubscriptionTerm(ctx, existingSub.ID, validityDays, input.Notes, false); err != nil {
 			return nil, false, err
 		}
 
@@ -589,7 +572,7 @@ func planEntitlementAliasMayChange(sub *UserSubscription, outcome subscriptionAs
 	case subscriptionAssignmentRenewed:
 		return shouldRenewPlanEntitlementAlias(sub, outcome)
 	case subscriptionAssignmentReused:
-		return sub.EntitlementLink == nil
+		return sub.Status == SubscriptionStatusActive && sub.EntitlementLink == nil
 	default:
 		return false
 	}
@@ -607,18 +590,55 @@ func shouldRenewPlanEntitlementAlias(sub *UserSubscription, outcome subscription
 
 func (s *SubscriptionService) updateExistingSubscriptionTerm(
 	ctx context.Context,
-	existingSub *UserSubscription,
+	subscriptionID int64,
+	validityDays int,
 	notes string,
-	startsAt time.Time,
-	newExpiresAt time.Time,
-	isExpired bool,
-) error {
-	return s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+	assignmentSemantics bool,
+) (updated bool, err error) {
+	err = s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		existingSub, err := s.userSubRepo.GetByIDForUpdate(txCtx, subscriptionID)
+		if err != nil {
+			return fmt.Errorf("lock subscription for renewal: %w", err)
+		}
+
+		now := time.Now()
+		if s.now != nil {
+			now = s.now()
+		}
+		if assignmentSemantics {
+			if existingSub.Status == SubscriptionStatusSuspended {
+				return nil
+			}
+			// AssignSubscription is idempotent. A stale pre-lock read may have seen
+			// an expired row that another concurrent assignment has already renewed.
+			// In that case, reuse the locked current term instead of extending it a
+			// second time and letting the legacy row drift past its V2 entitlement.
+			if existingSub.Status == SubscriptionStatusActive && existingSub.ExpiresAt.After(now) {
+				return nil
+			}
+		}
+		isExpired := !existingSub.ExpiresAt.After(now)
+		if assignmentSemantics {
+			isExpired = existingSub.Status == SubscriptionStatusExpired ||
+				(existingSub.Status != SubscriptionStatusSuspended && !existingSub.ExpiresAt.After(now))
+		}
+		newExpiresAt := existingSub.ExpiresAt.AddDate(0, 0, validityDays)
 		if isExpired {
-			renewed := renewedSubscriptionTerm(existingSub, notes, startsAt, newExpiresAt)
+			newExpiresAt = now.AddDate(0, 0, validityDays)
+		}
+		if newExpiresAt.After(MaxExpiresAt) {
+			newExpiresAt = MaxExpiresAt
+		}
+		if assignmentSemantics && strings.TrimSpace(existingSub.Notes) == strings.TrimSpace(notes) {
+			notes = ""
+		}
+
+		if isExpired {
+			renewed := renewedSubscriptionTerm(existingSub, notes, now, newExpiresAt)
 			if err := s.userSubRepo.Update(txCtx, renewed); err != nil {
 				return fmt.Errorf("renew expired subscription: %w", err)
 			}
+			updated = true
 			return nil
 		}
 
@@ -641,8 +661,10 @@ func (s *SubscriptionService) updateExistingSubscriptionTerm(
 			}
 		}
 
+		updated = true
 		return nil
 	})
+	return updated, err
 }
 
 func (s *SubscriptionService) withSubscriptionUpdateTx(ctx context.Context, fn func(context.Context) error) error {
@@ -828,16 +850,13 @@ func (s *SubscriptionService) assignSubscriptionWithReuse(ctx context.Context, i
 		if sub.Status == SubscriptionStatusExpired ||
 			(sub.Status != SubscriptionStatusSuspended && !sub.ExpiresAt.After(now)) {
 			validityDays := normalizeAssignValidityDays(input.ValidityDays)
-			newExpiresAt := now.AddDate(0, 0, validityDays)
-			if newExpiresAt.After(MaxExpiresAt) {
-				newExpiresAt = MaxExpiresAt
-			}
-			renewalNotes := input.Notes
-			if strings.TrimSpace(sub.Notes) == strings.TrimSpace(input.Notes) {
-				renewalNotes = ""
-			}
-			if err := s.updateExistingSubscriptionTerm(ctx, sub, renewalNotes, now, newExpiresAt, true); err != nil {
+			updated, err := s.updateExistingSubscriptionTerm(ctx, sub.ID, validityDays, input.Notes, true)
+			if err != nil {
 				return nil, subscriptionAssignmentCreated, err
+			}
+			if !updated {
+				current, getErr := s.userSubRepo.GetByID(ctx, sub.ID)
+				return current, subscriptionAssignmentReused, getErr
 			}
 			s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, deferCacheInvalidation)
 			renewed, getErr := s.userSubRepo.GetByID(ctx, sub.ID)
