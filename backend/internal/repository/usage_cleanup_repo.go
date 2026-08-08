@@ -124,18 +124,18 @@ func (r *usageCleanupRepository) ClaimNextPendingTask(ctx context.Context, stale
 		WITH next AS (
 			SELECT id
 			FROM usage_cleanup_tasks
-			WHERE status = $1
+			WHERE status IN ($1, $2)
 				OR (
-					status = $2
+					status = $3
 					AND started_at IS NOT NULL
-					AND started_at < NOW() - ($3 * interval '1 second')
+					AND started_at < NOW() - ($4 * interval '1 second')
 				)
 			ORDER BY created_at ASC
 			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
 		UPDATE usage_cleanup_tasks AS tasks
-		SET status = $4,
+		SET status = $5,
 			started_at = NOW(),
 			finished_at = NULL,
 			error_message = NULL,
@@ -156,6 +156,7 @@ func (r *usageCleanupRepository) ClaimNextPendingTask(ctx context.Context, stale
 		query,
 		[]any{
 			service.UsageCleanupStatusPending,
+			service.UsageCleanupStatusPendingV2,
 			service.UsageCleanupStatusRunning,
 			staleRunningAfterSeconds,
 			service.UsageCleanupStatusRunning,
@@ -229,7 +230,7 @@ func (r *usageCleanupRepository) CancelTask(ctx context.Context, taskID int64, c
 			error_message = NULL,
 			updated_at = NOW()
 		WHERE id = $2
-			AND status IN ($4, $5)
+		AND status IN ($4, $5, $6)
 		RETURNING id
 	`
 	var id int64
@@ -238,6 +239,7 @@ func (r *usageCleanupRepository) CancelTask(ctx context.Context, taskID int64, c
 		taskID,
 		canceledBy,
 		service.UsageCleanupStatusPending,
+		service.UsageCleanupStatusPendingV2,
 		service.UsageCleanupStatusRunning,
 	}, &id)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -486,7 +488,7 @@ func (r *usageCleanupRepository) cancelTaskWithEnt(ctx context.Context, taskID i
 	affected, err := client.UsageCleanupTask.Update().
 		Where(
 			dbusagecleanuptask.IDEQ(taskID),
-			dbusagecleanuptask.StatusIn(service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning),
+			dbusagecleanuptask.StatusIn(service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning),
 		).
 		SetStatus(service.UsageCleanupStatusCanceled).
 		SetCanceledBy(canceledBy).

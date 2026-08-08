@@ -198,6 +198,7 @@ const handleClose = () => {
 const statusLabel = (status: string) => {
   const map: Record<string, string> = {
     pending: t('admin.usage.cleanup.status.pending'),
+    pending_v2: t('admin.usage.cleanup.status.pending'),
     running: t('admin.usage.cleanup.status.running'),
     succeeded: t('admin.usage.cleanup.status.succeeded'),
     failed: t('admin.usage.cleanup.status.failed'),
@@ -279,7 +280,7 @@ const openConfirm = () => {
 }
 
 const canCancel = (task: UsageCleanupTask) => {
-  return task.status === 'pending' || task.status === 'running'
+  return task.status === 'pending' || task.status === 'pending_v2' || task.status === 'running'
 }
 
 const openCancelConfirm = (task: UsageCleanupTask) => {

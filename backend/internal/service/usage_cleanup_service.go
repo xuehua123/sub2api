@@ -146,8 +146,12 @@ func (s *UsageCleanupService) CreateTask(ctx context.Context, filters UsageClean
 		return nil, err
 	}
 
+	status := UsageCleanupStatusPending
+	if filters.EntitlementID != nil {
+		status = UsageCleanupStatusPendingV2
+	}
 	task := &UsageCleanupTask{
-		Status:    UsageCleanupStatusPending,
+		Status:    status,
 		Filters:   filters,
 		CreatedBy: createdBy,
 	}
@@ -334,7 +338,7 @@ func (s *UsageCleanupService) CancelTask(ctx context.Context, taskID int64, canc
 		logger.LegacyPrintf("service.usage_cleanup", "[UsageCleanup] cancel_task idempotent hit: task=%d operator=%d", taskID, canceledBy)
 		return nil
 	}
-	if status != UsageCleanupStatusPending && status != UsageCleanupStatusRunning {
+	if status != UsageCleanupStatusPending && status != UsageCleanupStatusPendingV2 && status != UsageCleanupStatusRunning {
 		return infraerrors.New(http.StatusConflict, "USAGE_CLEANUP_CANCEL_CONFLICT", "cleanup task cannot be canceled in current status")
 	}
 	ok, err := s.repo.CancelTask(ctx, taskID, canceledBy)

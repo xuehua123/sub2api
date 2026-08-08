@@ -200,7 +200,7 @@ func TestUsageCleanupRepositoryClaimNextPendingTaskNone(t *testing.T) {
 	repo := &usageCleanupRepository{sql: db}
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "status", "filters", "created_by", "deleted_rows", "error_message",
 			"started_at", "finished_at", "created_at", "updated_at",
@@ -239,7 +239,7 @@ func TestUsageCleanupRepositoryClaimNextPendingTask(t *testing.T) {
 	)
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
 		WillReturnRows(rows)
 
 	task, err := repo.ClaimNextPendingTask(context.Background(), 1800)
@@ -258,7 +258,7 @@ func TestUsageCleanupRepositoryClaimNextPendingTaskError(t *testing.T) {
 	repo := &usageCleanupRepository{sql: db}
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
 		WillReturnError(sql.ErrConnDone)
 
 	_, err := repo.ClaimNextPendingTask(context.Background(), 1800)
@@ -287,7 +287,7 @@ func TestUsageCleanupRepositoryClaimNextPendingTaskInvalidFilters(t *testing.T) 
 	)
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning, int64(1800), service.UsageCleanupStatusRunning).
 		WillReturnRows(rows)
 
 	_, err := repo.ClaimNextPendingTask(context.Background(), 1800)
@@ -366,7 +366,7 @@ func TestUsageCleanupRepositoryCancelTask(t *testing.T) {
 	repo := &usageCleanupRepository{sql: db}
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusCanceled, int64(6), int64(9), service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusCanceled, int64(6), int64(9), service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(int64(6)))
 
 	ok, err := repo.CancelTask(context.Background(), 6, 9)
@@ -380,7 +380,7 @@ func TestUsageCleanupRepositoryCancelTaskNoRows(t *testing.T) {
 	repo := &usageCleanupRepository{sql: db}
 
 	mock.ExpectQuery("UPDATE usage_cleanup_tasks").
-		WithArgs(service.UsageCleanupStatusCanceled, int64(6), int64(9), service.UsageCleanupStatusPending, service.UsageCleanupStatusRunning).
+		WithArgs(service.UsageCleanupStatusCanceled, int64(6), int64(9), service.UsageCleanupStatusPending, service.UsageCleanupStatusPendingV2, service.UsageCleanupStatusRunning).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}))
 
 	ok, err := repo.CancelTask(context.Background(), 6, 9)

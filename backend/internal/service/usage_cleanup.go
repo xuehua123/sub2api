@@ -14,7 +14,10 @@ var ErrUsageCleanupInvalidEntitlementID = infraerrors.BadRequest(
 )
 
 const (
-	UsageCleanupStatusPending   = "pending"
+	UsageCleanupStatusPending = "pending"
+	// pending_v2 prevents legacy workers, which only claim "pending", from
+	// executing filters such as entitlement_id that they do not understand.
+	UsageCleanupStatusPendingV2 = "pending_v2"
 	UsageCleanupStatusRunning   = "running"
 	UsageCleanupStatusSucceeded = "succeeded"
 	UsageCleanupStatusFailed    = "failed"
@@ -67,7 +70,7 @@ type UsageCleanupRepository interface {
 	CreateTask(ctx context.Context, task *UsageCleanupTask) error
 	ListTasks(ctx context.Context, params pagination.PaginationParams) ([]UsageCleanupTask, *pagination.PaginationResult, error)
 	// ClaimNextPendingTask 抢占下一条可执行任务：
-	// - 优先 pending
+	// - 优先 pending / pending_v2
 	// - 若 running 超过 staleRunningAfterSeconds（可能由于进程退出/崩溃/超时），允许重新抢占继续执行
 	ClaimNextPendingTask(ctx context.Context, staleRunningAfterSeconds int64) (*UsageCleanupTask, error)
 	// GetTaskStatus 查询任务状态；若不存在返回 sql.ErrNoRows

@@ -95,7 +95,7 @@ expected_cutover_hash=$(sed -n 's/^readonly CUTOVER_SCRIPT_SHA256="\([0-9a-f]\{6
 actual_cutover_hash=$(sha256_file "$CUTOVER_SCRIPT")
 [[ -n "$expected_cutover_hash" && "$expected_cutover_hash" == "$actual_cutover_hash" ]]
 grep -Fq 'AFFILIATE_REFUND_REVERSAL=1' "$CAPABILITY_MANIFEST"
-grep -Fq 'PAYMENT_REVERSAL_COMPONENTS=1' "$CAPABILITY_MANIFEST"
+grep -Fq 'PAYMENT_REVERSAL_COMPONENTS=0' "$CAPABILITY_MANIFEST"
 grep -Fq 'github.event_name }}" = "workflow_run"' "$IMAGE_WORKFLOW"
 grep -Fq 'affiliate_refund_reversal_capability=0' "$IMAGE_WORKFLOW"
 grep -Fq 'affiliate_refund_reversal_capability=1' "$IMAGE_WORKFLOW"
@@ -109,7 +109,7 @@ grep -Fq "steps.source.outputs.trusted_release == 'true'" "$IMAGE_WORKFLOW"
 grep -Fq 'org.sub2api.build.trusted-ci=${{ steps.source.outputs.trusted_ci_label }}' "$IMAGE_WORKFLOW"
 grep -Fq 'org.sub2api.capability.affiliate-refund-reversal=${{ steps.source.outputs.affiliate_refund_reversal_capability }}' "$IMAGE_WORKFLOW"
 grep -Fq 'org.sub2api.capability.payment-reversal-components=${{ steps.source.outputs.payment_reversal_components_capability }}' "$IMAGE_WORKFLOW"
-grep -Fq 'worker ignores that JSON field' "$DEPLOYMENT_CONTRACT_DOC"
+grep -Fq 'legacy workers claim only `pending`' "$DEPLOYMENT_CONTRACT_DOC"
 grep -Fq 'id-token: write' "$IMAGE_WORKFLOW"
 grep -Fq 'attestations: write' "$IMAGE_WORKFLOW"
 grep -Fq 'uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2' "$IMAGE_WORKFLOW"

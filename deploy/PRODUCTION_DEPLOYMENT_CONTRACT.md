@@ -29,21 +29,19 @@ first deployment with this contract:
 If the state directory or either state file later disappears, deployment must
 stop. Do not recreate `absent` state during incident handling.
 
-## First migration-197-capable image
+## Migration 197 expand phase
 
-The first image labeled
-`org.sub2api.capability.payment-reversal-components=1` is a maintenance
-transition even while the affiliate gate remains disabled. Deployment records
-pending state and gracefully stops the old writer before starting the candidate
-and allowing migration 197 to run. Automatic downgrade is forbidden. After
-activation, every future image must retain this capability.
+Migration 197 installs a deferred legacy-writer bridge before enforcing the new
+refund/chargeback projection. Images in this expand phase retain
+`org.sub2api.capability.payment-reversal-components=0`, so the inactive slot may
+start, migrate, and prewarm while the legacy slot continues serving. The bridge
+reconciles a legacy `refund_amount` delta from the audit row committed in the
+same transaction. A later reviewed contract release may remove the bridge and
+set the capability to `1` only after every legacy writer has been retired.
 
-The same stop-before-start boundary is also mandatory for usage-cleanup
-workers in this release. New tasks may contain `entitlement_id`; a legacy
-worker ignores that JSON field and would delete the wider date range. Do not
-create or execute an entitlement-scoped cleanup task until every legacy app and
-worker on that data plane has stopped, and never restart a legacy worker after
-the candidate becomes available.
+Entitlement-scoped usage-cleanup tasks use the `pending_v2` state. New workers
+claim both `pending` and `pending_v2`; legacy workers claim only `pending`, so
+they cannot execute a task whose `entitlement_id` they do not understand.
 
 ## Affiliate refund reversal activation
 

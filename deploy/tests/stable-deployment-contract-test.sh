@@ -707,8 +707,8 @@ grep -Fq 'payment_reversal_components_state=activated' "$payment_components_root
 [[ "$(cat "$payment_components_root/state/green_running")" == true ]]
 [[ "$(cat "$payment_components_root/state/green_gate")" == false ]]
 
-# Once migration 197 may have run, incapable images are no longer rollback
-# targets even when the separate affiliate feature is still disabled.
+# Once the later payment-components contract capability is activated, images
+# without that capability are no longer rollback targets.
 run_deploy "$payment_components_root" "$OLD_IMAGE_ID" disabled "$OLD_IMAGE_ID" "$OLD_REVISION" 1 false healthy 200 1 true 2.97.0 0
 assert_failure 'Payment reversal components are permanently activated; incapable images are rejected'
 

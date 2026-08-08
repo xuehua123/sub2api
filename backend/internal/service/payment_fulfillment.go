@@ -658,8 +658,8 @@ func paymentOrderReversalComponents(o *dbent.PaymentOrder) paymentReversalCompon
 
 	// Preserve pre-migration snapshots (and lightweight test fixtures that do
 	// not apply SQL migrations) by treating refund_amount as the canonical
-	// combined projection. Migration 197 enforces exact equality for settled
-	// production rows, so a legacy projection-only writer is rejected by the DB.
+	// combined projection. During migration 197's expand phase, the database
+	// bridge reconciles legacy projection-only writes at transaction commit.
 	legacyProjection := settledRefundAmount(o)
 	if legacyProjection > creditedTotal {
 		legacyProjection = creditedTotal

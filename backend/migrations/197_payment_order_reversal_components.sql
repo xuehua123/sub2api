@@ -1,7 +1,8 @@
--- SAFETY CONTRACT: all legacy payment writers MUST be stopped before this
--- migration executes. Legacy slots only update refund_amount and cannot retain
--- the refund/chargeback split. This migration is NOT shared-database blue-green
--- compatible with those writers; restarting one after migration is forbidden.
+-- EXPAND CONTRACT: this migration remains compatible with legacy payment
+-- writers during a shared-database blue-green rollout. Legacy slots only update
+-- refund_amount, so a deferred trigger classifies their committed projection
+-- delta from the audit row written in the same transaction. A later contract
+-- migration may remove that bridge only after every legacy writer is gone.
 -- The migration changes accounting classification only. It never adjusts user
 -- balances, subscriptions, entitlements, referral rewards, or affiliate quota.
 
@@ -333,7 +334,8 @@ BEGIN
         UPDATE payment_orders
         SET provider_refund_amount = provider_evidence,
             chargeback_amount = chosen_chargeback
-        WHERE id = order_row.id;
+        WHERE id = order_row.id
+          AND refund_amount = order_row.refund_amount;
     END LOOP;
 
     IF EXISTS (
@@ -375,27 +377,119 @@ END $$;
 ALTER TABLE payment_orders
     VALIDATE CONSTRAINT chk_payment_orders_reversal_components;
 
--- Once the historical split has been classified, settled rows must never
--- accept a legacy projection-only update. This turns the rollout contract into
--- a database-enforced invariant: accidentally restarting an old writer fails
--- its transaction instead of silently assigning the projection gap to the
--- wrong reversal component.
-DO $$
+-- Legacy writers commit the order update and its audit row in one transaction.
+-- Reconcile at the deferred boundary so the new projection is never visible in
+-- an inconsistent state, while allowing the old slot to keep serving during
+-- normal blue-green prewarming and drain.
+CREATE OR REPLACE FUNCTION sub2api_reconcile_legacy_reversal_projection()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $bridge$
+DECLARE
+    order_amount NUMERIC;
+    projection NUMERIC;
+    provider_component NUMERIC;
+    chargeback_component NUMERIC;
+    component_total NUMERIC;
+    projection_gap NUMERIC;
+    remaining NUMERIC;
+    latest_action TEXT;
+    current_status TEXT;
 BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_payment_orders_reversal_projection'
-          AND conrelid = 'payment_orders'::regclass
-    ) THEN
-        ALTER TABLE payment_orders
-            ADD CONSTRAINT chk_payment_orders_reversal_projection
-            CHECK (
-                status NOT IN ('PARTIALLY_REFUNDED', 'REFUNDED')
-                OR provider_refund_amount + chargeback_amount = refund_amount
-            ) NOT VALID;
-    END IF;
-END $$;
+    SELECT amount,
+           refund_amount,
+           provider_refund_amount,
+           chargeback_amount,
+           status
+    INTO order_amount,
+         projection,
+         provider_component,
+         chargeback_component,
+         current_status
+    FROM payment_orders
+    WHERE id = NEW.id
+    FOR UPDATE;
 
-ALTER TABLE payment_orders
-    VALIDATE CONSTRAINT chk_payment_orders_reversal_projection;
+    IF NOT FOUND OR current_status NOT IN ('PARTIALLY_REFUNDED', 'REFUNDED') THEN
+        RETURN NULL;
+    END IF;
+
+    order_amount := ROUND(order_amount, 2);
+    projection := ROUND(projection, 2);
+    provider_component := ROUND(provider_component, 2);
+    chargeback_component := ROUND(chargeback_component, 2);
+    component_total := ROUND(provider_component + chargeback_component, 2);
+    IF component_total = projection THEN
+        RETURN NULL;
+    END IF;
+    IF projection < 0 OR projection > order_amount THEN
+        RAISE EXCEPTION
+            'legacy reversal projection is outside payment order amount for order %: projection=% amount=%',
+            NEW.id, projection, order_amount;
+    END IF;
+
+    SELECT pal.action
+    INTO latest_action
+    FROM payment_audit_logs AS pal
+    WHERE pal.order_id = NEW.id::text
+      AND (
+            pal.action = 'REFUND_SUCCESS'
+            OR pal.action = 'EXTERNAL_REFUND_SYNCED'
+            OR pal.action = 'EXTERNAL_CHARGEBACK_SYNCED'
+            OR LEFT(pal.action, CHAR_LENGTH('REFUND_EVENT_')) = 'REFUND_EVENT_'
+            OR LEFT(pal.action, CHAR_LENGTH('CHARGEBACK_EVENT_')) = 'CHARGEBACK_EVENT_'
+          )
+    ORDER BY pal.created_at DESC, pal.id DESC
+    LIMIT 1;
+
+    projection_gap := ROUND(projection - component_total, 2);
+    IF projection_gap > 0 THEN
+        IF latest_action = 'EXTERNAL_CHARGEBACK_SYNCED'
+           OR LEFT(COALESCE(latest_action, ''), CHAR_LENGTH('CHARGEBACK_EVENT_')) = 'CHARGEBACK_EVENT_' THEN
+            chargeback_component := ROUND(chargeback_component + projection_gap, 2);
+        ELSE
+            provider_component := ROUND(provider_component + projection_gap, 2);
+        END IF;
+    ELSE
+        remaining := -projection_gap;
+        IF latest_action = 'EXTERNAL_CHARGEBACK_SYNCED'
+           OR LEFT(COALESCE(latest_action, ''), CHAR_LENGTH('CHARGEBACK_EVENT_')) = 'CHARGEBACK_EVENT_' THEN
+            projection_gap := LEAST(chargeback_component, remaining);
+            chargeback_component := ROUND(chargeback_component - projection_gap, 2);
+            remaining := ROUND(remaining - projection_gap, 2);
+            provider_component := ROUND(provider_component - remaining, 2);
+        ELSE
+            projection_gap := LEAST(provider_component, remaining);
+            provider_component := ROUND(provider_component - projection_gap, 2);
+            remaining := ROUND(remaining - projection_gap, 2);
+            chargeback_component := ROUND(chargeback_component - remaining, 2);
+        END IF;
+    END IF;
+
+    IF provider_component < 0
+       OR chargeback_component < 0
+       OR ROUND(provider_component + chargeback_component, 2) <> projection
+       OR ROUND(provider_component + chargeback_component, 2) > order_amount THEN
+        RAISE EXCEPTION
+            'could not reconcile legacy reversal projection for payment order %', NEW.id;
+    END IF;
+
+    UPDATE payment_orders
+    SET provider_refund_amount = provider_component,
+        chargeback_amount = chargeback_component
+    WHERE id = NEW.id
+      AND (
+            provider_refund_amount <> provider_component
+            OR chargeback_amount <> chargeback_component
+          );
+    RETURN NULL;
+END
+$bridge$;
+
+DROP TRIGGER IF EXISTS trg_payment_orders_reversal_projection_bridge ON payment_orders;
+CREATE CONSTRAINT TRIGGER trg_payment_orders_reversal_projection_bridge
+AFTER INSERT OR UPDATE ON payment_orders
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW
+WHEN (NEW.status IN ('PARTIALLY_REFUNDED', 'REFUNDED'))
+EXECUTE FUNCTION sub2api_reconcile_legacy_reversal_projection();

@@ -978,9 +978,9 @@ fi
 cutover_rollback_policy=allow
 if [[ "$prepared_contract_pending" == true || "$prepared_payment_components_pending" == true ]]; then
   cutover_rollback_policy=forbid
-  # Starting either an affiliate gate=true process or the first image carrying
-  # migration 197 can make old writers unsafe. Stop the old slot before the
-  # candidate starts migrations or writes irreversible state.
+  # Starting either an affiliate gate=true process or a future contract image
+  # that removes migration 197's legacy-writer bridge can make old writers
+  # unsafe. Stop the old slot before contract migrations or irreversible state.
   docker stop --time 120 "$active_container" >/dev/null
   if [[ "$(docker inspect --format '{{.State.Running}}' "$active_container" 2>/dev/null || true)" == true ]]; then
     echo "Irreversible activation could not stop the gate=false slot" >&2

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestMigration197RequiresLegacyWritersStoppedAndFailsClosed(t *testing.T) {
+func TestMigration197SupportsSharedDatabaseBlueGreen(t *testing.T) {
 	content, err := FS.ReadFile("197_payment_order_reversal_components.sql")
 	require.NoError(t, err)
 
@@ -15,8 +15,7 @@ func TestMigration197RequiresLegacyWritersStoppedAndFailsClosed(t *testing.T) {
 	upperSQL := strings.ToUpper(sql)
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS provider_refund_amount DECIMAL(20,2) NOT NULL DEFAULT 0")
 	require.Contains(t, sql, "ADD COLUMN IF NOT EXISTS chargeback_amount DECIMAL(20,2) NOT NULL DEFAULT 0")
-	require.Contains(t, sql, "all legacy payment writers MUST be stopped")
-	require.Contains(t, sql, "NOT shared-database blue-green")
+	require.Contains(t, sql, "shared-database blue-green rollout")
 	require.Contains(t, sql, "SET provider_refund_amount = LEAST(GREATEST(refund_amount, 0), GREATEST(amount, 0))")
 	require.Contains(t, sql, "status IN ('PARTIALLY_REFUNDED', 'REFUNDED')")
 	require.Contains(t, sql, "CHARGEBACK_EVENT_")
@@ -27,11 +26,12 @@ func TestMigration197RequiresLegacyWritersStoppedAndFailsClosed(t *testing.T) {
 	require.Contains(t, sql, "r.chargeback_amount")
 	require.Contains(t, sql, "chk_payment_orders_reversal_components")
 	require.Contains(t, sql, "provider_refund_amount + chargeback_amount <= amount")
-	require.Contains(t, sql, "chk_payment_orders_reversal_projection")
-	require.Contains(t, sql, "provider_refund_amount + chargeback_amount = refund_amount")
+	require.Contains(t, sql, "sub2api_reconcile_legacy_reversal_projection")
+	require.Contains(t, sql, "DEFERRABLE INITIALLY DEFERRED")
+	require.Contains(t, sql, "WHEN (NEW.status IN ('PARTIALLY_REFUNDED', 'REFUNDED'))")
 	require.Contains(t, sql, ") NOT VALID")
 	require.Contains(t, sql, "VALIDATE CONSTRAINT chk_payment_orders_reversal_components")
-	require.Contains(t, sql, "VALIDATE CONSTRAINT chk_payment_orders_reversal_projection")
+	require.NotContains(t, sql, "VALIDATE CONSTRAINT chk_payment_orders_reversal_projection")
 	require.NotContains(t, upperSQL, "DROP COLUMN")
 	require.NotContains(t, upperSQL, "DROP TABLE")
 	require.NotContains(t, upperSQL, "ALTER COLUMN REFUND_AMOUNT")

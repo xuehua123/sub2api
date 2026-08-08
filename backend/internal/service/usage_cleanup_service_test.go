@@ -187,7 +187,7 @@ func (s *cleanupRepoStub) CancelTask(ctx context.Context, taskID int64, canceled
 		s.statusByID = map[int64]string{}
 	}
 	status := s.statusByID[taskID]
-	if status != UsageCleanupStatusPending && status != UsageCleanupStatusRunning {
+	if status != UsageCleanupStatusPending && status != UsageCleanupStatusPendingV2 && status != UsageCleanupStatusRunning {
 		return false, nil
 	}
 	s.statusByID[taskID] = UsageCleanupStatusCanceled
@@ -349,6 +349,22 @@ func TestSanitizeUsageCleanupFiltersPreservesEntitlement(t *testing.T) {
 
 	require.NotNil(t, filters.EntitlementID)
 	require.Equal(t, int64(42), *filters.EntitlementID)
+}
+
+func TestUsageCleanupServiceCreatesEntitlementTaskAsPendingV2(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	svc := NewUsageCleanupService(repo, nil, nil, cfg)
+	entitlementID := int64(42)
+
+	task, err := svc.CreateTask(context.Background(), UsageCleanupFilters{
+		StartTime:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		EndTime:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+		EntitlementID: &entitlementID,
+	}, 9)
+
+	require.NoError(t, err)
+	require.Equal(t, UsageCleanupStatusPendingV2, task.Status)
 }
 
 func TestDescribeUsageCleanupFiltersIncludesRequestType(t *testing.T) {

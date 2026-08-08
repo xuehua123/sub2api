@@ -215,7 +215,7 @@ VALUES
 	require.Contains(t, err.Error(), "reversal evidence does not match settled projection")
 }
 
-func TestMigration197RejectsLegacySettledProjectionOnlyWriter(t *testing.T) {
+func TestMigration197ReconcilesLegacyWriterDuringBlueGreen(t *testing.T) {
 	ctx := context.Background()
 	tx, err := integrationDB.BeginTx(ctx, nil)
 	require.NoError(t, err)
@@ -229,16 +229,23 @@ VALUES (31, 100, 100, 0, 'legacy-writer-after-contract', 'stripe', 'COMPLETED');
 	require.NoError(t, err)
 
 	applyPaymentReversalMigration(t, ctx, tx)
-	require.NoError(t, savepoint(ctx, tx, "before_legacy_writer"))
 	_, err = tx.ExecContext(ctx, `
 UPDATE payment_orders
 SET status = 'PARTIALLY_REFUNDED',
     refund_amount = 20
 WHERE id = 31
 `)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "chk_payment_orders_reversal_projection")
-	require.NoError(t, rollbackToSavepoint(ctx, tx, "before_legacy_writer"))
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, `
+INSERT INTO payment_audit_logs (order_id, action, detail, created_at)
+VALUES ('31', 'CHARGEBACK_EVENT_legacy',
+        '{"gatewayAmount":20,"amountSemantic":"total","status":"chargeback","refundAmountTotal":20,"creditedDelta":20}',
+        NOW())
+`)
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "SET CONSTRAINTS ALL IMMEDIATE")
+	require.NoError(t, err)
+	assertPaymentReversalComponents(t, ctx, tx, 31, 0, 20, 20)
 }
 
 func createPaymentReversalMigrationTestTables(t *testing.T, ctx context.Context, tx *sql.Tx) {
