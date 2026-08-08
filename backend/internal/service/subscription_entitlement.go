@@ -17,18 +17,22 @@ const (
 )
 
 var (
-	ErrSubscriptionEntitlementNotFound      = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_NOT_FOUND", "subscription entitlement not found")
-	ErrSubscriptionEntitlementExpired       = infraerrors.Forbidden("SUBSCRIPTION_ENTITLEMENT_EXPIRED", "subscription entitlement has expired")
-	ErrSubscriptionEntitlementInactive      = infraerrors.Forbidden("SUBSCRIPTION_ENTITLEMENT_INACTIVE", "subscription entitlement is inactive")
-	ErrSubscriptionEntitlementNilInput      = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_NIL_INPUT", "subscription entitlement input cannot be nil")
-	ErrSubscriptionEntitlementAlreadyExists = infraerrors.Conflict("SUBSCRIPTION_ENTITLEMENT_ALREADY_EXISTS", "subscription entitlement already exists")
-	ErrSubscriptionEntitlementInvalidReset  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_RESET", "at least one entitlement usage window must be reset")
-	ErrSubscriptionEntitlementInvalidUsage  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_USAGE", "entitlement usage cost must be non-negative")
-	ErrSubscriptionEntitlementQuotaExceeded = infraerrors.TooManyRequests("SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", "subscription entitlement quota exceeded")
-	ErrSubscriptionEntitlementPlanRequired  = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_REQUIRED", "subscription plan is required")
-	ErrSubscriptionEntitlementPlanInvalid   = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_INVALID", "subscription plan cannot grant an entitlement")
-	ErrSubscriptionEntitlementPlanNotFound  = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_PLAN_NOT_FOUND", "subscription plan not found")
-	ErrSubscriptionEntitlementTermConflict  = infraerrors.Conflict("SUBSCRIPTION_ENTITLEMENT_TERM_CONFLICT", "subscription entitlement term changed concurrently")
+	ErrSubscriptionEntitlementNotFound         = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_NOT_FOUND", "subscription entitlement not found")
+	ErrSubscriptionEntitlementExpired          = infraerrors.Forbidden("SUBSCRIPTION_ENTITLEMENT_EXPIRED", "subscription entitlement has expired")
+	ErrSubscriptionEntitlementInactive         = infraerrors.Forbidden("SUBSCRIPTION_ENTITLEMENT_INACTIVE", "subscription entitlement is inactive")
+	ErrSubscriptionEntitlementNilInput         = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_NIL_INPUT", "subscription entitlement input cannot be nil")
+	ErrSubscriptionEntitlementAlreadyExists    = infraerrors.Conflict("SUBSCRIPTION_ENTITLEMENT_ALREADY_EXISTS", "subscription entitlement already exists")
+	ErrSubscriptionEntitlementInvalidReset     = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_RESET", "at least one entitlement usage window must be reset")
+	ErrSubscriptionEntitlementInvalidUsage     = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_INVALID_USAGE", "entitlement usage cost must be non-negative")
+	ErrSubscriptionEntitlementQuotaExceeded    = infraerrors.TooManyRequests("SUBSCRIPTION_ENTITLEMENT_QUOTA_EXCEEDED", "subscription entitlement quota exceeded")
+	ErrSubscriptionEntitlementPlanRequired     = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_REQUIRED", "subscription plan is required")
+	ErrSubscriptionEntitlementPlanInvalid      = infraerrors.BadRequest("SUBSCRIPTION_ENTITLEMENT_PLAN_INVALID", "subscription plan cannot grant an entitlement")
+	ErrSubscriptionEntitlementPlanNotFound     = infraerrors.NotFound("SUBSCRIPTION_ENTITLEMENT_PLAN_NOT_FOUND", "subscription plan not found")
+	ErrSubscriptionEntitlementTermConflict     = infraerrors.Conflict("SUBSCRIPTION_ENTITLEMENT_TERM_CONFLICT", "subscription entitlement term changed concurrently")
+	ErrSubscriptionEntitlementAliasUnavailable = infraerrors.ServiceUnavailable(
+		"SUBSCRIPTION_ENTITLEMENT_ALIAS_UNAVAILABLE",
+		"linked legacy subscription storage is unavailable",
+	)
 )
 
 type SubscriptionEntitlement struct {

@@ -154,13 +154,14 @@ func (s *SubscriptionEntitlementRepoSuite) TestResetUsageAndUpdateTerm() {
 	s.Require().NoError(s.repo.CreateTx(s.ctx, ent, []int64{group.ID}))
 
 	windowStart := now.Add(2 * time.Hour)
-	s.Require().NoError(s.repo.ResetUsage(s.ctx, ent.ID, true, false, true, windowStart))
+	dailyStart := windowStart.Add(-time.Hour)
+	s.Require().NoError(s.repo.ResetUsage(s.ctx, ent.ID, true, false, true, dailyStart, windowStart))
 	got, err := s.repo.GetByID(s.ctx, ent.ID)
 	s.Require().NoError(err)
 	s.Require().Zero(got.DailyUsageUSD)
 	s.Require().InEpsilon(2.5, got.WeeklyUsageUSD, 0.000001)
 	s.Require().Zero(got.MonthlyUsageUSD)
-	s.Require().Equal(windowStart, *got.DailyWindowStart)
+	s.Require().Equal(dailyStart, *got.DailyWindowStart)
 	s.Require().Equal(windowStart, *got.MonthlyWindowStart)
 
 	newExpiresAt := now.Add(48 * time.Hour)

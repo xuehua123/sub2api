@@ -195,6 +195,9 @@ type TopUsersByCurrency map[string][]TopUserStat
 type PaymentService struct {
 	providerMu                 sync.Mutex
 	providersLoaded            bool
+	refundRecoveryMu           sync.Mutex
+	refundRecoveryCursor       int64
+	affiliateReversalEnabled   bool
 	entClient                  *dbent.Client
 	registry                   *payment.Registry
 	loadBalancer               payment.LoadBalancer
@@ -227,6 +230,7 @@ func NewPaymentService(
 	referralRefundSvc *ReferralRefundService,
 	affiliateService *AffiliateService,
 ) *PaymentService {
+	affiliateReversalEnabled := affiliateRefundReversalEnabledFromEnvironment()
 	svc := &PaymentService{
 		entClient:                  entClient,
 		registry:                   registry,
@@ -242,8 +246,14 @@ func NewPaymentService(
 		referralRewardSvc:          referralRewardSvc,
 		referralRefundSvc:          referralRefundSvc,
 		affiliateService:           affiliateService,
+		affiliateReversalEnabled:   affiliateReversalEnabled,
 	}
+	slog.Info("[PaymentService] affiliate refund reversal gate initialized", "enabled", affiliateReversalEnabled)
 	return svc
+}
+
+func affiliateRefundReversalEnabledFromEnvironment() bool {
+	return strings.TrimSpace(os.Getenv(affiliateRefundReversalEnabledEnv)) == "true"
 }
 
 func (s *PaymentService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {

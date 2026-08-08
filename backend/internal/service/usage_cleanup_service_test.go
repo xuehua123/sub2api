@@ -238,10 +238,10 @@ func TestUsageCleanupServiceCreateTaskSanitizeFilters(t *testing.T) {
 
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	end := start.Add(24 * time.Hour)
-	userID := int64(-1)
+	userID := int64(1)
 	apiKeyID := int64(10)
 	model := "  gpt-4  "
-	billingType := int8(-2)
+	billingType := BillingTypeBalance
 	filters := UsageCleanupFilters{
 		StartTime:   start,
 		EndTime:     end,
@@ -254,13 +254,54 @@ func TestUsageCleanupServiceCreateTaskSanitizeFilters(t *testing.T) {
 	task, err := svc.CreateTask(context.Background(), filters, 9)
 	require.NoError(t, err)
 	require.Equal(t, UsageCleanupStatusPending, task.Status)
-	require.Nil(t, task.Filters.UserID)
+	require.NotNil(t, task.Filters.UserID)
+	require.Equal(t, userID, *task.Filters.UserID)
 	require.NotNil(t, task.Filters.APIKeyID)
 	require.Equal(t, apiKeyID, *task.Filters.APIKeyID)
 	require.NotNil(t, task.Filters.Model)
 	require.Equal(t, "gpt-4", *task.Filters.Model)
-	require.Nil(t, task.Filters.BillingType)
+	require.NotNil(t, task.Filters.BillingType)
+	require.Equal(t, billingType, *task.Filters.BillingType)
 	require.Equal(t, int64(9), task.CreatedBy)
+}
+
+func TestUsageCleanupServiceCreateTaskRejectsInvalidOptionalFilters(t *testing.T) {
+	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	invalidID := int64(0)
+	blankModel := "  "
+	invalidRequestType := int16(99)
+	invalidBillingType := int8(2)
+
+	tests := []struct {
+		name   string
+		filter UsageCleanupFilters
+		reason string
+	}{
+		{name: "user", filter: UsageCleanupFilters{UserID: &invalidID}, reason: "USAGE_CLEANUP_INVALID_USER_ID"},
+		{name: "api key", filter: UsageCleanupFilters{APIKeyID: &invalidID}, reason: "USAGE_CLEANUP_INVALID_API_KEY_ID"},
+		{name: "account", filter: UsageCleanupFilters{AccountID: &invalidID}, reason: "USAGE_CLEANUP_INVALID_ACCOUNT_ID"},
+		{name: "group", filter: UsageCleanupFilters{GroupID: &invalidID}, reason: "USAGE_CLEANUP_INVALID_GROUP_ID"},
+		{name: "entitlement", filter: UsageCleanupFilters{EntitlementID: &invalidID}, reason: "USAGE_CLEANUP_INVALID_ENTITLEMENT_ID"},
+		{name: "model", filter: UsageCleanupFilters{Model: &blankModel}, reason: "USAGE_CLEANUP_INVALID_MODEL"},
+		{name: "request type", filter: UsageCleanupFilters{RequestType: &invalidRequestType}, reason: "USAGE_CLEANUP_INVALID_REQUEST_TYPE"},
+		{name: "billing type", filter: UsageCleanupFilters{BillingType: &invalidBillingType}, reason: "USAGE_CLEANUP_INVALID_BILLING_TYPE"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &cleanupRepoStub{}
+			svc := NewUsageCleanupService(repo, nil, nil, &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true}})
+			tt.filter.StartTime = start
+			tt.filter.EndTime = end
+
+			task, err := svc.CreateTask(context.Background(), tt.filter, 9)
+			require.Nil(t, task)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tt.reason)
+			require.Empty(t, repo.created, "invalid filters must not be widened into a cleanup task")
+		})
+	}
 }
 
 func TestSanitizeUsageCleanupFiltersRequestTypePriority(t *testing.T) {
@@ -273,7 +314,7 @@ func TestSanitizeUsageCleanupFiltersRequestTypePriority(t *testing.T) {
 		Stream:      &stream,
 	}
 
-	sanitizeUsageCleanupFilters(&filters)
+	require.NoError(t, sanitizeUsageCleanupFilters(&filters))
 
 	require.NotNil(t, filters.RequestType)
 	require.Equal(t, int16(RequestTypeWSV2), *filters.RequestType)
@@ -290,11 +331,24 @@ func TestSanitizeUsageCleanupFiltersInvalidRequestType(t *testing.T) {
 		Stream:      &stream,
 	}
 
-	sanitizeUsageCleanupFilters(&filters)
+	err := sanitizeUsageCleanupFilters(&filters)
 
-	require.Nil(t, filters.RequestType)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "USAGE_CLEANUP_INVALID_REQUEST_TYPE")
+	require.NotNil(t, filters.RequestType)
+	require.Equal(t, int16(99), *filters.RequestType)
 	require.NotNil(t, filters.Stream)
 	require.True(t, *filters.Stream)
+}
+
+func TestSanitizeUsageCleanupFiltersPreservesEntitlement(t *testing.T) {
+	entitlementID := int64(42)
+	filters := UsageCleanupFilters{EntitlementID: &entitlementID}
+
+	require.NoError(t, sanitizeUsageCleanupFilters(&filters))
+
+	require.NotNil(t, filters.EntitlementID)
+	require.Equal(t, int64(42), *filters.EntitlementID)
 }
 
 func TestDescribeUsageCleanupFiltersIncludesRequestType(t *testing.T) {
@@ -310,6 +364,13 @@ func TestDescribeUsageCleanupFiltersIncludesRequestType(t *testing.T) {
 	require.Contains(t, desc, "request_type=ws_v2")
 }
 
+func TestDescribeUsageCleanupFiltersIncludesEntitlement(t *testing.T) {
+	entitlementID := int64(42)
+	desc := describeUsageCleanupFilters(UsageCleanupFilters{EntitlementID: &entitlementID})
+
+	require.Contains(t, desc, "entitlement_id=42")
+}
+
 func TestUsageCleanupServiceCreateTaskInvalidCreator(t *testing.T) {
 	repo := &cleanupRepoStub{}
 	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true}}
@@ -322,6 +383,26 @@ func TestUsageCleanupServiceCreateTaskInvalidCreator(t *testing.T) {
 	_, err := svc.CreateTask(context.Background(), filters, 0)
 	require.Error(t, err)
 	require.Equal(t, "USAGE_CLEANUP_INVALID_CREATOR", infraerrors.Reason(err))
+}
+
+func TestUsageCleanupServiceCreateTaskRejectsInvalidEntitlementID(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	svc := NewUsageCleanupService(repo, nil, nil, cfg)
+	entitlementID := int64(0)
+	filters := UsageCleanupFilters{
+		StartTime:     time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		EndTime:       time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC),
+		EntitlementID: &entitlementID,
+	}
+
+	task, err := svc.CreateTask(context.Background(), filters, 9)
+
+	require.Nil(t, task)
+	require.Error(t, err)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Equal(t, "USAGE_CLEANUP_INVALID_ENTITLEMENT_ID", infraerrors.Reason(err))
+	require.Empty(t, repo.created, "invalid entitlement filter must not create a broader cleanup task")
 }
 
 func TestUsageCleanupServiceCreateTaskDisabled(t *testing.T) {
@@ -351,6 +432,21 @@ func TestUsageCleanupServiceCreateTaskRangeTooLarge(t *testing.T) {
 	_, err := svc.CreateTask(context.Background(), filters, 1)
 	require.Error(t, err)
 	require.Equal(t, "USAGE_CLEANUP_RANGE_TOO_LARGE", infraerrors.Reason(err))
+}
+
+func TestUsageCleanupServiceCreateTaskAcceptsCalendarDayAcrossDST(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 1}}
+	svc := NewUsageCleanupService(repo, nil, nil, cfg)
+	location, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	start := time.Date(2024, 11, 3, 0, 0, 0, 0, location)
+	end := start.AddDate(0, 0, 1)
+	require.Greater(t, end.Sub(start), 24*time.Hour, "fall DST day should exercise the 25-hour boundary")
+
+	task, err := svc.CreateTask(context.Background(), UsageCleanupFilters{StartTime: start, EndTime: end}, 1)
+	require.NoError(t, err)
+	require.NotNil(t, task)
 }
 
 func TestUsageCleanupServiceCreateTaskMissingRange(t *testing.T) {
@@ -826,7 +922,7 @@ func TestUsageCleanupServiceDefaultsAndLifecycle(t *testing.T) {
 	svcMissingDeps.Start()
 }
 
-func TestSanitizeUsageCleanupFiltersModelEmpty(t *testing.T) {
+func TestSanitizeUsageCleanupFiltersRejectsRatherThanWidensInvalidValues(t *testing.T) {
 	model := "   "
 	apiKeyID := int64(-5)
 	accountID := int64(-1)
@@ -839,12 +935,14 @@ func TestSanitizeUsageCleanupFiltersModelEmpty(t *testing.T) {
 		Model:     &model,
 	}
 
-	sanitizeUsageCleanupFilters(&filters)
-	require.Nil(t, filters.UserID)
-	require.Nil(t, filters.APIKeyID)
-	require.Nil(t, filters.AccountID)
-	require.Nil(t, filters.GroupID)
-	require.Nil(t, filters.Model)
+	err := sanitizeUsageCleanupFilters(&filters)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "USAGE_CLEANUP_INVALID_USER_ID")
+	require.NotNil(t, filters.UserID)
+	require.NotNil(t, filters.APIKeyID)
+	require.NotNil(t, filters.AccountID)
+	require.NotNil(t, filters.GroupID)
+	require.NotNil(t, filters.Model)
 }
 
 func TestDescribeUsageCleanupFiltersAllFields(t *testing.T) {

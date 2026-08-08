@@ -67,7 +67,7 @@
         </div>
 
         <!-- Turnstile Widget for Resend -->
-        <div v-if="actionCaptchaEnabled || (turnstileEnabled && showResendTurnstile)">
+        <div v-if="resendCaptchaEnabled">
           <TurnstileWidget
             ref="turnstileRef"
             :site-key="turnstileSiteKey"
@@ -75,6 +75,7 @@
             :turnstile-site-key="turnstileSiteKey"
             :tencent-enabled="tencentCaptchaEnabled"
             :tencent-app-id="tencentCaptchaAppId"
+            :tencent-region="tencentCaptchaRegion"
             :aliyun-enabled="aliyunCaptchaEnabled"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
@@ -93,6 +94,7 @@
             :turnstile-site-key="turnstileSiteKey"
             :tencent-enabled="tencentCaptchaEnabled"
             :tencent-app-id="tencentCaptchaAppId"
+            :tencent-region="tencentCaptchaRegion"
             :aliyun-enabled="aliyunCaptchaEnabled"
             :aliyun-scene-id="aliyunCaptchaSceneId"
             :aliyun-prefix="aliyunCaptchaPrefix"
@@ -176,7 +178,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { computed, nextTick, ref, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
@@ -263,6 +265,7 @@ const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
 const tencentCaptchaEnabled = ref<boolean>(false)
 const tencentCaptchaAppId = ref<string>('')
+const tencentCaptchaRegion = ref<string>('cn')
 const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
@@ -278,6 +281,7 @@ const resendTencentCaptchaRandstr = ref<string>('')
 const createAccountTurnstileToken = ref<string>('')
 const createAccountTencentCaptchaRandstr = ref<string>('')
 const showResendTurnstile = ref<boolean>(false)
+const pendingOAuthCaptchaPurpose = ref<'create-account' | 'resend'>('create-account')
 const aliyunCaptchaReady = computed(
   () =>
     aliyunCaptchaEnabled.value &&
@@ -306,8 +310,16 @@ const validationToastMessage = computed(
 const pendingOAuthCreateTurnstileRequired = computed(
   () => isPendingOAuthFlow() && turnstileEnabled.value
 )
+const resendCaptchaEnabled = computed(
+  () =>
+    (actionCaptchaEnabled.value || (turnstileEnabled.value && showResendTurnstile.value)) &&
+    (!isPendingOAuthFlow() || pendingOAuthCaptchaPurpose.value === 'resend')
+)
 const pendingOAuthCreateCaptchaEnabled = computed(
-  () => isPendingOAuthFlow() && captchaEnabled.value
+  () =>
+    isPendingOAuthFlow() &&
+    captchaEnabled.value &&
+    pendingOAuthCaptchaPurpose.value === 'create-account'
 )
 
 watch(validationToastMessage, (value, previousValue) => {
@@ -364,6 +376,7 @@ onMounted(async () => {
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     tencentCaptchaEnabled.value = settings.tencent_captcha_enabled === true
     tencentCaptchaAppId.value = settings.tencent_captcha_app_id || ''
+    tencentCaptchaRegion.value = settings.tencent_captcha_region || 'cn'
     aliyunCaptchaEnabled.value = settings.aliyun_captcha_enabled === true
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
@@ -422,12 +435,14 @@ function onTurnstileExpire(): void {
   resendTurnstileToken.value = ''
   resendTencentCaptchaRandstr.value = ''
   errors.value.turnstile = t('auth.turnstileExpired')
+  restorePendingOAuthCreateCaptcha()
 }
 
 function onTurnstileError(): void {
   resendTurnstileToken.value = ''
   resendTencentCaptchaRandstr.value = ''
   errors.value.turnstile = t('auth.turnstileFailed')
+  restorePendingOAuthCreateCaptcha()
 }
 
 function onCreateAccountTurnstileVerify(token: string, randstr = ''): void {
@@ -452,6 +467,15 @@ function resetCreateAccountTurnstile(): void {
   createAccountTurnstileToken.value = ''
   createAccountTencentCaptchaRandstr.value = ''
   createAccountTurnstileRef.value?.reset()
+}
+
+function restorePendingOAuthCreateCaptcha(): void {
+  if (!isPendingOAuthFlow()) return
+
+  pendingOAuthCaptchaPurpose.value = 'create-account'
+  showResendTurnstile.value = false
+  resendTurnstileToken.value = ''
+  resendTencentCaptchaRandstr.value = ''
 }
 
 async function acquireResendActionProof(): Promise<boolean> {
@@ -613,22 +637,39 @@ function clearStoredCaptchaProof(): void {
 // ==================== Handlers ====================
 
 async function handleResendCode(): Promise<void> {
+  const shouldSwapPendingOAuthCaptcha = isPendingOAuthFlow() && captchaEnabled.value
+  const didSwapPendingOAuthCaptcha =
+    shouldSwapPendingOAuthCaptcha && pendingOAuthCaptchaPurpose.value !== 'resend'
+  if (shouldSwapPendingOAuthCaptcha) {
+    pendingOAuthCaptchaPurpose.value = 'resend'
+  }
+
   // Turnstile stays staged; Tencent is acquired from this action.
-  if (turnstileEnabled.value && !showResendTurnstile.value) {
+  if (turnstileEnabled.value && (!showResendTurnstile.value || didSwapPendingOAuthCaptcha)) {
     showResendTurnstile.value = true
     return
   }
 
-  if (turnstileEnabled.value && !resendTurnstileToken.value) {
-    errors.value.turnstile = t('auth.completeVerification')
-    return
+  if (shouldSwapPendingOAuthCaptcha) {
+    await nextTick()
   }
 
-  if (!(await acquireResendActionProof())) {
-    return
-  }
+  try {
+    if (turnstileEnabled.value && !resendTurnstileToken.value) {
+      errors.value.turnstile = t('auth.completeVerification')
+      return
+    }
 
-  await sendCode()
+    if (!(await acquireResendActionProof())) {
+      return
+    }
+
+    await sendCode()
+  } finally {
+    if (shouldSwapPendingOAuthCaptcha) {
+      restorePendingOAuthCreateCaptcha()
+    }
+  }
 }
 
 function validateForm(): boolean {

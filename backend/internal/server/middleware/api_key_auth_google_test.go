@@ -83,7 +83,7 @@ type fakeGoogleSubscriptionRepo struct {
 	getByID        func(ctx context.Context, id int64) (*service.UserSubscription, error)
 	getActive      func(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error)
 	updateStatus   func(ctx context.Context, subscriptionID int64, status string) error
-	activateWindow func(ctx context.Context, id int64, start time.Time) error
+	activateWindow func(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error
 	resetDaily     func(ctx context.Context, id int64, start time.Time) error
 	resetWeekly    func(ctx context.Context, id int64, start time.Time) error
 	resetMonthly   func(ctx context.Context, id int64, start time.Time) error
@@ -193,6 +193,9 @@ func (f fakeGoogleSubscriptionRepo) GetByIDForUpdate(ctx context.Context, id int
 func (f fakeGoogleSubscriptionRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
+func (f fakeGoogleSubscriptionRepo) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
 func (f fakeGoogleSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
@@ -209,6 +212,9 @@ func (f fakeGoogleSubscriptionRepo) Delete(ctx context.Context, id int64) error 
 	return errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) Restore(ctx context.Context, subscriptionID int64, restoredStatus string) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+func (f fakeGoogleSubscriptionRepo) RestoreWithLifecycle(ctx context.Context, subscriptionID int64, state service.UserSubscriptionLifecycleState) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) ListByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
@@ -241,13 +247,13 @@ func (f fakeGoogleSubscriptionRepo) UpdateStatus(ctx context.Context, subscripti
 func (f fakeGoogleSubscriptionRepo) UpdateNotes(ctx context.Context, subscriptionID int64, notes string) error {
 	return errors.New("not implemented")
 }
-func (f fakeGoogleSubscriptionRepo) ActivateWindows(ctx context.Context, id int64, start time.Time) error {
+func (f fakeGoogleSubscriptionRepo) ActivateWindows(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error {
 	if f.activateWindow != nil {
-		return f.activateWindow(ctx, id, start)
+		return f.activateWindow(ctx, id, dailyStart, periodicStart)
 	}
 	return errors.New("not implemented")
 }
-func (f fakeGoogleSubscriptionRepo) ResetUsageWindows(context.Context, int64, bool, bool, bool, time.Time) error {
+func (f fakeGoogleSubscriptionRepo) ResetUsageWindows(context.Context, int64, bool, bool, bool, time.Time, time.Time) error {
 	return errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) ResetDailyUsage(ctx context.Context, id int64, _ *time.Time, start time.Time) error {
@@ -1106,7 +1112,7 @@ func TestApiKeyAuthWithSubscriptionGoogle_SubscriptionLimitExceededReturns429(t 
 			return &clone, nil
 		},
 		updateStatus:   func(ctx context.Context, subscriptionID int64, status string) error { return nil },
-		activateWindow: func(ctx context.Context, id int64, start time.Time) error { return nil },
+		activateWindow: func(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error { return nil },
 		resetDaily:     func(ctx context.Context, id int64, start time.Time) error { return nil },
 		resetWeekly:    func(ctx context.Context, id int64, start time.Time) error { return nil },
 		resetMonthly:   func(ctx context.Context, id int64, start time.Time) error { return nil },

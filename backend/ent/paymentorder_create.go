@@ -288,6 +288,34 @@ func (_c *PaymentOrderCreate) SetNillableRefundAmount(v *float64) *PaymentOrderC
 	return _c
 }
 
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (_c *PaymentOrderCreate) SetProviderRefundAmount(v float64) *PaymentOrderCreate {
+	_c.mutation.SetProviderRefundAmount(v)
+	return _c
+}
+
+// SetNillableProviderRefundAmount sets the "provider_refund_amount" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableProviderRefundAmount(v *float64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetProviderRefundAmount(*v)
+	}
+	return _c
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (_c *PaymentOrderCreate) SetChargebackAmount(v float64) *PaymentOrderCreate {
+	_c.mutation.SetChargebackAmount(v)
+	return _c
+}
+
+// SetNillableChargebackAmount sets the "chargeback_amount" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableChargebackAmount(v *float64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetChargebackAmount(*v)
+	}
+	return _c
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_c *PaymentOrderCreate) SetRefundReason(v string) *PaymentOrderCreate {
 	_c.mutation.SetRefundReason(v)
@@ -553,6 +581,14 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultRefundAmount
 		_c.mutation.SetRefundAmount(v)
 	}
+	if _, ok := _c.mutation.ProviderRefundAmount(); !ok {
+		v := paymentorder.DefaultProviderRefundAmount
+		_c.mutation.SetProviderRefundAmount(v)
+	}
+	if _, ok := _c.mutation.ChargebackAmount(); !ok {
+		v := paymentorder.DefaultChargebackAmount
+		_c.mutation.SetChargebackAmount(v)
+	}
 	if _, ok := _c.mutation.ForceRefund(); !ok {
 		v := paymentorder.DefaultForceRefund
 		_c.mutation.SetForceRefund(v)
@@ -657,6 +693,12 @@ func (_c *PaymentOrderCreate) check() error {
 	}
 	if _, ok := _c.mutation.RefundAmount(); !ok {
 		return &ValidationError{Name: "refund_amount", err: errors.New(`ent: missing required field "PaymentOrder.refund_amount"`)}
+	}
+	if _, ok := _c.mutation.ProviderRefundAmount(); !ok {
+		return &ValidationError{Name: "provider_refund_amount", err: errors.New(`ent: missing required field "PaymentOrder.provider_refund_amount"`)}
+	}
+	if _, ok := _c.mutation.ChargebackAmount(); !ok {
+		return &ValidationError{Name: "chargeback_amount", err: errors.New(`ent: missing required field "PaymentOrder.chargeback_amount"`)}
 	}
 	if _, ok := _c.mutation.ForceRefund(); !ok {
 		return &ValidationError{Name: "force_refund", err: errors.New(`ent: missing required field "PaymentOrder.force_refund"`)}
@@ -808,6 +850,14 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.RefundAmount(); ok {
 		_spec.SetField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
 		_node.RefundAmount = value
+	}
+	if value, ok := _c.mutation.ProviderRefundAmount(); ok {
+		_spec.SetField(paymentorder.FieldProviderRefundAmount, field.TypeFloat64, value)
+		_node.ProviderRefundAmount = value
+	}
+	if value, ok := _c.mutation.ChargebackAmount(); ok {
+		_spec.SetField(paymentorder.FieldChargebackAmount, field.TypeFloat64, value)
+		_node.ChargebackAmount = value
 	}
 	if value, ok := _c.mutation.RefundReason(); ok {
 		_spec.SetField(paymentorder.FieldRefundReason, field.TypeString, value)
@@ -1352,6 +1402,42 @@ func (u *PaymentOrderUpsert) UpdateRefundAmount() *PaymentOrderUpsert {
 // AddRefundAmount adds v to the "refund_amount" field.
 func (u *PaymentOrderUpsert) AddRefundAmount(v float64) *PaymentOrderUpsert {
 	u.Add(paymentorder.FieldRefundAmount, v)
+	return u
+}
+
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (u *PaymentOrderUpsert) SetProviderRefundAmount(v float64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldProviderRefundAmount, v)
+	return u
+}
+
+// UpdateProviderRefundAmount sets the "provider_refund_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateProviderRefundAmount() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldProviderRefundAmount)
+	return u
+}
+
+// AddProviderRefundAmount adds v to the "provider_refund_amount" field.
+func (u *PaymentOrderUpsert) AddProviderRefundAmount(v float64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldProviderRefundAmount, v)
+	return u
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (u *PaymentOrderUpsert) SetChargebackAmount(v float64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldChargebackAmount, v)
+	return u
+}
+
+// UpdateChargebackAmount sets the "chargeback_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateChargebackAmount() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldChargebackAmount)
+	return u
+}
+
+// AddChargebackAmount adds v to the "chargeback_amount" field.
+func (u *PaymentOrderUpsert) AddChargebackAmount(v float64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldChargebackAmount, v)
 	return u
 }
 
@@ -2099,6 +2185,48 @@ func (u *PaymentOrderUpsertOne) AddRefundAmount(v float64) *PaymentOrderUpsertOn
 func (u *PaymentOrderUpsertOne) UpdateRefundAmount() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateRefundAmount()
+	})
+}
+
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (u *PaymentOrderUpsertOne) SetProviderRefundAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetProviderRefundAmount(v)
+	})
+}
+
+// AddProviderRefundAmount adds v to the "provider_refund_amount" field.
+func (u *PaymentOrderUpsertOne) AddProviderRefundAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddProviderRefundAmount(v)
+	})
+}
+
+// UpdateProviderRefundAmount sets the "provider_refund_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateProviderRefundAmount() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateProviderRefundAmount()
+	})
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (u *PaymentOrderUpsertOne) SetChargebackAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetChargebackAmount(v)
+	})
+}
+
+// AddChargebackAmount adds v to the "chargeback_amount" field.
+func (u *PaymentOrderUpsertOne) AddChargebackAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddChargebackAmount(v)
+	})
+}
+
+// UpdateChargebackAmount sets the "chargeback_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateChargebackAmount() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateChargebackAmount()
 	})
 }
 
@@ -3052,6 +3180,48 @@ func (u *PaymentOrderUpsertBulk) AddRefundAmount(v float64) *PaymentOrderUpsertB
 func (u *PaymentOrderUpsertBulk) UpdateRefundAmount() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateRefundAmount()
+	})
+}
+
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (u *PaymentOrderUpsertBulk) SetProviderRefundAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetProviderRefundAmount(v)
+	})
+}
+
+// AddProviderRefundAmount adds v to the "provider_refund_amount" field.
+func (u *PaymentOrderUpsertBulk) AddProviderRefundAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddProviderRefundAmount(v)
+	})
+}
+
+// UpdateProviderRefundAmount sets the "provider_refund_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateProviderRefundAmount() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateProviderRefundAmount()
+	})
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (u *PaymentOrderUpsertBulk) SetChargebackAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetChargebackAmount(v)
+	})
+}
+
+// AddChargebackAmount adds v to the "chargeback_amount" field.
+func (u *PaymentOrderUpsertBulk) AddChargebackAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddChargebackAmount(v)
+	})
+}
+
+// UpdateChargebackAmount sets the "chargeback_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateChargebackAmount() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateChargebackAmount()
 	})
 }
 

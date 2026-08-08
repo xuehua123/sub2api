@@ -12,6 +12,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
+	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/dgraph-io/ristretto"
@@ -558,6 +559,154 @@ func TestExecuteRefundWebhookSuccessWinsOverProviderError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPartiallyRefunded, reloaded.Status)
 	require.Equal(t, 50.0, reloaded.RefundAmount)
+}
+
+func TestExecuteRefund_ConcurrentChargebackPreservesClaimAndCombinesOnSuccess(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		&payment.RefundResponse{RefundID: "unused", Status: payment.ProviderStatusSuccess},
+		nil,
+		payment.NotificationAmountTotal,
+		"unused-refund-event",
+	)
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeRepo.orders["stripe::"+fixture.order.OutTradeNo] = &RechargeOrder{
+		ID:              910,
+		UserID:          fixture.order.UserID,
+		Provider:        payment.TypeStripe,
+		ExternalOrderID: fixture.order.OutTradeNo,
+		PaidAmount:      100,
+		Status:          RechargeOrderStatusCredited,
+		Currency:        ReferralSettlementCurrencyCNY,
+	}
+	fixture.svc.referralRefundSvc = NewReferralRefundService(rechargeRepo, &commissionRepoStub{}, nil, nil)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	fixture.svc.affiliateService = NewAffiliateService(affiliateRepo, nil, nil, nil)
+	fixture.svc.affiliateReversalEnabled = true
+	_, err := fixture.client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(fixture.order.ID, 10)).
+		SetAction("AFFILIATE_REBATE_APPLIED").
+		SetDetail(`{"rebateAmount":10}`).
+		SetOperator("system").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+
+	claimPreserved := false
+	provider := &callbackRefundProviderStub{
+		response: &payment.RefundResponse{RefundID: "rf_manual_success", Status: payment.ProviderStatusSuccess},
+		onRefund: func() {
+			fixture.webhookErr = fixture.svc.HandlePaymentNotification(fixture.ctx, &payment.PaymentNotification{
+				EventID:        "evt_chargeback_during_manual_success",
+				OrderID:        fixture.order.OutTradeNo,
+				TradeNo:        fixture.order.PaymentTradeNo,
+				Amount:         20,
+				AmountSemantic: payment.NotificationAmountTotal,
+				Status:         payment.NotificationStatusChargeback,
+			}, payment.TypeStripe)
+			current, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+			if err == nil {
+				_, claimPreserved = refundInFlightDetailFromOrder(current)
+				claimPreserved = claimPreserved && current.Status == OrderStatusRefunding
+			}
+		},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restore)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.True(t, result.Success)
+	require.True(t, claimPreserved, "a chargeback must not clear or finalize the unrelated in-flight refund claim")
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Equal(t, 20.0, fixture.webhookDeducted)
+	require.Zero(t, fixture.rollbackRestored)
+
+	updated, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 50.0, updated.ProviderRefundAmount)
+	require.Equal(t, 20.0, updated.ChargebackAmount)
+	require.Equal(t, 70.0, updated.RefundAmount)
+	require.Equal(t, OrderStatusPartiallyRefunded, updated.Status)
+
+	recharge, err := rechargeRepo.GetByProviderAndExternalOrderID(fixture.ctx, payment.TypeStripe, fixture.order.OutTradeNo)
+	require.NoError(t, err)
+	require.Equal(t, 50.0, recharge.RefundedAmount)
+	require.Equal(t, 20.0, recharge.ChargebackAmount)
+	require.Len(t, affiliateRepo.reverseCalls, 2)
+	require.InDelta(t, 0.2, affiliateRepo.reverseCalls[0].cumulativeRefundRatio, 1e-9)
+	require.InDelta(t, 0.7, affiliateRepo.reverseCalls[1].cumulativeRefundRatio, 1e-9)
+}
+
+func TestExecuteRefund_ConcurrentChargebackSurvivesGatewayFailureRollback(t *testing.T) {
+	fixture := newRefundWebhookRaceFixture(
+		t,
+		nil,
+		errors.New("unused"),
+		payment.NotificationAmountTotal,
+		"unused-refund-event",
+	)
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeRepo.orders["stripe::"+fixture.order.OutTradeNo] = &RechargeOrder{
+		ID:              911,
+		UserID:          fixture.order.UserID,
+		Provider:        payment.TypeStripe,
+		ExternalOrderID: fixture.order.OutTradeNo,
+		PaidAmount:      100,
+		Status:          RechargeOrderStatusCredited,
+		Currency:        ReferralSettlementCurrencyCNY,
+	}
+	fixture.svc.referralRefundSvc = NewReferralRefundService(rechargeRepo, &commissionRepoStub{}, nil, nil)
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	fixture.svc.affiliateService = NewAffiliateService(affiliateRepo, nil, nil, nil)
+	fixture.svc.affiliateReversalEnabled = true
+	_, err := fixture.client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(fixture.order.ID, 10)).
+		SetAction("AFFILIATE_REBATE_APPLIED").
+		SetDetail(`{"rebateAmount":10}`).
+		SetOperator("system").
+		Save(fixture.ctx)
+	require.NoError(t, err)
+
+	provider := &callbackRefundProviderStub{
+		err: errors.New("provider unavailable after chargeback callback"),
+		onRefund: func() {
+			fixture.webhookErr = fixture.svc.HandlePaymentNotification(fixture.ctx, &payment.PaymentNotification{
+				EventID:        "evt_chargeback_during_manual_failure",
+				OrderID:        fixture.order.OutTradeNo,
+				TradeNo:        fixture.order.PaymentTradeNo,
+				Amount:         20,
+				AmountSemantic: payment.NotificationAmountTotal,
+				Status:         payment.NotificationStatusChargeback,
+			}, payment.TypeStripe)
+		},
+	}
+	restore := replacePaymentProviderFactoryForTest(t, provider)
+	t.Cleanup(restore)
+
+	result, err := fixture.svc.ExecuteRefund(fixture.ctx, fixture.plan)
+	require.NoError(t, err)
+	require.NoError(t, fixture.webhookErr)
+	require.False(t, result.Success)
+	require.Equal(t, 50.0, fixture.initialDeducted)
+	require.Equal(t, 20.0, fixture.webhookDeducted)
+	require.Equal(t, 50.0, fixture.rollbackRestored)
+
+	updated, err := fixture.client.PaymentOrder.Get(fixture.ctx, fixture.order.ID)
+	require.NoError(t, err)
+	require.Zero(t, updated.ProviderRefundAmount)
+	require.Equal(t, 20.0, updated.ChargebackAmount)
+	require.Equal(t, 20.0, updated.RefundAmount)
+	require.Equal(t, OrderStatusPartiallyRefunded, updated.Status)
+	_, hasClaim := refundInFlightDetailFromOrder(updated)
+	require.False(t, hasClaim)
+
+	recharge, err := rechargeRepo.GetByProviderAndExternalOrderID(fixture.ctx, payment.TypeStripe, fixture.order.OutTradeNo)
+	require.NoError(t, err)
+	require.Zero(t, recharge.RefundedAmount)
+	require.Equal(t, 20.0, recharge.ChargebackAmount)
+	require.Len(t, affiliateRepo.reverseCalls, 1)
+	require.InDelta(t, 0.2, affiliateRepo.reverseCalls[0].cumulativeRefundRatio, 1e-9)
 }
 
 func TestExecuteRefund_DeductsSubscriptionEntitlementDays(t *testing.T) {
@@ -1122,7 +1271,9 @@ func TestFinishRefundPendingMarksOrderPendingAndRollsBackDeduction(t *testing.T)
 	reloaded, err := client.PaymentOrder.Get(ctx, order.ID)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusRefundPending, reloaded.Status)
-	require.Equal(t, 40.0, reloaded.RefundAmount)
+	require.Zero(t, reloaded.ProviderRefundAmount)
+	require.Zero(t, reloaded.ChargebackAmount)
+	require.Zero(t, reloaded.RefundAmount, "a pending provider operation is not a settled reversal component")
 	require.NotNil(t, reloaded.RefundReason)
 	require.Equal(t, "gateway accepted but not final", *reloaded.RefundReason)
 	require.Nil(t, reloaded.RefundAt)
@@ -1440,6 +1591,59 @@ func TestApplyRefundFinalDeductionShortensSubscriptionEntitlement(t *testing.T) 
 	require.WithinDuration(t, originalExpiry.AddDate(0, 0, -10), entitlement.ExpiresAt, time.Second)
 }
 
+func TestPrepSubscriptionDeductExplicitV2OrderNeverFallsBackToLegacySubscription(t *testing.T) {
+	now := time.Now()
+	const (
+		userID        = int64(41)
+		groupID       = int64(73)
+		entitlementID = int64(91)
+	)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	entRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+		ID:        entitlementID,
+		UserID:    userID,
+		Status:    SubscriptionStatusExpired,
+		StartsAt:  now.Add(-48 * time.Hour),
+		ExpiresAt: now.Add(-24 * time.Hour),
+	}
+	legacyRepo := newRefundRollbackSubscriptionRepoStub()
+	legacyRepo.seed(&UserSubscription{
+		ID:        19,
+		UserID:    userID,
+		GroupID:   groupID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-24 * time.Hour),
+		ExpiresAt: now.Add(30 * 24 * time.Hour),
+	})
+	svc := &PaymentService{
+		subscriptionEntitlementSvc: NewSubscriptionEntitlementService(entRepo, nil),
+		subscriptionSvc:            NewSubscriptionService(nil, legacyRepo, nil, nil, nil),
+	}
+	order := &dbent.PaymentOrder{
+		UserID:                    userID,
+		OrderType:                 payment.OrderTypeSubscription,
+		SubscriptionGroupID:       int64ValuePtr(groupID),
+		SubscriptionEntitlementID: int64ValuePtr(entitlementID),
+		ProviderSnapshot: map[string]any{
+			paymentOrderSnapshotEntitlementV2Enabled: true,
+		},
+	}
+	plan := &RefundPlan{}
+
+	result := svc.prepSubscriptionDeduct(context.Background(), order, plan, true, 10)
+
+	require.Nil(t, result)
+	require.Zero(t, plan.SubscriptionID)
+	require.Nil(t, plan.SubscriptionSnapshot)
+
+	nonForcePlan := &RefundPlan{}
+	result = svc.prepSubscriptionDeduct(context.Background(), order, nonForcePlan, false, 10)
+	require.NotNil(t, result)
+	require.True(t, result.RequireForce)
+	require.Zero(t, nonForcePlan.SubscriptionID)
+	require.Nil(t, nonForcePlan.SubscriptionSnapshot)
+}
+
 func TestPrepareRefundRejectsPendingRefundOrder(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)
@@ -1661,6 +1865,411 @@ func TestMarkRefundOkExistingTxRollsBackPartialReferralSyncBeforeWarning(t *test
 	require.Zero(t, updatedRecharge.RefundedAmount)
 	require.Nil(t, updatedRecharge.RefundedAt)
 	requireAuditActionsForOrder(t, ctx, client, order.ID, "REFUND_SUCCESS", "REFUND_REFERRAL_SYNC_FAILED")
+}
+
+func TestMarkRefundOkIsolatesReferralAndAffiliateSyncFailures(t *testing.T) {
+	tests := []struct {
+		name            string
+		referralErr     error
+		affiliateErr    error
+		expectedActions []string
+		expectedWarning []string
+	}{
+		{
+			name:            "referral failure does not roll back affiliate",
+			referralErr:     errors.New("referral unavailable"),
+			expectedActions: []string{paymentAuditActionReferralRefundSyncFailed},
+			expectedWarning: []string{"referral sync failed"},
+		},
+		{
+			name:            "affiliate failure does not roll back referral",
+			affiliateErr:    errors.New("affiliate unavailable"),
+			expectedActions: []string{paymentAuditActionAffiliateRefundSyncFailed},
+			expectedWarning: []string{"affiliate sync failed"},
+		},
+		{
+			name:            "both failures are recorded",
+			referralErr:     errors.New("referral unavailable"),
+			affiliateErr:    errors.New("affiliate unavailable"),
+			expectedActions: []string{paymentAuditActionReferralRefundSyncFailed, paymentAuditActionAffiliateRefundSyncFailed},
+			expectedWarning: []string{"referral sync failed", "affiliate sync failed"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newPaymentServiceEntClient(t)
+			ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+			user := createPaymentRefundTestUser(t, ctx, client, 0)
+			order := createPaymentOrderForRefundTest(
+				t,
+				ctx,
+				client,
+				user,
+				100,
+				100,
+				0,
+				OrderStatusRefunding,
+				"isolated_reward_sync_"+strconv.FormatInt(time.Now().UnixNano(), 10),
+				"trade_isolated_reward_sync_"+strconv.FormatInt(time.Now().UnixNano(), 10),
+			)
+			_, err := client.PaymentAuditLog.Create().
+				SetOrderID(strconv.FormatInt(order.ID, 10)).
+				SetAction("AFFILIATE_REBATE_APPLIED").
+				SetDetail(`{"rebateAmount":10}`).
+				SetOperator("system").
+				Save(ctx)
+			require.NoError(t, err)
+
+			affiliateRepo := &paymentFulfillmentAffiliateRepoStub{reverseErr: tt.affiliateErr}
+			svc := &PaymentService{
+				entClient:                client,
+				affiliateService:         NewAffiliateService(affiliateRepo, nil, nil, nil),
+				affiliateReversalEnabled: true,
+			}
+			if tt.referralErr != nil {
+				svc.referralRefundSvc = NewReferralRefundService(
+					&failingRechargeOrderRepoStub{rechargeOrderRepoStub: newRechargeOrderRepoStub(), err: tt.referralErr},
+					&commissionRepoStub{},
+					nil,
+					nil,
+				)
+			}
+
+			result, err := svc.markRefundOk(ctx, &RefundPlan{
+				OrderID:       order.ID,
+				Order:         order,
+				RefundAmount:  100,
+				GatewayAmount: 100,
+				Reason:        "gateway success",
+			})
+			require.NoError(t, err)
+			require.True(t, result.Success)
+			for _, warning := range tt.expectedWarning {
+				require.Contains(t, result.Warning, warning)
+			}
+			require.Len(t, affiliateRepo.reverseCalls, 1, "affiliate sync must be attempted independently")
+			require.InDelta(t, 1, affiliateRepo.reverseCalls[0].cumulativeRefundRatio, 1e-9)
+			requireAuditActionsForOrder(t, ctx, client, order.ID, append([]string{"REFUND_SUCCESS"}, tt.expectedActions...)...)
+
+			for _, action := range []string{paymentAuditActionReferralRefundSyncFailed, paymentAuditActionAffiliateRefundSyncFailed} {
+				count, countErr := client.PaymentAuditLog.Query().
+					Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(order.ID, 10)), paymentauditlog.ActionEQ(action)).
+					Count(ctx)
+				require.NoError(t, countErr)
+				require.Equal(t, boolToInt(containsExpectedAuditAction(tt.expectedActions, action)), count)
+			}
+		})
+	}
+}
+
+func TestRetryFailedRefundRewardSyncsIsIdempotentAcrossFailureCycles(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		100,
+		100,
+		50,
+		OrderStatusPartiallyRefunded,
+		"affiliate_recovery",
+		"trade_affiliate_recovery",
+	)
+	for _, action := range []string{"AFFILIATE_REBATE_APPLIED", paymentAuditActionAffiliateRefundSyncFailed} {
+		_, err := client.PaymentAuditLog.Create().
+			SetOrderID(strconv.FormatInt(order.ID, 10)).
+			SetAction(action).
+			SetDetail(`{"test":true}`).
+			SetOperator("system").
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	svc := &PaymentService{
+		entClient:                client,
+		affiliateService:         NewAffiliateService(affiliateRepo, nil, nil, nil),
+		affiliateReversalEnabled: true,
+	}
+
+	recovered, err := svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 1)
+	require.InDelta(t, 0.5, affiliateRepo.reverseCalls[0].cumulativeRefundRatio, 1e-9)
+	requireAuditActionsForOrder(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncRecovered)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncFailed, 0)
+
+	recovered, err = svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Zero(t, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 1, "recovery without a failed marker must be a no-op")
+
+	_, err = client.PaymentOrder.UpdateOneID(order.ID).SetRefundAmount(75).Save(ctx)
+	require.NoError(t, err)
+	_, err = client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction(paymentAuditActionAffiliateRefundSyncFailed).
+		SetDetail(`{"test":"second cycle"}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+
+	recovered, err = svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 2)
+	require.InDelta(t, 0.75, affiliateRepo.reverseCalls[1].cumulativeRefundRatio, 1e-9)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncFailed, 0)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncRecovered, 1)
+}
+
+func TestRetryFailedRefundRewardSyncsDefersAffiliateWhileGateDisabled(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		100,
+		100,
+		50,
+		OrderStatusPartiallyRefunded,
+		"deferred_affiliate_recovery",
+		"trade_deferred_affiliate_recovery",
+	)
+	for _, action := range []string{
+		"AFFILIATE_REBATE_APPLIED",
+		paymentAuditActionAffiliateRefundSyncFailed,
+		paymentAuditActionReferralRefundSyncFailed,
+	} {
+		_, err := client.PaymentAuditLog.Create().
+			SetOrderID(strconv.FormatInt(order.ID, 10)).
+			SetAction(action).
+			SetDetail(`{"test":true}`).
+			SetOperator("system").
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	rechargeRepo := newRechargeOrderRepoStub()
+	rechargeOrder := &RechargeOrder{
+		UserID:          order.UserID,
+		ExternalOrderID: order.OutTradeNo,
+		Provider:        payment.TypeStripe,
+		Currency:        ReferralSettlementCurrencyCNY,
+		PaidAmount:      100,
+		Status:          RechargeOrderStatusPaid,
+	}
+	require.NoError(t, rechargeRepo.Create(ctx, rechargeOrder))
+
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	svc := &PaymentService{
+		entClient:         client,
+		referralRefundSvc: NewReferralRefundService(rechargeRepo, &commissionRepoStub{}, nil, nil),
+		affiliateService:  NewAffiliateService(affiliateRepo, nil, nil, nil),
+		// The zero value intentionally represents the first deployment phase.
+	}
+
+	recovered, err := svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Empty(t, affiliateRepo.reverseCalls)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionReferralRefundSyncFailed, 0)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionReferralRefundSyncRecovered, 1)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncFailed, 1)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncRecovered, 0)
+
+	recovered, err = svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Zero(t, recovered, "disabled affiliate markers must not be retried repeatedly")
+	require.Empty(t, affiliateRepo.reverseCalls)
+
+	svc.affiliateReversalEnabled = true
+	recovered, err = svc.RetryFailedRefundRewardSyncs(ctx, 10)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 1)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncFailed, 0)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncRecovered, 1)
+}
+
+func TestRetryFailedRefundRewardSyncsRotatesPastPoisonScanWindow(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+
+	for i := 0; i < defaultFailedRefundSyncRecoveryLimit; i++ {
+		order := createPaymentOrderForRefundTest(
+			t,
+			ctx,
+			client,
+			user,
+			100,
+			100,
+			50,
+			OrderStatusCompleted,
+			fmt.Sprintf("poison_refund_recovery_%d", i),
+			fmt.Sprintf("trade_poison_refund_recovery_%d", i),
+		)
+		_, err := client.PaymentAuditLog.Create().
+			SetOrderID(strconv.FormatInt(order.ID, 10)).
+			SetAction(paymentAuditActionAffiliateRefundSyncFailed).
+			SetDetail(`{"test":"poison"}`).
+			SetOperator("system").
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	recoverable := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		100,
+		100,
+		50,
+		OrderStatusPartiallyRefunded,
+		"recoverable_after_poison_window",
+		"trade_recoverable_after_poison_window",
+	)
+	for _, action := range []string{"AFFILIATE_REBATE_APPLIED", paymentAuditActionAffiliateRefundSyncFailed} {
+		_, err := client.PaymentAuditLog.Create().
+			SetOrderID(strconv.FormatInt(recoverable.ID, 10)).
+			SetAction(action).
+			SetDetail(`{"test":"recoverable"}`).
+			SetOperator("system").
+			Save(ctx)
+		require.NoError(t, err)
+	}
+
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	svc := &PaymentService{
+		entClient:                client,
+		affiliateService:         NewAffiliateService(affiliateRepo, nil, nil, nil),
+		affiliateReversalEnabled: true,
+	}
+
+	recovered, err := svc.RetryFailedRefundRewardSyncs(ctx, 1)
+	require.NoError(t, err)
+	require.Zero(t, recovered)
+	require.Empty(t, affiliateRepo.reverseCalls)
+
+	// A replacement process must resume after the persisted poison window rather
+	// than starting over from the first failed audit rows.
+	restartedSvc := &PaymentService{
+		entClient:                client,
+		affiliateService:         NewAffiliateService(affiliateRepo, nil, nil, nil),
+		affiliateReversalEnabled: true,
+	}
+	recovered, err = restartedSvc.RetryFailedRefundRewardSyncs(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 1)
+	require.Equal(t, recoverable.ID, affiliateRepo.reverseCalls[0].sourceOrderID)
+}
+
+func TestLoadFailedRefundSyncRecoveryCursorRepairsInvalidValue(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	_, err := client.Setting.Create().
+		SetKey(failedRefundSyncRecoveryCursorSettingKey).
+		SetValue("not-an-audit-id").
+		Save(ctx)
+	require.NoError(t, err)
+	svc := &PaymentService{entClient: client}
+
+	cursor, err := svc.loadFailedRefundSyncRecoveryCursor(ctx)
+
+	require.NoError(t, err)
+	require.Zero(t, cursor)
+	settingEntry, err := client.Setting.Query().
+		Where(setting.KeyEQ(failedRefundSyncRecoveryCursorSettingKey)).
+		Only(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0", settingEntry.Value)
+}
+
+func TestSyncReferralRefundToSettledTotalSubtractsExistingChargeback(t *testing.T) {
+	ctx := context.Background()
+	rechargeRepo := newRechargeOrderRepoStub()
+	commissionRepo := &commissionRepoStub{}
+	recharge := &RechargeOrder{
+		UserID:           42,
+		ExternalOrderID:  "chargeback-cap",
+		Provider:         payment.TypeStripe,
+		Currency:         ReferralSettlementCurrencyCNY,
+		PaidAmount:       100,
+		RefundedAmount:   20,
+		ChargebackAmount: 30,
+		Status:           RechargeOrderStatusChargeback,
+	}
+	require.NoError(t, rechargeRepo.Create(ctx, recharge))
+	svc := &PaymentService{
+		referralRefundSvc: NewReferralRefundService(rechargeRepo, commissionRepo, nil, nil),
+	}
+	order := &dbent.PaymentOrder{
+		ID:                   99,
+		Amount:               100,
+		PayAmount:            100,
+		RefundAmount:         80,
+		ProviderRefundAmount: 50,
+		ChargebackAmount:     30,
+		OrderType:            payment.OrderTypeBalance,
+		PaymentType:          payment.TypeStripe,
+		OutTradeNo:           recharge.ExternalOrderID,
+	}
+
+	require.NoError(t, svc.syncReferralRefundToSettledTotal(ctx, order))
+	updated, err := rechargeRepo.GetByID(ctx, recharge.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 50, updated.RefundedAmount, 1e-9)
+	require.InDelta(t, 30, updated.ChargebackAmount, 1e-9)
+
+	require.NoError(t, svc.syncReferralRefundToSettledTotal(ctx, order))
+	updatedAgain, err := rechargeRepo.GetByID(ctx, recharge.ID)
+	require.NoError(t, err)
+	require.InDelta(t, 50, updatedAgain.RefundedAmount, 1e-9, "repeated cumulative recovery must be idempotent")
+
+	updatedAgain.PaidAmount = 0
+	require.NoError(t, rechargeRepo.Update(ctx, updatedAgain))
+	err = svc.syncReferralRefundToSettledTotal(ctx, order)
+	require.ErrorContains(t, err, "invalid referral reversal base")
+}
+
+func requirePaymentAuditActionCount(t *testing.T, ctx context.Context, client *dbent.Client, orderID int64, action string, expected int) {
+	t.Helper()
+	count, err := client.PaymentAuditLog.Query().
+		Where(paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10)), paymentauditlog.ActionEQ(action)).
+		Count(ctx)
+	require.NoError(t, err)
+	require.Equal(t, expected, count)
+}
+
+func containsExpectedAuditAction(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 type txAwareRefundRechargeRepo struct {

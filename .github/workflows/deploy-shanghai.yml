@@ -4,8 +4,17 @@ on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Immutable image tag or full image ref"
+        description: "Bare sha256 digest or full ghcr.io image@digest"
         required: true
+        type: string
+      affiliate_refund_reversal_stage:
+        description: "Affiliate refund reversal contract stage"
+        required: true
+        default: disabled
+        type: choice
+        options:
+          - disabled
+          - enabled
 
 permissions:
   contents: read
@@ -25,16 +34,22 @@ jobs:
     environment: production-stable
 
     steps:
-      - name: Validate immutable image tag
+      - name: Validate immutable image digest
         env:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
+          AFFILIATE_REFUND_REVERSAL_STAGE: ${{ inputs.affiliate_refund_reversal_stage }}
         run: |
           set -eu
-          case "$DEPLOY_IMAGE_TAG" in
-            sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]|sha256:*) ;;
-            ghcr.io/xuehua123/sub2api:sha-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
-            ghcr.io/xuehua123/sub2api@sha256:*) ;;
-            *) echo "Only immutable sha-* tags or sha256 digests are allowed" >&2; exit 1 ;;
+          if [[ "$DEPLOY_IMAGE_TAG" =~ ^sha256:[0-9a-f]{64}$ ]] \
+            || [[ "$DEPLOY_IMAGE_TAG" =~ ^ghcr\.io/xuehua123/sub2api@sha256:[0-9a-f]{64}$ ]]; then
+            :
+          else
+            echo "Only a bare sha256 digest or ${IMAGE_NAME}@sha256 digest is allowed" >&2
+            exit 1
+          fi
+          case "$AFFILIATE_REFUND_REVERSAL_STAGE" in
+            disabled|enabled) ;;
+            *) echo "Affiliate refund reversal stage must be disabled or enabled" >&2; exit 1 ;;
           esac
 
       - name: Prepare stable deployment payload
@@ -43,13 +58,15 @@ jobs:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USERNAME: ${{ github.actor }}
+          AFFILIATE_REFUND_REVERSAL_STAGE: ${{ inputs.affiliate_refund_reversal_stage }}
         run: |
           set -euo pipefail
           stable_deploy_payload="$(
-            printf '%s\n%s\n%s\n' \
+            printf 'sub2api-deploy-v2 %s\n%s\n%s\n%s\n' \
               "$DEPLOY_IMAGE_TAG" \
               "$GHCR_USERNAME" \
-              "$GHCR_TOKEN" |
+              "$GHCR_TOKEN" \
+              "$AFFILIATE_REFUND_REVERSAL_STAGE" |
               base64 -w0
           )"
           echo "::add-mask::$stable_deploy_payload"
@@ -62,6 +79,7 @@ jobs:
           STABLE_USER: ${{ secrets.NEW_STABLE_USER }}
           STABLE_PORT: ${{ secrets.NEW_STABLE_PORT }}
           STABLE_DEPLOY_KEY: ${{ secrets.SHANGHAI_DEPLOY_SSH_KEY }}
+          STABLE_KNOWN_HOSTS: ${{ secrets.SHANGHAI_SSH_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
 
@@ -72,8 +90,20 @@ jobs:
           }
           trap cleanup EXIT
 
+          if [[ -z "$STABLE_KNOWN_HOSTS" ]]; then
+            echo "SHANGHAI_SSH_KNOWN_HOSTS must be configured in the protected production-stable environment" >&2
+            exit 1
+          fi
+
           printf '%s\n' "$STABLE_DEPLOY_KEY" > "$key_file"
+          printf '%s\n' "$STABLE_KNOWN_HOSTS" > "$known_hosts_file"
           chmod 600 "$key_file"
+          chmod 600 "$known_hosts_file"
+
+          if ! ssh-keygen -l -f "$known_hosts_file" >/dev/null; then
+            echo "SHANGHAI_SSH_KNOWN_HOSTS does not contain a valid SSH host key" >&2
+            exit 1
+          fi
 
           # The deployment account is constrained by an SSH forced command. It
           # ignores remote shell text and consumes this session's stdin directly.
@@ -82,7 +112,7 @@ jobs:
             ssh -T \
               -i "$key_file" \
               -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=accept-new \
+              -o StrictHostKeyChecking=yes \
               -o UserKnownHostsFile="$known_hosts_file" \
               -p "$STABLE_PORT" \
               "$STABLE_USER@$STABLE_HOST" \

@@ -6,12 +6,35 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 type SubscriptionEntitlementService struct {
-	entitlementRepo SubscriptionEntitlementRepository
-	planRepo        SubscriptionEntitlementPlanRepository
-	nowFunc         func() time.Time
+	entitlementRepo        SubscriptionEntitlementRepository
+	planRepo               SubscriptionEntitlementPlanRepository
+	legacySubscriptionRepo UserSubscriptionRepository
+	legacyAliasInvalidator func(*SubscriptionEntitlement)
+	nowFunc                func() time.Time
+}
+
+func (s *SubscriptionEntitlementService) SetLegacySubscriptionRepository(repo UserSubscriptionRepository) {
+	if s != nil {
+		s.legacySubscriptionRepo = repo
+	}
+}
+
+func (s *SubscriptionEntitlementService) SetLegacyAliasInvalidator(invalidator func(*SubscriptionEntitlement)) {
+	if s != nil {
+		s.legacyAliasInvalidator = invalidator
+	}
+}
+
+func (s *SubscriptionEntitlementService) invalidateLinkedLegacyAlias(ent *SubscriptionEntitlement) {
+	if s == nil || ent == nil || ent.LegacySubscriptionID == nil || s.legacyAliasInvalidator == nil {
+		return
+	}
+	s.legacyAliasInvalidator(ent)
 }
 
 type AssignEntitlementFromPlanInput struct {
@@ -94,6 +117,36 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 		return nil, false, ErrSubscriptionEntitlementPlanInvalid
 	}
 	validityDays := entitlementValidityDays(plan, input.ValidityDaysOverride)
+	var result *SubscriptionEntitlement
+	var reused bool
+	err = s.entitlementRepo.WithUserEntitlementMutationTx(ctx, input.UserID, func(txCtx context.Context) error {
+		var mutationErr error
+		result, reused, mutationErr = s.assignOrExtendFromPlanLocked(txCtx, input, plan, groupIDs, validityDays, source, now)
+		return mutationErr
+	})
+	if err != nil {
+		if errors.Is(err, ErrSubscriptionEntitlementAlreadyExists) {
+			if replay, replayFound, replayErr := s.findEntitlementBySource(ctx, source); replayErr == nil && replayFound {
+				return replay, true, nil
+			}
+		}
+		return nil, false, err
+	}
+	return result, reused, nil
+}
+
+func (s *SubscriptionEntitlementService) assignOrExtendFromPlanLocked(
+	ctx context.Context,
+	input AssignEntitlementFromPlanInput,
+	plan *SubscriptionEntitlementPlan,
+	groupIDs []int64,
+	validityDays int,
+	source SubscriptionEntitlementSourceRef,
+	now time.Time,
+) (*SubscriptionEntitlement, bool, error) {
+	if existing, found, err := s.findEntitlementBySource(ctx, source); err != nil || found {
+		return existing, found, err
+	}
 
 	existing, found, err := s.findReusablePlanEntitlement(ctx, input.UserID, plan.ID, groupIDs, now)
 	if err != nil {
@@ -101,11 +154,6 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 	}
 	if found {
 		ent, err := s.extendExistingEntitlement(ctx, existing, validityDays, input.Notes, source, now)
-		if errors.Is(err, ErrSubscriptionEntitlementAlreadyExists) {
-			if replay, replayFound, replayErr := s.findEntitlementBySource(ctx, source); replayErr != nil || replayFound {
-				return replay, replayFound, replayErr
-			}
-		}
 		return ent, true, err
 	}
 
@@ -113,17 +161,17 @@ func (s *SubscriptionEntitlementService) AssignOrExtendFromPlanTx(ctx context.Co
 	applyEntitlementPurchaseSnapshot(ent.PlanSnapshot, input.PurchasePrice, input.PurchaseCurrency, input.PurchaseCNYPerUSDRate)
 	fulfillment := newEntitlementFulfillment(ent, validityDays, source)
 	if err := s.entitlementRepo.CreateWithFulfillment(ctx, ent, groupIDs, fulfillment); err != nil {
-		if errors.Is(err, ErrSubscriptionEntitlementAlreadyExists) {
-			if replay, replayFound, replayErr := s.findEntitlementBySource(ctx, source); replayErr != nil || replayFound {
-				return replay, replayFound, replayErr
-			}
-		}
 		return nil, false, err
 	}
 	if ent.ID > 0 {
-		if refreshed, err := s.entitlementRepo.GetByID(ctx, ent.ID); err == nil {
-			return refreshed, false, nil
+		refreshed, err := s.entitlementRepo.GetByID(ctx, ent.ID)
+		if err != nil {
+			return nil, false, err
 		}
+		if err := syncLinkedLegacySubscriptionLifecycle(ctx, s.legacySubscriptionRepo, refreshed); err != nil {
+			return nil, false, err
+		}
+		return refreshed, false, nil
 	}
 	return ent, false, nil
 }
@@ -136,6 +184,34 @@ func (s *SubscriptionEntitlementService) inputNow(override time.Time) time.Time 
 		return s.nowFunc()
 	}
 	return time.Now()
+}
+
+func (s *SubscriptionEntitlementService) withLockedEntitlement(
+	ctx context.Context,
+	entitlementID int64,
+	userID int64,
+	fn func(context.Context, *SubscriptionEntitlement) error,
+) error {
+	if s == nil || s.entitlementRepo == nil || entitlementID <= 0 || fn == nil {
+		return ErrSubscriptionEntitlementNotFound
+	}
+	if userID <= 0 {
+		ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+		if err != nil {
+			return err
+		}
+		userID = ent.UserID
+	}
+	return s.entitlementRepo.WithUserEntitlementMutationTx(ctx, userID, func(txCtx context.Context) error {
+		ent, err := s.entitlementRepo.GetByIDForUpdate(txCtx, entitlementID)
+		if err != nil {
+			return err
+		}
+		if ent.UserID != userID {
+			return ErrSubscriptionEntitlementNotFound
+		}
+		return fn(txCtx, ent)
+	})
 }
 
 func (s *SubscriptionEntitlementService) findEntitlementBySource(ctx context.Context, source SubscriptionEntitlementSourceRef) (*SubscriptionEntitlement, bool, error) {
@@ -216,7 +292,7 @@ func (s *SubscriptionEntitlementService) getEntitlementByFulfillmentRedeemCodeID
 }
 
 func (s *SubscriptionEntitlementService) findReusablePlanEntitlement(ctx context.Context, userID, planID int64, groupIDs []int64, now time.Time) (*SubscriptionEntitlement, bool, error) {
-	candidates, err := s.entitlementRepo.ListByUserPlanID(ctx, userID, planID)
+	candidates, err := s.entitlementRepo.ListByUserPlanIDForUpdate(ctx, userID, planID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -281,11 +357,15 @@ func (s *SubscriptionEntitlementService) extendExistingEntitlement(
 		StartsAt:  startsAt,
 		ExpiresAt: expiresAt,
 	}, validityDays, source)
-	if err := s.entitlementRepo.ExtendWithFulfillment(ctx, existing.ID, startsAt, expiresAt, SubscriptionStatusActive, mergedNotes, source, fulfillment, expired, startsAt); err != nil {
+	dailyStart := timezone.StartOfDay(startsAt)
+	if err := s.entitlementRepo.ExtendWithFulfillment(ctx, existing.ID, startsAt, expiresAt, SubscriptionStatusActive, mergedNotes, source, fulfillment, expired, dailyStart, startsAt); err != nil {
 		return nil, err
 	}
 	refreshed, err := s.entitlementRepo.GetByID(ctx, existing.ID)
 	if err != nil {
+		return nil, err
+	}
+	if err := syncLinkedLegacySubscriptionLifecycle(ctx, s.legacySubscriptionRepo, refreshed); err != nil {
 		return nil, err
 	}
 	return refreshed, nil
@@ -337,7 +417,8 @@ func entitlementSourceFromAssignInput(input AssignEntitlementFromPlanInput, now 
 
 func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID int64, primaryGroupID *int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time, legacySubscriptionID *int64) *SubscriptionEntitlement {
 	planID := plan.ID
-	windowStart := now
+	dailyWindowStart := timezone.StartOfDay(now)
+	periodicWindowStart := now
 	name := plan.Name
 	if strings.TrimSpace(name) == "" {
 		name = plan.ProductName
@@ -352,9 +433,9 @@ func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID int64, pri
 		Status:               SubscriptionStatusActive,
 		StartsAt:             now,
 		ExpiresAt:            addEntitlementValidityDays(now, validityDays),
-		DailyWindowStart:     &windowStart,
-		WeeklyWindowStart:    &windowStart,
-		MonthlyWindowStart:   &windowStart,
+		DailyWindowStart:     &dailyWindowStart,
+		WeeklyWindowStart:    &periodicWindowStart,
+		MonthlyWindowStart:   &periodicWindowStart,
 		DailyLimitUSD:        cloneFloat64Ptr(plan.DailyLimitUSD),
 		WeeklyLimitUSD:       cloneFloat64Ptr(plan.WeeklyLimitUSD),
 		MonthlyLimitUSD:      cloneFloat64Ptr(plan.MonthlyLimitUSD),

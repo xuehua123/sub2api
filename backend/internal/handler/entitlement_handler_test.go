@@ -13,6 +13,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -37,7 +38,7 @@ type entitlementHandlerFixture struct {
 
 func TestEntitlementHandler_ListUserEntitlementsSafeDTO(t *testing.T) {
 	fx := newEntitlementHandlerFixture(t)
-	windowStart := fx.now.Add(-12 * time.Hour)
+	windowStart := timezone.StartOfDay(fx.now)
 	dailyLimit := 10.0
 	weeklyLimit := 40.0
 	monthlyLimit := 100.0
@@ -108,7 +109,8 @@ func TestEntitlementHandler_ListUserEntitlementsSafeDTO(t *testing.T) {
 	require.Equal(t, float64(legacyID), got["legacy_subscription_id"])
 	require.Equal(t, 1.25, got["daily_usage_usd"])
 	require.Equal(t, float64(10), got["daily_limit_usd"])
-	require.Equal(t, float64(12*60*60), got["daily_resets_in_seconds"])
+	expectedDailyResetSeconds := timezone.StartOfDay(fx.now).AddDate(0, 0, 1).Sub(fx.now).Seconds()
+	require.Equal(t, expectedDailyResetSeconds, got["daily_resets_in_seconds"])
 	groups, ok := got["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 2)
@@ -351,6 +353,10 @@ type handlerAdvanceEntitlementRepo struct {
 	resetLogs    []service.SubscriptionEntitlementCycleResetLog
 }
 
+func (r *handlerAdvanceEntitlementRepo) WithUserEntitlementMutationTx(ctx context.Context, _ int64, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func (r *handlerAdvanceEntitlementRepo) Create(context.Context, *service.SubscriptionEntitlement, []int64) error {
 	return service.ErrSubscriptionEntitlementNotFound
 }
@@ -368,6 +374,10 @@ func (r *handlerAdvanceEntitlementRepo) GetByID(_ context.Context, id int64) (*s
 		return nil, service.ErrSubscriptionEntitlementNotFound
 	}
 	return cloneHandlerEntitlement(r.ent), nil
+}
+
+func (r *handlerAdvanceEntitlementRepo) GetByIDForUpdate(ctx context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	return r.GetByID(ctx, id)
 }
 
 func (r *handlerAdvanceEntitlementRepo) GetBySourceID(context.Context, string, int64) (*service.SubscriptionEntitlement, error) {
@@ -406,6 +416,10 @@ func (r *handlerAdvanceEntitlementRepo) ListByUserPlanID(context.Context, int64,
 	return nil, nil
 }
 
+func (r *handlerAdvanceEntitlementRepo) ListByUserPlanIDForUpdate(ctx context.Context, userID, planID int64) ([]service.SubscriptionEntitlement, error) {
+	return r.ListByUserPlanID(ctx, userID, planID)
+}
+
 func (r *handlerAdvanceEntitlementRepo) ListActiveByUserID(context.Context, int64) ([]service.SubscriptionEntitlement, error) {
 	return nil, nil
 }
@@ -422,11 +436,27 @@ func (r *handlerAdvanceEntitlementRepo) UpdateTermAndSource(context.Context, int
 	return service.ErrSubscriptionEntitlementNotFound
 }
 
-func (r *handlerAdvanceEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time) error {
+func (r *handlerAdvanceEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time, time.Time) error {
 	return service.ErrSubscriptionEntitlementNotFound
 }
 
-func (r *handlerAdvanceEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time) error {
+func (r *handlerAdvanceEntitlementRepo) ActivateWindows(context.Context, int64, time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetDailyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetWeeklyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetMonthlyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return service.ErrSubscriptionEntitlementNotFound
 }
 
@@ -436,10 +466,6 @@ func (r *handlerAdvanceEntitlementRepo) ApplyEntitlementUsage(context.Context, i
 
 func (r *handlerAdvanceEntitlementRepo) ReplaceGroups(context.Context, int64, []int64) error {
 	return service.ErrSubscriptionEntitlementNotFound
-}
-
-func (r *handlerAdvanceEntitlementRepo) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
-	return fn(ctx)
 }
 
 func (r *handlerAdvanceEntitlementRepo) LockEntitlementMonthlyCycle(_ context.Context, userID, entitlementID int64) (*service.SubscriptionEntitlementMonthlyCycleSnapshot, error) {

@@ -6,7 +6,7 @@ import (
 )
 
 type subscriptionEntitlementMonthlyCycleStore interface {
-	WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error
+	WithUserEntitlementMutationTx(ctx context.Context, userID int64, fn func(context.Context) error) error
 	LockEntitlementMonthlyCycle(ctx context.Context, userID, entitlementID int64) (*SubscriptionEntitlementMonthlyCycleSnapshot, error)
 	UpdateEntitlementMonthlyCycle(ctx context.Context, update SubscriptionEntitlementMonthlyCycleUpdate) error
 	InsertEntitlementCycleResetLog(ctx context.Context, log SubscriptionEntitlementCycleResetLog) error
@@ -23,7 +23,8 @@ func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context
 
 	now := s.inputNow(time.Time{}).Truncate(time.Second)
 	var result *AdvanceEntitlementMonthlyCycleResult
-	if err := store.WithEntitlementCycleTx(ctx, func(txCtx context.Context) error {
+	var invalidationTarget *SubscriptionEntitlement
+	if err := store.WithUserEntitlementMutationTx(ctx, userID, func(txCtx context.Context) error {
 		snapshot, err := store.LockEntitlementMonthlyCycle(txCtx, userID, entitlementID)
 		if err != nil {
 			return err
@@ -32,11 +33,20 @@ func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context
 		if err != nil {
 			return err
 		}
+		updatedEntitlement, err := s.entitlementRepo.GetByID(txCtx, entitlementID)
+		if err != nil {
+			return err
+		}
+		if err := syncLinkedLegacySubscriptionLifecycle(txCtx, s.legacySubscriptionRepo, updatedEntitlement); err != nil {
+			return err
+		}
+		invalidationTarget = updatedEntitlement
 		result = advanced
 		return nil
 	}); err != nil {
 		return nil, err
 	}
+	s.invalidateLinkedLegacyAlias(invalidationTarget)
 
 	entitlement, err := s.entitlementRepo.GetByID(ctx, entitlementID)
 	if err != nil {

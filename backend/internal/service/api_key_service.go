@@ -1675,7 +1675,11 @@ func entitlementCurrentUsageWindowStart(ent *SubscriptionEntitlement, quotaPerio
 			t := *ent.DailyWindowStart
 			return &t
 		}
-		return effectiveWindowStartAt(ent.DailyWindowStart, ent.StartsAt, 24*time.Hour, now)
+		windowStart := timezone.StartOfDay(*ent.DailyWindowStart)
+		if current, ok := ent.automaticDailyWindowStartAt(now); ok {
+			windowStart = current
+		}
+		return &windowStart
 	case "weekly":
 		if ent.WeeklyWindowStart == nil {
 			return nil
@@ -1705,7 +1709,11 @@ func legacySubscriptionCurrentUsageWindowStart(sub *UserSubscription, quotaPerio
 			t := *sub.DailyWindowStart
 			return &t
 		}
-		return effectiveWindowStartAt(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now)
+		windowStart := timezone.StartOfDay(*sub.DailyWindowStart)
+		if current, ok := sub.automaticDailyWindowStartAt(now); ok {
+			windowStart = current
+		}
+		return &windowStart
 	case "weekly":
 		if sub.WeeklyWindowStart == nil {
 			return nil
@@ -1762,7 +1770,7 @@ func legacySubscriptionCurrentPeriodUsageUSD(sub *UserSubscription, quotaPeriod 
 	var used float64
 	switch quotaPeriod {
 	case "daily":
-		if sub.DailyWindowStart != nil && !sub.HasOneTimeDailyQuota() && needsWindowResetAt(sub.DailyWindowStart, sub.StartsAt, 24*time.Hour, now) {
+		if sub.NeedsDailyResetAt(now) {
 			return 0
 		}
 		used = sub.DailyUsageUSD

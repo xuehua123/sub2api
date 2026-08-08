@@ -152,7 +152,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Select from '@/components/common/Select.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
 import { platformTextClass } from '@/utils/platformColors'
-import { parsePlanValidityUnit } from '@/utils/subscriptionTime'
+import { getPlanValidityDays, MAX_PLAN_VALIDITY_DAYS, parsePlanValidityUnit } from '@/utils/subscriptionTime'
 
 const props = defineProps<{
   show: boolean
@@ -285,7 +285,7 @@ const selectedGroupInfos = computed(() => {
   return subscriptionGroups.value.filter(group => selected.has(group.id))
 })
 
-const effectiveValidityDays = computed(() => planValidityDays(planForm.validity_days, planForm.validity_unit))
+const effectiveValidityDays = computed(() => getPlanValidityDays(planForm.validity_days, planForm.validity_unit))
 
 const limitPeriodError = computed(() => {
   if (planForm.weekly_limit_usd != null && effectiveValidityDays.value < 7) {
@@ -430,20 +430,6 @@ function normalizeLimit(value: number | null): number | null {
   return value != null && Number.isFinite(value) ? value : null
 }
 
-function planValidityDays(days: number, unit: string): number {
-  const value = Number.isFinite(days) && days > 0 ? days : 0
-  switch (parsePlanValidityUnit(unit)) {
-    case 'week':
-      return value * 7
-    case 'month':
-      return value * 30
-    case 'year':
-      return value * 365
-    default:
-      return value
-  }
-}
-
 /** Build request payload with snake_case keys matching backend JSON tags */
 function buildPlanPayload(): CreateSubscriptionPlanRequest | null {
   const parsedValidityUnit = parsePlanValidityUnit(planForm.validity_unit)
@@ -496,6 +482,10 @@ async function handleSavePlan() {
   }
   if (!parsePlanValidityUnit(planForm.validity_unit)) {
     appStore.showError(t('payment.admin.invalidValidityUnitMessage', { unit: planForm.validity_unit || '-' }))
+    return
+  }
+  if (effectiveValidityDays.value > MAX_PLAN_VALIDITY_DAYS) {
+    appStore.showError(t('payment.admin.validityTooLong', { days: MAX_PLAN_VALIDITY_DAYS }))
     return
   }
   if (hasInvalidLimit()) {

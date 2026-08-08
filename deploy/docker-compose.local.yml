@@ -64,6 +64,7 @@ services:
       - CONNECTIVITY_GEOIP_LOCALE=${CONNECTIVITY_GEOIP_LOCALE:-zh-CN}
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
+      - AFFILIATE_REFUND_REVERSAL_ENABLED=${AFFILIATE_REFUND_REVERSAL_ENABLED:-false}
 
       # =======================================================================
       # Database Configuration (PostgreSQL)

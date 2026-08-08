@@ -68,6 +68,10 @@ type PaymentOrder struct {
 	Status string `json:"status,omitempty"`
 	// RefundAmount holds the value of the "refund_amount" field.
 	RefundAmount float64 `json:"refund_amount,omitempty"`
+	// ProviderRefundAmount holds the value of the "provider_refund_amount" field.
+	ProviderRefundAmount float64 `json:"provider_refund_amount,omitempty"`
+	// ChargebackAmount holds the value of the "chargeback_amount" field.
+	ChargebackAmount float64 `json:"chargeback_amount,omitempty"`
 	// RefundReason holds the value of the "refund_reason" field.
 	RefundReason *string `json:"refund_reason,omitempty"`
 	// RefundAt holds the value of the "refund_at" field.
@@ -148,7 +152,7 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case paymentorder.FieldForceRefund:
 			values[i] = new(sql.NullBool)
-		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
+		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount, paymentorder.FieldProviderRefundAmount, paymentorder.FieldChargebackAmount:
 			values[i] = new(sql.NullFloat64)
 		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionEntitlementID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
@@ -332,6 +336,18 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field refund_amount", values[i])
 			} else if value.Valid {
 				_m.RefundAmount = value.Float64
+			}
+		case paymentorder.FieldProviderRefundAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_refund_amount", values[i])
+			} else if value.Valid {
+				_m.ProviderRefundAmount = value.Float64
+			}
+		case paymentorder.FieldChargebackAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field chargeback_amount", values[i])
+			} else if value.Valid {
+				_m.ChargebackAmount = value.Float64
 			}
 		case paymentorder.FieldRefundReason:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -576,6 +592,12 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("refund_amount=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RefundAmount))
+	builder.WriteString(", ")
+	builder.WriteString("provider_refund_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ProviderRefundAmount))
+	builder.WriteString(", ")
+	builder.WriteString("chargeback_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ChargebackAmount))
 	builder.WriteString(", ")
 	if v := _m.RefundReason; v != nil {
 		builder.WriteString("refund_reason=")

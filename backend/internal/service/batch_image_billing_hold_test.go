@@ -176,6 +176,25 @@ func TestBatchImageBillingHold_InvalidatesLegacySubscriptionCacheAfterSuccessful
 	}
 }
 
+func TestBatchImageBillingHold_InvalidatesLinkedEntitlementAliasCacheAfterSuccessfulMutations(t *testing.T) {
+	job := legacySubscriptionBatchImageJob("imgbatch_cache_linked_entitlement")
+	entitlementID := int64(81)
+	job.EntitlementID = &entitlementID
+	job.BillingSource = BillingSourceEntitlementQuota
+	repo := &fakeBatchImageBillingRepo{}
+	cache := &batchImageSubscriptionCacheInvalidatorStub{}
+
+	require.NoError(t, reserveBatchImageBalanceHold(context.Background(), repo, cache, job, "payload"))
+	require.NoError(t, captureBatchImageBalanceHold(context.Background(), repo, cache, job, 0.25, "payload"))
+	require.NoError(t, releaseBatchImageBalanceHold(context.Background(), repo, cache, job, "payload"))
+
+	require.Equal(t, [][2]int64{
+		{job.UserID, *job.GroupID},
+		{job.UserID, *job.GroupID},
+		{job.UserID, *job.GroupID},
+	}, cache.calls)
+}
+
 func TestBatchImageBillingHold_DoesNotInvalidateNonLegacySources(t *testing.T) {
 	sources := []string{
 		BillingSourceBalance,
@@ -185,6 +204,7 @@ func TestBatchImageBillingHold_DoesNotInvalidateNonLegacySources(t *testing.T) {
 	for _, source := range sources {
 		t.Run(source, func(t *testing.T) {
 			job := legacySubscriptionBatchImageJob("imgbatch_cache_nonlegacy_" + source)
+			job.SubscriptionID = nil
 			job.BillingSource = source
 			cache := &batchImageSubscriptionCacheInvalidatorStub{}
 

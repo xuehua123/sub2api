@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,13 +26,15 @@ func (r *dailyResetTrackingUserSubRepo) ResetDailyUsage(_ context.Context, _ int
 type windowActivationTrackingUserSubRepo struct {
 	userSubRepoNoop
 
-	activated   bool
-	windowStart time.Time
+	activated     bool
+	dailyStart    time.Time
+	periodicStart time.Time
 }
 
-func (r *windowActivationTrackingUserSubRepo) ActivateWindows(_ context.Context, _ int64, windowStart time.Time) error {
+func (r *windowActivationTrackingUserSubRepo) ActivateWindows(_ context.Context, _ int64, dailyStart, periodicStart time.Time) error {
 	r.activated = true
-	r.windowStart = windowStart
+	r.dailyStart = dailyStart
+	r.periodicStart = periodicStart
 	return nil
 }
 
@@ -52,7 +55,7 @@ func TestCreateSubscription_InitializesAlignedUsageWindows(t *testing.T) {
 	require.NotNil(t, created.DailyWindowStart)
 	require.NotNil(t, created.WeeklyWindowStart)
 	require.NotNil(t, created.MonthlyWindowStart)
-	require.Equal(t, created.StartsAt, *created.DailyWindowStart)
+	require.Equal(t, timezone.StartOfDay(created.StartsAt), *created.DailyWindowStart)
 	require.Equal(t, created.StartsAt, *created.WeeklyWindowStart)
 	require.Equal(t, created.StartsAt, *created.MonthlyWindowStart)
 }
@@ -95,7 +98,7 @@ func TestAssignOrExtendSubscription_ExpiredDailyCardStartsNewOneTimeQuota(t *tes
 	require.True(t, renewed.StartsAt.After(oldStart), "重新购买过期订阅时应重置当前周期 StartsAt")
 	require.False(t, renewed.ExpiresAt.After(renewed.StartsAt.AddDate(0, 0, 1)))
 	require.NotNil(t, renewed.DailyWindowStart)
-	require.Equal(t, renewed.StartsAt, *renewed.DailyWindowStart)
+	require.Equal(t, timezone.StartOfDay(renewed.StartsAt), *renewed.DailyWindowStart, "续期后日窗口应锚定当天 0 点")
 	require.Equal(t, 0.0, renewed.DailyUsageUSD)
 	require.Equal(t, 0.0, renewed.WeeklyUsageUSD)
 	require.Equal(t, 0.0, renewed.MonthlyUsageUSD)
@@ -106,6 +109,8 @@ func TestCheckAndActivateWindow_UsesSubscriptionStartTime(t *testing.T) {
 	repo := &windowActivationTrackingUserSubRepo{}
 	svc := NewSubscriptionService(groupRepoNoop{}, repo, nil, nil, nil)
 	startsAt := time.Date(2026, 5, 20, 15, 30, 0, 0, time.UTC)
+	activatedAt := startsAt.Add(10 * time.Hour)
+	svc.now = func() time.Time { return activatedAt }
 	sub := &UserSubscription{
 		ID:        1,
 		UserID:    10,
@@ -118,8 +123,9 @@ func TestCheckAndActivateWindow_UsesSubscriptionStartTime(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, repo.activated)
-	require.Equal(t, startsAt, repo.windowStart)
-	require.Equal(t, startsAt, *sub.DailyWindowStart)
+	require.Equal(t, timezone.StartOfDay(activatedAt), repo.dailyStart)
+	require.Equal(t, startsAt, repo.periodicStart)
+	require.Equal(t, timezone.StartOfDay(activatedAt), *sub.DailyWindowStart)
 	require.Equal(t, startsAt, *sub.WeeklyWindowStart)
 	require.Equal(t, startsAt, *sub.MonthlyWindowStart)
 }
@@ -177,8 +183,8 @@ func TestUserSubscriptionNeedsDailyReset_MultiDaySubscriptionStillRefreshes(t *t
 	}
 
 	require.False(t, sub.HasOneTimeDailyQuota())
-	require.False(t, sub.NeedsDailyResetAt(dailyWindowStart.Add(24*time.Hour)), "旧 0 点窗口不能在购买时刻满 24 小时前提前刷新")
-	require.True(t, sub.NeedsDailyResetAt(start.Add(24*time.Hour)), "多日订阅仍应按购买时刻对齐的 24 小时窗口刷新")
+	require.False(t, sub.NeedsDailyResetAt(dailyWindowStart.Add(24*time.Hour-time.Nanosecond)), "次日 0 点前不应刷新")
+	require.True(t, sub.NeedsDailyResetAt(dailyWindowStart.Add(24*time.Hour)), "多日订阅应在次日 0 点刷新")
 }
 
 func TestUserSubscriptionDailyResetTime_DailyCardReturnsExpiry(t *testing.T) {
@@ -241,7 +247,7 @@ func TestCheckAndResetWindows_MultiDaySubscriptionStillResetsDailyUsage(t *testi
 	require.NoError(t, err)
 	require.True(t, repo.resetDailyCalled, "多日订阅仍应重置过期 daily window")
 	require.Equal(t, 0.0, sub.DailyUsageUSD)
-	require.Equal(t, startsAt.Add(48*time.Hour), repo.resetDailyStart)
+	require.Equal(t, timezone.StartOfDay(now), repo.resetDailyStart)
 }
 
 func TestAlignedCycleStart_PreservesOriginalPurchaseTime(t *testing.T) {

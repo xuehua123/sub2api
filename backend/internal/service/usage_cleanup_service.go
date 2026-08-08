@@ -65,6 +65,9 @@ func describeUsageCleanupFilters(filters UsageCleanupFilters) string {
 	if filters.GroupID != nil {
 		parts = append(parts, fmt.Sprintf("group_id=%d", *filters.GroupID))
 	}
+	if filters.EntitlementID != nil {
+		parts = append(parts, fmt.Sprintf("entitlement_id=%d", *filters.EntitlementID))
+	}
 	if filters.Model != nil {
 		parts = append(parts, "model="+strings.TrimSpace(*filters.Model))
 	}
@@ -132,9 +135,12 @@ func (s *UsageCleanupService) CreateTask(ctx context.Context, filters UsageClean
 	if createdBy <= 0 {
 		return nil, infraerrors.BadRequest("USAGE_CLEANUP_INVALID_CREATOR", "invalid creator")
 	}
+	if err := sanitizeUsageCleanupFilters(&filters); err != nil {
+		logger.LegacyPrintf("service.usage_cleanup", "[UsageCleanup] create_task rejected: operator=%d err=%v %s", createdBy, err, describeUsageCleanupFilters(filters))
+		return nil, err
+	}
 
 	logger.LegacyPrintf("service.usage_cleanup", "[UsageCleanup] create_task requested: operator=%d %s", createdBy, describeUsageCleanupFilters(filters))
-	sanitizeUsageCleanupFilters(&filters)
 	if err := s.validateFilters(filters); err != nil {
 		logger.LegacyPrintf("service.usage_cleanup", "[UsageCleanup] create_task rejected: operator=%d err=%v %s", createdBy, err, describeUsageCleanupFilters(filters))
 		return nil, err
@@ -297,8 +303,9 @@ func (s *UsageCleanupService) validateFilters(filters UsageCleanupFilters) error
 	}
 	maxDays := s.maxRangeDays()
 	if maxDays > 0 {
-		delta := filters.EndTime.Sub(filters.StartTime)
-		if delta > time.Duration(maxDays)*24*time.Hour {
+		// The request is expressed as calendar dates in a user-selected location.
+		// AddDate preserves that calendar boundary across 23/25-hour DST days.
+		if filters.EndTime.After(filters.StartTime.AddDate(0, 0, maxDays)) {
 			return infraerrors.BadRequest("USAGE_CLEANUP_RANGE_TOO_LARGE", fmt.Sprintf("date range exceeds %d days", maxDays))
 		}
 	}
@@ -347,43 +354,45 @@ func (s *UsageCleanupService) CancelTask(ctx context.Context, taskID int64, canc
 	return nil
 }
 
-func sanitizeUsageCleanupFilters(filters *UsageCleanupFilters) {
+func sanitizeUsageCleanupFilters(filters *UsageCleanupFilters) error {
 	if filters == nil {
-		return
+		return nil
 	}
 	if filters.UserID != nil && *filters.UserID <= 0 {
-		filters.UserID = nil
+		return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_USER_ID", "user_id must be a positive integer")
 	}
 	if filters.APIKeyID != nil && *filters.APIKeyID <= 0 {
-		filters.APIKeyID = nil
+		return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_API_KEY_ID", "api_key_id must be a positive integer")
 	}
 	if filters.AccountID != nil && *filters.AccountID <= 0 {
-		filters.AccountID = nil
+		return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_ACCOUNT_ID", "account_id must be a positive integer")
 	}
 	if filters.GroupID != nil && *filters.GroupID <= 0 {
-		filters.GroupID = nil
+		return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_GROUP_ID", "group_id must be a positive integer")
+	}
+	if filters.EntitlementID != nil && *filters.EntitlementID <= 0 {
+		return ErrUsageCleanupInvalidEntitlementID
 	}
 	if filters.Model != nil {
 		model := strings.TrimSpace(*filters.Model)
 		if model == "" {
-			filters.Model = nil
-		} else {
-			filters.Model = &model
+			return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_MODEL", "model must not be blank when provided")
 		}
+		filters.Model = &model
 	}
 	if filters.RequestType != nil {
 		requestType := RequestType(*filters.RequestType)
 		if !requestType.IsValid() {
-			filters.RequestType = nil
-		} else {
-			value := int16(requestType.Normalize())
-			filters.RequestType = &value
-			filters.Stream = nil
+			return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_REQUEST_TYPE", "request_type is invalid")
 		}
+		value := int16(requestType.Normalize())
+		filters.RequestType = &value
+		filters.Stream = nil
 	}
-	if filters.BillingType != nil && *filters.BillingType < 0 {
-		filters.BillingType = nil
+	if filters.BillingType != nil && *filters.BillingType != BillingTypeBalance && *filters.BillingType != BillingTypeSubscription {
+		return infraerrors.BadRequest("USAGE_CLEANUP_INVALID_BILLING_TYPE", "billing_type must be 0 or 1")
 	}
+	return nil
 }
 
 func (s *UsageCleanupService) maxRangeDays() int {

@@ -828,6 +828,7 @@ func TestAPIContracts(t *testing.T) {
 					"tencent_captcha_app_secret_key_configured": false,
 					"tencent_captcha_cloud_secret_id_configured": false,
 					"tencent_captcha_cloud_secret_key_configured": false,
+					"tencent_captcha_region": "cn",
 					"aliyun_captcha_enabled": false,
 					"aliyun_captcha_access_key_id": "",
 					"aliyun_captcha_access_key_secret_configured": false,
@@ -1222,6 +1223,7 @@ func TestAPIContracts(t *testing.T) {
 					"tencent_captcha_app_secret_key_configured": false,
 					"tencent_captcha_cloud_secret_id_configured": false,
 					"tencent_captcha_cloud_secret_key_configured": false,
+					"tencent_captcha_region": "cn",
 					"aliyun_captcha_enabled": false,
 					"aliyun_captcha_access_key_id": "",
 					"aliyun_captcha_access_key_secret_configured": false,
@@ -2611,6 +2613,9 @@ func (r *stubUserSubscriptionRepo) GetByIDForUpdate(ctx context.Context, id int6
 func (stubUserSubscriptionRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
+func (stubUserSubscriptionRepo) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
 func (stubUserSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
@@ -2624,6 +2629,9 @@ func (stubUserSubscriptionRepo) Delete(ctx context.Context, id int64) error {
 	return errors.New("not implemented")
 }
 func (stubUserSubscriptionRepo) Restore(ctx context.Context, subscriptionID int64, restoredStatus string) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+func (stubUserSubscriptionRepo) RestoreWithLifecycle(ctx context.Context, subscriptionID int64, state service.UserSubscriptionLifecycleState) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
 func (r *stubUserSubscriptionRepo) ListByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {
@@ -2659,10 +2667,10 @@ func (stubUserSubscriptionRepo) UpdateStatus(ctx context.Context, subscriptionID
 func (stubUserSubscriptionRepo) UpdateNotes(ctx context.Context, subscriptionID int64, notes string) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) ActivateWindows(ctx context.Context, id int64, start time.Time) error {
+func (stubUserSubscriptionRepo) ActivateWindows(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error {
 	return errors.New("not implemented")
 }
-func (stubUserSubscriptionRepo) ResetUsageWindows(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, newWindowStart time.Time) error {
+func (stubUserSubscriptionRepo) ResetUsageWindows(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, dailyStart, periodicStart time.Time) error {
 	return errors.New("not implemented")
 }
 func (stubUserSubscriptionRepo) ResetDailyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {

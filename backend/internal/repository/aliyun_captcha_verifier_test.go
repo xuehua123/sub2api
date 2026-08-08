@@ -74,17 +74,9 @@ func TestAliyunCaptchaVerifier_APIErrorNormalized(t *testing.T) {
 }
 
 func TestAliyunCaptchaVerifier_TransportError(t *testing.T) {
-	server := httptest.NewServer(http.NotFoundHandler())
-	endpoint := strings.TrimPrefix(server.URL, "http://")
-	server.Close() // 立即关闭，制造连接失败
-
-	verifier := &aliyunCaptchaVerifier{protocol: "HTTP", timeoutMillis: 2_000}
-	cred := service.AliyunCaptchaCredentials{
-		AccessKeyID:     "test-ak-id",
-		AccessKeySecret: "test-ak-secret",
-		SceneID:         "scene-1",
-		Endpoint:        endpoint,
-	}
+	verifier, cred := newAliyunCaptchaTestTarget(t, func(http.ResponseWriter, *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
 
 	_, err := verifier.VerifyCaptcha(context.Background(), cred, "param")
 	require.Error(t, err)

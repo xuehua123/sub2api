@@ -573,6 +573,10 @@ type AdminUsageLog struct {
 	// UpstreamModel is the actual model sent to the upstream provider after mapping.
 	// Omitted when no mapping was applied (requested model was used as-is).
 	UpstreamModel *string `json:"upstream_model,omitempty"`
+	// UpstreamResponseModel is the raw model declared by the upstream response.
+	UpstreamResponseModel *string `json:"upstream_response_model,omitempty"`
+	// UpstreamModelMismatch is nil when the upstream did not declare a model.
+	UpstreamModelMismatch *bool `json:"upstream_model_mismatch,omitempty"`
 
 	// ChannelID 渠道 ID
 	ChannelID     *int64  `json:"channel_id,omitempty"`
@@ -595,16 +599,17 @@ type AdminUsageLog struct {
 }
 
 type UsageCleanupFilters struct {
-	StartTime   time.Time `json:"start_time"`
-	EndTime     time.Time `json:"end_time"`
-	UserID      *int64    `json:"user_id,omitempty"`
-	APIKeyID    *int64    `json:"api_key_id,omitempty"`
-	AccountID   *int64    `json:"account_id,omitempty"`
-	GroupID     *int64    `json:"group_id,omitempty"`
-	Model       *string   `json:"model,omitempty"`
-	RequestType *string   `json:"request_type,omitempty"`
-	Stream      *bool     `json:"stream,omitempty"`
-	BillingType *int8     `json:"billing_type,omitempty"`
+	StartTime     time.Time `json:"start_time"`
+	EndTime       time.Time `json:"end_time"`
+	UserID        *int64    `json:"user_id,omitempty"`
+	APIKeyID      *int64    `json:"api_key_id,omitempty"`
+	AccountID     *int64    `json:"account_id,omitempty"`
+	GroupID       *int64    `json:"group_id,omitempty"`
+	EntitlementID *int64    `json:"entitlement_id,omitempty"`
+	Model         *string   `json:"model,omitempty"`
+	RequestType   *string   `json:"request_type,omitempty"`
+	Stream        *bool     `json:"stream,omitempty"`
+	BillingType   *int8     `json:"billing_type,omitempty"`
 }
 
 type UsageCleanupTask struct {
@@ -646,6 +651,7 @@ type UserSubscription struct {
 	Status    string    `json:"status"`
 
 	DailyWindowStart   *time.Time `json:"daily_window_start"`
+	DailyResetsAt      *time.Time `json:"daily_resets_at,omitempty"`
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
 	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
 
@@ -671,6 +677,7 @@ type UserSubscriptionAlias struct {
 	Status    string    `json:"status"`
 
 	DailyWindowStart   *time.Time `json:"daily_window_start"`
+	DailyResetsAt      *time.Time `json:"daily_resets_at,omitempty"`
 	WeeklyWindowStart  *time.Time `json:"weekly_window_start"`
 	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
 

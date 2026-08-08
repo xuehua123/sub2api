@@ -687,6 +687,7 @@ export default {
       pleaseSelectUser: 'Please select a user',
       pleaseSelectGroup: 'Please select a group',
       validityDaysRequired: 'Please enter a valid number of days (at least 1)',
+      validityDaysTooLong: 'Validity must not exceed {days} days',
       revokeConfirm:
         'Are you sure you want to revoke the plan for \'{user}\'? You can restore it later from the revoked list.',
       restoreConfirm:

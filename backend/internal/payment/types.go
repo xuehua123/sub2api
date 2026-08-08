@@ -177,6 +177,9 @@ type QueryOrderResponse struct {
 
 // PaymentNotification is the parsed result of a webhook/notify callback.
 type PaymentNotification struct {
+	// EventID is the payment provider's immutable webhook event identifier.
+	// Refund/chargeback idempotency prefers it over business payload fields.
+	EventID        string
 	TradeNo        string
 	OrderID        string
 	RefundID       string

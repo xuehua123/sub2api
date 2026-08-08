@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
+	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -293,6 +294,15 @@ func (s *PaymentService) prepSubscriptionDeduct(ctx context.Context, o *dbent.Pa
 			return &RefundResult{Success: false, Warning: "cannot fetch active entitlement for deduction, use force", RequireForce: true}
 		}
 	}
+	// A V2 order never granted a legacy subscription. If its entitlement can no
+	// longer be deducted, force may waive the deduction but must not target an
+	// unrelated legacy subscription from the same group.
+	if enabled, snapshotted := paymentOrderEntitlementV2Mode(o); snapshotted && enabled {
+		if !force {
+			return &RefundResult{Success: false, Warning: "cannot find active subscription entitlement for deduction, use force", RequireForce: true}
+		}
+		return nil
+	}
 	if o.SubscriptionGroupID != nil {
 		sub, err := s.subscriptionSvc.GetActiveSubscription(ctx, o.UserID, *o.SubscriptionGroupID)
 		if err == nil && sub != nil {
@@ -345,6 +355,7 @@ type refundInFlightDetail struct {
 	PreviousSettledRefundAmount float64 `json:"previousSettledRefundAmount"`
 	DeductBalance               bool    `json:"deductBalance"`
 	DeductionType               string  `json:"deductionType"`
+	DeductionRollbackOK         *bool   `json:"deductionRollbackOK,omitempty"`
 	BalanceDeducted             float64 `json:"balanceDeducted"`
 	SubDaysDeducted             int     `json:"subDaysDeducted"`
 }
@@ -388,6 +399,7 @@ func (s *PaymentService) claimRefundAndApplyDeduction(ctx context.Context, p *Re
 		providerSnapshot = make(map[string]any, 1)
 	}
 	previousSettledRefundAmount := settledRefundAmount(p.Order)
+	settledComponents := paymentOrderReversalComponents(p.Order)
 	providerSnapshot[paymentOrderSnapshotRefundInFlight] = refundInFlightDetail{
 		RefundAmount:                p.RefundAmount,
 		GatewayAmount:               p.GatewayAmount,
@@ -400,6 +412,9 @@ func (s *PaymentService) claimRefundAndApplyDeduction(ctx context.Context, p *Re
 		SubDaysDeducted:             p.SubDaysToDeduct,
 	}
 	if _, err := tx.PaymentOrder.UpdateOneID(p.OrderID).
+		SetRefundAmount(settledComponents.CombinedAmount).
+		SetProviderRefundAmount(settledComponents.ProviderRefundAmount).
+		SetChargebackAmount(settledComponents.ChargebackAmount).
 		SetRefundReason(p.Reason).
 		SetForceRefund(p.Force).
 		SetProviderSnapshot(providerSnapshot).
@@ -436,10 +451,20 @@ func settledRefundAmount(order *dbent.PaymentOrder) float64 {
 }
 
 func (s *PaymentService) applyPreparedRefundDeduction(ctx context.Context, p *RefundPlan) error {
+	needsDeduction := (p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0) ||
+		(p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && (p.SubscriptionID > 0 || p.EntitlementID > 0))
+	rollbackPreviouslyFailed := false
+	if needsDeduction {
+		var err error
+		rollbackPreviouslyFailed, err = s.hasAuditLogRequired(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED")
+		if err != nil {
+			return fmt.Errorf("query prior refund rollback failure: %w", err)
+		}
+	}
 	if p.DeductionType == payment.DeductionTypeBalance && p.BalanceToDeduct > 0 {
 		// Skip balance deduction on retry if previous attempt already deducted
 		// but failed to roll back (REFUND_ROLLBACK_FAILED in audit log).
-		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
+		if !rollbackPreviouslyFailed {
 			deducted, err := s.deductAvailableBalance(ctx, p.Order.UserID, p.BalanceToDeduct)
 			if err != nil {
 				return fmt.Errorf("deduction: %w", err)
@@ -451,7 +476,7 @@ func (s *PaymentService) applyPreparedRefundDeduction(ctx context.Context, p *Re
 		}
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.SubscriptionID > 0 {
-		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
+		if !rollbackPreviouslyFailed {
 			_, err := s.subscriptionSvc.ExtendSubscription(ctx, p.SubscriptionID, -p.SubDaysToDeduct)
 			if err != nil {
 				if errors.Is(err, ErrAdjustWouldExpire) {
@@ -474,7 +499,7 @@ func (s *PaymentService) applyPreparedRefundDeduction(ctx context.Context, p *Re
 		}
 	}
 	if p.DeductionType == payment.DeductionTypeSubscription && p.SubDaysToDeduct > 0 && p.EntitlementID > 0 {
-		if !s.hasAuditLog(ctx, p.OrderID, "REFUND_ROLLBACK_FAILED") {
+		if !rollbackPreviouslyFailed {
 			if s.subscriptionEntitlementSvc == nil {
 				return fmt.Errorf("deduct subscription entitlement days: entitlement service is not configured")
 			}
@@ -586,12 +611,20 @@ func (s *PaymentService) QueryAndFinalizeRefund(ctx context.Context, oid int64) 
 	}
 
 	pendingDetail := s.latestRefundPendingDetail(ctx, o)
+	queryGatewayAmount := pendingDetail.GatewayAmount
+	if queryGatewayAmount <= 0 {
+		queryRefundAmount := pendingDetail.RefundAmount
+		if queryRefundAmount <= 0 {
+			queryRefundAmount = o.RefundAmount
+		}
+		queryGatewayAmount = calculateGatewayRefundAmount(o.Amount, o.PayAmount, queryRefundAmount, PaymentOrderCurrency(o))
+	}
 	finishProviderCall := servertiming.ObserveDependency(ctx, "payment")
 	resp, err := queryProvider.QueryRefund(ctx, payment.RefundQueryRequest{
 		TradeNo:  o.PaymentTradeNo,
 		OrderID:  o.OutTradeNo,
 		RefundID: pendingDetail.RefundID,
-		Amount:   formatGatewayRefundAmount(o.RefundAmount, o),
+		Amount:   formatGatewayRefundAmount(queryGatewayAmount, o),
 	})
 	finishProviderCall()
 	if err != nil {
@@ -709,7 +742,21 @@ func (s *PaymentService) invalidateFinalizedRefundSubscriptionCaches(p *RefundPl
 	)
 }
 func (s *PaymentService) refundFinalizePlan(o *dbent.PaymentOrder) *RefundPlan {
-	refundAmount := o.RefundAmount
+	components := paymentOrderReversalComponents(o)
+	refundAmount := components.ProviderRefundAmount
+	gatewayAmount := calculateGatewayRefundAmount(o.Amount, o.PayAmount, refundAmount, PaymentOrderCurrency(o))
+	if pending, ok := refundPendingDetailFromOrder(o); ok && pending.RefundAmount > 0 {
+		refundAmount = pending.RefundAmount
+		gatewayAmount = pending.GatewayAmount
+		if gatewayAmount <= 0 {
+			gatewayAmount = calculateGatewayRefundAmount(o.Amount, o.PayAmount, refundAmount, PaymentOrderCurrency(o))
+		}
+	} else if o != nil && o.Status == OrderStatusRefundPending && refundAmount <= 0 {
+		// Compatibility for pending rows written before refund_pending was
+		// persisted in provider_snapshot.
+		refundAmount = roundMoney(o.RefundAmount)
+		gatewayAmount = calculateGatewayRefundAmount(o.Amount, o.PayAmount, refundAmount, PaymentOrderCurrency(o))
+	}
 	reason := strings.TrimSpace(psStringValue(o.RefundReason))
 	if reason == "" {
 		reason = fmt.Sprintf("refund order:%d", o.ID)
@@ -718,7 +765,7 @@ func (s *PaymentService) refundFinalizePlan(o *dbent.PaymentOrder) *RefundPlan {
 		OrderID:       o.ID,
 		Order:         o,
 		RefundAmount:  refundAmount,
-		GatewayAmount: calculateGatewayRefundAmount(o.Amount, o.PayAmount, refundAmount, PaymentOrderCurrency(o)),
+		GatewayAmount: gatewayAmount,
 		Reason:        reason,
 		Force:         o.ForceRefund,
 		DeductBalance: true,
@@ -844,6 +891,8 @@ type refundPendingAuditDetail struct {
 	DeductBalance               *bool    `json:"deductBalance"`
 	DeductionType               string   `json:"deductionType"`
 	PreviousSettledRefundAmount float64  `json:"previousSettledRefundAmount"`
+	BalanceDeducted             float64  `json:"balanceDeducted"`
+	SubDaysDeducted             int      `json:"subDaysDeducted"`
 	BalanceRolledBack           *float64 `json:"balanceRolledBack"`
 	SubDaysRolledBack           *int     `json:"subDaysRolledBack"`
 }
@@ -928,7 +977,7 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 		}
 		return refundResultFromPlan(p), nil
 	}
-	if current.Status != OrderStatusRefunding {
+	if current.Status != OrderStatusRefunding && !refundClaimMatchesPlan(current, p) {
 		return nil, infraerrors.Conflict("CONFLICT", "refund status changed")
 	}
 
@@ -946,7 +995,7 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 
 	now := time.Now()
 	if _, err := tx.PaymentOrder.Update().
-		Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusEQ(OrderStatusRefunding)).
+		Where(paymentorder.IDEQ(p.OrderID)).
 		SetStatus(OrderStatusRefundFailed).
 		SetFailedAt(now).
 		SetFailedReason(psErrMsg(gErr)).
@@ -990,45 +1039,104 @@ func (s *PaymentService) markRefundOkLocked(ctx context.Context, p *RefundPlan) 
 	if s.refundCompletedExternally(ctx, current, p) {
 		return refundResultFromPlan(p), nil
 	}
-	if current.Status != OrderStatusRefunding {
+	if current.Status != OrderStatusRefunding && !refundClaimMatchesPlan(current, p) {
 		return nil, infraerrors.Conflict("CONFLICT", "refund status changed")
 	}
 
 	result := refundResultFromPlan(p)
-	finalStatus := refundSuccessStatus(p)
-	const referralSavepoint = "refund_referral_sync"
+	components := refundPlanReversalComponents(current, p)
+	finalStatus := paymentReversalStatus(current, components.CombinedAmount)
 	txClient := s.paymentOrderClient(ctx)
-	if _, err := txClient.ExecContext(ctx, "SAVEPOINT "+referralSavepoint); err != nil {
-		return nil, fmt.Errorf("create referral refund savepoint: %w", err)
-	}
-	if syncErr := s.syncReferralRefund(ctx, p); syncErr != nil {
-		if _, rollbackErr := txClient.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+referralSavepoint); rollbackErr != nil {
-			return nil, fmt.Errorf("sync referral refund: %w; rollback savepoint: %v", syncErr, rollbackErr)
-		}
-		if _, releaseErr := txClient.ExecContext(ctx, "RELEASE SAVEPOINT "+referralSavepoint); releaseErr != nil {
-			return nil, fmt.Errorf("sync referral refund: %w; release savepoint: %v", syncErr, releaseErr)
-		}
-		if err := s.persistRefundSuccess(ctx, current, p, finalStatus); err != nil {
-			return nil, fmt.Errorf("sync referral refund: %w; mark refund: %v", syncErr, err)
-		}
-		s.writeAuditLog(ctx, p.OrderID, "REFUND_REFERRAL_SYNC_FAILED", "admin", map[string]any{"detail": psErrMsg(syncErr)})
-		result.Warning = "refund completed but referral sync failed: " + psErrMsg(syncErr)
-		return result, nil
-	}
-	if _, err := txClient.ExecContext(ctx, "RELEASE SAVEPOINT "+referralSavepoint); err != nil {
-		return nil, fmt.Errorf("release referral refund savepoint: %w", err)
-	}
-	if err := s.persistRefundSuccess(ctx, current, p, finalStatus); err != nil {
+	var failures []refundRewardSyncFailure
+
+	referralErr, err := runRefundSyncSavepoint(ctx, txClient, "refund_referral_sync", func() error {
+		return s.syncReferralReversalToComponents(ctx, current, components)
+	})
+	if err != nil {
 		return nil, err
+	}
+	if referralErr != nil {
+		failures = append(failures, refundRewardSyncFailure{
+			action: paymentAuditActionReferralRefundSyncFailed,
+			kind:   "referral",
+			err:    referralErr,
+		})
+	}
+
+	affiliateErr, err := runRefundSyncSavepoint(ctx, txClient, "refund_affiliate_sync", func() error {
+		_, syncErr := s.syncAffiliateRebateReversal(ctx, current, components.CombinedAmount)
+		return syncErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	if affiliateErr != nil {
+		failures = append(failures, refundRewardSyncFailure{
+			action: paymentAuditActionAffiliateRefundSyncFailed,
+			kind:   "affiliate",
+			err:    affiliateErr,
+		})
+	}
+
+	if err := s.persistRefundSuccess(ctx, current, p, finalStatus, components); err != nil {
+		return nil, err
+	}
+	if len(failures) > 0 {
+		warnings := make([]string, 0, len(failures))
+		for _, failure := range failures {
+			if err := s.writeAuditLogRequired(ctx, p.OrderID, failure.action, "admin", map[string]any{
+				"detail":            psErrMsg(failure.err),
+				"refundAmountTotal": components.CombinedAmount,
+			}); err != nil {
+				return nil, fmt.Errorf("persist %s refund sync failure audit: %w", failure.kind, err)
+			}
+			warnings = append(warnings, failure.kind+" sync failed: "+psErrMsg(failure.err))
+		}
+		result.Warning = "refund completed but reward sync failed: " + strings.Join(warnings, "; ")
 	}
 	return result, nil
 }
 
-func refundSuccessStatus(p *RefundPlan) string {
-	if p != nil && p.Order != nil && p.RefundAmount < p.Order.Amount {
-		return OrderStatusPartiallyRefunded
+func refundPlanReversalComponents(current *dbent.PaymentOrder, p *RefundPlan) paymentReversalComponents {
+	components := paymentOrderReversalComponents(current)
+	if current == nil || p == nil {
+		return components
 	}
-	return OrderStatusRefunded
+	targetProviderRefund := roundMoney(p.RefundAmount)
+	if targetProviderRefund < components.ProviderRefundAmount {
+		targetProviderRefund = components.ProviderRefundAmount
+	}
+	maxProviderRefund := roundMoney(math.Max(roundMoney(current.Amount)-components.ChargebackAmount, 0))
+	if targetProviderRefund > maxProviderRefund {
+		targetProviderRefund = maxProviderRefund
+	}
+	components.ProviderRefundAmount = targetProviderRefund
+	components.CombinedAmount = roundMoney(components.ProviderRefundAmount + components.ChargebackAmount)
+	return components
+}
+
+func runRefundSyncSavepoint(
+	ctx context.Context,
+	client *dbent.Client,
+	name string,
+	syncFn func() error,
+) (syncErr error, fatalErr error) {
+	if _, err := client.ExecContext(ctx, "SAVEPOINT "+name); err != nil {
+		return nil, fmt.Errorf("create %s savepoint: %w", name, err)
+	}
+	if err := syncFn(); err != nil {
+		if _, rollbackErr := client.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+name); rollbackErr != nil {
+			return nil, fmt.Errorf("%s failed: %w; rollback savepoint: %v", name, err, rollbackErr)
+		}
+		if _, releaseErr := client.ExecContext(ctx, "RELEASE SAVEPOINT "+name); releaseErr != nil {
+			return nil, fmt.Errorf("%s failed: %w; release savepoint: %v", name, err, releaseErr)
+		}
+		return err, nil
+	}
+	if _, err := client.ExecContext(ctx, "RELEASE SAVEPOINT "+name); err != nil {
+		return nil, fmt.Errorf("release %s savepoint: %w", name, err)
+	}
+	return nil, nil
 }
 
 func refundResultFromPlan(p *RefundPlan) *RefundResult {
@@ -1046,7 +1154,8 @@ func refundOrderCoversPlan(order *dbent.PaymentOrder, p *RefundPlan) bool {
 	if order == nil || p == nil || !psIsSuccessfulRefundStatus(order.Status) {
 		return false
 	}
-	return roundMoney(order.RefundAmount)+paymentAmountToleranceForCurrency(PaymentOrderCurrency(order)) >= roundMoney(p.RefundAmount)
+	components := paymentOrderReversalComponents(order)
+	return components.ProviderRefundAmount+paymentAmountToleranceForCurrency(PaymentOrderCurrency(order)) >= roundMoney(p.RefundAmount)
 }
 
 func (s *PaymentService) refundCompletedExternally(ctx context.Context, order *dbent.PaymentOrder, p *RefundPlan) bool {
@@ -1077,6 +1186,7 @@ func refundSnapshotAwaitingWebhook(current *dbent.PaymentOrder, p *RefundPlan) m
 	if !ok {
 		pending, pendingOK := refundPendingDetailFromOrder(current)
 		if pendingOK {
+			rollbackOK := pending.DeductionRollbackOK
 			deductBalance := true
 			if pending.DeductBalance != nil {
 				deductBalance = *pending.DeductBalance
@@ -1089,6 +1199,7 @@ func refundSnapshotAwaitingWebhook(current *dbent.PaymentOrder, p *RefundPlan) m
 				PreviousSettledRefundAmount: pending.PreviousSettledRefundAmount,
 				DeductBalance:               deductBalance,
 				DeductionType:               pending.DeductionType,
+				DeductionRollbackOK:         &rollbackOK,
 			}
 			ok = true
 		}
@@ -1112,19 +1223,22 @@ func (s *PaymentService) restoreRefundClaim(ctx context.Context, current *dbent.
 	if current == nil || p == nil || p.Order == nil {
 		return errors.New("missing refund claim snapshot")
 	}
-	detail, ok := refundInFlightDetailFromOrder(current)
-	previousRefundAmount := p.Order.RefundAmount
-	if ok {
-		previousRefundAmount = detail.PreviousRefundAmount
+	if !refundClaimMatchesPlan(current, p) {
+		return infraerrors.Conflict("CONFLICT", "refund claim changed")
 	}
+	components := paymentOrderReversalComponents(current)
 	restoreStatus := p.Order.Status
-	if restoreStatus != OrderStatusCompleted && restoreStatus != OrderStatusRefundRequested && restoreStatus != OrderStatusRefundFailed {
+	if components.CombinedAmount > 0 {
+		restoreStatus = paymentReversalStatus(current, components.CombinedAmount)
+	} else if restoreStatus != OrderStatusCompleted && restoreStatus != OrderStatusRefundRequested && restoreStatus != OrderStatusRefundFailed {
 		restoreStatus = OrderStatusCompleted
 	}
 	update := s.paymentOrderClient(ctx).PaymentOrder.Update().
-		Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusEQ(OrderStatusRefunding)).
+		Where(paymentorder.IDEQ(p.OrderID)).
 		SetStatus(restoreStatus).
-		SetRefundAmount(previousRefundAmount).
+		SetRefundAmount(components.CombinedAmount).
+		SetProviderRefundAmount(components.ProviderRefundAmount).
+		SetChargebackAmount(components.ChargebackAmount).
 		SetForceRefund(p.Order.ForceRefund).
 		SetProviderSnapshot(refundSnapshotWithoutInFlight(current.ProviderSnapshot))
 	if p.Order.RefundReason != nil {
@@ -1132,7 +1246,11 @@ func (s *PaymentService) restoreRefundClaim(ctx context.Context, current *dbent.
 	} else {
 		update.ClearRefundReason()
 	}
-	if p.Order.RefundAt != nil {
+	if components.CombinedAmount > 0 && current.RefundAt != nil {
+		update.SetRefundAt(*current.RefundAt)
+	} else if components.CombinedAmount > 0 {
+		update.SetRefundAt(time.Now())
+	} else if p.Order.RefundAt != nil {
 		update.SetRefundAt(*p.Order.RefundAt)
 	} else {
 		update.ClearRefundAt()
@@ -1157,11 +1275,36 @@ func (s *PaymentService) restoreRefundClaim(ctx context.Context, current *dbent.
 	return nil
 }
 
-func (s *PaymentService) persistRefundSuccess(ctx context.Context, current *dbent.PaymentOrder, p *RefundPlan, status string) error {
+func refundClaimMatchesPlan(current *dbent.PaymentOrder, p *RefundPlan) bool {
+	if current == nil || p == nil {
+		return false
+	}
+	detail, ok := refundInFlightDetailFromOrder(current)
+	if !ok {
+		return false
+	}
+	tolerance := paymentAmountToleranceForCurrency(PaymentOrderCurrency(current))
+	if math.Abs(roundMoney(detail.RefundAmount)-roundMoney(p.RefundAmount)) > tolerance {
+		return false
+	}
+	detailID := strings.TrimSpace(detail.ProviderRefundID)
+	planID := strings.TrimSpace(p.ProviderRefundID)
+	return detailID == "" || planID == "" || detailID == planID
+}
+
+func (s *PaymentService) persistRefundSuccess(
+	ctx context.Context,
+	current *dbent.PaymentOrder,
+	p *RefundPlan,
+	status string,
+	components paymentReversalComponents,
+) error {
 	now := time.Now()
 	_, err := s.paymentOrderClient(ctx).PaymentOrder.UpdateOneID(p.OrderID).
 		SetStatus(status).
-		SetRefundAmount(p.RefundAmount).
+		SetRefundAmount(components.CombinedAmount).
+		SetProviderRefundAmount(components.ProviderRefundAmount).
+		SetChargebackAmount(components.ChargebackAmount).
 		SetRefundReason(p.Reason).
 		SetRefundAt(now).
 		SetForceRefund(p.Force).
@@ -1172,42 +1315,275 @@ func (s *PaymentService) persistRefundSuccess(ctx context.Context, current *dben
 	if err != nil {
 		return fmt.Errorf("mark refund: %w", err)
 	}
-	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
+	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{
+		"providerRefundAmount": components.ProviderRefundAmount,
+		"chargebackAmount":     components.ChargebackAmount,
+		"refundAmount":         components.CombinedAmount,
+		"reason":               p.Reason,
+		"balanceDeducted":      p.BalanceToDeduct,
+		"force":                p.Force,
+	})
 	return nil
 }
 
-func (s *PaymentService) syncReferralRefund(ctx context.Context, p *RefundPlan) error {
-	if s.referralRefundSvc == nil || p == nil || p.Order == nil {
+func (s *PaymentService) syncReferralRefundToSettledTotal(ctx context.Context, order *dbent.PaymentOrder) error {
+	if order == nil {
 		return nil
 	}
-	if p.Order.OrderType != payment.OrderTypeBalance && p.Order.OrderType != payment.OrderTypeSubscription {
-		return nil
+	if s.referralRefundSvc == nil {
+		return errors.New("referral refund service unavailable")
+	}
+	components := paymentOrderReversalComponents(order)
+	if components.CombinedAmount <= 0 {
+		return fmt.Errorf("invalid cumulative referral refund target for payment order %d", order.ID)
+	}
+	return s.syncReferralReversalToComponents(ctx, order, components)
+}
+
+func (s *PaymentService) RetryFailedRefundRewardSyncs(ctx context.Context, limit int) (int, error) {
+	if s == nil || s.entClient == nil {
+		return 0, nil
+	}
+	s.refundRecoveryMu.Lock()
+	defer s.refundRecoveryMu.Unlock()
+	cursor, err := s.loadFailedRefundSyncRecoveryCursor(ctx)
+	if err != nil {
+		return 0, err
+	}
+	s.refundRecoveryCursor = cursor
+	if limit <= 0 {
+		limit = defaultFailedRefundSyncRecoveryLimit
+	}
+	scanLimit := limit * 4
+	if scanLimit < defaultFailedRefundSyncRecoveryLimit {
+		scanLimit = defaultFailedRefundSyncRecoveryLimit
+	}
+	if scanLimit > maxFailedRefundSyncRecoveryScan {
+		scanLimit = maxFailedRefundSyncRecoveryScan
 	}
 
-	rechargeOrder, err := s.referralRefundSvc.rechargeRepo.GetByProviderAndExternalOrderID(ctx, strings.TrimSpace(paymentReferralProviderKey(p.Order)), strings.TrimSpace(p.Order.OutTradeNo))
+	logs, err := s.listFailedRefundSyncLogs(ctx, scanLimit)
 	if err != nil {
-		if errors.Is(err, ErrRechargeOrderNotFound) {
-			return nil
+		return 0, err
+	}
+
+	recovered := 0
+	nextCursor := cursor
+	seen := make(map[int64]struct{}, len(logs))
+	for _, logEntry := range logs {
+		// Advance across malformed and permanently failing entries as well. The
+		// next cycle wraps at the end, so every bounded scan window eventually
+		// receives an attempt without requiring mutable audit timestamps.
+		nextCursor = logEntry.ID
+		orderID, parseErr := strconv.ParseInt(strings.TrimSpace(logEntry.OrderID), 10, 64)
+		if parseErr != nil {
+			slog.Warn("skip invalid failed refund sync audit", "orderID", logEntry.OrderID, "error", parseErr)
+			continue
 		}
+		if _, ok := seen[orderID]; ok {
+			continue
+		}
+		seen[orderID] = struct{}{}
+		count, retryErr := s.retryFailedRefundRewardSyncsForOrder(ctx, orderID)
+		if retryErr != nil {
+			slog.Warn("retry failed refund reward sync", "orderID", orderID, "error", retryErr)
+			continue
+		}
+		recovered += count
+		if recovered >= limit {
+			break
+		}
+	}
+	if nextCursor != cursor {
+		if err := s.persistFailedRefundSyncRecoveryCursor(ctx, nextCursor); err != nil {
+			return recovered, err
+		}
+		s.refundRecoveryCursor = nextCursor
+	}
+	return recovered, nil
+}
+
+func (s *PaymentService) loadFailedRefundSyncRecoveryCursor(ctx context.Context) (int64, error) {
+	entry, err := s.entClient.Setting.Query().
+		Where(setting.KeyEQ(failedRefundSyncRecoveryCursorSettingKey)).
+		Only(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("load failed refund sync recovery cursor: %w", err)
+	}
+	cursor, err := strconv.ParseInt(strings.TrimSpace(entry.Value), 10, 64)
+	if err != nil || cursor < 0 {
+		slog.Warn("reset invalid failed refund sync recovery cursor", "value", entry.Value)
+		if persistErr := s.persistFailedRefundSyncRecoveryCursor(ctx, 0); persistErr != nil {
+			return 0, persistErr
+		}
+		return 0, nil
+	}
+	return cursor, nil
+}
+
+func (s *PaymentService) persistFailedRefundSyncRecoveryCursor(ctx context.Context, cursor int64) error {
+	if cursor < 0 {
+		return fmt.Errorf("persist failed refund sync recovery cursor: negative cursor %d", cursor)
+	}
+	if err := s.entClient.Setting.Create().
+		SetKey(failedRefundSyncRecoveryCursorSettingKey).
+		SetValue(strconv.FormatInt(cursor, 10)).
+		SetUpdatedAt(time.Now()).
+		OnConflictColumns(setting.FieldKey).
+		UpdateNewValues().
+		Exec(ctx); err != nil {
+		return fmt.Errorf("persist failed refund sync recovery cursor: %w", err)
+	}
+	return nil
+}
+
+func (s *PaymentService) listFailedRefundSyncLogs(ctx context.Context, scanLimit int) ([]*dbent.PaymentAuditLog, error) {
+	actions := s.failedRefundSyncActions()
+	cursor := s.refundRecoveryCursor
+	query := s.entClient.PaymentAuditLog.Query().
+		Where(paymentauditlog.ActionIn(actions...))
+	if cursor > 0 {
+		query.Where(paymentauditlog.IDGT(cursor))
+	}
+	logs, err := query.
+		Order(paymentauditlog.ByID()).
+		Limit(scanLimit).
+		All(ctx)
+	if err != nil || cursor <= 0 || len(logs) >= scanLimit {
+		return logs, err
+	}
+
+	wrapped, err := s.entClient.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.ActionIn(actions...),
+			paymentauditlog.IDLTE(cursor),
+		).
+		Order(paymentauditlog.ByID()).
+		Limit(scanLimit - len(logs)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(logs, wrapped...), nil
+}
+
+func (s *PaymentService) failedRefundSyncActions() []string {
+	actions := []string{paymentAuditActionReferralRefundSyncFailed}
+	if s.affiliateReversalEnabled {
+		actions = append(actions, paymentAuditActionAffiliateRefundSyncFailed)
+	}
+	return actions
+}
+
+func (s *PaymentService) retryFailedRefundRewardSyncsForOrder(ctx context.Context, orderID int64) (int, error) {
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin refund reward recovery: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+
+	order, err := s.getPaymentOrderByIDForUpdate(txCtx, orderID)
+	if err != nil {
+		return 0, err
+	}
+	if !psIsSuccessfulRefundStatus(order.Status) || order.RefundAmount <= 0 {
+		return 0, nil
+	}
+
+	failures, err := tx.PaymentAuditLog.Query().
+		Where(
+			paymentauditlog.OrderIDEQ(strconv.FormatInt(orderID, 10)),
+			paymentauditlog.ActionIn(s.failedRefundSyncActions()...),
+		).
+		Order(paymentauditlog.ByCreatedAt()).
+		All(txCtx)
+	if err != nil {
+		return 0, err
+	}
+
+	recovered := 0
+	for _, failure := range failures {
+		var (
+			recoveredAction string
+			syncFn          func() error
+		)
+		switch failure.Action {
+		case paymentAuditActionReferralRefundSyncFailed:
+			recoveredAction = paymentAuditActionReferralRefundSyncRecovered
+			syncFn = func() error { return s.syncReferralRefundToSettledTotal(txCtx, order) }
+		case paymentAuditActionAffiliateRefundSyncFailed:
+			recoveredAction = paymentAuditActionAffiliateRefundSyncRecovered
+			syncFn = func() error {
+				_, syncErr := s.syncAffiliateRebateReversal(txCtx, order, order.RefundAmount)
+				return syncErr
+			}
+		default:
+			continue
+		}
+
+		syncErr, fatalErr := runRefundSyncSavepoint(txCtx, tx.Client(), "refund_reward_recovery", syncFn)
+		if fatalErr != nil {
+			return 0, fatalErr
+		}
+		if syncErr != nil {
+			slog.Warn("refund reward recovery still failing", "orderID", orderID, "action", failure.Action, "error", syncErr)
+			continue
+		}
+		if err := s.markRefundSyncRecovered(txCtx, failure, recoveredAction, order.RefundAmount); err != nil {
+			return 0, err
+		}
+		recovered++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit refund reward recovery: %w", err)
+	}
+	return recovered, nil
+}
+
+func (s *PaymentService) markRefundSyncRecovered(
+	ctx context.Context,
+	failure *dbent.PaymentAuditLog,
+	recoveredAction string,
+	refundAmountTotal float64,
+) error {
+	if failure == nil {
+		return errors.New("missing failed refund sync audit")
+	}
+	client := s.paymentOrderClient(ctx)
+	deleted, err := client.PaymentAuditLog.Delete().
+		Where(paymentauditlog.IDEQ(failure.ID), paymentauditlog.ActionEQ(failure.Action)).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("clear failed refund sync audit: %w", err)
+	}
+	if deleted != 1 {
+		return fmt.Errorf("failed refund sync audit %d changed concurrently", failure.ID)
+	}
+
+	detailJSON, err := json.Marshal(map[string]any{
+		"sourceAction":      failure.Action,
+		"previousDetail":    failure.Detail,
+		"refundAmountTotal": refundAmountTotal,
+	})
+	if err != nil {
 		return err
 	}
-
-	settledGatewayAmount := referralSettlementReversalAmount(p.Order, rechargeOrder, p.GatewayAmount)
-	refundedAmount := roundMoney(rechargeOrder.RefundedAmount + settledGatewayAmount)
-	if refundedAmount <= 0 {
-		return nil
+	if err := client.PaymentAuditLog.Create().
+		SetOrderID(failure.OrderID).
+		SetAction(recoveredAction).
+		SetDetail(string(detailJSON)).
+		SetOperator("system").
+		OnConflictColumns(paymentauditlog.FieldOrderID, paymentauditlog.FieldAction).
+		UpdateNewValues().
+		Exec(ctx); err != nil {
+		return fmt.Errorf("record recovered refund sync audit: %w", err)
 	}
-	paidAmount := roundMoney(rechargeOrder.PaidAmount)
-	if paidAmount > 0 && refundedAmount > paidAmount {
-		refundedAmount = paidAmount
-	}
-
-	_, _, err = s.referralRefundSvc.ApplyRefund(ctx, &RechargeRefundInput{
-		RechargeOrderID:  rechargeOrder.ID,
-		RefundedAmount:   refundedAmount,
-		ChargebackAmount: roundMoney(rechargeOrder.ChargebackAmount),
-	})
-	return err
+	return nil
 }
 
 func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, resp *payment.RefundResponse) (*RefundResult, error) {
@@ -1238,7 +1614,10 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 	subDaysDeducted := p.SubDaysToDeduct
 	inFlightDetail, _ := refundInFlightDetailFromOrder(current)
 	deductRequested := p.DeductBalance || p.DeductionType != payment.DeductionTypeNone
-	rollbackPreviouslyFailed := s.hasAuditLog(txCtx, p.OrderID, "REFUND_ROLLBACK_FAILED")
+	rollbackPreviouslyFailed, err := s.hasAuditLogRequired(txCtx, p.OrderID, "REFUND_ROLLBACK_FAILED")
+	if err != nil {
+		return nil, fmt.Errorf("query prior refund rollback failure: %w", err)
+	}
 	rollbackOK := false
 	if rollbackPreviouslyFailed {
 		// A retry intentionally skips re-deduction after a prior rollback failure.
@@ -1273,10 +1652,13 @@ func (s *PaymentService) markRefundPending(ctx context.Context, p *RefundPlan, r
 		providerSnapshot = make(map[string]any, 1)
 	}
 	providerSnapshot[paymentOrderSnapshotRefundPending] = detail
+	components := paymentOrderReversalComponents(current)
 	updated, err := tx.PaymentOrder.Update().
 		Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusEQ(OrderStatusRefunding)).
 		SetStatus(OrderStatusRefundPending).
-		SetRefundAmount(p.RefundAmount).
+		SetRefundAmount(components.CombinedAmount).
+		SetProviderRefundAmount(components.ProviderRefundAmount).
+		SetChargebackAmount(components.ChargebackAmount).
 		SetRefundReason(p.Reason).
 		SetProviderSnapshot(providerSnapshot).
 		ClearRefundAt().

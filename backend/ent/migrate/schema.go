@@ -1527,6 +1527,8 @@ var (
 		{Name: "provider_snapshot", Type: field.TypeJSON, Nullable: true, SchemaType: map[string]string{"postgres": "jsonb"}},
 		{Name: "status", Type: field.TypeString, Size: 30, Default: "PENDING"},
 		{Name: "refund_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
+		{Name: "provider_refund_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
+		{Name: "chargeback_amount", Type: field.TypeFloat64, Default: 0, SchemaType: map[string]string{"postgres": "decimal(20,2)"}},
 		{Name: "refund_reason", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "refund_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "force_refund", Type: field.TypeBool, Default: false},
@@ -1554,13 +1556,13 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "payment_orders_subscription_entitlements_payment_orders",
-				Columns:    []*schema.Column{PaymentOrdersColumns[39]},
+				Columns:    []*schema.Column{PaymentOrdersColumns[41]},
 				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "payment_orders_users_payment_orders",
-				Columns:    []*schema.Column{PaymentOrdersColumns[40]},
+				Columns:    []*schema.Column{PaymentOrdersColumns[42]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -1577,7 +1579,7 @@ var (
 			{
 				Name:    "paymentorder_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[40]},
+				Columns: []*schema.Column{PaymentOrdersColumns[42]},
 			},
 			{
 				Name:    "paymentorder_status",
@@ -1587,22 +1589,22 @@ var (
 			{
 				Name:    "paymentorder_expires_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[29]},
+				Columns: []*schema.Column{PaymentOrdersColumns[31]},
 			},
 			{
 				Name:    "paymentorder_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[37]},
+				Columns: []*schema.Column{PaymentOrdersColumns[39]},
 			},
 			{
 				Name:    "paymentorder_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[30]},
+				Columns: []*schema.Column{PaymentOrdersColumns[32]},
 			},
 			{
 				Name:    "paymentorder_payment_type_paid_at",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[30]},
+				Columns: []*schema.Column{PaymentOrdersColumns[9], PaymentOrdersColumns[32]},
 			},
 			{
 				Name:    "paymentorder_order_type",
@@ -1612,7 +1614,7 @@ var (
 			{
 				Name:    "paymentorder_subscription_entitlement_id",
 				Unique:  false,
-				Columns: []*schema.Column{PaymentOrdersColumns[39]},
+				Columns: []*schema.Column{PaymentOrdersColumns[41]},
 			},
 		},
 	}
@@ -3119,6 +3121,8 @@ var (
 		{Name: "model", Type: field.TypeString, Size: 100},
 		{Name: "requested_model", Type: field.TypeString, Nullable: true, Size: 100},
 		{Name: "upstream_model", Type: field.TypeString, Nullable: true, Size: 100},
+		{Name: "upstream_response_model", Type: field.TypeString, Nullable: true, Size: 200},
+		{Name: "upstream_model_mismatch", Type: field.TypeBool, Nullable: true},
 		{Name: "channel_id", Type: field.TypeInt64, Nullable: true},
 		{Name: "model_mapping_chain", Type: field.TypeString, Nullable: true, Size: 500},
 		{Name: "billing_tier", Type: field.TypeString, Nullable: true, Size: 50},
@@ -3173,37 +3177,37 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "usage_logs_api_keys_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[44]},
+				Columns:    []*schema.Column{UsageLogsColumns[46]},
 				RefColumns: []*schema.Column{APIKeysColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_accounts_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[45]},
+				Columns:    []*schema.Column{UsageLogsColumns[47]},
 				RefColumns: []*schema.Column{AccountsColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_groups_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[46]},
+				Columns:    []*schema.Column{UsageLogsColumns[48]},
 				RefColumns: []*schema.Column{GroupsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_subscription_entitlements_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[47]},
+				Columns:    []*schema.Column{UsageLogsColumns[49]},
 				RefColumns: []*schema.Column{SubscriptionEntitlementsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
 			{
 				Symbol:     "usage_logs_users_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[48]},
+				Columns:    []*schema.Column{UsageLogsColumns[50]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
 			{
 				Symbol:     "usage_logs_user_subscriptions_usage_logs",
-				Columns:    []*schema.Column{UsageLogsColumns[49]},
+				Columns:    []*schema.Column{UsageLogsColumns[51]},
 				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
 				OnDelete:   schema.SetNull,
 			},
@@ -3212,42 +3216,42 @@ var (
 			{
 				Name:    "usagelog_user_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[48]},
+				Columns: []*schema.Column{UsageLogsColumns[50]},
 			},
 			{
 				Name:    "usagelog_api_key_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[44]},
+				Columns: []*schema.Column{UsageLogsColumns[46]},
 			},
 			{
 				Name:    "usagelog_account_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[45]},
+				Columns: []*schema.Column{UsageLogsColumns[47]},
 			},
 			{
 				Name:    "usagelog_group_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[46]},
+				Columns: []*schema.Column{UsageLogsColumns[48]},
 			},
 			{
 				Name:    "usagelog_subscription_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[49]},
+				Columns: []*schema.Column{UsageLogsColumns[51]},
 			},
 			{
 				Name:    "usagelog_entitlement_id",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[47]},
+				Columns: []*schema.Column{UsageLogsColumns[49]},
 			},
 			{
 				Name:    "usagelog_billing_source_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[25], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[27], UsageLogsColumns[45]},
 			},
 			{
 				Name:    "usagelog_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[45]},
 			},
 			{
 				Name:    "usagelog_model",
@@ -3267,17 +3271,17 @@ var (
 			{
 				Name:    "usagelog_user_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[48], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[50], UsageLogsColumns[45]},
 			},
 			{
 				Name:    "usagelog_api_key_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[44], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[46], UsageLogsColumns[45]},
 			},
 			{
 				Name:    "usagelog_group_id_created_at",
 				Unique:  false,
-				Columns: []*schema.Column{UsageLogsColumns[46], UsageLogsColumns[43]},
+				Columns: []*schema.Column{UsageLogsColumns[48], UsageLogsColumns[45]},
 			},
 		},
 	}

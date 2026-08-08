@@ -12,6 +12,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
+	entuser "github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -19,8 +21,55 @@ type subscriptionEntitlementRepository struct {
 	client *dbent.Client
 }
 
+type subscriptionEntitlementUserMutationQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
 func NewSubscriptionEntitlementRepository(client *dbent.Client) service.SubscriptionEntitlementRepository {
 	return &subscriptionEntitlementRepository{client: client}
+}
+
+func subscriptionEntitlementUserMutationLockKey(userID int64) int64 {
+	return advisoryLockHash(fmt.Sprintf("subscription-entitlement:user:%d", userID))
+}
+
+func lockSubscriptionEntitlementUserMutation(
+	ctx context.Context,
+	querier subscriptionEntitlementUserMutationQuerier,
+	userID int64,
+) error {
+	if querier == nil || userID <= 0 {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	rows, err := querier.QueryContext(ctx, "SELECT pg_advisory_xact_lock($1)", subscriptionEntitlementUserMutationLockKey(userID))
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func (r *subscriptionEntitlementRepository) WithUserEntitlementMutationTx(ctx context.Context, userID int64, fn func(context.Context) error) error {
+	if userID <= 0 || fn == nil {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		// Serialize entitlement mutations without locking the users row. Usage billing
+		// may lock an entitlement before updating balance; a users FOR UPDATE lock here
+		// would create the inverse lock order and permit a PostgreSQL deadlock.
+		if err := lockSubscriptionEntitlementUserMutation(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		exists, err := txClient.User.Query().
+			Where(entuser.IDEQ(userID), entuser.DeletedAtIsNil()).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrSubscriptionEntitlementNotFound
+		}
+		return fn(txCtx)
+	})
 }
 
 func (r *subscriptionEntitlementRepository) Create(ctx context.Context, ent *service.SubscriptionEntitlement, groupIDs []int64) error {
@@ -68,6 +117,18 @@ func (r *subscriptionEntitlementRepository) GetByID(ctx context.Context, id int6
 		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
 	}
 	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetByIDForUpdate(ctx context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	lockedID, err := client.SubscriptionEntitlement.Query().
+		Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+		ForUpdate().
+		OnlyID(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return r.GetByID(ctx, lockedID)
 }
 
 func (r *subscriptionEntitlementRepository) GetBySourceID(ctx context.Context, sourceType string, sourceID int64) (*service.SubscriptionEntitlement, error) {
@@ -188,6 +249,33 @@ func (r *subscriptionEntitlementRepository) ListByUserPlanID(ctx context.Context
 	return subscriptionEntitlementEntitiesToService(ms), nil
 }
 
+func (r *subscriptionEntitlementRepository) ListByUserPlanIDForUpdate(ctx context.Context, userID, planID int64) ([]service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	ids, err := client.SubscriptionEntitlement.Query().
+		Where(
+			subscriptionentitlement.UserIDEQ(userID),
+			subscriptionentitlement.PlanIDEQ(planID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Order(dbent.Asc(subscriptionentitlement.FieldID)).
+		ForUpdate().
+		IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []service.SubscriptionEntitlement{}, nil
+	}
+	ms, err := entitlementQueryWithGroups(client).
+		Where(subscriptionentitlement.IDIn(ids...)).
+		Order(dbent.Desc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return subscriptionEntitlementEntitiesToService(ms), nil
+}
+
 func (r *subscriptionEntitlementRepository) ListActiveByUserID(ctx context.Context, userID int64) ([]service.SubscriptionEntitlement, error) {
 	client := clientFromContext(ctx, r.client)
 	now := time.Now()
@@ -245,7 +333,7 @@ func (r *subscriptionEntitlementRepository) UpdateTerm(ctx context.Context, id i
 
 func (r *subscriptionEntitlementRepository) UpdateTermAndSource(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef) error {
 	client := clientFromContext(ctx, r.client)
-	err := updateSubscriptionEntitlementTermAndSourceWithClient(ctx, client, id, startsAt, expiresAt, status, notes, source, false, time.Time{})
+	err := updateSubscriptionEntitlementTermAndSourceWithClient(ctx, client, id, startsAt, expiresAt, status, notes, source, false, time.Time{}, time.Time{})
 	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
 }
 
@@ -283,9 +371,9 @@ func (r *subscriptionEntitlementRepository) CompareAndSwapTerm(
 	return updatedAt, affected == 1, nil
 }
 
-func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, fulfillment *service.SubscriptionEntitlementFulfillment, resetUsage bool, resetWindowStart time.Time) error {
+func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, fulfillment *service.SubscriptionEntitlementFulfillment, resetUsage bool, resetDailyStart, resetPeriodicStart time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
-		if err := updateSubscriptionEntitlementTermAndSourceWithClient(txCtx, txClient, id, startsAt, expiresAt, status, notes, source, resetUsage, resetWindowStart); err != nil {
+		if err := updateSubscriptionEntitlementTermAndSourceWithClient(txCtx, txClient, id, startsAt, expiresAt, status, notes, source, resetUsage, resetDailyStart, resetPeriodicStart); err != nil {
 			return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
 		}
 		if fulfillment == nil {
@@ -296,33 +384,129 @@ func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Co
 	})
 }
 
-func (r *subscriptionEntitlementRepository) ResetUsage(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error {
+func (r *subscriptionEntitlementRepository) ActivateWindows(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	affected, err := client.SubscriptionEntitlement.Update().
+		Where(
+			subscriptionentitlement.IDEQ(id),
+			subscriptionentitlement.DeletedAtIsNil(),
+			subscriptionentitlement.DailyWindowStartIsNil(),
+			subscriptionentitlement.WeeklyWindowStartIsNil(),
+			subscriptionentitlement.MonthlyWindowStartIsNil(),
+		).
+		SetDailyUsageUsd(0).
+		SetWeeklyUsageUsd(0).
+		SetMonthlyUsageUsd(0).
+		SetDailyWindowStart(dailyStart).
+		SetWeeklyWindowStart(periodicStart).
+		SetMonthlyWindowStart(periodicStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
+		Save(ctx)
+	return r.translateConditionalWindowUpdate(ctx, client, id, affected, err)
+}
+
+func (r *subscriptionEntitlementRepository) ResetUsage(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, dailyStart, periodicStart time.Time) error {
 	if !resetDaily && !resetWeekly && !resetMonthly {
 		return service.ErrSubscriptionEntitlementInvalidReset
 	}
-	if windowStart.IsZero() {
-		windowStart = time.Now()
+	now := time.Now()
+	if resetDaily && dailyStart.IsZero() {
+		dailyStart = timezone.StartOfDay(now)
+	}
+	if (resetWeekly || resetMonthly) && periodicStart.IsZero() {
+		periodicStart = now
 	}
 
 	client := clientFromContext(ctx, r.client)
 	update := client.SubscriptionEntitlement.UpdateOneID(id)
 	if resetDaily {
-		update.SetDailyUsageUsd(0).SetDailyWindowStart(windowStart)
+		update.SetDailyUsageUsd(0).SetDailyWindowStart(dailyStart)
 	}
 	if resetWeekly {
-		update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(windowStart)
+		update.SetWeeklyUsageUsd(0).SetWeeklyWindowStart(periodicStart)
 	}
 	if resetMonthly {
-		update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(windowStart)
+		update.SetMonthlyUsageUsd(0).SetMonthlyWindowStart(periodicStart)
 	}
 	_, err := update.Save(ctx)
 	return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
 }
 
-func (r *subscriptionEntitlementRepository) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
-	return r.withTx(ctx, func(txCtx context.Context, _ *dbent.Client) error {
-		return fn(txCtx)
-	})
+func (r *subscriptionEntitlementRepository) ResetDailyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.SubscriptionEntitlement.Update().Where(
+		subscriptionentitlement.IDEQ(id),
+		subscriptionentitlement.DeletedAtIsNil(),
+	)
+	if expectedWindowStart == nil {
+		update = update.Where(subscriptionentitlement.DailyWindowStartIsNil())
+	} else {
+		update = update.Where(subscriptionentitlement.DailyWindowStartEQ(*expectedWindowStart))
+	}
+	affected, err := update.
+		SetDailyUsageUsd(0).
+		SetDailyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
+		Save(ctx)
+	return r.translateConditionalWindowUpdate(ctx, client, id, affected, err)
+}
+
+func (r *subscriptionEntitlementRepository) ResetWeeklyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.SubscriptionEntitlement.Update().Where(
+		subscriptionentitlement.IDEQ(id),
+		subscriptionentitlement.DeletedAtIsNil(),
+	)
+	if expectedWindowStart == nil {
+		update = update.Where(subscriptionentitlement.WeeklyWindowStartIsNil())
+	} else {
+		update = update.Where(subscriptionentitlement.WeeklyWindowStartEQ(*expectedWindowStart))
+	}
+	affected, err := update.
+		SetWeeklyUsageUsd(0).
+		SetWeeklyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
+		Save(ctx)
+	return r.translateConditionalWindowUpdate(ctx, client, id, affected, err)
+}
+
+func (r *subscriptionEntitlementRepository) ResetMonthlyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.SubscriptionEntitlement.Update().Where(
+		subscriptionentitlement.IDEQ(id),
+		subscriptionentitlement.DeletedAtIsNil(),
+	)
+	if expectedWindowStart == nil {
+		update = update.Where(subscriptionentitlement.MonthlyWindowStartIsNil())
+	} else {
+		update = update.Where(subscriptionentitlement.MonthlyWindowStartEQ(*expectedWindowStart))
+	}
+	affected, err := update.
+		SetMonthlyUsageUsd(0).
+		SetMonthlyWindowStart(newWindowStart).
+		SetUpdatedAt(time.Now().Add(time.Millisecond)).
+		Save(ctx)
+	return r.translateConditionalWindowUpdate(ctx, client, id, affected, err)
+}
+
+func (r *subscriptionEntitlementRepository) translateConditionalWindowUpdate(ctx context.Context, client *dbent.Client, id int64, affected int, err error) error {
+	if err != nil {
+		return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	if affected > 0 {
+		return nil
+	}
+
+	exists, err := client.SubscriptionEntitlement.Query().
+		Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+		Exist(ctx)
+	if err != nil {
+		return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	if !exists {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	return nil
 }
 
 func (r *subscriptionEntitlementRepository) LockEntitlementMonthlyCycle(ctx context.Context, userID, entitlementID int64) (*service.SubscriptionEntitlementMonthlyCycleSnapshot, error) {
@@ -565,7 +749,7 @@ func (r *subscriptionEntitlementRepository) createWithClient(ctx context.Context
 	return nil
 }
 
-func updateSubscriptionEntitlementTermAndSourceWithClient(ctx context.Context, client *dbent.Client, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, resetUsage bool, resetWindowStart time.Time) error {
+func updateSubscriptionEntitlementTermAndSourceWithClient(ctx context.Context, client *dbent.Client, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, resetUsage bool, resetDailyStart, resetPeriodicStart time.Time) error {
 	update := client.SubscriptionEntitlement.UpdateOneID(id).
 		SetStartsAt(startsAt).
 		SetExpiresAt(expiresAt).
@@ -595,16 +779,20 @@ func updateSubscriptionEntitlementTermAndSourceWithClient(ctx context.Context, c
 		update.SetAssignedAt(source.AssignedAt)
 	}
 	if resetUsage {
-		if resetWindowStart.IsZero() {
-			resetWindowStart = time.Now()
+		now := time.Now()
+		if resetDailyStart.IsZero() {
+			resetDailyStart = timezone.StartOfDay(now)
+		}
+		if resetPeriodicStart.IsZero() {
+			resetPeriodicStart = now
 		}
 		update.
 			SetDailyUsageUsd(0).
 			SetWeeklyUsageUsd(0).
 			SetMonthlyUsageUsd(0).
-			SetDailyWindowStart(resetWindowStart).
-			SetWeeklyWindowStart(resetWindowStart).
-			SetMonthlyWindowStart(resetWindowStart)
+			SetDailyWindowStart(resetDailyStart).
+			SetWeeklyWindowStart(resetPeriodicStart).
+			SetMonthlyWindowStart(resetPeriodicStart)
 	}
 	_, err := update.Save(ctx)
 	return err

@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 func syntheticEntitlementIDFromSubscriptionID(subscriptionID int64) (int64, bool) {
@@ -27,40 +29,62 @@ func (s *SubscriptionService) adminAdjustEntitlement(ctx context.Context, entitl
 		days = -MaxValidityDays
 	}
 
-	now := time.Now()
-	ent, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
-	if err != nil {
-		return nil, err
-	}
-	if ent.Status == SubscriptionStatusRevoked || ent.Status == SubscriptionStatusSuspended {
-		return nil, ErrSubscriptionEntitlementInactive
-	}
+	now := entitlementSvc.inputNow(time.Time{})
+	var refreshed *SubscriptionEntitlement
+	err = entitlementSvc.withLockedEntitlement(ctx, entitlementID, 0, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		if ent.Status == SubscriptionStatusRevoked || ent.Status == SubscriptionStatusSuspended {
+			return ErrSubscriptionEntitlementInactive
+		}
 
-	expired := ent.Status == SubscriptionStatusExpired || !ent.ExpiresAt.After(now)
-	if expired && days < 0 {
-		return nil, ErrAdjustWouldExpire
-	}
+		expired := ent.Status == SubscriptionStatusExpired || !ent.ExpiresAt.After(now)
+		if expired && days < 0 {
+			return ErrAdjustWouldExpire
+		}
 
-	startsAt := ent.StartsAt
-	base := ent.ExpiresAt
-	status := ent.Status
-	if expired {
-		startsAt = now
-		base = now
-		status = SubscriptionStatusActive
-	}
-	expiresAt := base.AddDate(0, 0, days)
-	if expiresAt.After(MaxExpiresAt) {
-		expiresAt = MaxExpiresAt
-	}
-	if !expiresAt.After(now) {
-		return nil, ErrAdjustWouldExpire
-	}
+		startsAt := ent.StartsAt
+		base := ent.ExpiresAt
+		status := ent.Status
+		if expired {
+			startsAt = now
+			base = now
+			status = SubscriptionStatusActive
+		}
+		expiresAt := base.AddDate(0, 0, days)
+		if expiresAt.After(MaxExpiresAt) {
+			expiresAt = MaxExpiresAt
+		}
+		if !expiresAt.After(now) {
+			return ErrAdjustWouldExpire
+		}
 
-	if err := entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, startsAt, expiresAt, status, ent.Notes); err != nil {
-		return nil, err
-	}
-	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+		var updateErr error
+		if expired {
+			updateErr = entitlementSvc.entitlementRepo.ExtendWithFulfillment(
+				txCtx,
+				entitlementID,
+				startsAt,
+				expiresAt,
+				status,
+				ent.Notes,
+				SubscriptionEntitlementSourceRef{},
+				nil,
+				true,
+				timezone.StartOfDay(now),
+				now,
+			)
+		} else {
+			updateErr = entitlementSvc.entitlementRepo.UpdateTerm(txCtx, entitlementID, startsAt, expiresAt, status, ent.Notes)
+		}
+		if updateErr != nil {
+			return updateErr
+		}
+		var refreshErr error
+		refreshed, refreshErr = entitlementSvc.entitlementRepo.GetByID(txCtx, entitlementID)
+		if refreshErr != nil {
+			return refreshErr
+		}
+		return syncLinkedLegacySubscriptionLifecycle(txCtx, s.userSubRepo, refreshed)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -84,11 +108,23 @@ func (s *SubscriptionService) resetEntitlementQuotaUsage(ctx context.Context, en
 	if !resetDaily && !resetWeekly && !resetMonthly {
 		return nil, ErrInvalidInput
 	}
-	windowStart := time.Now()
-	if err := entitlementSvc.entitlementRepo.ResetUsage(ctx, entitlementID, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
-		return nil, err
-	}
-	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+	now := entitlementSvc.inputNow(time.Time{})
+	dailyStart := timezone.StartOfDay(now)
+	var refreshed *SubscriptionEntitlement
+	err = entitlementSvc.withLockedEntitlement(ctx, entitlementID, 0, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		if validateErr := validateActiveLinkedLegacySubscription(txCtx, s.userSubRepo, ent); validateErr != nil {
+			return validateErr
+		}
+		if resetErr := entitlementSvc.entitlementRepo.ResetUsage(txCtx, entitlementID, resetDaily, resetWeekly, resetMonthly, dailyStart, now); resetErr != nil {
+			return resetErr
+		}
+		var refreshErr error
+		refreshed, refreshErr = entitlementSvc.entitlementRepo.GetByID(txCtx, entitlementID)
+		if refreshErr != nil {
+			return refreshErr
+		}
+		return syncLinkedLegacySubscriptionLifecycle(txCtx, s.userSubRepo, refreshed)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -101,28 +137,16 @@ func (s *SubscriptionService) adminRevokeEntitlement(ctx context.Context, entitl
 	if err != nil {
 		return err
 	}
-	ent, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+	var invalidationTarget *SubscriptionEntitlement
+	err = entitlementSvc.withLockedEntitlement(ctx, entitlementID, 0, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		invalidationTarget = ent
+		now := entitlementSvc.inputNow(time.Time{})
+		return entitlementSvc.revokeEntitlementAndLinkedAliasLocked(txCtx, ent, now, "revoked by admin")
+	})
 	if err != nil {
 		return err
 	}
-	if ent.Status == SubscriptionStatusRevoked {
-		return nil
-	}
-
-	now := time.Now()
-	startsAt := ent.StartsAt
-	if startsAt.After(now) {
-		startsAt = now
-	}
-	expiresAt := ent.ExpiresAt
-	if expiresAt.After(now) {
-		expiresAt = now
-	}
-	notes := appendSubscriptionNotes(ent.Notes, "revoked by admin")
-	if err := entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, startsAt, expiresAt, SubscriptionStatusRevoked, notes); err != nil {
-		return err
-	}
-	s.invalidateEntitlementLegacyAlias(ent)
+	s.invalidateEntitlementLegacyAlias(invalidationTarget)
 	return nil
 }
 
@@ -131,23 +155,26 @@ func (s *SubscriptionService) adminRestoreEntitlement(ctx context.Context, entit
 	if err != nil {
 		return nil, err
 	}
-	ent, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
-	if err != nil {
-		return nil, err
-	}
-	if ent.Status != SubscriptionStatusRevoked {
-		return nil, ErrSubscriptionNotRevoked
-	}
-
-	restoredStatus := SubscriptionStatusActive
-	if !ent.ExpiresAt.After(time.Now()) {
-		restoredStatus = SubscriptionStatusExpired
-	}
-	notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
-	if err := entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, ent.StartsAt, ent.ExpiresAt, restoredStatus, notes); err != nil {
-		return nil, err
-	}
-	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
+	var refreshed *SubscriptionEntitlement
+	err = entitlementSvc.withLockedEntitlement(ctx, entitlementID, 0, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		if ent.Status != SubscriptionStatusRevoked {
+			return ErrSubscriptionNotRevoked
+		}
+		restoredStatus := SubscriptionStatusActive
+		if !ent.ExpiresAt.After(entitlementSvc.inputNow(time.Time{})) {
+			restoredStatus = SubscriptionStatusExpired
+		}
+		notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
+		if updateErr := entitlementSvc.entitlementRepo.UpdateTerm(txCtx, entitlementID, ent.StartsAt, ent.ExpiresAt, restoredStatus, notes); updateErr != nil {
+			return updateErr
+		}
+		var refreshErr error
+		refreshed, refreshErr = entitlementSvc.entitlementRepo.GetByID(txCtx, entitlementID)
+		if refreshErr != nil {
+			return refreshErr
+		}
+		return syncLinkedLegacySubscriptionLifecycle(txCtx, s.userSubRepo, refreshed)
+	})
 	if err != nil {
 		return nil, err
 	}

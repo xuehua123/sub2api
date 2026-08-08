@@ -170,6 +170,16 @@ func RefundAmount(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundAmount, v))
 }
 
+// ProviderRefundAmount applies equality check predicate on the "provider_refund_amount" field. It's identical to ProviderRefundAmountEQ.
+func ProviderRefundAmount(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldProviderRefundAmount, v))
+}
+
+// ChargebackAmount applies equality check predicate on the "chargeback_amount" field. It's identical to ChargebackAmountEQ.
+func ChargebackAmount(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldChargebackAmount, v))
+}
+
 // RefundReason applies equality check predicate on the "refund_reason" field. It's identical to RefundReasonEQ.
 func RefundReason(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRefundReason, v))
@@ -1588,6 +1598,86 @@ func RefundAmountLT(v float64) predicate.PaymentOrder {
 // RefundAmountLTE applies the LTE predicate on the "refund_amount" field.
 func RefundAmountLTE(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldLTE(FieldRefundAmount, v))
+}
+
+// ProviderRefundAmountEQ applies the EQ predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldProviderRefundAmount, v))
+}
+
+// ProviderRefundAmountNEQ applies the NEQ predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountNEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldProviderRefundAmount, v))
+}
+
+// ProviderRefundAmountIn applies the In predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldProviderRefundAmount, vs...))
+}
+
+// ProviderRefundAmountNotIn applies the NotIn predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountNotIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldProviderRefundAmount, vs...))
+}
+
+// ProviderRefundAmountGT applies the GT predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountGT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldProviderRefundAmount, v))
+}
+
+// ProviderRefundAmountGTE applies the GTE predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountGTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldProviderRefundAmount, v))
+}
+
+// ProviderRefundAmountLT applies the LT predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountLT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldProviderRefundAmount, v))
+}
+
+// ProviderRefundAmountLTE applies the LTE predicate on the "provider_refund_amount" field.
+func ProviderRefundAmountLTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldProviderRefundAmount, v))
+}
+
+// ChargebackAmountEQ applies the EQ predicate on the "chargeback_amount" field.
+func ChargebackAmountEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldChargebackAmount, v))
+}
+
+// ChargebackAmountNEQ applies the NEQ predicate on the "chargeback_amount" field.
+func ChargebackAmountNEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldChargebackAmount, v))
+}
+
+// ChargebackAmountIn applies the In predicate on the "chargeback_amount" field.
+func ChargebackAmountIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldChargebackAmount, vs...))
+}
+
+// ChargebackAmountNotIn applies the NotIn predicate on the "chargeback_amount" field.
+func ChargebackAmountNotIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldChargebackAmount, vs...))
+}
+
+// ChargebackAmountGT applies the GT predicate on the "chargeback_amount" field.
+func ChargebackAmountGT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldChargebackAmount, v))
+}
+
+// ChargebackAmountGTE applies the GTE predicate on the "chargeback_amount" field.
+func ChargebackAmountGTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldChargebackAmount, v))
+}
+
+// ChargebackAmountLT applies the LT predicate on the "chargeback_amount" field.
+func ChargebackAmountLT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldChargebackAmount, v))
+}
+
+// ChargebackAmountLTE applies the LTE predicate on the "chargeback_amount" field.
+func ChargebackAmountLTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldChargebackAmount, v))
 }
 
 // RefundReasonEQ applies the EQ predicate on the "refund_reason" field.

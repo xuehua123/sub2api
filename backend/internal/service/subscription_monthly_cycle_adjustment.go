@@ -441,7 +441,8 @@ func (s *SubscriptionService) applyEntitlementMonthlyCycleAdjustment(ctx context
 
 	now := monthlyCycleAdjustmentNow(input)
 	var applied *MonthlyCycleAdjustmentPreview
-	if err := store.WithEntitlementCycleTx(ctx, func(txCtx context.Context) error {
+	var refreshed *SubscriptionEntitlement
+	if err := store.WithUserEntitlementMutationTx(ctx, target.userID, func(txCtx context.Context) error {
 		snapshot, err := store.LockEntitlementMonthlyCycle(txCtx, target.userID, *target.entitlementID)
 		if err != nil {
 			return err
@@ -482,15 +483,21 @@ func (s *SubscriptionService) applyEntitlementMonthlyCycleAdjustment(ctx context
 		}); err != nil {
 			return err
 		}
+		refreshed, err = entitlementSvc.entitlementRepo.GetByID(txCtx, *target.entitlementID)
+		if err != nil {
+			return err
+		}
+		if err := syncLinkedLegacySubscriptionLifecycle(txCtx, s.userSubRepo, refreshed); err != nil {
+			return err
+		}
 		applied = preview
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 
-	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, *target.entitlementID)
-	if err != nil {
-		return nil, err
+	if refreshed == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
 	}
 	entitlementSvc.attachEntitlementEconomics(ctx, refreshed)
 	s.invalidateEntitlementLegacyAlias(refreshed)

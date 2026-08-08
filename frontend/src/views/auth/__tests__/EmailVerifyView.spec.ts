@@ -102,6 +102,74 @@ vi.mock('@/api/client', () => ({
 }))
 
 describe('EmailVerifyView', () => {
+  function configurePendingOAuthCaptcha(
+    settings: Record<string, unknown>,
+    initialProof: Record<string, string>,
+  ): void {
+    authStoreState.pendingAuthSession = {
+      token: 'pending-token-captcha',
+      token_field: 'pending_auth_token',
+      provider: 'oidc',
+      redirect: '/profile',
+    }
+    getPublicSettingsMock.mockResolvedValue({
+      turnstile_enabled: false,
+      turnstile_site_key: '',
+      site_name: 'Sub2API',
+      registration_email_suffix_whitelist: [],
+      ...settings,
+    })
+    sendPendingOAuthVerifyCodeMock.mockResolvedValue({ countdown: 0 })
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'fresh@example.com',
+        password: 'secret-123',
+        ...initialProof,
+      }),
+    )
+  }
+
+  function mountTrackedCaptcha(clickBehavior: 'none' | 'verify' | 'error' = 'none') {
+    let captchaMountCount = 0
+    const CaptchaChallengeStub = defineComponent({
+      props: {
+        tencentRegion: String,
+      },
+      emits: ['verify', 'error'],
+      setup(_, { emit, expose }) {
+        const mountId = ++captchaMountCount
+        expose({ verifyAction: verifyActionMock, reset: createTurnstileResetMock })
+        return () =>
+          h(
+            clickBehavior === 'none' ? 'div' : 'button',
+            {
+              'data-captcha-mount-id': mountId,
+              onClick:
+                clickBehavior === 'verify'
+                  ? () => emit('verify', `turnstile-proof-${mountId}`)
+                  : clickBehavior === 'error'
+                    ? () => emit('error')
+                    : undefined,
+            },
+            clickBehavior,
+          )
+      },
+    })
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: CaptchaChallengeStub,
+          transition: false,
+        },
+      },
+    })
+
+    return { CaptchaChallengeStub, wrapper }
+  }
+
   beforeEach(() => {
     pushMock.mockReset()
     showSuccessMock.mockReset()
@@ -130,6 +198,172 @@ describe('EmailVerifyView', () => {
     sendVerifyCodeMock.mockResolvedValue({ countdown: 60 })
     sendPendingOAuthVerifyCodeMock.mockResolvedValue({ countdown: 60 })
     setTokenMock.mockResolvedValue({})
+  })
+
+  it('temporarily swaps the pending oauth create captcha for the Tencent INTL resend captcha', async () => {
+    configurePendingOAuthCaptcha(
+      {
+        tencent_captcha_enabled: true,
+        tencent_captcha_app_id: 'tencent-app-id',
+        tencent_captcha_region: 'intl',
+      },
+      {
+        tencent_captcha_ticket: 'initial-ticket',
+        tencent_captcha_randstr: '@initial-rand',
+      },
+    )
+    let resolveResendProof!: (proof: { token: string; randstr: string } | null) => void
+    verifyActionMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveResendProof = resolve
+      }),
+    )
+    const { CaptchaChallengeStub, wrapper } = mountTrackedCaptcha()
+
+    await flushPromises()
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.findComponent(CaptchaChallengeStub).props('tencentRegion')).toBe('intl')
+    expect(wrapper.get('[data-captcha-mount-id="1"]').exists()).toBe(true)
+
+    const resendButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('auth.clickToResend'),
+    )!
+    await resendButton.trigger('click')
+    await flushPromises()
+
+    expect(verifyActionMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="2"]').exists()).toBe(true)
+
+    resolveResendProof(null)
+    await flushPromises()
+
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="3"]').exists()).toBe(true)
+    expect(sendPendingOAuthVerifyCodeMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    {
+      captchaName: 'Tencent CN',
+      settings: {
+        tencent_captcha_enabled: true,
+        tencent_captcha_app_id: 'tencent-app-id',
+        tencent_captcha_region: 'cn',
+      },
+      initialProof: {
+        tencent_captcha_ticket: 'initial-ticket',
+        tencent_captcha_randstr: '@initial-rand',
+      },
+      resendProof: { token: 'resend-ticket', randstr: '@resend-rand' },
+      expectedPayload: {
+        tencent_captcha_ticket: 'resend-ticket',
+        tencent_captcha_randstr: '@resend-rand',
+      },
+    },
+    {
+      captchaName: 'Aliyun',
+      settings: {
+        aliyun_captcha_enabled: true,
+        aliyun_captcha_scene_id: 'aliyun-scene',
+        aliyun_captcha_prefix: 'aliyun-prefix',
+        aliyun_captcha_region: 'sgp',
+      },
+      initialProof: {
+        turnstile_token: 'initial-aliyun-proof',
+      },
+      resendProof: { token: 'resend-aliyun-proof', randstr: '' },
+      expectedPayload: {
+        turnstile_token: 'resend-aliyun-proof',
+      },
+    },
+  ])(
+    'restores the pending oauth create captcha after a $captchaName resend succeeds',
+    async ({ settings, initialProof, resendProof, expectedPayload }) => {
+      configurePendingOAuthCaptcha(settings, initialProof)
+      verifyActionMock.mockResolvedValue(resendProof)
+      const { CaptchaChallengeStub, wrapper } = mountTrackedCaptcha()
+
+      await flushPromises()
+      expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+
+      const resendButton = wrapper.findAll('button').find((button) =>
+        button.text().includes('auth.clickToResend'),
+      )!
+      await resendButton.trigger('click')
+      await flushPromises()
+
+      expect(sendPendingOAuthVerifyCodeMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining(expectedPayload),
+      )
+      expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+      expect(wrapper.get('[data-captcha-mount-id="3"]').exists()).toBe(true)
+    },
+  )
+
+  it('keeps the pending oauth Turnstile resend staged and restores the create captcha after send', async () => {
+    configurePendingOAuthCaptcha(
+      {
+        turnstile_enabled: true,
+        turnstile_site_key: 'turnstile-site-key',
+      },
+      { turnstile_token: 'initial-turnstile-proof' },
+    )
+    const { CaptchaChallengeStub, wrapper } = mountTrackedCaptcha('verify')
+
+    await flushPromises()
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="1"]').exists()).toBe(true)
+
+    const resendButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('auth.clickToResend'),
+    )!
+    await resendButton.trigger('click')
+    await flushPromises()
+
+    expect(sendPendingOAuthVerifyCodeMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="2"]').exists()).toBe(true)
+
+    await wrapper.get('[data-captcha-mount-id="2"]').trigger('click')
+    await resendButton.trigger('click')
+    await flushPromises()
+
+    expect(sendPendingOAuthVerifyCodeMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ turnstile_token: 'turnstile-proof-2' }),
+    )
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="3"]').exists()).toBe(true)
+  })
+
+  it('restores the pending oauth create captcha when Turnstile resend proof fails', async () => {
+    configurePendingOAuthCaptcha(
+      {
+        turnstile_enabled: true,
+        turnstile_site_key: 'turnstile-site-key',
+      },
+      { turnstile_token: 'initial-turnstile-proof' },
+    )
+    const { CaptchaChallengeStub, wrapper } = mountTrackedCaptcha('error')
+
+    await flushPromises()
+    const resendButton = wrapper.findAll('button').find((button) =>
+      button.text().includes('auth.clickToResend'),
+    )!
+    await resendButton.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-captcha-mount-id="2"]').exists()).toBe(true)
+
+    await wrapper.get('[data-captcha-mount-id="2"]').trigger('click')
+    await flushPromises()
+
+    expect(showErrorMock).toHaveBeenCalledWith('auth.turnstileFailed')
+    expect(sendPendingOAuthVerifyCodeMock).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAllComponents(CaptchaChallengeStub)).toHaveLength(1)
+    expect(wrapper.get('[data-captcha-mount-id="3"]').exists()).toBe(true)
+    expect(resendButton.attributes('disabled')).toBeUndefined()
   })
 
   it('acquires a fresh Tencent proof for each resend action', async () => {

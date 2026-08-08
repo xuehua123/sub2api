@@ -1,0 +1,4 @@
+# Image capabilities trusted by the production deployment contract.
+# A capability is emitted as enabled only for the current main commit after CI.
+AFFILIATE_REFUND_REVERSAL=1
+PAYMENT_REVERSAL_COMPONENTS=1

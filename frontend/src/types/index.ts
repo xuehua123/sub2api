@@ -223,6 +223,7 @@ export interface PublicSettings {
   turnstile_enabled: boolean
   tencent_captcha_enabled?: boolean
   tencent_captcha_app_id?: string
+  tencent_captcha_region?: string
   passkey_enabled?: boolean
   turnstile_site_key: string
   aliyun_captcha_enabled?: boolean
@@ -1742,6 +1743,8 @@ export interface UsageLogAccountSummary {
 
 export interface AdminUsageLog extends UsageLog {
   upstream_model?: string | null
+  upstream_response_model?: string | null
+  upstream_model_mismatch?: boolean | null
   model_mapping_chain?: string | null
 
   // 账号计费倍率（仅管理员可见）
@@ -1764,6 +1767,7 @@ export interface UsageCleanupFilters {
   api_key_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string | null
   request_type?: UsageRequestType | null
   stream?: boolean | null
@@ -2034,6 +2038,7 @@ export interface UserSubscription {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   daily_window_start: string | null
+  daily_resets_at?: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
   created_at: string

@@ -678,6 +678,7 @@ export default {
       groupRequired: 'Please select a subscription group',
       priceRequired: 'Price must be greater than 0',
       validityRequired: 'Validity must be greater than 0',
+      validityTooLong: 'Effective plan validity must not exceed {days} days',
       groupMissing: 'Missing',
       groupInfo: 'Group Info',
       platform: 'Platform',

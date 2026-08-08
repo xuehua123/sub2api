@@ -35,6 +35,10 @@ func TestPaymentConfigPlanValidation(t *testing.T) {
 		{name: "empty name", mutate: func(req *CreatePlanRequest) { req.Name = "" }, wantErr: "plan name"},
 		{name: "zero price", mutate: func(req *CreatePlanRequest) { req.Price = 0 }, wantErr: "price"},
 		{name: "zero validity", mutate: func(req *CreatePlanRequest) { req.ValidityDays = 0 }, wantErr: "validity days"},
+		{name: "effective validity above maximum", mutate: func(req *CreatePlanRequest) {
+			req.ValidityDays = 101
+			req.ValidityUnit = "year"
+		}, wantErr: "must not exceed 36500 days"},
 		{name: "invalid validity unit", mutate: func(req *CreatePlanRequest) { req.ValidityUnit = "wek" }, wantErr: "valid validity unit"},
 		{name: "negative original price", mutate: func(req *CreatePlanRequest) { v := -1.0; req.OriginalPrice = &v }, wantErr: "original price"},
 		{name: "zero original price", mutate: func(req *CreatePlanRequest) { v := 0.0; req.OriginalPrice = &v }},
@@ -108,6 +112,53 @@ func TestPaymentConfigPlanPatchValidation(t *testing.T) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), tt.wantErr)
 			}
+		})
+	}
+}
+
+func TestValidateEffectivePlanValidityRange(t *testing.T) {
+	t.Parallel()
+
+	existing := &dbent.SubscriptionPlan{ValidityDays: 100, ValidityUnit: "day"}
+	years := "year"
+	err := validateEffectivePlanLimitPeriods(existing, UpdatePlanRequest{ValidityUnit: &years})
+	require.NoError(t, err)
+
+	oneHundredOne := 101
+	err = validateEffectivePlanLimitPeriods(existing, UpdatePlanRequest{ValidityDays: &oneHundredOne, ValidityUnit: &years})
+	require.Error(t, err)
+	require.Equal(t, "PLAN_VALIDITY_TOO_LONG", infraerrors.Reason(err))
+}
+
+func TestValidatePlanValidityRangeExactMaxAcrossUnits(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		validityDays int
+		validityUnit string
+		wantErr      bool
+	}{
+		{name: "36500 days", validityDays: 36500, validityUnit: "days"},
+		{name: "36501 days", validityDays: 36501, validityUnit: "day", wantErr: true},
+		{name: "5214 weeks", validityDays: 5214, validityUnit: "weeks"},
+		{name: "5215 weeks", validityDays: 5215, validityUnit: "week", wantErr: true},
+		{name: "1216 months", validityDays: 1216, validityUnit: "months"},
+		{name: "1217 months", validityDays: 1217, validityUnit: "month", wantErr: true},
+		{name: "100 years", validityDays: 100, validityUnit: "years"},
+		{name: "101 years", validityDays: 101, validityUnit: "year", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := validatePlanValidityRange(tt.validityDays, tt.validityUnit)
+			if tt.wantErr {
+				require.Error(t, err)
+				require.Equal(t, "PLAN_VALIDITY_TOO_LONG", infraerrors.Reason(err))
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }

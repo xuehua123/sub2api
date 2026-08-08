@@ -11,6 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const affiliateLedgerAccrueOrderUniqueSQL = `
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_ledger_accrue_order_uniq
+    ON user_affiliate_ledger (source_order_id)
+    WHERE action = 'accrue' AND source_order_id IS NOT NULL;
+`
+
 func TestValidateMigrationExecutionMode(t *testing.T) {
 	t.Run("事务迁移包含CONCURRENTLY会被拒绝", func(t *testing.T) {
 		nonTx, err := validateMigrationExecutionMode("001_add_idx.sql", "CREATE INDEX CONCURRENTLY idx_a ON t(a);")
@@ -203,6 +209,42 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_commission_rewards_status_available_
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestApplyMigrationsFS_NonTransactionalMigration_UsageModelMismatchIndexDropsInvalidIndexBeforeRetry(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs(usageLogsUpstreamModelMismatchIndexMigration).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT EXISTS \\(").
+		WithArgs(usageLogsUpstreamModelMismatchIndex).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_usage_logs_upstream_model_mismatch_created_at").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_upstream_model_mismatch_created_at").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
+		WithArgs(usageLogsUpstreamModelMismatchIndexMigration, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	fsys := fstest.MapFS{
+		usageLogsUpstreamModelMismatchIndexMigration: &fstest.MapFile{Data: []byte(`
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_usage_logs_upstream_model_mismatch_created_at
+    ON usage_logs (created_at DESC, id DESC)
+    WHERE upstream_model_mismatch IS TRUE;
+`)},
+	}
+
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestApplyMigrationsFS_PaymentOrdersOutTradeNoUniqueMigration_FailsFastOnDuplicatePrecheck(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -312,6 +354,79 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_scheduler_outbox_pending_dedu
     WHERE dedup_key IS NOT NULL;
 `),
 		},
+	}
+
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestAffiliateLedgerAccrueOrderUniqueMigrationExecutionMode(t *testing.T) {
+	content, err := migrations.FS.ReadFile(affiliateLedgerAccrueOrderUniqueMigration)
+	require.NoError(t, err)
+
+	nonTx, err := validateMigrationExecutionMode(affiliateLedgerAccrueOrderUniqueMigration, string(content))
+	require.True(t, nonTx)
+	require.NoError(t, err)
+	require.Len(t, splitSQLStatements(string(content)), 1)
+}
+
+func TestApplyMigrationsFS_AffiliateLedgerAccrueOrderUniqueMigration_FailsFastOnDuplicates(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs(affiliateLedgerAccrueOrderUniqueMigration).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT source_order_id, COUNT\\(\\*\\) AS duplicate_count FROM user_affiliate_ledger").
+		WillReturnRows(sqlmock.NewRows([]string{"source_order_id", "duplicate_count"}).
+			AddRow(int64(702), int64(3)).
+			AddRow(int64(701), int64(2)))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	fsys := fstest.MapFS{
+		affiliateLedgerAccrueOrderUniqueMigration: &fstest.MapFile{Data: []byte(affiliateLedgerAccrueOrderUniqueSQL)},
+	}
+
+	err = applyMigrationsFS(context.Background(), db, fsys)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "duplicate affiliate accrue source_order_id")
+	require.Contains(t, err.Error(), "order_id=702 (count=3)")
+	require.Contains(t, err.Error(), "order_id=701 (count=2)")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestApplyMigrationsFS_AffiliateLedgerAccrueOrderUniqueMigration_DropsInvalidIndexAfterCleanPrecheck(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	prepareMigrationsBootstrapExpectations(mock)
+	mock.ExpectQuery("SELECT checksum FROM schema_migrations WHERE filename = \\$1").
+		WithArgs(affiliateLedgerAccrueOrderUniqueMigration).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery("SELECT source_order_id, COUNT\\(\\*\\) AS duplicate_count FROM user_affiliate_ledger").
+		WillReturnRows(sqlmock.NewRows([]string{"source_order_id", "duplicate_count"}))
+	mock.ExpectQuery("SELECT EXISTS \\(").
+		WithArgs(affiliateLedgerAccrueOrderUniqueIndex).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectExec("DROP INDEX CONCURRENTLY IF EXISTS idx_user_affiliate_ledger_accrue_order_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_user_affiliate_ledger_accrue_order_uniq").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec("INSERT INTO schema_migrations \\(filename, checksum\\) VALUES \\(\\$1, \\$2\\)").
+		WithArgs(affiliateLedgerAccrueOrderUniqueMigration, sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("SELECT pg_advisory_unlock\\(\\$1\\)").
+		WithArgs(migrationsAdvisoryLockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	fsys := fstest.MapFS{
+		affiliateLedgerAccrueOrderUniqueMigration: &fstest.MapFile{Data: []byte(affiliateLedgerAccrueOrderUniqueSQL)},
 	}
 
 	err = applyMigrationsFS(context.Background(), db, fsys)

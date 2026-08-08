@@ -107,24 +107,29 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	}
 
 	expireCtx, cancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
-	defer cancel()
 	expired, err := s.paymentSvc.ExpireTimedOutOrders(expireCtx)
+	cancel()
 	if err != nil {
 		slog.Error("[PaymentOrderExpiry] failed to expire orders", "error", err)
-		return
-	}
-	if expired > 0 {
+	} else if expired > 0 {
 		slog.Info("[PaymentOrderExpiry] expired timed-out orders", "count", expired)
 	}
 
 	rewardCtx, rewardCancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
-	defer rewardCancel()
 	recovered, err = s.paymentSvc.RetryFailedSubscriptionReferralRewards(rewardCtx, defaultFailedReferralRewardRecoveryLimit)
+	rewardCancel()
 	if err != nil {
 		slog.Error("[PaymentOrderExpiry] failed to retry subscription referral rewards", "error", err)
-		return
-	}
-	if recovered > 0 {
+	} else if recovered > 0 {
 		slog.Info("[PaymentOrderExpiry] recovered subscription referral rewards", "count", recovered)
+	}
+
+	refundSyncCtx, refundSyncCancel := context.WithTimeout(context.Background(), expiryCheckTimeout)
+	recovered, err = s.paymentSvc.RetryFailedRefundRewardSyncs(refundSyncCtx, defaultFailedRefundSyncRecoveryLimit)
+	refundSyncCancel()
+	if err != nil {
+		slog.Error("[PaymentOrderExpiry] failed to retry refund reward syncs", "error", err)
+	} else if recovered > 0 {
+		slog.Info("[PaymentOrderExpiry] recovered refund reward syncs", "count", recovered)
 	}
 }

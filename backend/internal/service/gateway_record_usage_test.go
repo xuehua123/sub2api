@@ -640,6 +640,31 @@ func TestFinalizePostUsageBilling_EntitlementQuotaDoesNotQueueBalanceOrLegacySub
 	}, 100*time.Millisecond, 10*time.Millisecond)
 }
 
+func TestFinalizePostUsageBilling_LinkedEntitlementQueuesLegacyAliasCache(t *testing.T) {
+	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
+	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{
+		Cost:               &CostBreakdown{ActualCost: 2},
+		User:               &User{ID: 601},
+		APIKey:             &APIKey{ID: 501, GroupID: i64p(88)},
+		Account:            &Account{ID: 701},
+		Subscription:       &UserSubscription{ID: 913},
+		Entitlement:        &SubscriptionEntitlement{ID: 912, LegacySubscriptionID: i64p(913)},
+		IsSubscriptionBill: true,
+	}, &billingDeps{
+		billingCacheService: billingCache,
+		deferredService:     &DeferredService{},
+	}, &UsageBillingApplyResult{
+		Applied:             true,
+		EntitlementVersion:  123,
+		SubscriptionVersion: 123,
+	})
+
+	require.Eventually(t, func() bool {
+		return atomic.LoadInt64(&cache.subscriptionUpdates) > 0
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, int64(0), atomic.LoadInt64(&cache.balanceUpdates))
+}
+
 func TestFinalizePostUsageBilling_LegacySubscriptionQueuesSubscriptionCache(t *testing.T) {
 	billingCache, cache := newGatewayFinalizeBillingCacheForTest(t)
 	finalizePostUsageBilling(context.Background(), &postUsageBillingParams{

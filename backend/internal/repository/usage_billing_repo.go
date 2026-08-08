@@ -9,6 +9,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -186,6 +187,10 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 			result.NewBalance = &newBalance
 		} else {
 			result.EntitlementVersion = entitlementVersion
+			// Linked entitlement billing writes the same absolute usage snapshot to
+			// its legacy alias in this transaction. PostgreSQL NOW() is stable for
+			// the transaction, so the entitlement version is also the alias version.
+			result.SubscriptionVersion = entitlementVersion
 		}
 	} else if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
 		updatedAt, err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost)
@@ -287,26 +292,30 @@ func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, am
 }
 
 type usageBillingEntitlementState struct {
-	ID                 int64
-	UserID             int64
-	Status             string
-	StartsAt           time.Time
-	ExpiresAt          time.Time
-	DailyWindowStart   sql.NullTime
-	WeeklyWindowStart  sql.NullTime
-	MonthlyWindowStart sql.NullTime
-	DailyLimitUSD      sql.NullFloat64
-	WeeklyLimitUSD     sql.NullFloat64
-	MonthlyLimitUSD    sql.NullFloat64
-	DailyUsageUSD      float64
-	WeeklyUsageUSD     float64
-	MonthlyUsageUSD    float64
-	OveragePolicy      string
+	ID                   int64
+	UserID               int64
+	LegacySubscriptionID sql.NullInt64
+	Status               string
+	StartsAt             time.Time
+	ExpiresAt            time.Time
+	DailyWindowStart     sql.NullTime
+	WeeklyWindowStart    sql.NullTime
+	MonthlyWindowStart   sql.NullTime
+	DailyLimitUSD        sql.NullFloat64
+	WeeklyLimitUSD       sql.NullFloat64
+	MonthlyLimitUSD      sql.NullFloat64
+	DailyUsageUSD        float64
+	WeeklyUsageUSD       float64
+	MonthlyUsageUSD      float64
+	OveragePolicy        string
 }
 
 func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entitlementID int64, costUSD float64, allowBalanceFallback bool, allowOverage bool) (int64, bool, error) {
 	if costUSD < 0 {
 		return 0, false, service.ErrSubscriptionEntitlementInvalidUsage
+	}
+	if err := lockSubscriptionEntitlementUserMutation(ctx, tx, userID); err != nil {
+		return 0, false, err
 	}
 
 	state, err := lockUsageBillingEntitlement(ctx, tx, entitlementID)
@@ -349,6 +358,10 @@ func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entit
 	usage.dailyUsageUSD += costUSD
 	usage.weeklyUsageUSD += costUSD
 	usage.monthlyUsageUSD += costUSD
+	linkedAlias, err := lockUsageBillingLinkedLegacyAlias(ctx, tx, state.LegacySubscriptionID, userID)
+	if err != nil {
+		return 0, false, err
+	}
 
 	var updatedAt time.Time
 	err = tx.QueryRowContext(ctx, `
@@ -377,13 +390,120 @@ func applyUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, userID, entit
 	if err != nil {
 		return 0, false, err
 	}
+	if _, err := syncUsageBillingLinkedLegacyAlias(ctx, tx, linkedAlias, usage); err != nil {
+		return 0, false, err
+	}
 	return updatedAt.UnixMicro(), false, nil
+}
+
+type usageBillingLinkedLegacyAlias struct {
+	ID     int64
+	UserID int64
+}
+
+func lockUsageBillingLinkedLegacyAlias(
+	ctx context.Context,
+	tx *sql.Tx,
+	legacySubscriptionID sql.NullInt64,
+	userID int64,
+) (*usageBillingLinkedLegacyAlias, error) {
+	return lockUsageBillingLinkedLegacyAliasRow(ctx, tx, legacySubscriptionID, userID, false)
+}
+
+func lockUsageBillingLinkedLegacyAliasIncludingDeleted(
+	ctx context.Context,
+	tx *sql.Tx,
+	legacySubscriptionID sql.NullInt64,
+	userID int64,
+) (*usageBillingLinkedLegacyAlias, error) {
+	return lockUsageBillingLinkedLegacyAliasRow(ctx, tx, legacySubscriptionID, userID, true)
+}
+
+func lockUsageBillingLinkedLegacyAliasRow(
+	ctx context.Context,
+	tx *sql.Tx,
+	legacySubscriptionID sql.NullInt64,
+	userID int64,
+	includeDeleted bool,
+) (*usageBillingLinkedLegacyAlias, error) {
+	if !legacySubscriptionID.Valid {
+		return nil, nil
+	}
+	if legacySubscriptionID.Int64 <= 0 || userID <= 0 {
+		return nil, service.ErrSubscriptionEntitlementAliasUnavailable
+	}
+	alias := &usageBillingLinkedLegacyAlias{}
+	query := `
+		SELECT id, user_id
+		FROM user_subscriptions
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE
+	`
+	if includeDeleted {
+		query = `
+			SELECT id, user_id
+			FROM user_subscriptions
+			WHERE id = $1
+			FOR UPDATE
+		`
+	}
+	err := tx.QueryRowContext(ctx, query, legacySubscriptionID.Int64).Scan(&alias.ID, &alias.UserID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrSubscriptionEntitlementAliasUnavailable
+	}
+	if err != nil {
+		return nil, err
+	}
+	if alias.UserID != userID {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	return alias, nil
+}
+
+func syncUsageBillingLinkedLegacyAlias(
+	ctx context.Context,
+	tx *sql.Tx,
+	alias *usageBillingLinkedLegacyAlias,
+	usage usageBillingEntitlementWindowUsage,
+) (time.Time, error) {
+	if alias == nil {
+		return time.Time{}, nil
+	}
+	var updatedAt time.Time
+	err := tx.QueryRowContext(ctx, `
+		UPDATE user_subscriptions
+		SET daily_window_start = $1,
+			weekly_window_start = $2,
+			monthly_window_start = $3,
+			daily_usage_usd = $4,
+			weekly_usage_usd = $5,
+			monthly_usage_usd = $6,
+			updated_at = NOW()
+		WHERE id = $7 AND user_id = $8
+		RETURNING updated_at
+	`,
+		timePtrArg(usage.dailyWindowStart),
+		timePtrArg(usage.weeklyWindowStart),
+		timePtrArg(usage.monthlyWindowStart),
+		usage.dailyUsageUSD,
+		usage.weeklyUsageUSD,
+		usage.monthlyUsageUSD,
+		alias.ID,
+		alias.UserID,
+	).Scan(&updatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, service.ErrSubscriptionEntitlementAliasUnavailable
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return updatedAt, nil
 }
 
 func lockUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, entitlementID int64) (*usageBillingEntitlementState, error) {
 	var state usageBillingEntitlementState
 	err := tx.QueryRowContext(ctx, `
-		SELECT id, user_id, status, starts_at, expires_at,
+		SELECT id, user_id, legacy_subscription_id, status, starts_at, expires_at,
 			daily_window_start, weekly_window_start, monthly_window_start,
 			daily_limit_usd, weekly_limit_usd, monthly_limit_usd,
 			daily_usage_usd, weekly_usage_usd, monthly_usage_usd,
@@ -394,6 +514,7 @@ func lockUsageBillingEntitlement(ctx context.Context, tx *sql.Tx, entitlementID 
 	`, entitlementID).Scan(
 		&state.ID,
 		&state.UserID,
+		&state.LegacySubscriptionID,
 		&state.Status,
 		&state.StartsAt,
 		&state.ExpiresAt,
@@ -428,21 +549,22 @@ type usageBillingEntitlementWindowUsage struct {
 
 func (u *usageBillingEntitlementWindowUsage) activateAndReset(startsAt, expiresAt, now time.Time) {
 	if u.dailyWindowStart == nil && u.weeklyWindowStart == nil && u.monthlyWindowStart == nil {
-		windowStart := startsAt
-		if windowStart.IsZero() {
-			windowStart = now
+		periodicStart := startsAt
+		if periodicStart.IsZero() {
+			periodicStart = now
 		}
-		u.dailyWindowStart = &windowStart
-		u.weeklyWindowStart = &windowStart
-		u.monthlyWindowStart = &windowStart
+		dailyStart := timezone.StartOfDay(now)
+		u.dailyWindowStart = &dailyStart
+		u.weeklyWindowStart = &periodicStart
+		u.monthlyWindowStart = &periodicStart
 		u.dailyUsageUSD = 0
 		u.weeklyUsageUSD = 0
 		u.monthlyUsageUSD = 0
 	}
 	if u.dailyWindowStart != nil &&
 		!usageBillingOneTimeDailyQuota(startsAt, expiresAt) &&
-		usageBillingNeedsWindowResetAt(u.dailyWindowStart, startsAt, 24*time.Hour, now) {
-		windowStart := usageBillingResolvedWindowResetStart(u.dailyWindowStart, startsAt, 24*time.Hour, now)
+		timezone.StartOfDay(now).After(timezone.StartOfDay(*u.dailyWindowStart)) {
+		windowStart := timezone.StartOfDay(now)
 		u.dailyWindowStart = &windowStart
 		u.dailyUsageUSD = 0
 	}

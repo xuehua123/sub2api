@@ -22,7 +22,7 @@ func newAdvanceEntitlementMonthlyCycleRepo(now time.Time) *advanceEntitlementMon
 	}
 }
 
-func (r *advanceEntitlementMonthlyCycleRepo) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
+func (r *advanceEntitlementMonthlyCycleRepo) WithUserEntitlementMutationTx(ctx context.Context, _ int64, fn func(context.Context) error) error {
 	r.txCalls++
 	return fn(ctx)
 }
@@ -138,6 +138,66 @@ func TestAdvanceEntitlementMonthlyCycleSucceedsAndOnlyResetsMonthlyUsage(t *test
 	require.Equal(t, result.DeductedDays, log.DeductedDays)
 	require.Equal(t, result.DeductedSeconds, log.DeductedSeconds)
 	require.True(t, log.ResetMonthlyUsage)
+}
+
+func TestAdvanceEntitlementMonthlyCycleSyncsLinkedLegacyLifecycle(t *testing.T) {
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	ctx := context.Background()
+	userID := int64(42)
+	entitlementID := int64(3002)
+	legacySubscriptionID := int64(4002)
+	planID := int64(7002)
+	groupID := int64(101)
+	monthlyLimit := 100.0
+	startsAt := now.Add(-10 * 24 * time.Hour)
+	monthlyWindowStart := startsAt
+	dailyWindowStart := now.Add(-6 * time.Hour)
+	weeklyWindowStart := now.Add(-2 * 24 * time.Hour)
+	expiresAt := startsAt.Add(120 * 24 * time.Hour)
+	repo := newAdvanceEntitlementMonthlyCycleRepo(now)
+	require.NoError(t, repo.Create(ctx, &SubscriptionEntitlement{
+		ID:                   entitlementID,
+		UserID:               userID,
+		LegacySubscriptionID: &legacySubscriptionID,
+		PlanID:               &planID,
+		PrimaryGroupID:       &groupID,
+		Name:                 "Linked V2 monthly card",
+		Status:               SubscriptionStatusActive,
+		StartsAt:             startsAt,
+		ExpiresAt:            expiresAt,
+		MonthlyLimitUSD:      &monthlyLimit,
+		DailyUsageUSD:        3.25,
+		WeeklyUsageUSD:       22.5,
+		MonthlyUsageUSD:      92.25,
+		DailyWindowStart:     &dailyWindowStart,
+		WeeklyWindowStart:    &weeklyWindowStart,
+		MonthlyWindowStart:   &monthlyWindowStart,
+	}, []int64{groupID}))
+	legacyRepo := &linkedEntitlementUserSubRepoStub{sub: &UserSubscription{
+		ID:        legacySubscriptionID,
+		UserID:    userID,
+		GroupID:   groupID,
+		StartsAt:  startsAt.Add(-24 * time.Hour),
+		ExpiresAt: expiresAt.Add(24 * time.Hour),
+		Status:    SubscriptionStatusExpired,
+	}}
+	svc := NewSubscriptionEntitlementService(repo, nil)
+	svc.SetLegacySubscriptionRepository(legacyRepo)
+	svc.SetNowFunc(func() time.Time { return now })
+
+	result, err := svc.AdvanceMonthlyCycle(ctx, userID, entitlementID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, startsAt, legacyRepo.sub.StartsAt)
+	require.Equal(t, result.NewExpiresAt, legacyRepo.sub.ExpiresAt)
+	require.Equal(t, SubscriptionStatusActive, legacyRepo.sub.Status)
+	require.Equal(t, dailyWindowStart, *legacyRepo.sub.DailyWindowStart)
+	require.Equal(t, weeklyWindowStart, *legacyRepo.sub.WeeklyWindowStart)
+	require.Equal(t, now, *legacyRepo.sub.MonthlyWindowStart)
+	require.Equal(t, 3.25, legacyRepo.sub.DailyUsageUSD)
+	require.Equal(t, 22.5, legacyRepo.sub.WeeklyUsageUSD)
+	require.Zero(t, legacyRepo.sub.MonthlyUsageUSD)
 }
 
 func TestAdvanceEntitlementMonthlyCycleRejectsBelowThreshold(t *testing.T) {

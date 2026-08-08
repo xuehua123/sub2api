@@ -121,6 +121,18 @@ func TestUsageCleanupTaskFromService_RequestTypeMapping(t *testing.T) {
 	require.Equal(t, "stream", *dtoTask.Filters.RequestType)
 }
 
+func TestUsageCleanupTaskFromService_PreservesEntitlementFilter(t *testing.T) {
+	t.Parallel()
+	entitlementID := int64(42)
+	task := &service.UsageCleanupTask{
+		Filters: service.UsageCleanupFilters{EntitlementID: &entitlementID},
+	}
+
+	dtoTask := UsageCleanupTaskFromService(task)
+	require.NotNil(t, dtoTask)
+	require.Equal(t, task.Filters.EntitlementID, dtoTask.Filters.EntitlementID)
+}
+
 func TestRequestTypeStringPtrNil(t *testing.T) {
 	t.Parallel()
 	require.Nil(t, requestTypeStringPtr(nil))
@@ -163,11 +175,15 @@ func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *test
 	t.Parallel()
 
 	upstreamModel := "claude-sonnet-4-20250514"
+	upstreamResponseModel := "claude-sonnet-4-20250513"
+	upstreamModelMismatch := true
 	log := &service.UsageLog{
-		RequestID:      "req_4",
-		Model:          upstreamModel,
-		RequestedModel: "claude-sonnet-4",
-		UpstreamModel:  &upstreamModel,
+		RequestID:             "req_4",
+		Model:                 upstreamModel,
+		RequestedModel:        "claude-sonnet-4",
+		UpstreamModel:         &upstreamModel,
+		UpstreamResponseModel: &upstreamResponseModel,
+		UpstreamModelMismatch: &upstreamModelMismatch,
 	}
 
 	userDTO := UsageLogFromService(log)
@@ -179,10 +195,14 @@ func TestUsageLogFromService_UsesRequestedModelAndKeepsUpstreamAdminOnly(t *test
 	userJSON, err := json.Marshal(userDTO)
 	require.NoError(t, err)
 	require.NotContains(t, string(userJSON), "upstream_model")
+	require.NotContains(t, string(userJSON), "upstream_response_model")
+	require.NotContains(t, string(userJSON), "upstream_model_mismatch")
 
 	adminJSON, err := json.Marshal(adminDTO)
 	require.NoError(t, err)
 	require.Contains(t, string(adminJSON), `"upstream_model":"claude-sonnet-4-20250514"`)
+	require.Contains(t, string(adminJSON), `"upstream_response_model":"claude-sonnet-4-20250513"`)
+	require.Contains(t, string(adminJSON), `"upstream_model_mismatch":true`)
 }
 
 func TestUsageLogFromService_KeepsUserBillingAndIPWithoutAdminCostFields(t *testing.T) {

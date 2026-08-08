@@ -45,6 +45,7 @@ export interface UsageCleanupFilters {
   api_key_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string | null
   request_type?: UsageRequestType | null
   stream?: boolean | null
@@ -73,6 +74,7 @@ export interface CreateUsageCleanupTaskRequest {
   api_key_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string | null
   request_type?: UsageRequestType | null
   stream?: boolean | null
@@ -85,6 +87,7 @@ export interface AdminUsageQueryParams extends UsageQueryParams {
   entitlement_id?: number
   exact_total?: boolean
   billing_mode?: string
+  upstream_model_mismatch?: boolean
   sort_by?: string
   sort_order?: 'asc' | 'desc'
   // 错误请求 tab 专属筛选(仅传给错误列表接口;共用同一 filters 对象)
@@ -125,6 +128,9 @@ export async function getStats(params: {
   model?: string
   request_type?: UsageRequestType
   stream?: boolean
+  billing_type?: number | null
+  billing_mode?: string | null
+  upstream_model_mismatch?: boolean | null
   period?: string
   start_date?: string
   end_date?: string
@@ -190,8 +196,78 @@ export async function listCleanupTasks(
  * @param payload - Cleanup task parameters
  * @returns Created cleanup task
  */
+interface CleanupOperationState {
+  payload: string
+  key: string
+}
+
+const cleanupOperationKeys = new Map<string, CleanupOperationState>()
+
+function currentAdminID(): string | null {
+  try {
+    const rawUser = globalThis.localStorage?.getItem('auth_user')
+    if (!rawUser) return null
+    const user: unknown = JSON.parse(rawUser)
+    if (typeof user !== 'object' || user === null) return null
+    const id = (user as { id?: unknown }).id
+    return typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? String(id) : null
+  } catch {
+    return null
+  }
+}
+
+function canonicalCleanupPayload(payload: CreateUsageCleanupTaskRequest): string {
+  const entries = Object.entries(payload)
+    .filter(([, value]) => value !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+  return JSON.stringify(Object.fromEntries(entries))
+}
+
+function readCleanupOperationState(scope: string): CleanupOperationState | null {
+  try {
+    const raw = globalThis.sessionStorage?.getItem(scope)
+    if (!raw) return null
+    const state: unknown = JSON.parse(raw)
+    if (typeof state !== 'object' || state === null) return null
+    const candidate = state as Partial<CleanupOperationState>
+    if (typeof candidate.payload !== 'string' || typeof candidate.key !== 'string' || !candidate.key) return null
+    return { payload: candidate.payload, key: candidate.key }
+  } catch {
+    return null
+  }
+}
+
+function writeCleanupOperationState(scope: string, state: CleanupOperationState | null): void {
+  try {
+    if (state) globalThis.sessionStorage?.setItem(scope, JSON.stringify(state))
+    else globalThis.sessionStorage?.removeItem(scope)
+  } catch {
+    // The in-memory map still protects retries when storage is unavailable.
+  }
+}
+
 export async function createCleanupTask(payload: CreateUsageCleanupTaskRequest): Promise<UsageCleanupTask> {
-  const { data } = await apiClient.post<UsageCleanupTask>('/admin/usage/cleanup-tasks', payload)
+  const adminID = currentAdminID()
+  const scope = adminID ? `sub2api:admin:usage-cleanup:${adminID}` : ''
+  const canonicalPayload = canonicalCleanupPayload(payload)
+  const existing = scope ? cleanupOperationKeys.get(scope) ?? readCleanupOperationState(scope) : null
+  let state = existing?.payload === canonicalPayload ? existing : null
+  if (!state) {
+    const requestID = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    state = { payload: canonicalPayload, key: `usage-cleanup-${adminID ?? 'unknown-admin'}-${requestID}` }
+  }
+  if (scope) {
+    cleanupOperationKeys.set(scope, state)
+    writeCleanupOperationState(scope, state)
+  }
+
+  const { data } = await apiClient.post<UsageCleanupTask>('/admin/usage/cleanup-tasks', payload, {
+    headers: { 'Idempotency-Key': state.key }
+  })
+  if (scope) {
+    cleanupOperationKeys.delete(scope)
+    writeCleanupOperationState(scope, null)
+  }
   return data
 }
 

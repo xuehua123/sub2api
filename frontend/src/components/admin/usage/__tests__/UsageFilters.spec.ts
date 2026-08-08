@@ -28,6 +28,10 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per Request',
   'admin.usage.billingModeImage': 'Image',
+	'admin.usage.upstreamModelAudit': 'Upstream model audit',
+	'admin.usage.allUpstreamModelAudit': 'All response model states',
+	'admin.usage.upstreamModelMismatchOnly': 'Mismatched only',
+	'admin.usage.upstreamModelMatchedOnly': 'Matched only',
   'admin.usage.group': 'Group',
   'admin.usage.allGroups': 'All Groups',
   'admin.usage.entitlementId': 'Entitlement ID',
@@ -77,20 +81,21 @@ const defaultFilters = (): Record<string, any> => ({
   request_type: null,
   billing_type: null,
   billing_mode: null,
+	upstream_model_mismatch: null,
   group_id: null,
   entitlement_id: undefined,
   start_date: '',
   end_date: '',
 })
 
-function mountFilters(filters = defaultFilters()) {
+function mountFilters(filters = defaultFilters(), showActions = false) {
   return mount(UsageFilters, {
     props: {
       modelValue: filters,
       exporting: false,
       startDate: '2026-05-01',
       endDate: '2026-05-28',
-      showActions: false,
+      showActions,
       modelOptions: [],
     },
     global: {
@@ -269,14 +274,30 @@ describe('UsageFilters — entitlement filter', () => {
     expect(wrapper.emitted('change')).toBeTruthy()
   })
 
-  it('does not keep invalid entitlement_id values in filters', async () => {
+  it('keeps the last valid filter and blocks destructive actions for invalid input', async () => {
     const filters = defaultFilters()
     filters.entitlement_id = 42
-    const wrapper = mountFilters(filters)
+    const wrapper = mountFilters(filters, true)
     const input = wrapper.find('[data-test="entitlement-id-filter"]')
 
     await input.setValue('not-a-number')
 
+    expect(wrapper.props('modelValue').entitlement_id).toBe(42)
+    expect(input.attributes('aria-invalid')).toBe('true')
+    const cleanup = wrapper.findAll('button').find((button) => button.text() === 'Cleanup')
+    expect(cleanup).toBeDefined()
+    expect(cleanup!.attributes('disabled')).toBeDefined()
+    await cleanup!.trigger('click')
+    expect(wrapper.emitted('cleanup')).toBeUndefined()
+  })
+
+  it('rejects entitlement IDs above the JavaScript safe integer range', async () => {
+    const wrapper = mountFilters()
+    const input = wrapper.find('[data-test="entitlement-id-filter"]')
+
+    await input.setValue('9007199254740992')
+
     expect(wrapper.props('modelValue').entitlement_id).toBeUndefined()
+    expect(input.attributes('aria-invalid')).toBe('true')
   })
 })

@@ -111,6 +111,12 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Float("refund_amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
 			Default(0),
+		field.Float("provider_refund_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
+			Default(0),
+		field.Float("chargeback_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
+			Default(0),
 		field.String("refund_reason").
 			Optional().
 			Nillable().

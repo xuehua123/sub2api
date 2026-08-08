@@ -63,30 +63,35 @@ func TestPreviewMonthlyCycleAdjustmentAdvanceNextCycleLinkedEntitlement(t *testi
 func TestApplyMonthlyCycleAdjustmentCompensateResetLinkedEntitlement(t *testing.T) {
 	now := time.Date(2026, 6, 17, 11, 18, 43, 0, time.UTC)
 	groupID := int64(28)
+	legacySubscriptionID := int64(912)
 	monthlyLimit := 100.0
 	startsAt := now.Add(-10 * 24 * time.Hour)
 	monthlyWindowStart := startsAt
 	expiresAt := startsAt.Add(60 * 24 * time.Hour)
 	repo := newAdvanceEntitlementMonthlyCycleRepo(now)
 	repo.entitlements[91] = &SubscriptionEntitlement{
-		ID:                 91,
-		UserID:             7,
-		PrimaryGroupID:     &groupID,
-		Name:               "Pro Plan",
-		Status:             SubscriptionStatusActive,
-		StartsAt:           startsAt,
-		ExpiresAt:          expiresAt,
-		MonthlyLimitUSD:    &monthlyLimit,
-		MonthlyUsageUSD:    52,
-		MonthlyWindowStart: &monthlyWindowStart,
-		GroupGrants:        testGroupGrants([]int64{groupID}),
+		ID:                   91,
+		UserID:               7,
+		LegacySubscriptionID: &legacySubscriptionID,
+		PrimaryGroupID:       &groupID,
+		Name:                 "Pro Plan",
+		Status:               SubscriptionStatusActive,
+		StartsAt:             startsAt,
+		ExpiresAt:            expiresAt,
+		MonthlyLimitUSD:      &monthlyLimit,
+		MonthlyUsageUSD:      52,
+		MonthlyWindowStart:   &monthlyWindowStart,
+		GroupGrants:          testGroupGrants([]int64{groupID}),
 	}
 	userSubs := &linkedEntitlementUserSubRepoStub{
 		sub: &UserSubscription{
-			ID:      912,
-			UserID:  7,
-			GroupID: groupID,
-			Status:  SubscriptionStatusActive,
+			ID:              legacySubscriptionID,
+			UserID:          7,
+			GroupID:         groupID,
+			StartsAt:        startsAt.Add(-24 * time.Hour),
+			ExpiresAt:       expiresAt.Add(24 * time.Hour),
+			Status:          SubscriptionStatusExpired,
+			MonthlyUsageUSD: 12,
 			EntitlementLink: &UserSubscriptionEntitlementLink{
 				EntitlementID: 91,
 			},
@@ -115,6 +120,11 @@ func TestApplyMonthlyCycleAdjustmentCompensateResetLinkedEntitlement(t *testing.
 	require.Equal(t, MonthlyCycleAdjustmentCompensateReset, repo.resetLogs[0].Mode)
 	require.Equal(t, "payment callback recovered by support", repo.resetLogs[0].Reason)
 	require.Nil(t, repo.resetLogs[0].AdminID)
+	require.Equal(t, startsAt, userSubs.sub.StartsAt)
+	require.Equal(t, expiresAt, userSubs.sub.ExpiresAt)
+	require.Equal(t, SubscriptionStatusActive, userSubs.sub.Status)
+	require.Equal(t, now, *userSubs.sub.MonthlyWindowStart)
+	require.Zero(t, userSubs.sub.MonthlyUsageUSD)
 }
 
 func TestApplyMonthlyCycleAdjustmentCompensateResetLinkedEntitlementRecordsAuditFields(t *testing.T) {
@@ -433,5 +443,6 @@ func TestPreviewMonthlyCycleAdjustmentRejectsLongReason(t *testing.T) {
 func newSubscriptionServiceWithLinkedEntitlementCycleRepo(repo SubscriptionEntitlementRepository, userSubRepo UserSubscriptionRepository) *SubscriptionService {
 	svc := NewSubscriptionService(groupRepoNoop{}, userSubRepo, nil, nil, nil)
 	svc.entitlementSvc = NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
+	svc.entitlementSvc.SetLegacySubscriptionRepository(userSubRepo)
 	return svc
 }

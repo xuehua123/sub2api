@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,10 @@ type resetQuotaUserSubRepoStub struct {
 	resetDailyErr      error
 	resetWeeklyErr     error
 	resetMonthlyErr    error
-	windowStart        time.Time
+	dailyStart         time.Time
+	periodicStart      time.Time
+	lockCalls          int
+	updateCalls        int
 }
 
 func (r *resetQuotaUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
@@ -35,11 +39,31 @@ func (r *resetQuotaUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserS
 	return &cp, nil
 }
 
-func (r *resetQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, _ int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error {
+func (r *resetQuotaUserSubRepoStub) GetByIDIncludeDeletedForUpdate(_ context.Context, id int64) (*UserSubscription, error) {
+	r.lockCalls++
+	if r.sub == nil || r.sub.ID != id {
+		return nil, ErrSubscriptionNotFound
+	}
+	cp := *r.sub
+	return &cp, nil
+}
+
+func (r *resetQuotaUserSubRepoStub) Update(_ context.Context, sub *UserSubscription) error {
+	if r.sub == nil || sub == nil || r.sub.ID != sub.ID {
+		return ErrSubscriptionNotFound
+	}
+	r.updateCalls++
+	cp := *sub
+	r.sub = &cp
+	return nil
+}
+
+func (r *resetQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, _ int64, resetDaily, resetWeekly, resetMonthly bool, dailyStart, periodicStart time.Time) error {
 	r.resetDailyCalled = resetDaily
 	r.resetWeeklyCalled = resetWeekly
 	r.resetMonthlyCalled = resetMonthly
-	r.windowStart = windowStart
+	r.dailyStart = dailyStart
+	r.periodicStart = periodicStart
 	if resetDaily && r.resetDailyErr != nil {
 		return r.resetDailyErr
 	}
@@ -54,15 +78,15 @@ func (r *resetQuotaUserSubRepoStub) ResetUsageWindows(_ context.Context, _ int64
 	}
 	if resetDaily {
 		r.sub.DailyUsageUSD = 0
-		r.sub.DailyWindowStart = &windowStart
+		r.sub.DailyWindowStart = &dailyStart
 	}
 	if resetWeekly {
 		r.sub.WeeklyUsageUSD = 0
-		r.sub.WeeklyWindowStart = &windowStart
+		r.sub.WeeklyWindowStart = &periodicStart
 	}
 	if resetMonthly {
 		r.sub.MonthlyUsageUSD = 0
-		r.sub.MonthlyWindowStart = &windowStart
+		r.sub.MonthlyWindowStart = &periodicStart
 	}
 	return nil
 }
@@ -113,20 +137,32 @@ func TestAdminResetQuota_ResetBoth(t *testing.T) {
 	require.True(t, stub.resetDailyCalled, "应调用 ResetDailyUsage")
 	require.True(t, stub.resetWeeklyCalled, "应调用 ResetWeeklyUsage")
 	require.False(t, stub.resetMonthlyCalled, "不应调用 ResetMonthlyUsage")
-	require.Equal(t, resetAt, stub.windowStart)
-	require.Equal(t, resetAt, *result.DailyWindowStart)
+	// 手动重置后日窗口锚定当天 0 点（保持 0 点刷新节奏），周窗口锚定重置时刻。
+	require.Equal(t, timezone.StartOfDay(resetAt), stub.dailyStart)
+	require.Equal(t, resetAt, stub.periodicStart)
+	require.Equal(t, timezone.StartOfDay(resetAt), *result.DailyWindowStart)
 	require.Equal(t, resetAt, *result.WeeklyWindowStart)
 }
 
 func TestAdminResetQuota_LinkedEntitlementResetsEntitlementUsage(t *testing.T) {
-	now := time.Now().UTC()
+	now := time.Date(2026, 7, 1, 10, 37, 42, 0, time.UTC)
 	entitlementID := int64(92)
+	legacySubscriptionID := int64(11)
 	groupID := int64(28)
+	dailyStart := timezone.StartOfDay(now)
+	weeklyStart := now.Add(-3 * 24 * time.Hour)
+	monthlyStart := now.Add(-15 * 24 * time.Hour)
 	stub := &resetQuotaUserSubRepoStub{
 		sub: &UserSubscription{
-			ID:      11,
-			UserID:  10,
-			GroupID: 20,
+			ID:                 legacySubscriptionID,
+			UserID:             10,
+			GroupID:            20,
+			DailyUsageUSD:      4.4,
+			WeeklyUsageUSD:     5.5,
+			MonthlyUsageUSD:    6.6,
+			DailyWindowStart:   &dailyStart,
+			WeeklyWindowStart:  &weeklyStart,
+			MonthlyWindowStart: &monthlyStart,
 			EntitlementLink: &UserSubscriptionEntitlementLink{
 				EntitlementID: entitlementID,
 			},
@@ -134,29 +170,40 @@ func TestAdminResetQuota_LinkedEntitlementResetsEntitlementUsage(t *testing.T) {
 	}
 	entitlementRepo := newFakeSubscriptionEntitlementRepo(now)
 	entitlementRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
-		ID:              entitlementID,
-		UserID:          10,
-		PrimaryGroupID:  &groupID,
-		Name:            "Linked Plan",
-		Status:          SubscriptionStatusActive,
-		StartsAt:        now.Add(-time.Hour),
-		ExpiresAt:       now.Add(24 * time.Hour),
-		DailyUsageUSD:   1.1,
-		WeeklyUsageUSD:  2.2,
-		MonthlyUsageUSD: 3.3,
-		GroupGrants:     testGroupGrants([]int64{groupID}),
+		ID:                   entitlementID,
+		UserID:               10,
+		LegacySubscriptionID: &legacySubscriptionID,
+		PrimaryGroupID:       &groupID,
+		Name:                 "Linked Plan",
+		Status:               SubscriptionStatusActive,
+		StartsAt:             now.Add(-time.Hour),
+		ExpiresAt:            now.Add(24 * time.Hour),
+		DailyUsageUSD:        1.1,
+		WeeklyUsageUSD:       2.2,
+		MonthlyUsageUSD:      3.3,
+		GroupGrants:          testGroupGrants([]int64{groupID}),
 	}
 	svc := newResetQuotaSvc(stub)
 	svc.entitlementSvc = NewSubscriptionEntitlementService(entitlementRepo, &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{}})
+	svc.entitlementSvc.SetLegacySubscriptionRepository(stub)
+	svc.entitlementSvc.SetNowFunc(func() time.Time { return now })
 
-	result, err := svc.AdminResetQuota(context.Background(), 11, true, true, true)
+	result, err := svc.AdminResetQuota(context.Background(), legacySubscriptionID, true, true, true)
 
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, int64(11), result.ID)
-	require.False(t, stub.resetDailyCalled, "linked V2 entitlement rows must not reset legacy daily usage")
-	require.False(t, stub.resetWeeklyCalled, "linked V2 entitlement rows must not reset legacy weekly usage")
-	require.False(t, stub.resetMonthlyCalled, "linked V2 entitlement rows must not reset legacy monthly usage")
+	require.Equal(t, legacySubscriptionID, result.ID)
+	require.Equal(t, 2, stub.lockCalls, "linked alias must be validated before mutation and then synced from the refreshed entitlement")
+	require.Equal(t, 1, stub.updateCalls)
+	require.False(t, stub.resetDailyCalled, "linked alias must receive the entitlement's absolute lifecycle snapshot")
+	require.False(t, stub.resetWeeklyCalled, "linked alias must receive the entitlement's absolute lifecycle snapshot")
+	require.False(t, stub.resetMonthlyCalled, "linked alias must receive the entitlement's absolute lifecycle snapshot")
+	require.Zero(t, stub.sub.DailyUsageUSD)
+	require.Zero(t, stub.sub.WeeklyUsageUSD)
+	require.Zero(t, stub.sub.MonthlyUsageUSD)
+	require.Equal(t, dailyStart, *stub.sub.DailyWindowStart)
+	require.Equal(t, now, *stub.sub.WeeklyWindowStart)
+	require.Equal(t, now, *stub.sub.MonthlyWindowStart)
 	require.Len(t, entitlementRepo.resetCalls, 1)
 	require.Equal(t, entitlementID, entitlementRepo.resetCalls[0].id)
 	require.True(t, entitlementRepo.resetCalls[0].resetDaily)
@@ -165,6 +212,99 @@ func TestAdminResetQuota_LinkedEntitlementResetsEntitlementUsage(t *testing.T) {
 	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].DailyUsageUSD)
 	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].WeeklyUsageUSD)
 	require.Equal(t, float64(0), entitlementRepo.entitlements[entitlementID].MonthlyUsageUSD)
+}
+
+func TestAdminResetQuota_LinkedEntitlementValidatesAliasBeforeMutation(t *testing.T) {
+	now := time.Date(2026, 7, 1, 10, 37, 42, 0, time.UTC)
+	const (
+		entitlementID = int64(192)
+		userID        = int64(10)
+		groupID       = int64(28)
+	)
+	deletedAt := now.Add(-time.Hour)
+
+	tests := []struct {
+		name          string
+		legacyID      int64
+		aliasRepo     *resetQuotaUserSubRepoStub
+		wantErr       error
+		configureRepo bool
+	}{
+		{
+			name:          "invalid linked ID",
+			legacyID:      0,
+			aliasRepo:     &resetQuotaUserSubRepoStub{},
+			wantErr:       ErrSubscriptionEntitlementAliasUnavailable,
+			configureRepo: true,
+		},
+		{
+			name:          "missing repository",
+			legacyID:      991,
+			wantErr:       ErrSubscriptionEntitlementAliasUnavailable,
+			configureRepo: false,
+		},
+		{
+			name:      "missing alias",
+			legacyID:  992,
+			aliasRepo: &resetQuotaUserSubRepoStub{},
+			wantErr:   ErrSubscriptionEntitlementAliasUnavailable,
+		},
+		{
+			name:     "cross-user alias",
+			legacyID: 993,
+			aliasRepo: &resetQuotaUserSubRepoStub{sub: &UserSubscription{
+				ID:      993,
+				UserID:  userID + 1,
+				GroupID: groupID,
+			}},
+			wantErr: ErrSubscriptionEntitlementNotFound,
+		},
+		{
+			name:     "soft-deleted alias",
+			legacyID: 994,
+			aliasRepo: &resetQuotaUserSubRepoStub{sub: &UserSubscription{
+				ID:        994,
+				UserID:    userID,
+				GroupID:   groupID,
+				DeletedAt: &deletedAt,
+			}},
+			wantErr: ErrSubscriptionEntitlementAliasUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entitlementRepo := newFakeSubscriptionEntitlementRepo(now)
+			legacyID := tt.legacyID
+			primaryGroupID := groupID
+			entitlementRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+				ID:                   entitlementID,
+				UserID:               userID,
+				LegacySubscriptionID: &legacyID,
+				PrimaryGroupID:       &primaryGroupID,
+				Status:               SubscriptionStatusActive,
+				StartsAt:             now.Add(-time.Hour),
+				ExpiresAt:            now.Add(24 * time.Hour),
+				DailyUsageUSD:        9,
+				GroupGrants:          testGroupGrants([]int64{groupID}),
+			}
+
+			var userSubRepo UserSubscriptionRepository
+			if tt.configureRepo || tt.aliasRepo != nil {
+				userSubRepo = tt.aliasRepo
+			}
+			svc := NewSubscriptionService(groupRepoNoop{}, userSubRepo, nil, nil, nil)
+			svc.entitlementSvc = NewSubscriptionEntitlementService(entitlementRepo, nil)
+			svc.entitlementSvc.SetLegacySubscriptionRepository(userSubRepo)
+			svc.entitlementSvc.SetNowFunc(func() time.Time { return now })
+
+			_, err := svc.AdminResetQuota(context.Background(), -entitlementID, true, false, false)
+
+			require.ErrorIs(t, err, tt.wantErr)
+			require.Empty(t, entitlementRepo.resetCalls, "alias validation must complete before entitlement usage mutates")
+			require.Equal(t, 9.0, entitlementRepo.entitlements[entitlementID].DailyUsageUSD)
+		})
+	}
 }
 
 func TestAdminResetQuota_ResetDailyOnly(t *testing.T) {

@@ -14,6 +14,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -77,7 +78,7 @@ func TestSubscriptionHandler_V2OffListAndActiveKeepLegacyShape(t *testing.T) {
 func TestSubscriptionHandler_V2OnListReturnsLegacyLinkedEntitlementAliases(t *testing.T) {
 	fx := newSubscriptionAliasFixture(t, true)
 	legacyID := mustCreateAliasLegacySubscription(t, fx.client, fx.userID, fx.groupA, fx.now, service.SubscriptionStatusActive)
-	windowStart := fx.now.Add(-2 * time.Hour)
+	windowStart := timezone.StartOfDay(fx.now)
 	primaryGroupID := fx.groupB
 	entitlementID := mustCreateEntitlementForHandler(t, fx.repo, service.SubscriptionEntitlement{
 		UserID:               fx.userID,
@@ -197,7 +198,7 @@ func TestSubscriptionHandler_V2OnActiveFiltersEntitlementWindowAndStatus(t *test
 func TestSubscriptionHandler_V2OnActiveAliasesUseLegacyUsageWhenHigher(t *testing.T) {
 	fx := newSubscriptionAliasFixture(t, true)
 	legacyID := mustCreateAliasLegacySubscription(t, fx.client, fx.userID, fx.groupA, fx.now, service.SubscriptionStatusActive)
-	windowStart := fx.now.Add(-30 * time.Minute)
+	windowStart := timezone.StartOfDay(fx.now)
 	mustCreateEntitlementForHandler(t, fx.repo, service.SubscriptionEntitlement{
 		UserID:               fx.userID,
 		LegacySubscriptionID: &legacyID,
@@ -232,7 +233,7 @@ func TestSubscriptionHandler_V2OnActiveAliasesUseLegacyUsageWhenHigher(t *testin
 func TestSubscriptionHandler_V2OnActiveAliasesIgnoreLegacyUsageFromUngraftedGroup(t *testing.T) {
 	fx := newSubscriptionAliasFixture(t, true)
 	legacyID := mustCreateAliasLegacySubscription(t, fx.client, fx.userID, fx.groupA, fx.now, service.SubscriptionStatusActive)
-	windowStart := fx.now.Add(-30 * time.Minute)
+	windowStart := timezone.StartOfDay(fx.now)
 	mustCreateEntitlementForHandler(t, fx.repo, service.SubscriptionEntitlement{
 		UserID:               fx.userID,
 		LegacySubscriptionID: &legacyID,
