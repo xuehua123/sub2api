@@ -29,7 +29,9 @@ env:
 
 jobs:
   deploy:
-    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch
+    # One-shot compatibility branch for the v1 forced-command endpoint still
+    # installed on the stable host. This branch is never merged into main.
+    if: github.ref_type == 'branch' && (github.ref_name == github.event.repository.default_branch || github.ref_name == 'codex/stable-deploy-v1-compat')
     runs-on: ubuntu-latest
     environment: production-stable
 
@@ -58,15 +60,13 @@ jobs:
           DEPLOY_IMAGE_TAG: ${{ inputs.image_tag }}
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USERNAME: ${{ github.actor }}
-          AFFILIATE_REFUND_REVERSAL_STAGE: ${{ inputs.affiliate_refund_reversal_stage }}
         run: |
           set -euo pipefail
           stable_deploy_payload="$(
-            printf 'sub2api-deploy-v2 %s\n%s\n%s\n%s\n' \
+            printf '%s\n%s\n%s\n' \
               "$DEPLOY_IMAGE_TAG" \
               "$GHCR_USERNAME" \
-              "$GHCR_TOKEN" \
-              "$AFFILIATE_REFUND_REVERSAL_STAGE" |
+              "$GHCR_TOKEN" |
               base64 -w0
           )"
           echo "::add-mask::$stable_deploy_payload"
