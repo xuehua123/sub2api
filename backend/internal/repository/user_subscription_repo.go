@@ -113,6 +113,26 @@ func (r *userSubscriptionRepository) GetByIDIncludeDeleted(ctx context.Context, 
 	return &out[0], nil
 }
 
+func (r *userSubscriptionRepository) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	queryCtx := mixins.SkipSoftDelete(ctx)
+	m, err := client.UserSubscription.Query().
+		Where(usersubscription.IDEQ(id)).
+		ForUpdate().
+		WithUser().
+		WithGroup().
+		WithAssignedByUser().
+		Only(queryCtx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, nil)
+	}
+	out := []service.UserSubscription{*userSubscriptionEntityToServicePreserveStatus(m)}
+	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
+		return nil, err
+	}
+	return &out[0], nil
+}
+
 func (r *userSubscriptionRepository) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	client := clientFromContext(ctx, r.client)
 	m, err := client.UserSubscription.Query().
@@ -192,6 +212,39 @@ func (r *userSubscriptionRepository) Restore(ctx context.Context, subscriptionID
 		SetUpdatedAt(time.Now()).
 		Save(queryCtx)
 	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, service.ErrSubscriptionRestoreConflict)
+	}
+	return r.GetByID(ctx, subscriptionID)
+}
+
+func (r *userSubscriptionRepository) RestoreWithLifecycle(ctx context.Context, subscriptionID int64, state service.UserSubscriptionLifecycleState) (*service.UserSubscription, error) {
+	client := clientFromContext(ctx, r.client)
+	queryCtx := mixins.SkipSoftDelete(ctx)
+	update := client.UserSubscription.UpdateOneID(subscriptionID).
+		SetStartsAt(state.StartsAt).
+		SetExpiresAt(state.ExpiresAt).
+		SetStatus(state.Status).
+		SetDailyUsageUsd(state.DailyUsageUSD).
+		SetWeeklyUsageUsd(state.WeeklyUsageUSD).
+		SetMonthlyUsageUsd(state.MonthlyUsageUSD).
+		ClearDeletedAt().
+		SetUpdatedAt(time.Now())
+	if state.DailyWindowStart != nil {
+		update.SetDailyWindowStart(*state.DailyWindowStart)
+	} else {
+		update.ClearDailyWindowStart()
+	}
+	if state.WeeklyWindowStart != nil {
+		update.SetWeeklyWindowStart(*state.WeeklyWindowStart)
+	} else {
+		update.ClearWeeklyWindowStart()
+	}
+	if state.MonthlyWindowStart != nil {
+		update.SetMonthlyWindowStart(*state.MonthlyWindowStart)
+	} else {
+		update.ClearMonthlyWindowStart()
+	}
+	if _, err := update.Save(queryCtx); err != nil {
 		return nil, translatePersistenceError(err, service.ErrSubscriptionNotFound, service.ErrSubscriptionRestoreConflict)
 	}
 	return r.GetByID(ctx, subscriptionID)

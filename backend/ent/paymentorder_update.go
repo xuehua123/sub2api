@@ -473,6 +473,48 @@ func (_u *PaymentOrderUpdate) AddRefundAmount(v float64) *PaymentOrderUpdate {
 	return _u
 }
 
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (_u *PaymentOrderUpdate) SetProviderRefundAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetProviderRefundAmount()
+	_u.mutation.SetProviderRefundAmount(v)
+	return _u
+}
+
+// SetNillableProviderRefundAmount sets the "provider_refund_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableProviderRefundAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetProviderRefundAmount(*v)
+	}
+	return _u
+}
+
+// AddProviderRefundAmount adds value to the "provider_refund_amount" field.
+func (_u *PaymentOrderUpdate) AddProviderRefundAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddProviderRefundAmount(v)
+	return _u
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (_u *PaymentOrderUpdate) SetChargebackAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetChargebackAmount()
+	_u.mutation.SetChargebackAmount(v)
+	return _u
+}
+
+// SetNillableChargebackAmount sets the "chargeback_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableChargebackAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetChargebackAmount(*v)
+	}
+	return _u
+}
+
+// AddChargebackAmount adds value to the "chargeback_amount" field.
+func (_u *PaymentOrderUpdate) AddChargebackAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddChargebackAmount(v)
+	return _u
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_u *PaymentOrderUpdate) SetRefundReason(v string) *PaymentOrderUpdate {
 	_u.mutation.SetRefundReason(v)
@@ -999,6 +1041,18 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.AddedRefundAmount(); ok {
 		_spec.AddField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ProviderRefundAmount(); ok {
+		_spec.SetField(paymentorder.FieldProviderRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProviderRefundAmount(); ok {
+		_spec.AddField(paymentorder.FieldProviderRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ChargebackAmount(); ok {
+		_spec.SetField(paymentorder.FieldChargebackAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedChargebackAmount(); ok {
+		_spec.AddField(paymentorder.FieldChargebackAmount, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RefundReason(); ok {
 		_spec.SetField(paymentorder.FieldRefundReason, field.TypeString, value)
@@ -1596,6 +1650,48 @@ func (_u *PaymentOrderUpdateOne) AddRefundAmount(v float64) *PaymentOrderUpdateO
 	return _u
 }
 
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (_u *PaymentOrderUpdateOne) SetProviderRefundAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetProviderRefundAmount()
+	_u.mutation.SetProviderRefundAmount(v)
+	return _u
+}
+
+// SetNillableProviderRefundAmount sets the "provider_refund_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableProviderRefundAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetProviderRefundAmount(*v)
+	}
+	return _u
+}
+
+// AddProviderRefundAmount adds value to the "provider_refund_amount" field.
+func (_u *PaymentOrderUpdateOne) AddProviderRefundAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddProviderRefundAmount(v)
+	return _u
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (_u *PaymentOrderUpdateOne) SetChargebackAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetChargebackAmount()
+	_u.mutation.SetChargebackAmount(v)
+	return _u
+}
+
+// SetNillableChargebackAmount sets the "chargeback_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableChargebackAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetChargebackAmount(*v)
+	}
+	return _u
+}
+
+// AddChargebackAmount adds value to the "chargeback_amount" field.
+func (_u *PaymentOrderUpdateOne) AddChargebackAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddChargebackAmount(v)
+	return _u
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (_u *PaymentOrderUpdateOne) SetRefundReason(v string) *PaymentOrderUpdateOne {
 	_u.mutation.SetRefundReason(v)
@@ -2152,6 +2248,18 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.AddedRefundAmount(); ok {
 		_spec.AddField(paymentorder.FieldRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ProviderRefundAmount(); ok {
+		_spec.SetField(paymentorder.FieldProviderRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedProviderRefundAmount(); ok {
+		_spec.AddField(paymentorder.FieldProviderRefundAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.ChargebackAmount(); ok {
+		_spec.SetField(paymentorder.FieldChargebackAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedChargebackAmount(); ok {
+		_spec.AddField(paymentorder.FieldChargebackAmount, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.RefundReason(); ok {
 		_spec.SetField(paymentorder.FieldRefundReason, field.TypeString, value)

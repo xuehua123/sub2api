@@ -184,6 +184,273 @@ func TestUsageBillingRepositoryApply_DeduplicatesEntitlementBilling(t *testing.T
 	require.InDelta(t, 5.5, monthly, 0.000001)
 }
 
+func TestUsageBillingRepositoryApply_LinkedEntitlementPreservesLegacyRollbackUsage(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-linked-rollback-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	monthlyLimit := 6.0
+	group := mustCreateGroup(t, client, &service.Group{
+		Name:             "usage-billing-linked-rollback-" + uuid.NewString(),
+		Platform:         service.PlatformAnthropic,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+		MonthlyLimitUSD:  &monthlyLimit,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:  user.ID,
+		GroupID: &group.ID,
+		Key:     "sk-usage-billing-linked-rollback-" + uuid.NewString(),
+		Name:    "billing-linked-rollback",
+	})
+	now := time.Now().UTC()
+	windowStart := now.Add(-time.Hour)
+	legacy := mustCreateSubscription(t, client, &service.UserSubscription{
+		UserID:          user.ID,
+		GroupID:         group.ID,
+		StartsAt:        now.Add(-time.Hour),
+		ExpiresAt:       now.Add(48 * time.Hour),
+		DailyUsageUSD:   1,
+		WeeklyUsageUSD:  2,
+		MonthlyUsageUSD: 3,
+	})
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET daily_window_start = $1, weekly_window_start = $1, monthly_window_start = $1
+		WHERE id = $2
+	`, windowStart, legacy.ID)
+	require.NoError(t, err)
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:               user.ID,
+		LegacySubscriptionID: &legacy.ID,
+		Name:                 "linked rollback entitlement",
+		StartsAt:             legacy.StartsAt,
+		ExpiresAt:            legacy.ExpiresAt,
+		DailyWindowStart:     &windowStart,
+		WeeklyWindowStart:    &windowStart,
+		MonthlyWindowStart:   &windowStart,
+		MonthlyLimitUSD:      &monthlyLimit,
+		DailyUsageUSD:        1,
+		WeeklyUsageUSD:       2,
+		MonthlyUsageUSD:      3,
+	})
+
+	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:        uuid.NewString(),
+		APIKeyID:         apiKey.ID,
+		UserID:           user.ID,
+		EntitlementID:    &entitlement.ID,
+		SubscriptionCost: 2.5,
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Greater(t, result.EntitlementVersion, int64(0))
+	require.Equal(t, result.EntitlementVersion, result.SubscriptionVersion)
+	entDaily, entWeekly, entMonthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	legacyDaily, legacyWeekly, legacyMonthly := usageBillingLegacySubscriptionUsage(t, ctx, legacy.ID)
+	require.InDelta(t, entDaily, legacyDaily, 0.000001)
+	require.InDelta(t, entWeekly, legacyWeekly, 0.000001)
+	require.InDelta(t, entMonthly, legacyMonthly, 0.000001)
+	require.InDelta(t, 3.5, legacyDaily, 0.000001)
+	require.InDelta(t, 4.5, legacyWeekly, 0.000001)
+	require.InDelta(t, 5.5, legacyMonthly, 0.000001)
+
+	// Simulate disabling V2 immediately after this charge. The legacy quota
+	// evaluator must still see the V2 consumption rather than grant fresh quota.
+	rollbackView, err := NewUserSubscriptionRepository(client).GetByID(ctx, legacy.ID)
+	require.NoError(t, err)
+	require.False(t, rollbackView.CheckMonthlyLimit(&service.Group{MonthlyLimitUSD: &monthlyLimit}, 1))
+}
+
+func TestUsageBillingRepositoryApply_LinkedEntitlementConcurrentChargesKeepAliasExact(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-linked-concurrent-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	group := mustCreateGroup(t, client, &service.Group{
+		Name:             "usage-billing-linked-concurrent-" + uuid.NewString(),
+		Platform:         service.PlatformAnthropic,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:  user.ID,
+		GroupID: &group.ID,
+		Key:     "sk-usage-billing-linked-concurrent-" + uuid.NewString(),
+		Name:    "billing-linked-concurrent",
+	})
+	now := time.Now().UTC()
+	windowStart := now.Add(-time.Hour)
+	legacy := mustCreateSubscription(t, client, &service.UserSubscription{
+		UserID:    user.ID,
+		GroupID:   group.ID,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(48 * time.Hour),
+	})
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET daily_window_start = $1, weekly_window_start = $1, monthly_window_start = $1
+		WHERE id = $2
+	`, windowStart, legacy.ID)
+	require.NoError(t, err)
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:               user.ID,
+		LegacySubscriptionID: &legacy.ID,
+		Name:                 "linked concurrent entitlement",
+		StartsAt:             legacy.StartsAt,
+		ExpiresAt:            legacy.ExpiresAt,
+		DailyWindowStart:     &windowStart,
+		WeeklyWindowStart:    &windowStart,
+		MonthlyWindowStart:   &windowStart,
+	})
+
+	start := make(chan struct{})
+	errCh := make(chan error, 2)
+	for range 2 {
+		go func() {
+			<-start
+			_, applyErr := repo.Apply(ctx, &service.UsageBillingCommand{
+				RequestID:        uuid.NewString(),
+				APIKeyID:         apiKey.ID,
+				UserID:           user.ID,
+				EntitlementID:    &entitlement.ID,
+				SubscriptionCost: 3,
+			})
+			errCh <- applyErr
+		}()
+	}
+	close(start)
+	require.NoError(t, <-errCh)
+	require.NoError(t, <-errCh)
+
+	entDaily, entWeekly, entMonthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	legacyDaily, legacyWeekly, legacyMonthly := usageBillingLegacySubscriptionUsage(t, ctx, legacy.ID)
+	require.InDelta(t, 6, entDaily, 0.000001)
+	require.InDelta(t, 6, entWeekly, 0.000001)
+	require.InDelta(t, 6, entMonthly, 0.000001)
+	require.InDelta(t, entDaily, legacyDaily, 0.000001)
+	require.InDelta(t, entWeekly, legacyWeekly, 0.000001)
+	require.InDelta(t, entMonthly, legacyMonthly, 0.000001)
+}
+
+func TestUsageBillingRepositoryApply_LinkedEntitlementWaitsForUserMutexBeforeRows(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-linked-lock-order-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	group := mustCreateGroup(t, client, &service.Group{
+		Name:             "usage-billing-linked-lock-order-" + uuid.NewString(),
+		Platform:         service.PlatformAnthropic,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:  user.ID,
+		GroupID: &group.ID,
+		Key:     "sk-usage-billing-linked-lock-order-" + uuid.NewString(),
+		Name:    "billing-linked-lock-order",
+	})
+	now := time.Now().UTC()
+	windowStart := now.Add(-time.Hour)
+	legacy := mustCreateSubscription(t, client, &service.UserSubscription{
+		UserID:    user.ID,
+		GroupID:   group.ID,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(48 * time.Hour),
+	})
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET daily_window_start = $1, weekly_window_start = $1, monthly_window_start = $1
+		WHERE id = $2
+	`, windowStart, legacy.ID)
+	require.NoError(t, err)
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:               user.ID,
+		LegacySubscriptionID: &legacy.ID,
+		Name:                 "linked lock order entitlement",
+		StartsAt:             legacy.StartsAt,
+		ExpiresAt:            legacy.ExpiresAt,
+		DailyWindowStart:     &windowStart,
+		WeeklyWindowStart:    &windowStart,
+		MonthlyWindowStart:   &windowStart,
+	})
+
+	mutexKey := subscriptionEntitlementUserMutationLockKey(user.ID)
+	blockerTx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	defer func() { _ = blockerTx.Rollback() }()
+	rows, err := blockerTx.QueryContext(ctx, "SELECT pg_advisory_xact_lock($1)", mutexKey)
+	require.NoError(t, err)
+	require.NoError(t, rows.Close())
+
+	applyDone := make(chan error, 1)
+	go func() {
+		_, applyErr := repo.Apply(ctx, &service.UsageBillingCommand{
+			RequestID:        uuid.NewString(),
+			APIKeyID:         apiKey.ID,
+			UserID:           user.ID,
+			EntitlementID:    &entitlement.ID,
+			SubscriptionCost: 1,
+		})
+		applyDone <- applyErr
+	}()
+
+	lockBits := uint64(mutexKey)
+	classID := int64(uint32(lockBits >> 32))
+	objectID := int64(uint32(lockBits))
+	require.Eventually(t, func() bool {
+		var waiting bool
+		err := integrationDB.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM pg_locks
+				WHERE locktype = 'advisory'
+					AND classid::bigint = $1
+					AND objid::bigint = $2
+					AND objsubid = 1
+					AND NOT granted
+			)
+		`, classID, objectID).Scan(&waiting)
+		return err == nil && waiting
+	}, 5*time.Second, 20*time.Millisecond, "linked entitlement billing never waited on the user advisory mutex")
+
+	probeTx, err := integrationDB.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	var lockedID int64
+	err = probeTx.QueryRowContext(ctx, `
+		SELECT id
+		FROM subscription_entitlements
+		WHERE id = $1
+		FOR UPDATE NOWAIT
+	`, entitlement.ID).Scan(&lockedID)
+	require.NoError(t, err, "entitlement row was locked before the user advisory mutex")
+	require.Equal(t, entitlement.ID, lockedID)
+	err = probeTx.QueryRowContext(ctx, `
+		SELECT id
+		FROM user_subscriptions
+		WHERE id = $1
+		FOR UPDATE NOWAIT
+	`, legacy.ID).Scan(&lockedID)
+	require.NoError(t, err, "legacy alias row was locked before the user advisory mutex")
+	require.Equal(t, legacy.ID, lockedID)
+	require.NoError(t, probeTx.Rollback())
+
+	require.NoError(t, blockerTx.Commit())
+	require.NoError(t, <-applyDone)
+}
+
 func TestUsageBillingRepositoryApply_EntitlementFingerprintConflictRollsBack(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
@@ -1048,6 +1315,16 @@ func usageBillingEntitlementUsage(t *testing.T, ctx context.Context, entitlement
 		FROM subscription_entitlements
 		WHERE id = $1
 	`, entitlementID).Scan(&daily, &weekly, &monthly))
+	return daily, weekly, monthly
+}
+
+func usageBillingLegacySubscriptionUsage(t *testing.T, ctx context.Context, subscriptionID int64) (daily, weekly, monthly float64) {
+	t.Helper()
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `
+		SELECT daily_usage_usd, weekly_usage_usd, monthly_usage_usd
+		FROM user_subscriptions
+		WHERE id = $1
+	`, subscriptionID).Scan(&daily, &weekly, &monthly))
 	return daily, weekly, monthly
 }
 

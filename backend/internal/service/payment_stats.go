@@ -185,8 +185,14 @@ func (s *PaymentService) currentClient(ctx context.Context) *dbent.Client {
 }
 
 func (s *PaymentService) writeAuditLog(ctx context.Context, oid int64, action, op string, detail map[string]any) {
+	if err := s.writeAuditLogRequired(ctx, oid, action, op, detail); err != nil {
+		slog.Error("audit log failed", "orderID", oid, "action", action, "error", err)
+	}
+}
+
+func (s *PaymentService) writeAuditLogRequired(ctx context.Context, oid int64, action, op string, detail map[string]any) error {
 	dj, _ := json.Marshal(detail)
-	err := s.currentClient(ctx).PaymentAuditLog.Create().
+	return s.currentClient(ctx).PaymentAuditLog.Create().
 		SetOrderID(strconv.FormatInt(oid, 10)).
 		SetAction(action).
 		SetDetail(string(dj)).
@@ -194,9 +200,6 @@ func (s *PaymentService) writeAuditLog(ctx context.Context, oid int64, action, o
 		OnConflictColumns(paymentauditlog.FieldOrderID, paymentauditlog.FieldAction).
 		Ignore().
 		Exec(ctx)
-	if err != nil {
-		slog.Error("audit log failed", "orderID", oid, "action", action, "error", err)
-	}
 }
 
 func (s *PaymentService) GetOrderAuditLogs(ctx context.Context, oid int64) ([]*dbent.PaymentAuditLog, error) {

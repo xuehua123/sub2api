@@ -6,12 +6,175 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
+
+func TestApplyUsageBillingEntitlement_LocksUserBeforeLinkedRowsAndSyncsAlias(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	windowStart := timezone.StartOfDay(now)
+	updatedAt := now.Add(time.Second)
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(`SELECT pg_advisory_xact_lock\(\$1\)`).
+		WithArgs(subscriptionEntitlementUserMutationLockKey(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery(`(?s)FROM subscription_entitlements.*FOR UPDATE`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "legacy_subscription_id", "status", "starts_at", "expires_at",
+			"daily_window_start", "weekly_window_start", "monthly_window_start",
+			"daily_limit_usd", "weekly_limit_usd", "monthly_limit_usd",
+			"daily_usage_usd", "weekly_usage_usd", "monthly_usage_usd", "overage_policy",
+		}).AddRow(
+			int64(91), int64(42), int64(81), service.SubscriptionStatusActive, now.Add(-time.Hour), now.Add(48*time.Hour),
+			windowStart, windowStart, windowStart,
+			nil, nil, nil,
+			1.0, 2.0, 3.0, service.SubscriptionEntitlementOverageBlock,
+		))
+	mock.ExpectQuery(`(?s)FROM user_subscriptions.*FOR UPDATE`).
+		WithArgs(int64(81)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).AddRow(int64(81), int64(42)))
+	mock.ExpectQuery(`(?s)UPDATE subscription_entitlements.*RETURNING updated_at`).
+		WithArgs(windowStart, windowStart, windowStart, 3.0, 4.0, 5.0, int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(updatedAt))
+	mock.ExpectQuery(`(?s)UPDATE user_subscriptions.*RETURNING updated_at`).
+		WithArgs(windowStart, windowStart, windowStart, 3.0, 4.0, 5.0, int64(81), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(updatedAt))
+	mock.ExpectCommit()
+
+	version, usedFallback, err := applyUsageBillingEntitlement(ctx, tx, 42, 91, 2, false, false)
+
+	require.NoError(t, err)
+	require.False(t, usedFallback)
+	require.Equal(t, updatedAt.UnixMicro(), version)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestReserveUsageBillingBatchImageEntitlement_LocksUserBeforeLinkedRowsAndSyncsAlias(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	windowStart := timezone.StartOfDay(now)
+	updatedAt := now.Add(time.Second)
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(`SELECT pg_advisory_xact_lock\(\$1\)`).
+		WithArgs(subscriptionEntitlementUserMutationLockKey(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery(`(?s)FROM subscription_entitlements.*FOR UPDATE`).
+		WithArgs(int64(91)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "legacy_subscription_id", "status", "starts_at", "expires_at",
+			"daily_window_start", "weekly_window_start", "monthly_window_start",
+			"daily_limit_usd", "weekly_limit_usd", "monthly_limit_usd",
+			"daily_usage_usd", "weekly_usage_usd", "monthly_usage_usd", "overage_policy",
+		}).AddRow(
+			int64(91), int64(42), int64(81), service.SubscriptionStatusActive, now.Add(-time.Hour), now.Add(48*time.Hour),
+			windowStart, windowStart, windowStart,
+			nil, nil, nil,
+			1.0, 2.0, 3.0, service.SubscriptionEntitlementOverageBlock,
+		))
+	mock.ExpectQuery(`(?s)FROM user_subscriptions.*FOR UPDATE`).
+		WithArgs(int64(81)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).AddRow(int64(81), int64(42)))
+	mock.ExpectExec(`(?s)UPDATE subscription_entitlements.*updated_at = NOW\(\).*WHERE id = \$7 AND user_id = \$8`).
+		WithArgs(windowStart, windowStart, windowStart, 3.0, 4.0, 5.0, int64(91), int64(42)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(`(?s)UPDATE user_subscriptions.*RETURNING updated_at`).
+		WithArgs(windowStart, windowStart, windowStart, 3.0, 4.0, 5.0, int64(81), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(updatedAt))
+	mock.ExpectCommit()
+
+	result, err := reserveUsageBillingBatchImageEntitlement(ctx, tx, &service.BatchImageBalanceHoldCommand{
+		UserID:        42,
+		EntitlementID: func() *int64 { id := int64(91); return &id }(),
+		HoldAmount:    2,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, service.BillingSourceEntitlementQuota, result.BillingSource)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSettleUsageBillingBatchImageEntitlement_LocksUserBeforeLinkedRowsAndSyncsAlias(t *testing.T) {
+	ctx := context.Background()
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	windowStart := timezone.StartOfDay(now)
+	updatedAt := now.Add(time.Second)
+	entitlementID := int64(91)
+	mock.ExpectBegin()
+	tx, err := db.BeginTx(ctx, nil)
+	require.NoError(t, err)
+	mock.ExpectQuery(`SELECT 1\s+FROM usage_billing_dedup\s+WHERE request_id = \$1 AND api_key_id = \$2`).
+		WithArgs(service.BatchImageHoldRequestID("imgbatch_settle_alias"), int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+	mock.ExpectQuery(`SELECT pg_advisory_xact_lock\(\$1\)`).
+		WithArgs(subscriptionEntitlementUserMutationLockKey(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"pg_advisory_xact_lock"}).AddRow(nil))
+	mock.ExpectQuery(`(?s)FROM subscription_entitlements.*FOR UPDATE`).
+		WithArgs(entitlementID).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "user_id", "legacy_subscription_id", "status", "starts_at", "expires_at",
+			"daily_window_start", "weekly_window_start", "monthly_window_start",
+			"daily_limit_usd", "weekly_limit_usd", "monthly_limit_usd",
+			"daily_usage_usd", "weekly_usage_usd", "monthly_usage_usd", "overage_policy",
+		}).AddRow(
+			entitlementID, int64(42), int64(81), service.SubscriptionStatusActive, now.Add(-time.Hour), now.Add(48*time.Hour),
+			windowStart, windowStart, windowStart,
+			nil, nil, nil,
+			3.0, 4.0, 5.0, service.SubscriptionEntitlementOverageBlock,
+		))
+	mock.ExpectQuery(`(?s)FROM user_subscriptions.*FOR UPDATE`).
+		WithArgs(int64(81)).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id"}).AddRow(int64(81), int64(42)))
+	mock.ExpectQuery(`(?s)UPDATE subscription_entitlements.*RETURNING daily_window_start.*monthly_usage_usd`).
+		WithArgs(windowStart, windowStart, windowStart, 1.0, entitlementID, int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"daily_window_start", "weekly_window_start", "monthly_window_start",
+			"daily_usage_usd", "weekly_usage_usd", "monthly_usage_usd",
+		}).AddRow(windowStart, windowStart, windowStart, 2.0, 3.0, 4.0))
+	mock.ExpectQuery(`(?s)UPDATE user_subscriptions.*RETURNING updated_at`).
+		WithArgs(windowStart, windowStart, windowStart, 2.0, 3.0, 4.0, int64(81), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"updated_at"}).AddRow(updatedAt))
+	mock.ExpectCommit()
+
+	result, err := settleUsageBillingBatchImageEntitlement(ctx, tx, &service.BatchImageBalanceHoldCommand{
+		UserID:                 42,
+		APIKeyID:               7,
+		BatchID:                "imgbatch_settle_alias",
+		EntitlementID:          &entitlementID,
+		HeldDailyWindowStart:   &windowStart,
+		HeldWeeklyWindowStart:  &windowStart,
+		HeldMonthlyWindowStart: &windowStart,
+	}, 1)
+
+	require.NoError(t, err)
+	require.Equal(t, service.BillingSourceEntitlementQuota, result.BillingSource)
+	require.NoError(t, tx.Commit())
+	require.NoError(t, mock.ExpectationsWereMet())
+}
 
 const (
 	conditionalBalanceDeductSQL = `(?s)UPDATE users\s+SET balance = balance - \$1,\s+updated_at = NOW\(\)\s+WHERE id = \$2 AND deleted_at IS NULL AND balance >= \$1\s+RETURNING balance`

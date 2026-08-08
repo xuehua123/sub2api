@@ -29,6 +29,10 @@ type middlewareEntitlementRepo struct {
 	entitlements map[int64]*service.SubscriptionEntitlement
 }
 
+func (r *middlewareEntitlementRepo) WithUserEntitlementMutationTx(ctx context.Context, _ int64, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func newMiddlewareEntitlementRepo(entitlements ...*service.SubscriptionEntitlement) *middlewareEntitlementRepo {
 	repo := &middlewareEntitlementRepo{entitlements: make(map[int64]*service.SubscriptionEntitlement)}
 	for _, ent := range entitlements {
@@ -55,6 +59,9 @@ func (r *middlewareEntitlementRepo) GetByID(_ context.Context, id int64) (*servi
 		return nil, service.ErrSubscriptionEntitlementNotFound
 	}
 	return cloneMiddlewareEntitlement(ent), nil
+}
+func (r *middlewareEntitlementRepo) GetByIDForUpdate(ctx context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	return r.GetByID(ctx, id)
 }
 func (r *middlewareEntitlementRepo) GetBySourceID(context.Context, string, int64) (*service.SubscriptionEntitlement, error) {
 	return nil, service.ErrSubscriptionEntitlementNotFound
@@ -88,6 +95,9 @@ func (r *middlewareEntitlementRepo) ListByUserID(_ context.Context, userID int64
 }
 func (r *middlewareEntitlementRepo) ListByUserPlanID(context.Context, int64, int64) ([]service.SubscriptionEntitlement, error) {
 	return nil, nil
+}
+func (r *middlewareEntitlementRepo) ListByUserPlanIDForUpdate(ctx context.Context, userID, planID int64) ([]service.SubscriptionEntitlement, error) {
+	return r.ListByUserPlanID(ctx, userID, planID)
 }
 func (r *middlewareEntitlementRepo) ListActiveByUserID(_ context.Context, userID int64) ([]service.SubscriptionEntitlement, error) {
 	out := make([]service.SubscriptionEntitlement, 0)

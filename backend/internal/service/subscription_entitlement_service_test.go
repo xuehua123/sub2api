@@ -87,6 +87,10 @@ func newFakeSubscriptionEntitlementRepo(now time.Time) *fakeSubscriptionEntitlem
 	}
 }
 
+func (r *fakeSubscriptionEntitlementRepo) WithUserEntitlementMutationTx(ctx context.Context, _ int64, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
 func (r *fakeSubscriptionEntitlementRepo) Create(ctx context.Context, ent *SubscriptionEntitlement, groupIDs []int64) error {
 	return r.CreateTx(ctx, ent, groupIDs)
 }
@@ -144,6 +148,10 @@ func (r *fakeSubscriptionEntitlementRepo) GetByID(_ context.Context, id int64) (
 		return nil, ErrSubscriptionEntitlementNotFound
 	}
 	return cloneTestEntitlement(ent), nil
+}
+
+func (r *fakeSubscriptionEntitlementRepo) GetByIDForUpdate(ctx context.Context, id int64) (*SubscriptionEntitlement, error) {
+	return r.GetByID(ctx, id)
 }
 
 func (r *fakeSubscriptionEntitlementRepo) GetBySourceID(_ context.Context, sourceType string, sourceID int64) (*SubscriptionEntitlement, error) {
@@ -238,6 +246,10 @@ func (r *fakeSubscriptionEntitlementRepo) ListByUserPlanID(_ context.Context, us
 		}
 	}
 	return out, nil
+}
+
+func (r *fakeSubscriptionEntitlementRepo) ListByUserPlanIDForUpdate(ctx context.Context, userID, planID int64) ([]SubscriptionEntitlement, error) {
+	return r.ListByUserPlanID(ctx, userID, planID)
 }
 
 func (r *fakeSubscriptionEntitlementRepo) ListActiveByUserID(_ context.Context, userID int64) ([]SubscriptionEntitlement, error) {
@@ -873,6 +885,177 @@ func TestSubscriptionEntitlementService_RestoreRefundSnapshotRejectsConcurrentRe
 	require.Equal(t, renewedExpiry, current.ExpiresAt)
 }
 
+func TestSubscriptionEntitlementService_RenewalRestoresLinkedLegacyLifecycle(t *testing.T) {
+	now := time.Date(2026, 8, 8, 10, 30, 0, 0, timezone.Location())
+	planID := int64(1)
+	legacySubscriptionID := int64(912)
+	groupID := int64(101)
+	deletedAt := now.Add(-time.Hour)
+	oldWindow := now.AddDate(0, 0, -30)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[10] = &SubscriptionEntitlement{
+		ID:                   10,
+		UserID:               42,
+		PlanID:               &planID,
+		LegacySubscriptionID: &legacySubscriptionID,
+		Name:                 "Pro",
+		Status:               SubscriptionStatusExpired,
+		StartsAt:             now.AddDate(0, 0, -60),
+		ExpiresAt:            now.AddDate(0, 0, -1),
+		DailyWindowStart:     &oldWindow,
+		WeeklyWindowStart:    &oldWindow,
+		MonthlyWindowStart:   &oldWindow,
+		DailyUsageUSD:        1,
+		WeeklyUsageUSD:       2,
+		MonthlyUsageUSD:      3,
+		GroupGrants:          testGroupGrants([]int64{groupID}),
+		Groups:               testGroups([]int64{groupID}),
+	}
+	legacyRepo := &linkedEntitlementUserSubRepoStub{sub: &UserSubscription{
+		ID:        legacySubscriptionID,
+		UserID:    42,
+		GroupID:   groupID,
+		StartsAt:  now.AddDate(0, 0, -90),
+		ExpiresAt: now.AddDate(0, 0, -30),
+		Status:    SubscriptionStatusRevoked,
+		DeletedAt: &deletedAt,
+	}}
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		planID: testEntitlementPlan(planID, []int64{groupID}, nil),
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetLegacySubscriptionRepository(legacyRepo)
+
+	renewed, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:  42,
+		PlanID:  planID,
+		OrderID: 1234,
+		Now:     now,
+	})
+
+	require.NoError(t, err)
+	require.True(t, reused)
+	require.Equal(t, legacySubscriptionID, legacyRepo.restoredID)
+	require.Nil(t, legacyRepo.sub.DeletedAt)
+	require.Equal(t, renewed.StartsAt, legacyRepo.sub.StartsAt)
+	require.Equal(t, renewed.ExpiresAt, legacyRepo.sub.ExpiresAt)
+	require.Equal(t, renewed.Status, legacyRepo.sub.Status)
+	require.Equal(t, renewed.DailyWindowStart, legacyRepo.sub.DailyWindowStart)
+	require.Equal(t, renewed.WeeklyWindowStart, legacyRepo.sub.WeeklyWindowStart)
+	require.Equal(t, renewed.MonthlyWindowStart, legacyRepo.sub.MonthlyWindowStart)
+	require.Equal(t, renewed.DailyUsageUSD, legacyRepo.sub.DailyUsageUSD)
+	require.Equal(t, renewed.WeeklyUsageUSD, legacyRepo.sub.WeeklyUsageUSD)
+	require.Equal(t, renewed.MonthlyUsageUSD, legacyRepo.sub.MonthlyUsageUSD)
+}
+
+func TestSubscriptionEntitlementService_PurchaseSyncsLinkedLegacyLifecycle(t *testing.T) {
+	now := time.Date(2026, 8, 8, 10, 45, 0, 0, timezone.Location())
+	planID := int64(1)
+	legacySubscriptionID := int64(914)
+	groupID := int64(101)
+	legacyRepo := &linkedEntitlementUserSubRepoStub{sub: &UserSubscription{
+		ID:        legacySubscriptionID,
+		UserID:    42,
+		GroupID:   groupID,
+		StartsAt:  now.AddDate(0, 0, -10),
+		ExpiresAt: now.AddDate(0, 0, 1),
+		Status:    SubscriptionStatusExpired,
+	}}
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		planID: testEntitlementPlan(planID, []int64{groupID}, nil),
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	svc.SetLegacySubscriptionRepository(legacyRepo)
+	externalID := "admin-purchase-914"
+
+	purchased, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:               42,
+		PlanID:               planID,
+		LegacySubscriptionID: &legacySubscriptionID,
+		SourceType:           SubscriptionEntitlementSourceAdminAssign,
+		SourceExternalID:     &externalID,
+		Now:                  now,
+	})
+
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.Equal(t, purchased.StartsAt, legacyRepo.sub.StartsAt)
+	require.Equal(t, purchased.ExpiresAt, legacyRepo.sub.ExpiresAt)
+	require.Equal(t, purchased.Status, legacyRepo.sub.Status)
+	require.Equal(t, purchased.DailyWindowStart, legacyRepo.sub.DailyWindowStart)
+	require.Equal(t, purchased.WeeklyWindowStart, legacyRepo.sub.WeeklyWindowStart)
+	require.Equal(t, purchased.MonthlyWindowStart, legacyRepo.sub.MonthlyWindowStart)
+	require.Equal(t, purchased.DailyUsageUSD, legacyRepo.sub.DailyUsageUSD)
+	require.Equal(t, purchased.WeeklyUsageUSD, legacyRepo.sub.WeeklyUsageUSD)
+	require.Equal(t, purchased.MonthlyUsageUSD, legacyRepo.sub.MonthlyUsageUSD)
+}
+
+func TestSubscriptionEntitlementService_RefundAdjustmentSyncsAndRestoresLinkedLegacyLifecycle(t *testing.T) {
+	now := time.Date(2026, 8, 8, 11, 0, 0, 0, timezone.Location())
+	legacySubscriptionID := int64(913)
+	dailyWindow := timezone.StartOfDay(now)
+	weeklyWindow := now.AddDate(0, 0, -3)
+	monthlyWindow := now.AddDate(0, 0, -20)
+	originalExpiry := now.AddDate(0, 0, 30)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	repo.entitlements[11] = &SubscriptionEntitlement{
+		ID:                   11,
+		UserID:               42,
+		LegacySubscriptionID: &legacySubscriptionID,
+		Status:               SubscriptionStatusActive,
+		StartsAt:             now.AddDate(0, 0, -1),
+		ExpiresAt:            originalExpiry,
+		UpdatedAt:            now.Add(-time.Minute),
+		DailyWindowStart:     &dailyWindow,
+		WeeklyWindowStart:    &weeklyWindow,
+		MonthlyWindowStart:   &monthlyWindow,
+		DailyUsageUSD:        1.25,
+		WeeklyUsageUSD:       2.5,
+		MonthlyUsageUSD:      3.75,
+	}
+	legacyRepo := &linkedEntitlementUserSubRepoStub{sub: &UserSubscription{
+		ID:        legacySubscriptionID,
+		UserID:    42,
+		GroupID:   101,
+		StartsAt:  now.AddDate(0, 0, -30),
+		ExpiresAt: now.AddDate(0, 0, 1),
+		Status:    SubscriptionStatusExpired,
+	}}
+	svc := NewSubscriptionEntitlementService(repo, nil)
+	svc.SetLegacySubscriptionRepository(legacyRepo)
+
+	adjustment, err := svc.ShortenForRefund(context.Background(), 11, 10, now)
+
+	require.NoError(t, err)
+	require.NotNil(t, adjustment)
+	require.Equal(t, originalExpiry.AddDate(0, 0, -10), legacyRepo.sub.ExpiresAt)
+	require.Equal(t, SubscriptionStatusActive, legacyRepo.sub.Status)
+	require.Equal(t, dailyWindow, *legacyRepo.sub.DailyWindowStart)
+	require.Equal(t, weeklyWindow, *legacyRepo.sub.WeeklyWindowStart)
+	require.Equal(t, monthlyWindow, *legacyRepo.sub.MonthlyWindowStart)
+	require.Equal(t, 1.25, legacyRepo.sub.DailyUsageUSD)
+	require.Equal(t, 2.5, legacyRepo.sub.WeeklyUsageUSD)
+	require.Equal(t, 3.75, legacyRepo.sub.MonthlyUsageUSD)
+
+	deletedAt := now.Add(time.Minute)
+	legacyRepo.sub.DeletedAt = &deletedAt
+	legacyRepo.sub.Status = SubscriptionStatusRevoked
+	require.NoError(t, svc.RestoreRefundSnapshot(context.Background(), adjustment.Snapshot, adjustment.UpdatedAt))
+
+	require.Equal(t, legacySubscriptionID, legacyRepo.restoredID)
+	require.Nil(t, legacyRepo.sub.DeletedAt)
+	require.Equal(t, adjustment.Snapshot.StartsAt, legacyRepo.sub.StartsAt)
+	require.Equal(t, adjustment.Snapshot.ExpiresAt, legacyRepo.sub.ExpiresAt)
+	require.Equal(t, adjustment.Snapshot.Status, legacyRepo.sub.Status)
+	require.Equal(t, adjustment.Snapshot.DailyWindowStart, legacyRepo.sub.DailyWindowStart)
+	require.Equal(t, adjustment.Snapshot.WeeklyWindowStart, legacyRepo.sub.WeeklyWindowStart)
+	require.Equal(t, adjustment.Snapshot.MonthlyWindowStart, legacyRepo.sub.MonthlyWindowStart)
+	require.Equal(t, adjustment.Snapshot.DailyUsageUSD, legacyRepo.sub.DailyUsageUSD)
+	require.Equal(t, adjustment.Snapshot.WeeklyUsageUSD, legacyRepo.sub.WeeklyUsageUSD)
+	require.Equal(t, adjustment.Snapshot.MonthlyUsageUSD, legacyRepo.sub.MonthlyUsageUSD)
+}
+
 func TestSubscriptionEntitlementService_SourceRedeemCodeReplayDoesNotExtendTwice(t *testing.T) {
 	now := time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC)
 	repo := newFakeSubscriptionEntitlementRepo(now)
@@ -939,6 +1122,40 @@ func TestSubscriptionEntitlementService_SourceExternalIDReplayDoesNotExtendTwice
 	require.Equal(t, 1, repo.eventCount)
 	require.Equal(t, 0, repo.updateTermCount)
 	require.Equal(t, first.ExpiresAt, second.ExpiresAt)
+}
+
+func TestSubscriptionEntitlementService_SourceReplaySurvivesDeletedPlan(t *testing.T) {
+	now := time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		1: testEntitlementPlan(1, []int64{101}, nil),
+	}}
+	svc := NewSubscriptionEntitlementService(repo, planRepo)
+	orderID := int64(9001)
+
+	first, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:   42,
+		PlanID:   1,
+		SourceID: &orderID,
+		Now:      now,
+	})
+	require.NoError(t, err)
+	require.False(t, reused)
+
+	delete(planRepo.plans, 1)
+	replayed, reused, err := svc.AssignOrExtendFromPlan(context.Background(), AssignEntitlementFromPlanInput{
+		UserID:   42,
+		PlanID:   1,
+		SourceID: &orderID,
+		Now:      now.Add(time.Hour),
+	})
+
+	require.NoError(t, err)
+	require.True(t, reused)
+	require.Equal(t, first.ID, replayed.ID)
+	require.Equal(t, first.ExpiresAt, replayed.ExpiresAt)
+	require.Equal(t, 1, repo.createCount)
+	require.Equal(t, 1, repo.eventCount)
 }
 
 func TestSubscriptionEntitlementService_ExtendWritesSourceIDForReplay(t *testing.T) {

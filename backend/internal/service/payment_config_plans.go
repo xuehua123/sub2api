@@ -55,6 +55,9 @@ func validatePlanRequired(req CreatePlanRequest) error {
 	if !isSupportedValidityUnit(req.ValidityUnit) {
 		return infraerrors.BadRequest("PLAN_VALIDITY_UNIT_INVALID", "valid validity unit is required")
 	}
+	if err := validatePlanValidityRange(req.ValidityDays, req.ValidityUnit); err != nil {
+		return err
+	}
 	if req.OriginalPrice != nil && *req.OriginalPrice < 0 {
 		return infraerrors.BadRequest("PLAN_ORIGINAL_PRICE_INVALID", "original price must be >= 0")
 	}
@@ -131,6 +134,22 @@ func validatePlanLimitPeriods(validityDays int, validityUnit string, weeklyLimit
 	}
 	if monthlyLimit != nil && effectiveDays < 30 {
 		return infraerrors.BadRequest("PLAN_LIMIT_PERIOD_INVALID", "monthly limit requires plan validity of at least 30 days")
+	}
+	return nil
+}
+
+func validatePlanValidityRange(validityDays int, validityUnit string) error {
+	multiplier := 1
+	switch normalizeValidityUnit(validityUnit) {
+	case validityUnitWeek:
+		multiplier = 7
+	case validityUnitMonth:
+		multiplier = 30
+	case validityUnitYear:
+		multiplier = 365
+	}
+	if validityDays <= 0 || validityDays > MaxValidityDays/multiplier {
+		return infraerrors.BadRequest("PLAN_VALIDITY_TOO_LONG", fmt.Sprintf("effective plan validity must not exceed %d days", MaxValidityDays))
 	}
 	return nil
 }
@@ -606,6 +625,9 @@ func validateEffectivePlanLimitPeriods(existing *dbent.SubscriptionPlan, req Upd
 	validityUnit := existing.ValidityUnit
 	if req.ValidityUnit != nil {
 		validityUnit = *req.ValidityUnit
+	}
+	if err := validatePlanValidityRange(validityDays, validityUnit); err != nil {
+		return err
 	}
 	weeklyLimit := existing.WeeklyLimitUsd
 	if req.WeeklyLimitUSD.Set {

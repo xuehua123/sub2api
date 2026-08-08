@@ -230,46 +230,56 @@ func (s *SubscriptionEntitlementService) ShortenForRefund(ctx context.Context, e
 	if now.IsZero() {
 		now = s.inputNow(time.Time{})
 	}
-	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
-	if err != nil {
-		return nil, err
-	}
-	if !entitlementActiveAt(ent, now) {
-		return nil, ErrSubscriptionEntitlementExpired
-	}
-
-	expiresAt := ent.ExpiresAt.AddDate(0, 0, -days)
-	status := SubscriptionStatusActive
-	revoked := false
-	if !expiresAt.After(now) {
-		expiresAt = now
-		status = SubscriptionStatusExpired
-		revoked = true
-	}
 	casRepo, ok := s.entitlementRepo.(subscriptionEntitlementTermCASRepository)
 	if !ok {
 		return nil, ErrSubscriptionEntitlementTermConflict
 	}
-	updatedAt, swapped, err := casRepo.CompareAndSwapTerm(
-		ctx,
-		entitlementID,
-		ent.UpdatedAt,
-		ent.StartsAt,
-		expiresAt,
-		status,
-		ent.Notes,
-	)
+	var adjustment *SubscriptionEntitlementRefundAdjustment
+	err := s.withLockedEntitlement(ctx, entitlementID, 0, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		if !entitlementActiveAt(ent, now) {
+			return ErrSubscriptionEntitlementExpired
+		}
+		expiresAt := ent.ExpiresAt.AddDate(0, 0, -days)
+		status := SubscriptionStatusActive
+		revoked := false
+		if !expiresAt.After(now) {
+			expiresAt = now
+			status = SubscriptionStatusExpired
+			revoked = true
+		}
+		updatedAt, swapped, updateErr := casRepo.CompareAndSwapTerm(
+			txCtx,
+			entitlementID,
+			ent.UpdatedAt,
+			ent.StartsAt,
+			expiresAt,
+			status,
+			ent.Notes,
+		)
+		if updateErr != nil {
+			return updateErr
+		}
+		if !swapped {
+			return ErrSubscriptionEntitlementTermConflict
+		}
+		refreshed, getErr := s.entitlementRepo.GetByID(txCtx, entitlementID)
+		if getErr != nil {
+			return getErr
+		}
+		if syncErr := syncLinkedLegacySubscriptionLifecycle(txCtx, s.legacySubscriptionRepo, refreshed); syncErr != nil {
+			return syncErr
+		}
+		adjustment = &SubscriptionEntitlementRefundAdjustment{
+			Snapshot:  cloneSubscriptionEntitlementForRefund(ent),
+			Revoked:   revoked,
+			UpdatedAt: updatedAt,
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if !swapped {
-		return nil, ErrSubscriptionEntitlementTermConflict
-	}
-	return &SubscriptionEntitlementRefundAdjustment{
-		Snapshot:  cloneSubscriptionEntitlementForRefund(ent),
-		Revoked:   revoked,
-		UpdatedAt: updatedAt,
-	}, nil
+	return adjustment, nil
 }
 
 func (s *SubscriptionEntitlementService) RestoreRefundSnapshot(ctx context.Context, snapshot *SubscriptionEntitlement, expectedUpdatedAt time.Time) error {
@@ -283,22 +293,28 @@ func (s *SubscriptionEntitlementService) RestoreRefundSnapshot(ctx context.Conte
 	if !ok {
 		return ErrSubscriptionEntitlementTermConflict
 	}
-	_, swapped, err := casRepo.CompareAndSwapTerm(
-		ctx,
-		snapshot.ID,
-		expectedUpdatedAt,
-		snapshot.StartsAt,
-		snapshot.ExpiresAt,
-		snapshot.Status,
-		snapshot.Notes,
-	)
-	if err != nil {
-		return err
-	}
-	if !swapped {
-		return ErrSubscriptionEntitlementTermConflict
-	}
-	return nil
+	return s.withLockedEntitlement(ctx, snapshot.ID, snapshot.UserID, func(txCtx context.Context, _ *SubscriptionEntitlement) error {
+		_, swapped, err := casRepo.CompareAndSwapTerm(
+			txCtx,
+			snapshot.ID,
+			expectedUpdatedAt,
+			snapshot.StartsAt,
+			snapshot.ExpiresAt,
+			snapshot.Status,
+			snapshot.Notes,
+		)
+		if err != nil {
+			return err
+		}
+		if !swapped {
+			return ErrSubscriptionEntitlementTermConflict
+		}
+		refreshed, getErr := s.entitlementRepo.GetByID(txCtx, snapshot.ID)
+		if getErr != nil {
+			return getErr
+		}
+		return syncLinkedLegacySubscriptionLifecycle(txCtx, s.legacySubscriptionRepo, refreshed)
+	})
 }
 
 func cloneSubscriptionEntitlementForRefund(ent *SubscriptionEntitlement) *SubscriptionEntitlement {

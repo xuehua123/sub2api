@@ -105,7 +105,7 @@ func reserveBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 			job.HeldMonthlyWindowStart = result.HeldMonthlyWindowStart
 		}
 	}
-	bestEffortInvalidateBatchImageLegacySubscription(ctx, cache, job, "reserve")
+	bestEffortInvalidateBatchImageCompatibilitySubscription(ctx, cache, job, "reserve")
 	return nil
 }
 
@@ -142,7 +142,7 @@ func captureBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 	if _, err := repo.CaptureBatchImageBalance(ctx, cmd); err != nil {
 		return ErrBatchImageSettlementBillingFailed.WithCause(err)
 	}
-	bestEffortInvalidateBatchImageLegacySubscription(ctx, cache, job, "capture")
+	bestEffortInvalidateBatchImageCompatibilitySubscription(ctx, cache, job, "capture")
 	return nil
 }
 
@@ -165,17 +165,22 @@ func releaseBatchImageBalanceHold(ctx context.Context, repo UsageBillingReposito
 			logger.L().Warn("batch_image.release_fingerprint_conflict_treated_as_released",
 				zap.String("batch_id", job.BatchID),
 			)
-			bestEffortInvalidateBatchImageLegacySubscription(ctx, cache, job, "release")
+			bestEffortInvalidateBatchImageCompatibilitySubscription(ctx, cache, job, "release")
 			return nil
 		}
 		return ErrBatchImageBillingHoldFailed.WithCause(err)
 	}
-	bestEffortInvalidateBatchImageLegacySubscription(ctx, cache, job, "release")
+	bestEffortInvalidateBatchImageCompatibilitySubscription(ctx, cache, job, "release")
 	return nil
 }
 
-func bestEffortInvalidateBatchImageLegacySubscription(ctx context.Context, cache BatchImageSubscriptionCacheInvalidator, job *BatchImageJob, action string) {
-	if cache == nil || job == nil || job.UserID <= 0 || job.GroupID == nil || *job.GroupID <= 0 || job.BillingSource != BillingSourceLegacySubscription {
+func bestEffortInvalidateBatchImageCompatibilitySubscription(ctx context.Context, cache BatchImageSubscriptionCacheInvalidator, job *BatchImageJob, action string) {
+	if cache == nil || job == nil || job.UserID <= 0 || job.GroupID == nil || *job.GroupID <= 0 {
+		return
+	}
+	mutatedLegacySubscription := job.BillingSource == BillingSourceLegacySubscription ||
+		(job.BillingSource == BillingSourceEntitlementQuota && job.SubscriptionID != nil && *job.SubscriptionID > 0 && job.EntitlementID != nil && *job.EntitlementID > 0)
+	if !mutatedLegacySubscription {
 		return
 	}
 	cacheCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), batchImageSubscriptionCacheInvalidateTimeout)

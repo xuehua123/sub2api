@@ -131,6 +131,10 @@ func (s *SubscriptionService) SetSubscriptionEntitlementAliasDependencies(settin
 	}
 	s.settingSvc = settingSvc
 	s.entitlementSvc = entitlementSvc
+	if entitlementSvc != nil {
+		entitlementSvc.SetLegacySubscriptionRepository(s.userSubRepo)
+		entitlementSvc.SetLegacyAliasInvalidator(s.invalidateEntitlementLegacyAlias)
+	}
 }
 
 func (s *SubscriptionService) ShouldUseSubscriptionEntitlementAliases(ctx context.Context) bool {
@@ -377,13 +381,24 @@ func (o subscriptionAssignmentOutcome) reused() bool {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	if input == nil {
+		return nil, ErrInvalidInput
+	}
+	resolvedInput := *input
+	resolvedInput.ValidityDays = normalizeAssignValidityDays(input.ValidityDays)
+	input = &resolvedInput
+
 	if s.shouldAssignPlanEntitlementAlias(ctx, input) {
 		var (
 			sub            *UserSubscription
 			outcome        subscriptionAssignmentOutcome
 			aliasMayChange bool
 		)
-		err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		entitlementSvc, err := s.adminEntitlementService()
+		if err != nil {
+			return nil, err
+		}
+		err = entitlementSvc.entitlementRepo.WithUserEntitlementMutationTx(ctx, input.UserID, func(txCtx context.Context) error {
 			var innerErr error
 			sub, outcome, innerErr = s.assignSubscriptionWithReuse(txCtx, input, true)
 			if innerErr != nil {
@@ -964,12 +979,26 @@ func (s *SubscriptionService) revokeLinkedEntitlementSubscription(ctx context.Co
 	if sub == nil || sub.EntitlementLink == nil || sub.EntitlementLink.EntitlementID <= 0 {
 		return ErrSubscriptionNotFound
 	}
+	entitlementSvc, err := s.adminEntitlementService()
+	if err != nil {
+		return err
+	}
 
 	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
-		if err := s.adminRevokeEntitlement(txCtx, sub.EntitlementLink.EntitlementID); err != nil {
-			return err
-		}
-		return s.userSubRepo.Delete(txCtx, sub.ID)
+		return entitlementSvc.withLockedEntitlement(txCtx, sub.EntitlementLink.EntitlementID, sub.UserID, func(lockedCtx context.Context, ent *SubscriptionEntitlement) error {
+			if ent.LegacySubscriptionID != nil && *ent.LegacySubscriptionID != sub.ID {
+				return ErrSubscriptionNotFound
+			}
+			// Older linked rows may only carry the alias -> entitlement edge. Use the
+			// exact alias selected by the caller while repairing that legacy shape.
+			linked := *ent
+			if linked.LegacySubscriptionID == nil {
+				legacyID := sub.ID
+				linked.LegacySubscriptionID = &legacyID
+			}
+			now := entitlementSvc.inputNow(time.Time{})
+			return entitlementSvc.revokeEntitlementAndLinkedAliasLocked(lockedCtx, &linked, now, "revoked by admin")
+		})
 	}); err != nil {
 		return err
 	}
@@ -1007,14 +1036,6 @@ func (s *SubscriptionService) RestoreSubscription(ctx context.Context, subscript
 		return nil, ErrSubscriptionNotRevoked
 	}
 
-	exists, err := s.userSubRepo.ExistsActiveByUserIDAndGroupID(ctx, sub.UserID, sub.GroupID)
-	if err != nil {
-		return nil, err
-	}
-	if exists {
-		return nil, ErrSubscriptionRestoreConflict
-	}
-
 	restoredStatus := sub.Status
 	now := time.Now()
 	if restoredStatus == SubscriptionStatusActive && !sub.ExpiresAt.After(now) {
@@ -1023,8 +1044,15 @@ func (s *SubscriptionService) RestoreSubscription(ctx context.Context, subscript
 
 	var restored *UserSubscription
 	if sub.EntitlementLink != nil && sub.EntitlementLink.EntitlementID > 0 {
-		restored, err = s.restoreLinkedEntitlementSubscription(ctx, sub, restoredStatus)
+		restored, err = s.restoreLinkedEntitlementSubscription(ctx, sub)
 	} else {
+		exists, existsErr := s.userSubRepo.ExistsActiveByUserIDAndGroupID(ctx, sub.UserID, sub.GroupID)
+		if existsErr != nil {
+			return nil, existsErr
+		}
+		if exists {
+			return nil, ErrSubscriptionRestoreConflict
+		}
 		restored, err = s.userSubRepo.Restore(ctx, subscriptionID, restoredStatus)
 	}
 	if err != nil {
@@ -1036,7 +1064,7 @@ func (s *SubscriptionService) RestoreSubscription(ctx context.Context, subscript
 }
 
 // ExtendSubscription 调整订阅时长（正数延长，负数缩短）
-func (s *SubscriptionService) restoreLinkedEntitlementSubscription(ctx context.Context, sub *UserSubscription, restoredStatus string) (*UserSubscription, error) {
+func (s *SubscriptionService) restoreLinkedEntitlementSubscription(ctx context.Context, sub *UserSubscription) (*UserSubscription, error) {
 	if sub == nil || sub.EntitlementLink == nil || sub.EntitlementLink.EntitlementID <= 0 {
 		return nil, ErrSubscriptionNotFound
 	}
@@ -1047,24 +1075,82 @@ func (s *SubscriptionService) restoreLinkedEntitlementSubscription(ctx context.C
 
 	var restored *UserSubscription
 	if err := s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
-		ent, err := entitlementSvc.entitlementRepo.GetByID(txCtx, sub.EntitlementLink.EntitlementID)
-		if err != nil {
+		return entitlementSvc.withLockedEntitlement(txCtx, sub.EntitlementLink.EntitlementID, sub.UserID, func(lockedCtx context.Context, ent *SubscriptionEntitlement) error {
+			currentSub, err := s.userSubRepo.GetByIDIncludeDeletedForUpdate(lockedCtx, sub.ID)
+			if err != nil {
+				return err
+			}
+			if currentSub.EntitlementLink == nil || currentSub.EntitlementLink.EntitlementID != ent.ID {
+				return ErrSubscriptionNotFound
+			}
+			// A concurrent purchase may already have restored this exact linked
+			// alias after the initial deleted-row read. Treat that outcome as the
+			// same successful restore, while retaining conflicts for a different
+			// active subscription below.
+			if currentSub.DeletedAt == nil {
+				restored = currentSub
+				return nil
+			}
+			exists, existsErr := s.userSubRepo.ExistsActiveByUserIDAndGroupID(lockedCtx, currentSub.UserID, currentSub.GroupID)
+			if existsErr != nil {
+				return existsErr
+			}
+			if exists {
+				return ErrSubscriptionRestoreConflict
+			}
+
+			restoredStatus := currentSub.Status
+			now := entitlementSvc.inputNow(time.Time{})
+			if restoredStatus == SubscriptionStatusActive && !currentSub.ExpiresAt.After(now) {
+				restoredStatus = SubscriptionStatusExpired
+			}
+			lifecycle := UserSubscriptionLifecycleState{
+				StartsAt:           currentSub.StartsAt,
+				ExpiresAt:          currentSub.ExpiresAt,
+				Status:             restoredStatus,
+				DailyWindowStart:   currentSub.DailyWindowStart,
+				WeeklyWindowStart:  currentSub.WeeklyWindowStart,
+				MonthlyWindowStart: currentSub.MonthlyWindowStart,
+				DailyUsageUSD:      currentSub.DailyUsageUSD,
+				WeeklyUsageUSD:     currentSub.WeeklyUsageUSD,
+				MonthlyUsageUSD:    currentSub.MonthlyUsageUSD,
+			}
+			if ent.Status == SubscriptionStatusRevoked {
+				startsAt := lifecycle.StartsAt
+				if startsAt.IsZero() {
+					startsAt = ent.StartsAt
+				}
+				expiresAt := lifecycle.ExpiresAt
+				if expiresAt.IsZero() {
+					expiresAt = ent.ExpiresAt
+				}
+				notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
+				if err := entitlementSvc.entitlementRepo.UpdateTerm(lockedCtx, ent.ID, startsAt, expiresAt, restoredStatus, notes); err != nil {
+					return err
+				}
+				// The deleted alias is the pre-revoke lifecycle snapshot. Keep its
+				// windows and usage so restoring cannot reduce already accrued usage.
+				lifecycle.StartsAt = startsAt
+				lifecycle.ExpiresAt = expiresAt
+			} else {
+				// A concurrent purchase may have reactivated and extended the entitlement
+				// after the initial alias read. The locked entitlement is the source of truth.
+				lifecycle = UserSubscriptionLifecycleState{
+					StartsAt:           ent.StartsAt,
+					ExpiresAt:          ent.ExpiresAt,
+					Status:             ent.Status,
+					DailyWindowStart:   ent.DailyWindowStart,
+					WeeklyWindowStart:  ent.WeeklyWindowStart,
+					MonthlyWindowStart: ent.MonthlyWindowStart,
+					DailyUsageUSD:      ent.DailyUsageUSD,
+					WeeklyUsageUSD:     ent.WeeklyUsageUSD,
+					MonthlyUsageUSD:    ent.MonthlyUsageUSD,
+				}
+			}
+
+			restored, err = s.userSubRepo.RestoreWithLifecycle(lockedCtx, currentSub.ID, lifecycle)
 			return err
-		}
-		startsAt := sub.StartsAt
-		if startsAt.IsZero() {
-			startsAt = ent.StartsAt
-		}
-		expiresAt := sub.ExpiresAt
-		if expiresAt.IsZero() {
-			expiresAt = ent.ExpiresAt
-		}
-		notes := appendSubscriptionNotes(ent.Notes, "restored by admin")
-		if err := entitlementSvc.entitlementRepo.UpdateTerm(txCtx, ent.ID, startsAt, expiresAt, restoredStatus, notes); err != nil {
-			return err
-		}
-		restored, err = s.userSubRepo.Restore(txCtx, sub.ID, restoredStatus)
-		return err
+		})
 	}); err != nil {
 		return nil, err
 	}

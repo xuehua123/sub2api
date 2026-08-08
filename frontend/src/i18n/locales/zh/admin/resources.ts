@@ -589,6 +589,7 @@ export default {
         range: '时间范围',
         deletedRows: '删除数量',
         missingRange: '请选择时间范围',
+        invalidEntitlementId: '请输入有效的正整数权益 ID 后再执行清理',
         submitSuccess: '清理任务已创建',
         submitFailed: '创建清理任务失败',
         loadFailed: '加载清理任务失败',

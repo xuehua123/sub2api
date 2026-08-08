@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/payment"
-	stripe "github.com/stripe/stripe-go/v85"
 	"github.com/stretchr/testify/require"
+	stripe "github.com/stripe/stripe-go/v85"
 )
 
 type stripeRefundBackend struct {
@@ -73,6 +73,7 @@ func TestParseStripeChargeRefunded_PreservesTradeNoWithoutOrderMetadata(t *testi
 	t.Parallel()
 
 	notification, err := parseStripeChargeRefunded(&stripe.Event{
+		ID: "evt_refund_stable",
 		Data: &stripe.EventData{Raw: []byte(`{
 			"amount_refunded": 5000,
 			"metadata": {},
@@ -84,6 +85,7 @@ func TestParseStripeChargeRefunded_PreservesTradeNoWithoutOrderMetadata(t *testi
 	}, "raw")
 	require.NoError(t, err)
 	require.NotNil(t, notification)
+	require.Equal(t, "evt_refund_stable", notification.EventID)
 	require.Equal(t, "pi_refund_lookup", notification.TradeNo)
 	require.Empty(t, notification.OrderID)
 	require.Equal(t, 50.0, notification.Amount)
@@ -95,6 +97,7 @@ func TestParseStripeChargeDispute_FallsBackAcrossMetadataLocations(t *testing.T)
 	t.Parallel()
 
 	notification, err := parseStripeChargeDispute(&stripe.Event{
+		ID: "evt_dispute_stable",
 		Data: &stripe.EventData{Raw: []byte(`{
 			"amount": 3600,
 			"payment_intent": {
@@ -114,6 +117,7 @@ func TestParseStripeChargeDispute_FallsBackAcrossMetadataLocations(t *testing.T)
 	}, "raw")
 	require.NoError(t, err)
 	require.NotNil(t, notification)
+	require.Equal(t, "evt_dispute_stable", notification.EventID)
 	require.Equal(t, "pi_dispute_lookup", notification.TradeNo)
 	require.Equal(t, "order_from_payment_intent", notification.OrderID)
 	require.Equal(t, 36.0, notification.Amount)

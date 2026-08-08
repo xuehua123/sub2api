@@ -225,6 +225,64 @@ func TestUsageHandlerCreateCleanupTaskInvalidEndDate(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
 }
 
+func TestUsageHandlerCreateCleanupTaskRejectsInvalidTimezone(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	cleanupService := service.NewUsageCleanupService(repo, nil, nil, cfg)
+	router := setupCleanupRouter(cleanupService, 88)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cleanup-tasks", bytes.NewBufferString(`{
+		"start_date":"2024-01-01",
+		"end_date":"2024-01-02",
+		"timezone":"Not/A_Real_Timezone"
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Empty(t, repo.created)
+}
+
+func TestUsageHandlerCreateCleanupTaskUsesLocalCalendarEndAcrossDST(t *testing.T) {
+	location, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+
+	for _, date := range []string{"2024-03-10", "2024-11-03"} {
+		t.Run(date, func(t *testing.T) {
+			repo := &cleanupRepoStub{}
+			cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+			cleanupService := service.NewUsageCleanupService(repo, nil, nil, cfg)
+			router := setupCleanupRouter(cleanupService, 88)
+
+			body, err := json.Marshal(map[string]any{
+				"start_date": date,
+				"end_date":   date,
+				"timezone":   "America/New_York",
+			})
+			require.NoError(t, err)
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cleanup-tasks", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, req)
+
+			require.Equal(t, http.StatusOK, recorder.Code)
+			repo.mu.Lock()
+			require.Len(t, repo.created, 1)
+			created := repo.created[0]
+			repo.mu.Unlock()
+
+			start, err := time.ParseInLocation("2006-01-02", date, location)
+			require.NoError(t, err)
+			expectedEnd := start.AddDate(0, 0, 1)
+			require.True(t, created.Filters.StartTime.Equal(start))
+			require.True(t, created.Filters.EndTime.Equal(expectedEnd))
+		})
+	}
+}
+
 func TestUsageHandlerCreateCleanupTaskInvalidRequestType(t *testing.T) {
 	repo := &cleanupRepoStub{}
 	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
@@ -246,6 +304,31 @@ func TestUsageHandlerCreateCleanupTaskInvalidRequestType(t *testing.T) {
 	router.ServeHTTP(recorder, req)
 
 	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}
+
+func TestUsageHandlerCreateCleanupTaskRejectsInvalidEntitlementID(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	cleanupService := service.NewUsageCleanupService(repo, nil, nil, cfg)
+	router := setupCleanupRouter(cleanupService, 88)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cleanup-tasks", bytes.NewBufferString(`{
+		"start_date":"2024-01-01",
+		"end_date":"2024-01-02",
+		"timezone":"UTC",
+		"entitlement_id":0
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, "USAGE_CLEANUP_INVALID_ENTITLEMENT_ID", resp.Reason)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Empty(t, repo.created, "invalid entitlement filter must not create a broader cleanup task")
 }
 
 func TestUsageHandlerCreateCleanupTaskRequestTypePriority(t *testing.T) {
@@ -346,9 +429,33 @@ func TestUsageHandlerCreateCleanupTaskSuccess(t *testing.T) {
 	require.Equal(t, "gpt-4", *created.Filters.Model)
 
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
-	end := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC).Add(24*time.Hour - time.Nanosecond)
+	end := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
 	require.True(t, created.Filters.StartTime.Equal(start))
 	require.True(t, created.Filters.EndTime.Equal(end))
+}
+
+func TestUsageHandlerCreateCleanupTaskPreservesEntitlementFilter(t *testing.T) {
+	repo := &cleanupRepoStub{}
+	cfg := &config.Config{UsageCleanup: config.UsageCleanupConfig{Enabled: true, MaxRangeDays: 31}}
+	cleanupService := service.NewUsageCleanupService(repo, nil, nil, cfg)
+	router := setupCleanupRouter(cleanupService, 99)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/usage/cleanup-tasks", bytes.NewBufferString(`{
+		"start_date":"2024-01-01",
+		"end_date":"2024-01-02",
+		"timezone":"UTC",
+		"entitlement_id":42
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	require.Len(t, repo.created, 1)
+	require.NotNil(t, repo.created[0].Filters.EntitlementID)
+	require.Equal(t, int64(42), *repo.created[0].Filters.EntitlementID)
 }
 
 func TestUsageHandlerListCleanupTasksUnavailable(t *testing.T) {

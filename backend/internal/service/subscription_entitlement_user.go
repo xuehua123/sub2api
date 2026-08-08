@@ -57,27 +57,16 @@ func (s *SubscriptionEntitlementService) RevokeUserEntitlement(ctx context.Conte
 	if s == nil || s.entitlementRepo == nil || userID <= 0 || entitlementID <= 0 {
 		return ErrSubscriptionEntitlementNotFound
 	}
-	ent, err := s.entitlementRepo.GetByID(ctx, entitlementID)
-	if err != nil {
+	if now.IsZero() {
+		now = s.inputNow(time.Time{})
+	}
+	var invalidationTarget *SubscriptionEntitlement
+	if err := s.withLockedEntitlement(ctx, entitlementID, userID, func(txCtx context.Context, ent *SubscriptionEntitlement) error {
+		invalidationTarget = ent
+		return s.revokeEntitlementAndLinkedAliasLocked(txCtx, ent, now, "revoked by user")
+	}); err != nil {
 		return err
 	}
-	if ent.UserID != userID {
-		return ErrSubscriptionEntitlementNotFound
-	}
-	if ent.Status == SubscriptionStatusRevoked {
-		return nil
-	}
-	if now.IsZero() {
-		now = time.Now()
-	}
-	startsAt := ent.StartsAt
-	if startsAt.After(now) {
-		startsAt = now
-	}
-	expiresAt := ent.ExpiresAt
-	if expiresAt.After(now) {
-		expiresAt = now
-	}
-	notes := appendSubscriptionNotes(ent.Notes, "revoked by user")
-	return s.entitlementRepo.UpdateTerm(ctx, ent.ID, startsAt, expiresAt, SubscriptionStatusRevoked, notes)
+	s.invalidateLinkedLegacyAlias(invalidationTarget)
+	return nil
 }

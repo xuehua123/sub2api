@@ -30,6 +30,10 @@ func (r *subscriptionExpiryRepoStub) GetByIDIncludeDeleted(context.Context, int6
 	return nil, ErrSubscriptionNotFound
 }
 
+func (r *subscriptionExpiryRepoStub) GetByIDIncludeDeletedForUpdate(context.Context, int64) (*UserSubscription, error) {
+	return nil, ErrSubscriptionNotFound
+}
+
 func (r *subscriptionExpiryRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
 	return nil, ErrSubscriptionNotFound
 }
@@ -47,6 +51,10 @@ func (r *subscriptionExpiryRepoStub) Delete(context.Context, int64) error {
 }
 
 func (r *subscriptionExpiryRepoStub) Restore(context.Context, int64, string) (*UserSubscription, error) {
+	return nil, ErrSubscriptionNotFound
+}
+
+func (r *subscriptionExpiryRepoStub) RestoreWithLifecycle(context.Context, int64, UserSubscriptionLifecycleState) (*UserSubscription, error) {
 	return nil, ErrSubscriptionNotFound
 }
 

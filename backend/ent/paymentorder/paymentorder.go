@@ -62,6 +62,10 @@ const (
 	FieldStatus = "status"
 	// FieldRefundAmount holds the string denoting the refund_amount field in the database.
 	FieldRefundAmount = "refund_amount"
+	// FieldProviderRefundAmount holds the string denoting the provider_refund_amount field in the database.
+	FieldProviderRefundAmount = "provider_refund_amount"
+	// FieldChargebackAmount holds the string denoting the chargeback_amount field in the database.
+	FieldChargebackAmount = "chargeback_amount"
 	// FieldRefundReason holds the string denoting the refund_reason field in the database.
 	FieldRefundReason = "refund_reason"
 	// FieldRefundAt holds the string denoting the refund_at field in the database.
@@ -143,6 +147,8 @@ var Columns = []string{
 	FieldProviderSnapshot,
 	FieldStatus,
 	FieldRefundAmount,
+	FieldProviderRefundAmount,
+	FieldChargebackAmount,
 	FieldRefundReason,
 	FieldRefundAt,
 	FieldForceRefund,
@@ -202,6 +208,10 @@ var (
 	StatusValidator func(string) error
 	// DefaultRefundAmount holds the default value on creation for the "refund_amount" field.
 	DefaultRefundAmount float64
+	// DefaultProviderRefundAmount holds the default value on creation for the "provider_refund_amount" field.
+	DefaultProviderRefundAmount float64
+	// DefaultChargebackAmount holds the default value on creation for the "chargeback_amount" field.
+	DefaultChargebackAmount float64
 	// DefaultForceRefund holds the default value on creation for the "force_refund" field.
 	DefaultForceRefund bool
 	// RefundRequestedByValidator is a validator for the "refund_requested_by" field. It is called by the builders before save.
@@ -339,6 +349,16 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByRefundAmount orders the results by the refund_amount field.
 func ByRefundAmount(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRefundAmount, opts...).ToFunc()
+}
+
+// ByProviderRefundAmount orders the results by the provider_refund_amount field.
+func ByProviderRefundAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderRefundAmount, opts...).ToFunc()
+}
+
+// ByChargebackAmount orders the results by the chargeback_amount field.
+func ByChargebackAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldChargebackAmount, opts...).ToFunc()
 }
 
 // ByRefundReason orders the results by the refund_reason field.

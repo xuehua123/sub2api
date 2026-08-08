@@ -148,6 +148,8 @@
             inputmode="numeric"
             pattern="[0-9]*"
             class="input"
+            :class="{ 'border-red-500 focus:border-red-500 focus:ring-red-500': entitlementIDInvalid }"
+            :aria-invalid="entitlementIDInvalid"
             data-test="entitlement-id-filter"
             :placeholder="t('admin.usage.entitlementIdPlaceholder')"
             @input="onEntitlementIDInput"
@@ -196,10 +198,10 @@
         </button>
         <slot name="after-reset" />
         <template v-if="mode === 'usage'">
-          <button type="button" @click="$emit('cleanup')" class="btn btn-danger">
+          <button type="button" @click="$emit('cleanup')" :disabled="entitlementIDInvalid" class="btn btn-danger">
             {{ t('admin.usage.cleanup.button') }}
           </button>
-          <button type="button" @click="$emit('export')" :disabled="exporting" class="btn btn-primary">
+          <button type="button" @click="$emit('export')" :disabled="exporting || entitlementIDInvalid" class="btn btn-primary">
             {{ t('usage.exportExcel') }}
           </button>
         </template>
@@ -228,8 +230,9 @@ interface Props {
   /**
    * errors 模式:隐藏用量专属字段/按钮,显示错误类型+状态码(错误请求 tab 用)
    * ranking 模式:同 usage 但隐藏计费模式筛选与清理/导出按钮(用户排行 tab 用)
+   * cleanup 模式:仅显示清理任务后端支持的筛选字段
    */
-  mode?: 'usage' | 'errors' | 'ranking'
+  mode?: 'usage' | 'errors' | 'ranking' | 'cleanup'
   /** 嵌入统一卡片内使用：去掉自身卡片外观 */
   flat?: boolean
 }
@@ -275,6 +278,12 @@ const accountResults = ref<SimpleAccount[]>([])
 const showAccountDropdown = ref(false)
 let accountSearchTimeout: ReturnType<typeof setTimeout> | null = null
 const entitlementIDInput = ref('')
+const entitlementIDInvalid = computed(() => {
+  const value = entitlementIDInput.value.trim()
+  if (!value) return false
+  if (!/^[1-9]\d*$/.test(value)) return true
+  return !Number.isSafeInteger(Number(value))
+})
 
 const modelOptions = computed<SelectOption[]>(() => [
   { value: null, label: t('admin.usage.allModels') },
@@ -352,12 +361,10 @@ const onEntitlementIDInput = (event: Event) => {
     return
   }
   if (!/^[1-9]\d*$/.test(trimmed)) {
-    setEntitlementIDFilter(undefined)
     return
   }
   const next = Number(trimmed)
   if (!Number.isSafeInteger(next)) {
-    setEntitlementIDFilter(undefined)
     return
   }
   setEntitlementIDFilter(next)
@@ -586,6 +593,7 @@ const setUserKeyword = (email: string) => {
 }
 
 const getUserSearchRevision = () => userSearchSequence
+const hasInvalidEntitlementID = () => entitlementIDInvalid.value
 
-defineExpose({ getUserSearchRevision, setUserKeyword })
+defineExpose({ getUserSearchRevision, hasInvalidEntitlementID, setUserKeyword })
 </script>

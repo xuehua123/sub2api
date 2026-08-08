@@ -193,6 +193,9 @@ func (f fakeGoogleSubscriptionRepo) GetByIDForUpdate(ctx context.Context, id int
 func (f fakeGoogleSubscriptionRepo) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
+func (f fakeGoogleSubscriptionRepo) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
 func (f fakeGoogleSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
@@ -209,6 +212,9 @@ func (f fakeGoogleSubscriptionRepo) Delete(ctx context.Context, id int64) error 
 	return errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) Restore(ctx context.Context, subscriptionID int64, restoredStatus string) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+func (f fakeGoogleSubscriptionRepo) RestoreWithLifecycle(ctx context.Context, subscriptionID int64, state service.UserSubscriptionLifecycleState) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
 func (f fakeGoogleSubscriptionRepo) ListByUserID(ctx context.Context, userID int64) ([]service.UserSubscription, error) {

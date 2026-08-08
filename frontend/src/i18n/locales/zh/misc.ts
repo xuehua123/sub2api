@@ -702,6 +702,7 @@ export default {
       groupRequired: '请选择订阅分组',
       priceRequired: '价格必须大于 0',
       validityRequired: '有效期必须大于 0',
+      validityTooLong: '套餐换算后的有效期不能超过 {days} 天',
       groupMissing: '缺失',
       groupInfo: '分组信息',
       platform: '平台',

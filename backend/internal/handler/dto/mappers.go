@@ -773,16 +773,17 @@ func UsageCleanupTaskFromService(task *service.UsageCleanupTask) *UsageCleanupTa
 		ID:     task.ID,
 		Status: task.Status,
 		Filters: UsageCleanupFilters{
-			StartTime:   task.Filters.StartTime,
-			EndTime:     task.Filters.EndTime,
-			UserID:      task.Filters.UserID,
-			APIKeyID:    task.Filters.APIKeyID,
-			AccountID:   task.Filters.AccountID,
-			GroupID:     task.Filters.GroupID,
-			Model:       task.Filters.Model,
-			RequestType: requestTypeStringPtr(task.Filters.RequestType),
-			Stream:      task.Filters.Stream,
-			BillingType: task.Filters.BillingType,
+			StartTime:     task.Filters.StartTime,
+			EndTime:       task.Filters.EndTime,
+			UserID:        task.Filters.UserID,
+			APIKeyID:      task.Filters.APIKeyID,
+			AccountID:     task.Filters.AccountID,
+			GroupID:       task.Filters.GroupID,
+			EntitlementID: task.Filters.EntitlementID,
+			Model:         task.Filters.Model,
+			RequestType:   requestTypeStringPtr(task.Filters.RequestType),
+			Stream:        task.Filters.Stream,
+			BillingType:   task.Filters.BillingType,
 		},
 		CreatedBy:    task.CreatedBy,
 		DeletedRows:  task.DeletedRows,
@@ -838,6 +839,14 @@ func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) 
 		groupDTO.WeeklyLimitUSD = cloneFloat64(ent.WeeklyLimitUSD)
 		groupDTO.MonthlyLimitUSD = cloneFloat64(ent.MonthlyLimitUSD)
 	}
+	now := time.Now()
+	isActive := ent.IsActiveAt(now)
+	dailyWindowStart := entitlementDailyQuotaWindowStart(ent.DailyWindowStart, ent.StartsAt, ent.DailyLimitUSD, now, ent.HasOneTimeDailyQuota(), isActive)
+	dailyUsageUSD := ent.DailyUsageUSD
+	if isActive && ent.NeedsDailyResetAt(now) {
+		dailyUsageUSD = 0
+	}
+	dailyResetsAt, _ := entitlementDailyWindowReset(dailyWindowStart, ent.ExpiresAt, now, ent.HasOneTimeDailyQuota())
 	return &UserSubscriptionAlias{
 		ID:                 *ent.LegacySubscriptionID,
 		UserID:             ent.UserID,
@@ -845,10 +854,11 @@ func UserSubscriptionAliasFromEntitlement(ent *service.SubscriptionEntitlement) 
 		StartsAt:           ent.StartsAt,
 		ExpiresAt:          ent.ExpiresAt,
 		Status:             ent.Status,
-		DailyWindowStart:   cloneTime(ent.DailyWindowStart),
+		DailyWindowStart:   cloneTime(dailyWindowStart),
+		DailyResetsAt:      dailyResetsAt,
 		WeeklyWindowStart:  cloneTime(ent.WeeklyWindowStart),
 		MonthlyWindowStart: cloneTime(ent.MonthlyWindowStart),
-		DailyUsageUSD:      ent.DailyUsageUSD,
+		DailyUsageUSD:      dailyUsageUSD,
 		WeeklyUsageUSD:     ent.WeeklyUsageUSD,
 		MonthlyUsageUSD:    ent.MonthlyUsageUSD,
 		DailyLimitUSD:      cloneFloat64(ent.DailyLimitUSD),
@@ -948,6 +958,7 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 	if sub.EntitlementLink != nil {
 		applyAdminEntitlementQuota(&base, sub.EntitlementLink)
 	}
+	applyUserSubscriptionDailyReset(&base, time.Now())
 	return &AdminUserSubscription{
 		UserSubscription:          base,
 		AssignedBy:                sub.AssignedBy,
@@ -965,6 +976,24 @@ func UserSubscriptionFromServiceAdmin(sub *service.UserSubscription) *AdminUserS
 		EntitlementPrimaryGroupID: cloneInt64(adminSubscriptionEntitlementPrimaryGroupID(sub.EntitlementLink)),
 		EntitlementOveragePolicy:  cloneString(adminSubscriptionEntitlementOveragePolicy(sub.EntitlementLink)),
 	}
+}
+
+func applyUserSubscriptionDailyReset(out *UserSubscription, now time.Time) {
+	if out == nil || out.DailyWindowStart == nil {
+		return
+	}
+	oneTimeDaily := !out.StartsAt.IsZero() && !out.ExpiresAt.IsZero() && !out.ExpiresAt.After(out.StartsAt.AddDate(0, 0, 1))
+	windowStart := timezone.StartOfDay(*out.DailyWindowStart)
+	isActive := out.Status == service.SubscriptionStatusActive && !now.Before(out.StartsAt) && now.Before(out.ExpiresAt)
+	if isActive && !oneTimeDaily {
+		today := timezone.StartOfDay(now)
+		if today.After(windowStart) {
+			windowStart = today
+			out.DailyUsageUSD = 0
+		}
+	}
+	out.DailyWindowStart = cloneTime(&windowStart)
+	out.DailyResetsAt, _ = entitlementDailyWindowReset(out.DailyWindowStart, out.ExpiresAt, now, oneTimeDaily)
 }
 
 func applyAdminEntitlementQuota(out *UserSubscription, link *service.UserSubscriptionEntitlementLink) {
@@ -1276,7 +1305,7 @@ func cloneTime(v *time.Time) *time.Time {
 }
 
 func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscription {
-	return UserSubscription{
+	out := UserSubscription{
 		ID:                 sub.ID,
 		UserID:             sub.UserID,
 		GroupID:            sub.GroupID,
@@ -1295,6 +1324,8 @@ func userSubscriptionFromServiceBase(sub *service.UserSubscription) UserSubscrip
 		User:               UserFromServiceShallow(sub.User),
 		Group:              GroupFromServiceShallow(sub.Group),
 	}
+	applyUserSubscriptionDailyReset(&out, time.Now())
+	return out
 }
 
 func BulkAssignResultFromService(r *service.BulkAssignResult) *BulkAssignResult {

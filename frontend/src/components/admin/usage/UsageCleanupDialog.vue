@@ -2,11 +2,13 @@
   <BaseDialog :show="show" :title="t('admin.usage.cleanup.title')" width="wide" @close="handleClose">
     <div class="space-y-4">
       <UsageFilters
+        ref="usageFiltersRef"
         v-model="localFilters"
         v-model:startDate="localStartDate"
         v-model:endDate="localEndDate"
         :exporting="false"
         :show-actions="false"
+        mode="cleanup"
         @change="noop"
       />
 
@@ -143,6 +145,7 @@ const appStore = useAppStore()
 const localFilters = ref<AdminUsageQueryParams>({})
 const localStartDate = ref('')
 const localEndDate = ref('')
+const usageFiltersRef = ref<{ hasInvalidEntitlementID: () => boolean } | null>(null)
 
 const tasks = ref<UsageCleanupTask[]>([])
 const tasksLoading = ref(false)
@@ -289,6 +292,10 @@ const buildPayload = (): CreateUsageCleanupTaskRequest | null => {
     appStore.showError(t('admin.usage.cleanup.missingRange'))
     return null
   }
+  if (usageFiltersRef.value?.hasInvalidEntitlementID()) {
+    appStore.showError(t('admin.usage.cleanup.invalidEntitlementId'))
+    return null
+  }
 
   const payload: CreateUsageCleanupTaskRequest = {
     start_date: localStartDate.value,
@@ -307,6 +314,14 @@ const buildPayload = (): CreateUsageCleanupTaskRequest | null => {
   }
   if (localFilters.value.group_id && localFilters.value.group_id > 0) {
     payload.group_id = localFilters.value.group_id
+  }
+  const entitlementID = localFilters.value.entitlement_id
+  if (entitlementID !== null && entitlementID !== undefined) {
+    if (!Number.isSafeInteger(entitlementID) || entitlementID <= 0) {
+      appStore.showError(t('admin.usage.cleanup.invalidEntitlementId'))
+      return null
+    }
+    payload.entitlement_id = entitlementID
   }
   if (localFilters.value.model) {
     payload.model = localFilters.value.model

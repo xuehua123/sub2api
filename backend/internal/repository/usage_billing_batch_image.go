@@ -265,6 +265,9 @@ func reserveUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, c
 	if cmd.EntitlementID == nil {
 		return nil, service.ErrSubscriptionEntitlementNotFound
 	}
+	if err := lockSubscriptionEntitlementUserMutation(ctx, tx, cmd.UserID); err != nil {
+		return nil, err
+	}
 	state, err := lockUsageBillingEntitlement(ctx, tx, *cmd.EntitlementID)
 	if err != nil {
 		return nil, err
@@ -306,6 +309,10 @@ func reserveUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, c
 	usage.dailyUsageUSD += cmd.HoldAmount
 	usage.weeklyUsageUSD += cmd.HoldAmount
 	usage.monthlyUsageUSD += cmd.HoldAmount
+	linkedAlias, err := lockUsageBillingLinkedLegacyAlias(ctx, tx, state.LegacySubscriptionID, cmd.UserID)
+	if err != nil {
+		return nil, err
+	}
 	res, err := tx.ExecContext(ctx, `
 		UPDATE subscription_entitlements
 		SET daily_window_start = $1,
@@ -333,6 +340,9 @@ func reserveUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, c
 		return nil, err
 	} else if affected == 0 {
 		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	if _, err := syncUsageBillingLinkedLegacyAlias(ctx, tx, linkedAlias, usage); err != nil {
+		return nil, err
 	}
 	return &service.BatchImageBalanceHoldResult{
 		BillingSource:          service.BillingSourceEntitlementQuota,
@@ -394,7 +404,22 @@ func settleUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, cm
 	if refundAmount <= batchImageBillingEpsilon {
 		return &service.BatchImageBalanceHoldResult{BillingSource: service.BillingSourceEntitlementQuota}, nil
 	}
-	res, err := tx.ExecContext(ctx, `
+	if err := lockSubscriptionEntitlementUserMutation(ctx, tx, cmd.UserID); err != nil {
+		return nil, err
+	}
+	state, err := lockUsageBillingEntitlement(ctx, tx, *cmd.EntitlementID)
+	if err != nil {
+		return nil, err
+	}
+	if state.UserID != cmd.UserID {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
+	linkedAlias, err := lockUsageBillingLinkedLegacyAliasIncludingDeleted(ctx, tx, state.LegacySubscriptionID, cmd.UserID)
+	if err != nil {
+		return nil, err
+	}
+	usage := usageBillingEntitlementWindowUsage{}
+	err = tx.QueryRowContext(ctx, `
 		UPDATE subscription_entitlements
 		SET daily_usage_usd = CASE
 				WHEN $1::timestamptz IS NOT NULL AND daily_window_start = $1 THEN GREATEST(0, daily_usage_usd - $4)
@@ -407,6 +432,8 @@ func settleUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, cm
 				ELSE monthly_usage_usd END,
 			updated_at = NOW()
 		WHERE id = $5 AND user_id = $6
+		RETURNING daily_window_start, weekly_window_start, monthly_window_start,
+			daily_usage_usd, weekly_usage_usd, monthly_usage_usd
 	`,
 		timePtrArg(cmd.HeldDailyWindowStart),
 		timePtrArg(cmd.HeldWeeklyWindowStart),
@@ -414,14 +441,22 @@ func settleUsageBillingBatchImageEntitlement(ctx context.Context, tx *sql.Tx, cm
 		refundAmount,
 		*cmd.EntitlementID,
 		cmd.UserID,
+	).Scan(
+		&usage.dailyWindowStart,
+		&usage.weeklyWindowStart,
+		&usage.monthlyWindowStart,
+		&usage.dailyUsageUSD,
+		&usage.weeklyUsageUSD,
+		&usage.monthlyUsageUSD,
 	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, service.ErrSubscriptionEntitlementNotFound
+	}
 	if err != nil {
 		return nil, err
 	}
-	if affected, err := res.RowsAffected(); err != nil {
+	if _, err := syncUsageBillingLinkedLegacyAlias(ctx, tx, linkedAlias, usage); err != nil {
 		return nil, err
-	} else if affected == 0 {
-		return nil, service.ErrSubscriptionEntitlementNotFound
 	}
 	return &service.BatchImageBalanceHoldResult{BillingSource: service.BillingSourceEntitlementQuota}, nil
 }

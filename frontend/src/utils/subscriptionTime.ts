@@ -1,6 +1,7 @@
 import { getRemainingDurationParts } from './subscriptionQuota'
 
 export type PlanValidityUnit = 'day' | 'week' | 'month' | 'year'
+export const MAX_PLAN_VALIDITY_DAYS = 36500
 
 export function formatRemainingDurationCompact(
   targetAt: Date | string,
@@ -43,6 +44,20 @@ export function parsePlanValidityUnit(unit: string | null | undefined): PlanVali
       return 'year'
     default:
       return null
+  }
+}
+
+export function getPlanValidityDays(days: number, unit: string | null | undefined): number {
+  const value = Number.isFinite(days) && days > 0 ? days : 0
+  switch (parsePlanValidityUnit(unit)) {
+    case 'week':
+      return value * 7
+    case 'month':
+      return value * 30
+    case 'year':
+      return value * 365
+    default:
+      return value
   }
 }
 

@@ -210,7 +210,7 @@
               >
                 <span>{{ t('admin.subscriptions.planId', { id: resolveSubscriptionPlan(row)?.id }) }}</span>
                 <span>/</span>
-                <span>{{ formatPlanValidity(resolveSubscriptionPlan(row)?.validity_days) }}</span>
+                <span>{{ formatPlanValidity(getPlanValidityDays(resolveSubscriptionPlan(row)?.validity_days || 0, resolveSubscriptionPlan(row)?.validity_unit)) }}</span>
               </div>
               <div v-else class="mt-1 text-xs text-gray-500 dark:text-dark-300">
                 {{ t('admin.subscriptions.legacyGroup') }}
@@ -573,7 +573,7 @@
         </div>
         <div>
           <label class="input-label">{{ t('admin.subscriptions.form.validityDays') }}</label>
-          <input v-model.number="assignForm.validity_days" type="number" min="1" class="input" />
+          <input v-model.number="assignForm.validity_days" type="number" min="1" :max="MAX_PLAN_VALIDITY_DAYS" class="input" />
           <p class="input-hint">{{ t('admin.subscriptions.validityHint') }}</p>
         </div>
       </form>
@@ -1070,7 +1070,7 @@ import {
   isOneTimeDailyQuota,
   type RemainingDurationParts
 } from '@/utils/subscriptionQuota'
-import { formatRemainingDurationCompact, getCycleResetAt, getRemainingHours } from '@/utils/subscriptionTime'
+import { formatRemainingDurationCompact, getCycleResetAt, getPlanValidityDays, getRemainingHours, MAX_PLAN_VALIDITY_DAYS } from '@/utils/subscriptionTime'
 import {
   normalizeSubscriptionPlans,
   subscriptionDisplayName,
@@ -1348,7 +1348,7 @@ const subscriptionPlanOptions = computed<PlanOption[]>(() =>
       value: plan.id,
       label: getPlanDisplayName(plan),
       planId: plan.id,
-      validityDays: plan.validity_days,
+      validityDays: getPlanValidityDays(plan.validity_days, plan.validity_unit),
       groupCount: groupIds.length,
       disabled: groupIds.length === 0
     }
@@ -1804,7 +1804,9 @@ const handleAssignPlanChange = (value: string | number | boolean | null) => {
   const planID = typeof value === 'number' ? value : Number(value)
   const plan = Number.isFinite(planID) ? planByID.value.get(planID) : null
   assignForm.group_id = getPlanPrimaryGroupID(plan)
-  assignForm.validity_days = plan?.validity_days || 30
+  assignForm.validity_days = plan
+    ? getPlanValidityDays(plan.validity_days, plan.validity_unit)
+    : 30
 }
 
 const handleAssignSubscription = async () => {
@@ -1822,6 +1824,10 @@ const handleAssignSubscription = async () => {
   }
   if (!assignForm.validity_days || assignForm.validity_days < 1) {
     appStore.showError(t('admin.subscriptions.validityDaysRequired'))
+    return
+  }
+  if (assignForm.validity_days > MAX_PLAN_VALIDITY_DAYS) {
+    appStore.showError(t('admin.subscriptions.validityDaysTooLong', { days: MAX_PLAN_VALIDITY_DAYS }))
     return
   }
 
@@ -2135,6 +2141,11 @@ const formatDailyUsageWindow = (subscription: UserSubscription): string => {
   if (isOneTimeDailyQuota(subscription) && subscription.expires_at) {
     const parts = getRemainingDurationParts(subscription.expires_at)
     return parts ? formatQuotaEndDuration(parts) : t('admin.subscriptions.windowNotActive')
+  }
+
+  if (subscription.daily_resets_at) {
+    const parts = getRemainingDurationParts(subscription.daily_resets_at)
+    return parts ? formatResetDuration(parts) : t('admin.subscriptions.windowNotActive')
   }
 
   return formatResetTime(subscription.daily_window_start, subscription.starts_at, 'daily')

@@ -37632,6 +37632,10 @@ type PaymentOrderMutation struct {
 	status                          *string
 	refund_amount                   *float64
 	addrefund_amount                *float64
+	provider_refund_amount          *float64
+	addprovider_refund_amount       *float64
+	chargeback_amount               *float64
+	addchargeback_amount            *float64
 	refund_reason                   *string
 	refund_at                       *time.Time
 	force_refund                    *bool
@@ -38906,6 +38910,118 @@ func (m *PaymentOrderMutation) ResetRefundAmount() {
 	m.addrefund_amount = nil
 }
 
+// SetProviderRefundAmount sets the "provider_refund_amount" field.
+func (m *PaymentOrderMutation) SetProviderRefundAmount(f float64) {
+	m.provider_refund_amount = &f
+	m.addprovider_refund_amount = nil
+}
+
+// ProviderRefundAmount returns the value of the "provider_refund_amount" field in the mutation.
+func (m *PaymentOrderMutation) ProviderRefundAmount() (r float64, exists bool) {
+	v := m.provider_refund_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderRefundAmount returns the old "provider_refund_amount" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldProviderRefundAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderRefundAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderRefundAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderRefundAmount: %w", err)
+	}
+	return oldValue.ProviderRefundAmount, nil
+}
+
+// AddProviderRefundAmount adds f to the "provider_refund_amount" field.
+func (m *PaymentOrderMutation) AddProviderRefundAmount(f float64) {
+	if m.addprovider_refund_amount != nil {
+		*m.addprovider_refund_amount += f
+	} else {
+		m.addprovider_refund_amount = &f
+	}
+}
+
+// AddedProviderRefundAmount returns the value that was added to the "provider_refund_amount" field in this mutation.
+func (m *PaymentOrderMutation) AddedProviderRefundAmount() (r float64, exists bool) {
+	v := m.addprovider_refund_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetProviderRefundAmount resets all changes to the "provider_refund_amount" field.
+func (m *PaymentOrderMutation) ResetProviderRefundAmount() {
+	m.provider_refund_amount = nil
+	m.addprovider_refund_amount = nil
+}
+
+// SetChargebackAmount sets the "chargeback_amount" field.
+func (m *PaymentOrderMutation) SetChargebackAmount(f float64) {
+	m.chargeback_amount = &f
+	m.addchargeback_amount = nil
+}
+
+// ChargebackAmount returns the value of the "chargeback_amount" field in the mutation.
+func (m *PaymentOrderMutation) ChargebackAmount() (r float64, exists bool) {
+	v := m.chargeback_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldChargebackAmount returns the old "chargeback_amount" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldChargebackAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldChargebackAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldChargebackAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldChargebackAmount: %w", err)
+	}
+	return oldValue.ChargebackAmount, nil
+}
+
+// AddChargebackAmount adds f to the "chargeback_amount" field.
+func (m *PaymentOrderMutation) AddChargebackAmount(f float64) {
+	if m.addchargeback_amount != nil {
+		*m.addchargeback_amount += f
+	} else {
+		m.addchargeback_amount = &f
+	}
+}
+
+// AddedChargebackAmount returns the value that was added to the "chargeback_amount" field in this mutation.
+func (m *PaymentOrderMutation) AddedChargebackAmount() (r float64, exists bool) {
+	v := m.addchargeback_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetChargebackAmount resets all changes to the "chargeback_amount" field.
+func (m *PaymentOrderMutation) ResetChargebackAmount() {
+	m.chargeback_amount = nil
+	m.addchargeback_amount = nil
+}
+
 // SetRefundReason sets the "refund_reason" field.
 func (m *PaymentOrderMutation) SetRefundReason(s string) {
 	m.refund_reason = &s
@@ -39700,7 +39816,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 40)
+	fields := make([]string, 0, 42)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -39772,6 +39888,12 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.refund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
+	}
+	if m.provider_refund_amount != nil {
+		fields = append(fields, paymentorder.FieldProviderRefundAmount)
+	}
+	if m.chargeback_amount != nil {
+		fields = append(fields, paymentorder.FieldChargebackAmount)
 	}
 	if m.refund_reason != nil {
 		fields = append(fields, paymentorder.FieldRefundReason)
@@ -39877,6 +39999,10 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.Status()
 	case paymentorder.FieldRefundAmount:
 		return m.RefundAmount()
+	case paymentorder.FieldProviderRefundAmount:
+		return m.ProviderRefundAmount()
+	case paymentorder.FieldChargebackAmount:
+		return m.ChargebackAmount()
 	case paymentorder.FieldRefundReason:
 		return m.RefundReason()
 	case paymentorder.FieldRefundAt:
@@ -39966,6 +40092,10 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldStatus(ctx)
 	case paymentorder.FieldRefundAmount:
 		return m.OldRefundAmount(ctx)
+	case paymentorder.FieldProviderRefundAmount:
+		return m.OldProviderRefundAmount(ctx)
+	case paymentorder.FieldChargebackAmount:
+		return m.OldChargebackAmount(ctx)
 	case paymentorder.FieldRefundReason:
 		return m.OldRefundReason(ctx)
 	case paymentorder.FieldRefundAt:
@@ -40175,6 +40305,20 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetRefundAmount(v)
 		return nil
+	case paymentorder.FieldProviderRefundAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderRefundAmount(v)
+		return nil
+	case paymentorder.FieldChargebackAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetChargebackAmount(v)
+		return nil
 	case paymentorder.FieldRefundReason:
 		v, ok := value.(string)
 		if !ok {
@@ -40316,6 +40460,12 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addrefund_amount != nil {
 		fields = append(fields, paymentorder.FieldRefundAmount)
 	}
+	if m.addprovider_refund_amount != nil {
+		fields = append(fields, paymentorder.FieldProviderRefundAmount)
+	}
+	if m.addchargeback_amount != nil {
+		fields = append(fields, paymentorder.FieldChargebackAmount)
+	}
 	return fields
 }
 
@@ -40338,6 +40488,10 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedSubscriptionDays()
 	case paymentorder.FieldRefundAmount:
 		return m.AddedRefundAmount()
+	case paymentorder.FieldProviderRefundAmount:
+		return m.AddedProviderRefundAmount()
+	case paymentorder.FieldChargebackAmount:
+		return m.AddedChargebackAmount()
 	}
 	return nil, false
 }
@@ -40395,6 +40549,20 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddRefundAmount(v)
+		return nil
+	case paymentorder.FieldProviderRefundAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddProviderRefundAmount(v)
+		return nil
+	case paymentorder.FieldChargebackAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddChargebackAmount(v)
 		return nil
 	}
 	return fmt.Errorf("unknown PaymentOrder numeric field %s", name)
@@ -40623,6 +40791,12 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldRefundAmount:
 		m.ResetRefundAmount()
+		return nil
+	case paymentorder.FieldProviderRefundAmount:
+		m.ResetProviderRefundAmount()
+		return nil
+	case paymentorder.FieldChargebackAmount:
+		m.ResetChargebackAmount()
 		return nil
 	case paymentorder.FieldRefundReason:
 		m.ResetRefundReason()

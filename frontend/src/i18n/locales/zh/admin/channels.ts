@@ -687,6 +687,7 @@ export default {
       pleaseSelectUser: '请选择用户',
       pleaseSelectGroup: '请选择分组',
       validityDaysRequired: '请输入有效的天数（至少1天）',
+      validityDaysTooLong: '有效期不能超过 {days} 天',
       revokeConfirm: '确定要撤销 \'{user}\' 的套餐吗？可稍后在已撤销列表中恢复。',
       restoreConfirm: '确定要恢复 \'{user}\' 的套餐吗？如果原套餐已过期，恢复后将显示为已过期。',
       guide: {

@@ -592,6 +592,7 @@ export default {
         range: 'Range',
         deletedRows: 'Deleted',
         missingRange: 'Please select a date range',
+        invalidEntitlementId: 'Enter a positive whole-number entitlement ID before cleaning up',
         submitSuccess: 'Cleanup task created',
         submitFailed: 'Failed to create cleanup task',
         loadFailed: 'Failed to load cleanup tasks',

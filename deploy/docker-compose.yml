@@ -18,7 +18,7 @@ services:
   sub2api:
     # Require an explicitly pinned image so this generic Compose entrypoint
     # cannot silently replace the fork with upstream's floating latest tag.
-    image: ${SUB2API_IMAGE:?Set SUB2API_IMAGE to a CI-built immutable ghcr.io/xuehua123/sub2api:sha-* image}
+    image: ${SUB2API_IMAGE:?Set SUB2API_IMAGE to a CI-built immutable ghcr.io/xuehua123/sub2api@sha256 digest}
     container_name: sub2api
     restart: unless-stopped
     security_opt:
@@ -63,6 +63,7 @@ services:
       - RUN_MODE=${RUN_MODE:-standard}
       - UPDATE_GITHUB_TOKEN=${UPDATE_GITHUB_TOKEN:-}
       - ALIPAY_MOBILE_PRECREATE_DEEP_LINK=${ALIPAY_MOBILE_PRECREATE_DEEP_LINK:-}
+      - AFFILIATE_REFUND_REVERSAL_ENABLED=${AFFILIATE_REFUND_REVERSAL_ENABLED:-false}
 
       # =======================================================================
       # Database Configuration (PostgreSQL)

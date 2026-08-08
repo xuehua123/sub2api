@@ -44,17 +44,18 @@ func NewUsageHandler(
 
 // CreateUsageCleanupTaskRequest represents cleanup task creation request
 type CreateUsageCleanupTaskRequest struct {
-	StartDate   string  `json:"start_date"`
-	EndDate     string  `json:"end_date"`
-	UserID      *int64  `json:"user_id"`
-	APIKeyID    *int64  `json:"api_key_id"`
-	AccountID   *int64  `json:"account_id"`
-	GroupID     *int64  `json:"group_id"`
-	Model       *string `json:"model"`
-	RequestType *string `json:"request_type"`
-	Stream      *bool   `json:"stream"`
-	BillingType *int8   `json:"billing_type"`
-	Timezone    string  `json:"timezone"`
+	StartDate     string  `json:"start_date"`
+	EndDate       string  `json:"end_date"`
+	UserID        *int64  `json:"user_id"`
+	APIKeyID      *int64  `json:"api_key_id"`
+	AccountID     *int64  `json:"account_id"`
+	GroupID       *int64  `json:"group_id"`
+	EntitlementID *int64  `json:"entitlement_id,omitempty"`
+	Model         *string `json:"model"`
+	RequestType   *string `json:"request_type"`
+	Stream        *bool   `json:"stream"`
+	BillingType   *int8   `json:"billing_type"`
+	Timezone      string  `json:"timezone"`
 }
 
 // List handles listing all usage records with filters
@@ -512,8 +513,19 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	}
 	req.StartDate = strings.TrimSpace(req.StartDate)
 	req.EndDate = strings.TrimSpace(req.EndDate)
+	req.Timezone = strings.TrimSpace(req.Timezone)
 	if req.StartDate == "" || req.EndDate == "" {
 		response.BadRequest(c, "start_date and end_date are required")
+		return
+	}
+	if req.Timezone != "" {
+		if _, err := time.LoadLocation(req.Timezone); err != nil {
+			response.BadRequest(c, "Invalid timezone")
+			return
+		}
+	}
+	if req.EntitlementID != nil && *req.EntitlementID <= 0 {
+		response.ErrorFrom(c, service.ErrUsageCleanupInvalidEntitlementID)
 		return
 	}
 
@@ -527,7 +539,9 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 		response.BadRequest(c, "Invalid end_date format, use YYYY-MM-DD")
 		return
 	}
-	endTime = endTime.Add(24*time.Hour - time.Nanosecond)
+	// Store an exclusive end at the next local calendar midnight, not a fixed
+	// 24-hour duration. This is unambiguous across DST and database precision.
+	endTime = endTime.AddDate(0, 0, 1)
 
 	var requestType *int16
 	stream := req.Stream
@@ -543,16 +557,17 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	}
 
 	filters := service.UsageCleanupFilters{
-		StartTime:   startTime,
-		EndTime:     endTime,
-		UserID:      req.UserID,
-		APIKeyID:    req.APIKeyID,
-		AccountID:   req.AccountID,
-		GroupID:     req.GroupID,
-		Model:       req.Model,
-		RequestType: requestType,
-		Stream:      stream,
-		BillingType: req.BillingType,
+		StartTime:     startTime,
+		EndTime:       endTime,
+		UserID:        req.UserID,
+		APIKeyID:      req.APIKeyID,
+		AccountID:     req.AccountID,
+		GroupID:       req.GroupID,
+		EntitlementID: req.EntitlementID,
+		Model:         req.Model,
+		RequestType:   requestType,
+		Stream:        stream,
+		BillingType:   req.BillingType,
 	}
 
 	var userID any
@@ -570,6 +585,10 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 	var groupID any
 	if filters.GroupID != nil {
 		groupID = *filters.GroupID
+	}
+	var entitlementID any
+	if filters.EntitlementID != nil {
+		entitlementID = *filters.EntitlementID
 	}
 	var model any
 	if filters.Model != nil {
@@ -596,7 +615,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 		Body:       req,
 	}
 	executeAdminIdempotentJSON(c, "admin.usage.cleanup_tasks.create", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
-		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v model=%v request_type=%v stream=%v billing_type=%v tz=%q",
+		logger.LegacyPrintf("handler.admin.usage", "[UsageCleanup] 请求创建清理任务: operator=%d start=%s end=%s user_id=%v api_key_id=%v account_id=%v group_id=%v entitlement_id=%v model=%v request_type=%v stream=%v billing_type=%v tz=%q",
 			subject.UserID,
 			filters.StartTime.Format(time.RFC3339),
 			filters.EndTime.Format(time.RFC3339),
@@ -604,6 +623,7 @@ func (h *UsageHandler) CreateCleanupTask(c *gin.Context) {
 			apiKeyID,
 			accountID,
 			groupID,
+			entitlementID,
 			model,
 			requestTypeName,
 			streamValue,

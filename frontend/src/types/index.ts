@@ -1767,6 +1767,7 @@ export interface UsageCleanupFilters {
   api_key_id?: number
   account_id?: number
   group_id?: number
+  entitlement_id?: number
   model?: string | null
   request_type?: UsageRequestType | null
   stream?: boolean | null
@@ -2037,6 +2038,7 @@ export interface UserSubscription {
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
   daily_window_start: string | null
+  daily_resets_at?: string | null
   weekly_window_start: string | null
   monthly_window_start: string | null
   created_at: string

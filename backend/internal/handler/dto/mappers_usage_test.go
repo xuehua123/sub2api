@@ -121,6 +121,18 @@ func TestUsageCleanupTaskFromService_RequestTypeMapping(t *testing.T) {
 	require.Equal(t, "stream", *dtoTask.Filters.RequestType)
 }
 
+func TestUsageCleanupTaskFromService_PreservesEntitlementFilter(t *testing.T) {
+	t.Parallel()
+	entitlementID := int64(42)
+	task := &service.UsageCleanupTask{
+		Filters: service.UsageCleanupFilters{EntitlementID: &entitlementID},
+	}
+
+	dtoTask := UsageCleanupTaskFromService(task)
+	require.NotNil(t, dtoTask)
+	require.Equal(t, task.Filters.EntitlementID, dtoTask.Filters.EntitlementID)
+}
+
 func TestRequestTypeStringPtrNil(t *testing.T) {
 	t.Parallel()
 	require.Nil(t, requestTypeStringPtr(nil))

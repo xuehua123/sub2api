@@ -166,6 +166,9 @@ func (userSubRepoNoop) GetByIDForUpdate(context.Context, int64) (*UserSubscripti
 func (userSubRepoNoop) GetByIDIncludeDeleted(context.Context, int64) (*UserSubscription, error) {
 	panic("unexpected GetByIDIncludeDeleted call")
 }
+func (userSubRepoNoop) GetByIDIncludeDeletedForUpdate(context.Context, int64) (*UserSubscription, error) {
+	panic("unexpected GetByIDIncludeDeletedForUpdate call")
+}
 func (userSubRepoNoop) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
 	panic("unexpected GetByUserIDAndGroupID call")
 }
@@ -178,6 +181,9 @@ func (userSubRepoNoop) Update(context.Context, *UserSubscription) error {
 func (userSubRepoNoop) Delete(context.Context, int64) error { panic("unexpected Delete call") }
 func (userSubRepoNoop) Restore(context.Context, int64, string) (*UserSubscription, error) {
 	panic("unexpected Restore call")
+}
+func (userSubRepoNoop) RestoreWithLifecycle(context.Context, int64, UserSubscriptionLifecycleState) (*UserSubscription, error) {
+	panic("unexpected RestoreWithLifecycle call")
 }
 func (userSubRepoNoop) ListByUserID(context.Context, int64) ([]UserSubscription, error) {
 	panic("unexpected ListByUserID call")
@@ -306,7 +312,7 @@ func (s *subscriptionUserSubRepoStub) Create(_ context.Context, sub *UserSubscri
 
 func (s *subscriptionUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
 	sub := s.byID[id]
-	if sub == nil {
+	if sub == nil || sub.DeletedAt != nil {
 		return nil, ErrSubscriptionNotFound
 	}
 	cp := *sub
@@ -315,6 +321,19 @@ func (s *subscriptionUserSubRepoStub) GetByID(_ context.Context, id int64) (*Use
 
 func (s *subscriptionUserSubRepoStub) GetByIDForUpdate(ctx context.Context, id int64) (*UserSubscription, error) {
 	return s.GetByID(ctx, id)
+}
+
+func (s *subscriptionUserSubRepoStub) GetByIDIncludeDeleted(ctx context.Context, id int64) (*UserSubscription, error) {
+	sub := s.byID[id]
+	if sub == nil {
+		return nil, ErrSubscriptionNotFound
+	}
+	cp := *sub
+	return &cp, nil
+}
+
+func (s *subscriptionUserSubRepoStub) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*UserSubscription, error) {
+	return s.GetByIDIncludeDeleted(ctx, id)
 }
 
 func (s *subscriptionUserSubRepoStub) Update(_ context.Context, sub *UserSubscription) error {
@@ -721,6 +740,30 @@ func TestAssignSubscriptionV2PlanCreatesEntitlementWithLegacySubscriptionID(t *t
 	require.Equal(t, []int64{1, 2}, entitlementGroupIDs(ent))
 	require.NotNil(t, ent.SourceExternalID)
 	require.Equal(t, adminAssignEntitlementSourceExternalID(sub.ID, 77), *ent.SourceExternalID)
+}
+
+func TestAssignSubscriptionV2PlanUsesLegacyDefaultValidityForBothAliasRowsWhenOverrideOmitted(t *testing.T) {
+	now := time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	plan := testEntitlementPlan(77, []int64{1, 2}, nil)
+	plan.ValidityDays = 2
+	plan.ValidityUnit = validityUnitWeek
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{77: plan}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+
+	sub, err := svc.AssignSubscription(context.Background(), &AssignSubscriptionInput{
+		UserID:     3012,
+		GroupID:    1,
+		PlanID:     77,
+		AssignedBy: 9,
+		Notes:      "admin-plan-default-validity",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, sub.StartsAt.AddDate(0, 0, 30), sub.ExpiresAt)
+	ent := requireTestEntitlementByLegacy(t, entRepo, sub.ID, 77)
+	require.Equal(t, ent.StartsAt.AddDate(0, 0, 30), ent.ExpiresAt)
+	require.WithinDuration(t, sub.ExpiresAt, ent.ExpiresAt, time.Second)
 }
 
 func TestAssignSubscriptionV2PlanReplayDoesNotDuplicateEntitlement(t *testing.T) {

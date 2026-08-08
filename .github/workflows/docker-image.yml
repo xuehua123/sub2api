@@ -19,9 +19,11 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 concurrency:
-  group: sub2api-image-${{ github.event_name == 'workflow_run' && 'main' || inputs.ref || github.sha }}
+  group: sub2api-image-${{ github.event_name }}-${{ github.event_name == 'workflow_run' && 'main' || inputs.ref || github.sha }}
   cancel-in-progress: true
 
 env:
@@ -39,7 +41,7 @@ jobs:
 
     steps:
       - name: Checkout the tested commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.ref }}
 
@@ -67,10 +69,43 @@ jobs:
             is_current_main=true
           fi
 
+          affiliate_refund_reversal_capability=0
+          payment_reversal_components_capability=0
+          trusted_release=false
+          trusted_ci_label=0
+          if [ "${{ github.event_name }}" = "workflow_run" ] \
+            && [ "$is_current_main" = true ]; then
+            trusted_release=true
+            trusted_ci_label=1
+            if grep -Fxq 'AFFILIATE_REFUND_REVERSAL=1' deploy/image-capabilities.txt; then
+              affiliate_refund_reversal_capability=1
+            fi
+            if grep -Fxq 'PAYMENT_REVERSAL_COMPONENTS=1' deploy/image-capabilities.txt; then
+              payment_reversal_components_capability=1
+            fi
+          fi
+
           if [ "${{ github.event_name }}" = "workflow_run" ] && [ "$is_current_main" != true ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
             echo "Skipping stale tested commit $source_sha; current main is $current_main_sha." >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+
+          if [ "$trusted_release" = true ]; then
+            existing_release_commit="$(
+              git ls-remote origin \
+                "refs/tags/${release_tag}" \
+                "refs/tags/${release_tag}^{}" |
+                awk '
+                  $2 ~ /\^\{\}$/ { peeled = $1; next }
+                  { direct = $1 }
+                  END { print peeled != "" ? peeled : direct }
+                '
+            )"
+            if [ -n "$existing_release_commit" ] && [ "$existing_release_commit" != "$source_sha" ]; then
+              echo "Release tag ${release_tag} already points to ${existing_release_commit}; refusing to move it to ${source_sha}. Bump backend/cmd/server/VERSION." >&2
+              exit 1
+            fi
           fi
 
           {
@@ -81,30 +116,37 @@ jobs:
             echo "release_tag=$release_tag"
             echo "build_date=$build_date"
             echo "is_current_main=$is_current_main"
+            echo "trusted_release=$trusted_release"
+            echo "trusted_ci_label=$trusted_ci_label"
+            echo "affiliate_refund_reversal_capability=$affiliate_refund_reversal_capability"
+            echo "payment_reversal_components_capability=$payment_reversal_components_capability"
             echo "tags<<EOF"
-            echo "${IMAGE_NAME}:sha-${short_sha}"
-            echo "${IMAGE_NAME}:${version}"
-            if [ "$is_current_main" = true ]; then
+            if [ "$trusted_release" = true ]; then
+              echo "${IMAGE_NAME}:sha-${short_sha}"
+              echo "${IMAGE_NAME}:${version}"
               echo "${IMAGE_NAME}:latest"
+            else
+              echo "${IMAGE_NAME}:manual-${short_sha}-${GITHUB_RUN_ID}"
             fi
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         if: steps.source.outputs.publish == 'true'
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
       - name: Log in to GHCR
         if: steps.source.outputs.publish == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Sub2API image
+        id: image
         if: steps.source.outputs.publish == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: ./Dockerfile
@@ -116,6 +158,9 @@ jobs:
             org.opencontainers.image.revision=${{ steps.source.outputs.source_sha }}
             org.opencontainers.image.version=${{ steps.source.outputs.version }}
             org.opencontainers.image.created=${{ steps.source.outputs.build_date }}
+            org.sub2api.build.trusted-ci=${{ steps.source.outputs.trusted_ci_label }}
+            org.sub2api.capability.affiliate-refund-reversal=${{ steps.source.outputs.affiliate_refund_reversal_capability }}
+            org.sub2api.capability.payment-reversal-components=${{ steps.source.outputs.payment_reversal_components_capability }}
           build-args: |
             VERSION=${{ steps.source.outputs.version }}
             COMMIT=${{ steps.source.outputs.source_sha }}
@@ -124,8 +169,17 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
+      - name: Attest trusted production image provenance
+        if: steps.source.outputs.publish == 'true' && steps.source.outputs.trusted_release == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.image.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+
       - name: Publish versioned Docker release
-        if: steps.source.outputs.publish == 'true'
+        if: steps.source.outputs.publish == 'true' && steps.source.outputs.trusted_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -136,26 +190,27 @@ jobs:
           short_sha="${{ steps.source.outputs.short_sha }}"
           version="${{ steps.source.outputs.version }}"
           release_tag="${{ steps.source.outputs.release_tag }}"
+          image_digest="${{ steps.image.outputs.digest }}"
           version_image="${IMAGE_NAME}:${version}"
-          immutable_image="${IMAGE_NAME}:sha-${short_sha}"
+          commit_image="${IMAGE_NAME}:sha-${short_sha}"
+          immutable_image="${IMAGE_NAME}@${image_digest}"
           release_title="Sub2API ${version}"
           make_latest="${{ steps.source.outputs.is_current_main }}"
           body_file="$(mktemp)"
           payload_file="$(mktemp)"
           trap 'rm -f "$body_file" "$payload_file"' EXIT
 
+          if ! [[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Build did not return a valid immutable registry digest: $image_digest" >&2
+            exit 1
+          fi
+
           cat > "$body_file" <<EOF
           # Sub2API ${version}
 
           This release contains the prebuilt Sub2API Docker image from a commit that passed the complete CI workflow.
 
-          ## Recommended deployment
-
-          \`\`\`bash
-          docker pull ${version_image}
-          \`\`\`
-
-          Immutable commit image:
+          ## Recommended production deployment
 
           \`\`\`bash
           docker pull ${immutable_image}
@@ -163,21 +218,31 @@ jobs:
 
           - Version: \`${version}\`
           - Commit: [\`${source_sha}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${source_sha})
-          - Version image: \`${version_image}\`
-          - Immutable image: \`${immutable_image}\`
+          - Immutable registry digest: \`${immutable_image}\`
+          - Commit tag alias: \`${commit_image}\`
+          - Version tag alias: \`${version_image}\`
           - Build: [GitHub Actions run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})
 
-          The \`${IMAGE_NAME}:latest\` tag tracks the newest successful build and may point to a later version. Production deployments should use the version tag above.
+          Tags are convenience aliases and can move. Production deployments must use the immutable registry digest above.
 
-          This release intentionally contains no binary assets. Production servers should only pull the prebuilt image, restart the service, run health checks, and roll back to an earlier version tag if needed.
+          This release intentionally contains no binary assets. Production servers should only pull the prebuilt digest, switch the inactive slot, run health checks, and roll back to a previously recorded digest when safe.
           EOF
 
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${release_tag}" >/dev/null 2>&1; then
-            gh api --method PATCH \
-              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${release_tag}" \
-              -f sha="$source_sha" \
-              -F force=true >/dev/null
-          else
+          existing_release_commit="$(
+            git ls-remote origin \
+              "refs/tags/${release_tag}" \
+              "refs/tags/${release_tag}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1; next }
+                { direct = $1 }
+                END { print peeled != "" ? peeled : direct }
+              '
+          )"
+          if [ -n "$existing_release_commit" ] && [ "$existing_release_commit" != "$source_sha" ]; then
+            echo "Release tag ${release_tag} changed to ${existing_release_commit} during the build; refusing to move it to ${source_sha}." >&2
+            exit 1
+          fi
+          if [ -z "$existing_release_commit" ]; then
             gh api --method POST \
               "repos/${GITHUB_REPOSITORY}/git/refs" \
               -f ref="refs/tags/${release_tag}" \
@@ -212,7 +277,7 @@ jobs:
           fi
 
       - name: Remove legacy rolling release
-        if: steps.source.outputs.publish == 'true'
+        if: steps.source.outputs.publish == 'true' && steps.source.outputs.trusted_release == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
@@ -231,13 +296,21 @@ jobs:
           fi
 
       - name: Publish deployment reference
-        if: steps.source.outputs.publish == 'true'
+        if: steps.source.outputs.publish == 'true' && steps.source.outputs.trusted_release == 'true'
         shell: bash
         run: |
           {
             echo "## Sub2API image published"
             echo
             echo "Version: \`${{ steps.source.outputs.version }}\`"
+            echo
+            echo "Immutable production image:"
+            echo
+            echo '```text'
+            echo "${IMAGE_NAME}@${{ steps.image.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Convenience aliases:"
             echo
             echo '```text'
             echo "${IMAGE_NAME}:sha-${{ steps.source.outputs.short_sha }}"
@@ -249,4 +322,28 @@ jobs:
             echo
             echo "Commit: \`${{ steps.source.outputs.source_sha }}\`"
             echo "Release: [Sub2API ${{ steps.source.outputs.version }}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${{ steps.source.outputs.release_tag }})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish manual rebuild reference
+        if: steps.source.outputs.publish == 'true' && steps.source.outputs.trusted_release != 'true'
+        shell: bash
+        run: |
+          {
+            echo "## Manual Sub2API rebuild published"
+            echo
+            echo "This image is isolated from production release tags and is not eligible for affiliate reversal activation."
+            echo
+            echo "Immutable manual rebuild:"
+            echo
+            echo '```text'
+            echo "${IMAGE_NAME}@${{ steps.image.outputs.digest }}"
+            echo '```'
+            echo
+            echo "Convenience alias:"
+            echo
+            echo '```text'
+            echo "${IMAGE_NAME}:manual-${{ steps.source.outputs.short_sha }}-${GITHUB_RUN_ID}"
+            echo '```'
+            echo
+            echo "Commit: \`${{ steps.source.outputs.source_sha }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

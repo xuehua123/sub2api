@@ -4,6 +4,7 @@ import {
   getCycleResetAt,
   getEffectiveCycleStart,
   getEffectiveNextCycleResetAt,
+  getPlanValidityDays,
   parsePlanValidityUnit,
 } from '../subscriptionTime'
 
@@ -16,6 +17,16 @@ describe('subscriptionTime', () => {
     expect(parsePlanValidityUnit('year')).toBe('year')
     expect(parsePlanValidityUnit('wek')).toBeNull()
     expect(parsePlanValidityUnit('')).toBeNull()
+  })
+
+  it('converts plan validity units to the backend day-based assignment value', () => {
+    expect(getPlanValidityDays(2, 'weeks')).toBe(14)
+    expect(getPlanValidityDays(1, 'month')).toBe(30)
+    expect(getPlanValidityDays(2, 'years')).toBe(730)
+    expect(getPlanValidityDays(7, 'day')).toBe(7)
+    expect(getPlanValidityDays(7, 'unknown')).toBe(7)
+    expect(getPlanValidityDays(100, 'year')).toBe(36500)
+    expect(getPlanValidityDays(101, 'year')).toBeGreaterThan(36500)
   })
 
   it('keeps a manual reset window as the active cycle anchor', () => {

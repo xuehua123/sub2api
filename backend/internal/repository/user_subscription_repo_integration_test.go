@@ -258,6 +258,59 @@ func (s *UserSubscriptionRepoSuite) TestRestore() {
 	s.Require().Equal(service.SubscriptionStatusExpired, got.Status)
 }
 
+func (s *UserSubscriptionRepoSuite) TestRestoreWithLifecycleReplacesOnlyLifecycleFields() {
+	user := s.mustCreateUser("restore-lifecycle@test.com", service.RoleUser)
+	group := s.mustCreateGroup("g-restore-lifecycle")
+	now := time.Now().UTC().Truncate(time.Second)
+	oldDailyWindow := now.AddDate(0, 0, -2)
+	oldWeeklyWindow := now.AddDate(0, 0, -6)
+	oldMonthlyWindow := now.AddDate(0, 0, -20)
+	sub := s.mustCreateSubscription(user.ID, group.ID, func(create *dbent.UserSubscriptionCreate) {
+		create.
+			SetStartsAt(now.AddDate(0, 0, -30)).
+			SetExpiresAt(now.AddDate(0, 0, 1)).
+			SetDailyWindowStart(oldDailyWindow).
+			SetWeeklyWindowStart(oldWeeklyWindow).
+			SetMonthlyWindowStart(oldMonthlyWindow).
+			SetDailyUsageUsd(9).
+			SetWeeklyUsageUsd(10).
+			SetMonthlyUsageUsd(11).
+			SetNotes("preserve audit metadata")
+	})
+	s.Require().NoError(s.repo.Delete(s.ctx, sub.ID), "Delete")
+
+	newWeeklyWindow := now.Add(-2 * time.Hour)
+	state := service.UserSubscriptionLifecycleState{
+		StartsAt:           now,
+		ExpiresAt:          now.AddDate(0, 0, 30),
+		Status:             service.SubscriptionStatusActive,
+		WeeklyWindowStart:  &newWeeklyWindow,
+		DailyUsageUSD:      1.25,
+		WeeklyUsageUSD:     2.5,
+		MonthlyUsageUSD:    3.75,
+		DailyWindowStart:   nil,
+		MonthlyWindowStart: nil,
+	}
+	restored, err := s.repo.RestoreWithLifecycle(s.ctx, sub.ID, state)
+
+	s.Require().NoError(err, "RestoreWithLifecycle")
+	s.Require().Equal(sub.ID, restored.ID)
+	s.Require().Equal(user.ID, restored.UserID)
+	s.Require().Equal(group.ID, restored.GroupID)
+	s.Require().Equal("preserve audit metadata", restored.Notes)
+	s.Require().Equal(state.StartsAt, restored.StartsAt)
+	s.Require().Equal(state.ExpiresAt, restored.ExpiresAt)
+	s.Require().Equal(state.Status, restored.Status)
+	s.Require().Nil(restored.DailyWindowStart)
+	s.Require().NotNil(restored.WeeklyWindowStart)
+	s.Require().Equal(newWeeklyWindow, *restored.WeeklyWindowStart)
+	s.Require().Nil(restored.MonthlyWindowStart)
+	s.Require().Equal(state.DailyUsageUSD, restored.DailyUsageUSD)
+	s.Require().Equal(state.WeeklyUsageUSD, restored.WeeklyUsageUSD)
+	s.Require().Equal(state.MonthlyUsageUSD, restored.MonthlyUsageUSD)
+	s.Require().Nil(restored.DeletedAt)
+}
+
 func (s *UserSubscriptionRepoSuite) TestDelete_Idempotent() {
 	s.Require().NoError(s.repo.Delete(s.ctx, 42424242), "Delete should be idempotent")
 }

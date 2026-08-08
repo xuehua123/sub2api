@@ -211,6 +211,7 @@ func parseStripePaymentIntent(event *stripe.Event, status string, rawBody string
 	}
 	currency := stripeIntentCurrency(pi.Currency, payment.DefaultPaymentCurrency)
 	return &payment.PaymentNotification{
+		EventID: event.ID,
 		TradeNo: pi.ID,
 		OrderID: pi.Metadata["orderId"],
 		Amount:  payment.MinorUnitToAmount(pi.Amount, currency),
@@ -242,6 +243,7 @@ func parseStripeChargeRefunded(event *stripe.Event, rawBody string) (*payment.Pa
 	}
 
 	return &payment.PaymentNotification{
+		EventID:        event.ID,
 		TradeNo:        tradeNo,
 		OrderID:        orderID,
 		Amount:         payment.FenToYuan(charge.AmountRefunded),
@@ -277,6 +279,7 @@ func parseStripeChargeDispute(event *stripe.Event, rawBody string) (*payment.Pay
 	}
 
 	return &payment.PaymentNotification{
+		EventID:        event.ID,
 		TradeNo:        tradeNo,
 		OrderID:        orderID,
 		Amount:         payment.FenToYuan(dispute.Amount),

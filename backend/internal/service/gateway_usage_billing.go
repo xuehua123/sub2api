@@ -431,7 +431,7 @@ func finalizePostUsageBilling(ctx context.Context, p *postUsageBillingParams, de
 
 	if usageBillingAppliedBalanceDeduction(p, result) {
 		syncBalanceCacheAfterDeduction(ctx, p, deps, result)
-	} else if p.IsSubscriptionBill && p.Subscription != nil && p.Entitlement == nil {
+	} else if p.IsSubscriptionBill && p.Subscription != nil {
 		subscriptionCost := usageBillingSubscriptionCost(p)
 		if subscriptionCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsageWithVersion(p.User.ID, *p.APIKey.GroupID, subscriptionCost, result.SubscriptionVersion)

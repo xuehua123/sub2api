@@ -61,6 +61,8 @@ const commissionRewardsSettlementReadyIndexMigration = "185_add_commission_rewar
 const commissionRewardsSettlementReadyIndex = "idx_commission_rewards_status_available_at_id"
 const usageLogsUpstreamModelMismatchIndexMigration = "195_add_usage_log_upstream_model_mismatch_index_notx.sql"
 const usageLogsUpstreamModelMismatchIndex = "idx_usage_logs_upstream_model_mismatch_created_at"
+const affiliateLedgerAccrueOrderUniqueMigration = "196a_affiliate_ledger_accrue_order_unique_notx.sql"
+const affiliateLedgerAccrueOrderUniqueIndex = "idx_user_affiliate_ledger_accrue_order_uniq"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -293,6 +295,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 		return dropInvalidIndexIfPresent(ctx, db, commissionRewardsSettlementReadyIndex)
 	case usageLogsUpstreamModelMismatchIndexMigration:
 		return dropInvalidIndexIfPresent(ctx, db, usageLogsUpstreamModelMismatchIndex)
+	case affiliateLedgerAccrueOrderUniqueMigration:
+		return prepareAffiliateLedgerAccrueOrderUniqueMigration(ctx, db)
 	default:
 		return nil
 	}
@@ -312,6 +316,22 @@ func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db migra
 	}
 
 	return dropInvalidIndexIfPresent(ctx, db, paymentOrdersOutTradeNoUniqueIndex)
+}
+
+func prepareAffiliateLedgerAccrueOrderUniqueMigration(ctx context.Context, db migrationConnection) error {
+	duplicates, err := findDuplicateAffiliateLedgerAccrueOrderIDs(ctx, db)
+	if err != nil {
+		return fmt.Errorf("precheck duplicate affiliate accrue source_order_id: %w", err)
+	}
+	if len(duplicates) > 0 {
+		return fmt.Errorf(
+			"duplicate affiliate accrue source_order_id values block %s; remediate duplicate ledger entries before retrying: %s",
+			affiliateLedgerAccrueOrderUniqueMigration,
+			strings.Join(duplicates, ", "),
+		)
+	}
+
+	return dropInvalidIndexIfPresent(ctx, db, affiliateLedgerAccrueOrderUniqueIndex)
 }
 
 func dropInvalidIndexIfPresent(ctx context.Context, db migrationConnection, indexName string) error {
@@ -354,6 +374,39 @@ func findDuplicatePaymentOrderOutTradeNos(ctx context.Context, db migrationConne
 			return nil, err
 		}
 		duplicates = append(duplicates, fmt.Sprintf("%s (count=%d)", outTradeNo, duplicateCount))
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return duplicates, nil
+}
+
+func findDuplicateAffiliateLedgerAccrueOrderIDs(ctx context.Context, db migrationConnection) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT source_order_id, COUNT(*) AS duplicate_count
+		FROM user_affiliate_ledger
+		WHERE action = 'accrue'
+		  AND source_order_id IS NOT NULL
+		GROUP BY source_order_id
+		HAVING COUNT(*) > 1
+		ORDER BY duplicate_count DESC, source_order_id
+		LIMIT 5
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	duplicates := make([]string, 0, 5)
+	for rows.Next() {
+		var sourceOrderID int64
+		var duplicateCount int64
+		if err := rows.Scan(&sourceOrderID, &duplicateCount); err != nil {
+			return nil, err
+		}
+		duplicates = append(duplicates, fmt.Sprintf("order_id=%d (count=%d)", sourceOrderID, duplicateCount))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

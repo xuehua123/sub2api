@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
+	entuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
@@ -20,8 +21,55 @@ type subscriptionEntitlementRepository struct {
 	client *dbent.Client
 }
 
+type subscriptionEntitlementUserMutationQuerier interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
 func NewSubscriptionEntitlementRepository(client *dbent.Client) service.SubscriptionEntitlementRepository {
 	return &subscriptionEntitlementRepository{client: client}
+}
+
+func subscriptionEntitlementUserMutationLockKey(userID int64) int64 {
+	return advisoryLockHash(fmt.Sprintf("subscription-entitlement:user:%d", userID))
+}
+
+func lockSubscriptionEntitlementUserMutation(
+	ctx context.Context,
+	querier subscriptionEntitlementUserMutationQuerier,
+	userID int64,
+) error {
+	if querier == nil || userID <= 0 {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	rows, err := querier.QueryContext(ctx, "SELECT pg_advisory_xact_lock($1)", subscriptionEntitlementUserMutationLockKey(userID))
+	if err != nil {
+		return err
+	}
+	return rows.Close()
+}
+
+func (r *subscriptionEntitlementRepository) WithUserEntitlementMutationTx(ctx context.Context, userID int64, fn func(context.Context) error) error {
+	if userID <= 0 || fn == nil {
+		return service.ErrSubscriptionEntitlementNotFound
+	}
+	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		// Serialize entitlement mutations without locking the users row. Usage billing
+		// may lock an entitlement before updating balance; a users FOR UPDATE lock here
+		// would create the inverse lock order and permit a PostgreSQL deadlock.
+		if err := lockSubscriptionEntitlementUserMutation(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		exists, err := txClient.User.Query().
+			Where(entuser.IDEQ(userID), entuser.DeletedAtIsNil()).
+			Exist(txCtx)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return service.ErrSubscriptionEntitlementNotFound
+		}
+		return fn(txCtx)
+	})
 }
 
 func (r *subscriptionEntitlementRepository) Create(ctx context.Context, ent *service.SubscriptionEntitlement, groupIDs []int64) error {
@@ -69,6 +117,18 @@ func (r *subscriptionEntitlementRepository) GetByID(ctx context.Context, id int6
 		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
 	}
 	return subscriptionEntitlementEntityToService(m), nil
+}
+
+func (r *subscriptionEntitlementRepository) GetByIDForUpdate(ctx context.Context, id int64) (*service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	lockedID, err := client.SubscriptionEntitlement.Query().
+		Where(subscriptionentitlement.IDEQ(id), subscriptionentitlement.DeletedAtIsNil()).
+		ForUpdate().
+		OnlyID(ctx)
+	if err != nil {
+		return nil, translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, nil)
+	}
+	return r.GetByID(ctx, lockedID)
 }
 
 func (r *subscriptionEntitlementRepository) GetBySourceID(ctx context.Context, sourceType string, sourceID int64) (*service.SubscriptionEntitlement, error) {
@@ -181,6 +241,33 @@ func (r *subscriptionEntitlementRepository) ListByUserPlanID(ctx context.Context
 			subscriptionentitlement.PlanIDEQ(planID),
 			subscriptionentitlement.DeletedAtIsNil(),
 		).
+		Order(dbent.Desc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return subscriptionEntitlementEntitiesToService(ms), nil
+}
+
+func (r *subscriptionEntitlementRepository) ListByUserPlanIDForUpdate(ctx context.Context, userID, planID int64) ([]service.SubscriptionEntitlement, error) {
+	client := clientFromContext(ctx, r.client)
+	ids, err := client.SubscriptionEntitlement.Query().
+		Where(
+			subscriptionentitlement.UserIDEQ(userID),
+			subscriptionentitlement.PlanIDEQ(planID),
+			subscriptionentitlement.DeletedAtIsNil(),
+		).
+		Order(dbent.Asc(subscriptionentitlement.FieldID)).
+		ForUpdate().
+		IDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return []service.SubscriptionEntitlement{}, nil
+	}
+	ms, err := entitlementQueryWithGroups(client).
+		Where(subscriptionentitlement.IDIn(ids...)).
 		Order(dbent.Desc(subscriptionentitlement.FieldExpiresAt), dbent.Asc(subscriptionentitlement.FieldID)).
 		All(ctx)
 	if err != nil {
@@ -420,12 +507,6 @@ func (r *subscriptionEntitlementRepository) translateConditionalWindowUpdate(ctx
 		return service.ErrSubscriptionEntitlementNotFound
 	}
 	return nil
-}
-
-func (r *subscriptionEntitlementRepository) WithEntitlementCycleTx(ctx context.Context, fn func(context.Context) error) error {
-	return r.withTx(ctx, func(txCtx context.Context, _ *dbent.Client) error {
-		return fn(txCtx)
-	})
 }
 
 func (r *subscriptionEntitlementRepository) LockEntitlementMonthlyCycle(ctx context.Context, userID, entitlementID int64) (*service.SubscriptionEntitlementMonthlyCycleSnapshot, error) {

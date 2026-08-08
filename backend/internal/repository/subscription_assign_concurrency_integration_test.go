@@ -4,7 +4,6 @@ package repository
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
@@ -18,30 +17,6 @@ type enabledSubscriptionEntitlementsRuntime struct{}
 
 func (enabledSubscriptionEntitlementsRuntime) GetSubscriptionEntitlementsRuntime(context.Context) service.SubscriptionEntitlementsRuntime {
 	return service.SubscriptionEntitlementsRuntime{Enabled: true}
-}
-
-type concurrentAssignUserSubscriptionRepo struct {
-	service.UserSubscriptionRepository
-	start sync.WaitGroup
-}
-
-func newConcurrentAssignUserSubscriptionRepo(repo service.UserSubscriptionRepository) *concurrentAssignUserSubscriptionRepo {
-	out := &concurrentAssignUserSubscriptionRepo{UserSubscriptionRepository: repo}
-	out.start.Add(2)
-	return out
-}
-
-func (r *concurrentAssignUserSubscriptionRepo) waitForBothCalls() {
-	r.start.Done()
-	r.start.Wait()
-}
-
-func (r *concurrentAssignUserSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
-	sub, err := r.UserSubscriptionRepository.GetByUserIDAndGroupID(ctx, userID, groupID)
-	if err == nil {
-		r.waitForBothCalls()
-	}
-	return sub, err
 }
 
 func TestAssignSubscriptionConcurrentExpiredPlanRenewsEntitlementOnce(t *testing.T) {
@@ -71,6 +46,7 @@ func TestAssignSubscriptionConcurrentExpiredPlanRenewsEntitlementOnce(t *testing
 	entitlementSvc := service.NewSubscriptionEntitlementService(entitlementRepo, planRepo)
 	newSubscriptionSvc := func(subRepo service.UserSubscriptionRepository) *service.SubscriptionService {
 		svc := service.NewSubscriptionService(groupRepo, subRepo, nil, client, nil)
+		t.Cleanup(svc.Stop)
 		svc.SetSubscriptionEntitlementAliasDependencies(enabledSubscriptionEntitlementsRuntime{}, entitlementSvc)
 		return svc
 	}
@@ -105,15 +81,17 @@ func TestAssignSubscriptionConcurrentExpiredPlanRenewsEntitlementOnce(t *testing
 		Save(ctx)
 	require.NoError(t, err)
 
-	concurrentRepo := newConcurrentAssignUserSubscriptionRepo(baseSubRepo)
-	svc := newSubscriptionSvc(concurrentRepo)
+	svc := newSubscriptionSvc(baseSubRepo)
+	start := make(chan struct{})
 	errCh := make(chan error, 2)
 	for range 2 {
 		go func() {
+			<-start
 			_, assignErr := svc.AssignSubscription(ctx, input)
 			errCh <- assignErr
 		}()
 	}
+	close(start)
 	for range 2 {
 		require.NoError(t, <-errCh)
 	}

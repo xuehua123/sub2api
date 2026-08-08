@@ -223,3 +223,104 @@ func TestUserSubscriptionFromServiceAdminUsesLinkedEntitlementExpiryAndStatus(t 
 	require.NotNil(t, out.EntitlementExpiresAt)
 	require.Equal(t, entitlementExpiresAt, *out.EntitlementExpiresAt)
 }
+
+func TestUserSubscriptionAliasFromEntitlementClearsStaleActiveDailyUsageForDisplay(t *testing.T) {
+	now := time.Now().In(timezone.Location())
+	today := timezone.StartOfDay(now)
+	staleWindow := today.AddDate(0, 0, -1).Add(16*time.Hour + 45*time.Minute)
+	legacyID := int64(912)
+	groupID := int64(28)
+	dailyLimit := 10.0
+
+	out := UserSubscriptionAliasFromEntitlement(&service.SubscriptionEntitlement{
+		ID:                   1103,
+		UserID:               7,
+		LegacySubscriptionID: &legacyID,
+		PrimaryGroupID:       &groupID,
+		Status:               service.SubscriptionStatusActive,
+		StartsAt:             today.AddDate(0, 0, -5),
+		ExpiresAt:            today.AddDate(0, 0, 5),
+		DailyLimitUSD:        &dailyLimit,
+		DailyWindowStart:     &staleWindow,
+		DailyUsageUSD:        7,
+		GroupGrants: []service.SubscriptionEntitlementGroupGrant{{
+			GroupID:   groupID,
+			Enabled:   true,
+			SortOrder: 0,
+		}},
+	})
+
+	require.NotNil(t, out)
+	require.NotNil(t, out.DailyWindowStart)
+	require.Equal(t, today, *out.DailyWindowStart)
+	require.NotNil(t, out.DailyResetsAt)
+	require.Equal(t, today.AddDate(0, 0, 1), *out.DailyResetsAt)
+	require.Zero(t, out.DailyUsageUSD)
+}
+
+func TestApplyUserSubscriptionDailyResetProjectsOnlyActiveRows(t *testing.T) {
+	base := time.Date(2026, 6, 14, 0, 0, 0, 0, timezone.Location())
+	now := base.Add(10 * time.Hour)
+	staleWindow := base.AddDate(0, 0, -1).Add(16*time.Hour + 45*time.Minute)
+
+	tests := []struct {
+		name          string
+		status        string
+		startsAt      time.Time
+		expiresAt     time.Time
+		expectedStart time.Time
+		expectedUsage float64
+	}{
+		{
+			name:          "active",
+			status:        service.SubscriptionStatusActive,
+			startsAt:      base.AddDate(0, 0, -5),
+			expiresAt:     base.AddDate(0, 0, 5),
+			expectedStart: base,
+			expectedUsage: 0,
+		},
+		{
+			name:          "future",
+			status:        service.SubscriptionStatusActive,
+			startsAt:      base.AddDate(0, 0, 1),
+			expiresAt:     base.AddDate(0, 0, 5),
+			expectedStart: base.AddDate(0, 0, -1),
+			expectedUsage: 7,
+		},
+		{
+			name:          "expired",
+			status:        service.SubscriptionStatusExpired,
+			startsAt:      base.AddDate(0, 0, -5),
+			expiresAt:     base.Add(-time.Hour),
+			expectedStart: base.AddDate(0, 0, -1),
+			expectedUsage: 7,
+		},
+		{
+			name:          "revoked",
+			status:        service.SubscriptionStatusRevoked,
+			startsAt:      base.AddDate(0, 0, -5),
+			expiresAt:     base.AddDate(0, 0, 5),
+			expectedStart: base.AddDate(0, 0, -1),
+			expectedUsage: 7,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out := &UserSubscription{
+				Status:           tt.status,
+				StartsAt:         tt.startsAt,
+				ExpiresAt:        tt.expiresAt,
+				DailyWindowStart: &staleWindow,
+				DailyUsageUSD:    7,
+			}
+
+			applyUserSubscriptionDailyReset(out, now)
+
+			require.NotNil(t, out.DailyWindowStart)
+			require.Equal(t, tt.expectedStart, *out.DailyWindowStart)
+			require.Equal(t, tt.expectedUsage, out.DailyUsageUSD)
+			require.NotNil(t, out.DailyResetsAt)
+		})
+	}
+}

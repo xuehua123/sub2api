@@ -4,7 +4,13 @@ import (
 	"context"
 	"time"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+)
+
+var ErrUsageCleanupInvalidEntitlementID = infraerrors.BadRequest(
+	"USAGE_CLEANUP_INVALID_ENTITLEMENT_ID",
+	"entitlement_id must be a positive integer",
 )
 
 const (
@@ -26,16 +32,17 @@ const (
 // - nil 表示未设置该过滤条件
 // - 过滤条件均为精确匹配
 type UsageCleanupFilters struct {
-	StartTime   time.Time `json:"start_time"`
-	EndTime     time.Time `json:"end_time"`
-	UserID      *int64    `json:"user_id,omitempty"`
-	APIKeyID    *int64    `json:"api_key_id,omitempty"`
-	AccountID   *int64    `json:"account_id,omitempty"`
-	GroupID     *int64    `json:"group_id,omitempty"`
-	Model       *string   `json:"model,omitempty"`
-	RequestType *int16    `json:"request_type,omitempty"`
-	Stream      *bool     `json:"stream,omitempty"`
-	BillingType *int8     `json:"billing_type,omitempty"`
+	StartTime     time.Time `json:"start_time"` // inclusive
+	EndTime       time.Time `json:"end_time"`   // exclusive
+	UserID        *int64    `json:"user_id,omitempty"`
+	APIKeyID      *int64    `json:"api_key_id,omitempty"`
+	AccountID     *int64    `json:"account_id,omitempty"`
+	GroupID       *int64    `json:"group_id,omitempty"`
+	EntitlementID *int64    `json:"entitlement_id,omitempty"`
+	Model         *string   `json:"model,omitempty"`
+	RequestType   *int16    `json:"request_type,omitempty"`
+	Stream        *bool     `json:"stream,omitempty"`
+	BillingType   *int8     `json:"billing_type,omitempty"`
 }
 
 // UsageCleanupTask 表示使用记录清理任务

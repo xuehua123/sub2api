@@ -1984,6 +1984,10 @@ func (r *stubUserSubscriptionRepo) GetByIDIncludeDeleted(ctx context.Context, id
 	return nil, errors.New("not implemented")
 }
 
+func (r *stubUserSubscriptionRepo) GetByIDIncludeDeletedForUpdate(ctx context.Context, id int64) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+
 func (r *stubUserSubscriptionRepo) GetByUserIDAndGroupID(ctx context.Context, userID, groupID int64) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
@@ -2004,6 +2008,10 @@ func (r *stubUserSubscriptionRepo) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *stubUserSubscriptionRepo) Restore(ctx context.Context, subscriptionID int64, restoredStatus string) (*service.UserSubscription, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (r *stubUserSubscriptionRepo) RestoreWithLifecycle(ctx context.Context, subscriptionID int64, state service.UserSubscriptionLifecycleState) (*service.UserSubscription, error) {
 	return nil, errors.New("not implemented")
 }
 

@@ -33,6 +33,28 @@ type paymentFulfillmentTestProvider struct {
 	supportedTypes []payment.PaymentType
 }
 
+func TestAffiliateRefundReversalEnabledFromEnvironmentRequiresExactTrue(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		enabled bool
+	}{
+		{name: "unset equivalent", value: "", enabled: false},
+		{name: "false", value: "false", enabled: false},
+		{name: "invalid", value: "1", enabled: false},
+		{name: "wrong case", value: "TRUE", enabled: false},
+		{name: "true", value: "true", enabled: true},
+		{name: "trimmed true", value: "  true\t", enabled: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(affiliateRefundReversalEnabledEnv, tt.value)
+			require.Equal(t, tt.enabled, affiliateRefundReversalEnabledFromEnvironment())
+		})
+	}
+}
+
 func (p paymentFulfillmentTestProvider) Name() string        { return p.key }
 func (p paymentFulfillmentTestProvider) ProviderKey() string { return p.key }
 func (p paymentFulfillmentTestProvider) SupportedTypes() []payment.PaymentType {
@@ -188,58 +210,123 @@ func TestRedeemAction_DistinctValues(t *testing.T) {
 // RedeemCode.IsUsed / CanUse interaction with resolveRedeemAction
 // ---------------------------------------------------------------------------
 
-func TestComputeExternalCreditedRefund_UsesCreditRatioForPartialGatewayRefund(t *testing.T) {
+func TestRefundNotificationFingerprint_PrefersStableProviderIdentifiers(t *testing.T) {
 	t.Parallel()
 
-	creditedDelta, refundTotal := computeExternalCreditedRefund(&dbent.PaymentOrder{
-		Amount:       120,
+	base := &payment.PaymentNotification{
+		OrderID:        "order-1",
+		TradeNo:        "trade-1",
+		RefundID:       "refund-1",
+		Amount:         25,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        `{"attempt":1}`,
+	}
+	reencoded := *base
+	reencoded.RawData = `{ "attempt": 2, "non_business_field": true }`
+	reencoded.Amount = 999
+	reencoded.AmountSemantic = payment.NotificationAmountTotal
+	reencoded.Status = payment.NotificationStatusChargeback
+	reencoded.OrderID = "order-parsed-differently"
+	reencoded.TradeNo = "trade-parsed-differently"
+
+	require.Equal(t,
+		refundNotificationFingerprint(base, payment.TypeAlipay, false),
+		refundNotificationFingerprint(&reencoded, payment.TypeAlipay, true),
+		"the same provider RefundID must remain idempotent even when parsed fields or classification change",
+	)
+
+	differentRefund := reencoded
+	differentRefund.RefundID = "refund-2"
+	require.NotEqual(t,
+		refundNotificationFingerprint(base, payment.TypeAlipay, false),
+		refundNotificationFingerprint(&differentRefund, payment.TypeAlipay, false),
+	)
+
+	providerEvent := *base
+	providerEvent.EventID = "evt-1"
+	providerEvent.RefundID = "refund-changing"
+	providerEventRetry := providerEvent
+	providerEventRetry.RefundID = "refund-changed"
+	providerEventRetry.RawData = `{"retry":true}`
+	providerEventRetry.OrderID = "event-order-parsed-differently"
+	providerEventRetry.TradeNo = "event-trade-parsed-differently"
+	providerEventRetry.Status = payment.NotificationStatusChargeback
+	require.Equal(t,
+		refundNotificationFingerprint(&providerEvent, payment.TypeStripe, false),
+		refundNotificationFingerprint(&providerEventRetry, payment.TypeStripe, true),
+		"provider event ID has priority and must not depend on mutable parsed fields or classification",
+	)
+	require.NotEqual(t,
+		refundNotificationFingerprint(&providerEvent, payment.TypeStripe, false),
+		refundNotificationFingerprint(&providerEventRetry, payment.TypeAlipay, true),
+		"provider account family remains part of the stable identifier boundary",
+	)
+}
+
+func TestReconcilePaymentReversalComponents_KeepsRefundAndChargebackTotalsIndependent(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{Amount: 100, PayAmount: 100}
+	refund := reconcilePaymentReversalComponents(order, 30, payment.NotificationAmountTotal, false)
+	require.Equal(t, paymentReversalComponents{
+		ProviderRefundAmount: 30,
+		ChargebackAmount:     0,
+		CombinedAmount:       30,
+		CreditedDelta:        30,
+	}, refund)
+
+	order.ProviderRefundAmount = refund.ProviderRefundAmount
+	order.ChargebackAmount = refund.ChargebackAmount
+	order.RefundAmount = refund.CombinedAmount
+	chargeback := reconcilePaymentReversalComponents(order, 20, payment.NotificationAmountTotal, true)
+	require.Equal(t, paymentReversalComponents{
+		ProviderRefundAmount: 30,
+		ChargebackAmount:     20,
+		CombinedAmount:       50,
+		CreditedDelta:        20,
+	}, chargeback)
+
+	order.ProviderRefundAmount = chargeback.ProviderRefundAmount
+	order.ChargebackAmount = chargeback.ChargebackAmount
+	order.RefundAmount = chargeback.CombinedAmount
+	outOfOrderLowerTotal := reconcilePaymentReversalComponents(order, 10, payment.NotificationAmountTotal, false)
+	require.Equal(t, chargeback.ProviderRefundAmount, outOfOrderLowerTotal.ProviderRefundAmount)
+	require.Equal(t, chargeback.ChargebackAmount, outOfOrderLowerTotal.ChargebackAmount)
+	require.Equal(t, chargeback.CombinedAmount, outOfOrderLowerTotal.CombinedAmount)
+	require.Zero(t, outOfOrderLowerTotal.CreditedDelta)
+}
+
+func TestReconcilePaymentReversalComponents_IsOrderIndependent(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{Amount: 100, PayAmount: 100}
+	chargeback := reconcilePaymentReversalComponents(order, 20, payment.NotificationAmountTotal, true)
+	order.ProviderRefundAmount = chargeback.ProviderRefundAmount
+	order.ChargebackAmount = chargeback.ChargebackAmount
+	order.RefundAmount = chargeback.CombinedAmount
+	refund := reconcilePaymentReversalComponents(order, 30, payment.NotificationAmountTotal, false)
+
+	require.Equal(t, 30.0, refund.ProviderRefundAmount)
+	require.Equal(t, 20.0, refund.ChargebackAmount)
+	require.Equal(t, 50.0, refund.CombinedAmount)
+	require.Equal(t, 30.0, refund.CreditedDelta)
+}
+
+func TestReconcilePaymentReversalComponents_AbsorbsLegacyProjectionAsRefund(t *testing.T) {
+	t.Parallel()
+
+	components := reconcilePaymentReversalComponents(&dbent.PaymentOrder{
+		Amount:       100,
 		PayAmount:    100,
-		RefundAmount: 0,
-	}, 50, payment.NotificationAmountDelta)
+		RefundAmount: 30,
+		Status:       OrderStatusCompleted,
+	}, 20, payment.NotificationAmountTotal, true)
 
-	assert.Equal(t, 60.0, creditedDelta)
-	assert.Equal(t, 60.0, refundTotal)
-}
-
-func TestComputeExternalCreditedRefund_CapsAtRemainingCreditedBalance(t *testing.T) {
-	t.Parallel()
-
-	creditedDelta, refundTotal := computeExternalCreditedRefund(&dbent.PaymentOrder{
-		Amount:       120,
-		PayAmount:    100,
-		RefundAmount: 100,
-	}, 50, payment.NotificationAmountDelta)
-
-	assert.Equal(t, 20.0, creditedDelta)
-	assert.Equal(t, 120.0, refundTotal)
-}
-
-func TestComputeExternalCreditedRefund_UsesTotalSemanticAsCumulativeGatewayAmount(t *testing.T) {
-	t.Parallel()
-
-	creditedDelta, refundTotal := computeExternalCreditedRefund(&dbent.PaymentOrder{
-		Amount:       120,
-		PayAmount:    100,
-		RefundAmount: 24,
-	}, 50, payment.NotificationAmountTotal)
-
-	assert.Equal(t, 36.0, creditedDelta)
-	assert.Equal(t, 60.0, refundTotal)
-}
-
-func TestAccumulateExternalReversalAmount_AddsIncrementallyAndCapsTotal(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, 70.0, accumulateExternalReversalAmount(40, 30, 100))
-	assert.Equal(t, 100.0, accumulateExternalReversalAmount(80, 50, 100))
-	assert.Equal(t, 100.0, accumulateExternalReversalAmount(120, 10, 100))
-}
-
-func TestReconcileExternalReversalAmount_UsesTotalSemanticAsCumulativeAmount(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, 70.0, reconcileExternalReversalAmount(40, 70, 100, payment.NotificationAmountTotal))
-	assert.Equal(t, 100.0, reconcileExternalReversalAmount(40, 120, 100, payment.NotificationAmountTotal))
+	require.Equal(t, 30.0, components.ProviderRefundAmount)
+	require.Equal(t, 20.0, components.ChargebackAmount)
+	require.Equal(t, 50.0, components.CombinedAmount)
+	require.Equal(t, 20.0, components.CreditedDelta)
 }
 
 type paymentRefundUserRepoStub struct {
@@ -431,18 +518,6 @@ func TestResolveReferralSettlementSkipsUnsupportedForeignCurrency(t *testing.T) 
 	require.Contains(t, skipReason, "EUR")
 }
 
-func TestReferralSettlementReversalAmountUsesPersistedCNYRatio(t *testing.T) {
-	order := &dbent.PaymentOrder{
-		PayAmount: 10,
-		ProviderSnapshot: map[string]any{
-			"currency": "USD",
-		},
-	}
-	rechargeOrder := &RechargeOrder{PaidAmount: 72.5}
-
-	require.InDelta(t, 36.25, referralSettlementReversalAmount(order, rechargeOrder, 5), 0.000001)
-}
-
 func createPaymentOrderForRefundTest(t *testing.T, ctx context.Context, client *dbent.Client, user *dbent.User, amount float64, payAmount float64, refundAmount float64, status string, outTradeNo string, paymentTradeNo string) *dbent.PaymentOrder {
 	t.Helper()
 
@@ -614,10 +689,15 @@ func (s *subscriptionUserSubRepoStub) UpdateStatus(_ context.Context, subscripti
 func (s *subscriptionUserSubRepoStub) Delete(_ context.Context, subscriptionID int64) error {
 	sub := s.byID[subscriptionID]
 	if sub == nil {
-		return ErrSubscriptionNotFound
+		return nil
 	}
-	s.deleteCalls++
-	delete(s.byID, subscriptionID)
+	if sub.DeletedAt == nil {
+		s.deleteCalls++
+		deletedAt := time.Now()
+		cp := *sub
+		cp.DeletedAt = &deletedAt
+		s.byID[subscriptionID] = &cp
+	}
 	delete(s.byUserGroup, s.key(sub.UserID, sub.GroupID))
 	return nil
 }
@@ -1908,6 +1988,103 @@ func TestHandlePaymentNotification_ChargebackDeltaSyncsOrderBalanceAndReferralSt
 	require.Contains(t, logs[0].Detail, `"amountSemantic":"delta"`)
 }
 
+func TestHandlePaymentNotification_TotalRefundAndChargebackComponentsAreOrderIndependent(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		events []payment.PaymentNotification
+	}{
+		{
+			name: "refund then chargeback",
+			events: []payment.PaymentNotification{
+				{EventID: "evt-refund-first", Amount: 30, AmountSemantic: payment.NotificationAmountTotal, Status: payment.NotificationStatusRefunded},
+				{EventID: "evt-chargeback-second", Amount: 20, AmountSemantic: payment.NotificationAmountTotal, Status: payment.NotificationStatusChargeback},
+			},
+		},
+		{
+			name: "chargeback then refund",
+			events: []payment.PaymentNotification{
+				{EventID: "evt-chargeback-first", Amount: 20, AmountSemantic: payment.NotificationAmountTotal, Status: payment.NotificationStatusChargeback},
+				{EventID: "evt-refund-second", Amount: 30, AmountSemantic: payment.NotificationAmountTotal, Status: payment.NotificationStatusRefunded},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client := newPaymentServiceEntClient(t)
+			user := createPaymentRefundTestUser(t, ctx, client, 0)
+			key := strings.ReplaceAll(tc.name, " ", "_")
+			order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 0, OrderStatusCompleted, "mixed_total_"+key, "trade_mixed_total_"+key)
+
+			userRepo := newPaymentRefundUserRepoStub()
+			rechargeRepo := newRechargeOrderRepoStub()
+			rechargeRepo.orders["stripe::"+order.OutTradeNo] = &RechargeOrder{
+				ID:              800,
+				UserID:          user.ID,
+				Provider:        payment.TypeStripe,
+				ExternalOrderID: order.OutTradeNo,
+				PaidAmount:      100,
+				Status:          RechargeOrderStatusCredited,
+				Currency:        ReferralSettlementCurrencyCNY,
+			}
+			service := &PaymentService{
+				entClient:         client,
+				userRepo:          userRepo,
+				referralRefundSvc: NewReferralRefundService(rechargeRepo, &commissionRepoStub{}, nil, nil),
+			}
+
+			for i := range tc.events {
+				n := tc.events[i]
+				n.OrderID = order.OutTradeNo
+				n.TradeNo = order.PaymentTradeNo
+				require.NoError(t, service.HandlePaymentNotification(ctx, &n, payment.TypeStripe))
+			}
+
+			updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+			require.NoError(t, err)
+			require.Equal(t, 30.0, updatedOrder.ProviderRefundAmount)
+			require.Equal(t, 20.0, updatedOrder.ChargebackAmount)
+			require.Equal(t, 50.0, updatedOrder.RefundAmount)
+			require.Equal(t, 50.0, userRepo.deductedBalances[user.ID])
+
+			updatedRecharge, err := rechargeRepo.GetByProviderAndExternalOrderID(ctx, payment.TypeStripe, order.OutTradeNo)
+			require.NoError(t, err)
+			require.Equal(t, 30.0, updatedRecharge.RefundedAmount)
+			require.Equal(t, 20.0, updatedRecharge.ChargebackAmount)
+		})
+	}
+}
+
+func TestHandlePaymentNotification_SameRefundIDWithDifferentRawPayloadIsAppliedOnce(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(t, ctx, client, user, 100, 100, 0, OrderStatusCompleted, "stable_refund_id_order", "trade_stable_refund_id")
+	userRepo := newPaymentRefundUserRepoStub()
+	service := &PaymentService{entClient: client, userRepo: userRepo}
+
+	first := &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		RefundID:       "refund-stable-1",
+		Amount:         25,
+		AmountSemantic: payment.NotificationAmountDelta,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        `{"attempt":1}`,
+	}
+	require.NoError(t, service.HandlePaymentNotification(ctx, first, payment.TypeAlipay))
+	retry := *first
+	retry.Amount = 99
+	retry.RawData = `{ "attempt": 2, "non_business_field": true }`
+	require.NoError(t, service.HandlePaymentNotification(ctx, &retry, payment.TypeAlipay))
+
+	updatedOrder, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, 25.0, updatedOrder.ProviderRefundAmount)
+	require.Zero(t, updatedOrder.ChargebackAmount)
+	require.Equal(t, 25.0, updatedOrder.RefundAmount)
+	require.Equal(t, 25.0, userRepo.deductedBalances[user.ID])
+}
+
 func TestHandlePaymentNotification_RefundedFallsBackToTradeNoLookup(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentServiceEntClient(t)
@@ -2047,6 +2224,73 @@ func TestHandlePaymentNotification_DeltaRefundRetriesAreIdempotent(t *testing.T)
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusRefunded, reloaded.Status)
 	require.Equal(t, 100.0, reloaded.RefundAmount)
+}
+
+func TestHandlePaymentNotification_RefundPersistsWhileAffiliateReversalGateDisabled(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentServiceEntClient(t)
+	ensurePaymentAuditOrderActionUniqueIndex(t, ctx, client)
+	user := createPaymentRefundTestUser(t, ctx, client, 0)
+	order := createPaymentOrderForRefundTest(
+		t,
+		ctx,
+		client,
+		user,
+		100,
+		100,
+		0,
+		OrderStatusCompleted,
+		"gated_affiliate_refund",
+		"trade_gated_affiliate_refund",
+	)
+	_, err := client.PaymentAuditLog.Create().
+		SetOrderID(strconv.FormatInt(order.ID, 10)).
+		SetAction("AFFILIATE_REBATE_APPLIED").
+		SetDetail(`{"rebateAmount":10}`).
+		SetOperator("system").
+		Save(ctx)
+	require.NoError(t, err)
+
+	userRepo := newPaymentRefundUserRepoStub()
+	affiliateRepo := &paymentFulfillmentAffiliateRepoStub{}
+	svc := &PaymentService{
+		entClient:        client,
+		userRepo:         userRepo,
+		affiliateService: NewAffiliateService(affiliateRepo, nil, nil, nil),
+	}
+	notification := &payment.PaymentNotification{
+		OrderID:        order.OutTradeNo,
+		TradeNo:        order.PaymentTradeNo,
+		Amount:         50,
+		AmountSemantic: payment.NotificationAmountTotal,
+		Status:         payment.NotificationStatusRefunded,
+		RawData:        "gated-affiliate-refund-event",
+	}
+
+	require.NoError(t, svc.HandlePaymentNotification(ctx, notification, payment.TypeAlipay))
+	updated, err := client.PaymentOrder.Get(ctx, order.ID)
+	require.NoError(t, err)
+	require.Equal(t, OrderStatusPartiallyRefunded, updated.Status)
+	require.InDelta(t, 50, updated.RefundAmount, 1e-9)
+	require.InDelta(t, 50, userRepo.deductedBalances[user.ID], 1e-9)
+	require.Empty(t, affiliateRepo.reverseCalls)
+	requireAuditActionsForOrder(
+		t,
+		ctx,
+		client,
+		order.ID,
+		paymentAuditActionAffiliateRefundSyncFailed,
+		"EXTERNAL_REFUND_SYNCED",
+	)
+
+	svc.affiliateReversalEnabled = true
+	recovered, err := svc.RetryFailedRefundRewardSyncs(ctx, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1, recovered)
+	require.Len(t, affiliateRepo.reverseCalls, 1)
+	require.InDelta(t, 0.5, affiliateRepo.reverseCalls[0].cumulativeRefundRatio, 1e-9)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncFailed, 0)
+	requirePaymentAuditActionCount(t, ctx, client, order.ID, paymentAuditActionAffiliateRefundSyncRecovered, 1)
 }
 
 func TestMarkRefundOk_PersistsSuccessWhenReferralSyncFails(t *testing.T) {
@@ -2807,11 +3051,18 @@ type paymentFulfillmentAffiliateAccrueCall struct {
 	sourceOrderID *int64
 }
 
+type paymentFulfillmentAffiliateReverseCall struct {
+	sourceOrderID         int64
+	cumulativeRefundRatio float64
+}
+
 type paymentFulfillmentAffiliateRepoStub struct {
 	inviteeSummary *AffiliateSummary
 	inviterSummary *AffiliateSummary
 	accrued        float64
 	accrueCalls    []paymentFulfillmentAffiliateAccrueCall
+	reverseErr     error
+	reverseCalls   []paymentFulfillmentAffiliateReverseCall
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error) {
@@ -2833,14 +3084,41 @@ func (s *paymentFulfillmentAffiliateRepoStub) BindInviter(ctx context.Context, u
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
+	applied, err := s.AccrueQuotaCapped(ctx, inviterID, inviteeUserID, amount, 0, freezeHours, sourceOrderID)
+	return applied > 0, err
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) AccrueQuotaCapped(ctx context.Context, inviterID, inviteeUserID int64, amount, perInviteeCap float64, freezeHours int, sourceOrderID *int64) (float64, error) {
+	applied := amount
+	if perInviteeCap > 0 && s.accrued+applied > perInviteeCap {
+		applied = perInviteeCap - s.accrued
+	}
+	if applied <= 0 {
+		return 0, nil
+	}
 	s.accrueCalls = append(s.accrueCalls, paymentFulfillmentAffiliateAccrueCall{
 		inviterID:     inviterID,
 		inviteeUserID: inviteeUserID,
-		amount:        amount,
+		amount:        applied,
 		freezeHours:   freezeHours,
 		sourceOrderID: sourceOrderID,
 	})
-	return true, nil
+	s.accrued += applied
+	return applied, nil
+}
+
+func (s *paymentFulfillmentAffiliateRepoStub) ReverseQuotaForOrder(_ context.Context, sourceOrderID int64, cumulativeRefundRatio float64) (*AffiliateRebateReversal, error) {
+	s.reverseCalls = append(s.reverseCalls, paymentFulfillmentAffiliateReverseCall{
+		sourceOrderID:         sourceOrderID,
+		cumulativeRefundRatio: cumulativeRefundRatio,
+	})
+	if s.reverseErr != nil {
+		return nil, s.reverseErr
+	}
+	return &AffiliateRebateReversal{
+		SourceOrderID:  sourceOrderID,
+		ReversedAmount: cumulativeRefundRatio,
+	}, nil
 }
 
 func (s *paymentFulfillmentAffiliateRepoStub) GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error) {

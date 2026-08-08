@@ -17,6 +17,8 @@ type revokeCacheUserSubRepoStub struct {
 	sub            *UserSubscription
 	deleted        bool
 	getActiveCalls int
+	onUpdate       func()
+	onDelete       func()
 }
 
 func (r *revokeCacheUserSubRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
@@ -31,7 +33,32 @@ func (r *revokeCacheUserSubRepoStub) Delete(_ context.Context, id int64) error {
 	if r.sub == nil || r.sub.ID != id || r.deleted {
 		return ErrSubscriptionNotFound
 	}
+	if r.onDelete != nil {
+		r.onDelete()
+	}
 	r.deleted = true
+	deletedAt := time.Now()
+	r.sub.DeletedAt = &deletedAt
+	return nil
+}
+
+func (r *revokeCacheUserSubRepoStub) GetByIDIncludeDeletedForUpdate(_ context.Context, id int64) (*UserSubscription, error) {
+	if r.sub == nil || r.sub.ID != id {
+		return nil, ErrSubscriptionNotFound
+	}
+	cp := *r.sub
+	return &cp, nil
+}
+
+func (r *revokeCacheUserSubRepoStub) Update(_ context.Context, sub *UserSubscription) error {
+	if r.sub == nil || sub == nil || r.sub.ID != sub.ID {
+		return ErrSubscriptionNotFound
+	}
+	if r.onUpdate != nil {
+		r.onUpdate()
+	}
+	cp := *sub
+	r.sub = &cp
 	return nil
 }
 
@@ -42,6 +69,14 @@ func (r *revokeCacheUserSubRepoStub) GetActiveByUserIDAndGroupID(_ context.Conte
 	}
 	cp := *r.sub
 	return &cp, nil
+}
+
+func (r *revokeCacheUserSubRepoStub) ListActiveByUserID(_ context.Context, userID int64) ([]UserSubscription, error) {
+	if r.deleted || r.sub == nil || r.sub.UserID != userID {
+		return nil, nil
+	}
+	cp := *r.sub
+	return []UserSubscription{cp}, nil
 }
 
 func TestRevokeSubscription_InvalidatesL1CacheSynchronously(t *testing.T) {
@@ -73,6 +108,125 @@ func TestRevokeSubscription_InvalidatesL1CacheSynchronously(t *testing.T) {
 	_, err = svc.GetActiveSubscription(context.Background(), 10, 20)
 	require.ErrorIs(t, err, ErrSubscriptionNotFound)
 	require.Equal(t, 2, repo.getActiveCalls, "撤销后应回源确认订阅已不存在，不能命中旧 L1")
+}
+
+func TestRevokeUserEntitlement_InvalidatesLinkedAliasCacheAfterMutation(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	const (
+		userID               = int64(10)
+		groupID              = int64(20)
+		legacySubscriptionID = int64(30)
+		entitlementID        = int64(40)
+	)
+	userSubs := &revokeCacheUserSubRepoStub{sub: &UserSubscription{
+		ID:        legacySubscriptionID,
+		UserID:    userID,
+		GroupID:   groupID,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  now.Add(-time.Hour),
+		ExpiresAt: now.Add(24 * time.Hour),
+	}}
+	legacyID := legacySubscriptionID
+	primaryGroupID := groupID
+	entitlementRepo := newFakeSubscriptionEntitlementRepo(now)
+	entitlementRepo.entitlements[entitlementID] = &SubscriptionEntitlement{
+		ID:                   entitlementID,
+		UserID:               userID,
+		LegacySubscriptionID: &legacyID,
+		PrimaryGroupID:       &primaryGroupID,
+		Status:               SubscriptionStatusActive,
+		StartsAt:             now.Add(-time.Hour),
+		ExpiresAt:            now.Add(24 * time.Hour),
+		GroupGrants:          testGroupGrants([]int64{groupID}),
+	}
+	entitlementSvc := NewSubscriptionEntitlementService(entitlementRepo, nil)
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubs, nil, nil, &config.Config{
+		SubscriptionCache: config.SubscriptionCacheConfig{L1Size: 1024, L1TTLSeconds: 60},
+	})
+	t.Cleanup(svc.Stop)
+	svc.SetSubscriptionEntitlementAliasDependencies(nil, entitlementSvc)
+	seedLinkedAliasCacheEntries(t, svc, userID, groupID)
+	userSubs.onDelete = func() {
+		requireLinkedAliasCacheEntries(t, svc, userID, groupID, true, "cache invalidation must wait until the entitlement transaction finishes")
+	}
+
+	err := entitlementSvc.RevokeUserEntitlement(context.Background(), userID, entitlementID, now)
+
+	require.NoError(t, err)
+	requireLinkedAliasCacheEntries(t, svc, userID, groupID, false, "direct entitlement revoke must invalidate both linked alias cache keys")
+}
+
+func TestAdvanceEntitlementMonthlyCycle_InvalidatesLinkedAliasCacheAfterMutation(t *testing.T) {
+	now := time.Date(2026, 6, 14, 12, 0, 0, 0, time.UTC)
+	const (
+		userID               = int64(11)
+		groupID              = int64(21)
+		legacySubscriptionID = int64(31)
+		entitlementID        = int64(41)
+	)
+	monthlyLimit := 100.0
+	startsAt := now.Add(-10 * 24 * time.Hour)
+	monthlyWindowStart := startsAt
+	expiresAt := startsAt.Add(120 * 24 * time.Hour)
+	userSubs := &revokeCacheUserSubRepoStub{sub: &UserSubscription{
+		ID:                 legacySubscriptionID,
+		UserID:             userID,
+		GroupID:            groupID,
+		Status:             SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          expiresAt,
+		MonthlyWindowStart: &monthlyWindowStart,
+		MonthlyUsageUSD:    monthlyLimit,
+	}}
+	entitlementRepo := newAdvanceEntitlementMonthlyCycleRepo(now)
+	require.NoError(t, entitlementRepo.Create(context.Background(), &SubscriptionEntitlement{
+		ID:                   entitlementID,
+		UserID:               userID,
+		LegacySubscriptionID: func() *int64 { v := legacySubscriptionID; return &v }(),
+		PrimaryGroupID:       func() *int64 { v := groupID; return &v }(),
+		Status:               SubscriptionStatusActive,
+		StartsAt:             startsAt,
+		ExpiresAt:            expiresAt,
+		MonthlyLimitUSD:      &monthlyLimit,
+		MonthlyUsageUSD:      monthlyLimit,
+		MonthlyWindowStart:   &monthlyWindowStart,
+	}, []int64{groupID}))
+	entitlementSvc := NewSubscriptionEntitlementService(entitlementRepo, nil)
+	entitlementSvc.SetNowFunc(func() time.Time { return now })
+	svc := NewSubscriptionService(groupRepoNoop{}, userSubs, nil, nil, &config.Config{
+		SubscriptionCache: config.SubscriptionCacheConfig{L1Size: 1024, L1TTLSeconds: 60},
+	})
+	t.Cleanup(svc.Stop)
+	svc.SetSubscriptionEntitlementAliasDependencies(nil, entitlementSvc)
+	seedLinkedAliasCacheEntries(t, svc, userID, groupID)
+	userSubs.onUpdate = func() {
+		requireLinkedAliasCacheEntries(t, svc, userID, groupID, true, "cache invalidation must not run inside the entitlement transaction")
+	}
+
+	result, err := entitlementSvc.AdvanceMonthlyCycle(context.Background(), userID, entitlementID)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	requireLinkedAliasCacheEntries(t, svc, userID, groupID, false, "direct monthly-cycle advance must invalidate both linked alias cache keys")
+}
+
+func seedLinkedAliasCacheEntries(t *testing.T, svc *SubscriptionService, userID, groupID int64) {
+	t.Helper()
+	require.NotNil(t, svc.subCacheL1)
+	_, err := svc.GetActiveSubscription(context.Background(), userID, groupID)
+	require.NoError(t, err)
+	_, err = svc.listActiveSubscriptionsForSwitch(context.Background(), userID)
+	require.NoError(t, err)
+	svc.subCacheL1.Wait()
+	requireLinkedAliasCacheEntries(t, svc, userID, groupID, true, "cache fixture was not populated")
+}
+
+func requireLinkedAliasCacheEntries(t *testing.T, svc *SubscriptionService, userID, groupID int64, wantPresent bool, message string) {
+	t.Helper()
+	_, subscriptionPresent := svc.subCacheL1.Get(subCacheKey(userID, groupID))
+	_, listPresent := svc.subCacheL1.Get(activeSubscriptionsCacheKey(userID))
+	require.Equal(t, wantPresent, subscriptionPresent, message)
+	require.Equal(t, wantPresent, listPresent, message)
 }
 
 type restoreUserSubRepoStub struct {

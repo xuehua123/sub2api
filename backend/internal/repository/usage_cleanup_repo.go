@@ -330,7 +330,7 @@ func buildUsageCleanupWhere(filters service.UsageCleanupFilters) (string, []any)
 		idx++
 	}
 	if !filters.EndTime.IsZero() {
-		conditions = append(conditions, fmt.Sprintf("created_at <= $%d", idx))
+		conditions = append(conditions, fmt.Sprintf("created_at < $%d", idx))
 		args = append(args, filters.EndTime)
 		idx++
 	}
@@ -352,6 +352,11 @@ func buildUsageCleanupWhere(filters service.UsageCleanupFilters) (string, []any)
 	if filters.GroupID != nil {
 		conditions = append(conditions, fmt.Sprintf("group_id = $%d", idx))
 		args = append(args, *filters.GroupID)
+		idx++
+	}
+	if filters.EntitlementID != nil {
+		conditions = append(conditions, fmt.Sprintf("entitlement_id = $%d", idx))
+		args = append(args, *filters.EntitlementID)
 		idx++
 	}
 	if filters.Model != nil {

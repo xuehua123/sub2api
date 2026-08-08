@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
 import { mount } from '@vue/test-utils'
 
 import PlanEditDialog from '../PlanEditDialog.vue'
 import type { AdminGroup } from '@/types'
+
+const { createPlan, showError, showSuccess, updatePlan } = vi.hoisted(() => ({
+  createPlan: vi.fn(),
+  showError: vi.fn(),
+  showSuccess: vi.fn(),
+  updatePlan: vi.fn(),
+}))
 
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
@@ -17,15 +24,15 @@ vi.mock('vue-i18n', () => ({
 
 vi.mock('@/stores/app', () => ({
   useAppStore: () => ({
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
+    showError,
+    showSuccess,
   }),
 }))
 
 vi.mock('@/api/admin/payment', () => ({
   adminPaymentAPI: {
-    createPlan: vi.fn(),
-    updatePlan: vi.fn(),
+    createPlan,
+    updatePlan,
   },
 }))
 
@@ -149,6 +156,13 @@ function mountDialog({
 }
 
 describe('PlanEditDialog', () => {
+  beforeEach(() => {
+    createPlan.mockReset().mockResolvedValue({})
+    updatePlan.mockReset().mockResolvedValue({})
+    showError.mockReset()
+    showSuccess.mockReset()
+  })
+
   it('shows CNY channel charge using the configured subscription rate and fee', async () => {
     const wrapper = mountDialog({
       paymentConfig: {
@@ -203,5 +217,27 @@ describe('PlanEditDialog', () => {
     expect(wrapper.findAll('input[type="checkbox"]')).toHaveLength(1)
     expect(groupBadges).toContain('OpenAI + Claude + Gemini + Grok | composite | 1.2x')
     expect(groupBadges).not.toContain('Standard OpenAI | openai | 1x')
+  })
+
+  it('rejects a plan whose unit-converted validity exceeds the backend limit', async () => {
+    const wrapper = mountDialog()
+    const selects = wrapper.findAllComponents(SelectStub)
+
+    await selects[0].vm.$emit('update:modelValue', 'all_subscription_groups')
+    await selects[1].vm.$emit('update:modelValue', 'year')
+
+    const numberInputs = wrapper.findAll('input[type="number"]')
+    const priceInput = numberInputs.find(input => input.attributes('min') === '0.01')
+    const validityInput = numberInputs.find(input => input.attributes('min') === '1' && input.attributes('required') !== undefined)
+    expect(priceInput).toBeDefined()
+    expect(validityInput).toBeDefined()
+
+    await priceInput!.setValue('1')
+    await validityInput!.setValue('101')
+    await wrapper.get('form').trigger('submit')
+
+    expect(showError).toHaveBeenCalledWith('payment.admin.validityTooLong')
+    expect(createPlan).not.toHaveBeenCalled()
+    expect(updatePlan).not.toHaveBeenCalled()
   })
 })
