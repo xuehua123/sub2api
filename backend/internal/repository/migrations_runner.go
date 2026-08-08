@@ -59,6 +59,8 @@ const latestAPIKeyIPIndexMigration = "174_add_usage_logs_api_key_latest_ip_index
 const latestAPIKeyIPIndex = "idx_usage_logs_api_key_latest_ip"
 const commissionRewardsSettlementReadyIndexMigration = "185_add_commission_rewards_settlement_ready_index_notx.sql"
 const commissionRewardsSettlementReadyIndex = "idx_commission_rewards_status_available_at_id"
+const usageLogsUpstreamModelMismatchIndexMigration = "195_add_usage_log_upstream_model_mismatch_index_notx.sql"
+const usageLogsUpstreamModelMismatchIndex = "idx_usage_logs_upstream_model_mismatch_created_at"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -289,6 +291,8 @@ func prepareNonTransactionalMigration(ctx context.Context, db migrationConnectio
 	case commissionRewardsSettlementReadyIndexMigration:
 		// CONCURRENTLY failures leave INVALID indexes; drop so IF NOT EXISTS can recreate.
 		return dropInvalidIndexIfPresent(ctx, db, commissionRewardsSettlementReadyIndex)
+	case usageLogsUpstreamModelMismatchIndexMigration:
+		return dropInvalidIndexIfPresent(ctx, db, usageLogsUpstreamModelMismatchIndex)
 	default:
 		return nil
 	}

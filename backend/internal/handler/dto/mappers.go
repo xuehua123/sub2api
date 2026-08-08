@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -751,6 +752,8 @@ func UsageLogFromServiceAdmin(l *service.UsageLog) *AdminUsageLog {
 	return &AdminUsageLog{
 		UsageLog:              usageLog,
 		UpstreamModel:         l.UpstreamModel,
+		UpstreamResponseModel: l.UpstreamResponseModel,
+		UpstreamModelMismatch: l.UpstreamModelMismatch,
 		ChannelID:             l.ChannelID,
 		BillingSource:         billingSource,
 		ModelMappingChain:     l.ModelMappingChain,
@@ -879,10 +882,16 @@ func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.T
 	if now.IsZero() {
 		now = time.Now()
 	}
-	dailyWindowStart := entitlementQuotaWindowStart(ent.DailyWindowStart, ent.StartsAt, ent.DailyLimitUSD)
+	oneTimeDaily := ent.HasOneTimeDailyQuota()
+	isActive := ent.IsActiveAt(now)
+	dailyWindowStart := entitlementDailyQuotaWindowStart(ent.DailyWindowStart, ent.StartsAt, ent.DailyLimitUSD, now, oneTimeDaily, isActive)
+	dailyUsageUSD := ent.DailyUsageUSD
+	if isActive && ent.NeedsDailyResetAt(now) {
+		dailyUsageUSD = 0
+	}
 	weeklyWindowStart := entitlementQuotaWindowStart(ent.WeeklyWindowStart, ent.StartsAt, ent.WeeklyLimitUSD)
 	monthlyWindowStart := entitlementQuotaWindowStart(ent.MonthlyWindowStart, ent.StartsAt, ent.MonthlyLimitUSD)
-	dailyResetsAt, dailyResetsInSeconds := entitlementWindowReset(dailyWindowStart, ent.ExpiresAt, 24*time.Hour, now, ent.HasOneTimeDailyQuota())
+	dailyResetsAt, dailyResetsInSeconds := entitlementDailyWindowReset(dailyWindowStart, ent.ExpiresAt, now, oneTimeDaily)
 	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(weeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
 	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(monthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
 	return &UserEntitlement{
@@ -895,7 +904,7 @@ func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.T
 		ExpiresAt:              ent.ExpiresAt,
 		Groups:                 userEntitlementGroups(ent),
 		DailyLimitUSD:          cloneFloat64(ent.DailyLimitUSD),
-		DailyUsageUSD:          ent.DailyUsageUSD,
+		DailyUsageUSD:          dailyUsageUSD,
 		DailyWindowStart:       cloneTime(dailyWindowStart),
 		DailyResetsAt:          dailyResetsAt,
 		DailyResetsInSeconds:   dailyResetsInSeconds,
@@ -1175,6 +1184,50 @@ func entitlementWindowReset(windowStart *time.Time, expiresAt time.Time, cycle t
 		resetsInSeconds = 0
 	}
 	return cloneTime(&resetsAt), &resetsInSeconds
+}
+
+func entitlementDailyWindowReset(windowStart *time.Time, expiresAt, now time.Time, oneTimeDaily bool) (*time.Time, *int64) {
+	if windowStart == nil {
+		return nil, nil
+	}
+	resetsAt := timezone.StartOfDay(*windowStart).AddDate(0, 0, 1)
+	if oneTimeDaily && !expiresAt.IsZero() {
+		resetsAt = expiresAt
+	} else if !expiresAt.IsZero() && expiresAt.Before(resetsAt) {
+		resetsAt = expiresAt
+	}
+	resetsInSeconds := int64(resetsAt.Sub(now).Seconds())
+	if resetsInSeconds < 0 {
+		resetsInSeconds = 0
+	}
+	return cloneTime(&resetsAt), &resetsInSeconds
+}
+
+func entitlementDailyQuotaWindowStart(windowStart *time.Time, startsAt time.Time, limit *float64, now time.Time, oneTimeDaily, projectCurrent bool) *time.Time {
+	if limit == nil || *limit <= 0 {
+		return nil
+	}
+	if windowStart != nil {
+		start := timezone.StartOfDay(*windowStart)
+		if projectCurrent && !oneTimeDaily {
+			today := timezone.StartOfDay(now)
+			if today.After(start) {
+				start = today
+			}
+		}
+		return &start
+	}
+	if startsAt.IsZero() {
+		return nil
+	}
+	start := timezone.StartOfDay(startsAt)
+	if projectCurrent && !oneTimeDaily {
+		today := timezone.StartOfDay(now)
+		if today.After(start) {
+			start = today
+		}
+	}
+	return &start
 }
 
 func entitlementQuotaWindowStart(windowStart *time.Time, startsAt time.Time, limit *float64) *time.Time {

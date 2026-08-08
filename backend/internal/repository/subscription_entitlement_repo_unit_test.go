@@ -71,6 +71,44 @@ func TestSubscriptionEntitlementRepository_ListByUserID_SQLite(t *testing.T) {
 	require.Equal(t, []int64{groupB.ID, groupA.ID}, subscriptionEntitlementGrantGroupIDs(got[1].GroupGrants))
 }
 
+func TestSubscriptionEntitlementRepository_ResetDailyUsageStaleExpectedPreservesCurrentUsage_SQLite(t *testing.T) {
+	_, client := newAPIKeyRepoSQLite(t)
+	repo := &subscriptionEntitlementRepository{client: client}
+	ctx := context.Background()
+	now := time.Date(2026, 6, 15, 10, 0, 0, 0, time.UTC)
+	staleWindowStart := time.Date(2026, 6, 14, 0, 0, 0, 0, time.UTC)
+	currentWindowStart := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "ent-reset-cas@test.com")
+	entitlement := &service.SubscriptionEntitlement{
+		UserID:             user.ID,
+		Name:               "daily reset CAS",
+		Status:             service.SubscriptionStatusActive,
+		StartsAt:           now.AddDate(0, 0, -5),
+		ExpiresAt:          now.AddDate(0, 0, 5),
+		DailyWindowStart:   &staleWindowStart,
+		WeeklyWindowStart:  &staleWindowStart,
+		MonthlyWindowStart: &staleWindowStart,
+		DailyUsageUSD:      8,
+	}
+	require.NoError(t, repo.Create(ctx, entitlement, nil))
+
+	require.NoError(t, repo.ResetDailyUsage(ctx, entitlement.ID, &staleWindowStart, currentWindowStart))
+	_, err := client.SubscriptionEntitlement.UpdateOneID(entitlement.ID).SetDailyUsageUsd(4.5).Save(ctx)
+	require.NoError(t, err)
+
+	// A second request still carrying yesterday's window must be a stale no-op.
+	require.NoError(t, repo.ResetDailyUsage(ctx, entitlement.ID, &staleWindowStart, currentWindowStart))
+	got, err := repo.GetByID(ctx, entitlement.ID)
+	require.NoError(t, err)
+	require.Equal(t, 4.5, got.DailyUsageUSD)
+	require.NotNil(t, got.DailyWindowStart)
+	require.Equal(t, currentWindowStart, *got.DailyWindowStart)
+
+	err = repo.ResetDailyUsage(ctx, entitlement.ID+999, &staleWindowStart, currentWindowStart)
+	require.ErrorIs(t, err, service.ErrSubscriptionEntitlementNotFound)
+}
+
 func mustCreateSubscriptionEntitlementRepoGroup(t *testing.T, ctx context.Context, client *dbent.Client, name, platform string) *dbent.Group {
 	t.Helper()
 	group, err := client.Group.Create().

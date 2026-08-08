@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,17 +15,24 @@ func TestSubscriptionServiceExtendSubscription_AdjustsSyntheticEntitlementRow(t 
 	groupID := int64(28)
 	repo := newFakeSubscriptionEntitlementRepo(now)
 	repo.entitlements[91] = &SubscriptionEntitlement{
-		ID:             91,
-		UserID:         7,
-		PlanID:         &planID,
-		PrimaryGroupID: &groupID,
-		Name:           "Pro Plan",
-		Status:         SubscriptionStatusActive,
-		StartsAt:       now.Add(-time.Hour),
-		ExpiresAt:      now.Add(24 * time.Hour),
-		GroupGrants:    testGroupGrants([]int64{groupID}),
+		ID:                 91,
+		UserID:             7,
+		PlanID:             &planID,
+		PrimaryGroupID:     &groupID,
+		Name:               "Pro Plan",
+		Status:             SubscriptionStatusActive,
+		StartsAt:           now.Add(-time.Hour),
+		ExpiresAt:          now.Add(24 * time.Hour),
+		DailyWindowStart:   cloneTimeValue(now.Add(-time.Hour)),
+		WeeklyWindowStart:  cloneTimeValue(now.Add(-time.Hour)),
+		MonthlyWindowStart: cloneTimeValue(now.Add(-time.Hour)),
+		DailyUsageUSD:      1.25,
+		WeeklyUsageUSD:     2.5,
+		MonthlyUsageUSD:    3.75,
+		GroupGrants:        testGroupGrants([]int64{groupID}),
 	}
 	svc := newSubscriptionServiceWithEntitlementRepo(repo)
+	svc.entitlementSvc.SetNowFunc(func() time.Time { return now })
 
 	got, err := svc.ExtendSubscription(context.Background(), -91, 7)
 
@@ -35,6 +43,66 @@ func TestSubscriptionServiceExtendSubscription_AdjustsSyntheticEntitlementRow(t 
 	require.Equal(t, int64(91), got.EntitlementLink.EntitlementID)
 	require.Equal(t, SubscriptionStatusActive, repo.entitlements[91].Status)
 	require.True(t, repo.entitlements[91].ExpiresAt.After(now.Add(7*24*time.Hour)))
+	require.Equal(t, 1.25, repo.entitlements[91].DailyUsageUSD)
+	require.Equal(t, 2.5, repo.entitlements[91].WeeklyUsageUSD)
+	require.Equal(t, 3.75, repo.entitlements[91].MonthlyUsageUSD)
+}
+
+func TestSubscriptionServiceExtendSubscription_RevivesExpiredEntitlementWithFreshUsageWindows(t *testing.T) {
+	now := time.Date(2026, 6, 16, 16, 45, 0, 0, timezone.Location())
+
+	tests := []struct {
+		name          string
+		entitlementID int64
+		days          int
+		oneTimeDaily  bool
+	}{
+		{name: "one day card", entitlementID: 96, days: 1, oneTimeDaily: true},
+		{name: "multi day card", entitlementID: 97, days: 7, oneTimeDaily: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			groupID := int64(28)
+			oldWindowStart := now.AddDate(0, 0, -10)
+			repo := newFakeSubscriptionEntitlementRepo(now)
+			repo.entitlements[tt.entitlementID] = &SubscriptionEntitlement{
+				ID:                 tt.entitlementID,
+				UserID:             7,
+				PrimaryGroupID:     &groupID,
+				Name:               "Expired Plan",
+				Status:             SubscriptionStatusExpired,
+				StartsAt:           now.AddDate(0, 0, -10),
+				ExpiresAt:          now.AddDate(0, 0, -2),
+				DailyWindowStart:   &oldWindowStart,
+				WeeklyWindowStart:  &oldWindowStart,
+				MonthlyWindowStart: &oldWindowStart,
+				DailyUsageUSD:      8.5,
+				WeeklyUsageUSD:     18.5,
+				MonthlyUsageUSD:    28.5,
+				GroupGrants:        testGroupGrants([]int64{groupID}),
+			}
+			svc := newSubscriptionServiceWithEntitlementRepo(repo)
+			svc.entitlementSvc.SetNowFunc(func() time.Time { return now })
+
+			got, err := svc.ExtendSubscription(context.Background(), -tt.entitlementID, tt.days)
+
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			updated := repo.entitlements[tt.entitlementID]
+			require.Equal(t, SubscriptionStatusActive, updated.Status)
+			require.Equal(t, now, updated.StartsAt)
+			require.Equal(t, now.AddDate(0, 0, tt.days), updated.ExpiresAt)
+			require.Equal(t, tt.oneTimeDaily, updated.HasOneTimeDailyQuota())
+			require.Zero(t, updated.DailyUsageUSD)
+			require.Zero(t, updated.WeeklyUsageUSD)
+			require.Zero(t, updated.MonthlyUsageUSD)
+			require.Equal(t, timezone.StartOfDay(now), *updated.DailyWindowStart)
+			require.Equal(t, now, *updated.WeeklyWindowStart)
+			require.Equal(t, now, *updated.MonthlyWindowStart)
+			require.Empty(t, repo.resetCalls, "expired revival must reset term and usage atomically")
+		})
+	}
 }
 
 func TestSubscriptionServiceExtendSubscription_AdjustsLinkedEntitlementRow(t *testing.T) {
@@ -76,7 +144,7 @@ func TestSubscriptionServiceExtendSubscription_AdjustsLinkedEntitlementRow(t *te
 }
 
 func TestSubscriptionServiceAdminResetQuota_ResetsSyntheticEntitlementRow(t *testing.T) {
-	now := time.Now().UTC()
+	now := time.Date(2026, 6, 11, 16, 45, 0, 0, timezone.Location())
 	groupID := int64(28)
 	repo := newFakeSubscriptionEntitlementRepo(now)
 	repo.entitlements[92] = &SubscriptionEntitlement{
@@ -93,6 +161,7 @@ func TestSubscriptionServiceAdminResetQuota_ResetsSyntheticEntitlementRow(t *tes
 		GroupGrants:     testGroupGrants([]int64{groupID}),
 	}
 	svc := newSubscriptionServiceWithEntitlementRepo(repo)
+	svc.entitlementSvc.SetNowFunc(func() time.Time { return now })
 
 	got, err := svc.AdminResetQuota(context.Background(), -92, true, true, true)
 
@@ -103,6 +172,8 @@ func TestSubscriptionServiceAdminResetQuota_ResetsSyntheticEntitlementRow(t *tes
 	require.Equal(t, float64(0), got.MonthlyUsageUSD)
 	require.Len(t, repo.resetCalls, 1)
 	require.Equal(t, int64(92), repo.resetCalls[0].id)
+	require.Equal(t, timezone.StartOfDay(now), repo.resetCalls[0].dailyStart)
+	require.Equal(t, now, repo.resetCalls[0].periodicStart)
 }
 
 func TestSubscriptionServiceRevokeSubscription_RevokesSyntheticEntitlementRow(t *testing.T) {

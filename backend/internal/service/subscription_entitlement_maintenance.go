@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 type subscriptionEntitlementTermCASRepository interface {
@@ -39,10 +41,19 @@ func (e *SubscriptionEntitlement) HasOneTimeDailyQuota() bool {
 }
 
 func (e *SubscriptionEntitlement) NeedsDailyResetAt(now time.Time) bool {
+	_, ok := e.automaticDailyWindowStartAt(now)
+	return ok
+}
+
+func (e *SubscriptionEntitlement) automaticDailyWindowStartAt(now time.Time) (time.Time, bool) {
 	if e == nil || e.DailyWindowStart == nil || e.HasOneTimeDailyQuota() {
-		return false
+		return time.Time{}, false
 	}
-	return needsWindowResetAt(e.DailyWindowStart, e.StartsAt, 24*time.Hour, now)
+	today := timezone.StartOfDay(now)
+	if !today.After(timezone.StartOfDay(*e.DailyWindowStart)) {
+		return time.Time{}, false
+	}
+	return today, true
 }
 
 func (e *SubscriptionEntitlement) NeedsWeeklyResetAt(now time.Time) bool {
@@ -88,20 +99,15 @@ func (s *SubscriptionEntitlementService) CheckAndActivateWindow(ctx context.Cont
 	if ent == nil || ent.IsWindowActivated() {
 		return nil
 	}
-	windowStart := ent.StartsAt
-	if windowStart.IsZero() {
-		windowStart = now
+	periodicStart := ent.StartsAt
+	if periodicStart.IsZero() {
+		periodicStart = now
 	}
-	if err := s.entitlementRepo.ResetUsage(ctx, ent.ID, true, true, true, windowStart); err != nil {
+	dailyStart := timezone.StartOfDay(now)
+	if err := s.entitlementRepo.ActivateWindows(ctx, ent.ID, dailyStart, periodicStart); err != nil {
 		return err
 	}
-	ent.DailyWindowStart = &windowStart
-	ent.WeeklyWindowStart = &windowStart
-	ent.MonthlyWindowStart = &windowStart
-	ent.DailyUsageUSD = 0
-	ent.WeeklyUsageUSD = 0
-	ent.MonthlyUsageUSD = 0
-	return nil
+	return s.refreshEntitlementSnapshot(ctx, ent)
 }
 
 func (s *SubscriptionEntitlementService) CheckAndResetWindows(ctx context.Context, ent *SubscriptionEntitlement, now time.Time) error {
@@ -114,30 +120,39 @@ func (s *SubscriptionEntitlementService) CheckAndResetWindows(ctx context.Contex
 	if err := s.CheckAndActivateWindow(ctx, ent, now); err != nil {
 		return err
 	}
-	if ent.NeedsDailyResetAt(now) {
-		windowStart := resolvedWindowResetStart(ent.DailyWindowStart, ent.StartsAt, 24*time.Hour, now)
-		if err := s.entitlementRepo.ResetUsage(ctx, ent.ID, true, false, false, windowStart); err != nil {
+	maintained := false
+	if windowStart, ok := ent.automaticDailyWindowStartAt(now); ok {
+		if err := s.entitlementRepo.ResetDailyUsage(ctx, ent.ID, ent.DailyWindowStart, windowStart); err != nil {
 			return err
 		}
-		ent.DailyWindowStart = &windowStart
-		ent.DailyUsageUSD = 0
+		maintained = true
 	}
 	if ent.NeedsWeeklyResetAt(now) {
 		windowStart := resolvedWindowResetStart(ent.WeeklyWindowStart, ent.StartsAt, 7*24*time.Hour, now)
-		if err := s.entitlementRepo.ResetUsage(ctx, ent.ID, false, true, false, windowStart); err != nil {
+		if err := s.entitlementRepo.ResetWeeklyUsage(ctx, ent.ID, ent.WeeklyWindowStart, windowStart); err != nil {
 			return err
 		}
-		ent.WeeklyWindowStart = &windowStart
-		ent.WeeklyUsageUSD = 0
+		maintained = true
 	}
 	if ent.NeedsMonthlyResetAt(now) {
 		windowStart := resolvedWindowResetStart(ent.MonthlyWindowStart, ent.StartsAt, monthlyCycleDuration, now)
-		if err := s.entitlementRepo.ResetUsage(ctx, ent.ID, false, false, true, windowStart); err != nil {
+		if err := s.entitlementRepo.ResetMonthlyUsage(ctx, ent.ID, ent.MonthlyWindowStart, windowStart); err != nil {
 			return err
 		}
-		ent.MonthlyWindowStart = &windowStart
-		ent.MonthlyUsageUSD = 0
+		maintained = true
 	}
+	if maintained {
+		return s.refreshEntitlementSnapshot(ctx, ent)
+	}
+	return nil
+}
+
+func (s *SubscriptionEntitlementService) refreshEntitlementSnapshot(ctx context.Context, ent *SubscriptionEntitlement) error {
+	refreshed, err := s.entitlementRepo.GetByID(ctx, ent.ID)
+	if err != nil {
+		return err
+	}
+	*ent = *refreshed
 	return nil
 }
 

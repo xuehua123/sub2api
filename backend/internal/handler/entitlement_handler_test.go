@@ -13,6 +13,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -108,7 +109,8 @@ func TestEntitlementHandler_ListUserEntitlementsSafeDTO(t *testing.T) {
 	require.Equal(t, float64(legacyID), got["legacy_subscription_id"])
 	require.Equal(t, 1.25, got["daily_usage_usd"])
 	require.Equal(t, float64(10), got["daily_limit_usd"])
-	require.Equal(t, float64(12*60*60), got["daily_resets_in_seconds"])
+	expectedDailyResetSeconds := timezone.StartOfDay(fx.now).AddDate(0, 0, 1).Sub(fx.now).Seconds()
+	require.Equal(t, expectedDailyResetSeconds, got["daily_resets_in_seconds"])
 	groups, ok := got["groups"].([]any)
 	require.True(t, ok)
 	require.Len(t, groups, 2)
@@ -422,11 +424,27 @@ func (r *handlerAdvanceEntitlementRepo) UpdateTermAndSource(context.Context, int
 	return service.ErrSubscriptionEntitlementNotFound
 }
 
-func (r *handlerAdvanceEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time) error {
+func (r *handlerAdvanceEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time, time.Time) error {
 	return service.ErrSubscriptionEntitlementNotFound
 }
 
-func (r *handlerAdvanceEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time) error {
+func (r *handlerAdvanceEntitlementRepo) ActivateWindows(context.Context, int64, time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetDailyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetWeeklyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return service.ErrSubscriptionEntitlementNotFound
+}
+
+func (r *handlerAdvanceEntitlementRepo) ResetMonthlyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return service.ErrSubscriptionEntitlementNotFound
 }
 

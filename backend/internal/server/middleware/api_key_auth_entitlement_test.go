@@ -114,10 +114,22 @@ func (r *middlewareEntitlementRepo) UpdateTerm(context.Context, int64, time.Time
 func (r *middlewareEntitlementRepo) UpdateTermAndSource(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef) error {
 	return nil
 }
-func (r *middlewareEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time) error {
+func (r *middlewareEntitlementRepo) ExtendWithFulfillment(context.Context, int64, time.Time, time.Time, string, string, service.SubscriptionEntitlementSourceRef, *service.SubscriptionEntitlementFulfillment, bool, time.Time, time.Time) error {
 	return nil
 }
-func (r *middlewareEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time) error {
+func (r *middlewareEntitlementRepo) ActivateWindows(context.Context, int64, time.Time, time.Time) error {
+	return nil
+}
+func (r *middlewareEntitlementRepo) ResetUsage(context.Context, int64, bool, bool, bool, time.Time, time.Time) error {
+	return nil
+}
+func (r *middlewareEntitlementRepo) ResetDailyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return nil
+}
+func (r *middlewareEntitlementRepo) ResetWeeklyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return nil
+}
+func (r *middlewareEntitlementRepo) ResetMonthlyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return nil
 }
 func (r *middlewareEntitlementRepo) ApplyEntitlementUsage(context.Context, int64, float64, time.Time) (*service.EntitlementUsageApplyResult, error) {

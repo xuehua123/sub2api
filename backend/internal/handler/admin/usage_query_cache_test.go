@@ -28,5 +28,23 @@ func TestUsageStatsCacheKey_StableAndDistinct(t *testing.T) {
 
 	withEntitlement := base
 	withEntitlement.EntitlementID = 99
-	require.NotEqual(t, k1, usageStatsCacheKey(withEntitlement), "different entitlement must change key")
+	entitlementKey := usageStatsCacheKey(withEntitlement)
+	require.NotEqual(t, k1, entitlementKey, "different entitlement must change key")
+
+	mismatchTrue := true
+	withMismatchTrue := withEntitlement
+	withMismatchTrue.UpstreamModelMismatch = &mismatchTrue
+	trueKey := usageStatsCacheKey(withMismatchTrue)
+	require.NotEqual(t, entitlementKey, trueKey, "nil and true mismatch filters must not share a key")
+
+	mismatchFalse := false
+	withMismatchFalse := withEntitlement
+	withMismatchFalse.UpstreamModelMismatch = &mismatchFalse
+	falseKey := usageStatsCacheKey(withMismatchFalse)
+	require.NotEqual(t, entitlementKey, falseKey, "nil and false mismatch filters must not share a key")
+	require.NotEqual(t, trueKey, falseKey, "true and false mismatch filters must not share a key")
+
+	otherEntitlementWithMismatch := withMismatchTrue
+	otherEntitlementWithMismatch.EntitlementID = 100
+	require.NotEqual(t, trueKey, usageStatsCacheKey(otherEntitlementWithMismatch), "entitlement must remain part of a mismatch-filtered key")
 }

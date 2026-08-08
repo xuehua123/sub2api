@@ -22,9 +22,25 @@ type dashboardUsageRepoCapture struct {
 	modelStream        *bool
 	modelEntitlementID int64
 	groupEntitlementID int64
+	trendMismatch      *bool
+	modelMismatch      *bool
+	groupMismatch      *bool
 	rankingLimit       int
 	ranking            []usagestats.UserSpendingRankingItem
 	rankingTotal       float64
+}
+
+func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	granularity string,
+	filters usagestats.UsageLogFilters,
+) ([]usagestats.TrendDataPoint, error) {
+	s.trendRequestType = filters.RequestType
+	s.trendStream = filters.Stream
+	s.trendEntitlementID = filters.EntitlementID
+	s.trendMismatch = filters.UpstreamModelMismatch
+	return []usagestats.TrendDataPoint{}, nil
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
@@ -41,6 +57,29 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithFilters(
 	s.trendStream = stream
 	s.trendEntitlementID = entitlementID
 	return []usagestats.TrendDataPoint{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetModelStatsWithUsageFiltersBySource(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	filters usagestats.UsageLogFilters,
+	source string,
+) ([]usagestats.ModelStat, error) {
+	s.modelRequestType = filters.RequestType
+	s.modelStream = filters.Stream
+	s.modelEntitlementID = filters.EntitlementID
+	s.modelMismatch = filters.UpstreamModelMismatch
+	return []usagestats.ModelStat{}, nil
+}
+
+func (s *dashboardUsageRepoCapture) GetGroupStatsWithUsageFilters(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	filters usagestats.UsageLogFilters,
+) ([]usagestats.GroupStat, error) {
+	s.groupEntitlementID = filters.EntitlementID
+	s.groupMismatch = filters.UpstreamModelMismatch
+	return []usagestats.GroupStat{}, nil
 }
 
 func (s *dashboardUsageRepoCapture) GetModelStatsWithFilters(
@@ -234,6 +273,49 @@ func TestDashboardGroupStatsEntitlementIDFilter(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(765), repo.groupEntitlementID)
+}
+
+func TestDashboardModelAuditFilterPropagatesToTrendModelAndGroupQueries(t *testing.T) {
+	resetDashboardReadCachesForTest()
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	for _, path := range []string{
+		"/admin/dashboard/trend?entitlement_id=987&upstream_model_mismatch=true",
+		"/admin/dashboard/models?entitlement_id=654&upstream_model_mismatch=true",
+		"/admin/dashboard/groups?entitlement_id=765&upstream_model_mismatch=true",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, path)
+	}
+
+	require.NotNil(t, repo.trendMismatch)
+	require.True(t, *repo.trendMismatch)
+	require.NotNil(t, repo.modelMismatch)
+	require.True(t, *repo.modelMismatch)
+	require.NotNil(t, repo.groupMismatch)
+	require.True(t, *repo.groupMismatch)
+	require.Equal(t, int64(987), repo.trendEntitlementID)
+	require.Equal(t, int64(654), repo.modelEntitlementID)
+	require.Equal(t, int64(765), repo.groupEntitlementID)
+}
+
+func TestDashboardModelAuditFilterRejectsInvalidBoolean(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	for _, path := range []string{
+		"/admin/dashboard/trend?upstream_model_mismatch=invalid",
+		"/admin/dashboard/models?upstream_model_mismatch=invalid",
+		"/admin/dashboard/groups?upstream_model_mismatch=invalid",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code, path)
+	}
 }
 
 func TestDashboardUsersRankingLimitAndCache(t *testing.T) {

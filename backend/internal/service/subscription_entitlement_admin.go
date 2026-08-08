@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 func syntheticEntitlementIDFromSubscriptionID(subscriptionID int64) (int64, bool) {
@@ -27,7 +29,7 @@ func (s *SubscriptionService) adminAdjustEntitlement(ctx context.Context, entitl
 		days = -MaxValidityDays
 	}
 
-	now := time.Now()
+	now := entitlementSvc.inputNow(time.Time{})
 	ent, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
 	if err != nil {
 		return nil, err
@@ -57,8 +59,26 @@ func (s *SubscriptionService) adminAdjustEntitlement(ctx context.Context, entitl
 		return nil, ErrAdjustWouldExpire
 	}
 
-	if err := entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, startsAt, expiresAt, status, ent.Notes); err != nil {
-		return nil, err
+	var updateErr error
+	if expired {
+		updateErr = entitlementSvc.entitlementRepo.ExtendWithFulfillment(
+			ctx,
+			entitlementID,
+			startsAt,
+			expiresAt,
+			status,
+			ent.Notes,
+			SubscriptionEntitlementSourceRef{},
+			nil,
+			true,
+			timezone.StartOfDay(now),
+			now,
+		)
+	} else {
+		updateErr = entitlementSvc.entitlementRepo.UpdateTerm(ctx, entitlementID, startsAt, expiresAt, status, ent.Notes)
+	}
+	if updateErr != nil {
+		return nil, updateErr
 	}
 	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)
 	if err != nil {
@@ -84,8 +104,8 @@ func (s *SubscriptionService) resetEntitlementQuotaUsage(ctx context.Context, en
 	if !resetDaily && !resetWeekly && !resetMonthly {
 		return nil, ErrInvalidInput
 	}
-	windowStart := time.Now()
-	if err := entitlementSvc.entitlementRepo.ResetUsage(ctx, entitlementID, resetDaily, resetWeekly, resetMonthly, windowStart); err != nil {
+	now := entitlementSvc.inputNow(time.Time{})
+	if err := entitlementSvc.entitlementRepo.ResetUsage(ctx, entitlementID, resetDaily, resetWeekly, resetMonthly, timezone.StartOfDay(now), now); err != nil {
 		return nil, err
 	}
 	refreshed, err := entitlementSvc.entitlementRepo.GetByID(ctx, entitlementID)

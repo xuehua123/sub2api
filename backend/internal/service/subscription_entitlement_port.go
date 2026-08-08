@@ -23,8 +23,12 @@ type SubscriptionEntitlementRepository interface {
 	ListActiveCoveringGroupForUser(ctx context.Context, userID, groupID int64) ([]SubscriptionEntitlement, error)
 	UpdateTerm(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string) error
 	UpdateTermAndSource(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef) error
-	ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef, fulfillment *SubscriptionEntitlementFulfillment, resetUsage bool, resetWindowStart time.Time) error
-	ResetUsage(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error
+	ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef, fulfillment *SubscriptionEntitlementFulfillment, resetUsage bool, resetDailyStart, resetPeriodicStart time.Time) error
+	ActivateWindows(ctx context.Context, id int64, dailyStart, periodicStart time.Time) error
+	ResetUsage(ctx context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, dailyStart, periodicStart time.Time) error
+	ResetDailyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error
+	ResetWeeklyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error
+	ResetMonthlyUsage(ctx context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error
 	ApplyEntitlementUsage(ctx context.Context, id int64, costUSD float64, now time.Time) (*EntitlementUsageApplyResult, error)
 	ReplaceGroups(ctx context.Context, id int64, groupIDs []int64) error
 }

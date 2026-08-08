@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/stretchr/testify/require"
 )
 
@@ -38,6 +39,7 @@ type fakeSubscriptionEntitlementRepo struct {
 	eventCount      int
 	beforeExtend    func()
 	resetCalls      []fakeEntitlementResetCall
+	windowCalls     []fakeEntitlementWindowCall
 	createGroups    [][]int64
 }
 
@@ -58,11 +60,21 @@ func (r *conflictingSubscriptionEntitlementRepo) CompareAndSwapTerm(
 }
 
 type fakeEntitlementResetCall struct {
-	id           int64
-	resetDaily   bool
-	resetWeekly  bool
-	resetMonthly bool
-	windowStart  time.Time
+	id            int64
+	resetDaily    bool
+	resetWeekly   bool
+	resetMonthly  bool
+	dailyStart    time.Time
+	periodicStart time.Time
+}
+
+type fakeEntitlementWindowCall struct {
+	operation           string
+	id                  int64
+	expectedWindowStart *time.Time
+	dailyStart          time.Time
+	periodicStart       time.Time
+	newWindowStart      time.Time
 }
 
 func newFakeSubscriptionEntitlementRepo(now time.Time) *fakeSubscriptionEntitlementRepo {
@@ -324,7 +336,7 @@ func (r *fakeSubscriptionEntitlementRepo) UpdateTermAndSource(_ context.Context,
 	return nil
 }
 
-func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef, fulfillment *SubscriptionEntitlementFulfillment, resetUsage bool, resetWindowStart time.Time) error {
+func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source SubscriptionEntitlementSourceRef, fulfillment *SubscriptionEntitlementFulfillment, resetUsage bool, resetDailyStart, resetPeriodicStart time.Time) error {
 	if r.beforeExtend != nil {
 		r.beforeExtend()
 	}
@@ -367,9 +379,9 @@ func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Contex
 		ent.DailyUsageUSD = 0
 		ent.WeeklyUsageUSD = 0
 		ent.MonthlyUsageUSD = 0
-		ent.DailyWindowStart = cloneTimeValue(resetWindowStart)
-		ent.WeeklyWindowStart = cloneTimeValue(resetWindowStart)
-		ent.MonthlyWindowStart = cloneTimeValue(resetWindowStart)
+		ent.DailyWindowStart = cloneTimeValue(resetDailyStart)
+		ent.WeeklyWindowStart = cloneTimeValue(resetPeriodicStart)
+		ent.MonthlyWindowStart = cloneTimeValue(resetPeriodicStart)
 	}
 	if fulfillment != nil {
 		fulfillment.EntitlementID = id
@@ -390,7 +402,32 @@ func (r *fakeSubscriptionEntitlementRepo) ExtendWithFulfillment(_ context.Contex
 	return nil
 }
 
-func (r *fakeSubscriptionEntitlementRepo) ResetUsage(_ context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, windowStart time.Time) error {
+func (r *fakeSubscriptionEntitlementRepo) ActivateWindows(_ context.Context, id int64, dailyStart, periodicStart time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.windowCalls = append(r.windowCalls, fakeEntitlementWindowCall{
+		operation:     "activate",
+		id:            id,
+		dailyStart:    dailyStart,
+		periodicStart: periodicStart,
+	})
+	ent, ok := r.entitlements[id]
+	if !ok {
+		return ErrSubscriptionEntitlementNotFound
+	}
+	if ent.DailyWindowStart != nil || ent.WeeklyWindowStart != nil || ent.MonthlyWindowStart != nil {
+		return nil
+	}
+	ent.DailyUsageUSD = 0
+	ent.WeeklyUsageUSD = 0
+	ent.MonthlyUsageUSD = 0
+	ent.DailyWindowStart = cloneTimeValue(dailyStart)
+	ent.WeeklyWindowStart = cloneTimeValue(periodicStart)
+	ent.MonthlyWindowStart = cloneTimeValue(periodicStart)
+	return nil
+}
+
+func (r *fakeSubscriptionEntitlementRepo) ResetUsage(_ context.Context, id int64, resetDaily, resetWeekly, resetMonthly bool, dailyStart, periodicStart time.Time) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	ent, ok := r.entitlements[id]
@@ -399,18 +436,85 @@ func (r *fakeSubscriptionEntitlementRepo) ResetUsage(_ context.Context, id int64
 	}
 	if resetDaily {
 		ent.DailyUsageUSD = 0
-		ent.DailyWindowStart = &windowStart
+		ent.DailyWindowStart = &dailyStart
 	}
 	if resetWeekly {
 		ent.WeeklyUsageUSD = 0
-		ent.WeeklyWindowStart = &windowStart
+		ent.WeeklyWindowStart = &periodicStart
 	}
 	if resetMonthly {
 		ent.MonthlyUsageUSD = 0
-		ent.MonthlyWindowStart = &windowStart
+		ent.MonthlyWindowStart = &periodicStart
 	}
-	r.resetCalls = append(r.resetCalls, fakeEntitlementResetCall{id: id, resetDaily: resetDaily, resetWeekly: resetWeekly, resetMonthly: resetMonthly, windowStart: windowStart})
+	r.resetCalls = append(r.resetCalls, fakeEntitlementResetCall{
+		id:            id,
+		resetDaily:    resetDaily,
+		resetWeekly:   resetWeekly,
+		resetMonthly:  resetMonthly,
+		dailyStart:    dailyStart,
+		periodicStart: periodicStart,
+	})
 	return nil
+}
+
+func (r *fakeSubscriptionEntitlementRepo) ResetDailyUsage(_ context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	return r.resetWindowUsage(id, "daily", expectedWindowStart, newWindowStart)
+}
+
+func (r *fakeSubscriptionEntitlementRepo) ResetWeeklyUsage(_ context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	return r.resetWindowUsage(id, "weekly", expectedWindowStart, newWindowStart)
+}
+
+func (r *fakeSubscriptionEntitlementRepo) ResetMonthlyUsage(_ context.Context, id int64, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	return r.resetWindowUsage(id, "monthly", expectedWindowStart, newWindowStart)
+}
+
+func (r *fakeSubscriptionEntitlementRepo) resetWindowUsage(id int64, operation string, expectedWindowStart *time.Time, newWindowStart time.Time) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.windowCalls = append(r.windowCalls, fakeEntitlementWindowCall{
+		operation:           operation,
+		id:                  id,
+		expectedWindowStart: cloneTimePtr(expectedWindowStart),
+		newWindowStart:      newWindowStart,
+	})
+	ent, ok := r.entitlements[id]
+	if !ok {
+		return ErrSubscriptionEntitlementNotFound
+	}
+
+	var current *time.Time
+	switch operation {
+	case "daily":
+		current = ent.DailyWindowStart
+	case "weekly":
+		current = ent.WeeklyWindowStart
+	case "monthly":
+		current = ent.MonthlyWindowStart
+	}
+	if !fakeEntitlementWindowMatches(current, expectedWindowStart) {
+		return nil
+	}
+
+	switch operation {
+	case "daily":
+		ent.DailyUsageUSD = 0
+		ent.DailyWindowStart = cloneTimeValue(newWindowStart)
+	case "weekly":
+		ent.WeeklyUsageUSD = 0
+		ent.WeeklyWindowStart = cloneTimeValue(newWindowStart)
+	case "monthly":
+		ent.MonthlyUsageUSD = 0
+		ent.MonthlyWindowStart = cloneTimeValue(newWindowStart)
+	}
+	return nil
+}
+
+func fakeEntitlementWindowMatches(current, expected *time.Time) bool {
+	if current == nil || expected == nil {
+		return current == nil && expected == nil
+	}
+	return current.Equal(*expected)
 }
 
 func (r *fakeSubscriptionEntitlementRepo) ApplyEntitlementUsage(_ context.Context, id int64, costUSD float64, now time.Time) (*EntitlementUsageApplyResult, error) {
@@ -501,6 +605,8 @@ func TestSubscriptionEntitlementService_AssignOrExtendFromPlanCreatesEntitlement
 	require.Equal(t, int64(42), ent.UserID)
 	require.NotNil(t, ent.PlanID)
 	require.Equal(t, int64(1), *ent.PlanID)
+	require.Equal(t, timezone.StartOfDay(now), *ent.DailyWindowStart)
+	require.Equal(t, now, *ent.WeeklyWindowStart)
 	require.Equal(t, now, *ent.MonthlyWindowStart)
 	require.Equal(t, now.AddDate(0, 0, 30), ent.ExpiresAt)
 	require.NotNil(t, ent.MonthlyLimitUSD)
@@ -959,10 +1065,163 @@ func TestSubscriptionEntitlementService_CheckAndResetWindowsResetsExpiredDailyWe
 	require.Zero(t, updated.DailyUsageUSD)
 	require.Zero(t, updated.WeeklyUsageUSD)
 	require.Zero(t, updated.MonthlyUsageUSD)
-	require.Len(t, repo.resetCalls, 3)
+	require.Len(t, repo.windowCalls, 3)
+	require.Equal(t, "daily", repo.windowCalls[0].operation)
+	require.Equal(t, dailyStart, *repo.windowCalls[0].expectedWindowStart)
+	require.Equal(t, timezone.StartOfDay(now), repo.windowCalls[0].newWindowStart)
+	require.Equal(t, "weekly", repo.windowCalls[1].operation)
+	require.Equal(t, weeklyStart, *repo.windowCalls[1].expectedWindowStart)
+	require.Equal(t, "monthly", repo.windowCalls[2].operation)
+	require.Equal(t, monthlyStart, *repo.windowCalls[2].expectedWindowStart)
 	require.NotEqual(t, dailyStart, *updated.DailyWindowStart)
 	require.NotEqual(t, weeklyStart, *updated.WeeklyWindowStart)
 	require.NotEqual(t, monthlyStart, *updated.MonthlyWindowStart)
+}
+
+func TestSubscriptionEntitlementService_DailyWindowUsesCalendarMidnight(t *testing.T) {
+	base := time.Date(2026, 6, 11, 0, 0, 0, 0, timezone.Location())
+	startsAt := base.Add(9*time.Hour + 30*time.Minute)
+	dailyStart := base.Add(16*time.Hour + 45*time.Minute)
+	weeklyStart := startsAt
+	monthlyStart := startsAt
+	repo := newFakeSubscriptionEntitlementRepo(base)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	repo.entitlements[8] = &SubscriptionEntitlement{
+		ID:                 8,
+		UserID:             42,
+		Status:             SubscriptionStatusActive,
+		StartsAt:           startsAt,
+		ExpiresAt:          startsAt.AddDate(0, 0, 10),
+		DailyWindowStart:   &dailyStart,
+		WeeklyWindowStart:  &weeklyStart,
+		MonthlyWindowStart: &monthlyStart,
+		DailyUsageUSD:      7,
+	}
+	ent, err := repo.GetByID(context.Background(), 8)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckAndResetWindows(context.Background(), ent, base.Add(23*time.Hour+59*time.Minute)))
+	require.Empty(t, repo.windowCalls, "同一日历日内不应按滚动 24 小时重置")
+
+	nextDay := base.AddDate(0, 0, 1).Add(time.Minute)
+	require.NoError(t, svc.CheckAndResetWindows(context.Background(), ent, nextDay))
+	require.Len(t, repo.windowCalls, 1)
+	require.Equal(t, "daily", repo.windowCalls[0].operation)
+	require.Equal(t, dailyStart, *repo.windowCalls[0].expectedWindowStart)
+	require.Equal(t, timezone.StartOfDay(nextDay), repo.windowCalls[0].newWindowStart)
+	require.Equal(t, timezone.StartOfDay(nextDay), *ent.DailyWindowStart)
+	require.Zero(t, ent.DailyUsageUSD)
+}
+
+func TestSubscriptionEntitlementService_StaleDailyResetReloadsCurrentUsage(t *testing.T) {
+	now := time.Date(2026, 6, 15, 10, 0, 0, 0, timezone.Location())
+	staleDailyStart := timezone.StartOfDay(now.AddDate(0, 0, -1))
+	periodicStart := now.Add(-time.Hour)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	repo.entitlements[12] = &SubscriptionEntitlement{
+		ID:                 12,
+		UserID:             42,
+		Status:             SubscriptionStatusActive,
+		StartsAt:           now.AddDate(0, 0, -5),
+		ExpiresAt:          now.AddDate(0, 0, 5),
+		DailyWindowStart:   &staleDailyStart,
+		WeeklyWindowStart:  &periodicStart,
+		MonthlyWindowStart: &periodicStart,
+		DailyUsageUSD:      8,
+	}
+	firstSnapshot, err := repo.GetByID(context.Background(), 12)
+	require.NoError(t, err)
+	staleSnapshot, err := repo.GetByID(context.Background(), 12)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckAndResetWindows(context.Background(), firstSnapshot, now))
+	_, err = repo.ApplyEntitlementUsage(context.Background(), 12, 4.5, now)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckAndResetWindows(context.Background(), staleSnapshot, now))
+	require.Equal(t, 4.5, staleSnapshot.DailyUsageUSD)
+	require.Equal(t, timezone.StartOfDay(now), *staleSnapshot.DailyWindowStart)
+	require.Len(t, repo.windowCalls, 2)
+	require.Equal(t, staleDailyStart, *repo.windowCalls[1].expectedWindowStart)
+}
+
+func TestSubscriptionEntitlementService_OneDayCardKeepsOneTimeDailyQuota(t *testing.T) {
+	base := time.Date(2026, 6, 11, 0, 0, 0, 0, timezone.Location())
+	startsAt := base.Add(17 * time.Hour)
+	dailyStart := base
+	repo := newFakeSubscriptionEntitlementRepo(base)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	repo.entitlements[9] = &SubscriptionEntitlement{
+		ID:               9,
+		UserID:           42,
+		Status:           SubscriptionStatusActive,
+		StartsAt:         startsAt,
+		ExpiresAt:        startsAt.AddDate(0, 0, 1),
+		DailyWindowStart: &dailyStart,
+		DailyUsageUSD:    7,
+	}
+	ent, err := repo.GetByID(context.Background(), 9)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckAndResetWindows(context.Background(), ent, base.AddDate(0, 0, 1).Add(time.Hour)))
+	require.Empty(t, repo.windowCalls)
+	require.Equal(t, 7.0, ent.DailyUsageUSD)
+}
+
+func TestSubscriptionEntitlementService_DelayedActivationKeepsPaidTermPeriodicAnchor(t *testing.T) {
+	base := time.Date(2026, 6, 11, 0, 0, 0, 0, timezone.Location())
+	startsAt := base.Add(9 * time.Hour)
+	activatedAt := base.AddDate(0, 0, 2).Add(18 * time.Hour)
+	repo := newFakeSubscriptionEntitlementRepo(base)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	repo.entitlements[10] = &SubscriptionEntitlement{
+		ID:        10,
+		UserID:    42,
+		Status:    SubscriptionStatusActive,
+		StartsAt:  startsAt,
+		ExpiresAt: startsAt.AddDate(0, 0, 45),
+	}
+	ent, err := repo.GetByID(context.Background(), 10)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.CheckAndActivateWindow(context.Background(), ent, activatedAt))
+	require.Len(t, repo.windowCalls, 1)
+	require.Equal(t, "activate", repo.windowCalls[0].operation)
+	require.Equal(t, timezone.StartOfDay(activatedAt), repo.windowCalls[0].dailyStart)
+	require.Equal(t, startsAt, repo.windowCalls[0].periodicStart)
+	require.Equal(t, startsAt, *ent.WeeklyWindowStart)
+	require.Equal(t, startsAt, *ent.MonthlyWindowStart)
+}
+
+func TestSubscriptionEntitlementService_ExpiredExtensionSeparatesDailyAndPeriodicAnchors(t *testing.T) {
+	base := time.Date(2026, 6, 11, 0, 0, 0, 0, timezone.Location())
+	now := base.Add(15*time.Hour + 30*time.Minute)
+	planID := int64(1)
+	repo := newFakeSubscriptionEntitlementRepo(now)
+	svc := NewSubscriptionEntitlementService(repo, &fakeSubscriptionEntitlementPlanRepo{})
+	existing := &SubscriptionEntitlement{
+		ID:              11,
+		UserID:          42,
+		PlanID:          &planID,
+		Status:          SubscriptionStatusExpired,
+		StartsAt:        now.AddDate(0, 0, -10),
+		ExpiresAt:       now.AddDate(0, 0, -1),
+		DailyUsageUSD:   1,
+		WeeklyUsageUSD:  2,
+		MonthlyUsageUSD: 3,
+	}
+	repo.entitlements[existing.ID] = cloneTestEntitlement(existing)
+
+	extended, err := svc.extendExistingEntitlement(context.Background(), existing, 30, "renewed", SubscriptionEntitlementSourceRef{}, now)
+
+	require.NoError(t, err)
+	require.Equal(t, timezone.StartOfDay(now), *extended.DailyWindowStart)
+	require.Equal(t, now, *extended.WeeklyWindowStart)
+	require.Equal(t, now, *extended.MonthlyWindowStart)
+	require.Zero(t, extended.DailyUsageUSD)
+	require.Zero(t, extended.WeeklyUsageUSD)
+	require.Zero(t, extended.MonthlyUsageUSD)
 }
 
 func testEntitlementPlan(id int64, groupIDs []int64, monthlyLimit *float64) *SubscriptionEntitlementPlan {

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 )
 
 type SubscriptionEntitlementService struct {
@@ -281,7 +283,8 @@ func (s *SubscriptionEntitlementService) extendExistingEntitlement(
 		StartsAt:  startsAt,
 		ExpiresAt: expiresAt,
 	}, validityDays, source)
-	if err := s.entitlementRepo.ExtendWithFulfillment(ctx, existing.ID, startsAt, expiresAt, SubscriptionStatusActive, mergedNotes, source, fulfillment, expired, startsAt); err != nil {
+	dailyStart := timezone.StartOfDay(startsAt)
+	if err := s.entitlementRepo.ExtendWithFulfillment(ctx, existing.ID, startsAt, expiresAt, SubscriptionStatusActive, mergedNotes, source, fulfillment, expired, dailyStart, startsAt); err != nil {
 		return nil, err
 	}
 	refreshed, err := s.entitlementRepo.GetByID(ctx, existing.ID)
@@ -337,7 +340,8 @@ func entitlementSourceFromAssignInput(input AssignEntitlementFromPlanInput, now 
 
 func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID int64, primaryGroupID *int64, validityDays int, notes string, source SubscriptionEntitlementSourceRef, now time.Time, legacySubscriptionID *int64) *SubscriptionEntitlement {
 	planID := plan.ID
-	windowStart := now
+	dailyWindowStart := timezone.StartOfDay(now)
+	periodicWindowStart := now
 	name := plan.Name
 	if strings.TrimSpace(name) == "" {
 		name = plan.ProductName
@@ -352,9 +356,9 @@ func newEntitlementFromPlan(plan *SubscriptionEntitlementPlan, userID int64, pri
 		Status:               SubscriptionStatusActive,
 		StartsAt:             now,
 		ExpiresAt:            addEntitlementValidityDays(now, validityDays),
-		DailyWindowStart:     &windowStart,
-		WeeklyWindowStart:    &windowStart,
-		MonthlyWindowStart:   &windowStart,
+		DailyWindowStart:     &dailyWindowStart,
+		WeeklyWindowStart:    &periodicWindowStart,
+		MonthlyWindowStart:   &periodicWindowStart,
 		DailyLimitUSD:        cloneFloat64Ptr(plan.DailyLimitUSD),
 		WeeklyLimitUSD:       cloneFloat64Ptr(plan.WeeklyLimitUSD),
 		MonthlyLimitUSD:      cloneFloat64Ptr(plan.MonthlyLimitUSD),

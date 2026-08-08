@@ -9,6 +9,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
@@ -428,21 +429,22 @@ type usageBillingEntitlementWindowUsage struct {
 
 func (u *usageBillingEntitlementWindowUsage) activateAndReset(startsAt, expiresAt, now time.Time) {
 	if u.dailyWindowStart == nil && u.weeklyWindowStart == nil && u.monthlyWindowStart == nil {
-		windowStart := startsAt
-		if windowStart.IsZero() {
-			windowStart = now
+		periodicStart := startsAt
+		if periodicStart.IsZero() {
+			periodicStart = now
 		}
-		u.dailyWindowStart = &windowStart
-		u.weeklyWindowStart = &windowStart
-		u.monthlyWindowStart = &windowStart
+		dailyStart := timezone.StartOfDay(now)
+		u.dailyWindowStart = &dailyStart
+		u.weeklyWindowStart = &periodicStart
+		u.monthlyWindowStart = &periodicStart
 		u.dailyUsageUSD = 0
 		u.weeklyUsageUSD = 0
 		u.monthlyUsageUSD = 0
 	}
 	if u.dailyWindowStart != nil &&
 		!usageBillingOneTimeDailyQuota(startsAt, expiresAt) &&
-		usageBillingNeedsWindowResetAt(u.dailyWindowStart, startsAt, 24*time.Hour, now) {
-		windowStart := usageBillingResolvedWindowResetStart(u.dailyWindowStart, startsAt, 24*time.Hour, now)
+		timezone.StartOfDay(now).After(timezone.StartOfDay(*u.dailyWindowStart)) {
+		windowStart := timezone.StartOfDay(now)
 		u.dailyWindowStart = &windowStart
 		u.dailyUsageUSD = 0
 	}

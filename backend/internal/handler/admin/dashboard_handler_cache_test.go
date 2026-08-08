@@ -40,7 +40,30 @@ func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithFilters(
 	}}, nil
 }
 
-func TestDashboardHandler_GetUsageTrend_CacheKeyIncludesEntitlementID(t *testing.T) {
+func (r *dashboardUsageRepoCacheProbe) GetUsageTrendWithUsageFilters(
+	ctx context.Context,
+	startTime, endTime time.Time,
+	granularity string,
+	filters usagestats.UsageLogFilters,
+) ([]usagestats.TrendDataPoint, error) {
+	return r.GetUsageTrendWithFilters(
+		ctx,
+		startTime,
+		endTime,
+		granularity,
+		filters.UserID,
+		filters.APIKeyID,
+		filters.AccountID,
+		filters.GroupID,
+		filters.EntitlementID,
+		filters.Model,
+		filters.RequestType,
+		filters.Stream,
+		filters.BillingType,
+	)
+}
+
+func TestDashboardHandler_GetUsageTrend_CacheKeyIncludesEntitlementAndModelMismatch(t *testing.T) {
 	t.Cleanup(resetDashboardReadCachesForTest)
 	resetDashboardReadCachesForTest()
 
@@ -56,17 +79,27 @@ func TestDashboardHandler_GetUsageTrend_CacheKeyIncludesEntitlementID(t *testing
 	router.ServeHTTP(rec1, req1)
 	require.Equal(t, http.StatusOK, rec1.Code)
 
-	req2 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=2", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1&upstream_model_mismatch=true", nil)
 	rec2 := httptest.NewRecorder()
 	router.ServeHTTP(rec2, req2)
 	require.Equal(t, http.StatusOK, rec2.Code)
 
-	req3 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1", nil)
+	req3 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1&upstream_model_mismatch=false", nil)
 	rec3 := httptest.NewRecorder()
 	router.ServeHTTP(rec3, req3)
 	require.Equal(t, http.StatusOK, rec3.Code)
-	require.Equal(t, "hit", rec3.Header().Get("X-Snapshot-Cache"))
-	require.Equal(t, int32(2), repo.trendCalls.Load())
+
+	req4 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=2&upstream_model_mismatch=true", nil)
+	rec4 := httptest.NewRecorder()
+	router.ServeHTTP(rec4, req4)
+	require.Equal(t, http.StatusOK, rec4.Code)
+
+	req5 := httptest.NewRequest(http.MethodGet, "/admin/dashboard/trend?start_date=2026-03-01&end_date=2026-03-07&entitlement_id=1&upstream_model_mismatch=true", nil)
+	rec5 := httptest.NewRecorder()
+	router.ServeHTTP(rec5, req5)
+	require.Equal(t, http.StatusOK, rec5.Code)
+	require.Equal(t, "hit", rec5.Header().Get("X-Snapshot-Cache"))
+	require.Equal(t, int32(4), repo.trendCalls.Load())
 }
 
 func (r *dashboardUsageRepoCacheProbe) GetUserUsageTrend(

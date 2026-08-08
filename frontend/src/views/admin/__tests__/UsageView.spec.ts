@@ -52,6 +52,12 @@ const messages: Record<string, string> = {
   'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
   'admin.usage.billingSource.label': 'Billing Source',
   'admin.usage.entitlementId': 'Entitlement ID',
+  'usage.requestedModel': 'Requested model',
+  'usage.sentUpstreamModel': 'Sent upstream model',
+  'usage.upstreamResponseModel': 'Upstream response model',
+  'usage.upstreamModelMismatch': 'Upstream model mismatch',
+  'common.yes': 'Yes',
+  'common.no': 'No',
 }
 
 const formatLocalDate = (date: Date): string => {
@@ -771,5 +777,64 @@ describe('admin UsageView column settings migration', () => {
     expect(JSON.parse(storage.get('usage-hidden-columns') ?? '[]')).toEqual(['first_sse_event', 'user_agent'])
     expect(storage.get('usage-hidden-columns-version')).toBe('4')
     wrapper.unmount()
+  })
+})
+
+describe('admin UsageView model audit export', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    adminUsageList.mockReset().mockResolvedValue({
+      items: [{
+        id: 1,
+        created_at: '2026-08-04T00:00:00Z',
+        model: 'gpt-5.6-sol',
+        upstream_model: 'gpt-5.5',
+        upstream_response_model: 'gpt-5.4',
+        upstream_model_mismatch: true,
+        request_type: 'sync',
+        input_tokens: 1,
+        output_tokens: 1,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        duration_ms: 10,
+      }],
+      total: 1,
+      pages: 1,
+    })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0, total_input_tokens: 0, total_output_tokens: 0,
+      total_cache_tokens: 0, total_tokens: 0, total_cost: 0, total_actual_cost: 0, average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+    aoaToSheetMock.mockClear()
+    sheetAddAoaMock.mockClear()
+    saveAsMock.mockClear()
+    writeMock.mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('exports requested, sent, response, and mismatch as separate admin columns', async () => {
+    const wrapper = mountRouteFilteredUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    await (wrapper.vm as any).exportToExcel()
+    await flushPromises()
+
+    const headers = aoaToSheetMock.mock.calls[0][0][0]
+    expect(headers.slice(4, 8)).toEqual([
+      'Requested model',
+      'Sent upstream model',
+      'Upstream response model',
+      'Upstream model mismatch',
+    ])
+    const row = sheetAddAoaMock.mock.calls[0][1][0]
+    expect(row.slice(4, 8)).toEqual(['gpt-5.6-sol', 'gpt-5.5', 'gpt-5.4', 'Yes'])
+    expect(saveAsMock).toHaveBeenCalledTimes(1)
   })
 })
