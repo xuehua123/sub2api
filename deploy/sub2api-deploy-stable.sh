@@ -797,7 +797,10 @@ if [[ "$published_release_tag" != "$release_tag" || "$published_release_draft" !
 fi
 
 binary_version_output="$(docker run --rm --entrypoint /app/sub2api "$deploy_image" --version 2>&1)"
-mapfile -t binary_build_records < <(
+binary_build_records=()
+while IFS= read -r binary_build_record; do
+  [[ -n "$binary_build_record" ]] && binary_build_records+=("$binary_build_record")
+done < <(
   sed -nE 's/^.*Sub2API[[:space:]]+([^[:space:]]+)[[:space:]]+\(commit:[[:space:]]+([0-9a-f]{40,64}),[[:space:]]+built:[[:space:]]+[^)]*\)$/\1\t\2/p' <<< "$binary_version_output"
 )
 if [[ "${#binary_build_records[@]}" -ne 1 ]]; then
