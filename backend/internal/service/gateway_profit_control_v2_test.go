@@ -76,6 +76,20 @@ func TestGatewayProfitControlInstallsForFivePlatformsOnlyOnTokenRequests(t *test
 	}
 }
 
+func TestGatewayProfitControlSuppressedContextSkipsTokenGate(t *testing.T) {
+	group := gatewayProfitTestGroup(102, PlatformGrok)
+	groupID := group.ID
+	svc := &GatewayService{}
+	base := gatewayProfitTestContext(group)
+
+	regular := svc.withGatewayProfitControlGate(base, &groupID)
+	require.True(t, gatewayProfitControlGateActive(regular), "ordinary token requests must still install the gate")
+
+	suppressed := WithOpenAIProfitControlSuppressed(base)
+	suppressed = svc.withGatewayProfitControlGate(suppressed, &groupID)
+	require.False(t, gatewayProfitControlGateActive(suppressed), "independently priced requests must not inherit the token gate")
+}
+
 func TestGatewayProfitControlCompositeBillingUsesScheduledMemberConfig(t *testing.T) {
 	billingGroup := &Group{
 		ID:               201,

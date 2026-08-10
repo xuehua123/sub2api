@@ -34,8 +34,10 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	if !h.ensureResponsesDependencies(c, nil) {
 		return
 	}
+	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
@@ -45,7 +47,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	}
 
 	selection, _, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
-		c.Request.Context(),
+		requestCtx,
 		apiKey.GroupID,
 		"",
 		"",
@@ -72,7 +74,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	}
 	defer release()
 
-	token, _, err := h.gatewayService.GetRequestCredential(c.Request.Context(), c, selection.Account)
+	token, _, err := h.gatewayService.GetRequestCredential(requestCtx, c, selection.Account)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadGateway, "upstream_error", "Grok credential unavailable")
 		return
@@ -89,7 +91,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 		model = "grok-voice-latest"
 	}
 	started := time.Now()
-	proxyErr := h.gatewayService.ProxyGrokRealtime(c.Request.Context(), c, conn, selection.Account, token, model)
+	proxyErr := h.gatewayService.ProxyGrokRealtime(requestCtx, c, conn, selection.Account, token, model)
 	elapsed := time.Since(started)
 	if proxyErr != nil {
 		reqLog.Info("grok_realtime.proxy_failed", zap.Error(proxyErr))
@@ -108,7 +110,7 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 			Duration:   elapsed,
 			AudioUsage: &service.AudioUsage{Mode: "realtime", DurationOrUnits: elapsed.Minutes()},
 		}
-		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, "realtime", nil, result)
+		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, subscriptionEntitlement, entitlementBalanceFallback, "realtime", nil, result)
 	}
 }
 
@@ -135,8 +137,10 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 	if !h.ensureResponsesDependencies(c, nil) {
 		return
 	}
+	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
@@ -174,13 +178,14 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 	}
 
 	failed := map[int64]struct{}{}
+	sameAccountRetryCount := map[int64]int{}
 	var last *service.UpstreamFailoverError
 	reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 	selectionModel := "grok-4.5"
 
-	for attempts := 0; attempts < 4; attempts++ {
+	for attempts := 0; attempts < 4; {
 		selection, _, selectErr := h.gatewayService.SelectAccountWithSchedulerForCapability(
-			c.Request.Context(),
+			requestCtx,
 			apiKey.GroupID,
 			"",
 			"",
@@ -206,6 +211,7 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 		release, status := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &started, reqLog)
 		if status == openAISlotAcquireProfitVetoed {
 			failed[account.ID] = struct{}{}
+			attempts++
 			continue
 		}
 		if status != openAISlotAcquireOK {
@@ -215,20 +221,47 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 				return
 			}
 			failed[account.ID] = struct{}{}
+			attempts++
 			continue
 		}
 		result, forwardErr := func() (*service.OpenAIForwardResult, error) {
 			defer release()
-			return h.gatewayService.ForwardGrokVoice(c.Request.Context(), c, account, endpoint, body, contentType)
+			for {
+				result, err := h.gatewayService.ForwardGrokVoice(requestCtx, c, account, endpoint, body, contentType)
+				if err == nil {
+					return result, nil
+				}
+				var sameAccountErr *service.UpstreamFailoverError
+				if !errors.As(err, &sameAccountErr) ||
+					!sameAccountErr.RetryableOnSameAccount ||
+					service.IsChannelMonitorProbe(requestCtx) {
+					return nil, err
+				}
+				retryLimit := account.GetPoolModeRetryCount()
+				if sameAccountRetryCount[account.ID] >= retryLimit {
+					return nil, err
+				}
+				sameAccountRetryCount[account.ID]++
+				reqLog.Warn("grok_voice.pool_mode_same_account_retry",
+					zap.Int64("account_id", account.ID),
+					zap.Int("upstream_status", sameAccountErr.StatusCode),
+					zap.Int("retry_limit", retryLimit),
+					zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+				)
+				if !sleepWithContext(requestCtx, sameAccountRetryDelay) {
+					return nil, requestCtx.Err()
+				}
+			}
 		}()
 		if forwardErr == nil {
-			h.recordGrokVoiceUsage(c, apiKey, account, subscription, endpoint, body, result)
+			h.recordGrokVoiceUsage(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, endpoint, body, result)
 			return
 		}
 		var failoverErr *service.UpstreamFailoverError
 		if errors.As(forwardErr, &failoverErr) && failoverErr.ShouldRetryNextAccount() {
 			failed[account.ID] = struct{}{}
 			last = failoverErr
+			attempts++
 			continue
 		}
 		// Non-failover errors: handleGrokMediaErrorResponse / transport already wrote response.
@@ -245,6 +278,8 @@ func (h *OpenAIGatewayHandler) recordGrokVoiceUsage(
 	apiKey *service.APIKey,
 	account *service.Account,
 	subscription *service.UserSubscription,
+	entitlement *service.SubscriptionEntitlement,
+	entitlementBalanceFallback bool,
 	endpoint string,
 	body []byte,
 	result *service.OpenAIForwardResult,
@@ -278,20 +313,23 @@ func (h *OpenAIGatewayHandler) recordGrokVoiceUsage(
 
 	h.submitMandatoryUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 		if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
-			Result:             result,
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: requestPayloadHash,
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
-			SessionID:          sessionID,
-			ChannelUsageFields: clientRequestedUsageFields(c, service.ChannelMappingResult{}, model, result.UpstreamModel),
+			Result:                     result,
+			APIKey:                     apiKey,
+			User:                       apiKey.User,
+			Account:                    account,
+			Subscription:               subscription,
+			Entitlement:                entitlement,
+			EntitlementBalanceFallback: entitlementBalanceFallback,
+			AllowEntitlementOverage:    true,
+			InboundEndpoint:            inboundEndpoint,
+			UpstreamEndpoint:           upstreamEndpoint,
+			UserAgent:                  userAgent,
+			IPAddress:                  clientIP,
+			RequestPayloadHash:         requestPayloadHash,
+			APIKeyService:              h.apiKeyService,
+			QuotaPlatform:              quotaPlatform,
+			SessionID:                  sessionID,
+			ChannelUsageFields:         clientRequestedUsageFields(c, service.ChannelMappingResult{}, model, result.UpstreamModel),
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", "handler.openai_gateway.grok_voice"),

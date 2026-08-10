@@ -60,9 +60,12 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		return
 	}
 
+	// Web search has independent search pricing and must not inherit the text-token profit gate.
+	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
 	// Billing eligibility (same as other requests)
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
-	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
@@ -107,6 +110,7 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	}
 
 	failedAccounts := make(map[int64]struct{})
+	sameAccountRetryCount := make(map[int64]int)
 	var account *service.Account
 	var accountReleaseFunc func()
 	var nativeResp *websearch.SearchResponse
@@ -121,9 +125,9 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	}()
 
 	// First attempt + up to 3 failover accounts (max 4 total).
-	for attempt := 0; attempt < 4; attempt++ {
+	for attempt := 0; attempt < 4; {
 		selected, selectErr := h.gatewayService.SelectAccountWithLoadAwareness(
-			c.Request.Context(), groupID, "", xai.DefaultTextModel, failedAccounts, "", 0,
+			requestCtx, groupID, "", xai.DefaultTextModel, failedAccounts, "", 0,
 		)
 		if selectErr != nil {
 			if attempt == 0 {
@@ -154,25 +158,53 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 				return
 			}
 			failedAccounts[selected.Account.ID] = struct{}{}
+			attempt++
 			continue
 		}
 		account = selected.Account
 		accountReleaseFunc = release
 
-		nativeResp, providerName, err = h.doGrokNativeWebSearch(c.Request.Context(), c, account, req.Query, req.MaxResults)
+		for {
+			nativeResp, providerName, err = h.doGrokNativeWebSearch(requestCtx, c, account, req.Query, req.MaxResults)
+			if err == nil {
+				break
+			}
+			var sameAccountErr *service.UpstreamFailoverError
+			if !errors.As(err, &sameAccountErr) ||
+				!sameAccountErr.RetryableOnSameAccount ||
+				service.IsChannelMonitorProbe(requestCtx) {
+				break
+			}
+			retryLimit := account.GetPoolModeRetryCount()
+			if sameAccountRetryCount[account.ID] >= retryLimit {
+				break
+			}
+			sameAccountRetryCount[account.ID]++
+			reqLog.Warn("gateway.web_search.pool_mode_same_account_retry",
+				zap.Int64("account_id", account.ID),
+				zap.Int("upstream_status", sameAccountErr.StatusCode),
+				zap.Int("retry_limit", retryLimit),
+				zap.Int("retry_count", sameAccountRetryCount[account.ID]),
+			)
+			if !sleepWithContext(requestCtx, sameAccountRetryDelay) {
+				return
+			}
+		}
 		if err == nil {
 			break
 		}
-		var failoverErr *service.UpstreamFailoverError
-		if !errors.As(err, &failoverErr) || !failoverErr.ShouldRetryNextAccount() {
-			break
-		}
-		failedAccounts[account.ID] = struct{}{}
+		failedAccountID := account.ID
 		if accountReleaseFunc != nil {
 			accountReleaseFunc()
 			accountReleaseFunc = nil
 		}
 		account = nil
+		var failoverErr *service.UpstreamFailoverError
+		if !errors.As(err, &failoverErr) || !failoverErr.ShouldRetryNextAccount() {
+			break
+		}
+		failedAccounts[failedAccountID] = struct{}{}
+		attempt++
 	}
 	if err != nil || nativeResp == nil {
 		msg := "web search failed"
@@ -215,17 +247,20 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 				SearchCount: 1,
 				Duration:    0,
 			},
-			APIKey:             apiKey,
-			User:               apiKey.User,
-			Account:            account,
-			Subscription:       subscription,
-			InboundEndpoint:    inboundEndpoint,
-			UpstreamEndpoint:   upstreamEndpoint,
-			UserAgent:          userAgent,
-			IPAddress:          clientIP,
-			RequestPayloadHash: requestPayloadHash,
-			APIKeyService:      h.apiKeyService,
-			QuotaPlatform:      quotaPlatform,
+			APIKey:                     apiKey,
+			User:                       apiKey.User,
+			Account:                    account,
+			Subscription:               subscription,
+			Entitlement:                subscriptionEntitlement,
+			EntitlementBalanceFallback: entitlementBalanceFallback,
+			AllowEntitlementOverage:    true,
+			InboundEndpoint:            inboundEndpoint,
+			UpstreamEndpoint:           upstreamEndpoint,
+			UserAgent:                  userAgent,
+			IPAddress:                  clientIP,
+			RequestPayloadHash:         requestPayloadHash,
+			APIKeyService:              h.apiKeyService,
+			QuotaPlatform:              quotaPlatform,
 		}); err != nil {
 			logger.L().With(
 				zap.String("component", "handler.gateway.web_search"),
