@@ -10,7 +10,10 @@ const {
   getAllProxies,
   getAllGroups,
   listUpstreamConnections,
-  probeUpstreamConnection
+  probeUpstreamConnection,
+  pauseAutoRefresh,
+  resumeAutoRefresh,
+  intervalCallback
 } = vi.hoisted(() => ({
   listAccounts: vi.fn(),
   listWithEtag: vi.fn(),
@@ -18,8 +21,25 @@ const {
   getAllProxies: vi.fn(),
   getAllGroups: vi.fn(),
   listUpstreamConnections: vi.fn(),
-  probeUpstreamConnection: vi.fn()
+  probeUpstreamConnection: vi.fn(),
+  pauseAutoRefresh: vi.fn(),
+  resumeAutoRefresh: vi.fn(),
+  intervalCallback: { current: null as null | (() => void | Promise<void>) }
 }))
+
+vi.mock('@vueuse/core', async () => {
+  const actual = await vi.importActual<typeof import('@vueuse/core')>('@vueuse/core')
+  return {
+    ...actual,
+    useIntervalFn: (callback: () => void | Promise<void>) => {
+      intervalCallback.current = callback
+      return {
+        pause: pauseAutoRefresh,
+        resume: resumeAutoRefresh
+      }
+    }
+  }
+})
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
@@ -169,6 +189,9 @@ describe('admin AccountsView usage windows hint', () => {
     getAllGroups.mockReset()
     listUpstreamConnections.mockReset()
     probeUpstreamConnection.mockReset()
+    pauseAutoRefresh.mockReset()
+    resumeAutoRefresh.mockReset()
+    intervalCallback.current = null
 
     listAccounts.mockResolvedValue({
       items: [],
@@ -201,6 +224,42 @@ describe('admin AccountsView usage windows hint', () => {
     } finally {
       wrapper.unmount()
       addEventListener.mockRestore()
+    }
+  })
+
+  it('does not restart auto refresh when initial loading finishes after unmount', async () => {
+    localStorage.setItem('account-auto-refresh', JSON.stringify({ enabled: true, interval_seconds: 5 }))
+    const documentHidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+
+    try {
+      let resolveAccounts!: (value: {
+        items: never[]
+        total: number
+        page: number
+        page_size: number
+        pages: number
+      }) => void
+      listAccounts.mockReturnValueOnce(new Promise(resolve => {
+        resolveAccounts = resolve
+      }))
+
+      const wrapper = mountView()
+      await flushPromises()
+      wrapper.unmount()
+
+      resolveAccounts({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
+      await flushPromises()
+      await intervalCallback.current?.()
+
+      expect(pauseAutoRefresh).toHaveBeenCalled()
+      expect(resumeAutoRefresh).not.toHaveBeenCalled()
+      expect(listWithEtag).not.toHaveBeenCalled()
+      expect(getBatchTodayStats).not.toHaveBeenCalled()
+      expect(listUpstreamConnections).not.toHaveBeenCalled()
+      expect(getAllProxies).not.toHaveBeenCalled()
+      expect(getAllGroups).not.toHaveBeenCalled()
+    } finally {
+      documentHidden.mockRestore()
     }
   })
 

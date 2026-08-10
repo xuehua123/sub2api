@@ -892,6 +892,7 @@ const isDesktopViewport = ref(
 )
 let desktopViewportMediaQuery: MediaQueryList | null = null
 let desktopViewportListener: ((event: MediaQueryListEvent) => void) | null = null
+let isViewActive = false
 
 const usageBatchByAccountId = ref<Record<string, AccountUsageInfo | null>>({})
 const usageBatchErrorByAccountId = ref<Record<string, string | null>>({})
@@ -1600,13 +1601,16 @@ const load = async (options: { forceUpstreamConnections?: boolean } = {}) => {
     requestParams.lite = '1'
   }
   await baseLoad()
+  if (!isViewActive) return
   if (isFirstLoad.value) {
     isFirstLoad.value = false
     delete requestParams.lite
   }
   await refreshTodayStatsBatch()
+  if (!isViewActive) return
   // Account set just changed (initial load / filter / search); always force health refresh.
   await refreshAccountHealthBatch(true)
+  if (!isViewActive) return
   await refreshUpstreamConnections(options.forceUpstreamConnections === true)
 }
 
@@ -1886,7 +1890,7 @@ const syncPendingListChanges = async () => {
 
 const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
   async () => {
-    if (!autoRefreshEnabled.value) return
+    if (!isViewActive || !autoRefreshEnabled.value) return
     if (document.hidden) return
     if (loading.value || autoRefreshFetching.value) return
     if (isAnyModalOpen.value) return
@@ -2966,6 +2970,7 @@ const handleClickOutside = (event: MouseEvent) => {
 }
 
 onMounted(async () => {
+  isViewActive = true
   if (typeof window !== 'undefined') {
     desktopViewportMediaQuery = window.matchMedia(desktopViewportQuery)
     isDesktopViewport.value = desktopViewportMediaQuery.matches
@@ -2987,15 +2992,20 @@ onMounted(async () => {
 
   applyRouteFocus()
   await load()
+  if (!isViewActive) return
   try {
     const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
+    if (!isViewActive) return
     proxies.value = p
     groups.value = g
   } catch (error) {
-    console.error('Failed to load proxies/groups:', error)
+    if (isViewActive) console.error('Failed to load proxies/groups:', error)
   }
+  if (!isViewActive) return
   await loadRateMultiplierPrioritySettings()
+  if (!isViewActive) return
   await openHealthDrawerFromRoute()
+  if (!isViewActive) return
 
   if (autoRefreshEnabled.value) {
     autoRefreshCountdown.value = autoRefreshIntervalSeconds.value
@@ -3023,6 +3033,8 @@ watch(
 )
 
 onUnmounted(() => {
+  isViewActive = false
+  pauseAutoRefresh()
   if (usageBatchFlushTimer !== null) {
     clearTimeout(usageBatchFlushTimer)
     usageBatchFlushTimer = null
