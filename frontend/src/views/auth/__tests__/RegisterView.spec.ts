@@ -31,6 +31,9 @@ const t = (key: string, params?: Record<string, unknown>) => {
   if (key === 'auth.signUpToStart') {
     return `Sign up to start ${String(params?.siteName ?? '')}`
   }
+  if (key === 'auth.emailDomainRegistrationLimit') {
+    return '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
+  }
   return key
 }
 
@@ -67,15 +70,11 @@ vi.mock('@/utils/authError', () => ({
   buildAuthErrorMessage: () => 'registration failed'
 }))
 
-vi.mock('@/utils/registrationEmailPolicy', () => ({
-  isRegistrationEmailSuffixAllowed: () => true,
-  normalizeRegistrationEmailSuffixWhitelist: (value: string[]) => value
-}))
-
 const baseSettings = {
   registration_enabled: true,
   email_verify_enabled: false,
   registration_email_suffix_whitelist: [],
+  registration_email_domain_quota_enabled: false,
   promo_code_enabled: false,
   password_reset_enabled: false,
   invitation_code_enabled: false,
@@ -240,6 +239,7 @@ describe('RegisterView invitation layout', () => {
       turnstile_site_key: 'site-key'
     })
     isWeChatWebOAuthEnabled.mockReturnValue(false)
+    register.mockResolvedValue(undefined)
   })
 
   it('keeps the optional affiliate invitation field before Turnstile', async () => {
@@ -271,5 +271,91 @@ describe('RegisterView invitation layout', () => {
 
     expect(wrapper.find('[data-testid="affiliate-invitation-field"]').exists()).toBe(false)
     expect(wrapper.get('#invitation_code').exists()).toBe(true)
+  })
+
+  it('submits a non-whitelist email domain so the backend can enforce its registration quota', async () => {
+    getPublicSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_domain_quota_enabled: true
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('first@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'first@custom.example' })
+    )
+    expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('shows the localized registration domain quota message returned by the backend', async () => {
+    getPublicSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com'],
+      registration_email_domain_quota_enabled: true
+    })
+    register.mockRejectedValueOnce({
+      reason: 'EMAIL_DOMAIN_REGISTRATION_LIMIT',
+      message: 'raw backend message'
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('second@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(showError).toHaveBeenCalledWith(
+      '该邮箱域名无法注册新账户。请使用主流邮箱注册；如需使用企业邮箱，请联系客服添加域名白名单。'
+    )
+  })
+
+  // 域名限量注册开关默认关闭：恢复 PR5423 之前的客户端白名单预检，非白名单域名不发起注册请求。
+  it('rejects a non-whitelist email domain locally when the domain quota switch is disabled', async () => {
+    getPublicSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com']
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('first@custom.example')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(register).not.toHaveBeenCalled()
+    // 校验失败通过 validationToastMessage watcher 弹 toast
+    expect(showError).toHaveBeenCalledWith('auth.emailSuffixNotAllowedWithAllowed')
+    expect(wrapper.get('#email').classes()).toContain('input-error')
+  })
+
+  it('still submits whitelisted email domains when the domain quota switch is disabled', async () => {
+    getPublicSettings.mockResolvedValueOnce({
+      ...baseSettings,
+      turnstile_enabled: false,
+      registration_email_suffix_whitelist: ['allowed.com']
+    })
+
+    const wrapper = mountRegister()
+    await flushPromises()
+    await wrapper.get('#email').setValue('user@allowed.com')
+    await wrapper.get('#password').setValue('secret-123')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(register).toHaveBeenCalledWith(
+      expect.objectContaining({ email: 'user@allowed.com' })
+    )
+    expect(showError).not.toHaveBeenCalled()
   })
 })

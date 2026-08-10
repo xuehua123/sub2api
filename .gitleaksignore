@@ -100,7 +100,7 @@ fff4a300c6ab0c0cc6fd394925f2811a0e17c882:backend/internal/service/content_modera
 index/backend/internal/handler/admin/redeem_handler_test.go:generic-api-key:158
 index/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:380
 index/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:439
-index/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:637
+index/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:638
 index/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:170
 index/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:259
 index/backend/internal/handler/stream_error_event_test.go:generic-api-key:107
@@ -149,12 +149,12 @@ index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:280
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:44
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:57
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:64
-index/frontend/src/views/auth/__tests__/EmailVerifyView.spec.ts:generic-api-key:335
+index/frontend/src/views/auth/__tests__/EmailVerifyView.spec.ts:generic-api-key:338
 index/tools/subscription_entitlements_v2_staging_smoke.ps1:generic-api-key:35
 worktree/backend/internal/handler/admin/redeem_handler_test.go:generic-api-key:158
 worktree/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:380
 worktree/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:439
-worktree/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:637
+worktree/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:638
 worktree/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:170
 worktree/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:259
 worktree/backend/internal/handler/stream_error_event_test.go:generic-api-key:107
@@ -203,6 +203,6 @@ worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:280
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:44
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:57
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:64
-worktree/frontend/src/views/auth/__tests__/EmailVerifyView.spec.ts:generic-api-key:335
+worktree/frontend/src/views/auth/__tests__/EmailVerifyView.spec.ts:generic-api-key:338
 worktree/tools/subscription_entitlements_v2_staging_smoke.ps1:generic-api-key:35
 
