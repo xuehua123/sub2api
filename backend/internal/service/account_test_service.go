@@ -996,10 +996,13 @@ func (s *AccountTestService) observeGrokTestResponse(ctx context.Context, accoun
 	if isGrokContentPolicyRejection(resp.StatusCode, responseBody) {
 		return
 	}
-	decision := classifyGrokUpstreamFailure(resp.StatusCode, responseBody, "")
-	if account.IsPoolMode() && decision.Class == GrokFailureBilling {
+	// A pool-mode account represents an upstream-managed key pool. Keep the
+	// quota snapshot above for observability, but one probe response must never
+	// apply a default account-wide cooldown to every key in that pool.
+	if account.IsPoolMode() {
 		return
 	}
+	decision := classifyGrokUpstreamFailure(resp.StatusCode, responseBody, "")
 	if decision.Class == GrokFailureFreeUsage {
 		if resetAt, limited := grokRateLimitResetAtForAccount(account, snapshot, now); limited && resetAt.After(now) {
 			persistGrokRateLimit(ctx, s.accountRepo, account, resetAt)

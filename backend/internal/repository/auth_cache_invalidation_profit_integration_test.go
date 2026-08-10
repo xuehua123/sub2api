@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbmigrations "github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,7 +104,12 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 		"video_price_480p":                     "video_price_480p = 0.10",
 		"video_price_720p":                     "video_price_720p = 0.20",
 		"video_price_1080p":                    "video_price_1080p = 0.30",
+		"video_model_prices":                   `video_model_prices = '{"grok-imagine-video": {"720p": 0.40}}'::jsonb`,
 		"web_search_price_per_call":            "web_search_price_per_call = 0.05",
+		"search_price_per_1k":                  "search_price_per_1k = 0.06",
+		"audio_realtime_price_per_min":         "audio_realtime_price_per_min = 0.07",
+		"audio_tts_price_per_million_chars":    "audio_tts_price_per_million_chars = 0.08",
+		"audio_stt_price_per_hour":             "audio_stt_price_per_hour = 0.09",
 		"claude_code_only":                     "claude_code_only = true",
 		"fallback_group_id":                    "fallback_group_id = $1",
 		"fallback_group_id_on_invalid_request": "fallback_group_id_on_invalid_request = $1",
@@ -131,4 +137,102 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 			require.Equal(t, 1, count(), name+" 变更必须入队")
 		})
 	}
+}
+
+func TestMigration221BackfillsMediaPricingAuthCacheInvalidations(t *testing.T) {
+	ctx := context.Background()
+	suffix := time.Now().UnixNano()
+	user := mustCreateUser(t, integrationEntClient, &service.User{
+		Email: fmt.Sprintf("media-pricing-backfill-%d@example.com", suffix), Concurrency: 5,
+	})
+
+	backupGroup := mustCreateGroup(t, integrationEntClient, &service.Group{
+		Name: fmt.Sprintf("media-pricing-backup-%d", suffix), Platform: service.PlatformOpenAI, RateMultiplier: 1,
+	})
+	currentGroup := mustCreateGroup(t, integrationEntClient, &service.Group{
+		Name: fmt.Sprintf("media-pricing-current-%d", suffix), Platform: service.PlatformOpenAI, RateMultiplier: 1,
+	})
+	unaffectedGroup := mustCreateGroup(t, integrationEntClient, &service.Group{
+		Name: fmt.Sprintf("media-pricing-unaffected-%d", suffix), Platform: service.PlatformOpenAI, RateMultiplier: 1,
+	})
+
+	apiKeyRepo := NewAPIKeyRepository(integrationEntClient, integrationDB)
+	type keyedGroup struct {
+		group *service.Group
+		key   *service.APIKey
+		hash  string
+	}
+	keyedGroups := make([]keyedGroup, 0, 3)
+	for label, group := range map[string]*service.Group{
+		"backup": backupGroup, "current": currentGroup, "unaffected": unaffectedGroup,
+	} {
+		groupID := group.ID
+		keyValue := fmt.Sprintf("sk-media-pricing-%s-%d", label, suffix)
+		key := &service.APIKey{
+			UserID: user.ID, GroupID: &groupID, Key: keyValue, Name: "media-pricing-" + label, Status: service.StatusActive,
+		}
+		require.NoError(t, apiKeyRepo.Create(ctx, key))
+		sum := sha256.Sum256([]byte(keyValue))
+		keyedGroups = append(keyedGroups, keyedGroup{group: group, key: key, hash: hex.EncodeToString(sum[:])})
+	}
+
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM groups_video_price_backup_220 WHERE group_id IN ($1, $2, $3)", backupGroup.ID, currentGroup.ID, unaffectedGroup.ID)
+		for _, item := range keyedGroups {
+			_, _ = integrationDB.ExecContext(ctx, "DELETE FROM api_keys WHERE id = $1", item.key.ID)
+		}
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM groups WHERE id IN ($1, $2, $3)", backupGroup.ID, currentGroup.ID, unaffectedGroup.ID)
+		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM users WHERE id = $1", user.ID)
+		for _, item := range keyedGroups {
+			_, _ = integrationDB.ExecContext(ctx, "DELETE FROM auth_cache_invalidation_outbox WHERE cache_key = $1", item.hash)
+		}
+	})
+
+	_, err := integrationDB.ExecContext(ctx, `
+INSERT INTO groups_video_price_backup_220 (
+    group_id, platform, video_price_480p, video_price_720p,
+    video_price_1080p, video_model_prices, backed_up_at
+) VALUES ($1, 'openai', NULL, NULL, NULL, '{"grok-imagine-video":{"720p":0.40}}'::jsonb, now())
+`, backupGroup.ID)
+	require.NoError(t, err)
+
+	_, err = integrationDB.ExecContext(ctx, `
+UPDATE groups
+SET video_model_prices = '{"grok-imagine-video":{"720p":0.40}}'::jsonb,
+    search_price_per_1k = 0.06,
+    audio_realtime_price_per_min = 0.07,
+    audio_tts_price_per_million_chars = 0.08,
+    audio_stt_price_per_hour = 0.09
+WHERE id = $1
+`, currentGroup.ID)
+	require.NoError(t, err)
+
+	for _, item := range keyedGroups {
+		_, err = integrationDB.ExecContext(ctx, "DELETE FROM auth_cache_invalidation_outbox WHERE cache_key = $1", item.hash)
+		require.NoError(t, err)
+	}
+
+	migrationSQL, err := dbmigrations.FS.ReadFile("221_group_media_pricing_auth_cache_invalidation.sql")
+	require.NoError(t, err)
+	_, err = integrationDB.ExecContext(ctx, string(migrationSQL))
+	require.NoError(t, err)
+
+	count := func(cacheKey string) int {
+		var value int
+		require.NoError(t, integrationDB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM auth_cache_invalidation_outbox WHERE cache_key = $1", cacheKey).Scan(&value))
+		return value
+	}
+	var hashesByGroup = make(map[int64]string, len(keyedGroups))
+	for _, item := range keyedGroups {
+		hashesByGroup[item.group.ID] = item.hash
+	}
+	require.Equal(t, 1, count(hashesByGroup[backupGroup.ID]), "220 备份涉及的分组必须补投")
+	require.Equal(t, 1, count(hashesByGroup[currentGroup.ID]), "当前持有新媒体价格的分组必须补投")
+	require.Zero(t, count(hashesByGroup[unaffectedGroup.ID]), "无关分组不得补投")
+
+	_, err = integrationDB.ExecContext(ctx, string(migrationSQL))
+	require.NoError(t, err)
+	require.Equal(t, 1, count(hashesByGroup[backupGroup.ID]), "migration 重跑不得重复补投待办")
+	require.Equal(t, 1, count(hashesByGroup[currentGroup.ID]), "migration 重跑不得重复补投待办")
 }

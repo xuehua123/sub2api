@@ -49,11 +49,24 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		return nil, err
 	}
 	if !applied {
-		return &service.UsageBillingApplyResult{Applied: false}, nil
+		billingSource, lookupErr := lookupUsageBillingSource(ctx, tx, cmd.RequestID, cmd.APIKeyID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		return &service.UsageBillingApplyResult{Applied: false, BillingSource: billingSource}, nil
 	}
 
 	result := &service.UsageBillingApplyResult{Applied: true}
 	if err := r.applyUsageBillingEffects(ctx, tx, cmd, result); err != nil {
+		return nil, err
+	}
+	result.BillingSource = service.ResolveUsageBillingSourceFromApplyResult(
+		cmd.BillingType,
+		cmd.SubscriptionID,
+		cmd.EntitlementID,
+		result,
+	)
+	if err := persistUsageBillingSource(ctx, tx, cmd.RequestID, cmd.APIKeyID, result.BillingSource); err != nil {
 		return nil, err
 	}
 
@@ -111,6 +124,63 @@ func (r *usageBillingRepository) claimUsageBillingRequest(ctx context.Context, t
 	return true, nil
 }
 
+func lookupUsageBillingSource(ctx context.Context, tx *sql.Tx, requestID string, apiKeyID int64) (string, error) {
+	var dedupSource sql.NullString
+	var usageLogSource sql.NullString
+	err := tx.QueryRowContext(ctx, `
+		SELECT candidates.billing_source, usage_logs.billing_source
+		FROM (
+			SELECT billing_source, 0 AS source_priority
+			FROM usage_billing_dedup_archive
+			WHERE request_id = $1 AND api_key_id = $2
+			UNION ALL
+			SELECT billing_source, 1 AS source_priority
+			FROM usage_billing_dedup
+			WHERE request_id = $1 AND api_key_id = $2
+		) candidates
+		LEFT JOIN usage_logs
+			ON usage_logs.request_id = $1 AND usage_logs.api_key_id = $2
+		ORDER BY source_priority
+		LIMIT 1
+	`, requestID, apiKeyID).Scan(&dedupSource, &usageLogSource)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	for _, source := range []sql.NullString{dedupSource, usageLogSource} {
+		billingSource := strings.TrimSpace(source.String)
+		if source.Valid && service.IsValidUsageBillingSource(billingSource) {
+			return billingSource, nil
+		}
+	}
+	return "", nil
+}
+
+func persistUsageBillingSource(ctx context.Context, tx *sql.Tx, requestID string, apiKeyID int64, billingSource string) error {
+	billingSource = strings.TrimSpace(billingSource)
+	if !service.IsValidUsageBillingSource(billingSource) {
+		return errors.New("usage billing source is invalid")
+	}
+	result, err := tx.ExecContext(ctx, `
+		UPDATE usage_billing_dedup
+		SET billing_source = $1
+		WHERE request_id = $2 AND api_key_id = $3
+	`, billingSource, requestID, apiKeyID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return errors.New("usage billing dedup row not found while persisting billing source")
+	}
+	return nil
+}
+
 func (r *usageBillingRepository) ReserveBatchImageBalance(ctx context.Context, cmd *service.BatchImageBalanceHoldCommand) (*service.BatchImageBalanceHoldResult, error) {
 	return r.applyBatchImageBalanceHold(ctx, cmd, reserveUsageBillingBatchImage)
 }
@@ -154,7 +224,11 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 		return nil, err
 	}
 	if !applied {
-		return &service.BatchImageBalanceHoldResult{Applied: false}, nil
+		billingSource, lookupErr := lookupUsageBillingSource(ctx, tx, cmd.RequestID, cmd.APIKeyID)
+		if lookupErr != nil {
+			return nil, lookupErr
+		}
+		return &service.BatchImageBalanceHoldResult{Applied: false, BillingSource: billingSource}, nil
 	}
 
 	result, err := apply(ctx, tx, cmd)
@@ -165,6 +239,12 @@ func (r *usageBillingRepository) applyBatchImageBalanceHold(
 		result = &service.BatchImageBalanceHoldResult{}
 	}
 	result.Applied = true
+	if !service.IsValidUsageBillingSource(strings.TrimSpace(result.BillingSource)) {
+		result.BillingSource = cmd.BillingSource
+	}
+	if err := persistUsageBillingSource(ctx, tx, cmd.RequestID, cmd.APIKeyID, result.BillingSource); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -180,12 +260,24 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 			return err
 		}
 		if usedFallback {
-			newBalance, err := deductUsageBillingBalanceStrict(ctx, tx, cmd.UserID, cmd.SubscriptionCost)
-			if err != nil {
-				return err
+			newBalance, balanceErr := deductUsageBillingBalanceStrict(ctx, tx, cmd.UserID, cmd.SubscriptionCost)
+			switch {
+			case balanceErr == nil:
+				result.NewBalance = &newBalance
+			case cmd.AllowEntitlementOverage && errors.Is(balanceErr, service.ErrInsufficientBalance):
+				// The response has already been delivered on final-settlement paths. If
+				// balance fallback cannot cover it, persist the overage against the
+				// entitlement so the next preflight sees the exhausted quota.
+				entitlementVersion, _, err = applyUsageBillingEntitlement(ctx, tx, cmd.UserID, *cmd.EntitlementID, cmd.SubscriptionCost, false, true)
+				if err != nil {
+					return err
+				}
+				usedFallback = false
+			default:
+				return balanceErr
 			}
-			result.NewBalance = &newBalance
-		} else {
+		}
+		if !usedFallback {
 			result.EntitlementVersion = entitlementVersion
 			// Linked entitlement billing writes the same absolute usage snapshot to
 			// its legacy alias in this transaction. PostgreSQL NOW() is stable for

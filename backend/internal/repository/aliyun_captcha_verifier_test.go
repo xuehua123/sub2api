@@ -18,13 +18,17 @@ func newAliyunCaptchaTestTarget(t *testing.T, handler http.HandlerFunc) (*aliyun
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
+	endpoint := strings.TrimPrefix(server.URL, "http://")
+	// The Alibaba SDK applies HTTP_PROXY to loopback endpoints unless NO_PROXY
+	// exactly matches the host (including the random httptest port).
+	t.Setenv("NO_PROXY", endpoint)
 
 	verifier := &aliyunCaptchaVerifier{protocol: "HTTP", timeoutMillis: 2_000}
 	cred := service.AliyunCaptchaCredentials{
 		AccessKeyID:     "test-ak-id",
 		AccessKeySecret: "test-ak-secret",
 		SceneID:         "scene-1",
-		Endpoint:        strings.TrimPrefix(server.URL, "http://"),
+		Endpoint:        endpoint,
 	}
 	return verifier, cred
 }

@@ -67,6 +67,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingModeToken': 'Token',
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
+  'admin.usage.billingModeVideo': 'Video',
 }
 
 vi.mock('@/api', () => ({
@@ -510,6 +511,85 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('Image')
     expect(text).toContain('not recorded')
     expect(text).not.toContain('(2K)')
+  })
+
+  it('does not treat explicit token or video rows as image billing when image_count is positive', async () => {
+    const tokenRow = {
+      request_id: 'req-user-token-with-image-output',
+      actual_cost: 0.1,
+      total_cost: 0.1,
+      rate_multiplier: 1,
+      service_tier: null,
+      input_cost: 0.06,
+      output_cost: 0.04,
+      cache_creation_cost: 0,
+      cache_read_cost: 0,
+      input_tokens: 120,
+      output_tokens: 30,
+      cache_creation_tokens: 0,
+      cache_read_tokens: 0,
+      billing_mode: 'token',
+      image_count: 7,
+      image_size: '2K',
+      first_token_ms: null,
+      duration_ms: 1,
+      created_at: '2026-03-08T00:00:00Z',
+      model: 'gpt-image-2',
+    }
+    const videoRow = {
+      ...tokenRow,
+      request_id: 'req-user-video-with-preview-count',
+      billing_mode: 'video',
+      image_count: 8,
+      input_tokens: 240,
+      output_tokens: 60,
+      model: 'grok-imagine-video',
+    }
+
+    query.mockResolvedValue({
+      items: [tokenRow, videoRow],
+      total: 2,
+      pages: 1,
+    })
+    getStatsByDateRange.mockResolvedValue({
+      total_requests: 2,
+      total_tokens: 450,
+      total_cost: 0.2,
+      avg_duration_ms: 1,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          DataTable: DataTableStub,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Token')
+    expect(wrapper.text()).toContain('Video')
+    expect(wrapper.text()).not.toContain('7 images')
+    expect(wrapper.text()).not.toContain('8 images')
+
+    const setupState = (wrapper.vm as any).$?.setupState
+    setupState.tooltipData = tokenRow
+    setupState.tooltipVisible = true
+    await nextTick()
+
+    expect(wrapper.text()).toContain('Input price')
+    expect(wrapper.text()).not.toContain('Image count')
   })
 
   it('shows image billing metadata in the user cost tooltip', async () => {

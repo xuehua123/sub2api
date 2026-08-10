@@ -736,6 +736,7 @@ import {
   getBillingModeBadgeClass,
   getBillingModeLabel,
   getDisplayBillingMode as resolveDisplayBillingMode,
+  isImageUsage,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -913,10 +914,6 @@ const imageUnitPrice = (row: UsageLog | null): number => {
   const total = row.total_cost ?? 0
   const price = total / row.image_count
   return Number.isFinite(price) ? price : 0
-}
-
-const isImageUsage = (row: Pick<UsageLog, 'image_count'> | null | undefined): boolean => {
-  return (row?.image_count ?? 0) > 0
 }
 
 const formatUserAgent = (ua: string): string => {

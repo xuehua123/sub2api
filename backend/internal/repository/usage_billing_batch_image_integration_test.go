@@ -100,6 +100,7 @@ func TestUsageBillingRepositoryReserveBatchImageEntitlementIsIdempotent(t *testi
 	second, err := billingRepo.ReserveBatchImageBalance(ctx, cmd)
 	require.NoError(t, err)
 	require.False(t, second.Applied)
+	require.Equal(t, service.BillingSourceEntitlementQuota, second.BillingSource)
 
 	daily, weekly, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
 	require.InDelta(t, 5, daily, 0.000001)

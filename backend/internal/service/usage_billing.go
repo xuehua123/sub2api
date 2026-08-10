@@ -171,6 +171,7 @@ type AccountQuotaState struct {
 
 type UsageBillingApplyResult struct {
 	Applied              bool
+	BillingSource        string // persisted final source, including idempotent replays
 	APIKeyQuotaExhausted bool
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
 	BalanceOverdrafted   bool               // true when the sufficient-balance guard missed and debt was still recorded

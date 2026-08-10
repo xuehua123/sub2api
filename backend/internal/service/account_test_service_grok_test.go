@@ -82,6 +82,66 @@ func TestObserveGrokTestResponseKeepsEntitlement403Cooldown(t *testing.T) {
 	require.Greater(t, repo.lastTempUnschedUntil, before.Add(29*time.Minute))
 }
 
+func TestObserveGrokTestResponsePoolModeNeverAppliesDefaultAccountCooldown(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+	}{
+		{
+			name:       "free usage",
+			statusCode: http.StatusBadRequest,
+			body:       `{"error":{"code":"subscription:free-usage-exhausted","message":"included free usage exhausted"}}`,
+		},
+		{
+			name:       "unauthorized",
+			statusCode: http.StatusUnauthorized,
+			body:       `{"error":{"message":"invalid api key"}}`,
+		},
+		{
+			name:       "entitlement forbidden",
+			statusCode: http.StatusForbidden,
+			body:       `{"error":{"message":"subscription required"}}`,
+		},
+		{
+			name:       "upstream failure",
+			statusCode: http.StatusBadGateway,
+			body:       `{"error":{"message":"upstream unavailable"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{
+				ID:       1910 + int64(tt.statusCode),
+				Platform: PlatformGrok,
+				Type:     AccountTypeAPIKey,
+				Credentials: map[string]any{
+					"pool_mode": true,
+				},
+			}
+			repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+				accountsByID: map[int64]*Account{account.ID: account},
+			}}
+			svc := &AccountTestService{accountRepo: repo}
+			resp := &http.Response{
+				StatusCode: tt.statusCode,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}
+
+			svc.observeGrokTestResponse(context.Background(), account, resp)
+
+			require.Zero(t, repo.tempUnschedCalls)
+			require.Zero(t, repo.rateLimitedCalls)
+			require.Nil(t, account.TempUnschedulableUntil)
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.JSONEq(t, tt.body, string(body))
+		})
+	}
+}
+
 func (r *grokAccountTestRateLimitRepo) SetRateLimited(_ context.Context, _ int64, resetAt time.Time) error {
 	r.rateLimitedCalls++
 	r.resetAt = resetAt

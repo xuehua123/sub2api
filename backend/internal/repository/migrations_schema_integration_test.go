@@ -126,6 +126,18 @@ WHERE ns.nspname = 'public'
 	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.usage_billing_dedup')").Scan(&usageBillingDedupRegclass))
 	require.True(t, usageBillingDedupRegclass.Valid, "expected usage_billing_dedup table to exist")
 	requireColumn(t, tx, "usage_billing_dedup", "request_fingerprint", "character varying", 64, false)
+	requireColumn(t, tx, "usage_billing_dedup", "billing_source", "character varying", 40, true)
+	requireConstraintDefinitionContains(
+		t,
+		tx,
+		"usage_billing_dedup",
+		"usage_billing_dedup_billing_source_check",
+		"billing_source",
+		"'balance'",
+		"'legacy_subscription'",
+		"'entitlement_quota'",
+		"'entitlement_balance_fallback'",
+	)
 	requireIndex(t, tx, "usage_billing_dedup", "idx_usage_billing_dedup_request_api_key")
 	requireIndex(t, tx, "usage_billing_dedup", "idx_usage_billing_dedup_created_at_brin")
 
@@ -133,6 +145,18 @@ WHERE ns.nspname = 'public'
 	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regclass('public.usage_billing_dedup_archive')").Scan(&usageBillingDedupArchiveRegclass))
 	require.True(t, usageBillingDedupArchiveRegclass.Valid, "expected usage_billing_dedup_archive table to exist")
 	requireColumn(t, tx, "usage_billing_dedup_archive", "request_fingerprint", "character varying", 64, false)
+	requireColumn(t, tx, "usage_billing_dedup_archive", "billing_source", "character varying", 40, true)
+	requireConstraintDefinitionContains(
+		t,
+		tx,
+		"usage_billing_dedup_archive",
+		"usage_billing_dedup_archive_billing_source_check",
+		"billing_source",
+		"'balance'",
+		"'legacy_subscription'",
+		"'entitlement_quota'",
+		"'entitlement_balance_fallback'",
+	)
 	requireIndex(t, tx, "usage_billing_dedup_archive", "usage_billing_dedup_archive_pkey")
 
 	// settings table should exist

@@ -813,22 +813,122 @@ func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackDeductsBalance(t 
 		OveragePolicy:      service.SubscriptionEntitlementOverageBalanceFallback,
 	})
 
-	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
-		RequestID:                  uuid.NewString(),
+	requestID := uuid.NewString()
+	cmd := &service.UsageBillingCommand{
+		RequestID:                  requestID,
 		APIKeyID:                   apiKey.ID,
 		UserID:                     user.ID,
 		EntitlementID:              &entitlement.ID,
 		SubscriptionCost:           2,
 		EntitlementBalanceFallback: true,
-	})
+	}
+	result, err := repo.Apply(ctx, cmd)
 	require.NoError(t, err)
 	require.True(t, result.Applied)
+	require.Equal(t, service.BillingSourceEntitlementBalanceFallback, result.BillingSource)
 	require.Zero(t, result.EntitlementVersion)
 	require.NotNil(t, result.NewBalance)
 	require.InDelta(t, 98, *result.NewBalance, 0.000001)
 	_, _, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
 	require.InDelta(t, 5, monthly, 0.000001)
 	require.InDelta(t, 98, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
+
+	repeated, err := repo.Apply(ctx, cmd)
+	require.NoError(t, err)
+	require.False(t, repeated.Applied)
+	require.Equal(t, service.BillingSourceEntitlementBalanceFallback, repeated.BillingSource)
+}
+
+func TestUsageBillingRepositoryApply_FinalOverageUsesEntitlementWhenFallbackBalanceIsInsufficient(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-ent-final-fallback-user-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+		Balance:      0.01,
+	})
+	group := mustCreateGroup(t, client, &service.Group{
+		Name:             "usage-billing-ent-final-fallback-group-" + uuid.NewString(),
+		Platform:         service.PlatformAnthropic,
+		SubscriptionType: service.SubscriptionTypeSubscription,
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID:  user.ID,
+		GroupID: &group.ID,
+		Key:     "sk-usage-billing-ent-final-fallback-" + uuid.NewString(),
+		Name:    "billing-ent-final-fallback",
+	})
+	limit := 5.0
+	now := time.Now().UTC()
+	windowStart := now.Add(-time.Hour)
+	legacy := mustCreateSubscription(t, client, &service.UserSubscription{
+		UserID:          user.ID,
+		GroupID:         group.ID,
+		StartsAt:        now.Add(-time.Hour),
+		ExpiresAt:       now.Add(48 * time.Hour),
+		MonthlyUsageUSD: 4.99,
+	})
+	_, err := integrationDB.ExecContext(ctx, `
+		UPDATE user_subscriptions
+		SET monthly_window_start = $1
+		WHERE id = $2
+	`, windowStart, legacy.ID)
+	require.NoError(t, err)
+	entitlement := mustCreateUsageBillingEntitlement(t, client, &service.SubscriptionEntitlement{
+		UserID:               user.ID,
+		LegacySubscriptionID: &legacy.ID,
+		Name:                 "usage billing entitlement final fallback",
+		StartsAt:             now.Add(-time.Hour),
+		ExpiresAt:            now.Add(48 * time.Hour),
+		MonthlyWindowStart:   &windowStart,
+		MonthlyLimitUSD:      &limit,
+		MonthlyUsageUSD:      4.99,
+		OveragePolicy:        service.SubscriptionEntitlementOverageBalanceFallback,
+	})
+	requestID := uuid.NewString()
+	cmd := &service.UsageBillingCommand{
+		RequestID:                  requestID,
+		APIKeyID:                   apiKey.ID,
+		UserID:                     user.ID,
+		EntitlementID:              &entitlement.ID,
+		SubscriptionCost:           0.02,
+		EntitlementBalanceFallback: true,
+		AllowEntitlementOverage:    true,
+	}
+
+	result, err := repo.Apply(ctx, cmd)
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.Equal(t, service.BillingSourceEntitlementQuota, result.BillingSource)
+	require.Greater(t, result.EntitlementVersion, int64(0))
+	require.Equal(t, result.EntitlementVersion, result.SubscriptionVersion)
+	require.Nil(t, result.NewBalance)
+	_, _, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	_, _, legacyMonthly := usageBillingLegacySubscriptionUsage(t, ctx, legacy.ID)
+	require.InDelta(t, 5.01, monthly, 0.000001)
+	require.InDelta(t, monthly, legacyMonthly, 0.000001)
+	require.InDelta(t, 0.01, usageBillingUserBalance(t, ctx, user.ID), 0.000001)
+	require.Equal(t, 1, usageBillingDedupCount(t, ctx, requestID, apiKey.ID))
+
+	repeated, err := repo.Apply(ctx, cmd)
+	require.NoError(t, err)
+	require.False(t, repeated.Applied)
+	require.Equal(t, service.BillingSourceEntitlementQuota, repeated.BillingSource)
+	_, _, monthly = usageBillingEntitlementUsage(t, ctx, entitlement.ID)
+	_, _, legacyMonthly = usageBillingLegacySubscriptionUsage(t, ctx, legacy.ID)
+	require.InDelta(t, 5.01, monthly, 0.000001)
+	require.InDelta(t, monthly, legacyMonthly, 0.000001)
+
+	_, err = repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:        uuid.NewString(),
+		APIKeyID:         apiKey.ID,
+		UserID:           user.ID,
+		EntitlementID:    &entitlement.ID,
+		SubscriptionCost: 0.005,
+	})
+	require.ErrorIs(t, err, service.ErrSubscriptionEntitlementQuotaExceeded)
 }
 
 func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackCountsAPIKeyAndAccountQuota(t *testing.T) {
@@ -979,6 +1079,7 @@ func TestUsageBillingRepositoryApply_EntitlementBalanceFallbackFailureRollsBack(
 			EntitlementID:              &entitlement.ID,
 			SubscriptionCost:           1,
 			EntitlementBalanceFallback: true,
+			AllowEntitlementOverage:    true,
 		})
 		require.ErrorIs(t, err, service.ErrUserNotFound)
 		_, _, monthly := usageBillingEntitlementUsage(t, ctx, entitlement.ID)
@@ -1156,11 +1257,11 @@ func TestDashboardAggregationRepositoryCleanupUsageBillingDedup_BatchDeletesOldR
 	newCreatedAt := time.Now().UTC().Add(-time.Hour)
 
 	_, err := integrationDB.ExecContext(ctx, `
-		INSERT INTO usage_billing_dedup (request_id, api_key_id, request_fingerprint, created_at)
-		VALUES ($1, 1, $2, $3), ($4, 1, $5, $6)
+		INSERT INTO usage_billing_dedup (request_id, api_key_id, request_fingerprint, billing_source, created_at)
+		VALUES ($1, 1, $2, $3, $4), ($5, 1, $6, $7, $8)
 	`,
-		oldRequestID, strings.Repeat("a", 64), oldCreatedAt,
-		newRequestID, strings.Repeat("b", 64), newCreatedAt,
+		oldRequestID, strings.Repeat("a", 64), service.BillingSourceEntitlementBalanceFallback, oldCreatedAt,
+		newRequestID, strings.Repeat("b", 64), service.BillingSourceBalance, newCreatedAt,
 	)
 	require.NoError(t, err)
 
@@ -1177,6 +1278,9 @@ func TestDashboardAggregationRepositoryCleanupUsageBillingDedup_BatchDeletesOldR
 	var archivedCount int
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM usage_billing_dedup_archive WHERE request_id = $1", oldRequestID).Scan(&archivedCount))
 	require.Equal(t, 1, archivedCount)
+	var archivedBillingSource string
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT billing_source FROM usage_billing_dedup_archive WHERE request_id = $1", oldRequestID).Scan(&archivedBillingSource))
+	require.Equal(t, service.BillingSourceEntitlementBalanceFallback, archivedBillingSource)
 }
 
 func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T) {
@@ -1207,6 +1311,7 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 	result1, err := repo.Apply(ctx, cmd)
 	require.NoError(t, err)
 	require.True(t, result1.Applied)
+	require.Equal(t, service.BillingSourceBalance, result1.BillingSource)
 
 	_, err = integrationDB.ExecContext(ctx, `
 		UPDATE usage_billing_dedup
@@ -1219,10 +1324,122 @@ func TestUsageBillingRepositoryApply_DeduplicatesAgainstArchivedKey(t *testing.T
 	result2, err := repo.Apply(ctx, cmd)
 	require.NoError(t, err)
 	require.False(t, result2.Applied)
+	require.Equal(t, service.BillingSourceBalance, result2.BillingSource)
 
 	var balance float64
 	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1", user.ID).Scan(&balance))
 	require.InDelta(t, 98.75, balance, 0.000001)
+}
+
+func TestUsageBillingRepositoryApply_HistoricalNullBillingSourceRemainsCompatible(t *testing.T) {
+	ctx := context.Background()
+	repo := NewUsageBillingRepository(testEntClient(t), integrationDB)
+
+	for _, table := range []string{"usage_billing_dedup", "usage_billing_dedup_archive"} {
+		t.Run(table, func(t *testing.T) {
+			requestID := "historical-null-source-" + uuid.NewString()
+			cmd := &service.UsageBillingCommand{
+				RequestID:        requestID,
+				APIKeyID:         time.Now().UnixNano(),
+				UserID:           1,
+				BalanceCost:      1,
+				SubscriptionCost: 0,
+			}
+			cmd.Normalize()
+			t.Cleanup(func() {
+				_, _ = integrationDB.ExecContext(context.Background(), fmt.Sprintf(
+					"DELETE FROM %s WHERE request_id = $1 AND api_key_id = $2", table,
+				), cmd.RequestID, cmd.APIKeyID)
+			})
+
+			_, err := integrationDB.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s (request_id, api_key_id, request_fingerprint, billing_source, created_at)
+				VALUES ($1, $2, $3, NULL, NOW())
+			`, table), cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
+			require.NoError(t, err)
+
+			result, err := repo.Apply(ctx, cmd)
+			require.NoError(t, err)
+			require.False(t, result.Applied)
+			require.Empty(t, result.BillingSource)
+		})
+	}
+}
+
+func TestUsageBillingRepositoryApply_RecoversNullBillingSourceFromUsageLog(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	billingRepo := NewUsageBillingRepository(client, integrationDB)
+	usageLogRepo := NewUsageLogRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-source-recovery-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-source-recovery-" + uuid.NewString(),
+		Name:   "billing source recovery",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-source-recovery-" + uuid.NewString(),
+	})
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM usage_billing_dedup WHERE api_key_id = $1", apiKey.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM usage_billing_dedup_archive WHERE api_key_id = $1", apiKey.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM usage_logs WHERE user_id = $1", user.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM api_keys WHERE id = $1", apiKey.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM accounts WHERE id = $1", account.ID)
+		_, _ = integrationDB.ExecContext(cleanupCtx, "DELETE FROM users WHERE id = $1", user.ID)
+	})
+	entitlementID := int64(900_000_000 + time.Now().UnixNano()%100_000_000)
+
+	for _, table := range []string{"usage_billing_dedup", "usage_billing_dedup_archive"} {
+		t.Run(table, func(t *testing.T) {
+			requestID := "old-active-source-" + uuid.NewString()
+			cmd := &service.UsageBillingCommand{
+				RequestID:        requestID,
+				APIKeyID:         apiKey.ID,
+				UserID:           user.ID,
+				EntitlementID:    &entitlementID,
+				SubscriptionCost: 1,
+			}
+			cmd.Normalize()
+
+			_, err := integrationDB.ExecContext(ctx, fmt.Sprintf(`
+				INSERT INTO %s (request_id, api_key_id, request_fingerprint, billing_source, created_at)
+				VALUES ($1, $2, $3, NULL, NOW())
+			`, table), cmd.RequestID, cmd.APIKeyID, cmd.RequestFingerprint)
+			require.NoError(t, err)
+
+			usageLog := &service.UsageLog{
+				UserID:      user.ID,
+				APIKeyID:    apiKey.ID,
+				AccountID:   account.ID,
+				RequestID:   requestID,
+				Model:       "source-recovery",
+				BillingType: service.BillingTypeSubscription,
+				CreatedAt:   time.Now().UTC(),
+			}
+			usageLog.SetBillingSource(service.BillingSourceEntitlementBalanceFallback)
+			inserted, err := usageLogRepo.Create(ctx, usageLog)
+			require.NoError(t, err)
+			require.True(t, inserted)
+
+			result, err := billingRepo.Apply(ctx, cmd)
+			require.NoError(t, err)
+			require.False(t, result.Applied)
+			require.Equal(t, service.BillingSourceEntitlementBalanceFallback, result.BillingSource)
+			require.Equal(t, service.BillingSourceEntitlementBalanceFallback, service.ResolveUsageBillingSourceFromApplyResult(
+				service.BillingTypeSubscription,
+				nil,
+				&entitlementID,
+				result,
+			))
+		})
+	}
 }
 
 func ptrUsageBillingTime(v time.Time) *time.Time {

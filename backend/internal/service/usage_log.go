@@ -44,6 +44,18 @@ func ResolveUsageBillingSource(billingType int8, subscriptionID, entitlementID *
 }
 
 func ResolveUsageBillingSourceFromApplyResult(billingType int8, subscriptionID, entitlementID *int64, result *UsageBillingApplyResult) string {
+	if result != nil {
+		source := strings.TrimSpace(result.BillingSource)
+		if IsValidUsageBillingSource(source) {
+			return source
+		}
+		// A replay of a pre-migration entitlement key can have no persisted source.
+		// NewBalance is also absent on replays, so quota vs wallet fallback cannot be
+		// inferred safely. Preserve unknown attribution instead of recording quota.
+		if !result.Applied && entitlementID != nil {
+			return ""
+		}
+	}
 	if entitlementID != nil {
 		if result != nil && result.NewBalance != nil {
 			return BillingSourceEntitlementBalanceFallback
