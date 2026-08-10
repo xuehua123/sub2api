@@ -732,10 +732,10 @@ import {
 } from '@/utils/latencyHealth'
 import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
 import {
-  BILLING_MODE_IMAGE,
   BILLING_MODE_TOKEN,
   getBillingModeBadgeClass,
   getBillingModeLabel,
+  getDisplayBillingMode as resolveDisplayBillingMode,
 } from '@/utils/billingMode'
 import {
   formatImageBillingSize,
@@ -919,13 +919,6 @@ const isImageUsage = (row: Pick<UsageLog, 'image_count'> | null | undefined): bo
   return (row?.image_count ?? 0) > 0
 }
 
-const getDisplayBillingMode = (row: Pick<UsageLog, 'billing_mode' | 'image_count'> | null | undefined): string | null | undefined => {
-  if (isImageUsage(row)) {
-    return BILLING_MODE_IMAGE
-  }
-  return row?.billing_mode
-}
-
 const formatUserAgent = (ua: string): string => {
   return ua
 }
@@ -965,6 +958,10 @@ const formatUsageEndpoints = (log: UsageLog): string => {
   const inbound = log.inbound_endpoint?.trim()
   return inbound || '-'
 }
+
+const getDisplayBillingMode = (
+  row: Pick<UsageLog, 'billing_mode' | 'image_count'> | null | undefined
+): string | null | undefined => resolveDisplayBillingMode(row)
 
 const formatTokens = (value: number): string => {
   if (value >= 1_000_000_000) {

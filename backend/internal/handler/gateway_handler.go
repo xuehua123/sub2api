@@ -2531,6 +2531,33 @@ func subscriptionEntitlementUsageContext(c *gin.Context) (*service.SubscriptionE
 	return entitlement, middleware2.GetSubscriptionEntitlementBalanceFallbackFromContext(c)
 }
 
+// submitMandatoryUsageRecordTask never silently drops billing work on pool overflow.
+func (h *GatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
+	if task == nil {
+		return
+	}
+	task = wrapUsageRecordTaskContext(parent, task)
+	if h.usageRecordWorkerPool != nil {
+		if mode := h.usageRecordWorkerPool.Submit(task); !mode.Dropped() {
+			return
+		}
+		logger.L().With(
+			zap.String("component", "handler.gateway.usage"),
+		).Warn("gateway.usage_record_task_mandatory_sync_fallback")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.L().With(
+				zap.String("component", "handler.gateway.usage"),
+				zap.Any("panic", recovered),
+			).Error("gateway.usage_record_task_panic_recovered")
+		}
+	}()
+	task(ctx)
+}
+
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式
 // 返回 "serialize" | "throttle" | ""
 func (h *GatewayHandler) getUserMsgQueueMode(account *service.Account, parsed *service.ParsedRequest) string {

@@ -487,7 +487,7 @@ func (r *fakeSubscriptionEntitlementRepo) resetWindowUsage(id int64, operation s
 	r.windowCalls = append(r.windowCalls, fakeEntitlementWindowCall{
 		operation:           operation,
 		id:                  id,
-		expectedWindowStart: cloneTimePtr(expectedWindowStart),
+		expectedWindowStart: cloneEntitlementTestTimePtr(expectedWindowStart),
 		newWindowStart:      newWindowStart,
 	})
 	ent, ok := r.entitlements[id]
@@ -548,9 +548,9 @@ func (r *fakeSubscriptionEntitlementRepo) ApplyEntitlementUsage(_ context.Contex
 		DailyUsageUSD:      ent.DailyUsageUSD,
 		WeeklyUsageUSD:     ent.WeeklyUsageUSD,
 		MonthlyUsageUSD:    ent.MonthlyUsageUSD,
-		DailyWindowStart:   cloneTimePtr(ent.DailyWindowStart),
-		WeeklyWindowStart:  cloneTimePtr(ent.WeeklyWindowStart),
-		MonthlyWindowStart: cloneTimePtr(ent.MonthlyWindowStart),
+		DailyWindowStart:   cloneEntitlementTestTimePtr(ent.DailyWindowStart),
+		WeeklyWindowStart:  cloneEntitlementTestTimePtr(ent.WeeklyWindowStart),
+		MonthlyWindowStart: cloneEntitlementTestTimePtr(ent.MonthlyWindowStart),
 	}, nil
 }
 
@@ -1508,9 +1508,9 @@ func cloneTestEntitlement(ent *SubscriptionEntitlement) *SubscriptionEntitlement
 	cp.PlanID = cloneInt64Ptr(ent.PlanID)
 	cp.LegacySubscriptionID = cloneInt64Ptr(ent.LegacySubscriptionID)
 	cp.PrimaryGroupID = cloneInt64Ptr(ent.PrimaryGroupID)
-	cp.DailyWindowStart = cloneTimePtr(ent.DailyWindowStart)
-	cp.WeeklyWindowStart = cloneTimePtr(ent.WeeklyWindowStart)
-	cp.MonthlyWindowStart = cloneTimePtr(ent.MonthlyWindowStart)
+	cp.DailyWindowStart = cloneEntitlementTestTimePtr(ent.DailyWindowStart)
+	cp.WeeklyWindowStart = cloneEntitlementTestTimePtr(ent.WeeklyWindowStart)
+	cp.MonthlyWindowStart = cloneEntitlementTestTimePtr(ent.MonthlyWindowStart)
 	cp.DailyLimitUSD = cloneFloat64Ptr(ent.DailyLimitUSD)
 	cp.WeeklyLimitUSD = cloneFloat64Ptr(ent.WeeklyLimitUSD)
 	cp.MonthlyLimitUSD = cloneFloat64Ptr(ent.MonthlyLimitUSD)
@@ -1542,7 +1542,7 @@ func cloneTestFulfillment(fulfillment *SubscriptionEntitlementFulfillment) *Subs
 	return &cp
 }
 
-func cloneTimePtr(v *time.Time) *time.Time {
+func cloneEntitlementTestTimePtr(v *time.Time) *time.Time {
 	if v == nil {
 		return nil
 	}

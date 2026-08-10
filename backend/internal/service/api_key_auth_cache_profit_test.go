@@ -16,6 +16,10 @@ import (
 
 func profitAuthTestAPIKey() *APIKey {
 	groupID := int64(50)
+	searchPrice := 0.25
+	audioRealtimePrice := 1.5
+	audioTTSPrice := 2.5
+	audioSTTPrice := 3.5
 	return &APIKey{
 		ID:      82,
 		UserID:  40,
@@ -40,6 +44,13 @@ func profitAuthTestAPIKey() *APIKey {
 			ProfitControlEnabled: true,
 			ProfitMinMargin:      0.2,
 			ProfitSafetyBuffer:   0.05,
+			VideoModelPrices: map[string]map[string]float64{
+				"grok-imagine-video": {"720p": 0.7},
+			},
+			SearchPricePer1k:             &searchPrice,
+			AudioRealtimePricePerMin:     &audioRealtimePrice,
+			AudioTTSPricePerMillionChars: &audioTTSPrice,
+			AudioSTTPricePerHour:         &audioSTTPrice,
 		},
 	}
 }
@@ -53,7 +64,7 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
 	require.NotNil(t, snapshot)
 	require.Equal(t, apiKeyAuthSnapshotVersion, snapshot.Version)
-	require.Equal(t, 20, snapshot.Version, "v20 同时携带本地访问控制与利润控制字段")
+	require.Equal(t, 21, snapshot.Version, "v21 同时携带本地访问控制、利润控制与媒体计费字段")
 
 	// 模拟 L2 缓存的完整 JSON 往返（与 apiKeyCache.SetAuthCache/GetAuthCache 同构）。
 	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: snapshot})
@@ -70,6 +81,11 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	require.InDelta(t, 0.2, materialized.Group.ProfitMinMargin, 1e-12)
 	require.InDelta(t, 0.05, materialized.Group.ProfitSafetyBuffer, 1e-12)
 	require.InDelta(t, 0.06, materialized.Group.RateMultiplier, 1e-12)
+	require.InDelta(t, 0.7, materialized.Group.VideoModelPrices["grok-imagine-video"]["720p"], 1e-12)
+	require.InDelta(t, 0.25, *materialized.Group.SearchPricePer1k, 1e-12)
+	require.InDelta(t, 1.5, *materialized.Group.AudioRealtimePricePerMin, 1e-12)
+	require.InDelta(t, 2.5, *materialized.Group.AudioTTSPricePerMillionChars, 1e-12)
+	require.InDelta(t, 3.5, *materialized.Group.AudioSTTPricePerHour, 1e-12)
 
 	// 中间件语义：materialized.Group 进请求 ctx → 门必须按快照配置装上。
 	ctx := context.WithValue(context.Background(), ctxkey.Group, materialized.Group)
