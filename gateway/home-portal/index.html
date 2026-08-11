@@ -16,7 +16,7 @@
           <span>皮皮虾 AI</span>
         </a>
         <nav aria-label="主导航">
-          <a href="https://doc.psydo.top/" target="_blank" rel="noreferrer">开发文档</a>
+          <a data-doc-url href="https://doc.psydo.top/" target="_blank" rel="noreferrer">开发文档</a>
           <a href="/model-plaza" target="_top">模型广场</a>
           <a href="/login" target="_top" class="login-link">登录控制台</a>
         </nav>
@@ -49,7 +49,7 @@
               <div class="route-mark">03</div>
               <div><strong>生图与 API 项目协作</strong><small>独立生图分组、项目内 Skill、完整调用记录</small></div>
             </div>
-            <a class="signal-link" href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">查看工具接入教程 <span aria-hidden="true">↗</span></a>
+            <a class="signal-link" data-doc-url href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">查看工具接入教程 <span aria-hidden="true">↗</span></a>
           </aside>
         </section>
 
@@ -72,7 +72,7 @@
               <p>为项目创建 API Key，接入 SDK、工作流、Agent 和自有应用。</p>
               <span class="path-action">管理 API 密钥 <b>→</b></span>
             </a>
-            <a class="path-item" href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">
+            <a class="path-item" data-doc-url href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">
               <span class="path-index">02</span>
               <h3>Codex / Claude / Kiro</h3>
               <p>为 CCSwitch、Claude Code、Codex、Kiro、Cursor 等工具查看图文配置。</p>
@@ -103,5 +103,17 @@
         <small>服务仅面向新加坡境内合规用户提供</small>
       </footer>
     </div>
+    <script>
+      (() => {
+        const usePpxDocs = new Set(['cn2.ppxcode.com', 'cf.ppxcode.com']).has(window.location.hostname)
+        if (!usePpxDocs) return
+
+        document.querySelectorAll('[data-doc-url]').forEach((link) => {
+          const url = new URL(link.href)
+          url.hostname = 'doc.ppxcode.com'
+          link.href = url.toString()
+        })
+      })()
+    </script>
   </body>
 </html>

@@ -261,6 +261,7 @@ import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { leadingGraphemes, userDisplayName } from '@/utils/userDisplay'
 import { sanitizeUrl } from '@/utils/url'
+import { resolvePublicDocumentationUrl } from '@/utils/publicEndpoint'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 
 const router = useRouter()
@@ -275,7 +276,7 @@ const user = computed(() => authStore.user)
 const dropdownOpen = ref(false)
 const dropdownRef = ref<HTMLElement | null>(null)
 const contactInfo = computed(() => appStore.contactInfo)
-const docUrl = computed(() => sanitizeUrl(appStore.docUrl))
+const docUrl = computed(() => sanitizeUrl(resolvePublicDocumentationUrl(appStore.docUrl)))
 const modelPlazaEnabled = computed(() => isFeatureFlagEnabled(FeatureFlags.modelPlaza))
 const avatarUrl = computed(() => user.value?.avatar_url?.trim() || '')
 const availableBalance = computed(() => Number(user.value?.balance || 0))

@@ -26,7 +26,7 @@
         <a href="#api-reference">接口示例</a>
         <a href="#faq">常见问题</a>
       </nav>
-      <a class="console-link" href="https://api.psydo.top" target="_blank" rel="noreferrer">打开控制台 <span aria-hidden="true">↗</span></a>
+      <a class="console-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">打开控制台 <span aria-hidden="true">↗</span></a>
     </header>
 
     <main id="top">
@@ -37,7 +37,7 @@
           <p class="hero-lede">皮皮虾 AI 同时提供多个公开 API 端点。先按您当前网络选择一个端点，再将它填入任意兼容 OpenAI API 的客户端或代码。</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#quickstart">开始配置 <span aria-hidden="true">↓</span></a>
-            <a class="button button-quiet" href="https://api.psydo.top" target="_blank" rel="noreferrer">获取 API 密钥 <span aria-hidden="true">↗</span></a>
+            <a class="button button-quiet" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">获取 API 密钥 <span aria-hidden="true">↗</span></a>
           </div>
         </div>
         <aside class="hero-note">
@@ -60,6 +60,16 @@
               <span class="endpoint-content"><strong>默认端点</strong><small>适合大多数网络环境</small></span>
               <code>api.psydo.top</code>
             </button>
+            <button class="endpoint-card" type="button" data-endpoint="https://cn2.ppxcode.com" data-label="CN2 直连（推荐）" role="radio" aria-checked="false">
+              <span class="endpoint-state"></span>
+              <span class="endpoint-content"><strong>CN2 直连（推荐）</strong><small>推荐大陆网络与长流式调用</small></span>
+              <code>cn2.ppxcode.com</code>
+            </button>
+            <button class="endpoint-card" type="button" data-endpoint="https://cf.ppxcode.com" data-label="Cloudflare 入口" role="radio" aria-checked="false">
+              <span class="endpoint-state"></span>
+              <span class="endpoint-content"><strong>Cloudflare 入口</strong><small>适合需要 Cloudflare 的网络环境</small></span>
+              <code>cf.ppxcode.com</code>
+            </button>
             <button class="endpoint-card" type="button" data-endpoint="https://api.ppx-ai.com" data-label="CF 优选端点" role="radio" aria-checked="false">
               <span class="endpoint-state"></span>
               <span class="endpoint-content"><strong>CF 优选端点</strong><small>适合部分国际网络环境</small></span>
@@ -78,7 +88,7 @@
               <button class="copy-button" type="button" data-copy-target="base-url-value" aria-label="复制 Base URL">复制</button>
             </div>
             <p>这是兼容 OpenAI API 的 Base URL。大多数工具需要填写到 <code>Base URL</code>、<code>API Host</code> 或 <code>Endpoint</code>。</p>
-            <a class="test-link" href="https://api.psydo.top" target="_blank" rel="noreferrer">在控制台检测当前网络连接 <span aria-hidden="true">↗</span></a>
+            <a class="test-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">在控制台检测当前网络连接 <span aria-hidden="true">↗</span></a>
           </div>
         </div>
       </section>

@@ -26,7 +26,7 @@
           </div>
           <EndpointPopover
             v-if="publicSettings?.api_base_url || (publicSettings?.custom_endpoints?.length ?? 0) > 0"
-            :api-base-url="publicSettings?.api_base_url || ''"
+            :api-base-url="publicApiBaseUrl"
             :custom-endpoints="publicSettings?.custom_endpoints || []"
             :connectivity-enabled="publicSettings?.connectivity_test_enabled === true"
           />
@@ -1272,7 +1272,7 @@
     <UseKeyModal
       :show="showUseKeyModal"
       :api-key="selectedKey?.key || ''"
-      :base-url="publicSettings?.api_base_url || ''"
+      :base-url="publicApiBaseUrl"
       :platform="selectedKey?.group?.platform || null"
       :allow-messages-dispatch="selectedKey?.group?.allow_messages_dispatch || false"
       @close="closeUseKeyModal"
@@ -1447,6 +1447,7 @@ import {
 } from '@/utils/ccswitchImport'
 import { useCurrencyResolver } from '@/composables/useCurrencyResolver'
 import { sortGroupsForDisplay } from '@/utils/groupDisplayOrder'
+import { resolvePublicApiBaseUrl } from '@/utils/publicEndpoint'
 const { convertUsdToCnyForLog, formatCny } = useCurrencyResolver()
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -1487,6 +1488,7 @@ interface EntitlementSelectOption extends Record<string, unknown> {
 const appStore = useAppStore()
 const onboardingStore = useOnboardingStore()
 const { copyToClipboard: clipboardCopy } = useClipboard()
+const publicApiBaseUrl = computed(() => resolvePublicApiBaseUrl(publicSettings.value?.api_base_url || ''))
 
 const allColumns = computed<Column[]>(() => [
   { key: 'name', label: t('common.name'), sortable: true },
@@ -2899,7 +2901,7 @@ const importToCcswitch = (row: ApiKey) => {
 }
 
 const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
-  const baseUrl = publicSettings.value?.api_base_url || window.location.origin
+  const baseUrl = publicApiBaseUrl.value || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
   const usageScript = `({

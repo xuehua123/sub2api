@@ -4,7 +4,7 @@
     <!-- iframe mode -->
     <iframe
       v-if="isHomeContentUrl"
-      :src="homeContent.trim()"
+      :src="homeContentUrl"
       class="h-screen w-full border-0"
       allowfullscreen
     ></iframe>
@@ -480,6 +480,7 @@ import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
+import { resolvePublicDocumentationUrl, resolvePublicHomeContent } from '@/utils/publicEndpoint'
 
 const { t } = useI18n()
 
@@ -490,8 +491,10 @@ const appStore = useAppStore()
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
-const docUrl = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || ''))
+const configuredApiBaseUrl = computed(() => appStore.cachedPublicSettings?.api_base_url || appStore.apiBaseUrl || '')
+const docUrl = computed(() => sanitizeUrl(resolvePublicDocumentationUrl(appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')))
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+const homeContentUrl = computed(() => resolvePublicHomeContent(homeContent.value, configuredApiBaseUrl.value).trim())
 const hasHomeContent = computed(() => homeContent.value.trim().length > 0)
 const compactHomeEnabled = computed(() => appStore.cachedPublicSettings?.compact_home_enabled === true)
 

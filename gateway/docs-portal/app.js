@@ -1,4 +1,6 @@
-const state = { baseURL: 'https://api.psydo.top', label: '默认端点' }
+const state = window.location.hostname === 'doc.ppxcode.com'
+  ? { baseURL: 'https://cn2.ppxcode.com', label: 'CN2 直连（推荐）' }
+  : { baseURL: 'https://api.psydo.top', label: '默认端点' }
 
 const guides = {
   cherry: {
@@ -92,6 +94,7 @@ function updateEndpoint() {
   document.getElementById('base-url-value').textContent = `${state.baseURL}/v1`
   document.getElementById('selected-endpoint-label').textContent = state.label
   document.querySelectorAll('[data-base-url]').forEach((element) => { element.textContent = state.baseURL })
+  document.querySelectorAll('[data-console-url]').forEach((element) => { element.href = state.baseURL })
 }
 
 function notify(message) {
@@ -110,16 +113,22 @@ async function copy(value) {
   }
 }
 
-document.querySelectorAll('.endpoint-card').forEach((button) => {
+const endpointCards = [...document.querySelectorAll('.endpoint-card')]
+
+function selectEndpoint(button) {
+  state.baseURL = button.dataset.endpoint
+  state.label = button.dataset.label
+  endpointCards.forEach((item) => {
+    const selected = item === button
+    item.classList.toggle('is-selected', selected)
+    item.setAttribute('aria-checked', String(selected))
+  })
+  updateEndpoint()
+}
+
+endpointCards.forEach((button) => {
   button.addEventListener('click', () => {
-    state.baseURL = button.dataset.endpoint
-    state.label = button.dataset.label
-    document.querySelectorAll('.endpoint-card').forEach((item) => {
-      const selected = item === button
-      item.classList.toggle('is-selected', selected)
-      item.setAttribute('aria-checked', String(selected))
-    })
-    updateEndpoint()
+    selectEndpoint(button)
     notify(`已选择${state.label}`)
   })
 })
@@ -146,4 +155,4 @@ dialog.addEventListener('click', (event) => {
   if (event.target === dialog) dialog.close()
 })
 
-updateEndpoint()
+selectEndpoint(endpointCards.find((button) => button.dataset.endpoint === state.baseURL) || endpointCards[0])
