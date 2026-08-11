@@ -72,12 +72,15 @@ func (s *upstreamManagementClient) authenticateNewAPIManagementSession(ctx conte
 			return upstreamManagementHTTPSession{}, err
 		}
 		session.cookie = login.cookieNamed("session")
-		if session.cookie == nil {
-			return upstreamManagementHTTPSession{}, errors.New("upstream management login did not return a session cookie")
-		}
 		data := envelopeData(login.payload)
 		session.remoteUserID = int64FromMap(data, "id")
 		session.accessToken = firstString(data, "access_token", "token")
+		// NewAPI-compatible servers may return the access token in the JSON
+		// response and use a differently named refresh cookie. Either an access
+		// token or the legacy session cookie is enough for authenticated requests.
+		if session.cookie == nil && session.accessToken == "" {
+			return upstreamManagementHTTPSession{}, errors.New("upstream management login returned neither an access token nor a session cookie")
+		}
 	}
 	if session.remoteUserID <= 0 {
 		selfHeaders := newAPIManagementHeaders(config.Provider, session)
