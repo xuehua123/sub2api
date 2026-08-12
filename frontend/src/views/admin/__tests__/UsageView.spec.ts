@@ -52,6 +52,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
   'admin.usage.billingSource.label': 'Billing Source',
   'admin.usage.entitlementId': 'Entitlement ID',
+  'admin.usage.requestId': 'Request ID',
   'usage.requestedModel': 'Requested model',
   'usage.sentUpstreamModel': 'Sent upstream model',
   'usage.upstreamResponseModel': 'Upstream response model',
@@ -164,6 +165,7 @@ const UsageFiltersStub = defineComponent({
   `,
 })
 const UsageTableStub = {
+  props: ['columns'],
   emits: ['userClick'],
   template: '<div data-test="usage-table"><button class="user-click" @click="$emit(\'userClick\', 2)">user</button></div>',
 }
@@ -421,6 +423,70 @@ describe('admin UsageView distribution metric toggles', () => {
     expect(modelChart.find('.metric').text()).toBe('actual_cost')
     expect(groupChart.find('.metric').text()).toBe('actual_cost')
     expect(getSnapshotV2).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('admin UsageView request ID column visibility', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.mocked(localStorage.getItem).mockReset().mockReturnValue(null)
+    vi.mocked(localStorage.setItem).mockReset()
+    list.mockReset().mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockReset().mockResolvedValue({
+      total_requests: 0, total_input_tokens: 0, total_output_tokens: 0,
+      total_cache_tokens: 0, total_tokens: 0, total_cost: 0, total_actual_cost: 0, average_duration_ms: 0,
+    })
+    getSnapshotV2.mockReset().mockResolvedValue({ trend: [], models: [], groups: [] })
+    getModelStats.mockReset().mockResolvedValue({ models: [] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('keeps request ID hidden by default and allows enabling it from column settings', async () => {
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          UsageStatsCards: true,
+          UsageFilters: UsageFiltersStub,
+          UsageTable: UsageTableStub,
+          UsageExportProgress: true,
+          UsageCleanupDialog: true,
+          UserBalanceHistoryModal: true,
+          AuditLogModal: true,
+          Pagination: true,
+          Select: true,
+          DateRangePicker: true,
+          Icon: true,
+          TokenUsageTrend: true,
+          ModelDistributionChart: true,
+          GroupDistributionChart: true,
+          EndpointDistributionChart: true,
+          UserTokenRanking: true,
+        },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const usageTable = wrapper.findComponent(UsageTableStub)
+    expect(usageTable.props('columns')).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'request_id' })]),
+    )
+
+    await wrapper.get('button[title="admin.users.columnSettings"]').trigger('click')
+    const requestIdToggle = wrapper.findAll('button').find((button) => button.text() === 'Request ID')
+    expect(requestIdToggle).toBeDefined()
+    await requestIdToggle!.trigger('click')
+
+    expect(usageTable.props('columns')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'request_id', label: 'Request ID' })]),
+    )
+    expect(localStorage.setItem).toHaveBeenCalledWith(
+      'usage-hidden-columns-version',
+      '5',
+    )
   })
 })
 
@@ -774,8 +840,49 @@ describe('admin UsageView column settings migration', () => {
     vi.advanceTimersByTime(120)
     await flushPromises()
 
-    expect(JSON.parse(storage.get('usage-hidden-columns') ?? '[]')).toEqual(['first_sse_event', 'user_agent'])
-    expect(storage.get('usage-hidden-columns-version')).toBe('4')
+    expect(JSON.parse(storage.get('usage-hidden-columns') ?? '[]')).toEqual(['first_sse_event', 'user_agent', 'request_id'])
+    expect(storage.get('usage-hidden-columns-version')).toBe('5')
+    wrapper.unmount()
+  })
+
+  it('preserves v4 timing visibility choices while hiding the new request ID column', async () => {
+    const storage = new Map<string, string>([
+      ['usage-hidden-columns', JSON.stringify(['first_client_flush', 'user_agent'])],
+      ['usage-hidden-columns-version', '4'],
+    ])
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null)
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => { storage.set(key, value) })
+
+    const wrapper = mountRouteFilteredUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    expect(JSON.parse(storage.get('usage-hidden-columns') ?? '[]')).toEqual([
+      'first_client_flush',
+      'user_agent',
+      'request_id',
+    ])
+    expect(storage.get('usage-hidden-columns-version')).toBe('5')
+    wrapper.unmount()
+  })
+
+  it('preserves an explicitly visible request ID from the previous upstream marker', async () => {
+    const storage = new Map<string, string>([
+      ['usage-hidden-columns', JSON.stringify(['first_client_flush', 'user_agent'])],
+      ['usage-hidden-columns-version', 'request-id-hidden-by-default'],
+    ])
+    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null)
+    vi.mocked(localStorage.setItem).mockImplementation((key, value) => { storage.set(key, value) })
+
+    const wrapper = mountRouteFilteredUsageView()
+    vi.advanceTimersByTime(120)
+    await flushPromises()
+
+    expect(JSON.parse(storage.get('usage-hidden-columns') ?? '[]')).toEqual([
+      'first_client_flush',
+      'user_agent',
+    ])
+    expect(storage.get('usage-hidden-columns-version')).toBe('5')
     wrapper.unmount()
   })
 })

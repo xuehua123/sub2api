@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -621,6 +622,53 @@ func TestOpenAIWSConnPool_AcquireReusesOnlyMatchingBetaFeatures(t *testing.T) {
 	plainLease.Release()
 
 	require.Equal(t, 2, dialer.DialCount())
+}
+
+func TestOpenAIWSConnPool_AcquireReusesOnlyMatchingCodexFingerprint(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+
+	pool := newOpenAIWSConnPool(cfg)
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+	account := &Account{ID: 129, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	baseReq := openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	}
+	firstReq := baseReq
+	firstReq.Headers = http.Header{
+		"X-Codex-Installation-ID": {"install-a"},
+		"Session-ID":              {"session-a"},
+		"Thread-ID":               {"thread-a"},
+		"X-Codex-Window-ID":       {"window-a"},
+	}
+	first, err := pool.Acquire(context.Background(), firstReq)
+	require.NoError(t, err)
+	firstID := first.ConnID()
+	first.Release()
+
+	secondReq := baseReq
+	secondReq.Headers = http.Header{
+		"X-Codex-Installation-ID": {"install-b"},
+		"Session-ID":              {"session-b"},
+		"Thread-ID":               {"thread-b"},
+		"X-Codex-Window-ID":       {"window-b"},
+	}
+	second, err := pool.Acquire(context.Background(), secondReq)
+	require.NoError(t, err)
+	require.False(t, second.Reused(), "不同 OAuth fingerprint 不应复用旧连接")
+	require.NotEqual(t, firstID, second.ConnID())
+	second.Release()
+
+	third, err := pool.Acquire(context.Background(), firstReq)
+	require.NoError(t, err)
+	require.True(t, third.Reused())
+	require.Equal(t, firstID, third.ConnID())
+	third.Release()
+	assert.Equal(t, 2, dialer.DialCount())
 }
 
 func TestOpenAIWSConnPool_AcquireReplacesIdleConnWithDifferentBetaFeatures(t *testing.T) {

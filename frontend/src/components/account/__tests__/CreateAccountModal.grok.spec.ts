@@ -50,4 +50,9 @@ describe('CreateAccountModal Grok account types', () => {
   it('hides Grok password authorize option in the create flow', () => {
     expect(source).toContain(':show-email-password-option="false"')
   })
+
+  it('limits Codex fingerprint settings to OpenAI OAuth accounts', () => {
+    expect(source).toContain("v-if=\"form.platform === 'openai' && form.type === 'oauth'\"")
+    expect(source).toContain("if (form.type === 'oauth' && codexFingerprintMode.value !== 'session')")
+  })
 })

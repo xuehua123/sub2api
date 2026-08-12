@@ -86,6 +86,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
+	if account.IsOpenAIOAuth() {
+		if ids := ensureCodexFingerprintAttemptIDs(c, account); ids != nil {
+			if !applyCodexFingerprintClientMetadata(payload, ids) {
+				// The helper normally creates client_metadata for a fingerprinted
+				// OAuth request. Keep this guard explicit so a future payload shape
+				// change cannot silently desynchronize WS headers and body.
+				return nil, fmt.Errorf("apply OpenAI Codex fingerprint metadata to websocket payload")
+			}
+		}
+	}
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {
 		payloadEventType = "response.create"

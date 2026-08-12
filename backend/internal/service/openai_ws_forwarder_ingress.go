@@ -191,6 +191,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if !gjson.ValidBytes(trimmed) {
 			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 		}
+		// Keep one stable fingerprint identity for the WS connection and rotate
+		// only turn_id between response.create frames. The first parse also
+		// seeds the handshake headers; subsequent parses are the only place where
+		// a new turn is allocated.
+		var fingerprintIDs *codexFingerprintIDs
+		if account.IsOpenAIOAuth() {
+			if turn <= 1 {
+				fingerprintIDs = ensureCodexFingerprintAttemptIDs(c, account)
+			} else {
+				fingerprintIDs = advanceCodexFingerprintTurn(c, account)
+			}
+		}
 
 		values := gjson.GetManyBytes(trimmed, "type", "model", "prompt_cache_key", "previous_response_id")
 		eventType := strings.TrimSpace(values[0].String())
@@ -416,6 +428,15 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		normalized = policyApplied
 		ingressSessionOriginalModel = originalModel
+		if fingerprintIDs != nil {
+			fingerprinted, changed, fingerprintErr := applyCodexFingerprintJSONBody(normalized, fingerprintIDs)
+			if fingerprintErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket fingerprint metadata", fingerprintErr)
+			}
+			if changed {
+				normalized = fingerprinted
+			}
+		}
 
 		return openAIWSClientPayload{
 			payloadRaw:         normalized,

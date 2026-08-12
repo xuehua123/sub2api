@@ -155,6 +155,8 @@ worktree/backend/internal/handler/admin/redeem_handler_test.go:generic-api-key:1
 worktree/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:380
 worktree/backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:439
 worktree/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:638
+index/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:658
+worktree/backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:658
 worktree/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:170
 worktree/backend/internal/handler/payment_handler_resume_test.go:generic-api-key:259
 worktree/backend/internal/handler/stream_error_event_test.go:generic-api-key:107

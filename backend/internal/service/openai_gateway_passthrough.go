@@ -81,6 +81,19 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if normalized {
 			body = normalizedBody
 		}
+		if !isOpenAIResponsesCompactPath(c) {
+			if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
+				if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(fpIDs, account) {
+					fingerprintedBody, changed, fingerprintErr := applyCodexFingerprintJSONBody(body, fpIDs)
+					if fingerprintErr != nil {
+						return nil, fmt.Errorf("apply OpenAI Codex fingerprint metadata: %w", fingerprintErr)
+					}
+					if changed {
+						body = fingerprintedBody
+					}
+				}
+			}
+		}
 	}
 
 	sanitizedBody, sanitized, err := sanitizeEmptyBase64InputImagesInOpenAIBody(body)
@@ -458,6 +471,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		// （#3777 期望行为 4）。
 		req.Header.Set("accept", "application/json")
 	}
+	// Use the same attempt-local IDs that were applied to client_metadata in
+	// forwardOpenAIPassthrough. Ownership validation prevents a reused Gin
+	// context from leaking a prior failover account's headers.
+	if account.Type == AccountTypeOAuth && !isOpenAIResponsesCompactPath(c) && c != nil {
+		if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
+			if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(fpIDs, account) {
+				applyCodexFingerprintHeaders(req.Header, fpIDs)
+			}
+		}
+	}
 
 	// 透传模式也支持账户自定义 User-Agent 与 ForceCodexCLI 兜底。
 	customUA := account.GetOpenAIUserAgent()
@@ -521,6 +544,9 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 		return false
 	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
+		return true
+	}
+	if account != nil && account.IsPoolMode() && account.IsPoolModeRetryableStatus(statusCode) {
 		return true
 	}
 	switch statusCode {
@@ -828,6 +854,63 @@ func openAIStreamDataStartsClientOutput(data, eventType string) bool {
 		return !openAIStreamFailedEventShouldFailover(payload, extractOpenAISSEErrorMessage(payload))
 	}
 	return !openAIStreamEventIsPreamble(eventType)
+}
+
+func openAIStreamItemHasVisibleOutput(item gjson.Result) bool {
+	if item.Get("arguments").String() != "" || item.Get("input").String() != "" || item.Get("result").String() != "" {
+		return true
+	}
+	for _, path := range []string{"content", "summary"} {
+		for _, part := range item.Get(path).Array() {
+			if part.Get("text").String() != "" || part.Get("transcript").String() != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Structural progress can commit an attempt and disarm first-output failover,
+// but TTFT should start only when the stream carries content a client can use.
+func openAIStreamDataStartsVisibleOutput(data, eventType string) bool {
+	trimmed := strings.TrimSpace(data)
+	if trimmed == "" || trimmed == "[DONE]" || !gjson.Valid(trimmed) {
+		return false
+	}
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		eventType = strings.TrimSpace(gjson.Get(trimmed, "type").String())
+	}
+	if strings.HasSuffix(eventType, ".delta") {
+		delta := gjson.Get(trimmed, "delta")
+		return delta.Exists() && delta.String() != ""
+	}
+	switch eventType {
+	case "response.output_text.done",
+		"response.reasoning_summary_text.done",
+		"response.reasoning_text.done",
+		"response.audio_transcript.done":
+		return gjson.Get(trimmed, "text").String() != ""
+	case "response.function_call_arguments.done":
+		return gjson.Get(trimmed, "arguments").String() != ""
+	case "response.custom_tool_call_input.done":
+		return gjson.Get(trimmed, "input").String() != ""
+	case "response.image_generation_call.partial_image":
+		return gjson.Get(trimmed, "partial_image_b64").String() != ""
+	case "response.content_part.added", "response.content_part.done",
+		"response.reasoning_summary_part.added", "response.reasoning_summary_part.done":
+		part := gjson.Get(trimmed, "part")
+		return part.Get("text").String() != "" || part.Get("transcript").String() != ""
+	case "response.output_item.added", "response.output_item.done":
+		return openAIStreamItemHasVisibleOutput(gjson.Get(trimmed, "item"))
+	case "response.completed", "response.done":
+		for _, item := range gjson.Get(trimmed, "response.output").Array() {
+			if openAIStreamItemHasVisibleOutput(item) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // openAIStreamFailedEventErrorCode 提取流内 failed 事件的错误码（小写），
@@ -1184,6 +1267,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	sawDone := false
 	sawTerminalEvent := false
 	sawFailedEvent := false
+	semanticOutputSeen := false
 	failedMessage := ""
 	clientOutputStarted := false
 	upstreamRequestID := strings.TrimSpace(resp.Header.Get("x-request-id"))
@@ -1333,7 +1417,20 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				line = "data: " + string(sanitizedData)
 			}
 			lineStartsClientOutput = forceFlushFailedEvent || openAIStreamDataStartsClientOutput(trimmedData, eventType)
-			if firstTokenMs == nil && lineStartsClientOutput && trimmedData != "[DONE]" {
+			if lineStartsClientOutput && trimmedData != "[DONE]" && !openAIStreamEventTypeIsTerminal(eventType) {
+				semanticOutputSeen = true
+			}
+			// OpenAI Responses streams that terminate with an empty
+			// response.completed (no output, no usage, no error, nothing sent
+			// to the client) are silent upstream refusals: fail over instead of
+			// recording a successful 0/0 usage turn (issue #5009).
+			if account != nil && account.Platform == PlatformOpenAI &&
+				(eventType == "response.completed" || eventType == "response.done") &&
+				!sawFailedEvent && !semanticOutputSeen && !clientOutputStarted &&
+				openAIResponsesCompletedEventIsEmpty(dataBytes, usage) {
+				return resultWithUsage(), newOpenAIResponsesEmptyCompletedFailoverError(c, account, upstreamRequestID)
+			}
+			if firstTokenMs == nil && openAIStreamDataStartsVisibleOutput(trimmedData, eventType) {
 				setStreamElapsedMsOnce(&firstTokenMs, startTime)
 			}
 			s.parseSSEUsageBytes(dataBytes, usage)
@@ -1497,6 +1594,13 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 
 	usage := &OpenAIUsage{}
 	if ok {
+		// Usage can be emitted on an earlier SSE event rather than the terminal
+		// response object, so collect it before classifying an empty completion.
+		forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
+			if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(data); parsed {
+				*usage = parsedUsage
+			}
+		})
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -1508,6 +1612,14 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 					finalResponse = patched
 				}
 			}
+		}
+		// A non-streaming client can still receive an SSE response from an
+		// upstream. Classify it only after reconstructing any output carried by
+		// delta events; otherwise a valid delta-only completion would be mistaken
+		// for an empty upstream refusal.
+		if account != nil && account.Platform == PlatformOpenAI &&
+			openAIResponsesCompletedEventIsEmpty(finalResponse, usage) {
+			return nil, newOpenAIResponsesEmptyCompletedFailoverError(c, account, openAIHeaderValueEqualFold(resp.Header, "x-request-id"))
 		}
 		finalResponse = supplementCompactionItemFromSSE(c, finalResponse, bodyText)
 		body = finalResponse
@@ -1569,6 +1681,16 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 	}, nil
+}
+
+func openAIHeaderValueEqualFold(h http.Header, name string) string {
+	for key, values := range h {
+		if !strings.EqualFold(strings.TrimSpace(key), name) || len(values) == 0 {
+			continue
+		}
+		return strings.TrimSpace(values[0])
+	}
+	return ""
 }
 
 func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {

@@ -629,8 +629,10 @@ func ProvideBackupService(
 	encryptor SecretEncryptor,
 	storeFactory BackupObjectStoreFactory,
 	dumper DBDumper,
+	lockCache LeaderLockCache,
+	db *sql.DB,
 ) *BackupService {
-	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, dumper)
+	svc := newBackupServiceWithCoordination(settingRepo, cfg, encryptor, storeFactory, dumper, lockCache, db)
 	svc.Start()
 	return svc
 }

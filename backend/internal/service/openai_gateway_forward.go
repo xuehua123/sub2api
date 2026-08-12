@@ -19,6 +19,19 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	// A gin context is reused across account failover attempts. Clear the
+	// account-scoped fingerprint payload before deriving the current attempt so
+	// an explicit off/compact mode cannot inherit the previous account's IDs.
+	if c != nil {
+		c.Set(codexFingerprintIDsContextKey, nil)
+		c.Set(codexFingerprintConnectionIDsContextKey, nil)
+	}
+	// Resolve one fingerprint set for this account attempt. The handler reuses
+	// the Gin context during failover, so the value is cleared above and tagged
+	// with the account ID for an additional ownership check at request build.
+	if account != nil && account.IsOpenAIOAuth() && !isOpenAIResponsesCompactPath(c) {
+		ensureCodexFingerprintAttemptIDs(c, account)
+	}
 	beginUpstreamResponseModelObservation(c)
 	clearGrokResponsesClientToolMapping(c)
 	clearOpenAIResponsesNamespaceNames(c)
@@ -426,6 +439,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		// 带真实 device_id 时补齐 client_metadata 安装标识，与真实 Codex 对齐（compact 形态不同，跳过）。
 		if !isCompactRequest && applyCodexClientMetadata(decoded, account) {
 			markDecodedModified()
+		}
+		// 指纹收敛：使用 Forward() 为本次账号尝试预计算的 IDs，请求体和
+		// 出站头共享同一份随机 turn_id。
+		if !isCompactRequest {
+			if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
+				if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(fpIDs, account) && applyCodexFingerprintClientMetadata(decoded, fpIDs) {
+					markDecodedModified()
+				}
+			}
 		}
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
@@ -1167,6 +1189,15 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 用于网关未透传/改写 User-Agent 时，仍能命中 Codex 侧识别逻辑。
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
 		req.Header.Set("user-agent", codexCLIUserAgent)
+	}
+
+	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
+	if account.Type == AccountTypeOAuth && c != nil {
+		if fpIDs, ok := c.Get(codexFingerprintIDsContextKey); ok {
+			if ids, ok := fpIDs.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(ids, account) {
+				applyCodexFingerprintHeaders(req.Header, ids)
+			}
+		}
 	}
 
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。

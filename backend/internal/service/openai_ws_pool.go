@@ -77,7 +77,8 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
-	betaFeatures string
+	betaFeatures     string
+	codexFingerprint string
 }
 
 type openAIWSConnLease struct {
@@ -2013,8 +2014,62 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 
 func normalizeOpenAIWSHandshakeCompatibility(headers http.Header) openAIWSHandshakeCompatibilityKey {
 	return openAIWSHandshakeCompatibilityKey{
-		betaFeatures: normalizeOpenAIWSBetaFeatures(headers),
+		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
+		codexFingerprint: normalizeOpenAIWSCodexFingerprint(headers),
 	}
+}
+
+// normalizeOpenAIWSCodexFingerprint keeps pooled connections with different
+// OAuth thread/session identities from being reused for one another. The
+// values are intentionally limited to handshake fingerprint fields; routing
+// hints remain a separate soft affinity signal.
+func normalizeOpenAIWSCodexFingerprint(headers http.Header) string {
+	if headers == nil {
+		return ""
+	}
+	// session_id is also used by ordinary API-key requests for sticky
+	// affinity. Only treat the connection as fingerprint-sensitive when a
+	// Codex-specific identity marker is present; otherwise API-key sessions
+	// must continue to share the normal pool connection.
+	installationID := openAIWSHeaderValueFold(headers, "x-codex-installation-id")
+	windowID := openAIWSHeaderValueFold(headers, "x-codex-window-id")
+	threadID := openAIWSHeaderValueFold(headers, "thread-id")
+	turnMetadata := openAIWSHeaderValueFold(headers, "x-codex-turn-metadata")
+	if installationID == "" && windowID == "" && threadID == "" && turnMetadata == "" {
+		return ""
+	}
+	parts := []string{
+		installationID,
+		openAIWSHeaderValueFold(headers, "session-id"),
+		openAIWSHeaderValueFold(headers, "session_id"),
+		threadID,
+		openAIWSHeaderValueFold(headers, "x-client-request-id"),
+		windowID,
+	}
+	return strings.Join(parts, "\x00")
+}
+
+// openAIWSHeaderValueFold reads the first non-empty value for a header while
+// tolerating raw map keys whose casing was not canonicalized by net/http.
+func openAIWSHeaderValueFold(headers http.Header, name string) string {
+	if headers == nil {
+		return ""
+	}
+	keys := make([]string, 0, 1)
+	for key := range headers {
+		if strings.EqualFold(strings.TrimSpace(key), name) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		for _, value := range headers[key] {
+			if value = strings.TrimSpace(value); value != "" {
+				return value
+			}
+		}
+	}
+	return ""
 }
 
 func normalizeOpenAIWSRoutingAffinity(headers http.Header) string {

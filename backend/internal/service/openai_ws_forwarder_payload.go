@@ -122,6 +122,14 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
+	// OAuth WS handshakes and their response.create payloads share one
+	// attempt-local fingerprint set. Apply it after all ordinary client header
+	// isolation/metadata copying so it is the final fingerprint value.
+	if account != nil && account.IsOpenAIOAuth() {
+		if ids := ensureCodexFingerprintAttemptIDs(c, account); ids != nil {
+			applyCodexFingerprintHeaders(headers, ids)
+		}
+	}
 
 	if account != nil && account.Type == AccountTypeOAuth {
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {

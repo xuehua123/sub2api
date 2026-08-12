@@ -323,6 +323,26 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('OpenAI setup-token 批量编辑仍显示并提交 OAuth WS mode 字段', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['setup-token']
+    })
+
+    expect(wrapper.find('#bulk-edit-openai-ws-mode-enabled').exists()).toBe(true)
+    await wrapper.get('#bulk-edit-openai-ws-mode-enabled').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-openai-ws-mode-select"]').setValue('ctx_pool')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        openai_oauth_responses_websockets_v2_mode: 'ctx_pool',
+        openai_oauth_responses_websockets_v2_enabled: true
+      }
+    })
+  })
+
   it('OpenAI API Key 批量编辑不显示 WS mode 入口', () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
@@ -406,6 +426,60 @@ describe('BulkEditAccountModal', () => {
         openai_apikey_responses_websockets_v2_mode: 'ctx_pool',
         openai_apikey_responses_websockets_v2_enabled: true
       }
+    })
+  })
+
+  it('API Key 账号批量编辑可开启上游账单自动探测', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['antigravity'],
+      selectedTypes: ['apikey']
+    })
+
+    await wrapper.get('#bulk-edit-upstream-billing-auto-probe-enabled').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-upstream-billing-auto-probe-select"]').setValue('disabled')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      upstream_billing_probe_enabled: false
+    })
+  })
+
+  it('Codex 指纹模式仅对 OpenAI OAuth 展示和提交', async () => {
+    const oauthWrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await oauthWrapper.get('#bulk-edit-codex-fingerprint-enabled').setValue(true)
+    await oauthWrapper.get('[data-testid="bulk-codex-fingerprint-mode-select"]').setValue('full')
+    await oauthWrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: { codex_fingerprint_mode: 'full' }
+    })
+
+    const setupTokenWrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['setup-token']
+    })
+    expect(setupTokenWrapper.find('#bulk-edit-codex-fingerprint-enabled').exists()).toBe(false)
+  })
+
+  it('批量指纹模式可显式恢复默认 session', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-codex-fingerprint-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: { codex_fingerprint_mode: 'session' }
     })
   })
 
