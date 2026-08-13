@@ -3,6 +3,7 @@
 package handler
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -48,5 +49,35 @@ func TestGrokRealtimeBillingResultUsesForcedUniqueID(t *testing.T) {
 	}
 	if first.AudioUsage == nil || first.AudioUsage.Mode != "realtime" || first.AudioUsage.DurationOrUnits != 1.5 {
 		t.Fatalf("unexpected audio usage: %#v", first.AudioUsage)
+	}
+}
+
+func TestSettleGrokRealtimeProxyOutcomeBillsObservedAudioBeforeUnexpectedFailure(t *testing.T) {
+	result, unexpected := settleGrokRealtimeProxyOutcome(
+		"grok-voice-latest",
+		90*time.Second,
+		true,
+		errors.New("invalid realtime event"),
+	)
+	if result == nil || result.AudioUsage == nil {
+		t.Fatal("audio consumed before an unexpected relay failure must still be billed")
+	}
+	if !unexpected {
+		t.Fatal("unexpected relay failure must still close the client with an error")
+	}
+}
+
+func TestSettleGrokRealtimeProxyOutcomeDoesNotBillFailureWithoutAudio(t *testing.T) {
+	result, unexpected := settleGrokRealtimeProxyOutcome(
+		"grok-voice-latest",
+		time.Second,
+		false,
+		errors.New("invalid realtime event"),
+	)
+	if result != nil {
+		t.Fatal("a failed session without observed audio must not be billed")
+	}
+	if !unexpected {
+		t.Fatal("unexpected relay failure must be preserved")
 	}
 }

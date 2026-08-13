@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -75,7 +76,7 @@ func newAvailableChannelService(channels []Channel, groupRepo GroupRepository) *
 	repo := &mockChannelRepository{
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return channels, nil },
 	}
-	return NewChannelService(repo, groupRepo, nil, nil)
+	return NewChannelService(repo, groupRepo, nil, nil, nil)
 }
 
 func TestListAvailable_EmptyActiveGroups_NoGroupsAttached(t *testing.T) {
@@ -134,7 +135,7 @@ func TestListAvailable_ListAllErrorPropagates(t *testing.T) {
 		listAllFn: func(ctx context.Context) ([]Channel, error) { return nil, sentinel },
 	}
 	groupRepo := &stubGroupRepoForAvailable{}
-	svc := NewChannelService(repo, groupRepo, nil, nil)
+	svc := NewChannelService(repo, groupRepo, nil, nil, nil)
 	out, err := svc.ListAvailable(context.Background())
 	require.Nil(t, out)
 	require.ErrorIs(t, err, sentinel)
@@ -189,6 +190,7 @@ func TestPricingNeedsFallback(t *testing.T) {
 			Intervals:   []PricingInterval{{TierLabel: "1K"}, {TierLabel: "2K"}},
 		}, true},
 		{"flat input set", &ChannelModelPricing{InputPrice: testPtrFloat64(3e-6)}, false},
+		{"image input zero set", &ChannelModelPricing{ImageInputPrice: testPtrFloat64(0)}, false},
 		{"flat per_request set", &ChannelModelPricing{PerRequestPrice: testPtrFloat64(0.04)}, false},
 		{"interval with price", &ChannelModelPricing{
 			Intervals: []PricingInterval{{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)}},
@@ -208,6 +210,7 @@ func TestSynthesizePricingFromLiteLLM_TokenMode(t *testing.T) {
 		OutputCostPerToken:          1.5e-5,
 		CacheCreationInputTokenCost: 3.75e-6,
 		CacheReadInputTokenCost:     3e-7,
+		InputCostPerImageToken:      7e-6,
 	}
 	got := synthesizePricingFromLiteLLM(lp, nil)
 	require.NotNil(t, got)
@@ -215,6 +218,8 @@ func TestSynthesizePricingFromLiteLLM_TokenMode(t *testing.T) {
 	require.NotNil(t, got.InputPrice)
 	require.InDelta(t, 3e-6, *got.InputPrice, 1e-12)
 	require.NotNil(t, got.CacheReadPrice)
+	require.NotNil(t, got.ImageInputPrice)
+	require.InDelta(t, 7e-6, *got.ImageInputPrice, 1e-12)
 }
 
 func TestSynthesizePricingFromLiteLLM_ImageGenerationMode(t *testing.T) {
@@ -288,24 +293,437 @@ func TestFillGlobalPricingFallback_EmptyPricingFillsFromLiteLLM(t *testing.T) {
 	require.InDelta(t, 4e-5, *models[0].Pricing.ImageOutputPrice, 1e-12)
 }
 
-func TestFillGlobalPricingFallback_KeepsExistingPrice(t *testing.T) {
-	// 渠道已经填了价格的条目不应被回落覆盖。
+func TestFillGlobalPricingFallback_EnrichesPartialTokenPricingWithoutOverwritingExplicitValues(t *testing.T) {
 	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
-		"served-model": {Mode: "chat", InputCostPerToken: 1e-6},
+		"served-model": {
+			Mode: "chat", InputCostPerToken: 1e-6, OutputCostPerToken: 5e-6,
+			CacheReadInputTokenCost: 0.1e-6, InputCostPerImageToken: 7e-6,
+		},
 	})
 	svc := &ChannelService{pricingService: pricingSvc}
 
+	zero := 0.0
 	existing := &ChannelModelPricing{
-		BillingMode: BillingModeToken,
-		InputPrice:  testPtrFloat64(9e-9),
+		BillingMode:     BillingModeToken,
+		InputPrice:      testPtrFloat64(9e-9),
+		ImageInputPrice: &zero,
 	}
 	models := []SupportedModel{
 		{Name: "served-model", Platform: "anthropic", Pricing: existing},
 	}
 	svc.fillGlobalPricingFallback(models)
-	require.Same(t, existing, models[0].Pricing)
+	require.NotSame(t, existing, models[0].Pricing)
+	require.InDelta(t, 9e-9, *models[0].Pricing.InputPrice, 1e-12)
+	require.InDelta(t, 5e-6, *models[0].Pricing.OutputPrice, 1e-12)
+	require.InDelta(t, 0.1e-6, *models[0].Pricing.CacheReadPrice, 1e-12)
+	require.NotNil(t, models[0].Pricing.ImageInputPrice)
+	require.Zero(t, *models[0].Pricing.ImageInputPrice, "explicit zero image input must survive merge")
+	require.NotNil(t, models[0].Pricing.ImageOutputPrice)
+	require.Zero(t, *models[0].Pricing.ImageOutputPrice, "missing channel image output is runtime-explicit zero")
 }
 
 func newStubPricingServiceFromMap(data map[string]*LiteLLMModelPricing) *PricingService {
 	return &PricingService{pricingData: data}
+}
+
+func TestListAvailable_PricingByGroupUsesExactWildcardAndExplicitZero(t *testing.T) {
+	channelPrice := 9e-6
+	wildcardPrice := 2e-6
+	exactZero := 0.0
+	groups := []Group{
+		{
+			ID: 1, Name: "exact", Platform: PlatformOpenAI,
+			ModelPricing: []ChannelModelPricing{
+				{Models: []string{"gpt-*"}, BillingMode: BillingModeToken, InputPrice: &wildcardPrice},
+				{Models: []string{"GPT-5.6-SOL"}, BillingMode: BillingModeToken, InputPrice: &exactZero},
+			},
+		},
+		{
+			ID: 2, Name: "wildcard", Platform: PlatformOpenAI,
+			ModelPricing: []ChannelModelPricing{
+				{Models: []string{"gpt-*"}, BillingMode: BillingModeToken, InputPrice: &wildcardPrice},
+			},
+		},
+		{ID: 3, Name: "channel-fallback", Platform: PlatformOpenAI},
+	}
+	channels := []Channel{{
+		ID: 1, Name: "openai", Status: StatusActive, GroupIDs: []int64{1, 2, 3},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformOpenAI, Models: []string{"gpt-5.6-sol"},
+			BillingMode: BillingModeToken, InputPrice: &channelPrice,
+		}},
+	}}
+
+	out, err := newAvailableChannelService(
+		channels,
+		&stubGroupRepoForAvailable{activeGroups: groups},
+	).ListAvailable(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].SupportedModels, 1)
+	byGroup := out[0].SupportedModels[0].PricingByGroup
+	require.NotNil(t, byGroup[1].InputPrice)
+	require.Zero(t, *byGroup[1].InputPrice, "exact rule and explicit zero must win")
+	require.InDelta(t, wildcardPrice, *byGroup[2].InputPrice, 1e-12)
+	require.InDelta(t, channelPrice, *byGroup[3].InputPrice, 1e-12)
+	require.NotSame(t, out[0].SupportedModels[0].Pricing, byGroup[3])
+}
+
+func TestListAvailable_GroupPricingFollowsRequestedVsChannelMappedSource(t *testing.T) {
+	requestedPrice := 1e-6
+	mappedPrice := 8e-6
+	group := Group{
+		ID: 1, Name: "g", Platform: PlatformOpenAI,
+		ModelPricing: []ChannelModelPricing{
+			{Models: []string{"public-alias"}, InputPrice: &requestedPrice},
+			{Models: []string{"provider-model"}, InputPrice: &mappedPrice},
+		},
+	}
+	base := Channel{
+		Status: StatusActive, GroupIDs: []int64{1},
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {"public-alias": "provider-model"},
+		},
+		ModelPricing: []ChannelModelPricing{{
+			Platform: PlatformOpenAI, Models: []string{"provider-model"}, InputPrice: &mappedPrice,
+		}},
+	}
+	requested := base
+	requested.ID, requested.Name = 1, "requested"
+	requested.BillingModelSource = BillingModelSourceRequested
+	mapped := base
+	mapped.ID, mapped.Name = 2, "mapped"
+	mapped.BillingModelSource = BillingModelSourceChannelMapped
+
+	out, err := newAvailableChannelService(
+		[]Channel{requested, mapped},
+		&stubGroupRepoForAvailable{activeGroups: []Group{group}},
+	).ListAvailable(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 2)
+	aliasPrice := func(ch AvailableChannel) float64 {
+		for _, model := range ch.SupportedModels {
+			if model.Name == "public-alias" {
+				require.NotNil(t, model.PricingByGroup[1])
+				require.NotNil(t, model.PricingByGroup[1].InputPrice)
+				return *model.PricingByGroup[1].InputPrice
+			}
+		}
+		t.Fatalf("public alias missing from channel %q", ch.Name)
+		return 0
+	}
+	require.InDelta(t, mappedPrice, aliasPrice(out[0]), 1e-12)
+	require.InDelta(t, requestedPrice, aliasPrice(out[1]), 1e-12)
+}
+
+func TestGroupModelPricingForDisplay_LongContextSwitchMatchesRuntimePolicy(t *testing.T) {
+	baseInput := 2e-6
+	baseOutput := 10e-6
+	officialImageInput := 7e-6
+	officialImageOutput := 20e-6
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"gpt-5.6-sol": {
+			InputCostPerToken:               3e-6,
+			OutputCostPerToken:              15e-6,
+			InputCostPerImageToken:          officialImageInput,
+			OutputCostPerImageToken:         officialImageOutput,
+			LongContextInputTokenThreshold:  272000,
+			LongContextInputCostMultiplier:  2,
+			LongContextOutputCostMultiplier: 1.5,
+		},
+	})
+	svc := &ChannelService{pricingService: pricingSvc}
+	group := Group{
+		LongContextPricingEnabled: true,
+		ModelPricing: []ChannelModelPricing{{
+			Models: []string{"gpt-5.6-sol"}, BillingMode: BillingModeToken,
+			InputPrice: &baseInput, OutputPrice: &baseOutput,
+		}},
+	}
+
+	enabled, matched := svc.GroupModelPricingForDisplay(&group, "gpt-5.6-sol")
+
+	require.True(t, matched)
+	require.Len(t, enabled.Intervals, 4)
+	require.Equal(t, 272000, *enabled.Intervals[0].MaxTokens)
+	require.InDelta(t, baseInput, *enabled.Intervals[0].InputPrice, 1e-12)
+	require.InDelta(t, baseInput*2, *enabled.Intervals[1].InputPrice, 1e-12)
+	require.InDelta(t, baseOutput*1.5, *enabled.Intervals[1].OutputPrice, 1e-12)
+	require.NotNil(t, enabled.ImageInputPrice)
+	require.InDelta(t, baseInput, *enabled.ImageInputPrice, 1e-12, "missing group image input falls back to effective text input")
+	require.NotNil(t, enabled.ImageOutputPrice)
+	require.Zero(t, *enabled.ImageOutputPrice, "missing group image output is an explicit runtime zero")
+
+	group.LongContextPricingEnabled = false
+	disabled, matched := svc.GroupModelPricingForDisplay(&group, "gpt-5.6-sol")
+	require.True(t, matched)
+	require.Len(t, disabled.Intervals, 2)
+	require.Equal(t, "基础", disabled.Intervals[0].TierLabel)
+	require.Equal(t, "Fast", disabled.Intervals[1].TierLabel)
+	require.InDelta(t, baseInput, *disabled.InputPrice, 1e-12)
+}
+
+func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing.T) {
+	baseInput := 2e-6
+	baseOutput := 10e-6
+	baseCacheWrite := 1e-6
+	baseCacheRead := 0.2e-6
+	zero := 0.0
+	groupFor := func(enabled bool, cacheRead *float64) *Group {
+		return &Group{
+			LongContextPricingEnabled: enabled,
+			ModelPricing: []ChannelModelPricing{{
+				Models:          []string{"*"},
+				BillingMode:     BillingModeToken,
+				InputPrice:      &baseInput,
+				OutputPrice:     &baseOutput,
+				CacheWritePrice: &baseCacheWrite,
+				CacheReadPrice:  cacheRead,
+			}},
+		}
+	}
+	byLabel := func(t *testing.T, pricing *ChannelModelPricing) map[string]PricingInterval {
+		t.Helper()
+		out := make(map[string]PricingInterval, len(pricing.Intervals))
+		for _, interval := range pricing.Intervals {
+			out[interval.TierLabel] = interval
+		}
+		return out
+	}
+
+	t.Run("gpt-5.5 enabled keeps base long fast and fast-long", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.5", nil)
+		require.True(t, ok)
+		require.Len(t, got.Intervals, 4)
+		tiers := byLabel(t, got)
+		require.InDelta(t, baseInput*2, *tiers["长上下文"].InputPrice, 1e-12)
+		require.InDelta(t, baseCacheWrite*2, *tiers["长上下文"].CacheWritePrice, 1e-12)
+		require.InDelta(t, baseInput*openAIGPT55PriorityMultiplier, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, baseCacheRead*openAIGPT55PriorityMultiplier, *tiers["Fast"].CacheReadPrice, 1e-12)
+		require.InDelta(t, baseInput*2*openAIGPT55PriorityMultiplier, *tiers["Fast 长上下文"].InputPrice, 1e-12)
+	})
+
+	t.Run("long-context switch does not hide gpt-5.5 fast", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(false, &baseCacheRead), "gpt-5.5", nil)
+		require.True(t, ok)
+		require.Len(t, got.Intervals, 2)
+		tiers := byLabel(t, got)
+		require.Contains(t, tiers, "基础")
+		require.Contains(t, tiers, "Fast")
+		require.NotContains(t, tiers, "长上下文")
+		require.NotContains(t, tiers, "Fast 长上下文")
+	})
+
+	t.Run("gpt-5.4 fast floors and priority long uses standard long", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.4", nil)
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		require.InDelta(t, openAIGPT54PriorityInputPrice, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, openAIGPT54PriorityOutputPrice, *tiers["Fast"].OutputPrice, 1e-12)
+		require.InDelta(t, openAIGPT54PriorityCacheReadPrice, *tiers["Fast"].CacheReadPrice, 1e-12)
+		require.InDelta(t, *tiers["长上下文"].InputPrice, *tiers["Fast 长上下文"].InputPrice, 1e-12)
+		require.InDelta(t, *tiers["长上下文"].CacheWritePrice, *tiers["Fast 长上下文"].CacheWritePrice, 1e-12)
+	})
+
+	t.Run("catalog priority overlays group values and preserves explicit zero cache", func(t *testing.T) {
+		official := &LiteLLMModelPricing{
+			InputCostPerToken:                   3e-6,
+			InputCostPerTokenPriority:           6e-6,
+			OutputCostPerToken:                  15e-6,
+			OutputCostPerTokenPriority:          30e-6,
+			CacheCreationInputTokenCost:         2e-6,
+			CacheCreationInputTokenCostPriority: 4e-6,
+			CacheReadInputTokenCost:             0.3e-6,
+			CacheReadInputTokenCostPriority:     0.6e-6,
+			LongContextInputTokenThreshold:      200000,
+			LongContextInputCostMultiplier:      2,
+			LongContextOutputCostMultiplier:     1.5,
+			LongContextCacheReadCostMultiplier:  2,
+			SupportsServiceTier:                 true,
+		}
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &zero), "custom-priority", official)
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		// Explicit group input/cache-write values also replace their runtime
+		// priority fields; untouched output keeps the catalog priority rate.
+		require.InDelta(t, baseInput, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, baseCacheWrite, *tiers["Fast"].CacheWritePrice, 1e-12)
+		require.InDelta(t, baseOutput, *tiers["Fast"].OutputPrice, 1e-12)
+		require.NotNil(t, tiers["Fast"].CacheReadPrice)
+		require.Zero(t, *tiers["Fast"].CacheReadPrice)
+		require.NotNil(t, tiers["Fast 长上下文"].CacheReadPrice)
+		require.Zero(t, *tiers["Fast 长上下文"].CacheReadPrice)
+	})
+
+	t.Run("ordinary group override does not invent fast capability", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(false, &baseCacheRead), "claude-ordinary", &LiteLLMModelPricing{
+			InputCostPerToken:  3e-6,
+			OutputCostPerToken: 15e-6,
+		})
+		require.True(t, ok)
+		require.Empty(t, got.Intervals)
+	})
+
+	t.Run("grok inclusive threshold starts long tier at exactly 200k", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "grok-4.5", &LiteLLMModelPricing{
+			InputCostPerToken:                  2e-6,
+			OutputCostPerToken:                 6e-6,
+			LongContextInputTokenThreshold:     200000,
+			LongContextInputCostMultiplier:     2,
+			LongContextOutputCostMultiplier:    2,
+			LongContextCacheReadCostMultiplier: 2,
+		})
+		require.True(t, ok)
+		require.Len(t, got.Intervals, 2)
+		require.Equal(t, 199999, *got.Intervals[0].MaxTokens)
+		require.Equal(t, 199999, got.Intervals[1].MinTokens)
+	})
+}
+
+func TestPricingForGroupDisplay_NoGroupOverrideStillProjectsRuntimeTiers(t *testing.T) {
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"gpt-5.6-sol": {
+			InputCostPerToken:               2e-6,
+			OutputCostPerToken:              8e-6,
+			LongContextInputTokenThreshold:  272000,
+			LongContextInputCostMultiplier:  2,
+			LongContextOutputCostMultiplier: 1.5,
+		},
+	})
+	svc := &ChannelService{
+		pricingService: pricingSvc,
+		billingService: NewBillingService(&config.Config{}, pricingSvc),
+	}
+
+	got, matched := svc.PricingForGroupDisplay(&Group{
+		Platform:                  PlatformOpenAI,
+		LongContextPricingEnabled: true,
+	}, "gpt-5.6-sol", nil)
+
+	require.False(t, matched)
+	require.NotNil(t, got)
+	require.Len(t, got.Intervals, 4)
+	require.Equal(t, "基础", got.Intervals[0].TierLabel)
+	require.Zero(t, got.Intervals[0].MinTokens)
+	require.True(t, got.Intervals[1].RequiresAccountLongContext)
+	require.Equal(t, "Fast", got.Intervals[2].TierLabel)
+	require.True(t, got.Intervals[3].RequiresAccountLongContext)
+}
+
+func TestPricingForGroupDisplay_ChannelIntervalsFollowGroupSwitch(t *testing.T) {
+	inputBase, inputLong := 2e-6, 4e-6
+	raw := &ChannelModelPricing{
+		Platform: PlatformOpenAI, BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{
+			{MinTokens: 0, TierLabel: "base", InputPrice: &inputBase},
+			{MinTokens: 32000, TierLabel: "long", InputPrice: &inputLong},
+		},
+	}
+	svc := &ChannelService{billingService: NewBillingService(&config.Config{}, nil)}
+
+	disabled, _ := svc.PricingForGroupDisplay(&Group{Platform: PlatformOpenAI}, "unknown-local", raw)
+	require.NotNil(t, disabled)
+	require.InDelta(t, inputBase, *disabled.InputPrice, 1e-12)
+	require.Empty(t, disabled.Intervals)
+
+	enabled, _ := svc.PricingForGroupDisplay(&Group{Platform: PlatformOpenAI, LongContextPricingEnabled: true}, "gpt-5.5", raw)
+	require.Len(t, enabled.Intervals, 4)
+	require.Equal(t, "base", enabled.Intervals[0].TierLabel)
+	require.Equal(t, "Fast base", enabled.Intervals[1].TierLabel)
+	require.InDelta(t, inputBase*openAIGPT55PriorityMultiplier, *enabled.Intervals[1].InputPrice, 1e-12)
+}
+
+func TestPricingForGroupDisplay_UnknownGroupExplicitPriceAndZeroImageInput(t *testing.T) {
+	input, zero := 3e-6, 0.0
+	svc := &ChannelService{billingService: NewBillingService(&config.Config{}, nil)}
+	got, matched := svc.PricingForGroupDisplay(&Group{
+		Platform: PlatformOpenAI,
+		ModelPricing: []ChannelModelPricing{{
+			Models: []string{"unknown-local"}, InputPrice: &input, ImageInputPrice: &zero,
+		}},
+	}, "unknown-local", nil)
+	require.True(t, matched)
+	require.NotNil(t, got)
+	require.InDelta(t, input, *got.InputPrice, 1e-12)
+	require.InDelta(t, input, *got.ImageInputPrice, 1e-12)
+}
+
+func TestPricingForGroupDisplay_GPT56IntervalUsesGenericCachePolicy(t *testing.T) {
+	input := 4e-6
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"gpt-5.6-sol": {
+			InputCostPerToken:                   2e-6,
+			OutputCostPerToken:                  8e-6,
+			CacheCreationInputTokenCost:         2.5e-6,
+			CacheCreationInputTokenCostAbove1hr: 4e-6,
+		},
+	})
+	svc := &ChannelService{
+		pricingService: pricingSvc,
+		billingService: NewBillingService(&config.Config{}, pricingSvc),
+	}
+	raw := &ChannelModelPricing{BillingMode: BillingModeToken, Intervals: []PricingInterval{{
+		TierLabel: "base", InputPrice: &input,
+	}}}
+
+	got, _ := svc.PricingForGroupDisplay(&Group{Platform: PlatformOpenAI, LongContextPricingEnabled: true}, "gpt-5.6-sol", raw)
+
+	require.Len(t, got.Intervals, 2)
+	base := got.Intervals[0]
+	require.NotNil(t, base.CacheWritePrice)
+	require.InDelta(t, input*1.25, *base.CacheWritePrice, 1e-12)
+	require.Nil(t, base.CacheWrite5mPrice)
+	require.Nil(t, base.CacheWrite1hPrice)
+}
+
+func TestFillGlobalPricingFallbackTracksOfficialAndFallbackSources(t *testing.T) {
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"catalog-model": {InputCostPerToken: 2e-6},
+	})
+	svc := &ChannelService{
+		pricingService: pricingSvc,
+		billingService: NewBillingService(&config.Config{}, pricingSvc),
+	}
+	models := []SupportedModel{
+		{Name: "catalog-model", BillingModel: "catalog-model"},
+		{Name: "gpt-5.5", BillingModel: "gpt-5.5"},
+	}
+
+	svc.fillGlobalPricingFallback(models)
+
+	require.Equal(t, PricingSourceOfficial, models[0].PricingSource)
+	require.Equal(t, PricingSourceFallback, models[1].PricingSource)
+}
+
+func TestListAvailable_MappedAliasUsesBillingModelForGlobalFallback(t *testing.T) {
+	globalPrice := 4e-6
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"provider-model": {InputCostPerToken: globalPrice},
+	})
+	channel := Channel{
+		ID: 1, Name: "mapped", Status: StatusActive, GroupIDs: []int64{10},
+		BillingModelSource: BillingModelSourceChannelMapped,
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {"public-alias": "provider-model"},
+		},
+	}
+	svc := newAvailableChannelService(
+		[]Channel{channel},
+		&stubGroupRepoForAvailable{activeGroups: []Group{{ID: 10, Name: "g", Platform: PlatformOpenAI}}},
+	)
+	svc.pricingService = pricingSvc
+
+	out, err := svc.ListAvailable(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, out, 1)
+	require.Len(t, out[0].SupportedModels, 1)
+	model := out[0].SupportedModels[0]
+	require.Equal(t, "public-alias", model.Name)
+	require.Equal(t, "provider-model", model.BillingModel)
+	require.NotNil(t, model.Pricing)
+	require.InDelta(t, globalPrice, *model.Pricing.InputPrice, 1e-12)
+	require.InDelta(t, globalPrice, *model.PricingByGroup[10].InputPrice, 1e-12)
 }

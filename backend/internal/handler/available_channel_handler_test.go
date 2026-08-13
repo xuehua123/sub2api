@@ -253,3 +253,31 @@ func TestBuildPlatformSections_CompositeWithoutModelsKeepsEmptyCompositeSection(
 	require.Len(t, sections[0].Groups, 1)
 	require.Empty(t, sections[0].SupportedModels)
 }
+
+func TestToUserSupportedModels_FiltersAndPreservesPerGroupZeroPricing(t *testing.T) {
+	zero := 0.0
+	other := 4e-6
+	src := []service.SupportedModel{{
+		Name: "gpt-5.6-sol", Platform: service.PlatformOpenAI,
+		PricingByGroup: map[int64]*service.ChannelModelPricing{
+			1: {BillingMode: service.BillingModeToken, InputPrice: &zero},
+			2: {BillingMode: service.BillingModeToken, InputPrice: &other},
+		},
+	}}
+
+	out := toUserSupportedModels(
+		src,
+		map[string]struct{}{service.PlatformOpenAI: {}},
+		map[int64]struct{}{1: {}},
+	)
+
+	require.Len(t, out, 1)
+	require.Len(t, out[0].PricingByGroup, 1)
+	require.Contains(t, out[0].PricingByGroup, int64(1))
+	require.NotContains(t, out[0].PricingByGroup, int64(2))
+	require.NotNil(t, out[0].PricingByGroup[1].InputPrice)
+	require.Zero(t, *out[0].PricingByGroup[1].InputPrice)
+	raw, err := json.Marshal(out[0])
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"pricing_by_group":{"1":`)
+}

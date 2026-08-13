@@ -3316,16 +3316,16 @@
               <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.title") }}</h4>
               <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t("admin.groups.modelPricing.description") }}</p>
             </div>
-            <button type="button" class="btn btn-secondary" @click="addGroupPricing(editForm.model_pricing)">
+            <button type="button" class="btn btn-secondary" @click="addEditGroupPricing">
               <Icon name="plus" size="sm" class="mr-1" />{{ t("admin.groups.modelPricing.add") }}
             </button>
           </div>
           <label class="mt-3 flex items-start gap-2">
-            <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" />
+            <input v-model="editForm.long_context_pricing_enabled" type="checkbox" class="mt-0.5" @change="editPricingFields.longContextDirty = true" />
             <span><span class="block text-sm text-gray-700 dark:text-gray-300">{{ t("admin.groups.modelPricing.longContext") }}</span><span class="block text-xs text-gray-500">{{ t("admin.groups.modelPricing.longContextHint") }}</span></span>
           </label>
           <div class="mt-3 space-y-2">
-            <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" hide-token-intervals @update="editForm.model_pricing[index] = $event" @remove="editForm.model_pricing.splice(index, 1)" />
+            <PricingEntryCard v-for="(entry, index) in editForm.model_pricing" :key="index" :entry="entry" :platform="editForm.platform" hide-token-intervals @update="updateEditGroupPricing(index, $event)" @remove="removeEditGroupPricing(index)" />
           </div>
         </div>
 
@@ -4525,9 +4525,11 @@ import type { PricingFormEntry } from "@/components/admin/channel/types";
 import {
   apiIntervalsToForm,
   formIntervalsToAPI,
+  findModelConflict,
   mTokToPerToken,
   perTokenToMTok,
   toNullableNumber,
+  validateIntervals,
 } from "@/components/admin/channel/types";
 import type { ChannelModelPricing } from "@/api/admin/channels";
 import { VueDraggable } from "vue-draggable-plus";
@@ -4598,6 +4600,63 @@ const emptyGroupPricing = (): PricingFormEntry => ({
 
 const addGroupPricing = (entries: PricingFormEntry[]) =>
   entries.push(emptyGroupPricing());
+
+const editPricingFields = reactive({
+  longContextPresent: false,
+  modelPricingPresent: false,
+  longContextDirty: false,
+  modelPricingDirty: false,
+});
+
+const addEditGroupPricing = () => {
+  editPricingFields.modelPricingDirty = true;
+  addGroupPricing(editForm.model_pricing);
+};
+
+const updateEditGroupPricing = (index: number, entry: PricingFormEntry) => {
+  editPricingFields.modelPricingDirty = true;
+  editForm.model_pricing[index] = entry;
+};
+
+const removeEditGroupPricing = (index: number) => {
+  editPricingFields.modelPricingDirty = true;
+  editForm.model_pricing.splice(index, 1);
+};
+
+const validateGroupPricingEntries = (
+  entries: PricingFormEntry[],
+  platform: string,
+): boolean => {
+  if (entries.some((entry) => entry.models.length === 0)) {
+    appStore.showError(t("admin.channels.emptyModelsInPricing"));
+    return false;
+  }
+  const conflict = findModelConflict(entries.flatMap((entry) => entry.models));
+  if (conflict) {
+    appStore.showError(
+      t("admin.channels.modelConflict", { model1: conflict[0], model2: conflict[1] }),
+    );
+    return false;
+  }
+  for (const entry of entries) {
+    if (
+      ["per_request", "image", "video"].includes(entry.billing_mode) &&
+      (entry.per_request_price == null || entry.per_request_price === "") &&
+      (!entry.intervals || entry.intervals.length === 0)
+    ) {
+      appStore.showError(t("admin.channels.form.perRequestPriceRequired"));
+      return false;
+    }
+    if (entry.intervals?.length) {
+      const intervalError = validateIntervals(entry.intervals, entry.billing_mode, t);
+      if (intervalError) {
+        appStore.showError(`${platform} - ${entry.models.join(", ")}: ${intervalError}`);
+        return false;
+      }
+    }
+  }
+  return true;
+};
 
 const groupPricingFromAPI = (
   pricing: ChannelModelPricing[] | undefined,
@@ -6129,6 +6188,9 @@ const handleCreateGroup = async () => {
   if (!validateProfitControlForm(createForm)) {
     return;
   }
+  if (!validateGroupPricingEntries(createForm.model_pricing, createForm.platform)) {
+    return;
+  }
   submitting.value = true;
   try {
     const {
@@ -6257,6 +6319,16 @@ const handleCreateGroup = async () => {
 
 const handleEdit = async (group: AdminGroup) => {
   editingGroup.value = group;
+  editPricingFields.longContextPresent =
+    Object.prototype.hasOwnProperty.call(
+      group,
+      "long_context_pricing_enabled",
+    ) && typeof group.long_context_pricing_enabled === "boolean";
+  editPricingFields.modelPricingPresent =
+    Object.prototype.hasOwnProperty.call(group, "model_pricing") &&
+    Array.isArray(group.model_pricing);
+  editPricingFields.longContextDirty = false;
+  editPricingFields.modelPricingDirty = false;
   editForm.name = group.name;
   editForm.description = group.description || "";
   editForm.platform = group.platform;
@@ -6382,6 +6454,10 @@ const closeEditModal = () => {
   editForm.video_model_prices = createVideoModelPricesForm();
   editForm.long_context_pricing_enabled = true;
   editForm.model_pricing = [];
+  editPricingFields.longContextPresent = false;
+  editPricingFields.modelPricingPresent = false;
+  editPricingFields.longContextDirty = false;
+  editPricingFields.modelPricingDirty = false;
   editForm.web_search_price_per_call = null;
   editForm.search_price_per_1k = null;
   editForm.audio_realtime_price_per_min = null;
@@ -6407,6 +6483,12 @@ const handleUpdateGroup = async () => {
     return;
   }
   if (!validateProfitControlForm(editForm)) {
+    return;
+  }
+  if (
+    (editPricingFields.modelPricingPresent || editPricingFields.modelPricingDirty) &&
+    !validateGroupPricingEntries(editForm.model_pricing, editForm.platform)
+  ) {
     return;
   }
 
@@ -6469,6 +6551,16 @@ const handleUpdateGroup = async () => {
     };
     delete (payload as Record<string, unknown>).profit_min_margin_percent;
     delete (payload as Record<string, unknown>).profit_safety_buffer_percent;
+    if (
+      !editPricingFields.longContextPresent &&
+      !editPricingFields.longContextDirty
+    ) {
+      delete (payload as Record<string, unknown>)
+        .long_context_pricing_enabled;
+    }
+    if (!editPricingFields.modelPricingPresent && !editPricingFields.modelPricingDirty) {
+      delete (payload as Record<string, unknown>).model_pricing;
+    }
     // v-model.number 清空输入框时产生 ""，转为 null 让后端设为无限制
     const emptyToNull = (v: any) => (v === "" ? null : v);
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);

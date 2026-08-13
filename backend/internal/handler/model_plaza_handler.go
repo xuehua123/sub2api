@@ -38,6 +38,7 @@ func NewModelPlazaHandler(
 // modelPlazaOfficialPricing LiteLLM 官方参考价（USD per token）。
 type modelPlazaOfficialPricing struct {
 	InputPrice        *float64 `json:"input_price"`
+	ImageInputPrice   *float64 `json:"image_input_price"`
 	OutputPrice       *float64 `json:"output_price"`
 	CacheWritePrice   *float64 `json:"cache_write_price"`
 	CacheWrite1hPrice *float64 `json:"cache_write_1h_price,omitempty"`
@@ -70,6 +71,8 @@ type modelPlazaGroup struct {
 	// 不取分组/用户专属倍率。
 	ImageRateIndependent bool              `json:"image_rate_independent"`
 	ImageRateMultiplier  float64           `json:"image_rate_multiplier"`
+	VideoRateIndependent bool              `json:"video_rate_independent"`
+	VideoRateMultiplier  float64           `json:"video_rate_multiplier"`
 	Models               []modelPlazaModel `json:"models"`
 }
 
@@ -181,6 +184,8 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 		IsExclusive:          g.IsExclusive,
 		ImageRateIndependent: g.ImageRateIndependent,
 		ImageRateMultiplier:  g.ImageRateMultiplier,
+		VideoRateIndependent: g.VideoRateIndependent,
+		VideoRateMultiplier:  g.VideoRateMultiplier,
 		Models:               models,
 	}
 	if rate, ok := userRates[g.ID]; ok {
@@ -196,6 +201,7 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 	}
 	return &modelPlazaOfficialPricing{
 		InputPrice:        p.InputPrice,
+		ImageInputPrice:   p.ImageInputPrice,
 		OutputPrice:       p.OutputPrice,
 		CacheWritePrice:   p.CacheWritePrice,
 		CacheWrite1hPrice: p.CacheWrite1hPrice,

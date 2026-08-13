@@ -264,6 +264,33 @@ func openAIWSPayloadTransientStatus(payload []byte) int {
 	}
 }
 
+func grokWSHTTPBridgeFailureMessage(payload []byte) string {
+	return strings.TrimSpace(firstNonEmpty(
+		gjson.GetBytes(payload, "response.error.message").String(),
+		gjson.GetBytes(payload, "error.message").String(),
+		gjson.GetBytes(payload, "message").String(),
+	))
+}
+
+func grokWSHTTPBridgeFailureStatus(payload []byte) int {
+	for _, path := range []string{
+		"response.error.status_code", "response.error.status",
+		"error.status_code", "error.status",
+	} {
+		if status := int(gjson.GetBytes(payload, path).Int()); status >= 400 && status <= 599 {
+			return status
+		}
+	}
+	// response.failed is transported over HTTP 200. Promote only the exact
+	// Grok provider/model-unavailable signature to 400 so the shared Grok
+	// classifier can apply a model-scoped block. This remains isolated from
+	// official OpenAI errors and from unrelated 400 responses.
+	if isGrokModelProviderUnavailable(http.StatusBadRequest, payload) {
+		return http.StatusBadRequest
+	}
+	return openAIStreamFailedEventSemanticStatus(payload, grokWSHTTPBridgeFailureMessage(payload))
+}
+
 func (s *OpenAIGatewayService) handleOpenAIWSTerminalTransientFailure(ctx context.Context, account *Account, canonicalModel string, headers http.Header, payload []byte) string {
 	eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
 	terminalEvent := normalizeOpenAIWSTerminalEvent(eventType)

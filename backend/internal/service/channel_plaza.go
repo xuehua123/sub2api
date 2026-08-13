@@ -11,6 +11,7 @@ import (
 // 字段为 nil 表示官方数据中该项缺失（0 视为未配置）。
 type PlazaOfficialPricing struct {
 	InputPrice        *float64
+	ImageInputPrice   *float64
 	OutputPrice       *float64
 	CacheWritePrice   *float64 // 5m 缓存写入（= LiteLLM cache_creation）
 	CacheWrite1hPrice *float64 // 1h 缓存写入（LiteLLM cache_creation_above_1hr）
@@ -23,6 +24,7 @@ type PlazaModel struct {
 	Platform        string
 	Pricing         *ChannelModelPricing
 	OfficialPricing *PlazaOfficialPricing
+	billingModel    string
 }
 
 // PlazaGroup 模型广场中以分组为顶层的条目。
@@ -46,6 +48,8 @@ type PlazaGroup struct {
 	// = 档位价 × ImageRateMultiplier，不乘分组/用户专属倍率（与计费口径一致）。
 	ImageRateIndependent bool
 	ImageRateMultiplier  float64
+	VideoRateIndependent bool
+	VideoRateMultiplier  float64
 	Models               []PlazaModel
 }
 
@@ -95,6 +99,8 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 			IsExclusive:          g.IsExclusive,
 			ImageRateIndependent: g.ImageRateIndependent,
 			ImageRateMultiplier:  g.ImageRateMultiplier,
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  g.VideoRateMultiplier,
 		}
 		groupEnt[g.ID] = g
 		order = append(order, g.ID)
@@ -113,6 +119,10 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 		}
 		ch.normalizeBillingModelSource()
 		supported := ch.SupportedModels()
+		rawPricing := make([]*ChannelModelPricing, len(supported))
+		for modelIdx := range supported {
+			rawPricing[modelIdx] = cloneChannelModelPricingForDisplay(supported[modelIdx].Pricing)
+		}
 		s.fillGlobalPricingFallback(supported)
 
 		for _, gid := range ch.GroupIDs {
@@ -134,20 +144,32 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 				} else if m.Platform != pg.Platform {
 					continue
 				}
-				pricing := plazaImageDisplayPricing(m.Pricing, groupEnt[gid])
+				billingModel := m.BillingModel
+				if billingModel == "" {
+					billingModel = m.Name
+				}
+				pricing, groupOverride := s.PricingForGroupDisplay(groupEnt[gid], billingModel, rawPricing[j])
+				if pricing == nil {
+					pricing = cloneChannelModelPricingForDisplay(m.Pricing)
+				}
+				if !groupOverride {
+					pricing = plazaImageDisplayPricing(pricing, groupEnt[gid])
+				}
 				key := modelKey{platform: m.Platform, name: m.Name}
 				if at, seen := idx[key]; seen {
 					// 先见者胜；仅当已存条目无定价而新条目有定价时升级。
 					if pg.Models[at].Pricing == nil && pricing != nil {
 						pg.Models[at].Pricing = pricing
+						pg.Models[at].billingModel = billingModel
 					}
 					continue
 				}
 				idx[key] = len(pg.Models)
 				pg.Models = append(pg.Models, PlazaModel{
-					Name:     m.Name,
-					Platform: m.Platform,
-					Pricing:  pricing,
+					Name:         m.Name,
+					Platform:     m.Platform,
+					Pricing:      pricing,
+					billingModel: billingModel,
 				})
 			}
 		}
@@ -167,7 +189,11 @@ func (s *ChannelService) ListPlazaGroups(ctx context.Context) ([]PlazaGroup, err
 			return pg.Models[i].Platform < pg.Models[j].Platform
 		})
 		for j := range pg.Models {
-			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(pg.Models[j].Name, officialMemo)
+			billingModel := strings.TrimSpace(pg.Models[j].billingModel)
+			if billingModel == "" {
+				billingModel = pg.Models[j].Name
+			}
+			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(billingModel, officialMemo)
 		}
 		out = append(out, *pg)
 	}
@@ -241,12 +267,13 @@ func (s *ChannelService) lookupOfficialPricing(modelName string, memo map[string
 	if lp := s.pricingService.GetModelPricing(modelName); lp != nil && !lp.TokenPricingAbsent {
 		result = &PlazaOfficialPricing{
 			InputPrice:        nonZeroPtr(lp.InputCostPerToken),
+			ImageInputPrice:   nonZeroPtr(lp.InputCostPerImageToken),
 			OutputPrice:       nonZeroPtr(lp.OutputCostPerToken),
 			CacheWritePrice:   nonZeroPtr(lp.CacheCreationInputTokenCost),
 			CacheWrite1hPrice: nonZeroPtr(lp.CacheCreationInputTokenCostAbove1hr),
 			CacheReadPrice:    nonZeroPtr(lp.CacheReadInputTokenCost),
 		}
-		if result.InputPrice == nil && result.OutputPrice == nil &&
+		if result.InputPrice == nil && result.ImageInputPrice == nil && result.OutputPrice == nil &&
 			result.CacheWritePrice == nil && result.CacheWrite1hPrice == nil && result.CacheReadPrice == nil {
 			result = nil
 		}

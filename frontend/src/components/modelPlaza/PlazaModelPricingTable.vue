@@ -117,14 +117,38 @@
                 v-if="hasCachePricing(m)"
                 class="space-y-0.5 font-mono text-xs text-gray-800 dark:text-gray-200"
               >
-                <div>
-                  <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWrite') }}</span>
-                  {{ paidPerMillion(m.pricing?.cache_write_price) }}
-                </div>
-                <div>
-                  <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
-                  {{ paidPerMillion(m.pricing?.cache_read_price) }}
-                </div>
+                <template v-if="tokenIntervals(m).length">
+                  <div v-for="(iv, idx) in tokenIntervals(m)" :key="idx" class="leading-5">
+                    <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ tierLabel(iv) }}</span>
+					<span v-if="iv.cache_write_5m_price != null">
+					  {{ t('modelPlaza.table.cacheWrite') }} 5m {{ paidPerMillion(iv.cache_write_5m_price) }}
+					</span>
+					<span v-if="iv.cache_write_1h_price != null">
+					  / {{ t('modelPlaza.table.cacheWrite') }} 1h {{ paidPerMillion(iv.cache_write_1h_price) }}
+					</span>
+					<span v-if="iv.cache_write_5m_price == null && iv.cache_write_1h_price == null && iv.cache_write_price != null">
+					  {{ t('modelPlaza.table.cacheWrite') }} {{ paidPerMillion(iv.cache_write_price) }}
+                    </span>
+                    <span v-if="iv.cache_write_price != null && iv.cache_read_price != null"> / </span>
+                    <span v-if="iv.cache_read_price != null">
+                      {{ t('modelPlaza.table.cacheRead') }} {{ paidPerMillion(iv.cache_read_price) }}
+                    </span>
+					<span v-if="iv.cache_write_price == null && iv.cache_write_5m_price == null && iv.cache_write_1h_price == null && iv.cache_read_price == null">-</span>
+                  </div>
+                </template>
+                <template v-else>
+                  <div>
+                    <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheWrite') }}</span>
+					<template v-if="m.pricing?.cache_write_5m_price != null || m.pricing?.cache_write_1h_price != null">
+					  5m {{ paidPerMillion(m.pricing?.cache_write_5m_price) }} / 1h {{ paidPerMillion(m.pricing?.cache_write_1h_price) }}
+					</template>
+					<template v-else>{{ paidPerMillion(m.pricing?.cache_write_price) }}</template>
+                  </div>
+                  <div>
+                    <span class="mr-1 font-sans font-normal text-gray-400 dark:text-dark-500">{{ t('modelPlaza.table.cacheRead') }}</span>
+                    {{ paidPerMillion(m.pricing?.cache_read_price) }}
+                  </div>
+                </template>
               </div>
               <span v-else class="text-gray-400 dark:text-dark-500">-</span>
             </td>
@@ -192,7 +216,7 @@
             class="border-l border-gray-100 py-2.5 pl-3 pr-5 text-right align-middle font-mono text-xs dark:border-dark-700/60"
           >
             <span
-              v-if="usesIndependentImageRate(m)"
+              v-if="usesIndependentImageRate(m) || usesIndependentVideoRate(m)"
               class="font-bold text-gray-700 dark:text-gray-300"
               >{{ requestRate(m) }}x</span
             >
@@ -216,6 +240,7 @@ import { platformAccentColor, platformBadgeLightClass, platformLabel } from '@/u
 import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_IMAGE,
+  BILLING_MODE_VIDEO,
   type BillingMode
 } from '@/constants/channel'
 import type { PlazaModel } from '@/api/modelPlaza'
@@ -232,6 +257,9 @@ const props = defineProps<{
   /** 生图独立倍率:true 时图片计费模型的实付倍率取 imageRateMultiplier,不取分组/专属倍率。 */
   imageRateIndependent?: boolean
   imageRateMultiplier?: number | null
+  /** 视频独立倍率:true 时视频每秒价不取分组/专属倍率。 */
+  videoRateIndependent?: boolean
+  videoRateMultiplier?: number | null
 }>()
 
 const { t } = useI18n()
@@ -271,9 +299,14 @@ function billingMode(m: PlazaModel): BillingMode {
 }
 
 function billingModeLabel(m: PlazaModel): string {
-  return billingMode(m) === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perImage')
-    : t('modelPlaza.table.perRequest')
+  switch (billingMode(m)) {
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.perImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.perVideo')
+    default:
+      return t('modelPlaza.table.perRequest')
+  }
 }
 
 /** 价格统一保底 2 位小数,更长的有效小数原样保留。 */
@@ -290,9 +323,16 @@ function usesIndependentImageRate(m: PlazaModel): boolean {
   return billingMode(m) === BILLING_MODE_IMAGE && props.imageRateIndependent === true
 }
 
+/** 视频模型且分组开启视频独立倍率：实付倍率取视频独立倍率。 */
+function usesIndependentVideoRate(m: PlazaModel): boolean {
+  return billingMode(m) === BILLING_MODE_VIDEO && props.videoRateIndependent === true
+}
+
 /** 按次/按图片行的生效倍率。 */
 function requestRate(m: PlazaModel): number {
-  return usesIndependentImageRate(m) ? (props.imageRateMultiplier ?? 1) : effectiveRate.value
+  if (usesIndependentImageRate(m)) return props.imageRateMultiplier ?? 1
+  if (usesIndependentVideoRate(m)) return props.videoRateMultiplier ?? 1
+  return effectiveRate.value
 }
 
 /** 按次 / 按图片单价(乘该行生效倍率,不换算 1M)。 */
@@ -309,13 +349,21 @@ function official(value: number | null | undefined): string {
 
 /** 非 token 计费的单位后缀:按图片 → “/ 张”,按次 → “/ 次”。 */
 function perUnitSuffix(m: PlazaModel): string {
-  return billingMode(m) === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perUnitImage')
-    : t('modelPlaza.table.perUnitRequest')
+  switch (billingMode(m)) {
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.perUnitImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.perUnitSecond')
+    default:
+      return t('modelPlaza.table.perUnitRequest')
+  }
 }
 
 function hasCachePricing(m: PlazaModel): boolean {
-  return m.pricing?.cache_write_price != null || m.pricing?.cache_read_price != null
+	return m.pricing?.cache_write_price != null || m.pricing?.cache_write_5m_price != null ||
+	  m.pricing?.cache_write_1h_price != null || m.pricing?.cache_read_price != null ||
+	  tokenIntervals(m).some((iv) => iv.cache_write_price != null || iv.cache_write_5m_price != null ||
+		iv.cache_write_1h_price != null || iv.cache_read_price != null)
 }
 
 function hasOfficialCache(o: NonNullable<PlazaModel['official_pricing']>): boolean {
@@ -332,13 +380,19 @@ function requestIntervals(m: PlazaModel): UserPricingInterval[] {
   return (m.pricing?.intervals ?? []).filter((iv) => iv.per_request_price != null)
 }
 
-/** 档位标签:优先管理员配置的 tier_label,否则按 token 区间生成(≤200K / >200K / 200K–1M)。 */
+/** 档位标签：管理员标签与有效 token 区间同时展示，避免隐藏生效边界。 */
 function tierLabel(iv: UserPricingInterval): string {
-  if (iv.tier_label) return iv.tier_label
+  let range = ''
   const { min_tokens: min, max_tokens: max } = iv
-  if (max == null) return `>${formatTokenCount(min)}`
-  if (min === 0) return `≤${formatTokenCount(max)}`
-  return `${formatTokenCount(min)}–${formatTokenCount(max)}`
+  if (!(min === 0 && max == null)) {
+    if (max == null) range = `>${formatTokenCount(min)}`
+    else if (min === 0) range = `≤${formatTokenCount(max)}`
+    else range = `${formatTokenCount(min)}–${formatTokenCount(max)}`
+  }
+  const label = iv.tier_label
+    ? [iv.tier_label, range].filter(Boolean).join(' · ')
+    : range
+  return iv.requires_account_long_context ? `${label}（需账号开启）` : label
 }
 
 function formatTokenCount(n: number): string {

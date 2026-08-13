@@ -14,7 +14,7 @@ const (
 	BillingModeToken      BillingMode = "token"       // 按 token 区间计费
 	BillingModePerRequest BillingMode = "per_request" // 按次计费（支持上下文窗口分层）
 	BillingModeImage      BillingMode = "image"       // 图片计费（当前按次，预留 token 计费）
-	BillingModeVideo      BillingMode = "video"       // 视频生成计费（按视频生成次数）
+	BillingModeVideo      BillingMode = "video"       // 视频生成计费（单价按秒）
 )
 
 // IsValid 检查 BillingMode 是否为合法值
@@ -87,38 +87,46 @@ type AccountStatsPricingRule struct {
 
 // ChannelModelPricing 渠道模型定价条目
 type ChannelModelPricing struct {
-	ID               int64             `json:"id,omitempty"`
-	ChannelID        int64             `json:"channel_id,omitempty"`
-	Platform         string            `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
-	Models           []string          `json:"models"`
-	BillingMode      BillingMode       `json:"billing_mode"`
-	InputPrice       *float64          `json:"input_price"`
-	OutputPrice      *float64          `json:"output_price"`
-	CacheWritePrice  *float64          `json:"cache_write_price"`
-	CacheReadPrice   *float64          `json:"cache_read_price"`
-	ImageInputPrice  *float64          `json:"image_input_price"`
-	ImageOutputPrice *float64          `json:"image_output_price"`
-	PerRequestPrice  *float64          `json:"per_request_price"`
-	Intervals        []PricingInterval `json:"intervals"`
-	CreatedAt        time.Time         `json:"created_at,omitempty"`
-	UpdatedAt        time.Time         `json:"updated_at,omitempty"`
+	ID              int64       `json:"id,omitempty"`
+	ChannelID       int64       `json:"channel_id,omitempty"`
+	Platform        string      `json:"platform"` // 所属平台（anthropic/openai/gemini/...）
+	Models          []string    `json:"models"`
+	BillingMode     BillingMode `json:"billing_mode"`
+	InputPrice      *float64    `json:"input_price"`
+	OutputPrice     *float64    `json:"output_price"`
+	CacheWritePrice *float64    `json:"cache_write_price"`
+	// Display-only cache creation breakdown. These fields are projected from
+	// the effective billing card and are never persisted by repositories.
+	CacheWrite5mPrice *float64          `json:"-"`
+	CacheWrite1hPrice *float64          `json:"-"`
+	CacheReadPrice    *float64          `json:"cache_read_price"`
+	ImageInputPrice   *float64          `json:"image_input_price"`
+	ImageOutputPrice  *float64          `json:"image_output_price"`
+	PerRequestPrice   *float64          `json:"per_request_price"`
+	Intervals         []PricingInterval `json:"intervals"`
+	CreatedAt         time.Time         `json:"created_at,omitempty"`
+	UpdatedAt         time.Time         `json:"updated_at,omitempty"`
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
 type PricingInterval struct {
-	ID              int64     `json:"id,omitempty"`
-	PricingID       int64     `json:"pricing_id,omitempty"`
-	MinTokens       int       `json:"min_tokens"`
-	MaxTokens       *int      `json:"max_tokens"`
-	TierLabel       string    `json:"tier_label"`
-	InputPrice      *float64  `json:"input_price"`
-	OutputPrice     *float64  `json:"output_price"`
-	CacheWritePrice *float64  `json:"cache_write_price"`
-	CacheReadPrice  *float64  `json:"cache_read_price"`
-	PerRequestPrice *float64  `json:"per_request_price"`
-	SortOrder       int       `json:"sort_order"`
-	CreatedAt       time.Time `json:"created_at,omitempty"`
-	UpdatedAt       time.Time `json:"updated_at,omitempty"`
+	ID                         int64    `json:"id,omitempty"`
+	PricingID                  int64    `json:"pricing_id,omitempty"`
+	MinTokens                  int      `json:"min_tokens"`
+	MaxTokens                  *int     `json:"max_tokens"`
+	TierLabel                  string   `json:"tier_label"`
+	RequiresAccountLongContext bool     `json:"-"`
+	InputPrice                 *float64 `json:"input_price"`
+	OutputPrice                *float64 `json:"output_price"`
+	CacheWritePrice            *float64 `json:"cache_write_price"`
+	// Display-only effective cache creation rates; see ChannelModelPricing.
+	CacheWrite5mPrice *float64  `json:"-"`
+	CacheWrite1hPrice *float64  `json:"-"`
+	CacheReadPrice    *float64  `json:"cache_read_price"`
+	PerRequestPrice   *float64  `json:"per_request_price"`
+	SortOrder         int       `json:"sort_order"`
+	CreatedAt         time.Time `json:"created_at,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at,omitempty"`
 }
 
 // IsActive 判断渠道是否启用
@@ -416,9 +424,13 @@ type ChannelUsageFields struct {
 
 // SupportedModel 渠道的一个支持模型条目（无通配符、可直接展示给用户）
 type SupportedModel struct {
-	Name     string               // 用户侧模型名
-	Platform string               // 所属平台
-	Pricing  *ChannelModelPricing // 定价详情（nil 表示未配置定价）
+	Name                 string                         // 用户侧模型名
+	Platform             string                         // 所属平台
+	BillingModel         string                         // 实际计费匹配使用的模型名（映射后）
+	Pricing              *ChannelModelPricing           // 渠道/全局展示定价（nil 表示未配置定价）
+	PricingByGroup       map[int64]*ChannelModelPricing // 分组生效展示定价；key 为 group ID
+	PricingSource        string                         // channel / official / fallback
+	PricingSourceByGroup map[int64]string               // 分组最终展示价来源
 }
 
 // wildcardSuffix 是模型模式中的通配符后缀标记（仅支持尾部匹配）。
@@ -510,8 +522,10 @@ func buildPricingIndex(pricings []ChannelModelPricing) map[string]*platformPrici
 // 算法（mapping ∪ pricing 并联）：
 //
 //   - Pass A（mapping）：遍历 ModelMapping
-//   - 精确 src → target：显示名 = src（用户视角），定价用 target 在同 platform 定价里查
-//     （mapping 改写后实际计费的是 target；这是用户感知的"实际花费"）。
+//   - 精确 src → target：显示名 = src（用户视角）。billing_model_source=requested
+//     时定价/分组价按 src 匹配；默认 channel_mapped 按 target 匹配。
+//     upstream/response_model 的最终模型要到请求完成后才能知道，列表页采用 target
+//     作为当前唯一可确定的预估模型；实际结算仍以运行时观测值为准。
 //     target 为空或为通配符时退化为按 src 自查。
 //   - 通配符 src（如 "claude-3-*"）：用同 platform 定价里前缀匹配的模型作为候选展开，
 //     每个候选用自身定价（通配符场景一般是 passthrough，target 通常也是通配符）。
@@ -554,16 +568,17 @@ func (c *Channel) SupportedModels() []SupportedModel {
 		return name, nil
 	}
 
-	add := func(platform, displayName string, pricing *ChannelModelPricing) {
+	add := func(platform, displayName, billingModel string, pricing *ChannelModelPricing) {
 		key := dedupKey{platform: platform, name: strings.ToLower(displayName)}
 		if _, ok := seen[key]; ok {
 			return
 		}
 		seen[key] = struct{}{}
 		result = append(result, SupportedModel{
-			Name:     displayName,
-			Platform: platform,
-			Pricing:  pricing,
+			Name:         displayName,
+			Platform:     platform,
+			BillingModel: billingModel,
+			Pricing:      pricing,
 		})
 	}
 
@@ -582,8 +597,18 @@ func (c *Channel) SupportedModels() []SupportedModel {
 				prefixLower := strings.ToLower(prefix)
 				for _, candidate := range pidx.names {
 					if strings.HasPrefix(strings.ToLower(candidate), prefixLower) {
-						display, pricing := lookup(pidx, candidate)
-						add(platform, display, pricing)
+						display, _ := lookup(pidx, candidate)
+						billingModel := candidate
+						// A wildcard request pattern may still map every public model to
+						// one concrete upstream model. Static pricing views must follow
+						// the same requested-vs-mapped choice as runtime billing.
+						if c.BillingModelSource != BillingModelSourceRequested {
+							if _, targetWild := splitWildcardSuffix(target); strings.TrimSpace(target) != "" && !targetWild {
+								billingModel = target
+							}
+						}
+						_, pricing := lookup(pidx, billingModel)
+						add(platform, display, billingModel, pricing)
 					}
 				}
 				continue
@@ -596,10 +621,14 @@ func (c *Channel) SupportedModels() []SupportedModel {
 			if _, targetWild := splitWildcardSuffix(pricingKey); targetWild {
 				pricingKey = src
 			}
-			_, pricing := lookup(pidx, pricingKey)
 			// 显示名优先用 src 在定价里的原始大小写（若 src 本身是个定价模型名）
 			displayName, _ := lookup(pidx, src)
-			add(platform, displayName, pricing)
+			billingModel := pricingKey
+			if c.BillingModelSource == BillingModelSourceRequested {
+				billingModel = src
+			}
+			_, pricing := lookup(pidx, billingModel)
+			add(platform, displayName, billingModel, pricing)
 		}
 	}
 
@@ -607,7 +636,7 @@ func (c *Channel) SupportedModels() []SupportedModel {
 	for platform, pidx := range idx {
 		for _, name := range pidx.names {
 			display, pricing := lookup(pidx, name)
-			add(platform, display, pricing)
+			add(platform, display, name, pricing)
 		}
 	}
 

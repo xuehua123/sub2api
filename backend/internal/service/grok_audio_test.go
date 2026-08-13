@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync/atomic"
 	"testing"
@@ -71,6 +72,27 @@ func TestAwaitGrokRealtimeAudioObservedReadsFlagAfterRelayExits(t *testing.T) {
 	got, err := awaitGrokRealtimeAudioObserved(errCh, &observed)
 	require.ErrorIs(t, err, io.EOF)
 	require.True(t, got, "audioObserved must be read after the relay returns, not before <-errCh")
+}
+
+func TestRelayGrokRealtimeClientEventFirstWriteFailureDoesNotObserveAudio(t *testing.T) {
+	var observed atomic.Bool
+	wantErr := errors.New("upstream websocket closed")
+
+	err := relayGrokRealtimeClientEvent(&observed, true, func() error { return wantErr })
+
+	require.ErrorIs(t, err, wantErr)
+	require.False(t, observed.Load(), "audio not accepted by the upstream must not be billed")
+}
+
+func TestRelayGrokRealtimeClientEventSuccessfulAudioRemainsObservedAfterLaterFailure(t *testing.T) {
+	var observed atomic.Bool
+	require.NoError(t, relayGrokRealtimeClientEvent(&observed, true, func() error { return nil }))
+	wantErr := errors.New("later upstream websocket failure")
+
+	err := relayGrokRealtimeClientEvent(&observed, false, func() error { return wantErr })
+
+	require.ErrorIs(t, err, wantErr)
+	require.True(t, observed.Load(), "audio accepted before a later relay failure must still be billed")
 }
 
 func TestGrokRealtimeEventHasAudio(t *testing.T) {

@@ -45,7 +45,7 @@ func TestHasIdentifiedResponseModelPricingRejectsNonTokenChannelPricing(t *testi
 			return map[int64]string{groupID: "anthropic"}, nil
 		},
 	}
-	cs := NewChannelService(repo, nil, nil, nil)
+	cs := NewChannelService(repo, nil, nil, nil, nil)
 	svc := &GatewayService{billingService: bs, resolver: NewModelPricingResolver(cs, bs)}
 	apiKey := &APIKey{Group: &Group{ID: groupID, Platform: "anthropic"}}
 
@@ -77,7 +77,7 @@ func TestHasIdentifiedOpenAIResponsePricingRejectsNonTokenChannelPricing(t *test
 					return map[int64]string{groupID: "openai"}, nil
 				},
 			}
-			cs := NewChannelService(repo, nil, nil, nil)
+			cs := NewChannelService(repo, nil, nil, nil, nil)
 			svc := &OpenAIGatewayService{billingService: bs, resolver: NewModelPricingResolver(cs, bs)}
 			apiKey := &APIKey{Group: &Group{ID: groupID, Platform: "openai"}}
 
@@ -285,6 +285,71 @@ func TestOpenAIGatewayServiceRecordUsage_ResponseModelBillsCheaperResponseModel(
 	require.Equal(t, cheaper, *usageRepo.lastLog.UpstreamResponseModel)
 	require.NotNil(t, usageRepo.lastLog.UpstreamModelMismatch)
 	require.True(t, *usageRepo.lastLog.UpstreamModelMismatch)
+}
+
+func TestOpenAIGatewayServiceRecordUsage_ResponseModelCannotBypassLaterGroupPricedCandidate(t *testing.T) {
+	const (
+		groupID     int64 = 707
+		opaqueModel       = "opaque-account-alias"
+		mappedModel       = "premium-mapped-model"
+	)
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	userRepo := &openAIRecordUsageUserRepoStub{}
+	svc := newOpenAIRecordUsageServiceForTest(usageRepo, userRepo, &openAIRecordUsageSubRepoStub{}, nil)
+	svc.resolver = NewModelPricingResolver(nil, svc.billingService)
+
+	inputPrice := 0.00002
+	outputPrice := 0.00004
+	group := &Group{
+		ID:                        groupID,
+		Platform:                  PlatformOpenAI,
+		RateMultiplier:            1.1,
+		LongContextPricingEnabled: true,
+		ModelPricing: []ChannelModelPricing{{
+			Platform:    PlatformOpenAI,
+			Models:      []string{mappedModel},
+			BillingMode: BillingModeToken,
+			InputPrice:  &inputPrice,
+			OutputPrice: &outputPrice,
+		}},
+	}
+	tokens := UsageTokens{InputTokens: 20, OutputTokens: 1_000}
+	expected, err := svc.billingService.CalculateCostUnified(CostInput{
+		Ctx: context.Background(), Model: mappedModel, GroupID: i64p(groupID), Group: group,
+		Tokens: tokens, RateMultiplier: group.RateMultiplier, Resolver: svc.resolver,
+	})
+	require.NoError(t, err)
+	require.Greater(t, expected.ActualCost, 0.0)
+
+	err = svc.RecordUsage(context.Background(), &OpenAIRecordUsageInput{
+		Result: &OpenAIForwardResult{
+			RequestID:             "openai_response_model_later_group_candidate",
+			Model:                 opaqueModel,
+			UpstreamModel:         opaqueModel,
+			BillingModel:          opaqueModel,
+			UpstreamResponseModel: openAICheapFixtureModel,
+			Usage:                 OpenAIUsage{InputTokens: tokens.InputTokens, OutputTokens: tokens.OutputTokens},
+			Duration:              time.Second,
+		},
+		APIKey: &APIKey{ID: 10, GroupID: i64p(groupID), Group: group},
+		User:   &User{ID: 20},
+		Account: &Account{
+			ID:       30,
+			Platform: PlatformOpenAI,
+		},
+		ChannelUsageFields: ChannelUsageFields{
+			ChannelID:          9,
+			OriginalModel:      mappedModel,
+			ChannelMappedModel: mappedModel,
+			BillingModelSource: BillingModelSourceResponse,
+		},
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.InDelta(t, expected.ActualCost, usageRepo.lastLog.ActualCost, 1e-12,
+		"response_model must not replace an explicit Group price selected by a later candidate")
+	require.InDelta(t, expected.ActualCost, userRepo.lastAmount, 1e-12)
 }
 
 func TestOpenAIGatewayServiceRecordUsage_ResponseModelRejectsPricierResponseModel(t *testing.T) {

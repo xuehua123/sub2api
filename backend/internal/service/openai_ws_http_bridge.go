@@ -265,10 +265,6 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		_ = writeClientMessage(buildOpenAIWSHTTPBridgeErrorEvent(resp.StatusCode, upstreamMsg))
 		return nil, fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg)
 	}
-	if account.Platform == PlatformGrok {
-		s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, resolveGrokWSUpstreamModel(account, body, originalModel)), account, resp.Header, resp.StatusCode)
-	}
-
 	responseID := ""
 	usage := OpenAIUsage{}
 	imageCounter := newOpenAIImageOutputCounter()
@@ -407,6 +403,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
 			shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(statusCode, errMessage, upstreamMessage)
 			if account.Platform == PlatformGrok {
+				if isGrokModelProviderUnavailable(http.StatusBadRequest, upstreamMessage) {
+					statusCode = http.StatusBadRequest
+				}
 				// SSE error events do not carry an HTTP status. The local status
 				// mapper therefore defaults unknown xAI codes (for example
 				// new_sensitive) to 502; classify the body as a request-scoped
@@ -430,6 +429,25 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				return nil, newOpenAIUpstreamFailoverError(statusCode, resp.Header, upstreamMessage, errMessage, false)
 			}
 			upstreamEventErr = errors.New(errMessage)
+		}
+		if eventType == "response.failed" && account.Platform == PlatformGrok {
+			statusCode := grokWSHTTPBridgeFailureStatus(upstreamMessage)
+			upstreamModel := resolveGrokWSUpstreamModel(account, body, originalModel)
+			stateCtx := withGrokTeamRateLimitModel(ctx, upstreamModel)
+			shouldFailover := false
+			if !isGrokContentPolicyRejection(http.StatusForbidden, upstreamMessage) {
+				shouldFailover = s.shouldFailoverGrokUpstreamErrorForContext(stateCtx, statusCode, upstreamMessage)
+				s.handleGrokAccountUpstreamError(stateCtx, account, statusCode, resp.Header, upstreamMessage)
+			}
+			if turn == 1 && !wroteDownstream && shouldFailover {
+				return nil, newOpenAIUpstreamFailoverError(
+					statusCode,
+					resp.Header,
+					upstreamMessage,
+					grokWSHTTPBridgeFailureMessage(upstreamMessage),
+					false,
+				)
+			}
 		}
 
 		// 客户端写出副本改写容量降载码：Codex 对 error/response.failed 中的
@@ -471,7 +489,18 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			return resultWithUsage(), upstreamEventErr
 		}
 		if isOpenAIWSTerminalEvent(eventType) {
-			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, upstreamMessage)
+			if account.Platform == PlatformGrok {
+				upstreamTerminalEvent = normalizeOpenAIWSTerminalEvent(eventType)
+				// An HTTP 200 is only successful after a successful terminal event.
+				// Reconciling earlier could clear an existing Grok cooldown before a
+				// subsequent response.failed reports quota/provider failure.
+				if upstreamTerminalEvent == "response.completed" || upstreamTerminalEvent == "response.done" {
+					upstreamModel := resolveGrokWSUpstreamModel(account, body, originalModel)
+					s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.Header, resp.StatusCode)
+				}
+			} else {
+				upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, canonicalOpenAIAccountSchedulingModel(account, originalModel), resp.Header, upstreamMessage)
+			}
 			terminalEventCount++
 			firstTokenMsValue := -1
 			if firstTokenMs != nil {

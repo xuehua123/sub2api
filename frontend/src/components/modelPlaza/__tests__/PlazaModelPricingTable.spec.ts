@@ -43,7 +43,12 @@ function mountTable(
   models: PlazaModel[],
   rateMultiplier: number,
   userRateMultiplier?: number | null,
-  extraProps?: { imageRateIndependent?: boolean; imageRateMultiplier?: number | null }
+  extraProps?: {
+    imageRateIndependent?: boolean
+    imageRateMultiplier?: number | null
+    videoRateIndependent?: boolean
+    videoRateMultiplier?: number | null
+  }
 ) {
   return mount(PlazaModelPricingTable, {
     props: { models, rateMultiplier, userRateMultiplier: userRateMultiplier ?? null, ...extraProps }
@@ -224,6 +229,35 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('modelPlaza.table.perUnitRequest')
   })
 
+  it('video 模型按每秒价与视频独立倍率展示', () => {
+    const model = tokenModel({
+      name: 'video-model',
+      pricing: {
+        billing_mode: 'video',
+        input_price: null,
+        output_price: null,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: 0.04,
+        intervals: []
+      },
+      official_pricing: null
+    })
+    const wrapper = mountTable([model], 0.5, null, {
+      videoRateIndependent: true,
+      videoRateMultiplier: 0.25
+    })
+    const text = wrapper.text()
+
+    expect(text).toContain('$0.01')
+    expect(text).toContain('modelPlaza.table.perVideo')
+    expect(text).toContain('modelPlaza.table.perUnitSecond')
+    expect(text).toContain('0.25x')
+    expect(text).not.toContain('perUnitRequest')
+  })
+
   it('token 模型阶梯定价内联进输入/输出列,按倍率折算', () => {
     const model = tokenModel({
       pricing: {
@@ -268,6 +302,62 @@ describe('PlazaModelPricingTable', () => {
     expect(text).toContain('$1.50')
     expect(text).toContain('$7.50')
     expect(text).toContain('$15.00')
+  })
+
+  it('命名阶梯仍展示 token 生效边界', () => {
+    const model = tokenModel({
+      pricing: {
+        billing_mode: 'token',
+        input_price: 3e-6,
+        output_price: 1.5e-5,
+        cache_write_price: null,
+        cache_read_price: null,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [{
+          min_tokens: 272000,
+          max_tokens: null,
+          tier_label: 'Long context',
+          input_price: 6e-6,
+          output_price: 3e-5,
+          cache_write_price: null,
+          cache_read_price: null,
+          per_request_price: null,
+        }],
+      },
+    })
+
+    expect(mountTable([model], 1).text()).toContain('Long context · >272K')
+  })
+
+  it('token 阶梯缓存价格按档展示并保留显式零', () => {
+    const model = tokenModel({
+      pricing: {
+        billing_mode: 'token',
+        input_price: 2e-6,
+        output_price: 10e-6,
+        cache_write_price: 9e-6,
+        cache_read_price: 9e-6,
+        image_input_price: null,
+        image_output_price: null,
+        per_request_price: null,
+        intervals: [{
+          min_tokens: 0,
+          max_tokens: null,
+          tier_label: 'Fast',
+          input_price: 4e-6,
+          output_price: 20e-6,
+          cache_write_price: 0,
+          cache_read_price: 0.4e-6,
+          per_request_price: null,
+        }],
+      },
+    })
+    const text = mountTable([model], 0.5).text()
+    expect(text).toContain('Fast')
+    expect(text).toContain('modelPlaza.table.cacheWrite $0.00')
+    expect(text).toContain('modelPlaza.table.cacheRead $0.20')
   })
 
   it('生图独立倍率开启时,按图价格 × 独立倍率,不乘分组倍率;倍率列展示独立倍率', () => {

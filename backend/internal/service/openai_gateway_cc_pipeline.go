@@ -96,8 +96,9 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		shouldFailover = tempUnscheduled
 	}
 	if account != nil && account.Platform == PlatformGrok {
-		shouldFailover = s.shouldFailoverGrokUpstreamErrorForContext(ctx, resp.StatusCode, respBody)
-		shouldDisable = s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		stateCtx := withGrokTeamRateLimitModel(ctx, upstreamModel)
+		shouldFailover = s.shouldFailoverGrokUpstreamErrorForContext(stateCtx, resp.StatusCode, respBody)
+		shouldDisable = s.handleGrokAccountUpstreamError(stateCtx, account, resp.StatusCode, resp.Header, respBody)
 	}
 	if !shouldFailover {
 		return nil

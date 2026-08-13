@@ -189,15 +189,15 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 			if kind != coderws.MessageText && kind != coderws.MessageBinary {
 				continue
 			}
-			if grokRealtimeEventHasAudio(msg) {
-				audioObserved.Store(true)
-			}
+			hasAudio := grokRealtimeEventHasAudio(msg)
 			var raw json.RawMessage
 			if unmarshalErr := json.Unmarshal(msg, &raw); unmarshalErr != nil {
 				errCh <- fmt.Errorf("invalid realtime event: %w", unmarshalErr)
 				return
 			}
-			if writeErr := upstream.WriteJSON(ctx, raw); writeErr != nil {
+			if writeErr := relayGrokRealtimeClientEvent(&audioObserved, hasAudio, func() error {
+				return upstream.WriteJSON(ctx, raw)
+			}); writeErr != nil {
 				errCh <- writeErr
 				return
 			}
@@ -205,6 +205,22 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 	}()
 
 	return awaitGrokRealtimeAudioObserved(errCh, &audioObserved)
+}
+
+func relayGrokRealtimeClientEvent(audioObserved *atomic.Bool, hasAudio bool, write func() error) error {
+	if write == nil {
+		return fmt.Errorf("realtime upstream writer is required")
+	}
+	if err := write(); err != nil {
+		return err
+	}
+	// Client audio becomes billable only after xAI accepted the frame. Merely
+	// reading it from the client is insufficient when the upstream socket has
+	// already failed.
+	if hasAudio && audioObserved != nil {
+		audioObserved.Store(true)
+	}
+	return nil
 }
 
 func awaitGrokRealtimeAudioObserved(errCh <-chan error, audioObserved *atomic.Bool) (bool, error) {

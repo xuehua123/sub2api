@@ -543,11 +543,35 @@ describe('admin GroupsView column settings', () => {
     await vm.handleUpdateGroup()
     await flushPromises()
 
+    expect(updateGroupRequest).toHaveBeenCalledTimes(1)
+    const payload = updateGroupRequest.mock.calls[0]?.[1]
+    expect(payload).not.toHaveProperty('long_context_pricing_enabled')
+    expect(payload).not.toHaveProperty('model_pricing')
+  })
+
+  it('includes legacy pricing fields after the operator touches them', async () => {
+    const legacyGroup = {
+      ...createGroup({ id: 44 }),
+      long_context_pricing_enabled: undefined,
+      model_pricing: undefined,
+    } as unknown as AdminGroup
+    const wrapper = await mountView()
+    const vm = wrapper.vm as any
+
+    await vm.handleEdit(legacyGroup)
+    vm.editForm.long_context_pricing_enabled = false
+    vm.editPricingFields.longContextDirty = true
+    vm.addEditGroupPricing()
+    vm.editForm.model_pricing[0].models = ['gpt-5.6-sol']
+
+    await vm.handleUpdateGroup()
+    await flushPromises()
+
     expect(updateGroupRequest).toHaveBeenCalledWith(
-      43,
+      44,
       expect.objectContaining({
-        long_context_pricing_enabled: true,
-        model_pricing: [],
+        long_context_pricing_enabled: false,
+        model_pricing: [expect.objectContaining({ models: ['gpt-5.6-sol'] })],
       }),
     )
   })

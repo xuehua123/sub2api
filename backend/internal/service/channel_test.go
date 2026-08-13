@@ -539,6 +539,53 @@ func TestSupportedModels_WildcardExpandedFromPricing(t *testing.T) {
 	}
 }
 
+func TestSupportedModels_WildcardFixedTargetUsesMappedBillingModel(t *testing.T) {
+	ch := &Channel{
+		BillingModelSource: BillingModelSourceChannelMapped,
+		ModelPricing: []ChannelModelPricing{
+			{ID: 1, Platform: PlatformOpenAI, Models: []string{"public-one"}},
+			{ID: 2, Platform: PlatformOpenAI, Models: []string{"public-two"}},
+			{ID: 9, Platform: PlatformOpenAI, Models: []string{"provider-model"}},
+		},
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {"public-*": "provider-model"},
+		},
+	}
+
+	got := ch.SupportedModels()
+	byName := make(map[string]SupportedModel, len(got))
+	for _, model := range got {
+		byName[model.Name] = model
+	}
+	for _, name := range []string{"public-one", "public-two"} {
+		require.Equal(t, "provider-model", byName[name].BillingModel)
+		require.NotNil(t, byName[name].Pricing)
+		require.Equal(t, int64(9), byName[name].Pricing.ID)
+	}
+}
+
+func TestSupportedModels_WildcardFixedTargetUsesRequestedBillingModel(t *testing.T) {
+	ch := &Channel{
+		BillingModelSource: BillingModelSourceRequested,
+		ModelPricing: []ChannelModelPricing{
+			{ID: 1, Platform: PlatformOpenAI, Models: []string{"public-one"}},
+			{ID: 9, Platform: PlatformOpenAI, Models: []string{"provider-model"}},
+		},
+		ModelMapping: map[string]map[string]string{
+			PlatformOpenAI: {"public-*": "provider-model"},
+		},
+	}
+
+	got := ch.SupportedModels()
+	byName := make(map[string]SupportedModel, len(got))
+	for _, model := range got {
+		byName[model.Name] = model
+	}
+	require.Equal(t, "public-one", byName["public-one"].BillingModel)
+	require.NotNil(t, byName["public-one"].Pricing)
+	require.Equal(t, int64(1), byName["public-one"].Pricing.ID)
+}
+
 func TestSupportedModels_MissingPricingKeepsNilPricing(t *testing.T) {
 	ch := &Channel{
 		ModelMapping: map[string]map[string]string{
@@ -760,6 +807,28 @@ func TestSupportedModels_ExactMappingUsesTargetPricing(t *testing.T) {
 	require.Equal(t, int64(200), got[0].Pricing.ID, "req-model 显示但定价是 served-model 的（mapping target）")
 	require.Equal(t, "served-model", got[1].Name)
 	require.Equal(t, int64(200), got[1].Pricing.ID)
+}
+
+func TestSupportedModels_ExactMappingUsesRequestedPricingWhenConfigured(t *testing.T) {
+	ch := &Channel{
+		BillingModelSource: BillingModelSourceRequested,
+		ModelPricing: []ChannelModelPricing{
+			{ID: 100, Platform: "anthropic", Models: []string{"req-model"}, InputPrice: testPtrFloat64(3e-6)},
+			{ID: 200, Platform: "anthropic", Models: []string{"served-model"}, InputPrice: testPtrFloat64(1.5e-5)},
+		},
+		ModelMapping: map[string]map[string]string{
+			"anthropic": {"req-model": "served-model"},
+		},
+	}
+
+	got := ch.SupportedModels()
+
+	require.Len(t, got, 2)
+	require.Equal(t, "req-model", got[0].Name)
+	require.Equal(t, "req-model", got[0].BillingModel)
+	require.NotNil(t, got[0].Pricing)
+	require.Equal(t, int64(100), got[0].Pricing.ID)
+	require.Equal(t, "served-model", got[1].BillingModel)
 }
 
 func TestSupportedModels_ExactMappingTargetMissingFromPricing(t *testing.T) {

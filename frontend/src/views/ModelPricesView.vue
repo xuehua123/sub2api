@@ -250,7 +250,7 @@
                     {{ selectedGroup.hidden ? '恢复当前分组' : '隐藏当前分组' }}
                   </button>
                   <button class="toolbar-button" :class="{ active: showOfficial }" @click="showOfficial = !showOfficial">
-                    官方参考价
+					计费基准价
                   </button>
                   <button class="toolbar-button" :class="{ active: showMultiplier }" @click="showMultiplier = !showMultiplier">
                     优惠倍数
@@ -283,7 +283,7 @@
             <div class="ops-card">
               <div>
                 <span>我们的销售价</span>
-                <strong>官方价 × 分组倍率 × 套餐换算</strong>
+				<strong>计费基准价 × 分组倍率 × 套餐换算</strong>
                 <small>人民币成交价由下方换算参数控制</small>
               </div>
               <RouterLink class="toolbar-button" to="/admin/channels/pricing">
@@ -325,7 +325,7 @@
             <div>
               <span>价格说明</span>
               <strong>页面优先展示折扣后的人民币参考价</strong>
-              <p>美元价格仅作为换算参考，实际结算按当前套餐、分组倍率与用量规则执行；固定价格会按每张、每次或每分钟展示。</p>
+              <p>美元价格仅作为换算参考，实际结算按当前套餐、分组倍率与用量规则执行；固定价格会按每张、每次、视频每秒或音频每分钟展示。</p>
             </div>
             <div v-if="isAdmin" class="sales-note-admin" :class="profitSafety.tone">
               <span>利润安全提示</span>
@@ -353,7 +353,7 @@
             </div>
             <div class="metric-tile">
               <span>优惠力度</span>
-              <strong class="text-emerald-300">{{ selectedGroup.best_plan ? saveFactorLabel(groupSaleMultiplier(selectedGroup)) : '按官方参考' }}</strong>
+			  <strong class="text-emerald-300">{{ selectedGroup.best_plan ? saveFactorLabel(groupSaleMultiplier(selectedGroup)) : '按计费基准价' }}</strong>
             </div>
           </section>
 
@@ -432,7 +432,7 @@
           <section class="mt-4 hidden overflow-hidden rounded-lg border border-[var(--border-color)] bg-[var(--bg-panel)] xl:block transition-all duration-200">
             <div class="price-table-header" :class="{ admin: isAdmin }">
               <span>模型</span>
-              <span>官方参考价</span>
+			  <span>计费基准价</span>
               <span>折扣后价格</span>
               <span>阶梯价格</span>
               <span>优惠力度</span>
@@ -566,16 +566,19 @@
 
               <div class="mt-4 rounded-lg border border-emerald-500/15 bg-emerald-500/[0.02] dark:border-emerald-400/10 dark:bg-emerald-400/[0.035] p-3">
                 <div class="mb-2 flex items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-200">官方参考价</span>
+				  <span class="text-[11px] font-bold text-emerald-600 dark:text-emerald-200">计费基准价</span>
                 </div>
                 <div v-if="isFixedPriceModel(model)" class="space-y-2">
                   <PriceRow :label="`${fixedPriceUnitLabel(model)}价格`" :value="priceValue(model.official.per_request_usd)" :suffix="`/ ${fixedPriceUnit(model)}`" />
                 </div>
                 <div v-else class="space-y-2">
                   <PriceRow label="输入价格" :value="priceValue(model.official.input_usd_per_m)" suffix="/ 百万 tokens" />
+                  <PriceRow v-if="model.official.image_input_usd_per_m != null" label="图片输入" :value="priceValue(model.official.image_input_usd_per_m)" suffix="/ 百万 tokens" />
                   <PriceRow label="输出价格" :value="priceValue(model.official.output_usd_per_m)" suffix="/ 百万 tokens" />
                   <PriceRow label="缓存读取" :value="priceValue(model.official.cache_read_usd_per_m)" suffix="/ 百万 tokens" />
-                  <PriceRow label="缓存创建" :value="priceValue(model.official.cache_write_usd_per_m)" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.official.cache_write_5m_usd_per_m != null" label="缓存创建（5 分钟）" :value="priceValue(model.official.cache_write_5m_usd_per_m)" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.official.cache_write_1h_usd_per_m != null" label="缓存创建（1 小时）" :value="priceValue(model.official.cache_write_1h_usd_per_m)" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.official.cache_write_5m_usd_per_m == null && model.official.cache_write_1h_usd_per_m == null" label="缓存创建" :value="priceValue(model.official.cache_write_usd_per_m)" suffix="/ 百万 tokens" />
                 </div>
               </div>
 
@@ -591,9 +594,12 @@
                 </div>
                 <div v-else class="space-y-2">
                   <PriceRow label="输入价格" :value="bestActual(model, 'input_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'input_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" highlight />
+                  <PriceRow v-if="model.actual.image_input_usd_per_m != null" label="图片输入" :value="bestActual(model, 'image_input_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'image_input_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
                   <PriceRow label="输出价格" :value="bestActual(model, 'output_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'output_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" highlight />
                   <PriceRow label="缓存读取" :value="bestActual(model, 'cache_read_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_read_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
-                  <PriceRow label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_write_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.actual.cache_write_5m_usd_per_m != null" label="缓存创建（5 分钟）" :value="bestActual(model, 'cache_write_5m_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_write_5m_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.actual.cache_write_1h_usd_per_m != null" label="缓存创建（1 小时）" :value="bestActual(model, 'cache_write_1h_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_write_1h_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
+				  <PriceRow v-if="model.actual.cache_write_5m_usd_per_m == null && model.actual.cache_write_1h_usd_per_m == null" label="缓存创建" :value="bestActual(model, 'cache_write_cny_per_m')" :secondary="formatUSDPerMillion(bestActual(model, 'cache_write_usd_per_m'))" currency="cny" suffix="/ 百万 tokens" />
                 </div>
               </div>
 
@@ -649,6 +655,7 @@
                 <option value="token">按量计费</option>
                 <option value="per_request">按次计费</option>
                 <option value="image">图片计费</option>
+                <option value="video">视频按秒计费</option>
               </select>
             </label>
 
@@ -674,7 +681,7 @@
             </template>
             <template v-else>
               <label class="editor-field">
-                <span>{{ priceEditor.billingMode === 'image' ? '图片 $/张' : '固定 $/次' }}</span>
+                <span>{{ priceEditor.billingMode === 'image' ? '图片 $/张' : priceEditor.billingMode === 'video' ? '视频 $/秒' : '固定 $/次' }}</span>
                 <input v-model="priceEditor.perRequestUSD" type="number" step="any" min="0" placeholder="例如 0.05" />
               </label>
             </template>
@@ -1334,7 +1341,7 @@ async function clearCustomPrice() {
 }
 
 function priceInput(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? String(value) : ''
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? String(value) : ''
 }
 
 function priceValue(value: number | null | undefined): number | undefined {
@@ -1345,7 +1352,7 @@ function parseOptionalPrice(value: string): number | null {
   const trimmed = value.trim()
   if (!trimmed) return null
   const parsed = Number.parseFloat(trimmed)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
 function customPriceHasValue(price: ModelPriceCustomPrice): boolean {
@@ -1356,21 +1363,22 @@ function customPriceHasValue(price: ModelPriceCustomPrice): boolean {
     price.cache_read_usd_per_m,
     price.image_output_usd_per_m,
     price.per_request_usd,
-  ].some(value => typeof value === 'number' && Number.isFinite(value) && value > 0)
+  ].some(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)
 }
 
 function normalizeBillingMode(mode: string | undefined): string {
   if (mode === 'image') return 'image'
+  if (mode === 'video') return 'video'
   if (mode === 'per_request' || mode === 'request') return 'per_request'
   return 'token'
 }
 
 function bestActual(model: ModelPriceModel, key: ActualPriceKey): number | undefined {
   const base = model.actual[key]
-  if (typeof base === 'number' && Number.isFinite(base) && base > 0) return base
+  if (typeof base === 'number' && Number.isFinite(base) && base >= 0) return base
   for (const tier of model.price_tiers) {
     const value = tier.actual[key]
-    if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) return value
   }
   return undefined
 }
@@ -1413,15 +1421,23 @@ function tierBadges(model: ModelPriceModel): TierBadge[] {
 }
 
 function tierTitle(tier: ModelPriceTier): string {
-  if (!tier.threshold_tokens) return tier.label
-  return `${tier.label} ${formatThresholdTokens(tier.threshold_tokens)}`
+	const label = !tier.threshold_tokens ? tier.label : `${tier.label} ${formatThresholdTokens(tier.threshold_tokens)}`
+	return tier.requires_account_long_context ? `${label}（需账号开启长上下文计费）` : label
 }
 
 function tierPriceSummary(tier: ModelPriceTier): string {
-  const input = formatUSDPerMillion(tier.actual.input_usd_per_m)
-  const output = formatUSDPerMillion(tier.actual.output_usd_per_m)
-  if (input === '-' && output === '-') return '暂未定价'
-  return `入 ${input} / 出 ${output}`
+  const values: Array<[string, number | null | undefined]> = [
+    ['入', tier.actual.input_usd_per_m],
+    ['出', tier.actual.output_usd_per_m],
+    ['缓存写', tier.actual.cache_write_usd_per_m],
+	['缓存写5m', tier.actual.cache_write_5m_usd_per_m],
+	['缓存写1h', tier.actual.cache_write_1h_usd_per_m],
+    ['缓存读', tier.actual.cache_read_usd_per_m],
+  ]
+  const parts = values
+    .filter((item): item is [string, number] => typeof item[1] === 'number' && Number.isFinite(item[1]))
+    .map(([label, value]) => `${label} ${formatUSDPerMillion(value)}`)
+  return parts.length > 0 ? parts.join(' / ') : '暂未定价'
 }
 
 function formatCompactTokens(tokens: number): string {
@@ -1531,6 +1547,7 @@ function providerShort(platform: string): string {
 function billingLabel(mode: string): string {
   if (mode === 'request' || mode === 'per_request') return '按次计费'
   if (mode === 'image') return '图片计费'
+  if (mode === 'video') return '视频按秒计费'
   return '按量计费'
 }
 
@@ -1545,27 +1562,29 @@ function displayProvider(model: ModelPriceModel): string {
   return model.provider || model.platform
 }
 
-function hasPositiveNumber(value: number | null | undefined): boolean {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
+function hasConfiguredNumber(value: number | null | undefined): boolean {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
 }
 
 function hasActualPrice(model: ModelPriceModel): boolean {
   const values = Object.values(model.actual)
-  if (values.some(value => hasPositiveNumber(value))) return true
-  return model.price_tiers.some(tier => Object.values(tier.actual).some(value => hasPositiveNumber(value)))
+  if (values.some(value => hasConfiguredNumber(value))) return true
+  return model.price_tiers.some(tier => Object.values(tier.actual).some(value => hasConfiguredNumber(value)))
 }
 
 function isFixedPriceModel(model: ModelPriceModel): boolean {
   return model.billing_mode === 'request' ||
     model.billing_mode === 'per_request' ||
-    hasPositiveNumber(model.official.per_request_usd) ||
-    hasPositiveNumber(model.actual.per_request_usd)
+    model.billing_mode === 'image' ||
+    model.billing_mode === 'video' ||
+    hasConfiguredNumber(model.official.per_request_usd) ||
+    hasConfiguredNumber(model.actual.per_request_usd)
 }
 
 function fixedPriceUnit(model: ModelPriceModel): string {
   const name = model.name.toLowerCase()
   if (model.billing_mode === 'image' || name.includes('image') || name.includes('photo') || name.includes('picture') || name.includes('dall-e')) return '张'
-  if (name.includes('video')) return '分钟'
+  if (model.billing_mode === 'video' || name.includes('video')) return '秒'
   if (name.includes('audio') || name.includes('speech') || name.includes('tts') || name.includes('transcrib')) return '分钟'
   return '次'
 }
@@ -1573,6 +1592,7 @@ function fixedPriceUnit(model: ModelPriceModel): string {
 function fixedPriceUnitLabel(model: ModelPriceModel): string {
   const unit = fixedPriceUnit(model)
   if (unit === '张') return '每张'
+  if (unit === '秒') return '每秒'
   if (unit === '分钟') return '每分钟'
   return '每次'
 }
@@ -1580,7 +1600,9 @@ function fixedPriceUnitLabel(model: ModelPriceModel): string {
 function sourceLabel(source: string): string {
   if (source === 'custom') return '自定义价'
   if (source === 'official') return '官方目录'
+	if (source === 'fallback') return '内置回退价'
   if (source === 'channel') return '渠道配置'
+  if (source === 'group') return '分组配置'
   return '待补价'
 }
 

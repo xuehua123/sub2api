@@ -635,17 +635,22 @@ export default {
       billingModeToken: '按 Token',
       billingModePerRequest: '按次',
       billingModeImage: '按图片',
-      billingModeVideo: '按视频',
+      billingModeVideo: '按秒',
       inputPrice: '输入',
       outputPrice: '输出',
       cacheWritePrice: '缓存写入',
+	  cacheWrite5mPrice: '缓存写入（5 分钟）',
+	  cacheWrite1hPrice: '缓存写入（1 小时）',
+	  accountLongContextRequired: '（需账号开启长上下文计费）',
       cacheReadPrice: '缓存读取',
       imageInputPrice: '图片输入',
       imageOutputPrice: '图片输出',
       perRequestPrice: '每次请求',
+      perSecondPrice: '每秒价格',
       intervals: '阶梯定价',
       unitPerMillion: '/ 1M token',
-      unitPerRequest: '/ 次'
+      unitPerRequest: '/ 次',
+      unitPerSecond: '/ 秒'
     }
   },
 
@@ -683,13 +688,15 @@ export default {
       cacheWrite: '写入',
       cacheRead: '读取',
       paidPrice: '实付价格(折后)',
-      officialPrice: '官方价格',
+      officialPrice: '计费基准价',
       rate: '折扣倍率',
       unitPerMillion: '$ / 1M token',
       perUnitRequest: '/ 次',
       perUnitImage: '/ 张',
+      perUnitSecond: '/ 秒',
       perRequest: '按次计费',
-      perImage: '按图片计费'
+      perImage: '按图片计费',
+      perVideo: '视频（按秒）'
     },
     nav: {
       login: '登录',

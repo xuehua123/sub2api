@@ -693,10 +693,10 @@ func (s *OpenAIGatewayService) ForwardGrokMedia(
 	requestIDHeader := firstNonEmpty(resp.Header.Get("x-request-id"), resp.Header.Get("xai-request-id"))
 	requestModel := requestInfo.Model
 	if resp.StatusCode >= 400 {
-		return s.handleGrokMediaErrorResponse(ctx, resp, c, account, requestIDHeader, requestModel)
+		return s.handleGrokMediaErrorResponse(ctx, resp, c, account, requestIDHeader, upstreamModel)
 	}
 
-	s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, requestModel), account, resp.Header, resp.StatusCode)
+	s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.Header, resp.StatusCode)
 	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
@@ -1212,7 +1212,8 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 	body := s.readUpstreamErrorBody(resp)
 	// Reconcile readiness before configurable passthrough branches can return;
 	// otherwise a Grok 429 can remain schedulable.
-	shouldDisable := s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+	stateCtx := withGrokTeamRateLimitModel(ctx, requestedModel)
+	shouldDisable := s.handleGrokAccountUpstreamError(stateCtx, account, resp.StatusCode, resp.Header, body)
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(body)))
 	if upstreamMsg == "" {
 		upstreamMsg = fmt.Sprintf("xAI upstream returned status %d", resp.StatusCode)
@@ -1274,7 +1275,7 @@ func (s *OpenAIGatewayService) handleGrokMediaErrorResponse(
 		return nil, fmt.Errorf("upstream error: %d (not in custom error codes) message=%s", resp.StatusCode, upstreamMsg)
 	}
 
-	shouldFailover := s.shouldFailoverGrokUpstreamErrorForContext(ctx, resp.StatusCode, body)
+	shouldFailover := s.shouldFailoverGrokUpstreamErrorForContext(stateCtx, resp.StatusCode, body)
 	kind := "http_error"
 	if shouldFailover {
 		kind = "failover"

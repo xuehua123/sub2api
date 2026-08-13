@@ -1554,7 +1554,10 @@ func TestQueryAndFinalizeRefundUsesPendingRollbackBalanceAmount(t *testing.T) {
 
 func TestApplyRefundFinalDeductionShortensSubscriptionEntitlement(t *testing.T) {
 	ctx := context.Background()
-	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	// Keep the entitlement in the future relative to the real clock. A fixed
+	// 2026 date eventually crossed the service's "never expire in the past"
+	// clamp and made this otherwise deterministic test time-bomb.
+	now := time.Now().UTC().Truncate(time.Second)
 	client := newPaymentConfigServiceTestClient(t)
 	user, err := client.User.Create().
 		SetEmail("pending-entitlement-refund@example.com").

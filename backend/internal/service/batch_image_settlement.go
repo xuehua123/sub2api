@@ -23,28 +23,45 @@ const (
 )
 
 type BatchImagePricingResolver interface {
-	BatchImageUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error)
+	BatchImageUnitPrice(ctx context.Context, job *BatchImageJob, group *Group) (float64, error)
 }
 
 type BatchImageModelPricingResolver struct {
 	Resolver *ModelPricingResolver
 }
 
-func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context, job *BatchImageJob) (float64, error) {
+func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context, job *BatchImageJob, group *Group) (float64, error) {
 	if r == nil || r.Resolver == nil || job == nil || strings.TrimSpace(job.Model) == "" {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
-	resolved := r.Resolver.Resolve(ctx, PricingInput{Model: job.Model})
+	groupID := job.GroupID
+	if group != nil {
+		if groupID != nil && *groupID != group.ID {
+			return 0, ErrBatchImageSettlementPricingMissing
+		}
+		if groupID == nil && group.ID > 0 {
+			id := group.ID
+			groupID = &id
+		}
+	}
+	resolved := r.Resolver.Resolve(ctx, PricingInput{Model: job.Model, GroupID: groupID, Group: group})
 	if resolved == nil {
 		return 0, ErrBatchImageSettlementPricingMissing
 	}
 	switch resolved.Mode {
 	case BillingModeImage, BillingModePerRequest:
-		if resolved.DefaultPerRequestPrice > 0 {
-			return resolved.DefaultPerRequestPrice, nil
+		if price, found := r.Resolver.GetRequestTierPrice(resolved, defaultBatchImageImageSize); found {
+			return price, nil
 		}
-		if len(resolved.RequestTiers) == 1 && resolved.RequestTiers[0].PerRequestPrice != nil && *resolved.RequestTiers[0].PerRequestPrice >= 0 {
-			return *resolved.RequestTiers[0].PerRequestPrice, nil
+		if len(resolved.RequestTiers) == 1 {
+			tier := resolved.RequestTiers[0]
+			if isGenericBatchImageTierLabel(tier.TierLabel) && tier.PerRequestPrice != nil && *tier.PerRequestPrice >= 0 {
+				return *tier.PerRequestPrice, nil
+			}
+		}
+		if resolved.DefaultPerRequestPrice > 0 ||
+			(resolved.channelPricing != nil && resolved.channelPricing.PerRequestPrice != nil) {
+			return resolved.DefaultPerRequestPrice, nil
 		}
 	case BillingModeToken:
 		if resolved.BasePricing != nil && (resolved.BasePricing.ImageOutputPriceExplicit || resolved.BasePricing.ImageOutputPricePerToken > 0) {
@@ -52,6 +69,15 @@ func (r *BatchImageModelPricingResolver) BatchImageUnitPrice(ctx context.Context
 		}
 	}
 	return 0, ErrBatchImageSettlementPricingMissing
+}
+
+func isGenericBatchImageTierLabel(label string) bool {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case "", "default", "generic", "通用":
+		return true
+	default:
+		return false
+	}
 }
 
 type BatchImageSettlementService struct {
@@ -399,7 +425,7 @@ func (s *BatchImageSettlementService) settlementUnitPrice(ctx context.Context, j
 		}
 		return job.BillableUnitPrice, nil
 	}
-	unitPrice, err := s.Pricing.BatchImageUnitPrice(ctx, job)
+	unitPrice, err := s.Pricing.BatchImageUnitPrice(ctx, job, nil)
 	if err != nil {
 		return 0, err
 	}

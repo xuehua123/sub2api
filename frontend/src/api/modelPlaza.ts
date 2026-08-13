@@ -10,6 +10,7 @@ import type { UserSupportedModelPricing } from './channels'
 /** LiteLLM 官方参考价（USD per token，字段缺失 = 官方数据未覆盖）。 */
 export interface PlazaOfficialPricing {
   input_price: number | null
+  image_input_price?: number | null
   output_price: number | null
   /** 5m 缓存写入（= LiteLLM cache_creation）。 */
   cache_write_price: number | null
@@ -43,6 +44,9 @@ export interface ModelPlazaGroup {
   /** 生图独立倍率：true 时图片计费模型的实付倍率取 image_rate_multiplier，不取分组/专属倍率。 */
   image_rate_independent: boolean
   image_rate_multiplier: number
+  /** 视频按秒计费的独立倍率。 */
+  video_rate_independent?: boolean
+  video_rate_multiplier?: number
   models: PlazaModel[]
 }
 

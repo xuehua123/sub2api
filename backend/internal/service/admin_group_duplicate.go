@@ -82,6 +82,40 @@ func cloneGroupVideoModelPrices(value map[string]map[string]float64) map[string]
 	return cloned
 }
 
+func cloneGroupModelPricing(value []ChannelModelPricing) []ChannelModelPricing {
+	if value == nil {
+		return nil
+	}
+	cloned := make([]ChannelModelPricing, len(value))
+	for i := range value {
+		cloned[i] = value[i]
+		if value[i].Models != nil {
+			cloned[i].Models = append([]string{}, value[i].Models...)
+		}
+		cloned[i].InputPrice = cloneGroupValuePointer(value[i].InputPrice)
+		cloned[i].OutputPrice = cloneGroupValuePointer(value[i].OutputPrice)
+		cloned[i].CacheWritePrice = cloneGroupValuePointer(value[i].CacheWritePrice)
+		cloned[i].CacheReadPrice = cloneGroupValuePointer(value[i].CacheReadPrice)
+		cloned[i].ImageInputPrice = cloneGroupValuePointer(value[i].ImageInputPrice)
+		cloned[i].ImageOutputPrice = cloneGroupValuePointer(value[i].ImageOutputPrice)
+		cloned[i].PerRequestPrice = cloneGroupValuePointer(value[i].PerRequestPrice)
+		if value[i].Intervals == nil {
+			continue
+		}
+		cloned[i].Intervals = make([]PricingInterval, len(value[i].Intervals))
+		for j := range value[i].Intervals {
+			cloned[i].Intervals[j] = value[i].Intervals[j]
+			cloned[i].Intervals[j].MaxTokens = cloneGroupValuePointer(value[i].Intervals[j].MaxTokens)
+			cloned[i].Intervals[j].InputPrice = cloneGroupValuePointer(value[i].Intervals[j].InputPrice)
+			cloned[i].Intervals[j].OutputPrice = cloneGroupValuePointer(value[i].Intervals[j].OutputPrice)
+			cloned[i].Intervals[j].CacheWritePrice = cloneGroupValuePointer(value[i].Intervals[j].CacheWritePrice)
+			cloned[i].Intervals[j].CacheReadPrice = cloneGroupValuePointer(value[i].Intervals[j].CacheReadPrice)
+			cloned[i].Intervals[j].PerRequestPrice = cloneGroupValuePointer(value[i].Intervals[j].PerRequestPrice)
+		}
+	}
+	return cloned
+}
+
 func cloneGroupMessagesDispatchModelConfig(value OpenAIMessagesDispatchModelConfig) OpenAIMessagesDispatchModelConfig {
 	cloned := value
 	if value.ExactModelMappings != nil {
@@ -110,6 +144,8 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		Status:                          duplicateGroupInactiveStatus,
 		DuplicateOperationID:            operationID,
 		SubscriptionType:                source.SubscriptionType,
+		BalanceEnabled:                  source.BalanceEnabled,
+		SubscriptionEnabled:             source.SubscriptionEnabled,
 		DailyLimitUSD:                   cloneGroupValuePointer(source.DailyLimitUSD),
 		WeeklyLimitUSD:                  cloneGroupValuePointer(source.WeeklyLimitUSD),
 		MonthlyLimitUSD:                 cloneGroupValuePointer(source.MonthlyLimitUSD),
@@ -134,6 +170,8 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		AudioRealtimePricePerMin:        cloneGroupValuePointer(source.AudioRealtimePricePerMin),
 		AudioTTSPricePerMillionChars:    cloneGroupValuePointer(source.AudioTTSPricePerMillionChars),
 		AudioSTTPricePerHour:            cloneGroupValuePointer(source.AudioSTTPricePerHour),
+		LongContextPricingEnabled:       source.LongContextPricingEnabled,
+		ModelPricing:                    cloneGroupModelPricing(source.ModelPricing),
 		ClaudeCodeOnly:                  source.ClaudeCodeOnly,
 		FallbackGroupID:                 cloneGroupValuePointer(source.FallbackGroupID),
 		FallbackGroupIDOnInvalidRequest: cloneGroupValuePointer(source.FallbackGroupIDOnInvalidRequest),

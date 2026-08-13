@@ -93,16 +93,24 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 	started := time.Now()
 	audioObserved, proxyErr := h.gatewayService.ProxyGrokRealtime(requestCtx, c, conn, selection.Account, token, model)
 	elapsed := time.Since(started)
+	billingResult, unexpectedProxyFailure := settleGrokRealtimeProxyOutcome(model, elapsed, audioObserved, proxyErr)
 	if proxyErr != nil {
 		reqLog.Info("grok_realtime.proxy_failed", zap.Error(proxyErr))
-		if !isExpectedGrokRealtimeClose(proxyErr) {
-			_ = conn.Close(coderws.StatusInternalError, "upstream realtime websocket failed")
-			return
-		}
 	}
-	if result := grokRealtimeBillingResult(model, elapsed, audioObserved); result != nil {
-		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, subscriptionEntitlement, entitlementBalanceFallback, "realtime", nil, result)
+	// Audio already relayed upstream is a money event even when the session then
+	// ends with a protocol/transport error. Record it exactly once before closing
+	// the client; the durable request ID protects the billing write from retries.
+	if billingResult != nil {
+		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, subscriptionEntitlement, entitlementBalanceFallback, "realtime", nil, billingResult)
 	}
+	if unexpectedProxyFailure {
+		_ = conn.Close(coderws.StatusInternalError, "upstream realtime websocket failed")
+		return
+	}
+}
+
+func settleGrokRealtimeProxyOutcome(model string, elapsed time.Duration, audioObserved bool, proxyErr error) (*service.OpenAIForwardResult, bool) {
+	return grokRealtimeBillingResult(model, elapsed, audioObserved), proxyErr != nil && !isExpectedGrokRealtimeClose(proxyErr)
 }
 
 func grokRealtimeBillingResult(model string, elapsed time.Duration, audioObserved bool) *service.OpenAIForwardResult {

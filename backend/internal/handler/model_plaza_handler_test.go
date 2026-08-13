@@ -74,8 +74,9 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 				InputPrice:  testPtr(3e-6),
 			},
 			OfficialPricing: &service.PlazaOfficialPricing{
-				InputPrice:     testPtr(3e-6),
-				CacheReadPrice: testPtr(3e-7),
+				InputPrice:      testPtr(3e-6),
+				ImageInputPrice: testPtr(7e-6),
+				CacheReadPrice:  testPtr(3e-7),
 			},
 		}},
 	}
@@ -106,6 +107,7 @@ func TestToModelPlazaGroupDTO_UserRateAndFieldWhitelist(t *testing.T) {
 	require.Contains(t, model, "official_pricing")
 	official := model["official_pricing"].(map[string]any)
 	require.Contains(t, official, "input_price")
+	require.InDelta(t, 7e-6, official["image_input_price"].(float64), 1e-12)
 	require.Contains(t, official, "cache_read_price")
 	_, has1h := official["cache_write_1h_price"]
 	require.False(t, has1h, "1h 缓存写价为 nil 时应 omitempty")

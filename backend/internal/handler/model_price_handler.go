@@ -27,6 +27,7 @@ type ModelPriceHandler struct {
 
 type modelPriceCatalog interface {
 	GetModelPricing(model string) *service.LiteLLMModelPricing
+	GetIdentifiedModelPricing(model string) *service.LiteLLMModelPricing
 	ListModelNamesByProvider(provider string) []string
 }
 
@@ -74,43 +75,57 @@ type modelPriceGroupDTO struct {
 	UserRateMultiplier   *float64           `json:"user_rate_multiplier,omitempty"`
 	ImageRateIndependent bool               `json:"image_rate_independent"`
 	ImageRateMultiplier  float64            `json:"image_rate_multiplier"`
+	VideoRateIndependent bool               `json:"video_rate_independent"`
+	VideoRateMultiplier  float64            `json:"video_rate_multiplier"`
 	IsExclusive          bool               `json:"is_exclusive"`
 	Hidden               bool               `json:"hidden"`
 	ModelCount           int                `json:"model_count"`
 	ChannelCount         int                `json:"channel_count"`
 	BestPlan             *modelPricePlanDTO `json:"best_plan,omitempty"`
+	modelPricing         []service.ChannelModelPricing
+	longContextPricing   bool
 }
 
 type modelPriceValueDTO struct {
-	InputUSDPerM       *float64 `json:"input_usd_per_m"`
-	OutputUSDPerM      *float64 `json:"output_usd_per_m"`
-	CacheWriteUSDPerM  *float64 `json:"cache_write_usd_per_m"`
-	CacheReadUSDPerM   *float64 `json:"cache_read_usd_per_m"`
-	ImageOutputUSDPerM *float64 `json:"image_output_usd_per_m"`
-	PerRequestUSD      *float64 `json:"per_request_usd"`
+	InputUSDPerM        *float64 `json:"input_usd_per_m"`
+	ImageInputUSDPerM   *float64 `json:"image_input_usd_per_m"`
+	OutputUSDPerM       *float64 `json:"output_usd_per_m"`
+	CacheWriteUSDPerM   *float64 `json:"cache_write_usd_per_m"`
+	CacheWrite5mUSDPerM *float64 `json:"cache_write_5m_usd_per_m,omitempty"`
+	CacheWrite1hUSDPerM *float64 `json:"cache_write_1h_usd_per_m,omitempty"`
+	CacheReadUSDPerM    *float64 `json:"cache_read_usd_per_m"`
+	ImageOutputUSDPerM  *float64 `json:"image_output_usd_per_m"`
+	PerRequestUSD       *float64 `json:"per_request_usd"`
 }
 
 type modelPriceActualDTO struct {
-	InputUSDPerM       *float64 `json:"input_usd_per_m"`
-	InputCNYPerM       *float64 `json:"input_cny_per_m"`
-	OutputUSDPerM      *float64 `json:"output_usd_per_m"`
-	OutputCNYPerM      *float64 `json:"output_cny_per_m"`
-	CacheWriteUSDPerM  *float64 `json:"cache_write_usd_per_m"`
-	CacheWriteCNYPerM  *float64 `json:"cache_write_cny_per_m"`
-	CacheReadUSDPerM   *float64 `json:"cache_read_usd_per_m"`
-	CacheReadCNYPerM   *float64 `json:"cache_read_cny_per_m"`
-	ImageOutputUSDPerM *float64 `json:"image_output_usd_per_m"`
-	ImageOutputCNYPerM *float64 `json:"image_output_cny_per_m"`
-	PerRequestUSD      *float64 `json:"per_request_usd"`
-	PerRequestCNY      *float64 `json:"per_request_cny"`
+	InputUSDPerM        *float64 `json:"input_usd_per_m"`
+	InputCNYPerM        *float64 `json:"input_cny_per_m"`
+	ImageInputUSDPerM   *float64 `json:"image_input_usd_per_m"`
+	ImageInputCNYPerM   *float64 `json:"image_input_cny_per_m"`
+	OutputUSDPerM       *float64 `json:"output_usd_per_m"`
+	OutputCNYPerM       *float64 `json:"output_cny_per_m"`
+	CacheWriteUSDPerM   *float64 `json:"cache_write_usd_per_m"`
+	CacheWriteCNYPerM   *float64 `json:"cache_write_cny_per_m"`
+	CacheWrite5mUSDPerM *float64 `json:"cache_write_5m_usd_per_m,omitempty"`
+	CacheWrite5mCNYPerM *float64 `json:"cache_write_5m_cny_per_m,omitempty"`
+	CacheWrite1hUSDPerM *float64 `json:"cache_write_1h_usd_per_m,omitempty"`
+	CacheWrite1hCNYPerM *float64 `json:"cache_write_1h_cny_per_m,omitempty"`
+	CacheReadUSDPerM    *float64 `json:"cache_read_usd_per_m"`
+	CacheReadCNYPerM    *float64 `json:"cache_read_cny_per_m"`
+	ImageOutputUSDPerM  *float64 `json:"image_output_usd_per_m"`
+	ImageOutputCNYPerM  *float64 `json:"image_output_cny_per_m"`
+	PerRequestUSD       *float64 `json:"per_request_usd"`
+	PerRequestCNY       *float64 `json:"per_request_cny"`
 }
 
 type modelPriceTierDTO struct {
-	Key             string              `json:"key"`
-	Label           string              `json:"label"`
-	ThresholdTokens *int                `json:"threshold_tokens,omitempty"`
-	Official        modelPriceValueDTO  `json:"official"`
-	Actual          modelPriceActualDTO `json:"actual"`
+	Key                        string              `json:"key"`
+	Label                      string              `json:"label"`
+	ThresholdTokens            *int                `json:"threshold_tokens,omitempty"`
+	RequiresAccountLongContext bool                `json:"requires_account_long_context,omitempty"`
+	Official                   modelPriceValueDTO  `json:"official"`
+	Actual                     modelPriceActualDTO `json:"actual"`
 }
 
 type modelPriceModelDTO struct {
@@ -451,8 +466,12 @@ func (h *ModelPriceHandler) groupDTOs(c *gin.Context, groups []service.Group, us
 			EffectiveMultiplier:  normalizeMultiplier(effective),
 			UserRateMultiplier:   userRate,
 			ImageRateIndependent: g.ImageRateIndependent,
-			ImageRateMultiplier:  normalizeMultiplier(g.ImageRateMultiplier),
+			ImageRateMultiplier:  normalizeConfiguredMultiplier(g.ImageRateMultiplier),
+			VideoRateIndependent: g.VideoRateIndependent,
+			VideoRateMultiplier:  normalizeConfiguredMultiplier(g.VideoRateMultiplier),
 			IsExclusive:          g.IsExclusive,
+			modelPricing:         append([]service.ChannelModelPricing(nil), g.ModelPricing...),
+			longContextPricing:   g.LongContextPricingEnabled,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -814,11 +833,16 @@ func selectModelPriceGroupID(raw string, groups []modelPriceGroupDTO) *int64 {
 }
 
 type modelAggregate struct {
-	name         string
-	platform     string
-	billingMode  string
-	pricing      *service.ChannelModelPricing
-	channelNames map[string]struct{}
+	name                  string
+	platform              string
+	billingModel          string
+	billingMode           string
+	pricing               *service.ChannelModelPricing
+	channelNames          map[string]struct{}
+	pricingSource         string
+	accountOnly           bool
+	channelBacked         bool
+	billingModelAmbiguous bool
 }
 
 func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool, customPrices map[string]service.ModelPriceCustomPrice) []modelPriceModelDTO {
@@ -829,6 +853,65 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 
 	models := make([]modelPriceModelDTO, 0, len(aggregates))
 	for _, agg := range aggregates {
+		billingModel := strings.TrimSpace(agg.billingModel)
+		if billingModel == "" {
+			billingModel = agg.name
+		}
+		var groupPricing *service.ChannelModelPricing
+		var matched bool
+		if agg.billingModelAmbiguous {
+			// Different direct accounts or channels can map the same public alias
+			// to different billable projections. There is no single honest
+			// advertised price, so fail closed instead of selecting by list order.
+			agg.pricing = nil
+			agg.pricingSource = "unknown"
+		} else if h.channelService != nil {
+			if !agg.channelBacked {
+				groupPricing, matched = h.channelService.PricingForGroupDisplay(
+					&service.Group{
+						Platform:                  group.Platform,
+						ModelPricing:              group.modelPricing,
+						LongContextPricingEnabled: group.longContextPricing,
+					},
+					billingModel,
+					nil,
+				)
+			} else {
+				// Channel-backed rows already carry the exact per-group projection
+				// produced by ListAvailable. Reuse it; never feed that projection
+				// back as raw channel configuration.
+				groupPricing = agg.pricing
+				matched = service.MatchGroupModelPricing(&service.Group{Platform: group.Platform, ModelPricing: group.modelPricing}, billingModel) != nil
+			}
+		} else {
+			var official *service.LiteLLMModelPricing
+			if h.pricingService != nil {
+				official = h.pricingService.GetModelPricing(billingModel)
+			}
+			groupPricing, matched = service.ResolveGroupModelPricingForDisplay(
+				&service.Group{
+					Platform:                  group.Platform,
+					ModelPricing:              group.modelPricing,
+					LongContextPricingEnabled: group.longContextPricing,
+				},
+				billingModel,
+				official,
+			)
+		}
+		if matched && groupPricing != nil {
+			agg.pricing = groupPricing
+			agg.billingMode = string(normalizeDisplayBillingMode(groupPricing.BillingMode))
+			agg.pricingSource = service.PricingSourceGroup
+		} else if groupPricing != nil && !agg.billingModelAmbiguous {
+			agg.pricing = groupPricing
+			if !agg.channelBacked {
+				if h.pricingService != nil && h.pricingService.GetIdentifiedModelPricing(billingModel) != nil {
+					agg.pricingSource = service.PricingSourceOfficial
+				} else {
+					agg.pricingSource = service.PricingSourceFallback
+				}
+			}
+		}
 		model := h.toModelPriceDTO(agg, group, usdCNYRate)
 		if custom, ok := customPrices[service.ModelPriceCustomPriceKey(group.ID, agg.name)]; ok && custom.HasPrice() {
 			model = applyModelPriceCustomPrice(model, custom, usdCNYRate)
@@ -851,43 +934,71 @@ func collectModelPriceAggregates(channels []service.AvailableChannel, accounts [
 			if m.Platform != group.Platform || strings.TrimSpace(m.Name) == "" {
 				continue
 			}
+			effectivePricing := m.Pricing
+			effectiveSource := m.PricingSource
+			if byGroup, ok := m.PricingByGroup[group.ID]; ok {
+				effectivePricing = byGroup
+				if source, exists := m.PricingSourceByGroup[group.ID]; exists {
+					effectiveSource = source
+				}
+			}
+			effectiveBillingMode := modelPriceEffectiveBillingMode(effectivePricing)
 			key := strings.ToLower(m.Platform + "\x00" + m.Name)
 			agg, ok := aggregates[key]
 			if !ok {
 				agg = &modelAggregate{
-					name:         m.Name,
-					platform:     m.Platform,
-					billingMode:  string(service.BillingModeToken),
-					pricing:      m.Pricing,
-					channelNames: make(map[string]struct{}),
+					name:          m.Name,
+					platform:      m.Platform,
+					billingModel:  m.BillingModel,
+					billingMode:   effectiveBillingMode,
+					pricing:       effectivePricing,
+					pricingSource: effectiveSource,
+					channelNames:  make(map[string]struct{}),
+					channelBacked: true,
 				}
 				aggregates[key] = agg
-			}
-			if pricingHasValues(m.Pricing) && !pricingHasValues(agg.pricing) {
-				agg.pricing = m.Pricing
-			}
-			if m.Pricing != nil && m.Pricing.BillingMode != "" {
-				agg.billingMode = string(m.Pricing.BillingMode)
+			} else if !modelPriceChannelProjectionEqual(agg, m, effectivePricing, effectiveSource, effectiveBillingMode) {
+				// A public alias can be served by multiple channels. Runtime billing
+				// follows the channel/account actually selected, so advertising one
+				// arbitrarily chosen target or price would be dishonest. Fail closed
+				// when any billable part of the channel projection differs.
+				agg.billingModelAmbiguous = true
 			}
 			agg.channelNames[ch.Name] = struct{}{}
 		}
 	}
-	for i := range accounts {
-		account := accounts[i]
+	// Account repositories are not required to return a stable order. Sort a
+	// copy so alias/target aggregation is reproducible across requests.
+	stableAccounts := append([]service.Account(nil), accounts...)
+	sort.SliceStable(stableAccounts, func(i, j int) bool {
+		if stableAccounts[i].ID != stableAccounts[j].ID {
+			return stableAccounts[i].ID < stableAccounts[j].ID
+		}
+		return stableAccounts[i].Name < stableAccounts[j].Name
+	})
+	for i := range stableAccounts {
+		account := stableAccounts[i]
 		if !modelPriceAccountUsableForGroup(account, group.Platform) {
 			continue
 		}
-		for _, model := range accountModelPriceNames(account, group.Platform) {
-			key := strings.ToLower(group.Platform + "\x00" + model)
+		for _, entry := range accountModelPriceEntries(account, group.Platform) {
+			key := strings.ToLower(group.Platform + "\x00" + entry.displayName)
 			agg, ok := aggregates[key]
 			if !ok {
 				agg = &modelAggregate{
-					name:         model,
+					name:         entry.displayName,
 					platform:     group.Platform,
+					billingModel: entry.billingModel,
 					billingMode:  string(service.BillingModeToken),
 					channelNames: make(map[string]struct{}),
+					accountOnly:  true,
 				}
 				aggregates[key] = agg
+			} else if agg.accountOnly && !strings.EqualFold(agg.billingModel, entry.billingModel) {
+				agg.billingModelAmbiguous = true
+			}
+			if agg.accountOnly && entry.ambiguous {
+				agg.billingModelAmbiguous = true
 			}
 			agg.channelNames[account.Name] = struct{}{}
 		}
@@ -916,6 +1027,7 @@ func (h *ModelPriceHandler) seedCatalogModelsForGroup(aggregates map[string]*mod
 			aggregates[key] = &modelAggregate{
 				name:         name,
 				platform:     group.Platform,
+				billingModel: name,
 				billingMode:  billingMode,
 				channelNames: make(map[string]struct{}),
 			}
@@ -956,10 +1068,17 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 	official := modelPriceValueDTO{}
 	priceTiers := []modelPriceTierDTO{}
 	provider := agg.platform
-	source := "unknown"
+	source := agg.pricingSource
+	if source == "" {
+		source = "unknown"
+	}
 	officialMissing := true
-	if h.pricingService != nil {
-		if p := h.pricingService.GetModelPricing(agg.name); p != nil {
+	if !agg.billingModelAmbiguous && agg.pricingSource != service.PricingSourceGroup && h.pricingService != nil {
+		billingModel := strings.TrimSpace(agg.billingModel)
+		if billingModel == "" {
+			billingModel = agg.name
+		}
+		if p := h.pricingService.GetModelPricing(billingModel); p != nil {
 			official = priceValueFromLiteLLM(p)
 			priceTiers = priceTiersFromLiteLLM(p)
 			if strings.TrimSpace(p.LiteLLMProvider) != "" {
@@ -969,10 +1088,19 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 			officialMissing = false
 		}
 	}
-	if officialMissing && pricingHasValues(agg.pricing) {
+	// AvailableChannel pricing is already the effective runtime projection
+	// (global/hardcoded base plus channel/group overrides). Prefer it over the
+	// raw catalog card so display includes model-specific billing policies.
+	if pricingHasValues(agg.pricing) {
 		official = priceValueFromChannel(agg.pricing)
 		priceTiers = priceTiersFromChannel(agg.pricing)
-		source = "channel"
+		switch agg.pricingSource {
+		case service.PricingSourceGroup, service.PricingSourceChannel,
+			service.PricingSourceOfficial, service.PricingSourceFallback:
+			source = agg.pricingSource
+		default:
+			source = service.PricingSourceChannel
+		}
 		officialMissing = false
 	}
 
@@ -1040,8 +1168,11 @@ func cheaperFactorFromActual(official modelPriceValueDTO, actual modelPriceActua
 		actual   *float64
 	}{
 		{official.InputUSDPerM, actual.InputUSDPerM},
+		{official.ImageInputUSDPerM, actual.ImageInputUSDPerM},
 		{official.OutputUSDPerM, actual.OutputUSDPerM},
 		{official.CacheWriteUSDPerM, actual.CacheWriteUSDPerM},
+		{official.CacheWrite5mUSDPerM, actual.CacheWrite5mUSDPerM},
+		{official.CacheWrite1hUSDPerM, actual.CacheWrite1hUSDPerM},
 		{official.CacheReadUSDPerM, actual.CacheReadUSDPerM},
 		{official.ImageOutputUSDPerM, actual.ImageOutputUSDPerM},
 		{official.PerRequestUSD, actual.PerRequestUSD},
@@ -1066,6 +1197,8 @@ func normalizeModelPriceBillingMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
 	case string(service.BillingModeImage):
 		return string(service.BillingModeImage)
+	case string(service.BillingModeVideo):
+		return string(service.BillingModeVideo)
 	case string(service.BillingModePerRequest), "request":
 		return string(service.BillingModePerRequest)
 	default:
@@ -1073,13 +1206,32 @@ func normalizeModelPriceBillingMode(mode string) string {
 	}
 }
 
-func modelPriceMultiplier(group modelPriceGroupDTO, billingMode string, official modelPriceValueDTO) float64 {
-	base := group.EffectiveMultiplier
-	if (billingMode == string(service.BillingModeImage) || official.ImageOutputUSDPerM != nil) && group.ImageRateIndependent {
-		base = group.ImageRateMultiplier
+func normalizeDisplayBillingMode(mode service.BillingMode) service.BillingMode {
+	if mode == "" {
+		return service.BillingModeToken
 	}
-	base = normalizeMultiplier(base)
+	return mode
+}
+
+func modelPriceMultiplier(group modelPriceGroupDTO, billingMode string, _ modelPriceValueDTO) float64 {
+	base := group.EffectiveMultiplier
+	independent := false
+	if billingMode == string(service.BillingModeImage) && group.ImageRateIndependent {
+		base = group.ImageRateMultiplier
+		independent = true
+	} else if billingMode == string(service.BillingModeVideo) && group.VideoRateIndependent {
+		base = group.VideoRateMultiplier
+		independent = true
+	}
+	if independent {
+		base = normalizeConfiguredMultiplier(base)
+	} else {
+		base = normalizeMultiplier(base)
+	}
 	if group.BestPlan != nil && group.BestPlan.USDMultiplier > 0 {
+		if independent {
+			return normalizeConfiguredMultiplier(base * group.BestPlan.USDMultiplier)
+		}
 		return normalizeMultiplier(base * group.BestPlan.USDMultiplier)
 	}
 	return base
@@ -1108,40 +1260,80 @@ func modelPriceAccountUsableForGroup(account service.Account, groupPlatform stri
 }
 
 func accountModelPriceNames(account service.Account, groupPlatform string) []string {
+	entries := accountModelPriceEntries(account, groupPlatform)
+	out := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		out = append(out, entry.displayName)
+	}
+	return out
+}
+
+type accountModelPriceEntry struct {
+	displayName  string
+	billingModel string
+	ambiguous    bool
+}
+
+func accountModelPriceEntries(account service.Account, groupPlatform string) []accountModelPriceEntry {
 	mapping := (&account).GetModelMapping()
 	if len(mapping) == 0 {
 		return nil
 	}
-	seen := make(map[string]string, len(mapping))
+	rawKeys := make([]string, 0, len(mapping))
 	for raw := range mapping {
+		rawKeys = append(rawKeys, raw)
+	}
+	sort.SliceStable(rawKeys, func(i, j int) bool {
+		left, right := strings.ToLower(strings.TrimSpace(rawKeys[i])), strings.ToLower(strings.TrimSpace(rawKeys[j]))
+		if left != right {
+			return left < right
+		}
+		return rawKeys[i] < rawKeys[j]
+	})
+	seen := make(map[string]accountModelPriceEntry, len(mapping))
+	for _, raw := range rawKeys {
 		name := strings.TrimSpace(raw)
 		if name == "" || strings.Contains(name, "*") || !catalogModelMatchesGroupPlatform(name, groupPlatform) {
 			continue
 		}
 		lower := strings.ToLower(name)
-		if _, ok := seen[lower]; ok {
+		billingModel := strings.TrimSpace((&account).GetMappedModel(name))
+		if billingModel == "" {
+			billingModel = name
+		}
+		if existing, ok := seen[lower]; ok {
+			if !strings.EqualFold(existing.billingModel, billingModel) {
+				existing.ambiguous = true
+				seen[lower] = existing
+			}
 			continue
 		}
-		seen[lower] = name
+		seen[lower] = accountModelPriceEntry{displayName: name, billingModel: billingModel}
 	}
-	out := make([]string, 0, len(seen))
-	for _, name := range seen {
-		out = append(out, name)
+	out := make([]accountModelPriceEntry, 0, len(seen))
+	for _, entry := range seen {
+		out = append(out, entry)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		return strings.ToLower(out[i]) < strings.ToLower(out[j])
+		if !strings.EqualFold(out[i].displayName, out[j].displayName) {
+			return strings.ToLower(out[i].displayName) < strings.ToLower(out[j].displayName)
+		}
+		return strings.ToLower(out[i].billingModel) < strings.ToLower(out[j].billingModel)
 	})
 	return out
 }
 
 func priceValueFromLiteLLM(p *service.LiteLLMModelPricing) modelPriceValueDTO {
 	return modelPriceValueDTO{
-		InputUSDPerM:       perMillionPtr(p.InputCostPerToken),
-		OutputUSDPerM:      perMillionPtr(p.OutputCostPerToken),
-		CacheWriteUSDPerM:  perMillionPtr(p.CacheCreationInputTokenCost),
-		CacheReadUSDPerM:   perMillionPtr(p.CacheReadInputTokenCost),
-		ImageOutputUSDPerM: perMillionPtr(p.OutputCostPerImageToken),
-		PerRequestUSD:      nonZeroFloatPtr(p.OutputCostPerImage),
+		InputUSDPerM:        perMillionPtr(p.InputCostPerToken),
+		ImageInputUSDPerM:   perMillionPtr(p.InputCostPerImageToken),
+		OutputUSDPerM:       perMillionPtr(p.OutputCostPerToken),
+		CacheWriteUSDPerM:   perMillionPtr(p.CacheCreationInputTokenCost),
+		CacheWrite5mUSDPerM: perMillionPtr(p.CacheCreationInputTokenCost),
+		CacheWrite1hUSDPerM: perMillionPtr(p.CacheCreationInputTokenCostAbove1hr),
+		CacheReadUSDPerM:    perMillionPtr(p.CacheReadInputTokenCost),
+		ImageOutputUSDPerM:  perMillionPtr(p.OutputCostPerImageToken),
+		PerRequestUSD:       nonZeroFloatPtr(p.OutputCostPerImage),
 	}
 }
 
@@ -1155,11 +1347,13 @@ func priceTiersFromChannel(p *service.ChannelModelPricing) []modelPriceTierDTO {
 	tiers := make([]modelPriceTierDTO, 0, len(p.Intervals))
 	for _, interval := range p.Intervals {
 		value := modelPriceValueDTO{
-			InputUSDPerM:      perMillionFromPtr(interval.InputPrice),
-			OutputUSDPerM:     perMillionFromPtr(interval.OutputPrice),
-			CacheWriteUSDPerM: perMillionFromPtr(interval.CacheWritePrice),
-			CacheReadUSDPerM:  perMillionFromPtr(interval.CacheReadPrice),
-			PerRequestUSD:     clonePositivePtr(interval.PerRequestPrice),
+			InputUSDPerM:        perMillionFromPtr(interval.InputPrice),
+			OutputUSDPerM:       perMillionFromPtr(interval.OutputPrice),
+			CacheWriteUSDPerM:   perMillionFromPtr(interval.CacheWritePrice),
+			CacheWrite5mUSDPerM: perMillionFromPtr(interval.CacheWrite5mPrice),
+			CacheWrite1hUSDPerM: perMillionFromPtr(interval.CacheWrite1hPrice),
+			CacheReadUSDPerM:    perMillionFromPtr(interval.CacheReadPrice),
+			PerRequestUSD:       clonePositivePtr(interval.PerRequestPrice),
 		}
 		if !priceValueHasValues(value) {
 			continue
@@ -1169,12 +1363,13 @@ func priceTiersFromChannel(p *service.ChannelModelPricing) []modelPriceTierDTO {
 			label = channelIntervalLabel(interval)
 		}
 		tier := modelPriceTierDTO{
-			Key:      "channel_interval_" + strconv.Itoa(interval.SortOrder),
-			Label:    label,
-			Official: value,
+			Key:                        "channel_interval_" + strconv.Itoa(interval.SortOrder),
+			Label:                      label,
+			RequiresAccountLongContext: interval.RequiresAccountLongContext,
+			Official:                   value,
 		}
-		if interval.MaxTokens != nil && *interval.MaxTokens > 0 {
-			tier.ThresholdTokens = intPtr(*interval.MaxTokens)
+		if interval.MinTokens > 0 {
+			tier.ThresholdTokens = intPtr(interval.MinTokens)
 		}
 		tiers = append(tiers, tier)
 	}
@@ -1225,10 +1420,12 @@ func priceTiersFromLiteLLM(p *service.LiteLLMModelPricing) []modelPriceTierDTO {
 
 	if hasPriorityPricing(p) {
 		tiers = appendTier(tiers, "priority", "Fast", 0, modelPriceValueDTO{
-			InputUSDPerM:      perMillionPtr(p.InputCostPerTokenPriority),
-			OutputUSDPerM:     perMillionPtr(p.OutputCostPerTokenPriority),
-			CacheWriteUSDPerM: perMillionPtr(p.CacheCreationInputTokenCost),
-			CacheReadUSDPerM:  perMillionPtr(p.CacheReadInputTokenCostPriority),
+			InputUSDPerM:        perMillionPtr(p.InputCostPerTokenPriority),
+			OutputUSDPerM:       perMillionPtr(p.OutputCostPerTokenPriority),
+			CacheWriteUSDPerM:   perMillionPtr(p.CacheCreationInputTokenCost),
+			CacheWrite5mUSDPerM: perMillionPtr(p.CacheCreationInputTokenCost),
+			CacheWrite1hUSDPerM: perMillionPtr(p.CacheCreationInputTokenCostAbove1hr),
+			CacheReadUSDPerM:    perMillionPtr(p.CacheReadInputTokenCostPriority),
 		})
 	}
 	for _, contextTier := range p.ContextPriceTiers {
@@ -1252,10 +1449,11 @@ func contextTierKey(threshold int, priority bool) string {
 
 func priceValueFromContextTier(tier service.LiteLLMContextPriceTier) modelPriceValueDTO {
 	return modelPriceValueDTO{
-		InputUSDPerM:      perMillionPtr(tier.InputCostPerToken),
-		OutputUSDPerM:     perMillionPtr(tier.OutputCostPerToken),
-		CacheWriteUSDPerM: perMillionPtr(tier.CacheCreationInputTokenCost),
-		CacheReadUSDPerM:  perMillionPtr(tier.CacheReadInputTokenCost),
+		InputUSDPerM:        perMillionPtr(tier.InputCostPerToken),
+		OutputUSDPerM:       perMillionPtr(tier.OutputCostPerToken),
+		CacheWriteUSDPerM:   perMillionPtr(tier.CacheCreationInputTokenCost),
+		CacheWrite5mUSDPerM: perMillionPtr(tier.CacheCreationInputTokenCost),
+		CacheReadUSDPerM:    perMillionPtr(tier.CacheReadInputTokenCost),
 	}
 }
 
@@ -1319,8 +1517,9 @@ func actualizePriceTiers(tiers []modelPriceTierDTO, multiplier, usdCNYRate float
 }
 
 func priceValueHasValues(v modelPriceValueDTO) bool {
-	return v.InputUSDPerM != nil || v.OutputUSDPerM != nil || v.CacheWriteUSDPerM != nil ||
-		v.CacheReadUSDPerM != nil || v.ImageOutputUSDPerM != nil || v.PerRequestUSD != nil
+	return v.InputUSDPerM != nil || v.ImageInputUSDPerM != nil || v.OutputUSDPerM != nil || v.CacheWriteUSDPerM != nil ||
+		v.CacheWrite5mUSDPerM != nil || v.CacheWrite1hUSDPerM != nil || v.CacheReadUSDPerM != nil ||
+		v.ImageOutputUSDPerM != nil || v.PerRequestUSD != nil
 }
 
 func priceValueFromChannel(p *service.ChannelModelPricing) modelPriceValueDTO {
@@ -1328,29 +1527,38 @@ func priceValueFromChannel(p *service.ChannelModelPricing) modelPriceValueDTO {
 		return modelPriceValueDTO{}
 	}
 	return modelPriceValueDTO{
-		InputUSDPerM:       perMillionFromPtr(p.InputPrice),
-		OutputUSDPerM:      perMillionFromPtr(p.OutputPrice),
-		CacheWriteUSDPerM:  perMillionFromPtr(p.CacheWritePrice),
-		CacheReadUSDPerM:   perMillionFromPtr(p.CacheReadPrice),
-		ImageOutputUSDPerM: perMillionFromPtr(p.ImageOutputPrice),
-		PerRequestUSD:      clonePositivePtr(p.PerRequestPrice),
+		InputUSDPerM:        perMillionFromPtr(p.InputPrice),
+		ImageInputUSDPerM:   perMillionFromPtr(p.ImageInputPrice),
+		OutputUSDPerM:       perMillionFromPtr(p.OutputPrice),
+		CacheWriteUSDPerM:   perMillionFromPtr(p.CacheWritePrice),
+		CacheWrite5mUSDPerM: perMillionFromPtr(p.CacheWrite5mPrice),
+		CacheWrite1hUSDPerM: perMillionFromPtr(p.CacheWrite1hPrice),
+		CacheReadUSDPerM:    perMillionFromPtr(p.CacheReadPrice),
+		ImageOutputUSDPerM:  perMillionFromPtr(p.ImageOutputPrice),
+		PerRequestUSD:       clonePositivePtr(p.PerRequestPrice),
 	}
 }
 
 func actualPriceValue(v modelPriceValueDTO, multiplier, usdCNYRate float64) modelPriceActualDTO {
 	return modelPriceActualDTO{
-		InputUSDPerM:       multiplyPtr(v.InputUSDPerM, multiplier),
-		InputCNYPerM:       multiplyPtr(v.InputUSDPerM, multiplier*usdCNYRate),
-		OutputUSDPerM:      multiplyPtr(v.OutputUSDPerM, multiplier),
-		OutputCNYPerM:      multiplyPtr(v.OutputUSDPerM, multiplier*usdCNYRate),
-		CacheWriteUSDPerM:  multiplyPtr(v.CacheWriteUSDPerM, multiplier),
-		CacheWriteCNYPerM:  multiplyPtr(v.CacheWriteUSDPerM, multiplier*usdCNYRate),
-		CacheReadUSDPerM:   multiplyPtr(v.CacheReadUSDPerM, multiplier),
-		CacheReadCNYPerM:   multiplyPtr(v.CacheReadUSDPerM, multiplier*usdCNYRate),
-		ImageOutputUSDPerM: multiplyPtr(v.ImageOutputUSDPerM, multiplier),
-		ImageOutputCNYPerM: multiplyPtr(v.ImageOutputUSDPerM, multiplier*usdCNYRate),
-		PerRequestUSD:      multiplyPtr(v.PerRequestUSD, multiplier),
-		PerRequestCNY:      multiplyPtr(v.PerRequestUSD, multiplier*usdCNYRate),
+		InputUSDPerM:        multiplyPtr(v.InputUSDPerM, multiplier),
+		InputCNYPerM:        multiplyPtr(v.InputUSDPerM, multiplier*usdCNYRate),
+		ImageInputUSDPerM:   multiplyPtr(v.ImageInputUSDPerM, multiplier),
+		ImageInputCNYPerM:   multiplyPtr(v.ImageInputUSDPerM, multiplier*usdCNYRate),
+		OutputUSDPerM:       multiplyPtr(v.OutputUSDPerM, multiplier),
+		OutputCNYPerM:       multiplyPtr(v.OutputUSDPerM, multiplier*usdCNYRate),
+		CacheWriteUSDPerM:   multiplyPtr(v.CacheWriteUSDPerM, multiplier),
+		CacheWriteCNYPerM:   multiplyPtr(v.CacheWriteUSDPerM, multiplier*usdCNYRate),
+		CacheWrite5mUSDPerM: multiplyPtr(v.CacheWrite5mUSDPerM, multiplier),
+		CacheWrite5mCNYPerM: multiplyPtr(v.CacheWrite5mUSDPerM, multiplier*usdCNYRate),
+		CacheWrite1hUSDPerM: multiplyPtr(v.CacheWrite1hUSDPerM, multiplier),
+		CacheWrite1hCNYPerM: multiplyPtr(v.CacheWrite1hUSDPerM, multiplier*usdCNYRate),
+		CacheReadUSDPerM:    multiplyPtr(v.CacheReadUSDPerM, multiplier),
+		CacheReadCNYPerM:    multiplyPtr(v.CacheReadUSDPerM, multiplier*usdCNYRate),
+		ImageOutputUSDPerM:  multiplyPtr(v.ImageOutputUSDPerM, multiplier),
+		ImageOutputCNYPerM:  multiplyPtr(v.ImageOutputUSDPerM, multiplier*usdCNYRate),
+		PerRequestUSD:       multiplyPtr(v.PerRequestUSD, multiplier),
+		PerRequestCNY:       multiplyPtr(v.PerRequestUSD, multiplier*usdCNYRate),
 	}
 }
 
@@ -1384,7 +1592,7 @@ func pricingHasValues(p *service.ChannelModelPricing) bool {
 		return false
 	}
 	if p.InputPrice != nil || p.OutputPrice != nil || p.CacheWritePrice != nil ||
-		p.CacheReadPrice != nil || p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
+		p.CacheReadPrice != nil || p.ImageInputPrice != nil || p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
 		return true
 	}
 	for _, iv := range p.Intervals {
@@ -1396,8 +1604,96 @@ func pricingHasValues(p *service.ChannelModelPricing) bool {
 	return false
 }
 
+func modelPriceEffectiveBillingMode(pricing *service.ChannelModelPricing) string {
+	if pricing == nil {
+		return string(service.BillingModeToken)
+	}
+	return normalizeModelPriceBillingMode(string(pricing.BillingMode))
+}
+
+func modelPriceChannelProjectionEqual(
+	agg *modelAggregate,
+	model service.SupportedModel,
+	pricing *service.ChannelModelPricing,
+	source string,
+	billingMode string,
+) bool {
+	if agg == nil {
+		return false
+	}
+	currentBillingModel := strings.TrimSpace(agg.billingModel)
+	if currentBillingModel == "" {
+		currentBillingModel = agg.name
+	}
+	candidateBillingModel := strings.TrimSpace(model.BillingModel)
+	if candidateBillingModel == "" {
+		candidateBillingModel = model.Name
+	}
+	return strings.EqualFold(currentBillingModel, candidateBillingModel) &&
+		normalizeModelPriceBillingMode(agg.billingMode) == billingMode &&
+		modelPriceEffectivePricingEqual(agg.pricing, pricing) &&
+		strings.EqualFold(strings.TrimSpace(agg.pricingSource), strings.TrimSpace(source))
+}
+
+func modelPriceEffectivePricingEqual(a, b *service.ChannelModelPricing) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	if !modelPriceFloatPointerEqual(a.InputPrice, b.InputPrice) ||
+		!modelPriceFloatPointerEqual(a.OutputPrice, b.OutputPrice) ||
+		!modelPriceFloatPointerEqual(a.CacheWritePrice, b.CacheWritePrice) ||
+		!modelPriceFloatPointerEqual(a.CacheWrite5mPrice, b.CacheWrite5mPrice) ||
+		!modelPriceFloatPointerEqual(a.CacheWrite1hPrice, b.CacheWrite1hPrice) ||
+		!modelPriceFloatPointerEqual(a.CacheReadPrice, b.CacheReadPrice) ||
+		!modelPriceFloatPointerEqual(a.ImageInputPrice, b.ImageInputPrice) ||
+		!modelPriceFloatPointerEqual(a.ImageOutputPrice, b.ImageOutputPrice) ||
+		!modelPriceFloatPointerEqual(a.PerRequestPrice, b.PerRequestPrice) ||
+		len(a.Intervals) != len(b.Intervals) {
+		return false
+	}
+	for i := range a.Intervals {
+		left, right := a.Intervals[i], b.Intervals[i]
+		if left.MinTokens != right.MinTokens ||
+			!modelPriceIntPointerEqual(left.MaxTokens, right.MaxTokens) ||
+			left.TierLabel != right.TierLabel ||
+			left.RequiresAccountLongContext != right.RequiresAccountLongContext ||
+			!modelPriceFloatPointerEqual(left.InputPrice, right.InputPrice) ||
+			!modelPriceFloatPointerEqual(left.OutputPrice, right.OutputPrice) ||
+			!modelPriceFloatPointerEqual(left.CacheWritePrice, right.CacheWritePrice) ||
+			!modelPriceFloatPointerEqual(left.CacheWrite5mPrice, right.CacheWrite5mPrice) ||
+			!modelPriceFloatPointerEqual(left.CacheWrite1hPrice, right.CacheWrite1hPrice) ||
+			!modelPriceFloatPointerEqual(left.CacheReadPrice, right.CacheReadPrice) ||
+			!modelPriceFloatPointerEqual(left.PerRequestPrice, right.PerRequestPrice) ||
+			left.SortOrder != right.SortOrder {
+			return false
+		}
+	}
+	return true
+}
+
+func modelPriceFloatPointerEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func modelPriceIntPointerEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 func normalizeMultiplier(v float64) float64 {
 	if v <= 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 1
+	}
+	return v
+}
+
+func normalizeConfiguredMultiplier(v float64) float64 {
+	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
 		return 1
 	}
 	return v
@@ -1421,7 +1717,7 @@ func perMillionPtr(v float64) *float64 {
 }
 
 func perMillionFromPtr(v *float64) *float64 {
-	if v == nil || *v <= 0 {
+	if v == nil || *v < 0 {
 		return nil
 	}
 	out := roundPrice(*v * 1_000_000)
@@ -1437,7 +1733,7 @@ func nonZeroFloatPtr(v float64) *float64 {
 }
 
 func clonePositivePtr(v *float64) *float64 {
-	if v == nil || *v <= 0 {
+	if v == nil || *v < 0 {
 		return nil
 	}
 	out := roundPrice(*v)

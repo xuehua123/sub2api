@@ -719,7 +719,7 @@ func ValidateReferralCreditConversionMultiplier(multiplier float64) error {
 }
 
 func modelPricePositiveFloatPtr(v *float64) bool {
-	return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v > 0
+	return v != nil && !math.IsNaN(*v) && !math.IsInf(*v, 0) && *v >= 0
 }
 
 func normalizeModelPriceCustomPrice(price *ModelPriceCustomPrice) {

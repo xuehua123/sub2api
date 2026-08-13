@@ -18,14 +18,15 @@ import (
 type GrokUpstreamFailureClass string
 
 const (
-	GrokFailureNone          GrokUpstreamFailureClass = ""
-	GrokFailureFreeUsage     GrokUpstreamFailureClass = "subscription:free-usage-exhausted"
-	GrokFailureBilling       GrokUpstreamFailureClass = "billing_quota"
-	GrokFailureEmptyUpstream GrokUpstreamFailureClass = "empty_upstream"
-	GrokFailureModelCapacity GrokUpstreamFailureClass = "model_capacity"
-	GrokFailureRateLimit     GrokUpstreamFailureClass = "rate_limit"
-	GrokFailureAuth          GrokUpstreamFailureClass = "auth_error"
-	GrokFailureServer        GrokUpstreamFailureClass = "server_error"
+	GrokFailureNone             GrokUpstreamFailureClass = ""
+	GrokFailureFreeUsage        GrokUpstreamFailureClass = "subscription:free-usage-exhausted"
+	GrokFailureBilling          GrokUpstreamFailureClass = "billing_quota"
+	GrokFailureEmptyUpstream    GrokUpstreamFailureClass = "empty_upstream"
+	GrokFailureModelCapacity    GrokUpstreamFailureClass = "model_capacity"
+	GrokFailureModelUnavailable GrokUpstreamFailureClass = "model_unavailable"
+	GrokFailureRateLimit        GrokUpstreamFailureClass = "rate_limit"
+	GrokFailureAuth             GrokUpstreamFailureClass = "auth_error"
+	GrokFailureServer           GrokUpstreamFailureClass = "server_error"
 )
 
 // GrokUpstreamFailureDecision is a pure classification result. Callers map it
@@ -41,8 +42,8 @@ type GrokUpstreamFailureDecision struct {
 	// terminal response (pre-commit only). Content-policy rejections are
 	// handled separately and never reach this classifier for failover.
 	ShouldFailover bool
-	// BlockModel is true only for empty-output when a model id is known.
-	// Free-usage never sets this: the account cools, not a single model.
+	// BlockModel is true for model-scoped empty-output/capacity/provider errors
+	// when a model id is known. Free-usage never sets this: the account cools.
 	BlockModel   bool
 	Reason       string
 	TokensActual *int64
@@ -58,11 +59,12 @@ var (
 // Priority (body/code first, status second):
 //  1. free-usage exhausted → account cool, no model block, failover
 //  2. billing hard quota → longer cool, failover
-//  3. empty model output → short cool + optional model soft-block marker, failover
-//  4. model capacity → short cool, failover
-//  5. bare rate-limit / 429 without free-usage language → cool, failover
-//  6. bare 5xx → brief cool, failover
-//  7. validation / client errors without quota language → no cool
+//  3. model/provider unavailable → short model-only block, failover
+//  4. empty model output → short cool + optional model soft-block marker, failover
+//  5. model capacity → short cool, failover
+//  6. bare rate-limit / 429 without free-usage language → cool, failover
+//  7. bare 5xx → brief cool, failover
+//  8. validation / client errors without quota language → no cool
 //
 // Content-policy 403s must be filtered by the caller before invoking this.
 func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedModel string) GrokUpstreamFailureDecision {
@@ -108,6 +110,23 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 			ShouldFailover: true,
 			BlockModel:     model != "",
 			Reason:         reason,
+		}
+	}
+
+	// xAI-compatible gateways sometimes return a deterministic 400 when the
+	// selected account cannot resolve the requested model/provider. This is
+	// account+model scoped: another account may work, while sibling models on the
+	// same account must remain schedulable. Keep this Grok-only and deliberately
+	// narrower than generic OpenAI model_not_found handling.
+	if isGrokModelProviderUnavailable(statusCode, responseBody) {
+		return GrokUpstreamFailureDecision{
+			Class:          GrokFailureModelUnavailable,
+			Model:          model,
+			Cooldown:       3 * time.Minute,
+			ShouldCooldown: true,
+			ShouldFailover: true,
+			BlockModel:     model != "",
+			Reason:         firstNonEmpty(text, code, "grok model/provider unavailable"),
 		}
 	}
 
@@ -164,6 +183,38 @@ func classifyGrokUpstreamFailure(statusCode int, responseBody []byte, requestedM
 	return GrokUpstreamFailureDecision{Reason: text}
 }
 
+func isGrokModelProviderUnavailable(statusCode int, body []byte) bool {
+	if statusCode != http.StatusBadRequest || len(body) == 0 {
+		return false
+	}
+	for _, path := range []string{
+		"response.error.code", "error.code", "code",
+		"response.error.type", "error.type", "type",
+	} {
+		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, path).String()))
+		code = strings.NewReplacer("-", "_", " ", "_").Replace(code)
+		switch code {
+		case "model_not_found", "unknown_provider", "provider_not_found", "unsupported_model", "model_unsupported":
+			return true
+		}
+	}
+	normalized := normalizeModelNotFoundBody(body)
+	for _, phrase := range []string{
+		"unknown provider for model",
+		"no provider for model",
+		"no available provider for model",
+		"provider not found for model",
+		"model not found",
+		"unknown model",
+		"unsupported model",
+	} {
+		if strings.Contains(normalized, phrase) {
+			return true
+		}
+	}
+	return false
+}
+
 func grokUpstreamErrorCorpus(statusCode int, responseBody []byte) (text, code, low string) {
 	_ = statusCode // classifier already has the transport status; corpus is body-only
 	raw := strings.TrimSpace(string(responseBody))
@@ -181,13 +232,16 @@ func grokUpstreamErrorCorpus(statusCode int, responseBody []byte) (text, code, l
 	// Prefer structured fields from the original body when present.
 	if len(responseBody) > 0 {
 		if m := strings.TrimSpace(firstNonEmpty(
+			gjson.GetBytes(responseBody, "response.error.message").String(),
 			gjson.GetBytes(responseBody, "error.message").String(),
 			gjson.GetBytes(responseBody, "message").String(),
+			gjson.GetBytes(responseBody, "response.error").String(),
 			gjson.GetBytes(responseBody, "error").String(),
 		)); m != "" && (text == "" || looksLikeGrokQuotaMessage(m)) {
 			text = m
 		}
 		if c := strings.TrimSpace(firstNonEmpty(
+			gjson.GetBytes(responseBody, "response.error.code").String(),
 			gjson.GetBytes(responseBody, "error.code").String(),
 			gjson.GetBytes(responseBody, "code").String(),
 		)); c != "" {
@@ -493,6 +547,14 @@ func (s *OpenAIGatewayService) applyGrokUpstreamFailureDecision(
 			return true
 		}
 		reason = "grok model capacity"
+	case GrokFailureModelUnavailable:
+		// The failure is tied to this account's provider/model resolution, not
+		// to every model on the account. A short process-local model block keeps
+		// the failed pair out of selection while allowing cross-account failover.
+		if decision.Model != "" {
+			markGrokModelTransientBlock(account.ID, decision.Model, time.Now().Add(decision.Cooldown))
+		}
+		return true
 	case GrokFailureRateLimit:
 		// Pure 429 without free-usage language keeps the existing rate-limit
 		// snapshot path (Retry-After / quota headers). Body-only rate-limit

@@ -2944,7 +2944,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		channelSvc = service.NewChannelService(&openAIWSUsageHandlerChannelRepoStub{
 			channels:       []service.Channel{channel},
 			groupPlatforms: map[int64]string{groupID: service.PlatformOpenAI},
-		}, nil, nil, nil)
+		}, nil, nil, nil, nil)
 	}
 
 	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)

@@ -10,6 +10,7 @@ import (
 const (
 	PricingSourceGroup    = "group"
 	PricingSourceChannel  = "channel"
+	PricingSourceOfficial = "official"
 	PricingSourceLiteLLM  = "litellm"
 	PricingSourceFallback = "fallback"
 )
@@ -170,6 +171,14 @@ func matchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
 		}
 	}
 	return wildcard
+}
+
+// MatchGroupModelPricing exposes the canonical group-pricing matcher to
+// read-only presentation paths. Keeping display and billing on the same
+// exact-before-wildcard rule prevents advertised prices from drifting from
+// the price selected by Resolve.
+func MatchGroupModelPricing(group *Group, model string) *ChannelModelPricing {
+	return matchGroupModelPricing(group, model)
 }
 
 func (r *ModelPricingResolver) applyFirstTokenTier(resolved *ResolvedPricing, config *ChannelModelPricing) {

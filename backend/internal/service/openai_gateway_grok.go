@@ -1700,6 +1700,13 @@ func (s *OpenAIGatewayService) handleGrokAccountUpstreamError(ctx context.Contex
 	// status switch so non-429 free-usage bodies still cool the account.
 	// Pool-mode still skips durable mutation unless an explicit temp rule matches.
 	decision := classifyGrokUpstreamFailure(statusCode, responseBody, grokRequestedModelFromCtx(ctx))
+	if decision.Class == GrokFailureModelUnavailable {
+		// This deterministic 400 is model-scoped even for an upstream-managed
+		// key pool. Block the current account/model pair and force the caller to
+		// try another account; never retry the same pool entry for this signal.
+		s.applyGrokUpstreamFailureDecision(ctx, account, decision)
+		return true
+	}
 	if decision.ShouldCooldown && decision.Class != GrokFailureNone && decision.Class != GrokFailureRateLimit {
 		if account.IsPoolMode() {
 			// Allow configured temp rules (403) below; skip default body cools.

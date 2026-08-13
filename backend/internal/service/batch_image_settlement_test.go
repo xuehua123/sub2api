@@ -12,6 +12,122 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBatchImageModelPricingResolver_GroupAndChannelPriority(t *testing.T) {
+	const (
+		groupID = int64(100)
+		model   = "group-channel-batch-image"
+	)
+	channelPrice := 0.22
+	repo := &mockChannelRepository{
+		listAllFn: func(context.Context) ([]Channel, error) {
+			return []Channel{{
+				ID:       1,
+				Name:     "batch-image-channel",
+				Status:   StatusActive,
+				GroupIDs: []int64{groupID},
+				ModelPricing: []ChannelModelPricing{{
+					Platform:        PlatformGemini,
+					Models:          []string{model},
+					BillingMode:     BillingModeImage,
+					PerRequestPrice: &channelPrice,
+				}},
+			}}, nil
+		},
+		getGroupPlatformsFn: func(context.Context, []int64) (map[int64]string, error) {
+			return map[int64]string{groupID: PlatformGemini}, nil
+		},
+	}
+	channelService := NewChannelService(repo, nil, nil, nil, nil)
+	billingService := &BillingService{fallbackPrices: map[string]*ModelPricing{}}
+	pricing := &BatchImageModelPricingResolver{
+		Resolver: NewModelPricingResolver(channelService, billingService),
+	}
+	jobGroupID := groupID
+	job := &BatchImageJob{Model: model, GroupID: &jobGroupID}
+
+	t.Run("group price wins over channel price", func(t *testing.T) {
+		groupPrice := 0.11
+		group := &Group{ID: groupID, Platform: PlatformGemini, ModelPricing: []ChannelModelPricing{{
+			Platform:        PlatformGemini,
+			Models:          []string{model},
+			BillingMode:     BillingModeImage,
+			PerRequestPrice: &groupPrice,
+		}}}
+
+		got, err := pricing.BatchImageUnitPrice(context.Background(), job, group)
+
+		require.NoError(t, err)
+		require.InDelta(t, groupPrice, got, 1e-12)
+	})
+
+	t.Run("channel price is used when group has no matching card", func(t *testing.T) {
+		group := &Group{ID: groupID, Platform: PlatformGemini}
+
+		got, err := pricing.BatchImageUnitPrice(context.Background(), job, group)
+
+		require.NoError(t, err)
+		require.InDelta(t, channelPrice, got, 1e-12)
+	})
+
+	t.Run("explicit zero group price remains free", func(t *testing.T) {
+		zero := 0.0
+		group := &Group{ID: groupID, Platform: PlatformGemini, ModelPricing: []ChannelModelPricing{{
+			Platform:        PlatformGemini,
+			Models:          []string{model},
+			BillingMode:     BillingModeImage,
+			PerRequestPrice: &zero,
+		}}}
+
+		got, err := pricing.BatchImageUnitPrice(context.Background(), job, group)
+
+		require.NoError(t, err)
+		require.Zero(t, got)
+	})
+}
+
+func TestBatchImageModelPricingResolver_SingleTierFallbackRequiresGenericLabel(t *testing.T) {
+	const (
+		groupID = int64(101)
+		model   = "single-tier-batch-image"
+	)
+	price := 0.16
+	billingService := &BillingService{fallbackPrices: map[string]*ModelPricing{}}
+	pricing := &BatchImageModelPricingResolver{
+		Resolver: NewModelPricingResolver(nil, billingService),
+	}
+	jobGroupID := groupID
+	job := &BatchImageJob{Model: model, GroupID: &jobGroupID}
+
+	groupWithTier := func(label string) *Group {
+		return &Group{ID: groupID, Platform: PlatformGemini, ModelPricing: []ChannelModelPricing{{
+			Platform:    PlatformGemini,
+			Models:      []string{model},
+			BillingMode: BillingModeImage,
+			Intervals: []PricingInterval{{
+				TierLabel:       label,
+				PerRequestPrice: &price,
+			}},
+		}}}
+	}
+
+	t.Run("explicit non-1K tier is not used for 1K jobs", func(t *testing.T) {
+		got, err := pricing.BatchImageUnitPrice(context.Background(), job, groupWithTier("4K"))
+
+		require.ErrorIs(t, err, ErrBatchImageSettlementPricingMissing)
+		require.Zero(t, got)
+	})
+
+	for _, label := range []string{"", " default ", "generic", "通用"} {
+		label := label
+		t.Run("generic tier "+label, func(t *testing.T) {
+			got, err := pricing.BatchImageUnitPrice(context.Background(), job, groupWithTier(label))
+
+			require.NoError(t, err)
+			require.InDelta(t, price, got, 1e-12)
+		})
+	}
+}
+
 func TestBatchImageSettlementService_SettlesAndChargesSuccessfulImagesOnly(t *testing.T) {
 	repo := newFakeBatchImageRepository()
 	job := testSettlingBatchImageJob("imgbatch_settle")
@@ -422,7 +538,7 @@ type fakeBatchImagePricingResolver struct {
 	calls         int
 }
 
-func (r *fakeBatchImagePricingResolver) BatchImageUnitPrice(_ context.Context, job *BatchImageJob) (float64, error) {
+func (r *fakeBatchImagePricingResolver) BatchImageUnitPrice(_ context.Context, job *BatchImageJob, _ *Group) (float64, error) {
 	r.calls++
 	if r.err != nil {
 		return 0, r.err

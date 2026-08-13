@@ -222,7 +222,8 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	}
 	// 与 ListModels 使用同一鉴权谓词（AllowBatchImageGeneration + Platform==Gemini），
 	// 避免两个入口校验口径不一致留下防御纵深缺口。
-	if err := s.ensureGroupAllowsBatchImage(ctx, owner.GroupID); err != nil {
+	group, err := s.loadAllowedBatchImageGroup(ctx, owner.GroupID)
+	if err != nil {
 		return nil, err
 	}
 	requestHash := HashBatchImageSubmitRequest(normalized)
@@ -250,7 +251,7 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	if err != nil {
 		return nil, err
 	}
-	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
+	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account, group)
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +644,8 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 	if s.Pricing == nil {
 		return nil, ErrBatchImageSettlementPricingMissing
 	}
-	if err := s.ensureGroupAllowsBatchImage(ctx, owner.GroupID); err != nil {
+	group, err := s.loadAllowedBatchImageGroup(ctx, owner.GroupID)
+	if err != nil {
 		return nil, err
 	}
 
@@ -663,7 +665,7 @@ func (s *BatchImagePublicService) ListModels(ctx context.Context, owner BatchIma
 				continue
 			}
 			for _, model := range batchImageModelsFromAccountMapping(&account) {
-				if _, err := s.Pricing.BatchImageUnitPrice(ctx, &BatchImageJob{Provider: providerName, Model: model}); err != nil {
+				if !s.hasResolvableBatchImageUnitPrice(ctx, owner.GroupID, providerName, model, group) {
 					continue
 				}
 				if !account.IsModelSupported(model) {
@@ -998,41 +1000,33 @@ func (s *BatchImagePublicService) listCandidateAccounts(ctx context.Context, gro
 	return s.AccountRepo.ListSchedulableByPlatform(ctx, platform)
 }
 
-func (s *BatchImagePublicService) ensureGroupAllowsBatchImage(ctx context.Context, groupID *int64) error {
+func (s *BatchImagePublicService) loadAllowedBatchImageGroup(ctx context.Context, groupID *int64) (*Group, error) {
 	if groupID == nil || *groupID <= 0 {
-		return nil
+		return nil, nil
 	}
 	if s.GroupRepo == nil {
-		return ErrBatchImageSettlementPricingMissing
+		return nil, ErrBatchImageSettlementPricingMissing
 	}
 	group, err := s.GroupRepo.GetByIDLite(ctx, *groupID)
 	if err != nil || group == nil {
-		return ErrBatchImageSettlementPricingMissing
+		return nil, ErrBatchImageSettlementPricingMissing
 	}
 	if !group.AllowBatchImageGeneration {
-		return ErrBatchImageGroupDisabled
+		return nil, ErrBatchImageGroupDisabled
 	}
 	if group.Platform != PlatformGemini {
-		return ErrBatchImageGroupDisabled
+		return nil, ErrBatchImageGroupDisabled
 	}
-	return nil
+	return group, nil
 }
 
-func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account) (*BatchImagePricingSnapshot, error) {
-	unit := -1.0
+func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, provider string, account *Account, group *Group) (*BatchImagePricingSnapshot, error) {
 	groupMultiplier := 1.0
 	discountMultiplier := defaultBatchImageDiscountMultiplier
 	holdMultiplier := defaultBatchImageHoldMultiplier
 	if owner.GroupID != nil && *owner.GroupID > 0 {
-		if s.GroupRepo == nil {
+		if group == nil || group.ID != *owner.GroupID {
 			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		group, err := s.GroupRepo.GetByIDLite(ctx, *owner.GroupID)
-		if err != nil || group == nil {
-			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		if !group.AllowBatchImageGeneration {
-			return nil, ErrBatchImageGroupDisabled
 		}
 		groupDefaultMultiplier := group.RateMultiplier
 		if groupDefaultMultiplier < 0 {
@@ -1062,19 +1056,10 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		if group.BatchImageHoldMultiplier >= 0 {
 			holdMultiplier = group.BatchImageHoldMultiplier
 		}
-		if configuredUnit := group.GetImagePrice(req.ImageSize); configuredUnit != nil && *configuredUnit >= 0 {
-			unit = *configuredUnit
-		}
 	}
-	if unit < 0 {
-		if s.Pricing == nil {
-			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		resolvedUnit, err := s.Pricing.BatchImageUnitPrice(ctx, &BatchImageJob{Provider: provider, Model: req.Model})
-		if err != nil || resolvedUnit < 0 {
-			return nil, ErrBatchImageSettlementPricingMissing
-		}
-		unit = resolvedUnit
+	unit, err := s.resolveBatchImageUnitPrice(ctx, owner.GroupID, provider, req.Model, req.ImageSize, group)
+	if err != nil {
+		return nil, ErrBatchImageSettlementPricingMissing
 	}
 	// 定价不变式：hold 比例不得低于 discount 比例，否则成功率足够高时
 	// actualCost > holdAmount，结算永远失败、冻结余额无法解冻。
@@ -1107,6 +1092,63 @@ func (s *BatchImagePublicService) resolvePricingSnapshot(ctx context.Context, ow
 		EstimatedCost:           billableUnitPrice * float64(len(req.Items)),
 		HoldAmount:              holdUnitPrice * float64(len(req.Items)),
 	}, nil
+}
+
+// resolveBatchImageUnitPrice is the side-effect-free pricing gate shared by
+// model discovery and submission. Legacy size-specific group prices keep their
+// historical priority; model pricing is the fallback when that size is absent.
+func (s *BatchImagePublicService) resolveBatchImageUnitPrice(
+	ctx context.Context,
+	groupID *int64,
+	provider string,
+	model string,
+	imageSize string,
+	group *Group,
+) (float64, error) {
+	if groupID != nil && *groupID > 0 {
+		if group == nil || group.ID != *groupID {
+			return 0, ErrBatchImageSettlementPricingMissing
+		}
+		if configuredUnit := group.GetImagePrice(imageSize); configuredUnit != nil && *configuredUnit >= 0 {
+			return *configuredUnit, nil
+		}
+	}
+	if s.Pricing == nil {
+		return 0, ErrBatchImageSettlementPricingMissing
+	}
+	unit, err := s.Pricing.BatchImageUnitPrice(ctx, &BatchImageJob{
+		Provider: provider,
+		Model:    model,
+		GroupID:  groupID,
+	}, group)
+	if err != nil || unit < 0 {
+		return 0, ErrBatchImageSettlementPricingMissing
+	}
+	return unit, nil
+}
+
+func (s *BatchImagePublicService) hasResolvableBatchImageUnitPrice(
+	ctx context.Context,
+	groupID *int64,
+	provider string,
+	model string,
+	group *Group,
+) bool {
+	if groupID != nil && *groupID > 0 {
+		if group == nil || group.ID != *groupID {
+			return false
+		}
+		// Public batch submissions currently accept 1K only. Advertising a model
+		// merely because the group has a 2K/4K legacy card creates a dead route:
+		// 2K/4K is rejected by validation and 1K then has no resolvable price.
+		if configuredUnit := group.GetImagePrice(defaultBatchImageImageSize); configuredUnit != nil && *configuredUnit >= 0 {
+			return true
+		}
+	}
+	// ModelPricing/Channel/global pricing is currently size-independent for
+	// batch jobs, so probe it once after all legacy size cards miss.
+	_, err := s.resolveBatchImageUnitPrice(ctx, groupID, provider, model, defaultBatchImageImageSize, group)
+	return err == nil
 }
 
 func (s *BatchImagePublicService) enabled() bool {

@@ -30,8 +30,11 @@ export interface UserPricingInterval {
   input_price: number | null
   output_price: number | null
   cache_write_price: number | null
+  cache_write_5m_price?: number | null
+  cache_write_1h_price?: number | null
   cache_read_price: number | null
   per_request_price: number | null
+  requires_account_long_context?: boolean
 }
 
 export interface UserSupportedModelPricing {
@@ -39,6 +42,8 @@ export interface UserSupportedModelPricing {
   input_price: number | null
   output_price: number | null
   cache_write_price: number | null
+  cache_write_5m_price?: number | null
+  cache_write_1h_price?: number | null
   cache_read_price: number | null
   image_input_price: number | null
   image_output_price: number | null
@@ -50,6 +55,8 @@ export interface UserSupportedModel {
   name: string
   platform: string
   pricing: UserSupportedModelPricing | null
+  /** 分组最终生效展示价；key 为分组 ID。旧后端可能不返回此字段。 */
+  pricing_by_group?: Record<string, UserSupportedModelPricing | null>
 }
 
 /**

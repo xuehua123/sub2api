@@ -54,53 +54,79 @@
           </span>
         </div>
 
-        <div class="p-3">
-          <div v-if="!model.pricing" class="text-gray-500 dark:text-gray-400">
-            {{ noPricingLabel }}
-          </div>
-
-          <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
-            <div class="flex justify-between">
-              <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
-              <span>{{ billingModeLabel }}</span>
+        <div class="space-y-3 p-3">
+          <div
+            v-for="(priceEntry, entryIndex) in displayPricingEntries"
+            :key="priceEntry.key"
+            :class="entryIndex > 0 ? ['border-t pt-3', popoverBorderClass] : ''"
+          >
+            <div
+              v-if="priceEntry.name"
+              class="mb-2 truncate font-semibold text-gray-700 dark:text-gray-200"
+            >
+              {{ priceEntry.name }}
+            </div>
+            <div v-if="!priceEntry.pricing" class="text-gray-500 dark:text-gray-400">
+              {{ noPricingLabel }}
             </div>
 
-            <template v-if="model.pricing.billing_mode === BILLING_MODE_TOKEN">
+            <div v-else class="space-y-2 text-gray-700 dark:text-gray-300">
+            <div class="flex justify-between">
+              <span class="text-gray-500 dark:text-gray-400">{{ t(prefixKey('billingMode')) }}</span>
+              <span>{{ billingModeLabel(priceEntry.pricing.billing_mode) }}</span>
+            </div>
+
+            <template v-if="priceEntry.pricing.billing_mode === BILLING_MODE_TOKEN">
               <PricingRow
                 :label="t(prefixKey('inputPrice'))"
-                :value="model.pricing.input_price"
+                :value="priceEntry.pricing.input_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
               <PricingRow
                 :label="t(prefixKey('outputPrice'))"
-                :value="model.pricing.output_price"
+                :value="priceEntry.pricing.output_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
               <PricingRow
+				v-if="priceEntry.pricing.cache_write_5m_price == null && priceEntry.pricing.cache_write_1h_price == null"
                 :label="t(prefixKey('cacheWritePrice'))"
-                :value="model.pricing.cache_write_price"
+                :value="priceEntry.pricing.cache_write_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
+			  <PricingRow
+				v-if="priceEntry.pricing.cache_write_5m_price != null"
+				:label="t(prefixKey('cacheWrite5mPrice'))"
+				:value="priceEntry.pricing.cache_write_5m_price"
+				:unit="t(prefixKey('unitPerMillion'))"
+				:scale="perMillionScale"
+			  />
+			  <PricingRow
+				v-if="priceEntry.pricing.cache_write_1h_price != null"
+				:label="t(prefixKey('cacheWrite1hPrice'))"
+				:value="priceEntry.pricing.cache_write_1h_price"
+				:unit="t(prefixKey('unitPerMillion'))"
+				:scale="perMillionScale"
+			  />
               <PricingRow
                 :label="t(prefixKey('cacheReadPrice'))"
-                :value="model.pricing.cache_read_price"
+                :value="priceEntry.pricing.cache_read_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
               <PricingRow
-                v-if="model.pricing.image_input_price != null && model.pricing.image_input_price > 0"
+                v-if="priceEntry.pricing.image_input_price != null"
                 :label="t(prefixKey('imageInputPrice'))"
-                :value="model.pricing.image_input_price"
+                :value="priceEntry.pricing.image_input_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
               <PricingRow
-                v-if="model.pricing.image_output_price != null && model.pricing.image_output_price > 0"
+                v-if="priceEntry.pricing.image_output_price != null"
                 :label="t(prefixKey('imageOutputPrice'))"
-                :value="model.pricing.image_output_price"
+                :value="priceEntry.pricing.image_output_price"
                 :unit="t(prefixKey('unitPerMillion'))"
                 :scale="perMillionScale"
               />
@@ -108,28 +134,45 @@
 
             <PricingRow
               v-if="
-                model.pricing.billing_mode === BILLING_MODE_PER_REQUEST &&
-                model.pricing.per_request_price != null
+                (priceEntry.pricing.billing_mode === BILLING_MODE_PER_REQUEST ||
+                  priceEntry.pricing.billing_mode === BILLING_MODE_VIDEO) &&
+                priceEntry.pricing.per_request_price != null
               "
-              :label="t(prefixKey('perRequestPrice'))"
-              :value="model.pricing.per_request_price"
-              :unit="t(prefixKey('unitPerRequest'))"
+              :label="
+                t(
+                  prefixKey(
+                    priceEntry.pricing.billing_mode === BILLING_MODE_VIDEO
+                      ? 'perSecondPrice'
+                      : 'perRequestPrice',
+                  ),
+                )
+              "
+              :value="priceEntry.pricing.per_request_price"
+              :unit="
+                t(
+                  prefixKey(
+                    priceEntry.pricing.billing_mode === BILLING_MODE_VIDEO
+                      ? 'unitPerSecond'
+                      : 'unitPerRequest',
+                  ),
+                )
+              "
               :scale="1"
             />
 
             <PricingRow
               v-if="
-                model.pricing.billing_mode === BILLING_MODE_IMAGE &&
-                model.pricing.image_output_price != null
+                priceEntry.pricing.billing_mode === BILLING_MODE_IMAGE &&
+                priceEntry.pricing.image_output_price != null
               "
               :label="t(prefixKey('imageOutputPrice'))"
-              :value="model.pricing.image_output_price"
+              :value="priceEntry.pricing.image_output_price"
               :unit="t(prefixKey('unitPerRequest'))"
               :scale="1"
             />
 
             <div
-              v-if="model.pricing.intervals && model.pricing.intervals.length > 0"
+              v-if="priceEntry.pricing.intervals && priceEntry.pricing.intervals.length > 0"
               class="mt-2 border-t pt-2"
               :class="[popoverBorderClass]"
             >
@@ -138,18 +181,18 @@
               </div>
               <div class="space-y-1">
                 <div
-                  v-for="(iv, idx) in model.pricing.intervals"
+                  v-for="(iv, idx) in priceEntry.pricing.intervals"
                   :key="idx"
                   class="flex justify-between text-[11px]"
                 >
                   <span class="text-gray-500 dark:text-gray-400">
-                    <template v-if="iv.tier_label">{{ iv.tier_label }}</template>
-                    <template v-else>{{ formatRange(iv.min_tokens, iv.max_tokens) }}</template>
+                    {{ intervalLabel(iv) }}
                   </span>
-                  <span>{{ formatInterval(iv, model.pricing.billing_mode) }}</span>
+                  <span>{{ formatInterval(iv, priceEntry.pricing.billing_mode) }}</span>
                 </div>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -166,11 +209,17 @@ import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
   BILLING_MODE_IMAGE,
+  BILLING_MODE_VIDEO,
   type BillingMode
 } from '@/constants/channel'
 // 复用 api/channels.ts 的用户侧最小形态 DTO。
 // admin 侧 ChannelModelPricing 字段更多，但结构上是用户 DTO 的超集，admin 视图传入可直接通过结构化子类型检查。
-import type { UserPricingInterval, UserSupportedModel } from '@/api/channels'
+import type {
+  UserAvailableGroup,
+  UserPricingInterval,
+  UserSupportedModel,
+  UserSupportedModelPricing
+} from '@/api/channels'
 import PlatformIcon from '@/components/common/PlatformIcon.vue'
 import type { GroupPlatform } from '@/types'
 import { platformBadgeClass, platformBorderClass, platformBadgeLightClass } from '@/utils/platformColors'
@@ -178,6 +227,7 @@ import { platformBadgeClass, platformBorderClass, platformBadgeLightClass } from
 const props = withDefaults(
   defineProps<{
     model: UserSupportedModel
+    groups?: UserAvailableGroup[]
     /** i18n 前缀：管理端传 `admin.availableChannels.pricing`，用户端传 `availableChannels.pricing`。 */
     pricingKeyPrefix?: string
     noPricingLabel?: string
@@ -197,6 +247,33 @@ const props = withDefaults(
 )
 
 const effectivePlatform = computed<string>(() => props.model.platform || props.platformHint || '')
+
+interface DisplayPricingEntry {
+  key: string
+  name: string
+  pricing: UserSupportedModelPricing | null
+}
+
+/**
+ * 新响应按当前 section 的可见分组逐项展示最终生效价；旧响应没有
+ * pricing_by_group 时继续使用原 pricing，保证滚动升级期间兼容。
+ */
+const displayPricingEntries = computed<DisplayPricingEntry[]>(() => {
+  const pricingByGroup = props.model.pricing_by_group
+  if (!pricingByGroup || !props.groups?.length) {
+    return [{ key: 'default', name: '', pricing: props.model.pricing }]
+  }
+  const entries = props.groups
+    .filter((group) => Object.prototype.hasOwnProperty.call(pricingByGroup, String(group.id)))
+    .map((group) => ({
+      key: String(group.id),
+      name: group.name,
+      pricing: pricingByGroup[String(group.id)] ?? null
+    }))
+  return entries.length > 0
+    ? entries
+    : [{ key: 'default', name: '', pricing: props.model.pricing }]
+})
 
 const { t } = useI18n()
 
@@ -220,8 +297,7 @@ function prefixKey(k: string): string {
   return `${props.pricingKeyPrefix}.${k}`
 }
 
-const billingModeLabel = computed(() => {
-  const mode = props.model.pricing?.billing_mode
+function billingModeLabel(mode: BillingMode): string {
   switch (mode) {
     case BILLING_MODE_TOKEN:
       return t(prefixKey('billingModeToken'))
@@ -229,23 +305,60 @@ const billingModeLabel = computed(() => {
       return t(prefixKey('billingModePerRequest'))
     case BILLING_MODE_IMAGE:
       return t(prefixKey('billingModeImage'))
+    case BILLING_MODE_VIDEO:
+      return t(prefixKey('billingModeVideo'))
     default:
       return '-'
   }
-})
+}
 
 function formatRange(min: number, max: number | null): string {
-  const maxLabel = max == null ? '∞' : String(max)
-  return `(${min}, ${maxLabel}]`
+  if (max == null) return `>${formatTokenCount(min)}`
+  if (min === 0) return `≤${formatTokenCount(max)}`
+  return `${formatTokenCount(min)}–${formatTokenCount(max)}`
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${trimTokenCount(value / 1_000_000)}M`
+  if (value >= 1_000) return `${trimTokenCount(value / 1_000)}K`
+  return String(value)
+}
+
+function trimTokenCount(value: number): string {
+  return String(Math.round(value * 100) / 100)
 }
 
 function formatInterval(iv: UserPricingInterval, mode: BillingMode): string {
-  if (mode === BILLING_MODE_PER_REQUEST || mode === BILLING_MODE_IMAGE) {
+  if (
+    mode === BILLING_MODE_PER_REQUEST ||
+    mode === BILLING_MODE_IMAGE ||
+    mode === BILLING_MODE_VIDEO
+  ) {
     return formatScaled(iv.per_request_price, 1)
   }
-  const input = formatScaled(iv.input_price, perMillionScale)
-  const output = formatScaled(iv.output_price, perMillionScale)
-  return `${input} / ${output}`
+  const values = [
+    [t(prefixKey('inputPrice')), iv.input_price],
+    [t(prefixKey('outputPrice')), iv.output_price],
+    [iv.cache_write_5m_price != null || iv.cache_write_1h_price != null ? t(prefixKey('cacheWrite5mPrice')) : t(prefixKey('cacheWritePrice')), iv.cache_write_5m_price ?? iv.cache_write_price],
+    [t(prefixKey('cacheWrite1hPrice')), iv.cache_write_1h_price],
+    [t(prefixKey('cacheReadPrice')), iv.cache_read_price],
+  ] as const
+  return values
+    .filter(([, value]) => value != null)
+    .map(([label, value]) => `${label} ${formatScaled(value ?? null, perMillionScale)}`)
+    .join(' · ') || '-'
+}
+
+function intervalLabel(iv: UserPricingInterval): string {
+  const range = iv.min_tokens === 0 && iv.max_tokens == null
+    ? ''
+    : formatRange(iv.min_tokens, iv.max_tokens)
+  const label = iv.tier_label
+    ? [iv.tier_label, range].filter(Boolean).join(' · ')
+    : range
+  return iv.requires_account_long_context
+    ? `${label}${t(prefixKey('accountLongContextRequired'))}`
+    : label
 }
 
 // ── Popover positioning ─────────────────────────────────────────────

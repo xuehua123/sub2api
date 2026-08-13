@@ -50,6 +50,7 @@ func (s *OpenAIGatewayService) DoGrokNativeResponsesJSON(ctx context.Context, ac
 	upstreamReq.Header.Set("Accept", "application/json")
 	applyGrokCLIHeaders(upstreamReq.Header)
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	upstreamReq = upstreamReq.WithContext(ContextWithAccountUpstreamPolicy(upstreamReq.Context(), account))
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
@@ -76,8 +77,8 @@ func (s *OpenAIGatewayService) DoGrokNativeResponsesJSON(ctx context.Context, ac
 
 	stateCtx := withGrokTeamRateLimitModel(ctx, upstreamModel)
 	if resp.StatusCode >= http.StatusBadRequest {
-		modelUnavailable := isGrokNativeSearchModelProviderUnavailable(resp.StatusCode, respBytes)
-		shouldFailover := modelUnavailable || s.shouldFailoverGrokUpstreamErrorForContext(stateCtx, resp.StatusCode, respBytes)
+		modelUnavailable := isGrokModelProviderUnavailable(resp.StatusCode, respBytes)
+		shouldFailover := s.shouldFailoverGrokUpstreamErrorForContext(stateCtx, resp.StatusCode, respBytes)
 		shouldDisable := s.handleGrokAccountUpstreamError(stateCtx, account, resp.StatusCode, resp.Header, respBytes)
 		if shouldFailover {
 			reason := GatewayFailureReason("grok_search_upstream")
@@ -121,33 +122,4 @@ func resolveGrokNativeSearchBody(account *Account, body []byte) ([]byte, string,
 		return nil, "", fmt.Errorf("set grok search upstream model: %w", err)
 	}
 	return patched, upstreamModel, nil
-}
-
-func isGrokNativeSearchModelProviderUnavailable(statusCode int, body []byte) bool {
-	if statusCode != http.StatusBadRequest || len(body) == 0 {
-		return false
-	}
-	for _, path := range []string{"error.code", "code", "error.type", "type"} {
-		code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(body, path).String()))
-		code = strings.NewReplacer("-", "_", " ", "_").Replace(code)
-		switch code {
-		case "model_not_found", "unknown_provider", "provider_not_found", "unsupported_model", "model_unsupported":
-			return true
-		}
-	}
-	normalized := normalizeModelNotFoundBody(body)
-	for _, phrase := range []string{
-		"unknown provider for model",
-		"no provider for model",
-		"no available provider for model",
-		"provider not found for model",
-		"model not found",
-		"unknown model",
-		"unsupported model",
-	} {
-		if strings.Contains(normalized, phrase) {
-			return true
-		}
-	}
-	return false
 }

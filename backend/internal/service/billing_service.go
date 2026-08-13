@@ -1357,6 +1357,14 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	if pricing == nil {
 		return nil
 	}
+	// xAI's long-context threshold is inclusive. Keep that semantic on the
+	// effective runtime card itself so billing and every display projection
+	// consume one source of truth, including dynamically loaded catalog cards.
+	if isGrokUnknownTextFamilyModel(model) && pricing.LongContextInputThreshold > 0 && !pricing.LongContextThresholdInclusive {
+		cloned := *pricing
+		cloned.LongContextThresholdInclusive = true
+		pricing = &cloned
+	}
 	normalized := normalizeKnownOpenAICodexModel(model)
 	isGPT56 := isOpenAIGPT56Model(normalized)
 	usesLegacyLongContextPricing := usesOpenAILegacyLongContextPricing(normalized)

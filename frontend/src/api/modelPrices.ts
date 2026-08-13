@@ -10,6 +10,8 @@ export interface ModelPriceGroup {
   user_rate_multiplier?: number
   image_rate_independent: boolean
   image_rate_multiplier: number
+  video_rate_independent?: boolean
+  video_rate_multiplier?: number
   is_exclusive: boolean
   hidden: boolean
   model_count: number
@@ -28,8 +30,11 @@ export interface ModelPricePlan {
 
 export interface ModelPriceValue {
   input_usd_per_m: number | null
+  image_input_usd_per_m?: number | null
   output_usd_per_m: number | null
   cache_write_usd_per_m: number | null
+  cache_write_5m_usd_per_m?: number | null
+  cache_write_1h_usd_per_m?: number | null
   cache_read_usd_per_m: number | null
   image_output_usd_per_m: number | null
   per_request_usd: number | null
@@ -38,10 +43,16 @@ export interface ModelPriceValue {
 export interface ModelPriceActual {
   input_usd_per_m: number | null
   input_cny_per_m: number | null
+  image_input_usd_per_m?: number | null
+  image_input_cny_per_m?: number | null
   output_usd_per_m: number | null
   output_cny_per_m: number | null
   cache_write_usd_per_m: number | null
   cache_write_cny_per_m: number | null
+  cache_write_5m_usd_per_m?: number | null
+  cache_write_5m_cny_per_m?: number | null
+  cache_write_1h_usd_per_m?: number | null
+  cache_write_1h_cny_per_m?: number | null
   cache_read_usd_per_m: number | null
   cache_read_cny_per_m: number | null
   image_output_usd_per_m: number | null
@@ -65,6 +76,7 @@ export interface ModelPriceTier {
   key: string
   label: string
   threshold_tokens?: number
+  requires_account_long_context?: boolean
   official: ModelPriceValue
   actual: ModelPriceActual
 }
@@ -74,7 +86,7 @@ export interface ModelPriceModel {
   platform: string
   provider: string
   billing_mode: string
-  pricing_source: 'official' | 'channel' | 'unknown' | string
+  pricing_source: 'official' | 'channel' | 'group' | 'unknown' | string
   official: ModelPriceValue
   actual: ModelPriceActual
   price_tiers: ModelPriceTier[]
