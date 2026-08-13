@@ -138,6 +138,8 @@ func TestCodexFingerprintIDsBelongToAccount(t *testing.T) {
 	assert.True(t, codexFingerprintIDsBelongToAccount(ids, account))
 	assert.False(t, codexFingerprintIDsBelongToAccount(ids, other))
 	assert.False(t, codexFingerprintIDsBelongToAccount(nil, account))
+	assert.True(t, codexFingerprintIDsBelongToAttempt(ids, account, 0))
+	assert.False(t, codexFingerprintIDsBelongToAttempt(ids, account, 9))
 }
 
 func TestNewCodexFingerprintTurnIDsPreservesConnectionIdentity(t *testing.T) {
@@ -175,6 +177,83 @@ func TestEnsureCodexFingerprintAttemptIDsReusesConnectionAndRotatesTurns(t *test
 	assert.Equal(t, first.threadID, next.threadID)
 	assert.Equal(t, first.windowID, next.windowID)
 	assert.NotEqual(t, first.turnID, next.turnID)
+}
+
+func TestResolveSessionFingerprintSessionIDIsolatesAPIKeys(t *testing.T) {
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "session"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "same-client-session")
+
+	idsA := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, clientHeaders, 11)
+	idsB := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, clientHeaders, 22)
+	idsAAgain := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, clientHeaders, 11)
+	require.NotNil(t, idsA)
+	require.NotNil(t, idsB)
+	require.NotNil(t, idsAAgain)
+
+	assert.Equal(t, resolveConvergedInstallationID(account), idsA.installationID)
+	assert.Equal(t, idsA.installationID, idsB.installationID, "设备指纹仍按账号收敛")
+	assert.Equal(t, idsA.threadID, idsB.threadID, "同一客户端 session 的 thread 仍按账号+客户端派生")
+	assert.NotEqual(t, idsA.sessionID, idsB.sessionID, "不同 API Key 不能共享 session 模式的 session_id")
+	assert.Equal(t, idsA.sessionID, idsAAgain.sessionID)
+	assert.Equal(t, isolateOpenAISessionID(11, resolveConvergedSessionID(account)), idsA.sessionID)
+	assert.Equal(t, isolateOpenAISessionID(22, resolveConvergedSessionID(account)), idsB.sessionID)
+}
+
+func TestResolveFullFingerprintSessionIDIsAccountScoped(t *testing.T) {
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "full"})
+	idsA := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, nil, 11)
+	idsB := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, nil, 22)
+	require.NotNil(t, idsA)
+	require.NotNil(t, idsB)
+	assert.Equal(t, resolveConvergedSessionID(account), idsA.sessionID)
+	assert.Equal(t, idsA.sessionID, idsB.sessionID, "full 模式保持账号级会话收敛")
+}
+
+func TestEnsureCodexFingerprintAttemptIDsDoesNotReuseAnotherAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	c.Request.Header.Set("session-id", "client-session")
+	account := newTestOAuthAccount(23, map[string]any{codexFingerprintModeExtraKey: "session"})
+
+	c.Set("api_key", &APIKey{ID: 11})
+	first := ensureCodexFingerprintAttemptIDs(c, account)
+	c.Set("api_key", &APIKey{ID: 22})
+	second := ensureCodexFingerprintAttemptIDs(c, account)
+	require.NotNil(t, first)
+	require.NotNil(t, second)
+	assert.Equal(t, int64(11), first.apiKeyID)
+	assert.Equal(t, int64(22), second.apiKeyID)
+	assert.NotEqual(t, first.sessionID, second.sessionID)
+}
+
+func TestBuildOpenAIWSHeadersSessionModeKeepsAPIKeyIsolation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	account := newTestOAuthAccount(31, map[string]any{codexFingerprintModeExtraKey: "session"})
+	service := &OpenAIGatewayService{}
+
+	build := func(apiKeyID int64) http.Header {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+		c.Request.Header.Set("session-id", "client-session")
+		c.Set("api_key", &APIKey{ID: apiKeyID})
+		headers, _, err := service.buildOpenAIWSHeaders(
+			context.Background(), c, account, "token",
+			OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
+			true, "", "", "", "gpt-5.6-codex", "",
+		)
+		require.NoError(t, err)
+		return headers
+	}
+
+	headersA := build(11)
+	headersB := build(22)
+	assert.Equal(t, resolveConvergedInstallationID(account), headersA.Get("x-codex-installation-id"))
+	assert.Equal(t, headersA.Get("x-codex-installation-id"), headersB.Get("x-codex-installation-id"))
+	assert.Equal(t, isolateOpenAISessionID(11, resolveConvergedSessionID(account)), headersA.Get("session_id"))
+	assert.Equal(t, isolateOpenAISessionID(22, resolveConvergedSessionID(account)), headersB.Get("session_id"))
+	assert.NotEqual(t, headersA.Get("session_id"), headersB.Get("session_id"))
 }
 
 func TestEnsureCodexFingerprintAttemptIDsDoesNotReuseAnotherAccount(t *testing.T) {
@@ -318,7 +397,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	applyCodexFingerprintHeaders(h, ids)
 
 	convergedInstall := resolveConvergedInstallationID(account)
-	convergedSession := resolveConvergedSessionID(account)
+	convergedSession := resolveSessionFingerprintSessionID(account, 0)
 	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, h.Get("x-codex-installation-id"))
@@ -519,7 +598,7 @@ func TestApplyCodexFingerprintClientMetadata_SessionMode(t *testing.T) {
 	cm, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
 	convergedInstall := resolveConvergedInstallationID(account)
-	convergedSession := resolveConvergedSessionID(account)
+	convergedSession := resolveSessionFingerprintSessionID(account, 0)
 	convergedThread := resolveConvergedThreadID(account, "client-session-aaa")
 
 	assert.Equal(t, convergedInstall, cm["x-codex-installation-id"])

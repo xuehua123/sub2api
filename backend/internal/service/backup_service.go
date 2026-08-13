@@ -247,6 +247,23 @@ func (s *BackupService) Start() {
 	}
 }
 
+// backupOperationIsStale reports whether a backup/restore timestamp is old
+// enough to treat as interrupted. Empty or unparseable timestamps are stale:
+// the multi-instance grace only applies to a live operation that recorded a
+// valid start time. Missing RestoreStartedAt on a pre-fusion record must not
+// stay "running" forever.
+func backupOperationIsStale(raw string, now time.Time) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	startedAt, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return true
+	}
+	return now.Sub(startedAt) > backupOperationTimeout+backupStaleGrace
+}
+
 // recoverStaleRecords 启动时将孤立的 running 记录标记为 failed，并清理已上传对象。
 func (s *BackupService) recoverStaleRecords() {
 	if s == nil {
@@ -268,9 +285,7 @@ func (s *BackupService) recoverStaleRecords() {
 	}
 	now := time.Now()
 	for i := range records {
-		startedAt, startedErr := time.Parse(time.RFC3339, records[i].StartedAt)
-		stale := startedErr == nil && now.Sub(startedAt) > backupOperationTimeout+backupStaleGrace
-		if stale && records[i].Status == "running" {
+		if backupOperationIsStale(records[i].StartedAt, now) && records[i].Status == "running" {
 			staleRecord := records[i]
 			records[i].Status = "failed"
 			records[i].ErrorMsg = "interrupted by server restart"
@@ -285,9 +300,7 @@ func (s *BackupService) recoverStaleRecords() {
 			}
 			logger.LegacyPrintf("service.backup", "[Backup] recovered stale running record: %s", records[i].ID)
 		}
-		restoreStartedAt, restoreStartedErr := time.Parse(time.RFC3339, records[i].RestoreStartedAt)
-		restoreStale := restoreStartedErr == nil && now.Sub(restoreStartedAt) > backupOperationTimeout+backupStaleGrace
-		if restoreStale && records[i].RestoreStatus == "running" {
+		if backupOperationIsStale(records[i].RestoreStartedAt, now) && records[i].RestoreStatus == "running" {
 			records[i].RestoreStatus = "failed"
 			records[i].RestoreError = "interrupted by server restart"
 			s.saveRecoveredRecord(&records[i])

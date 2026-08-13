@@ -1129,6 +1129,54 @@ func TestStartBackup_ShuttingDown(t *testing.T) {
 	require.Contains(t, err.Error(), "shutting down")
 }
 
+func TestBackupOperationIsStale(t *testing.T) {
+	now := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
+	require.True(t, backupOperationIsStale("", now))
+	require.True(t, backupOperationIsStale("   ", now))
+	require.True(t, backupOperationIsStale("not-a-timestamp", now))
+	require.True(t, backupOperationIsStale(now.Add(-(backupOperationTimeout + backupStaleGrace + time.Second)).Format(time.RFC3339), now))
+	require.False(t, backupOperationIsStale(now.Add(-time.Minute).Format(time.RFC3339), now))
+}
+
+func TestRecoverStaleRecords_RecoversUnparseableAndMissingTimestamps(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:        "bad-started-at",
+		Status:    "running",
+		StartedAt: "yesterday",
+	}))
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:            "legacy-restore",
+		Status:        "completed",
+		RestoreStatus: "running",
+		StartedAt:     time.Now().Add(-time.Minute).Format(time.RFC3339),
+	}))
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:               "live-backup",
+		Status:           "running",
+		StartedAt:        time.Now().Add(-time.Minute).Format(time.RFC3339),
+		RestoreStartedAt: time.Now().Add(-time.Minute).Format(time.RFC3339),
+	}))
+
+	svc.recoverStaleRecords()
+
+	bad, err := svc.GetBackupRecord(context.Background(), "bad-started-at")
+	require.NoError(t, err)
+	require.Equal(t, "failed", bad.Status)
+	require.Contains(t, bad.ErrorMsg, "server restart")
+
+	legacy, err := svc.GetBackupRecord(context.Background(), "legacy-restore")
+	require.NoError(t, err)
+	require.Equal(t, "failed", legacy.RestoreStatus)
+	require.Contains(t, legacy.RestoreError, "server restart")
+
+	live, err := svc.GetBackupRecord(context.Background(), "live-backup")
+	require.NoError(t, err)
+	require.Equal(t, "running", live.Status, "in-flight backup with a fresh timestamp must survive restart grace")
+}
+
 func TestRecoverStaleRecords(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())

@@ -27,7 +27,8 @@ const (
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 收敛 installation_id + session_id，
 	// thread_id 按客户端原始 session-id 确定性派生（每个真实 Codex 会话一个独立线程）。
-	// 上游看到 1 台设备 + 1 会话 + N 线程，最接近正常用户 spawn 子代理的模式。
+	// session_id 在账号级种子上再按 API Key 隔离：同一 Key 是稳定会话，
+	// 共账号的不同用户不会撞上同一条上游 session。
 	codexFingerprintSession codexFingerprintMode = "session"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
 	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
@@ -98,6 +99,18 @@ func resolveConvergedSessionID(account *Account) string {
 	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID))
 }
 
+// resolveSessionFingerprintSessionID 是 session 模式的出站 session_id。
+// 上游默认把 session 收到账号级恒定值，fork 则用 isolateOpenAISessionID 按 API
+// Key 隔离共账号用户。两者叠在一起时指纹后写会盖掉隔离；这里先收敛再隔离，
+// 同一 Key 仍是稳定会话，不同 Key 不会撞上同一条上游 session。
+func resolveSessionFingerprintSessionID(account *Account, apiKeyID int64) string {
+	base := resolveConvergedSessionID(account)
+	if base == "" {
+		return ""
+	}
+	return isolateOpenAISessionID(apiKeyID, base)
+}
+
 // resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
 // 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
 // 模拟正常用户 spawn 子代理或开多窗口的模式。
@@ -113,6 +126,7 @@ func resolveConvergedThreadID(account *Account, clientSessionID string) string {
 // 确保所有载体中的 turn_id 等随机字段一致。
 type codexFingerprintIDs struct {
 	accountID      int64
+	apiKeyID       int64
 	mode           codexFingerprintMode
 	installationID string
 	sessionID      string
@@ -125,6 +139,13 @@ type codexFingerprintIDs struct {
 // a previous failover attempt from being applied to another OAuth account.
 func codexFingerprintIDsBelongToAccount(ids *codexFingerprintIDs, account *Account) bool {
 	return ids != nil && account != nil && ids.accountID == account.ID
+}
+
+// codexFingerprintIDsBelongToAttempt also requires the same API key. Session
+// mode derives session_id from account+key isolation; reusing another key's
+// set would reintroduce the cross-user collision the fork guard prevents.
+func codexFingerprintIDsBelongToAttempt(ids *codexFingerprintIDs, account *Account, apiKeyID int64) bool {
+	return codexFingerprintIDsBelongToAccount(ids, account) && ids.apiKeyID == apiKeyID
 }
 
 // newCodexFingerprintTurnIDs clones the connection identity and creates a new
@@ -153,13 +174,14 @@ func ensureCodexFingerprintAttemptIDs(c *gin.Context, account *Account) *codexFi
 		}
 		return nil
 	}
+	apiKeyID := getAPIKeyIDFromContext(c)
 	if currentValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
-		if current, ok := currentValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(current, account) {
+		if current, ok := currentValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAttempt(current, account, apiKeyID) {
 			return current
 		}
 	}
 	if baseValue, ok := c.Get(codexFingerprintConnectionIDsContextKey); ok {
-		if base, ok := baseValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(base, account) {
+		if base, ok := baseValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAttempt(base, account, apiKeyID) {
 			current := newCodexFingerprintTurnIDs(base)
 			c.Set(codexFingerprintIDsContextKey, current)
 			return current
@@ -169,7 +191,7 @@ func ensureCodexFingerprintAttemptIDs(c *gin.Context, account *Account) *codexFi
 	if c.Request != nil {
 		clientHeaders = c.Request.Header
 	}
-	base := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	base := resolveCodexFingerprintIDsFromRequestWithAPIKey(account, clientHeaders, apiKeyID)
 	c.Set(codexFingerprintConnectionIDsContextKey, base)
 	c.Set(codexFingerprintIDsContextKey, base)
 	return base
@@ -184,7 +206,7 @@ func advanceCodexFingerprintTurn(c *gin.Context, account *Account) *codexFingerp
 	}
 	baseValue, _ := c.Get(codexFingerprintConnectionIDsContextKey)
 	base, _ := baseValue.(*codexFingerprintIDs)
-	if !codexFingerprintIDsBelongToAccount(base, account) {
+	if !codexFingerprintIDsBelongToAttempt(base, account, getAPIKeyIDFromContext(c)) {
 		base = ensureCodexFingerprintAttemptIDs(c, account)
 		if base == nil {
 			return nil
@@ -234,12 +256,12 @@ func applyCodexFingerprintJSONBody(body []byte, ids *codexFingerprintIDs) ([]byt
 // 的 thread_id 派生——每个真实 Codex 会话得到一个独立线程。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
-func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode) *codexFingerprintIDs {
+func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode codexFingerprintMode, apiKeyID int64) *codexFingerprintIDs {
 	if account == nil || mode == codexFingerprintOff {
 		return nil
 	}
 
-	ids := &codexFingerprintIDs{accountID: account.ID, mode: mode}
+	ids := &codexFingerprintIDs{accountID: account.ID, apiKeyID: apiKeyID, mode: mode}
 
 	ids.installationID = resolveConvergedInstallationID(account)
 	if ids.installationID == "" {
@@ -251,7 +273,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintSession:
-		ids.sessionID = resolveConvergedSessionID(account)
+		ids.sessionID = resolveSessionFingerprintSessionID(account, apiKeyID)
 		ids.threadID = resolveConvergedThreadID(account, clientSessionID)
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
@@ -261,6 +283,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintFull:
+		// full 是管理员显式选择的最激进收敛：1 设备 + 1 会话 + 1 线程，
+		// 不再按 API Key 隔离。
 		ids.sessionID = resolveConvergedSessionID(account)
 		ids.threadID = ids.sessionID
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
@@ -285,6 +309,10 @@ func extractClientSessionID(h http.Header) string {
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
 func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.Header) *codexFingerprintIDs {
+	return resolveCodexFingerprintIDsFromRequestWithAPIKey(account, clientHeaders, 0)
+}
+
+func resolveCodexFingerprintIDsFromRequestWithAPIKey(account *Account, clientHeaders http.Header, apiKeyID int64) *codexFingerprintIDs {
 	if account == nil {
 		return nil
 	}
@@ -296,7 +324,7 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 	if clientHeaders != nil {
 		clientSessionID = extractClientSessionID(clientHeaders)
 	}
-	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	return resolveCodexFingerprintIDs(account, clientSessionID, mode, apiKeyID)
 }
 
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。
