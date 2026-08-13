@@ -12,6 +12,8 @@ const {
   getCapacitySummary,
   getLiveCapability,
   listAccounts,
+  createGroupRequest,
+  updateGroupRequest,
   showError,
   showSuccess,
   isCurrentStep,
@@ -24,6 +26,8 @@ const {
   getCapacitySummary: vi.fn(),
   getLiveCapability: vi.fn(),
   listAccounts: vi.fn(),
+  createGroupRequest: vi.fn(),
+  updateGroupRequest: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
   isCurrentStep: vi.fn(),
@@ -54,8 +58,8 @@ vi.mock('@/api/admin', () => ({
       getUsageSummary,
       getCapacitySummary,
       getLiveCapability,
-      create: vi.fn(),
-      update: vi.fn(),
+      create: createGroupRequest,
+      update: updateGroupRequest,
       delete: vi.fn(),
       updateSortOrder: vi.fn(),
     },
@@ -102,6 +106,8 @@ const createGroup = (overrides: Partial<AdminGroup> = {}): AdminGroup => ({
   daily_limit_usd: null,
   weekly_limit_usd: null,
   monthly_limit_usd: null,
+  long_context_pricing_enabled: true,
+  model_pricing: [],
   allow_image_generation: false,
   image_rate_independent: false,
   image_rate_multiplier: 1,
@@ -238,6 +244,8 @@ describe('admin GroupsView column settings', () => {
     getCapacitySummary.mockReset()
     getLiveCapability.mockReset()
     listAccounts.mockReset()
+    createGroupRequest.mockReset()
+    updateGroupRequest.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
     isCurrentStep.mockReset()
@@ -256,6 +264,8 @@ describe('admin GroupsView column settings', () => {
     getCapacitySummary.mockResolvedValue([])
     getLiveCapability.mockResolvedValue({ supported: false })
     listAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 0 })
+    createGroupRequest.mockResolvedValue({})
+    updateGroupRequest.mockResolvedValue({})
     isCurrentStep.mockReturnValue(false)
   })
 
@@ -416,5 +426,129 @@ describe('admin GroupsView column settings', () => {
     await clickColumnToggle(wrapper, 'Capacity')
     expect(getUsageSummary).toHaveBeenCalledTimes(1)
     expect(getCapacitySummary).toHaveBeenCalledTimes(1)
+  })
+
+  it('serializes model pricing and the long-context switch in create payloads', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm as any
+
+    expect(vm.createForm.long_context_pricing_enabled).toBe(true)
+    expect(vm.createForm.model_pricing).toEqual([])
+
+    Object.assign(vm.createForm, {
+      name: 'Grok priced group',
+      platform: 'grok',
+      long_context_pricing_enabled: false,
+      model_pricing: [
+        {
+          models: ['grok-4.1*'],
+          billing_mode: 'token',
+          input_price: 2,
+          output_price: 10,
+          cache_write_price: 3,
+          cache_read_price: 0.5,
+          image_input_price: null,
+          image_output_price: null,
+          per_request_price: null,
+          intervals: [],
+        },
+      ],
+    })
+
+    await vm.handleCreateGroup()
+    await flushPromises()
+
+    expect(createGroupRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        platform: 'grok',
+        long_context_pricing_enabled: false,
+        model_pricing: [
+          {
+            platform: 'grok',
+            models: ['grok-4.1*'],
+            billing_mode: 'token',
+            input_price: 0.000002,
+            output_price: 0.00001,
+            cache_write_price: 0.000003,
+            cache_read_price: 0.0000005,
+            image_input_price: null,
+            image_output_price: null,
+            per_request_price: null,
+            intervals: [],
+          },
+        ],
+      }),
+    )
+  })
+
+  it('round-trips stored model pricing through the edit payload', async () => {
+    const storedPricing = {
+      platform: 'grok',
+      models: ['grok-4.1*'],
+      billing_mode: 'token' as const,
+      input_price: 0.000002,
+      output_price: 0.00001,
+      cache_write_price: 0.000003,
+      cache_read_price: 0.0000005,
+      image_input_price: null,
+      image_output_price: null,
+      per_request_price: null,
+      intervals: [],
+    }
+    const group = createGroup({
+      id: 42,
+      platform: 'grok',
+      long_context_pricing_enabled: false,
+      model_pricing: [storedPricing],
+    })
+    const wrapper = await mountView()
+    const vm = wrapper.vm as any
+
+    await vm.handleEdit(group)
+    expect(vm.editForm.long_context_pricing_enabled).toBe(false)
+    expect(vm.editForm.model_pricing[0]).toMatchObject({
+      models: ['grok-4.1*'],
+      input_price: 2,
+      output_price: 10,
+      cache_write_price: 3,
+      cache_read_price: 0.5,
+    })
+
+    await vm.handleUpdateGroup()
+    await flushPromises()
+
+    expect(updateGroupRequest).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({
+        long_context_pricing_enabled: false,
+        model_pricing: [storedPricing],
+      }),
+    )
+  })
+
+  it('uses safe edit defaults when an older response omits pricing fields', async () => {
+    const legacyGroup = {
+      ...createGroup({ id: 43 }),
+      long_context_pricing_enabled: undefined,
+      model_pricing: undefined,
+    } as unknown as AdminGroup
+    const wrapper = await mountView()
+    const vm = wrapper.vm as any
+
+    await vm.handleEdit(legacyGroup)
+
+    expect(vm.editForm.long_context_pricing_enabled).toBe(true)
+    expect(vm.editForm.model_pricing).toEqual([])
+
+    await vm.handleUpdateGroup()
+    await flushPromises()
+
+    expect(updateGroupRequest).toHaveBeenCalledWith(
+      43,
+      expect.objectContaining({
+        long_context_pricing_enabled: true,
+        model_pricing: [],
+      }),
+    )
   })
 })

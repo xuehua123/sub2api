@@ -169,12 +169,25 @@ func TestGetRequestTierPrice(t *testing.T) {
 		RequestTiers: []PricingInterval{
 			{TierLabel: "1K", PerRequestPrice: testPtrFloat64(0.04)},
 			{TierLabel: "2K", PerRequestPrice: testPtrFloat64(0.08)},
+			{TierLabel: " HD ", PerRequestPrice: testPtrFloat64(0)},
 		},
 	}
 
-	require.InDelta(t, 0.04, r.GetRequestTierPrice(resolved, "1K"), 1e-12)
-	require.InDelta(t, 0.08, r.GetRequestTierPrice(resolved, "2K"), 1e-12)
-	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "4K"), 1e-12)
+	price, found := r.GetRequestTierPrice(resolved, "1K")
+	require.True(t, found)
+	require.InDelta(t, 0.04, price, 1e-12)
+
+	price, found = r.GetRequestTierPrice(resolved, "2K")
+	require.True(t, found)
+	require.InDelta(t, 0.08, price, 1e-12)
+
+	price, found = r.GetRequestTierPrice(resolved, "  hd  ")
+	require.True(t, found, "tier labels should match case-insensitively after trimming whitespace")
+	require.Zero(t, price, "an explicitly free tier must still count as found")
+
+	price, found = r.GetRequestTierPrice(resolved, "4K")
+	require.False(t, found)
+	require.Zero(t, price)
 }
 
 func TestGetRequestTierPriceByContext(t *testing.T) {
@@ -189,8 +202,13 @@ func TestGetRequestTierPriceByContext(t *testing.T) {
 		},
 	}
 
-	require.InDelta(t, 0.05, r.GetRequestTierPriceByContext(resolved, 50000), 1e-12)
-	require.InDelta(t, 0.10, r.GetRequestTierPriceByContext(resolved, 200000), 1e-12)
+	price, found := r.GetRequestTierPriceByContext(resolved, 50000)
+	require.True(t, found)
+	require.InDelta(t, 0.05, price, 1e-12)
+
+	price, found = r.GetRequestTierPriceByContext(resolved, 200000)
+	require.True(t, found)
+	require.InDelta(t, 0.10, price, 1e-12)
 }
 
 func TestGetRequestTierPrice_NilPerRequestPrice(t *testing.T) {
@@ -204,7 +222,9 @@ func TestGetRequestTierPrice_NilPerRequestPrice(t *testing.T) {
 		},
 	}
 
-	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "1K"), 1e-12)
+	price, found := r.GetRequestTierPrice(resolved, "1K")
+	require.False(t, found)
+	require.Zero(t, price)
 }
 
 // ===========================================================================
@@ -373,8 +393,12 @@ func TestResolve_WithChannelOverride_PerRequest(t *testing.T) {
 	require.Len(t, resolved.RequestTiers, 2)
 
 	// Verify tier lookups
-	require.InDelta(t, 0.03, r.GetRequestTierPriceByContext(resolved, 50000), 1e-12)
-	require.InDelta(t, 0.10, r.GetRequestTierPriceByContext(resolved, 200000), 1e-12)
+	price, found := r.GetRequestTierPriceByContext(resolved, 50000)
+	require.True(t, found)
+	require.InDelta(t, 0.03, price, 1e-12)
+	price, found = r.GetRequestTierPriceByContext(resolved, 200000)
+	require.True(t, found)
+	require.InDelta(t, 0.10, price, 1e-12)
 }
 
 func TestResolve_WithChannelOverride_PerRequestNilPrice(t *testing.T) {
@@ -446,10 +470,18 @@ func TestResolve_WithChannelOverride_ImageTierLabels(t *testing.T) {
 		GroupID: groupIDPtr(),
 	})
 
-	require.InDelta(t, 0.04, r.GetRequestTierPrice(resolved, "1K"), 1e-12)
-	require.InDelta(t, 0.08, r.GetRequestTierPrice(resolved, "2K"), 1e-12)
-	require.InDelta(t, 0.16, r.GetRequestTierPrice(resolved, "4K"), 1e-12)
-	require.InDelta(t, 0.0, r.GetRequestTierPrice(resolved, "8K"), 1e-12) // not found
+	price, found := r.GetRequestTierPrice(resolved, "1K")
+	require.True(t, found)
+	require.InDelta(t, 0.04, price, 1e-12)
+	price, found = r.GetRequestTierPrice(resolved, "2K")
+	require.True(t, found)
+	require.InDelta(t, 0.08, price, 1e-12)
+	price, found = r.GetRequestTierPrice(resolved, "4K")
+	require.True(t, found)
+	require.InDelta(t, 0.16, price, 1e-12)
+	price, found = r.GetRequestTierPrice(resolved, "8K")
+	require.False(t, found)
+	require.Zero(t, price)
 }
 
 // ---------------------------------------------------------------------------
@@ -594,7 +626,8 @@ func TestGetRequestTierPriceByContext_EmptyTiers(t *testing.T) {
 		RequestTiers: nil, // empty
 	}
 
-	price := r.GetRequestTierPriceByContext(resolved, 50000)
+	price, found := r.GetRequestTierPriceByContext(resolved, 50000)
+	require.False(t, found)
 	require.InDelta(t, 0.0, price, 1e-12)
 
 	// Also test with explicit empty slice
@@ -603,7 +636,8 @@ func TestGetRequestTierPriceByContext_EmptyTiers(t *testing.T) {
 		RequestTiers: []PricingInterval{},
 	}
 
-	price2 := r.GetRequestTierPriceByContext(resolved2, 50000)
+	price2, found2 := r.GetRequestTierPriceByContext(resolved2, 50000)
+	require.False(t, found2)
 	require.InDelta(t, 0.0, price2, 1e-12)
 }
 
@@ -622,13 +656,15 @@ func TestGetRequestTierPriceByContext_ExactBoundary(t *testing.T) {
 	// totalContextTokens = 128000 exactly:
 	// FindMatchingInterval checks: totalTokens > MinTokens && totalTokens <= MaxTokens
 	// For first interval: 128000 > 0 (true) && 128000 <= 128000 (true) → matches first interval
-	price := r.GetRequestTierPriceByContext(resolved, 128000)
+	price, found := r.GetRequestTierPriceByContext(resolved, 128000)
+	require.True(t, found)
 	require.InDelta(t, 0.05, price, 1e-12)
 
 	// totalContextTokens = 128001 should match second interval
 	// For first interval: 128001 > 0 (true) && 128001 <= 128000 (false) → no match
 	// For second interval: 128001 > 128000 (true) && MaxTokens == nil → matches
-	price2 := r.GetRequestTierPriceByContext(resolved, 128001)
+	price2, found2 := r.GetRequestTierPriceByContext(resolved, 128001)
+	require.True(t, found2)
 	require.InDelta(t, 0.10, price2, 1e-12)
 }
 
@@ -832,4 +868,155 @@ func TestApplyTokenOverrides_IntervalDoesNotPolluteFallbackPrices(t *testing.T) 
 	require.InDelta(t, 3e-6, fp.InputPricePerToken, 1e-12, "fallback InputPricePerToken polluted")
 	require.InDelta(t, 15e-6, fp.OutputPricePerToken, 1e-12, "fallback OutputPricePerToken polluted")
 	require.False(t, fp.ImageOutputPriceExplicit, "fallback ImageOutputPriceExplicit polluted")
+}
+
+func TestResolve_GroupPricingOverridesChannel(t *testing.T) {
+	r := newResolverWithChannel(t, []ChannelModelPricing{{
+		Platform: "anthropic", Models: []string{"claude-sonnet-4"}, BillingMode: BillingModeToken,
+		InputPrice: testPtrFloat64(10e-6), OutputPrice: testPtrFloat64(20e-6),
+	}})
+	group := &Group{ID: 100, ModelPricing: []ChannelModelPricing{{
+		Models: []string{"claude-sonnet-*"}, BillingMode: BillingModeToken,
+		InputPrice: testPtrFloat64(1e-6), OutputPrice: testPtrFloat64(2e-6),
+	}}}
+	resolved := r.Resolve(context.Background(), PricingInput{Model: "claude-sonnet-4", GroupID: groupIDPtr(), Group: group})
+
+	require.Equal(t, PricingSourceGroup, resolved.Source)
+	require.InDelta(t, 1e-6, resolved.BasePricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 2e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
+}
+
+func TestResolve_GroupLongContextUsesPresetNotCustomIntervals(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	bs.fallbackPrices["claude-sonnet-4"].LongContextInputThreshold = 200000
+	bs.fallbackPrices["claude-sonnet-4"].LongContextThresholdInclusive = true
+	bs.fallbackPrices["claude-sonnet-4"].LongContextInputMultiplier = 2
+	bs.fallbackPrices["claude-sonnet-4"].LongContextOutputMultiplier = 2
+	r := NewModelPricingResolver(nil, bs)
+	group := &Group{ID: 100, ModelPricing: []ChannelModelPricing{{
+		Models: []string{"claude-sonnet-4"}, BillingMode: BillingModeToken,
+		InputPrice: testPtrFloat64(1e-6), OutputPrice: testPtrFloat64(2e-6),
+		Intervals: []PricingInterval{
+			{MinTokens: 0, MaxTokens: testPtrInt(200000), InputPrice: testPtrFloat64(9e-6)},
+			{MinTokens: 200000, InputPrice: testPtrFloat64(18e-6)},
+		},
+	}}}
+
+	resolved := r.Resolve(context.Background(), PricingInput{Model: "claude-sonnet-4", Group: group})
+	require.False(t, resolved.longContextPricingEnabled)
+	require.Empty(t, resolved.Intervals, "group token intervals are not a user-facing long-context ladder")
+	require.InDelta(t, 1e-6, r.GetIntervalPricing(resolved, 300000).InputPricePerToken, 1e-12)
+	require.Equal(t, 200000, resolved.BasePricing.LongContextInputThreshold)
+
+	group.LongContextPricingEnabled = true
+	resolved = r.Resolve(context.Background(), PricingInput{Model: "claude-sonnet-4", Group: group})
+	require.True(t, resolved.longContextPricingEnabled)
+	require.Empty(t, resolved.Intervals)
+	require.InDelta(t, 1e-6, r.GetIntervalPricing(resolved, 300000).InputPricePerToken, 1e-12)
+	require.Equal(t, 200000, resolved.BasePricing.LongContextInputThreshold)
+	require.InDelta(t, 2.0, resolved.BasePricing.LongContextInputMultiplier, 1e-12)
+}
+
+func TestCalculateCostUnified_UsesContinuousMediaUnits(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	r := NewModelPricingResolver(nil, bs)
+	price := 0.08
+	group := &Group{ModelPricing: []ChannelModelPricing{{
+		Models: []string{"grok-voice-think-fast-2.0"}, BillingMode: BillingModePerRequest,
+		PerRequestPrice: &price,
+	}}}
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Ctx: context.Background(), Model: "grok-voice-think-fast-2.0", Group: group,
+		UsageUnits: 1.5, RateMultiplier: 1, Resolver: r,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.12, cost.TotalCost, 1e-12)
+}
+
+func TestCalculateCostUnified_GroupMediaTierExplicitZeroDoesNotFallback(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	r := NewModelPricingResolver(nil, bs)
+	zero := 0.0
+	defaultPrice := 0.08
+	contextTierPrice := 0.04
+	group := &Group{ModelPricing: []ChannelModelPricing{{
+		Models:          []string{"grok-imagine-image"},
+		BillingMode:     BillingModeImage,
+		PerRequestPrice: &defaultPrice,
+		Intervals: []PricingInterval{
+			{TierLabel: " HD ", PerRequestPrice: &zero},
+			{MinTokens: 0, MaxTokens: testPtrInt(128000), PerRequestPrice: &contextTierPrice},
+		},
+	}}}
+
+	cost, err := bs.CalculateCostUnified(CostInput{
+		Ctx:            context.Background(),
+		Model:          "grok-imagine-image",
+		Group:          group,
+		SizeTier:       "hd",
+		UsageUnits:     2,
+		Tokens:         UsageTokens{InputTokens: 1000},
+		RateMultiplier: 1,
+		Resolver:       r,
+	})
+	require.NoError(t, err)
+	require.Equal(t, string(BillingModeImage), cost.BillingMode)
+	require.Zero(t, cost.TotalCost, "an explicit zero label tier must win over context and default prices")
+	require.Zero(t, cost.ActualCost)
+}
+
+func TestCalculateCostUnified_PerRequestTierFallbacks(t *testing.T) {
+	bs := newTestBillingServiceForResolver()
+	r := NewModelPricingResolver(nil, bs)
+	zero := 0.0
+	contextTierPrice := 0.04
+	defaultPrice := 0.08
+
+	t.Run("explicit context zero does not fall back to default", func(t *testing.T) {
+		resolved := &ResolvedPricing{
+			Mode:                   BillingModePerRequest,
+			DefaultPerRequestPrice: defaultPrice,
+			RequestTiers: []PricingInterval{{
+				MinTokens: 0, MaxTokens: testPtrInt(128000), PerRequestPrice: &zero,
+			}},
+		}
+		cost, err := bs.CalculateCostUnified(CostInput{
+			Model: "grok-voice", Tokens: UsageTokens{InputTokens: 1000}, UsageUnits: 3,
+			RateMultiplier: 1, Resolver: r, Resolved: resolved,
+		})
+		require.NoError(t, err)
+		require.Zero(t, cost.TotalCost)
+	})
+
+	t.Run("missing label falls back to matching context", func(t *testing.T) {
+		resolved := &ResolvedPricing{
+			Mode:                   BillingModePerRequest,
+			DefaultPerRequestPrice: defaultPrice,
+			RequestTiers: []PricingInterval{{
+				MinTokens: 0, MaxTokens: testPtrInt(128000), PerRequestPrice: &contextTierPrice,
+			}},
+		}
+		cost, err := bs.CalculateCostUnified(CostInput{
+			Model: "grok-voice", SizeTier: "missing", Tokens: UsageTokens{InputTokens: 1000}, UsageUnits: 2,
+			RateMultiplier: 1, Resolver: r, Resolved: resolved,
+		})
+		require.NoError(t, err)
+		require.InDelta(t, 0.08, cost.TotalCost, 1e-12)
+	})
+
+	t.Run("missing label and context fall back to default", func(t *testing.T) {
+		resolved := &ResolvedPricing{
+			Mode:                   BillingModePerRequest,
+			DefaultPerRequestPrice: defaultPrice,
+			RequestTiers: []PricingInterval{{
+				MinTokens: 10000, PerRequestPrice: &contextTierPrice,
+			}},
+		}
+		cost, err := bs.CalculateCostUnified(CostInput{
+			Model: "grok-voice", SizeTier: "missing", Tokens: UsageTokens{InputTokens: 1000}, UsageUnits: 2,
+			RateMultiplier: 1, Resolver: r, Resolved: resolved,
+		})
+		require.NoError(t, err)
+		require.InDelta(t, 0.16, cost.TotalCost, 1e-12)
+	})
 }

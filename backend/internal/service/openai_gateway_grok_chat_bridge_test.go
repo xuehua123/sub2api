@@ -105,6 +105,31 @@ func TestGrokChatResponsesBridgeEligibility(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "x search tool and object choice bridge",
+			body: `{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"tools":[{"type":"x_search","allowed_x_handles":["xai"],"excluded_x_handles":["spam"],"from_date":"2026-08-01","to_date":"2026-08-10","enable_image_understanding":true,"enable_video_understanding":false}],"tool_choice":{"type":"x_search"}}`,
+			want: true,
+		},
+		{
+			name: "x search string choice bridge",
+			body: `{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"tools":[{"type":"x_search"}],"tool_choice":"x_search"}`,
+			want: true,
+		},
+		{
+			name:   "x search choice without declaration falls back",
+			body:   `{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"tools":[],"tool_choice":{"type":"x_search"}}`,
+			reason: "x_search_tool_choice_without_tool",
+		},
+		{
+			name:   "invalid x search handles fall back",
+			body:   `{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"tools":[{"type":"x_search","allowed_x_handles":"xai"}]}`,
+			reason: "invalid_x_search_allowed_x_handles",
+		},
+		{
+			name:   "unknown x search field falls back",
+			body:   `{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"tools":[{"type":"x_search","max_results":10}]}`,
+			reason: "unsafe_x_search_tool_field_max_results",
+		},
+		{
 			name:   "legacy functions fall back",
 			body:   `{"model":"grok","messages":[{"role":"user","content":"hi"}],"functions":[{"name":"lookup","parameters":{"type":"object"}}]}`,
 			reason: "unsupported_functions",
@@ -218,9 +243,53 @@ func TestGrokChatResponsesBridgeEligibility(t *testing.T) {
 func TestGrokChatResponsesRuntimeEligibility(t *testing.T) {
 	t.Parallel()
 	require.True(t, grokChatResponsesRuntimeEligible("grok-4.5", "isolated-id"))
+	require.True(t, grokChatResponsesRuntimeEligible("grok-4.6", "isolated-id"))
+	require.True(t, grokChatResponsesRuntimeEligible("grok-4.6-latest", "isolated-id"))
 	require.False(t, grokChatResponsesRuntimeEligible("grok-4.3", "isolated-id"))
 	require.False(t, grokChatResponsesRuntimeEligible("grok-4.5-build-free", "isolated-id"))
 	require.False(t, grokChatResponsesRuntimeEligible("grok-4.5", ""))
+	require.False(t, grokChatResponsesRuntimeEligible("grok-4.6", ""))
+}
+
+func TestForwardGrokChatXSearchUsesResponsesBridgeAndPreservesTool(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := []byte(`{"model":"grok","messages":[{"role":"user","content":"latest xAI post"}],"stream":false,"tools":[{"type":"x_search","allowed_x_handles":["xai"],"excluded_x_handles":["spam"],"from_date":"2026-08-01","to_date":"2026-08-10","enable_image_understanding":true,"enable_video_understanding":false}],"tool_choice":{"type":"x_search"}}`)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, grokChatRawEndpoint, bytes.NewReader(body))
+	// Deliberately omit api_key so no cache identity can be derived. Native
+	// x_search still requires the Responses route rather than raw Chat.
+
+	account := grokChatBridgeTestAccount(710)
+	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
+		accountsByID: map[int64]*Account{account.ID: account},
+	}}
+	upstream := &httpUpstreamRecorder{resp: grokChatBridgeCompletedResponse("resp_grok_chat_x_search", 0)}
+	svc := &OpenAIGatewayService{
+		httpUpstream:      upstream,
+		grokTokenProvider: NewGrokTokenProvider(repo, nil),
+		accountRepo:       repo,
+	}
+
+	result, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "", "")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, xai.DefaultCLIBaseURL+"/responses", upstream.lastReq.URL.String())
+	require.Equal(t, grokChatResponsesEndpoint, result.UpstreamEndpoint)
+	require.Empty(t, gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+	require.Empty(t, upstream.lastReq.Header.Get(grokConversationIDHeader))
+
+	tool := gjson.GetBytes(upstream.lastBody, "tools.0")
+	require.Equal(t, "x_search", tool.Get("type").String())
+	require.Equal(t, "xai", tool.Get("allowed_x_handles.0").String())
+	require.Equal(t, "spam", tool.Get("excluded_x_handles.0").String())
+	require.Equal(t, "2026-08-01", tool.Get("from_date").String())
+	require.Equal(t, "2026-08-10", tool.Get("to_date").String())
+	require.True(t, tool.Get("enable_image_understanding").Bool())
+	require.True(t, tool.Get("enable_video_understanding").Exists())
+	require.False(t, tool.Get("enable_video_understanding").Bool())
+	require.Equal(t, "x_search", gjson.GetBytes(upstream.lastBody, "tool_choice.type").String())
 }
 
 func TestForwardGrokChatViaResponsesNonStreamingCachesAndReturnsChat(t *testing.T) {

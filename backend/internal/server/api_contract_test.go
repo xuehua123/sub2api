@@ -393,6 +393,7 @@ func TestAPIContracts(t *testing.T) {
 						"daily_limit_usd": null,
 						"weekly_limit_usd": null,
 						"monthly_limit_usd": null,
+						"long_context_pricing_enabled": false,
 						"image_price_1k": null,
 						"image_price_2k": null,
 						"image_price_4k": null,
@@ -1604,6 +1605,79 @@ func TestAPIContracts(t *testing.T) {
 	}
 }
 
+func TestAPIContractAdminGroupCreatePricing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name                   string
+		body                   string
+		wantLongContextPricing bool
+		wantModel              string
+	}{
+		{
+			name:                   "omitted long-context policy defaults enabled",
+			body:                   `{"name":"Default Pricing","platform":"openai","rate_multiplier":1}`,
+			wantLongContextPricing: true,
+		},
+		{
+			name: "explicit policy and model pricing round trip",
+			body: `{
+				"name":"Custom Pricing",
+				"platform":"openai",
+				"rate_multiplier":1,
+				"long_context_pricing_enabled":false,
+				"model_pricing":[{
+					"platform":"anthropic",
+					"models":[" gpt-5.6-sol "],
+					"billing_mode":"token",
+					"input_price":0.000001,
+					"output_price":0.000002
+				}]
+			}`,
+			wantLongContextPricing: false,
+			wantModel:              "gpt-5.6-sol",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deps := newContractDeps(t)
+			status, body := doRequest(t, deps.router, http.MethodPost, "/api/v1/admin/groups", tt.body, map[string]string{
+				"Content-Type": "application/json",
+			})
+
+			require.Equal(t, http.StatusOK, status)
+			var envelope struct {
+				Code int             `json:"code"`
+				Data json.RawMessage `json:"data"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(body), &envelope))
+			require.Zero(t, envelope.Code)
+
+			var rawFields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(envelope.Data, &rawFields))
+			require.Contains(t, rawFields, "long_context_pricing_enabled")
+			require.Contains(t, rawFields, "model_pricing")
+
+			var group dto.AdminGroup
+			require.NoError(t, json.Unmarshal(envelope.Data, &group))
+			require.Equal(t, tt.wantLongContextPricing, group.LongContextPricingEnabled)
+			require.NotNil(t, group.ModelPricing)
+			if tt.wantModel == "" {
+				require.Empty(t, group.ModelPricing)
+			} else {
+				require.Len(t, group.ModelPricing, 1)
+				require.Equal(t, service.PlatformOpenAI, group.ModelPricing[0].Platform,
+					"group pricing must use the group platform, not a client-supplied entry platform")
+				require.Equal(t, []string{tt.wantModel}, group.ModelPricing[0].Models)
+			}
+
+			require.Len(t, deps.groupRepo.created, 1)
+			require.Equal(t, tt.wantLongContextPricing, deps.groupRepo.created[0].LongContextPricingEnabled)
+		})
+	}
+}
+
 func TestAPIContractAdvanceMonthlyCycleUsesPublicDTO(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1811,7 +1885,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 
 	apiKeyRepo := newStubApiKeyRepo(now)
 	apiKeyCache := stubApiKeyCache{}
-	groupRepo := &stubGroupRepo{}
+	groupRepo := &stubGroupRepo{now: now}
 	userSubRepo := &stubUserSubscriptionRepo{}
 	accountRepo := stubAccountRepo{}
 	proxyRepo := stubProxyRepo{}
@@ -1845,12 +1919,38 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingService := service.NewSettingService(settingRepo, cfg)
 	entitlementHandler := handler.NewEntitlementHandler(entitlementService, settingService)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, apiKeyService, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(
+		userRepo,
+		groupRepo,
+		&accountRepo,
+		proxyRepo,
+		apiKeyRepo,
+		apiKeyService,
+		redeemRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService, nil, nil)
 	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminGroupHandler := adminhandler.NewGroupHandler(adminService, nil, nil)
 
 	jwtAuth := func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyUser), middleware.AuthSubject{
@@ -1903,6 +2003,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin.Use(adminAuth)
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
 	v1Admin.POST("/accounts/bulk-update", adminAccountHandler.BulkUpdate)
+	v1Admin.POST("/groups", adminGroupHandler.Create)
 
 	return &contractDeps{
 		now:         now,
@@ -2134,15 +2235,33 @@ func (stubApiKeyCache) SubscribeAuthCacheInvalidation(ctx context.Context, handl
 }
 
 type stubGroupRepo struct {
-	active []service.Group
+	active  []service.Group
+	created []*service.Group
+	now     time.Time
+	nextID  int64
 }
 
 func (r *stubGroupRepo) SetActive(groups []service.Group) {
 	r.active = append([]service.Group(nil), groups...)
 }
 
-func (stubGroupRepo) Create(ctx context.Context, group *service.Group) error {
-	return errors.New("not implemented")
+func (r *stubGroupRepo) Create(ctx context.Context, group *service.Group) error {
+	if group == nil {
+		return errors.New("nil group")
+	}
+	if group.ID == 0 {
+		r.nextID++
+		group.ID = r.nextID
+	}
+	if group.CreatedAt.IsZero() {
+		group.CreatedAt = r.now
+	}
+	if group.UpdatedAt.IsZero() {
+		group.UpdatedAt = r.now
+	}
+	clone := *group
+	r.created = append(r.created, &clone)
+	return nil
 }
 
 func (stubGroupRepo) GetByID(ctx context.Context, id int64) (*service.Group, error) {

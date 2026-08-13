@@ -126,9 +126,13 @@ func (s *GroupService) Create(ctx context.Context, req CreateGroupRequest) (*Gro
 		BalanceEnabled:       true,
 		SubscriptionEnabled:  false,
 		PlanAutoGrantEnabled: false,
-		AllowImageGeneration: req.AllowImageGeneration,
-		ImageRateIndependent: req.ImageRateIndependent,
-		ImageRateMultiplier:  imageRateMultiplier,
+		// Keep the legacy creation path aligned with the admin API and database
+		// default. The repository writes concrete booleans, so omitting this
+		// assignment would persist false instead of letting the DB default apply.
+		LongContextPricingEnabled: true,
+		AllowImageGeneration:      req.AllowImageGeneration,
+		ImageRateIndependent:      req.ImageRateIndependent,
+		ImageRateMultiplier:       imageRateMultiplier,
 	}
 
 	if err := s.groupRepo.Create(ctx, group); err != nil {

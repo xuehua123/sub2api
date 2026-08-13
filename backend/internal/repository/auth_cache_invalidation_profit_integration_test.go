@@ -92,6 +92,8 @@ func TestAuthCacheInvalidationTrigger_AuthSnapshotColumns(t *testing.T) {
 		"daily_limit_usd":                      "daily_limit_usd = 1.1",
 		"weekly_limit_usd":                     "weekly_limit_usd = 2.2",
 		"monthly_limit_usd":                    "monthly_limit_usd = 3.3",
+		"long_context_pricing_enabled":         "long_context_pricing_enabled = NOT long_context_pricing_enabled",
+		"model_pricing":                        `model_pricing = '[{"platform":"openai","models":["gpt-5.5"],"billing_mode":"token","input_price":0.000001}]'::jsonb`,
 		"allow_image_generation":               "allow_image_generation = true",
 		"allow_batch_image_generation":         "allow_batch_image_generation = true",
 		"image_rate_independent":               "image_rate_independent = true",

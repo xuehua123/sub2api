@@ -282,6 +282,47 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	require.InDelta(t, 0.30, *repo.created.ImagePrice4K, 0.0001)
 }
 
+func TestAdminService_CreateGroup_LongContextPricingDefaultAndExplicitFalse(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		input    *bool
+		expected bool
+	}{
+		{name: "omitted defaults true", input: nil, expected: true},
+		{name: "explicit false is preserved", input: boolPtr(false), expected: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &groupRepoStubForAdmin{}
+			svc := &adminServiceImpl{groupRepo: repo}
+
+			created, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+				Name:                      "group-long-context-default",
+				Platform:                  PlatformOpenAI,
+				RateMultiplier:            1,
+				LongContextPricingEnabled: tt.input,
+			})
+
+			require.NoError(t, err)
+			require.NotNil(t, created)
+			require.NotNil(t, repo.created)
+			require.Equal(t, tt.expected, repo.created.LongContextPricingEnabled)
+		})
+	}
+}
+
+func TestNormalizeGroupModelPricing_ForcesGroupPlatformBeforeConflictValidation(t *testing.T) {
+	pricing := []ChannelModelPricing{
+		{Platform: PlatformAnthropic, Models: []string{"gpt-5.5"}, BillingMode: BillingModeToken},
+		{Platform: PlatformGemini, Models: []string{" GPT-5.5 "}, BillingMode: BillingModeToken},
+	}
+
+	normalized, err := normalizeGroupModelPricing(PlatformComposite, pricing)
+
+	require.Error(t, err)
+	require.Nil(t, normalized)
+	require.Contains(t, err.Error(), "conflict")
+}
+
 func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}

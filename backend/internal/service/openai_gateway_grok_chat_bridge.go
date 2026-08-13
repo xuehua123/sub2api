@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -89,6 +90,9 @@ func grokChatResponsesBridgeEligibility(body []byte) (bool, string) {
 	if raw, exists := root["tool_choice"]; exists {
 		if ok, reason := grokChatToolChoiceBridgeable(raw); !ok {
 			return false, reason
+		}
+		if grokChatToolChoiceSelectsXSearch(raw) && !grokChatHasXSearchDeclaration(root) {
+			return false, "x_search_tool_choice_without_tool"
 		}
 		var choice string
 		if json.Unmarshal(raw, &choice) == nil && choice == "required" && !grokChatHasFunctionDeclarations(root) {
@@ -261,14 +265,24 @@ func grokChatFunctionDeclarationsBridgeable(raw json.RawMessage) (bool, string) 
 		if json.Unmarshal(declaration, &tool) != nil || tool == nil {
 			return false, "invalid_tool"
 		}
+		var toolType string
+		if rawType, exists := tool["type"]; !exists || json.Unmarshal(rawType, &toolType) != nil {
+			return false, "unsupported_tool_type"
+		}
+		toolType = strings.ToLower(strings.TrimSpace(toolType))
+		if toolType == "x_search" {
+			if ok, reason := grokChatXSearchDeclarationBridgeable(tool); !ok {
+				return false, reason
+			}
+			continue
+		}
+		if toolType != "function" {
+			return false, "unsupported_tool_type"
+		}
 		for field := range tool {
 			if field != "type" && field != "function" {
 				return false, "unsafe_tool_field_" + field
 			}
-		}
-		var toolType string
-		if rawType, exists := tool["type"]; !exists || json.Unmarshal(rawType, &toolType) != nil || toolType != "function" {
-			return false, "unsupported_tool_type"
 		}
 		functionRaw, exists := tool["function"]
 		if !exists {
@@ -310,20 +324,101 @@ func grokChatFunctionDeclarationsBridgeable(raw json.RawMessage) (bool, string) 
 	return true, ""
 }
 
+func grokChatXSearchDeclarationBridgeable(tool map[string]json.RawMessage) (bool, string) {
+	for field := range tool {
+		switch field {
+		case "type", "allowed_x_handles", "excluded_x_handles", "from_date", "to_date",
+			"enable_image_understanding", "enable_video_understanding":
+		default:
+			return false, "unsafe_x_search_tool_field_" + field
+		}
+	}
+	for _, field := range []string{"allowed_x_handles", "excluded_x_handles"} {
+		raw, exists := tool[field]
+		if !exists || grokChatJSONNull(raw) {
+			continue
+		}
+		var handles []string
+		if json.Unmarshal(raw, &handles) != nil {
+			return false, "invalid_x_search_" + field
+		}
+	}
+	for _, field := range []string{"from_date", "to_date"} {
+		raw, exists := tool[field]
+		if !exists || grokChatJSONNull(raw) {
+			continue
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil {
+			return false, "invalid_x_search_" + field
+		}
+	}
+	for _, field := range []string{"enable_image_understanding", "enable_video_understanding"} {
+		raw, exists := tool[field]
+		if !exists || grokChatJSONNull(raw) {
+			continue
+		}
+		var enabled bool
+		if json.Unmarshal(raw, &enabled) != nil {
+			return false, "invalid_x_search_" + field
+		}
+	}
+	return true, ""
+}
+
 func grokChatToolChoiceBridgeable(raw json.RawMessage) (bool, string) {
 	if strings.TrimSpace(string(raw)) == "null" {
 		return true, ""
 	}
 	var choice string
-	if json.Unmarshal(raw, &choice) != nil {
+	if json.Unmarshal(raw, &choice) == nil {
+		switch strings.ToLower(strings.TrimSpace(choice)) {
+		case "auto", "none", "required", "x_search":
+			return true, ""
+		default:
+			return false, "unsupported_tool_choice"
+		}
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil || len(object) != 1 {
 		return false, "unsupported_tool_choice"
 	}
-	switch choice {
-	case "auto", "none", "required":
+	var choiceType string
+	if rawType, exists := object["type"]; exists && json.Unmarshal(rawType, &choiceType) == nil && strings.EqualFold(strings.TrimSpace(choiceType), "x_search") {
 		return true, ""
-	default:
-		return false, "unsupported_tool_choice"
 	}
+	return false, "unsupported_tool_choice"
+}
+
+func grokChatToolChoiceSelectsXSearch(raw json.RawMessage) bool {
+	var choice string
+	if json.Unmarshal(raw, &choice) == nil {
+		return strings.EqualFold(strings.TrimSpace(choice), "x_search")
+	}
+	var object map[string]json.RawMessage
+	if json.Unmarshal(raw, &object) != nil {
+		return false
+	}
+	var choiceType string
+	return json.Unmarshal(object["type"], &choiceType) == nil && strings.EqualFold(strings.TrimSpace(choiceType), "x_search")
+}
+
+func grokChatHasXSearchDeclaration(root map[string]json.RawMessage) bool {
+	raw, exists := root["tools"]
+	if !exists {
+		return false
+	}
+	var declarations []map[string]json.RawMessage
+	if json.Unmarshal(raw, &declarations) != nil {
+		return false
+	}
+	for _, declaration := range declarations {
+		var toolType string
+		if json.Unmarshal(declaration["type"], &toolType) == nil && strings.EqualFold(strings.TrimSpace(toolType), "x_search") {
+			return true
+		}
+	}
+	return false
 }
 
 func grokChatHasFunctionDeclarations(root map[string]json.RawMessage) bool {
@@ -495,8 +590,17 @@ func grokChatResponsesCacheIntentBody(body []byte) ([]byte, error) {
 	return json.Marshal(root)
 }
 
+func grokChatResponsesBridgeModel(model string) bool {
+	switch strings.ToLower(xai.StripGrokProviderPrefix(strings.TrimSpace(model))) {
+	case "grok-4.5", "grok-4.6", "grok-4.6-latest":
+		return true
+	default:
+		return false
+	}
+}
+
 func grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity string) bool {
-	return strings.TrimSpace(upstreamModel) == "grok-4.5" && strings.TrimSpace(cacheIdentity) != ""
+	return grokChatResponsesBridgeModel(upstreamModel) && strings.TrimSpace(cacheIdentity) != ""
 }
 
 // forwardGrokChatCompletionsViaResponses converts a strictly compatible Chat
@@ -527,7 +631,9 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 	// for non-composer models, so they would be silently dropped. Route them to
 	// Responses even when no prompt-cache identity is available.
 	hasImageInput := openAIJSONValueMayContainImageInput(gjson.GetBytes(body, "messages"))
-	if !grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity) && (!hasImageInput || strings.TrimSpace(upstreamModel) != "grok-4.5") {
+	hasXSearch := grokChatBodyHasXSearchDeclaration(body)
+	requiresResponses := hasImageInput || hasXSearch
+	if !grokChatResponsesRuntimeEligible(upstreamModel, cacheIdentity) && (!requiresResponses || !grokChatResponsesBridgeModel(upstreamModel)) {
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 	}
 
@@ -623,7 +729,13 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 			Kind:               kind,
 			Message:            upstreamMsg,
 		})
-		shouldDisable := s.handleGrokAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+		shouldDisable := s.handleGrokAccountUpstreamError(
+			withGrokTeamRateLimitModel(ctx, upstreamModel),
+			account,
+			resp.StatusCode,
+			resp.Header,
+			respBody,
+		)
 		if shouldFailover {
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
@@ -635,7 +747,7 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 		return s.handleChatCompletionsErrorResponse(resp, c, account, billingModel)
 	}
 
-	s.updateGrokUsageFromResponse(ctx, account, resp.Header, resp.StatusCode)
+	s.updateGrokUsageFromResponse(withGrokTeamRateLimitModel(ctx, upstreamModel), account, resp.Header, resp.StatusCode)
 
 	var result *OpenAIForwardResult
 	if clientStream {
@@ -652,4 +764,13 @@ func (s *OpenAIGatewayService) forwardGrokChatCompletionsViaResponses(
 		result.ReasoningEffort = extractOpenAIReasoningEffortFromBody(body, upstreamModel, billingModel, originalModel)
 	}
 	return result, err
+}
+
+func grokChatBodyHasXSearchDeclaration(body []byte) bool {
+	for _, tool := range gjson.GetBytes(body, "tools").Array() {
+		if strings.EqualFold(strings.TrimSpace(tool.Get("type").String()), "x_search") {
+			return true
+		}
+	}
+	return false
 }

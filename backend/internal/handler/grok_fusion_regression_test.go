@@ -200,13 +200,19 @@ func TestGrokWebSearchFusionUsesEntitlementSuppressesProfitGateAndRetriesSameAcc
 		schedulerSnapshot, concurrencySvc, service.NewBillingService(cfg, nil), nil, billingCacheSvc,
 		nil, upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 	)
+	openAIGatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo, usageLogRepo, usageBillingRepo, userRepo, nil, nil, nil, cfg,
+		schedulerSnapshot, concurrencySvc, service.NewBillingService(cfg, nil), nil, billingCacheSvc,
+		upstream, &service.DeferredService{}, nil, nil, nil, nil, nil, nil, nil,
+	)
 	h := &GatewayHandler{
-		gatewayService:      gatewaySvc,
-		billingCacheService: billingCacheSvc,
-		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, time.Second),
-		maxAccountSwitches:  1,
-		cfg:                 cfg,
+		gatewayService:       gatewaySvc,
+		openAIGatewayService: openAIGatewaySvc,
+		billingCacheService:  billingCacheSvc,
+		apiKeyService:        &service.APIKeyService{},
+		concurrencyHelper:    NewConcurrencyHelper(concurrencySvc, SSEPingFormatNone, time.Second),
+		maxAccountSwitches:   1,
+		cfg:                  cfg,
 	}
 
 	router := gin.New()

@@ -325,6 +325,70 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesReasoningEffortPolicy(t *testi
 	require.Equal(t, apiKey.Group.ReasoningEffortMappings, roundTrip.Group.ReasoningEffortMappings)
 }
 
+func TestAPIKeyService_SnapshotRoundTrip_PreservesGroupModelPricing(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+	groupID := int64(9)
+	inputPrice := 1.25e-6
+	outputPrice := 7.5e-6
+	maxTokens := 200_000
+	apiKey := &APIKey{
+		ID:      1,
+		UserID:  2,
+		GroupID: &groupID,
+		Key:     "k-group-model-pricing",
+		Name:    "Group Pricing Key",
+		Status:  StatusActive,
+		User: &User{
+			ID:          2,
+			Status:      StatusActive,
+			Role:        RoleUser,
+			Balance:     10,
+			Concurrency: 3,
+		},
+		Group: &Group{
+			ID:                        groupID,
+			Name:                      "openai",
+			Platform:                  PlatformOpenAI,
+			Status:                    StatusActive,
+			SubscriptionType:          SubscriptionTypeStandard,
+			RateMultiplier:            1,
+			LongContextPricingEnabled: false,
+			ModelPricing: []ChannelModelPricing{{
+				Platform:    PlatformOpenAI,
+				Models:      []string{"gpt-5.5"},
+				BillingMode: BillingModeToken,
+				InputPrice:  &inputPrice,
+				OutputPrice: &outputPrice,
+				Intervals: []PricingInterval{{
+					MinTokens:  128_000,
+					MaxTokens:  &maxTokens,
+					InputPrice: &inputPrice,
+				}},
+			}},
+		},
+	}
+
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot)
+	require.Equal(t, apiKeyAuthSnapshotVersion, snapshot.Version)
+	require.NotNil(t, snapshot.Group)
+	require.False(t, snapshot.Group.LongContextPricingEnabled)
+	require.Equal(t, apiKey.Group.ModelPricing, snapshot.Group.ModelPricing)
+
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, snapshot)
+	require.NotNil(t, roundTrip)
+	require.NotNil(t, roundTrip.Group)
+	require.False(t, roundTrip.Group.LongContextPricingEnabled)
+	require.Equal(t, apiKey.Group.ModelPricing, roundTrip.Group.ModelPricing)
+
+	// Snapshot and reconstructed request state must not share their mutable
+	// slices. L1/L2 cache entries are reused across requests.
+	snapshot.Group.ModelPricing[0].Models[0] = "mutated"
+	snapshot.Group.ModelPricing[0].Intervals[0].MinTokens = 1
+	require.Equal(t, "gpt-5.5", roundTrip.Group.ModelPricing[0].Models[0])
+	require.Equal(t, 128_000, roundTrip.Group.ModelPricing[0].Intervals[0].MinTokens)
+}
+
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {
 	cache := &authCacheStub{}
 	var repoCalls int32

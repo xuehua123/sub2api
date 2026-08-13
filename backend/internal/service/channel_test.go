@@ -445,6 +445,32 @@ func TestValidateIntervals_ImageModeAllowsMultipleUnboundedTiers(t *testing.T) {
 	require.NoError(t, ValidateIntervals(intervals, BillingModePerRequest))
 }
 
+func TestValidateIntervals_MediaModesRejectNormalizedDuplicateTierLabels(t *testing.T) {
+	intervals := []PricingInterval{
+		{TierLabel: "tts", PerRequestPrice: testPtrFloat64(0)},
+		{TierLabel: " TTS ", PerRequestPrice: testPtrFloat64(0.08)},
+	}
+
+	for _, mode := range []BillingMode{BillingModePerRequest, BillingModeImage, BillingModeVideo} {
+		t.Run(string(mode), func(t *testing.T) {
+			err := ValidateIntervals(intervals, mode)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "duplicate tier_label")
+		})
+	}
+}
+
+func TestValidateIntervals_MediaModesAllowDistinctNormalizedTierLabels(t *testing.T) {
+	intervals := []PricingInterval{
+		{TierLabel: " tts ", PerRequestPrice: testPtrFloat64(0)},
+		{TierLabel: "stt", PerRequestPrice: testPtrFloat64(0.08)},
+	}
+
+	for _, mode := range []BillingMode{BillingModePerRequest, BillingModeImage, BillingModeVideo} {
+		require.NoError(t, ValidateIntervals(intervals, mode))
+	}
+}
+
 func TestValidateIntervals_ImageModeStillRejectsNegativePrice(t *testing.T) {
 	// image 模式只跳过区间重叠校验，单条字段自洽（价格非负）仍要校验。
 	intervals := []PricingInterval{
@@ -512,7 +538,6 @@ func TestSupportedModels_WildcardExpandedFromPricing(t *testing.T) {
 		require.NotContains(t, m.Name, "*")
 	}
 }
-
 
 func TestSupportedModels_MissingPricingKeepsNilPricing(t *testing.T) {
 	ch := &Channel{
