@@ -1029,19 +1029,15 @@ func (s *OpenAIGatewayService) parseSSEUsageBytes(data []byte, usage *OpenAIUsag
 	if usage == nil || len(data) == 0 || bytes.Equal(data, []byte("[DONE]")) {
 		return
 	}
-	// 选择性解析：仅在数据中包含终止事件标识时才进入字段提取。
-	if len(data) < 72 {
-		return
-	}
+	// 选择性解析：仅终止事件进入 usage 提取。不要使用长度门槛：一个合法的
+	// top-level response.done usage 事件可以短于 72 字节。
 	eventType := gjson.GetBytes(data, "type").String()
 	if eventType != "response.completed" && eventType != "response.done" && eventType != "response.failed" &&
 		eventType != "response.incomplete" && eventType != "response.cancelled" && eventType != "response.canceled" {
 		return
 	}
 
-	if parsedUsage, ok := extractOpenAIUsageFromJSONBytes(data); ok {
-		*usage = parsedUsage
-	}
+	mergeOpenAIUsage(usage, data)
 }
 
 func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
@@ -1337,13 +1333,9 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		// Usage can be emitted on an earlier SSE event rather than the terminal
 		// response object, so collect it before classifying an empty completion.
 		forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
-			if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(data); parsed {
-				*usage = parsedUsage
-			}
+			mergeOpenAIUsage(usage, data)
 		})
-		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
-			*usage = parsedUsage
-		}
+		mergeOpenAIUsage(usage, finalResponse)
 		// When the terminal event has an empty output array, reconstruct
 		// output from accumulated delta events so the client gets full content.
 		// gjson Array() returns empty slice for null, missing, or empty arrays.

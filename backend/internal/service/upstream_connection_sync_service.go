@@ -130,10 +130,13 @@ func (s *UpstreamConnectionSyncService) RunDue(ctx context.Context) error {
 	s.cycleMu.Lock()
 	defer s.cycleMu.Unlock()
 
-	release, acquired := tryAcquireSingletonLeaderLock(
+	release, acquired, err := tryAcquireSingletonLeaderLock(
 		ctx, s.lockCache, s.db, upstreamConnectionSyncLeaderLockKey,
 		s.instanceID, upstreamConnectionSyncLeaderLockTTL,
 	)
+	if err != nil {
+		return fmt.Errorf("acquire upstream connection sync leader lock: %w", err)
+	}
 	if !acquired {
 		return nil
 	}

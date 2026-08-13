@@ -90,8 +90,12 @@ func (s *PaymentOrderExpiryService) runOnce() {
 	// Multi-instance guard: only the leader reconciles/expires orders per cycle,
 	// avoiding N× upstream payment-provider API calls and update races.
 	lockCtx, lockCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	release, ok := tryAcquireSingletonLeaderLock(lockCtx, s.lockCache, s.db, paymentOrderExpiryLeaderLockKey, s.instanceID, paymentOrderExpiryLeaderLockTTL)
+	release, ok, err := tryAcquireSingletonLeaderLock(lockCtx, s.lockCache, s.db, paymentOrderExpiryLeaderLockKey, s.instanceID, paymentOrderExpiryLeaderLockTTL)
 	lockCancel()
+	if err != nil {
+		slog.Warn("[PaymentOrderExpiry] failed to acquire leader lock", "error", err)
+		return
+	}
 	if !ok {
 		return
 	}

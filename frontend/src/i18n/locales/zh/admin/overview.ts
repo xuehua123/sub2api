@@ -82,7 +82,7 @@ export default {
 
     backup: {
       title: '数据库备份',
-      description: '全量数据库备份到 S3 兼容存储，支持定时备份与恢复',
+      description: '全量数据库备份到 S3 兼容存储；整库恢复必须停服并按离线维护流程执行',
       s3: {
         title: 'S3 存储配置',
         description: '配置 S3 兼容存储（支持 Cloudflare R2）',
@@ -177,6 +177,8 @@ export default {
         restoreConfirm: '确定要从此备份恢复吗？这将覆盖当前数据库！',
         restorePasswordPrompt: '请输入管理员密码以确认恢复操作',
         restoreSuccess: '数据库恢复成功',
+        restoreOfflineOnly: '仅限离线恢复',
+        restoreOfflineHint: '为避免在线请求、后台任务、Redis 缓存和蓝绿另一槽继续写入，整库恢复已禁止从网页执行。请先切维护页、排空连接并停止全部应用槽，再按审核过的离线恢复流程操作。',
         deleteConfirm: '确定要删除此备份吗？',
         deleted: '备份已删除'
       },

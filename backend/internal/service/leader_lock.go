@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -18,8 +20,8 @@ type LeaderLockCache interface {
 	ReleaseLeaderLock(ctx context.Context, key, owner string) error
 }
 
-// tryAcquireSingletonLeaderLock provides best-effort single-flight execution of a
-// periodic background job across multiple instances. Exactly one lock domain is
+// tryAcquireSingletonLeaderLock provides single-flight execution of a periodic
+// background job across multiple instances. Exactly one lock domain is
 // used per call:
 //   - if a LeaderLockCache is configured, Redis is the only domain;
 //   - otherwise a Postgres advisory lock is used when a DB is configured;
@@ -31,39 +33,45 @@ type LeaderLockCache interface {
 // backup/restore of the same database.
 //
 // Semantics:
-//   - acquired      -> returns a non-nil release func and true; callers should
+//   - acquired      -> returns a non-nil release func, true and nil; callers should
 //     defer the release once the job finishes.
-//   - held by peer / cache error -> returns (nil, false); callers should skip
-//     this cycle rather than invent a second lock domain.
+//   - held by peer  -> returns (nil, false, nil); callers should skip or wait.
+//   - backend error -> returns (nil, false, err); callers must surface/log it and
+//     must not invent a second lock domain.
 //   - no backend    -> when neither the cache nor a DB is configured it runs
-//     without gating, returning a no-op release and true.
+//     without gating, returning a no-op release, true and nil.
 //
 // The TTL is purely a crash-safety bound: callers release the lock as soon as the
 // job completes, so leadership is re-contested every cycle rather than pinned to
 // one instance. The TTL must therefore be larger than the job's worst-case
 // runtime so the lock does not expire mid-run.
-func tryAcquireSingletonLeaderLock(ctx context.Context, cache LeaderLockCache, db *sql.DB, key, owner string, ttl time.Duration) (func(), bool) {
+func tryAcquireSingletonLeaderLock(ctx context.Context, cache LeaderLockCache, db *sql.DB, key, owner string, ttl time.Duration) (func(), bool, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	if cache != nil {
 		ok, err := cache.TryAcquireLeaderLock(ctx, key, owner, ttl)
-		if err != nil || !ok {
-			return nil, false
+		if err != nil {
+			return nil, false, fmt.Errorf("acquire redis leader lock %q: %w", key, err)
+		}
+		if !ok {
+			return nil, false, nil
 		}
 		release := func() {
 			ctx2, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			_ = cache.ReleaseLeaderLock(ctx2, key, owner)
+			if err := cache.ReleaseLeaderLock(ctx2, key, owner); err != nil {
+				slog.Warn("failed to release distributed leader lock", "key", key, "error", err)
+			}
 		}
-		return release, true
+		return release, true, nil
 	}
 
 	if db != nil {
-		return tryAcquireDBAdvisoryLock(ctx, db, hashAdvisoryLockID(key))
+		return tryAcquireDBAdvisoryLockWithError(ctx, db, hashAdvisoryLockID(key))
 	}
 
 	// No coordination backend available: run without gating.
-	return func() {}, true
+	return func() {}, true, nil
 }

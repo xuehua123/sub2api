@@ -29,6 +29,8 @@ type mockSettingRepo struct {
 	data          map[string]string
 	getValueErr   error
 	getValueCalls int
+	setHook       func(key, value string, call int) error
+	setCalls      int
 }
 
 func newMockSettingRepo() *mockSettingRepo {
@@ -62,6 +64,12 @@ func (m *mockSettingRepo) GetValue(_ context.Context, key string) (string, error
 func (m *mockSettingRepo) Set(_ context.Context, key, value string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.setCalls++
+	if m.setHook != nil {
+		if err := m.setHook(key, value, m.setCalls); err != nil {
+			return err
+		}
+	}
 	m.data[key] = value
 	return nil
 }
@@ -182,6 +190,34 @@ type cancelingUploadFailureStore struct {
 	cancel context.CancelFunc
 }
 
+type blockingDeleteObjectStore struct {
+	*mockObjectStore
+	deleteStarted chan string
+	allowDelete   chan struct{}
+}
+
+func newBlockingDeleteObjectStore() *blockingDeleteObjectStore {
+	return &blockingDeleteObjectStore{
+		mockObjectStore: newMockObjectStore(),
+		deleteStarted:   make(chan string, 8),
+		allowDelete:     make(chan struct{}),
+	}
+}
+
+func (m *blockingDeleteObjectStore) Delete(ctx context.Context, key string) error {
+	select {
+	case m.deleteStarted <- key:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	select {
+	case <-m.allowDelete:
+		return m.mockObjectStore.Delete(ctx, key)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (m *cancelingUploadFailureStore) UploadFile(_ context.Context, key string, filePath string, _ string) (int64, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -273,7 +309,32 @@ func (m *mockObjectStore) HeadBucket(_ context.Context) error {
 }
 
 func newTestBackupService(repo *mockSettingRepo, dumper DBDumper, store *mockObjectStore) *BackupService {
-	cfg := &config.Config{
+	return newTestBackupServiceWithObjectStore(repo, dumper, store)
+}
+
+func newTestBackupServiceWithObjectStore(repo *mockSettingRepo, dumper DBDumper, store BackupObjectStore) *BackupService {
+	cfg := testBackupConfig()
+	factory := func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
+		return store, nil
+	}
+	svc := NewBackupService(repo, cfg, &plainEncryptor{}, factory, dumper)
+	return svc
+}
+
+func newCoordinatedTestBackupService(
+	repo *mockSettingRepo,
+	dumper DBDumper,
+	store BackupObjectStore,
+	cache LeaderLockCache,
+) *BackupService {
+	factory := func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
+		return store, nil
+	}
+	return newBackupServiceWithCoordination(repo, testBackupConfig(), &plainEncryptor{}, factory, dumper, cache, nil)
+}
+
+func testBackupConfig() *config.Config {
+	return &config.Config{
 		Database: config.DatabaseConfig{
 			Host:   "localhost",
 			Port:   5432,
@@ -284,11 +345,6 @@ func newTestBackupService(repo *mockSettingRepo, dumper DBDumper, store *mockObj
 		// an S3 secret requires it (#4524).
 		Totp: config.TotpConfig{EncryptionKeyConfigured: true},
 	}
-	factory := func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
-		return store, nil
-	}
-	svc := NewBackupService(repo, cfg, &plainEncryptor{}, factory, dumper)
-	return svc
 }
 
 // newTestBackupServiceEphemeralKey mirrors a deployment that never set
@@ -315,6 +371,35 @@ func seedS3Config(t *testing.T, repo *mockSettingRepo) {
 	}
 	data, _ := json.Marshal(cfg)
 	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(data)))
+}
+
+const legacyBackupRecordLimit = 100
+
+func seedCompletedBackupRecords(t *testing.T, repo *mockSettingRepo, store *mockObjectStore, count int) []BackupRecord {
+	t.Helper()
+	now := time.Now().UTC()
+	records := make([]BackupRecord, 0, count)
+	for i := 0; i < count; i++ {
+		key := fmt.Sprintf("backups/record-%03d.sql.gz", i)
+		records = append(records, BackupRecord{
+			ID:        fmt.Sprintf("record-%03d", i),
+			Status:    "completed",
+			S3Key:     key,
+			StartedAt: now.Add(time.Duration(i-count) * time.Hour).Format(time.RFC3339),
+		})
+		store.objects[key] = []byte("old backup")
+	}
+	data, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupRecords, string(data)))
+	return records
+}
+
+func seedBackupSchedule(t *testing.T, repo *mockSettingRepo, schedule BackupScheduleConfig) {
+	t.Helper()
+	data, err := json.Marshal(schedule)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupSchedule, string(data)))
 }
 
 // ─── Tests ───
@@ -365,19 +450,154 @@ func TestBackupService_S3ConfigKeepExistingSecret(t *testing.T) {
 	// 再更新时不提供 secret，应保留原值
 	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
 		Bucket:      "my-bucket",
-		AccessKeyID: "AKID-NEW",
+		AccessKeyID: "AKID",
+		Prefix:      "new-prefix",
 	})
 	require.NoError(t, err)
 
 	internal, err := svc.loadS3Config(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "original-secret", internal.SecretAccessKey)
-	require.Equal(t, "AKID-NEW", internal.AccessKeyID)
+	require.Equal(t, "AKID", internal.AccessKeyID)
+	require.Equal(t, "new-prefix", internal.Prefix)
 	raw, err := repo.GetValue(context.Background(), settingKeyBackupS3Config)
 	require.NoError(t, err)
 	var stored BackupS3Config
 	require.NoError(t, json.Unmarshal([]byte(raw), &stored))
 	require.Equal(t, "ENC:original-secret", stored.SecretAccessKey)
+}
+
+func TestBackupService_UpdateS3Config_AccessKeyChangeRequiresSecret(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	_, err := svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Bucket:          "my-bucket",
+		AccessKeyID:     "AKID",
+		SecretAccessKey: "original-secret",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Bucket:      "my-bucket",
+		AccessKeyID: "AKID-NEW",
+	})
+	require.ErrorIs(t, err, ErrBackupS3SecretRequired)
+}
+
+func TestBackupService_UpdateS3Config_BlocksStorageMoveWhileObjectsAreReferenced(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	initial := BackupS3Config{
+		Endpoint:        "https://s3.example.com",
+		Region:          "auto",
+		Bucket:          "original-bucket",
+		AccessKeyID:     "AKID",
+		SecretAccessKey: "ENC:secret",
+		Prefix:          "backups",
+		ForcePathStyle:  true,
+	}
+	raw, err := json.Marshal(initial)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(raw)))
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:     "stored-backup",
+		Status: "completed",
+		S3Key:  "backups/stored.sql.gz",
+	}))
+
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Endpoint:       initial.Endpoint,
+		Region:         initial.Region,
+		Bucket:         "different-bucket",
+		AccessKeyID:    initial.AccessKeyID,
+		Prefix:         initial.Prefix,
+		ForcePathStyle: initial.ForcePathStyle,
+	})
+	require.ErrorIs(t, err, ErrBackupS3StorageInUse)
+
+	stored, err := svc.loadS3Config(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, initial.Bucket, stored.Bucket)
+}
+
+func TestBackupService_UpdateS3Config_DoesNotGuessLocatorForUnboundRecords(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "legacy-unbound", Status: "completed", S3Key: "backups/legacy.sql.gz",
+	}))
+
+	_, err := svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Endpoint:        "https://new.example.com",
+		Region:          "auto",
+		Bucket:          "new-bucket",
+		AccessKeyID:     "AKID",
+		SecretAccessKey: "secret",
+	})
+	require.ErrorIs(t, err, ErrBackupS3StorageInUse)
+	raw, getErr := repo.GetValue(context.Background(), settingKeyBackupS3Config)
+	require.NoError(t, getErr)
+	require.Empty(t, raw)
+}
+
+func TestBackupService_UpdateS3Config_AllowsCredentialAndPrefixRotationInPlace(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	initial := BackupS3Config{
+		Endpoint:        "https://s3.example.com/",
+		Region:          "auto",
+		Bucket:          "stable-bucket",
+		AccessKeyID:     "OLD-AKID",
+		SecretAccessKey: "ENC:old-secret",
+		Prefix:          "backups",
+		ForcePathStyle:  true,
+	}
+	raw, err := json.Marshal(initial)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupS3Config, string(raw)))
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:     "stored-backup",
+		Status: "completed",
+		S3Key:  "backups/stored.sql.gz",
+	}))
+
+	_, err = svc.UpdateS3Config(context.Background(), BackupS3Config{
+		Endpoint:        "https://s3.example.com",
+		Region:          initial.Region,
+		Bucket:          initial.Bucket,
+		AccessKeyID:     "NEW-AKID",
+		SecretAccessKey: "new-secret",
+		Prefix:          "new-prefix",
+		ForcePathStyle:  initial.ForcePathStyle,
+	})
+	require.NoError(t, err)
+
+	stored, err := svc.loadS3Config(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "NEW-AKID", stored.AccessKeyID)
+	require.Equal(t, "new-secret", stored.SecretAccessKey)
+	require.Equal(t, "new-prefix", stored.Prefix)
+}
+
+func TestBackupService_GetOrCreateStore_RebuildsWhenConfigChanges(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	var factoryCalls int
+	svc.storeFactory = func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
+		factoryCalls++
+		return newMockObjectStore(), nil
+	}
+	first := &BackupS3Config{Bucket: "bucket", AccessKeyID: "akid", SecretAccessKey: "secret", Prefix: "one"}
+	second := *first
+	second.Prefix = "two"
+
+	_, err := svc.getOrCreateStore(context.Background(), first)
+	require.NoError(t, err)
+	_, err = svc.getOrCreateStore(context.Background(), first)
+	require.NoError(t, err)
+	_, err = svc.getOrCreateStore(context.Background(), &second)
+	require.NoError(t, err)
+	require.Equal(t, 2, factoryCalls)
 }
 
 func TestBackupService_RepositoryErrorsArePropagated(t *testing.T) {
@@ -454,6 +674,225 @@ func TestBackupService_SaveRecordConcurrency(t *testing.T) {
 	records, err := svc.loadRecords(context.Background())
 	require.NoError(t, err)
 	require.Len(t, records, n)
+}
+
+func TestBackupService_SaveRecordBeyondLegacyLimitPreservesAllObjectMetadata(t *testing.T) {
+	repo := newMockSettingRepo()
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{}, store)
+	records := seedCompletedBackupRecords(t, repo, store, legacyBackupRecordLimit)
+
+	err := svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "record-101", Status: "running", S3Key: "backups/new.sql.gz",
+	})
+	require.NoError(t, err)
+	stored, err := svc.loadRecords(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, legacyBackupRecordLimit+1)
+	require.Equal(t, records[0].ID, stored[0].ID, "old object metadata must never be silently evicted")
+}
+
+func TestBackupService_ScheduledBackupUnlimitedPreservesRecordsBeyondLegacyLimit(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{dumpData: []byte("scheduled dump")}, store)
+	records := seedCompletedBackupRecords(t, repo, store, legacyBackupRecordLimit)
+	seedBackupSchedule(t, repo, BackupScheduleConfig{})
+
+	svc.runScheduledBackup()
+
+	stored, err := svc.loadRecords(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, legacyBackupRecordLimit+1, "retain_count=0 must remain unlimited")
+	require.Empty(t, store.deletedKeys, "unlimited retention must not delete old backups")
+	require.Equal(t, records[0].ID, stored[0].ID)
+	require.Equal(t, 1, store.uploadFileCalls)
+}
+
+func TestBackupService_ScheduledBackupFailureNeverDeletesCompletedBackups(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		dumper     *mockDumper
+		failUpload bool
+	}{
+		{name: "dump failure", dumper: &mockDumper{dumpErr: errors.New("dump failed")}},
+		{name: "upload failure", dumper: &mockDumper{dumpData: []byte("scheduled dump")}, failUpload: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newMockSettingRepo()
+			seedS3Config(t, repo)
+			store := newMockObjectStore()
+			if tc.failUpload {
+				store.failUploadFileAt = 1
+			}
+			svc := newTestBackupService(repo, tc.dumper, store)
+			records := seedCompletedBackupRecords(t, repo, store, legacyBackupRecordLimit)
+			seedBackupSchedule(t, repo, BackupScheduleConfig{RetainCount: legacyBackupRecordLimit})
+
+			svc.runScheduledBackup()
+
+			stored, err := svc.loadRecords(context.Background())
+			require.NoError(t, err)
+			require.Len(t, stored, legacyBackupRecordLimit+1, "failed attempts remain diagnosable without replacing good backups")
+			for _, record := range records {
+				require.NotContains(t, store.deletedKeys, record.S3Key, "failed replacement must not delete a completed object")
+				_, err = svc.GetBackupRecord(context.Background(), record.ID)
+				require.NoError(t, err)
+				store.mu.Lock()
+				_, objectExists := store.objects[record.S3Key]
+				store.mu.Unlock()
+				require.True(t, objectExists, "completed object %s must survive a failed replacement", record.S3Key)
+			}
+		})
+	}
+}
+
+func TestBackupService_ScheduledBackupCleansRetentionOnlyAfterSuccess(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{dumpData: []byte("scheduled dump")}, store)
+	seedCompletedBackupRecords(t, repo, store, legacyBackupRecordLimit)
+	seedBackupSchedule(t, repo, BackupScheduleConfig{RetainCount: legacyBackupRecordLimit})
+
+	svc.runScheduledBackup()
+
+	stored, err := svc.loadRecords(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, legacyBackupRecordLimit)
+	_, err = svc.GetBackupRecord(context.Background(), "record-000")
+	require.ErrorIs(t, err, ErrBackupNotFound)
+	require.Contains(t, store.deletedKeys, "backups/record-000.sql.gz")
+	require.Equal(t, 1, store.uploadFileCalls)
+}
+
+func TestBackupService_ScheduledBackupDoesNotCleanRetentionWhenCompletedStateSaveFails(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{dumpData: []byte("scheduled dump")}, store)
+	seedCompletedBackupRecords(t, repo, store, 1)
+	seedBackupSchedule(t, repo, BackupScheduleConfig{RetainCount: 1})
+
+	repo.mu.Lock()
+	baselineSetCalls := repo.setCalls
+	repo.setHook = func(key, value string, call int) error {
+		if key != settingKeyBackupRecords || call <= baselineSetCalls {
+			return nil
+		}
+		var records []BackupRecord
+		if err := json.Unmarshal([]byte(value), &records); err != nil {
+			return err
+		}
+		for i := range records {
+			if records[i].ID != "record-000" && records[i].Status == "completed" {
+				return errors.New("persist completed state failed")
+			}
+		}
+		return nil
+	}
+	repo.mu.Unlock()
+
+	svc.runScheduledBackup()
+
+	stored, err := svc.loadRecords(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, 2)
+	require.Equal(t, "completed", stored[0].Status)
+	require.Equal(t, "running", stored[1].Status)
+	require.NotContains(t, store.deletedKeys, "backups/record-000.sql.gz")
+	store.mu.Lock()
+	_, oldObjectExists := store.objects["backups/record-000.sql.gz"]
+	store.mu.Unlock()
+	require.True(t, oldObjectExists)
+}
+
+func TestBackupService_ScheduledBackupBelowLimitIsNotBlockedByRetentionDeleteFailure(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newMockObjectStore()
+	svc := newTestBackupService(repo, &mockDumper{dumpData: []byte("scheduled dump")}, store)
+
+	const oldKey = "backups/old-expired.sql.gz"
+	store.objects[oldKey] = []byte("old backup")
+	store.failDeleteKeys[oldKey] = errors.New("object store unavailable")
+	records := []BackupRecord{{
+		ID:        "old-expired",
+		Status:    "completed",
+		S3Key:     oldKey,
+		StartedAt: time.Now().Add(-48 * time.Hour).Format(time.RFC3339),
+	}}
+	recordData, err := json.Marshal(records)
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupRecords, string(recordData)))
+	scheduleData, err := json.Marshal(BackupScheduleConfig{RetainDays: 1})
+	require.NoError(t, err)
+	require.NoError(t, repo.Set(context.Background(), settingKeyBackupSchedule, string(scheduleData)))
+
+	svc.runScheduledBackup()
+
+	stored, err := svc.loadRecords(context.Background())
+	require.NoError(t, err)
+	require.Len(t, stored, 2, "best-effort retention failure must not block the new backup")
+	require.Equal(t, 1, store.uploadFileCalls)
+	_, err = svc.GetBackupRecord(context.Background(), "old-expired")
+	require.NoError(t, err, "failed retention deletion must preserve the old record")
+}
+
+func TestBackupService_SaveRecord_ReturnsQuicklyWhenCoordinationBackendFails(t *testing.T) {
+	repo := newMockSettingRepo()
+	redisErr := errors.New("redis unavailable")
+	cache := &fakeLeaderLockCache{acquireErr: redisErr}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- svc.saveRecord(context.Background(), &BackupRecord{ID: "record", Status: "completed"})
+	}()
+	select {
+	case err := <-done:
+		require.ErrorIs(t, err, ErrBackupCoordinationUnavailable)
+		require.ErrorIs(t, err, redisErr)
+	case <-time.After(time.Second):
+		t.Fatal("coordination backend errors must not be retried as lock contention")
+	}
+}
+
+func TestBackupService_SaveRecord_BackendDeadlineIsServiceUnavailable(t *testing.T) {
+	repo := newMockSettingRepo()
+	cache := &fakeLeaderLockCache{acquireErr: context.DeadlineExceeded}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+
+	err := svc.saveRecord(context.Background(), &BackupRecord{ID: "record", Status: "completed"})
+	require.ErrorIs(t, err, ErrBackupCoordinationUnavailable)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestBackupService_SaveRecord_CanceledCallerKeepsContextError(t *testing.T) {
+	repo := newMockSettingRepo()
+	cache := &fakeLeaderLockCache{acquireErr: context.DeadlineExceeded}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := svc.saveRecord(ctx, &BackupRecord{ID: "record", Status: "completed"})
+	require.ErrorIs(t, err, context.Canceled)
+	require.NotErrorIs(t, err, ErrBackupCoordinationUnavailable)
+}
+
+func TestBackupService_StartBackup_ReportsCoordinationUnavailable(t *testing.T) {
+	repo := newMockSettingRepo()
+	redisErr := errors.New("redis unavailable")
+	cache := &fakeLeaderLockCache{acquireErr: redisErr}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+
+	_, err := svc.StartBackup(context.Background(), "manual", 14)
+	require.ErrorIs(t, err, ErrBackupCoordinationUnavailable)
+	require.ErrorIs(t, err, redisErr)
+	svc.opMu.Lock()
+	require.False(t, svc.backingUp, "failed lock acquisition must reset the in-memory operation flag")
+	svc.opMu.Unlock()
 }
 
 func TestBackupService_LoadRecords_Empty(t *testing.T) {
@@ -652,7 +1091,7 @@ func TestBackupService_CreateBackup_ConcurrentBlocked(t *testing.T) {
 	require.ErrorIs(t, err, ErrBackupInProgress)
 }
 
-func TestBackupService_RestoreBackup_Streaming(t *testing.T) {
+func TestBackupService_OnlineRestoreEntryPointsFailClosed(t *testing.T) {
 	repo := newMockSettingRepo()
 	seedS3Config(t, repo)
 
@@ -665,106 +1104,16 @@ func TestBackupService_RestoreBackup_Streaming(t *testing.T) {
 	record, err := svc.CreateBackup(context.Background(), "manual", 14)
 	require.NoError(t, err)
 
-	// 恢复
+	// 在线进程不得下载或恢复数据库；同步和异步入口都必须 fail-closed。
 	err = svc.RestoreBackup(context.Background(), record.ID)
-	require.NoError(t, err)
-
-	// 验证 psql 收到的数据是否与原始 dump 内容一致
-	require.Equal(t, dumpContent, string(dumper.restored))
-}
-
-func TestBackupService_RestoreBackup_SplitParts(t *testing.T) {
-	repo := newMockSettingRepo()
-	seedS3Config(t, repo)
-	dumpContent := entropyBackupFixture(512)
-	dumper := &mockDumper{}
-	store := newMockObjectStore()
-	svc := newTestBackupService(repo, dumper, store)
-
-	compressed := gzipBackupBytes(t, dumpContent)
-	parts := splitBackupBytes(compressed, 11)
-	recordParts := make([]BackupPart, 0, len(parts))
-	for i, data := range parts {
-		key := fmt.Sprintf("backups/split-1/payload.part-%06d", i+1)
-		store.objects[key] = data
-		recordParts = append(recordParts, BackupPart{
-			Index:     i + 1,
-			S3Key:     key,
-			SizeBytes: int64(len(data)),
-			SHA256:    fmt.Sprintf("%x", sha256.Sum256(data)),
-		})
-	}
-	record := &BackupRecord{
-		ID:        "split-1",
-		Status:    "completed",
-		Parts:     recordParts,
-		SizeBytes: int64(len(compressed)),
-	}
-	require.NoError(t, svc.saveRecord(context.Background(), record))
-
-	require.NoError(t, svc.RestoreBackup(context.Background(), record.ID))
-	require.Equal(t, dumpContent, dumper.restored)
-}
-
-func TestBackupService_RestoreBackup_SplitPartsMissingPartDoesNotRestore(t *testing.T) {
-	repo := newMockSettingRepo()
-	seedS3Config(t, repo)
-	dumpContent := entropyBackupFixture(256)
-	dumper := &mockDumper{}
-	store := newMockObjectStore()
-	svc := newTestBackupService(repo, dumper, store)
-
-	compressed := gzipBackupBytes(t, dumpContent)
-	parts := splitBackupBytes(compressed, 11)
-	recordParts := make([]BackupPart, 0, len(parts))
-	for i, data := range parts {
-		key := fmt.Sprintf("backups/split-missing/payload.part-%06d", i+1)
-		store.objects[key] = data
-		recordParts = append(recordParts, BackupPart{
-			Index:     i + 1,
-			S3Key:     key,
-			SizeBytes: int64(len(data)),
-			SHA256:    fmt.Sprintf("%x", sha256.Sum256(data)),
-		})
-	}
-	delete(store.objects, recordParts[1].S3Key)
-	record := &BackupRecord{ID: "split-missing", Status: "completed", Parts: recordParts}
-	require.NoError(t, svc.saveRecord(context.Background(), record))
-
-	require.Error(t, svc.RestoreBackup(context.Background(), record.ID))
+	require.ErrorIs(t, err, ErrRestoreRequiresOfflineMaintenance)
+	started, err := svc.StartRestore(context.Background(), record.ID)
+	require.Nil(t, started)
+	require.ErrorIs(t, err, ErrRestoreRequiresOfflineMaintenance)
 	require.Empty(t, dumper.restored)
-}
-
-func TestBackupService_DownloadBackupPartsRejectsMismatchedMetadata(t *testing.T) {
-	tests := []struct {
-		name string
-		part BackupPart
-		want string
-	}{
-		{
-			name: "size",
-			part: BackupPart{Index: 1, S3Key: "backups/mismatch/size", SizeBytes: 4},
-			want: "size mismatch",
-		},
-		{
-			name: "checksum",
-			part: BackupPart{Index: 1, S3Key: "backups/mismatch/checksum", SizeBytes: 3, SHA256: "bad-checksum"},
-			want: "checksum mismatch",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			repo := newMockSettingRepo()
-			seedS3Config(t, repo)
-			store := newMockObjectStore()
-			store.objects[tt.part.S3Key] = []byte("abc")
-			svc := newTestBackupService(repo, &mockDumper{}, store)
-
-			_, err := svc.downloadBackupParts(context.Background(), store, []BackupPart{tt.part})
-			require.ErrorContains(t, err, tt.want)
-		})
-	}
+	unchanged, err := svc.GetBackupRecord(context.Background(), record.ID)
+	require.NoError(t, err)
+	require.Empty(t, unchanged.RestoreStatus)
 }
 
 func gzipBackupBytes(t *testing.T, content []byte) []byte {
@@ -802,7 +1151,7 @@ func TestBackupService_RestoreBackup_NotCompleted(t *testing.T) {
 	})
 
 	err := svc.RestoreBackup(context.Background(), "fail-1")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrRestoreRequiresOfflineMaintenance)
 }
 
 func TestBackupService_DeleteBackup(t *testing.T) {
@@ -834,6 +1183,93 @@ func TestBackupService_DeleteBackup(t *testing.T) {
 	// 记录应不存在
 	_, err = svc.GetBackupRecord(context.Background(), record.ID)
 	require.ErrorIs(t, err, ErrBackupNotFound)
+}
+
+func TestBackupService_DeleteBackup_DoesNotHoldRecordsLockAcrossObjectDeletion(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newBlockingDeleteObjectStore()
+	svc := newTestBackupServiceWithObjectStore(repo, &mockDumper{}, store)
+	const key = "backups/blocking-delete.sql.gz"
+	store.objects[key] = []byte("backup")
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "delete-target", Status: "completed", S3Key: key,
+	}))
+
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- svc.DeleteBackup(context.Background(), "delete-target") }()
+	select {
+	case <-store.deleteStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("object deletion did not start")
+	}
+
+	saveDone := make(chan error, 1)
+	go func() {
+		saveDone <- svc.saveRecord(context.Background(), &BackupRecord{ID: "concurrent", Status: "completed"})
+	}()
+	select {
+	case err := <-saveDone:
+		require.NoError(t, err, "unrelated record writes must not wait for slow S3 deletion")
+	case <-time.After(time.Second):
+		t.Fatal("records lock remained held across object deletion")
+	}
+
+	close(store.allowDelete)
+	require.NoError(t, <-deleteDone)
+	_, err := svc.GetBackupRecord(context.Background(), "delete-target")
+	require.ErrorIs(t, err, ErrBackupNotFound)
+	_, err = svc.GetBackupRecord(context.Background(), "concurrent")
+	require.NoError(t, err, "second phase must preserve records written during object deletion")
+}
+
+func TestBackupService_DeleteBackup_PreservesRecordChangedBetweenPhases(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newBlockingDeleteObjectStore()
+	svc := newTestBackupServiceWithObjectStore(repo, &mockDumper{}, store)
+	const oldKey = "backups/old-object.sql.gz"
+	const newKey = "backups/new-object.sql.gz"
+	store.objects[oldKey] = []byte("old")
+	store.objects[newKey] = []byte("new")
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "changing-target", Status: "completed", S3Key: oldKey,
+	}))
+
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- svc.DeleteBackup(context.Background(), "changing-target") }()
+	select {
+	case <-store.deleteStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("object deletion did not start")
+	}
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "changing-target", Status: "completed", S3Key: newKey,
+	}))
+	close(store.allowDelete)
+	err := <-deleteDone
+	require.ErrorContains(t, err, "BACKUP_RECORD_CHANGED")
+
+	current, getErr := svc.GetBackupRecord(context.Background(), "changing-target")
+	require.NoError(t, getErr)
+	require.Equal(t, newKey, current.S3Key)
+	store.mu.Lock()
+	require.NotContains(t, store.objects, oldKey)
+	require.Contains(t, store.objects, newKey)
+	store.mu.Unlock()
+}
+
+func TestBackupService_DeleteBackup_MissingStorageKeepsRecord(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID: "missing-config", Status: "completed", S3Key: "backups/unknown.sql.gz",
+	}))
+
+	err := svc.DeleteBackup(context.Background(), "missing-config")
+	require.ErrorIs(t, err, ErrBackupS3NotConfigured)
+	_, getErr := svc.GetBackupRecord(context.Background(), "missing-config")
+	require.NoError(t, getErr)
 }
 
 func TestBackupService_DeleteBackup_RunningKeepsUploadObjects(t *testing.T) {
@@ -1134,7 +1570,7 @@ func TestBackupOperationIsStale(t *testing.T) {
 	require.True(t, backupOperationIsStale("", now))
 	require.True(t, backupOperationIsStale("   ", now))
 	require.True(t, backupOperationIsStale("not-a-timestamp", now))
-	require.True(t, backupOperationIsStale(now.Add(-(backupOperationTimeout + backupStaleGrace + time.Second)).Format(time.RFC3339), now))
+	require.True(t, backupOperationIsStale(now.Add(-(backupOperationTimeout+backupStaleGrace+time.Second)).Format(time.RFC3339), now))
 	require.False(t, backupOperationIsStale(now.Add(-time.Minute).Format(time.RFC3339), now))
 }
 
@@ -1160,7 +1596,7 @@ func TestRecoverStaleRecords_RecoversUnparseableAndMissingTimestamps(t *testing.
 		RestoreStartedAt: time.Now().Add(-time.Minute).Format(time.RFC3339),
 	}))
 
-	svc.recoverStaleRecords()
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
 
 	bad, err := svc.GetBackupRecord(context.Background(), "bad-started-at")
 	require.NoError(t, err)
@@ -1196,7 +1632,7 @@ func TestRecoverStaleRecords(t *testing.T) {
 		RestoreStartedAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
 	})
 
-	svc.recoverStaleRecords()
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
 
 	r1, _ := svc.GetBackupRecord(context.Background(), "stale-1")
 	require.Equal(t, "failed", r1.Status)
@@ -1205,6 +1641,125 @@ func TestRecoverStaleRecords(t *testing.T) {
 	r2, _ := svc.GetBackupRecord(context.Background(), "stale-2")
 	require.Equal(t, "failed", r2.RestoreStatus)
 	require.Contains(t, r2.RestoreError, "server restart")
+}
+
+func TestBackupService_RecoverySweep_RetriesAfterCoordinationFailure(t *testing.T) {
+	repo := newMockSettingRepo()
+	cache := &fakeLeaderLockCache{}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:        "retry-recovery",
+		Status:    "running",
+		StartedAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
+	}))
+
+	redisErr := errors.New("redis startup timeout")
+	cache.acquireErr = redisErr
+	err := svc.recoverStaleRecordsWithContext(context.Background())
+	require.ErrorIs(t, err, redisErr)
+	stillRunning, getErr := svc.GetBackupRecord(context.Background(), "retry-recovery")
+	require.NoError(t, getErr)
+	require.Equal(t, "running", stillRunning.Status)
+
+	cache.acquireErr = nil
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
+	recovered, getErr := svc.GetBackupRecord(context.Background(), "retry-recovery")
+	require.NoError(t, getErr)
+	require.Equal(t, "failed", recovered.Status)
+}
+
+func TestBackupService_RecoverySweep_SkipsLiveOperationThenRetries(t *testing.T) {
+	repo := newMockSettingRepo()
+	cache := &fakeLeaderLockCache{}
+	svc := newCoordinatedTestBackupService(repo, &mockDumper{}, newMockObjectStore(), cache)
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:        "operation-held",
+		Status:    "running",
+		StartedAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
+	}))
+	peerRelease, acquired, err := tryAcquireSingletonLeaderLock(
+		context.Background(), cache, nil, backupOperationLockKey, "peer", time.Minute,
+	)
+	require.NoError(t, err)
+	require.True(t, acquired)
+
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
+	record, err := svc.GetBackupRecord(context.Background(), "operation-held")
+	require.NoError(t, err)
+	require.Equal(t, "running", record.Status)
+
+	peerRelease()
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
+	record, err = svc.GetBackupRecord(context.Background(), "operation-held")
+	require.NoError(t, err)
+	require.Equal(t, "failed", record.Status)
+}
+
+func TestBackupService_RecoverySweep_RecoversFreshRecordAfterItBecomesStale(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	record := &BackupRecord{
+		ID:        "becomes-stale",
+		Status:    "running",
+		StartedAt: time.Now().Format(time.RFC3339),
+	}
+	require.NoError(t, svc.saveRecord(context.Background(), record))
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
+	current, err := svc.GetBackupRecord(context.Background(), record.ID)
+	require.NoError(t, err)
+	require.Equal(t, "running", current.Status)
+
+	current.StartedAt = time.Now().Add(-(backupOperationTimeout + backupStaleGrace + time.Minute)).Format(time.RFC3339)
+	require.NoError(t, svc.saveRecord(context.Background(), current))
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
+	current, err = svc.GetBackupRecord(context.Background(), record.ID)
+	require.NoError(t, err)
+	require.Equal(t, "failed", current.Status)
+}
+
+func TestBackupService_StopCancelsAndWaitsForRecoverySweep(t *testing.T) {
+	repo := newMockSettingRepo()
+	seedS3Config(t, repo)
+	store := newBlockingDeleteObjectStore()
+	svc := newTestBackupServiceWithObjectStore(repo, &mockDumper{}, store)
+	svc.recoveryCtx, svc.recoveryCancel = context.WithCancel(context.Background())
+	const key = "backups/stale-stop.sql.gz"
+	store.objects[key] = []byte("backup")
+	require.NoError(t, svc.saveRecord(context.Background(), &BackupRecord{
+		ID:        "stale-stop",
+		Status:    "running",
+		S3Key:     key,
+		StartedAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
+	}))
+
+	go svc.runRecoverySweep()
+	select {
+	case <-store.deleteStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("recovery object cleanup did not start")
+	}
+	stopDone := make(chan struct{})
+	go func() {
+		svc.Stop()
+		close(stopDone)
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop did not cancel and wait for the recovery sweep")
+	}
+	store.mu.Lock()
+	require.Empty(t, store.deletedKeys, "canceled cleanup must not continue deleting after Stop")
+	store.mu.Unlock()
+}
+
+func TestBackupService_Start_RegistersPeriodicRecoverySweep(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+	svc.Start()
+	t.Cleanup(svc.Stop)
+	require.NotZero(t, svc.recoveryEntryID)
+	require.NotEmpty(t, svc.cronSched.Entries())
 }
 
 func TestBackupService_RecoverStaleRecords_CleansBackupObjects(t *testing.T) {
@@ -1226,7 +1781,7 @@ func TestBackupService_RecoverStaleRecords_CleansBackupObjects(t *testing.T) {
 		StartedAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
 	}))
 
-	svc.recoverStaleRecords()
+	require.NoError(t, svc.recoverStaleRecordsWithContext(context.Background()))
 
 	record, err := svc.GetBackupRecord(context.Background(), "stale-parts")
 	require.NoError(t, err)
@@ -1254,7 +1809,7 @@ func TestBackupService_RecoverStaleRecords_PreservesKeysWhenCleanupFails(t *test
 		StartedAt: time.Now().Add(-time.Hour).Format(time.RFC3339),
 	}))
 
-	svc.recoverStaleRecords()
+	require.Error(t, svc.recoverStaleRecordsWithContext(context.Background()))
 
 	record, err := svc.GetBackupRecord(context.Background(), "stale-cleanup-failed")
 	require.NoError(t, err)
@@ -1304,7 +1859,7 @@ func TestGracefulShutdown(t *testing.T) {
 	}
 }
 
-func TestStartRestore_Async(t *testing.T) {
+func TestStartRestore_FailClosedPreservesExistingRestoreState(t *testing.T) {
 	repo := newMockSettingRepo()
 	seedS3Config(t, repo)
 
@@ -1317,17 +1872,21 @@ func TestStartRestore_Async(t *testing.T) {
 	record, err := svc.CreateBackup(context.Background(), "manual", 14)
 	require.NoError(t, err)
 
-	// 异步恢复
+	record.RestoreStatus = "failed"
+	record.RestoreError = "previous failure"
+	record.RestoredAt = time.Now().Add(-time.Hour).Format(time.RFC3339)
+	require.NoError(t, svc.saveRecord(context.Background(), record))
+
 	restored, err := svc.StartRestore(context.Background(), record.ID)
-	require.NoError(t, err)
-	require.Equal(t, "running", restored.RestoreStatus)
+	require.Nil(t, restored)
+	require.ErrorIs(t, err, ErrRestoreRequiresOfflineMaintenance)
 
-	svc.wg.Wait()
-
-	// 验证最终状态
 	final, err := svc.GetBackupRecord(context.Background(), record.ID)
 	require.NoError(t, err)
-	require.Equal(t, "completed", final.RestoreStatus)
+	require.Equal(t, "failed", final.RestoreStatus)
+	require.Equal(t, "previous failure", final.RestoreError)
+	require.NotEmpty(t, final.RestoredAt)
+	require.Empty(t, dumper.restored)
 }
 
 func TestBackupService_StartRestore_SplitParts(t *testing.T) {
@@ -1355,12 +1914,7 @@ func TestBackupService_StartRestore_SplitParts(t *testing.T) {
 	require.NoError(t, svc.saveRecord(context.Background(), record))
 
 	started, err := svc.StartRestore(context.Background(), record.ID)
-	require.NoError(t, err)
-	require.Equal(t, "running", started.RestoreStatus)
-	svc.wg.Wait()
-
-	final, err := svc.GetBackupRecord(context.Background(), record.ID)
-	require.NoError(t, err)
-	require.Equal(t, "completed", final.RestoreStatus)
-	require.Equal(t, dumpContent, dumper.restored)
+	require.Nil(t, started)
+	require.ErrorIs(t, err, ErrRestoreRequiresOfflineMaintenance)
+	require.Empty(t, dumper.restored)
 }

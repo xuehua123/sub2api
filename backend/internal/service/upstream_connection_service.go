@@ -32,6 +32,7 @@ var (
 	ErrUpstreamConnectionInvalidReference     = infraerrors.BadRequest("INVALID_UPSTREAM_CONNECTION_REFERENCE", "referenced proxy or account does not exist")
 	ErrUpstreamConnectionChanged              = infraerrors.Conflict("UPSTREAM_CONNECTION_CHANGED", "upstream connection changed; reload and retry")
 	ErrUpstreamCredentialRefreshBusy          = infraerrors.Conflict("UPSTREAM_CREDENTIAL_REFRESH_BUSY", "another upstream credential refresh is already in progress")
+	ErrUpstreamCredentialRefreshUnavailable   = infraerrors.ServiceUnavailable("UPSTREAM_CREDENTIAL_REFRESH_UNAVAILABLE", "upstream credential refresh coordination is temporarily unavailable")
 	ErrUpstreamAccountBindingNotFound         = infraerrors.NotFound("UPSTREAM_ACCOUNT_BINDING_NOT_FOUND", "upstream account binding not found")
 	ErrUpstreamConnectionAuthentication       = errors.New("upstream management authentication failed")
 )
@@ -627,7 +628,9 @@ func (s *UpstreamConnectionService) Probe(ctx context.Context, id int64) (*Upstr
 	}
 	connection, credential, err = s.prepareConnectionCredential(ctx, connection, credential)
 	if err != nil {
-		if errors.Is(err, ErrUpstreamConnectionChanged) || errors.Is(err, ErrUpstreamCredentialRefreshBusy) {
+		if errors.Is(err, ErrUpstreamConnectionChanged) ||
+			errors.Is(err, ErrUpstreamCredentialRefreshBusy) ||
+			errors.Is(err, ErrUpstreamCredentialRefreshUnavailable) {
 			return nil, err
 		}
 		s.recordProbeFailure(ctx, connection, connection.Version, err)
@@ -729,11 +732,14 @@ func (s *UpstreamConnectionService) prepareConnectionCredential(
 	// observes the new expiry, and skips another refresh.
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
-	release, acquired := tryAcquireSingletonLeaderLock(
+	release, acquired, lockErr := tryAcquireSingletonLeaderLock(
 		ctx, s.lockCache, s.db,
 		fmt.Sprintf("upstream:connections:v2:credential-refresh:%d", connection.ID),
 		s.instanceID, 2*time.Minute,
 	)
+	if lockErr != nil {
+		return connection, credential, ErrUpstreamCredentialRefreshUnavailable.WithCause(lockErr)
+	}
 	if !acquired {
 		return connection, credential, ErrUpstreamCredentialRefreshBusy
 	}

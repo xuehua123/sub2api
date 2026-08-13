@@ -1011,7 +1011,8 @@ func TestOllamaCloudUsageRunnerHonorsLeaderLockAndBackoff(t *testing.T) {
 		SettingKeyOllamaCloudUsageSettings: `{"enabled":true,"interval_minutes":60}`,
 	}}
 	cache := &fakeLeaderLockCache{}
-	_, acquired := tryAcquireSingletonLeaderLock(context.Background(), cache, nil, ollamaCloudUsageLeaderLockKey, "peer", time.Minute)
+	_, acquired, err := tryAcquireSingletonLeaderLock(context.Background(), cache, nil, ollamaCloudUsageLeaderLockKey, "peer", time.Minute)
+	require.NoError(t, err)
 	require.True(t, acquired)
 	svc := newOllamaUsageTestService(t, repo, upstream, settingsRepo, true)
 	svc.lockCache = cache
@@ -1026,6 +1027,25 @@ func TestOllamaCloudUsageRunnerHonorsLeaderLockAndBackoff(t *testing.T) {
 	require.Greater(t, thirdFailure, firstFailure)
 	require.GreaterOrEqual(t, nextOllamaCloudUsageDelay(60, 1, 3*time.Hour), 3*time.Hour)
 	require.LessOrEqual(t, nextOllamaCloudUsageDelay(60, 20, 0), ollamaCloudUsageMaxDelay+5*time.Minute)
+}
+
+func TestOllamaCloudUsageRunnerReportsLeaderLockBackendError(t *testing.T) {
+	account := ollamaUsageAccount(12)
+	account.Extra[OllamaCloudUsageSessionExtraKey] = "cipher:wos-session=secret"
+	account.Extra[OllamaCloudUsageAutoRefreshExtraKey] = true
+	repo := newOllamaUsageTestRepo(map[int64]*Account{12: account})
+	upstream := &ollamaUsageHTTPStub{body: ollamaUsageFixture(t)}
+	settingsRepo := &ollamaUsageTestSettingRepo{values: map[string]string{
+		SettingKeyOllamaCloudUsageSettings: `{"enabled":true,"interval_minutes":60}`,
+	}}
+	lockErr := errors.New("redis unavailable")
+	svc := newOllamaUsageTestService(t, repo, upstream, settingsRepo, true)
+	svc.lockCache = &fakeLeaderLockCache{acquireErr: lockErr}
+
+	err := svc.RunDue(context.Background())
+
+	require.ErrorIs(t, err, lockErr)
+	require.Zero(t, upstream.calls.Load(), "lock backend failure must stop the due cycle")
 }
 
 func TestOllamaCloudUsageRunnerDisablesAutoRefreshAfterUnpersistableIdentityError(t *testing.T) {

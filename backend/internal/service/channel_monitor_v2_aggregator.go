@@ -222,7 +222,11 @@ func (s *ChannelMonitorV2Aggregator) runOnce() {
 	}
 	ctx, cancel := context.WithTimeout(parent, 55*time.Second)
 	defer cancel()
-	release, acquired := tryAcquireSingletonLeaderLock(ctx, nil, s.db, channelMonitorV2AggregatorLockKey, s.instanceID, 2*time.Minute)
+	release, acquired, err := tryAcquireSingletonLeaderLock(ctx, nil, s.db, channelMonitorV2AggregatorLockKey, s.instanceID, 2*time.Minute)
+	if err != nil {
+		logger.LegacyPrintf("service.channel_monitor_v2", "[ChannelMonitorV2] acquire leader lock failed: %v", err)
+		return
+	}
 	if !acquired {
 		return
 	}

@@ -82,7 +82,7 @@ export default {
 
     backup: {
       title: 'Database Backup',
-      description: 'Full database backup to S3-compatible storage with scheduled backup and restore',
+      description: 'Full database backup to S3-compatible storage; database restore requires a stopped, offline maintenance procedure',
       s3: {
         title: 'S3 Storage Configuration',
         description: 'Configure S3-compatible storage (supports Cloudflare R2)',
@@ -177,6 +177,8 @@ export default {
         restoreConfirm: 'Are you sure you want to restore from this backup? This will overwrite the current database!',
         restorePasswordPrompt: 'Please enter your admin password to confirm the restore operation',
         restoreSuccess: 'Database restored successfully',
+        restoreOfflineOnly: 'Offline restore only',
+        restoreOfflineHint: 'Online restore is disabled because requests, workers, Redis caches, and the other blue-green slot could keep writing. Drain traffic and stop every application slot before following the reviewed offline restore procedure.',
         deleteConfirm: 'Are you sure you want to delete this backup?',
         deleted: 'Backup deleted'
       },

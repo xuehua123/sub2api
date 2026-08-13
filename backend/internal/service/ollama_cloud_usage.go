@@ -732,7 +732,10 @@ func (s *OllamaCloudUsageService) RunDue(ctx context.Context) error {
 	if !settings.Enabled {
 		return nil
 	}
-	release, acquired := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, ollamaCloudUsageLeaderLockKey, s.instanceID, ollamaCloudUsageLeaderLockTTL)
+	release, acquired, err := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, ollamaCloudUsageLeaderLockKey, s.instanceID, ollamaCloudUsageLeaderLockTTL)
+	if err != nil {
+		return fmt.Errorf("acquire Ollama Cloud usage leader lock: %w", err)
+	}
 	if !acquired {
 		return nil
 	}

@@ -9,12 +9,14 @@ const {
   getSchedule,
   listBackups,
   getDownloadURL,
+  restoreBackup,
 } = vi.hoisted(() => ({
   getS3Config: vi.fn(),
   getImageStorageConfig: vi.fn(),
   getSchedule: vi.fn(),
   listBackups: vi.fn(),
   getDownloadURL: vi.fn(),
+  restoreBackup: vi.fn(),
 }))
 
 vi.mock('@/api', () => ({
@@ -33,7 +35,7 @@ vi.mock('@/api', () => ({
       getBackup: vi.fn(),
       deleteBackup: vi.fn(),
       getDownloadURL,
-      restoreBackup: vi.fn(),
+      restoreBackup,
     },
   },
 }))
@@ -155,5 +157,18 @@ describe('admin BackupView 分卷备份', () => {
 
     expect(wrapper.find('tbody tr td:nth-child(5)').text()).toBe('-')
     expect(wrapper.findAll('button').some(button => button.text() === 'common.delete')).toBe(false)
+  })
+
+  it('完成的备份只提示离线恢复，不提供在线恢复入口', async () => {
+    listBackups.mockResolvedValue({ items: [baseRecord('offline-only')] })
+
+    const wrapper = mountBackupView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('admin.backup.actions.restoreOfflineOnly')
+    expect(wrapper.findAll('button').some(button =>
+      button.text().includes('admin.backup.actions.restore'),
+    )).toBe(false)
+    expect(restoreBackup).not.toHaveBeenCalled()
   })
 })

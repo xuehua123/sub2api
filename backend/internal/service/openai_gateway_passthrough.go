@@ -1597,13 +1597,9 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		// Usage can be emitted on an earlier SSE event rather than the terminal
 		// response object, so collect it before classifying an empty completion.
 		forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
-			if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(data); parsed {
-				*usage = parsedUsage
-			}
+			mergeOpenAIUsage(usage, data)
 		})
-		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
-			*usage = parsedUsage
-		}
+		mergeOpenAIUsage(usage, finalResponse)
 		// When the terminal event has an empty output array, reconstruct
 		// output from accumulated delta events so the client gets full content.
 		if len(gjson.GetBytes(finalResponse, "output").Array()) == 0 {

@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -174,7 +175,7 @@ func TestOpenAIResponsesNonStreamingNativeEarlierUsageSucceeds(t *testing.T) {
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: io.NopCloser(strings.NewReader(
 			"data: {\"type\":\"response.done\",\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}\n\n" +
-				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_native\",\"status\":\"completed\",\"output\":[]}}\n\n",
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_native\",\"status\":\"completed\",\"output\":[],\"usage\":{}}}\n\n",
 		)),
 	}}
 	svc := newOpenAIImageGenerationControlTestService(upstream)
@@ -252,7 +253,7 @@ func TestOpenAIResponsesNonStreamingPassthroughEarlierUsageSucceeds(t *testing.T
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: io.NopCloser(strings.NewReader(
 			"data: {\"type\":\"response.done\",\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}\n\n" +
-				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_buffered\",\"status\":\"completed\",\"output\":[]}}\n\n",
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_buffered\",\"status\":\"completed\",\"output\":[],\"usage\":{}}}\n\n",
 		)),
 	}}
 	svc := newOpenAIImageGenerationControlTestService(upstream)
@@ -267,6 +268,36 @@ func TestOpenAIResponsesNonStreamingPassthroughEarlierUsageSucceeds(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, 4, result.Usage.InputTokens)
+}
+
+func TestOpenAIResponsesStreamingEarlierShortUsageSurvivesEmptyTerminalUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, passthrough := range []bool{false, true} {
+		t.Run(fmt.Sprintf("passthrough_%t", passthrough), func(t *testing.T) {
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+				Body: io.NopCloser(strings.NewReader(
+					"data: {\"type\":\"response.done\",\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}\n\n" +
+						"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_stream\",\"status\":\"completed\",\"output\":[],\"usage\":{}}}\n\n",
+				)),
+			}}
+			svc := newOpenAIImageGenerationControlTestService(upstream)
+			c, _ := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.144.1")
+			account := newOpenAIImageGenerationControlTestAccount()
+			if passthrough {
+				account.Extra = map[string]any{"openai_passthrough": true}
+			}
+
+			result, err := svc.Forward(context.Background(), c, account, []byte(`{
+				"model":"gpt-5.6-sol","stream":true,"input":"continue"
+			}`))
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, 4, result.Usage.InputTokens)
+		})
+	}
 }
 
 func TestOpenAIResponsesCompletedEventIsEmpty(t *testing.T) {

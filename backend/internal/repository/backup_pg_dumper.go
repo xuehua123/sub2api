@@ -12,12 +12,20 @@ import (
 
 // PgDumper implements service.DBDumper using pg_dump/psql
 type PgDumper struct {
-	cfg *config.DatabaseConfig
+	cfg                   *config.DatabaseConfig
+	restoreCommandContext func(context.Context, string, ...string) *exec.Cmd
 }
 
 // NewPgDumper creates a new PgDumper
 func NewPgDumper(cfg *config.Config) service.DBDumper {
 	return &PgDumper{cfg: &cfg.Database}
+}
+
+func (d *PgDumper) newRestoreCommand(ctx context.Context, args ...string) *exec.Cmd {
+	if d.restoreCommandContext != nil {
+		return d.restoreCommandContext(ctx, "psql", args...)
+	}
+	return exec.CommandContext(ctx, "psql", args...)
 }
 
 // Dump executes pg_dump and returns a streaming reader of the output
@@ -61,10 +69,13 @@ func (d *PgDumper) Restore(ctx context.Context, data io.Reader) error {
 		"-p", fmt.Sprintf("%d", d.cfg.Port),
 		"-U", d.cfg.User,
 		"-d", d.cfg.DBName,
+		"--no-psqlrc",
+		"--set=ON_ERROR_STOP=on",
 		"--single-transaction",
+		"--file=-",
 	}
 
-	cmd := exec.CommandContext(ctx, "psql", args...)
+	cmd := d.newRestoreCommand(ctx, args...)
 	if d.cfg.Password != "" {
 		cmd.Env = append(cmd.Environ(), "PGPASSWORD="+d.cfg.Password)
 	}
@@ -76,7 +87,7 @@ func (d *PgDumper) Restore(ctx context.Context, data io.Reader) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, string(output))
+		return fmt.Errorf("psql restore failed: %w: %s", err, output)
 	}
 	return nil
 }

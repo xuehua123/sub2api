@@ -240,15 +240,13 @@
                     >
                       {{ t('admin.backup.actions.download') }}
                     </button>
-                    <button
+                    <span
                       v-if="record.status === 'completed'"
-                      type="button"
-                      class="btn btn-secondary btn-xs"
-                      :disabled="restoringId === record.id"
-                      @click="restoreBackup(record.id)"
+                      class="inline-flex cursor-help items-center rounded bg-amber-50 px-2 py-1 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      :title="t('admin.backup.actions.restoreOfflineHint')"
                     >
-                      {{ restoringId === record.id ? t('common.loading') : t('admin.backup.actions.restore') }}
-                    </button>
+                      {{ t('admin.backup.actions.restoreOfflineOnly') }}
+                    </span>
                     <button
                       v-if="record.status !== 'running'"
                       type="button"
@@ -797,28 +795,6 @@ async function downloadBackup(id: string) {
 function closeDownloadParts() {
   downloadPartsModalOpen.value = false
   downloadParts.value = []
-}
-
-async function restoreBackup(id: string) {
-  if (!window.confirm(t('admin.backup.actions.restoreConfirm'))) return
-  const password = window.prompt(t('admin.backup.actions.restorePasswordPrompt'))
-  if (!password) return
-  restoringId.value = id
-  try {
-    const record = await backupStepUp.run(() => adminAPI.backup.restoreBackup(id, password))
-    updateRecordInList(record)
-    startRestorePolling(id)
-  } catch (error: any) {
-    restoringId.value = ''
-    if (isStepUpCancelled(error)) return
-    if (reportStepUpBlocked(error)) return
-    // apiClient 拦截器把 HTTP 错误归一化为顶层 { status } 平面对象（无 response 字段）
-    if (error?.status === 409 || error?.response?.status === 409) {
-      appStore.showWarning(t('admin.backup.operations.restoreRunning'))
-    } else {
-      appStore.showError(error?.message || t('errors.networkError'))
-    }
-  }
 }
 
 async function removeBackup(id: string) {

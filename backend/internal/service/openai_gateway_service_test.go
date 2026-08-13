@@ -3467,6 +3467,47 @@ func TestParseSSEUsage_SelectiveParsing(t *testing.T) {
 	require.Equal(t, 6, usage.CacheReadInputTokens)
 }
 
+func TestParseSSEUsage_ShortDoneThenEmptyUsagePreservesSnapshot(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	usage := &OpenAIUsage{}
+	shortDone := `{"type":"response.done","usage":{"input_tokens":4,"output_tokens":0}}`
+	require.Less(t, len(shortDone), 72, "fixture must cover the removed short-event guard")
+
+	svc.parseSSEUsage(shortDone, usage)
+	require.Equal(t, 4, usage.InputTokens)
+
+	svc.parseSSEUsage(`{"type":"response.completed","response":{"usage":{}}}`, usage)
+	require.Equal(t, 4, usage.InputTokens, "an empty terminal usage object must not erase an earlier snapshot")
+}
+
+func TestMergeOpenAIUsage_AllFieldsPreserveZerosAndAcceptLaterPositiveSnapshot(t *testing.T) {
+	usage := &OpenAIUsage{
+		InputTokens:              1,
+		ImageInputTokens:         2,
+		OutputTokens:             3,
+		CacheCreationInputTokens: 4,
+		CacheReadInputTokens:     5,
+		ImageOutputTokens:        6,
+	}
+	original := *usage
+
+	mergeOpenAIUsage(usage, []byte(`{"type":"response.completed","response":{"usage":{}}}`))
+	require.Equal(t, original, *usage, "empty usage must not erase any accumulated bucket")
+
+	mergeOpenAIUsage(usage, []byte(`{"usage":{"input_tokens":0,"output_tokens":0,"input_tokens_details":{"image_tokens":0,"cache_write_tokens":0,"cached_tokens":0},"output_tokens_details":{"image_tokens":0}}}`))
+	require.Equal(t, original, *usage, "zero-valued snapshots must not erase positive accumulated buckets")
+
+	mergeOpenAIUsage(usage, []byte(`{"usage":{"input_tokens":11,"output_tokens":13,"input_tokens_details":{"image_tokens":12,"cache_write_tokens":14,"cached_tokens":15},"output_tokens_details":{"image_tokens":16}}}`))
+	require.Equal(t, OpenAIUsage{
+		InputTokens:              11,
+		ImageInputTokens:         12,
+		OutputTokens:             13,
+		CacheCreationInputTokens: 14,
+		CacheReadInputTokens:     15,
+		ImageOutputTokens:        16,
+	}, *usage)
+}
+
 func TestExtractOpenAIUsageFromJSONBytes_AcceptsResponseAndChatUsageShapes(t *testing.T) {
 	usage, ok := extractOpenAIUsageFromJSONBytes([]byte(`{"id":"resp_1","usage":{"input_tokens":9,"output_tokens":5,"input_tokens_details":{"cached_tokens":2,"cache_write_tokens":4}}}`))
 	require.True(t, ok)

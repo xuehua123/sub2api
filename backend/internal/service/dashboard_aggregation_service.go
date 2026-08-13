@@ -224,7 +224,11 @@ func (s *DashboardAggregationService) runScheduledAggregation() {
 
 	// Multi-instance guard: only the leader runs the periodic aggregation; peers
 	// skip this cycle to avoid N× redundant GROUP BY queries and watermark races.
-	release, ok := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, dashboardAggregationLeaderLockKey, s.instanceID, dashboardAggregationLeaderLockTTL)
+	release, ok, err := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, dashboardAggregationLeaderLockKey, s.instanceID, dashboardAggregationLeaderLockTTL)
+	if err != nil {
+		logger.LegacyPrintf("service.dashboard_aggregation", "[DashboardAggregation] 获取 leader lock 失败: %v", err)
+		return
+	}
 	if !ok {
 		return
 	}

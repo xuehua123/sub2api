@@ -1418,6 +1418,29 @@ func TestUpstreamConnectionCredentialRefreshStopsWhenDistributedLockIsHeld(t *te
 	require.Equal(t, int64(1), repo.connection.Version)
 }
 
+func TestUpstreamConnectionCredentialRefreshReportsLockBackendError(t *testing.T) {
+	lockErr := errors.New("redis unavailable")
+	connectionService := NewUpstreamConnectionService(&upstreamConnectionTestRepo{}, upstreamConnectionTestEncryptor{}, nil)
+	connectionService.inspector = newUpstreamConnectionInspector(nil, nil, http.DefaultClient)
+	connectionService.lockCache = &fakeLeaderLockCache{acquireErr: lockErr}
+	connection := &UpstreamConnection{
+		ID:       13,
+		Provider: UpstreamConnectionProviderSub2API,
+		AuthMode: string(UpstreamManagementAuthModeAccessToken),
+	}
+	credential := upstreamConnectionCredential{
+		AccessToken:  "old-access",
+		RefreshToken: "old-refresh",
+		ExpiresAt:    time.Now().Add(-time.Minute).Unix(),
+	}
+
+	_, _, err := connectionService.prepareConnectionCredential(context.Background(), connection, credential)
+
+	require.ErrorIs(t, err, ErrUpstreamCredentialRefreshUnavailable)
+	require.ErrorIs(t, err, lockErr)
+	require.True(t, infraerrors.IsServiceUnavailable(err))
+}
+
 func TestSub2APIManagementLoginBodyOnlySendsExplicitLocationConfirmation(t *testing.T) {
 	withoutConfirmation, err := json.Marshal(sub2APIManagementLoginBody(upstreamConnectionCredential{
 		Username: "admin@example.com", Password: "secret",

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 	"testing"
@@ -13,14 +14,18 @@ import (
 )
 
 type upstreamConnectionSyncLock struct {
-	mu       sync.Mutex
-	held     bool
-	releases int
+	mu         sync.Mutex
+	held       bool
+	releases   int
+	acquireErr error
 }
 
 func (l *upstreamConnectionSyncLock) TryAcquireLeaderLock(_ context.Context, _, _ string, _ time.Duration) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.acquireErr != nil {
+		return false, l.acquireErr
+	}
 	if l.held {
 		return false, nil
 	}
@@ -70,6 +75,24 @@ func TestUpstreamConnectionSyncServiceSkipsWhenPeerIsLeader(t *testing.T) {
 	}
 
 	require.NoError(t, service.RunDue(context.Background()))
+	require.False(t, called)
+	require.Zero(t, lock.releases)
+}
+
+func TestUpstreamConnectionSyncServiceReportsLeaderLockBackendError(t *testing.T) {
+	repo := &upstreamConnectionTestRepo{dueConnections: []*UpstreamConnection{{ID: 1}}}
+	lockErr := errors.New("redis unavailable")
+	lock := &upstreamConnectionSyncLock{acquireErr: lockErr}
+	service := NewUpstreamConnectionSyncService(repo, nil, lock, nil)
+	called := false
+	service.syncConnection = func(context.Context, int64, int) error {
+		called = true
+		return nil
+	}
+
+	err := service.RunDue(context.Background())
+
+	require.ErrorIs(t, err, lockErr)
 	require.False(t, called)
 	require.Zero(t, lock.releases)
 }

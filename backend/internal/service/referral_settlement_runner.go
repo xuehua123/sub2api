@@ -141,10 +141,14 @@ func (r *referralSettlementRunner) runOnce() {
 	}
 	ctx, cancel := context.WithTimeout(r.parentCtx, timeout)
 	defer cancel()
-	release, acquired := tryAcquireSingletonLeaderLock(
+	release, acquired, err := tryAcquireSingletonLeaderLock(
 		ctx, r.lockCache, r.db,
 		referralSettlementRunnerLeaderLockKey, r.instanceID, referralSettlementRunnerLeaderLockTTL,
 	)
+	if err != nil {
+		logger.LegacyPrintf("service.referral_settlement_runner", "acquire_leader_lock_failed: err=%v", err)
+		return
+	}
 	if !acquired {
 		return
 	}
