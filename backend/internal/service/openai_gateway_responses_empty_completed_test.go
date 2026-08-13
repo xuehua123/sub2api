@@ -114,6 +114,82 @@ func TestOpenAIResponsesEmptyCompletedWithUsageSucceeds(t *testing.T) {
 	require.Equal(t, 3, result.Usage.InputTokens)
 }
 
+func TestOpenAIResponsesEmptyCompletedNonStreamingNativeFailsOver(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			"x-request-id": []string{"rid-empty-native"},
+		},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_empty_native\",\"status\":\"in_progress\"}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_empty_native\",\"status\":\"completed\",\"output\":[]}}\n\n",
+		)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.144.1")
+	account := newOpenAIImageGenerationControlTestAccount()
+
+	_, err := svc.Forward(context.Background(), c, account, []byte(`{
+		"model":"gpt-5.6-sol","stream":false,"input":"continue"
+	}`))
+
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.Equal(t, "rid-empty-native", failoverErr.ResponseHeaders.Get("x-request-id"))
+	require.Empty(t, recorder.Body.String())
+}
+
+func TestOpenAIResponsesNonStreamingNativeDeltaOutputSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_delta_native\",\"status\":\"completed\",\"output\":[]}}\n\n",
+		)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, recorder := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.144.1")
+	account := newOpenAIImageGenerationControlTestAccount()
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{
+		"model":"gpt-5.6-sol","stream":false,"input":"continue"
+	}`))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "hello", gjson.Get(recorder.Body.String(), "output.0.content.0.text").String())
+}
+
+func TestOpenAIResponsesNonStreamingNativeEarlierUsageSucceeds(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.done\",\"usage\":{\"input_tokens\":4,\"output_tokens\":0}}\n\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_usage_native\",\"status\":\"completed\",\"output\":[]}}\n\n",
+		)),
+	}}
+	svc := newOpenAIImageGenerationControlTestService(upstream)
+	c, _ := newOpenAIImageGenerationControlTestContext(true, "codex_cli_rs/0.144.1")
+	account := newOpenAIImageGenerationControlTestAccount()
+
+	result, err := svc.Forward(context.Background(), c, account, []byte(`{
+		"model":"gpt-5.6-sol","stream":false,"input":"continue"
+	}`))
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, 4, result.Usage.InputTokens)
+}
+
 func TestOpenAIResponsesEmptyCompletedNonStreamingPassthroughFailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

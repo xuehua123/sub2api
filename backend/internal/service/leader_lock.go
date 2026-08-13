@@ -19,19 +19,24 @@ type LeaderLockCache interface {
 }
 
 // tryAcquireSingletonLeaderLock provides best-effort single-flight execution of a
-// periodic background job across multiple instances. It prefers the Redis-backed
-// LeaderLockCache and falls back to a Postgres advisory lock when the cache is
-// unavailable or errors, mirroring the approach used by the Ops background
-// services.
+// periodic background job across multiple instances. Exactly one lock domain is
+// used per call:
+//   - if a LeaderLockCache is configured, Redis is the only domain;
+//   - otherwise a Postgres advisory lock is used when a DB is configured;
+//   - otherwise the job runs ungated (unit tests / single-instance).
+//
+// Redis errors must not fall through to Postgres. The two backends cannot see
+// each other's holders, so a peer that still holds the Redis lock would race
+// a second instance that acquired the advisory lock — including concurrent
+// backup/restore of the same database.
 //
 // Semantics:
 //   - acquired      -> returns a non-nil release func and true; callers should
 //     defer the release once the job finishes.
-//   - held by peer  -> returns (nil, false); callers should skip this cycle.
-//   - no backend    -> when neither the cache nor a DB is configured (e.g. unit
-//     tests, or a single-instance deployment without Redis) it runs without
-//     gating, returning a no-op release and true, so the job is never silently
-//     starved.
+//   - held by peer / cache error -> returns (nil, false); callers should skip
+//     this cycle rather than invent a second lock domain.
+//   - no backend    -> when neither the cache nor a DB is configured it runs
+//     without gating, returning a no-op release and true.
 //
 // The TTL is purely a crash-safety bound: callers release the lock as soon as the
 // job completes, so leadership is re-contested every cycle rather than pinned to
@@ -44,19 +49,15 @@ func tryAcquireSingletonLeaderLock(ctx context.Context, cache LeaderLockCache, d
 
 	if cache != nil {
 		ok, err := cache.TryAcquireLeaderLock(ctx, key, owner, ttl)
-		if err == nil {
-			if !ok {
-				return nil, false
-			}
-			release := func() {
-				ctx2, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				defer cancel()
-				_ = cache.ReleaseLeaderLock(ctx2, key, owner)
-			}
-			return release, true
+		if err != nil || !ok {
+			return nil, false
 		}
-		// Cache error: fall through to the DB advisory lock so a flaky Redis does
-		// not stampede the job across every instance.
+		release := func() {
+			ctx2, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = cache.ReleaseLeaderLock(ctx2, key, owner)
+		}
+		return release, true
 	}
 
 	if db != nil {

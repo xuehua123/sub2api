@@ -75,15 +75,14 @@ func TestTryAcquireSingletonLeaderLock_ContendedThenReleased(t *testing.T) {
 	releaseB()
 }
 
-// When the cache errors, the helper must fall through rather than acquire via the
-// cache. With no DB configured it runs ungated so the job is never starved by a
-// flaky Redis.
-func TestTryAcquireSingletonLeaderLock_CacheErrorFallsThrough(t *testing.T) {
+// When a cache is configured, it is the only lock domain. An acquire error must
+// skip the cycle instead of falling through to Postgres or running ungated;
+// otherwise a peer still holding the Redis lock can race this instance.
+func TestTryAcquireSingletonLeaderLock_CacheErrorDoesNotFallBack(t *testing.T) {
 	cache := &fakeLeaderLockCache{acquireErr: context.DeadlineExceeded}
 	release, ok := tryAcquireSingletonLeaderLock(context.Background(), cache, nil, "k", "inst", time.Minute)
-	require.True(t, ok, "cache error with no DB must run ungated, not skip")
-	require.NotNil(t, release)
-	require.NotPanics(t, release)
+	require.False(t, ok, "configured cache error must skip, not invent another lock domain")
+	require.Nil(t, release)
 }
 
 func TestSubscriptionExpiryService_ReminderSkipsScanWhenNotLeader(t *testing.T) {

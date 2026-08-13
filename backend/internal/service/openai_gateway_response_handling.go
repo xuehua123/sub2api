@@ -1334,6 +1334,13 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 
 	usage := &OpenAIUsage{}
 	if ok {
+		// Usage can be emitted on an earlier SSE event rather than the terminal
+		// response object, so collect it before classifying an empty completion.
+		forEachOpenAISSEDataPayload(bodyText, func(data []byte) {
+			if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(data); parsed {
+				*usage = parsedUsage
+			}
+		})
 		if parsedUsage, parsed := extractOpenAIUsageFromJSONBytes(finalResponse); parsed {
 			*usage = parsedUsage
 		}
@@ -1346,6 +1353,13 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 					finalResponse = patched
 				}
 			}
+		}
+		// Match handlePassthroughSSEToJSON: classify empty completed only after
+		// reconstructing delta output, so a valid delta-only completion is not
+		// mistaken for a silent refusal.
+		if account != nil && account.Platform == PlatformOpenAI &&
+			openAIResponsesCompletedEventIsEmpty(finalResponse, usage) {
+			return nil, newOpenAIResponsesEmptyCompletedFailoverError(c, account, openAIHeaderValueEqualFold(resp.Header, "x-request-id"))
 		}
 		finalResponse = supplementCompactionItemFromSSE(c, finalResponse, bodyText)
 		body = finalResponse
