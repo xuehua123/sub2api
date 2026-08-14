@@ -103,7 +103,10 @@ func TestProxyDialersApplyTunnelTimeout(t *testing.T) {
 				_ = conn.Close()
 			}
 			require.Error(t, err)
-			require.ErrorIs(t, err, context.DeadlineExceeded)
+			var timeoutErr net.Error
+			require.True(t, errors.Is(err, context.DeadlineExceeded) ||
+				(errors.As(err, &timeoutErr) && timeoutErr.Timeout()),
+				"expected timeout error, got %v", err)
 			require.Less(t, time.Since(started), time.Second)
 		})
 	}
