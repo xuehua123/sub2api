@@ -64,7 +64,7 @@ for container in sub2api-blue sub2api-green; do
     echo "Unable to inspect required stable slot: $container" >&2
     exit 1
   fi
-  running_state="$(jq -er 'if length == 1 and (.[0].State.Running | type) == "boolean" then .[0].State.Running else error("invalid running state") end' <<< "$container_inspect")" || {
+  running_state="$(jq -er 'if length == 1 and (.[0].State.Running | type) == "boolean" then (if .[0].State.Running then "true" else "false" end) else error("invalid running state") end' <<< "$container_inspect")" || {
     echo "Unable to determine running state for stable slot: $container" >&2
     exit 1
   }

@@ -100,6 +100,10 @@ try:
         if not isinstance(value, bool):
             raise ValueError("invalid running state")
         print("true" if value else "false")
+        if not value and '"false"' not in expression:
+            # Match jq -e: a raw boolean false result exits non-zero. The
+            # production filter must emit the string "false" for stopped slots.
+            sys.exit(1)
     elif "AFFILIATE_REFUND_REVERSAL_ENABLED=" in expression:
         values = item["Config"].get("Env") or []
         if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
