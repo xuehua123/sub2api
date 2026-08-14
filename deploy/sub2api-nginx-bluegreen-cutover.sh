@@ -9,6 +9,8 @@ readonly STATE_DIR="/var/lib/sub2api-deploy"
 readonly STATE_OWNER_UID="0"
 readonly STATE_OWNER_GID="0"
 readonly LOCK_FILE="${STATE_DIR}/nginx-bluegreen-cutover.lock"
+readonly PUBLIC_HEALTH_RESOLVE="api.wenrugouai.com:443:40.160.58.167"
+readonly NGINX_PID_FILE="/run/nginx.pid"
 
 if [[ "${1:-}" == --protocol ]]; then
   [[ "$#" -eq 1 ]] || exit 2
@@ -124,7 +126,58 @@ container_healthy() {
 }
 
 public_health_ok() {
-  [[ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "$public_health_url")" == 200 ]]
+  [[ "$(curl --noproxy '*' --resolve "$PUBLIC_HEALTH_RESOLVE" -sS -o /dev/null -w '%{http_code}' --max-time 10 "$public_health_url")" == 200 ]]
+}
+
+remove_target_container_verified() {
+  docker rm -f "$target_container" >/dev/null 2>&1 || return 1
+  if docker container inspect "$target_container" >/dev/null 2>&1; then
+    echo "Target container still exists after removal: $target_container" >&2
+    return 1
+  fi
+  return 0
+}
+
+reload_nginx_verified() {
+  local master_pid
+  local current_master_pid
+  local workers_before
+  local workers_after
+  local worker
+
+  nginx -t || return 1
+  [[ -f "$NGINX_PID_FILE" && ! -L "$NGINX_PID_FILE" ]] || {
+    echo "Nginx PID file is missing or unsafe: $NGINX_PID_FILE" >&2
+    return 1
+  }
+  master_pid="$(tr -d '[:space:]' < "$NGINX_PID_FILE")"
+  [[ "$master_pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "Nginx master PID is invalid" >&2
+    return 1
+  }
+  workers_before="$(pgrep -P "$master_pid" 2>/dev/null | sort -n || true)"
+  [[ -n "$workers_before" ]] || {
+    echo "No Nginx worker exists before reload" >&2
+    return 1
+  }
+  nginx -s reload || return 1
+  for ((attempt = 0; attempt < 10; attempt++)); do
+    current_master_pid="$(tr -d '[:space:]' < "$NGINX_PID_FILE")"
+    [[ "$current_master_pid" == "$master_pid" ]] || {
+      echo "Nginx master changed during graceful reload" >&2
+      return 1
+    }
+    workers_after="$(pgrep -P "$master_pid" 2>/dev/null | sort -n || true)"
+    while IFS= read -r worker; do
+      [[ -n "$worker" ]] || continue
+      if ! grep -Fxq -- "$worker" <<< "$workers_before"; then
+        return 0
+      fi
+    done <<< "$workers_after"
+    sleep 1
+  done
+  echo "Nginx reload did not create a new worker" >&2
+  return 1
 }
 
 if [[ "$rollback_policy" == allow ]]; then
@@ -221,15 +274,18 @@ rollback_cutover() {
     cp --preserve=mode,ownership -- "$backup" "$rollback_candidate"
     mv -f -- "$rollback_candidate" "$nginx_config"
     rollback_candidate=""
-    if nginx -t && nginx -s reload; then
+    if reload_nginx_verified; then
       rollback_reload_verified=true
     fi
   fi
 
   if [[ "$rollback_reload_verified" == true ]] &&
     container_healthy "$active_container" "$active_upstream" && public_health_ok; then
-    docker rm -f "$target_container" >/dev/null 2>&1 || true
-    echo "Cutover failed and the previous slot was restored: $active_container" >&2
+    if remove_target_container_verified; then
+      echo "Cutover failed and the previous slot was restored: $active_container" >&2
+    else
+      echo "Cutover failed and automatic rollback could not remove the target; operator intervention is required" >&2
+    fi
   else
     echo "Cutover failed and automatic rollback could not be verified; operator intervention is required" >&2
   fi
@@ -242,8 +298,7 @@ trap 'rollback_cutover 143' TERM
 
 mv -f -- "$candidate" "$nginx_config"
 switch_committed=true
-nginx -t
-nginx -s reload
+reload_nginx_verified
 
 public_health_verified=false
 for ((attempt = 0; attempt < 10; attempt++)); do

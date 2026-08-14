@@ -4,16 +4,28 @@ These commands are production safety boundaries. Install the reviewed scripts
 as root-owned, non-symlink files; the stable deploy script verifies the exact
 cutover helper hash before every run.
 
-`/opt/platform`, its `docker-compose.yml`, the resolved Nginx configuration and
-its parent directory must be root-owned and not writable by group or others.
+The OVH stable host uses `/srv/sub2api-migration/incoming`,
+`docker-compose.migration.yml`, and `sub2api.env`. The environment file must be
+`root:root` mode `0600`; the deployment tree, resolved Nginx configuration, and
+every parent directory must be root-owned, non-symlink, and not writable by
+group or others.
+
+The reviewed OVH v2 package is installed with
+`sub2api-install-stable-ovh.sh`. Run `--preflight` first, then `--install`. The
+installer snapshots the package into a root-only directory, holds the deploy
+and cutover locks, verifies the rendered shared PostgreSQL/Redis/network/volume
+contract, migrates all three live Nginx routes to one shared upstream include,
+and atomically replaces the fixed forced-command entry. Existing scripts are
+archived under `/root`; do not delete that archive until a successful release
+has completed its observation window.
 
 ## One-time state bootstrap
 
 The ordinary deploy command never creates missing monotonic state. Before the
 first deployment with this contract:
 
-1. Confirm that no active blue/green container has
-   `AFFILIATE_REFUND_REVERSAL_ENABLED=true` or the
+1. Confirm that every active blue/green container has the explicit literal
+   `AFFILIATE_REFUND_REVERSAL_ENABLED=false` and does not have the
    `org.sub2api.capability.payment-reversal-components=1` image label.
 2. Independently query the production database and confirm that no affiliate
    reversal has ever been persisted, including non-zero `reversed_amount` or
@@ -28,6 +40,12 @@ first deployment with this contract:
 
 If the state directory or either state file later disappears, deployment must
 stop. Do not recreate `absent` state during incident handling.
+
+The bootstrap uses `state-bootstrap.pending` as a crash-recovery journal. A
+matching journal may complete the same first bootstrap transaction. A lone
+state file without that journal is treated as historical state loss and always
+requires operator review. Ordinary deployment also refuses to run while the
+journal exists.
 
 ## Migration 197 expand phase
 

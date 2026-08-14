@@ -5,19 +5,22 @@ set -Eeuo pipefail
 umask 077
 
 readonly IMAGE_NAME="ghcr.io/xuehua123/sub2api"
-readonly DEPLOY_DIR="/opt/platform"
+readonly DEPLOY_DIR="/srv/sub2api-migration/incoming"
 readonly STATE_DIR="/var/lib/sub2api-deploy"
 readonly STATE_OWNER_UID="0"
 readonly STATE_OWNER_GID="0"
-readonly COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
-readonly NGINX_CONFIG="/etc/nginx/sites-enabled/platform.conf"
+readonly COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.migration.yml"
+readonly COMPOSE_ENV_FILE="${DEPLOY_DIR}/sub2api.env"
+readonly NGINX_CONFIG="/etc/nginx/snippets/sub2api-active-upstream.conf"
 readonly CUTOVER_SCRIPT="/usr/local/sbin/sub2api-nginx-bluegreen-cutover"
 readonly CUTOVER_SCRIPT_PROTOCOL="sub2api-nginx-bluegreen-cutover-v2"
-readonly CUTOVER_SCRIPT_SHA256="d8cd65e75c6efad66588e078a014295c3582764558311821e57d3dcee32bc7d1"
+readonly CUTOVER_SCRIPT_SHA256="1d4f8b7b66d09e6c6968fc20173e58d46ed8967ddcc92eddf164b005e408b1e4"
 readonly CUTOVER_OWNER_UID="0"
 readonly CUTOVER_OWNER_GID="0"
 readonly LOCK_FILE="${STATE_DIR}/stable-deploy.lock"
 readonly PUBLIC_HEALTH_URL="https://api.wenrugouai.com/health"
+readonly PUBLIC_HEALTH_RESOLVE="api.wenrugouai.com:443:40.160.58.167"
+readonly NGINX_PID_FILE="/run/nginx.pid"
 readonly DEPLOY_PROTOCOL="sub2api-deploy-v2"
 readonly TRUSTED_CI_IMAGE_LABEL="org.sub2api.build.trusted-ci"
 readonly AFFILIATE_REVERSAL_CAPABILITY_LABEL="org.sub2api.capability.affiliate-refund-reversal"
@@ -31,6 +34,7 @@ readonly AFFILIATE_REVERSAL_CONTRACT_PENDING_FILE="${AFFILIATE_REVERSAL_CONTRACT
 readonly PAYMENT_REVERSAL_COMPONENTS_STATE_FILE="${STATE_DIR}/payment-reversal-components-state"
 readonly PAYMENT_REVERSAL_COMPONENTS_CONTRACT_FILE="${STATE_DIR}/payment-reversal-components-contract"
 readonly PAYMENT_REVERSAL_COMPONENTS_CONTRACT_PENDING_FILE="${PAYMENT_REVERSAL_COMPONENTS_CONTRACT_FILE}.pending"
+readonly BOOTSTRAP_PENDING_FILE="${STATE_DIR}/state-bootstrap.pending"
 
 if ! IFS= read -r deploy_request || [[ -z "$deploy_request" ]]; then
   echo "A versioned deployment request must be provided on stdin" >&2
@@ -142,6 +146,11 @@ validate_root_owned_nonwritable_file() {
 
 validate_root_owned_nonwritable_directory "$DEPLOY_DIR"
 validate_root_owned_nonwritable_file "$COMPOSE_FILE"
+validate_root_owned_nonwritable_file "$COMPOSE_ENV_FILE"
+if [[ "$(stat -c '%u:%g:%a' -- "$COMPOSE_ENV_FILE")" != "${STATE_OWNER_UID}:${STATE_OWNER_GID}:600" ]]; then
+  echo "Compose environment file must be root-owned with mode 0600: $COMPOSE_ENV_FILE" >&2
+  exit 1
+fi
 [[ -f "$NGINX_CONFIG" ]] || { echo "Stable nginx config not found: $NGINX_CONFIG" >&2; exit 1; }
 [[ -x "$CUTOVER_SCRIPT" ]] || { echo "Blue-green cutover script not found: $CUTOVER_SCRIPT" >&2; exit 1; }
 if [[ -L "$CUTOVER_SCRIPT" ]] ||
@@ -240,6 +249,10 @@ if [[ -L "$STATE_DIR" || ! -d "$STATE_DIR" ]]; then
   exit 1
 fi
 validate_secure_state_directory
+if [[ -e "$BOOTSTRAP_PENDING_FILE" || -L "$BOOTSTRAP_PENDING_FILE" ]]; then
+  echo "Deployment state bootstrap transaction is incomplete; finish reviewed bootstrap recovery before deploying" >&2
+  exit 1
+fi
 if [[ ! -e "$AFFILIATE_REVERSAL_STATE_FILE" && ! -L "$AFFILIATE_REVERSAL_STATE_FILE" ]]; then
   echo "Deployment state directory exists without its monotonic contract state; run the reviewed bootstrap only after the required operator precheck" >&2
   exit 1
@@ -617,7 +630,48 @@ nginx_routes_to_only_slot() {
 }
 
 public_health_ok() {
-  [[ "$(curl --noproxy '*' -sS -o /dev/null -w '%{http_code}' --max-time 10 "$PUBLIC_HEALTH_URL")" == 200 ]]
+  [[ "$(curl --noproxy '*' --resolve "$PUBLIC_HEALTH_RESOLVE" -sS -o /dev/null -w '%{http_code}' --max-time 10 "$PUBLIC_HEALTH_URL")" == 200 ]]
+}
+
+reload_nginx_verified() {
+  local master_pid
+  local current_master_pid
+  local workers_before
+  local workers_after
+  local worker
+
+  nginx -t || return 1
+  [[ -f "$NGINX_PID_FILE" && ! -L "$NGINX_PID_FILE" ]] || return 1
+  master_pid="$(tr -d '[:space:]' < "$NGINX_PID_FILE")"
+  [[ "$master_pid" =~ ^[1-9][0-9]*$ ]] || return 1
+  workers_before="$(pgrep -P "$master_pid" 2>/dev/null | sort -n || true)"
+  [[ -n "$workers_before" ]] || return 1
+  nginx -s reload || return 1
+  for ((attempt = 0; attempt < 10; attempt++)); do
+    current_master_pid="$(tr -d '[:space:]' < "$NGINX_PID_FILE")"
+    [[ "$current_master_pid" == "$master_pid" ]] || return 1
+    workers_after="$(pgrep -P "$master_pid" 2>/dev/null | sort -n || true)"
+    while IFS= read -r worker; do
+      [[ -n "$worker" ]] || continue
+      if ! grep -Fxq -- "$worker" <<< "$workers_before"; then return 0; fi
+    done <<< "$workers_after"
+    sleep 1
+  done
+  echo "Nginx reload did not create a new worker" >&2
+  return 1
+}
+
+remove_target_container_verified() {
+  if docker container inspect "$target_container" >/dev/null 2>&1; then
+    docker rm -f "$target_container" >/dev/null 2>&1 || return 1
+  else
+    docker info >/dev/null 2>&1 || return 1
+  fi
+  if docker container inspect "$target_container" >/dev/null 2>&1; then
+    echo "Target container still exists after removal: $target_container" >&2
+    return 1
+  fi
+  return 0
 }
 
 active_color=""
@@ -676,9 +730,9 @@ services:
       AFFILIATE_REFUND_REVERSAL_ENABLED: "${affiliate_refund_reversal_enabled}"
 
 networks:
-  shanghai-net:
+  sub2api-net:
     external: true
-    name: platform_shanghai-net
+    name: sub2api-net
 EOF
 else
   cat > "$candidate" <<EOF
@@ -692,13 +746,13 @@ services:
       AFFILIATE_REFUND_REVERSAL_ENABLED: "${affiliate_refund_reversal_enabled}"
 
 networks:
-  shanghai-net:
+  sub2api-net:
     external: true
-    name: platform_shanghai-net
+    name: sub2api-net
 EOF
 fi
 
-compose=(docker compose -p "platform-${target_color}" -f "$COMPOSE_FILE" -f "$candidate")
+compose=(docker compose --env-file "$COMPOSE_ENV_FILE" -p "sub2api-stable-${target_color}" -f "$COMPOSE_FILE" -f "$candidate")
 DOCKER_CONFIG="$docker_config" "${compose[@]}" pull sub2api
 
 candidate_image_id="$(docker image inspect --format '{{.Id}}' "$deploy_image")"
@@ -873,8 +927,7 @@ attempt_safe_cutover_rollback() {
 
   if container_healthy_on_port "$active_color" &&
     nginx_routes_to_only_slot "$active_upstream" "$target_upstream"; then
-    if nginx -t && nginx -s reload && public_health_ok; then
-      docker rm -f "$target_container" >/dev/null 2>&1 || true
+    if reload_nginx_verified && public_health_ok && remove_target_container_verified; then
       return 0
     fi
     return 1
@@ -904,7 +957,7 @@ attempt_safe_cutover_rollback() {
 
   if container_healthy_on_port "$active_color" &&
     nginx_routes_to_only_slot "$active_upstream" "$target_upstream" && public_health_ok; then
-    docker rm -f "$target_container" >/dev/null 2>&1 || true
+    remove_target_container_verified || return 1
     return 0
   fi
   return 1
@@ -915,7 +968,9 @@ abort_deployment() {
   trap - ERR INT TERM
   set +e
   if [[ "$cutover_started" != true ]]; then
-    docker rm -f "$target_container" >/dev/null 2>&1 || true
+    if ! remove_target_container_verified; then
+      echo "Deployment failed and candidate cleanup could not be verified; operator intervention is required." >&2
+    fi
   fi
   if [[ "$prepared_contract_pending" == true || "$prepared_payment_components_pending" == true ]]; then
     echo "An irreversible deployment activation remains pending; forward operator recovery is required." >&2
@@ -988,7 +1043,7 @@ if [[ "$prepared_contract_pending" == true || "$prepared_payment_components_pend
   fi
 fi
 
-docker rm -f "$target_container" >/dev/null 2>&1 || true
+remove_target_container_verified
 "${compose[@]}" up -d --no-deps --force-recreate sub2api
 
 for ((attempt = 0; attempt < 90; attempt++)); do

@@ -40,6 +40,17 @@ fi
 exit 0
 EOF
 
+cat > "$MOCK_BIN/pgrep" <<'EOF'
+#!/usr/bin/env bash
+reload_count=0
+[[ ! -f "$MOCK_STATE_DIR/nginx_reload_count" ]] || reload_count=$(cat "$MOCK_STATE_DIR/nginx_reload_count")
+if [[ "${MOCK_NGINX_NO_WORKER_TURNOVER:-false}" == true ]]; then
+  printf '%s\n' 200
+else
+  printf '%s\n' "$((200 + reload_count))"
+fi
+EOF
+
 cat > "$MOCK_BIN/stat" <<'EOF'
 #!/usr/bin/env bash
 path=${!#}
@@ -119,6 +130,12 @@ set -Eeuo pipefail
 command=$1
 shift
 case "$command" in
+  container)
+    [[ "${1:-}" == inspect ]]
+    container=${2:-}
+    color=${container#sub2api-}
+    [[ "$(cat "$MOCK_STATE_DIR/${color}_exists")" == true ]]
+    ;;
   inspect)
     [[ "$1" == --format ]]
     template=$2
@@ -140,11 +157,14 @@ case "$command" in
     container=$1
     color=${container#sub2api-}
     printf '%s' true > "$MOCK_STATE_DIR/${color}_running"
+    printf '%s' true > "$MOCK_STATE_DIR/${color}_exists"
     ;;
   rm)
     container=${!#}
     color=${container#sub2api-}
+    [[ "${MOCK_RM_FAIL:-false}" != true ]] || exit 1
     printf '%s' false > "$MOCK_STATE_DIR/${color}_running"
+    printf '%s' false > "$MOCK_STATE_DIR/${color}_exists"
     ;;
   *) exit 91 ;;
 esac
@@ -153,16 +173,21 @@ EOF
 chmod +x "$MOCK_BIN"/*
 
 SUBJECT="$TEST_ROOT/cutover.sh"
+NGINX_PID_FILE="$TEST_ROOT/nginx.pid"
+printf '%s\n' 100 > "$NGINX_PID_FILE"
 sed \
   -e "s|readonly STATE_DIR=\"/var/lib/sub2api-deploy\"|readonly STATE_DIR=\"$DEPLOY_STATE\"|" \
   -e "s|readonly STATE_OWNER_UID=\"0\"|readonly STATE_OWNER_UID=\"$(id -u)\"|" \
   -e "s|readonly STATE_OWNER_GID=\"0\"|readonly STATE_OWNER_GID=\"$(id -g)\"|" \
+  -e "s|readonly NGINX_PID_FILE=\"/run/nginx.pid\"|readonly NGINX_PID_FILE=\"$NGINX_PID_FILE\"|" \
   "$CUTOVER_SOURCE" > "$SUBJECT"
 chmod +x "$SUBJECT"
 
 reset_state() {
   printf '%s' true > "$MOCK_STATE/blue_running"
   printf '%s' true > "$MOCK_STATE/green_running"
+  printf '%s' true > "$MOCK_STATE/blue_exists"
+  printf '%s' true > "$MOCK_STATE/green_exists"
 }
 
 write_active_config() {
@@ -182,6 +207,8 @@ run_cutover() {
   local stop_fail=${3:-false}
   local rollback_policy=${4:-allow}
   local reload_fail_on_call=${5:-0}
+  local no_worker_turnover=${6:-false}
+  local rm_fail=${7:-false}
   RUN_LOG="$TEST_ROOT/run-$(basename "$config").log"
   rm -f -- "$MOCK_STATE/nginx_reload_count"
   set +e
@@ -191,6 +218,8 @@ run_cutover() {
     MOCK_PUBLIC_STATUS="$public_status" \
     MOCK_STOP_FAIL="$stop_fail" \
     MOCK_NGINX_RELOAD_FAIL_ON_CALL="$reload_fail_on_call" \
+    MOCK_NGINX_NO_WORKER_TURNOVER="$no_worker_turnover" \
+    MOCK_RM_FAIL="$rm_fail" \
     bash "$SUBJECT" \
       sub2api-blue sub2api-green \
       127.0.0.1:18080 127.0.0.1:28080 \
@@ -219,6 +248,28 @@ write_active_config "$public_failure_config"
 run_cutover "$public_failure_config" 503
 [[ "$RUN_STATUS" -ne 0 ]]
 grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$public_failure_config"
+[[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
+grep -Fq 'automatic rollback could not be verified' "$RUN_LOG"
+
+# A rollback is not complete until the target container is actually gone.
+target_removal_failure_config="$TEST_ROOT/target-removal-failure.conf"
+reset_state
+write_active_config "$target_removal_failure_config"
+run_cutover "$target_removal_failure_config" 200 true allow 0 false true
+[[ "$RUN_STATUS" -ne 0 ]]
+grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$target_removal_failure_config"
+[[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
+[[ "$(cat "$MOCK_STATE/green_running")" == true ]]
+grep -Fq 'automatic rollback could not remove the target' "$RUN_LOG"
+
+# A successful reload command is not enough: without a new worker, health can
+# still be served by the old configuration and the old slot must stay alive.
+no_worker_turnover_config="$TEST_ROOT/no-worker-turnover.conf"
+reset_state
+write_active_config "$no_worker_turnover_config"
+run_cutover "$no_worker_turnover_config" 200 false allow 0 true
+[[ "$RUN_STATUS" -ne 0 ]]
+grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$no_worker_turnover_config"
 [[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
 grep -Fq 'automatic rollback could not be verified' "$RUN_LOG"
 

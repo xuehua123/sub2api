@@ -43,6 +43,23 @@ cat > "$MOCK_BIN/sleep" <<'EOF'
 exit 0
 EOF
 
+cat > "$MOCK_BIN/nginx" <<'EOF'
+#!/usr/bin/env bash
+if [[ "${1:-}" == -s && "${2:-}" == reload ]]; then
+  reload_count=0
+  [[ ! -f "$MOCK_STATE_DIR/nginx_reload_count" ]] || reload_count=$(cat "$MOCK_STATE_DIR/nginx_reload_count")
+  printf '%s' "$((reload_count + 1))" > "$MOCK_STATE_DIR/nginx_reload_count"
+fi
+exit 0
+EOF
+
+cat > "$MOCK_BIN/pgrep" <<'EOF'
+#!/usr/bin/env bash
+reload_count=0
+[[ ! -f "$MOCK_STATE_DIR/nginx_reload_count" ]] || reload_count=$(cat "$MOCK_STATE_DIR/nginx_reload_count")
+printf '%s\n' "$((200 + reload_count))"
+EOF
+
 cat > "$MOCK_BIN/sync" <<'EOF'
 #!/usr/bin/env bash
 exit 0
@@ -67,6 +84,46 @@ if [[ "${1:-}" == -- ]]; then
   shift
 fi
 exec /usr/bin/shasum -a 256 "$@"
+EOF
+
+cat > "$MOCK_BIN/jq" <<'EOF'
+#!/usr/bin/env python3
+import json
+import sys
+
+expression = sys.argv[-1]
+try:
+    data = json.load(sys.stdin)
+    item = data[0]
+    if "State.Running" in expression:
+        value = item["State"]["Running"]
+        if not isinstance(value, bool):
+            raise ValueError("invalid running state")
+        print("true" if value else "false")
+    elif "AFFILIATE_REFUND_REVERSAL_ENABLED=" in expression:
+        values = item["Config"].get("Env") or []
+        if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+            raise ValueError("invalid env")
+        matches = [value for value in values if value.startswith("AFFILIATE_REFUND_REVERSAL_ENABLED=")]
+        if matches == ["AFFILIATE_REFUND_REVERSAL_ENABLED=false"]:
+            print("false")
+        else:
+            print("unsafe")
+    elif ".[0].Image" in expression:
+        value = item.get("Image")
+        if not isinstance(value, str) or not value:
+            raise ValueError("invalid image")
+        print(value)
+    elif "org.sub2api.capability.payment-reversal-components" in expression:
+        value = item.get("Config", {}).get("Labels", {}).get(
+            "org.sub2api.capability.payment-reversal-components", ""
+        )
+        print(value)
+    else:
+        raise ValueError("unsupported expression")
+except Exception as exc:
+    print(str(exc), file=sys.stderr)
+    sys.exit(1)
 EOF
 
 cat > "$MOCK_BIN/install" <<'EOF'
@@ -204,6 +261,35 @@ command=${1:-}
 shift || true
 
 case "$command" in
+  container)
+    [[ "${1:-}" == inspect ]] || exit 89
+    container=${2:-}
+    color=${container#sub2api-}
+    [[ "${MOCK_CONTAINER_INSPECT_FAIL:-}" != "$color" ]] || exit 88
+    [[ "$(state_value "$color" exists true)" == true ]] || exit 1
+    running="$(state_value "$color" running false)"
+    image_id="$(state_value "$color" image_id '')"
+    gate_value="$(state_value "$color" gate '')"
+    MOCK_JSON_RUNNING="$running" MOCK_JSON_IMAGE="$image_id" MOCK_JSON_GATE="$gate_value" \
+      MOCK_JSON_INVALID_ENV="${MOCK_CONTAINER_INSPECT_INVALID_ENV:-}" MOCK_JSON_COLOR="$color" \
+      python3 - <<'PY'
+import json
+import os
+
+gate = os.environ.get("MOCK_JSON_GATE", "")
+if os.environ.get("MOCK_JSON_INVALID_ENV") == os.environ.get("MOCK_JSON_COLOR"):
+    env = {"invalid": True}
+elif gate:
+    env = ["AFFILIATE_REFUND_REVERSAL_ENABLED=" + gate]
+else:
+    env = []
+print(json.dumps([{
+    "State": {"Running": os.environ["MOCK_JSON_RUNNING"] == "true"},
+    "Config": {"Env": env},
+    "Image": os.environ.get("MOCK_JSON_IMAGE", ""),
+}]))
+PY
+    ;;
   inspect)
     [[ "${1:-}" == --format ]] || exit 90
     template=$2
@@ -235,7 +321,20 @@ case "$command" in
     esac
     ;;
   image)
-    [[ "${1:-}" == inspect && "${2:-}" == --format ]] || exit 92
+    [[ "${1:-}" == inspect ]] || exit 92
+    if [[ "${2:-}" != --format ]]; then
+      image=${2:-}
+      [[ "${MOCK_IMAGE_INSPECT_FAIL:-false}" != true ]] || exit 92
+      capability="$(image_payment_reversal_components "$image")"
+      MOCK_JSON_CAPABILITY="$capability" python3 - <<'PY'
+import json
+import os
+print(json.dumps([{"Config": {"Labels": {
+    "org.sub2api.capability.payment-reversal-components": os.environ.get("MOCK_JSON_CAPABILITY", "")
+}}}]))
+PY
+      exit 0
+    fi
     template=$3
     image=$4
     case "$template" in
@@ -271,11 +370,17 @@ case "$command" in
     ;;
   compose)
     candidate=''
+    compose_env_file=''
+    compose_project=''
     previous=''
     action=''
     for argument in "$@"; do
       if [[ "$previous" == -f ]]; then
         candidate=$argument
+      elif [[ "$previous" == --env-file ]]; then
+        compose_env_file=$argument
+      elif [[ "$previous" == -p ]]; then
+        compose_project=$argument
       fi
       case "$argument" in
         pull|up) action=$argument ;;
@@ -283,6 +388,10 @@ case "$command" in
       previous=$argument
     done
     [[ -n "$candidate" && -n "$action" ]] || exit 94
+    [[ -f "$compose_env_file" ]] || exit 97
+    [[ "$compose_project" =~ ^sub2api-stable-(blue|green)$ ]] || exit 98
+    grep -Fq '  sub2api-net:' "$candidate" || exit 99
+    grep -Fq '    name: sub2api-net' "$candidate" || exit 100
     if [[ "$action" == pull ]]; then
       exit 0
     fi
@@ -295,6 +404,7 @@ case "$command" in
       [[ "$(state_value "$old_color" running false)" != true ]] || exit 96
     fi
     set_state "$color" running true
+    set_state "$color" exists true
     set_state "$color" health "${MOCK_CANDIDATE_HEALTH:-healthy}"
     set_state "$color" image_ref "$image_ref"
     set_state "$color" image_id "$MOCK_CANDIDATE_ID"
@@ -318,6 +428,7 @@ case "$command" in
     if [[ -n "$container" ]]; then
       color=${container#sub2api-}
       set_state "$color" running false
+      set_state "$color" exists false
     fi
     ;;
   stop)
@@ -329,6 +440,10 @@ case "$command" in
     container=$1
     color=${container#sub2api-}
     set_state "$color" running true
+    set_state "$color" exists true
+    ;;
+  info)
+    exit 0
     ;;
   logs)
     ;;
@@ -371,9 +486,12 @@ new_scenario() {
     'payment_reversal_components_state=absent' \
     'updated_at=2026-08-08T00:00:00Z' > "$deploy_state/payment-reversal-components-state"
   chmod 0600 "$deploy_state/payment-reversal-components-state"
-  printf '%s\n' 'services: {}' > "$platform/docker-compose.yml"
+  printf '%s\n' 'services: {}' > "$platform/docker-compose.migration.yml"
+  printf '%s\n' '# fixture intentionally contains no secrets' > "$platform/sub2api.env"
+  chmod 0600 "$platform/sub2api.env"
   printf '%s\n' 'proxy_pass http://127.0.0.1:18080;' > "$nginx_config"
   printf '%s' true > "$state/blue_running"
+  printf '%s' true > "$state/blue_exists"
   printf '%s' healthy > "$state/blue_health"
   printf '%s' 'ghcr.io/xuehua123/sub2api:sha-aaaaaaa' > "$state/blue_image_ref"
   printf '%s' "$OLD_IMAGE_ID" > "$state/blue_image_id"
@@ -382,6 +500,8 @@ new_scenario() {
     printf '%s' "$active_gate" > "$state/blue_gate"
   fi
   printf '%s' false > "$state/green_running"
+  printf '%s' true > "$state/green_exists"
+  printf '%s\n' 100 > "$state/nginx.pid"
 
   cat > "$cutover" <<'EOF'
 #!/usr/bin/env bash
@@ -399,11 +519,12 @@ EOF
   chmod +x "$cutover"
 
   sed \
-    -e "s|readonly DEPLOY_DIR=\"/opt/platform\"|readonly DEPLOY_DIR=\"$platform\"|" \
+    -e "s|readonly DEPLOY_DIR=\"/srv/sub2api-migration/incoming\"|readonly DEPLOY_DIR=\"$platform\"|" \
     -e "s|readonly STATE_DIR=\"/var/lib/sub2api-deploy\"|readonly STATE_DIR=\"$deploy_state\"|" \
     -e "s|readonly STATE_OWNER_UID=\"0\"|readonly STATE_OWNER_UID=\"$(id -u)\"|" \
     -e "s|readonly STATE_OWNER_GID=\"0\"|readonly STATE_OWNER_GID=\"$(id -g)\"|" \
-    -e "s|readonly NGINX_CONFIG=\"/etc/nginx/sites-enabled/platform.conf\"|readonly NGINX_CONFIG=\"$nginx_config\"|" \
+    -e "s|readonly NGINX_CONFIG=\"/etc/nginx/snippets/sub2api-active-upstream.conf\"|readonly NGINX_CONFIG=\"$nginx_config\"|" \
+    -e "s|readonly NGINX_PID_FILE=\"/run/nginx.pid\"|readonly NGINX_PID_FILE=\"$state/nginx.pid\"|" \
     -e "s|readonly CUTOVER_SCRIPT=\"/usr/local/sbin/sub2api-nginx-bluegreen-cutover\"|readonly CUTOVER_SCRIPT=\"$cutover\"|" \
     -e "s|readonly CUTOVER_SCRIPT_SHA256=\"[0-9a-f]*\"|readonly CUTOVER_SCRIPT_SHA256=\"$(sha256_file "$cutover")\"|" \
     -e "s|readonly CUTOVER_OWNER_UID=\"0\"|readonly CUTOVER_OWNER_UID=\"$(id -u)\"|" \
@@ -494,15 +615,17 @@ assert_failure() {
 
 new_bootstrap_scenario() {
   local name=$1
-  local active_gate=${2:-false}
+  local active_gate=${2-false}
   local payment_components=${3:-'<no value>'}
   local root="$TEST_ROOT/bootstrap-$name"
   mkdir -p "$root/state"
   printf '%s' true > "$root/state/blue_running"
+  printf '%s' true > "$root/state/blue_exists"
   printf '%s' "$active_gate" > "$root/state/blue_gate"
   printf '%s' "$OLD_IMAGE_ID" > "$root/state/blue_image_id"
   printf '%s' "$payment_components" > "$root/state/blue_payment_components"
   printf '%s' false > "$root/state/green_running"
+  printf '%s' true > "$root/state/green_exists"
   sed \
     -e "s|readonly STATE_DIR=\"/var/lib/sub2api-deploy\"|readonly STATE_DIR=\"$root/deploy-state\"|" \
     -e "s|readonly STATE_OWNER_UID=\"0\"|readonly STATE_OWNER_UID=\"$(id -u)\"|" \
@@ -510,6 +633,13 @@ new_bootstrap_scenario() {
     "$BOOTSTRAP_SCRIPT" > "$root/bootstrap.sh"
   chmod +x "$root/bootstrap.sh"
   printf '%s' "$root"
+}
+
+assert_bootstrap_rejected_without_state() {
+  local root=$1
+  [[ -d "$root/deploy-state" ]]
+  [[ -f "$root/deploy-state/stable-deploy.lock" ]]
+  [[ "$(find "$root/deploy-state" -type f ! -name stable-deploy.lock -print | wc -l)" -eq 0 ]]
 }
 
 # Missing state is never inferred as a virgin host. A separate one-time
@@ -534,7 +664,43 @@ if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_gate_root/state" \
   exit 1
 fi
 grep -Fq 'may have affiliate refund reversal enabled' "$bootstrap_gate_root/run.log"
-[[ ! -e "$bootstrap_gate_root/deploy-state" ]]
+assert_bootstrap_rejected_without_state "$bootstrap_gate_root"
+
+bootstrap_whitespace_gate_root=$(new_bootstrap_scenario whitespace-gate-enabled $'  true\t')
+if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_whitespace_gate_root/state" \
+  bash "$bootstrap_whitespace_gate_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals > "$bootstrap_whitespace_gate_root/run.log" 2>&1; then
+  echo "Bootstrap unexpectedly accepted a whitespace-padded gate=true slot" >&2
+  exit 1
+fi
+grep -Fq 'may have affiliate refund reversal enabled' "$bootstrap_whitespace_gate_root/run.log"
+assert_bootstrap_rejected_without_state "$bootstrap_whitespace_gate_root"
+
+bootstrap_newline_gate_root=$(new_bootstrap_scenario newline-gate-enabled $'\ntrue\n')
+if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_newline_gate_root/state" \
+  bash "$bootstrap_newline_gate_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals > "$bootstrap_newline_gate_root/run.log" 2>&1; then
+  echo "Bootstrap unexpectedly accepted a newline-padded gate=true slot" >&2
+  exit 1
+fi
+grep -Fq 'may have affiliate refund reversal enabled' "$bootstrap_newline_gate_root/run.log"
+assert_bootstrap_rejected_without_state "$bootstrap_newline_gate_root"
+
+bootstrap_inspect_failure_root=$(new_bootstrap_scenario inspect-failure false)
+if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_inspect_failure_root/state" MOCK_CONTAINER_INSPECT_FAIL=blue \
+  bash "$bootstrap_inspect_failure_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals > "$bootstrap_inspect_failure_root/run.log" 2>&1; then
+  echo "Bootstrap unexpectedly treated a Docker inspect failure as an absent slot" >&2
+  exit 1
+fi
+grep -Fq 'Unable to inspect required stable slot' "$bootstrap_inspect_failure_root/run.log"
+assert_bootstrap_rejected_without_state "$bootstrap_inspect_failure_root"
+
+bootstrap_missing_gate_root=$(new_bootstrap_scenario missing-gate '')
+if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_missing_gate_root/state" \
+  bash "$bootstrap_missing_gate_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals > "$bootstrap_missing_gate_root/run.log" 2>&1; then
+  echo "Bootstrap unexpectedly accepted a running slot without an explicit gate=false" >&2
+  exit 1
+fi
+grep -Fq 'may have affiliate refund reversal enabled' "$bootstrap_missing_gate_root/run.log"
+assert_bootstrap_rejected_without_state "$bootstrap_missing_gate_root"
 
 bootstrap_payment_root=$(new_bootstrap_scenario payment-components false 1)
 if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_payment_root/state" \
@@ -543,7 +709,55 @@ if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_payment_root/state" \
   exit 1
 fi
 grep -Fq 'has payment reversal components enabled' "$bootstrap_payment_root/run.log"
-[[ ! -e "$bootstrap_payment_root/deploy-state" ]]
+assert_bootstrap_rejected_without_state "$bootstrap_payment_root"
+
+# A lone state file without the bootstrap transaction journal can mean that a
+# previously initialized monotonic state was lost. It must never be inferred
+# as an interrupted first bootstrap.
+bootstrap_lone_state_root=$(new_bootstrap_scenario lone-state false)
+mkdir -p "$bootstrap_lone_state_root/deploy-state"
+chmod 0700 "$bootstrap_lone_state_root/deploy-state"
+printf '%s\n' \
+  'state_version=1' \
+  'affiliate_refund_reversal_state=absent' \
+  'updated_at=2026-08-14T00:00:00Z' > "$bootstrap_lone_state_root/deploy-state/affiliate-refund-reversal-state"
+chmod 0600 "$bootstrap_lone_state_root/deploy-state/affiliate-refund-reversal-state"
+if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_lone_state_root/state" \
+  bash "$bootstrap_lone_state_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals > "$bootstrap_lone_state_root/run.log" 2>&1; then
+  echo "Bootstrap unexpectedly repaired a lone state without its transaction journal" >&2
+  exit 1
+fi
+grep -Fq 'incomplete without a matching bootstrap transaction' "$bootstrap_lone_state_root/run.log"
+[[ ! -e "$bootstrap_lone_state_root/deploy-state/payment-reversal-components-state" ]]
+
+# A crash after the first no-clobber state commit is recoverable only while the
+# matching pending journal is still present and both hashes match exactly.
+bootstrap_resume_root=$(new_bootstrap_scenario resume false)
+mkdir -p "$bootstrap_resume_root/deploy-state"
+chmod 0700 "$bootstrap_resume_root/deploy-state"
+resume_updated_at=2026-08-14T00:00:00Z
+printf '%s\n' \
+  'state_version=1' \
+  'affiliate_refund_reversal_state=absent' \
+  "updated_at=$resume_updated_at" > "$bootstrap_resume_root/deploy-state/affiliate-refund-reversal-state"
+resume_payment="$bootstrap_resume_root/payment.expected"
+printf '%s\n' \
+  'state_version=1' \
+  'payment_reversal_components_state=absent' \
+  "updated_at=$resume_updated_at" > "$resume_payment"
+chmod 0600 "$bootstrap_resume_root/deploy-state/affiliate-refund-reversal-state"
+cat > "$bootstrap_resume_root/deploy-state/state-bootstrap.pending" <<EOF
+bootstrap_version=1
+transaction_id=0123456789abcdef0123456789abcdef
+updated_at=$resume_updated_at
+affiliate_sha256=$(sha256_file "$bootstrap_resume_root/deploy-state/affiliate-refund-reversal-state")
+payment_sha256=$(sha256_file "$resume_payment")
+EOF
+chmod 0600 "$bootstrap_resume_root/deploy-state/state-bootstrap.pending"
+env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_resume_root/state" \
+  bash "$bootstrap_resume_root/bootstrap.sh" --operator-confirm-database-has-no-affiliate-reversals >/dev/null
+cmp -s "$resume_payment" "$bootstrap_resume_root/deploy-state/payment-reversal-components-state"
+[[ ! -e "$bootstrap_resume_root/deploy-state/state-bootstrap.pending" ]]
 
 bootstrap_no_confirmation_root=$(new_bootstrap_scenario no-confirmation false)
 if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_no_confirmation_root/state" \
@@ -552,6 +766,12 @@ if env PATH="$MOCK_BIN:$PATH" MOCK_STATE_DIR="$bootstrap_no_confirmation_root/st
   exit 1
 fi
 grep -Fq 'This command does not query the production database' "$bootstrap_no_confirmation_root/run.log"
+
+bootstrap_pending_root=$(new_scenario bootstrap-pending false)
+printf '%s\n' 'bootstrap_version=1' > "$bootstrap_pending_root/deploy-state/state-bootstrap.pending"
+chmod 0600 "$bootstrap_pending_root/deploy-state/state-bootstrap.pending"
+run_deploy "$bootstrap_pending_root" "$RELEASE_IMAGE_ID" disabled "$RELEASE_IMAGE_ID" "$RELEASE_REVISION" 1
+assert_failure 'Deployment state bootstrap transaction is incomplete'
 
 # The protocol prefix occupies the first line without moving the contract stage
 # from line four. A legacy three-line receiver treats line one as an image and
@@ -683,11 +903,25 @@ assert_failure 'Deployment directory must be root-owned and not group/other writ
 compose_symlink_root=$(new_scenario compose-symlink false)
 compose_victim="$compose_symlink_root/compose-victim"
 printf '%s' preserved > "$compose_victim"
-rm -f -- "$compose_symlink_root/platform/docker-compose.yml"
-ln -s "$compose_victim" "$compose_symlink_root/platform/docker-compose.yml"
+rm -f -- "$compose_symlink_root/platform/docker-compose.migration.yml"
+ln -s "$compose_victim" "$compose_symlink_root/platform/docker-compose.migration.yml"
 run_deploy "$compose_symlink_root" "$RELEASE_IMAGE_ID" disabled "$RELEASE_IMAGE_ID" "$RELEASE_REVISION" 1
 assert_failure 'Deployment file is not a regular non-symlink file'
 [[ "$(cat "$compose_victim")" == preserved ]]
+
+env_symlink_root=$(new_scenario env-symlink false)
+env_victim="$env_symlink_root/env-victim"
+printf '%s' preserved > "$env_victim"
+rm -f -- "$env_symlink_root/platform/sub2api.env"
+ln -s "$env_victim" "$env_symlink_root/platform/sub2api.env"
+run_deploy "$env_symlink_root" "$RELEASE_IMAGE_ID" disabled "$RELEASE_IMAGE_ID" "$RELEASE_REVISION" 1
+assert_failure 'Deployment file is not a regular non-symlink file'
+[[ "$(cat "$env_victim")" == preserved ]]
+
+env_mode_root=$(new_scenario env-mode false)
+chmod 0644 "$env_mode_root/platform/sub2api.env"
+run_deploy "$env_mode_root" "$RELEASE_IMAGE_ID" disabled "$RELEASE_IMAGE_ID" "$RELEASE_REVISION" 1
+assert_failure 'Compose environment file must be root-owned with mode 0600'
 
 # Migration 197 changes the payment refund writer contract. The first capable
 # image must persist pending state and stop the old incapable writer before the
