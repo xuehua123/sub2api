@@ -4,10 +4,12 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -29,6 +31,28 @@ func NewAESEncryptor(cfg *config.Config) (service.SecretEncryptor, error) {
 		return nil, fmt.Errorf("totp encryption key must be 32 bytes (64 hex chars), got %d bytes", len(key))
 	}
 
+	return &AESEncryptor{key: key}, nil
+}
+
+// NewCodexTurnStateEncryptor derives a dedicated AES-GCM key from the
+// mandatory JWT secret. TOTP's encryption key may intentionally be generated
+// per process when it is absent, which would make a blue/green handoff unable
+// to decrypt shared state. JWT signing material is required at normal startup
+// and must already remain stable across slots for authenticated sessions.
+//
+// Domain separation ensures this does not reuse the JWT signing bytes directly
+// as an AES key or collide with any other encrypted payload type.
+func NewCodexTurnStateEncryptor(cfg *config.Config) (service.SecretEncryptor, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("codex turn-state encryption config is nil")
+	}
+	jwtSecret := strings.TrimSpace(cfg.JWT.Secret)
+	if jwtSecret == "" {
+		return nil, fmt.Errorf("codex turn-state encryption requires jwt secret")
+	}
+	derived := sha256.Sum256([]byte("sub2api:codex-turn-state:v1\x00" + jwtSecret))
+	key := make([]byte, len(derived))
+	copy(key, derived[:])
 	return &AESEncryptor{key: key}, nil
 }
 

@@ -477,8 +477,10 @@ type OpenAIGatewayService struct {
 	// openaiCodexTurnStateOrigins: API Key/session/blob 哈希 →
 	// openAICodexTurnStateOrigin。仅记录已提交给下游的状态头，用于拒绝
 	// 跨账号或来源未知的回带（openai_codex_turn_state.go）。
-	openaiCodexTurnStateOrigins sync.Map
-	openaiCodexTurnStateWrites  atomic.Uint64
+	openaiCodexTurnStateOrigins             sync.Map
+	openaiCodexTurnStateWrites              atomic.Uint64
+	openaiCodexTurnStateStoreFailures       atomic.Uint64
+	openaiCodexTurnStateStoreLastFailureLog atomic.Int64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

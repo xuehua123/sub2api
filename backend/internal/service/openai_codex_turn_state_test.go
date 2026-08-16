@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,18 +32,31 @@ func newTurnStateTestContext(t *testing.T, apiKeyID int64, sessionID string) (*g
 
 func TestOpenAICodexTurnStateProvenanceKey_HashesBlobAndScopesOwnership(t *testing.T) {
 	c, _ := newTurnStateTestContext(t, 7, "sess-1")
+	groupA := int64(17)
+	c.Set("api_key", &APIKey{ID: 7, GroupID: &groupA})
 	key, ok := openAICodexTurnStateProvenanceKeyFor(c, "blob-A")
 	require.True(t, ok)
+	require.Equal(t, groupA, key.groupID)
 	require.Equal(t, int64(7), key.apiKeyID)
 
-	// 同一 blob 不能跨 API Key 或 session 复用；key 中只保留两个 SHA-256，
-	// 不会把原始 state 放进 sync.Map。
+	// 同一 blob 不能跨 group、API Key 或 session 复用；key 中只保留两个
+	// SHA-256，不会把原始 state 放进 sync.Map。
+	groupB := int64(18)
+	otherGroup, _ := newTurnStateTestContext(t, 7, "sess-1")
+	otherGroup.Set("api_key", &APIKey{ID: 7, GroupID: &groupB})
+	otherGroupKey, ok := openAICodexTurnStateProvenanceKeyFor(otherGroup, "blob-A")
+	require.True(t, ok)
+	require.NotEqual(t, key.groupID, otherGroupKey.groupID)
+	require.NotEqual(t, key.String(), otherGroupKey.String())
+
 	otherSession, _ := newTurnStateTestContext(t, 7, "sess-2")
+	otherSession.Set("api_key", &APIKey{ID: 7, GroupID: &groupA})
 	otherSessionKey, ok := openAICodexTurnStateProvenanceKeyFor(otherSession, "blob-A")
 	require.True(t, ok)
 	require.NotEqual(t, key.sessionHash, otherSessionKey.sessionHash)
 
 	otherKey, _ := newTurnStateTestContext(t, 8, "sess-1")
+	otherKey.Set("api_key", &APIKey{ID: 8, GroupID: &groupA})
 	otherKeyProvenance, ok := openAICodexTurnStateProvenanceKeyFor(otherKey, "blob-A")
 	require.True(t, ok)
 	require.NotEqual(t, key.apiKeyID, otherKeyProvenance.apiKeyID)
@@ -671,7 +685,8 @@ func TestBuildOpenAIWSHeaders_CarriesSessionBetaFeatures(t *testing.T) {
 }
 
 type stubCodexTurnStateOriginStore struct {
-	data map[string]int64
+	data        map[string]int64
+	sessionData map[string]string
 }
 
 func (s *stubCodexTurnStateOriginStore) SetTurnStateOrigin(_ context.Context, key string, accountID int64, _ time.Duration) error {
@@ -682,15 +697,41 @@ func (s *stubCodexTurnStateOriginStore) SetTurnStateOrigin(_ context.Context, ke
 	return nil
 }
 
-func (s *stubCodexTurnStateOriginStore) GetTurnStateOrigin(_ context.Context, key string) (int64, error) {
+func (s *stubCodexTurnStateOriginStore) GetTurnStateOrigin(_ context.Context, key string) (int64, time.Duration, bool, error) {
 	if s.data == nil {
-		return 0, nil
+		return 0, 0, false, nil
 	}
 	val, ok := s.data[key]
 	if !ok {
-		return 0, nil
+		return 0, 0, false, nil
 	}
-	return val, nil
+	return val, time.Hour, true, nil
+}
+
+func (s *stubCodexTurnStateOriginStore) SetSessionTurnState(_ context.Context, key string, state string, _ time.Duration) error {
+	if s.sessionData == nil {
+		s.sessionData = make(map[string]string)
+	}
+	s.sessionData[key] = state
+	return nil
+}
+
+func (s *stubCodexTurnStateOriginStore) GetSessionTurnState(_ context.Context, key string) (string, time.Duration, bool, error) {
+	if s.sessionData == nil {
+		return "", 0, false, nil
+	}
+	state, ok := s.sessionData[key]
+	if !ok {
+		return "", 0, false, nil
+	}
+	return state, time.Hour, true, nil
+}
+
+func (s *stubCodexTurnStateOriginStore) DeleteSessionTurnState(_ context.Context, key string) error {
+	if s.sessionData != nil {
+		delete(s.sessionData, key)
+	}
+	return nil
 }
 
 type stubGatewayCacheWithOriginStore struct {
@@ -700,25 +741,29 @@ type stubGatewayCacheWithOriginStore struct {
 
 func TestGuardOpenAICodexTurnStateEcho_RecoversFromRedisL2OnBlueGreenSwitch(t *testing.T) {
 	sharedStore := &stubGatewayCacheWithOriginStore{
-		stubCodexTurnStateOriginStore: stubCodexTurnStateOriginStore{data: make(map[string]int64)},
+		stubCodexTurnStateOriginStore: stubCodexTurnStateOriginStore{
+			data:        make(map[string]int64),
+			sessionData: make(map[string]string),
+		},
 	}
 
 	// 模拟 Blue 槽：处理第一轮请求并记录 turn-state 溯源
 	svcA := &OpenAIGatewayService{cache: sharedStore}
 	accountA := &Account{ID: 100}
 	cA, _ := newTurnStateTestContext(t, 1, "session-blue-green")
+	groupA := int64(31)
+	cA.Set("api_key", &APIKey{ID: 1, GroupID: &groupA})
 
 	state := "valid-turn-state-blob"
 	key, ok := openAICodexTurnStateProvenanceKeyFor(cA, state)
 	require.True(t, ok)
 
 	require.True(t, svcA.noteOpenAICodexTurnStateOrigin(cA, accountA, state))
-	// 确保写入了 sharedStore
-	require.NoError(t, sharedStore.SetTurnStateOrigin(context.Background(), key.String(), accountA.ID, time.Hour))
 
 	// 模拟 Green 槽（全新实例/切换）：本地 L1 内存为空，但共享 L2 存储
 	svcB := &OpenAIGatewayService{cache: sharedStore}
 	cB, _ := newTurnStateTestContext(t, 1, "session-blue-green")
+	cB.Set("api_key", &APIKey{ID: 1, GroupID: &groupA})
 	hB := http.Header{}
 	hB.Set("x-codex-turn-state", state)
 
@@ -733,10 +778,265 @@ func TestGuardOpenAICodexTurnStateEcho_RecoversFromRedisL2OnBlueGreenSwitch(t *t
 	require.True(t, ok)
 	require.Equal(t, accountA.ID, origin.accountID)
 
+	// API Key 的 group 变更后不能重放原 group 的 L2 provenance。raw WS
+	// state 已按 group 分区，provenance 也必须采用同一边界。
+	groupB := int64(32)
+	cOtherGroup, _ := newTurnStateTestContext(t, 1, "session-blue-green")
+	cOtherGroup.Set("api_key", &APIKey{ID: 1, GroupID: &groupB})
+	hOtherGroup := http.Header{}
+	hOtherGroup.Set("x-codex-turn-state", state)
+	svcB.guardOpenAICodexTurnStateEcho(cOtherGroup, accountA, hOtherGroup)
+	require.Empty(t, hOtherGroup.Get("x-codex-turn-state"), "跨 group 的 L2 provenance 必须 fail-closed")
+
 	// 验证不同账号请求（盗用该 blob）：即使 Redis 存在，账号不匹配仍被拦截
 	mismatchedAccount := &Account{ID: 200}
 	hMismatched := http.Header{}
 	hMismatched.Set("x-codex-turn-state", state)
 	svcB.guardOpenAICodexTurnStateEcho(cB, mismatchedAccount, hMismatched)
 	require.Empty(t, hMismatched.Get("x-codex-turn-state"), "账号不匹配必须 fail-closed 剥除")
+}
+
+func TestOpenAIWSStateStore_RecoversSessionTurnStateOnBlueGreenSwitch(t *testing.T) {
+	sharedCache := &stubGatewayCacheWithOriginStore{
+		stubCodexTurnStateOriginStore: stubCodexTurnStateOriginStore{
+			data:        make(map[string]int64),
+			sessionData: make(map[string]string),
+		},
+	}
+
+	// 模拟 Blue 槽：真实握手 state 没有回到下游 WS header，只能经受保护
+	// 的共享 session cache 恢复。commit 同时写入 blob→account 的 provenance。
+	svcA := &OpenAIGatewayService{cache: sharedCache}
+	storeA := svcA.getOpenAIWSStateStore()
+	groupID := int64(1)
+	apiKeyID := int64(10)
+	accountID := int64(100)
+	sessionHash := "sess-hash-ws-blue-green"
+	turnState := "ws-handshake-blob-12345"
+	account := &Account{ID: accountID}
+	cA, _ := newTurnStateTestContext(t, apiKeyID, "session-blue-green-handshake")
+	cA.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	require.True(t, svcA.commitOpenAIWSSessionTurnState(cA, account, storeA, groupID, sessionHash, turnState))
+
+	// 模拟 Green 槽：本地内存为空、客户端也没有 handshake state 原文。
+	svcB := &OpenAIGatewayService{cache: sharedCache}
+	storeB := svcB.getOpenAIWSStateStore()
+	cB, _ := newTurnStateTestContext(t, apiKeyID, "session-blue-green-handshake")
+	cB.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+	// Green 槽从共享 state cache 取回原文，并经共享 provenance 检验后才放行。
+	recovered := svcB.loadOpenAIWSSessionTurnState(cB, account, storeB, groupID, sessionHash)
+	require.Equal(t, turnState, recovered, "Green 槽必须能够从共享存储中恢复握手专属 state")
+
+	// 再次读取（本地内存热缓存命中）
+	recoveredL1, ok := storeB.GetSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	require.True(t, ok)
+	require.Equal(t, turnState, recoveredL1)
+
+	// 验证跨账号隔离：另一个 accountID 无法读取
+	_, otherAccountOk := storeB.GetSessionTurnState(groupID, apiKeyID, 999, sessionHash)
+	require.False(t, otherAccountOk, "跨账号不得命中其他账号的 WS turnState")
+
+	// 验证跨 API Key 隔离：另一个 apiKeyID 无法读取
+	_, otherKeyOk := storeB.GetSessionTurnState(groupID, 888, accountID, sessionHash)
+	require.False(t, otherKeyOk, "跨 API Key 不得命中其他 Key 的 WS turnState")
+
+	// 验证跨 group 隔离：即使 API Key/account/session 相同，也不能恢复旧
+	// group 的握手 state 或 provenance。
+	otherGroupID := int64(2)
+	cOtherGroup, _ := newTurnStateTestContext(t, apiKeyID, "session-blue-green-handshake")
+	cOtherGroup.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &otherGroupID})
+	require.Empty(t, svcB.loadOpenAIWSSessionTurnState(cOtherGroup, account, storeB, otherGroupID, sessionHash), "跨 group 不得恢复 WS turnState")
+
+	// 验证删除时同步清理
+	storeB.DeleteSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	_, deletedOk := storeB.GetSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	require.False(t, deletedOk, "删除后不可读")
+}
+
+type failingCodexTurnStateStore struct {
+	stubGatewayCache
+	originWrites  int
+	sessionWrites int
+}
+
+func (s *failingCodexTurnStateStore) SetTurnStateOrigin(context.Context, string, int64, time.Duration) error {
+	s.originWrites++
+	return errors.New("shared origin unavailable")
+}
+
+func (s *failingCodexTurnStateStore) GetTurnStateOrigin(context.Context, string) (int64, time.Duration, bool, error) {
+	return 0, 0, false, errors.New("shared origin unavailable")
+}
+
+func (s *failingCodexTurnStateStore) SetSessionTurnState(context.Context, string, string, time.Duration) error {
+	s.sessionWrites++
+	return errors.New("shared session unavailable")
+}
+
+func (s *failingCodexTurnStateStore) GetSessionTurnState(context.Context, string) (string, time.Duration, bool, error) {
+	return "", 0, false, errors.New("shared session unavailable")
+}
+
+func (s *failingCodexTurnStateStore) DeleteSessionTurnState(context.Context, string) error {
+	return errors.New("shared session unavailable")
+}
+
+// deadlineBlockingCodexTurnStateStore simulates Redis operations that consume
+// their entire context budget. It lets the regression tests prove that a
+// provenance + raw-state chain inherits one deadline instead of resetting a
+// fresh 500ms timeout for each operation.
+type deadlineBlockingCodexTurnStateStore struct {
+	stubGatewayCache
+
+	rawState string
+	rawDelay time.Duration
+
+	originWriteCalls  int
+	sessionWriteCalls int
+	sessionReadCalls  int
+	originReadCalls   int
+	deleteCalls       int
+
+	sessionWriteBudget time.Duration
+	originReadBudget   time.Duration
+}
+
+func (s *deadlineBlockingCodexTurnStateStore) SetTurnStateOrigin(ctx context.Context, _ string, _ int64, _ time.Duration) error {
+	s.originWriteCalls++
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (s *deadlineBlockingCodexTurnStateStore) GetTurnStateOrigin(ctx context.Context, _ string) (int64, time.Duration, bool, error) {
+	s.originReadCalls++
+	if deadline, ok := ctx.Deadline(); ok {
+		s.originReadBudget = time.Until(deadline)
+	}
+	<-ctx.Done()
+	return 0, 0, false, ctx.Err()
+}
+
+func (s *deadlineBlockingCodexTurnStateStore) SetSessionTurnState(ctx context.Context, _ string, _ string, _ time.Duration) error {
+	s.sessionWriteCalls++
+	if deadline, ok := ctx.Deadline(); ok {
+		s.sessionWriteBudget = time.Until(deadline)
+	}
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (s *deadlineBlockingCodexTurnStateStore) GetSessionTurnState(ctx context.Context, _ string) (string, time.Duration, bool, error) {
+	s.sessionReadCalls++
+	timer := time.NewTimer(s.rawDelay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return "", 0, false, ctx.Err()
+	case <-timer.C:
+		return s.rawState, time.Hour, strings.TrimSpace(s.rawState) != "", nil
+	}
+}
+
+func (s *deadlineBlockingCodexTurnStateStore) DeleteSessionTurnState(ctx context.Context, _ string) error {
+	s.deleteCalls++
+	return ctx.Err()
+}
+
+func TestCodexTurnStateSharedStoreFailureIsBoundedAndObservable(t *testing.T) {
+	cache := &failingCodexTurnStateStore{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 100}
+	c, _ := newTurnStateTestContext(t, 10, "session-shared-store-failure")
+
+	// Both writes execute in the caller's bounded post-delivery path. There is
+	// no per-response goroutine to outlive this function when Redis is down.
+	require.True(t, svc.commitOpenAIWSSessionTurnState(
+		c,
+		account,
+		svc.getOpenAIWSStateStore(),
+		1,
+		"session-hash-shared-store-failure",
+		"handshake-state-shared-store-failure",
+	))
+	require.Equal(t, 1, cache.originWrites)
+	require.Equal(t, 1, cache.sessionWrites)
+	require.EqualValues(t, 2, svc.openaiCodexTurnStateStoreFailures.Load())
+
+	// The local L1 remains usable by the active slot; a later slot still fails
+	// closed rather than accepting an unverifiable raw state.
+	require.Equal(t, "handshake-state-shared-store-failure", svc.loadOpenAIWSSessionTurnState(
+		c,
+		account,
+		svc.getOpenAIWSStateStore(),
+		1,
+		"session-hash-shared-store-failure",
+	))
+	green := &OpenAIGatewayService{cache: cache}
+	cGreen, _ := newTurnStateTestContext(t, 10, "session-shared-store-failure")
+	require.Empty(t, green.loadOpenAIWSSessionTurnState(
+		cGreen,
+		account,
+		green.getOpenAIWSStateStore(),
+		1,
+		"session-hash-shared-store-failure",
+	))
+}
+
+func TestCodexTurnStateSharedStoreCommitUsesOneTotalDeadline(t *testing.T) {
+	cache := &deadlineBlockingCodexTurnStateStore{}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 100}
+	c, _ := newTurnStateTestContext(t, 10, "session-total-deadline-commit")
+
+	started := time.Now()
+	require.True(t, svc.commitOpenAIWSSessionTurnState(
+		c,
+		account,
+		svc.getOpenAIWSStateStore(),
+		1,
+		"session-hash-total-deadline-commit",
+		"handshake-state-total-deadline-commit",
+	))
+	elapsed := time.Since(started)
+
+	// The raw-state write still runs so local L1 is populated, but it inherits
+	// the already exhausted provenance deadline instead of receiving another
+	// full 500ms wait.
+	require.Equal(t, 1, cache.originWriteCalls)
+	require.Equal(t, 1, cache.sessionWriteCalls)
+	require.Less(t, cache.sessionWriteBudget, 100*time.Millisecond)
+	require.Less(t, elapsed, 800*time.Millisecond)
+	require.GreaterOrEqual(t, svc.openaiCodexTurnStateStoreFailures.Load(), uint64(2))
+}
+
+func TestCodexTurnStateSharedStoreRecoveryUsesOneTotalDeadline(t *testing.T) {
+	cache := &deadlineBlockingCodexTurnStateStore{
+		rawState: "handshake-state-total-deadline-recovery",
+		rawDelay: 150 * time.Millisecond,
+	}
+	svc := &OpenAIGatewayService{cache: cache}
+	account := &Account{ID: 100}
+	c, _ := newTurnStateTestContext(t, 10, "session-total-deadline-recovery")
+
+	started := time.Now()
+	recovered := svc.loadOpenAIWSSessionTurnState(
+		c,
+		account,
+		svc.getOpenAIWSStateStore(),
+		1,
+		"session-hash-total-deadline-recovery",
+	)
+	elapsed := time.Since(started)
+
+	// The raw L2 read consumes part of the total budget. The subsequent origin
+	// check must see only the remaining time, then fail closed and clear local
+	// state; a fresh 500ms origin timeout would leave roughly the full budget.
+	require.Empty(t, recovered)
+	require.Equal(t, 1, cache.sessionReadCalls)
+	require.Equal(t, 1, cache.originReadCalls)
+	require.Less(t, cache.originReadBudget, 400*time.Millisecond)
+	require.Less(t, elapsed, 800*time.Millisecond)
+	require.GreaterOrEqual(t, cache.deleteCalls, 1)
 }

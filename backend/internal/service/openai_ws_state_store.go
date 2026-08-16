@@ -19,6 +19,19 @@ const (
 	openAIWSStateStoreRedisTimeout     = 3 * time.Second
 )
 
+type openAIWSTurnStateStoreFailureReporter func(operation string, groupID, apiKeyID, accountID int64, err error)
+
+// openAIWSStateStoreTurnStateContext is an internal extension used when a
+// complete handshake-state operation performs more than one Redis action. The
+// public store API remains backward-compatible for callers that only need a
+// single operation, while the gateway can carry one shared deadline through a
+// raw-state lookup/write and its provenance check/write.
+type openAIWSStateStoreTurnStateContext interface {
+	bindSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration)
+	getSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash string) (string, bool)
+	deleteSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash string)
+}
+
 type openAIWSAccountBinding struct {
 	accountID int64
 	expiresAt time.Time
@@ -67,7 +80,8 @@ type OpenAIWSStateStore interface {
 }
 
 type defaultOpenAIWSStateStore struct {
-	cache GatewayCache
+	cache                         GatewayCache
+	turnStateStoreFailureReporter openAIWSTurnStateStoreFailureReporter
 
 	responseToAccountMu  sync.RWMutex
 	responseToAccount    map[string]openAIWSAccountBinding
@@ -82,13 +96,18 @@ type defaultOpenAIWSStateStore struct {
 }
 
 // NewOpenAIWSStateStore 创建默认 WS 状态存储。
-func NewOpenAIWSStateStore(cache GatewayCache) OpenAIWSStateStore {
+func NewOpenAIWSStateStore(cache GatewayCache, reporters ...openAIWSTurnStateStoreFailureReporter) OpenAIWSStateStore {
+	var reporter openAIWSTurnStateStoreFailureReporter
+	if len(reporters) > 0 {
+		reporter = reporters[0]
+	}
 	store := &defaultOpenAIWSStateStore{
-		cache:              cache,
-		responseToAccount:  make(map[string]openAIWSAccountBinding, 256),
-		responseToConn:     make(map[string]openAIWSConnBinding, 256),
-		sessionToTurnState: make(map[string]openAIWSTurnStateBinding, 256),
-		sessionToConn:      make(map[string]openAIWSSessionConnBinding, 256),
+		cache:                         cache,
+		turnStateStoreFailureReporter: reporter,
+		responseToAccount:             make(map[string]openAIWSAccountBinding, 256),
+		responseToConn:                make(map[string]openAIWSConnBinding, 256),
+		sessionToTurnState:            make(map[string]openAIWSTurnStateBinding, 256),
+		sessionToConn:                 make(map[string]openAIWSSessionConnBinding, 256),
 	}
 	store.lastCleanupUnixNano.Store(time.Now().UnixNano())
 	return store
@@ -215,6 +234,10 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 }
 
 func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration) {
+	s.bindSessionTurnStateWithContext(context.Background(), groupID, apiKeyID, accountID, sessionHash, turnState, ttl)
+}
+
+func (s *defaultOpenAIWSStateStore) bindSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration) {
 	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	state := strings.TrimSpace(turnState)
 	if key == "" || state == "" {
@@ -230,9 +253,21 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID, apiKeyID, acco
 		expiresAt: time.Now().Add(ttl),
 	}
 	s.sessionToTurnStateMu.Unlock()
+
+	if store, ok := s.codexTurnStateSessionStore(); ok {
+		cacheCtx, cancel := newOpenAICodexTurnStateStoreContext(ctx)
+		defer cancel()
+		if err := store.SetSessionTurnState(cacheCtx, key, state, ttl); err != nil {
+			s.reportTurnStateStoreFailure("session_write", groupID, apiKeyID, accountID, err)
+		}
+	}
 }
 
 func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string) (string, bool) {
+	return s.getSessionTurnStateWithContext(context.Background(), groupID, apiKeyID, accountID, sessionHash)
+}
+
+func (s *defaultOpenAIWSStateStore) getSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash string) (string, bool) {
 	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return "", false
@@ -243,13 +278,37 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID, apiKeyID, accou
 	s.sessionToTurnStateMu.RLock()
 	binding, ok := s.sessionToTurnState[key]
 	s.sessionToTurnStateMu.RUnlock()
-	if !ok || now.After(binding.expiresAt) || strings.TrimSpace(binding.turnState) == "" {
-		return "", false
+	if ok && !now.After(binding.expiresAt) && strings.TrimSpace(binding.turnState) != "" {
+		return binding.turnState, true
 	}
-	return binding.turnState, true
+
+	if store, ok := s.codexTurnStateSessionStore(); ok {
+		cacheCtx, cancel := newOpenAICodexTurnStateStoreContext(ctx)
+		defer cancel()
+		val, ttl, found, err := store.GetSessionTurnState(cacheCtx, key)
+		val = strings.TrimSpace(val)
+		if err != nil {
+			s.reportTurnStateStoreFailure("session_read", groupID, apiKeyID, accountID, err)
+		}
+		if err == nil && found && ttl > 0 && val != "" {
+			s.sessionToTurnStateMu.Lock()
+			ensureBindingCapacity(s.sessionToTurnState, key, openAIWSStateStoreMaxEntriesPerMap)
+			s.sessionToTurnState[key] = openAIWSTurnStateBinding{
+				turnState: val,
+				expiresAt: time.Now().Add(ttl),
+			}
+			s.sessionToTurnStateMu.Unlock()
+			return val, true
+		}
+	}
+	return "", false
 }
 
 func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string) {
+	s.deleteSessionTurnStateWithContext(context.Background(), groupID, apiKeyID, accountID, sessionHash)
+}
+
+func (s *defaultOpenAIWSStateStore) deleteSessionTurnStateWithContext(ctx context.Context, groupID, apiKeyID, accountID int64, sessionHash string) {
 	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return
@@ -257,6 +316,61 @@ func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID, apiKeyID, ac
 	s.sessionToTurnStateMu.Lock()
 	delete(s.sessionToTurnState, key)
 	s.sessionToTurnStateMu.Unlock()
+
+	if store, ok := s.codexTurnStateSessionStore(); ok {
+		cacheCtx, cancel := newOpenAICodexTurnStateStoreContext(ctx)
+		defer cancel()
+		if err := store.DeleteSessionTurnState(cacheCtx, key); err != nil {
+			s.reportTurnStateStoreFailure("session_delete", groupID, apiKeyID, accountID, err)
+		}
+	}
+}
+
+func bindOpenAIWSSessionTurnStateWithContext(ctx context.Context, stateStore OpenAIWSStateStore, groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration) {
+	if stateStore == nil {
+		return
+	}
+	if store, ok := stateStore.(openAIWSStateStoreTurnStateContext); ok {
+		store.bindSessionTurnStateWithContext(ctx, groupID, apiKeyID, accountID, sessionHash, turnState, ttl)
+		return
+	}
+	stateStore.BindSessionTurnState(groupID, apiKeyID, accountID, sessionHash, turnState, ttl)
+}
+
+func getOpenAIWSSessionTurnStateWithContext(ctx context.Context, stateStore OpenAIWSStateStore, groupID, apiKeyID, accountID int64, sessionHash string) (string, bool) {
+	if stateStore == nil {
+		return "", false
+	}
+	if store, ok := stateStore.(openAIWSStateStoreTurnStateContext); ok {
+		return store.getSessionTurnStateWithContext(ctx, groupID, apiKeyID, accountID, sessionHash)
+	}
+	return stateStore.GetSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+}
+
+func deleteOpenAIWSSessionTurnStateWithContext(ctx context.Context, stateStore OpenAIWSStateStore, groupID, apiKeyID, accountID int64, sessionHash string) {
+	if stateStore == nil {
+		return
+	}
+	if store, ok := stateStore.(openAIWSStateStoreTurnStateContext); ok {
+		store.deleteSessionTurnStateWithContext(ctx, groupID, apiKeyID, accountID, sessionHash)
+		return
+	}
+	stateStore.DeleteSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+}
+
+func (s *defaultOpenAIWSStateStore) codexTurnStateSessionStore() (CodexTurnStateSessionStore, bool) {
+	if s == nil || s.cache == nil {
+		return nil, false
+	}
+	store, ok := s.cache.(CodexTurnStateSessionStore)
+	return store, ok && store != nil
+}
+
+func (s *defaultOpenAIWSStateStore) reportTurnStateStoreFailure(operation string, groupID, apiKeyID, accountID int64, err error) {
+	if s == nil || s.turnStateStoreFailureReporter == nil || err == nil {
+		return
+	}
+	s.turnStateStoreFailureReporter(operation, groupID, apiKeyID, accountID, err)
 }
 
 func (s *defaultOpenAIWSStateStore) BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration) {

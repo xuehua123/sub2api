@@ -285,7 +285,10 @@ func (s *OpenAIGatewayService) getOpenAIWSStateStore() OpenAIWSStateStore {
 	}
 	s.openaiWSStateStoreOnce.Do(func() {
 		if s.openaiWSStateStore == nil {
-			s.openaiWSStateStore = NewOpenAIWSStateStore(s.cache)
+			s.openaiWSStateStore = NewOpenAIWSStateStore(
+				s.cache,
+				openAIWSTurnStateStoreFailureReporter(s.reportOpenAICodexTurnStateStoreFailure),
+			)
 		}
 	})
 	return s.openaiWSStateStore

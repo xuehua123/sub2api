@@ -1200,7 +1200,7 @@ func reconcileCRSOllamaCloudUsageExtra(
 func sanitizeSyncedAccountExtraForTargetType(platform, accountType string, existingExtra, incomingExtra map[string]any) map[string]any {
 	merged := mergeMap(existingExtra, incomingExtra)
 	if platform != PlatformOpenAI || accountType != AccountTypeOAuth {
-		if incomingExtra == nil || incomingExtra[codexFingerprintModeExtraKey] == nil {
+		if _, explicitlyProvided := incomingExtra[codexFingerprintModeExtraKey]; !explicitlyProvided {
 			delete(merged, codexFingerprintModeExtraKey)
 		}
 	}

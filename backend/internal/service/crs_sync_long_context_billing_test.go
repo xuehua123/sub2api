@@ -264,4 +264,25 @@ func TestCRSSync_RejectsExplicitCodexFingerprintModeOnNonOAuth(t *testing.T) {
 	require.Len(t, result.Items, 1)
 	require.Equal(t, "failed", result.Items[0].Action)
 	require.Contains(t, result.Items[0].Error, "codex_fingerprint_mode is only supported for OpenAI OAuth accounts")
+	require.Empty(t, repo.accounts, "explicit remote extra must not reach persistence")
+}
+
+func TestCRSSync_RejectsExplicitNullCodexFingerprintModeOnNonOAuth(t *testing.T) {
+	repo := newCRSLongContextAccountRepo()
+
+	// CRS 远端显式传入 codex_fingerprint_mode: nil，不应被静默当作“未提供”
+	result := runCRSOpenAILongContextSync(t, repo, crsOpenAILongContextSource{
+		collection: "openaiResponsesAccounts",
+		credentials: map[string]any{
+			"api_key": "sk-new-apikey",
+		},
+		extra: map[string]any{
+			codexFingerprintModeExtraKey: nil,
+		},
+	})
+
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "failed", result.Items[0].Action)
+	require.Contains(t, result.Items[0].Error, "codex_fingerprint_mode is only supported for OpenAI OAuth accounts")
+	require.Empty(t, repo.accounts, "explicit null remote extra must not reach persistence")
 }

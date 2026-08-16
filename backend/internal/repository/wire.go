@@ -125,7 +125,7 @@ var ProviderSet = wire.NewSet(
 	NewLobeHubOIDCSigningKeyProvider,
 
 	// Cache implementations
-	NewGatewayCache,
+	ProvideGatewayCache,
 	NewBillingCache,
 	NewAPIKeyCache,
 	NewTempUnschedCache,

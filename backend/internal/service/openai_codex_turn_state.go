@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/gin-gonic/gin"
 )
 
@@ -22,17 +23,18 @@ const openAICodexTurnStateHeader = "x-codex-turn-state"
 // （failover 换号后客户端仍回带旧账号的 blob）是代理链独有、真实 Codex
 // 永远不会产生的矛盾信号。
 //
-// 溯源键包含下游 API Key、客户端会话和 blob 的 SHA-256。map 中绝不保存
-// 原始 blob：一是它本身是不透明的上游凭据，二是必须逐 blob 校验，不能让
+// 溯源键包含下游 group/API Key、客户端会话和 blob 的 SHA-256。map 中绝不
+// 保存原始 blob：一是它本身是不透明的上游凭据，二是必须逐 blob 校验，不能让
 // 账号 B 最近铸造的新 blob 覆盖账号 A 的旧 blob 的归属记录。
 type openAICodexTurnStateProvenanceKey struct {
+	groupID     int64
 	apiKeyID    int64
 	sessionHash [sha256.Size]byte
 	stateHash   [sha256.Size]byte
 }
 
 func (k openAICodexTurnStateProvenanceKey) String() string {
-	return fmt.Sprintf("%d:%x:%x", k.apiKeyID, k.sessionHash, k.stateHash)
+	return fmt.Sprintf("%d:%d:%x:%x", k.groupID, k.apiKeyID, k.sessionHash, k.stateHash)
 }
 
 type openAICodexTurnStateOrigin struct {
@@ -40,11 +42,44 @@ type openAICodexTurnStateOrigin struct {
 	expiresAt time.Time
 }
 
+const (
+	// Shared state is written/read on bounded terminal and recovery paths.
+	// A complete path (raw state plus provenance) must share this single budget,
+	// rather than giving each Redis operation a fresh timeout.
+	openAICodexTurnStateStoreTimeout         = 500 * time.Millisecond
+	openAICodexTurnStateStoreFailureLogEvery = 30 * time.Second
+)
+
+func newOpenAICodexTurnStateStoreContext(parent context.Context) (context.Context, context.CancelFunc) {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithTimeout(parent, openAICodexTurnStateStoreTimeout)
+}
+
+func openAICodexTurnStateRequestContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil && c.Request.Context() != nil {
+		return c.Request.Context()
+	}
+	return context.Background()
+}
+
 // CodexTurnStateOriginStore provides shared L2 verification across slots and
-// server instances for x-codex-turn-state origins.
+// server instances for x-codex-turn-state origins. It never exposes an opaque
+// turn-state blob itself.
 type CodexTurnStateOriginStore interface {
 	SetTurnStateOrigin(ctx context.Context, key string, accountID int64, ttl time.Duration) error
-	GetTurnStateOrigin(ctx context.Context, key string) (int64, error)
+	GetTurnStateOrigin(ctx context.Context, key string) (accountID int64, ttl time.Duration, found bool, err error)
+}
+
+// CodexTurnStateSessionStore is deliberately separate from origin lookup: it
+// contains an encrypted raw handshake state for WS clients that never receive
+// the upstream handshake header. Implementations must enforce a TTL and bind
+// the ciphertext to the supplied scope.
+type CodexTurnStateSessionStore interface {
+	SetSessionTurnState(ctx context.Context, key string, state string, ttl time.Duration) error
+	GetSessionTurnState(ctx context.Context, key string) (state string, ttl time.Duration, found bool, err error)
+	DeleteSessionTurnState(ctx context.Context, key string) error
 }
 
 func (s *OpenAIGatewayService) getCodexTurnStateStore() CodexTurnStateOriginStore {
@@ -55,6 +90,34 @@ func (s *OpenAIGatewayService) getCodexTurnStateStore() CodexTurnStateOriginStor
 		return store
 	}
 	return nil
+}
+
+func (s *OpenAIGatewayService) reportOpenAICodexTurnStateStoreFailure(operation string, groupID, apiKeyID, accountID int64, err error) {
+	if s == nil || err == nil {
+		return
+	}
+	failureCount := s.openaiCodexTurnStateStoreFailures.Add(1)
+	now := time.Now().UnixNano()
+	last := s.openaiCodexTurnStateStoreLastFailureLog.Load()
+	if last != 0 && now-last < openAICodexTurnStateStoreFailureLogEvery.Nanoseconds() {
+		return
+	}
+	if !s.openaiCodexTurnStateStoreLastFailureLog.CompareAndSwap(last, now) {
+		return
+	}
+	// Do not include the scope key, encrypted value, or raw upstream state in
+	// logs. The operation and concrete error type retain enough signal for
+	// alerting without turning a credential cache into a logging side-channel.
+	logger.LegacyPrintf(
+		"service.openai_gateway",
+		"[Codex turn-state] shared_store_failed operation=%s group_id=%d api_key_id=%d account_id=%d failure_count=%d error_type=%T",
+		strings.TrimSpace(operation),
+		groupID,
+		apiKeyID,
+		accountID,
+		failureCount,
+		err,
+	)
 }
 
 // openAICodexTurnStateProvenanceKeyFor 生成不含原文的归属键。客户端会话
@@ -77,6 +140,7 @@ func openAICodexTurnStateProvenanceKeyFor(c *gin.Context, state string) (openAIC
 		return openAICodexTurnStateProvenanceKey{}, false
 	}
 	return openAICodexTurnStateProvenanceKey{
+		groupID:     getOpenAIGroupIDFromContext(c),
 		apiKeyID:    apiKeyID,
 		sessionHash: sha256.Sum256([]byte(sessionID)),
 		stateHash:   sha256.Sum256([]byte(state)),
@@ -162,6 +226,10 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateCommitted(c *gin.Context,
 // caller invokes this only after the corresponding downstream WS turn has
 // completed successfully.
 func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOrigin(c *gin.Context, account *Account, state string) bool {
+	return s.noteOpenAICodexTurnStateOriginWithContext(context.Background(), c, account, state)
+}
+
+func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOriginWithContext(storeParentCtx context.Context, c *gin.Context, account *Account, state string) bool {
 	if s == nil || account == nil || account.ID <= 0 {
 		return false
 	}
@@ -181,11 +249,11 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOrigin(c *gin.Context, ac
 	s.sweepOpenAICodexTurnStateOrigins()
 
 	if store := s.getCodexTurnStateStore(); store != nil {
-		go func(st CodexTurnStateOriginStore, keyStr string, accID int64, t time.Duration) {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = st.SetTurnStateOrigin(ctx, keyStr, accID, t)
-		}(store, key.String(), account.ID, ttl)
+		writeCtx, cancel := newOpenAICodexTurnStateStoreContext(storeParentCtx)
+		defer cancel()
+		if err := store.SetTurnStateOrigin(writeCtx, key.String(), account.ID, ttl); err != nil {
+			s.reportOpenAICodexTurnStateStoreFailure("origin_write", key.groupID, key.apiKeyID, account.ID, err)
+		}
 	}
 	return true
 }
@@ -194,13 +262,17 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOrigin(c *gin.Context, ac
 // WebSocket handshake state as HTTP requests. The state-store is only a
 // performance cache; it is never an authority for a blob's account owner.
 func (s *OpenAIGatewayService) guardedOpenAIWSTurnState(c *gin.Context, account *Account, state string) string {
+	return s.guardedOpenAIWSTurnStateWithContext(openAICodexTurnStateRequestContext(c), c, account, state)
+}
+
+func (s *OpenAIGatewayService) guardedOpenAIWSTurnStateWithContext(storeParentCtx context.Context, c *gin.Context, account *Account, state string) string {
 	state = strings.TrimSpace(state)
 	if state == "" {
 		return ""
 	}
 	headers := http.Header{}
 	headers.Set(openAICodexTurnStateHeader, state)
-	s.guardOpenAICodexTurnStateEcho(c, account, headers)
+	s.guardOpenAICodexTurnStateEchoWithContext(storeParentCtx, c, account, headers)
 	return extractOpenAICodexTurnState(headers)
 }
 
@@ -215,9 +287,10 @@ func openAIWSTurnStateScopeIDs(c *gin.Context, account *Account) (int64, int64, 
 	return apiKeyID, account.ID, true
 }
 
-// loadOpenAIWSSessionTurnState reads an account/API-key-scoped cache entry and
-// then independently verifies the exact blob against in-memory provenance.
-// A cache hit from another slot/restart is deliberately treated as unknown.
+// loadOpenAIWSSessionTurnState reads a group/API-key/account/session-scoped
+// cache entry and then independently verifies the exact blob against L1 or its
+// short-lived shared provenance record. A cache hit without either provenance
+// source remains unknown and is deleted fail-closed.
 func (s *OpenAIGatewayService) loadOpenAIWSSessionTurnState(
 	c *gin.Context,
 	account *Account,
@@ -232,15 +305,18 @@ func (s *OpenAIGatewayService) loadOpenAIWSSessionTurnState(
 	if !ok {
 		return ""
 	}
-	state, found := stateStore.GetSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	storeCtx, cancel := newOpenAICodexTurnStateStoreContext(openAICodexTurnStateRequestContext(c))
+	defer cancel()
+
+	state, found := getOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, sessionHash)
 	if !found {
 		return ""
 	}
-	guarded := s.guardedOpenAIWSTurnState(c, account, state)
+	guarded := s.guardedOpenAIWSTurnStateWithContext(storeCtx, c, account, state)
 	if guarded == "" {
 		// The cache is not trusted authority. Drop values whose provenance is
 		// absent, expired, or no longer matches this exact owner.
-		stateStore.DeleteSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+		deleteOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, sessionHash)
 	}
 	return guarded
 }
@@ -257,7 +333,11 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	sessionHash string,
 	state string,
 ) bool {
-	if !s.noteOpenAICodexTurnStateOrigin(c, account, state) {
+	// Provenance and raw handshake state are written after delivery. They must
+	// share one deadline so a degraded Redis cannot add one timeout per write.
+	storeCtx, cancel := newOpenAICodexTurnStateStoreContext(context.Background())
+	defer cancel()
+	if !s.noteOpenAICodexTurnStateOriginWithContext(storeCtx, c, account, state) {
 		return false
 	}
 	if stateStore == nil || strings.TrimSpace(sessionHash) == "" {
@@ -267,7 +347,7 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 	if !ok {
 		return true
 	}
-	stateStore.BindSessionTurnState(groupID, apiKeyID, accountID, sessionHash, state, s.openAIWSSessionStickyTTL())
+	bindOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, sessionHash, state, s.openAIWSSessionStickyTTL())
 	return true
 }
 
@@ -277,6 +357,10 @@ func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
 // 只剥离、不注入——/responses 路径的客户端会按自身回合语义自行回带；服务端
 // 注入是 Claude 兼容桥（无法回带的客户端）的专属行为。
 func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, account *Account, h http.Header) {
+	s.guardOpenAICodexTurnStateEchoWithContext(openAICodexTurnStateRequestContext(c), c, account, h)
+}
+
+func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEchoWithContext(storeParentCtx context.Context, c *gin.Context, account *Account, h http.Header) {
 	if h == nil {
 		return
 	}
@@ -308,19 +392,21 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 
 	// 2. Check L2 Redis origin store (e.g. across blue-green slot switch / restart)
 	if store := s.getCodexTurnStateStore(); store != nil {
-		reqCtx := context.Background()
-		if c != nil && c.Request != nil && c.Request.Context() != nil {
-			reqCtx = c.Request.Context()
+		if storeParentCtx == nil {
+			storeParentCtx = openAICodexTurnStateRequestContext(c)
 		}
-		checkCtx, cancel := context.WithTimeout(reqCtx, 1500*time.Millisecond)
+		checkCtx, cancel := newOpenAICodexTurnStateStoreContext(storeParentCtx)
 		defer cancel()
-		accountID, err := store.GetTurnStateOrigin(checkCtx, key.String())
-		if err == nil && accountID > 0 {
+		accountID, ttl, found, err := store.GetTurnStateOrigin(checkCtx, key.String())
+		if err != nil {
+			s.reportOpenAICodexTurnStateStoreFailure("origin_read", key.groupID, key.apiKeyID, account.ID, err)
+		}
+		if err == nil && found && accountID > 0 && ttl > 0 {
 			if accountID == account.ID {
 				// Warm up L1 memory cache for subsequent turns
 				s.openaiCodexTurnStateOrigins.Store(key, openAICodexTurnStateOrigin{
 					accountID: account.ID,
-					expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
+					expiresAt: time.Now().Add(ttl),
 				})
 				return
 			}

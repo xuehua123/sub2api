@@ -3,13 +3,17 @@ package repository
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
 )
@@ -18,11 +22,36 @@ const stickySessionPrefix = "sticky_session:"
 const liveCallPrefix = "live:call:"
 
 type gatewayCache struct {
-	rdb *redis.Client
+	rdb                           *redis.Client
+	codexTurnStateEncryptor       service.SecretEncryptor
+	codexTurnStateEncryptorConfig *config.Config
+	codexTurnStateEncryptorMu     sync.Mutex
 }
 
-func NewGatewayCache(rdb *redis.Client) service.GatewayCache {
-	return &gatewayCache{rdb: rdb}
+// NewGatewayCache creates the gateway cache. The optional encryptor keeps
+// older focused cache tests lightweight. Without it, the encrypted Codex
+// handshake-state L2 is deliberately unavailable and fails closed; ordinary
+// gateway-cache features remain usable.
+func NewGatewayCache(rdb *redis.Client, encryptors ...service.SecretEncryptor) service.GatewayCache {
+	var encryptor service.SecretEncryptor
+	if len(encryptors) > 0 {
+		encryptor = encryptors[0]
+	}
+	return &gatewayCache{rdb: rdb, codexTurnStateEncryptor: encryptor}
+}
+
+// ProvideGatewayCache is the production Wire provider. It derives a stable,
+// domain-separated cipher from JWT signing material rather than TOTP's
+// optional per-process key, so blue and green slots can decrypt the same
+// short-lived state without adding a new deployment secret.
+//
+// Config is intentionally loaded in bootstrap mode before Ent may populate a
+// generated JWT secret from the database. Cipher construction is therefore
+// lazy: an early raw-state operation fails closed rather than blocking startup
+// or choosing a process-random key, and it can safely enable after bootstrap
+// has populated the same config instance.
+func ProvideGatewayCache(rdb *redis.Client, cfg *config.Config) service.GatewayCache {
+	return &gatewayCache{rdb: rdb, codexTurnStateEncryptorConfig: cfg}
 }
 
 // buildSessionKey 构建 session key，包含 groupID 实现分组隔离
@@ -131,25 +160,171 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
 var _ service.CodexTurnStateOriginStore = (*gatewayCache)(nil)
+var _ service.CodexTurnStateSessionStore = (*gatewayCache)(nil)
 
 const codexTurnStateOriginPrefix = "codex:turn_origin:"
 
 func (c *gatewayCache) SetTurnStateOrigin(ctx context.Context, key string, accountID int64, ttl time.Duration) error {
-	if strings.TrimSpace(key) == "" || accountID <= 0 {
-		return nil
+	key = strings.TrimSpace(key)
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	if key == "" || accountID <= 0 || ttl <= 0 {
+		return errors.New("invalid codex turn-state origin")
 	}
 	return c.rdb.Set(ctx, codexTurnStateOriginPrefix+key, accountID, ttl).Err()
 }
 
-func (c *gatewayCache) GetTurnStateOrigin(ctx context.Context, key string) (int64, error) {
-	if strings.TrimSpace(key) == "" {
-		return 0, redis.Nil
+func (c *gatewayCache) GetTurnStateOrigin(ctx context.Context, key string) (int64, time.Duration, bool, error) {
+	key = strings.TrimSpace(key)
+	if c == nil || c.rdb == nil {
+		return 0, 0, false, errors.New("gateway cache unavailable")
+	}
+	if key == "" {
+		return 0, 0, false, nil
 	}
 	val, err := c.rdb.Get(ctx, codexTurnStateOriginPrefix+key).Int64()
 	if err != nil {
-		return 0, err
+		if errors.Is(err, redis.Nil) {
+			return 0, 0, false, nil
+		}
+		return 0, 0, false, err
 	}
-	return val, nil
+	ttl, found, err := c.getCodexTurnStateTTL(ctx, codexTurnStateOriginPrefix+key)
+	if err != nil || !found || val <= 0 {
+		return 0, 0, false, err
+	}
+	return val, ttl, true, nil
+}
+
+const codexSessionTurnStatePrefix = "codex:session_turn_state:"
+
+const codexSessionTurnStateEnvelopeVersion = 1
+
+// codexSessionTurnStateEnvelope is encrypted before entering Redis. Embedding
+// the scope in the authenticated plaintext means a ciphertext copied from one
+// API-key/session/account scope to another is rejected after decryption.
+type codexSessionTurnStateEnvelope struct {
+	Version int    `json:"v"`
+	Scope   string `json:"scope"`
+	State   string `json:"state"`
+}
+
+func (c *gatewayCache) SetSessionTurnState(ctx context.Context, key string, state string, ttl time.Duration) error {
+	key = strings.TrimSpace(key)
+	state = strings.TrimSpace(state)
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	if key == "" || state == "" || ttl <= 0 {
+		return errors.New("invalid codex session turn-state")
+	}
+	encryptor, err := c.codexSessionTurnStateEncryptor()
+	if err != nil {
+		return errors.New("codex session turn-state protection unavailable")
+	}
+	redisKey := codexSessionTurnStateRedisKey(key)
+	payload, err := json.Marshal(codexSessionTurnStateEnvelope{
+		Version: codexSessionTurnStateEnvelopeVersion,
+		Scope:   key,
+		State:   state,
+	})
+	if err != nil {
+		return errors.New("encode codex session turn-state")
+	}
+	ciphertext, err := encryptor.Encrypt(string(payload))
+	if err != nil || strings.TrimSpace(ciphertext) == "" {
+		return errors.New("encrypt codex session turn-state")
+	}
+	return c.rdb.Set(ctx, redisKey, ciphertext, ttl).Err()
+}
+
+func (c *gatewayCache) GetSessionTurnState(ctx context.Context, key string) (string, time.Duration, bool, error) {
+	key = strings.TrimSpace(key)
+	if c == nil || c.rdb == nil {
+		return "", 0, false, errors.New("gateway cache unavailable")
+	}
+	if key == "" {
+		return "", 0, false, nil
+	}
+	encryptor, err := c.codexSessionTurnStateEncryptor()
+	if err != nil {
+		return "", 0, false, errors.New("codex session turn-state protection unavailable")
+	}
+	redisKey := codexSessionTurnStateRedisKey(key)
+	ciphertext, err := c.rdb.Get(ctx, redisKey).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return "", 0, false, nil
+		}
+		return "", 0, false, err
+	}
+	ttl, found, err := c.getCodexTurnStateTTL(ctx, redisKey)
+	if err != nil || !found {
+		return "", 0, false, err
+	}
+	plaintext, err := encryptor.Decrypt(ciphertext)
+	if err != nil {
+		return "", 0, false, errors.New("decrypt codex session turn-state")
+	}
+	var payload codexSessionTurnStateEnvelope
+	if err := json.Unmarshal([]byte(plaintext), &payload); err != nil ||
+		payload.Version != codexSessionTurnStateEnvelopeVersion ||
+		strings.TrimSpace(payload.State) == "" ||
+		len(payload.Scope) != len(key) ||
+		subtle.ConstantTimeCompare([]byte(payload.Scope), []byte(key)) != 1 {
+		return "", 0, false, errors.New("invalid codex session turn-state")
+	}
+	return strings.TrimSpace(payload.State), ttl, true, nil
+}
+
+func (c *gatewayCache) DeleteSessionTurnState(ctx context.Context, key string) error {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	if c == nil || c.rdb == nil {
+		return errors.New("gateway cache unavailable")
+	}
+	return c.rdb.Del(ctx, codexSessionTurnStateRedisKey(key)).Err()
+}
+
+// codexSessionTurnStateRedisKey keeps group/API-key/account/session scope out
+// of Redis keyspace inspection. The encrypted envelope still carries and
+// authenticates the original scope, so a copied ciphertext cannot be replayed
+// under a different calculated key.
+func codexSessionTurnStateRedisKey(scope string) string {
+	sum := sha256.Sum256([]byte("sub2api:codex-session-turn-state-key:v1\x00" + scope))
+	return codexSessionTurnStatePrefix + hex.EncodeToString(sum[:])
+}
+
+func (c *gatewayCache) codexSessionTurnStateEncryptor() (service.SecretEncryptor, error) {
+	if c == nil {
+		return nil, errors.New("gateway cache unavailable")
+	}
+	c.codexTurnStateEncryptorMu.Lock()
+	defer c.codexTurnStateEncryptorMu.Unlock()
+	if c.codexTurnStateEncryptor != nil {
+		return c.codexTurnStateEncryptor, nil
+	}
+	encryptor, err := NewCodexTurnStateEncryptor(c.codexTurnStateEncryptorConfig)
+	if err != nil {
+		return nil, err
+	}
+	c.codexTurnStateEncryptor = encryptor
+	return encryptor, nil
+}
+
+func (c *gatewayCache) getCodexTurnStateTTL(ctx context.Context, redisKey string) (time.Duration, bool, error) {
+	ttl, err := c.rdb.TTL(ctx, redisKey).Result()
+	if err != nil {
+		return 0, false, err
+	}
+	if ttl <= 0 {
+		// A persistent or already-expired secret state is unsafe to reuse.
+		return 0, false, nil
+	}
+	return ttl, true, nil
 }
 
 const cyberSessionBlockPrefix = "cyber_session_block:"

@@ -47,6 +47,43 @@ func (d *openAIWSSingleConnDialer) Dial(
 	return d.conn, 0, nil, nil
 }
 
+type openAIWSSessionTurnStateBind struct {
+	groupID     int64
+	apiKeyID    int64
+	accountID   int64
+	sessionHash string
+	turnState   string
+}
+
+// recordingOpenAIWSStateStore observes the exact scope used by ingress when it
+// commits a handshake turn-state. Embedding the real store keeps all unrelated
+// state-store behavior identical to production.
+type recordingOpenAIWSStateStore struct {
+	OpenAIWSStateStore
+
+	mu                    sync.Mutex
+	sessionTurnStateBinds []openAIWSSessionTurnStateBind
+}
+
+func (s *recordingOpenAIWSStateStore) BindSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration) {
+	s.mu.Lock()
+	s.sessionTurnStateBinds = append(s.sessionTurnStateBinds, openAIWSSessionTurnStateBind{
+		groupID:     groupID,
+		apiKeyID:    apiKeyID,
+		accountID:   accountID,
+		sessionHash: sessionHash,
+		turnState:   turnState,
+	})
+	s.mu.Unlock()
+	s.OpenAIWSStateStore.BindSessionTurnState(groupID, apiKeyID, accountID, sessionHash, turnState, ttl)
+}
+
+func (s *recordingOpenAIWSStateStore) SessionTurnStateBinds() []openAIWSSessionTurnStateBind {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]openAIWSSessionTurnStateBind(nil), s.sessionTurnStateBinds...)
+}
+
 func TestOpenAIWSDownstreamWriteContext_CancellationOwnership(t *testing.T) {
 	t.Run("pre-canceled ordinary context is canceled before return", func(t *testing.T) {
 		controlCtx, cancelControl := context.WithCancelCause(context.Background())
@@ -955,6 +992,217 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_DedicatedModeDoe
 	runSingleTurnSession("resp_dedicated_2")
 
 	require.Equal(t, 2, dialer.DialCount(), "dedicated 模式下跨客户端会话不应复用上游连接")
+}
+
+func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ReusedLeaseDoesNotRebindHandshakeTurnStateAcrossAPIKeys(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.QueueLimitPerConn = 8
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.ReadTimeoutSeconds = 3
+	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
+
+	upstreamConn := &openAIWSCaptureConn{
+		events: [][]byte{
+			[]byte(`{"type":"response.completed","response":{"id":"resp_key_a","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+			[]byte(`{"type":"response.completed","response":{"id":"resp_key_b","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`),
+			[]byte(`{"type":"error","error":{"code":"rate_limit_exceeded","type":"usage_limit_reached","message":"The usage limit has been reached"}}`),
+		},
+	}
+	dialer := &openAIWSCaptureDialer{
+		conn: upstreamConn,
+		handshake: http.Header{
+			http.CanonicalHeaderKey(openAIWSTurnStateHeader): []string{"turn-state-from-key-a"},
+		},
+	}
+	pool := newOpenAIWSConnPool(cfg)
+	pool.setClientDialerForTest(dialer)
+	defer pool.Close()
+	stateStore := &recordingOpenAIWSStateStore{
+		OpenAIWSStateStore: NewOpenAIWSStateStore(&stubGatewayCache{}),
+	}
+
+	svc := &OpenAIGatewayService{
+		cfg:                cfg,
+		httpUpstream:       &httpUpstreamRecorder{},
+		cache:              &stubGatewayCache{},
+		openaiWSResolver:   NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:      NewCodexToolCorrector(),
+		openaiWSPool:       pool,
+		openaiWSStateStore: stateStore,
+	}
+	account := &Account{
+		ID:          442,
+		Name:        "openai-ingress-reused-handshake-state",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	const (
+		apiKeyAID int64 = 44201
+		apiKeyBID int64 = 44202
+		apiKeyCID int64 = 44203
+	)
+	groupID := int64(4420)
+	serverErrCh := make(chan error, 3)
+	secondTurnHeaders := make(chan http.Header, 1)
+	var sessionMu sync.Mutex
+	sessionIndex := 0
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
+			CompressionMode: coderws.CompressionContextTakeover,
+		})
+		if err != nil {
+			serverErrCh <- err
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		sessionMu.Lock()
+		sessionIndex++
+		index := sessionIndex
+		sessionMu.Unlock()
+		apiKeyID := apiKeyAID
+		sessionID := "session-key-a"
+		switch index {
+		case 2:
+			apiKeyID = apiKeyBID
+			sessionID = "session-key-b"
+		case 3:
+			apiKeyID = apiKeyCID
+			sessionID = "session-key-c"
+		}
+
+		rec := httptest.NewRecorder()
+		ginCtx, _ := gin.CreateTestContext(rec)
+		req := r.Clone(r.Context())
+		req.Header = req.Header.Clone()
+		req.Header.Set("User-Agent", "unit-test-agent/1.0")
+		req.Header.Set("session_id", sessionID)
+		ginCtx.Request = req
+		ginCtx.Set("api_key", &APIKey{ID: apiKeyID, GroupID: &groupID})
+
+		readCtx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		msgType, firstMessage, readErr := conn.Read(readCtx)
+		cancel()
+		if readErr != nil {
+			serverErrCh <- readErr
+			return
+		}
+		if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
+			serverErrCh <- errors.New("unsupported websocket client message type")
+			return
+		}
+
+		hooks := &OpenAIWSIngressHooks{
+			AfterTurn: func(_ int, result *OpenAIForwardResult, turnErr error) {
+				if index == 2 && turnErr == nil && result != nil {
+					secondTurnHeaders <- cloneHeader(result.ResponseHeaders)
+				}
+			},
+		}
+		serverErrCh <- svc.ProxyResponsesWebSocketFromClient(r.Context(), ginCtx, conn, account, "sk-test", firstMessage, hooks)
+	}))
+	defer wsServer.Close()
+
+	runSingleTurnSession := func(expectedResponseID string) {
+		dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+		clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+		cancelDial()
+		require.NoError(t, err)
+		defer func() { _ = clientConn.CloseNow() }()
+
+		writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+		err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`))
+		cancelWrite()
+		require.NoError(t, err)
+
+		readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+		msgType, event, readErr := clientConn.Read(readCtx)
+		cancelRead()
+		require.NoError(t, readErr)
+		require.Equal(t, coderws.MessageText, msgType)
+		require.Equal(t, expectedResponseID, gjson.GetBytes(event, "response.id").String())
+
+		require.NoError(t, clientConn.Close(coderws.StatusNormalClosure, "done"))
+		select {
+		case serverErr := <-serverErrCh:
+			require.NoError(t, serverErr)
+		case <-time.After(5 * time.Second):
+			t.Fatal("等待 ingress websocket 结束超时")
+		}
+	}
+
+	runSingleTurnSession("resp_key_a")
+	runSingleTurnSession("resp_key_b")
+
+	// A rate-limit error from Key C must not carry Key A's cached handshake
+	// credential merely because the account-scoped upstream lease was reused.
+	runReusedRateLimitSession := func() {
+		dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+		clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http"), nil)
+		cancelDial()
+		require.NoError(t, err)
+		defer func() { _ = clientConn.CloseNow() }()
+
+		writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+		err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`))
+		cancelWrite()
+		require.NoError(t, err)
+
+		select {
+		case serverErr := <-serverErrCh:
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, serverErr, &failoverErr)
+			require.Equal(t, http.StatusTooManyRequests, failoverErr.StatusCode)
+			require.NotNil(t, failoverErr.ResponseHeaders, "the error must carry a detached handshake-header map")
+			require.Empty(t, failoverErr.ResponseHeaders.Get(openAIWSTurnStateHeader), "reused-lease error must not carry another session's turn-state")
+		case <-time.After(5 * time.Second):
+			t.Fatal("等待 reused lease 限流错误超时")
+		}
+	}
+	runReusedRateLimitSession()
+
+	var keyAStateBound bool
+	for _, bind := range stateStore.SessionTurnStateBinds() {
+		if bind.groupID != groupID || bind.accountID != account.ID || bind.turnState != "turn-state-from-key-a" {
+			continue
+		}
+		switch bind.apiKeyID {
+		case apiKeyAID:
+			keyAStateBound = true
+		case apiKeyBID:
+			t.Fatal("复用连接的握手状态不得绑定给另一把 API Key")
+		}
+	}
+	require.True(t, keyAStateBound, "新建连接的握手状态应绑定给首个 API Key")
+
+	select {
+	case headers := <-secondTurnHeaders:
+		require.Empty(t, headers.Get(openAIWSTurnStateHeader), "复用连接不得把前一会话的握手状态暴露给 hooks")
+	case <-time.After(2 * time.Second):
+		t.Fatal("未收到第二个 ingress turn 的结果")
+	}
+	require.Equal(t, 1, dialer.DialCount(), "后续 API Key 应复用同一账号的空闲连接以覆盖隔离边界")
 }
 
 func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughModeRelaysByCaddyAdapter(t *testing.T) {
