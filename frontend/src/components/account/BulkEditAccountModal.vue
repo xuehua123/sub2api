@@ -1626,7 +1626,7 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const enableCodexFingerprintMode = ref(false)
-const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 const codexFingerprintModeOptions = computed(() => [
   { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
   { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
@@ -1934,9 +1934,8 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
 
   if (enableCodexFingerprintMode.value && allOpenAIOAuthOnly.value) {
     const extra = ensureExtra()
-    // The backend merges JSONB extras; omitting the default cannot remove an
-    // existing non-default value. Send session explicitly so bulk edit can
-    // restore the default and keep the update payload non-empty.
+    // BulkUpdate merges JSONB extras. Persist off instead of deleting the key,
+    // otherwise an existing opt-in value cannot be cleared.
     extra.codex_fingerprint_mode = codexFingerprintMode.value
   }
 
@@ -2186,7 +2185,7 @@ watch(
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
       enableCodexFingerprintMode.value = false
-      codexFingerprintMode.value = 'session'
+      codexFingerprintMode.value = 'off'
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false

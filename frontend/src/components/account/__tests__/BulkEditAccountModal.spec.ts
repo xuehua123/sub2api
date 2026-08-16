@@ -468,7 +468,7 @@ describe('BulkEditAccountModal', () => {
     expect(setupTokenWrapper.find('#bulk-edit-codex-fingerprint-enabled').exists()).toBe(false)
   })
 
-  it('批量指纹模式可显式恢复默认 session', async () => {
+  it('批量指纹模式可显式关闭为 off', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
@@ -479,7 +479,7 @@ describe('BulkEditAccountModal', () => {
     await flushPromises()
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: { codex_fingerprint_mode: 'session' }
+      extra: { codex_fingerprint_mode: 'off' }
     })
   })
 

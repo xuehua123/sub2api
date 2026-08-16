@@ -405,8 +405,8 @@ func (t *accountWriteThrottle) Allow(id int64, now time.Time) bool {
 
 var defaultOpenAICodexSnapshotPersistThrottle = newAccountWriteThrottle(openAICodexSnapshotPersistMinInterval)
 
-// ErrNoAvailableCompactAccounts indicates the request needs /responses/compact
-// support but no compatible account is available.
+// ErrNoAvailableCompactAccounts indicates a legacy /responses/compact request
+// needs compact support but no compatible account is available.
 var ErrNoAvailableCompactAccounts = errors.New("no available accounts support /responses/compact")
 
 // OpenAIGatewayService handles OpenAI API gateway operations
@@ -469,6 +469,11 @@ type OpenAIGatewayService struct {
 	codexModelsManifestCache            codexModelsManifestCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+	// openaiCodexTurnStateOrigins: API Key/session/blob 哈希 →
+	// openAICodexTurnStateOrigin。仅记录已提交给下游的状态头，用于拒绝
+	// 跨账号或来源未知的回带（openai_codex_turn_state.go）。
+	openaiCodexTurnStateOrigins sync.Map
+	openaiCodexTurnStateWrites  atomic.Uint64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService
@@ -617,6 +622,10 @@ func (s *OpenAIGatewayService) ValidateChannelModelForAccount(ctx context.Contex
 func (s *OpenAIGatewayService) isUpstreamModelRestrictedByChannel(ctx context.Context, groupID int64, account *Account, requestedModel string, requireCompact bool) bool {
 	if s.channelService == nil {
 		return false
+	}
+	if compactForwardModel, ok := openAIForwardModelFromContext(ctx); ok {
+		requestedModel = compactForwardModel.model
+		requireCompact = compactForwardModel.useCompactModelMapping
 	}
 	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, requestedModel, requireCompact)
 	if upstreamModel == "" {

@@ -57,6 +57,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	guardFirstOutput := firstOutputTimeout > 0
 	var attemptResponseHeaders http.Header
+	turnState := ""
+	turnStateReadyToCommit := false
 	if guardFirstOutput {
 		if s.responseHeaderFilter != nil {
 			attemptResponseHeaders = responseheaders.FilterHeaders(resp.Header, s.responseHeaderFilter)
@@ -65,6 +67,23 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 	} else if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	}
+	// x-codex-turn-state 不在通用响应头白名单内，按 Codex 协议显式回传：
+	// 客户端会在同回合的后续请求中回带（openai_codex_turn_state.go）。
+	// 首输出守卫模式下只暂存；溯源只会在后续 Write/Flush 成功后记录。
+	if guardFirstOutput {
+		stageOpenAICodexTurnState(&attemptResponseHeaders, resp.Header)
+		turnState = extractOpenAICodexTurnState(attemptResponseHeaders)
+	} else {
+		turnState = s.relayOpenAICodexTurnState(c, resp.Header)
+		turnStateReadyToCommit = turnState != ""
+	}
+	turnStateCommitted := false
+	noteTurnStateCommitted := func() {
+		if !turnStateReadyToCommit || turnStateCommitted {
+			return
+		}
+		turnStateCommitted = s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 	}
 
 	// Set SSE response headers
@@ -87,6 +106,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				c.Writer.Header().Add(key, value)
 			}
 		}
+		// 暂存头将在随后的 Write/Flush 中真正提交；只有写出成功后才记录
+		// turn-state 溯源，避免首输出 failover 污染下一次请求。
+		turnStateReadyToCommit = turnState != ""
 		// These headers describe this gateway's SSE stream and are stable across
 		// account attempts. Keep them authoritative over upstream values.
 		c.Header("Content-Type", "text/event-stream")
@@ -141,6 +163,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 		}
 		flusher.Flush()
+		noteTurnStateCommitted()
 		if hadBufferedData {
 			setStreamElapsedMsOnce(&firstClientFlushMs, startTime)
 		}
@@ -485,6 +508,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 								"message": errMsg,
 							},
 						})
+						noteTurnStateCommitted()
 						streamEarlyErr = fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
 						return
 					}
@@ -1281,6 +1305,9 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, fmt.Errorf("restore OpenAI namespace response: %w", err)
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	// Codex 协议要求 /responses/compact JSON 响应携带 x-codex-turn-state
+	// （codex-api/src/endpoint/compact.rs 从响应头捕获），显式回传。
+	turnState := s.relayOpenAICodexTurnState(c, resp.Header)
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1292,6 +1319,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
+	s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,
@@ -1395,7 +1423,6 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 		}
 		body = []byte(bodyText)
 	}
-
 	contentType := "application/json; charset=utf-8"
 	if ok {
 		writeFilteredHeadersForTransformedJSON(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
@@ -1406,10 +1433,14 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			contentType = "text/event-stream"
 		}
 	}
+	// turn-state is deliberately relayed after the normal header filter: it is
+	// protocol state, not a generally forwarded upstream header.
+	turnState := s.relayOpenAICodexTurnState(c, resp.Header)
 	c.Writer.Header().Set("Content-Type", contentType)
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
+	s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,

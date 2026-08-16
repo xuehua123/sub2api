@@ -81,18 +81,30 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if normalized {
 			body = normalizedBody
 		}
+
+		// Reuse the attempt-scoped IDs created by Forward. This keeps raw-body
+		// metadata and headers on one turn ID while retaining account/API-key
+		// isolation across failover.
 		if !isOpenAIResponsesCompactPath(c) {
-			if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
-				if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(fpIDs, account) {
-					fingerprintedBody, changed, fingerprintErr := applyCodexFingerprintJSONBody(body, fpIDs)
-					if fingerprintErr != nil {
-						return nil, fmt.Errorf("apply OpenAI Codex fingerprint metadata: %w", fingerprintErr)
-					}
-					if changed {
-						body = fingerprintedBody
+			var fpIDs *codexFingerprintIDs
+			if c != nil {
+				if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
+					if ids, ok := fpIDsValue.(*codexFingerprintIDs); ok &&
+						codexFingerprintIDsBelongToAttempt(ids, account, getAPIKeyIDFromContext(c)) {
+						fpIDs = ids
 					}
 				}
 			}
+			if fpIDs != nil {
+				fingerprintedBody, changed, fingerprintErr := applyCodexFingerprintClientMetadataRaw(body, fpIDs)
+				if fingerprintErr != nil {
+					return nil, fmt.Errorf("apply OpenAI Codex fingerprint metadata: %w", fingerprintErr)
+				}
+				if changed {
+					body = fingerprintedBody
+				}
+			}
+			stageCodexFingerprintIDs(c, fpIDs)
 		}
 	}
 
@@ -409,6 +421,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 	ensureOpenAIClientRequestIDHeader(ctx, req)
 
+	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
+	// 剥离后再出站（openai_codex_turn_state.go）。
+	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+
 	// 覆盖入站鉴权残留，并注入上游认证
 	req.Header.Del("authorization")
 	req.Header.Del("x-api-key")
@@ -476,7 +492,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// context from leaking a prior failover account's headers.
 	if account.Type == AccountTypeOAuth && !isOpenAIResponsesCompactPath(c) && c != nil {
 		if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
-			if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok && codexFingerprintIDsBelongToAccount(fpIDs, account) {
+			if fpIDs, ok := fpIDsValue.(*codexFingerprintIDs); ok &&
+				codexFingerprintIDsBelongToAttempt(fpIDs, account, getAPIKeyIDFromContext(c)) {
 				applyCodexFingerprintHeaders(req.Header, fpIDs)
 			}
 		}
@@ -502,6 +519,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
 	account.ApplyHeaderOverrides(req.Header)
+	// x-codex-beta-features：按真实 Codex 的会话级行为补注（在账号级覆写之后，
+	// 保证不被覆盖丢失）。
+	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 
@@ -1240,7 +1260,21 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
-	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	// Header 写入本身不等于下游已收到它。若此前已有响应（例如 keepalive），
+	// 这个 turn-state 已无法被追加到 HTTP headers，因而不能登记为可信来源。
+	turnState := ""
+	if !c.Writer.Written() {
+		turnState = writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	} else {
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	}
+	turnStateCommitted := false
+	noteTurnStateCommitted := func() {
+		if turnStateCommitted || turnState == "" {
+			return
+		}
+		turnStateCommitted = s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
+	}
 
 	// SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -1291,6 +1325,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 				return false
 			}
+			noteTurnStateCommitted()
 		}
 		pendingLines = pendingLines[:0]
 		return true
@@ -1387,6 +1422,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 								"message": errMsg,
 							},
 						})
+						noteTurnStateCommitted()
 						return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
 					}
 					if openAIStreamFailedEventShouldFailover(dataBytes, failedMessage) {
@@ -1451,6 +1487,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
 			} else {
 				clientOutputStarted = true
+				noteTurnStateCommitted()
 				flushPending = true
 				if line == "" {
 					flushPendingOutput()
@@ -1559,7 +1596,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 		usage = s.parseSSEUsageFromBody(string(body))
 	}
 
-	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	turnState := ""
+	if !c.Writer.Written() {
+		turnState = writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	} else {
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	}
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -1575,6 +1617,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
+	s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
 		usage:            usage,
@@ -1656,7 +1699,12 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 		body = []byte(bodyText)
 	}
 
-	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	turnState := ""
+	if !c.Writer.Written() {
+		turnState = writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	} else {
+		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	}
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {
@@ -1669,6 +1717,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
+	s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
@@ -1689,9 +1738,12 @@ func openAIHeaderValueEqualFold(h http.Header, name string) string {
 	return ""
 }
 
-func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) {
+// writeOpenAIPassthroughResponseHeaders 返回待提交的 turn-state。调用方必须
+// 在实际 Write 成功后才把该值登记为可信来源；仅写入 Header 尚不代表客户端
+// 已收到它，failover 仍可能丢弃本次 attempt。
+func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, filter *responseheaders.CompiledHeaderFilter) string {
 	if dst == nil || src == nil {
-		return
+		return ""
 	}
 	if filter != nil {
 		responseheaders.WriteFilteredHeaders(dst, src, filter)
@@ -1735,4 +1787,14 @@ func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, fil
 			dst.Add(key, v)
 		}
 	}
+
+	// x-codex-turn-state：Codex 回合状态头，客户端会在同回合后续请求回带。
+	// 与上面的用量头不同，这里在上游缺失时也主动清除——failover 换号后残留
+	// 上一账号的 blob 会构成跨账号矛盾（openai_codex_turn_state.go）。
+	turnStateKey := http.CanonicalHeaderKey(openAICodexTurnStateHeader)
+	dst.Del(turnStateKey)
+	for _, v := range getCaseInsensitiveValues(src, openAICodexTurnStateHeader) {
+		dst.Add(turnStateKey, v)
+	}
+	return extractOpenAICodexTurnState(src)
 }

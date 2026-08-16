@@ -51,8 +51,11 @@ describe('CreateAccountModal Grok account types', () => {
     expect(source).toContain(':show-email-password-option="false"')
   })
 
-  it('limits Codex fingerprint settings to OpenAI OAuth accounts', () => {
+  it('persists the default-off Codex fingerprint mode for OAuth accounts', () => {
     expect(source).toContain("v-if=\"form.platform === 'openai' && form.type === 'oauth'\"")
-    expect(source).toContain("if (form.type === 'oauth' && codexFingerprintMode.value !== 'session')")
+    expect(source).toContain("const codexFingerprintMode = ref<CodexFingerprintMode>('off')")
+    expect(source).toMatch(
+      /if \(form\.type === 'oauth'\) \{\s+extra\.codex_fingerprint_mode = codexFingerprintMode\.value\s+\} else \{\s+delete extra\.codex_fingerprint_mode/
+    )
   })
 })

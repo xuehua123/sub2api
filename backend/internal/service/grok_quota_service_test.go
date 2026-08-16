@@ -719,6 +719,15 @@ func TestGrokQuotaServiceQueryQuotaFreeFallsBackToGrok45(t *testing.T) {
 	t.Parallel()
 
 	account := healthyGrokQuotaOAuthAccount(51)
+	// QueryQuota schedules a best-effort /v1/models refresh after the quota
+	// probes. Seed a fresh observation so that background request cannot race
+	// this test's assertion of the three quota-probe requests.
+	account.Extra = map[string]any{
+		grokObservedModelsExtraKey: grokObservedModelsSnapshot{
+			Models:    []string{grokQuotaDefaultModel},
+			FetchedAt: time.Now().UTC().Format(time.RFC3339),
+		},
+	}
 	repo := &grokQuotaAccountRepo{mockAccountRepoForPlatform: &mockAccountRepoForPlatform{
 		accountsByID: map[int64]*Account{account.ID: account},
 	}}
