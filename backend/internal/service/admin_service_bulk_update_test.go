@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
@@ -16,6 +17,7 @@ type accountRepoStubForBulkUpdate struct {
 	accountRepoStub
 	bulkUpdateErr       error
 	bulkUpdateIDs       []int64
+	bulkUpdatePayload   AccountBulkUpdate
 	bindGroupErrByID    map[int64]error
 	bindGroupsCalls     []int64
 	bindGroupsByAccount map[int64][]int64
@@ -48,8 +50,9 @@ type accountRepoStubForBulkUpdate struct {
 	}
 }
 
-func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, _ AccountBulkUpdate) (int64, error) {
+func (s *accountRepoStubForBulkUpdate) BulkUpdate(_ context.Context, ids []int64, updates AccountBulkUpdate) (int64, error) {
 	s.bulkUpdateIDs = append([]int64{}, ids...)
+	s.bulkUpdatePayload = updates
 	if s.bulkUpdateErr != nil {
 		return 0, s.bulkUpdateErr
 	}
@@ -151,6 +154,106 @@ func TestAdminService_BulkUpdateAccounts_AllSuccessIDs(t *testing.T) {
 	require.ElementsMatch(t, []int64{1, 2, 3}, result.SuccessIDs)
 	require.Empty(t, result.FailedIDs)
 	require.Len(t, result.Results, 3)
+}
+
+func TestValidateCodexFingerprintModeExtraForAccount(t *testing.T) {
+	tests := []struct {
+		name        string
+		platform    string
+		accountType string
+		extra       map[string]any
+		wantReason  string
+	}{
+		{
+			name:        "openai oauth accepts explicit off",
+			platform:    PlatformOpenAI,
+			accountType: AccountTypeOAuth,
+			extra:       map[string]any{codexFingerprintModeExtraKey: "off"},
+		},
+		{
+			name:        "openai oauth rejects malformed value",
+			platform:    PlatformOpenAI,
+			accountType: AccountTypeOAuth,
+			extra:       map[string]any{codexFingerprintModeExtraKey: true},
+			wantReason:  "CODEX_FINGERPRINT_MODE_INVALID",
+		},
+		{
+			name:        "non oauth rejects setting",
+			platform:    PlatformOpenAI,
+			accountType: AccountTypeAPIKey,
+			extra:       map[string]any{codexFingerprintModeExtraKey: "off"},
+			wantReason:  "CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+		},
+		{
+			name:        "other platform rejects setting",
+			platform:    PlatformAnthropic,
+			accountType: AccountTypeOAuth,
+			extra:       map[string]any{codexFingerprintModeExtraKey: "off"},
+			wantReason:  "CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+		},
+		{
+			name:        "unrelated extra remains allowed",
+			platform:    PlatformAnthropic,
+			accountType: AccountTypeOAuth,
+			extra:       map[string]any{"provider_owned": true},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateCodexFingerprintModeExtraForAccount(tt.platform, tt.accountType, tt.extra)
+			if tt.wantReason == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			require.Equal(t, tt.wantReason, infraerrors.Reason(err))
+		})
+	}
+}
+
+func TestAdminServiceUpdateAccountRejectsFingerprintModeOnTypeOnlyTransition(t *testing.T) {
+	tests := []struct {
+		name        string
+		accountType string
+		extra       map[string]any
+		targetType  string
+		wantReason  string
+	}{
+		{
+			name:        "oauth to setup token cannot retain oauth-only setting",
+			accountType: AccountTypeOAuth,
+			extra:       map[string]any{codexFingerprintModeExtraKey: "session"},
+			targetType:  AccountTypeSetupToken,
+			wantReason:  "CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+		},
+		{
+			name:        "legacy api key malformed setting cannot become oauth",
+			accountType: AccountTypeAPIKey,
+			extra:       map[string]any{codexFingerprintModeExtraKey: true},
+			targetType:  AccountTypeOAuth,
+			wantReason:  "CODEX_FINGERPRINT_MODE_INVALID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			account := &Account{
+				ID:       71,
+				Platform: PlatformOpenAI,
+				Type:     tt.accountType,
+				Extra:    tt.extra,
+			}
+			repo := &accountRepoStubForBulkUpdate{getByIDAccounts: map[int64]*Account{account.ID: account}}
+			svc := &adminServiceImpl{accountRepo: repo}
+
+			_, err := svc.UpdateAccount(context.Background(), account.ID, &UpdateAccountInput{Type: tt.targetType})
+
+			require.Error(t, err)
+			require.Equal(t, tt.wantReason, infraerrors.Reason(err))
+			require.Empty(t, repo.updatedAccounts, "validation must run before persistence")
+		})
+	}
 }
 
 func TestAdminService_BulkUpdateAccounts_AllowsManualMultiplierAfterRetiredSyncRemoval(t *testing.T) {
@@ -314,4 +417,92 @@ func TestAdminServiceBulkUpdateAccounts_ResolvesIDsFromFilters(t *testing.T) {
 	require.Equal(t, 2, result.Success)
 	require.Equal(t, 0, result.Failed)
 	require.Equal(t, []int64{7, 11}, result.SuccessIDs)
+}
+
+func TestAdminServiceBulkUpdateAccounts_CodexFingerprintModeRequiresEveryTargetToBeOpenAIOAuth(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2},
+		Extra: map[string]any{
+			codexFingerprintModeExtraKey: "session",
+		},
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "must be an OpenAI OAuth account")
+	require.Empty(t, repo.bulkUpdateIDs, "validation must finish before any target is updated")
+}
+
+func TestAdminServiceBulkUpdateAccounts_CodexFingerprintModeValidatesAllFilterTargets(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		listData: []Account{
+			{ID: 7},
+			{ID: 11},
+		},
+		listResult: &pagination.PaginationResult{Total: 2},
+		getByIDsAccounts: []*Account{
+			{ID: 7, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 11, Platform: PlatformAnthropic, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		Filters: &BulkUpdateAccountFilters{Platform: PlatformOpenAI},
+		Extra: map[string]any{
+			codexFingerprintModeExtraKey: "full",
+		},
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "must be an OpenAI OAuth account")
+	require.True(t, repo.listCalled)
+	require.Equal(t, []int64{7, 11}, repo.getByIDsIDs)
+	require.Empty(t, repo.bulkUpdateIDs, "a later incompatible filter target must block the whole write")
+}
+
+func TestAdminServiceBulkUpdateAccounts_CodexFingerprintModeAcceptsOnlyCanonicalModes(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1},
+		Extra: map[string]any{
+			codexFingerprintModeExtraKey: " session ",
+		},
+	})
+
+	require.Nil(t, result)
+	require.ErrorContains(t, err, "codex_fingerprint_mode must be one of")
+	require.False(t, repo.getByIDsCalled)
+	require.Empty(t, repo.bulkUpdateIDs)
+}
+
+func TestAdminServiceBulkUpdateAccounts_CodexFingerprintModeUpdatesEligibleTargets(t *testing.T) {
+	repo := &accountRepoStubForBulkUpdate{
+		getByIDsAccounts: []*Account{
+			{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			{ID: 2, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+		},
+	}
+	svc := &adminServiceImpl{accountRepo: repo}
+
+	result, err := svc.BulkUpdateAccounts(context.Background(), &BulkUpdateAccountsInput{
+		AccountIDs: []int64{1, 2},
+		Extra: map[string]any{
+			codexFingerprintModeExtraKey: "off",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Success)
+	require.Equal(t, []int64{1, 2}, repo.bulkUpdateIDs)
+	require.Equal(t, "off", repo.bulkUpdatePayload.Extra[codexFingerprintModeExtraKey])
 }

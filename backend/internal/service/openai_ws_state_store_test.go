@@ -43,18 +43,22 @@ func TestOpenAIWSStateStore_ResponseConnTTL(t *testing.T) {
 
 func TestOpenAIWSStateStore_SessionTurnStateTTL(t *testing.T) {
 	store := NewOpenAIWSStateStore(nil)
-	store.BindSessionTurnState(9, "session_hash_1", "turn_state_1", 30*time.Millisecond)
+	store.BindSessionTurnState(9, 7, 42, "session_hash_1", "turn_state_1", 30*time.Millisecond)
 
-	state, ok := store.GetSessionTurnState(9, "session_hash_1")
+	state, ok := store.GetSessionTurnState(9, 7, 42, "session_hash_1")
 	require.True(t, ok)
 	require.Equal(t, "turn_state_1", state)
 
-	// group 隔离
-	_, ok = store.GetSessionTurnState(10, "session_hash_1")
+	// group、API key、账号三层都必须隔离；session hash 本身不是权限边界。
+	_, ok = store.GetSessionTurnState(10, 7, 42, "session_hash_1")
+	require.False(t, ok)
+	_, ok = store.GetSessionTurnState(9, 8, 42, "session_hash_1")
+	require.False(t, ok)
+	_, ok = store.GetSessionTurnState(9, 7, 43, "session_hash_1")
 	require.False(t, ok)
 
 	time.Sleep(60 * time.Millisecond)
-	_, ok = store.GetSessionTurnState(9, "session_hash_1")
+	_, ok = store.GetSessionTurnState(9, 7, 42, "session_hash_1")
 	require.False(t, ok)
 }
 

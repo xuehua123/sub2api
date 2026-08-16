@@ -42,6 +42,29 @@ type openaiNonStreamingResult struct {
 	searchCount      int
 }
 
+// applyOpenAIStagedResponseHeaders commits the headers buffered by the
+// first-output guard. Most upstream headers retain Add semantics, but an
+// opaque turn-state is singular account-bound state: an old attempt's value
+// must be removed before the successful attempt's staged value is installed.
+func applyOpenAIStagedResponseHeaders(dst http.Header, staged http.Header) {
+	if dst == nil {
+		return
+	}
+	stagedTurnState := extractOpenAICodexTurnState(staged)
+	dst.Del(openAICodexTurnStateHeader)
+	for key, values := range staged {
+		if strings.EqualFold(key, openAICodexTurnStateHeader) {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+	if stagedTurnState != "" {
+		dst.Set(openAICodexTurnStateHeader, stagedTurnState)
+	}
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel string) (*openaiStreamingResult, error) {
 	return s.handleStreamingResponseWithReasoning(ctx, resp, c, account, startTime, originalModel, mappedModel, "")
 }
@@ -98,14 +121,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		c.Header("x-request-id", v)
 	}
 	applyAttemptResponseHeaders := func() {
-		if !guardFirstOutput || len(attemptResponseHeaders) == 0 || c.Writer.Written() {
+		if !guardFirstOutput || c.Writer.Written() {
 			return
 		}
-		for key, values := range attemptResponseHeaders {
-			for _, value := range values {
-				c.Writer.Header().Add(key, value)
-			}
-		}
+		// An empty staged header set is still meaningful: it clears any
+		// provisional turn-state left by a failed earlier attempt before this
+		// successful attempt commits its first downstream byte.
+		applyOpenAIStagedResponseHeaders(c.Writer.Header(), attemptResponseHeaders)
 		// 暂存头将在随后的 Write/Flush 中真正提交；只有写出成功后才记录
 		// turn-state 溯源，避免首输出 failover 污染下一次请求。
 		turnStateReadyToCommit = turnState != ""

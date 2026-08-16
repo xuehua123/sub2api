@@ -128,6 +128,47 @@ func TestCRSSyncOpenAILongContextBilling(t *testing.T) {
 	}
 }
 
+func TestCRSSyncRejectsCodexFingerprintModeOutsideOpenAIOAuth(t *testing.T) {
+	tests := []struct {
+		name       string
+		collection string
+		extra      map[string]any
+		wantReason string
+	}{
+		{
+			name:       "openai oauth rejects malformed remote value",
+			collection: "openaiOAuthAccounts",
+			extra:      map[string]any{codexFingerprintModeExtraKey: true},
+			wantReason: "codex_fingerprint_mode must be one of",
+		},
+		{
+			name:       "openai api key rejects oauth only setting",
+			collection: "openaiResponsesAccounts",
+			extra:      map[string]any{codexFingerprintModeExtraKey: "off"},
+			wantReason: "codex_fingerprint_mode is only supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := newCRSLongContextAccountRepo()
+			result := runCRSOpenAILongContextSync(t, repo, crsOpenAILongContextSource{
+				collection: tt.collection,
+				credentials: map[string]any{
+					"access_token": "oauth-token",
+					"api_key":      "sk-test",
+				},
+				extra: tt.extra,
+			})
+
+			require.Len(t, result.Items, 1)
+			require.Equal(t, "failed", result.Items[0].Action)
+			require.Contains(t, result.Items[0].Error, tt.wantReason)
+			require.Empty(t, repo.accounts, "invalid remote extra must not reach persistence")
+		})
+	}
+}
+
 func runCRSOpenAILongContextSync(t *testing.T, repo AccountRepository, source crsOpenAILongContextSource) *SyncFromCRSResult {
 	t.Helper()
 	account := map[string]any{

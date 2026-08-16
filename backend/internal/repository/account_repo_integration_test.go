@@ -11,6 +11,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
@@ -1770,6 +1771,35 @@ func (s *AccountRepoSuite) TestBulkUpdate_MergeExtra() {
 	got, _ := s.repo.GetByID(s.ctx, a1.ID)
 	s.Require().Equal("val", got.Extra["existing"])
 	s.Require().Equal("new_val", got.Extra["new_key"])
+}
+
+func (s *AccountRepoSuite) TestBulkUpdate_RequireOpenAIOAuthRollsBackMixedTargets() {
+	eligible := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:     "bulk-codex-oauth",
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeOAuth,
+	})
+	ineligible := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:     "bulk-codex-apikey",
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeAPIKey,
+	})
+	beforeEligible, err := s.repo.GetByID(s.ctx, eligible.ID)
+	s.Require().NoError(err)
+
+	_, err = s.repo.BulkUpdate(s.ctx, []int64{eligible.ID, ineligible.ID}, service.AccountBulkUpdate{
+		Extra:              map[string]any{"codex_fingerprint_mode": "off"},
+		RequireOpenAIOAuth: true,
+	})
+
+	s.Require().Error(err)
+	s.Require().Equal("CODEX_FINGERPRINT_MODE_TARGET_INVALID", infraerrors.Reason(err))
+	storedEligible, err := s.repo.GetByID(s.ctx, eligible.ID)
+	s.Require().NoError(err)
+	storedIneligible, err := s.repo.GetByID(s.ctx, ineligible.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(beforeEligible.Extra, storedEligible.Extra, "transaction must not partially update eligible targets")
+	s.Require().NotContains(storedIneligible.Extra, "codex_fingerprint_mode")
 }
 
 func (s *AccountRepoSuite) TestBulkUpdate_EmptyIDs() {

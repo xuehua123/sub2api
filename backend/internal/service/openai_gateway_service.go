@@ -293,6 +293,11 @@ type OpenAIForwardResult struct {
 
 	wsReplayInput       []json.RawMessage
 	wsReplayInputExists bool
+	// terminalDelivered is set only when the terminal event of an OpenAI WS
+	// turn was successfully written to the downstream client. It intentionally
+	// remains internal: it gates reuse of handshake turn-state, rather than
+	// changing the public forwarding result contract.
+	terminalDelivered bool
 }
 
 // SucceededForScheduling reports whether this result is an upstream success

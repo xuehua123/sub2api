@@ -220,6 +220,25 @@ func TestDuplicateAccountRejectsCredentialShadow(t *testing.T) {
 	require.Len(t, repo.accounts, 1)
 }
 
+func TestDuplicateAccountRejectsFingerprintModeOutsideOpenAIOAuth(t *testing.T) {
+	ctx := context.Background()
+	repo := newDuplicateAccountRepoStub()
+	svc := &adminServiceImpl{accountRepo: repo, accountDuplicateRepo: repo}
+	source := &Account{
+		Name:     "legacy-openai-key",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{codexFingerprintModeExtraKey: "off"},
+	}
+	require.NoError(t, repo.Create(ctx, source))
+
+	_, err := svc.DuplicateAccount(ctx, source.ID, "admin:1", "")
+
+	require.Error(t, err)
+	require.Equal(t, "CODEX_FINGERPRINT_MODE_TARGET_INVALID", infraerrors.Reason(err))
+	require.Len(t, repo.accounts, 1)
+}
+
 func TestDuplicateAccountRejectsRotatingOrUnknownCredentialTypes(t *testing.T) {
 	for _, accountType := range []string{AccountTypeOAuth, AccountTypeSetupToken, "legacy-cookie"} {
 		t.Run(accountType, func(t *testing.T) {

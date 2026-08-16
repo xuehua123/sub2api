@@ -3067,7 +3067,12 @@
             </p>
           </div>
           <div class="w-52 flex-shrink-0">
-            <Select v-model="codexFingerprintMode" data-testid="create-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
+            <Select
+              v-model="codexFingerprintMode"
+              data-testid="create-codex-fingerprint-mode-select"
+              :options="codexFingerprintModeOptions"
+              @update:model-value="markCodexFingerprintModeTouched"
+            />
           </div>
         </div>
       </div>
@@ -3933,6 +3938,9 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
+// Codex session imports may update an existing account. Keep its configured
+// convergence mode unless the operator explicitly changes this selector.
+const codexFingerprintModeTouched = ref(false)
 const codexFingerprintModeOptions = computed(() => [
   { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
   { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
@@ -3949,6 +3957,10 @@ const webSearchGlobalEnabled = ref(false)
 const toggleOpenAILongContextBilling = () => {
   openAILongContextBillingEnabled.value = !openAILongContextBillingEnabled.value
   openAILongContextBillingTouched.value = true
+}
+
+const markCodexFingerprintModeTouched = () => {
+  codexFingerprintModeTouched.value = true
 }
 const {
   globalEnabled: quotaNotifyGlobalEnabled,
@@ -4875,6 +4887,7 @@ const resetForm = () => {
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
   codexFingerprintMode.value = 'off'
+  codexFingerprintModeTouched.value = false
   anthropicPassthroughEnabled.value = false
   anthropicCachedTokensInInput.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
@@ -5008,6 +5021,13 @@ const buildOpenAICodexImportExtra = (): Record<string, unknown> | undefined => {
   }
   if (!openAILongContextBillingTouched.value) {
     delete extra.openai_long_context_billing_enabled
+  }
+  // buildOpenAIExtra persists an explicit "off" for newly created accounts,
+  // but an import can update an existing account. Do not turn its current
+  // device/session/full setting off merely because the create form starts at
+  // the default selection.
+  if (!codexFingerprintModeTouched.value) {
+    delete extra.codex_fingerprint_mode
   }
   return Object.keys(extra).length > 0 ? extra : undefined
 }

@@ -1260,21 +1260,39 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
-	// Header 写入本身不等于下游已收到它。若此前已有响应（例如 keepalive），
-	// 这个 turn-state 已无法被追加到 HTTP headers，因而不能登记为可信来源。
+	// Header 写入本身不等于下游已收到它。Passthrough 的首输出前仍可能
+	// failover，故先让通用 header copier 清除旧值，再把本 attempt 的
+	// turn-state 暂存到局部变量。真正要写第一行时才附回 response header；
+	// 否则 A 账号在无输出失败后会把 blob 留给 B 账号的响应。
 	turnState := ""
 	if !c.Writer.Written() {
 		turnState = writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+		c.Writer.Header().Del(openAICodexTurnStateHeader)
 	} else {
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
 	turnStateCommitted := false
+	prepareTurnStateCommit := func() {
+		if turnState == "" || c == nil || c.Writer == nil || c.Writer.Written() {
+			return
+		}
+		c.Writer.Header().Set(openAICodexTurnStateHeader, turnState)
+	}
 	noteTurnStateCommitted := func() {
 		if turnStateCommitted || turnState == "" {
 			return
 		}
 		turnStateCommitted = s.noteOpenAICodexTurnStateCommitted(c, account, turnState)
 	}
+	defer func() {
+		// No downstream bytes means the next failover attempt owns the headers.
+		// Do not leave a provisional state behind for an error response or a
+		// different account. Once Written, headers cannot be retracted; a failed
+		// write then deliberately remains untrusted because no provenance is noted.
+		if !turnStateCommitted && c != nil && c.Writer != nil && !c.Writer.Written() {
+			c.Writer.Header().Del(openAICodexTurnStateHeader)
+		}
+	}()
 
 	// SSE headers
 	c.Header("Content-Type", "text/event-stream")
@@ -1320,6 +1338,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	defer flushPendingOutput()
 	writePendingLines := func() bool {
 		for _, pending := range pendingLines {
+			prepareTurnStateCommit()
 			if _, err := fmt.Fprintln(w, pending); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)
@@ -1415,6 +1434,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						// antigravity 先例），否则透传命中的 failed 在监控中不可见。
 						s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "http_error", dataBytes, failedMessage)
 						MarkResponseCommitted(c)
+						prepareTurnStateCommit()
 						c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 						c.JSON(status, gin.H{
 							"error": gin.H{
@@ -1482,6 +1502,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					continue
 				}
 			}
+			prepareTurnStateCommit()
 			if _, err := fmt.Fprintln(w, line); err != nil {
 				clientDisconnected = true
 				logger.LegacyPrintf("service.openai_gateway", "[OpenAI passthrough] Client disconnected during streaming, continue draining upstream for usage: account=%d", account.ID)

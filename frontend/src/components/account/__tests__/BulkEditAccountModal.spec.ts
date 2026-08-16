@@ -483,6 +483,49 @@ describe('BulkEditAccountModal', () => {
     })
   })
 
+  it('筛选批量编辑仅在精确 OpenAI OAuth 过滤时展示并提交 Codex 指纹模式', async () => {
+    const unsafePreviewWrapper = mountModal({
+      accountIds: [],
+      selectedPlatforms: [],
+      selectedTypes: [],
+      target: {
+        mode: 'filtered',
+        // Preview metadata covers only the first page and cannot authorize an
+        // OAuth-only field when the server filter itself is broader.
+        filters: { platform: 'openai' },
+        previewCount: 101,
+        selectedPlatforms: ['openai'],
+        selectedTypes: ['oauth']
+      }
+    })
+    expect(unsafePreviewWrapper.find('#bulk-edit-codex-fingerprint-enabled').exists()).toBe(false)
+
+    const exactOAuthFilterWrapper = mountModal({
+      accountIds: [],
+      selectedPlatforms: [],
+      selectedTypes: [],
+      target: {
+        mode: 'filtered',
+        filters: { platform: 'openai', type: 'oauth' },
+        previewCount: 101,
+        // Even stale/broad preview metadata must not hide a control whose
+        // exact server filter guarantees all resolved targets are OAuth.
+        selectedPlatforms: ['openai'],
+        selectedTypes: ['oauth', 'apikey']
+      }
+    })
+
+    await exactOAuthFilterWrapper.get('#bulk-edit-codex-fingerprint-enabled').setValue(true)
+    await exactOAuthFilterWrapper.get('[data-testid="bulk-codex-fingerprint-mode-select"]').setValue('session')
+    await exactOAuthFilterWrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith({
+      filters: { platform: 'openai', type: 'oauth' },
+      extra: { codex_fingerprint_mode: 'session' }
+    })
+  })
+
   it('筛选 OpenAI 账号批量编辑应提交 Compact 模式和专属模型映射', async () => {
     const wrapper = mountModal({
       accountIds: [],

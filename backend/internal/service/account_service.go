@@ -156,6 +156,10 @@ type AccountBulkUpdate struct {
 	Schedulable    *bool
 	Credentials    map[string]any
 	Extra          map[string]any
+	// RequireOpenAIOAuth makes a bulk JSONB update fail closed if any target
+	// stops being an OpenAI OAuth account before the repository transaction
+	// commits. It is used for OAuth-only Codex fingerprint settings.
+	RequireOpenAIOAuth bool
 }
 
 // CreateAccountRequest 创建账号请求

@@ -578,7 +578,8 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		account = latest
 	}
-	if requireCompact && openAICompactSupportTier(account) == 0 {
+	if requiresOpenAICompactCapability(ctx, requireCompact) &&
+		openAICompactSupportTierForRequest(ctx, account, requireCompact) == 0 {
 		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil
 	}

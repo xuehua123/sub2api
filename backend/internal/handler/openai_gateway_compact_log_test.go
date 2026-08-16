@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -174,6 +175,29 @@ func TestLogOpenAIRemoteCompactOutcome_Failed(t *testing.T) {
 	require.True(t, logSink.ContainsFieldValue("compact_outcome", "failed"))
 	require.True(t, logSink.ContainsFieldValue("status_code", "502"))
 	require.True(t, logSink.ContainsFieldValue("path", "/responses/compact"))
+}
+
+func TestLogOpenAIRemoteCompactOutcome_NativeV2Succeeded(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	logSink, restore := captureHandlerStructuredLog(t)
+	defer restore()
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	service.MarkOpenAINativeCompactionV2(c)
+	c.Set(opsModelKey, "gpt-5.6-sol")
+	c.Set(opsAccountIDKey, int64(456))
+	c.Status(http.StatusOK)
+
+	h := &OpenAIGatewayHandler{}
+	h.logOpenAIRemoteCompactOutcome(c, time.Now().Add(-6*time.Millisecond))
+
+	require.True(t, logSink.ContainsMessageAtLevel("codex.remote_compact.succeeded", "info"))
+	require.True(t, logSink.ContainsFieldValue("compact_protocol", "remote_compaction_v2"))
+	require.True(t, logSink.ContainsFieldValue("path", "/v1/responses"))
+	require.True(t, logSink.ContainsFieldValue("request_model", "gpt-5.6-sol"))
+	require.True(t, logSink.ContainsFieldValue("account_id", "456"))
 }
 
 func TestLogOpenAIRemoteCompactOutcome_NonCompactSkips(t *testing.T) {

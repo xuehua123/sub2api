@@ -586,6 +586,29 @@ func openAIWSPassthroughIsTerminalOutput(payload []byte) bool {
 	}
 }
 
+// commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite makes an
+// upstream handshake state reusable only after a terminal frame was actually
+// written to the downstream client. RunEntry invokes OnTurnComplete before it
+// writes that frame, so committing there would authorize an abandoned relay.
+func (s *OpenAIGatewayService) commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite(
+	c *gin.Context,
+	account *Account,
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	sessionHash string,
+	handshakeTurnState string,
+	writeErr error,
+	commitAttempted *atomic.Bool,
+) bool {
+	if writeErr != nil || strings.TrimSpace(handshakeTurnState) == "" || commitAttempted == nil {
+		return false
+	}
+	if !commitAttempted.CompareAndSwap(false, true) {
+		return false
+	}
+	return s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
+}
+
 var _ openaiwsv2.FrameConn = (*openAIWSClientFrameConn)(nil)
 var _ openaiwsv2.FrameConn = (*openAIWSPassthroughFirstOutputFrameConn)(nil)
 
@@ -675,6 +698,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if err := validateOpenAIWSBearerToken(account, token); err != nil {
 		return err
 	}
+	// Preserve the downstream session identity before policy, model, and
+	// fingerprint rewrites. A later reconnect must resolve the state under the
+	// same client-visible session, not under any gateway-added metadata.
+	sessionHash := s.GenerateSessionHash(c, firstClientMessage)
 	if account.IsOpenAIOAuth() && isOpenAIResponsesLiteWebSocketPayload(firstClientMessage) {
 		liteFirstMessage, _, liteErr := normalizeOpenAIResponsesLiteToolsPayload(firstClientMessage)
 		if liteErr != nil {
@@ -809,8 +836,21 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	turnState := ""
 	turnMetadata := ""
 	if c != nil {
+		if c.Request != nil {
+			s.guardOpenAICodexTurnStateEcho(c, account, c.Request.Header)
+		}
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
+	}
+	stateStore := s.getOpenAIWSStateStore()
+	groupID := getOpenAIGroupIDFromContext(c)
+	if sessionHash == "" {
+		var legacySessionHash string
+		sessionHash, legacySessionHash = openAIWSSessionHashesFromID(promptCacheKey)
+		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
+	}
+	if turnState == "" && stateStore != nil && sessionHash != "" {
+		turnState = s.loadOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash)
 	}
 	headers, _, buildHdrErr := s.buildOpenAIWSHeaders(
 		ctx,
@@ -885,6 +925,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	defer func() {
 		_ = upstreamConn.Close()
 	}()
+	// The downstream websocket upgrade has already completed, so this upstream
+	// handshake header cannot be returned to the client. It becomes reusable
+	// only after a terminal frame is actually written to that client below.
+	handshakeTurnState := strings.TrimSpace(handshakeHeaders.Get(openAIWSTurnStateHeader))
+	upstreamSupportsNativeRemoteCompactionV2 := hasOpenAIRemoteCompactionV2BetaFeature(headers)
 	logOpenAIWSV2Passthrough(
 		"relay_dial_ok account_id=%d status_code=%d upstream_request_id=%s",
 		account.ID,
@@ -926,6 +971,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	}
 
 	completedTurns := atomic.Int32{}
+	// A handshake state belongs to this connection's first successfully
+	// relayed terminal turn. Do not let later terminal frames make an abandoned
+	// first turn's state reusable.
+	handshakeTurnStateCommitAttempted := atomic.Bool{}
 	turnLifecycle := newOpenAIWSPassthroughTurnLifecycle(true)
 	clientFrameConn := &openAIWSClientFrameConn{
 		conn:                 clientConn,
@@ -992,6 +1041,22 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if hooks != nil && hooks.BeforeRequest != nil {
 					if err := hooks.BeforeRequest(turnNo, payload, requestModelForThisFrame); err != nil {
 						return payload, nil, err
+					}
+				}
+				if HasCompactionTriggerInInput(payload) {
+					if !AllowsOpenAINativeRemoteCompactionV2(account) {
+						return payload, nil, NewOpenAIWSClientCloseError(
+							coderws.StatusTryAgainLater,
+							"account does not support native remote compaction on this connection, please reconnect",
+							nil,
+						)
+					}
+					if !upstreamSupportsNativeRemoteCompactionV2 {
+						return payload, nil, NewOpenAIWSClientCloseError(
+							coderws.StatusTryAgainLater,
+							"native remote compaction requires a v2-enabled upstream websocket, please reconnect",
+							nil,
+						)
 					}
 				}
 				if hooks != nil && hooks.TransformRequest != nil {
@@ -1088,6 +1153,22 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		},
 	}
 	upstreamFirstMessageSent := false
+	if HasCompactionTriggerInInput(firstClientMessage) {
+		if !AllowsOpenAINativeRemoteCompactionV2(account) {
+			return NewOpenAIWSClientCloseError(
+				coderws.StatusTryAgainLater,
+				"account does not support native remote compaction on this connection, please reconnect",
+				nil,
+			)
+		}
+		if !upstreamSupportsNativeRemoteCompactionV2 {
+			return NewOpenAIWSClientCloseError(
+				coderws.StatusTryAgainLater,
+				"native remote compaction requires a v2-enabled upstream websocket, please reconnect",
+				nil,
+			)
+		}
+	}
 	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())
 	firstWriteErr := relayUpstreamFrameConn.WriteFrame(firstWriteCtx, coderws.MessageText, firstClientMessage)
 	cancelFirstWrite()
@@ -1187,6 +1268,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			},
 			AfterClientWrite: func(msgType coderws.MessageType, payload []byte, writeErr error) {
 				if msgType == coderws.MessageText && openAIWSPassthroughIsTerminalOutput(payload) {
+					s.commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite(
+						c,
+						account,
+						stateStore,
+						groupID,
+						sessionHash,
+						handshakeTurnState,
+						writeErr,
+						&handshakeTurnStateCommitAttempted,
+					)
 					turnLifecycle.finishTerminalWrite(writeErr == nil, clientFrameConn.markTurnCompleted)
 				}
 			},

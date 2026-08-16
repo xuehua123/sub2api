@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -103,6 +104,38 @@ func (d *stagedPassthroughDialer) Dial(context.Context, string, http.Header, str
 	return d.conn, http.StatusSwitchingProtocols, http.Header{}, nil
 }
 
+type stagedPassthroughSequenceDialer struct {
+	mu               sync.Mutex
+	conns            []openAIWSClientConn
+	handshakeHeaders []http.Header
+	requestHeaders   []http.Header
+}
+
+func (d *stagedPassthroughSequenceDialer) Dial(_ context.Context, _ string, headers http.Header, _ string) (openAIWSClientConn, int, http.Header, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	index := len(d.requestHeaders)
+	d.requestHeaders = append(d.requestHeaders, cloneHeader(headers))
+	if index >= len(d.conns) {
+		return nil, 0, nil, errors.New("unexpected passthrough websocket dial")
+	}
+	handshakeHeaders := http.Header{}
+	if index < len(d.handshakeHeaders) {
+		handshakeHeaders = cloneHeader(d.handshakeHeaders[index])
+	}
+	return d.conns[index], http.StatusSwitchingProtocols, handshakeHeaders, nil
+}
+
+func (d *stagedPassthroughSequenceDialer) requestHeader(index int) http.Header {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if index < 0 || index >= len(d.requestHeaders) {
+		return nil
+	}
+	return cloneHeader(d.requestHeaders[index])
+}
+
 func newPassthroughLifecycleService(cfg *config.Config, upstream *stagedPassthroughConn) *OpenAIGatewayService {
 	return &OpenAIGatewayService{
 		cfg:                       cfg,
@@ -153,6 +186,16 @@ func startPassthroughLifecycleServer(
 	svc *OpenAIGatewayService,
 	account *Account,
 ) (*httptest.Server, <-chan error) {
+	return startPassthroughLifecycleServerWithAPIKey(t, controlCtx, svc, account, nil)
+}
+
+func startPassthroughLifecycleServerWithAPIKey(
+	t *testing.T,
+	controlCtx context.Context,
+	svc *OpenAIGatewayService,
+	account *Account,
+	apiKey *APIKey,
+) (*httptest.Server, <-chan error) {
 	t.Helper()
 	serverErr := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -184,15 +227,26 @@ func startPassthroughLifecycleServer(
 		req := r.Clone(controlCtx)
 		req.Header = req.Header.Clone()
 		ginCtx.Request = req
+		if apiKey != nil {
+			ginCtx.Set("api_key", apiKey)
+		}
 		serverErr <- svc.ProxyResponsesWebSocketFromClient(controlCtx, ginCtx, conn, account, "sk-test", firstMessage, nil)
 	}))
 	return server, serverErr
 }
 
 func dialPassthroughLifecycleClient(t *testing.T, server *httptest.Server) *coderws.Conn {
+	return dialPassthroughLifecycleClientWithHeaders(t, server, nil)
+}
+
+func dialPassthroughLifecycleClientWithHeaders(t *testing.T, server *httptest.Server, headers http.Header) *coderws.Conn {
 	t.Helper()
 	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
-	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	var dialOptions *coderws.DialOptions
+	if headers != nil {
+		dialOptions = &coderws.DialOptions{HTTPHeader: cloneHeader(headers)}
+	}
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(server.URL, "http"), dialOptions)
 	cancelDial()
 	require.NoError(t, err)
 	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
@@ -219,6 +273,117 @@ func requirePassthroughUpstreamWrite(t *testing.T, upstream *stagedPassthroughCo
 		t.Fatal("passthrough request was not forwarded upstream")
 		return nil
 	}
+}
+
+func TestOpenAIWSPassthroughHandshakeTurnState_RequiresSuccessfulTerminalClientWrite(t *testing.T) {
+	svc := &OpenAIGatewayService{
+		cfg:   passthroughLifecycleConfig(),
+		cache: &stubGatewayCache{},
+	}
+	account := passthroughLifecycleAccount()
+	const apiKeyID int64 = 981
+	c, _ := newTurnStateTestContext(t, apiKeyID, "passthrough-terminal-write")
+	store := svc.getOpenAIWSStateStore()
+	sessionHash := svc.GenerateSessionHash(c, nil)
+	require.NotEmpty(t, sessionHash)
+
+	var commitAttempted atomic.Bool
+	require.False(t, svc.commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite(
+		c,
+		account,
+		store,
+		0,
+		sessionHash,
+		"state-not-delivered",
+		errors.New("downstream websocket write failed"),
+		&commitAttempted,
+	))
+	_, found := store.GetSessionTurnState(0, apiKeyID, account.ID, sessionHash)
+	require.False(t, found, "a failed terminal client write must not populate the replay cache")
+	key, ok := openAICodexTurnStateProvenanceKeyFor(c, "state-not-delivered")
+	require.True(t, ok)
+	_, found = svc.openaiCodexTurnStateOrigins.Load(key)
+	require.False(t, found, "a failed terminal client write must not record blob provenance")
+
+	require.True(t, svc.commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite(
+		c,
+		account,
+		store,
+		0,
+		sessionHash,
+		"state-delivered",
+		nil,
+		&commitAttempted,
+	))
+	state, found := store.GetSessionTurnState(0, apiKeyID, account.ID, sessionHash)
+	require.True(t, found)
+	require.Equal(t, "state-delivered", state)
+
+	require.False(t, svc.commitOpenAIWSPassthroughHandshakeTurnStateAfterClientWrite(
+		c,
+		account,
+		store,
+		0,
+		sessionHash,
+		"state-from-a-later-turn",
+		nil,
+		&commitAttempted,
+	))
+	state, found = store.GetSessionTurnState(0, apiKeyID, account.ID, sessionHash)
+	require.True(t, found)
+	require.Equal(t, "state-delivered", state, "one upstream handshake state may commit only once")
+}
+
+func TestPassthroughTurnState_ReconnectLoadsCommittedHandshakeState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	controlCtx, cancelControl := context.WithCancelCause(context.Background())
+	defer cancelControl(context.Canceled)
+
+	firstUpstream := newStagedPassthroughConn()
+	firstUpstream.Send(`{"type":"response.completed","response":{"id":"resp_turn_state_first","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
+	secondUpstream := newStagedPassthroughConn()
+	secondUpstream.Send(`{"type":"response.completed","response":{"id":"resp_turn_state_second","model":"gpt-5.1","usage":{"input_tokens":1,"output_tokens":1}}}`)
+	firstHandshake := http.Header{}
+	firstHandshake.Set(openAIWSTurnStateHeader, "passthrough-handshake-state")
+	dialer := &stagedPassthroughSequenceDialer{
+		conns:            []openAIWSClientConn{firstUpstream, secondUpstream},
+		handshakeHeaders: []http.Header{firstHandshake, {}},
+	}
+	svc := newPassthroughLifecycleService(passthroughLifecycleConfig(), firstUpstream)
+	svc.openaiWSPassthroughDialer = dialer
+	account := passthroughLifecycleAccount()
+	apiKey := &APIKey{ID: 982}
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session_id", "passthrough-reconnect-session")
+
+	firstServer, firstServerErr := startPassthroughLifecycleServerWithAPIKey(t, controlCtx, svc, account, apiKey)
+	firstClient := dialPassthroughLifecycleClientWithHeaders(t, firstServer, clientHeaders)
+	firstEvent, err := readPassthroughLifecycleFrame(t, firstClient, 3*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(firstEvent, "type").String())
+	require.NoError(t, firstClient.CloseNow())
+	select {
+	case <-firstServerErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first passthrough turn did not exit after downstream close")
+	}
+	firstServer.Close()
+	require.Empty(t, dialer.requestHeader(0).Get(openAIWSTurnStateHeader))
+
+	secondServer, secondServerErr := startPassthroughLifecycleServerWithAPIKey(t, controlCtx, svc, account, apiKey)
+	defer secondServer.Close()
+	secondClient := dialPassthroughLifecycleClientWithHeaders(t, secondServer, clientHeaders)
+	secondEvent, err := readPassthroughLifecycleFrame(t, secondClient, 3*time.Second)
+	require.NoError(t, err)
+	require.Equal(t, "response.completed", gjson.GetBytes(secondEvent, "type").String())
+	require.NoError(t, secondClient.CloseNow())
+	select {
+	case <-secondServerErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reconnected passthrough turn did not exit after downstream close")
+	}
+
+	require.Equal(t, "passthrough-handshake-state", dialer.requestHeader(1).Get(openAIWSTurnStateHeader))
 }
 
 func TestOpenAIWSPassthroughTurnLifecycle_SerializesTerminalCommitAndNextTurn(t *testing.T) {

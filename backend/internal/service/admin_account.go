@@ -295,6 +295,9 @@ func (s *adminServiceImpl) DuplicateAccount(ctx context.Context, id int64, actor
 	if err != nil {
 		return nil, fmt.Errorf("clone account extra configuration: %w", err)
 	}
+	if err := ValidateCodexFingerprintModeExtraForAccount(source.Platform, source.Type, extra); err != nil {
+		return nil, err
+	}
 	if operationID != "" {
 		if extra == nil {
 			extra = make(map[string]any, 1)
@@ -384,6 +387,52 @@ func ValidateOpenAILongContextBillingExtra(platform string, extra map[string]any
 		)
 	}
 	return nil
+}
+
+// ValidateCodexFingerprintModeExtra validates the optional OpenAI OAuth
+// fingerprint convergence override before a bulk operation reaches the JSONB
+// merge path. A malformed value must not be silently normalized to "off" by a
+// database trigger, because that would turn an invalid administrative request
+// into a configuration change.
+func ValidateCodexFingerprintModeExtra(extra map[string]any) error {
+	raw, exists := extra[codexFingerprintModeExtraKey]
+	if !exists {
+		return nil
+	}
+
+	mode, ok := raw.(string)
+	if !ok {
+		return infraerrors.BadRequest(
+			"CODEX_FINGERPRINT_MODE_INVALID",
+			"codex_fingerprint_mode must be one of off, device, session, or full",
+		)
+	}
+	switch codexFingerprintMode(mode) {
+	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintFull:
+		return nil
+	default:
+		return infraerrors.BadRequest(
+			"CODEX_FINGERPRINT_MODE_INVALID",
+			"codex_fingerprint_mode must be one of off, device, session, or full",
+		)
+	}
+}
+
+// ValidateCodexFingerprintModeExtraForAccount keeps this OAuth-only setting
+// out of other account types as well as rejecting malformed values. The
+// database trigger is intentionally a blue-green compatibility backstop, not
+// an input sanitizer for administrative APIs.
+func ValidateCodexFingerprintModeExtraForAccount(platform, accountType string, extra map[string]any) error {
+	if _, exists := extra[codexFingerprintModeExtraKey]; !exists {
+		return nil
+	}
+	if platform != PlatformOpenAI || accountType != AccountTypeOAuth {
+		return infraerrors.BadRequest(
+			"CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+			"codex_fingerprint_mode is only supported for OpenAI OAuth accounts",
+		)
+	}
+	return ValidateCodexFingerprintModeExtra(extra)
 }
 
 func normalizeOpenAILongContextBillingExtra(platform string, extra map[string]any) (map[string]any, error) {
@@ -498,6 +547,9 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	if err := ValidateCodexFingerprintModeExtraForAccount(input.Platform, input.Type, input.Extra); err != nil {
+		return nil, err
+	}
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -590,8 +642,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	}
 	stripRetiredAccountProbeExtra(account.Extra)
 	stripRetiredUpstreamManagementCredentials(account.Credentials)
+	effectiveType := account.Type
+	if input.Type != "" {
+		effectiveType = input.Type
+	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
+		if err := ValidateCodexFingerprintModeExtraForAccount(account.Platform, effectiveType, input.Extra); err != nil {
+			return nil, err
+		}
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
 			return nil, err
@@ -601,6 +660,17 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		if err != nil {
 			return nil, err
 		}
+	}
+	// A type-only update preserves account.Extra. Validate the final
+	// platform/type/extra tuple as well as the submitted map so a legacy
+	// OAuth-only fingerprint key cannot be carried onto an API-key or
+	// setup-token account and silently normalized by the compatibility trigger.
+	effectiveExtra := account.Extra
+	if input.Extra != nil {
+		effectiveExtra = normalizedExtra
+	}
+	if err := ValidateCodexFingerprintModeExtraForAccount(account.Platform, effectiveType, effectiveExtra); err != nil {
+		return nil, err
 	}
 	previousOllamaUsageIdentity := ollamaCloudUsageIdentity(account)
 	// 安全/身份不变量(影子账号):通用更新路径被 edit/re-auth/refresh/batch 共用,
@@ -805,12 +875,19 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
-	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
+	_, hasLongContextBillingUpdate := updates[openAILongContextBillingEnabledKey]
+	_, hasCodexFingerprintModeUpdate := updates[codexFingerprintModeExtraKey]
+	if hasLongContextBillingUpdate || hasCodexFingerprintModeUpdate {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
 			return err
 		}
-		if err := ValidateOpenAILongContextBillingExtra(account.Platform, updates); err != nil {
+		if hasLongContextBillingUpdate {
+			if err := ValidateOpenAILongContextBillingExtra(account.Platform, updates); err != nil {
+				return err
+			}
+		}
+		if err := ValidateCodexFingerprintModeExtraForAccount(account.Platform, account.Type, updates); err != nil {
 			return err
 		}
 	}
@@ -855,10 +932,16 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 	_, hasLongContextBillingUpdate := input.Extra[openAILongContextBillingEnabledKey]
+	_, hasCodexFingerprintModeUpdate := input.Extra[codexFingerprintModeExtraKey]
+	if hasCodexFingerprintModeUpdate {
+		if err := ValidateCodexFingerprintModeExtra(input.Extra); err != nil {
+			return nil, err
+		}
+	}
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || input.RateMultiplier != nil || needMixedChannelCheck || hasLongContextBillingUpdate {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || input.RateMultiplier != nil || needMixedChannelCheck || hasLongContextBillingUpdate || hasCodexFingerprintModeUpdate {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -874,6 +957,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 			break
+		}
+	}
+	if hasCodexFingerprintModeUpdate {
+		if err := validateBulkCodexFingerprintModeTargets(input.AccountIDs, cachedTargets); err != nil {
+			return nil, err
 		}
 	}
 
@@ -941,8 +1029,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	// Prepare bulk updates for columns and JSONB fields.
 	repoUpdates := AccountBulkUpdate{
-		Credentials: input.Credentials,
-		Extra:       input.Extra,
+		Credentials:        input.Credentials,
+		Extra:              input.Extra,
+		RequireOpenAIOAuth: hasCodexFingerprintModeUpdate,
 	}
 	if input.Name != "" {
 		repoUpdates.Name = &input.Name
@@ -1015,6 +1104,43 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	return result, nil
+}
+
+// validateBulkCodexFingerprintModeTargets verifies the actual resolved target
+// set, rather than trusting the frontend's preview. Filtered edits can span
+// more than the preview page, so every target must be OpenAI OAuth before this
+// OAuth-only extra key is merged into any account.
+func validateBulkCodexFingerprintModeTargets(accountIDs []int64, targets []*Account) error {
+	targetsByID := make(map[int64]*Account, len(targets))
+	for _, account := range targets {
+		if account != nil {
+			targetsByID[account.ID] = account
+		}
+	}
+
+	seen := make(map[int64]struct{}, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if _, alreadySeen := seen[accountID]; alreadySeen {
+			continue
+		}
+		seen[accountID] = struct{}{}
+
+		account, ok := targetsByID[accountID]
+		if !ok || account == nil {
+			return infraerrors.BadRequest(
+				"CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+				fmt.Sprintf("account %d must exist and be an OpenAI OAuth account to update codex_fingerprint_mode", accountID),
+			)
+		}
+		if account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+			return infraerrors.BadRequest(
+				"CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+				fmt.Sprintf("account %d must be an OpenAI OAuth account to update codex_fingerprint_mode", accountID),
+			)
+		}
+	}
+
+	return nil
 }
 
 func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filters *BulkUpdateAccountFilters) ([]int64, error) {

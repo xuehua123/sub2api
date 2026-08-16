@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -13,6 +14,13 @@ import (
 // 写入，供上游请求构造时补注协商头。
 const openAINativeCompactionV2Key = "openai_native_compaction_v2"
 
+// openAINativeCompactionV2SchedulingContextKey carries the native v2
+// capability requirement through account scheduling. It is deliberately
+// separate from the legacy /responses/compact flag: native v2 must avoid an
+// account that the native probe has explicitly marked unsupported, but must
+// not opt into legacy compact_model_mapping semantics.
+type openAINativeCompactionV2SchedulingContextKey struct{}
+
 const openAIRemoteCompactionV2Feature = "remote_compaction_v2"
 
 // MarkOpenAINativeCompactionV2 由 handler 在识别出原生 v2 压缩请求时调用。
@@ -22,11 +30,31 @@ func MarkOpenAINativeCompactionV2(c *gin.Context) {
 	}
 }
 
-func isOpenAINativeCompactionV2(c *gin.Context) bool {
+// IsOpenAINativeCompactionV2 reports whether the handler recognized the
+// current request as a native remote compaction v2 turn.
+func IsOpenAINativeCompactionV2(c *gin.Context) bool {
 	if c == nil {
 		return false
 	}
 	return c.GetBool(openAINativeCompactionV2Key)
+}
+
+// WithOpenAINativeCompactionV2Scheduling marks a request context so account
+// selection enforces the native v2 probe result. It does not change legacy
+// compact request semantics such as compact_model_mapping.
+func WithOpenAINativeCompactionV2Scheduling(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAINativeCompactionV2SchedulingContextKey{}, true)
+}
+
+func requiresOpenAINativeCompactionV2Scheduling(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	required, _ := ctx.Value(openAINativeCompactionV2SchedulingContextKey{}).(bool)
+	return required
 }
 
 // ensureOpenAIRemoteCompactionV2BetaFeature 确保出站 x-codex-beta-features
@@ -39,21 +67,72 @@ func ensureOpenAIRemoteCompactionV2BetaFeature(h http.Header) {
 	if h == nil {
 		return
 	}
+	const headerName = "x-codex-beta-features"
+	canonicalHeaderName := http.CanonicalHeaderKey(headerName)
 	tokens := make([]string, 0, 4)
-	for _, value := range h.Values("x-codex-beta-features") {
-		for _, token := range strings.Split(value, ",") {
-			token = strings.TrimSpace(token)
-			if token == "" {
-				continue
+	matchingKeys := make([]string, 0, 1)
+	hasFeature := false
+	canonicalOnly := true
+	for name, values := range h {
+		// Account header overrides deliberately preserve wire casing and can
+		// therefore leave this key as lower-case. http.Header.Values only
+		// sees the canonical map key, so scan the raw map case-insensitively.
+		if !strings.EqualFold(strings.TrimSpace(name), headerName) {
+			continue
+		}
+		matchingKeys = append(matchingKeys, name)
+		if name != canonicalHeaderName {
+			canonicalOnly = false
+		}
+		for _, value := range values {
+			for _, token := range strings.Split(value, ",") {
+				token = strings.TrimSpace(token)
+				if token == "" {
+					continue
+				}
+				if strings.EqualFold(token, openAIRemoteCompactionV2Feature) {
+					hasFeature = true
+				}
+				tokens = append(tokens, token)
 			}
-			if token == openAIRemoteCompactionV2Feature {
-				return
-			}
-			tokens = append(tokens, token)
 		}
 	}
-	tokens = append(tokens, openAIRemoteCompactionV2Feature)
-	h.Set("x-codex-beta-features", strings.Join(tokens, ","))
+	// Keep the existing canonical header byte-for-byte when it already
+	// advertises v2. Besides avoiding needless churn, this preserves any
+	// client-selected token formatting.
+	if hasFeature && canonicalOnly && len(matchingKeys) == 1 {
+		return
+	}
+	if !hasFeature {
+		tokens = append(tokens, openAIRemoteCompactionV2Feature)
+	}
+	// Collapse mixed/raw casing to one canonical key. Without this, a raw
+	// API-key override can coexist with a canonical v2 header and Go's
+	// header lookup/writer may hide or drop one of them.
+	for _, name := range matchingKeys {
+		delete(h, name)
+	}
+	h.Set(canonicalHeaderName, strings.Join(tokens, ","))
+}
+
+// hasOpenAIRemoteCompactionV2BetaFeature reports whether an already-built
+// upstream handshake advertises remote compaction v2. It accepts repeated
+// header lines and mixed casing so the check is safe after account-level
+// header overrides.
+func hasOpenAIRemoteCompactionV2BetaFeature(h http.Header) bool {
+	for name, values := range h {
+		if !strings.EqualFold(strings.TrimSpace(name), "x-codex-beta-features") {
+			continue
+		}
+		for _, value := range values {
+			for _, feature := range strings.Split(value, ",") {
+				if strings.EqualFold(strings.TrimSpace(feature), openAIRemoteCompactionV2Feature) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // hasOpenAICodexBetaFeaturesHeader 报告出站头里是否已存在非空的
@@ -97,7 +176,7 @@ func applyOpenAICodexBetaFeatures(c *gin.Context, account *Account, h http.Heade
 	if h == nil {
 		return
 	}
-	if isOpenAINativeCompactionV2(c) {
+	if IsOpenAINativeCompactionV2(c) {
 		ensureOpenAIRemoteCompactionV2BetaFeature(h)
 		return
 	}

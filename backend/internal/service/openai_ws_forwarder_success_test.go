@@ -424,6 +424,43 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersPreservesCodexIdentity(t *test
 	require.Empty(t, headers.Get("X-Test"))
 }
 
+func TestOpenAIGatewayService_BuildOpenAIWSHeadersRestoresNativeCompactionFeatureAfterAPIKeyOverride(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+	MarkOpenAINativeCompactionV2(c)
+
+	account := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{
+			credKeyHeaderOverrideEnabled: true,
+			credKeyHeaderOverrides: map[string]any{
+				"x-codex-beta-features": "some_other_feature",
+			},
+		},
+	}
+	require.Equal(t, "some_other_feature", account.GetHeaderOverrides()["x-codex-beta-features"])
+	headers, _, err := (&OpenAIGatewayService{}).buildOpenAIWSHeaders(
+		context.Background(),
+		c,
+		account,
+		"token",
+		OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportResponsesWebsocketV2},
+		true,
+		"",
+		"",
+		"",
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.Contains(t, headers.Get("x-codex-beta-features"), "some_other_feature")
+	require.Contains(t, headers.Get("x-codex-beta-features"), "remote_compaction_v2")
+}
+
 func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
 	require.NotPanics(t, func() {
 		logOpenAIWSBindResponseAccountWarn(1, 2, "resp_ok", nil)
@@ -1197,13 +1234,14 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 	c1.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	c1.Request.Header.Set("session_id", "session_turn_state")
 	c1.Request.Header.Set("x-codex-turn-metadata", "turn_meta_1")
+	c1.Set("api_key", &APIKey{ID: 71})
 	result1, err := svc.Forward(context.Background(), c1, account, reqBody)
 	require.NoError(t, err)
 	require.NotNil(t, result1)
 
 	sessionHash := svc.GenerateSessionHash(c1, reqBody)
 	store := svc.getOpenAIWSStateStore()
-	turnState, ok := store.GetSessionTurnState(0, sessionHash)
+	turnState, ok := store.GetSessionTurnState(0, 71, account.ID, sessionHash)
 	require.True(t, ok)
 	require.Equal(t, "turn_state_first", turnState)
 
@@ -1217,6 +1255,7 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 	c2.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	c2.Request.Header.Set("session_id", "session_turn_state")
 	c2.Request.Header.Set("x-codex-turn-metadata", "turn_meta_2")
+	c2.Set("api_key", &APIKey{ID: 71})
 	result2, err := svc.Forward(context.Background(), c2, account, reqBody)
 	require.NoError(t, err)
 	require.NotNil(t, result2)
@@ -1226,6 +1265,88 @@ func TestOpenAIGatewayService_Forward_WSv2_TurnStateAndMetadataReplayOnReconnect
 	require.Equal(t, "turn_meta_1", firstHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
 	require.Equal(t, "turn_meta_2", secondHandshakeHeaders.Get("X-Codex-Turn-Metadata"))
 	require.Equal(t, "turn_state_first", secondHandshakeHeaders.Get("X-Codex-Turn-State"))
+}
+
+func TestOpenAIGatewayService_Forward_WSv2_DoesNotCacheHandshakeTurnStateAfterTerminalWriteFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name   string
+		stream bool
+	}{
+		{name: "non_stream", stream: false},
+		{name: "stream", stream: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Security.URLAllowlist.Enabled = false
+			cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+			cfg.Gateway.OpenAIWS.Enabled = true
+			cfg.Gateway.OpenAIWS.OAuthEnabled = true
+			cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+			cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+			cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 1
+			cfg.Gateway.OpenAIWS.MinIdlePerAccount = 0
+			cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 0
+
+			captureConn := &openAIWSCaptureConn{events: [][]byte{
+				[]byte(`{"type":"response.completed","response":{"id":"resp_terminal_write_failed","model":"gpt-5.1","usage":{"input_tokens":2,"output_tokens":1}}}`),
+			}}
+			captureDialer := &openAIWSCaptureDialer{
+				conn: captureConn,
+				handshake: http.Header{
+					openAIWSTurnStateHeader: []string{"turn_state_not_delivered"},
+				},
+			}
+			pool := newOpenAIWSConnPool(cfg)
+			pool.setClientDialerForTest(captureDialer)
+			t.Cleanup(pool.Close)
+
+			svc := &OpenAIGatewayService{
+				cfg:              cfg,
+				httpUpstream:     &httpUpstreamRecorder{},
+				cache:            &stubGatewayCache{},
+				openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+				toolCorrector:    NewCodexToolCorrector(),
+				openaiWSPool:     pool,
+			}
+			account := &Account{
+				ID:          901,
+				Name:        "openai-turn-state-write-failure",
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+				Credentials: map[string]any{
+					"api_key": "sk-test",
+				},
+				Extra: map[string]any{
+					"responses_websockets_v2_enabled": true,
+				},
+			}
+
+			body := []byte(`{"model":"gpt-5.1","stream":` + strconv.FormatBool(tt.stream) + `,"prompt_cache_key":"v2-terminal-write-failure","input":[{"type":"input_text","text":"hello"}]}`)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+			c.Set("api_key", &APIKey{ID: 902})
+			c.Writer = &failingGinWriter{ResponseWriter: c.Writer, failAfter: 0}
+
+			result, err := svc.Forward(context.Background(), c, account, body)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.False(t, result.terminalDelivered)
+
+			_, hasSavedTurnState := svc.getOpenAIWSStateStore().GetSessionTurnState(
+				0,
+				902,
+				account.ID,
+				DeriveSessionHashFromSeed("v2-terminal-write-failure"),
+			)
+			require.False(t, hasSavedTurnState, "未送达终态不得缓存上游握手 turn state")
+		})
+	}
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_GeneratePrewarm(t *testing.T) {

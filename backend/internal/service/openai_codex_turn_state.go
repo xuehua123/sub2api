@@ -129,6 +129,23 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateCommitted(c *gin.Context,
 	if state == "" || strings.TrimSpace(c.Writer.Header().Get(openAICodexTurnStateHeader)) != state {
 		return false
 	}
+	return s.noteOpenAICodexTurnStateOrigin(c, account, state)
+}
+
+// noteOpenAICodexTurnStateOrigin records a state that has become usable by a
+// WebSocket session. HTTP callers must use noteOpenAICodexTurnStateCommitted,
+// which additionally proves the response header was actually written. A WS
+// upstream handshake has no later HTTP response header to observe, so its
+// caller invokes this only after the corresponding downstream WS turn has
+// completed successfully.
+func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOrigin(c *gin.Context, account *Account, state string) bool {
+	if s == nil || account == nil || account.ID <= 0 {
+		return false
+	}
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return false
+	}
 	key, ok := openAICodexTurnStateProvenanceKeyFor(c, state)
 	if !ok {
 		return false
@@ -138,6 +155,87 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateCommitted(c *gin.Context,
 		expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
 	})
 	s.sweepOpenAICodexTurnStateOrigins()
+	return true
+}
+
+// guardedOpenAIWSTurnState applies the same fail-closed provenance gate to
+// WebSocket handshake state as HTTP requests. The state-store is only a
+// performance cache; it is never an authority for a blob's account owner.
+func (s *OpenAIGatewayService) guardedOpenAIWSTurnState(c *gin.Context, account *Account, state string) string {
+	state = strings.TrimSpace(state)
+	if state == "" {
+		return ""
+	}
+	headers := http.Header{}
+	headers.Set(openAICodexTurnStateHeader, state)
+	s.guardOpenAICodexTurnStateEcho(c, account, headers)
+	return extractOpenAICodexTurnState(headers)
+}
+
+func openAIWSTurnStateScopeIDs(c *gin.Context, account *Account) (int64, int64, bool) {
+	if account == nil || account.ID <= 0 {
+		return 0, 0, false
+	}
+	apiKeyID := getAPIKeyIDFromContext(c)
+	if apiKeyID <= 0 {
+		return 0, 0, false
+	}
+	return apiKeyID, account.ID, true
+}
+
+// loadOpenAIWSSessionTurnState reads an account/API-key-scoped cache entry and
+// then independently verifies the exact blob against in-memory provenance.
+// A cache hit from another slot/restart is deliberately treated as unknown.
+func (s *OpenAIGatewayService) loadOpenAIWSSessionTurnState(
+	c *gin.Context,
+	account *Account,
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	sessionHash string,
+) string {
+	if stateStore == nil || strings.TrimSpace(sessionHash) == "" {
+		return ""
+	}
+	apiKeyID, accountID, ok := openAIWSTurnStateScopeIDs(c, account)
+	if !ok {
+		return ""
+	}
+	state, found := stateStore.GetSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	if !found {
+		return ""
+	}
+	guarded := s.guardedOpenAIWSTurnState(c, account, state)
+	if guarded == "" {
+		// The cache is not trusted authority. Drop values whose provenance is
+		// absent, expired, or no longer matches this exact owner.
+		stateStore.DeleteSessionTurnState(groupID, apiKeyID, accountID, sessionHash)
+	}
+	return guarded
+}
+
+// commitOpenAIWSSessionTurnState records a WS handshake/bridge state only
+// after the corresponding downstream turn has completed, then stores it in a
+// cache scoped to both the API key and account. The cache never replaces the
+// exact-blob provenance check performed on read.
+func (s *OpenAIGatewayService) commitOpenAIWSSessionTurnState(
+	c *gin.Context,
+	account *Account,
+	stateStore OpenAIWSStateStore,
+	groupID int64,
+	sessionHash string,
+	state string,
+) bool {
+	if !s.noteOpenAICodexTurnStateOrigin(c, account, state) {
+		return false
+	}
+	if stateStore == nil || strings.TrimSpace(sessionHash) == "" {
+		return true
+	}
+	apiKeyID, accountID, ok := openAIWSTurnStateScopeIDs(c, account)
+	if !ok {
+		return true
+	}
+	stateStore.BindSessionTurnState(groupID, apiKeyID, accountID, sessionHash, state, s.openAIWSSessionStickyTTL())
 	return true
 }
 

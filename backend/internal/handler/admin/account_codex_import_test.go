@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseCodexSessionImportEntriesSupportsRawTokenJSONAndArray(t *testing.T) {
@@ -721,6 +722,52 @@ func TestImportCodexSessionsAccessTokenOnlySameUserUpdatesExisting(t *testing.T)
 	if got := svc.updatedAccounts[0].input.Extra["openai_long_context_billing_enabled"]; got != false {
 		t.Fatalf("openai_long_context_billing_enabled = %v, want false", got)
 	}
+}
+
+func TestImportCodexSessionsPreservesExistingFingerprintModeUnlessExplicitlyProvided(t *testing.T) {
+	existingToken := buildCodexAccessToken(t, "workspace-1", "user-1", time.Now().Add(time.Hour))
+	makeService := func() *codexImportMemoryAdminService {
+		return newCodexImportMemoryAdminService([]service.Account{{
+			ID:       15,
+			Name:     "existing",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Credentials: map[string]any{
+				"chatgpt_account_id": "workspace-1",
+				"chatgpt_user_id":    "user-1",
+				"access_token":       existingToken,
+			},
+			Extra: map[string]any{"codex_fingerprint_mode": "session"},
+		}})
+	}
+	entries := []codexImportEntry{{Index: 1, Value: map[string]any{"access_token": existingToken}}}
+
+	t.Run("untouched import preserves existing opt-in", func(t *testing.T) {
+		svc := makeService()
+		handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		result, err := handler.importCodexSessions(context.Background(), CodexSessionImportRequest{
+			SkipDefaultGroupBind: boolPtr(true),
+		}, entries)
+		require.NoError(t, err)
+		require.Equal(t, 1, result.Updated)
+		require.Len(t, svc.updatedAccounts, 1)
+		require.Equal(t, "session", svc.updatedAccounts[0].input.Extra["codex_fingerprint_mode"])
+	})
+
+	t.Run("explicit import selection overrides existing mode", func(t *testing.T) {
+		svc := makeService()
+		handler := NewAccountHandler(svc, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+		result, err := handler.importCodexSessions(context.Background(), CodexSessionImportRequest{
+			SkipDefaultGroupBind: boolPtr(true),
+			Extra:                map[string]any{"codex_fingerprint_mode": "off"},
+		}, entries)
+		require.NoError(t, err)
+		require.Equal(t, 1, result.Updated)
+		require.Len(t, svc.updatedAccounts, 1)
+		require.Equal(t, "off", svc.updatedAccounts[0].input.Extra["codex_fingerprint_mode"])
+	})
 }
 
 func TestImportCodexSessionsUpgradesAccessTokenOnlyAccountWithRefreshToken(t *testing.T) {

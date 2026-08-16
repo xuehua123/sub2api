@@ -419,6 +419,90 @@ func TestTurnStateProvenance_GuardedSSEFailoverDoesNotRecordUncommittedAttempt(t
 	require.False(t, found)
 }
 
+func TestPassthroughTurnState_FailoverDropsProvisionalHeaderAndCommitsReplacement(t *testing.T) {
+	svc := newTurnStateResponseTestService(0)
+	c, rec := newTurnStateTestContext(t, 7, "sess-passthrough-failover")
+	accountA := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	accountB := &Account{ID: 43, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+
+	// A gives us a state in its headers but fails before the first client byte.
+	// The same gin writer is then reused by the real failover loop for B.
+	respA := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":       []string{"text/event-stream"},
+			"X-Codex-Turn-State": []string{"blob-attempt-a"},
+		},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			"event: response.created",
+			`data: {"type":"response.created","response":{"id":"resp-attempt-a"}}`,
+			"",
+			"event: response.failed",
+			`data: {"type":"response.failed","error":{"code":"server_error","message":"upstream processing failed"}}`,
+			"",
+		}, "\n"))),
+	}
+	_, err := svc.handleStreamingResponsePassthrough(context.Background(), respA, c, accountA, time.Now(), "gpt-5.5", "gpt-5.5")
+	require.Error(t, err)
+	var failoverErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &failoverErr)
+	require.False(t, c.Writer.Written())
+	require.Empty(t, rec.Header().Get(openAICodexTurnStateHeader), "abandoned attempt must not poison B response headers")
+	keyA, ok := openAICodexTurnStateProvenanceKeyFor(c, "blob-attempt-a")
+	require.True(t, ok)
+	_, found := svc.openaiCodexTurnStateOrigins.Load(keyA)
+	require.False(t, found)
+
+	respB := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type":       []string{"text/event-stream"},
+			"X-Codex-Turn-State": []string{"blob-attempt-b"},
+		},
+		Body: io.NopCloser(strings.NewReader(strings.Join([]string{
+			`data: {"type":"response.output_text.delta","delta":"ok"}`,
+			"",
+			`data: {"type":"response.completed","response":{"id":"resp-attempt-b","usage":{"input_tokens":1,"output_tokens":1}}}`,
+			"",
+		}, "\n"))),
+	}
+	_, err = svc.handleStreamingResponsePassthrough(context.Background(), respB, c, accountB, time.Now(), "gpt-5.5", "gpt-5.5")
+	require.NoError(t, err)
+	require.True(t, c.Writer.Written())
+	require.Equal(t, "blob-attempt-b", rec.Header().Get(openAICodexTurnStateHeader))
+	requireTurnStateOrigin(t, svc, c, "blob-attempt-b", accountB.ID)
+}
+
+func TestOpenAIWSTurnState_RequiresExactProvenanceAndScopedCache(t *testing.T) {
+	svc := &OpenAIGatewayService{}
+	store := NewOpenAIWSStateStore(nil)
+	accountA := &Account{ID: 42}
+	accountB := &Account{ID: 43}
+	cA, _ := newTurnStateTestContext(t, 7, "sess-ws-provenance")
+	const sessionHash = "ws-session-hash"
+	const state = "ws-state-a"
+
+	// A completed WS turn may persist its upstream handshake state, but only
+	// under this exact API key + account + session scope.
+	require.True(t, svc.commitOpenAIWSSessionTurnState(cA, accountA, store, 9, sessionHash, state))
+	require.Equal(t, state, svc.loadOpenAIWSSessionTurnState(cA, accountA, store, 9, sessionHash))
+
+	cOtherKey, _ := newTurnStateTestContext(t, 8, "sess-ws-provenance")
+	require.Empty(t, svc.loadOpenAIWSSessionTurnState(cOtherKey, accountA, store, 9, sessionHash))
+	require.Empty(t, svc.guardedOpenAIWSTurnState(cOtherKey, accountA, state), "another API key cannot inject A's blob")
+
+	cOtherAccount, _ := newTurnStateTestContext(t, 7, "sess-ws-provenance")
+	require.Empty(t, svc.loadOpenAIWSSessionTurnState(cOtherAccount, accountB, store, 9, sessionHash))
+	require.Empty(t, svc.guardedOpenAIWSTurnState(cOtherAccount, accountB, state), "a failover account cannot replay A's blob")
+
+	// A cache record without this slot's blob provenance is never enough to
+	// authorize a replay after a blue/green switch or process restart.
+	newSlot := &OpenAIGatewayService{}
+	require.Empty(t, newSlot.loadOpenAIWSSessionTurnState(cA, accountA, store, 9, sessionHash))
+	_, stillCached := store.GetSessionTurnState(9, 7, accountA.ID, sessionHash)
+	require.False(t, stillCached, "unverifiable cache state is deleted fail-closed")
+}
+
 func TestWriteOpenAIPassthroughResponseHeaders_RelaysAndClearsTurnState(t *testing.T) {
 	// filter=nil 走 content-type 兜底分支；turn-state 强制放行不依赖 filter。
 	dst := http.Header{}
@@ -430,6 +514,29 @@ func TestWriteOpenAIPassthroughResponseHeaders_RelaysAndClearsTurnState(t *testi
 	// 上游缺失时清除残留（failover 换号防串扰）
 	writeOpenAIPassthroughResponseHeaders(dst, http.Header{"Content-Type": []string{"application/json"}}, nil)
 	require.Empty(t, dst.Get("X-Codex-Turn-State"))
+}
+
+func TestApplyOpenAIStagedResponseHeaders_ReplacesOldTurnState(t *testing.T) {
+	dst := http.Header{
+		"X-Codex-Turn-State": []string{"blob-attempt-a"},
+		"X-Existing":         []string{"preserved"},
+	}
+	staged := http.Header{
+		"X-Codex-Turn-State": []string{"blob-attempt-b"},
+		"X-Request-Id":       []string{"request-b"},
+	}
+
+	applyOpenAIStagedResponseHeaders(dst, staged)
+
+	// State has single-value ownership semantics: B replaces, never appends to,
+	// a provisional A value. Other staged headers intentionally retain Add.
+	require.Equal(t, []string{"blob-attempt-b"}, dst.Values(openAICodexTurnStateHeader))
+	require.Equal(t, "preserved", dst.Get("X-Existing"))
+	require.Equal(t, "request-b", dst.Get("X-Request-Id"))
+
+	applyOpenAIStagedResponseHeaders(dst, nil)
+	require.Empty(t, dst.Get(openAICodexTurnStateHeader), "a successful attempt without state must clear stale A/B state")
+	require.Equal(t, []string{"request-b"}, dst.Values("X-Request-Id"))
 }
 
 func TestEnsureOpenAIRemoteCompactionV2BetaFeature(t *testing.T) {

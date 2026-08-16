@@ -82,6 +82,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	turnState := ""
 	turnMetadata := ""
 	if c != nil && c.Request != nil {
+		s.guardOpenAICodexTurnStateEcho(c, account, c.Request.Header)
 		turnState = strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
@@ -128,9 +129,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
 	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
-		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
-			turnState = savedTurnState
-		}
+		turnState = s.loadOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash)
 	}
 	preferredConnID := ""
 	if stateStore != nil && previousResponseID != "" {
@@ -312,14 +311,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		handshakeTurnState != "",
 		len(handshakeTurnState),
 	)
+	handshakeTurnStateCommitted := false
 	if handshakeTurnState != "" {
-		if stateStore != nil && sessionHash != "" {
-			stateStore.BindSessionTurnState(groupID, sessionHash, handshakeTurnState, s.openAIWSSessionStickyTTL())
-		}
-		if c != nil {
-			c.Header(http.CanonicalHeaderKey(openAIWSTurnStateHeader), handshakeTurnState)
+		if c != nil && c.Writer != nil && !c.Writer.Written() {
+			c.Header(openAIWSTurnStateHeader, handshakeTurnState)
 		}
 	}
+	defer func() {
+		if !handshakeTurnStateCommitted && c != nil && c.Writer != nil && !c.Writer.Written() {
+			// A WS attempt that falls back before writing must not leave its
+			// upstream state on the shared HTTP response for the next attempt.
+			c.Writer.Header().Del(openAIWSTurnStateHeader)
+		}
+	}()
 
 	if err := s.performOpenAIWSGeneratePrewarm(
 		ctx,
@@ -363,6 +367,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	responseID := ""
 	var finalResponse []byte
 	wroteDownstream := false
+	terminalDelivered := false
 	needModelReplace := originalModel != mappedModel
 	var mappedModelBytes []byte
 	if needModelReplace && mappedModel != "" {
@@ -413,23 +418,24 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		pendingFlushEvents = 0
 		lastFlushAt = time.Now()
 	}
-	emitStreamMessage := func(message []byte, forceFlush bool) {
+	emitStreamMessage := func(message []byte, forceFlush bool) bool {
 		if clientDisconnected {
-			return
+			return false
 		}
 		frame := make([]byte, 0, len(message)+8)
 		frame = append(frame, "data: "...)
 		frame = append(frame, message...)
 		frame = append(frame, '\n', '\n')
-		_, wErr := c.Writer.Write(frame)
-		if wErr == nil {
+		written, wErr := c.Writer.Write(frame)
+		if wErr == nil && written == len(frame) {
 			wroteDownstream = true
 			pendingFlushEvents++
 			flushStreamWriter(forceFlush)
-			return
+			return true
 		}
 		clientDisconnected = true
 		logger.LegacyPrintf("service.openai_gateway", "[OpenAI WS Mode] client disconnected, continue draining upstream: account=%d", account.ID)
+		return false
 	}
 	flushBufferedStreamEvents := func(reason string) {
 		if len(bufferedStreamEvents) == 0 {
@@ -691,7 +697,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				}
 			} else {
 				flushBufferedStreamEvents(eventType)
-				emitStreamMessage(message, isTerminalEvent)
+				if emitStreamMessage(message, isTerminalEvent) && isTerminalEvent {
+					terminalDelivered = true
+				}
 			}
 		} else {
 			if responseField.Exists() && responseField.Type == gjson.JSON {
@@ -735,9 +743,21 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			responseID = strings.TrimSpace(gjson.GetBytes(finalResponse, "id").String())
 		}
 
-		c.Data(http.StatusOK, "application/json", finalResponse)
+		c.Status(http.StatusOK)
+		c.Header("Content-Type", "application/json")
+		written, writeErr := c.Writer.Write(finalResponse)
+		if writeErr == nil && written == len(finalResponse) {
+			wroteDownstream = true
+			terminalDelivered = true
+		} else {
+			clientDisconnected = true
+			logger.LegacyPrintf("service.openai_gateway", "[OpenAI WS Mode] client disconnected, continue draining upstream: account=%d", account.ID)
+		}
 	} else {
 		flushStreamWriter(true)
+	}
+	if handshakeTurnState != "" && terminalDelivered {
+		handshakeTurnStateCommitted = s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, handshakeTurnState)
 	}
 
 	if responseID != "" && stateStore != nil {
@@ -788,6 +808,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		ResponseHeaders:               lease.HandshakeHeaders(),
 		Duration:                      time.Since(startTime),
 		FirstTokenMs:                  firstTokenMs,
+		terminalDelivered:             terminalDelivered,
 	}, nil
 }
 

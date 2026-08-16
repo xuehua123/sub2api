@@ -488,6 +488,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return err
 	}
 
+	// An ingress client can inject an arbitrary header on the initial WS
+	// upgrade. Strip it before it ever reaches a pooled upstream connection.
+	if c.Request != nil {
+		s.guardOpenAICodexTurnStateEcho(c, account, c.Request.Header)
+	}
 	turnState := strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader))
 	stateStore := s.getOpenAIWSStateStore()
 	groupID := getOpenAIGroupIDFromContext(c)
@@ -498,9 +503,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
 		if turnState == "" && stateStore != nil && sessionHash != "" {
-			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
-				turnState = savedTurnState
-			}
+			turnState = s.loadOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash)
 		}
 
 		preferredConnID = ""
@@ -620,11 +623,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				bridgeReplayInput = append(bridgeReplayInput, cloneOpenAIWSRawMessages(result.wsReplayInput)...)
 				bridgeReplayInputExists = true
 			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" {
+			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" && result.terminalDelivered {
 				turnState = bridgeTurnState
-				if stateStore != nil && sessionHash != "" {
-					stateStore.BindSessionTurnState(groupID, sessionHash, bridgeTurnState, s.openAIWSSessionStickyTTL())
-				}
+				s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
 			}
 			responseID := strings.TrimSpace(result.RequestID)
 			if responseID != "" && stateStore != nil {
@@ -741,6 +742,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 
 	agentTaskRecoveryTried := false
+	// The beta capability is negotiated when this lease is acquired.  Headers
+	// for a future redial may change between turns (for example when a later
+	// payload supplies prompt_cache_key), so they must not alter this value.
+	currentLeaseSupportsNativeRemoteCompactionV2 := false
 	var acquireTurnLease func(int, string, bool) (*openAIWSConnLease, error)
 	acquireTurnLease = func(turn int, preferred string, forcePreferredConn bool) (*openAIWSConnLease, error) {
 		req := cloneOpenAIWSAcquireRequest(baseAcquireReq)
@@ -807,12 +812,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			return nil, acquireErr
 		}
+		currentLeaseSupportsNativeRemoteCompactionV2 = hasOpenAIRemoteCompactionV2BetaFeature(req.Headers)
 		connID := strings.TrimSpace(lease.ConnID())
 		if handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader)); handshakeTurnState != "" {
 			turnState = handshakeTurnState
-			if stateStore != nil && sessionHash != "" {
-				stateStore.BindSessionTurnState(groupID, sessionHash, handshakeTurnState, s.openAIWSSessionStickyTTL())
-			}
 			updatedHeaders := cloneHeader(baseAcquireReq.Headers)
 			if updatedHeaders == nil {
 				updatedHeaders = make(http.Header)
@@ -838,8 +841,31 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if lease == nil {
 			return nil, errors.New("upstream websocket lease is nil")
 		}
+		// response.create 的 native v2 capability 在 WS 握手阶段协商，不能
+		// 在同一条已建立的连接上补注。连接池按 beta 头兼容性分桶，因此
+		// 只可使用 acquire 时冻结的当前 lease 能力，不能读未来重连的头。
+		if HasCompactionTriggerInInput(payload) {
+			// Keep this service-layer fence in addition to handler scheduling: a
+			// selected account can be refreshed while acquiring a slot, and test
+			// or future callers may invoke this ingress without handler hooks.
+			if !AllowsOpenAINativeRemoteCompactionV2(account) {
+				return nil, NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					"account does not support native remote compaction on this connection, please reconnect",
+					nil,
+				)
+			}
+			if !currentLeaseSupportsNativeRemoteCompactionV2 {
+				return nil, NewOpenAIWSClientCloseError(
+					coderws.StatusTryAgainLater,
+					"native remote compaction requires a v2-enabled upstream websocket, please reconnect",
+					nil,
+				)
+			}
+		}
 		turnStart := time.Now()
 		wroteDownstream := false
+		terminalDelivered := false
 		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
@@ -1045,6 +1071,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					}
 				} else {
 					wroteDownstream = true
+					if isTerminalEvent {
+						terminalDelivered = true
+					}
 				}
 			}
 			if isTerminalEvent {
@@ -1091,6 +1120,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ResponseHeaders:               lease.HandshakeHeaders(),
 					Duration:                      time.Since(turnStart),
 					FirstTokenMs:                  firstTokenMs,
+					terminalDelivered:             terminalDelivered,
 				}
 				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 					result.wsReplayInput = replayInput
@@ -1189,6 +1219,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return currentTurnReplayInputExists && openAIWSRawItemsHasFunctionCallOutput(currentTurnReplayInput)
 	}
 	resetSessionLease := func(markBroken bool) {
+		currentLeaseSupportsNativeRemoteCompactionV2 = false
 		if sessionLease == nil {
 			return
 		}
@@ -1624,6 +1655,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		if result == nil {
 			return errors.New("websocket turn result is nil")
+		}
+		// The upstream handshake state becomes reusable only after the terminal
+		// event itself has reached the downstream client. A disconnected client
+		// can otherwise let us drain upstream successfully without receiving it.
+		if turnState != "" && result.terminalDelivered {
+			s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, turnState)
 		}
 		responseID := strings.TrimSpace(result.RequestID)
 		lastTurnResponseID = responseID

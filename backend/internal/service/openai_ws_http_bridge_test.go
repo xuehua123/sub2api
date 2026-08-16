@@ -338,6 +338,49 @@ func TestProxyOpenAIWSHTTPBridgeTurnRequiresTerminalEvent(t *testing.T) {
 	}
 }
 
+func TestProxyOpenAIWSHTTPBridgeTurn_ClientDisconnectBeforeTerminalDoesNotMarkTerminalDelivered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"text/event-stream"},
+			http.CanonicalHeaderKey(openAIWSTurnStateHeader): []string{"bridge_turn_state_not_delivered"},
+		},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_bridge_write_failed\",\"model\":\"gpt-5.1\",\"usage\":{\"input_tokens\":2,\"output_tokens\":1}}}\n\n",
+		)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          811,
+		Name:        "openai-http-bridge-terminal-write-failure",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"api_key": "sk-test",
+		},
+	}
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	payload := []byte(`{"type":"response.create","model":"gpt-5.1","stream":true,"input":"hello"}`)
+
+	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
+		context.Background(), c, account, "sk-test", payload, len(payload),
+		"gpt-5.1", "", "", "", "", 1,
+		func([]byte) error { return io.EOF },
+	)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.terminalDelivered)
+	require.Equal(t, "bridge_turn_state_not_delivered", result.ResponseHeaders.Get(openAIWSTurnStateHeader))
+}
+
 func TestOpenAIWSHTTPBridgeRelaysSSEFramesAsWebSocketMessages(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -58,4 +58,13 @@ describe('CreateAccountModal Grok account types', () => {
       /if \(form\.type === 'oauth'\) \{\s+extra\.codex_fingerprint_mode = codexFingerprintMode\.value\s+\} else \{\s+delete extra\.codex_fingerprint_mode/
     )
   })
+
+  it('does not overwrite an existing account fingerprint mode during an untouched Codex import', () => {
+    expect(source).toContain('const codexFingerprintModeTouched = ref(false)')
+    expect(source).toContain('@update:model-value="markCodexFingerprintModeTouched"')
+    expect(source).toContain('const markCodexFingerprintModeTouched = () => {')
+    expect(source).toMatch(
+      /if \(!codexFingerprintModeTouched\.value\) \{\s+delete extra\.codex_fingerprint_mode/
+    )
+  })
 })

@@ -994,7 +994,7 @@
       </div>
 
       <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div v-if="allOpenAIOAuthOnly" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <div v-if="canBulkEditCodexFingerprintMode" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
           <input
@@ -1507,6 +1507,21 @@ const allOpenAIOAuthOnly = computed(() => {
   )
 })
 
+// A filtered preview contains only the first page of results. Its observed
+// platform/type metadata therefore cannot prove that later matching accounts
+// are also OpenAI OAuth. Only an exact server-side filter makes this OAuth-only
+// field safe to offer in filtered mode; the backend repeats the check against
+// every resolved target before writing.
+const canBulkEditCodexFingerprintMode = computed(() => {
+  if (targetMode.value !== 'filtered') {
+    return allOpenAIOAuthOnly.value
+  }
+
+  const filters = props.target?.filters
+  if (!filters) return false
+  return filters.platform === 'openai' && filters.type === 'oauth'
+})
+
 const allOpenAIAPIKey = computed(() => {
   return (
     targetSelectedPlatforms.value.length === 1 &&
@@ -1932,7 +1947,7 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     extra.codex_cli_only_allow_app_server = codexCLIOnlyAppServerEnabled.value
   }
 
-  if (enableCodexFingerprintMode.value && allOpenAIOAuthOnly.value) {
+  if (enableCodexFingerprintMode.value && canBulkEditCodexFingerprintMode.value) {
     const extra = ensureExtra()
     // BulkUpdate merges JSONB extras. Persist off instead of deleting the key,
     // otherwise an existing opt-in value cannot be cleared.
@@ -2051,7 +2066,7 @@ const handleSubmit = async () => {
     enableUpstreamBillingAutoProbe.value ||
     enableCodexCLIOnly.value ||
     enableCodexCLIOnlyAppServer.value ||
-    enableCodexFingerprintMode.value ||
+    (enableCodexFingerprintMode.value && canBulkEditCodexFingerprintMode.value) ||
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||

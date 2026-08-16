@@ -281,6 +281,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 	upstreamTerminalEvent := ""
 	sawDone := false
 	wroteDownstream := false
+	terminalDelivered := false
 	clientDisconnected := false
 	mappedModel := ""
 	needModelReplace := false
@@ -315,6 +316,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			FirstTokenMs:                  firstTokenMs,
 			FirstSSEEventMs:               firstSSEEventMs,
 			FirstClientFlushMs:            firstClientFlushMs,
+			terminalDelivered:             terminalDelivered,
 		}
 		if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 			result.wsReplayInput = replayInput
@@ -481,6 +483,9 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 				}
 			} else {
 				wroteDownstream = true
+				if isOpenAIWSTerminalEvent(eventType) {
+					terminalDelivered = true
+				}
 				setStreamElapsedMsOnce(&firstClientFlushMs, turnStart)
 			}
 		}

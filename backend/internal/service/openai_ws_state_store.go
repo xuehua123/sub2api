@@ -54,9 +54,12 @@ type OpenAIWSStateStore interface {
 	GetResponseConn(responseID string) (string, bool)
 	DeleteResponseConn(responseID string)
 
-	BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration)
-	GetSessionTurnState(groupID int64, sessionHash string) (string, bool)
-	DeleteSessionTurnState(groupID int64, sessionHash string)
+	// Turn-state is additionally scoped to the downstream API key and the
+	// upstream account. group/session alone is not a security boundary: two
+	// keys can share them and an account can change after failover.
+	BindSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration)
+	GetSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string) (string, bool)
+	DeleteSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string)
 
 	BindSessionConn(groupID int64, sessionHash, connID string, ttl time.Duration)
 	GetSessionConn(groupID int64, sessionHash string) (string, bool)
@@ -211,8 +214,8 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 	s.responseToConnMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash, turnState string, ttl time.Duration) {
+	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	state := strings.TrimSpace(turnState)
 	if key == "" || state == "" {
 		return
@@ -229,8 +232,8 @@ func (s *defaultOpenAIWSStateStore) BindSessionTurnState(groupID int64, sessionH
 	s.sessionToTurnStateMu.Unlock()
 }
 
-func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHash string) (string, bool) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string) (string, bool) {
+	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return "", false
 	}
@@ -246,8 +249,8 @@ func (s *defaultOpenAIWSStateStore) GetSessionTurnState(groupID int64, sessionHa
 	return binding.turnState, true
 }
 
-func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID int64, sessionHash string) {
-	key := openAIWSSessionTurnStateKey(groupID, sessionHash)
+func (s *defaultOpenAIWSStateStore) DeleteSessionTurnState(groupID, apiKeyID, accountID int64, sessionHash string) {
+	key := openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID, sessionHash)
 	if key == "" {
 		return
 	}
@@ -437,6 +440,18 @@ func openAIWSSessionTurnStateKey(groupID int64, sessionHash string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d:%s", groupID, hash)
+}
+
+// openAIWSTurnStateScopeKey intentionally includes every stable owner of a
+// cached WebSocket turn-state. The opaque blob itself is validated against the
+// separate SHA-256 provenance map before it is sent upstream; keeping it out
+// of this cache key permits replacement by a newer state in the same turn.
+func openAIWSTurnStateScopeKey(groupID, apiKeyID, accountID int64, sessionHash string) string {
+	hash := strings.TrimSpace(sessionHash)
+	if hash == "" || apiKeyID <= 0 || accountID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d:%d:%s", groupID, apiKeyID, accountID, hash)
 }
 
 func withOpenAIWSStateStoreRedisTimeout(ctx context.Context) (context.Context, context.CancelFunc) {

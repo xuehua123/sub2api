@@ -113,6 +113,27 @@ func TestAccountCreateBoundaryDoesNotApplyOpenAIValidationToOtherPlatforms(t *te
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
 
+func TestCodexSessionImportRejectsMalformedFingerprintModeBeforeParsing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewAccountHandler(newStubAdminService(), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	router := gin.New()
+	router.POST("/accounts/import-codex-session", handler.ImportCodexSession)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/accounts/import-codex-session", bytes.NewBufferString(
+		`{"content":"token","extra":{"codex_fingerprint_mode":true}}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	var responseBody struct {
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
+	require.Equal(t, "CODEX_FINGERPRINT_MODE_INVALID", responseBody.Reason)
+}
+
 func TestApplyOAuthCredentialsRejectsMalformedOpenAILongContextBillingBeforeMutation(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := newStubAdminService()
@@ -162,4 +183,26 @@ func TestOpenAIOAuthCodexPATBoundaryRejectsMalformedOpenAILongContextBillingValu
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
 	require.Equal(t, "OPENAI_LONG_CONTEXT_BILLING_INVALID", responseBody.Reason)
+}
+
+func TestOpenAIOAuthCodexPATBoundaryRejectsMalformedFingerprintModeBeforeTokenValidation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewOpenAIOAuthHandler(nil, newStubAdminService(), nil, nil)
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.POST("/openai/create-from-codex-pat", handler.CreateAccountFromCodexPAT)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/openai/create-from-codex-pat", bytes.NewBufferString(
+		`{"access_token":"token","extra":{"codex_fingerprint_mode":true}}`,
+	))
+	request.Header.Set("Content-Type", "application/json")
+
+	router.ServeHTTP(recorder, request)
+
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+	var responseBody struct {
+		Reason string `json:"reason"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &responseBody))
+	require.Equal(t, "CODEX_FINGERPRINT_MODE_INVALID", responseBody.Reason)
 }

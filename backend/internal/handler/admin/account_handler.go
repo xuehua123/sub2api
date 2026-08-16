@@ -829,6 +829,10 @@ func (h *AccountHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	if err := service.ValidateCodexFingerprintModeExtraForAccount(req.Platform, req.Type, req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if err := service.ValidateOpenAILongContextBillingExtra(req.Platform, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1418,6 +1422,13 @@ func (h *AccountHandler) ApplyOAuthCredentials(c *gin.Context) {
 		response.ErrorFrom(c, infraerrors.BadRequest("NOT_OAUTH", "cannot apply oauth credentials to non-OAuth account"))
 		return
 	}
+	// Validate against the type that this re-authorization will persist, not
+	// the account's pre-update type. This keeps setup-token -> OAuth valid and
+	// rejects an OAuth-only fingerprint setting when moving the other way.
+	if err := service.ValidateCodexFingerprintModeExtraForAccount(existing.Platform, req.Type, req.Extra); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	if err := service.ValidateOpenAILongContextBillingExtra(existing.Platform, req.Extra); err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -1868,6 +1879,10 @@ func (h *AccountHandler) BatchCreate(c *gin.Context) {
 		return
 	}
 	for _, item := range req.Accounts {
+		if err := service.ValidateCodexFingerprintModeExtraForAccount(item.Platform, item.Type, item.Extra); err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
 		if err := service.ValidateOpenAILongContextBillingExtra(item.Platform, item.Extra); err != nil {
 			response.ErrorFrom(c, err)
 			return

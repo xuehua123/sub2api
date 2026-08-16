@@ -1472,6 +1472,81 @@ func TestOpenAIResponsesWebSocket_PassthroughRejectsRestrictedFollowupModel(t *t
 	require.Len(t, got.logs, 1)
 }
 
+func TestOpenAIResponsesWebSocket_NativeRemoteCompactionFirstTurnSkipsKnownUnsupportedAccount(t *testing.T) {
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:             `{"type":"response.create","model":"gpt-5.6-sol","input":[{"type":"message","role":"user","content":"compact this"},{"type":"compaction_trigger"}]}`,
+		nativeCompactionFallback: true,
+	})
+
+	require.Len(t, got.upstreamPayloads, 1)
+	require.Len(t, got.upstreamAuthorizations, 1)
+	require.Equal(t, "Bearer sk-native-v2-supported", got.upstreamAuthorizations[0],
+		"首帧 native v2 必须跳过已明确不支持的账号")
+	require.Equal(t, "compaction_trigger", gjson.GetBytes(got.upstreamPayloads[0], "input.#(type==\"compaction_trigger\").type").String())
+}
+
+func TestOpenAIResponsesWebSocket_NativeRemoteCompactionFirstTurnRestoresV2AfterAPIKeyHeaderOverride(t *testing.T) {
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload: `{"type":"response.create","model":"gpt-5.6-sol","input":[{"type":"compaction_trigger"}]}`,
+		headerOverrides: map[string]any{
+			"x-codex-beta-features": "some_other_feature",
+		},
+	})
+
+	require.Len(t, got.upstreamBetaFeatures, 1)
+	require.Contains(t, got.upstreamBetaFeatures[0], "some_other_feature")
+	require.Contains(t, got.upstreamBetaFeatures[0], "remote_compaction_v2",
+		"原生首帧必须在 API-key 覆写后仍以 v2 feature 建立上游握手")
+}
+
+func TestOpenAIResponsesWebSocket_NativeRemoteCompactionFollowupRejectsKnownUnsupportedConnection(t *testing.T) {
+	unsupported := false
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload: `{"type":"response.create","model":"gpt-5.6-sol","input":[{"type":"message","role":"user","content":"start"}]}`,
+		subsequentPayloads: []string{
+			`{"type":"response.create","model":"gpt-5.6-sol","input":[{"type":"compaction_trigger"}]}`,
+		},
+		openAICompactSupported: &unsupported,
+		rejectTurn:             2,
+	})
+
+	require.Error(t, got.clientTerminalErr)
+	var closeErr coderws.CloseError
+	require.ErrorAs(t, got.clientTerminalErr, &closeErr)
+	require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+	require.Contains(t, closeErr.Reason, "does not support native remote compaction")
+	require.Len(t, got.upstreamPayloads, 1, "后续 native v2 帧不得写给已知不支持的账号")
+	require.Len(t, got.logs, 1)
+}
+
+func TestOpenAIResponsesWebSocket_NativeRemoteCompactionFollowupRequiresV2HandshakeAfterPromptCacheHeaderRefresh(t *testing.T) {
+	for _, ingressMode := range []string{
+		service.OpenAIWSIngressModePassthrough,
+		service.OpenAIWSIngressModeCtxPool,
+	} {
+		t.Run(ingressMode, func(t *testing.T) {
+			supported := true
+			got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+				firstPayload: `{"type":"response.create","model":"gpt-5.6-sol","input":[{"type":"message","role":"user","content":"start"}]}`,
+				subsequentPayloads: []string{
+					`{"type":"response.create","model":"gpt-5.6-sol","prompt_cache_key":"native-v2-followup-refresh","input":[{"type":"compaction_trigger"}]}`,
+				},
+				ingressMode:            ingressMode,
+				openAICompactSupported: &supported,
+				rejectTurn:             2,
+			})
+
+			require.Error(t, got.clientTerminalErr)
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, got.clientTerminalErr, &closeErr)
+			require.Equal(t, coderws.StatusTryAgainLater, closeErr.Code)
+			require.Contains(t, closeErr.Reason, "requires a v2-enabled upstream websocket")
+			require.Len(t, got.upstreamPayloads, 1, "未在握手协商 v2 的 API-key 连接不得转发后续压缩帧")
+			require.Len(t, got.logs, 1)
+		})
+	}
+}
+
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogLeavesUserAgentNilWhenMissing(t *testing.T) {
 	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
 		firstPayload: `{"type":"response.create","model":"gpt-5.4","stream":false,"reasoning":{"effort":"medium"}}`,
@@ -1864,6 +1939,9 @@ type openAIResponsesWSUsageLogCase struct {
 	billingModelSource        string
 	accountModelMapping       map[string]any
 	afterFirstUpstreamRequest func(channelSvc *service.ChannelService) error
+	headerOverrides           map[string]any
+	openAICompactSupported    *bool
+	nativeCompactionFallback  bool
 	rejectTurn                int
 }
 
@@ -1873,20 +1951,30 @@ type openAIResponsesWSUsageLogResult struct {
 	upstreamFirstPayload      []byte
 	upstreamPayloads          [][]byte
 	upstreamInterTurnPayloads [][]byte
+	upstreamAuthorizations    []string
+	upstreamBetaFeatures      []string
 	clientEvents              [][]byte
 	clientTerminalErr         error
 }
 
 type openAIWSUsageHandlerAccountRepoStub struct {
 	service.AccountRepository
-	account service.Account
+	account  service.Account
+	accounts []service.Account
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
-	if s.account.Platform != platform {
-		return nil, nil
+	accounts := s.accounts
+	if len(accounts) == 0 {
+		accounts = []service.Account{s.account}
 	}
-	return []service.Account{s.account}, nil
+	result := make([]service.Account, 0, len(accounts))
+	for _, account := range accounts {
+		if account.Platform == platform {
+			result = append(result, account)
+		}
+	}
+	return result, nil
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]service.Account, error) {
@@ -1894,11 +1982,17 @@ func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByGroupIDAndPlatfor
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) GetByID(ctx context.Context, id int64) (*service.Account, error) {
-	if s.account.ID != id {
-		return nil, nil
+	accounts := s.accounts
+	if len(accounts) == 0 {
+		accounts = []service.Account{s.account}
 	}
-	account := s.account
-	return &account, nil
+	for _, account := range accounts {
+		if account.ID == id {
+			account := account
+			return &account, nil
+		}
+	}
+	return nil, nil
 }
 
 type openAIWSFailoverHandlerAccountRepoStub struct {
@@ -2795,6 +2889,8 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		successfulTurnCount = tc.rejectTurn - 1
 	}
 	upstreamPayloadCh := make(chan []byte, successfulTurnCount)
+	upstreamAuthorizationCh := make(chan string, successfulTurnCount)
+	upstreamBetaFeaturesCh := make(chan string, successfulTurnCount)
 	upstreamInterTurnPayloadCh := make(chan []byte, len(tc.interTurnPayloads))
 	upstreamErrCh := make(chan error, 1)
 	var channelSvc *service.ChannelService
@@ -2828,6 +2924,8 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 				return
 			}
 			upstreamPayloadCh <- payload
+			upstreamAuthorizationCh <- r.Header.Get("Authorization")
+			upstreamBetaFeaturesCh <- r.Header.Get("x-codex-beta-features")
 			if turn == 1 && tc.afterFirstUpstreamRequest != nil {
 				if callbackErr := tc.afterFirstUpstreamRequest(channelSvc); callbackErr != nil {
 					upstreamErrCh <- callbackErr
@@ -2905,6 +3003,13 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	if strings.TrimSpace(tc.ingressMode) != "" {
 		account.Extra["openai_apikey_responses_websockets_v2_mode"] = tc.ingressMode
 	}
+	if len(tc.headerOverrides) > 0 {
+		account.Credentials["header_override_enabled"] = true
+		account.Credentials["header_overrides"] = tc.headerOverrides
+	}
+	if tc.openAICompactSupported != nil {
+		account.Extra["openai_compact_supported"] = *tc.openAICompactSupported
+	}
 
 	cfg := &config.Config{}
 	cfg.RunMode = config.RunModeSimple
@@ -2920,6 +3025,21 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
+	if tc.nativeCompactionFallback {
+		unsupportedAccount := account
+		unsupportedAccount.Extra = cloneOpenAIWSUsageTestMap(account.Extra)
+		unsupportedAccount.Extra["openai_compact_supported"] = false
+
+		supportedAccount := account
+		supportedAccount.ID = 9902
+		supportedAccount.Name = "openai-ws-native-compaction-supported"
+		supportedAccount.Credentials = cloneOpenAIWSUsageTestMap(account.Credentials)
+		supportedAccount.Credentials["api_key"] = "sk-native-v2-supported"
+		supportedAccount.Extra = cloneOpenAIWSUsageTestMap(account.Extra)
+		supportedAccount.Extra["openai_compact_supported"] = true
+
+		accountRepo.accounts = []service.Account{unsupportedAccount, supportedAccount}
+	}
 	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, turnCount)}
 
 	if len(tc.channelMapping) > 0 || len(tc.channelAllowedModels) > 0 {
@@ -3069,12 +3189,26 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 
 	upstreamPayloads := make([][]byte, 0, successfulTurnCount)
+	upstreamAuthorizations := make([]string, 0, successfulTurnCount)
+	upstreamBetaFeatures := make([]string, 0, successfulTurnCount)
 	for range successfulTurnCount {
 		select {
 		case upstreamPayload := <-upstreamPayloadCh:
 			upstreamPayloads = append(upstreamPayloads, upstreamPayload)
 		case <-time.After(3 * time.Second):
 			t.Fatal("等待上游 WebSocket 请求帧超时")
+		}
+		select {
+		case authorization := <-upstreamAuthorizationCh:
+			upstreamAuthorizations = append(upstreamAuthorizations, authorization)
+		case <-time.After(3 * time.Second):
+			t.Fatal("等待上游 WebSocket 鉴权头超时")
+		}
+		select {
+		case betaFeatures := <-upstreamBetaFeaturesCh:
+			upstreamBetaFeatures = append(upstreamBetaFeatures, betaFeatures)
+		case <-time.After(3 * time.Second):
+			t.Fatal("等待上游 WebSocket beta feature 头超时")
 		}
 	}
 	upstreamInterTurnPayloads := make([][]byte, 0, len(tc.interTurnPayloads))
@@ -3100,6 +3234,8 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		upstreamFirstPayload:      upstreamPayloads[0],
 		upstreamPayloads:          upstreamPayloads,
 		upstreamInterTurnPayloads: upstreamInterTurnPayloads,
+		upstreamAuthorizations:    upstreamAuthorizations,
+		upstreamBetaFeatures:      upstreamBetaFeatures,
 		clientEvents:              clientEvents,
 		clientTerminalErr:         clientTerminalErr,
 	}
@@ -3107,6 +3243,14 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 
 func testStringPtr(v string) *string {
 	return &v
+}
+
+func cloneOpenAIWSUsageTestMap(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func TestOpenAIForwardErrorAlreadyCommunicated(t *testing.T) {

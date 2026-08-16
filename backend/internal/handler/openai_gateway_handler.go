@@ -317,6 +317,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 原生 v2 压缩出站前补注 x-codex-beta-features: remote_compaction_v2，
 		// 与真实 Codex 线型一致（网关链剥头后本级负责恢复，#5586）。
 		service.MarkOpenAINativeCompactionV2(c)
+		// 原生 v2 与 legacy /responses/compact 共用 capability 探测结果，
+		// 但不能因此启用 legacy compact_model_mapping。通过独立 context 标记
+		// 让调度层仅过滤已明确不支持 native v2 的账号。
+		c.Request = c.Request.WithContext(service.WithOpenAINativeCompactionV2Scheduling(c.Request.Context()))
 	}
 	// body-signal compact：上游 unary 等待期间向下游发 SSE 注释行心跳，防止
 	// 反向代理空闲超时掐断长压缩连接（#3887）。首拍延迟一个心跳间隔，快速
@@ -841,7 +845,9 @@ func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Con
 }
 
 func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, startedAt time.Time) {
-	if !isOpenAILegacyCompactPath(c) {
+	legacyCompact := isOpenAILegacyCompactPath(c)
+	nativeV2 := service.IsOpenAINativeCompactionV2(c)
+	if !legacyCompact && !nativeV2 {
 		return
 	}
 
@@ -877,10 +883,15 @@ func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, sta
 	if latencyMs < 0 {
 		latencyMs = 0
 	}
+	compactProtocol := "legacy_responses_compact"
+	if nativeV2 {
+		compactProtocol = "remote_compaction_v2"
+	}
 
 	fields := []zap.Field{
 		zap.String("component", "handler.openai_gateway.responses"),
 		zap.Bool("remote_compact", true),
+		zap.String("compact_protocol", compactProtocol),
 		zap.String("compact_outcome", outcome),
 		zap.Int("status_code", status),
 		zap.Int64("latency_ms", latencyMs),
@@ -1743,6 +1754,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	ctx = c.Request.Context()
+	// WebSocket 的 response.create 天然是流式回合；首帧带
+	// compaction_trigger 即是 native remote compaction v2。单独标记调度
+	// context，避免 legacy /responses/compact 的模型映射语义泄漏进来。
+	if service.HasCompactionTriggerInInput(firstMessage) {
+		service.MarkOpenAINativeCompactionV2(c)
+		ctx = service.WithOpenAINativeCompactionV2Scheduling(ctx)
+		c.Request = c.Request.WithContext(ctx)
+	}
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
 		platform, ok := service.ResolvedTargetPlatformFromContext(ctx)
 		if !ok || (platform != service.PlatformOpenAI && platform != service.PlatformGrok) {
@@ -2139,6 +2158,23 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			ReasoningEffortMappings: reasoningEffortMappings,
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
+				if service.HasCompactionTriggerInInput(payload) {
+					// 同一 WS 连接不能在中途切换上游账号；若账号在首帧选择后被
+					// 确认为不支持 native v2，后续压缩回合必须要求客户端重连，
+					// 绝不能把该帧写给上游。
+					service.MarkOpenAINativeCompactionV2(c)
+					if !service.AllowsOpenAINativeRemoteCompactionV2(account) {
+						reqLog.Info("openai.websocket_native_remote_compaction_rejected",
+							zap.Int("turn", turn),
+							zap.Int64("account_id", account.ID),
+						)
+						return service.NewOpenAIWSClientCloseError(
+							coderws.StatusTryAgainLater,
+							"account does not support native remote compaction on this connection, please reconnect",
+							nil,
+						)
+					}
+				}
 				if turn == 1 {
 					return nil
 				}

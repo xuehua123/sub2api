@@ -27,6 +27,7 @@ import (
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
 	dbupstreamaccountbinding "github.com/Wei-Shaw/sub2api/ent/upstreamaccountbinding"
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -2669,8 +2670,24 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 
 	setClauses = append(setClauses, "updated_at = NOW()")
 
-	query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + " WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
+	whereClauses := []string{
+		"id = ANY($" + itoa(idx) + ")",
+		"deleted_at IS NULL",
+	}
+	query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + " WHERE " + joinClauses(whereClauses, " AND ")
 	args = append(args, pq.Array(ids))
+	if updates.RequireOpenAIOAuth {
+		// Lock every live target before validating it. The all-or-nothing CTE
+		// makes a concurrent platform/type transition result in zero updated
+		// rows rather than attaching an OAuth-only setting to part of the set.
+		expectedCountPlaceholder := "$" + itoa(idx+1)
+		query = "WITH bulk_targets AS MATERIALIZED (" +
+			"SELECT id, platform, type FROM accounts WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL FOR UPDATE" +
+			"), bulk_target_check AS (" +
+			"SELECT COUNT(*) = " + expectedCountPlaceholder + " AND COALESCE(BOOL_AND(platform = 'openai' AND type = 'oauth'), false) AS valid FROM bulk_targets" +
+			") " + query + " AND COALESCE((SELECT valid FROM bulk_target_check), false)"
+		args = append(args, uniqueAccountIDCount(ids))
+	}
 
 	baseCtx := ctx
 	contextTx := dbent.TxFromContext(ctx)
@@ -2699,6 +2716,12 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 	if err != nil {
 		return 0, err
 	}
+	if updates.RequireOpenAIOAuth && rows != int64(uniqueAccountIDCount(ids)) {
+		return 0, infraerrors.BadRequest(
+			"CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+			"codex_fingerprint_mode is only supported for OpenAI OAuth accounts",
+		)
+	}
 	if rows > 0 {
 		payload := map[string]any{"account_ids": ids}
 		if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
@@ -2723,6 +2746,14 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		}
 	}
 	return rows, nil
+}
+
+func uniqueAccountIDCount(ids []int64) int {
+	unique := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		unique[id] = struct{}{}
+	}
+	return len(unique)
 }
 
 // UpdateRateMultiplierPriorities atomically applies each multiplier-derived band to

@@ -122,7 +122,11 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 			headers.Set("conversation_id", sessionResolution.ConversationID)
 		}
 	}
-	if state := strings.TrimSpace(turnState); state != "" {
+	// Treat every caller-provided WS state as untrusted until it passes the
+	// same API-key/session/blob/account provenance gate as HTTP. This is a
+	// final defense for reconnect and passthrough paths that construct headers
+	// through different call chains.
+	if state := s.guardedOpenAIWSTurnState(c, account, turnState); state != "" {
 		headers.Set(openAIWSTurnStateHeader, state)
 	}
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
@@ -173,6 +177,10 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）。
 	// 覆盖所有 WS 模式（ctx_pool/dedicated/passthrough）的握手头。
 	account.ApplyHeaderOverrides(headers)
+	// 与 HTTP 出站保持一致：账号覆写可以改写 x-codex-beta-features，但原生
+	// compaction_trigger 已经是本轮启用 v2 的实锤，必须在覆写后重新补回。
+	// 否则首帧会建立一个未协商 v2 的 WS 连接，后续压缩只能被安全拒绝。
+	applyOpenAICodexBetaFeatures(c, account, headers)
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,
