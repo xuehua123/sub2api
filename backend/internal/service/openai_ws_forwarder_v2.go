@@ -127,6 +127,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		var legacySessionHash string
 		sessionHash, legacySessionHash = openAIWSSessionHashesFromID(promptCacheKey)
 		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
+	} else {
+		// This path historically passed nil to GenerateSessionHash and then
+		// used the already-parsed prompt_cache_key below.  Preserve that exact
+		// v0.1.177 fallback as one scoped bridge when session-id now wins.
+		attachOpenAIPreCanonicalSessionHashBridgeFromWSFallback(c, sessionHash, promptCacheKey)
 	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
 		turnState = s.loadOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash)

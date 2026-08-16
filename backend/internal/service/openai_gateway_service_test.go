@@ -379,6 +379,21 @@ func TestOpenAIGatewayService_GenerateSessionHash_Priority(t *testing.T) {
 	}
 }
 
+func TestOpenAIGatewayService_GenerateSessionHash_UsesCodexSessionIDAcrossBodyChanges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	c.Request.Header.Set("session-id", "codex-cli-session")
+
+	svc := &OpenAIGatewayService{}
+	first := svc.GenerateSessionHash(c, []byte(`{"input":"first turn"}`))
+	second := svc.GenerateSessionHash(c, []byte(`{"input":"later turn with different content"}`))
+
+	require.Equal(t, DeriveSessionHashFromSeed("codex-cli-session"), first)
+	require.Equal(t, first, second, "Codex session-id must win over content fallback across turns")
+}
+
 func TestOpenAIGatewayService_ClientSessionHeaderPriority(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -390,6 +405,7 @@ func TestOpenAIGatewayService_ClientSessionHeaderPriority(t *testing.T) {
 		name  string
 		value string
 	}{
+		{name: "session-id", value: "codex-cli-session"},
 		{name: "session_id", value: "generic-session"},
 		{name: "conversation_id", value: "generic-conversation"},
 		{name: openCodeSessionAffinityHeader, value: "opencode-affinity"},
@@ -3091,6 +3107,8 @@ func TestOpenAIBuildUpstreamRequestPassthroughAddsClientRequestIDFromContext(t *
 	c, _ := gin.CreateTestContext(rec)
 	ctx := context.WithValue(context.Background(), ctxkey.ClientRequestID, "client-passthrough-123")
 	c.Request = httptest.NewRequest(http.MethodPost, "/responses", bytes.NewReader([]byte(`{"model":"gpt-5"}`))).WithContext(ctx)
+	c.Request.Header.Set("session-id", "codex-session-A")
+	c.Request.Header.Set("session_id", "legacy-session-B")
 
 	svc := &OpenAIGatewayService{cfg: &config.Config{
 		Security: config.SecurityConfig{
@@ -3106,6 +3124,8 @@ func TestOpenAIBuildUpstreamRequestPassthroughAddsClientRequestIDFromContext(t *
 	req, err := svc.buildUpstreamRequestOpenAIPassthrough(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false)
 	require.NoError(t, err)
 	require.Equal(t, "client-passthrough-123", req.Header.Get("X-Client-Request-ID"))
+	require.Equal(t, "codex-session-A", req.Header.Get("session_id"))
+	require.Empty(t, req.Header.Get("session-id"))
 }
 
 func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
@@ -3116,6 +3136,8 @@ func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
 	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.144.1")
 	c.Request.Header.Set("X-Codex-Window-ID", "window-http")
 	c.Request.Header.Set("X-Codex-Installation-ID", "installation-http")
+	c.Request.Header.Set("session-id", "codex-session-A")
+	c.Request.Header.Set("session_id", "legacy-session-B")
 	c.Request.Header.Set("X-Test", "blocked")
 
 	body := []byte(`{"model":"gpt-5","input":"hello"}`)
@@ -3130,8 +3152,54 @@ func TestOpenAIBuildUpstreamRequestPreservesCodexIdentityHeaders(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "window-http", req.Header.Get("X-Codex-Window-ID"))
 	require.Equal(t, "installation-http", req.Header.Get("X-Codex-Installation-ID"))
+	require.Equal(t, "codex-session-A", req.Header.Get("session_id"))
+	require.Empty(t, req.Header.Get("session-id"))
 	require.Empty(t, req.Header.Get("X-Test"))
 	require.True(t, openai.EvaluateEngineFingerprint(req.Header, body, openai.DefaultEngineFingerprintSignals))
+}
+
+func TestOpenAIBuildUpstreamRequestCanonicalizesCodexSessionIDForOAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	newContext := func() *gin.Context {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader([]byte(`{"model":"gpt-5","input":"hello"}`)))
+		c.Request.Header.Set("session-id", "codex-session-A")
+		c.Request.Header.Set("session_id", "legacy-session-B")
+		c.Set("api_key", &APIKey{ID: 42})
+		return c
+	}
+	account := &Account{
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
+	}
+	svc := &OpenAIGatewayService{}
+	body := []byte(`{"model":"gpt-5","input":"hello"}`)
+	expected := isolateOpenAISessionID(42, "codex-session-A")
+
+	cHTTP := newContext()
+	reqHTTP, err := svc.buildUpstreamRequest(cHTTP.Request.Context(), cHTTP, account, body, "token", false, "", true)
+	require.NoError(t, err)
+	require.Equal(t, expected, reqHTTP.Header.Get("session_id"))
+	require.Empty(t, reqHTTP.Header.Get("session-id"))
+
+	cPassthrough := newContext()
+	reqPassthrough, err := svc.buildUpstreamRequestOpenAIPassthrough(cPassthrough.Request.Context(), cPassthrough, account, body, "token")
+	require.NoError(t, err)
+	require.Equal(t, expected, reqPassthrough.Header.Get("session_id"))
+	require.Empty(t, reqPassthrough.Header.Get("session-id"))
+}
+
+func TestResolveOpenAICompactSessionID_PrefersCodexSessionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	c.Request.Header.Set("session-id", "codex-session-A")
+	c.Request.Header.Set("session_id", "legacy-session-B")
+
+	require.Equal(t, "codex-session-A", resolveOpenAICompactSessionID(c))
 }
 
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {

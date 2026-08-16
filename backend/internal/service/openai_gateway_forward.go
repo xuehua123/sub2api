@@ -1149,6 +1149,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		}
 	}
 
+	clientSessionID := ""
+	clientConversationID := ""
+	if c != nil && c.Request != nil {
+		clientSessionID = extractClientSessionID(c.Request.Header)
+		clientConversationID = strings.TrimSpace(getHeaderRaw(c.Request.Header, "conversation_id"))
+	}
+
 	// Whitelist passthrough headers
 	for key, values := range c.Request.Header {
 		lowerKey := strings.ToLower(key)
@@ -1162,12 +1169,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站——异账号 blob 与本账号的（指纹收敛后）出站身份自相矛盾。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	// session-id/session_id are equivalent client inputs but must never coexist
+	// upstream: scheduling, provenance, HTTP and WS all use the hyphenated
+	// Codex spelling first, then emit the one legacy wire form expected by
+	// upstream APIs.
+	deleteHeaderAllForms(req.Header, "session-id")
+	deleteHeaderAllForms(req.Header, "session_id")
 	if account.Type == AccountTypeOAuth {
 		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// 清除客户端透传的 session 头，后续用隔离后的值重新设置，防止跨用户会话碰撞。
-		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		req.Header.Del("conversation_id")
-		req.Header.Del("session_id")
 
 		if compatMessagesBridge {
 			req.Header.Del("OpenAI-Beta")
@@ -1186,17 +1197,26 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
-		if promptCacheKey != "" {
-			isolated := isolateOpenAISessionID(apiKeyID, promptCacheKey)
+		if promptCacheKey != "" || clientSessionID != "" {
+			sessionSeed := promptCacheKey
+			if clientSessionID != "" {
+				sessionSeed = clientSessionID
+			}
+			isolated := isolateOpenAISessionID(apiKeyID, sessionSeed)
 			req.Header.Set("session_id", isolated)
-			if !compatMessagesBridge || clientConversationID != "" {
+			if promptCacheKey != "" && (!compatMessagesBridge || clientConversationID != "") {
 				req.Header.Set("conversation_id", isolated)
 			}
 		}
-	} else if isOpenAIResponsesCompactPath(c) {
-		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
-		// 避免 OpenAI 兼容网关按 SSE 返回（#3777 期望行为 4）。
-		req.Header.Set("accept", "application/json")
+	} else {
+		if clientSessionID != "" {
+			req.Header.Set("session_id", clientSessionID)
+		}
+		if isOpenAIResponsesCompactPath(c) {
+			// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
+			// 避免 OpenAI 兼容网关按 SSE 返回（#3777 期望行为 4）。
+			req.Header.Set("accept", "application/json")
+		}
 	}
 
 	// Apply custom User-Agent if configured

@@ -66,6 +66,59 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_JSON(t *testing.T) {
 	require.False(t, parsed.Multipart)
 }
 
+func TestOpenAIGatewayServiceBuildOpenAIImagesRequest_CanonicalizesCodexSessionID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, tt := range []struct {
+		name        string
+		headers     map[string]string
+		wantSession string
+	}{
+		{
+			name: "hyphenated Codex header wins over legacy underscore form",
+			headers: map[string]string{
+				"session-id": "codex-session",
+				"session_id": "legacy-session",
+			},
+			wantSession: "codex-session",
+		},
+		{
+			name: "hyphenated Codex header is forwarded when it is the only form",
+			headers: map[string]string{
+				"session-id": "codex-session",
+			},
+			wantSession: "codex-session",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, openAIImagesGenerationsEndpoint, bytes.NewReader([]byte(`{"model":"gpt-image-1","prompt":"cat"}`)))
+			for key, value := range tt.headers {
+				addHeaderRaw(req.Header, key, value)
+			}
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = req
+
+			upstream, err := (&OpenAIGatewayService{cfg: &config.Config{
+				Security: config.SecurityConfig{URLAllowlist: config.URLAllowlistConfig{Enabled: false}},
+			}}).buildOpenAIImagesRequest(
+				context.Background(),
+				c,
+				&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+				[]byte(`{"model":"gpt-image-1","prompt":"cat"}`),
+				"application/json",
+				"test-key",
+				openAIImagesGenerationsEndpoint,
+			)
+			require.NoError(t, err)
+			require.Equal(t, tt.wantSession, getHeaderRaw(upstream.Header, "session_id"))
+			for key := range upstream.Header {
+				require.NotEqual(t, "session-id", strings.ToLower(key), "upstream must contain only canonical session_id")
+			}
+		})
+	}
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

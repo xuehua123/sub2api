@@ -359,6 +359,11 @@ func normalizeOpenAICodexCompactReasoningEffort(body []byte, effectiveModel stri
 
 func resolveOpenAICompactSessionID(c *gin.Context) string {
 	if c != nil {
+		if c.Request != nil {
+			if sessionID := extractClientSessionID(c.Request.Header); sessionID != "" {
+				return sessionID
+			}
+		}
 		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
 			return sessionID
 		}

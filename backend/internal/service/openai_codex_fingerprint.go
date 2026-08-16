@@ -337,10 +337,10 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 // 优先取 session-id（连字符形式，Codex CLI 标准），回退到 session_id（下划线形式）。
 // 返回的值尚未被 isolateOpenAISessionID 改写，是客户端的真实标识。
 func extractClientSessionID(h http.Header) string {
-	if v := strings.TrimSpace(h.Get("session-id")); v != "" {
+	if v := strings.TrimSpace(getHeaderRaw(h, "session-id")); v != "" {
 		return v
 	}
-	return strings.TrimSpace(h.Get("session_id"))
+	return strings.TrimSpace(getHeaderRaw(h, "session_id"))
 }
 
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，

@@ -308,15 +308,28 @@ func (s *OpenAIGatewayService) loadOpenAIWSSessionTurnState(
 	storeCtx, cancel := newOpenAICodexTurnStateStoreContext(openAICodexTurnStateRequestContext(c))
 	defer cancel()
 
-	state, found := getOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, sessionHash)
-	if !found {
-		return ""
+	stateScopeHash := strings.TrimSpace(sessionHash)
+	state, found := getOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, stateScopeHash)
+	if !found && s.openAISessionHashReadOldFallbackEnabled() {
+		// A v0.1.177 slot keyed raw WS state by the old scheduler hash because
+		// it did not honor the hyphenated Codex session-id header.  Probe only
+		// the one deterministic old hash captured from this same request.  The
+		// lookup retains group/API-key/account scope and never scans Redis keys.
+		preCanonicalHash := openAIPreCanonicalSessionHashFromContext(storeCtx, stateScopeHash)
+		if preCanonicalHash == "" {
+			return ""
+		}
+		state, found = getOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, preCanonicalHash)
+		if !found {
+			return ""
+		}
+		stateScopeHash = preCanonicalHash
 	}
 	guarded := s.guardedOpenAIWSTurnStateWithContext(storeCtx, c, account, state)
 	if guarded == "" {
 		// The cache is not trusted authority. Drop values whose provenance is
 		// absent, expired, or no longer matches this exact owner.
-		deleteOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, sessionHash)
+		deleteOpenAIWSSessionTurnStateWithContext(storeCtx, stateStore, groupID, apiKeyID, accountID, stateScopeHash)
 	}
 	return guarded
 }

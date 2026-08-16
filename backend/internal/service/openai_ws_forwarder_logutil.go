@@ -65,7 +65,13 @@ func resolveOpenAIWSSessionHeaders(c *gin.Context, promptCacheKey string) openAI
 		ConversationSource: "none",
 	}
 	if c != nil && c.Request != nil {
-		if sessionID := strings.TrimSpace(c.Request.Header.Get("session_id")); sessionID != "" {
+		// Codex CLI sends the hyphenated standard header. Keep this order in
+		// sync with extractClientSessionID and GenerateSessionHash so upstream
+		// WS identity, sticky routing, and raw turn-state L2 use one session.
+		if sessionID := strings.TrimSpace(getHeaderRaw(c.Request.Header, "session-id")); sessionID != "" {
+			resolution.SessionID = sessionID
+			resolution.SessionSource = "header_session-id"
+		} else if sessionID := strings.TrimSpace(getHeaderRaw(c.Request.Header, "session_id")); sessionID != "" {
 			resolution.SessionID = sessionID
 			resolution.SessionSource = "header_session_id"
 		}

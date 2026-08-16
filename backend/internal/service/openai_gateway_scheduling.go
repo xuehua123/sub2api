@@ -28,6 +28,10 @@ const (
 )
 
 var explicitOpenAIHeaderSessionNames = []string{
+	// Codex CLI uses the hyphenated form. Keep it ahead of the legacy
+	// underscore spelling so sticky routing and Codex turn-state scopes share
+	// the same canonical client session identity.
+	"session-id",
 	"session_id",
 	"conversation_id",
 	openCodeSessionAffinityHeader,
@@ -43,6 +47,11 @@ var explicitOpenAIHeaderSessionNames = []string{
 func explicitOpenAIHeaderSessionID(c *gin.Context) string {
 	if c == nil {
 		return ""
+	}
+	if c.Request != nil {
+		if sessionID := extractClientSessionID(c.Request.Header); sessionID != "" {
+			return sessionID
+		}
 	}
 
 	for _, header := range explicitOpenAIHeaderSessionNames {
@@ -125,13 +134,17 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 
 	currentHash, legacyHash := deriveOpenAISessionHashes(sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
+	// Bridge only the one deterministic pre-session-id key that this exact
+	// request would have used in v0.1.177.  Images intentionally retain their
+	// old no-content-fallback behavior.
+	attachOpenAIPreCanonicalSessionHashBridge(c, currentHash, body, false)
 	return currentHash
 }
 
 // GenerateSessionHash generates a sticky-session hash for OpenAI requests.
 //
 // Priority:
-//  1. Header: session_id
+//  1. Header: session-id / session_id
 //  2. Header: conversation_id
 //  3. Header: x-session-affinity / x-session-id / x-opencode-session (OpenCode)
 //  4. Header: x-conversation-id (CodeBuddy)
@@ -164,6 +177,11 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 
 	currentHash, legacyHash := deriveOpenAISessionHashes(sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
+	// A v0.1.177 instance ignored the hyphenated Codex session-id header and
+	// selected one lower-priority known signal instead.  Retain that single
+	// hash in request context so sticky routing / WS recovery can make one
+	// scoped compatibility probe; no cache-key enumeration is permitted.
+	attachOpenAIPreCanonicalSessionHashBridge(c, currentHash, body, true)
 	return currentHash
 }
 
@@ -190,6 +208,12 @@ func grokStickyAffinitySeed(sessionID string, body []byte) string {
 func (s *OpenAIGatewayService) GenerateSessionHashWithFallback(c *gin.Context, body []byte, fallbackSeed string) string {
 	sessionHash := s.GenerateSessionHash(c, body)
 	if sessionHash != "" {
+		// Some endpoints (notably Alpha Search) historically used fallbackSeed
+		// only after every regular v0.1.177 source had failed. A canonical
+		// session-id can now make the primary hash non-empty first, so expose
+		// that one old fallback hash only when its former precedence remains
+		// intact. This is a scoped bridge, never a broad fallback lookup.
+		attachOpenAIPreCanonicalSessionHashBridgeFromFallbackSeed(c, sessionHash, body, fallbackSeed, true)
 		return sessionHash
 	}
 

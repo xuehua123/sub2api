@@ -1945,6 +1945,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		firstMessage,
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
+	// GenerateSessionHash may attach a deterministic compatibility hash to the
+	// request context. Carry that derived context into pricing and scheduling so
+	// the pre-session-id sticky bridge is visible before selecting an account.
+	ctx = c.Request.Context()
 	maxAccountSwitches := h.maxAccountSwitches
 	switchCount := 0
 	profitVetoCount := 0

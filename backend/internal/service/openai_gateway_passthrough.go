@@ -424,6 +424,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// 客户端回带的 x-codex-turn-state 若已知由其他账号铸造（failover 换号），
 	// 剥离后再出站（openai_codex_turn_state.go）。
 	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	clientSessionID := ""
+	clientConversationID := ""
+	if c != nil && c.Request != nil {
+		clientSessionID = extractClientSessionID(c.Request.Header)
+		clientConversationID = strings.TrimSpace(getHeaderRaw(c.Request.Header, "conversation_id"))
+	}
+	deleteHeaderAllForms(req.Header, "session-id")
+	deleteHeaderAllForms(req.Header, "session_id")
 
 	// 覆盖入站鉴权残留，并注入上游认证
 	req.Header.Del("authorization")
@@ -452,8 +460,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		}
 		apiKeyID := getAPIKeyIDFromContext(c)
 		// 先保存客户端原始值，再做 compact 补充，避免后续统一隔离时读到已处理的值。
-		clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
-		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if req.Header.Get("version") == "" {
@@ -481,11 +487,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if clientConversationID != "" {
 			req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, clientConversationID))
 		}
-	} else if isOpenAIResponsesCompactPath(c) {
-		// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
-		// unary JSON 协议，API-key 账号同样强制 Accept，避免上游按 SSE 返回
-		// （#3777 期望行为 4）。
-		req.Header.Set("accept", "application/json")
+	} else {
+		if clientSessionID != "" {
+			req.Header.Set("session_id", clientSessionID)
+		}
+		if isOpenAIResponsesCompactPath(c) {
+			// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
+			// unary JSON 协议，API-key 账号同样强制 Accept，避免上游按 SSE 返回
+			// （#3777 期望行为 4）。
+			req.Header.Set("accept", "application/json")
+		}
 	}
 	// Use the same attempt-local IDs that were applied to client_metadata in
 	// forwardOpenAIPassthrough. Ownership validation prevents a reused Gin

@@ -782,13 +782,27 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 			req.Header.Add(key, value)
 		}
 	}
-	for key, values := range c.Request.Header {
-		if !openaiPassthroughAllowedHeaders[strings.ToLower(key)] {
-			continue
+	// Keep the image path aligned with Responses routing: Codex's standard
+	// session-id wins over the legacy underscore spelling, and upstream sees
+	// exactly one canonical wire header. Do this outside the shared passthrough
+	// whitelist because that whitelist is also used by image-adjacent paths
+	// where a Codex session header must not be forwarded implicitly.
+	clientSessionID := ""
+	if c != nil && c.Request != nil {
+		clientSessionID = extractClientSessionID(c.Request.Header)
+		for key, values := range c.Request.Header {
+			if !openaiPassthroughAllowedHeaders[strings.ToLower(key)] {
+				continue
+			}
+			for _, value := range values {
+				req.Header.Add(key, value)
+			}
 		}
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
+	}
+	deleteHeaderAllForms(req.Header, "session-id")
+	deleteHeaderAllForms(req.Header, "session_id")
+	if clientSessionID != "" {
+		req.Header.Set("session_id", clientSessionID)
 	}
 	customUA := account.GetOpenAIUserAgent()
 	if customUA != "" {
