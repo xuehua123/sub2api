@@ -303,11 +303,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 	}
 
-	handshakeTurnState := strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+	handshakeTurnState := ""
+	if !lease.Reused() {
+		handshakeTurnState = strings.TrimSpace(lease.HandshakeHeader(openAIWSTurnStateHeader))
+	}
 	logOpenAIWSModeDebug(
-		"handshake account_id=%d conn_id=%s has_turn_state=%v turn_state_len=%d",
+		"handshake account_id=%d conn_id=%s reused=%v has_turn_state=%v turn_state_len=%d",
 		account.ID,
 		connID,
+		lease.Reused(),
 		handshakeTurnState != "",
 		len(handshakeTurnState),
 	)
@@ -805,10 +809,16 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		Stream:                        reqStream,
 		OpenAIWSMode:                  true,
 		UpstreamTerminalEvent:         upstreamTerminalEvent,
-		ResponseHeaders:               lease.HandshakeHeaders(),
-		Duration:                      time.Since(startTime),
-		FirstTokenMs:                  firstTokenMs,
-		terminalDelivered:             terminalDelivered,
+		ResponseHeaders: func() http.Header {
+			h := lease.HandshakeHeaders()
+			if lease.Reused() && h != nil {
+				h.Del(openAIWSTurnStateHeader)
+			}
+			return h
+		}(),
+		Duration:          time.Since(startTime),
+		FirstTokenMs:      firstTokenMs,
+		terminalDelivered: terminalDelivered,
 	}, nil
 }
 

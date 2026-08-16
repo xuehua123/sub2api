@@ -669,3 +669,74 @@ func TestBuildOpenAIWSHeaders_CarriesSessionBetaFeatures(t *testing.T) {
 	require.Empty(t, apiKeyHeaders.Get("x-codex-beta-features"),
 		"非 Codex 后端不注入")
 }
+
+type stubCodexTurnStateOriginStore struct {
+	data map[string]int64
+}
+
+func (s *stubCodexTurnStateOriginStore) SetTurnStateOrigin(_ context.Context, key string, accountID int64, _ time.Duration) error {
+	if s.data == nil {
+		s.data = make(map[string]int64)
+	}
+	s.data[key] = accountID
+	return nil
+}
+
+func (s *stubCodexTurnStateOriginStore) GetTurnStateOrigin(_ context.Context, key string) (int64, error) {
+	if s.data == nil {
+		return 0, nil
+	}
+	val, ok := s.data[key]
+	if !ok {
+		return 0, nil
+	}
+	return val, nil
+}
+
+type stubGatewayCacheWithOriginStore struct {
+	stubGatewayCache
+	stubCodexTurnStateOriginStore
+}
+
+func TestGuardOpenAICodexTurnStateEcho_RecoversFromRedisL2OnBlueGreenSwitch(t *testing.T) {
+	sharedStore := &stubGatewayCacheWithOriginStore{
+		stubCodexTurnStateOriginStore: stubCodexTurnStateOriginStore{data: make(map[string]int64)},
+	}
+
+	// 模拟 Blue 槽：处理第一轮请求并记录 turn-state 溯源
+	svcA := &OpenAIGatewayService{cache: sharedStore}
+	accountA := &Account{ID: 100}
+	cA, _ := newTurnStateTestContext(t, 1, "session-blue-green")
+
+	state := "valid-turn-state-blob"
+	key, ok := openAICodexTurnStateProvenanceKeyFor(cA, state)
+	require.True(t, ok)
+
+	require.True(t, svcA.noteOpenAICodexTurnStateOrigin(cA, accountA, state))
+	// 确保写入了 sharedStore
+	require.NoError(t, sharedStore.SetTurnStateOrigin(context.Background(), key.String(), accountA.ID, time.Hour))
+
+	// 模拟 Green 槽（全新实例/切换）：本地 L1 内存为空，但共享 L2 存储
+	svcB := &OpenAIGatewayService{cache: sharedStore}
+	cB, _ := newTurnStateTestContext(t, 1, "session-blue-green")
+	hB := http.Header{}
+	hB.Set("x-codex-turn-state", state)
+
+	// Green 槽校验：L1 未命中，但从 Redis L2 成功命中并放行
+	svcB.guardOpenAICodexTurnStateEcho(cB, accountA, hB)
+	require.Equal(t, state, hB.Get("x-codex-turn-state"), "蓝绿切换后应从 L2 Redis 恢复溯源放行")
+
+	// 验证已回填至 Green 槽的 L1 内存
+	raw, found := svcB.openaiCodexTurnStateOrigins.Load(key)
+	require.True(t, found, "应已热加载至本地 L1")
+	origin, ok := raw.(openAICodexTurnStateOrigin)
+	require.True(t, ok)
+	require.Equal(t, accountA.ID, origin.accountID)
+
+	// 验证不同账号请求（盗用该 blob）：即使 Redis 存在，账号不匹配仍被拦截
+	mismatchedAccount := &Account{ID: 200}
+	hMismatched := http.Header{}
+	hMismatched.Set("x-codex-turn-state", state)
+	svcB.guardOpenAICodexTurnStateEcho(cB, mismatchedAccount, hMismatched)
+	require.Empty(t, hMismatched.Get("x-codex-turn-state"), "账号不匹配必须 fail-closed 剥除")
+}

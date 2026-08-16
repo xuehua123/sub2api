@@ -1969,3 +1969,112 @@ func cloneMapStringAny(src map[string]any) map[string]any {
 	}
 	return dst
 }
+
+func TestOpenAIGatewayService_Forward_WSv2_ReusedConn_DoesNotLeakHandshakeTurnState(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+	wsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		responseHeaders := http.Header{}
+		responseHeaders.Set(openAIWSTurnStateHeader, "secret_blob_from_key_a")
+		conn, err := upgrader.Upgrade(w, r, responseHeaders)
+		if err != nil {
+			t.Errorf("upgrade failed: %v", err)
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		for {
+			var request map[string]any
+			if err := conn.ReadJSON(&request); err != nil {
+				return
+			}
+			_ = conn.WriteJSON(map[string]any{
+				"type": "response.created",
+				"response": map[string]any{
+					"id":    "resp_1",
+					"model": "gpt-5.1",
+				},
+			})
+			_ = conn.WriteJSON(map[string]any{
+				"type": "response.completed",
+				"response": map[string]any{
+					"id":    "resp_1",
+					"model": "gpt-5.1",
+					"usage": map[string]any{
+						"input_tokens":  5,
+						"output_tokens": 5,
+					},
+				},
+			})
+		}
+	}))
+	defer wsServer.Close()
+
+	cfg := &config.Config{}
+	cfg.Security.URLAllowlist.Enabled = false
+	cfg.Security.URLAllowlist.AllowInsecureHTTP = true
+	cfg.Gateway.OpenAIWS.Enabled = true
+	cfg.Gateway.OpenAIWS.OAuthEnabled = true
+	cfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	cfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 5
+
+	upstream := &httpUpstreamRecorder{}
+	cache := &stubGatewayCache{}
+	svc := &OpenAIGatewayService{
+		cfg:              cfg,
+		httpUpstream:     upstream,
+		cache:            cache,
+		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
+		toolCorrector:    NewCodexToolCorrector(),
+	}
+
+	account := &Account{
+		ID:          999,
+		Name:        "openai-ws-test",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeAPIKey,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 5,
+		Credentials: map[string]any{
+			"api_key":  "sk-test",
+			"base_url": wsServer.URL,
+		},
+		Extra: map[string]any{
+			"responses_websockets_v2_enabled": true,
+		},
+	}
+
+	// 第一次请求：Key A 建连
+	recA := httptest.NewRecorder()
+	cA, _ := gin.CreateTestContext(recA)
+	cA.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	groupID := int64(1001)
+	cA.Set("api_key", &APIKey{ID: 101, GroupID: &groupID})
+
+	bodyA := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello"}]}`)
+	resA, errA := svc.Forward(context.Background(), cA, account, bodyA)
+	require.NoError(t, errA)
+	require.NotNil(t, resA)
+	require.False(t, cA.GetBool(OpsOpenAIWSConnReusedKey))
+	require.Equal(t, "secret_blob_from_key_a", cA.Writer.Header().Get(openAIWSTurnStateHeader))
+
+	// 第二次请求：Key B 复用连接
+	recB := httptest.NewRecorder()
+	cB, _ := gin.CreateTestContext(recB)
+	cB.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
+	cB.Set("api_key", &APIKey{ID: 102, GroupID: &groupID})
+
+	bodyB := []byte(`{"model":"gpt-5.1","stream":false,"input":[{"type":"input_text","text":"hello again"}]}`)
+	resB, errB := svc.Forward(context.Background(), cB, account, bodyB)
+	require.NoError(t, errB)
+	require.NotNil(t, resB)
+	require.True(t, cB.GetBool(OpsOpenAIWSConnReusedKey))
+	// 验证 Key B 的响应头中没有泄漏 Key A 的 turn-state
+	require.Empty(t, cB.Writer.Header().Get(openAIWSTurnStateHeader))
+	if resB.ResponseHeaders != nil {
+		require.Empty(t, resB.ResponseHeaders.Get(openAIWSTurnStateHeader))
+	}
+}

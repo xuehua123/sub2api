@@ -208,3 +208,60 @@ func runCRSOpenAILongContextSync(t *testing.T, repo AccountRepository, source cr
 	require.NoError(t, err)
 	return result
 }
+
+func TestCRSSync_CrossTypeAccount_CleansObsoleteCodexFingerprintMode(t *testing.T) {
+	// 既有账号是 OpenAI OAuth，并且含有 codex_fingerprint_mode: "off"
+	existingOAuthAccount := &Account{
+		ID:       1,
+		Name:     "Existing OpenAI OAuth",
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"access_token": "old-token",
+		},
+		Extra: map[string]any{
+			"crs_account_id":             "crs-openai-1",
+			codexFingerprintModeExtraKey: "off",
+		},
+	}
+
+	repo := newCRSLongContextAccountRepo(existingOAuthAccount)
+
+	// CRS 远端变更该账号类型为 OpenAI API Key
+	result := runCRSOpenAILongContextSync(t, repo, crsOpenAILongContextSource{
+		collection: "openaiResponsesAccounts",
+		credentials: map[string]any{
+			"api_key": "sk-new-apikey",
+		},
+		extra: map[string]any{},
+	})
+
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "updated", result.Items[0].Action)
+
+	updatedAccount := repo.accounts["crs-openai-1"]
+	require.NotNil(t, updatedAccount)
+	require.Equal(t, PlatformOpenAI, updatedAccount.Platform)
+	require.Equal(t, AccountTypeAPIKey, updatedAccount.Type)
+	// 验证旧的 codex_fingerprint_mode 已被自动剔除，不会留存在非 OAuth 账号中
+	require.Nil(t, updatedAccount.Extra[codexFingerprintModeExtraKey])
+}
+
+func TestCRSSync_RejectsExplicitCodexFingerprintModeOnNonOAuth(t *testing.T) {
+	repo := newCRSLongContextAccountRepo()
+
+	// CRS 远端试图直接向 API Key 账号写入 codex_fingerprint_mode
+	result := runCRSOpenAILongContextSync(t, repo, crsOpenAILongContextSource{
+		collection: "openaiResponsesAccounts",
+		credentials: map[string]any{
+			"api_key": "sk-new-apikey",
+		},
+		extra: map[string]any{
+			codexFingerprintModeExtraKey: "off",
+		},
+	})
+
+	require.Len(t, result.Items, 1)
+	require.Equal(t, "failed", result.Items[0].Action)
+	require.Contains(t, result.Items[0].Error, "codex_fingerprint_mode is only supported for OpenAI OAuth accounts")
+}

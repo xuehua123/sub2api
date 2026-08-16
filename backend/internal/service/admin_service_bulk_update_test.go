@@ -72,6 +72,18 @@ func (s *accountRepoStubForBulkUpdate) Update(_ context.Context, account *Accoun
 	return s.updateErr
 }
 
+func (s *accountRepoStubForBulkUpdate) UpdateExtra(_ context.Context, id int64, updates map[string]any) error {
+	if s.getByIDAccounts != nil && s.getByIDAccounts[id] != nil {
+		if s.getByIDAccounts[id].Extra == nil {
+			s.getByIDAccounts[id].Extra = make(map[string]any)
+		}
+		for k, v := range updates {
+			s.getByIDAccounts[id].Extra[k] = v
+		}
+	}
+	return nil
+}
+
 func (s *accountRepoStubForBulkUpdate) BindGroups(_ context.Context, accountID int64, groupIDs []int64) error {
 	s.bindGroupsCalls = append(s.bindGroupsCalls, accountID)
 	if s.bindGroupsByAccount == nil {
@@ -505,4 +517,47 @@ func TestAdminServiceBulkUpdateAccounts_CodexFingerprintModeUpdatesEligibleTarge
 	require.Equal(t, 2, result.Success)
 	require.Equal(t, []int64{1, 2}, repo.bulkUpdateIDs)
 	require.Equal(t, "off", repo.bulkUpdatePayload.Extra[codexFingerprintModeExtraKey])
+}
+
+func TestAdminServiceUpdateAccountExtra_CodexFingerprintMode(t *testing.T) {
+	t.Run("allows_openai_oauth_account", func(t *testing.T) {
+		repo := &accountRepoStubForBulkUpdate{
+			getByIDAccounts: map[int64]*Account{
+				10: {ID: 10, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			},
+		}
+		svc := &adminServiceImpl{accountRepo: repo}
+		err := svc.UpdateAccountExtra(context.Background(), 10, map[string]any{
+			codexFingerprintModeExtraKey: "device",
+		})
+		require.NoError(t, err)
+	})
+
+	t.Run("rejects_non_oauth_account", func(t *testing.T) {
+		repo := &accountRepoStubForBulkUpdate{
+			getByIDAccounts: map[int64]*Account{
+				11: {ID: 11, Platform: PlatformOpenAI, Type: AccountTypeAPIKey},
+			},
+		}
+		svc := &adminServiceImpl{accountRepo: repo}
+		err := svc.UpdateAccountExtra(context.Background(), 11, map[string]any{
+			codexFingerprintModeExtraKey: "device",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "codex_fingerprint_mode is only supported for OpenAI OAuth accounts")
+	})
+
+	t.Run("rejects_invalid_mode_value", func(t *testing.T) {
+		repo := &accountRepoStubForBulkUpdate{
+			getByIDAccounts: map[int64]*Account{
+				10: {ID: 10, Platform: PlatformOpenAI, Type: AccountTypeOAuth},
+			},
+		}
+		svc := &adminServiceImpl{accountRepo: repo}
+		err := svc.UpdateAccountExtra(context.Background(), 10, map[string]any{
+			codexFingerprintModeExtraKey: "invalid_mode",
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "codex_fingerprint_mode must be one of")
+	})
 }

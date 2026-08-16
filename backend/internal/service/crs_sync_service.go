@@ -364,10 +364,12 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			result.Items = append(result.Items, item)
 			continue
 		}
+		var existingExtra map[string]any
 		if existing != nil {
-			extra = mergeMap(existing.Extra, extra)
+			existingExtra = existing.Extra
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
+		extra = sanitizeSyncedAccountExtraForTargetType(PlatformAnthropic, targetType, existingExtra, extra)
 		stripRetiredCRSAccountState(credentials, extra)
 		reconcileCRSOllamaCloudUsageExtra(existing, PlatformAnthropic, targetType, credentials, extra)
 		if existing == nil {
@@ -500,10 +502,12 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			result.Items = append(result.Items, item)
 			continue
 		}
+		var existingExtra map[string]any
 		if existing != nil {
-			extra = mergeMap(existing.Extra, extra)
+			existingExtra = existing.Extra
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
+		extra = sanitizeSyncedAccountExtraForTargetType(PlatformAnthropic, AccountTypeAPIKey, existingExtra, extra)
 		stripRetiredCRSAccountState(credentials, extra)
 		reconcileCRSOllamaCloudUsageExtra(existing, PlatformAnthropic, AccountTypeAPIKey, credentials, extra)
 		if existing == nil {
@@ -648,7 +652,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		if existing != nil {
 			existingExtra = existing.Extra
 		}
-		extra, err = mergeCRSOpenAILongContextBillingExtra(existingExtra, extra)
+		extra, err = mergeCRSOpenAILongContextBillingExtra(PlatformOpenAI, AccountTypeOAuth, existingExtra, extra)
 		if err != nil {
 			item.Action = "failed"
 			item.Error = err.Error()
@@ -799,7 +803,7 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 		if existing != nil {
 			existingExtra = existing.Extra
 		}
-		extra, err = mergeCRSOpenAILongContextBillingExtra(existingExtra, extra)
+		extra, err = mergeCRSOpenAILongContextBillingExtra(PlatformOpenAI, AccountTypeAPIKey, existingExtra, extra)
 		if err != nil {
 			item.Action = "failed"
 			item.Error = err.Error()
@@ -936,10 +940,12 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			result.Items = append(result.Items, item)
 			continue
 		}
+		var existingExtra map[string]any
 		if existing != nil {
-			extra = mergeMap(existing.Extra, extra)
+			existingExtra = existing.Extra
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
+		extra = sanitizeSyncedAccountExtraForTargetType(PlatformGemini, AccountTypeOAuth, existingExtra, extra)
 		stripRetiredCRSAccountState(credentials, extra)
 		reconcileCRSOllamaCloudUsageExtra(existing, PlatformGemini, AccountTypeOAuth, credentials, extra)
 		if existing == nil {
@@ -1066,10 +1072,12 @@ func (s *CRSSyncService) SyncFromCRS(ctx context.Context, input SyncFromCRSInput
 			result.Items = append(result.Items, item)
 			continue
 		}
+		var existingExtra map[string]any
 		if existing != nil {
-			extra = mergeMap(existing.Extra, extra)
+			existingExtra = existing.Extra
 			credentials = mergeMap(existing.Credentials, credentials)
 		}
+		extra = sanitizeSyncedAccountExtraForTargetType(PlatformGemini, AccountTypeAPIKey, existingExtra, extra)
 		stripRetiredCRSAccountState(credentials, extra)
 		reconcileCRSOllamaCloudUsageExtra(existing, PlatformGemini, AccountTypeAPIKey, credentials, extra)
 		if existing == nil {
@@ -1184,8 +1192,24 @@ func reconcileCRSOllamaCloudUsageExtra(
 		}
 	}
 }
-func mergeCRSOpenAILongContextBillingExtra(existing, updates map[string]any) (map[string]any, error) {
-	return normalizeOpenAILongContextBillingExtra(PlatformOpenAI, mergeMap(existing, updates))
+
+// sanitizeSyncedAccountExtraForTargetType cleans up obsolete OAuth-specific keys
+// inherited from an existing account when the target platform or type is no longer
+// OpenAI OAuth. If the incoming payload itself explicitly contains the invalid key,
+// ValidateCodexFingerprintModeExtraForAccount will properly reject it at persistence.
+func sanitizeSyncedAccountExtraForTargetType(platform, accountType string, existingExtra, incomingExtra map[string]any) map[string]any {
+	merged := mergeMap(existingExtra, incomingExtra)
+	if platform != PlatformOpenAI || accountType != AccountTypeOAuth {
+		if incomingExtra == nil || incomingExtra[codexFingerprintModeExtraKey] == nil {
+			delete(merged, codexFingerprintModeExtraKey)
+		}
+	}
+	return merged
+}
+
+func mergeCRSOpenAILongContextBillingExtra(platform, accountType string, existing, updates map[string]any) (map[string]any, error) {
+	merged := sanitizeSyncedAccountExtraForTargetType(platform, accountType, existing, updates)
+	return normalizeOpenAILongContextBillingExtra(platform, merged)
 }
 
 // createSyncedAccount and updateSyncedAccount are the single persistence

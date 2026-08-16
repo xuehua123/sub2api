@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -29,9 +31,30 @@ type openAICodexTurnStateProvenanceKey struct {
 	stateHash   [sha256.Size]byte
 }
 
+func (k openAICodexTurnStateProvenanceKey) String() string {
+	return fmt.Sprintf("%d:%x:%x", k.apiKeyID, k.sessionHash, k.stateHash)
+}
+
 type openAICodexTurnStateOrigin struct {
 	accountID int64
 	expiresAt time.Time
+}
+
+// CodexTurnStateOriginStore provides shared L2 verification across slots and
+// server instances for x-codex-turn-state origins.
+type CodexTurnStateOriginStore interface {
+	SetTurnStateOrigin(ctx context.Context, key string, accountID int64, ttl time.Duration) error
+	GetTurnStateOrigin(ctx context.Context, key string) (int64, error)
+}
+
+func (s *OpenAIGatewayService) getCodexTurnStateStore() CodexTurnStateOriginStore {
+	if s == nil {
+		return nil
+	}
+	if store, ok := s.cache.(CodexTurnStateOriginStore); ok {
+		return store
+	}
+	return nil
 }
 
 // openAICodexTurnStateProvenanceKeyFor 生成不含原文的归属键。客户端会话
@@ -150,11 +173,20 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateOrigin(c *gin.Context, ac
 	if !ok {
 		return false
 	}
+	ttl := s.openAIWSSessionStickyTTL()
 	s.openaiCodexTurnStateOrigins.Store(key, openAICodexTurnStateOrigin{
 		accountID: account.ID,
-		expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
+		expiresAt: time.Now().Add(ttl),
 	})
 	s.sweepOpenAICodexTurnStateOrigins()
+
+	if store := s.getCodexTurnStateStore(); store != nil {
+		go func(st CodexTurnStateOriginStore, keyStr string, accID int64, t time.Duration) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = st.SetTurnStateOrigin(ctx, keyStr, accID, t)
+		}(store, key.String(), account.ID, ttl)
+	}
 	return true
 }
 
@@ -261,25 +293,45 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 		h.Del(openAICodexTurnStateHeader)
 		return
 	}
-	raw, ok := s.openaiCodexTurnStateOrigins.Load(key)
-	if !ok {
-		h.Del(openAICodexTurnStateHeader)
-		return
-	}
-	origin, ok := raw.(openAICodexTurnStateOrigin)
-	if !ok {
+
+	// 1. Check L1 in-memory map first (zero latency)
+	if raw, ok := s.openaiCodexTurnStateOrigins.Load(key); ok {
+		origin, ok := raw.(openAICodexTurnStateOrigin)
+		if ok && (origin.expiresAt.IsZero() || time.Now().Before(origin.expiresAt)) {
+			if origin.accountID != account.ID {
+				h.Del(openAICodexTurnStateHeader)
+			}
+			return
+		}
 		s.openaiCodexTurnStateOrigins.Delete(key)
-		h.Del(openAICodexTurnStateHeader)
-		return
 	}
-	if !origin.expiresAt.IsZero() && time.Now().After(origin.expiresAt) {
-		s.openaiCodexTurnStateOrigins.Delete(key)
-		h.Del(openAICodexTurnStateHeader)
-		return
+
+	// 2. Check L2 Redis origin store (e.g. across blue-green slot switch / restart)
+	if store := s.getCodexTurnStateStore(); store != nil {
+		reqCtx := context.Background()
+		if c != nil && c.Request != nil && c.Request.Context() != nil {
+			reqCtx = c.Request.Context()
+		}
+		checkCtx, cancel := context.WithTimeout(reqCtx, 1500*time.Millisecond)
+		defer cancel()
+		accountID, err := store.GetTurnStateOrigin(checkCtx, key.String())
+		if err == nil && accountID > 0 {
+			if accountID == account.ID {
+				// Warm up L1 memory cache for subsequent turns
+				s.openaiCodexTurnStateOrigins.Store(key, openAICodexTurnStateOrigin{
+					accountID: account.ID,
+					expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
+				})
+				return
+			}
+			// Account mismatch in shared storage: strip header
+			h.Del(openAICodexTurnStateHeader)
+			return
+		}
 	}
-	if origin.accountID != account.ID {
-		h.Del(openAICodexTurnStateHeader)
-	}
+
+	// 3. Fail-closed if origin cannot be verified
+	h.Del(openAICodexTurnStateHeader)
 }
 
 // sweepOpenAICodexTurnStateOrigins 机会式清扫过期溯源记录：每 256 次写入

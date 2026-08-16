@@ -130,6 +130,27 @@ func (c *gatewayCache) ReleaseGrokVideoBilled(ctx context.Context, key string) e
 // Compile-time assertion: gatewayCache must implement CyberSessionBlockStore.
 var _ service.CyberSessionBlockStore = (*gatewayCache)(nil)
 var _ service.LiveCallStore = (*gatewayCache)(nil)
+var _ service.CodexTurnStateOriginStore = (*gatewayCache)(nil)
+
+const codexTurnStateOriginPrefix = "codex:turn_origin:"
+
+func (c *gatewayCache) SetTurnStateOrigin(ctx context.Context, key string, accountID int64, ttl time.Duration) error {
+	if strings.TrimSpace(key) == "" || accountID <= 0 {
+		return nil
+	}
+	return c.rdb.Set(ctx, codexTurnStateOriginPrefix+key, accountID, ttl).Err()
+}
+
+func (c *gatewayCache) GetTurnStateOrigin(ctx context.Context, key string) (int64, error) {
+	if strings.TrimSpace(key) == "" {
+		return 0, redis.Nil
+	}
+	val, err := c.rdb.Get(ctx, codexTurnStateOriginPrefix+key).Int64()
+	if err != nil {
+		return 0, err
+	}
+	return val, nil
+}
 
 const cyberSessionBlockPrefix = "cyber_session_block:"
 

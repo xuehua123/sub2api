@@ -2467,9 +2467,14 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 			client = tx.Client()
 		}
 	}
+	_, hasCodexFingerprint := updates["codex_fingerprint_mode"]
+	query := "UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL"
+	if hasCodexFingerprint {
+		query += " AND platform = 'openai' AND type = 'oauth'"
+	}
 	result, err := client.ExecContext(
 		ctx,
-		"UPDATE accounts SET extra = COALESCE(extra, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL",
+		query,
 		string(payload), id,
 	)
 
@@ -2482,6 +2487,15 @@ func (r *accountRepository) UpdateExtra(ctx context.Context, id int64, updates m
 		return err
 	}
 	if affected == 0 {
+		if hasCodexFingerprint {
+			exists, _ := client.Account.Query().Where(dbaccount.IDEQ(id), dbaccount.DeletedAtIsNil()).Exist(ctx)
+			if exists {
+				return infraerrors.BadRequest(
+					"CODEX_FINGERPRINT_MODE_TARGET_INVALID",
+					"codex_fingerprint_mode is only supported for OpenAI OAuth accounts",
+				)
+			}
+		}
 		return service.ErrAccountNotFound
 	}
 	if durableSchedulerChange {
