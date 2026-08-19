@@ -15,7 +15,8 @@ describe('CreateAccountModal Grok account types', () => {
       /newPlatform === 'gemini'[\s\S]*?'https:\/\/generativelanguage\.googleapis\.com'[\s\S]*?newPlatform === 'grok'[\s\S]*?'https:\/\/api\.x\.ai\/v1'[\s\S]*?'https:\/\/api\.anthropic\.com'/
     )
     expect(source).toContain("form.platform === 'grok'")
-    expect(source).toContain("? 'xai-...'")
+    expect(source).toContain("case 'grok':")
+    expect(source).toContain("return 'xai-...'")
   })
 
   it('keeps the complete Grok OAuth flow wired into the account modal', () => {

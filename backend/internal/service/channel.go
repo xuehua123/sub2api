@@ -97,15 +97,29 @@ type ChannelModelPricing struct {
 	CacheWritePrice *float64    `json:"cache_write_price"`
 	// Display-only cache creation breakdown. These fields are projected from
 	// the effective billing card and are never persisted by repositories.
-	CacheWrite5mPrice *float64          `json:"-"`
-	CacheWrite1hPrice *float64          `json:"-"`
-	CacheReadPrice    *float64          `json:"cache_read_price"`
-	ImageInputPrice   *float64          `json:"image_input_price"`
-	ImageOutputPrice  *float64          `json:"image_output_price"`
-	PerRequestPrice   *float64          `json:"per_request_price"`
-	Intervals         []PricingInterval `json:"intervals"`
-	CreatedAt         time.Time         `json:"created_at,omitempty"`
-	UpdatedAt         time.Time         `json:"updated_at,omitempty"`
+	CacheWrite5mPrice *float64            `json:"-"`
+	CacheWrite1hPrice *float64            `json:"-"`
+	CacheReadPrice    *float64            `json:"cache_read_price"`
+	ImageInputPrice   *float64            `json:"image_input_price"`
+	ImageOutputPrice  *float64            `json:"image_output_price"`
+	PerRequestPrice   *float64            `json:"per_request_price"`
+	Intervals         []PricingInterval   `json:"intervals"`
+	TimePricing       *ChannelTimePricing `json:"time_pricing,omitempty"`
+	CreatedAt         time.Time           `json:"created_at,omitempty"`
+	UpdatedAt         time.Time           `json:"updated_at,omitempty"`
+}
+
+// ChannelTimePricing 渠道模型定价的分时倍率配置。
+type ChannelTimePricing struct {
+	Timezone string                     `json:"timezone"`
+	Periods  []ChannelTimePricingPeriod `json:"periods"`
+}
+
+// ChannelTimePricingPeriod 是秒级的左闭右开分时倍率区间，并兼容历史 HH:mm 数据。
+type ChannelTimePricingPeriod struct {
+	StartTime  string  `json:"start_time"`
+	EndTime    string  `json:"end_time"`
+	Multiplier float64 `json:"multiplier"`
 }
 
 // PricingInterval 定价区间（token 区间 / 按次分层 / 图片分辨率分层）
@@ -202,6 +216,12 @@ func (p ChannelModelPricing) Clone() ChannelModelPricing {
 	if p.Intervals != nil {
 		cp.Intervals = make([]PricingInterval, len(p.Intervals))
 		copy(cp.Intervals, p.Intervals)
+	}
+	if p.TimePricing != nil {
+		cp.TimePricing = &ChannelTimePricing{Timezone: p.TimePricing.Timezone}
+		if p.TimePricing.Periods != nil {
+			cp.TimePricing.Periods = append([]ChannelTimePricingPeriod(nil), p.TimePricing.Periods...)
+		}
 	}
 	return cp
 }

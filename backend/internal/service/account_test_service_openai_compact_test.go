@@ -284,7 +284,10 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 			"chatgpt_account_id": "chatgpt-acc",
 		},
 		// 收敛是显式 opt-in（#5610），这里显式开启以验证探测身份与真实流量同构。
-		Extra: map[string]any{"codex_fingerprint_mode": "session"},
+		Extra: map[string]any{
+			"codex_fingerprint_mode":     "session",
+			codexFingerprintSeedExtraKey: testCodexFingerprintSeed,
+		},
 	}
 	repo := &snapshotUpdateAccountRepo{
 		stubOpenAIAccountRepo: stubOpenAIAccountRepo{accounts: []Account{account}},
@@ -305,10 +308,12 @@ func TestAccountTestService_TestAccountConnection_OpenAICompactProbeIdentityMatc
 
 	// 显式 session 收敛模式仍按 API Key 隔离会话；此管理探测没有 API Key，
 	// 因而应使用 apiKeyID=0 的同一稳定派生值，而不是 full 模式的账号级会话值。
-	converged := resolveSessionFingerprintSessionID(&account, 0)
+	seed, ok := codexFingerprintSeed(account.Extra)
+	require.True(t, ok)
+	converged := resolveSessionFingerprintSessionID(seed, 0)
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session-id"))
 	require.Equal(t, converged, upstream.lastReq.Header.Get("session_id"))
-	require.Equal(t, resolveConvergedInstallationID(&account), upstream.lastReq.Header.Get("x-codex-installation-id"),
+	require.Equal(t, resolveConvergedInstallationID(&account, seed), upstream.lastReq.Header.Get("x-codex-installation-id"),
 		"真实 Codex 每个请求必带 installation-id，探测不得缺失")
 	require.NotContains(t, upstream.lastReq.Header.Get("session-id"), "probe_compact",
 		"探测标识不得是可被上游一眼识别的字面量")

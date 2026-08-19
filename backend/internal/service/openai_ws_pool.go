@@ -77,8 +77,13 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
-	betaFeatures     string
-	codexFingerprint string
+	betaFeatures        string
+	codexInstallationID string
+	sessionIDHyphen     string
+	sessionIDUnderscore string
+	threadID            string
+	clientRequestID     string
+	codexWindowID       string
 }
 
 type openAIWSConnLease struct {
@@ -856,7 +861,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers)
+	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1016,37 +1021,39 @@ retryAcquire:
 			p.ensureTargetIdleAsync(accountID)
 			return lease, nil
 		}
-		for _, conn := range ap.conns {
-			if conn == nil || conn == best || !conn.matchesHandshakeCompatibility(compatibility) || !conn.matchesRoutingAffinity(routingAffinity) {
-				continue
-			}
-			if conn.tryAcquire() {
-				connPick := time.Since(pickStartedAt)
-				p.recordConnPickDuration(connPick)
-				ap.mu.Unlock()
-				closeOpenAIWSConns(evicted)
-				if p.shouldHealthCheckConn(conn) {
-					if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-						conn.close()
-						p.evictConn(accountID, conn.id)
-						if retry < 1 {
-							return p.acquire(ctx, req, retry+1)
-						}
-						return nil, err
-					}
+		if routingAffinity == "" || len(ap.conns)+ap.creating >= effectiveMaxConns {
+			for _, conn := range ap.conns {
+				if conn == nil || conn == best || !conn.matchesHandshakeCompatibility(compatibility) {
+					continue
 				}
-				lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
-				p.metrics.acquireReuseTotal.Add(1)
-				p.recordLastSuccessfulAcquire(accountID, acquireGeneration, req)
-				p.ensureTargetIdleAsync(accountID)
-				return lease, nil
+				if conn.tryAcquire() {
+					connPick := time.Since(pickStartedAt)
+					p.recordConnPickDuration(connPick)
+					ap.mu.Unlock()
+					closeOpenAIWSConns(evicted)
+					if p.shouldHealthCheckConn(conn) {
+						if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+							conn.close()
+							p.evictConn(accountID, conn.id)
+							if retry < 1 {
+								return p.acquire(ctx, req, retry+1)
+							}
+							return nil, err
+						}
+					}
+					lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
+					p.metrics.acquireReuseTotal.Add(1)
+					p.recordLastSuccessfulAcquire(accountID, acquireGeneration, req)
+					p.ensureTargetIdleAsync(accountID)
+					return lease, nil
+				}
 			}
 		}
 	}
 
 	if !req.ForceNewConn && len(ap.conns)+ap.creating >= effectiveMaxConns {
 		affine := p.pickLeastBusyConnWithRoutingAffinityLocked(ap, compatibility, routingAffinity)
-		if idle := p.pickOldestIdleConnWithoutHandshakeCompatibilityOrRoutingAffinityLocked(ap, compatibility, routingAffinity); idle != nil {
+		if idle := p.pickOldestIdleConnWithoutHandshakeCompatibilityLocked(ap, compatibility); idle != nil {
 			delete(ap.conns, idle.id)
 			evicted = append(evicted, idle)
 			p.metrics.scaleDownTotal.Add(1)
@@ -1242,10 +1249,9 @@ func (p *openAIWSConnPool) pickOldestIdleConnLocked(ap *openAIWSAccountPool) *op
 	return oldest
 }
 
-func (p *openAIWSConnPool) pickOldestIdleConnWithoutHandshakeCompatibilityOrRoutingAffinityLocked(
+func (p *openAIWSConnPool) pickOldestIdleConnWithoutHandshakeCompatibilityLocked(
 	ap *openAIWSAccountPool,
 	compatibility openAIWSHandshakeCompatibilityKey,
-	routingAffinity string,
 ) *openAIWSConn {
 	if ap == nil || len(ap.conns) == 0 {
 		return nil
@@ -1253,7 +1259,7 @@ func (p *openAIWSConnPool) pickOldestIdleConnWithoutHandshakeCompatibilityOrRout
 	var oldest *openAIWSConn
 	for _, conn := range ap.conns {
 		if conn == nil ||
-			(conn.matchesHandshakeCompatibility(compatibility) && conn.matchesRoutingAffinity(routingAffinity)) ||
+			conn.matchesHandshakeCompatibility(compatibility) ||
 			conn.isLeased() || conn.waiters.Load() > 0 || p.isConnPinnedLocked(ap, conn.id) {
 			continue
 		}
@@ -1801,7 +1807,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	}
 	id := p.nextConnID(req.Account.ID)
 	pooledConn := newOpenAIWSConn(id, req.Account.ID, conn, handshakeHeaders)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Account, req.Headers)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	return pooledConn, nil
 }
@@ -1984,7 +1990,7 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
 		stringsTrim(a.ProxyURL) == stringsTrim(b.ProxyURL) &&
-		normalizeOpenAIWSHandshakeCompatibility(a.Headers) == normalizeOpenAIWSHandshakeCompatibility(b.Headers)
+		normalizeOpenAIWSHandshakeCompatibility(a.Account, a.Headers) == normalizeOpenAIWSHandshakeCompatibility(b.Account, b.Headers)
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2012,41 +2018,38 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	return strings.Join(normalized, ",")
 }
 
-func normalizeOpenAIWSHandshakeCompatibility(headers http.Header) openAIWSHandshakeCompatibilityKey {
-	return openAIWSHandshakeCompatibilityKey{
-		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
-		codexFingerprint: normalizeOpenAIWSCodexFingerprint(headers),
+func normalizeOpenAIWSHandshakeCompatibility(account *Account, headers http.Header) openAIWSHandshakeCompatibilityKey {
+	key := openAIWSHandshakeCompatibilityKey{
+		betaFeatures: normalizeOpenAIWSBetaFeatures(headers),
 	}
+	mode := activeCodexFingerprintMode(account)
+	if mode == codexFingerprintOff {
+		return key
+	}
+	key.codexInstallationID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-installation-id")
+	if mode == codexFingerprintDevice {
+		return key
+	}
+	key.sessionIDHyphen = normalizeOpenAIWSStableIdentityHeader(headers, "session-id")
+	key.sessionIDUnderscore = normalizeOpenAIWSStableIdentityHeader(headers, "session_id")
+	key.threadID = normalizeOpenAIWSStableIdentityHeader(headers, "thread-id")
+	key.clientRequestID = normalizeOpenAIWSStableIdentityHeader(headers, "x-client-request-id")
+	key.codexWindowID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-window-id")
+	return key
 }
 
-// normalizeOpenAIWSCodexFingerprint keeps pooled connections with different
-// OAuth thread/session identities from being reused for one another. The
-// values are intentionally limited to handshake fingerprint fields; routing
-// hints remain a separate soft affinity signal.
-func normalizeOpenAIWSCodexFingerprint(headers http.Header) string {
-	if headers == nil {
-		return ""
+func activeCodexFingerprintMode(account *Account) codexFingerprintMode {
+	if account == nil || account.GetCodexFingerprintMode() == codexFingerprintOff {
+		return codexFingerprintOff
 	}
-	// session_id is also used by ordinary API-key requests for sticky
-	// affinity. Only treat the connection as fingerprint-sensitive when a
-	// Codex-specific identity marker is present; otherwise API-key sessions
-	// must continue to share the normal pool connection.
-	installationID := openAIWSHeaderValueFold(headers, "x-codex-installation-id")
-	windowID := openAIWSHeaderValueFold(headers, "x-codex-window-id")
-	threadID := openAIWSHeaderValueFold(headers, "thread-id")
-	turnMetadata := openAIWSHeaderValueFold(headers, "x-codex-turn-metadata")
-	if installationID == "" && windowID == "" && threadID == "" && turnMetadata == "" {
-		return ""
+	if _, ok := codexFingerprintSeed(account.Extra); !ok {
+		return codexFingerprintOff
 	}
-	parts := []string{
-		installationID,
-		openAIWSHeaderValueFold(headers, "session-id"),
-		openAIWSHeaderValueFold(headers, "session_id"),
-		threadID,
-		openAIWSHeaderValueFold(headers, "x-client-request-id"),
-		windowID,
-	}
-	return strings.Join(parts, "\x00")
+	return account.GetCodexFingerprintMode()
+}
+
+func normalizeOpenAIWSStableIdentityHeader(headers http.Header, name string) string {
+	return openAIWSHeaderValueFold(headers, name)
 }
 
 // openAIWSHeaderValueFold reads the first non-empty value for a header while

@@ -62,23 +62,6 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
-	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
-	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
-	_, hasTools := payload["tools"]
-	debugEnabled := isOpenAIWSModeDebugEnabled()
-	payloadBytes := -1
-	resolvePayloadBytes := func() int {
-		if payloadBytes >= 0 {
-			return payloadBytes
-		}
-		payloadBytes = len(payloadAsJSONBytes(payload))
-		return payloadBytes
-	}
-	streamValue := "-"
-	if raw, ok := payload["stream"]; ok {
-		streamValue = normalizeOpenAIWSLogValue(strings.TrimSpace(fmt.Sprintf("%v", raw)))
-	}
 	turnState := ""
 	turnMetadata := ""
 	if c != nil && c.Request != nil {
@@ -96,6 +79,23 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				return nil, fmt.Errorf("apply OpenAI Codex fingerprint metadata to websocket payload")
 			}
 		}
+	}
+	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
+	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
+	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
+	_, hasTools := payload["tools"]
+	debugEnabled := isOpenAIWSModeDebugEnabled()
+	payloadBytes := -1
+	resolvePayloadBytes := func() int {
+		if payloadBytes >= 0 {
+			return payloadBytes
+		}
+		payloadBytes = len(payloadAsJSONBytes(payload))
+		return payloadBytes
+	}
+	streamValue := "-"
+	if raw, ok := payload["stream"]; ok {
+		streamValue = normalizeOpenAIWSLogValue(strings.TrimSpace(fmt.Sprintf("%v", raw)))
 	}
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {

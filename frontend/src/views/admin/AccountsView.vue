@@ -3078,13 +3078,20 @@ onMounted(async () => {
   applyRouteFocus()
   await load()
   if (!isViewActive) return
-  try {
-    const [p, g] = await Promise.all([adminAPI.proxies.getAll(), adminAPI.groups.getAll()])
-    if (!isViewActive) return
-    proxies.value = p
-    groups.value = g
-  } catch (error) {
-    if (isViewActive) console.error('Failed to load proxies/groups:', error)
+  const [proxyResult, groupResult] = await Promise.allSettled([
+    adminAPI.proxies.getAll(),
+    adminAPI.groups.getAll()
+  ])
+  if (!isViewActive) return
+  if (proxyResult.status === 'fulfilled') {
+    proxies.value = proxyResult.value
+  } else {
+    console.error('Failed to load proxies:', proxyResult.reason)
+  }
+  if (groupResult.status === 'fulfilled') {
+    groups.value = groupResult.value
+  } else {
+    console.error('Failed to load groups:', groupResult.reason)
   }
   if (!isViewActive) return
   await loadRateMultiplierPrioritySettings()

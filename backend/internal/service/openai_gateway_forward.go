@@ -34,6 +34,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 	beginUpstreamResponseModelObservation(c)
 	clearGrokResponsesClientToolMapping(c)
+	clearOpenAIResponsesClientToolMapping(c)
 	clearOpenAIResponsesNamespaceNames(c)
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
@@ -119,6 +120,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
+	}
+
+	// CN 供应商 anthropic 协议账号：/v1/responses 入站是交叉协议组合
+	// （Responses 客户端 × Anthropic 上游），转成 Anthropic 请求走原生端点。
+	// 不能落到下面的 raw-CC 分支——其 URL 构造会把 anthropic base 当 CC base 用。
+	if account.IsAnthropicProtocol() {
+		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
 	}
 
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -440,20 +448,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if !isCompactRequest && applyCodexClientMetadata(decoded, account) {
 			markDecodedModified()
 		}
-		// 指纹收敛：使用 Forward() 为本次账号尝试预计算的 IDs，请求体和
-		// 出站头共享同一份随机 turn_id。
+		fpIDs := stagedCodexFingerprintIDs(c, account)
+		stageCodexFingerprintIDs(c, nil)
+		// 指纹收敛：复用 Forward() 为本次账号尝试预计算的 IDs，请求体和
+		// 出站头共享同一份随机 turn_id；先清空 staged 值避免 failover 残留。
 		if !isCompactRequest {
-			var fpIDs *codexFingerprintIDs
-			if c != nil {
-				if fpIDsValue, ok := c.Get(codexFingerprintIDsContextKey); ok {
-					if ids, ok := fpIDsValue.(*codexFingerprintIDs); ok &&
-						codexFingerprintIDsBelongToAttempt(ids, account, getAPIKeyIDFromContext(c)) {
-						fpIDs = ids
-						if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
-							markDecodedModified()
-						}
-					}
-				}
+			if fpIDs != nil && applyCodexFingerprintClientMetadata(decoded, fpIDs) {
+				markDecodedModified()
 			}
 			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用。
 			// 无条件覆写（含 nil）：failover 从收敛账号切到 off 账号时，上一
@@ -463,7 +464,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
 		}
-		if codexResult.PromptCacheKey != "" {
+		if currentPromptCacheKey, ok := decoded["prompt_cache_key"].(string); ok && currentPromptCacheKey != "" {
+			promptCacheKey = currentPromptCacheKey
+		} else if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
 	}
@@ -1115,12 +1118,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			if err != nil {
 				return nil, err
 			}
-			targetURL = buildOpenAIResponsesURL(validatedURL)
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
 		}
 	default:
 		targetURL = openaiPlatformAPIURL
 	}
 	targetURL = appendOpenAIResponsesRequestPathSuffix(targetURL, openAIResponsesRequestPathSuffix(c))
+
+	// DeepSeek 原生 Responses 端点为无状态实现：强制 store=false、清除
+	// previous_response_id，避免携带状态字段被上游拒绝。
+	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
 	if err != nil {
@@ -1190,7 +1197,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if req.Header.Get("version") == "" {
-				req.Header.Set("version", codexCLIVersion)
+				req.Header.Set("version", CodexCanonicalClientVersion())
 			}
 			compactSession := resolveOpenAICompactSessionID(c)
 			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, compactSession))
@@ -1225,21 +1232,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("user-agent", customUA)
 	}
 
-	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为 Codex CLI。
+	// 若开启 ForceCodexCLI，则强制将上游 User-Agent 伪装为规范 Codex 身份。
 	// 用于网关未透传/改写 User-Agent 时，仍能命中 Codex 侧识别逻辑。
 	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
-		req.Header.Set("user-agent", codexCLIUserAgent)
+		req.Header.Set("user-agent", CodexCanonicalUserAgent())
 	}
 
 	// 指纹收敛：使用 Forward() 中预计算的收敛 ID 改写出站头，与请求体使用同一份 IDs。
-	if account.Type == AccountTypeOAuth && c != nil {
-		if fpIDs, ok := c.Get(codexFingerprintIDsContextKey); ok {
-			if ids, ok := fpIDs.(*codexFingerprintIDs); ok &&
-				codexFingerprintIDsBelongToAttempt(ids, account, getAPIKeyIDFromContext(c)) {
-				applyCodexFingerprintHeaders(req.Header, ids)
-			}
-		}
-	}
+	applyStagedCodexFingerprintHeaders(c, account, req.Header)
 
 	// 终态收口：强制统一 OAuth 出站身份（User-Agent / originator / version 同源自洽）。
 	// 客户端自报身份不参与构造，浏览器型 UA 也因此不会再到达上游（原浏览器 UA 兜底已被吸收）。
