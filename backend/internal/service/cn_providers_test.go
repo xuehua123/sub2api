@@ -50,6 +50,92 @@ func TestCNParseF64(t *testing.T) {
 	}
 }
 
+func TestParseCNProviderBalancePayloadRejectsInvalidSuccessResponses(t *testing.T) {
+	t.Parallel()
+
+	entries, available, err := parseCNProviderBalancePayload(PlatformKimi, []byte(`{
+		"code": 0,
+		"data": {"available_balance": 12.5}
+	}`))
+	require.NoError(t, err)
+	require.True(t, available)
+	require.Equal(t, []CNProviderBalanceEntry{{Currency: "CNY", Balance: 12.5}}, entries)
+
+	invalidKimi := []string{
+		`{"code": 401, "message": "invalid key"}`,
+		`{"data": {"available_balance": 12.5}}`,
+		`{"code": 0, "data": {}}`,
+		`{"code": 0, "data": {"available_balance": "not-a-number"}}`,
+		`{"code": 0`,
+	}
+	for _, body := range invalidKimi {
+		_, _, err := parseCNProviderBalancePayload(PlatformKimi, []byte(body))
+		require.Error(t, err, body)
+	}
+
+	entries, available, err = parseCNProviderBalancePayload(PlatformDeepseek, []byte(`{
+		"is_available": true,
+		"balance_infos": [
+			{"currency": "CNY", "total_balance": "10.5"},
+			{"currency": "USD", "total_balance": "2.25"}
+		]
+	}`))
+	require.NoError(t, err)
+	require.True(t, available)
+	require.Equal(t, []CNProviderBalanceEntry{
+		{Currency: "CNY", Balance: 10.5},
+		{Currency: "USD", Balance: 2.25},
+	}, entries)
+
+	invalidDeepseek := []string{
+		`{"balance_infos": [{"currency": "CNY", "total_balance": "10"}]}`,
+		`{"is_available": true}`,
+		`{"is_available": true, "balance_infos": []}`,
+		`{"is_available": true, "balance_infos": [{"currency": "CNY"}]}`,
+		`{"is_available": "true", "balance_infos": [{"currency": "CNY", "total_balance": "10"}]}`,
+	}
+	for _, body := range invalidDeepseek {
+		_, _, err := parseCNProviderBalancePayload(PlatformDeepseek, []byte(body))
+		require.Error(t, err, body)
+	}
+}
+
+func TestValidateCNProviderQuotaPayloadRejectsEmptyOrInvalidResponses(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, validateCNProviderQuotaPayload(PlatformKimi, []byte(`{
+		"limits": [{"detail": {"limit": 1000, "remaining": 600}}],
+		"usage": {"limit": 10000, "remaining": 4000}
+	}`)))
+	require.NoError(t, validateCNProviderQuotaPayload(PlatformZhipu, []byte(`{
+		"success": true,
+		"data": {"limits": [{"type": "TOKENS_LIMIT", "unit": 3, "percentage": 20}]}
+	}`)))
+
+	invalidKimi := []string{
+		`{}`,
+		`{"code": 401, "message": "invalid key"}`,
+		`{"limits": {}}`,
+		`{"limits": [{"detail": {"limit": "bad", "remaining": 1}}]}`,
+		`{"usage": {"limit": 100, "remaining": "bad"}}`,
+		`{"usage": {"limit": -1, "remaining": 0}}`,
+		`{"limits": [`,
+	}
+	for _, body := range invalidKimi {
+		require.Error(t, validateCNProviderQuotaPayload(PlatformKimi, []byte(body)), body)
+	}
+
+	invalidZhipu := []string{
+		`{}`,
+		`{"success": true, "data": {}}`,
+		`{"success": true, "data": {"limits": []}}`,
+		`{"success": true, "data": {"limits": [{"type": "TOKENS_LIMIT", "percentage": "bad"}]}}`,
+	}
+	for _, body := range invalidZhipu {
+		require.Error(t, validateCNProviderQuotaPayload(PlatformZhipu, []byte(body)), body)
+	}
+}
+
 // TestCNMillisToRFC3339 秒级（<1e12）按秒、毫秒级按毫秒处理；非正返回空串。
 func TestCNMillisToRFC3339(t *testing.T) {
 	t.Parallel()

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -173,7 +174,10 @@ func (s *CNProviderQuotaService) queryUsage(ctx context.Context, accountID int64
 		return nil, infraerrors.Newf(http.StatusBadGateway, "CN_QUOTA_REQUEST_FAILED", "upstream request failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, cnQuotaMaxBodyBytes))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, cnQuotaMaxBodyBytes))
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadGateway, "CN_QUOTA_RESPONSE_READ_FAILED", "read upstream response: %v", err)
+	}
 
 	now := time.Now().UTC()
 	result := &CNProviderQuotaProbeResult{
@@ -204,6 +208,10 @@ func (s *CNProviderQuotaService) queryUsage(ctx context.Context, accountID int64
 			return result, nil
 		}
 	}
+	if err := validateCNProviderQuotaPayload(provider, bodyBytes); err != nil {
+		result.Error = "Invalid API response: " + err.Error()
+		return result, nil
+	}
 
 	var tiers []CNQuotaTier
 	switch provider {
@@ -224,6 +232,98 @@ func (s *CNProviderQuotaService) queryUsage(ctx context.Context, accountID int64
 		result.Persisted = true
 	}
 	return result, nil
+}
+
+// validateCNProviderQuotaPayload 校验成功响应的最小结构和数值。空响应或字段解析失败
+// 不得被标记为 Success/CredentialValid，也不得刷新 usage_updated_at。
+func validateCNProviderQuotaPayload(provider string, body []byte) error {
+	if !gjson.ValidBytes(body) {
+		return fmt.Errorf("malformed JSON")
+	}
+
+	validAmountPair := func(value gjson.Result) bool {
+		limit, limitOK := cnParseF64(value.Get("limit").Value())
+		remaining, remainingOK := cnParseF64(value.Get("remaining").Value())
+		return limitOK && remainingOK && !math.IsNaN(limit) && !math.IsInf(limit, 0) &&
+			!math.IsNaN(remaining) && !math.IsInf(remaining, 0) && limit >= 0 && remaining >= 0
+	}
+
+	switch provider {
+	case PlatformKimi:
+		if code := gjson.GetBytes(body, "code"); code.Exists() {
+			value, ok := cnParseF64(code.Value())
+			if !ok || value != 0 {
+				return fmt.Errorf("business error code %s", truncate(code.String(), 80))
+			}
+		}
+
+		hasTier := false
+		limits := gjson.GetBytes(body, "limits")
+		if limits.Exists() && !limits.IsArray() {
+			return fmt.Errorf("invalid limits")
+		}
+		var detailErr error
+		limits.ForEach(func(_, item gjson.Result) bool {
+			detail := item.Get("detail")
+			if !detail.Exists() {
+				return true
+			}
+			if !detail.IsObject() || !validAmountPair(detail) {
+				detailErr = fmt.Errorf("invalid limits detail")
+				return false
+			}
+			hasTier = true
+			return false // 解析器只消费首个 detail
+		})
+		if detailErr != nil {
+			return detailErr
+		}
+
+		if usage := gjson.GetBytes(body, "usage"); usage.Exists() {
+			if !usage.IsObject() || !validAmountPair(usage) {
+				return fmt.Errorf("invalid usage")
+			}
+			hasTier = true
+		}
+		if !hasTier {
+			return fmt.Errorf("no usable quota tiers")
+		}
+		return nil
+
+	case PlatformZhipu:
+		data := gjson.GetBytes(body, "data")
+		if !data.Exists() || !data.IsObject() {
+			return fmt.Errorf("missing or invalid data")
+		}
+		limits := data.Get("limits")
+		if !limits.Exists() || !limits.IsArray() {
+			return fmt.Errorf("missing or invalid data.limits")
+		}
+		hasTier := false
+		var tierErr error
+		limits.ForEach(func(_, item gjson.Result) bool {
+			limitType := strings.ToUpper(strings.TrimSpace(item.Get("type").String()))
+			if limitType != "TOKENS_LIMIT" && limitType != "CREDIT_LIMIT" {
+				return true
+			}
+			percentage, ok := cnParseF64(item.Get("percentage").Value())
+			if !ok || math.IsNaN(percentage) || math.IsInf(percentage, 0) {
+				tierErr = fmt.Errorf("invalid data.limits percentage")
+				return false
+			}
+			hasTier = true
+			return true
+		})
+		if tierErr != nil {
+			return tierErr
+		}
+		if !hasTier {
+			return fmt.Errorf("no usable quota tiers")
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported provider %q", provider)
+	}
 }
 
 func (s *CNProviderQuotaService) loadCodingPlanAccount(ctx context.Context, accountID int64) (*Account, error) {
