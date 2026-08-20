@@ -572,8 +572,13 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		if vetoed, _ := openAIProfitControlVetoReason(ctx, latest); vetoed {
 			return 0, nil, "", nil
 		}
-		if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
+		switch s.openAIAccountRequestRuntimeBlockKindForContext(ctx, latest, requestedModel) {
+		case openAIAccountRequestRuntimeBlockAccount:
 			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			return 0, nil, "", nil
+		case openAIAccountRequestRuntimeBlockModelTransient:
+			// Model-transient cooldown is a soft preference. Keep the binding so
+			// the fail-open pass can retry the exact response-chain account.
 			return 0, nil, "", nil
 		}
 		account = latest

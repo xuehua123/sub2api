@@ -25,6 +25,26 @@ type schedulerTestOpenAIAccountRepo struct {
 	accounts []Account
 }
 
+type countingSchedulerTestOpenAIAccountRepo struct {
+	schedulerTestOpenAIAccountRepo
+	listCalls int
+}
+
+func (r *countingSchedulerTestOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {
+	r.listCalls++
+	return r.schedulerTestOpenAIAccountRepo.ListSchedulableByGroupIDAndPlatform(ctx, groupID, platform)
+}
+
+func (r *countingSchedulerTestOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	r.listCalls++
+	return r.schedulerTestOpenAIAccountRepo.ListSchedulableByPlatform(ctx, platform)
+}
+
+func (r *countingSchedulerTestOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	r.listCalls++
+	return r.schedulerTestOpenAIAccountRepo.ListSchedulableUngroupedByPlatform(ctx, platform)
+}
+
 func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
 	for i := range r.accounts {
 		if r.accounts[i].ID == id {
@@ -1487,6 +1507,299 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SkipsQuarantinedSharedP
 	require.NotNil(t, selection)
 	require.NotNil(t, selection.Account)
 	require.Equal(t, int64(469803), selection.Account.ID)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_PrefersHealthyAccountOverModelTransientBlock(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	accounts := []Account{
+		{ID: 459901, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0},
+		{ID: 459902, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		svc.recordOpenAIAccountModelTransientFailure(&accounts[0], "gpt-5.6-sol", now.Add(time.Duration(i)*time.Millisecond))
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.6-sol", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, int64(459902), selection.Account.ID,
+		"a healthy account must win before the model-transient circuit fails open")
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ModelTransientFailsOpenWithoutClearingBlock(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	accounts := []Account{
+		{ID: 460001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0},
+		{ID: 460002, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 5},
+	}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	now := time.Now()
+	for i := range accounts {
+		for failure := 0; failure < 3; failure++ {
+			svc.recordOpenAIAccountModelTransientFailure(&accounts[i], "gpt-5.6-luna", now.Add(time.Duration(failure)*time.Millisecond))
+		}
+	}
+	excluded := map[int64]struct{}{accounts[0].ID: struct{}{}}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.6-luna", excluded, OpenAIUpstreamTransportAny, false,
+	)
+	require.NoError(t, err, "model-transient cooldown must fail open instead of returning a routing 503")
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, accounts[1].ID, selection.Account.ID, "request-local exclusions must remain enforced")
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(&accounts[1], "gpt-5.6-luna"),
+		"fail-open must not clear the cooldown; a completed success or TTL expiry owns recovery")
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_UnrelatedModelTransientDoesNotRetrySelection(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	repo := &countingSchedulerTestOpenAIAccountRepo{}
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	unrelated := &Account{ID: 460051, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		svc.recordOpenAIAccountModelTransientFailure(unrelated, "gpt-5.6-sol", now.Add(time.Duration(i)*time.Millisecond))
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.6-sol", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+	require.Equal(t, 1, repo.listCalls,
+		"a transient block outside this selection must not trigger a second scheduler pass")
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ModelTransientFailOpenPreservesPreviousResponseBinding(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	ctx := context.Background()
+	groupID := int64(46006)
+	accounts := []Account{
+		{
+			ID: 460061, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 10, GroupIDs: []int64{groupID},
+			Extra: map[string]any{"openai_apikey_responses_websockets_v2_enabled": true},
+		},
+		{
+			ID: 460062, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+			Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0, GroupIDs: []int64{groupID},
+			Extra: map[string]any{"openai_apikey_responses_websockets_v2_enabled": true},
+		},
+	}
+	snapshotCache := &openAISnapshotCacheStub{
+		snapshotAccounts: []*Account{&accounts[0], &accounts[1]},
+		accountsByID:     map[int64]*Account{accounts[0].ID: &accounts[0], accounts[1].ID: &accounts[1]},
+	}
+	cache := &schedulerTestGatewayCache{}
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              cache,
+		cfg:                newSchedulerTestOpenAIWSV2Config(),
+		schedulerSnapshot:  &SchedulerSnapshotService{cache: snapshotCache},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+		openaiProxyStreamCircuit: newOpenAIProxyStreamCircuit(openAIProxyStreamCircuitSettings{
+			failureThreshold: 1,
+			failureWindow:    time.Minute,
+			quarantineTTL:    10 * time.Minute,
+			maxEntries:       16,
+		}),
+	}
+	now := time.Now()
+	// An unrelated proxy quarantine forces an intermediate proxy fail-open pass.
+	// The strict response chain must still wait for the model-transient bypass
+	// instead of falling through to the healthy backup on that repeated pass.
+	svc.openaiProxyStreamCircuit.recordFailure(460069, now)
+	for failure := 0; failure < 3; failure++ {
+		svc.recordOpenAIAccountModelTransientFailure(&accounts[0], "gpt-5.6-luna", now.Add(time.Duration(failure)*time.Millisecond))
+	}
+	store := svc.getOpenAIWSStateStore()
+	require.NoError(t, store.BindResponseAccount(ctx, groupID, "resp_model_transient", accounts[0].ID, time.Hour))
+
+	selection, decision, err := svc.SelectAccountWithSchedulerForCapability(
+		ctx,
+		&groupID,
+		"resp_model_transient",
+		"",
+		"gpt-5.6-luna",
+		nil,
+		OpenAIUpstreamTransportAny,
+		OpenAIEndpointCapabilityChatCompletions,
+		false,
+		false,
+		true,
+		PlatformOpenAI,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, accounts[0].ID, selection.Account.ID)
+	require.Equal(t, openAIAccountScheduleLayerPreviousResponse, decision.Layer)
+	require.True(t, decision.StickyPreviousHit)
+	boundAccountID, err := store.GetResponseAccount(ctx, groupID, "resp_model_transient")
+	require.NoError(t, err)
+	require.Equal(t, accounts[0].ID, boundAccountID)
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_IneligibleModelTransientDoesNotRetrySelection(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	account := Account{
+		ID:          460065,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+	}
+	repo := &countingSchedulerTestOpenAIAccountRepo{
+		schedulerTestOpenAIAccountRepo: schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+	}
+	svc := &OpenAIGatewayService{
+		accountRepo:        repo,
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                &config.Config{},
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		rateLimitService:   newOpenAIAdvancedSchedulerRateLimitService("true"),
+	}
+	now := time.Now()
+	for failure := 0; failure < 3; failure++ {
+		svc.recordOpenAIAccountModelTransientFailure(&account, "grok-4.5", now.Add(time.Duration(failure)*time.Millisecond))
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "grok-4.5", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.ErrorIs(t, err, ErrNoAvailableAccounts)
+	require.Nil(t, selection)
+	require.Contains(t, err.Error(), "model_not_supported=1")
+	require.Equal(t, 1, repo.listCalls,
+		"an account that cannot serve the requested model must not trigger a model-transient fail-open pass")
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ModelTransientFailOpenPreservesLegacySessionBinding(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	accounts := []Account{
+		{ID: 460071, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 10},
+		{ID: 460072, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, Priority: 0},
+	}
+	cacheKey := "openai:session_hash_model_transient"
+	cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{cacheKey: accounts[0].ID}}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: accounts},
+		cache:              cache,
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	now := time.Now()
+	for i := range accounts {
+		for failure := 0; failure < 3; failure++ {
+			svc.recordOpenAIAccountModelTransientFailure(&accounts[i], "gpt-5.6-terra", now.Add(time.Duration(failure)*time.Millisecond))
+		}
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "session_hash_model_transient", "gpt-5.6-terra", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, accounts[0].ID, selection.Account.ID)
+	require.Equal(t, accounts[0].ID, cache.sessionBindings[cacheKey])
+	require.Zero(t, cache.deletedSessions[cacheKey])
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ModelTransientFailOpenKeepsHardRuntimeBlock(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	account := Account{ID: 460101, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		svc.recordOpenAIAccountModelTransientFailure(&account, "gpt-5.6-luna", now.Add(time.Duration(i)*time.Millisecond))
+	}
+	svc.BlockAccountScheduling(&account, now.Add(time.Minute), "test_hard_block")
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.6-luna", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.Error(t, err)
+	require.True(t, errors.Is(err, ErrNoAvailableAccounts))
+	require.Nil(t, selection, "fail-open must never bypass the account-wide runtime block")
+}
+
+func TestOpenAIGatewayService_SelectAccountWithScheduler_ComposesProxyAndModelTransientFailOpen(t *testing.T) {
+	resetOpenAIAdvancedSchedulerSettingCacheForTest()
+
+	proxyID := int64(4602)
+	account := Account{ID: 460201, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Status: StatusActive, Schedulable: true, Concurrency: 1, ProxyID: &proxyID}
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo:        schedulerTestOpenAIAccountRepo{accounts: []Account{account}},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+		openaiProxyStreamCircuit: newOpenAIProxyStreamCircuit(openAIProxyStreamCircuitSettings{
+			failureThreshold: 1,
+			failureWindow:    time.Minute,
+			quarantineTTL:    10 * time.Minute,
+			maxEntries:       16,
+		}),
+	}
+	now := time.Now()
+	svc.openaiProxyStreamCircuit.recordFailure(proxyID, now)
+	for i := 0; i < 3; i++ {
+		svc.recordOpenAIAccountModelTransientFailure(&account, "gpt-5.6-terra", now.Add(time.Duration(i)*time.Millisecond))
+	}
+
+	selection, _, err := svc.SelectAccountWithScheduler(
+		context.Background(), nil, "", "", "gpt-5.6-terra", nil, OpenAIUpstreamTransportAny, false,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.NotNil(t, selection.Account)
+	require.Equal(t, account.ID, selection.Account.ID)
+	require.True(t, svc.openaiProxyStreamCircuit.isBlocked(proxyID, time.Now()))
+	require.True(t, svc.isOpenAIAccountModelRuntimeBlocked(&account, "gpt-5.6-terra"))
 }
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_FailsOpenWhenAllProxiesQuarantined(t *testing.T) {

@@ -313,6 +313,42 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Acc
 	return s != nil && (s.isOpenAIAccountRuntimeBlocked(account) || s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel))
 }
 
+type openAIAccountRequestRuntimeBlockKind uint8
+
+const (
+	openAIAccountRequestRuntimeBlockNone openAIAccountRequestRuntimeBlockKind = iota
+	openAIAccountRequestRuntimeBlockAccount
+	openAIAccountRequestRuntimeBlockModelTransient
+)
+
+func (s *OpenAIGatewayService) classifyOpenAIAccountRequestRuntimeBlockForContext(ctx context.Context, account *Account, requestedModel string) openAIAccountRequestRuntimeBlockKind {
+	if s == nil {
+		return openAIAccountRequestRuntimeBlockNone
+	}
+	if s.isOpenAIAccountRuntimeBlocked(account) {
+		return openAIAccountRequestRuntimeBlockAccount
+	}
+	if openAIModelTransientBypassed(ctx) || !s.isOpenAIAccountModelRuntimeBlocked(account, requestedModel) {
+		return openAIAccountRequestRuntimeBlockNone
+	}
+	return openAIAccountRequestRuntimeBlockModelTransient
+}
+
+func (s *OpenAIGatewayService) openAIAccountRequestRuntimeBlockKindForContext(ctx context.Context, account *Account, requestedModel string) openAIAccountRequestRuntimeBlockKind {
+	kind := s.classifyOpenAIAccountRequestRuntimeBlockForContext(ctx, account, requestedModel)
+	if kind != openAIAccountRequestRuntimeBlockModelTransient {
+		return kind
+	}
+	if trace := openAIModelTransientSelectionTraceFromContext(ctx); trace != nil && account != nil {
+		trace.record(account.ID)
+	}
+	return kind
+}
+
+func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlockedForContext(ctx context.Context, account *Account, requestedModel string) bool {
+	return s.openAIAccountRequestRuntimeBlockKindForContext(ctx, account, requestedModel) != openAIAccountRequestRuntimeBlockNone
+}
+
 func (s *OpenAIGatewayService) recordOpenAIOAuth429() {
 	if s == nil {
 		return

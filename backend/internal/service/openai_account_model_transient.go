@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -19,12 +21,81 @@ const (
 	// attempt plus a failover before reaching a healthy account. Low-traffic
 	// deployments were hit hardest, which is the opposite of what a breaker
 	// should do.
-	openAIModelTransientStreakTTL     = 30 * time.Minute
-	openAIModelTransientShortCooldown = 10 * time.Second
-	openAIModelTransientLongCooldown  = 45 * time.Second
-	openAIModelTransientDefaultMax    = 4096
-	openAIModelTransientMaxModelBytes = 512
+	openAIModelTransientStreakTTL           = 30 * time.Minute
+	openAIModelTransientShortCooldown       = 10 * time.Second
+	openAIModelTransientLongCooldown        = 45 * time.Second
+	openAIModelTransientDefaultMax          = 4096
+	openAIModelTransientMaxModelBytes       = 512
+	openAIModelTransientFailOpenLogInterval = 5 * time.Second
 )
+
+// openAIModelTransientBypassKey marks a fail-open scheduling pass. The pass
+// ignores only the short-lived account+model transient cooldown; permanent
+// account/runtime blocks and every persisted eligibility gate remain active.
+type openAIModelTransientBypassKey struct{}
+
+type openAIModelTransientSelectionTraceKey struct{}
+
+type openAIModelTransientSelectionTrace struct {
+	mu                sync.Mutex
+	blockedAccountIDs map[int64]struct{}
+	blockEvents       int
+}
+
+func withOpenAIModelTransientBypass(ctx context.Context) context.Context {
+	return context.WithValue(ctx, openAIModelTransientBypassKey{}, true)
+}
+
+func openAIModelTransientBypassed(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	bypassed, _ := ctx.Value(openAIModelTransientBypassKey{}).(bool)
+	return bypassed
+}
+
+func withOpenAIModelTransientSelectionTrace(ctx context.Context, trace *openAIModelTransientSelectionTrace) context.Context {
+	return context.WithValue(ctx, openAIModelTransientSelectionTraceKey{}, trace)
+}
+
+func openAIModelTransientSelectionTraceFromContext(ctx context.Context) *openAIModelTransientSelectionTrace {
+	if ctx == nil {
+		return nil
+	}
+	trace, _ := ctx.Value(openAIModelTransientSelectionTraceKey{}).(*openAIModelTransientSelectionTrace)
+	return trace
+}
+
+func (t *openAIModelTransientSelectionTrace) record(accountID int64) {
+	if t == nil || accountID <= 0 {
+		return
+	}
+	t.mu.Lock()
+	if t.blockedAccountIDs == nil {
+		t.blockedAccountIDs = make(map[int64]struct{})
+	}
+	t.blockedAccountIDs[accountID] = struct{}{}
+	t.blockEvents++
+	t.mu.Unlock()
+}
+
+func (t *openAIModelTransientSelectionTrace) blockedAccountCount() int {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.blockedAccountIDs)
+}
+
+func (t *openAIModelTransientSelectionTrace) blockEventCount() int {
+	if t == nil {
+		return 0
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.blockEvents
+}
 
 type openAIAccountModelKey struct {
 	AccountID int64
@@ -169,6 +240,24 @@ func (s *openAIAccountModelTransientState) size() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.entries)
+}
+
+// logOpenAIModelTransientFailOpen emits a rate-limited warning only after a
+// bypass pass actually recovered capacity. Outage traffic must not flood logs.
+func (s *OpenAIGatewayService) logOpenAIModelTransientFailOpen(requestedModel string, blockedEntries int) {
+	if s == nil {
+		return
+	}
+	now := time.Now().UnixNano()
+	last := s.openaiModelTransientFailOpenLogAt.Load()
+	if now-last < int64(openAIModelTransientFailOpenLogInterval) ||
+		!s.openaiModelTransientFailOpenLogAt.CompareAndSwap(last, now) {
+		return
+	}
+	slog.Warn("openai_model_transient_fail_open",
+		"blocked_entries", blockedEntries,
+		"model", requestedModel,
+	)
 }
 
 func (s *openAIAccountModelTransientState) evictOldestLocked() {

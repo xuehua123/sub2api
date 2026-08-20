@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -47,6 +48,24 @@ func TestOpenAIModelTransient_ThirdFailureCreatesFortyFiveSecondModelBlock(t *te
 	assert.Equal(t, 45*time.Second, decision.Cooldown)
 	assert.True(t, state.isBlocked(35, "gpt-5.5", now.Add(40*time.Second)))
 	assert.False(t, state.isBlocked(35, "gpt-5.5", now.Add(48*time.Second)))
+}
+
+func TestOpenAIModelTransientBypassContext(t *testing.T) {
+	ctx := context.Background()
+	require.False(t, openAIModelTransientBypassed(ctx))
+	require.True(t, openAIModelTransientBypassed(withOpenAIModelTransientBypass(ctx)))
+}
+
+func TestOpenAIModelTransientSelectionTraceDeduplicatesAccounts(t *testing.T) {
+	trace := &openAIModelTransientSelectionTrace{}
+	ctx := withOpenAIModelTransientSelectionTrace(context.Background(), trace)
+
+	openAIModelTransientSelectionTraceFromContext(ctx).record(35)
+	openAIModelTransientSelectionTraceFromContext(ctx).record(35)
+	openAIModelTransientSelectionTraceFromContext(ctx).record(47)
+
+	require.Equal(t, 2, trace.blockedAccountCount())
+	require.Equal(t, 3, trace.blockEventCount())
 }
 
 func TestOpenAIModelTransient_BlockIsIsolatedByModel(t *testing.T) {
