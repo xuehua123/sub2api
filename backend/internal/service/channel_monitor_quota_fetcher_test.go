@@ -294,6 +294,22 @@ func TestQuotaFetcher_CNQuotaCredentialInvalidFlagPropagates(t *testing.T) {
 	require.Equal(t, "api key expired", snapshot.Error)
 }
 
+func TestQuotaFetcher_CNQuotaNonAuthFailureRemainsGenericError(t *testing.T) {
+	fetcher, _, cnQuota, _, accounts := newQuotaFetcherTestSetup(t)
+	accounts.accounts[7] = &Account{
+		ID:          7,
+		Platform:    domain.PlatformKimi,
+		Credentials: map[string]any{"account_mode": AccountModeCoding},
+	}
+	cnQuota.result = &CNProviderQuotaProbeResult{Success: false, CredentialValid: true, Error: "invalid upstream response"}
+
+	snapshot := fetcher.Fetch(context.Background(), 7)
+
+	require.False(t, snapshot.Success)
+	require.False(t, snapshot.CredentialInvalid)
+	require.Equal(t, MonitorStatusError, deriveQuotaCheckResult(snapshot, "quota", time.Now()).Status)
+}
+
 func TestQuotaFetcher_CNBalanceHTTP403MarksCredentialInvalid(t *testing.T) {
 	fetcher, _, _, cnBalance, accounts := newQuotaFetcherTestSetup(t)
 	accounts.accounts[6] = &Account{ID: 6, Platform: domain.PlatformKimi}

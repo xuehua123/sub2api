@@ -6,7 +6,9 @@ package service
 
 import (
 	"context"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -56,6 +58,23 @@ type recordingHTTPUpstream struct{ calls int }
 func (u *recordingHTTPUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
 	u.calls++
 	return nil, context.DeadlineExceeded
+}
+
+type staticCNProbeHTTPUpstream struct {
+	statusCode int
+	body       string
+}
+
+func (u *staticCNProbeHTTPUpstream) Do(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: u.statusCode,
+		Body:       io.NopCloser(strings.NewReader(u.body)),
+		Header:     make(http.Header),
+	}, nil
+}
+
+func (u *staticCNProbeHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
+	return u.Do(req, proxyURL, accountID, accountConcurrency)
 }
 
 func (u *recordingHTTPUpstream) DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error) {
@@ -126,4 +145,41 @@ func TestCNProviderBalanceService_OfficialHostPassesValidation(t *testing.T) {
 
 	_, _ = svc.QueryBalance(context.Background(), 3)
 	require.Equal(t, 1, upstream.calls, "official host must pass URL policy and reach the upstream layer")
+}
+
+func TestCNProviderQuotaService_OnlyAuthFailuresInvalidateCredentials(t *testing.T) {
+	t.Parallel()
+
+	repo := &fakeCNProbeAccountRepo{account: &Account{
+		ID: 4, Platform: PlatformKimi, Type: AccountTypeAPIKey, Status: StatusActive,
+		Credentials: map[string]any{
+			"account_mode": "coding",
+			"api_key":      "sk-test",
+			"base_url":     "https://api.kimi.com/coding",
+		},
+	}}
+	tests := []struct {
+		name                string
+		statusCode          int
+		body                string
+		wantCredentialValid bool
+	}{
+		{name: "server error", statusCode: http.StatusInternalServerError, body: `{"error":"temporary"}`, wantCredentialValid: true},
+		{name: "invalid response", statusCode: http.StatusOK, body: `{}`, wantCredentialValid: true},
+		{name: "unauthorized", statusCode: http.StatusUnauthorized, body: `{"error":"unauthorized"}`, wantCredentialValid: false},
+		{name: "forbidden", statusCode: http.StatusForbidden, body: `{"error":"forbidden"}`, wantCredentialValid: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := &staticCNProbeHTTPUpstream{statusCode: tc.statusCode, body: tc.body}
+			svc := NewCNProviderQuotaService(repo, nil, upstream, cnProbeAllowlistConfig("api.kimi.com"))
+
+			result, err := svc.QueryUsage(context.Background(), repo.account.ID)
+
+			require.NoError(t, err)
+			require.False(t, result.Success)
+			require.Equal(t, tc.wantCredentialValid, result.CredentialValid)
+		})
+	}
 }

@@ -181,14 +181,16 @@ func (s *CNProviderQuotaService) queryUsage(ctx context.Context, accountID int64
 
 	now := time.Now().UTC()
 	result := &CNProviderQuotaProbeResult{
-		Provider:   provider,
-		Source:     "coding_plan",
-		FetchedAt:  now.Unix(),
-		StatusCode: resp.StatusCode,
+		Provider:        provider,
+		Source:          "coding_plan",
+		CredentialValid: true,
+		FetchedAt:       now.Unix(),
+		StatusCode:      resp.StatusCode,
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		// 鉴权失败：不落快照（不覆盖之前的有效值），仅返回失败结果供前端提示。
+		result.CredentialValid = false
 		result.Error = fmt.Sprintf("Authentication failed (HTTP %d)", resp.StatusCode)
 		return result, nil
 	}
