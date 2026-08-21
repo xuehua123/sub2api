@@ -100,6 +100,8 @@ type ChannelModelPricing struct {
 	CacheWrite5mPrice *float64            `json:"-"`
 	CacheWrite1hPrice *float64            `json:"-"`
 	CacheReadPrice    *float64            `json:"cache_read_price"`
+	FastMultiplier    *float64            `json:"fast_multiplier"`
+	FlexMultiplier    *float64            `json:"flex_multiplier"`
 	ImageInputPrice   *float64            `json:"image_input_price"`
 	ImageOutputPrice  *float64            `json:"image_output_price"`
 	PerRequestPrice   *float64            `json:"per_request_price"`
@@ -134,13 +136,17 @@ type PricingInterval struct {
 	OutputPrice                *float64 `json:"output_price"`
 	CacheWritePrice            *float64 `json:"cache_write_price"`
 	// Display-only effective cache creation rates; see ChannelModelPricing.
-	CacheWrite5mPrice *float64  `json:"-"`
-	CacheWrite1hPrice *float64  `json:"-"`
-	CacheReadPrice    *float64  `json:"cache_read_price"`
-	PerRequestPrice   *float64  `json:"per_request_price"`
-	SortOrder         int       `json:"sort_order"`
-	CreatedAt         time.Time `json:"created_at,omitempty"`
-	UpdatedAt         time.Time `json:"updated_at,omitempty"`
+	CacheWrite5mPrice    *float64  `json:"-"`
+	CacheWrite1hPrice    *float64  `json:"-"`
+	CacheReadPrice       *float64  `json:"cache_read_price"`
+	InputMultiplier      *float64  `json:"input_multiplier"`
+	OutputMultiplier     *float64  `json:"output_multiplier"`
+	CacheWriteMultiplier *float64  `json:"cache_write_multiplier"`
+	CacheReadMultiplier  *float64  `json:"cache_read_multiplier"`
+	PerRequestPrice      *float64  `json:"per_request_price"`
+	SortOrder            int       `json:"sort_order"`
+	CreatedAt            time.Time `json:"created_at,omitempty"`
+	UpdatedAt            time.Time `json:"updated_at,omitempty"`
 }
 
 // IsActive 判断渠道是否启用
@@ -399,6 +405,20 @@ func validateIntervalPrices(iv *PricingInterval, idx int) error {
 	for _, p := range prices {
 		if p.val != nil && *p.val < 0 {
 			return fmt.Errorf("interval #%d: %s must be >= 0", idx+1, p.name)
+		}
+	}
+	multipliers := []struct {
+		name string
+		val  *float64
+	}{
+		{"input_multiplier", iv.InputMultiplier},
+		{"output_multiplier", iv.OutputMultiplier},
+		{"cache_write_multiplier", iv.CacheWriteMultiplier},
+		{"cache_read_multiplier", iv.CacheReadMultiplier},
+	}
+	for _, multiplier := range multipliers {
+		if multiplier.val != nil && *multiplier.val <= 0 {
+			return fmt.Errorf("interval #%d: %s must be > 0", idx+1, multiplier.name)
 		}
 	}
 	return nil

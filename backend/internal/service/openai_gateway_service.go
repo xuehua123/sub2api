@@ -291,8 +291,9 @@ type OpenAIForwardResult struct {
 	// AudioUsage carries Voice billing units when present.
 	AudioUsage *AudioUsage
 
-	wsReplayInput       []json.RawMessage
-	wsReplayInputExists bool
+	wsReplayInput                []json.RawMessage
+	wsReplayInputExists          bool
+	wsAccountFailoverReplayInput []json.RawMessage
 	// terminalDelivered is set only when the terminal event of an OpenAI WS
 	// turn was successfully written to the downstream client. It intentionally
 	// remains internal: it gates reuse of handshake turn-state, rather than

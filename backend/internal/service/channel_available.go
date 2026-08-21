@@ -298,6 +298,9 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	}
 	baseRuntime = s.billingService.applyModelSpecificPricingPolicy(model, baseRuntime)
 	fallbackRuntime := *baseRuntime
+	applyChannelTokenPriceOverrides(&fallbackRuntime, raw)
+	fallbackRuntime.FastMultiplier = raw.FastMultiplier
+	fallbackRuntime.FlexMultiplier = raw.FlexMultiplier
 	if raw.ImageOutputPrice != nil {
 		fallbackRuntime.ImageOutputPricePerToken = *raw.ImageOutputPrice
 	}
@@ -310,7 +313,7 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 				first = interval
 			}
 		}
-		runtimePricing := intervalToModelPricing(&first, baseRuntime.SupportsCacheBreakdown, raw)
+		runtimePricing := intervalToModelPricingForModel(model, &first, &fallbackRuntime, raw)
 		runtimePricing = s.billingService.applyModelSpecificPricingPolicy(model, runtimePricing)
 		projected := effectiveTokenPricingForDisplay(runtimePricing, true)
 		projected.Platform = raw.Platform
@@ -326,7 +329,7 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	hasFast := groupDisplaySupportsFast(model, official)
 	for i := range valid {
 		iv := valid[i]
-		runtimePricing := intervalToModelPricing(&iv, baseRuntime.SupportsCacheBreakdown, raw)
+		runtimePricing := intervalToModelPricingForModel(model, &iv, &fallbackRuntime, raw)
 		runtimePricing = s.billingService.applyModelSpecificPricingPolicy(model, runtimePricing)
 		card := effectiveTokenPricingForDisplay(runtimePricing, true)
 		tier := PricingInterval{
