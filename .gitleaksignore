@@ -40,6 +40,7 @@
 4d40fb6b602a0469bbdaa56bd047493a9d712f32:backend/internal/service/gateway_beta_test.go:generic-api-key:19
 4d40fb6b602a0469bbdaa56bd047493a9d712f32:backend/internal/service/gateway_beta_test.go:generic-api-key:22
 4de4823a65bccf199d1507af5dfd4a14655e8236:backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:398
+499a8ee4235eea151b9907b5cda408b43dc29c0d:backend/internal/handler/openai_gateway_handler_test.go:generic-api-key:657
 55e8dd550a4a261ab4bdf26f865da2eab11dafd8:backend/internal/handler/auth_wechat_oauth_test.go:generic-api-key:201
 5e5c2062bf436be34b5bb8dc5603c6ead9af45cc:backend/internal/handler/stream_error_event_test.go:generic-api-key:107
 63d1860dc0063df3da020d0c638288af469ebb65:backend/internal/payment/provider/alipay_test.go:generic-api-key:62
