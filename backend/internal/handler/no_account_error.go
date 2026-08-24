@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -29,8 +31,31 @@ type noAccountErrorClassification struct {
 	ModelNotFound bool // true when this is a 404 model_not_found classification
 }
 
-// classifyNoAccountError decides between 404 model_not_found and a
-// conservative 503 fallback for "no available accounts" failures.
+var selectionModelRateLimitedPattern = regexp.MustCompile(`(?:model_rate_limited|rate_limited)=(\d+)`)
+
+// classifySelectionFailureError preserves the scheduler's compact reason when
+// every model-capable account is temporarily rate limited.
+func classifySelectionFailureError(err error, fallback noAccountErrorClassification) noAccountErrorClassification {
+	if err == nil {
+		return fallback
+	}
+	match := selectionModelRateLimitedPattern.FindStringSubmatch(strings.ToLower(err.Error()))
+	if len(match) != 2 {
+		return fallback
+	}
+	count, parseErr := strconv.Atoi(match[1])
+	if parseErr != nil || count <= 0 {
+		return fallback
+	}
+	return noAccountErrorClassification{
+		Status:  http.StatusTooManyRequests,
+		ErrType: "rate_limit_error",
+		Message: "All available accounts are currently rate-limited. Please retry later.",
+	}
+}
+
+// classifyNoAccountError decides between 404 model_not_found and 503
+// api_error for "no available accounts" failures.
 //
 // The classifier intentionally does not consume the original error: the
 // selection layer never tells us *why* the pool came up empty (rate-limited

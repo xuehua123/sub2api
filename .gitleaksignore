@@ -137,12 +137,16 @@ index/backend/internal/service/gateway_beta_test.go:generic-api-key:86
 index/backend/internal/service/gateway_context_management_test.go:generic-api-key:94
 index/backend/internal/service/payment_order_result_test.go:generic-api-key:370
 index/backend/internal/service/payment_webhook_provider_test.go:generic-api-key:21
+index/backend/internal/service/plugin_package.go:generic-api-key:28
 index/backend/internal/service/upstream_management_protocol_test.go:generic-api-key:37
 index/backend/internal/util/logredact/redact_test.go:generic-api-key:23
 index/backend/internal/util/logredact/redact_test.go:generic-api-key:9
 index/deploy/run_referral_demo.ps1:generic-api-key:10
 index/deploy/run_referral_demo.ps1:generic-api-key:11
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:132
+index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:164
+index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:177
+index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:184
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:192
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:205
 index/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:212
@@ -193,12 +197,16 @@ worktree/backend/internal/service/gateway_beta_test.go:generic-api-key:86
 worktree/backend/internal/service/gateway_context_management_test.go:generic-api-key:94
 worktree/backend/internal/service/payment_order_result_test.go:generic-api-key:370
 worktree/backend/internal/service/payment_webhook_provider_test.go:generic-api-key:21
+worktree/backend/internal/service/plugin_package.go:generic-api-key:28
 worktree/backend/internal/service/upstream_management_protocol_test.go:generic-api-key:37
 worktree/backend/internal/util/logredact/redact_test.go:generic-api-key:23
 worktree/backend/internal/util/logredact/redact_test.go:generic-api-key:9
 worktree/deploy/run_referral_demo.ps1:generic-api-key:10
 worktree/deploy/run_referral_demo.ps1:generic-api-key:11
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:132
+worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:164
+worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:177
+worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:184
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:192
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:205
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:212
@@ -208,4 +216,5 @@ worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:57
 worktree/docs/ADMIN_PAYMENT_INTEGRATION_API.md:generic-api-key:64
 worktree/frontend/src/views/auth/__tests__/EmailVerifyView.spec.ts:generic-api-key:338
 worktree/tools/subscription_entitlements_v2_staging_smoke.ps1:generic-api-key:35
+40ea3aebad7d9ff786171a40b14c9920bc006a96:backend/internal/service/plugin_package.go:generic-api-key:28
 

@@ -430,6 +430,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		HideLobeHubImportButton:              settings.HideLobeHubImportButton,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		ModelPlazaDescription:                settings.ModelPlazaDescription,
 
 		AccountSchedulingThresholds: settings.AccountSchedulingThresholds,

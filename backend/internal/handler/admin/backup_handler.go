@@ -198,12 +198,9 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 		return
 	}
 
-	record, err := h.backupService.StartRestore(c.Request.Context(), backupID)
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Accepted(c, record)
+	// Online restore is deliberately unavailable: blue-green slots share the
+	// same database, so an in-process restore cannot safely fence all writers.
+	response.ErrorFrom(c, service.ErrRestoreRequiresOfflineMaintenance)
 }
 
 // ─── 异步生图对象存储配置 ───

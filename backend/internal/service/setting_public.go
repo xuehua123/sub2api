@@ -257,6 +257,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyModelPricesUserVisible,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
+		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
@@ -427,6 +428,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ModelPricesUserVisible:       !isFalseSettingValue(settings[SettingKeyModelPricesUserVisible]),
 		ModelPlazaEnabled:            settings[SettingKeyModelPlazaEnabled] == "true",
 		ModelPlazaRequireAuth:        settings[SettingKeyModelPlazaRequireAuth] == "true",
+		PluginManagementEnabled:      settings[SettingKeyPluginManagementEnabled] == "true",
 		BalanceLowNotifyEnabled:      settings[SettingKeyBalanceLowNotifyEnabled] == "true",
 		AccountQuotaNotifyEnabled:    settings[SettingKeyAccountQuotaNotifyEnabled] == "true",
 		BalanceLowNotifyThreshold:    balanceLowNotifyThreshold,
@@ -716,6 +718,7 @@ type PublicSettingsInjectionPayload struct {
 	ModelPricesUserVisible     bool    `json:"model_prices_user_visible"`
 	ModelPlazaEnabled          bool    `json:"model_plaza_enabled"`
 	ModelPlazaRequireAuth      bool    `json:"model_plaza_require_auth"`
+	PluginManagementEnabled    bool    `json:"plugin_management_enabled"`
 	AffiliateEnabled           bool    `json:"affiliate_enabled"`
 	RiskControlEnabled         bool    `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests bool    `json:"allow_user_view_error_requests"`
@@ -826,6 +829,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ModelPricesUserVisible:               settings.ModelPricesUserVisible,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
+		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,

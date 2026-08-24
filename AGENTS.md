@@ -136,7 +136,7 @@ go generate ./ent          # regenerate Ent after schema changes
 go generate ./cmd/server   # regenerate Wire after DI changes
 go test -tags=unit ./...           # unit tests
 go test -tags=integration ./...    # integration tests (uses testcontainers)
-golangci-lint run ./...            # lint (v2.9)
+golangci-lint run ./...            # lint (v2.13)
 CGO_ENABLED=0 go build -ldflags="-s -w" -trimpath -o bin/server ./cmd/server
 ```
 
@@ -170,8 +170,8 @@ Without `-tags embed`, the binary will NOT serve the frontend UI.
 
 ## Go Version
 
-- `go.mod` declares **go 1.26.6** (source of truth)
-- CI verifies `go1.26.6` exactly
+- `go.mod` declares **go 1.27.0** (source of truth)
+- CI verifies `go1.27.0` exactly
 - README badges must match the `go.mod` version.
 
 ## Testing Quirks

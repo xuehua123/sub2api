@@ -802,6 +802,11 @@ func (s *ChannelService) fillGlobalPricingFallback(models []SupportedModel) {
 	}
 }
 
+// fillGlobalPricingFallback 为模型广场复用只读的全局价格回落。
+func fillGlobalPricingFallback(pricingService *PricingService, models []SupportedModel) {
+	(&ChannelService{pricingService: pricingService}).fillGlobalPricingFallback(models)
+}
+
 func (s *ChannelService) catalogOrFallbackPricingSource(model string) string {
 	if s != nil && s.pricingService != nil {
 		if pricing := s.pricingService.GetIdentifiedModelPricing(model); pricing != nil && !pricing.TokenPricingAbsent {

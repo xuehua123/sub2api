@@ -67,8 +67,6 @@ func TestFilterGrokFreeQuotaAccountsOnlyBlocksExplicitFreeOAuth(t *testing.T) {
 	repo := &grokFreeQuotaUsageRepoStub{stats: map[int64]*usagestats.AccountStats{
 		1: {Tokens: 475_000}, // 95% of 500k
 	}}
-	// Clear shared cache for deterministic unit tests.
-	openaiGrokFreeQuotaGateCache = sync.Map{}
 	scheduler := &defaultOpenAIAccountScheduler{service: &OpenAIGatewayService{cfg: grokFreeQuotaTestConfig(), usageLogRepo: repo}}
 	accounts := []Account{
 		{ID: 1, Platform: PlatformGrok, Type: AccountTypeOAuth, Credentials: map[string]any{"subscription_tier": "FREE"}},
@@ -87,11 +85,20 @@ func TestFilterGrokFreeQuotaAccountsOnlyBlocksExplicitFreeOAuth(t *testing.T) {
 		return repo.calls >= 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	// Second pass: uses refreshed cache and blocks over-gate free OAuth.
-	filtered = scheduler.filterGrokFreeQuotaAccounts(context.Background(), accounts)
+	// Wait for the asynchronous refresh to publish its cache entry. Observing
+	// repo.calls alone is insufficient because the goroutine increments it
+	// before storing the fetched result.
+	require.Eventually(t, func() bool {
+		filtered = scheduler.filterGrokFreeQuotaAccounts(context.Background(), accounts)
+		return len(filtered) == 3 && filtered[0].ID == 2 && filtered[1].ID == 3 && filtered[2].ID == 4
+	}, 2*time.Second, 10*time.Millisecond)
 	require.Equal(t, []int64{2, 3, 4}, accountIDs(filtered), "paid and unknown fail-open; API-key free marker is not gated")
-	require.Equal(t, []int64{1}, repo.lastIDs, "paid, unknown, and API-key accounts must not enter the local free-tier query")
-	require.WithinDuration(t, time.Now().UTC().Add(-24*time.Hour), repo.start, time.Second)
+	repo.mu.Lock()
+	lastIDs := append([]int64(nil), repo.lastIDs...)
+	start := repo.start
+	repo.mu.Unlock()
+	require.Equal(t, []int64{1}, lastIDs, "paid, unknown, and API-key accounts must not enter the local free-tier query")
+	require.WithinDuration(t, time.Now().UTC().Add(-24*time.Hour), start, time.Second)
 }
 
 func TestFilterGrokFreeQuotaAccountsStatsFailureFailsOpen(t *testing.T) {

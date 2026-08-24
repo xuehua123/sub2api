@@ -171,7 +171,8 @@ func TestOpenAIGatewayService_FingerprintClearedAcrossAccountFailoverAttempts(t 
 	body := []byte(`{"model":"gpt-5.6","stream":false,"instructions":"test","input":"hello"}`)
 	_, err := svc.Forward(context.Background(), c, accountA, body)
 	require.NoError(t, err)
-	require.NotEqual(t, "client-install", upstreamA.lastReq.Header.Get("x-codex-installation-id"))
+	accountAInstallationID := upstreamA.lastReq.Header.Get("x-codex-installation-id")
+	require.NotEqual(t, "client-install", accountAInstallationID)
 
 	upstreamB := &httpUpstreamRecorder{resp: &http.Response{
 		StatusCode: http.StatusOK,
@@ -187,7 +188,11 @@ func TestOpenAIGatewayService_FingerprintClearedAcrossAccountFailoverAttempts(t 
 	}
 	_, err = svc.Forward(context.Background(), c, accountB, body)
 	require.NoError(t, err)
-	require.Equal(t, "client-install", upstreamB.lastReq.Header.Get("x-codex-installation-id"))
+	expectedAccountBInstallationID := scopeCodexAccountIdentityValue(
+		accountB, getAPIKeyIDFromContext(c), "installation", "client-install",
+	)
+	require.Equal(t, expectedAccountBInstallationID, upstreamB.lastReq.Header.Get("x-codex-installation-id"))
+	require.NotEqual(t, accountAInstallationID, upstreamB.lastReq.Header.Get("x-codex-installation-id"))
 	require.False(t, gjson.GetBytes(upstreamB.lastBody, "client_metadata").Exists())
 }
 
@@ -882,7 +887,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_NamespaceNonStreamingResponse(t *
 	setOpenAIResponsesNamespaceNames(c, names)
 
 	result, err := (&OpenAIGatewayService{cfg: &config.Config{}}).handleNonStreamingResponsePassthrough(
-		context.Background(), resp, c, nil, "gpt-5.5", "",
+		context.Background(), resp, c, &Account{ID: 91}, "gpt-5.5", "",
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)

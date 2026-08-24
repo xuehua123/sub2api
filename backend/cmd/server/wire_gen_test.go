@@ -98,8 +98,10 @@ func TestProvideCleanup_WithMinimalDependencies_NoPanic(t *testing.T) {
 		nil, // referralSettlement
 		nil, // ollamaCloudUsage
 		nil, // auditLog
+		nil, // openAIAutoReset
 		nil, // promptAudit
 		nil, // settingService
+		nil, // pluginManager
 	)
 
 	require.NotPanics(t, func() {

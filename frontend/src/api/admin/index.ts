@@ -38,6 +38,7 @@ import adminIssuesAPI from './issues'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import upstreamConnectionsAPI from './upstreamConnections'
+import pluginsAPI from './plugins'
 
 /**
  * Unified admin API object for convenient access
@@ -77,7 +78,8 @@ export const adminAPI = {
   issues: adminIssuesAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  upstreamConnections: upstreamConnectionsAPI
+	upstreamConnections: upstreamConnectionsAPI,
+  plugins: pluginsAPI
 }
 
 export {
@@ -115,7 +117,8 @@ export {
   adminIssuesAPI,
   adminComplianceAPI,
   auditAPI,
-  upstreamConnectionsAPI
+	upstreamConnectionsAPI,
+  pluginsAPI
 }
 
 export default adminAPI
@@ -137,3 +140,9 @@ export type {
   CreateUpstreamConnectionRequest,
   UpdateUpstreamConnectionRequest
 } from './upstreamConnections'
+export type {
+  PluginInstallation,
+  PluginCompatibility,
+  PluginUISession,
+  PluginTestResult
+} from './plugins'

@@ -20,3 +20,8 @@ backend/migrations/*.sql text eol=lf
 
 # Dockerfile
 Dockerfile text eol=lf
+
+# Repository metadata and documentation
+.gitignore text eol=lf
+*.md text eol=lf
+*.json text eol=lf
