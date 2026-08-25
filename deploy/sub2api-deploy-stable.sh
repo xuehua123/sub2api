@@ -174,7 +174,7 @@ if [[ ! "$gh_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] ||
   echo "GitHub CLI ${MINIMUM_GH_VERSION} or newer is required for secure attestation identity verification" >&2
   exit 1
 fi
-if ! gh attestation verify --help 2>&1 | grep -Fq -- '--source-digest'; then
+if ! gh attestation verify --help 2>&1 | grep -F -- '--source-digest' >/dev/null; then
   echo "Installed GitHub CLI does not support required attestation policy flags" >&2
   exit 1
 fi
@@ -855,7 +855,7 @@ binary_build_records=()
 while IFS= read -r binary_build_record; do
   [[ -n "$binary_build_record" ]] && binary_build_records+=("$binary_build_record")
 done < <(
-  sed -nE 's/^.*Sub2API[[:space:]]+([^[:space:]]+)[[:space:]]+\(commit:[[:space:]]+([0-9a-f]{40,64}),[[:space:]]+built:[[:space:]]+[^)]*\)$/\1\t\2/p' <<< "$binary_version_output"
+  sed -nE 's/^.*Sub2API[[:space:]]+([^[:space:]]+)[[:space:]]+\(commit:[[:space:]]+([0-9a-f]{40,64}),[[:space:]]+built:[[:space:]]+[^)]*\).*$/\1\t\2/p' <<< "$binary_version_output"
 )
 if [[ "${#binary_build_records[@]}" -ne 1 ]]; then
   echo "Candidate binary did not report one parseable version record" >&2
