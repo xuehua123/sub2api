@@ -640,6 +640,25 @@ func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejection(t *
 	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
 }
 
+func TestOpenAIGatewayService_ResponsesLiteBodyWithoutHeaderPinsParallelToolCallsBeforeForward(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-terra","stream":false,"parallel_tool_calls":true,"input":[{"type":"additional_tools","role":"developer","tools":[{"type":"custom","name":"exec"}]},{"type":"message","role":"user","content":"hello"}]}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+	c := newOpenAIRejectedFieldTestContext(body)
+	require.Empty(t, c.GetHeader(responsesLiteHeader), "regression requires the Lite header to be absent")
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), c, newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+	require.Equal(t, "additional_tools", gjson.GetBytes(upstream.bodies[0], "input.0.type").String())
+}
+
 func TestOpenAIGatewayService_ComposesProactiveNamespaceStripWithRejectedFieldRetry(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","stream":false,"max_output_tokens":2048,"input":[{"type":"function_call","name":"first","namespace":"remove-first","arguments":"{}"},{"type":"custom_tool_call","name":"second","namespace":"remove-second","input":"{}"}]}`)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{

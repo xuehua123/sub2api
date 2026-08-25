@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 type openAIResponsesLiteValidationError struct {
@@ -12,6 +14,23 @@ type openAIResponsesLiteValidationError struct {
 }
 
 func (e *openAIResponsesLiteValidationError) Error() string { return e.message }
+
+// isOpenAIResponsesLiteHTTPPayload recognizes the private HTTP carrier used by
+// Responses Lite. Some compatible suppliers select their Lite route from this
+// body shape even when the internal Lite header did not reach the gateway, so
+// header-only detection leaves parallel_tool_calls=true on the wire.
+func isOpenAIResponsesLiteHTTPPayload(body []byte) bool {
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() {
+		return false
+	}
+	for _, item := range input.Array() {
+		if strings.EqualFold(strings.TrimSpace(item.Get("type").String()), "additional_tools") {
+			return true
+		}
+	}
+	return false
+}
 
 func newOpenAIResponsesLiteValidationError(param, format string, args ...any) error {
 	return &openAIResponsesLiteValidationError{param: param, message: fmt.Sprintf(format, args...)}
