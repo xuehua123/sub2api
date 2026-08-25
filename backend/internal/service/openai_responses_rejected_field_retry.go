@@ -127,9 +127,11 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 	// upstream's exact Lite contract rejection. The caller applies a dedicated
 	// one-shot guard so this idempotent compatibility repair remains available
 	// even after the generic rejected-field retry budget is exhausted.
-	if code == "unsupported_value" && param == "parallel_tool_calls" &&
-		strings.Contains(message, "x-openai-internal-codex-responses-lite") &&
-		strings.Contains(message, "requires `parallel_tool_calls` to be false") {
+	liteContractRejection := strings.Contains(message, "x-openai-internal-codex-responses-lite") &&
+		strings.Contains(message, "requires `parallel_tool_calls` to be false")
+	liteErrorShape := (code == "" || code == "unsupported_value" || code == "invalid_request_error") &&
+		(param == "" || param == "parallel_tool_calls")
+	if liteContractRejection && liteErrorShape {
 		parallelToolCalls := gjson.GetBytes(body, "parallel_tool_calls")
 		if parallelToolCalls.Type == gjson.False {
 			return nil, "", false, nil

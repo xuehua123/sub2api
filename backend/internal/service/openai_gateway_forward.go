@@ -1137,7 +1137,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					Detail:             upstreamDetail,
 				})
 
-				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+				// This exact Lite contract failure is a supplier request-serialization
+				// incompatibility, not evidence that the credential is unhealthy. Rotate
+				// the request without applying generic 400 account side effects.
+				responsesLiteContractError := isOpenAIResponsesLiteParallelToolCallsUpstreamError(
+					resp.StatusCode, upstreamMsg, respBody,
+				)
+				shouldDisable := false
+				if !responsesLiteContractError {
+					shouldDisable = s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+				}
 				return nil, s.newOpenAIAccountFailoverError(
 					account,
 					resp.StatusCode,
@@ -1315,6 +1324,19 @@ func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
+	// Pin the supplier-side Responses Lite contract at the last byte boundary.
+	// Forward normally applies the same normalization earlier, but later request
+	// rewrites and alternate callers must not be able to put true/missing back on
+	// the wire for affected API-key models.
+	if suffix, recognized := rawOpenAIResponsesRequestPathSuffix(c); recognized && suffix == "" &&
+		shouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls(account, body) {
+		pinnedBody, _, pinErr := normalizeOpenAIResponsesLiteParallelToolCallsPayload(body)
+		if pinErr != nil {
+			return nil, fmt.Errorf("pin Responses Lite parallel_tool_calls at upstream boundary: %w", pinErr)
+		}
+		body = pinnedBody
+	}
+
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {

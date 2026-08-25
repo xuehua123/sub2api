@@ -260,6 +260,13 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	// A compatible supplier may strip an explicit false value while proxying to
+	// its private Responses Lite route. After the dedicated same-account repair
+	// has been tried, rotate away from that account instead of returning its
+	// supplier-specific 400 directly to the client.
+	if isOpenAIResponsesLiteParallelToolCallsUpstreamError(statusCode, upstreamMsg, upstreamBody) {
+		return true
+	}
 	if isOpenAIHTTPUpstreamAccessStateError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}
@@ -270,6 +277,26 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 		return true
 	}
 	return isOpenAITransientProcessingError(statusCode, upstreamMsg, upstreamBody)
+}
+
+func isOpenAIResponsesLiteParallelToolCallsUpstreamError(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	match := func(message string) bool {
+		message = strings.ToLower(strings.TrimSpace(message))
+		return strings.Contains(message, "x-openai-internal-codex-responses-lite") &&
+			strings.Contains(message, "requires `parallel_tool_calls` to be false")
+	}
+	if match(upstreamMsg) {
+		return true
+	}
+	for _, path := range [...]string{"error.message", "response.error.message", "message"} {
+		if match(gjson.GetBytes(upstreamBody, path).String()) {
+			return true
+		}
+	}
+	return !gjson.ValidBytes(upstreamBody) && match(string(upstreamBody))
 }
 
 // OpenAIRequestBodyTooLargeClientMessage is the fixed downstream message used

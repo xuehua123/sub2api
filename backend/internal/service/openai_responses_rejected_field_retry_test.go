@@ -137,6 +137,20 @@ func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyPinsResponsesLiteParallel
 	require.Nil(t, retryBody)
 }
 
+func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyPinsMessageOnlyResponsesLiteError(t *testing.T) {
+	responseBody := []byte(`{"error":{"message":"X-OpenAI-Internal-Codex-Responses-Lite requires ` + "`parallel_tool_calls`" + ` to be false."}}`)
+	retryBody, reason, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(
+		http.StatusBadRequest,
+		[]byte(`{"model":"gpt-5.6-terra","parallel_tool_calls":true}`),
+		responseBody,
+	)
+
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, openAIResponsesLiteParallelToolCallsRejectionReason, reason)
+	require.Equal(t, gjson.False, gjson.GetBytes(retryBody, "parallel_tool_calls").Type)
+}
+
 func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyDoesNotGuessAutomationRootType(t *testing.T) {
 	body := []byte(`{"tools":[{"type":"function","name":"automation_update","parameters":{"oneOf":[{"type":"object"}]}}]}`)
 	tests := []string{
@@ -640,6 +654,24 @@ func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejection(t *
 	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
 }
 
+func TestOpenAIGatewayService_RetriesMessageOnlyResponsesLiteParallelToolCallsRejection(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, `{"error":{"message":"X-OpenAI-Internal-Codex-Responses-Lite requires `+"`parallel_tool_calls`"+` to be false."}}`),
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), newOpenAIRejectedFieldTestContext(body), newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
+}
+
 func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejectionAfterGenericBudgetExhausted(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.5","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
@@ -703,6 +735,29 @@ func TestOpenAIGatewayService_AffectedAPIKeyModelPinsParallelToolCallsWithoutLit
 			require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
 		})
 	}
+}
+
+func TestOpenAIGatewayService_BuildUpstreamRequestRepinsAffectedModelAtWireBoundary(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-terra","stream":true,"parallel_tool_calls":true,"input":"hello"}`)
+	c := newOpenAIRejectedFieldTestContext(body)
+	req, err := newOpenAIRejectedFieldTestService(nil).buildUpstreamRequest(
+		context.Background(), c, newOpenAIRejectedFieldTestAccount(), body, "sk-test", true, "", false,
+	)
+
+	require.NoError(t, err)
+	wireBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.Equal(t, gjson.False, gjson.GetBytes(wireBody, "parallel_tool_calls").Type)
+}
+
+func TestOpenAIResponsesLiteParallelToolCallsErrorTriggersAccountFailover(t *testing.T) {
+	message := "X-OpenAI-Internal-Codex-Responses-Lite requires `parallel_tool_calls` to be false."
+	body := []byte(`{"error":{"message":` + strconv.Quote(message) + `}}`)
+	svc := &OpenAIGatewayService{}
+
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, message, body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, "", body))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusUnprocessableEntity, message, body))
 }
 
 func TestOpenAIGatewayService_ModelMappedToAffectedAPIKeyModelPinsBeforeForward(t *testing.T) {
