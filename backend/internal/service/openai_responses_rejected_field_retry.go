@@ -119,6 +119,24 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(responseBody)))
 	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
 	param := strings.ToLower(strings.TrimSpace(gjson.GetBytes(responseBody, "error.param").String()))
+	// Some Responses-compatible suppliers enable the internal Lite route after
+	// this gateway has already built the request, so the inbound Lite header is
+	// not always available for proactive normalization. Recover only from the
+	// upstream's exact Lite contract rejection and let the existing retry guard
+	// bound the replay to one distinct body.
+	if code == "unsupported_value" && param == "parallel_tool_calls" &&
+		strings.Contains(message, "x-openai-internal-codex-responses-lite") &&
+		strings.Contains(message, "requires `parallel_tool_calls` to be false") {
+		parallelToolCalls := gjson.GetBytes(body, "parallel_tool_calls")
+		if parallelToolCalls.Type == gjson.False {
+			return nil, "", false, nil
+		}
+		retryBody, err := sjson.SetBytes(body, "parallel_tool_calls", false)
+		if err != nil {
+			return nil, "", false, fmt.Errorf("pin rejected Responses Lite parallel_tool_calls: %w", err)
+		}
+		return retryBody, "Responses Lite parallel_tool_calls rejection", true, nil
+	}
 	if code == "invalid_function_parameters" &&
 		openAIResponsesToolParametersParamPattern.MatchString(param) &&
 		openAIResponsesMissingSchemaTypePattern.MatchString(message) {

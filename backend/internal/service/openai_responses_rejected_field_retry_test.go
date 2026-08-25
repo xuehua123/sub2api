@@ -113,6 +113,30 @@ func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyRepairsAutomationMissingR
 	require.Equal(t, "object", gjson.GetBytes(retryBody, "tools.0.parameters.type").String())
 }
 
+func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyPinsResponsesLiteParallelToolCalls(t *testing.T) {
+	responseBody := []byte(`{"error":{"code":"unsupported_value","message":"X-OpenAI-Internal-Codex-Responses-Lite requires ` + "`parallel_tool_calls`" + ` to be false.","param":"parallel_tool_calls","type":"invalid_request_error"}}`)
+
+	for _, body := range [][]byte{
+		[]byte(`{"model":"gpt-5.6-sol","parallel_tool_calls":true}`),
+		[]byte(`{"model":"gpt-5.6-terra"}`),
+	} {
+		retryBody, reason, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(http.StatusBadRequest, body, responseBody)
+		require.NoError(t, err)
+		require.True(t, changed)
+		require.Equal(t, "Responses Lite parallel_tool_calls rejection", reason)
+		require.Equal(t, gjson.False, gjson.GetBytes(retryBody, "parallel_tool_calls").Type)
+	}
+
+	retryBody, _, changed, err := normalizeOpenAIResponsesRejectedFieldRetryBody(
+		http.StatusBadRequest,
+		[]byte(`{"model":"gpt-5.6-sol","parallel_tool_calls":false}`),
+		responseBody,
+	)
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Nil(t, retryBody)
+}
+
 func TestNormalizeOpenAIResponsesRejectedFieldRetryBodyDoesNotGuessAutomationRootType(t *testing.T) {
 	body := []byte(`{"tools":[{"type":"function","name":"automation_update","parameters":{"oneOf":[{"type":"object"}]}}]}`)
 	tests := []string{
@@ -593,6 +617,27 @@ func TestOpenAIGatewayService_RetriesExplicitMaxOutputTokensRejection(t *testing
 	require.Equal(t, int64(4096), gjson.GetBytes(upstream.bodies[0], "max_output_tokens").Int())
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "max_output_tokens").Exists())
 	require.Equal(t, "keep", gjson.GetBytes(upstream.bodies[1], "input.0.content.max_output_tokens").String())
+}
+
+func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejection(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-terra","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, `{"error":{"code":"unsupported_value","message":"X-OpenAI-Internal-Codex-Responses-Lite requires `+"`parallel_tool_calls`"+` to be false.","param":"parallel_tool_calls","type":"invalid_request_error"}}`),
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(),
+		newOpenAIRejectedFieldTestContext(body),
+		newOpenAIRejectedFieldTestAccount(),
+		body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
 }
 
 func TestOpenAIGatewayService_ComposesProactiveNamespaceStripWithRejectedFieldRetry(t *testing.T) {
