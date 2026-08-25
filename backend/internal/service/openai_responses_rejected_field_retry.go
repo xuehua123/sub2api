@@ -16,6 +16,8 @@ import (
 
 const maxOpenAIResponsesRejectedFieldRetries = 6
 
+const openAIResponsesLiteParallelToolCallsRejectionReason = "Responses Lite parallel_tool_calls rejection"
+
 var (
 	openAIResponsesRejectedNamespaceParamPattern  = regexp.MustCompile(`(?i)^input\[(\d+)\]\.namespace$`)
 	openAIResponsesRejectedStatusParamPattern     = regexp.MustCompile(`(?i)^input\[(\d+)\]\.status$`)
@@ -122,8 +124,9 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 	// Some Responses-compatible suppliers enable the internal Lite route after
 	// this gateway has already built the request, so the inbound Lite header is
 	// not always available for proactive normalization. Recover only from the
-	// upstream's exact Lite contract rejection and let the existing retry guard
-	// bound the replay to one distinct body.
+	// upstream's exact Lite contract rejection. The caller applies a dedicated
+	// one-shot guard so this idempotent compatibility repair remains available
+	// even after the generic rejected-field retry budget is exhausted.
 	if code == "unsupported_value" && param == "parallel_tool_calls" &&
 		strings.Contains(message, "x-openai-internal-codex-responses-lite") &&
 		strings.Contains(message, "requires `parallel_tool_calls` to be false") {
@@ -135,7 +138,7 @@ func normalizeOpenAIResponsesRejectedFieldRetryBody(statusCode int, body, respon
 		if err != nil {
 			return nil, "", false, fmt.Errorf("pin rejected Responses Lite parallel_tool_calls: %w", err)
 		}
-		return retryBody, "Responses Lite parallel_tool_calls rejection", true, nil
+		return retryBody, openAIResponsesLiteParallelToolCallsRejectionReason, true, nil
 	}
 	if code == "invalid_function_parameters" &&
 		openAIResponsesToolParametersParamPattern.MatchString(param) &&

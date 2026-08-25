@@ -620,7 +620,7 @@ func TestOpenAIGatewayService_RetriesExplicitMaxOutputTokensRejection(t *testing
 }
 
 func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejection(t *testing.T) {
-	body := []byte(`{"model":"gpt-5.6-terra","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	body := []byte(`{"model":"gpt-5.5","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{
 		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, `{"error":{"code":"unsupported_value","message":"X-OpenAI-Internal-Codex-Responses-Lite requires `+"`parallel_tool_calls`"+` to be false.","param":"parallel_tool_calls","type":"invalid_request_error"}}`),
 		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
@@ -638,6 +638,143 @@ func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejection(t *
 	require.Len(t, upstream.bodies, 2)
 	require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
 	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
+}
+
+func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejectionAfterGenericBudgetExhausted(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, `{"error":{"code":"unsupported_value","message":"X-OpenAI-Internal-Codex-Responses-Lite requires `+"`parallel_tool_calls`"+` to be false.","param":"parallel_tool_calls","type":"invalid_request_error"}}`),
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+	c := newOpenAIRejectedFieldTestContext(body)
+	c.Set(openAIResponsesRejectedFieldRetryBudgetContextKey, &openAIResponsesRejectedFieldRetryBudget{
+		attempts: maxOpenAIResponsesRejectedFieldRetries,
+	})
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), c, newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
+}
+
+func TestOpenAIGatewayService_RetriesResponsesLiteParallelToolCallsRejectionOnlyOnce(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.5","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	rejection := `{"error":{"code":"unsupported_value","message":"X-OpenAI-Internal-Codex-Responses-Lite requires ` + "`parallel_tool_calls`" + ` to be false.","param":"parallel_tool_calls","type":"invalid_request_error"}}`
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, rejection),
+		newOpenAIRejectedFieldTestResponse(http.StatusBadRequest, rejection),
+	}}
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), newOpenAIRejectedFieldTestContext(body), newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Len(t, upstream.bodies, 2)
+	require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[1], "parallel_tool_calls").Type)
+}
+
+func TestOpenAIGatewayService_AffectedAPIKeyModelPinsParallelToolCallsWithoutLiteSignals(t *testing.T) {
+	for _, path := range []string{"/v1/responses", "/responses"} {
+		t.Run(path, func(t *testing.T) {
+			body := []byte(`{"model":"gpt-5.6-terra","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+			}}
+			c := newOpenAIRejectedFieldTestContext(body)
+			c.Request.URL.Path = path
+			require.Empty(t, c.GetHeader(responsesLiteHeader))
+			require.False(t, isOpenAIResponsesLiteHTTPPayload(body))
+
+			result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+				context.Background(), c, newOpenAIRejectedFieldTestAccount(), body,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.bodies, 1)
+			require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+		})
+	}
+}
+
+func TestOpenAIGatewayService_ModelMappedToAffectedAPIKeyModelPinsBeforeForward(t *testing.T) {
+	body := []byte(`{"model":"supplier-terra","stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	account := newOpenAIRejectedFieldTestAccount()
+	account.Credentials["model_mapping"] = map[string]any{"supplier-terra": "gpt-5.6-terra"}
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), newOpenAIRejectedFieldTestContext(body), account, body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, "gpt-5.6-terra", gjson.GetBytes(upstream.bodies[0], "model").String())
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+}
+
+func TestOpenAIGatewayService_AffectedAPIKeyModelAddsParallelToolCallsWhenAbsent(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.6-terra","stream":false,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`)
+	upstream := &httpUpstreamRecorder{responses: []*http.Response{
+		newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+	}}
+
+	result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+		context.Background(), newOpenAIRejectedFieldTestContext(body), newOpenAIRejectedFieldTestAccount(), body,
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Len(t, upstream.bodies, 1)
+	require.Equal(t, gjson.False, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+}
+
+func TestOpenAIGatewayService_UnaffectedRequestsKeepParallelToolCalls(t *testing.T) {
+	mappedAwayFromTerra := newOpenAIRejectedFieldTestAccount()
+	mappedAwayFromTerra.Credentials["model_mapping"] = map[string]any{"gpt-5.6-terra": "gpt-5.5"}
+	tests := []struct {
+		name    string
+		account *Account
+		model   string
+		path    string
+	}{
+		{name: "other API key model", account: newOpenAIRejectedFieldTestAccount(), model: "gpt-5.5"},
+		{name: "OAuth affected model without Lite signal", account: newOpenAIOAuthNamespaceTestAccount(), model: "gpt-5.6-terra"},
+		{name: "API key compact path", account: newOpenAIRejectedFieldTestAccount(), model: "gpt-5.6-terra", path: "/v1/responses/compact"},
+		{name: "API key model mapped away from affected model", account: mappedAwayFromTerra, model: "gpt-5.6-terra"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q,"stream":false,"parallel_tool_calls":true,"tools":[{"type":"function","name":"shell"}],"input":"hello"}`, tt.model))
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{
+				newOpenAIRejectedFieldTestResponse(http.StatusOK, `{"output":[],"usage":{"input_tokens":1,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}`),
+			}}
+			c := newOpenAIRejectedFieldTestContext(body)
+			if tt.path != "" {
+				c.Request.URL.Path = tt.path
+			}
+
+			result, err := newOpenAIRejectedFieldTestService(upstream).Forward(
+				context.Background(), c, tt.account, body,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.bodies, 1)
+			require.Equal(t, gjson.True, gjson.GetBytes(upstream.bodies[0], "parallel_tool_calls").Type)
+		})
+	}
 }
 
 func TestOpenAIGatewayService_ResponsesLiteBodyWithoutHeaderPinsParallelToolCallsBeforeForward(t *testing.T) {

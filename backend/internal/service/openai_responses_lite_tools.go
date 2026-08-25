@@ -32,6 +32,23 @@ func isOpenAIResponsesLiteHTTPPayload(body []byte) bool {
 	return false
 }
 
+// shouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls covers Codex models for
+// which API-key model manifests already advertise use_responses_lite=false.
+// Some compatible suppliers still select their private Lite route internally,
+// without forwarding the client Lite header or additional_tools carrier. An
+// explicit false value is valid on the full Responses path and also satisfies
+// that supplier-side Lite contract, avoiding a late (and potentially slow) 400.
+func shouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls(account *Account, body []byte) bool {
+	if account == nil || !account.IsOpenAIApiKey() || shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
+		return false
+	}
+	requestedModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	upstreamModel := resolveOpenAIAccountUpstreamModelForRequest(account, requestedModel, false)
+	upstreamModel = strings.ToLower(strings.TrimSpace(upstreamModel))
+	_, targeted := apiKeyCodexModelsWithoutResponsesLite[upstreamModel]
+	return targeted
+}
+
 func newOpenAIResponsesLiteValidationError(param, format string, args ...any) error {
 	return &openAIResponsesLiteValidationError{param: param, message: fmt.Sprintf(format, args...)}
 }

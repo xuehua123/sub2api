@@ -5,6 +5,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -56,6 +57,62 @@ func TestNormalizeOpenAIResponsesLiteTools_MovesNamespacesAndKeepsSupportedTools
 	require.Equal(t, "image_gen", additional[0].(map[string]any)["name"])
 	require.Equal(t, "collaboration", additional[1].(map[string]any)["name"], "existing namespace must not be duplicated")
 	require.Equal(t, map[string]any{"type": "namespace", "name": "collaboration"}, reqBody["tool_choice"])
+}
+
+func TestShouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls(t *testing.T) {
+	apiKey := &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
+	oauth := &Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	mappedToTerra := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"supplier-terra": "gpt-5.6-terra",
+		}},
+	}
+	mappedAwayFromTerra := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"gpt-5.6-terra": "gpt-5.5",
+		}},
+	}
+	passthroughIgnoresMapping := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Credentials: map[string]any{"model_mapping": map[string]any{
+			"supplier-terra": "gpt-5.6-terra",
+		}},
+		Extra: map[string]any{"openai_passthrough": true},
+	}
+	chatCompletionsFallback := &Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeAPIKey,
+		Extra:    map[string]any{"openai_responses_supported": false},
+	}
+
+	tests := []struct {
+		name    string
+		account *Account
+		model   string
+		want    bool
+	}{
+		{name: "sol API key", account: apiKey, model: "gpt-5.6-sol", want: true},
+		{name: "terra API key", account: apiKey, model: "GPT-5.6-TERRA", want: true},
+		{name: "luna API key", account: apiKey, model: "gpt-5.6-luna", want: true},
+		{name: "mapping targets terra", account: mappedToTerra, model: "supplier-terra", want: true},
+		{name: "mapping targets another model", account: mappedAwayFromTerra, model: "gpt-5.6-terra", want: false},
+		{name: "passthrough ignores account mapping", account: passthroughIgnoresMapping, model: "supplier-terra", want: false},
+		{name: "chat completions fallback", account: chatCompletionsFallback, model: "gpt-5.6-terra", want: false},
+		{name: "other API key model", account: apiKey, model: "gpt-5.5", want: false},
+		{name: "OAuth remains header driven", account: oauth, model: "gpt-5.6-terra", want: false},
+		{name: "nil account", account: nil, model: "gpt-5.6-terra", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := []byte(fmt.Sprintf(`{"model":%q}`, tt.model))
+			require.Equal(t, tt.want, shouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls(tt.account, body))
+		})
+	}
 }
 
 func TestNormalizeOpenAIResponsesLiteTools_PreservesDeferredFlagsWithToolSearch(t *testing.T) {

@@ -89,8 +89,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			body = reasoningBody
 		}
 	}
+	compactPath := isOpenAIResponsesCompactPath(c)
 	responsesLite := account.IsOpenAI() && (isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) ||
-		isOpenAIResponsesLiteHTTPPayload(body))
+		isOpenAIResponsesLiteHTTPPayload(body) ||
+		(!compactPath && shouldPinOpenAIAPIKeyResponsesLiteParallelToolCalls(account, body)))
 	if responsesLite {
 		liteBody, changed, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(body, account)
 		if liteErr != nil {
@@ -113,7 +115,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
 	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, GetOpenAIClientTransport(c))
 	passthroughEnabled := account.IsOpenAIPassthroughEnabled()
-	compactPath := isOpenAIResponsesCompactPath(c)
 	if shouldFlattenOpenAIResponsesNamespaces(account, wsDecision.Transport, passthroughEnabled, compactPath) {
 		body, err = flattenOpenAIResponsesNamespaces(c, body)
 		if err != nil {
@@ -977,6 +978,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	httpInvalidEncryptedContentRetryTried := false
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
+	responsesLiteParallelToolCallsRetryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
 	for {
 		// Build upstream request
@@ -1081,12 +1083,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			}
 			if retryBody, reason, changed, retryErr := normalizeOpenAIResponsesRejectedFieldRetryBody(resp.StatusCode, body, respBody); retryErr != nil {
 				return nil, fmt.Errorf("normalize rejected Responses field retry body: %w", retryErr)
-			} else if changed && rejectedFieldRetryState.Allow(retryBody) {
-				body = retryBody
-				requestView = newOpenAIRequestView(body)
-				reqBody = nil
-				logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request after %s (account: %s)", reason, account.Name)
-				continue
+			} else if changed {
+				retryAllowed := false
+				if reason == openAIResponsesLiteParallelToolCallsRejectionReason {
+					retryAllowed = !responsesLiteParallelToolCallsRetryTried
+					responsesLiteParallelToolCallsRetryTried = true
+				} else {
+					retryAllowed = rejectedFieldRetryState.Allow(retryBody)
+				}
+				if retryAllowed {
+					body = retryBody
+					requestView = newOpenAIRequestView(body)
+					reqBody = nil
+					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request after %s (account: %s)", reason, account.Name)
+					continue
+				}
 			}
 			if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 				c, account, requestedModel, body, resp.StatusCode, upstreamMsg, respBody, compactModelFallbackRetried,
