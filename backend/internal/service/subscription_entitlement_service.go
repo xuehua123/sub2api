@@ -554,7 +554,7 @@ func entitlementGroupIDs(ent *SubscriptionEntitlement) []int64 {
 			ids = append(ids, grant.GroupID)
 		}
 	}
-	if len(ids) == 0 {
+	if len(ids) == 0 && !entitlementHasConfiguredGroupGrants(ent) {
 		for _, group := range ent.Groups {
 			if group.ID > 0 {
 				ids = append(ids, group.ID)

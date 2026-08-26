@@ -75,6 +75,38 @@
         />
         <p class="input-hint">{{ t('admin.users.form.rpmLimitHint') }}</p>
       </div>
+      <div class="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-dark-600">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.users.form.restrictToAllowedGroups') }}</p>
+            <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.users.form.restrictToAllowedGroupsHint') }}</p>
+          </div>
+          <button
+            type="button"
+            data-test="restrict-to-allowed-groups-toggle"
+            @click="form.restrictToAllowedGroups = !form.restrictToAllowedGroups"
+            :class="form.restrictToAllowedGroups ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'"
+            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out"
+          >
+            <span :class="form.restrictToAllowedGroups ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none ml-0.5 mt-0.5 inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out" />
+          </button>
+        </div>
+        <div class="flex items-start justify-between gap-4 border-t border-gray-100 pt-3 dark:border-dark-700">
+          <div>
+            <p class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.users.form.paymentDisabled') }}</p>
+            <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ t('admin.users.form.paymentDisabledHint') }}</p>
+          </div>
+          <button
+            type="button"
+            data-test="payment-disabled-toggle"
+            @click="form.paymentDisabled = !form.paymentDisabled"
+            :class="form.paymentDisabled ? 'bg-red-600' : 'bg-gray-200 dark:bg-dark-600'"
+            class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out"
+          >
+            <span :class="form.paymentDisabled ? 'translate-x-5' : 'translate-x-0'" class="pointer-events-none ml-0.5 mt-0.5 inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ease-in-out" />
+          </button>
+        </div>
+      </div>
       <UserAttributeForm v-model="form.customAttributes" :user-id="user?.id" />
     </form>
     <template #footer>
@@ -123,12 +155,14 @@ const form = reactive({
   concurrency: 1,
   rpm_limit: 0,
   referralEnabled: false,
+  restrictToAllowedGroups: false,
+  paymentDisabled: false,
   customAttributes: {} as UserAttributeValuesMap
 })
 
 watch(() => props.user, (u) => {
   if (u) {
-    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, referralEnabled: u.referral_enabled ?? false, customAttributes: {} })
+    Object.assign(form, { email: u.email, password: '', username: u.username || '', notes: u.notes || '', role: u.role || 'user', concurrency: u.concurrency, rpm_limit: u.rpm_limit ?? 0, referralEnabled: u.referral_enabled ?? false, restrictToAllowedGroups: u.restrict_to_allowed_groups ?? false, paymentDisabled: u.payment_disabled ?? false, customAttributes: {} })
     passwordCopied.value = false
   }
 }, { immediate: true })
@@ -159,7 +193,7 @@ const handleUpdateUser = async () => {
   const userId = props.user.id
   submitting.value = true
   try {
-    const data: any = { email: form.email, username: form.username, notes: form.notes, role: form.role, concurrency: form.concurrency, rpm_limit: form.rpm_limit, referral_enabled: form.referralEnabled }
+    const data: any = { email: form.email, username: form.username, notes: form.notes, role: form.role, concurrency: form.concurrency, rpm_limit: form.rpm_limit, referral_enabled: form.referralEnabled, restrict_to_allowed_groups: form.restrictToAllowedGroups, payment_disabled: form.paymentDisabled }
     if (form.password.trim()) data.password = form.password.trim()
     // 提升为管理员属敏感操作：后端返回 STEP_UP_REQUIRED 时弹 TOTP 验证并重试
     await stepUp.run(() => adminAPI.users.update(userId, data))

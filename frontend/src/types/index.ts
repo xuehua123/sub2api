@@ -91,6 +91,8 @@ export interface User {
   rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
+  restrict_to_allowed_groups?: boolean // Allow only exclusive groups authorized by balance grants, subscriptions, or entitlements
+  payment_disabled?: boolean // User cannot open self-service payment pages or create payment orders
   balance_notify_enabled: boolean
   balance_notify_threshold: number | null
   balance_notify_extra_emails: NotifyEmailEntry[]
@@ -687,6 +689,8 @@ export interface AvailableGroupAccessSource {
 export interface AvailableGroup extends Group {
   entitlements?: AvailableGroupEntitlement[]
   access_sources?: AvailableGroupAccessSource[]
+  disabled?: boolean
+  unavailable_reason?: string | null
 }
 
 export interface AdminGroup extends Group {
@@ -2036,6 +2040,8 @@ export interface UpdateUserRequest {
   status?: 'active' | 'disabled'
   referral_enabled?: boolean
   allowed_groups?: number[] | null
+  restrict_to_allowed_groups?: boolean
+  payment_disabled?: boolean
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
   group_rates?: Record<number, number | null>

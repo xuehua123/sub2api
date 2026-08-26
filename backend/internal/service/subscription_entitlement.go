@@ -84,6 +84,11 @@ type SubscriptionEntitlement struct {
 
 	Groups      []Group
 	GroupGrants []SubscriptionEntitlementGroupGrant
+	// GroupGrantsConfigured distinguishes a legacy object with no grant rows
+	// from an entitlement whose configured grant rows are all disabled. The
+	// repository exposes only enabled grants in GroupGrants, so len alone is not
+	// sufficient for authorization fallbacks.
+	GroupGrantsConfigured bool
 }
 
 type SubscriptionEntitlementGroupGrant struct {

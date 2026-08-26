@@ -83,6 +83,7 @@ func TestBackendModeUserGuard(t *testing.T) {
 		nilService bool
 		enabled    string
 		role       *string
+		path       string
 		wantStatus int
 	}{
 		{
@@ -107,6 +108,19 @@ func TestBackendModeUserGuard(t *testing.T) {
 			name:       "enabled_user_blocked",
 			enabled:    "true",
 			role:       stringPtr("user"),
+			wantStatus: http.StatusForbidden,
+		},
+		{
+			name:       "enabled_user_can_refresh_own_profile",
+			enabled:    "true",
+			role:       stringPtr("user"),
+			path:       "/api/v1/auth/me",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "enabled_auth_me_without_role_blocked",
+			enabled:    "true",
+			path:       "/api/v1/auth/me",
 			wantStatus: http.StatusForbidden,
 		},
 		{
@@ -142,12 +156,16 @@ func TestBackendModeUserGuard(t *testing.T) {
 			}
 
 			r.Use(BackendModeUserGuard(svc))
-			r.GET("/test", func(c *gin.Context) {
+			path := tc.path
+			if path == "" {
+				path = "/test"
+			}
+			r.GET(path, func(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"ok": true})
 			})
 
 			w := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			req := httptest.NewRequest(http.MethodGet, path, nil)
 			r.ServeHTTP(w, req)
 
 			require.Equal(t, tc.wantStatus, w.Code)

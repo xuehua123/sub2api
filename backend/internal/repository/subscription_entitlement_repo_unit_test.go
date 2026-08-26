@@ -8,6 +8,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -69,6 +70,38 @@ func TestSubscriptionEntitlementRepository_ListByUserID_SQLite(t *testing.T) {
 	require.Equal(t, newer.ID, got[0].ID, "list should sort by expires_at desc")
 	require.Equal(t, older.ID, got[1].ID)
 	require.Equal(t, []int64{groupB.ID, groupA.ID}, subscriptionEntitlementGrantGroupIDs(got[1].GroupGrants))
+}
+
+func TestSubscriptionEntitlementRepository_AllDisabledGrantsRemainConfigured_SQLite(t *testing.T) {
+	_, client := newAPIKeyRepoSQLite(t)
+	repo := &subscriptionEntitlementRepository{client: client}
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	user := mustCreateAPIKeyRepoUser(t, ctx, client, "ent-disabled-grants@test.com")
+	group := mustCreateSubscriptionEntitlementRepoGroup(t, ctx, client, "ent-disabled-grant", service.PlatformOpenAI)
+	entitlement := &service.SubscriptionEntitlement{
+		UserID:     user.ID,
+		Name:       "disabled grants entitlement",
+		Status:     service.SubscriptionStatusActive,
+		StartsAt:   now.Add(-time.Hour),
+		ExpiresAt:  now.Add(time.Hour),
+		SourceType: service.SubscriptionEntitlementSourceAdminAssign,
+	}
+	require.NoError(t, repo.Create(ctx, entitlement, []int64{group.ID}))
+
+	_, err := client.SubscriptionEntitlementGroup.Update().
+		Where(subscriptionentitlementgroup.EntitlementIDEQ(entitlement.ID)).
+		SetEnabled(false).
+		Save(ctx)
+	require.NoError(t, err)
+
+	got, err := repo.GetByID(ctx, entitlement.ID)
+	require.NoError(t, err)
+	require.True(t, got.GroupGrantsConfigured)
+	require.Empty(t, got.GroupGrants, "disabled grant rows must not be exposed as usable grants")
+	require.Len(t, got.Groups, 1, "unfiltered group details may remain loaded for display")
+	require.Equal(t, group.ID, got.Groups[0].ID)
 }
 
 func TestSubscriptionEntitlementRepository_ResetDailyUsageStaleExpectedPreservesCurrentUsage_SQLite(t *testing.T) {

@@ -10,21 +10,23 @@ import (
 )
 
 type User struct {
-	ID                  int64      `json:"id"`
-	Email               string     `json:"email"`
-	Username            string     `json:"username"`
-	Role                string     `json:"role"`
-	Balance             float64    `json:"balance"`
-	FrozenBalance       float64    `json:"frozen_balance"`
-	Concurrency         int        `json:"concurrency"`
-	Status              string     `json:"status"`
-	AllowedGroups       []int64    `json:"allowed_groups"`
-	ReferralEnabled     bool       `json:"referral_enabled"`
-	DefaultChatAPIKeyID *int64     `json:"default_chat_api_key_id,omitempty"`
-	LastActiveAt        *time.Time `json:"last_active_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
-	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
+	ID                      int64      `json:"id"`
+	Email                   string     `json:"email"`
+	Username                string     `json:"username"`
+	Role                    string     `json:"role"`
+	Balance                 float64    `json:"balance"`
+	FrozenBalance           float64    `json:"frozen_balance"`
+	Concurrency             int        `json:"concurrency"`
+	Status                  string     `json:"status"`
+	AllowedGroups           []int64    `json:"allowed_groups"`
+	RestrictToAllowedGroups bool       `json:"restrict_to_allowed_groups"`
+	PaymentDisabled         bool       `json:"payment_disabled"`
+	ReferralEnabled         bool       `json:"referral_enabled"`
+	DefaultChatAPIKeyID     *int64     `json:"default_chat_api_key_id,omitempty"`
+	LastActiveAt            *time.Time `json:"last_active_at,omitempty"`
+	CreatedAt               time.Time  `json:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at"`
+	DeletedAt               *time.Time `json:"deleted_at,omitempty"`
 
 	// 余额不足通知
 	BalanceNotifyEnabled       bool               `json:"balance_notify_enabled"`

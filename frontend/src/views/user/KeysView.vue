@@ -765,6 +765,12 @@
                 />
                 <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-left text-xs">
                   <span
+                    v-if="(option as unknown as GroupOption).disabled"
+                    class="font-medium text-amber-600 dark:text-amber-400"
+                  >
+                    {{ t('keys.groupUnavailableExclusiveOnly') }}
+                  </span>
+                  <span
                     v-if="groupEntitlementScopeText(option as unknown as GroupOption, formData.subscription_entitlement_id)"
                     class="text-primary-600 dark:text-primary-400"
                   >
@@ -1358,10 +1364,12 @@
           <button
             v-for="option in filteredGroupOptions"
             :key="option.value ?? 'null'"
-            @click="changeGroup(selectedKeyForGroup!, option.value)"
+            :disabled="option.disabled"
+            @click="!option.disabled && changeGroup(selectedKeyForGroup!, option.value)"
             :class="[
               'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm transition-colors',
               'border-b border-gray-100 last:border-0 dark:border-dark-700',
+              option.disabled && 'cursor-not-allowed opacity-60',
               selectedKeyForGroup?.group_id === option.value ||
               (!selectedKeyForGroup?.group_id && option.value === null)
                 ? 'bg-primary-50 dark:bg-primary-900/20'
@@ -1397,6 +1405,9 @@
                   {{ groupOptionActualCostText(option, selectedKeyForGroup?.subscription_entitlement_id, selectedKeyForGroup ? rowAccessSource(selectedKeyForGroup) : undefined) }}
                 </span>
               </div>
+              <p v-if="option.disabled" class="mt-1 text-left text-xs font-medium text-amber-600 dark:text-amber-400">
+                {{ t('keys.groupUnavailableExclusiveOnly') }}
+              </p>
             </div>
           </button>
           <!-- Empty state when search has no results -->
@@ -1474,6 +1485,8 @@ interface GroupOption {
   platform: GroupPlatform
   entitlements: AvailableGroupEntitlement[]
   accessSources: AvailableGroupAccessSource[]
+  disabled: boolean
+  unavailableReason: string | null
 }
 
 type AccessSource = 'balance' | 'entitlement'
@@ -1750,7 +1763,9 @@ const groupOptions = computed(() =>
     planAutoGrantEnabled: group.plan_auto_grant_enabled,
     platform: group.platform,
     entitlements: group.entitlements ?? [],
-    accessSources: group.access_sources ?? []
+    accessSources: group.access_sources ?? [],
+    disabled: group.disabled === true,
+    unavailableReason: group.unavailable_reason ?? null
   }))
 )
 
@@ -1869,12 +1884,13 @@ function groupSupportsEntitlementSource(option: GroupOption): boolean {
 
 const formGroupOptions = computed(() => {
   if (formData.value.access_source === 'balance') {
-    return groupOptions.value.filter(groupSupportsBalanceSource)
+    return groupOptions.value.filter((option) => option.disabled || groupSupportsBalanceSource(option))
   }
 
   const entitlementID = formData.value.subscription_entitlement_id
-  if (!entitlementID) return groupOptions.value.filter(groupSupportsEntitlementSource)
+  if (!entitlementID) return groupOptions.value.filter((option) => option.disabled || groupSupportsEntitlementSource(option))
   return groupOptions.value.filter((option) => {
+    if (option.disabled) return true
     if (!groupSupportsEntitlementSource(option)) return false
     return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
   })
@@ -2274,12 +2290,13 @@ const quickSwitchGroupOptions = computed(() => {
   const selectedKey = selectedKeyForGroup.value
   if (!selectedKey) return groupOptions.value
   if (rowAccessSource(selectedKey) === 'balance') {
-    return groupOptions.value.filter(groupSupportsBalanceSource)
+    return groupOptions.value.filter((option) => option.disabled || groupSupportsBalanceSource(option))
   }
 
   const entitlementID = selectedKey.subscription_entitlement_id
   if (!entitlementID) return []
   return groupOptions.value.filter((option) => {
+    if (option.disabled) return true
     if (!groupSupportsEntitlementSource(option)) return false
     return entitlementsForGroupOption(option).some((entitlement) => entitlement.id === entitlementID)
   })
@@ -2650,6 +2667,10 @@ const handleSubmit = async () => {
   // Validate group_id is required
   if (formData.value.group_id === null) {
     appStore.showError(t('keys.groupRequired'))
+    return
+  }
+  if (selectedGroupOption.value?.disabled) {
+    appStore.showError(t('keys.groupUnavailableExclusiveOnly'))
     return
   }
   if (requiresEntitlementSelection.value && !formData.value.subscription_entitlement_id) {

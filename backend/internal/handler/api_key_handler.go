@@ -108,8 +108,10 @@ type AvailableGroupAccessSourceDTO struct {
 
 type AvailableGroupDTO struct {
 	dto.Group
-	Entitlements  []AvailableGroupEntitlementDTO  `json:"entitlements,omitempty"`
-	AccessSources []AvailableGroupAccessSourceDTO `json:"access_sources,omitempty"`
+	Entitlements      []AvailableGroupEntitlementDTO  `json:"entitlements,omitempty"`
+	AccessSources     []AvailableGroupAccessSourceDTO `json:"access_sources,omitempty"`
+	Disabled          bool                            `json:"disabled,omitempty"`
+	UnavailableReason string                          `json:"unavailable_reason,omitempty"`
 }
 
 func validAPIKeyLimit(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) && v >= 0 }
@@ -398,7 +400,11 @@ func (h *APIKeyHandler) GetAvailableGroups(c *gin.Context) {
 	out := make([]AvailableGroupDTO, 0, len(groups))
 	for i := range groups {
 		groupDTO := dto.GroupFromService(&groups[i].Group)
-		item := AvailableGroupDTO{Group: *groupDTO}
+		item := AvailableGroupDTO{
+			Group:             *groupDTO,
+			Disabled:          groups[i].Disabled,
+			UnavailableReason: groups[i].UnavailableReason,
+		}
 		if len(groups[i].Entitlements) > 0 {
 			item.Entitlements = make([]AvailableGroupEntitlementDTO, 0, len(groups[i].Entitlements))
 			for _, ent := range groups[i].Entitlements {

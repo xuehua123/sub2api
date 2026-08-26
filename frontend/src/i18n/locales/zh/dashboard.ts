@@ -135,6 +135,7 @@ export default {
     noGroup: '无分组',
     searchGroup: '搜索分组...',
     noGroupFound: '未找到匹配的分组',
+    groupUnavailableExclusiveOnly: '当前账号仅可使用已授权的专属分组',
     created: '创建时间',
     copyToClipboard: '复制到剪贴板',
     copied: '已复制！',
@@ -705,7 +706,8 @@ export default {
     },
     badges: {
       exclusive: '专属分组',
-      subscription: '订阅'
+      subscription: '订阅',
+      viewOnly: '仅可查看，不可使用'
     },
     detail: {
       noModels: '该分组暂未配置模型',

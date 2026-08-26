@@ -418,11 +418,11 @@ const routes: RouteRecordRaw[] = [
     name: 'StripePayment',
     component: () => import('@/views/user/StripePaymentView.vue'),
     meta: {
-      requiresAuth: false,
+      requiresAuth: true,
       requiresAdmin: false,
       title: 'Stripe Payment',
       titleKey: 'payment.stripePay',
-      requiresPayment: false
+      requiresPayment: true
     }
   },
   {
@@ -430,11 +430,11 @@ const routes: RouteRecordRaw[] = [
     name: 'AirwallexPayment',
     component: () => import('@/views/user/AirwallexPaymentView.vue'),
     meta: {
-      requiresAuth: false,
+      requiresAuth: true,
       requiresAdmin: false,
       title: 'Airwallex Payment',
       titleKey: 'payment.airwallexPay',
-      requiresPayment: false
+      requiresPayment: true
     }
   },
   {
@@ -442,10 +442,10 @@ const routes: RouteRecordRaw[] = [
     name: 'StripePopup',
     component: () => import('@/views/user/StripePopupView.vue'),
     meta: {
-      requiresAuth: false,
+      requiresAuth: true,
       requiresAdmin: false,
       title: 'Payment',
-      requiresPayment: false
+      requiresPayment: true
     }
   },
   {
@@ -1087,6 +1087,23 @@ router.beforeEach(async (to, _from, next) => {
           adminComplianceStore.requireAcknowledgement(err.metadata)
         }
       }
+    }
+  }
+
+  // Self-service payment routes must use fresh user policy. checkAuth restores
+  // localStorage first and refreshes asynchronously, which is not strong enough
+  // for an administrator-controlled payment denial.
+  if (to.meta.requiresPayment && !to.path.startsWith('/admin/')) {
+    try {
+      await authStore.refreshUser()
+    } catch (error) {
+      console.warn('Failed to refresh user payment policy in route guard', error)
+      next(authStore.isAuthenticated ? (authStore.isAdmin ? '/admin/dashboard' : '/dashboard') : '/login')
+      return
+    }
+    if (authStore.user?.payment_disabled === true) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
     }
   }
 

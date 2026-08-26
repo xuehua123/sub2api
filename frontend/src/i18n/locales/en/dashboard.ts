@@ -134,6 +134,7 @@ export default {
     noGroup: 'No group',
     searchGroup: 'Search groups...',
     noGroupFound: 'No groups found',
+    groupUnavailableExclusiveOnly: 'This account can use only authorized exclusive groups',
     created: 'Created',
     copyToClipboard: 'Copy to clipboard',
     copied: 'Copied!',
@@ -699,7 +700,8 @@ export default {
     },
     badges: {
       exclusive: 'Exclusive',
-      subscription: 'Subscription'
+      subscription: 'Subscription',
+      viewOnly: 'View only'
     },
     detail: {
       noModels: 'No models configured for this group',

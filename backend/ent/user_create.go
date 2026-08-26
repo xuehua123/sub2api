@@ -182,6 +182,34 @@ func (_c *UserCreate) SetNillableDefaultChatAPIKeyID(v *int64) *UserCreate {
 	return _c
 }
 
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (_c *UserCreate) SetRestrictToAllowedGroups(v bool) *UserCreate {
+	_c.mutation.SetRestrictToAllowedGroups(v)
+	return _c
+}
+
+// SetNillableRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field if the given value is not nil.
+func (_c *UserCreate) SetNillableRestrictToAllowedGroups(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetRestrictToAllowedGroups(*v)
+	}
+	return _c
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (_c *UserCreate) SetPaymentDisabled(v bool) *UserCreate {
+	_c.mutation.SetPaymentDisabled(v)
+	return _c
+}
+
+// SetNillablePaymentDisabled sets the "payment_disabled" field if the given value is not nil.
+func (_c *UserCreate) SetNillablePaymentDisabled(v *bool) *UserCreate {
+	if v != nil {
+		_c.SetPaymentDisabled(*v)
+	}
+	return _c
+}
+
 // SetUsername sets the "username" field.
 func (_c *UserCreate) SetUsername(v string) *UserCreate {
 	_c.mutation.SetUsername(v)
@@ -857,6 +885,14 @@ func (_c *UserCreate) defaults() error {
 		v := user.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.RestrictToAllowedGroups(); !ok {
+		v := user.DefaultRestrictToAllowedGroups
+		_c.mutation.SetRestrictToAllowedGroups(v)
+	}
+	if _, ok := _c.mutation.PaymentDisabled(); !ok {
+		v := user.DefaultPaymentDisabled
+		_c.mutation.SetPaymentDisabled(v)
+	}
 	if _, ok := _c.mutation.Username(); !ok {
 		v := user.DefaultUsername
 		_c.mutation.SetUsername(v)
@@ -948,6 +984,12 @@ func (_c *UserCreate) check() error {
 		if err := user.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "User.status": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.RestrictToAllowedGroups(); !ok {
+		return &ValidationError{Name: "restrict_to_allowed_groups", err: errors.New(`ent: missing required field "User.restrict_to_allowed_groups"`)}
+	}
+	if _, ok := _c.mutation.PaymentDisabled(); !ok {
+		return &ValidationError{Name: "payment_disabled", err: errors.New(`ent: missing required field "User.payment_disabled"`)}
 	}
 	if _, ok := _c.mutation.Username(); !ok {
 		return &ValidationError{Name: "username", err: errors.New(`ent: missing required field "User.username"`)}
@@ -1059,6 +1101,14 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.DefaultChatAPIKeyID(); ok {
 		_spec.SetField(user.FieldDefaultChatAPIKeyID, field.TypeInt64, value)
 		_node.DefaultChatAPIKeyID = &value
+	}
+	if value, ok := _c.mutation.RestrictToAllowedGroups(); ok {
+		_spec.SetField(user.FieldRestrictToAllowedGroups, field.TypeBool, value)
+		_node.RestrictToAllowedGroups = value
+	}
+	if value, ok := _c.mutation.PaymentDisabled(); ok {
+		_spec.SetField(user.FieldPaymentDisabled, field.TypeBool, value)
+		_node.PaymentDisabled = value
 	}
 	if value, ok := _c.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)
@@ -1748,6 +1798,30 @@ func (u *UserUpsert) ClearDefaultChatAPIKeyID() *UserUpsert {
 	return u
 }
 
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (u *UserUpsert) SetRestrictToAllowedGroups(v bool) *UserUpsert {
+	u.Set(user.FieldRestrictToAllowedGroups, v)
+	return u
+}
+
+// UpdateRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field to the value that was provided on create.
+func (u *UserUpsert) UpdateRestrictToAllowedGroups() *UserUpsert {
+	u.SetExcluded(user.FieldRestrictToAllowedGroups)
+	return u
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (u *UserUpsert) SetPaymentDisabled(v bool) *UserUpsert {
+	u.Set(user.FieldPaymentDisabled, v)
+	return u
+}
+
+// UpdatePaymentDisabled sets the "payment_disabled" field to the value that was provided on create.
+func (u *UserUpsert) UpdatePaymentDisabled() *UserUpsert {
+	u.SetExcluded(user.FieldPaymentDisabled)
+	return u
+}
+
 // SetUsername sets the "username" field.
 func (u *UserUpsert) SetUsername(v string) *UserUpsert {
 	u.Set(user.FieldUsername, v)
@@ -2200,6 +2274,34 @@ func (u *UserUpsertOne) UpdateDefaultChatAPIKeyID() *UserUpsertOne {
 func (u *UserUpsertOne) ClearDefaultChatAPIKeyID() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearDefaultChatAPIKeyID()
+	})
+}
+
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (u *UserUpsertOne) SetRestrictToAllowedGroups(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetRestrictToAllowedGroups(v)
+	})
+}
+
+// UpdateRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateRestrictToAllowedGroups() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateRestrictToAllowedGroups()
+	})
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (u *UserUpsertOne) SetPaymentDisabled(v bool) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaymentDisabled(v)
+	})
+}
+
+// UpdatePaymentDisabled sets the "payment_disabled" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdatePaymentDisabled() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaymentDisabled()
 	})
 }
 
@@ -2859,6 +2961,34 @@ func (u *UserUpsertBulk) UpdateDefaultChatAPIKeyID() *UserUpsertBulk {
 func (u *UserUpsertBulk) ClearDefaultChatAPIKeyID() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearDefaultChatAPIKeyID()
+	})
+}
+
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (u *UserUpsertBulk) SetRestrictToAllowedGroups(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetRestrictToAllowedGroups(v)
+	})
+}
+
+// UpdateRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateRestrictToAllowedGroups() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateRestrictToAllowedGroups()
+	})
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (u *UserUpsertBulk) SetPaymentDisabled(v bool) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetPaymentDisabled(v)
+	})
+}
+
+// UpdatePaymentDisabled sets the "payment_disabled" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdatePaymentDisabled() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdatePaymentDisabled()
 	})
 }
 

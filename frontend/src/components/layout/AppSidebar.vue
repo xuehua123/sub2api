@@ -284,7 +284,7 @@ const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
-const flagPayment = makeSidebarFlag(FeatureFlags.payment)
+const flagPayment = () => authStore.user?.payment_disabled !== true && makeSidebarFlag(FeatureFlags.payment)()
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagModelPrices = () => authStore.isAdmin || makeSidebarFlag(FeatureFlags.modelPrices)()
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)

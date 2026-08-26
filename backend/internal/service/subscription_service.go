@@ -1323,6 +1323,9 @@ func (s *SubscriptionService) ResolveUsableSubscriptionForAPIKeyWithRequest(ctx 
 		if sub.GroupID == fromGroupID || sub.Group == nil || !sub.Group.IsSubscriptionType() || !sub.Group.IsActive() {
 			continue
 		}
+		if !apiKey.User.AllowsGroupType(sub.Group.IsExclusive) {
+			continue
+		}
 		validateErr := s.validateSwitchCandidate(ctx, apiKey.User.ID, sub, sub.Group)
 		if validateErr != nil {
 			if errors.Is(validateErr, ErrSubscriptionMaintenance) {

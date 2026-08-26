@@ -518,7 +518,11 @@ export default {
         concurrencyPlaceholder: '0 = unlimited',
         concurrencyHint: 'Max concurrent requests for this user; 0 = unlimited.',
         rpmLimitPlaceholder: '0 = unlimited',
-        rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.'
+        rpmLimitHint: 'Max requests per minute for this user; 0 = unlimited. Acts as a fallback only when the group has no rpm_limit set.',
+        restrictToAllowedGroups: 'Exclusive groups only',
+        restrictToAllowedGroupsHint: 'Only authorized exclusive groups can be used: balance-backed groups selected in User Group Configuration, plus exclusive groups granted by an active subscription or entitlement. Public groups and existing unauthorized API keys are rejected.',
+        paymentDisabled: 'Disable user payments',
+        paymentDisabledHint: 'Hides purchase and order entries, blocks payment pages, and makes the backend reject new payment orders for this user.'
       },
       columns: {
         user: 'User',
@@ -615,6 +619,7 @@ export default {
       groupConfigHint: 'Configure custom rate multipliers for user {email} (overrides group defaults)',
       exclusiveGroups: 'Exclusive Groups',
       publicGroups: 'Public Groups (Default Available)',
+      publicGroupsRestricted: 'Public Groups (Unavailable to this user)',
       defaultRate: 'Default Rate',
       customRate: 'Custom Rate',
       useDefaultRate: 'Use Default',

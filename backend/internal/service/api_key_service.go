@@ -477,6 +477,12 @@ func (s *APIKeyService) incrementAPIKeyErrorCount(ctx context.Context, userID in
 // 对于订阅类型分组：检查用户是否有有效订阅
 // 对于标准类型分组：使用原有的 AllowedGroups 和 IsExclusive 逻辑
 func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group *Group) bool {
+	if user == nil || group == nil {
+		return false
+	}
+	if !user.AllowsGroupType(group.IsExclusive) {
+		return false
+	}
 	// 订阅类型分组：需要有效订阅
 	if group.SupportsSubscriptionAccess() {
 		if s.subscriptionEntitlementsRuntime(ctx).Enabled {
@@ -496,6 +502,9 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, user *User, group *Group, accessSource string, explicitEntitlementID *int64, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
 	if !runtime.Enabled {
 		return s.resolveCreateSubscriptionEntitlementID(ctx, user, group, explicitEntitlementID, runtime)
+	}
+	if group != nil && user != nil && !user.AllowsGroupType(group.IsExclusive) {
+		return nil, ErrGroupNotAllowed
 	}
 	switch accessSource {
 	case APIKeyAccessSourceBalance:
@@ -524,6 +533,9 @@ func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, us
 func (s *APIKeyService) resolveUpdateAccessSourceBinding(ctx context.Context, user *User, group *Group, accessSource string, currentEntitlementID *int64, explicitEntitlementID *int64, explicitEntitlementSet bool, groupChanged bool, runtime SubscriptionEntitlementsRuntime) (*int64, error) {
 	if !runtime.Enabled {
 		return s.resolveUpdateSubscriptionEntitlementID(ctx, user, group, currentEntitlementID, explicitEntitlementID, explicitEntitlementSet, groupChanged, runtime)
+	}
+	if group != nil && user != nil && !user.AllowsGroupType(group.IsExclusive) {
+		return nil, ErrGroupNotAllowed
 	}
 	switch accessSource {
 	case APIKeyAccessSourceBalance:
@@ -599,7 +611,7 @@ func (s *APIKeyService) resolveAdminGroupAccessBinding(ctx context.Context, apiK
 	if err != nil {
 		return "", nil, fmt.Errorf("get user: %w", err)
 	}
-	if accessSource == APIKeyAccessSourceBalance && group.IsExclusive && !user.CanBindGroup(group.ID, true) {
+	if accessSource == APIKeyAccessSourceBalance && !user.CanBindGroup(group.ID, group.IsExclusive) {
 		userCopy := *user
 		userCopy.AllowedGroups = append(append([]int64(nil), user.AllowedGroups...), group.ID)
 		user = &userCopy
@@ -629,6 +641,9 @@ func (s *APIKeyService) resolveCreateSubscriptionEntitlementID(ctx context.Conte
 		}
 		return nil, nil
 	}
+	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+		return nil, ErrGroupNotAllowed
+	}
 	if !group.SupportsSubscriptionAccess() {
 		if !user.CanBindGroup(group.ID, group.IsExclusive) {
 			return nil, ErrGroupNotAllowed
@@ -650,6 +665,9 @@ func (s *APIKeyService) resolveUpdateSubscriptionEntitlementID(ctx context.Conte
 			return nil, ErrGroupNotAllowed
 		}
 		return nil, nil
+	}
+	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+		return nil, ErrGroupNotAllowed
 	}
 	if !group.SupportsSubscriptionAccess() {
 		if !user.CanBindGroup(group.ID, group.IsExclusive) {
@@ -753,6 +771,9 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
+	}
+	if user.RestrictToAllowedGroups && req.GroupID == nil {
+		return nil, ErrGroupNotAllowed
 	}
 
 	// 验证 IP 白名单格式
@@ -1215,6 +1236,9 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		if err != nil {
 			return nil, fmt.Errorf("get user: %w", err)
 		}
+		if user.RestrictToAllowedGroups && apiKey.GroupID == nil {
+			return nil, ErrGroupNotAllowed
+		}
 		var group *Group
 		if apiKey.GroupID != nil {
 			group, err = s.groupRepo.GetByID(ctx, *apiKey.GroupID)
@@ -1522,6 +1546,16 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 
 	availableGroups := make([]AvailableAPIKeyGroup, 0)
 	for _, group := range allGroups {
+		if unavailableReason, unavailable := groupUnavailableByUserPolicy(user, &group); unavailable {
+			// Exclusive-only users still see public groups in the UI, but they
+			// receive no access source and cannot select or bind them.
+			availableGroups = append(availableGroups, AvailableAPIKeyGroup{
+				Group:             group,
+				Disabled:          true,
+				UnavailableReason: unavailableReason,
+			})
+			continue
+		}
 		if runtime.Enabled {
 			entitlements := entitlementsByGroupID[group.ID]
 			accessSources := buildAvailableGroupAccessSources(user, &group, entitlements)
@@ -1548,6 +1582,16 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 	return availableGroups, nil
 }
 
+func groupUnavailableByUserPolicy(user *User, group *Group) (string, bool) {
+	if user == nil || group == nil {
+		return "GROUP_NOT_ALLOWED", true
+	}
+	if !user.AllowsGroupType(group.IsExclusive) {
+		return "EXCLUSIVE_GROUPS_ONLY", true
+	}
+	return "", false
+}
+
 func canUserUseBalanceAccessSource(user *User, group *Group) bool {
 	if user == nil || group == nil {
 		return false
@@ -1557,6 +1601,9 @@ func canUserUseBalanceAccessSource(user *User, group *Group) bool {
 
 func buildAvailableGroupAccessSources(user *User, group *Group, entitlements []AvailableAPIKeyGroupEntitlement) []AvailableAPIKeyGroupAccessSource {
 	if group == nil {
+		return nil
+	}
+	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
 		return nil
 	}
 	sources := make([]AvailableAPIKeyGroupAccessSource, 0, 1+len(entitlements))
@@ -1844,6 +1891,9 @@ func entitlementCoveredGroupIDs(ent *SubscriptionEntitlement) []int64 {
 		seen[grant.GroupID] = struct{}{}
 		out = append(out, grant.GroupID)
 	}
+	if entitlementHasConfiguredGroupGrants(ent) {
+		return out
+	}
 	for _, group := range ent.Groups {
 		if group.ID <= 0 {
 			continue
@@ -1857,8 +1907,37 @@ func entitlementCoveredGroupIDs(ent *SubscriptionEntitlement) []int64 {
 	return out
 }
 
+// entitlementEnabledGrantGroupIDs is intentionally stricter than
+// entitlementCoveredGroupIDs. Visibility policy must follow the enabled join
+// rows and must not revive a disabled grant merely because its unfiltered
+// Group edge was also preloaded.
+func entitlementEnabledGrantGroupIDs(ent *SubscriptionEntitlement) []int64 {
+	if ent == nil {
+		return nil
+	}
+	seen := make(map[int64]struct{})
+	out := make([]int64, 0, len(ent.GroupGrants))
+	for _, grant := range ent.GroupGrants {
+		if !grant.Enabled || grant.GroupID <= 0 {
+			continue
+		}
+		if _, ok := seen[grant.GroupID]; ok {
+			continue
+		}
+		seen[grant.GroupID] = struct{}{}
+		out = append(out, grant.GroupID)
+	}
+	return out
+}
+
 // canUserBindGroupInternal 内部方法，检查用户是否可以绑定分组（使用预加载的订阅数据）
 func (s *APIKeyService) canUserBindGroupInternal(user *User, group *Group, subscribedGroupIDs map[int64]bool) bool {
+	if user == nil || group == nil {
+		return false
+	}
+	if !user.AllowsGroupType(group.IsExclusive) {
+		return false
+	}
 	// 订阅类型分组：需要有效订阅
 	if group.IsSubscriptionType() {
 		return subscribedGroupIDs[group.ID]
@@ -1875,20 +1954,51 @@ func (s *APIKeyService) SearchAPIKeys(ctx context.Context, userID int64, keyword
 	return keys, nil
 }
 
-// GetUserAllowedGroupIDSet 返回 user_allowed_groups 授权给该用户的专属分组 ID 集合。
+// GetUserAllowedGroupIDSet 返回通过显式授权或有效订阅授权给用户的专属分组 ID 集合。
 //
-// 与 GetAvailableGroups 的区别：这里是「橱窗」语义（模型广场用），不检查订阅有效性，
-// 也不关心分组是否活跃——仅回答"哪些专属分组对该用户可见"。返回值恒非 nil。
+// 与 GetAvailableGroups 的区别：这里是「橱窗」语义（模型广场用），不检查分组是否活跃，
+// 仅回答“哪些专属分组对该用户可见”。返回值恒非 nil。
 func (s *APIKeyService) GetUserAllowedGroupIDSet(ctx context.Context, userID int64) (map[int64]struct{}, error) {
+	allowed, _, err := s.GetUserGroupAccessPolicy(ctx, userID)
+	return allowed, err
+}
+
+// GetUserGroupAccessPolicy returns the explicit and subscription-backed group
+// allowlist together with whether the user is in exclusive-group-only mode.
+// Visibility endpoints use the mode bit to mark public groups as view-only.
+func (s *APIKeyService) GetUserGroupAccessPolicy(ctx context.Context, userID int64) (map[int64]struct{}, bool, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("get user: %w", err)
+		return nil, false, fmt.Errorf("get user: %w", err)
 	}
 	allowed := make(map[int64]struct{}, len(user.AllowedGroups))
 	for _, id := range user.AllowedGroups {
 		allowed[id] = struct{}{}
 	}
-	return allowed, nil
+	// Entitlement/subscription access is independent from the balance-backed
+	// AllowedGroups relation. Include active grants so the model plaza can show
+	// every exclusive group the user can actually use.
+	runtime := s.subscriptionEntitlementsRuntime(ctx)
+	if runtime.Enabled && s.subscriptionEntitlementSvc != nil {
+		entitlements, listErr := s.subscriptionEntitlementSvc.ListActiveBindingsByUser(ctx, userID, time.Now())
+		if listErr != nil {
+			return nil, false, fmt.Errorf("list active entitlement bindings: %w", listErr)
+		}
+		for i := range entitlements {
+			for _, groupID := range entitlementEnabledGrantGroupIDs(&entitlements[i]) {
+				allowed[groupID] = struct{}{}
+			}
+		}
+	} else if !runtime.Enabled && s.userSubRepo != nil {
+		subscriptions, listErr := s.userSubRepo.ListActiveByUserID(ctx, userID)
+		if listErr != nil {
+			return nil, false, fmt.Errorf("list active subscriptions: %w", listErr)
+		}
+		for i := range subscriptions {
+			allowed[subscriptions[i].GroupID] = struct{}{}
+		}
+	}
+	return allowed, user.RestrictToAllowedGroups, nil
 }
 
 // GetUserGroupRates 获取用户的专属分组倍率配置

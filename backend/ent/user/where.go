@@ -110,6 +110,16 @@ func DefaultChatAPIKeyID(v int64) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldDefaultChatAPIKeyID, v))
 }
 
+// RestrictToAllowedGroups applies equality check predicate on the "restrict_to_allowed_groups" field. It's identical to RestrictToAllowedGroupsEQ.
+func RestrictToAllowedGroups(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRestrictToAllowedGroups, v))
+}
+
+// PaymentDisabled applies equality check predicate on the "payment_disabled" field. It's identical to PaymentDisabledEQ.
+func PaymentDisabled(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaymentDisabled, v))
+}
+
 // Username applies equality check predicate on the "username" field. It's identical to UsernameEQ.
 func Username(v string) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldUsername, v))
@@ -743,6 +753,26 @@ func DefaultChatAPIKeyIDIsNil() predicate.User {
 // DefaultChatAPIKeyIDNotNil applies the NotNil predicate on the "default_chat_api_key_id" field.
 func DefaultChatAPIKeyIDNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldDefaultChatAPIKeyID))
+}
+
+// RestrictToAllowedGroupsEQ applies the EQ predicate on the "restrict_to_allowed_groups" field.
+func RestrictToAllowedGroupsEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRestrictToAllowedGroups, v))
+}
+
+// RestrictToAllowedGroupsNEQ applies the NEQ predicate on the "restrict_to_allowed_groups" field.
+func RestrictToAllowedGroupsNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRestrictToAllowedGroups, v))
+}
+
+// PaymentDisabledEQ applies the EQ predicate on the "payment_disabled" field.
+func PaymentDisabledEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldPaymentDisabled, v))
+}
+
+// PaymentDisabledNEQ applies the NEQ predicate on the "payment_disabled" field.
+func PaymentDisabledNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldPaymentDisabled, v))
 }
 
 // UsernameEQ applies the EQ predicate on the "username" field.

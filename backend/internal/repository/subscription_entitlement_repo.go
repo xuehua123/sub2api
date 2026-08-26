@@ -853,8 +853,7 @@ func entitlementQueryWithGroups(client *dbent.Client) *dbent.SubscriptionEntitle
 			q.Order(dbent.Asc(entgroup.FieldID))
 		}).
 		WithSubscriptionEntitlementGroups(func(q *dbent.SubscriptionEntitlementGroupQuery) {
-			q.Where(subscriptionentitlementgroup.EnabledEQ(true)).
-				WithGroup().
+			q.WithGroup().
 				Order(dbent.Asc(subscriptionentitlementgroup.FieldSortOrder), dbent.Asc(subscriptionentitlementgroup.FieldGroupID))
 		})
 }
@@ -917,6 +916,7 @@ func subscriptionEntitlementEntityToService(m *dbent.SubscriptionEntitlement) *s
 		}
 	}
 	if len(m.Edges.SubscriptionEntitlementGroups) > 0 {
+		out.GroupGrantsConfigured = true
 		out.GroupGrants = make([]service.SubscriptionEntitlementGroupGrant, 0, len(m.Edges.SubscriptionEntitlementGroups))
 		for _, grant := range m.Edges.SubscriptionEntitlementGroups {
 			if grant == nil || !grant.Enabled {

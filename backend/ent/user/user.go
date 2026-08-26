@@ -37,6 +37,10 @@ const (
 	FieldStatus = "status"
 	// FieldDefaultChatAPIKeyID holds the string denoting the default_chat_api_key_id field in the database.
 	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
+	// FieldRestrictToAllowedGroups holds the string denoting the restrict_to_allowed_groups field in the database.
+	FieldRestrictToAllowedGroups = "restrict_to_allowed_groups"
+	// FieldPaymentDisabled holds the string denoting the payment_disabled field in the database.
+	FieldPaymentDisabled = "payment_disabled"
 	// FieldUsername holds the string denoting the username field in the database.
 	FieldUsername = "username"
 	// FieldNotes holds the string denoting the notes field in the database.
@@ -326,6 +330,8 @@ var Columns = []string{
 	FieldConcurrency,
 	FieldStatus,
 	FieldDefaultChatAPIKeyID,
+	FieldRestrictToAllowedGroups,
+	FieldPaymentDisabled,
 	FieldUsername,
 	FieldNotes,
 	FieldTotpSecretEncrypted,
@@ -391,6 +397,10 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DefaultRestrictToAllowedGroups holds the default value on creation for the "restrict_to_allowed_groups" field.
+	DefaultRestrictToAllowedGroups bool
+	// DefaultPaymentDisabled holds the default value on creation for the "payment_disabled" field.
+	DefaultPaymentDisabled bool
 	// DefaultUsername holds the default value on creation for the "username" field.
 	DefaultUsername string
 	// UsernameValidator is a validator for the "username" field. It is called by the builders before save.
@@ -478,6 +488,16 @@ func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 // ByDefaultChatAPIKeyID orders the results by the default_chat_api_key_id field.
 func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDefaultChatAPIKeyID, opts...).ToFunc()
+}
+
+// ByRestrictToAllowedGroups orders the results by the restrict_to_allowed_groups field.
+func ByRestrictToAllowedGroups(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRestrictToAllowedGroups, opts...).ToFunc()
+}
+
+// ByPaymentDisabled orders the results by the payment_disabled field.
+func ByPaymentDisabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldPaymentDisabled, opts...).ToFunc()
 }
 
 // ByUsername orders the results by the username field.

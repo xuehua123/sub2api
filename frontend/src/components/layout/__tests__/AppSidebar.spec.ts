@@ -62,7 +62,8 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(componentSource).toContain('function buildSelfNavItems(withDashboard: boolean): NavItem[]')
     expect(componentSource).toContain('finalizeNav(buildSelfNavItems(true))')
     expect(componentSource).toContain('finalizeNav(buildSelfNavItems(false))')
-    expect(componentSource).toContain('const flagPayment = makeSidebarFlag(FeatureFlags.payment)')
+    expect(componentSource).toContain("authStore.user?.payment_disabled !== true")
+    expect(componentSource).toContain('makeSidebarFlag(FeatureFlags.payment)()')
     expect(componentSource).toContain('featureFlag: flagPayment')
   })
 

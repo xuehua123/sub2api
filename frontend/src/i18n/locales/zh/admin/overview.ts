@@ -584,7 +584,11 @@ export default {
         concurrencyPlaceholder: '0 表示不限制',
         concurrencyHint: '该用户的最大并发请求数，0 = 不限制',
         rpmLimitPlaceholder: '0 表示不限制',
-        rpmLimitHint: '该用户每分钟最大请求数，0 = 不限制；仅在所用分组未设置 rpm_limit 时作为兜底生效'
+        rpmLimitHint: '该用户每分钟最大请求数，0 = 不限制；仅在所用分组未设置 rpm_limit 时作为兜底生效',
+        restrictToAllowedGroups: '只能使用专属分组',
+        restrictToAllowedGroupsHint: '开启后，用户只能使用已授权的专属分组，包括“用户分组配置”中勾选的余额分组，以及有效订阅或权益授权的专属分组；公开分组及已有未授权 API Key 都会被拒绝。',
+        paymentDisabled: '禁止用户支付',
+        paymentDisabledHint: '隐藏购买和订单入口、拦截支付页面，并由后端拒绝该用户创建新支付订单。'
       },
       adjustBalance: '调整余额',
       adjustConcurrency: '调整并发数',
@@ -619,6 +623,7 @@ export default {
       groupConfigHint: '为用户 {email} 配置专属分组倍率（覆盖分组默认倍率）',
       exclusiveGroups: '专属分组',
       publicGroups: '公开分组（默认可用）',
+      publicGroupsRestricted: '公开分组（当前用户不可用）',
       defaultRate: '默认倍率',
       customRate: '专属倍率',
       useDefaultRate: '使用默认',

@@ -50,6 +50,35 @@ func TestFilterPlazaVisibleGroups_AuthedEmptySetSeesNoExclusive(t *testing.T) {
 	require.Len(t, visible, 2)
 }
 
+func TestFilterPlazaVisibleGroups_ExclusiveOnlyKeepsPublicGroupsVisible(t *testing.T) {
+	t.Parallel()
+
+	allowed := map[int64]struct{}{2: {}}
+	visible := filterPlazaVisibleGroups(plazaGroups(), allowed)
+
+	require.Len(t, visible, 3)
+	ids := make([]int64, 0, len(visible))
+	for _, group := range visible {
+		ids = append(ids, group.ID)
+	}
+	require.ElementsMatch(t, []int64{1, 2, 3}, ids)
+}
+
+func TestApplyModelPlazaGroupAccessPolicyMarksPublicGroupViewOnly(t *testing.T) {
+	t.Parallel()
+
+	publicGroup := &service.PlazaGroup{ID: 1}
+	item := modelPlazaGroup{ID: 1}
+	applyModelPlazaGroupAccessPolicy(&item, publicGroup, true)
+	require.True(t, item.Unavailable)
+	require.Equal(t, "EXCLUSIVE_GROUPS_ONLY", item.UnavailableReason)
+
+	exclusiveGroup := &service.PlazaGroup{ID: 2, IsExclusive: true}
+	exclusiveItem := modelPlazaGroup{ID: 2}
+	applyModelPlazaGroupAccessPolicy(&exclusiveItem, exclusiveGroup, true)
+	require.False(t, exclusiveItem.Unavailable)
+}
+
 func TestModelPlazaHandler_NilSettingServiceFailsClosed404(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &ModelPlazaHandler{} // settingService == nil → fail-closed

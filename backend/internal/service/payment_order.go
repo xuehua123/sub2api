@@ -47,8 +47,8 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if err != nil {
 		return nil, fmt.Errorf("get user: %w", err)
 	}
-	if user.Status != payment.EntityStatusActive {
-		return nil, infraerrors.Forbidden("USER_INACTIVE", "user account is disabled")
+	if err := validateUserPaymentAccess(user); err != nil {
+		return nil, err
 	}
 	if s.notificationEmailService != nil {
 		s.notificationEmailService.RememberRecipientLocale(ctx, req.UserID, user.Email, req.Locale)
@@ -112,6 +112,16 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 		return nil, err
 	}
 	return resp, nil
+}
+
+func validateUserPaymentAccess(user *User) error {
+	if user == nil || user.Status != payment.EntityStatusActive {
+		return infraerrors.Forbidden("USER_INACTIVE", "user account is disabled")
+	}
+	if user.PaymentDisabled {
+		return infraerrors.Forbidden("USER_PAYMENT_DISABLED", "payment is disabled for this user")
+	}
+	return nil
 }
 
 func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrderRequest, cfg *PaymentConfig) (*dbent.SubscriptionPlan, *SubscriptionPlanOrderAccess, error) {

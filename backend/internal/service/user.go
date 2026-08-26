@@ -1,30 +1,89 @@
 package service
 
 import (
+	"context"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
 
+type apiKeyGroupAccessPolicyContextKey struct{}
+
+type apiKeyGroupAccessPolicy struct {
+	user         *User
+	accessSource string
+	entitlement  *SubscriptionEntitlement
+	subscription *UserSubscription
+}
+
+// WithAPIKeyGroupAccessPolicy carries the authenticated API key's effective
+// group authorization into gateway routing. This lets runtime fallbacks apply
+// the same user-level policy as the group originally bound to the key.
+func WithAPIKeyGroupAccessPolicy(ctx context.Context, apiKey *APIKey, entitlement *SubscriptionEntitlement, subscription *UserSubscription) context.Context {
+	if ctx == nil || apiKey == nil || apiKey.User == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, apiKeyGroupAccessPolicyContextKey{}, apiKeyGroupAccessPolicy{
+		user:         apiKey.User,
+		accessSource: apiKey.EffectiveAccessSource(),
+		entitlement:  entitlement,
+		subscription: subscription,
+	})
+}
+
+// IsAPIKeyResolvedGroupAllowed validates a group selected after authentication,
+// such as a Claude Code fallback or an invalid-request fallback. Requests that
+// do not originate from API-key middleware have no policy and keep the legacy
+// behavior.
+func IsAPIKeyResolvedGroupAllowed(ctx context.Context, group *Group) bool {
+	if ctx == nil || group == nil {
+		return true
+	}
+	policy, ok := ctx.Value(apiKeyGroupAccessPolicyContextKey{}).(apiKeyGroupAccessPolicy)
+	if !ok || policy.user == nil || !policy.user.RestrictToAllowedGroups {
+		return true
+	}
+	if !policy.user.AllowsGroupType(group.IsExclusive) {
+		return false
+	}
+	if policy.entitlement != nil {
+		for _, groupID := range entitlementEnabledGrantGroupIDs(policy.entitlement) {
+			if groupID == group.ID {
+				return true
+			}
+		}
+		return false
+	}
+	if policy.subscription != nil {
+		return policy.subscription.GroupID == group.ID
+	}
+	if policy.accessSource == APIKeyAccessSourceEntitlement {
+		return false
+	}
+	return policy.user.CanBindGroup(group.ID, group.IsExclusive)
+}
+
 type User struct {
-	ID                  int64
-	Email               string
-	Username            string
-	Notes               string
-	AvatarURL           string
-	AvatarSource        string
-	AvatarMIME          string
-	AvatarByteSize      int
-	AvatarSHA256        string
-	PasswordHash        string
-	Role                string
-	Balance             float64
-	FrozenBalance       float64
-	Concurrency         int
-	Status              string
-	DefaultChatAPIKeyID *int64
-	AllowedGroups       []int64
-	TokenVersion        int64 // Incremented on password change to invalidate existing tokens
+	ID                      int64
+	Email                   string
+	Username                string
+	Notes                   string
+	AvatarURL               string
+	AvatarSource            string
+	AvatarMIME              string
+	AvatarByteSize          int
+	AvatarSHA256            string
+	PasswordHash            string
+	Role                    string
+	Balance                 float64
+	FrozenBalance           float64
+	Concurrency             int
+	Status                  string
+	DefaultChatAPIKeyID     *int64
+	AllowedGroups           []int64
+	RestrictToAllowedGroups bool
+	PaymentDisabled         bool
+	TokenVersion            int64 // Incremented on password change to invalidate existing tokens
 
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
@@ -77,22 +136,49 @@ func (u *User) IsActive() bool {
 	return u.Status == StatusActive
 }
 
-// CanBindGroup checks whether a user can bind to a given group.
-// For standard groups:
-// - Public groups (non-exclusive): all users can bind
-// - Exclusive groups: only users with the group in AllowedGroups can bind
-func (u *User) CanBindGroup(groupID int64, isExclusive bool) bool {
-	// 公开分组（非专属）：所有用户都可以绑定
-	if !isExclusive {
-		return true
+// HasAllowedGroup reports whether groupID is present in the user's explicit
+// user_allowed_groups allowlist.
+func (u *User) HasAllowedGroup(groupID int64) bool {
+	if u == nil {
+		return false
 	}
-	// 专属分组：需要在 AllowedGroups 中
 	for _, id := range u.AllowedGroups {
 		if id == groupID {
 			return true
 		}
 	}
 	return false
+}
+
+// AllowsGroupType applies the user-level group-type policy without deciding
+// how access is funded. In exclusive-only mode, balance allowlists,
+// subscriptions, and entitlements may authorize access, but only to exclusive
+// groups.
+func (u *User) AllowsGroupType(isExclusive bool) bool {
+	if u == nil {
+		return false
+	}
+	return !u.RestrictToAllowedGroups || isExclusive
+}
+
+// CanBindGroup checks whether a user can bind to a given group.
+// For standard groups:
+// - Public groups (non-exclusive): all users can bind
+// - Exclusive groups: only users with the group in AllowedGroups can bind
+// - Exclusive-only users: only explicitly granted exclusive groups are usable
+func (u *User) CanBindGroup(groupID int64, isExclusive bool) bool {
+	if u == nil {
+		return false
+	}
+	if u.RestrictToAllowedGroups {
+		return u.AllowsGroupType(isExclusive) && u.HasAllowedGroup(groupID)
+	}
+	// 公开分组（非专属）：所有用户都可以绑定
+	if !isExclusive {
+		return true
+	}
+	// 专属分组：需要在 AllowedGroups 中
+	return u.HasAllowedGroup(groupID)
 }
 
 func (u *User) SetPassword(password string) error {

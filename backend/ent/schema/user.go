@@ -60,6 +60,15 @@ func (User) Fields() []ent.Field {
 		field.Int64("default_chat_api_key_id").
 			Optional().
 			Nillable(),
+		// Restrict access to authorized exclusive groups. Balance-backed access uses
+		// user_allowed_groups; active subscriptions and entitlements authorize their
+		// own exclusive groups. When false, public groups retain implicit access.
+		field.Bool("restrict_to_allowed_groups").
+			Default(false),
+		// User-level payment deny switch. The backend enforces this when creating
+		// orders; the frontend also hides and guards payment entry points.
+		field.Bool("payment_disabled").
+			Default(false),
 
 		// Optional profile fields (added later; default '' in DB migration)
 		field.String("username").

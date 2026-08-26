@@ -3314,6 +3314,8 @@ var (
 		{Name: "concurrency", Type: field.TypeInt, Default: 5},
 		{Name: "status", Type: field.TypeString, Size: 20, Default: "active"},
 		{Name: "default_chat_api_key_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "restrict_to_allowed_groups", Type: field.TypeBool, Default: false},
+		{Name: "payment_disabled", Type: field.TypeBool, Default: false},
 		{Name: "username", Type: field.TypeString, Size: 100, Default: ""},
 		{Name: "notes", Type: field.TypeString, Default: "", SchemaType: map[string]string{"postgres": "text"}},
 		{Name: "totp_secret_encrypted", Type: field.TypeString, Nullable: true, SchemaType: map[string]string{"postgres": "text"}},

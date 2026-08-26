@@ -97,20 +97,23 @@
         <div v-if="publicGroups.length > 0">
           <div class="mb-3 flex items-center gap-2">
             <div class="h-1.5 w-1.5 rounded-full bg-green-500"></div>
-            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ t('admin.users.publicGroups') }}</h4>
+            <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">{{ user.restrict_to_allowed_groups ? t('admin.users.publicGroupsRestricted') : t('admin.users.publicGroups') }}</h4>
             <span class="text-xs text-gray-400">({{ publicGroupConfigs.length }})</span>
           </div>
           <div class="grid gap-3">
             <div
               v-for="config in publicGroupConfigs"
               :key="config.groupId"
-              class="relative overflow-hidden rounded-xl border-2 border-green-200 bg-green-50/50 p-4 dark:border-green-800/50 dark:bg-green-900/10"
+              class="relative overflow-hidden rounded-xl border-2 p-4"
+              :class="config.isSelected
+                ? 'border-green-200 bg-green-50/50 dark:border-green-800/50 dark:bg-green-900/10'
+                : 'border-gray-200 bg-gray-50/60 opacity-70 dark:border-dark-700 dark:bg-dark-800/60'"
             >
               <div class="flex items-center gap-4">
                 <!-- 复选框（禁用状态） -->
                 <div class="flex-shrink-0">
-                  <div class="flex h-5 w-5 items-center justify-center rounded-md border-2 border-green-400 bg-green-500 dark:border-green-600 dark:bg-green-600">
-                    <svg class="h-full w-full text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
+                  <div class="flex h-5 w-5 items-center justify-center rounded-md border-2" :class="config.isSelected ? 'border-green-400 bg-green-500 dark:border-green-600 dark:bg-green-600' : 'border-gray-300 bg-white dark:border-dark-500 dark:bg-dark-700'">
+                    <svg v-if="config.isSelected" class="h-full w-full text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </div>
@@ -246,8 +249,8 @@ const load = async () => {
       defaultRate: g.rate_multiplier,
       customRate: userGroupRates[g.id] ?? null,
       // 专属分组：检查是否在 allowed_groups 中
-      // 公开分组：始终选中
-      isSelected: g.is_exclusive ? userAllowedGroups.includes(g.id) : true,
+      // 公开分组：普通模式默认可用；白名单模式下不再隐式可用。
+      isSelected: g.is_exclusive ? userAllowedGroups.includes(g.id) : !(props.user?.restrict_to_allowed_groups ?? false),
     }))
   } catch (error) {
     console.error('Failed to load groups:', error)

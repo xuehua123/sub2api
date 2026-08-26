@@ -3498,3 +3498,32 @@ func TestGatewayService_ResolveGatewayGroup_DetectsFallbackCycle(t *testing.T) {
 	require.Nil(t, gotID)
 	require.Contains(t, err.Error(), "fallback group cycle")
 }
+
+func TestGatewayService_ResolveGatewayGroup_RejectsUnauthorizedFallback(t *testing.T) {
+	t.Parallel()
+
+	groupID := int64(20)
+	fallbackID := int64(21)
+	group := &Group{
+		ID:              groupID,
+		IsExclusive:     true,
+		Status:          StatusActive,
+		ClaudeCodeOnly:  true,
+		FallbackGroupID: &fallbackID,
+	}
+	fallbackGroup := &Group{ID: fallbackID, IsExclusive: true, Status: StatusActive}
+	svc := &GatewayService{groupRepo: &mockGroupRepoForGateway{groups: map[int64]*Group{
+		groupID:    group,
+		fallbackID: fallbackGroup,
+	}}}
+	key := &APIKey{
+		User:         &User{RestrictToAllowedGroups: true, AllowedGroups: []int64{groupID}},
+		AccessSource: APIKeyAccessSourceBalance,
+	}
+	ctx := WithAPIKeyGroupAccessPolicy(context.Background(), key, nil, nil)
+
+	resolvedGroup, resolvedID, err := svc.resolveGatewayGroup(ctx, &groupID)
+	require.ErrorIs(t, err, ErrGroupNotAllowed)
+	require.Nil(t, resolvedGroup)
+	require.Nil(t, resolvedID)
+}

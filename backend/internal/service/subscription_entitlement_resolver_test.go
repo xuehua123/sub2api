@@ -66,6 +66,27 @@ func TestSubscriptionEntitlementResolver_DisabledGrantDoesNotFallBackToGroupsEdg
 
 	_, err = svc.ResolveForGroup(context.Background(), 42, 101, 0)
 	require.ErrorIs(t, err, ErrGroupNotAllowed)
+
+	// The production repository filters disabled rows out of GroupGrants but
+	// preserves that grant rows were configured. This shape must not be treated
+	// as a legacy Groups-only entitlement.
+	filtered := testActiveEntitlement(2, 42, []int64{202}, now, now.AddDate(0, 0, 30))
+	filtered.GroupGrants = nil
+	filtered.GroupGrantsConfigured = true
+	repo.entitlements[2] = filtered
+	filteredID := int64(2)
+
+	_, err = svc.Resolve(context.Background(), ResolveSubscriptionEntitlementInput{
+		UserID:        42,
+		GroupID:       202,
+		EntitlementID: &filteredID,
+		Now:           now,
+	})
+	require.ErrorIs(t, err, ErrGroupNotAllowed)
+	require.Empty(t, entitlementCoveredGroupIDs(filtered))
+
+	legacy := &SubscriptionEntitlement{Groups: []Group{{ID: 303}}}
+	require.True(t, entitlementCoversGroup(legacy, 303), "true legacy objects retain the Groups-only fallback")
 }
 
 func TestSubscriptionEntitlementResolver_SharedMonthlyUsageExhaustedAcrossGroups(t *testing.T) {

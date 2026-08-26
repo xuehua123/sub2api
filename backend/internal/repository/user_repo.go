@@ -150,6 +150,8 @@ func (r *userRepository) create(ctx context.Context, userIn *service.User, guard
 		SetConcurrency(userIn.Concurrency).
 		SetStatus(userIn.Status).
 		SetReferralEnabled(userIn.ReferralEnabled).
+		SetRestrictToAllowedGroups(userIn.RestrictToAllowedGroups).
+		SetPaymentDisabled(userIn.PaymentDisabled).
 		SetNillableDefaultChatAPIKeyID(userIn.DefaultChatAPIKeyID).
 		SetSignupSource(userSignupSourceOrDefault(userIn.SignupSource)).
 		SetNillableLastLoginAt(userIn.LastLoginAt).
@@ -325,6 +327,12 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User, field
 	}
 	if fields.ReferralEnabled {
 		updateOp = updateOp.SetReferralEnabled(userIn.ReferralEnabled)
+	}
+	if fields.RestrictToAllowedGroups {
+		updateOp = updateOp.SetRestrictToAllowedGroups(userIn.RestrictToAllowedGroups)
+	}
+	if fields.PaymentDisabled {
+		updateOp = updateOp.SetPaymentDisabled(userIn.PaymentDisabled)
 	}
 	if fields.BalanceNotifySettings {
 		updateOp = updateOp.

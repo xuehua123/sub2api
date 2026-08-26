@@ -1267,6 +1267,9 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
 		}
+		if apiKey.User != nil && !apiKey.User.AllowsGroupType(group.IsExclusive) {
+			return nil, ErrGroupNotAllowed
+		}
 
 		entitlementsRuntime := SubscriptionEntitlementsRuntime{}
 		if s.apiKeyService != nil {
@@ -1301,8 +1304,10 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 			apiKey.SubscriptionEntitlementID = resolvedEntitlementID
 		}
 
-		// Only balance-backed exclusive bindings need an allowed-group grant.
-		autoGrantBalanceAccess := group.IsExclusive && ((!entitlementsV2Enabled && !group.IsSubscriptionType()) || (entitlementsV2Enabled && resolvedAccessSource == APIKeyAccessSourceBalance))
+		// Balance-backed exclusive bindings need an explicit allowed-group grant
+		// so the new binding is immediately usable.
+		requiresExplicitGrant := group.IsExclusive
+		autoGrantBalanceAccess := requiresExplicitGrant && ((!entitlementsV2Enabled && !group.IsSubscriptionType()) || (entitlementsV2Enabled && resolvedAccessSource == APIKeyAccessSourceBalance))
 		if autoGrantBalanceAccess {
 			opCtx := ctx
 			var tx *dbent.Tx

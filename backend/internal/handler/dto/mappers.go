@@ -25,6 +25,8 @@ func UserFromServiceShallow(u *service.User) *User {
 		Concurrency:                u.Concurrency,
 		Status:                     u.Status,
 		AllowedGroups:              u.AllowedGroups,
+		RestrictToAllowedGroups:    u.RestrictToAllowedGroups,
+		PaymentDisabled:            u.PaymentDisabled,
 		ReferralEnabled:            u.ReferralEnabled,
 		DefaultChatAPIKeyID:        u.DefaultChatAPIKeyID,
 		LastActiveAt:               u.LastActiveAt,

@@ -36,6 +36,9 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 
 	fromGroup := apiKey.Group
 	fromGroupID := fromGroup.ID
+	if !apiKey.User.AllowsGroupType(fromGroup.IsExclusive) {
+		return nil, ErrGroupNotAllowed
+	}
 	if !fromGroup.SupportsSubscriptionAccess() {
 		currentGroupUnavailable = true
 	}
@@ -49,7 +52,7 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 		if bindingErr != nil {
 			return nil, bindingErr
 		}
-		switchGroup := selectEntitlementSwitchGroup(entitlement, fromGroup, fromGroupID, req)
+		switchGroup := selectEntitlementSwitchGroup(entitlement, fromGroup, fromGroupID, req, apiKey.User)
 		if switchGroup == nil {
 			return nil, err
 		}
@@ -62,7 +65,7 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 		return nil, currentErr
 	}
 
-	switchGroup := selectEntitlementSwitchGroup(resolution.Entitlement, fromGroup, fromGroupID, req)
+	switchGroup := selectEntitlementSwitchGroup(resolution.Entitlement, fromGroup, fromGroupID, req, apiKey.User)
 	if switchGroup == nil {
 		return nil, currentErr
 	}
@@ -152,13 +155,16 @@ func entitlementCurrentGroupError(group *Group, req SubscriptionSwitchRequest, c
 	return subscriptionSwitchRequestEligibilityError(group, req)
 }
 
-func selectEntitlementSwitchGroup(ent *SubscriptionEntitlement, currentGroup *Group, currentGroupID int64, req SubscriptionSwitchRequest) *Group {
+func selectEntitlementSwitchGroup(ent *SubscriptionEntitlement, currentGroup *Group, currentGroupID int64, req SubscriptionSwitchRequest, user *User) *Group {
 	if ent == nil || currentGroup == nil {
 		return nil
 	}
 	for _, grant := range ent.GroupGrants {
 		group := entitlementGrantGroup(ent, grant)
 		if group == nil || group.ID == currentGroupID || !group.SupportsSubscriptionAccess() || !group.IsActive() {
+			continue
+		}
+		if user != nil && !user.AllowsGroupType(group.IsExclusive) {
 			continue
 		}
 		if err := subscriptionSwitchRequestEligibilityError(group, req); err != nil {

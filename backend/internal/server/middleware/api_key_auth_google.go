@@ -152,6 +152,8 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 		// 简易模式：跳过余额和订阅检查
 		if cfg.RunMode == config.RunModeSimple {
+			policyCtx := service.WithAPIKeyGroupAccessPolicy(c.Request.Context(), apiKey, nil, nil)
+			c.Request = c.Request.WithContext(policyCtx)
 			c.Set(string(ContextKeyAPIKey), apiKey)
 			c.Set(string(ContextKeyUser), AuthSubject{
 				UserID:      apiKey.User.ID,
@@ -170,6 +172,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		}
 
 		var entitlement *service.SubscriptionEntitlement
+		var subscription *service.UserSubscription
 		if useEntitlementAccess {
 			resolved, err := apiKeyService.ResolveEntitlementForAPIKeyAuth(
 				c.Request.Context(),
@@ -183,6 +186,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			}
 			if resolved != nil && resolved.Entitlement != nil {
 				entitlement = resolved.Entitlement
+				subscription = resolved.LegacySubscription
 				if resolved.Switched {
 					swapped, err := apiKeyService.CompareAndSwapGroupIDWithEntitlement(c.Request.Context(), apiKey, resolved.FromGroupID, resolved.ToGroupID, resolved.Entitlement.ID)
 					if err != nil {
@@ -197,9 +201,6 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				}
 				if resolved.Group != nil {
 					applyResolvedSubscriptionGroup(c, apiKey, resolved.Group, resolved.FromGroupID)
-				}
-				if resolved.LegacySubscription != nil {
-					c.Set(string(ContextKeySubscription), resolved.LegacySubscription)
 				}
 				if resolved.UseBalanceFallback {
 					c.Set(string(ContextKeySubscriptionEntitlementBalanceFallback), true)
@@ -216,7 +217,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				return
 			}
 			if candidate != nil && candidate.Subscription != nil {
-				subscription := candidate.Subscription
+				subscription = candidate.Subscription
 				if candidate.Switched {
 					swapped, err := apiKeyService.CompareAndSwapGroupID(c.Request.Context(), apiKey, candidate.FromGroupID, candidate.ToGroupID)
 					if err != nil {
@@ -247,7 +248,6 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 					abortWithGoogleError(c, subscriptionErrorStatus(validateErr), subscriptionErrorMessage(validateErr))
 					return
 				}
-				c.Set(string(ContextKeySubscription), subscription)
 			}
 		} else {
 			if apiKeyBalanceBelowAuthThreshold(apiKey.User.Balance, cfg) {
@@ -259,6 +259,11 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 		if entitlement != nil {
 			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
 		}
+		if subscription != nil {
+			c.Set(string(ContextKeySubscription), subscription)
+		}
+		policyCtx := service.WithAPIKeyGroupAccessPolicy(c.Request.Context(), apiKey, entitlement, subscription)
+		c.Request = c.Request.WithContext(policyCtx)
 		c.Set(string(ContextKeyAPIKey), apiKey)
 		c.Set(string(ContextKeyUser), AuthSubject{
 			UserID:      apiKey.User.ID,

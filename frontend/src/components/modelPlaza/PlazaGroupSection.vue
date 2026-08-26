@@ -31,6 +31,12 @@
         >
           {{ t('modelPlaza.badges.subscription') }}
         </span>
+        <span
+          v-if="group.unavailable"
+          class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/20 dark:text-amber-400"
+        >
+          {{ t('modelPlaza.badges.viewOnly') }}
+        </span>
       </div>
       <p v-if="group.description" class="mt-2 text-sm text-gray-500 dark:text-dark-400">
         {{ group.description }}

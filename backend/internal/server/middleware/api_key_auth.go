@@ -206,6 +206,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
 		if cfg.RunMode == config.RunModeSimple {
+			ctx = service.WithAPIKeyGroupAccessPolicy(c.Request.Context(), apiKey, nil, nil)
+			c.Request = c.Request.WithContext(ctx)
 			c.Set(string(ContextKeyAPIKey), apiKey)
 			c.Set(string(ContextKeyUser), AuthSubject{
 				UserID:      apiKey.User.ID,
@@ -365,6 +367,8 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		if entitlement != nil {
 			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
 		}
+		ctx = service.WithAPIKeyGroupAccessPolicy(c.Request.Context(), apiKey, entitlement, subscription)
+		c.Request = c.Request.WithContext(ctx)
 		c.Set(string(ContextKeyAPIKey), apiKey)
 		c.Set(string(ContextKeyUser), AuthSubject{
 			UserID:      apiKey.User.ID,
@@ -625,10 +629,16 @@ func abortIfAPIKeyGroupNotAllowed(c *gin.Context, apiKey *service.APIKey, v2Enti
 }
 
 func validateAPIKeyGroupAllowed(apiKey *service.APIKey, v2EntitlementsEnabled bool, accessSource string) bool {
-	if apiKey == nil || apiKey.GroupID == nil || apiKey.User == nil || apiKey.Group == nil {
+	if apiKey == nil || apiKey.User == nil {
 		return true
 	}
+	if apiKey.GroupID == nil || apiKey.Group == nil {
+		return !apiKey.User.RestrictToAllowedGroups
+	}
 	group := apiKey.Group
+	if !apiKey.User.AllowsGroupType(group.IsExclusive) {
+		return false
+	}
 	if v2EntitlementsEnabled {
 		switch accessSource {
 		case service.APIKeyAccessSourceBalance:

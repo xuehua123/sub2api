@@ -88,6 +88,8 @@ type modelPlazaGroup struct {
 	PeakEnd            string   `json:"peak_end"`
 	PeakRateMultiplier float64  `json:"peak_rate_multiplier"`
 	IsExclusive        bool     `json:"is_exclusive"`
+	Unavailable        bool     `json:"unavailable,omitempty"`
+	UnavailableReason  string   `json:"unavailable_reason,omitempty"`
 	// 生图独立倍率：为 true 时图片计费模型的实付倍率取 ImageRateMultiplier，
 	// 不取分组/用户专属倍率。
 	ImageRateIndependent bool    `json:"image_rate_independent"`
@@ -132,9 +134,10 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 
 	// allowedExclusive == nil 表示匿名；登录用户恒为非 nil（可能为空集合）。
 	var allowedExclusive map[int64]struct{}
+	restrictToAllowedGroups := false
 	var userRates map[int64]float64
 	if authed {
-		allowedExclusive, err = h.apiKeyService.GetUserAllowedGroupIDSet(c.Request.Context(), subject.UserID)
+		allowedExclusive, restrictToAllowedGroups, err = h.apiKeyService.GetUserGroupAccessPolicy(c.Request.Context(), subject.UserID)
 		if err != nil {
 			// 可见性数据拿不到时不能静默降级成匿名视图（会错漏专属分组），直接报错。
 			response.ErrorFrom(c, err)
@@ -152,12 +155,22 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 
 	out := make([]modelPlazaGroup, 0, len(visible))
 	for i := range visible {
-		out = append(out, toModelPlazaGroupDTO(&visible[i], userRates))
+		item := toModelPlazaGroupDTO(&visible[i], userRates)
+		applyModelPlazaGroupAccessPolicy(&item, &visible[i], restrictToAllowedGroups)
+		out = append(out, item)
 	}
 	response.Success(c, modelPlazaResponse{
 		Description: rt.Description,
 		Groups:      out,
 	})
+}
+
+func applyModelPlazaGroupAccessPolicy(item *modelPlazaGroup, group *service.PlazaGroup, exclusiveOnly bool) {
+	if item == nil || group == nil || !exclusiveOnly || group.IsExclusive {
+		return
+	}
+	item.Unavailable = true
+	item.UnavailableReason = "EXCLUSIVE_GROUPS_ONLY"
 }
 
 // filterPlazaVisibleGroups 按登录态裁剪分组可见性。

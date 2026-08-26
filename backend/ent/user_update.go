@@ -222,6 +222,34 @@ func (_u *UserUpdate) ClearDefaultChatAPIKeyID() *UserUpdate {
 	return _u
 }
 
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (_u *UserUpdate) SetRestrictToAllowedGroups(v bool) *UserUpdate {
+	_u.mutation.SetRestrictToAllowedGroups(v)
+	return _u
+}
+
+// SetNillableRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableRestrictToAllowedGroups(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetRestrictToAllowedGroups(*v)
+	}
+	return _u
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (_u *UserUpdate) SetPaymentDisabled(v bool) *UserUpdate {
+	_u.mutation.SetPaymentDisabled(v)
+	return _u
+}
+
+// SetNillablePaymentDisabled sets the "payment_disabled" field if the given value is not nil.
+func (_u *UserUpdate) SetNillablePaymentDisabled(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetPaymentDisabled(*v)
+	}
+	return _u
+}
+
 // SetUsername sets the "username" field.
 func (_u *UserUpdate) SetUsername(v string) *UserUpdate {
 	_u.mutation.SetUsername(v)
@@ -1549,6 +1577,12 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.DefaultChatAPIKeyIDCleared() {
 		_spec.ClearField(user.FieldDefaultChatAPIKeyID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RestrictToAllowedGroups(); ok {
+		_spec.SetField(user.FieldRestrictToAllowedGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PaymentDisabled(); ok {
+		_spec.SetField(user.FieldPaymentDisabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)
@@ -2977,6 +3011,34 @@ func (_u *UserUpdateOne) ClearDefaultChatAPIKeyID() *UserUpdateOne {
 	return _u
 }
 
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (_u *UserUpdateOne) SetRestrictToAllowedGroups(v bool) *UserUpdateOne {
+	_u.mutation.SetRestrictToAllowedGroups(v)
+	return _u
+}
+
+// SetNillableRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableRestrictToAllowedGroups(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetRestrictToAllowedGroups(*v)
+	}
+	return _u
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (_u *UserUpdateOne) SetPaymentDisabled(v bool) *UserUpdateOne {
+	_u.mutation.SetPaymentDisabled(v)
+	return _u
+}
+
+// SetNillablePaymentDisabled sets the "payment_disabled" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillablePaymentDisabled(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetPaymentDisabled(*v)
+	}
+	return _u
+}
+
 // SetUsername sets the "username" field.
 func (_u *UserUpdateOne) SetUsername(v string) *UserUpdateOne {
 	_u.mutation.SetUsername(v)
@@ -4334,6 +4396,12 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if _u.mutation.DefaultChatAPIKeyIDCleared() {
 		_spec.ClearField(user.FieldDefaultChatAPIKeyID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.RestrictToAllowedGroups(); ok {
+		_spec.SetField(user.FieldRestrictToAllowedGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.PaymentDisabled(); ok {
+		_spec.SetField(user.FieldPaymentDisabled, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.Username(); ok {
 		_spec.SetField(user.FieldUsername, field.TypeString, value)

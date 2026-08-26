@@ -8,14 +8,17 @@ type NavigationGuard = (
 
 const routerHarness = vi.hoisted(() => ({
   guard: null as NavigationGuard | null,
+  routes: [] as Array<{ path: string; meta?: Record<string, unknown> }>,
 }))
 
 const authStore = vi.hoisted(() => ({
   checkAuth: vi.fn(),
+  refreshUser: vi.fn(),
   isAuthenticated: true,
   isAdmin: false,
   isSimpleMode: false,
   hasPendingAuthSession: false,
+  user: { payment_disabled: false },
 }))
 
 const appStore = vi.hoisted(() => ({
@@ -32,13 +35,16 @@ const appStore = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   createWebHistory: vi.fn(() => ({})),
-  createRouter: vi.fn(() => ({
-    beforeEach: vi.fn((guard: NavigationGuard) => {
-      routerHarness.guard = guard
-    }),
-    afterEach: vi.fn(),
-    onError: vi.fn(),
-  })),
+  createRouter: vi.fn((config: { routes: Array<{ path: string; meta?: Record<string, unknown> }> }) => {
+    routerHarness.routes = config.routes
+    return {
+      beforeEach: vi.fn((guard: NavigationGuard) => {
+        routerHarness.guard = guard
+      }),
+      afterEach: vi.fn(),
+      onError: vi.fn(),
+    }
+  }),
 }))
 
 vi.mock('@/stores/auth', () => ({
@@ -114,10 +120,23 @@ describe('feature route guard', () => {
     authStore.isAuthenticated = true
     authStore.isAdmin = false
     authStore.isSimpleMode = false
+    authStore.user = { payment_disabled: false }
+    authStore.refreshUser.mockReset()
+    authStore.refreshUser.mockImplementation(async () => authStore.user)
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
+    appStore.backendModeEnabled = false
     appStore.fetchPublicSettings.mockReset()
   })
+
+  it.each(['/payment/stripe', '/payment/airwallex', '/payment/stripe-popup'])(
+    'protects direct checkout route %s with current user payment policy',
+    (path) => {
+      const route = routerHarness.routes.find((candidate) => candidate.path === path)
+      expect(route?.meta?.requiresAuth).toBe(true)
+      expect(route?.meta?.requiresPayment).toBe(true)
+    }
+  )
 
   it('waits for the first public-settings request before deciding payment access', async () => {
     const deferred = createDeferred<{ payment_enabled: boolean }>()
@@ -173,5 +192,68 @@ describe('feature route guard', () => {
     expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
     expect(next).toHaveBeenCalledOnce()
     expect(next).toHaveBeenCalledWith(target)
+  })
+
+  it('redirects a payment-disabled user before loading global payment settings', async () => {
+    authStore.user = { payment_disabled: true }
+
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/purchase')
+    await navigation
+
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('refreshes stale user policy before allowing a payment route', async () => {
+    authStore.user = { payment_disabled: false }
+    authStore.refreshUser.mockImplementation(async () => {
+      authStore.user = { payment_disabled: true }
+      return authStore.user
+    })
+
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/payment/stripe')
+    await navigation
+
+    expect(authStore.refreshUser).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith('/dashboard')
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when current payment policy cannot be refreshed', async () => {
+    authStore.refreshUser.mockRejectedValue(new Error('profile unavailable'))
+
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/purchase')
+    await navigation
+
+    expect(next).toHaveBeenCalledWith('/dashboard')
+    expect(appStore.fetchPublicSettings).not.toHaveBeenCalled()
+  })
+
+  it('does not block admin payment management when the admin self-payment flag is disabled', async () => {
+    authStore.isAdmin = true
+    authStore.user = { payment_disabled: true }
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { payment_enabled: true }
+
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/admin/orders')
+    await navigation
+
+    expect(authStore.refreshUser).not.toHaveBeenCalled()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
+  })
+
+  it('allows authenticated users to complete Airwallex checkout in backend mode', async () => {
+    appStore.backendModeEnabled = true
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { payment_enabled: true }
+
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/payment/airwallex')
+    await navigation
+
+    expect(authStore.refreshUser).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledOnce()
+    expect(next).toHaveBeenCalledWith()
   })
 })

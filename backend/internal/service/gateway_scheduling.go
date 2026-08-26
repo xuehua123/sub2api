@@ -891,6 +891,9 @@ func (s *GatewayService) resolveGatewayGroup(ctx context.Context, groupID *int64
 		}
 
 		if !group.ClaudeCodeOnly || IsClaudeCodeClient(ctx) {
+			if !IsAPIKeyResolvedGroupAllowed(ctx, group) {
+				return nil, nil, ErrGroupNotAllowed
+			}
 			return group, &currentID, nil
 		}
 

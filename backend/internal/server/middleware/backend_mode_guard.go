@@ -22,9 +22,21 @@ func BackendModeUserGuard(settingService *service.SettingService) gin.HandlerFun
 			c.Next()
 			return
 		}
+		// Authenticated checkout recovery still needs a fresh user policy lookup.
+		// Keep this exception narrow: require the user role populated by JWT auth,
+		// and expose only the caller's own profile endpoint.
+		if role == "user" && backendModeAllowsUserPath(c.Request.URL.Path) {
+			c.Next()
+			return
+		}
 		response.Forbidden(c, "Backend mode is active. User self-service is disabled.")
 		c.Abort()
 	}
+}
+
+func backendModeAllowsUserPath(path string) bool {
+	path = strings.ToLower(strings.TrimSpace(path))
+	return strings.HasSuffix(path, "/auth/me")
 }
 
 func backendModeAllowsAuthPath(path string) bool {

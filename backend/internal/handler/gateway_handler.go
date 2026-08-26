@@ -987,7 +987,8 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 						if currentSubscription != nil || currentEntitlement != nil ||
 							fallbackGroup.Platform != service.PlatformAnthropic ||
 							fallbackGroup.SupportsSubscriptionAccess() ||
-							fallbackGroup.FallbackGroupIDOnInvalidRequest != nil {
+							fallbackGroup.FallbackGroupIDOnInvalidRequest != nil ||
+							!service.IsAPIKeyResolvedGroupAllowed(c.Request.Context(), fallbackGroup) {
 							reqLog.Warn("gateway.fallback_group_invalid",
 								zap.Int64("fallback_group_id", fallbackGroup.ID),
 								zap.String("fallback_platform", fallbackGroup.Platform),

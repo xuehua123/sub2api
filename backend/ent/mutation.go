@@ -82795,6 +82795,8 @@ type UserMutation struct {
 	status                                    *string
 	default_chat_api_key_id                   *int64
 	adddefault_chat_api_key_id                *int64
+	restrict_to_allowed_groups                *bool
+	payment_disabled                          *bool
 	username                                  *string
 	notes                                     *string
 	totp_secret_encrypted                     *string
@@ -83495,6 +83497,78 @@ func (m *UserMutation) ResetDefaultChatAPIKeyID() {
 	m.default_chat_api_key_id = nil
 	m.adddefault_chat_api_key_id = nil
 	delete(m.clearedFields, user.FieldDefaultChatAPIKeyID)
+}
+
+// SetRestrictToAllowedGroups sets the "restrict_to_allowed_groups" field.
+func (m *UserMutation) SetRestrictToAllowedGroups(b bool) {
+	m.restrict_to_allowed_groups = &b
+}
+
+// RestrictToAllowedGroups returns the value of the "restrict_to_allowed_groups" field in the mutation.
+func (m *UserMutation) RestrictToAllowedGroups() (r bool, exists bool) {
+	v := m.restrict_to_allowed_groups
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRestrictToAllowedGroups returns the old "restrict_to_allowed_groups" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldRestrictToAllowedGroups(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRestrictToAllowedGroups is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRestrictToAllowedGroups requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRestrictToAllowedGroups: %w", err)
+	}
+	return oldValue.RestrictToAllowedGroups, nil
+}
+
+// ResetRestrictToAllowedGroups resets all changes to the "restrict_to_allowed_groups" field.
+func (m *UserMutation) ResetRestrictToAllowedGroups() {
+	m.restrict_to_allowed_groups = nil
+}
+
+// SetPaymentDisabled sets the "payment_disabled" field.
+func (m *UserMutation) SetPaymentDisabled(b bool) {
+	m.payment_disabled = &b
+}
+
+// PaymentDisabled returns the value of the "payment_disabled" field in the mutation.
+func (m *UserMutation) PaymentDisabled() (r bool, exists bool) {
+	v := m.payment_disabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaymentDisabled returns the old "payment_disabled" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldPaymentDisabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaymentDisabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaymentDisabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaymentDisabled: %w", err)
+	}
+	return oldValue.PaymentDisabled, nil
+}
+
+// ResetPaymentDisabled resets all changes to the "payment_disabled" field.
+func (m *UserMutation) ResetPaymentDisabled() {
+	m.payment_disabled = nil
 }
 
 // SetUsername sets the "username" field.
@@ -85586,7 +85660,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 26)
+	fields := make([]string, 0, 28)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -85619,6 +85693,12 @@ func (m *UserMutation) Fields() []string {
 	}
 	if m.default_chat_api_key_id != nil {
 		fields = append(fields, user.FieldDefaultChatAPIKeyID)
+	}
+	if m.restrict_to_allowed_groups != nil {
+		fields = append(fields, user.FieldRestrictToAllowedGroups)
+	}
+	if m.payment_disabled != nil {
+		fields = append(fields, user.FieldPaymentDisabled)
 	}
 	if m.username != nil {
 		fields = append(fields, user.FieldUsername)
@@ -85695,6 +85775,10 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.Status()
 	case user.FieldDefaultChatAPIKeyID:
 		return m.DefaultChatAPIKeyID()
+	case user.FieldRestrictToAllowedGroups:
+		return m.RestrictToAllowedGroups()
+	case user.FieldPaymentDisabled:
+		return m.PaymentDisabled()
 	case user.FieldUsername:
 		return m.Username()
 	case user.FieldNotes:
@@ -85756,6 +85840,10 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldStatus(ctx)
 	case user.FieldDefaultChatAPIKeyID:
 		return m.OldDefaultChatAPIKeyID(ctx)
+	case user.FieldRestrictToAllowedGroups:
+		return m.OldRestrictToAllowedGroups(ctx)
+	case user.FieldPaymentDisabled:
+		return m.OldPaymentDisabled(ctx)
 	case user.FieldUsername:
 		return m.OldUsername(ctx)
 	case user.FieldNotes:
@@ -85871,6 +85959,20 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDefaultChatAPIKeyID(v)
+		return nil
+	case user.FieldRestrictToAllowedGroups:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRestrictToAllowedGroups(v)
+		return nil
+	case user.FieldPaymentDisabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaymentDisabled(v)
 		return nil
 	case user.FieldUsername:
 		v, ok := value.(string)
@@ -86190,6 +86292,12 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldDefaultChatAPIKeyID:
 		m.ResetDefaultChatAPIKeyID()
+		return nil
+	case user.FieldRestrictToAllowedGroups:
+		m.ResetRestrictToAllowedGroups()
+		return nil
+	case user.FieldPaymentDisabled:
+		m.ResetPaymentDisabled()
 		return nil
 	case user.FieldUsername:
 		m.ResetUsername()

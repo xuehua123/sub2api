@@ -168,9 +168,11 @@ type APIKeyListFilters struct {
 }
 
 type AvailableAPIKeyGroup struct {
-	Group         Group
-	Entitlements  []AvailableAPIKeyGroupEntitlement
-	AccessSources []AvailableAPIKeyGroupAccessSource
+	Group             Group
+	Entitlements      []AvailableAPIKeyGroupEntitlement
+	AccessSources     []AvailableAPIKeyGroupAccessSource
+	Disabled          bool
+	UnavailableReason string
 }
 
 type AvailableAPIKeyGroupEntitlement struct {
