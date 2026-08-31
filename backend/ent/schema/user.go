@@ -65,6 +65,11 @@ func (User) Fields() []ent.Field {
 		// own exclusive groups. When false, public groups retain implicit access.
 		field.Bool("restrict_to_allowed_groups").
 			Default(false),
+		// Restrict public (non-exclusive) groups to the explicit
+		// user_allowed_groups relation. This policy is independent from
+		// restrict_to_allowed_groups, which is the fork's exclusive-only mode.
+		field.Bool("restrict_public_groups").
+			Default(false),
 		// User-level payment deny switch. The backend enforces this when creating
 		// orders; the frontend also hides and guards payment entry points.
 		field.Bool("payment_disabled").

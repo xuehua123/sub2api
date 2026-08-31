@@ -15,7 +15,8 @@ import (
 // 广场路由挂 OptionalJWT 中间件：匿名可访问（除非 require_auth 开启），带 token 则
 // 识别用户。可见性规则（橱窗语义，与「可用渠道」的可绑定语义不同）：
 //   - 匿名：仅非专属分组（订阅型照常展示）；
-//   - 登录：非专属分组 + user_allowed_groups 授权的专属分组（不检查订阅有效性）。
+//   - 登录：非专属分组 + user_allowed_groups 授权的专属分组（不检查订阅有效性）；
+//     若该用户开启了公开分组限制，则公开分组同样需要落在授权集合内。
 type ModelPlazaHandler struct {
 	plazaService   *service.ModelPlazaService
 	apiKeyService  *service.APIKeyService
@@ -132,14 +133,22 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		return
 	}
 
-	// allowedExclusive == nil 表示匿名；登录用户恒为非 nil（可能为空集合）。
-	var allowedExclusive map[int64]struct{}
+	// accessibleGroups == nil 表示匿名；登录用户恒为非 nil（可能为空集合）。
+	// publicAllowedGroups 仅含显式 user_allowed_groups，不被权益/订阅扩大。
+	var accessibleGroups map[int64]struct{}
+	var publicAllowedGroups map[int64]struct{}
 	restrictToAllowedGroups := false
+	restrictPublicGroups := false
 	var userRates map[int64]float64
 	if authed {
-		allowedExclusive, restrictToAllowedGroups, err = h.apiKeyService.GetUserGroupAccessPolicy(c.Request.Context(), subject.UserID)
+		accessibleGroups, restrictToAllowedGroups, err = h.apiKeyService.GetUserGroupAccessPolicy(c.Request.Context(), subject.UserID)
 		if err != nil {
 			// 可见性数据拿不到时不能静默降级成匿名视图（会错漏专属分组），直接报错。
+			response.ErrorFrom(c, err)
+			return
+		}
+		publicAllowedGroups, restrictPublicGroups, err = h.apiKeyService.GetUserGroupVisibility(c.Request.Context(), subject.UserID)
+		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
@@ -151,7 +160,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		}
 	}
 
-	visible := filterPlazaVisibleGroups(groups, allowedExclusive)
+	visible := filterPlazaVisibleGroups(groups, accessibleGroups, publicAllowedGroups, restrictPublicGroups)
 
 	out := make([]modelPlazaGroup, 0, len(visible))
 	for i := range visible {
@@ -173,19 +182,27 @@ func applyModelPlazaGroupAccessPolicy(item *modelPlazaGroup, group *service.Plaz
 	item.UnavailableReason = "EXCLUSIVE_GROUPS_ONLY"
 }
 
-// filterPlazaVisibleGroups 按登录态裁剪分组可见性。
-// allowedExclusive == nil 表示匿名（仅非专属）；非 nil 表示登录（非专属 + 授权专属）。
+// filterPlazaVisibleGroups 按登录态裁剪分组可见性。专属分组按显式授权或
+// 有效权益的可访问集合展示；开启 restrict_public_groups 时，公开分组必须在
+// 显式 user_allowed_groups 中才可见。restrict_to_allowed_groups 只由调用方标记
+// 公开分组为不可用，两个策略同时开启时自然取交集。
 func filterPlazaVisibleGroups(
 	groups []service.PlazaGroup,
-	allowedExclusive map[int64]struct{},
+	accessibleGroups map[int64]struct{},
+	publicAllowedGroups map[int64]struct{},
+	restrictPublicGroups bool,
 ) []service.PlazaGroup {
 	visible := make([]service.PlazaGroup, 0, len(groups))
 	for _, g := range groups {
 		if g.IsExclusive {
-			if allowedExclusive == nil {
+			if accessibleGroups == nil {
 				continue
 			}
-			if _, ok := allowedExclusive[g.ID]; !ok {
+			if _, ok := accessibleGroups[g.ID]; !ok {
+				continue
+			}
+		} else if restrictPublicGroups && publicAllowedGroups != nil {
+			if _, ok := publicAllowedGroups[g.ID]; !ok {
 				continue
 			}
 		}

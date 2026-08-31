@@ -15,19 +15,22 @@ import (
 
 type dashboardUsageRepoCapture struct {
 	service.UsageLogRepository
-	trendRequestType   *int16
-	trendStream        *bool
-	trendEntitlementID int64
-	modelRequestType   *int16
-	modelStream        *bool
-	modelEntitlementID int64
-	groupEntitlementID int64
-	trendMismatch      *bool
-	modelMismatch      *bool
-	groupMismatch      *bool
-	rankingLimit       int
-	ranking            []usagestats.UserSpendingRankingItem
-	rankingTotal       float64
+	trendRequestType      *int16
+	trendStream           *bool
+	trendEntitlementID    int64
+	trendNativeCompaction *bool
+	modelRequestType      *int16
+	modelStream           *bool
+	modelEntitlementID    int64
+	modelNativeCompaction *bool
+	groupEntitlementID    int64
+	groupNativeCompaction *bool
+	trendMismatch         *bool
+	modelMismatch         *bool
+	groupMismatch         *bool
+	rankingLimit          int
+	ranking               []usagestats.UserSpendingRankingItem
+	rankingTotal          float64
 }
 
 func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
@@ -39,6 +42,7 @@ func (s *dashboardUsageRepoCapture) GetUsageTrendWithUsageFilters(
 	s.trendRequestType = filters.RequestType
 	s.trendStream = filters.Stream
 	s.trendEntitlementID = filters.EntitlementID
+	s.trendNativeCompaction = filters.NativeCompactionV2
 	s.trendMismatch = filters.UpstreamModelMismatch
 	return []usagestats.TrendDataPoint{}, nil
 }
@@ -68,6 +72,7 @@ func (s *dashboardUsageRepoCapture) GetModelStatsWithUsageFiltersBySource(
 	s.modelRequestType = filters.RequestType
 	s.modelStream = filters.Stream
 	s.modelEntitlementID = filters.EntitlementID
+	s.modelNativeCompaction = filters.NativeCompactionV2
 	s.modelMismatch = filters.UpstreamModelMismatch
 	return []usagestats.ModelStat{}, nil
 }
@@ -78,6 +83,7 @@ func (s *dashboardUsageRepoCapture) GetGroupStatsWithUsageFilters(
 	filters usagestats.UsageLogFilters,
 ) ([]usagestats.GroupStat, error) {
 	s.groupEntitlementID = filters.EntitlementID
+	s.groupNativeCompaction = filters.NativeCompactionV2
 	s.groupMismatch = filters.UpstreamModelMismatch
 	return []usagestats.GroupStat{}, nil
 }
@@ -273,6 +279,48 @@ func TestDashboardGroupStatsEntitlementIDFilter(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, int64(765), repo.groupEntitlementID)
+}
+
+func TestDashboardNativeCompactionFilterPropagatesAlongsideTransport(t *testing.T) {
+	resetDashboardReadCachesForTest()
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	for _, path := range []string{
+		"/admin/dashboard/trend?request_type=stream&native_compaction_v2=true",
+		"/admin/dashboard/models?request_type=stream&native_compaction_v2=true",
+		"/admin/dashboard/groups?request_type=stream&native_compaction_v2=true",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, path)
+	}
+
+	require.NotNil(t, repo.trendNativeCompaction)
+	require.True(t, *repo.trendNativeCompaction)
+	require.NotNil(t, repo.modelNativeCompaction)
+	require.True(t, *repo.modelNativeCompaction)
+	require.NotNil(t, repo.groupNativeCompaction)
+	require.True(t, *repo.groupNativeCompaction)
+	require.NotNil(t, repo.trendRequestType)
+	require.Equal(t, int16(service.RequestTypeStream), *repo.trendRequestType)
+}
+
+func TestDashboardNativeCompactionFilterRejectsInvalidBoolean(t *testing.T) {
+	repo := &dashboardUsageRepoCapture{}
+	router := newDashboardRequestTypeTestRouter(repo)
+
+	for _, path := range []string{
+		"/admin/dashboard/trend?native_compaction_v2=invalid",
+		"/admin/dashboard/models?native_compaction_v2=invalid",
+		"/admin/dashboard/groups?native_compaction_v2=invalid",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusBadRequest, rec.Code, path)
+	}
 }
 
 func TestDashboardModelAuditFilterPropagatesToTrendModelAndGroupQueries(t *testing.T) {

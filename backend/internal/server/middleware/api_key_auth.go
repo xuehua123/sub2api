@@ -636,7 +636,7 @@ func validateAPIKeyGroupAllowed(apiKey *service.APIKey, v2EntitlementsEnabled bo
 		return !apiKey.User.RestrictToAllowedGroups
 	}
 	group := apiKey.Group
-	if !apiKey.User.AllowsGroupType(group.IsExclusive) {
+	if !apiKey.User.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return false
 	}
 	if v2EntitlementsEnabled {

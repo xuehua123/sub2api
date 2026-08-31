@@ -80,6 +80,18 @@ func TestAPIKeyResolvedGroupPolicyUsesEntitlementOrLegacySubscriptionCoverage(t 
 	require.False(t, IsAPIKeyResolvedGroupAllowed(legacyCtx, &Group{ID: 12, IsExclusive: true}))
 }
 
+func TestPublicGroupRestrictionCannotBeBypassedByEntitlementCoverage(t *testing.T) {
+	t.Parallel()
+
+	user := &User{RestrictPublicGroups: true, AllowedGroups: []int64{7}}
+	key := &APIKey{User: user, AccessSource: APIKeyAccessSourceEntitlement}
+	entitlement := &SubscriptionEntitlement{GroupGrants: []SubscriptionEntitlementGroupGrant{{GroupID: 8, Enabled: true}}}
+	ctx := WithAPIKeyGroupAccessPolicy(context.Background(), key, entitlement, nil)
+
+	require.False(t, IsAPIKeyResolvedGroupAllowed(ctx, &Group{ID: 8, IsExclusive: false}))
+	require.Empty(t, buildAvailableGroupAccessSources(user, &Group{ID: 8, Status: StatusActive, SubscriptionEnabled: true}, []AvailableAPIKeyGroupEntitlement{{ID: 21}}))
+}
+
 func TestEntitlementEnabledGrantGroupIDsIgnoresDisabledAndUnfilteredEdges(t *testing.T) {
 	t.Parallel()
 
@@ -140,6 +152,7 @@ func TestGetUserGroupAccessPolicyIncludesActiveSubscriptionGroups(t *testing.T) 
 			ID:                      5,
 			AllowedGroups:           []int64{7},
 			RestrictToAllowedGroups: true,
+			RestrictPublicGroups:    true,
 		}},
 		userSubRepo: &autoSwitchUserSubRepoStub{list: []UserSubscription{{
 			ID:      12,
@@ -153,6 +166,12 @@ func TestGetUserGroupAccessPolicyIncludesActiveSubscriptionGroups(t *testing.T) 
 	require.True(t, restricted)
 	require.Contains(t, allowed, int64(7))
 	require.Contains(t, allowed, int64(9))
+
+	explicit, restrictPublic, err := svc.GetUserGroupVisibility(context.Background(), 5)
+	require.NoError(t, err)
+	require.True(t, restrictPublic)
+	require.Contains(t, explicit, int64(7))
+	require.NotContains(t, explicit, int64(9), "subscription coverage must not widen the explicit public-group allowlist")
 }
 
 func TestValidateUserPaymentAccessRejectsDisabledUser(t *testing.T) {

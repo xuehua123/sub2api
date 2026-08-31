@@ -384,6 +384,97 @@ func accountIDs(accounts []service.Account) []int64 {
 	return ids
 }
 
+// 平台白名单放开后，官方 ollama.com key 挂在国产 OpenAI 兼容平台下同样进用量
+// 窗口：组写入跨 kimi/zhipu/deepseek 共享，白名单外平台（gemini）不得被卷入；
+// 组身份守卫（lockAndMerge）与 due 列表也必须识别 CN 平台的行。
+func TestOllamaCloudUsageEligibilityExtendsToCNOpenAICompatPlatforms(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	repo := newAccountRepositoryWithSQL(tx.Client(), tx, nil)
+	now := time.Now().UTC()
+	activity := now.Add(-time.Minute)
+	create := func(name, platform, baseURL string) *service.Account {
+		t.Helper()
+		return mustCreateAccount(t, tx.Client(), &service.Account{
+			Name: name, Platform: platform, Type: service.AccountTypeAPIKey,
+			Credentials: map[string]any{"api_key": "cn-shared-key", "base_url": baseURL},
+			Extra:       map[string]any{}, LastUsedAt: &activity,
+		})
+	}
+	kimi := create("ollama-cn-kimi", service.PlatformKimi, "https://ollama.com")
+	zhipu := create("ollama-cn-zhipu", service.PlatformZhipu, "HTTPS://WWW.OLLAMA.COM:443/v1")
+	deepseek := create("ollama-cn-deepseek", service.PlatformDeepseek, "https://ollama.com/v1")
+	gemini := create("ollama-cn-gemini", service.PlatformGemini, "https://ollama.com")
+
+	require.NoError(t, repo.SaveOllamaCloudUsageSession(ctx, kimi, "cipher:cn-shared", true))
+	for _, id := range []int64{kimi.ID, zhipu.ID, deepseek.ID} {
+		account, err := repo.GetByID(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, "cipher:cn-shared", account.Extra[service.OllamaCloudUsageSessionExtraKey], account.Name)
+		require.Equal(t, true, account.Extra[service.OllamaCloudUsageAutoRefreshExtraKey], account.Name)
+	}
+	geminiLoaded, err := repo.GetByID(ctx, gemini.ID)
+	require.NoError(t, err)
+	require.NotContains(t, geminiLoaded.Extra, service.OllamaCloudUsageSessionExtraKey,
+		"用量窗口不随 base_url 放开到白名单外平台")
+
+	// lockAndMerge 组身份守卫：CN 行凭证未变时必须保留 ollama 托管键。
+	kimiLoaded, err := repo.GetByID(ctx, kimi.ID)
+	require.NoError(t, err)
+	merged, err := lockAndMergeAccountOllamaCloudUsageExtra(ctx, tx.Client(), kimiLoaded)
+	require.NoError(t, err)
+	require.Equal(t, "cipher:cn-shared", merged[service.OllamaCloudUsageSessionExtraKey])
+	require.Equal(t, true, merged[service.OllamaCloudUsageAutoRefreshExtraKey])
+
+	// due 列表识别 CN 行：给同 key 组挂上过期快照（fetched 2h 前、活动更新），
+	// 每个 api_key 只返回一行，且必须来自 CN 组员。
+	staleFetched := now.Add(-2 * time.Hour)
+	deepseekLoaded, err := repo.GetByID(ctx, deepseek.ID)
+	require.NoError(t, err)
+	require.NoError(t, repo.UpdateOllamaCloudUsageSnapshot(ctx, deepseekLoaded, &service.OllamaCloudUsageSnapshot{
+		Status:        service.OllamaCloudUsageStatusOK,
+		FetchedAt:     &staleFetched,
+		LastAttemptAt: staleFetched,
+	}))
+
+	due, err := repo.ListDueOllamaCloudUsageAccounts(ctx, now, time.Minute, time.Hour, 10)
+
+	require.NoError(t, err)
+	require.Len(t, due, 1, "同 key 跨 CN 平台组按组去重后只应有一行 due")
+	require.Contains(t, []int64{kimi.ID, zhipu.ID, deepseek.ID}, due[0].ID,
+		"due 行必须来自 CN 平台的 ollama 组员")
+	require.NotNil(t, due[0].LastUsedAt)
+}
+
+// 端到端验证：普通（非 ollama）kimi apikey 账号改凭证进入统一分支后，
+// 遗留的 Ollama 托管状态会被清理，其它 extra 键不受影响。
+func TestUpdateCredentialsPlainCNAPIKeyAccountCleanupIsSemanticallyEquivalent(t *testing.T) {
+	ctx := context.Background()
+	tx := testEntTx(t)
+	repo := newAccountRepositoryWithSQL(tx.Client(), tx, nil)
+	account := mustCreateAccount(t, tx.Client(), &service.Account{
+		Name: "plain-kimi-apikey", Platform: service.PlatformKimi, Type: service.AccountTypeAPIKey,
+		Credentials: map[string]any{"api_key": "sk-moonshot", "base_url": "https://api.moonshot.cn"},
+		Extra: map[string]any{
+			service.OllamaCloudUsageSessionExtraKey:     "cipher:legacy-session",
+			service.OllamaCloudUsageAutoRefreshExtraKey: true,
+			service.OllamaCloudUsageSnapshotExtraKey:    map[string]any{"status": "ok"},
+			"custom_note":                               "keep-me",
+		},
+	})
+
+	require.NoError(t, repo.UpdateCredentials(ctx, account.ID, map[string]any{
+		"api_key": "sk-moonshot-rotated", "base_url": "https://api.moonshot.cn",
+	}))
+
+	loaded, err := repo.GetByID(ctx, account.ID)
+	require.NoError(t, err)
+	require.NotContains(t, loaded.Extra, service.OllamaCloudUsageSessionExtraKey)
+	require.NotContains(t, loaded.Extra, service.OllamaCloudUsageAutoRefreshExtraKey)
+	require.NotContains(t, loaded.Extra, service.OllamaCloudUsageSnapshotExtraKey)
+	require.Equal(t, "keep-me", loaded.Extra["custom_note"], "其它 extra 键不得误伤")
+}
+
 func TestOllamaCloudUsageCredentialAndBulkUpdatesPreserveManagedStateOnlyWhenSafe(t *testing.T) {
 	ctx := context.Background()
 	tx := testEntTx(t)

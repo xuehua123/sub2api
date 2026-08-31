@@ -90,7 +90,7 @@ export interface User {
   concurrency: number // Allowed concurrent requests
   rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
-  allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
+  allowed_groups: number[] | null // Explicit group IDs; public IDs matter when restrict_public_groups is enabled
   restrict_to_allowed_groups?: boolean // Allow only exclusive groups authorized by balance grants, subscriptions, or entitlements
   payment_disabled?: boolean // User cannot open self-service payment pages or create payment orders
   balance_notify_enabled: boolean
@@ -111,6 +111,8 @@ export interface AdminUser extends User {
   last_used_at?: string | null
   // 用户专属分组倍率配置 (group_id -> rate_multiplier)
   group_rates?: Record<number, number>
+  // When true, public groups must also be present in allowed_groups.
+  restrict_public_groups?: boolean
   // 当前并发数（仅管理员列表接口返回）
   current_concurrency?: number
 }
@@ -1726,6 +1728,7 @@ export interface UsageLog {
   request_type?: UsageRequestType
   stream: boolean
   openai_ws_mode?: boolean
+  native_compaction_v2: boolean
   duration_ms: number | null
   first_token_ms: number | null
   first_sse_event_ms: number | null
@@ -1772,6 +1775,7 @@ export interface AdminUsageLog extends UsageLog {
   upstream_model?: string | null
   upstream_response_model?: string | null
   upstream_model_mismatch?: boolean | null
+  upstream_reasoning_effort?: string | null
   model_mapping_chain?: string | null
 
   // 账号计费倍率（仅管理员可见）
@@ -2041,6 +2045,7 @@ export interface UpdateUserRequest {
   referral_enabled?: boolean
   allowed_groups?: number[] | null
   restrict_to_allowed_groups?: boolean
+  restrict_public_groups?: boolean
   payment_disabled?: boolean
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
@@ -2289,6 +2294,7 @@ export interface UsageQueryParams {
   model?: string
   request_type?: UsageRequestType
   stream?: boolean
+  native_compaction_v2?: boolean | null
   billing_type?: number | null
   billing_mode?: string | null
   start_date?: string

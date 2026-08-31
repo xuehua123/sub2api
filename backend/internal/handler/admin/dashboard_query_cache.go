@@ -29,6 +29,7 @@ type dashboardTrendCacheKey struct {
 	Model                 string `json:"model"`
 	RequestType           *int16 `json:"request_type"`
 	Stream                *bool  `json:"stream"`
+	NativeCompactionV2    *bool  `json:"native_compaction_v2"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
 }
@@ -44,6 +45,7 @@ type dashboardModelGroupCacheKey struct {
 	ModelSource           string `json:"model_source,omitempty"`
 	RequestType           *int16 `json:"request_type"`
 	Stream                *bool  `json:"stream"`
+	NativeCompactionV2    *bool  `json:"native_compaction_v2"`
 	BillingType           *int8  `json:"billing_type"`
 	UpstreamModelMismatch *bool  `json:"upstream_model_mismatch"`
 }
@@ -87,6 +89,7 @@ func (h *DashboardHandler) getUsageTrendCached(
 	model string,
 	requestType *int16,
 	stream *bool,
+	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
 ) ([]usagestats.TrendDataPoint, bool, error) {
@@ -102,13 +105,14 @@ func (h *DashboardHandler) getUsageTrendCached(
 		Model:                 model,
 		RequestType:           requestType,
 		Stream:                stream,
+		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
 	})
 	entry, hit, err := dashboardTrendCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetUsageTrendWithUsageFilters(ctx, startTime, endTime, granularity, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID, EntitlementID: entitlementID,
-			Model: model, RequestType: requestType, Stream: stream, BillingType: billingType,
+			Model: model, RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
 		})
 	})
@@ -126,6 +130,7 @@ func (h *DashboardHandler) getModelStatsCached(
 	modelSource string,
 	requestType *int16,
 	stream *bool,
+	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
 ) ([]usagestats.ModelStat, bool, error) {
@@ -140,13 +145,14 @@ func (h *DashboardHandler) getModelStatsCached(
 		ModelSource:           usagestats.NormalizeModelSource(modelSource),
 		RequestType:           requestType,
 		Stream:                stream,
+		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
 	})
 	entry, hit, err := dashboardModelStatsCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetModelStatsWithUsageFiltersBySource(ctx, startTime, endTime, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID, EntitlementID: entitlementID,
-			RequestType: requestType, Stream: stream, BillingType: billingType,
+			RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
 		}, modelSource)
 	})
@@ -163,6 +169,7 @@ func (h *DashboardHandler) getGroupStatsCached(
 	userID, apiKeyID, accountID, groupID, entitlementID int64,
 	requestType *int16,
 	stream *bool,
+	nativeCompactionV2 *bool,
 	billingType *int8,
 	upstreamModelMismatch *bool,
 ) ([]usagestats.GroupStat, bool, error) {
@@ -176,13 +183,14 @@ func (h *DashboardHandler) getGroupStatsCached(
 		EntitlementID:         entitlementID,
 		RequestType:           requestType,
 		Stream:                stream,
+		NativeCompactionV2:    nativeCompactionV2,
 		BillingType:           billingType,
 		UpstreamModelMismatch: upstreamModelMismatch,
 	})
 	entry, hit, err := dashboardGroupStatsCache.GetOrLoad(key, func() (any, error) {
 		return h.dashboardService.GetGroupStatsWithUsageFilters(ctx, startTime, endTime, usagestats.UsageLogFilters{
 			UserID: userID, APIKeyID: apiKeyID, AccountID: accountID, GroupID: groupID, EntitlementID: entitlementID,
-			RequestType: requestType, Stream: stream, BillingType: billingType,
+			RequestType: requestType, Stream: stream, NativeCompactionV2: nativeCompactionV2, BillingType: billingType,
 			UpstreamModelMismatch: upstreamModelMismatch,
 		})
 	})

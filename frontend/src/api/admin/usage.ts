@@ -130,6 +130,7 @@ export async function getStats(params: {
   stream?: boolean
   billing_type?: number | null
   billing_mode?: string | null
+  native_compaction_v2?: boolean | null
   upstream_model_mismatch?: boolean | null
   period?: string
   start_date?: string

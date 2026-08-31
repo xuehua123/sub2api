@@ -1109,6 +1109,11 @@ const getUserGroups = (user: AdminUser) => {
         exclusive.push(g)
       }
     } else {
+      // The policies are independent. Exclusive-only mode removes every
+      // public group; otherwise the upstream public restriction keeps only
+      // explicitly allowlisted public groups.
+      if (user.restrict_to_allowed_groups) continue
+      if (user.restrict_public_groups && !user.allowed_groups?.includes(g.id)) continue
       publicGroups.push(g)
     }
   }

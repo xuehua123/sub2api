@@ -69,6 +69,7 @@ type CreateUserRequest struct {
 	RPMLimit                int      `json:"rpm_limit"`
 	AllowedGroups           []int64  `json:"allowed_groups"`
 	RestrictToAllowedGroups bool     `json:"restrict_to_allowed_groups"`
+	RestrictPublicGroups    bool     `json:"restrict_public_groups"`
 	PaymentDisabled         bool     `json:"payment_disabled"`
 }
 
@@ -86,6 +87,7 @@ type UpdateUserRequest struct {
 	Status                  string   `json:"status" binding:"omitempty,oneof=active disabled"`
 	AllowedGroups           *[]int64 `json:"allowed_groups"`
 	RestrictToAllowedGroups *bool    `json:"restrict_to_allowed_groups"`
+	RestrictPublicGroups    *bool    `json:"restrict_public_groups"`
 	PaymentDisabled         *bool    `json:"payment_disabled"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
@@ -280,7 +282,6 @@ func (h *UserHandler) Create(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-
 	// 创建管理员账号属权限敏感操作：需最近完成 step-up 2FA 验证。
 	if req.Role == service.RoleAdmin {
 		if !middleware.EnforceStepUp(c, h.totpService, h.userService, h.settingService) {
@@ -299,6 +300,7 @@ func (h *UserHandler) Create(c *gin.Context) {
 		RPMLimit:                req.RPMLimit,
 		AllowedGroups:           req.AllowedGroups,
 		RestrictToAllowedGroups: req.RestrictToAllowedGroups,
+		RestrictPublicGroups:    req.RestrictPublicGroups,
 		PaymentDisabled:         req.PaymentDisabled,
 		ActorAdminID:            getAdminIDFromContext(c),
 	})
@@ -324,7 +326,6 @@ func (h *UserHandler) Update(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-
 	// 防锁死保护：管理员不能把自己降级为普通用户(单管理员场景下会失去后台访问权)。
 	// 与既有"不能禁用/删除 admin"保护一致。降级其他管理员仍然允许。
 	if req.Role == service.RoleUser && userID == getAdminIDFromContext(c) {
@@ -360,6 +361,7 @@ func (h *UserHandler) Update(c *gin.Context) {
 		Status:                  req.Status,
 		AllowedGroups:           req.AllowedGroups,
 		RestrictToAllowedGroups: req.RestrictToAllowedGroups,
+		RestrictPublicGroups:    req.RestrictPublicGroups,
 		PaymentDisabled:         req.PaymentDisabled,
 		GroupRates:              req.GroupRates,
 		ReferralEnabled:         req.ReferralEnabled,

@@ -117,6 +117,15 @@
               />
             </div>
 
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
+              <label class="input-label">{{ t('usage.compactionFilter') }}</label>
+              <Select
+                v-model="filters.native_compaction_v2"
+                :options="compactionOptions"
+                @change="applyFilters"
+              />
+            </div>
+
             <template v-else>
               <div class="min-w-[180px]">
                 <label class="input-label">{{ t('usage.errors.keyName') }}</label>
@@ -229,7 +238,7 @@
           </template>
 
           <template #cell-reasoning_effort="{ row }">
-            <span class="text-sm text-gray-900 dark:text-white">
+            <span data-testid="reasoning-effort-cell" class="text-sm text-gray-900 dark:text-white">
               {{ formatReasoningEffort(row.reasoning_effort) }}
             </span>
           </template>
@@ -241,12 +250,22 @@
           </template>
 
           <template #cell-stream="{ row }">
-            <span
-              class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
-              :class="getRequestTypeBadgeClass(row)"
-            >
-              {{ getRequestTypeLabel(row) }}
-            </span>
+            <div class="flex flex-wrap items-center gap-1">
+              <span
+                data-testid="request-type-badge"
+                class="inline-flex items-center rounded px-2 py-0.5 text-xs font-medium"
+                :class="getRequestTypeBadgeClass(row)"
+              >
+                {{ getRequestTypeLabel(row) }}
+              </span>
+              <span
+                v-if="row.native_compaction_v2"
+                data-testid="native-compaction-badge"
+                class="inline-flex items-center rounded bg-teal-100 px-2 py-0.5 text-xs font-medium text-teal-800 dark:bg-teal-900 dark:text-teal-200"
+              >
+                {{ t('usage.nativeCompactionV2') }}
+              </span>
+            </div>
           </template>
 
           <template #cell-billing_mode="{ row }">
@@ -859,7 +878,8 @@ const endDate = ref(formatLocalDate(now))
 const filters = ref<UsageQueryParams>({
   api_key_id: undefined,
   start_date: undefined,
-  end_date: undefined
+  end_date: undefined,
+  native_compaction_v2: null
 })
 
 // Initialize filters with date range
@@ -899,6 +919,11 @@ const formatDuration = (ms: number | null | undefined): string => {
   if (ms < 1000) return `${ms.toFixed(0)}ms`
   return `${(ms / 1000).toFixed(2)}s`
 }
+
+const compactionOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('usage.allCompactionTypes') },
+  { value: true, label: t('usage.compactionOnly') }
+])
 
 const firstResponseMs = (log: UsageLog): number | null => {
   return log.first_client_flush_ms ?? log.first_sse_event_ms ?? log.first_token_ms
@@ -1030,12 +1055,11 @@ const loadApiKeys = async () => {
 
 const loadUsageStats = async () => {
   try {
-    const apiKeyId = filters.value.api_key_id ? Number(filters.value.api_key_id) : undefined
-    const stats = await usageAPI.getStatsByDateRange(
-      filters.value.start_date || startDate.value,
-      filters.value.end_date || endDate.value,
-      apiKeyId
-    )
+    const stats = await usageAPI.getStats({
+      ...filters.value,
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value
+    })
     usageStats.value = stats
   } catch (error) {
     console.error('Failed to load usage stats:', error)
@@ -1060,7 +1084,8 @@ const resetFilters = () => {
   filters.value = {
     api_key_id: undefined,
     start_date: undefined,
-    end_date: undefined
+    end_date: undefined,
+    native_compaction_v2: null
   }
   // Reset date range to default (last 7 days)
   const now = new Date()

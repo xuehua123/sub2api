@@ -209,7 +209,7 @@ func TestOpenAIWSHTTPBridgeResponseFailedReconcilesGrokBeforeFailover(t *testing
 
 	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
 		context.Background(), nil, account, "token", payload, len(payload),
-		"grok-4.6", "", "", "", "cache-id", 1,
+		"grok-4.6", nil, "", "", "", "cache-id", 1,
 		func([]byte) error { writes++; return nil },
 	)
 
@@ -235,7 +235,7 @@ func TestOpenAIWSHTTPBridgeModelUnavailableIsGrokOnly(t *testing.T) {
 		}}}
 		account := &Account{ID: accountID, Platform: PlatformGrok, Type: AccountTypeAPIKey, Concurrency: 1}
 		result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
-			context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", "", "", "", "", 1,
+			context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", nil, "", "", "", "", 1,
 			func([]byte) error { return nil },
 		)
 		require.Nil(t, result)
@@ -249,7 +249,7 @@ func TestOpenAIWSHTTPBridgeModelUnavailableIsGrokOnly(t *testing.T) {
 		account := &Account{ID: 98107, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Concurrency: 1}
 		writes := 0
 		result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
-			context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", "", "", "", "", 1,
+			context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", nil, "", "", "", "", 1,
 			func([]byte) error { writes++; return nil },
 		)
 		require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestOpenAIWSHTTPBridgeErrorEventModelUnavailableUsesGrokScopedClassifier(t 
 	account := &Account{ID: accountID, Platform: PlatformGrok, Type: AccountTypeAPIKey, Concurrency: 1}
 
 	result, err := svc.proxyOpenAIWSHTTPBridgeTurn(
-		context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", "", "", "", "", 1,
+		context.Background(), nil, account, "token", payload, len(payload), "grok-4.6", nil, "", "", "", "", 1,
 		func([]byte) error { return nil },
 	)
 

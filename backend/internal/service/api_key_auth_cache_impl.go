@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 23 // v23: user exclusive-group-only access policy
+const apiKeyAuthSnapshotVersion = 24 // v24: independent public-group allowlist policy
 
 func cloneChannelModelPricing(pricing []ChannelModelPricing) []ChannelModelPricing {
 	if pricing == nil {
@@ -372,6 +372,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			Concurrency:                apiKey.User.Concurrency,
 			AllowedGroups:              apiKey.User.AllowedGroups,
 			RestrictToAllowedGroups:    apiKey.User.RestrictToAllowedGroups,
+			RestrictPublicGroups:       apiKey.User.RestrictPublicGroups,
 			Email:                      apiKey.User.Email,
 			Username:                   apiKey.User.Username,
 			BalanceNotifyEnabled:       apiKey.User.BalanceNotifyEnabled,
@@ -483,6 +484,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			Concurrency:                snapshot.User.Concurrency,
 			AllowedGroups:              snapshot.User.AllowedGroups,
 			RestrictToAllowedGroups:    snapshot.User.RestrictToAllowedGroups,
+			RestrictPublicGroups:       snapshot.User.RestrictPublicGroups,
 			Email:                      snapshot.User.Email,
 			Username:                   snapshot.User.Username,
 			BalanceNotifyEnabled:       snapshot.User.BalanceNotifyEnabled,

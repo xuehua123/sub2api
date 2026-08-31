@@ -106,6 +106,7 @@ type UserUpdateFields struct {
 	RPMLimit                bool
 	ReferralEnabled         bool
 	RestrictToAllowedGroups bool
+	RestrictPublicGroups    bool
 	PaymentDisabled         bool
 	SignupSource            bool
 	LastLoginAt             bool

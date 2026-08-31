@@ -4,9 +4,9 @@ import { nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
 
-const { query, getStatsByDateRange, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
+const { query, getStats, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
   query: vi.fn(),
-  getStatsByDateRange: vi.fn(),
+  getStats: vi.fn(),
   list: vi.fn(),
   showError: vi.fn(),
   showWarning: vi.fn(),
@@ -68,12 +68,27 @@ const messages: Record<string, string> = {
   'admin.usage.billingModePerRequest': 'Per request',
   'admin.usage.billingModeImage': 'Image',
   'admin.usage.billingModeVideo': 'Video',
+  'usage.ws': 'WS',
+  'usage.stream': 'Stream',
+  'usage.sync': 'Sync',
+  'usage.compactionFilter': 'Request Kind',
+  'usage.allCompactionTypes': 'All Requests',
+  'usage.compactionOnly': 'Compaction Only',
+  'usage.exporting': 'Exporting',
+  'usage.exportCsv': 'Export CSV',
+  'usage.failedToLoad': 'Failed to load',
+  'usage.noDataToExport': 'No data',
+  'usage.preparingExport': 'Preparing export',
+  'usage.exportSuccess': 'Export success',
+  'usage.exportFailed': 'Export failed',
+  'common.refresh': 'Refresh',
+  'common.reset': 'Reset',
 }
 
 vi.mock('@/api', () => ({
   usageAPI: {
     query,
-    getStatsByDateRange,
+    getStats,
   },
   keysAPI: {
     list,
@@ -122,7 +137,7 @@ const DataTableStub = {
 describe('user UsageView tooltip', () => {
   beforeEach(() => {
     query.mockReset()
-    getStatsByDateRange.mockReset()
+    getStats.mockReset()
     list.mockReset()
     showError.mockReset()
     showWarning.mockReset()
@@ -178,7 +193,7 @@ describe('user UsageView tooltip', () => {
       total: 1,
       pages: 1,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 1,
       total_tokens: 100,
       total_cost: 0.1,
@@ -276,7 +291,7 @@ describe('user UsageView tooltip', () => {
       total: 1,
       pages: 1,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 1,
       total_tokens: 100,
       total_cost: 0.1,
@@ -313,6 +328,7 @@ describe('user UsageView tooltip', () => {
     await flushPromises()
 
     const setupState = (wrapper.vm as any).$?.setupState
+    setupState.filters.native_compaction_v2 = true
     await setupState.exportToCSV()
 
     expect(exportedBlob).not.toBeNull()
@@ -323,6 +339,7 @@ describe('user UsageView tooltip', () => {
         params?.page_size === 100 &&
         params?.sort_by === 'created_at' &&
         params?.sort_order === 'desc' &&
+        params?.native_compaction_v2 === true &&
         config === undefined
       )
     })
@@ -353,6 +370,63 @@ describe('user UsageView tooltip', () => {
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL
     clickSpy.mockRestore()
+  })
+
+  it('propagates and resets the native compaction filter for logs and stats', async () => {
+    query.mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getStats.mockResolvedValue({
+      total_requests: 0,
+      total_tokens: 0,
+      total_cost: 0,
+      avg_duration_ms: 0,
+    })
+    list.mockResolvedValue({ items: [] })
+
+    const wrapper = mount(UsageView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          TablePageLayout: TablePageLayoutStub,
+          Pagination: true,
+          EmptyState: true,
+          Select: true,
+          DateRangePicker: true,
+          DataTable: DataTableStub,
+          Icon: true,
+          Teleport: true,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect((wrapper.vm as any).compactionOptions).toEqual([
+      { value: null, label: 'All Requests' },
+      { value: true, label: 'Compaction Only' },
+    ])
+
+    query.mockClear()
+    getStats.mockClear()
+    ;(wrapper.vm as any).filters.native_compaction_v2 = true
+    ;(wrapper.vm as any).applyFilters()
+    await flushPromises()
+
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: true }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: true }))
+
+    query.mockClear()
+    getStats.mockClear()
+    ;(wrapper.vm as any).resetFilters()
+    await flushPromises()
+
+    expect((wrapper.vm as any).filters.native_compaction_v2).toBeNull()
+    expect(query).toHaveBeenCalledWith(
+      expect.objectContaining({ native_compaction_v2: null }),
+      expect.anything()
+    )
+    expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
   })
 
   it('exports historical image rows with image billing mode derived from image_count', async () => {
@@ -390,7 +464,7 @@ describe('user UsageView tooltip', () => {
       total: 1,
       pages: 1,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 1,
       total_tokens: 0,
       total_cost: 0.2,
@@ -480,7 +554,7 @@ describe('user UsageView tooltip', () => {
       total: 1,
       pages: 1,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 1,
       total_tokens: 0,
       total_cost: 0.2,
@@ -551,7 +625,7 @@ describe('user UsageView tooltip', () => {
       total: 2,
       pages: 1,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 2,
       total_tokens: 450,
       total_cost: 0.2,
@@ -598,7 +672,7 @@ describe('user UsageView tooltip', () => {
       total: 0,
       pages: 0,
     })
-    getStatsByDateRange.mockResolvedValue({
+    getStats.mockResolvedValue({
       total_requests: 0,
       total_tokens: 0,
       total_cost: 0,

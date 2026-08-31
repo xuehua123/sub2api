@@ -95,3 +95,21 @@ func TestAPIKeyService_RejectsV22AuthSnapshotWithoutUserGroupAccessPolicy(t *tes
 		t.Fatalf("expected no API key from stale snapshot, got %#v", apiKey)
 	}
 }
+
+func TestAPIKeyService_RejectsV23AuthSnapshotWithoutPublicGroupAccessPolicy(t *testing.T) {
+	svc := &APIKeyService{}
+
+	apiKey, ok, err := svc.applyAuthCacheEntry("k-legacy-public-group-policy", &APIKeyAuthCacheEntry{
+		Snapshot: &APIKeyAuthSnapshot{Version: 23},
+	})
+
+	if err != nil {
+		t.Fatalf("expected stale snapshot to be ignored without error, got %v", err)
+	}
+	if ok {
+		t.Fatal("expected v23 auth snapshot to be rejected after public group access policy was added")
+	}
+	if apiKey != nil {
+		t.Fatalf("expected no API key from stale snapshot, got %#v", apiKey)
+	}
+}

@@ -103,7 +103,11 @@ func populateCreatedAPIKey(key *service.APIKey, created *dbent.APIKey) {
 func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIKey, error) {
 	m, err := r.activeQuery().
 		Where(apikey.IDEQ(id)).
-		WithUser().
+		WithUser(func(q *dbent.UserQuery) {
+			q.WithAllowedGroups(func(gq *dbent.GroupQuery) {
+				gq.Select(group.FieldID)
+			})
+		}).
 		WithGroup().
 		Only(ctx)
 	if err != nil {
@@ -184,6 +188,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				user.FieldBalance,
 				user.FieldConcurrency,
 				user.FieldRestrictToAllowedGroups,
+				user.FieldRestrictPublicGroups,
 				user.FieldBalanceNotifyEnabled,
 				user.FieldBalanceNotifyThresholdType,
 				user.FieldBalanceNotifyThreshold,
@@ -1014,6 +1019,7 @@ func userEntityToService(u *dbent.User) *service.User {
 		Status:                     u.Status,
 		DefaultChatAPIKeyID:        u.DefaultChatAPIKeyID,
 		RestrictToAllowedGroups:    u.RestrictToAllowedGroups,
+		RestrictPublicGroups:       u.RestrictPublicGroups,
 		PaymentDisabled:            u.PaymentDisabled,
 		SignupSource:               u.SignupSource,
 		LastLoginAt:                u.LastLoginAt,

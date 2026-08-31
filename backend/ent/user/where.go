@@ -115,6 +115,11 @@ func RestrictToAllowedGroups(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRestrictToAllowedGroups, v))
 }
 
+// RestrictPublicGroups applies equality check predicate on the "restrict_public_groups" field. It's identical to RestrictPublicGroupsEQ.
+func RestrictPublicGroups(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRestrictPublicGroups, v))
+}
+
 // PaymentDisabled applies equality check predicate on the "payment_disabled" field. It's identical to PaymentDisabledEQ.
 func PaymentDisabled(v bool) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldPaymentDisabled, v))
@@ -763,6 +768,16 @@ func RestrictToAllowedGroupsEQ(v bool) predicate.User {
 // RestrictToAllowedGroupsNEQ applies the NEQ predicate on the "restrict_to_allowed_groups" field.
 func RestrictToAllowedGroupsNEQ(v bool) predicate.User {
 	return predicate.User(sql.FieldNEQ(FieldRestrictToAllowedGroups, v))
+}
+
+// RestrictPublicGroupsEQ applies the EQ predicate on the "restrict_public_groups" field.
+func RestrictPublicGroupsEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldRestrictPublicGroups, v))
+}
+
+// RestrictPublicGroupsNEQ applies the NEQ predicate on the "restrict_public_groups" field.
+func RestrictPublicGroupsNEQ(v bool) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldRestrictPublicGroups, v))
 }
 
 // PaymentDisabledEQ applies the EQ predicate on the "payment_disabled" field.

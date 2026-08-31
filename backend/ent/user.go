@@ -42,6 +42,8 @@ type User struct {
 	DefaultChatAPIKeyID *int64 `json:"default_chat_api_key_id,omitempty"`
 	// RestrictToAllowedGroups holds the value of the "restrict_to_allowed_groups" field.
 	RestrictToAllowedGroups bool `json:"restrict_to_allowed_groups,omitempty"`
+	// RestrictPublicGroups holds the value of the "restrict_public_groups" field.
+	RestrictPublicGroups bool `json:"restrict_public_groups,omitempty"`
 	// PaymentDisabled holds the value of the "payment_disabled" field.
 	PaymentDisabled bool `json:"payment_disabled,omitempty"`
 	// Username holds the value of the "username" field.
@@ -391,7 +393,7 @@ func (*User) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case user.FieldRestrictToAllowedGroups, user.FieldPaymentDisabled, user.FieldTotpEnabled, user.FieldReferralEnabled, user.FieldBalanceNotifyEnabled:
+		case user.FieldRestrictToAllowedGroups, user.FieldRestrictPublicGroups, user.FieldPaymentDisabled, user.FieldTotpEnabled, user.FieldReferralEnabled, user.FieldBalanceNotifyEnabled:
 			values[i] = new(sql.NullBool)
 		case user.FieldBalance, user.FieldFrozenBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
 			values[i] = new(sql.NullFloat64)
@@ -495,6 +497,12 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field restrict_to_allowed_groups", values[i])
 			} else if value.Valid {
 				_m.RestrictToAllowedGroups = value.Bool
+			}
+		case user.FieldRestrictPublicGroups:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field restrict_public_groups", values[i])
+			} else if value.Valid {
+				_m.RestrictPublicGroups = value.Bool
 			}
 		case user.FieldPaymentDisabled:
 			if value, ok := values[i].(*sql.NullBool); !ok {
@@ -807,6 +815,9 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("restrict_to_allowed_groups=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RestrictToAllowedGroups))
+	builder.WriteString(", ")
+	builder.WriteString("restrict_public_groups=")
+	builder.WriteString(fmt.Sprintf("%v", _m.RestrictPublicGroups))
 	builder.WriteString(", ")
 	builder.WriteString("payment_disabled=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PaymentDisabled))

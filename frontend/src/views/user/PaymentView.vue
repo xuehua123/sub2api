@@ -617,7 +617,7 @@
                     <span class="text-xl font-extrabold text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                   </div>
                   <p v-if="balanceRechargeMultiplier !== 1" class="mt-2 border-t border-slate-200/80 pt-1 text-[10px] text-slate-500 dark:border-white/5">
-                    充值比例折算：$1.00 到账额度需实付 ¥{{ balanceRechargeMultiplier.toFixed(2) }}
+                    {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
                   </p>
                 </div>
                 <div v-else class="rounded-xl border border-slate-200/80 bg-slate-50/80 p-6 text-center text-xs text-slate-500 dark:border-white/5 dark:bg-white/[0.01]">

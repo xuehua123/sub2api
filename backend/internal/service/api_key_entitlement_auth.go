@@ -36,7 +36,7 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 
 	fromGroup := apiKey.Group
 	fromGroupID := fromGroup.ID
-	if !apiKey.User.AllowsGroupType(fromGroup.IsExclusive) {
+	if !apiKey.User.AllowsGroupByPolicy(fromGroup.ID, fromGroup.IsExclusive) {
 		return nil, ErrGroupNotAllowed
 	}
 	if !fromGroup.SupportsSubscriptionAccess() {
@@ -164,7 +164,7 @@ func selectEntitlementSwitchGroup(ent *SubscriptionEntitlement, currentGroup *Gr
 		if group == nil || group.ID == currentGroupID || !group.SupportsSubscriptionAccess() || !group.IsActive() {
 			continue
 		}
-		if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+		if user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 			continue
 		}
 		if err := subscriptionSwitchRequestEligibilityError(group, req); err != nil {

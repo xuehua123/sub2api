@@ -236,6 +236,20 @@ func (_u *UserUpdate) SetNillableRestrictToAllowedGroups(v *bool) *UserUpdate {
 	return _u
 }
 
+// SetRestrictPublicGroups sets the "restrict_public_groups" field.
+func (_u *UserUpdate) SetRestrictPublicGroups(v bool) *UserUpdate {
+	_u.mutation.SetRestrictPublicGroups(v)
+	return _u
+}
+
+// SetNillableRestrictPublicGroups sets the "restrict_public_groups" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableRestrictPublicGroups(v *bool) *UserUpdate {
+	if v != nil {
+		_u.SetRestrictPublicGroups(*v)
+	}
+	return _u
+}
+
 // SetPaymentDisabled sets the "payment_disabled" field.
 func (_u *UserUpdate) SetPaymentDisabled(v bool) *UserUpdate {
 	_u.mutation.SetPaymentDisabled(v)
@@ -1580,6 +1594,9 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.RestrictToAllowedGroups(); ok {
 		_spec.SetField(user.FieldRestrictToAllowedGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RestrictPublicGroups(); ok {
+		_spec.SetField(user.FieldRestrictPublicGroups, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.PaymentDisabled(); ok {
 		_spec.SetField(user.FieldPaymentDisabled, field.TypeBool, value)
@@ -3025,6 +3042,20 @@ func (_u *UserUpdateOne) SetNillableRestrictToAllowedGroups(v *bool) *UserUpdate
 	return _u
 }
 
+// SetRestrictPublicGroups sets the "restrict_public_groups" field.
+func (_u *UserUpdateOne) SetRestrictPublicGroups(v bool) *UserUpdateOne {
+	_u.mutation.SetRestrictPublicGroups(v)
+	return _u
+}
+
+// SetNillableRestrictPublicGroups sets the "restrict_public_groups" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableRestrictPublicGroups(v *bool) *UserUpdateOne {
+	if v != nil {
+		_u.SetRestrictPublicGroups(*v)
+	}
+	return _u
+}
+
 // SetPaymentDisabled sets the "payment_disabled" field.
 func (_u *UserUpdateOne) SetPaymentDisabled(v bool) *UserUpdateOne {
 	_u.mutation.SetPaymentDisabled(v)
@@ -4399,6 +4430,9 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if value, ok := _u.mutation.RestrictToAllowedGroups(); ok {
 		_spec.SetField(user.FieldRestrictToAllowedGroups, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.RestrictPublicGroups(); ok {
+		_spec.SetField(user.FieldRestrictPublicGroups, field.TypeBool, value)
 	}
 	if value, ok := _u.mutation.PaymentDisabled(); ok {
 		_spec.SetField(user.FieldPaymentDisabled, field.TypeBool, value)

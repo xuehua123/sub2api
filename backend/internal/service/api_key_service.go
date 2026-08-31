@@ -480,7 +480,7 @@ func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group 
 	if user == nil || group == nil {
 		return false
 	}
-	if !user.AllowsGroupType(group.IsExclusive) {
+	if !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return false
 	}
 	// 订阅类型分组：需要有效订阅
@@ -503,7 +503,7 @@ func (s *APIKeyService) resolveCreateAccessSourceBinding(ctx context.Context, us
 	if !runtime.Enabled {
 		return s.resolveCreateSubscriptionEntitlementID(ctx, user, group, explicitEntitlementID, runtime)
 	}
-	if group != nil && user != nil && !user.AllowsGroupType(group.IsExclusive) {
+	if group != nil && user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return nil, ErrGroupNotAllowed
 	}
 	switch accessSource {
@@ -534,7 +534,7 @@ func (s *APIKeyService) resolveUpdateAccessSourceBinding(ctx context.Context, us
 	if !runtime.Enabled {
 		return s.resolveUpdateSubscriptionEntitlementID(ctx, user, group, currentEntitlementID, explicitEntitlementID, explicitEntitlementSet, groupChanged, runtime)
 	}
-	if group != nil && user != nil && !user.AllowsGroupType(group.IsExclusive) {
+	if group != nil && user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return nil, ErrGroupNotAllowed
 	}
 	switch accessSource {
@@ -641,7 +641,7 @@ func (s *APIKeyService) resolveCreateSubscriptionEntitlementID(ctx context.Conte
 		}
 		return nil, nil
 	}
-	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+	if user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return nil, ErrGroupNotAllowed
 	}
 	if !group.SupportsSubscriptionAccess() {
@@ -666,7 +666,7 @@ func (s *APIKeyService) resolveUpdateSubscriptionEntitlementID(ctx context.Conte
 		}
 		return nil, nil
 	}
-	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+	if user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return nil, ErrGroupNotAllowed
 	}
 	if !group.SupportsSubscriptionAccess() {
@@ -1546,6 +1546,13 @@ func (s *APIKeyService) GetAvailableGroupsWithEntitlements(ctx context.Context, 
 
 	availableGroups := make([]AvailableAPIKeyGroup, 0)
 	for _, group := range allGroups {
+		// Public-group restriction mirrors upstream behavior: public groups that
+		// are not explicitly allowlisted are absent rather than shown as a usable
+		// entitlement/subscription option. The fork's exclusive-only policy keeps
+		// its existing view-only presentation below.
+		if !group.IsExclusive && user.RestrictPublicGroups && !user.HasAllowedGroup(group.ID) {
+			continue
+		}
 		if unavailableReason, unavailable := groupUnavailableByUserPolicy(user, &group); unavailable {
 			// Exclusive-only users still see public groups in the UI, but they
 			// receive no access source and cannot select or bind them.
@@ -1603,7 +1610,7 @@ func buildAvailableGroupAccessSources(user *User, group *Group, entitlements []A
 	if group == nil {
 		return nil
 	}
-	if user != nil && !user.AllowsGroupType(group.IsExclusive) {
+	if user != nil && !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return nil
 	}
 	sources := make([]AvailableAPIKeyGroupAccessSource, 0, 1+len(entitlements))
@@ -1935,7 +1942,7 @@ func (s *APIKeyService) canUserBindGroupInternal(user *User, group *Group, subsc
 	if user == nil || group == nil {
 		return false
 	}
-	if !user.AllowsGroupType(group.IsExclusive) {
+	if !user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return false
 	}
 	// 订阅类型分组：需要有效订阅
@@ -1999,6 +2006,22 @@ func (s *APIKeyService) GetUserGroupAccessPolicy(ctx context.Context, userID int
 		}
 	}
 	return allowed, user.RestrictToAllowedGroups, nil
+}
+
+// GetUserGroupVisibility returns only the explicit user_allowed_groups set and
+// the independent public-group restriction. Entitlement/subscription grants
+// intentionally do not widen this set: restrict_public_groups specifically
+// requires public groups to be explicitly allowlisted.
+func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64) (map[int64]struct{}, bool, error) {
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, false, fmt.Errorf("get user: %w", err)
+	}
+	allowed := make(map[int64]struct{}, len(user.AllowedGroups))
+	for _, id := range user.AllowedGroups {
+		allowed[id] = struct{}{}
+	}
+	return allowed, user.RestrictPublicGroups, nil
 }
 
 // GetUserGroupRates 获取用户的专属分组倍率配置

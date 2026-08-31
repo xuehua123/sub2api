@@ -9,6 +9,7 @@ const editSource = readFileSync(resolve(currentDir, '../UserEditModal.vue'), 'ut
 const groupsSource = readFileSync(resolve(currentDir, '../UserAllowedGroupsModal.vue'), 'utf8')
 const keysSource = readFileSync(resolve(currentDir, '../../../../views/user/KeysView.vue'), 'utf8')
 const plazaSource = readFileSync(resolve(currentDir, '../../../modelPlaza/PlazaGroupSection.vue'), 'utf8')
+const usersViewSource = readFileSync(resolve(currentDir, '../../../../views/admin/UsersView.vue'), 'utf8')
 
 describe('admin user access controls', () => {
   it('edits and submits both user-level switches', () => {
@@ -20,10 +21,18 @@ describe('admin user access controls', () => {
     expect(editSource).toContain('payment_disabled: form.paymentDisabled')
   })
 
-  it('shows public groups as unavailable in exclusive-only mode', () => {
+  it('keeps the public allowlist independent from exclusive-only mode', () => {
     expect(groupsSource).toContain('user.restrict_to_allowed_groups')
-    expect(groupsSource).toContain("t('admin.users.publicGroupsRestricted')")
-    expect(groupsSource).toContain("!(props.user?.restrict_to_allowed_groups ?? false)")
+    expect(groupsSource).toContain('props.user?.restrict_public_groups ?? false')
+    expect(groupsSource).toContain('@change="toggleRestrictPublicGroups"')
+    expect(groupsSource).toContain('@change="togglePublicGroup(config.groupId)"')
+    expect(groupsSource).toContain('restrict_public_groups: restrictPublicGroups.value')
+    expect(groupsSource).toContain('c.isExclusive || restrictPublicGroups.value')
+  })
+
+  it('shows the intersection of both group policies in the admin list', () => {
+    expect(usersViewSource).toContain('if (user.restrict_to_allowed_groups) continue')
+    expect(usersViewSource).toContain('if (user.restrict_public_groups && !user.allowed_groups?.includes(g.id)) continue')
   })
 
   it('keeps unavailable user-facing groups visible but disables their use', () => {

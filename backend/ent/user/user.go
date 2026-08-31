@@ -39,6 +39,8 @@ const (
 	FieldDefaultChatAPIKeyID = "default_chat_api_key_id"
 	// FieldRestrictToAllowedGroups holds the string denoting the restrict_to_allowed_groups field in the database.
 	FieldRestrictToAllowedGroups = "restrict_to_allowed_groups"
+	// FieldRestrictPublicGroups holds the string denoting the restrict_public_groups field in the database.
+	FieldRestrictPublicGroups = "restrict_public_groups"
 	// FieldPaymentDisabled holds the string denoting the payment_disabled field in the database.
 	FieldPaymentDisabled = "payment_disabled"
 	// FieldUsername holds the string denoting the username field in the database.
@@ -331,6 +333,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldDefaultChatAPIKeyID,
 	FieldRestrictToAllowedGroups,
+	FieldRestrictPublicGroups,
 	FieldPaymentDisabled,
 	FieldUsername,
 	FieldNotes,
@@ -399,6 +402,8 @@ var (
 	StatusValidator func(string) error
 	// DefaultRestrictToAllowedGroups holds the default value on creation for the "restrict_to_allowed_groups" field.
 	DefaultRestrictToAllowedGroups bool
+	// DefaultRestrictPublicGroups holds the default value on creation for the "restrict_public_groups" field.
+	DefaultRestrictPublicGroups bool
 	// DefaultPaymentDisabled holds the default value on creation for the "payment_disabled" field.
 	DefaultPaymentDisabled bool
 	// DefaultUsername holds the default value on creation for the "username" field.
@@ -493,6 +498,11 @@ func ByDefaultChatAPIKeyID(opts ...sql.OrderTermOption) OrderOption {
 // ByRestrictToAllowedGroups orders the results by the restrict_to_allowed_groups field.
 func ByRestrictToAllowedGroups(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRestrictToAllowedGroups, opts...).ToFunc()
+}
+
+// ByRestrictPublicGroups orders the results by the restrict_public_groups field.
+func ByRestrictPublicGroups(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRestrictPublicGroups, opts...).ToFunc()
 }
 
 // ByPaymentDisabled orders the results by the payment_disabled field.

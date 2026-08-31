@@ -120,6 +120,9 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	got, changed := applyOpenAIReasoningEffortPolicyForRequest(openAICtx, apiKey, body)
 	require.True(t, changed)
 	require.JSONEq(t, `{"reasoning":{"effort":"medium"}}`, string(got))
+	requested := service.RequestedReasoningEffortFromContext(openAICtx.Request.Context())
+	require.NotNil(t, requested)
+	require.Equal(t, "max", *requested)
 
 	bindOpenAIReasoningEffortPolicyForMessagesRequest(openAICtx, apiKey, []byte(`{"output_config":{"effort":"max"}}`))
 	bound, changed := service.ApplyOpenAIReasoningEffortPolicyFromContext(openAICtx.Request.Context(), body)
@@ -140,6 +143,40 @@ func TestOpenAIReasoningEffortPolicyForCompositeTarget(t *testing.T) {
 	got, changed = applyOpenAIReasoningEffortPolicyForRequest(grokCtx, apiKey, body)
 	require.False(t, changed)
 	require.Equal(t, body, got)
+}
+
+func TestStampOpenAIRequestedReasoningEffortUsesInboundSnapshotForSuccessfulUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, path := range []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"} {
+		t.Run(path, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", path, nil)
+			c.Request = c.Request.WithContext(service.WithRequestedReasoningEffort(c.Request.Context(), "max"))
+
+			// WSv2 and bridge forwarders may already expose the effective value on
+			// their result. The handler's pre-policy snapshot must win before the
+			// successful usage row is submitted.
+			effective := "xhigh"
+			result := &service.OpenAIForwardResult{RequestedReasoningEffort: &effective}
+			stampOpenAIRequestedReasoningEffort(result, c)
+
+			require.NotNil(t, result.RequestedReasoningEffort)
+			require.Equal(t, "max", *result.RequestedReasoningEffort)
+		})
+	}
+}
+
+func TestStampOpenAIRequestedReasoningEffortPreservesForwarderValueWithoutInboundSnapshot(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+
+	forwarderValue := "high"
+	result := &service.OpenAIForwardResult{RequestedReasoningEffort: &forwarderValue}
+	stampOpenAIRequestedReasoningEffort(result, c)
+
+	require.Same(t, &forwarderValue, result.RequestedReasoningEffort)
 }
 
 func TestClientRequestedModelUsesCompositePublicModel(t *testing.T) {

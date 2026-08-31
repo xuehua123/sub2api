@@ -61,6 +61,55 @@ func shouldReportOpenAIWSProxyAccountFailure(err error) bool {
 	return err != nil && !errors.Is(err, errOpenAIWSUnsupportedModelSwitch) && !service.IsOpenAIWSSessionPreemptedError(err)
 }
 
+// openAIWSIngressEndedByClient reports whether a finished ingress WebSocket turn
+// ended the way a healthy client ends one, rather than through an upstream or
+// account fault.
+//
+// Three error shapes describe that same benign outcome and only the first was
+// recognised:
+//
+//   - *service.OpenAIWSClientCloseError carrying 1000 — the gateway closing the
+//     socket on its own terms, e.g. the inter-turn idle timeout.
+//   - a bare coderws.CloseError{Code: 1000} — what coder/websocket returns when
+//     the client closes cleanly. ReadOpenAIWSClientMessage hands conn.Read's
+//     error back verbatim, so nothing ever wraps it into the type above and an
+//     errors.As against that type cannot see it.
+//   - context.Canceled — the client went away mid-turn. That path closes with
+//     StatusGoingAway (1001) and carries the cancellation as its cause, so a
+//     check for 1000 alone never matched it either.
+//
+// The last two fell through to shouldReportOpenAIWSProxyAccountFailure, which
+// filters only model-switch and session-preemption errors. Everything else
+// reaches ObserveOpenAIAPIKeyHealthFailure and scheduler.ReportResult(false), so
+// a client that merely disconnected counted against the upstream account's
+// health and could trip it out of scheduling.
+//
+// failoverClientGone already states the rule this restores for the HTTP failover
+// path — a cancelled client context "被误报成账号耗尽" is a bug, not a signal —
+// and summarizeWSCloseErrorForLog already reads the close code the correct way,
+// which is why the resulting WARN printed close_status=1000(StatusNormalClosure)
+// for an error that was, in the same breath, being charged to the account.
+//
+// Deliberately narrow. StatusGoingAway is not matched on its own: the gateway
+// emits 1001 when it tears a session down for its own reasons too, and the
+// client-cancellation case is already covered by context.Canceled.
+// context.DeadlineExceeded is left out as well — the idle-timeout path wraps it
+// in a 1000 close error and stays benign through the first check, while any
+// other deadline is a genuine stall worth reporting.
+func openAIWSIngressEndedByClient(err error) bool {
+	if err == nil {
+		return true
+	}
+	var closeErr *service.OpenAIWSClientCloseError
+	if errors.As(err, &closeErr) && closeErr.StatusCode() == coderws.StatusNormalClosure {
+		return true
+	}
+	if coderws.CloseStatus(err) == coderws.StatusNormalClosure {
+		return true
+	}
+	return errors.Is(err, context.Canceled)
+}
+
 func openAIWSTurnBillingModel(result *service.OpenAIForwardResult, mapping service.ChannelMappingResult, requestedModel, upstreamModel string) string {
 	billingModel := ""
 	if result != nil {
@@ -704,7 +753,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyHTTP = sessionHashBody
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, reqModel, err != nil, cyberBlockBodyHTTP, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, reqModel, err != nil, cyberBlockBodyHTTP, clientRequestedUsageFields(c, channelMapping, reqModel, ""), service.HashUsageRequestPayload(body), nativeV2)
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -721,6 +770,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			stampOpenAIRequestedReasoningEffort(res, c)
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
 			requestPayloadHash := service.HashUsageRequestPayload(body)
@@ -750,6 +800,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					ChannelUsageFields:         clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel),
 					PricingAt:                  pricingAt,
 					CyberBlocked:               cyberBlocked,
+					NativeCompactionV2:         nativeV2,
 				}); err != nil {
 					logger.L().With(
 						zap.String("component", "handler.openai_gateway.responses"),
@@ -1162,7 +1213,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
-	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel, body)
+	sessionHash, promptCacheKey = resolveOpenAIMessagesMetadataSession(c, sessionHash, promptCacheKey, reqModel, body)
 	if h.rejectIfCyberSessionBlocked(c, apiKey, body, reqModel, cyberBlockFormatAnthropic) {
 		return
 	}
@@ -1278,7 +1329,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockBodyMsg = body
 		}
-		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, reqModel, err != nil, cyberBlockBodyMsg, clientRequestedUsageFields(c, channelMappingMsg, reqModel, ""), service.HashUsageRequestPayload(body))
+		h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, reqModel, err != nil, cyberBlockBodyMsg, clientRequestedUsageFields(c, channelMappingMsg, reqModel, ""), service.HashUsageRequestPayload(body), false)
 		forwardDurationMs := time.Since(forwardStart).Milliseconds()
 		upstreamLatencyMs, _ := getContextInt64(c, service.OpsUpstreamLatencyMsKey)
 		responseLatencyMs := forwardDurationMs
@@ -1296,6 +1347,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 			if res == nil {
 				return
 			}
+			stampOpenAIRequestedReasoningEffort(res, c)
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
 			requestPayloadHash := service.HashUsageRequestPayload(body)
@@ -1430,6 +1482,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		} else {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account, openAIAccountScheduleModel(c, account, currentRoutingModel, false, result), true, nil)
 		}
+		stampOpenAIRequestedReasoningEffort(result, c)
 
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
@@ -1481,10 +1534,19 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 }
 
-func resolveOpenAIMessagesMetadataSession(sessionHash, promptCacheKey, reqModel string, body []byte) (string, string) {
+func resolveOpenAIMessagesMetadataSession(c *gin.Context, sessionHash, promptCacheKey, reqModel string, body []byte) (string, string) {
 	// Anthropic metadata.user_id 只作为账号粘性信号。上游 GPT/Codex 缓存键
 	// 交给 ForwardAsAnthropic 从 cache_control 或完整消息 digest 派生，避免
 	// 固定 metadata key 压住后续 turn 的缓存滚动。
+	//
+	// Claude Code 的 X-Claude-Code-Session-Id 是比 body content fallback 更稳定的
+	// 会话边界，但它只用于本地账号粘性；不要把它提升为 prompt_cache_key 或上游
+	// session_id，否则会改变现有 Messages→Codex 缓存滚动语义。
+	if promptCacheKey == "" {
+		if claudeSessionID := service.ClaudeCodeSessionIDFromHeader(c); claudeSessionID != "" {
+			return service.DeriveSessionHashFromSeed(claudeSessionID), promptCacheKey
+		}
+	}
 	if sessionHash != "" {
 		return sessionHash, promptCacheKey
 	}
@@ -2027,15 +2089,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 
 	type wsTurnUsageContext struct {
-		requestedModel string
-		channelMapping service.ChannelMappingResult
-		payloadHash    string
+		requestedModel     string
+		channelMapping     service.ChannelMappingResult
+		payloadHash        string
+		nativeCompactionV2 bool
 	}
 	var turnUsageMu sync.Mutex
 	turnUsageContexts := map[int]wsTurnUsageContext{
 		1: {
-			requestedModel: reqModel,
-			channelMapping: channelMappingWS,
+			requestedModel:     reqModel,
+			channelMapping:     channelMappingWS,
+			nativeCompactionV2: service.HasCompactionTriggerInInput(firstMessage),
 		},
 	}
 	latestRequestedModel := reqModel
@@ -2088,9 +2152,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			transformed = h.gatewayService.ReplaceModelInBody(payload, mapping.MappedModel)
 		}
 		setTurnUsageContext(turn, wsTurnUsageContext{
-			requestedModel: requestedModel,
-			channelMapping: mapping,
-			payloadHash:    service.HashUsageRequestPayload(transformed),
+			requestedModel:     requestedModel,
+			channelMapping:     mapping,
+			payloadHash:        service.HashUsageRequestPayload(transformed),
+			nativeCompactionV2: service.HasCompactionTriggerInInput(payload),
 		})
 		return transformed, nil
 	}
@@ -2426,6 +2491,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
 				setCyberTurnBody(turn, payload)
+				// Passthrough ingress intentionally skips BeforeTurn, so enforce the
+				// connection-level cyber session gate here as well. Native ingress keeps
+				// its BeforeTurn guard as defense in depth.
+				if cyberBlockedThisConn {
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, cyberSessionBlockedClientMsg, nil)
+				}
 				if service.HasCompactionTriggerInInput(payload) {
 					// 同一 WS 连接不能在中途切换上游账号；若账号在首帧选择后被
 					// 确认为不支持 native v2，后续压缩回合必须要求客户端重连，
@@ -2552,7 +2623,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					turnUpstreamModel = account.GetMappedModel(routedModel)
 				}
 				turnUsageFields := turnMapping.ToUsageFields(turnRequestedModel, turnUpstreamModel)
-				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, turnRequestedModel, turnErr != nil, cyberBlockBody, turnUsageFields, turnUsage.payloadHash)
+				h.recordCyberPolicyIfMarked(c, apiKey, account, subscription, subscriptionEntitlement, entitlementBalanceFallback, turnRequestedModel, turnErr != nil, cyberBlockBody, turnUsageFields, turnUsage.payloadHash, turnUsage.nativeCompactionV2)
 				if service.GetOpsCyberPolicy(c) != nil {
 					cyberBlockedThisConn = true
 				}
@@ -2621,6 +2692,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 						ChannelUsageFields:         turnUsageFields,
 						PricingAt:                  turnRecordPricingAt,
 						CyberBlocked:               cyberBlocked,
+						NativeCompactionV2:         turnUsage.nativeCompactionV2,
 					}); err != nil {
 						reqLog.Error("openai.websocket_record_usage_failed",
 							zap.Int64("account_id", account.ID),
@@ -2647,9 +2719,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 		// WebSocket 首包可能很大，hash 必须在 hooks 外算成字符串，避免 AfterTurn 闭包保活请求体。
 		setTurnUsageContext(1, wsTurnUsageContext{
-			requestedModel: reqModel,
-			channelMapping: channelMappingWS,
-			payloadHash:    service.HashUsageRequestPayload(wsFirstMessage),
+			requestedModel:     reqModel,
+			channelMapping:     channelMappingWS,
+			payloadHash:        service.HashUsageRequestPayload(wsFirstMessage),
+			nativeCompactionV2: service.HasCompactionTriggerInInput(wsFirstMessage),
 		})
 		if preemptCtx, cleanupPreempt, armed := h.gatewayService.BeginOpenAIWSIngressSessionPreemption(ctx, c, account, wsFirstMessage); armed {
 			ctx = preemptCtx
@@ -2720,12 +2793,23 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			}
 
 			var closeErr *service.OpenAIWSClientCloseError
-			if errors.As(err, &closeErr) && closeErr.StatusCode() == coderws.StatusNormalClosure {
-				reqLog.Info("openai.websocket_ingress_closed_normally",
-					zap.Int64("account_id", account.ID),
-					zap.String("reason", closeErr.Reason()),
-				)
-				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+			hasClientCloseErr := errors.As(err, &closeErr)
+			if openAIWSIngressEndedByClient(err) {
+				closedFields := []zap.Field{zap.Int64("account_id", account.ID)}
+				if hasClientCloseErr {
+					closedFields = append(closedFields, zap.String("reason", closeErr.Reason()))
+				} else {
+					closedFields = append(closedFields, zap.Error(err))
+				}
+				reqLog.Info("openai.websocket_ingress_closed_normally", closedFields...)
+				// A bare coderws.CloseError or a plain cancellation carries no
+				// gateway-chosen close frame; mirror the client's clean 1000
+				// rather than the 1011 the proxy-failure tail would have sent.
+				if hasClientCloseErr {
+					closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
+				} else {
+					closeOpenAIClientWS(wsConn, coderws.StatusNormalClosure, "")
+				}
 				return
 			}
 
@@ -2750,7 +2834,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				proxyFailedFields = append(proxyFailedFields, zap.Int64p("proxy_id", account.ProxyID))
 			}
 			reqLog.Warn("openai.websocket_proxy_failed", proxyFailedFields...)
-			if errors.As(err, &closeErr) {
+			if hasClientCloseErr {
 				closeOpenAIClientWS(wsConn, closeErr.StatusCode(), closeErr.Reason())
 				return
 			}
@@ -3723,7 +3807,7 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 // 并在 forward 返回错误时写一条 tokens=0 用量行。标记由 gateway 服务层在透传 cyber 后设置；
 // 当前请求已发给用户，本方法只做事后记录，不影响响应。forwardErrored 为 true 时才写用量行，
 // 避免与正常 RecordUsage(forward 成功路径)重复。每请求至多记录一次。
-func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, subscriptionEntitlement *service.SubscriptionEntitlement, entitlementBalanceFallback bool, model string, forwardErrored bool, cyberBlockBody []byte, channelFields service.ChannelUsageFields, requestPayloadHash string) {
+func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey *service.APIKey, account *service.Account, subscription *service.UserSubscription, subscriptionEntitlement *service.SubscriptionEntitlement, entitlementBalanceFallback bool, model string, forwardErrored bool, cyberBlockBody []byte, channelFields service.ChannelUsageFields, requestPayloadHash string, nativeCompactionV2 bool) {
 	mark := service.GetOpsCyberPolicy(c)
 	if mark == nil {
 		return
@@ -3855,6 +3939,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 				RequestPayloadHash:         requestPayloadHash,
 				APIKeyService:              apiKeySvc,
 				QuotaPlatform:              quotaPlatform,
+				NativeCompactionV2:         nativeCompactionV2,
 				ChannelUsageFields:         channelFields,
 			})
 		}

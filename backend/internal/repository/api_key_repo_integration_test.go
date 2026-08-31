@@ -59,6 +59,27 @@ func (s *APIKeyRepoSuite) TestGetByID_NotFound() {
 	s.Require().Error(err, "expected error for non-existent ID")
 }
 
+func (s *APIKeyRepoSuite) TestGetByID_LoadsPublicGroupAllowlistForPolicy() {
+	group := s.mustCreateGroup("g-public-allowlist")
+	user, err := s.client.User.Create().
+		SetEmail("getbyid-public-allowlist@test.com").
+		SetPasswordHash("test-password-hash").
+		SetStatus(service.StatusActive).
+		SetRole(service.RoleUser).
+		SetRestrictPublicGroups(true).
+		AddAllowedGroupIDs(group.ID).
+		Save(s.ctx)
+	s.Require().NoError(err, "create restricted user")
+
+	key := s.mustCreateApiKey(user.ID, "sk-getbyid-public-allowlist", "Restricted Key", nil)
+	got, err := s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err, "GetByID")
+	s.Require().NotNil(got.User, "expected User preload")
+	s.Require().True(got.User.RestrictPublicGroups)
+	s.Require().Contains(got.User.AllowedGroups, group.ID)
+	s.Require().True(got.User.AllowsGroupByPolicy(group.ID, false), "allowlisted public group should remain bindable")
+}
+
 func (s *APIKeyRepoSuite) TestGetByKey() {
 	user := s.mustCreateUser("getbykey@test.com")
 	group := s.mustCreateGroup("g-key")

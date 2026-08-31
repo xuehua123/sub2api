@@ -25,6 +25,7 @@ func TestAdminService_CreateUser_Success(t *testing.T) {
 		Concurrency:             7,
 		AllowedGroups:           []int64{3, 5},
 		RestrictToAllowedGroups: true,
+		RestrictPublicGroups:    true,
 		PaymentDisabled:         true,
 	}
 
@@ -39,6 +40,7 @@ func TestAdminService_CreateUser_Success(t *testing.T) {
 	require.Equal(t, input.Concurrency, user.Concurrency)
 	require.Equal(t, input.AllowedGroups, user.AllowedGroups)
 	require.True(t, user.RestrictToAllowedGroups)
+	require.True(t, user.RestrictPublicGroups)
 	require.True(t, user.PaymentDisabled)
 	require.Equal(t, RoleUser, user.Role)
 	require.Equal(t, StatusActive, user.Status)

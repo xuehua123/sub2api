@@ -40,6 +40,7 @@ type APIKeyAuthUserSnapshot struct {
 	Concurrency             int     `json:"concurrency"`
 	AllowedGroups           []int64 `json:"allowed_groups,omitempty"`
 	RestrictToAllowedGroups bool    `json:"restrict_to_allowed_groups,omitempty"`
+	RestrictPublicGroups    bool    `json:"restrict_public_groups,omitempty"`
 
 	// Balance notification fields (required for CheckBalanceAfterDeduction)
 	Email                      string             `json:"email"`

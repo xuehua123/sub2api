@@ -25,7 +25,7 @@ func plazaGroups() []service.PlazaGroup {
 
 func TestFilterPlazaVisibleGroups_AnonymousSeesOnlyNonExclusive(t *testing.T) {
 	// 匿名(allowedExclusive == nil):仅非专属分组;订阅型公开分组照常可见(橱窗语义)。
-	visible := filterPlazaVisibleGroups(plazaGroups(), nil)
+	visible := filterPlazaVisibleGroups(plazaGroups(), nil, nil, false)
 	require.Len(t, visible, 2)
 	ids := []int64{visible[0].ID, visible[1].ID}
 	require.ElementsMatch(t, []int64{1, 3}, ids)
@@ -34,7 +34,7 @@ func TestFilterPlazaVisibleGroups_AnonymousSeesOnlyNonExclusive(t *testing.T) {
 func TestFilterPlazaVisibleGroups_AuthedSeesGrantedExclusive(t *testing.T) {
 	// 登录:非专属 + 授权的专属;未授权的专属仍不可见。
 	allowed := map[int64]struct{}{2: {}}
-	visible := filterPlazaVisibleGroups(plazaGroups(), allowed)
+	visible := filterPlazaVisibleGroups(plazaGroups(), allowed, allowed, false)
 	require.Len(t, visible, 3)
 	ids := make([]int64, 0, len(visible))
 	for _, g := range visible {
@@ -46,7 +46,7 @@ func TestFilterPlazaVisibleGroups_AuthedSeesGrantedExclusive(t *testing.T) {
 func TestFilterPlazaVisibleGroups_AuthedEmptySetSeesNoExclusive(t *testing.T) {
 	// 登录但无任何专属授权(空集合,非 nil):与匿名同样只见非专属,
 	// 但语义区分要保持——空集合不能被当作 nil 匿名分支。
-	visible := filterPlazaVisibleGroups(plazaGroups(), map[int64]struct{}{})
+	visible := filterPlazaVisibleGroups(plazaGroups(), map[int64]struct{}{}, map[int64]struct{}{}, false)
 	require.Len(t, visible, 2)
 }
 
@@ -54,7 +54,7 @@ func TestFilterPlazaVisibleGroups_ExclusiveOnlyKeepsPublicGroupsVisible(t *testi
 	t.Parallel()
 
 	allowed := map[int64]struct{}{2: {}}
-	visible := filterPlazaVisibleGroups(plazaGroups(), allowed)
+	visible := filterPlazaVisibleGroups(plazaGroups(), allowed, allowed, false)
 
 	require.Len(t, visible, 3)
 	ids := make([]int64, 0, len(visible))
@@ -77,6 +77,52 @@ func TestApplyModelPlazaGroupAccessPolicyMarksPublicGroupViewOnly(t *testing.T) 
 	exclusiveItem := modelPlazaGroup{ID: 2}
 	applyModelPlazaGroupAccessPolicy(&exclusiveItem, exclusiveGroup, true)
 	require.False(t, exclusiveItem.Unavailable)
+}
+
+func TestFilterPlazaVisibleGroups_RestrictionDoesNotAffectAnonymous(t *testing.T) {
+	// 匿名没有用户记录，限制标志无从谈起，可见性必须与未受限时一致。
+	visible := filterPlazaVisibleGroups(plazaGroups(), nil, nil, true)
+	ids := make([]int64, 0, len(visible))
+	for _, g := range visible {
+		ids = append(ids, g.ID)
+	}
+	require.ElementsMatch(t, []int64{1, 3}, ids)
+}
+
+func TestFilterPlazaVisibleGroups_PublicRestrictionUsesExplicitAllowlist(t *testing.T) {
+	t.Parallel()
+
+	// accessibleGroups includes an entitlement-backed exclusive group and a
+	// hypothetical public entitlement. Only publicAllowedGroups may authorize a
+	// public group when restrict_public_groups is enabled.
+	accessibleGroups := map[int64]struct{}{1: {}, 2: {}, 3: {}}
+	publicAllowedGroups := map[int64]struct{}{1: {}}
+	visible := filterPlazaVisibleGroups(plazaGroups(), accessibleGroups, publicAllowedGroups, true)
+
+	ids := make([]int64, 0, len(visible))
+	for _, group := range visible {
+		ids = append(ids, group.ID)
+	}
+	require.ElementsMatch(t, []int64{1, 2}, ids)
+}
+
+func TestModelPlazaDualPoliciesTakeIntersection(t *testing.T) {
+	t.Parallel()
+
+	publicAllowedGroups := map[int64]struct{}{1: {}}
+	visible := filterPlazaVisibleGroups(plazaGroups(), map[int64]struct{}{1: {}, 2: {}}, publicAllowedGroups, true)
+	require.ElementsMatch(t, []int64{1, 2}, []int64{visible[0].ID, visible[1].ID})
+
+	for i := range visible {
+		item := toModelPlazaGroupDTO(&visible[i], nil)
+		applyModelPlazaGroupAccessPolicy(&item, &visible[i], true)
+		if visible[i].IsExclusive {
+			require.False(t, item.Unavailable)
+		} else {
+			require.True(t, item.Unavailable)
+			require.Equal(t, "EXCLUSIVE_GROUPS_ONLY", item.UnavailableReason)
+		}
+	}
 }
 
 func TestModelPlazaHandler_NilSettingServiceFailsClosed404(t *testing.T) {

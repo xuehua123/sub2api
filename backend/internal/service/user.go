@@ -40,10 +40,10 @@ func IsAPIKeyResolvedGroupAllowed(ctx context.Context, group *Group) bool {
 		return true
 	}
 	policy, ok := ctx.Value(apiKeyGroupAccessPolicyContextKey{}).(apiKeyGroupAccessPolicy)
-	if !ok || policy.user == nil || !policy.user.RestrictToAllowedGroups {
+	if !ok || policy.user == nil || (!policy.user.RestrictToAllowedGroups && !policy.user.RestrictPublicGroups) {
 		return true
 	}
-	if !policy.user.AllowsGroupType(group.IsExclusive) {
+	if !policy.user.AllowsGroupByPolicy(group.ID, group.IsExclusive) {
 		return false
 	}
 	if policy.entitlement != nil {
@@ -82,9 +82,9 @@ type User struct {
 	DefaultChatAPIKeyID     *int64
 	AllowedGroups           []int64
 	RestrictToAllowedGroups bool
+	RestrictPublicGroups    bool
 	PaymentDisabled         bool
 	TokenVersion            int64 // Incremented on password change to invalidate existing tokens
-
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
 	TokenVersionResolved bool
@@ -161,17 +161,33 @@ func (u *User) AllowsGroupType(isExclusive bool) bool {
 	return !u.RestrictToAllowedGroups || isExclusive
 }
 
+// AllowsGroupByPolicy applies both independent user-level access policies:
+// restrict_to_allowed_groups rejects every public group, while
+// restrict_public_groups keeps only explicitly allowlisted public groups.
+// When both switches are enabled their intersection applies, so public groups
+// remain unavailable even when they are present in AllowedGroups.
+func (u *User) AllowsGroupByPolicy(groupID int64, isExclusive bool) bool {
+	if u == nil || !u.AllowsGroupType(isExclusive) {
+		return false
+	}
+	if !isExclusive && u.RestrictPublicGroups {
+		return u.HasAllowedGroup(groupID)
+	}
+	return true
+}
+
 // CanBindGroup checks whether a user can bind to a given group.
 // For standard groups:
-// - Public groups (non-exclusive): all users can bind
-// - Exclusive groups: only users with the group in AllowedGroups can bind
-// - Exclusive-only users: only explicitly granted exclusive groups are usable
+//   - Public groups (non-exclusive): all users can bind unless one of the two
+//     independent restriction policies denies the group
+//   - Exclusive groups: only users with the group in AllowedGroups can bind
+//   - Exclusive-only users: only explicitly granted exclusive groups are usable
 func (u *User) CanBindGroup(groupID int64, isExclusive bool) bool {
 	if u == nil {
 		return false
 	}
-	if u.RestrictToAllowedGroups {
-		return u.AllowsGroupType(isExclusive) && u.HasAllowedGroup(groupID)
+	if !u.AllowsGroupByPolicy(groupID, isExclusive) {
+		return false
 	}
 	// 公开分组（非专属）：所有用户都可以绑定
 	if !isExclusive {
