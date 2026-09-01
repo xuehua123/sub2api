@@ -372,11 +372,12 @@ func TestCalculateCostUnified_BillingModeFieldFilled(t *testing.T) {
 	require.Equal(t, "token", cost.BillingMode)
 }
 
-func TestCalculateCostUnified_GPT55ChannelPriorityUsesTwoPointFiveMultiplier(t *testing.T) {
+func TestCalculateCostUnified_GPT55ChannelPriorityUsesSupportedModelMultiplier(t *testing.T) {
 	groupID := int64(10)
 	cases := []struct {
 		name            string
 		model           string
+		fastMultiplier  float64
 		inputPrice      float64
 		outputPrice     float64
 		cacheWritePrice float64
@@ -385,6 +386,7 @@ func TestCalculateCostUnified_GPT55ChannelPriorityUsesTwoPointFiveMultiplier(t *
 		{
 			name:            "gpt-5.5",
 			model:           "gpt-5.5",
+			fastMultiplier:  2.5,
 			inputPrice:      5e-6,
 			outputPrice:     30e-6,
 			cacheWritePrice: 5e-6,
@@ -393,6 +395,7 @@ func TestCalculateCostUnified_GPT55ChannelPriorityUsesTwoPointFiveMultiplier(t *
 		{
 			name:            "gpt-5.5-pro wildcard",
 			model:           "gpt-5.5-pro-20260423",
+			fastMultiplier:  1,
 			inputPrice:      30e-6,
 			outputPrice:     180e-6,
 			cacheWritePrice: 30e-6,
@@ -447,10 +450,10 @@ func TestCalculateCostUnified_GPT55ChannelPriorityUsesTwoPointFiveMultiplier(t *
 			})
 			require.NoError(t, err)
 
-			expectedInput := float64(tokens.InputTokens) * tt.inputPrice * 2.5
-			expectedOutput := float64(tokens.OutputTokens) * tt.outputPrice * 2.5
-			expectedCacheWrite := float64(tokens.CacheCreationTokens) * tt.cacheWritePrice * 2.5
-			expectedCacheRead := float64(tokens.CacheReadTokens) * tt.cacheReadPrice * 2.5
+			expectedInput := float64(tokens.InputTokens) * tt.inputPrice * tt.fastMultiplier
+			expectedOutput := float64(tokens.OutputTokens) * tt.outputPrice * tt.fastMultiplier
+			expectedCacheWrite := float64(tokens.CacheCreationTokens) * tt.cacheWritePrice * tt.fastMultiplier
+			expectedCacheRead := float64(tokens.CacheReadTokens) * tt.cacheReadPrice * tt.fastMultiplier
 			require.InDelta(t, expectedInput, cost.InputCost, 1e-12)
 			require.InDelta(t, expectedOutput, cost.OutputCost, 1e-12)
 			require.InDelta(t, expectedCacheWrite, cost.CacheCreationCost, 1e-12)

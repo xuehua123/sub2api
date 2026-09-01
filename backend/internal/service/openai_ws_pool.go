@@ -18,8 +18,11 @@ import (
 )
 
 const (
-	openAIWSConnMaxAge             = 60 * time.Minute
-	openAIWSConnHealthCheckIdle    = 90 * time.Second
+	openAIWSConnMaxAge          = 60 * time.Minute
+	openAIWSConnHealthCheckIdle = 90 * time.Second
+	// coder/websocket cannot consume pong frames without a reader. Recycle
+	// unsupported idle sockets before the upstream keepalive window expires.
+	openAIWSConnIdleRecycleAfter   = 90 * time.Second
 	openAIWSConnHealthCheckTO      = 2 * time.Second
 	openAIWSConnPrewarmExtraDelay  = 2 * time.Second
 	openAIWSAcquireCleanupInterval = 3 * time.Second
@@ -224,6 +227,18 @@ func (l *openAIWSConnLease) SupportsIdlePingWithoutReader() bool {
 		return false
 	}
 	return conn.supportsIdlePingWithoutReader()
+}
+
+// shouldReconnectAfterIdle reports whether a cross-turn lease has been idle
+// long enough that it must not be trusted without a reader-safe ping. Ingress
+// keeps one lease for the downstream WebSocket lifetime, so the regular pool
+// sweeper cannot recycle that leased (and sometimes pinned) connection.
+func (l *openAIWSConnLease) shouldReconnectAfterIdle(now time.Time, maxIdle time.Duration) bool {
+	conn, err := l.activeConn()
+	if err != nil || conn.supportsIdlePingWithoutReader() || maxIdle <= 0 {
+		return false
+	}
+	return conn.idleDuration(now) >= maxIdle
 }
 
 func (l *openAIWSConnLease) MarkBroken() {
@@ -760,6 +775,7 @@ func (p *openAIWSConnPool) runBackgroundPingSweep() {
 		g.Go(func() error {
 			if err := item.conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
 				p.evictConn(item.accountID, item.conn.id)
+				p.ensureTargetIdleAfterSweepAsync(item.accountID)
 			}
 			return nil
 		})
@@ -818,10 +834,15 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		return
 	}
 	type cleanupResult struct {
-		evicted []*openAIWSConn
+		accountID int64
+		evicted   []*openAIWSConn
 	}
 	results := make([]cleanupResult, 0)
-	p.accounts.Range(func(_ any, value any) bool {
+	p.accounts.Range(func(key any, value any) bool {
+		accountID, validAccountID := key.(int64)
+		if !validAccountID || accountID <= 0 {
+			return true
+		}
 		ap, ok := value.(*openAIWSAccountPool)
 		if !ok || ap == nil {
 			return true
@@ -835,12 +856,18 @@ func (p *openAIWSConnPool) runBackgroundCleanupSweep(now time.Time) {
 		ap.lastCleanupAt = now
 		ap.mu.Unlock()
 		if len(evicted) > 0 {
-			results = append(results, cleanupResult{evicted: evicted})
+			results = append(results, cleanupResult{accountID: accountID, evicted: evicted})
 		}
 		return true
 	})
 	for _, result := range results {
 		closeOpenAIWSConns(result.evicted)
+		// cleanupAccountLocked can evict the last prewarmed socket. Restore the
+		// configured floor from the last known-good acquire target instead of
+		// waiting indefinitely for the next foreground request.
+		if result.accountID > 0 {
+			p.ensureTargetIdleAfterSweepAsync(result.accountID)
+		}
 	}
 }
 
@@ -1353,6 +1380,17 @@ func (p *openAIWSConnPool) cleanupAccountLocked(ap *openAIWSAccountPool, now tim
 		if p.isConnPinnedLocked(ap, id) {
 			continue
 		}
+		if !conn.isLeased() && conn.waiters.Load() == 0 &&
+			!conn.supportsIdlePingWithoutReader() &&
+			conn.idleDuration(now) >= openAIWSConnIdleRecycleAfter {
+			delete(ap.conns, id)
+			if len(ap.pinnedConns) > 0 {
+				delete(ap.pinnedConns, id)
+			}
+			evicted = append(evicted, conn)
+			p.metrics.scaleDownTotal.Add(1)
+			continue
+		}
 		if maxAge > 0 && !conn.isLeased() && conn.age(now) > maxAge {
 			delete(ap.conns, id)
 			if len(ap.pinnedConns) > 0 {
@@ -1507,6 +1545,14 @@ func (p *openAIWSConnPool) AccountPoolLoad(accountID int64) (inflight int, waite
 }
 
 func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
+	p.ensureTargetIdleAsyncMode(accountID, false)
+}
+
+func (p *openAIWSConnPool) ensureTargetIdleAfterSweepAsync(accountID int64) {
+	p.ensureTargetIdleAsyncMode(accountID, true)
+}
+
+func (p *openAIWSConnPool) ensureTargetIdleAsyncMode(accountID int64, restoreMinIdle bool) {
 	if p == nil || accountID <= 0 {
 		return
 	}
@@ -1528,7 +1574,10 @@ func (p *openAIWSConnPool) ensureTargetIdleAsync(accountID int64) {
 	}
 	now := time.Now()
 	if !ap.prewarmUntil.IsZero() && now.Before(ap.prewarmUntil) {
-		return
+		minIdle := p.minIdlePerAccount()
+		if !restoreMinIdle || len(ap.conns)+ap.creating >= minIdle {
+			return
+		}
 	}
 	if p.shouldSuppressPrewarmLocked(ap, now) {
 		return

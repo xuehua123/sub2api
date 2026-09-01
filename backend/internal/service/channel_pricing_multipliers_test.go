@@ -79,7 +79,7 @@ func TestChannelOverridePreservesCatalogFastRatioByDefault(t *testing.T) {
 
 func TestAnthropicFastUsesDefaultMultiplierWithoutCatalogTier(t *testing.T) {
 	pricing := &ModelPricing{InputPricePerToken: 5e-6, OutputPricePerToken: 25e-6}
-	cost := (&BillingService{}).computeTokenBreakdown("", pricing, UsageTokens{
+	cost := (&BillingService{}).computeTokenBreakdown("claude-opus-4.8", pricing, UsageTokens{
 		InputTokens: 1_000_000, OutputTokens: 1_000_000,
 	}, 1, "fast", false)
 

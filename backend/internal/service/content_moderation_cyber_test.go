@@ -260,8 +260,13 @@ func TestRecordCyberPolicyEvent_RuntimeSnapshotRefreshFailureKeepsStaleScope(t *
 		SettingKeyRiskControlEnabled:      "true",
 		SettingKeyContentModerationConfig: `{"all_groups":true,"model_filter":{"type":"include","models":["gpt-5"]}}`,
 	}}
-	svc := NewContentModerationService(settingRepo, repo, nil, nil, nil, nil, nil, nil)
-	svc.runtimeCacheTTL = time.Minute
+	// Build the minimal service directly so constructor-started workers cannot
+	// contend for runtimeRefreshMu and cause this test's TryLock refresh to skip.
+	svc := &ContentModerationService{
+		settingRepo:     settingRepo,
+		repo:            repo,
+		runtimeCacheTTL: time.Minute,
+	}
 
 	_, err := svc.loadRuntimeSnapshot(context.Background())
 	require.NoError(t, err)
@@ -278,11 +283,10 @@ func TestRecordCyberPolicyEvent_RuntimeSnapshotRefreshFailureKeepsStaleScope(t *
 	})
 
 	require.Len(t, repo.snapshotLogs(), 1)
-	require.Eventually(t, func() bool {
-		_, calls := settingRepo.calls()
-		return calls == 2
-	}, time.Second, time.Millisecond)
+	// Join the refresh goroutine before inspecting the final call count.
+	svc.runtimeRefreshMu.Lock()
 	getValue, getMultiple := settingRepo.calls()
+	svc.runtimeRefreshMu.Unlock()
 	require.Zero(t, getValue)
 	require.Equal(t, 2, getMultiple)
 }

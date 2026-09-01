@@ -1243,6 +1243,21 @@ func TestOpenAIWSConnLease_PingWithTimeout(t *testing.T) {
 	require.ErrorIs(t, err, errOpenAIWSConnClosed)
 }
 
+func TestOpenAIWSConnLease_ShouldReconnectAfterUnsupportedReaderPingIdle(t *testing.T) {
+	now := time.Now()
+	unsupported := newOpenAIWSConn("unsupported_idle_lease", 1, &openAIWSIdlePingUnsupportedConn{}, nil)
+	unsupported.lastUsedNano.Store(now.Add(-openAIWSConnIdleRecycleAfter - time.Second).UnixNano())
+	lease := &openAIWSConnLease{conn: unsupported}
+	require.True(t, lease.shouldReconnectAfterIdle(now, openAIWSConnIdleRecycleAfter))
+
+	unsupported.lastUsedNano.Store(now.Add(-time.Second).UnixNano())
+	require.False(t, lease.shouldReconnectAfterIdle(now, openAIWSConnIdleRecycleAfter))
+
+	supported := newOpenAIWSConn("supported_idle_lease", 1, &openAIWSFakeConn{}, nil)
+	supported.lastUsedNano.Store(now.Add(-openAIWSConnIdleRecycleAfter - time.Second).UnixNano())
+	require.False(t, (&openAIWSConnLease{conn: supported}).shouldReconnectAfterIdle(now, openAIWSConnIdleRecycleAfter))
+}
+
 func TestOpenAIWSConn_ReadAndWriteCanProceedConcurrently(t *testing.T) {
 	conn := newOpenAIWSConn("full_duplex", 1, &openAIWSBlockingConn{readDelay: 120 * time.Millisecond}, nil)
 
@@ -1305,6 +1320,73 @@ func TestOpenAIWSConnPool_BackgroundCleanupSweep_WithoutAcquire(t *testing.T) {
 	_, exists := ap.conns[stale.id]
 	ap.mu.Unlock()
 	require.False(t, exists, "后台清理应在无新 acquire 时也回收过期连接")
+}
+
+func TestOpenAIWSConnPool_BackgroundCleanupSweep_RestoresMinIdle(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MinIdlePerAccount = 1
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	cfg.Gateway.OpenAIWS.DialTimeoutSeconds = 1
+	cfg.Gateway.OpenAIWS.PrewarmCooldownMS = 60_000
+	pool := newOpenAIWSConnPool(cfg)
+	defer pool.Close()
+	dialer := &openAIWSCountingDialer{}
+	pool.setClientDialerForTest(dialer)
+
+	accountID := int64(304)
+	account := &Account{ID: accountID, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1}
+	ap := pool.getOrCreateAccountPool(accountID)
+	stale := newOpenAIWSConn("stale_min_idle", accountID, &openAIWSFakeConn{}, nil)
+	stale.createdAtNano.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+	stale.lastUsedNano.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+	ap.mu.Lock()
+	ap.conns[stale.id] = stale
+	ap.lastAcquire = &openAIWSAcquireRequest{
+		Account: account,
+		WSURL:   "wss://example.com/v1/responses",
+	}
+	ap.prewarmUntil = time.Now().Add(time.Minute)
+	ap.mu.Unlock()
+
+	pool.runBackgroundCleanupSweep(time.Now())
+
+	require.Eventually(t, func() bool {
+		ap.mu.Lock()
+		defer ap.mu.Unlock()
+		return len(ap.conns) == 1 && !ap.prewarmActive
+	}, 2*time.Second, 10*time.Millisecond)
+	require.Equal(t, 1, dialer.DialCount(), "sweep 淘汰后应主动补回 MinIdlePerAccount")
+	ap.mu.Lock()
+	_, staleExists := ap.conns[stale.id]
+	ap.mu.Unlock()
+	require.False(t, staleExists)
+}
+
+func TestOpenAIWSConnPool_RecyclesUnsupportedIdlePingConnection(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.OpenAIWS.MaxConnsPerAccount = 2
+	cfg.Gateway.OpenAIWS.MaxIdlePerAccount = 2
+	pool := &openAIWSConnPool{cfg: cfg}
+
+	accountID := int64(303)
+	ap := &openAIWSAccountPool{conns: make(map[string]*openAIWSConn)}
+	conn := newOpenAIWSConn("stale_unsupported_idle_ping", accountID, &openAIWSIdlePingUnsupportedConn{}, nil)
+	conn.lastUsedNano.Store(time.Now().Add(-openAIWSConnIdleRecycleAfter - time.Second).UnixNano())
+	ap.conns[conn.id] = conn
+	pool.accounts.Store(accountID, ap)
+
+	pool.runBackgroundCleanupSweep(time.Now())
+
+	ap.mu.Lock()
+	_, exists := ap.conns[conn.id]
+	ap.mu.Unlock()
+	require.False(t, exists, "不支持无 reader idle ping 的陈旧连接应被主动回收")
+	select {
+	case <-conn.closedCh:
+	default:
+		t.Fatal("被回收的陈旧连接应已关闭")
+	}
 }
 
 func TestOpenAIWSConnPool_BackgroundWorkerGuardBranches(t *testing.T) {

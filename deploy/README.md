@@ -51,6 +51,12 @@ See [APPLE_CONTAINER.md](./APPLE_CONTAINER.md) for configuration, upgrades, pers
 
 ## Docker Deployment (Recommended)
 
+> **Fork production safety:** the one-click and floating-tag examples below are
+> for generic standalone use. Pipixia production must use the CI-built
+> `ghcr.io/xuehua123/sub2api@sha256:...` digest and the role-based canary,
+> Canada, relay, and disaster-recovery runbook in the repository root
+> `AGENTS.md`. Never build an image on a production business host.
+
 ### Method 1: One-Click Deployment (Recommended)
 
 Use the automated preparation script for the easiest setup:
@@ -147,6 +153,28 @@ When using Docker Compose with `AUTO_SETUP=true`:
    docker compose logs sub2api | grep "admin password"
    ```
 
+### Startup and Database Recovery
+
+Sub2API applies database migrations during application startup. PostgreSQL can
+remain in its recovery/startup phase briefly after a host or Docker daemon
+restart. The application retries transient PostgreSQL startup and connection
+errors with bounded exponential backoff, then starts automatically when the
+database becomes ready. Authentication errors, migration checksum mismatches,
+SQL errors, and other permanent configuration or data errors fail immediately.
+
+The Compose example also uses a PostgreSQL health check that verifies both
+server readiness and a simple SQL query. `depends_on: condition: service_healthy`
+controls dependency ordering for a fresh Compose start, but it is not a
+replacement for application-level retries when Docker restores existing
+containers after a host restart.
+
+For systemd deployments, keep `Restart=always` and `RestartSec` configured in
+`sub2api.service`; the application retry covers transient database startup,
+while systemd remains the supervisor for permanent process exits. For
+Kubernetes, use a PostgreSQL readiness probe and retain the Sub2API startup
+retry behavior; configure the application liveness probe separately so a
+database recovery period is not treated as a permanent process failure.
+
 ### Database Migration Notes (PostgreSQL)
 
 - Migrations are applied in lexicographic order (e.g. `001_...sql`, `002_...sql`).
@@ -196,7 +224,7 @@ docker compose -f docker-compose.local.yml logs -f sub2api
 # Restart Sub2API only
 docker compose -f docker-compose.local.yml restart sub2api
 
-# Update to latest version
+# Update the generic standalone image
 docker compose -f docker-compose.local.yml pull
 docker compose -f docker-compose.local.yml up -d
 
@@ -220,9 +248,10 @@ docker compose logs -f sub2api
 # Restart Sub2API only
 docker compose restart sub2api
 
-# Update to latest version
-docker compose pull
-docker compose up -d
+# Update to a reviewed immutable fork image
+# Replace the placeholder with the digest emitted by CI for the exact commit.
+SUB2API_IMAGE=ghcr.io/xuehua123/sub2api@sha256:<digest> docker compose pull sub2api
+SUB2API_IMAGE=ghcr.io/xuehua123/sub2api@sha256:<digest> docker compose up -d sub2api
 
 # Remove all data (caution!)
 docker compose down -v

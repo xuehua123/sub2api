@@ -466,6 +466,12 @@ func TestGroupModelPricingForDisplay_LongContextSwitchMatchesRuntimePolicy(t *te
 }
 
 func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing.T) {
+	catalog := newStubPricingServiceFromJSON(t, openAILadderCatalogJSON)
+	gpt55CatalogPricing := catalog.GetModelPricing("gpt-5.5")
+	gpt54CatalogPricing := catalog.GetModelPricing("gpt-5.4")
+	require.NotNil(t, gpt55CatalogPricing)
+	require.NotNil(t, gpt54CatalogPricing)
+
 	baseInput := 2e-6
 	baseOutput := 10e-6
 	baseCacheWrite := 1e-6
@@ -494,7 +500,7 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 	}
 
 	t.Run("gpt-5.5 enabled keeps base long fast and fast-long", func(t *testing.T) {
-		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.5", nil)
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.5", gpt55CatalogPricing)
 		require.True(t, ok)
 		require.Len(t, got.Intervals, 4)
 		tiers := byLabel(t, got)
@@ -506,7 +512,7 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 	})
 
 	t.Run("long-context switch does not hide gpt-5.5 fast", func(t *testing.T) {
-		got, ok := ResolveGroupModelPricingForDisplay(groupFor(false, &baseCacheRead), "gpt-5.5", nil)
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(false, &baseCacheRead), "gpt-5.5", gpt55CatalogPricing)
 		require.True(t, ok)
 		require.Len(t, got.Intervals, 2)
 		tiers := byLabel(t, got)
@@ -516,8 +522,34 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 		require.NotContains(t, tiers, "Fast 长上下文")
 	})
 
+	t.Run("explicit fast multiplier advertises custom model and controls display", func(t *testing.T) {
+		fastMultiplier := 1.7
+		group := groupFor(false, &baseCacheRead)
+		group.ModelPricing[0].FastMultiplier = &fastMultiplier
+		got, ok := ResolveGroupModelPricingForDisplay(group, "custom-fast", nil)
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		require.Len(t, tiers, 2)
+		require.InDelta(t, baseInput*fastMultiplier, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, baseOutput*fastMultiplier, *tiers["Fast"].OutputPrice, 1e-12)
+		require.InDelta(t, baseCacheWrite*fastMultiplier, *tiers["Fast"].CacheWritePrice, 1e-12)
+		require.InDelta(t, baseCacheRead*fastMultiplier, *tiers["Fast"].CacheReadPrice, 1e-12)
+	})
+
+	t.Run("explicit fast multiplier overrides gpt-5.5 built-in ratio", func(t *testing.T) {
+		fastMultiplier := 1.7
+		group := groupFor(false, &baseCacheRead)
+		group.ModelPricing[0].FastMultiplier = &fastMultiplier
+		got, ok := ResolveGroupModelPricingForDisplay(group, "gpt-5.5", gpt55CatalogPricing)
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		require.InDelta(t, baseInput*fastMultiplier, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, baseOutput*fastMultiplier, *tiers["Fast"].OutputPrice, 1e-12)
+		require.InDelta(t, baseCacheRead*fastMultiplier, *tiers["Fast"].CacheReadPrice, 1e-12)
+	})
+
 	t.Run("gpt-5.4 fast floors and priority long uses standard long", func(t *testing.T) {
-		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.4", nil)
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "gpt-5.4", gpt54CatalogPricing)
 		require.True(t, ok)
 		tiers := byLabel(t, got)
 		require.InDelta(t, openAIGPT54PriorityInputPrice, *tiers["Fast"].InputPrice, 1e-12)
@@ -525,6 +557,18 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 		require.InDelta(t, openAIGPT54PriorityCacheReadPrice, *tiers["Fast"].CacheReadPrice, 1e-12)
 		require.InDelta(t, *tiers["长上下文"].InputPrice, *tiers["Fast 长上下文"].InputPrice, 1e-12)
 		require.InDelta(t, *tiers["长上下文"].CacheWritePrice, *tiers["Fast 长上下文"].CacheWritePrice, 1e-12)
+	})
+
+	t.Run("gpt-5.4 explicit fast multiplier applies after long-context rates", func(t *testing.T) {
+		fastMultiplier := 1.7
+		group := groupFor(true, &baseCacheRead)
+		group.ModelPricing[0].FastMultiplier = &fastMultiplier
+		got, ok := ResolveGroupModelPricingForDisplay(group, "gpt-5.4", gpt54CatalogPricing)
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		require.InDelta(t, *tiers["长上下文"].InputPrice*fastMultiplier, *tiers["Fast 长上下文"].InputPrice, 1e-12)
+		require.InDelta(t, *tiers["长上下文"].OutputPrice*fastMultiplier, *tiers["Fast 长上下文"].OutputPrice, 1e-12)
+		require.InDelta(t, *tiers["长上下文"].CacheReadPrice*fastMultiplier, *tiers["Fast 长上下文"].CacheReadPrice, 1e-12)
 	})
 
 	t.Run("catalog priority overlays group values and preserves explicit zero cache", func(t *testing.T) {
@@ -546,15 +590,33 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &zero), "custom-priority", official)
 		require.True(t, ok)
 		tiers := byLabel(t, got)
-		// Explicit group input/cache-write values also replace their runtime
-		// priority fields; untouched output keeps the catalog priority rate.
-		require.InDelta(t, baseInput, *tiers["Fast"].InputPrice, 1e-12)
-		require.InDelta(t, baseCacheWrite, *tiers["Fast"].CacheWritePrice, 1e-12)
-		require.InDelta(t, baseOutput, *tiers["Fast"].OutputPrice, 1e-12)
+		// Standard group overrides preserve the catalog's explicit priority
+		// ratio, matching GetModelPricingWithChannel runtime billing.
+		require.InDelta(t, baseInput*2, *tiers["Fast"].InputPrice, 1e-12)
+		require.InDelta(t, baseCacheWrite*2, *tiers["Fast"].CacheWritePrice, 1e-12)
+		require.InDelta(t, baseOutput*2, *tiers["Fast"].OutputPrice, 1e-12)
 		require.NotNil(t, tiers["Fast"].CacheReadPrice)
 		require.Zero(t, *tiers["Fast"].CacheReadPrice)
 		require.NotNil(t, tiers["Fast 长上下文"].CacheReadPrice)
 		require.Zero(t, *tiers["Fast 长上下文"].CacheReadPrice)
+	})
+
+	t.Run("partial long-context multipliers keep unconfigured components at standard price", func(t *testing.T) {
+		got, ok := ResolveGroupModelPricingForDisplay(groupFor(true, &baseCacheRead), "partial-long", &LiteLLMModelPricing{
+			InputCostPerToken:                  2e-6,
+			OutputCostPerToken:                 6e-6,
+			CacheCreationInputTokenCost:        2.5e-6,
+			CacheReadInputTokenCost:            0.2e-6,
+			LongContextInputTokenThreshold:     200000,
+			LongContextOutputCostMultiplier:    1.5,
+			LongContextCacheReadCostMultiplier: 0,
+		})
+		require.True(t, ok)
+		tiers := byLabel(t, got)
+		require.InDelta(t, *tiers["基础"].InputPrice, *tiers["长上下文"].InputPrice, 1e-12)
+		require.InDelta(t, *tiers["基础"].CacheWritePrice, *tiers["长上下文"].CacheWritePrice, 1e-12)
+		require.InDelta(t, *tiers["基础"].CacheReadPrice, *tiers["长上下文"].CacheReadPrice, 1e-12)
+		require.InDelta(t, *tiers["基础"].OutputPrice*1.5, *tiers["长上下文"].OutputPrice, 1e-12)
 	})
 
 	t.Run("ordinary group override does not invent fast capability", func(t *testing.T) {
@@ -564,6 +626,20 @@ func TestResolveGroupModelPricingForDisplay_PreservesRuntimeFastTiers(t *testing
 		})
 		require.True(t, ok)
 		require.Empty(t, got.Intervals)
+	})
+
+	t.Run("flex-only catalog capability does not invent fast", func(t *testing.T) {
+		for _, model := range []string{"gpt-5.5-pro", "gpt-5.4-nano"} {
+			t.Run(model, func(t *testing.T) {
+				got, ok := ResolveGroupModelPricingForDisplay(groupFor(false, &baseCacheRead), model, &LiteLLMModelPricing{
+					InputCostPerToken:   3e-6,
+					OutputCostPerToken:  15e-6,
+					SupportsServiceTier: true,
+				})
+				require.True(t, ok)
+				require.Empty(t, got.Intervals)
+			})
+		}
 	})
 
 	t.Run("grok inclusive threshold starts long tier at exactly 200k", func(t *testing.T) {
@@ -726,4 +802,230 @@ func TestListAvailable_MappedAliasUsesBillingModelForGlobalFallback(t *testing.T
 	require.NotNil(t, model.Pricing)
 	require.InDelta(t, globalPrice, *model.Pricing.InputPrice, 1e-12)
 	require.InDelta(t, globalPrice, *model.PricingByGroup[10].InputPrice, 1e-12)
+}
+
+func TestResolveGroupModelPricingForDisplay_PreservesCacheBreakdownInFlatAndTiers(t *testing.T) {
+	pricing := &LiteLLMModelPricing{
+		InputCostPerToken:                   5e-6,
+		InputCostPerTokenPriority:           10e-6,
+		OutputCostPerToken:                  25e-6,
+		OutputCostPerTokenPriority:          50e-6,
+		CacheCreationInputTokenCost:         6.25e-6,
+		CacheCreationInputTokenCostPriority: 12.5e-6,
+		CacheCreationInputTokenCostAbove1hr: 10e-6,
+		CacheReadInputTokenCost:             0.5e-6,
+		CacheReadInputTokenCostPriority:     1e-6,
+		LongContextInputTokenThreshold:      200000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     2,
+	}
+	group := &Group{
+		Platform:                  PlatformAnthropic,
+		LongContextPricingEnabled: true,
+		ModelPricing: []ChannelModelPricing{{
+			Models: []string{"*"}, BillingMode: BillingModeToken,
+		}},
+	}
+
+	got, matched := ResolveGroupModelPricingForDisplay(group, "cache-breakdown-model", pricing)
+
+	require.True(t, matched)
+	require.NotNil(t, got)
+	require.NotNil(t, got.CacheWrite5mPrice)
+	require.NotNil(t, got.CacheWrite1hPrice)
+	require.InDelta(t, 6.25e-6, *got.CacheWrite5mPrice, 1e-12)
+	require.InDelta(t, 10e-6, *got.CacheWrite1hPrice, 1e-12)
+	require.Len(t, got.Intervals, 4)
+	for _, interval := range got.Intervals {
+		require.NotNilf(t, interval.CacheWrite5mPrice, "%s must retain the effective 5m rate", interval.TierLabel)
+		require.NotNilf(t, interval.CacheWrite1hPrice, "%s must retain the effective 1h rate", interval.TierLabel)
+	}
+	require.InDelta(t, 12.5e-6, *got.Intervals[1].CacheWrite5mPrice, 1e-12)
+	require.InDelta(t, 20e-6, *got.Intervals[1].CacheWrite1hPrice, 1e-12)
+}
+
+func TestDeepSeekDisplayPreservesCustomSourcesAndMatchesRuntimeCost(t *testing.T) {
+	const model = "deepseek-v4-pro"
+	catalog := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		model: {
+			LiteLLMProvider:         "deepseek",
+			InputCostPerToken:       9e-6,
+			OutputCostPerToken:      19e-6,
+			CacheReadInputTokenCost: 3e-6,
+		},
+	})
+
+	t.Run("catalog-only remains official", func(t *testing.T) {
+		got, matched := ResolveCatalogModelPricingForDisplay(model, catalog.GetModelPricing(model))
+		require.True(t, matched)
+		require.InDelta(t, deepseekProOffPeakInputPrice, *got.InputPrice, 1e-15)
+		require.InDelta(t, deepseekProOffPeakOutputPrice, *got.OutputPrice, 1e-15)
+		require.InDelta(t, deepseekProOffPeakCacheRead, *got.CacheReadPrice, 1e-15)
+	})
+
+	t.Run("group override", func(t *testing.T) {
+		input := 4e-6
+		group := &Group{ID: 100, Platform: PlatformDeepseek, LongContextPricingEnabled: true, ModelPricing: []ChannelModelPricing{{
+			Models: []string{model}, BillingMode: BillingModeToken,
+			InputPrice: &input,
+		}}}
+		bs, resolver := newTokenCostTestEnv(t, PlatformDeepseek, nil, catalog)
+		resolver.channelService.pricingService = catalog
+		resolver.channelService.billingService = bs
+
+		display, matched := resolver.channelService.GroupModelPricingForDisplay(group, model)
+		require.True(t, matched)
+		require.InDelta(t, input, *display.InputPrice, 1e-15)
+		require.InDelta(t, deepseekProOffPeakOutputPrice, *display.OutputPrice, 1e-15)
+		require.InDelta(t, deepseekProOffPeakCacheRead, *display.CacheReadPrice, 1e-15)
+
+		resolved := resolver.Resolve(context.Background(), PricingInput{Model: model, Group: group})
+		require.Equal(t, PricingSourceGroup, resolved.Source)
+		tokens := UsageTokens{InputTokens: 1000, OutputTokens: 100, CacheReadTokens: 50}
+		cost, err := bs.CalculateTokenCostForRequest(TokenCostRequest{
+			Ctx: context.Background(), Model: model, Group: group, Tokens: tokens,
+			RateMultiplier: 1, Resolver: resolver, Resolved: resolved,
+		})
+		require.NoError(t, err)
+		require.InDelta(t, float64(tokens.InputTokens)**display.InputPrice, cost.InputCost, 1e-12)
+		require.InDelta(t, float64(tokens.OutputTokens)**display.OutputPrice, cost.OutputCost, 1e-12)
+		require.InDelta(t, float64(tokens.CacheReadTokens)**display.CacheReadPrice, cost.CacheReadCost, 1e-12)
+	})
+
+	t.Run("channel interval", func(t *testing.T) {
+		input, output, cacheRead := 7e-6, 21e-6, 0.7e-6
+		channelPricing := []ChannelModelPricing{{
+			Platform: PlatformDeepseek, Models: []string{model}, BillingMode: BillingModeToken,
+			Intervals: []PricingInterval{{
+				MinTokens: 0, TierLabel: "custom", InputPrice: &input, OutputPrice: &output, CacheReadPrice: &cacheRead,
+			}},
+		}}
+		group := &Group{ID: 100, Platform: PlatformDeepseek, LongContextPricingEnabled: true}
+		bs, resolver := newTokenCostTestEnv(t, PlatformDeepseek, channelPricing, catalog)
+		resolver.channelService.pricingService = catalog
+		resolver.channelService.billingService = bs
+
+		display, matched := resolver.channelService.PricingForGroupDisplay(group, model, &channelPricing[0])
+		require.False(t, matched)
+		require.Len(t, display.Intervals, 1)
+		tier := display.Intervals[0]
+		require.InDelta(t, input, *tier.InputPrice, 1e-15)
+		require.InDelta(t, output, *tier.OutputPrice, 1e-15)
+		require.InDelta(t, cacheRead, *tier.CacheReadPrice, 1e-15)
+
+		gid := group.ID
+		resolved := resolver.Resolve(context.Background(), PricingInput{Model: model, GroupID: &gid, Group: group})
+		require.Equal(t, PricingSourceChannel, resolved.Source)
+		tokens := UsageTokens{InputTokens: 1000, OutputTokens: 100, CacheReadTokens: 50}
+		cost, err := bs.CalculateTokenCostForRequest(TokenCostRequest{
+			Ctx: context.Background(), Model: model, Group: group, Tokens: tokens,
+			RateMultiplier: 1, Resolver: resolver, Resolved: resolved,
+		})
+		require.NoError(t, err)
+		require.InDelta(t, float64(tokens.InputTokens)**tier.InputPrice, cost.InputCost, 1e-12)
+		require.InDelta(t, float64(tokens.OutputTokens)**tier.OutputPrice, cost.OutputCost, 1e-12)
+		require.InDelta(t, float64(tokens.CacheReadTokens)**tier.CacheReadPrice, cost.CacheReadCost, 1e-12)
+	})
+}
+
+func TestPricingForGroupDisplay_LongContextDisabledUsesRuntimeContextOneFallback(t *testing.T) {
+	const model = "gemini-2.5-pro"
+	intervalInput, intervalOutput := 9e-6, 30e-6
+	channelPricing := []ChannelModelPricing{{
+		Platform: PlatformGemini, Models: []string{model}, BillingMode: BillingModeToken,
+		Intervals: []PricingInterval{{
+			MinTokens: 199999, TierLabel: "200K+",
+			InputPrice: &intervalInput, OutputPrice: &intervalOutput,
+		}},
+	}}
+	group := &Group{ID: 100, Platform: PlatformGemini, LongContextPricingEnabled: false}
+	catalog := geminiCatalogStub()
+	bs, resolver := newTokenCostTestEnv(t, PlatformGemini, channelPricing, catalog)
+	resolver.channelService.pricingService = catalog
+	resolver.channelService.billingService = bs
+
+	display, matched := resolver.channelService.PricingForGroupDisplay(group, model, &channelPricing[0])
+	require.False(t, matched)
+	require.NotNil(t, display)
+	require.Empty(t, display.Intervals)
+	require.NotNil(t, display.InputPrice)
+	require.NotNil(t, display.OutputPrice)
+	require.InDelta(t, 1.25e-6, *display.InputPrice, 1e-15)
+	require.InDelta(t, 10e-6, *display.OutputPrice, 1e-15)
+	require.NotEqual(t, intervalInput, *display.InputPrice, "a disabled ladder must not select an interval that misses context=1")
+
+	groupID := group.ID
+	resolved := resolver.Resolve(context.Background(), PricingInput{Model: model, GroupID: &groupID, Group: group})
+	require.Equal(t, PricingSourceChannel, resolved.Source)
+	tokens := UsageTokens{InputTokens: 300000, OutputTokens: 1000}
+	cost, err := bs.CalculateTokenCostForRequest(TokenCostRequest{
+		Ctx: context.Background(), Model: model, Group: group, Tokens: tokens,
+		RateMultiplier: 1, Resolver: resolver, Resolved: resolved,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, float64(tokens.InputTokens)**display.InputPrice, cost.InputCost, 1e-12)
+	require.InDelta(t, float64(tokens.OutputTokens)**display.OutputPrice, cost.OutputCost, 1e-12)
+}
+
+func TestWithDirectAnthropicFastPricingForDisplay_RequiresRuntimeCapableAccount(t *testing.T) {
+	input, output := 5e-6, 25e-6
+	cacheWrite, cacheWrite5m, cacheWrite1h, cacheRead := 6.25e-6, 6.25e-6, 10e-6, 0.5e-6
+	pricing := &ChannelModelPricing{
+		Platform:          PlatformAnthropic,
+		BillingMode:       BillingModeToken,
+		InputPrice:        &input,
+		OutputPrice:       &output,
+		CacheWritePrice:   &cacheWrite,
+		CacheWrite5mPrice: &cacheWrite5m,
+		CacheWrite1hPrice: &cacheWrite1h,
+		CacheReadPrice:    &cacheRead,
+	}
+	direct := &Account{Platform: PlatformAnthropic, Type: AccountTypeAPIKey}
+	bedrock := &Account{Platform: PlatformAnthropic, Type: AccountTypeBedrock}
+
+	require.True(t, SupportsDirectAnthropicFastForDisplay(direct, "claude-opus-4-8"))
+	require.True(t, SupportsDirectAnthropicFastForDisplay(direct, "claude-opus-5"))
+	require.False(t, SupportsDirectAnthropicFastForDisplay(bedrock, "claude-opus-4-8"))
+	require.False(t, SupportsDirectAnthropicFastForDisplay(direct, "claude-opus-4-7"))
+
+	directPricing := WithDirectAnthropicFastPricingForDisplay(
+		true, true, pricing,
+	)
+	require.Len(t, directPricing.Intervals, 2)
+	require.Equal(t, "基础", directPricing.Intervals[0].TierLabel)
+	require.Equal(t, "Fast", directPricing.Intervals[1].TierLabel)
+	require.InDelta(t, input*2, *directPricing.Intervals[1].InputPrice, 1e-12)
+	require.InDelta(t, cacheWrite5m*2, *directPricing.Intervals[1].CacheWrite5mPrice, 1e-12)
+	require.InDelta(t, cacheWrite1h*2, *directPricing.Intervals[1].CacheWrite1hPrice, 1e-12)
+
+	poisonedMultiplier := 3.0
+	poisoned := pricing.Clone()
+	poisoned.FastMultiplier = &poisonedMultiplier
+	poisoned.Intervals = []PricingInterval{
+		{TierLabel: "基础", InputPrice: &input, OutputPrice: &output},
+		{TierLabel: "Fast", InputPrice: testPtrFloat64(input * poisonedMultiplier), OutputPrice: testPtrFloat64(output * poisonedMultiplier)},
+		{TierLabel: "Fast 长上下文", MinTokens: 200000, InputPrice: testPtrFloat64(input * poisonedMultiplier)},
+	}
+	poisonedBefore := poisoned.Clone()
+	directPoisoned := WithDirectAnthropicFastPricingForDisplay(true, true, &poisoned)
+	require.Nil(t, directPoisoned.FastMultiplier)
+	require.Len(t, directPoisoned.Intervals, 2)
+	require.Equal(t, "Fast", directPoisoned.Intervals[1].TierLabel)
+	require.InDelta(t, input*poisonedMultiplier, *directPoisoned.Intervals[1].InputPrice, 1e-12)
+	require.InDelta(t, output*poisonedMultiplier, *directPoisoned.Intervals[1].OutputPrice, 1e-12)
+	bedrockPricing := WithDirectAnthropicFastPricingForDisplay(
+		true, false, &poisoned,
+	)
+	require.Nil(t, bedrockPricing.FastMultiplier)
+	require.Len(t, bedrockPricing.Intervals, 1)
+	require.Equal(t, "基础", bedrockPricing.Intervals[0].TierLabel)
+
+	retiredPricing := WithDirectAnthropicFastPricingForDisplay(true, false, &poisoned)
+	require.Nil(t, retiredPricing.FastMultiplier)
+	require.Len(t, retiredPricing.Intervals, 1, "retired Opus must not leak catalog/config Fast tiers")
+	require.Equal(t, "基础", retiredPricing.Intervals[0].TierLabel)
+	nonAnthropicPricing := WithDirectAnthropicFastPricingForDisplay(false, false, &poisoned)
+	require.Same(t, &poisoned, nonAnthropicPricing, "non-Anthropic routes must retain their own Fast semantics")
+	require.Equal(t, poisonedBefore, poisoned, "display projection must not mutate a configured card")
+	require.Empty(t, pricing.Intervals, "display projection must not mutate the input card")
 }

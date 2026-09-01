@@ -439,25 +439,23 @@ func TestGatewayServiceRecordUsage_EntitlementStreamingPartialDisconnectStillBil
 	require.Equal(t, int64(901), *usageRepo.lastLog.EntitlementID)
 }
 
-func TestGatewayServiceRecordUsageWithLongContext_GeminiEntitlementAttributionSmoke(t *testing.T) {
+func TestGatewayServiceRecordUsage_GeminiEntitlementAttributionSmoke(t *testing.T) {
 	usageRepo := &openAIRecordUsageLogRepoStub{}
 	billingRepo := &openAIRecordUsageBillingRepoStub{result: &UsageBillingApplyResult{Applied: true, EntitlementVersion: 123}}
 	svc := newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo, billingRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
 
-	err := svc.RecordUsageWithLongContext(context.Background(), &RecordUsageLongContextInput{
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
 		Result: &ForwardResult{
 			RequestID: "gemini_entitlement_long_context_smoke",
 			Usage:     ClaudeUsage{InputTokens: 210000, OutputTokens: 1000},
 			Model:     "claude-sonnet-4",
 			Duration:  time.Second,
 		},
-		APIKey:                &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, Platform: PlatformGemini, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
-		User:                  &User{ID: 601},
-		Account:               &Account{ID: 701, Type: AccountTypeAPIKey},
-		Entitlement:           &SubscriptionEntitlement{ID: 901},
-		QuotaPlatform:         PlatformGemini,
-		LongContextThreshold:  200000,
-		LongContextMultiplier: 2,
+		APIKey:        &APIKey{ID: 501, GroupID: i64p(88), Group: &Group{ID: 88, Platform: PlatformGemini, SubscriptionType: SubscriptionTypeSubscription, RateMultiplier: 1}},
+		User:          &User{ID: 601},
+		Account:       &Account{ID: 701, Type: AccountTypeAPIKey},
+		Entitlement:   &SubscriptionEntitlement{ID: 901},
+		QuotaPlatform: PlatformGemini,
 	})
 
 	require.NoError(t, err)
@@ -1132,45 +1130,6 @@ func TestGatewayServiceRecordUsage_UsageLogWriteErrorDoesNotSkipBilling(t *testi
 	require.Equal(t, 1, usageRepo.calls)
 	require.Equal(t, 1, userRepo.deductCalls)
 	require.Equal(t, 1, quotaSvc.quotaCalls)
-}
-
-func TestGatewayServiceRecordUsageWithLongContext_BillingUsesDetachedContext(t *testing.T) {
-	usageRepo := &openAIRecordUsageLogRepoStub{inserted: false, err: context.DeadlineExceeded}
-	userRepo := &openAIRecordUsageUserRepoStub{}
-	subRepo := &openAIRecordUsageSubRepoStub{}
-	quotaSvc := &openAIRecordUsageAPIKeyQuotaStub{}
-	svc := newGatewayRecordUsageServiceForTest(usageRepo, userRepo, subRepo)
-
-	reqCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := svc.RecordUsageWithLongContext(reqCtx, &RecordUsageLongContextInput{
-		Result: &ForwardResult{
-			RequestID: "gateway_long_context_detached_ctx",
-			Usage: ClaudeUsage{
-				InputTokens:  12,
-				OutputTokens: 8,
-			},
-			Model:    "claude-sonnet-4",
-			Duration: time.Second,
-		},
-		APIKey: &APIKey{
-			ID:    502,
-			Quota: 100,
-		},
-		User:                  &User{ID: 602},
-		Account:               &Account{ID: 702},
-		LongContextThreshold:  200000,
-		LongContextMultiplier: 2,
-		APIKeyService:         quotaSvc,
-	})
-
-	require.NoError(t, err)
-	require.Equal(t, 1, usageRepo.calls)
-	require.Equal(t, 1, userRepo.deductCalls)
-	require.NoError(t, userRepo.lastCtxErr)
-	require.Equal(t, 1, quotaSvc.quotaCalls)
-	require.NoError(t, quotaSvc.lastQuotaCtxErr)
 }
 
 func TestGatewayServiceRecordUsage_GeneratesRequestIDWhenUpstreamMissingDespiteContextRequestID(t *testing.T) {

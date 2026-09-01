@@ -334,6 +334,92 @@ func TestOpenAIFastBilling_FastMultiplierOverridesEnforcedRatio(t *testing.T) {
 		"without FastMultiplier the same enforced prices still bill 2.5x")
 }
 
+func TestOpenAIFastBilling_PriorityPricingPrecedence(t *testing.T) {
+	t.Parallel()
+
+	multiplier := 1.7
+	base := func() *ModelPricing {
+		return &ModelPricing{
+			InputPricePerToken:         1e-6,
+			OutputPricePerToken:        1e-6,
+			CacheCreationPricePerToken: 1e-6,
+			CacheReadPricePerToken:     1e-6,
+		}
+	}
+	withExplicitPriority := func(modelPricing *ModelPricing, ratio float64) *ModelPricing {
+		modelPricing.InputPricePerTokenPriority = modelPricing.InputPricePerToken * ratio
+		modelPricing.OutputPricePerTokenPriority = modelPricing.OutputPricePerToken * ratio
+		modelPricing.CacheCreationPricePerTokenPriority = modelPricing.CacheCreationPricePerToken * ratio
+		modelPricing.CacheReadPricePerTokenPriority = modelPricing.CacheReadPricePerToken * ratio
+		return modelPricing
+	}
+	withMultiplierAndPriority := withExplicitPriority(base(), 3)
+	withMultiplierAndPriority.FastMultiplier = &multiplier
+
+	tests := []struct {
+		name    string
+		model   string
+		pricing *ModelPricing
+		ratio   float64
+	}{
+		{name: "explicit multiplier beats explicit price and builtin", model: "gpt-5.5", pricing: withMultiplierAndPriority, ratio: 1.7},
+		{name: "explicit priority price beats builtin", model: "gpt-5.5", pricing: withExplicitPriority(base(), 1.8), ratio: 1.8},
+		{name: "explicit priority price enables known unsupported", model: "gpt-5.5-pro", pricing: withExplicitPriority(base(), 1.6), ratio: 1.6},
+		{name: "builtin gpt55 ratio", model: "gpt-5.5", pricing: base(), ratio: 2.5},
+		{name: "builtin gpt56 ratio", model: "gpt-5.6-sol", pricing: base(), ratio: 2},
+		{name: "known unsupported pro stays standard", model: "gpt-5.5-pro", pricing: base(), ratio: 1},
+		{name: "known unsupported nano stays standard", model: "gpt-5.4-nano", pricing: base(), ratio: 1},
+		{name: "unknown model stays standard", model: "provider-coding-model", pricing: base(), ratio: 1},
+	}
+	tokens := UsageTokens{
+		InputTokens:         100,
+		OutputTokens:        100,
+		CacheCreationTokens: 100,
+		CacheReadTokens:     100,
+	}
+	svc := &BillingService{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			standard := svc.computeTokenBreakdown(tt.model, tt.pricing, tokens, 1, "", false)
+			priority := svc.computeTokenBreakdown(tt.model, tt.pricing, tokens, 1, "priority", false)
+			require.InDelta(t, standard.TotalCost*tt.ratio, priority.TotalCost, 1e-12)
+		})
+	}
+
+	t.Run("unknown model with fast alias stays standard", func(t *testing.T) {
+		pricing := base()
+		standard := svc.computeTokenBreakdown("provider-coding-model", pricing, tokens, 1, "", false)
+		fast := svc.computeTokenBreakdown("provider-coding-model", pricing, tokens, 1, "fast", false)
+		require.InDelta(t, standard.TotalCost, fast.TotalCost, 1e-12)
+	})
+}
+
+func TestOpenAIFastBilling_KnownUnsupportedFallbacksDoNotSurcharge(t *testing.T) {
+	t.Parallel()
+
+	svc := NewBillingService(&config.Config{}, nil)
+	tokens := UsageTokens{
+		InputTokens:         120,
+		OutputTokens:        30,
+		CacheCreationTokens: 12,
+		CacheReadTokens:     8,
+	}
+	for _, model := range []string{"gpt-5.5-pro", "gpt-5.4-nano"} {
+		t.Run(model, func(t *testing.T) {
+			standard, err := svc.CalculateCost(model, tokens, 1)
+			require.NoError(t, err)
+			priority, err := svc.CalculateCostWithServiceTier(model, tokens, 1, "priority")
+			require.NoError(t, err)
+
+			require.InDelta(t, standard.InputCost, priority.InputCost, 1e-12)
+			require.InDelta(t, standard.OutputCost, priority.OutputCost, 1e-12)
+			require.InDelta(t, standard.CacheCreationCost, priority.CacheCreationCost, 1e-12)
+			require.InDelta(t, standard.CacheReadCost, priority.CacheReadCost, 1e-12)
+			require.InDelta(t, standard.TotalCost, priority.TotalCost, 1e-12)
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 上游 payload：fast 归一化为 priority 并确实到达上游
 // ---------------------------------------------------------------------------

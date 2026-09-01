@@ -843,6 +843,7 @@ type modelAggregate struct {
 	accountOnly           bool
 	channelBacked         bool
 	billingModelAmbiguous bool
+	anthropicFastEnabled  bool
 }
 
 func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, accounts []service.Account, group modelPriceGroupDTO, usdCNYRate float64, includeCatalog bool, customPrices map[string]service.ModelPriceCustomPrice) []modelPriceModelDTO {
@@ -857,6 +858,8 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 		if billingModel == "" {
 			billingModel = agg.name
 		}
+		anthropicRoute := strings.EqualFold(strings.TrimSpace(group.Platform), service.PlatformAnthropic)
+		agg.anthropicFastEnabled = modelPriceDirectAnthropicFastEnabled(accounts, group.Platform, agg.name, billingModel, agg.channelBacked)
 		var groupPricing *service.ChannelModelPricing
 		var matched bool
 		if agg.billingModelAmbiguous {
@@ -898,6 +901,7 @@ func (h *ModelPriceHandler) modelsForGroup(channels []service.AvailableChannel, 
 				official,
 			)
 		}
+		groupPricing = service.WithDirectAnthropicFastPricingForDisplay(anthropicRoute, agg.anthropicFastEnabled, groupPricing)
 		if matched && groupPricing != nil {
 			agg.pricing = groupPricing
 			agg.billingMode = string(normalizeDisplayBillingMode(groupPricing.BillingMode))
@@ -1073,6 +1077,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		source = "unknown"
 	}
 	officialMissing := true
+	anthropicRoute := strings.EqualFold(strings.TrimSpace(group.Platform), service.PlatformAnthropic)
 	if !agg.billingModelAmbiguous && agg.pricingSource != service.PricingSourceGroup && h.pricingService != nil {
 		billingModel := strings.TrimSpace(agg.billingModel)
 		if billingModel == "" {
@@ -1080,7 +1085,10 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 		}
 		if p := h.pricingService.GetModelPricing(billingModel); p != nil {
 			official = priceValueFromLiteLLM(p)
-			priceTiers = priceTiersFromLiteLLM(p)
+			if projected, ok := projectLiteLLMModelPricingForDisplay(billingModel, p, anthropicRoute, agg.anthropicFastEnabled); ok {
+				official = mergeEffectiveTokenPriceValue(official, priceValueFromChannel(projected))
+			}
+			priceTiers = priceTiersFromLiteLLM(billingModel, p, anthropicRoute, agg.anthropicFastEnabled)
 			if strings.TrimSpace(p.LiteLLMProvider) != "" {
 				provider = p.LiteLLMProvider
 			}
@@ -1259,6 +1267,54 @@ func modelPriceAccountUsableForGroup(account service.Account, groupPlatform stri
 		(groupPlatform == service.PlatformAnthropic || groupPlatform == service.PlatformGemini)
 }
 
+func modelPriceDirectAnthropicFastEnabled(accounts []service.Account, groupPlatform, publicModel, billingModel string, channelMapped bool) bool {
+	if !strings.EqualFold(strings.TrimSpace(groupPlatform), service.PlatformAnthropic) {
+		return false
+	}
+	publicModel = strings.TrimSpace(publicModel)
+	billingModel = strings.TrimSpace(billingModel)
+	if publicModel == "" {
+		publicModel = billingModel
+	}
+	routeModel := publicModel
+	if channelMapped && billingModel != "" {
+		routeModel = billingModel
+	}
+	eligible := false
+	for i := range accounts {
+		accountCopy := accounts[i]
+		account := &accountCopy
+		accountPlatform := strings.ToLower(strings.TrimSpace(account.Platform))
+		if !account.IsSchedulable() {
+			continue
+		}
+		if accountPlatform == service.PlatformAntigravity {
+			if account.IsMixedSchedulingEnabled() && account.IsModelSupported(publicModel) {
+				return false
+			}
+			continue
+		}
+		if accountPlatform != service.PlatformAnthropic {
+			continue
+		}
+		if !account.IsModelSupported(publicModel) {
+			continue
+		}
+		if account.IsBedrock() {
+			if _, ok := service.ResolveBedrockModelID(account, routeModel); !ok {
+				continue
+			}
+			return false
+		}
+		eligible = true
+		finalModel := account.GetMappedModel(routeModel)
+		if !service.SupportsDirectAnthropicFastForDisplay(account, finalModel) {
+			return false
+		}
+	}
+	return eligible
+}
+
 func accountModelPriceNames(account service.Account, groupPlatform string) []string {
 	entries := accountModelPriceEntries(account, groupPlatform)
 	out := make([]string, 0, len(entries))
@@ -1399,62 +1455,30 @@ func formatTokenBoundary(tokens int) string {
 	return strconv.Itoa(tokens)
 }
 
-func priceTiersFromLiteLLM(p *service.LiteLLMModelPricing) []modelPriceTierDTO {
+func priceTiersFromLiteLLM(model string, p *service.LiteLLMModelPricing, anthropicRoute, fastEnabled bool) []modelPriceTierDTO {
 	if p == nil {
 		return nil
 	}
-	tiers := basePriceTier(priceValueFromLiteLLM(p))
-
-	seenContextTiers := map[string]struct{}{}
-	for _, contextTier := range p.ContextPriceTiers {
-		if contextTier.Priority {
-			continue
-		}
-		key := contextTierKey(contextTier.ThresholdTokens, contextTier.Priority)
-		seenContextTiers[key] = struct{}{}
-		tiers = appendTier(tiers, key, "长上下文", contextTier.ThresholdTokens, priceValueFromContextTier(contextTier))
+	projected, ok := projectLiteLLMModelPricingForDisplay(model, p, anthropicRoute, fastEnabled)
+	if !ok || projected == nil || len(projected.Intervals) == 0 {
+		return basePriceTier(priceValueFromLiteLLM(p))
 	}
-	if _, ok := seenContextTiers[contextTierKey(272000, false)]; !ok {
-		tiers = appendTier(tiers, "long_context_272k", "长上下文", 272000, longContext272KValue(p))
-	}
-
-	if hasPriorityPricing(p) {
-		tiers = appendTier(tiers, "priority", "Fast", 0, modelPriceValueDTO{
-			InputUSDPerM:        perMillionPtr(p.InputCostPerTokenPriority),
-			OutputUSDPerM:       perMillionPtr(p.OutputCostPerTokenPriority),
-			CacheWriteUSDPerM:   perMillionPtr(p.CacheCreationInputTokenCost),
-			CacheWrite5mUSDPerM: perMillionPtr(p.CacheCreationInputTokenCost),
-			CacheWrite1hUSDPerM: perMillionPtr(p.CacheCreationInputTokenCostAbove1hr),
-			CacheReadUSDPerM:    perMillionPtr(p.CacheReadInputTokenCostPriority),
-		})
-	}
-	for _, contextTier := range p.ContextPriceTiers {
-		if !contextTier.Priority {
-			continue
-		}
-		key := contextTierKey(contextTier.ThresholdTokens, contextTier.Priority)
-		seenContextTiers[key] = struct{}{}
-		tiers = appendTier(tiers, key, "Fast 长上下文", contextTier.ThresholdTokens, priceValueFromContextTier(contextTier))
-	}
-
-	return tiers
+	return priceTiersFromChannel(projected)
 }
 
-func contextTierKey(threshold int, priority bool) string {
-	if priority {
-		return "priority_long_context_" + strconv.Itoa(threshold)
-	}
-	return "long_context_" + strconv.Itoa(threshold)
+func projectLiteLLMModelPricingForDisplay(model string, p *service.LiteLLMModelPricing, anthropicRoute, fastEnabled bool) (*service.ChannelModelPricing, bool) {
+	projected, ok := service.ResolveCatalogModelPricingForDisplay(model, p)
+	return service.WithDirectAnthropicFastPricingForDisplay(anthropicRoute, fastEnabled, projected), ok
 }
 
-func priceValueFromContextTier(tier service.LiteLLMContextPriceTier) modelPriceValueDTO {
-	return modelPriceValueDTO{
-		InputUSDPerM:        perMillionPtr(tier.InputCostPerToken),
-		OutputUSDPerM:       perMillionPtr(tier.OutputCostPerToken),
-		CacheWriteUSDPerM:   perMillionPtr(tier.CacheCreationInputTokenCost),
-		CacheWrite5mUSDPerM: perMillionPtr(tier.CacheCreationInputTokenCost),
-		CacheReadUSDPerM:    perMillionPtr(tier.CacheReadInputTokenCost),
-	}
+func mergeEffectiveTokenPriceValue(base, effective modelPriceValueDTO) modelPriceValueDTO {
+	base.InputUSDPerM = effective.InputUSDPerM
+	base.OutputUSDPerM = effective.OutputUSDPerM
+	base.CacheWriteUSDPerM = effective.CacheWriteUSDPerM
+	base.CacheWrite5mUSDPerM = effective.CacheWrite5mUSDPerM
+	base.CacheWrite1hUSDPerM = effective.CacheWrite1hUSDPerM
+	base.CacheReadUSDPerM = effective.CacheReadUSDPerM
+	return base
 }
 
 func basePriceTier(v modelPriceValueDTO) []modelPriceTierDTO {
@@ -1466,45 +1490,6 @@ func basePriceTier(v modelPriceValueDTO) []modelPriceTierDTO {
 		Label:    "基础",
 		Official: v,
 	}}
-}
-
-func appendTier(tiers []modelPriceTierDTO, key, label string, threshold int, value modelPriceValueDTO) []modelPriceTierDTO {
-	if !priceValueHasValues(value) {
-		return tiers
-	}
-	tier := modelPriceTierDTO{
-		Key:      key,
-		Label:    label,
-		Official: value,
-	}
-	if threshold > 0 {
-		tier.ThresholdTokens = intPtr(threshold)
-	}
-	return append(tiers, tier)
-}
-
-func longContext272KValue(p *service.LiteLLMModelPricing) modelPriceValueDTO {
-	value := modelPriceValueDTO{
-		InputUSDPerM:     perMillionPtr(p.InputCostPerTokenAbove272K),
-		OutputUSDPerM:    perMillionPtr(p.OutputCostPerTokenAbove272K),
-		CacheReadUSDPerM: perMillionPtr(p.CacheReadInputTokenCostAbove272K),
-	}
-	if p.LongContextInputTokenThreshold == 272000 {
-		if value.InputUSDPerM == nil && p.InputCostPerToken > 0 && p.LongContextInputCostMultiplier > 0 {
-			value.InputUSDPerM = perMillionPtr(p.InputCostPerToken * p.LongContextInputCostMultiplier)
-		}
-		if value.OutputUSDPerM == nil && p.OutputCostPerToken > 0 && p.LongContextOutputCostMultiplier > 0 {
-			value.OutputUSDPerM = perMillionPtr(p.OutputCostPerToken * p.LongContextOutputCostMultiplier)
-		}
-		if value.CacheReadUSDPerM == nil && p.CacheReadInputTokenCost > 0 && p.LongContextCacheReadCostMultiplier > 0 {
-			value.CacheReadUSDPerM = perMillionPtr(p.CacheReadInputTokenCost * p.LongContextCacheReadCostMultiplier)
-		}
-	}
-	return value
-}
-
-func hasPriorityPricing(p *service.LiteLLMModelPricing) bool {
-	return p != nil && (p.InputCostPerTokenPriority > 0 || p.OutputCostPerTokenPriority > 0 || p.CacheReadInputTokenCostPriority > 0)
 }
 
 func actualizePriceTiers(tiers []modelPriceTierDTO, multiplier, usdCNYRate float64) []modelPriceTierDTO {

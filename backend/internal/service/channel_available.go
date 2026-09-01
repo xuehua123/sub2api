@@ -170,9 +170,9 @@ func (s *ChannelService) GroupModelPricingForDisplay(group *Group, model string)
 	var effective *ModelPricing
 	if configured != nil && s != nil && s.billingService != nil {
 		effective, _ = s.billingService.GetModelPricingWithChannel(model, configured)
-		effective = s.billingService.applyModelSpecificPricingPolicy(model, effective)
+		effective = s.billingService.applyModelSpecificPricingPolicyEx(model, effective, false)
 	}
-	pricing, matched := resolveGroupModelPricingForDisplay(group, model, official, effective)
+	pricing, matched := resolveGroupModelPricingForDisplay(group, model, official, effective, false)
 	markOpenAIAccountLongContextGate(pricing, displayRoutePlatform(group, configured))
 	return pricing, matched
 }
@@ -227,7 +227,7 @@ func (s *ChannelService) PricingForGroupDisplay(group *Group, model string, rawC
 		}
 		runtimePricing = overlayTokenPricingForDisplay(&ModelPricing{}, selected)
 	}
-	runtimePricing = s.billingService.applyModelSpecificPricingPolicy(model, runtimePricing)
+	runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, selected == nil)
 	projected := effectiveTokenPricingForDisplay(runtimePricing, selected != nil)
 	if selected != nil {
 		projected.Platform = selected.Platform
@@ -306,15 +306,13 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	}
 	fallbackRuntime.ImageOutputPriceExplicit = true
 	applyChannelImageInputPrice(raw, &fallbackRuntime)
+	fallbackRuntime = *s.billingService.applyModelSpecificPricingPolicyEx(model, &fallbackRuntime, false)
 	if !longEnabled {
-		first := valid[0]
-		for _, interval := range valid[1:] {
-			if interval.MinTokens < first.MinTokens {
-				first = interval
-			}
+		runtimePricing := &fallbackRuntime
+		if interval := FindMatchingInterval(valid, 1); interval != nil {
+			runtimePricing = intervalToModelPricingForModel(model, interval, &fallbackRuntime, raw)
 		}
-		runtimePricing := intervalToModelPricingForModel(model, &first, &fallbackRuntime, raw)
-		runtimePricing = s.billingService.applyModelSpecificPricingPolicy(model, runtimePricing)
+		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false)
 		projected := effectiveTokenPricingForDisplay(runtimePricing, true)
 		projected.Platform = raw.Platform
 		projected.Models = append([]string(nil), raw.Models...)
@@ -326,11 +324,11 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	projected.Platform = raw.Platform
 	projected.Models = append([]string(nil), raw.Models...)
 	tiers := make([]PricingInterval, 0, len(valid)*2)
-	hasFast := groupDisplaySupportsFast(model, official)
+	hasFast := groupDisplaySupportsFast(model, official, &fallbackRuntime)
 	for i := range valid {
 		iv := valid[i]
 		runtimePricing := intervalToModelPricingForModel(model, &iv, &fallbackRuntime, raw)
-		runtimePricing = s.billingService.applyModelSpecificPricingPolicy(model, runtimePricing)
+		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false)
 		card := effectiveTokenPricingForDisplay(runtimePricing, true)
 		tier := PricingInterval{
 			MinTokens:         iv.MinTokens,
@@ -375,7 +373,21 @@ func ResolveGroupModelPricingForDisplay(
 	model string,
 	official *LiteLLMModelPricing,
 ) (*ChannelModelPricing, bool) {
-	return resolveGroupModelPricingForDisplay(group, model, official, nil)
+	return resolveGroupModelPricingForDisplay(group, model, official, nil, false)
+}
+
+// ResolveCatalogModelPricingForDisplay projects a catalog-only card. Unlike
+// group/channel overrides, catalog pricing intentionally applies the official
+// DeepSeek policy used by the LiteLLM runtime source.
+func ResolveCatalogModelPricingForDisplay(model string, official *LiteLLMModelPricing) (*ChannelModelPricing, bool) {
+	group := &Group{
+		LongContextPricingEnabled: true,
+		ModelPricing: []ChannelModelPricing{{
+			Models:      []string{"*"},
+			BillingMode: BillingModeToken,
+		}},
+	}
+	return resolveGroupModelPricingForDisplay(group, model, official, nil, true)
 }
 
 func resolveGroupModelPricingForDisplay(
@@ -383,6 +395,7 @@ func resolveGroupModelPricingForDisplay(
 	model string,
 	official *LiteLLMModelPricing,
 	runtimePricing *ModelPricing,
+	forceDeepSeekRates bool,
 ) (*ChannelModelPricing, bool) {
 	configured := MatchGroupModelPricing(group, model)
 	if configured == nil {
@@ -403,6 +416,18 @@ func resolveGroupModelPricingForDisplay(
 	} else {
 		if official != nil {
 			effective = synthesizePricingFromLiteLLM(official, nil)
+			// GetModelPricing normalizes the catalog before runtime applies a
+			// group override. Mirror that order so partial DeepSeek overrides
+			// inherit official values only for fields the operator did not set.
+			catalogRuntime := groupRuntimeTokenPricingForDisplay(effective, nil, official)
+			catalogRuntime = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, catalogRuntime, true)
+			catalogCard := effectiveTokenPricingForDisplay(catalogRuntime, false)
+			effective.InputPrice = catalogCard.InputPrice
+			effective.OutputPrice = catalogCard.OutputPrice
+			effective.CacheWritePrice = catalogCard.CacheWritePrice
+			effective.CacheWrite5mPrice = catalogCard.CacheWrite5mPrice
+			effective.CacheWrite1hPrice = catalogCard.CacheWrite1hPrice
+			effective.CacheReadPrice = catalogCard.CacheReadPrice
 		}
 		if effective == nil {
 			effective = &ChannelModelPricing{BillingMode: BillingModeToken}
@@ -420,7 +445,8 @@ func resolveGroupModelPricingForDisplay(
 			effective.ImageOutputPrice = &zero
 		}
 		runtimePricing = groupRuntimeTokenPricingForDisplay(effective, configured, official)
-		runtimePricing = (&BillingService{}).applyModelSpecificPricingPolicy(model, runtimePricing)
+		runtimePricing = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, runtimePricing, forceDeepSeekRates)
+		projectEffectiveCacheBreakdownForDisplay(effective, runtimePricing)
 	}
 	effective.BillingMode = BillingModeToken
 	effective.Platform = configured.Platform
@@ -483,7 +509,7 @@ func (s *ChannelService) TokenPricingForDisplay(model string, configured *Channe
 	if err != nil || pricing == nil {
 		return nil, false
 	}
-	pricing = s.billingService.applyModelSpecificPricingPolicy(model, pricing)
+	pricing = s.billingService.applyModelSpecificPricingPolicyEx(model, pricing, configured == nil)
 	projected := effectiveTokenPricingForDisplay(pricing, configured != nil)
 	if configured != nil {
 		projected.Platform = configured.Platform
@@ -513,7 +539,7 @@ func groupTokenIntervalsForDisplay(
 
 	hasLong := longContextEnabled && runtimePricing.LongContextInputThreshold > 0 &&
 		(runtimePricing.LongContextInputMultiplier > 1 || runtimePricing.LongContextOutputMultiplier > 1)
-	hasFast := groupDisplaySupportsFast(model, pricing)
+	hasFast := groupDisplaySupportsFast(model, pricing, runtimePricing)
 	if !hasLong && !hasFast {
 		return nil
 	}
@@ -553,7 +579,7 @@ func groupTokenIntervalsForDisplay(
 	tiers = append(tiers, fastTier)
 	if hasLong {
 		var fastLong PricingInterval
-		if isOpenAIGPT54Model(model) && !isOpenAIGPT55Model(model) {
+		if runtimePricing.FastMultiplier == nil && isOpenAIGPT54Model(model) && !isOpenAIGPT55Model(model) {
 			// GPT-5.4 priority requests above the threshold use the standard
 			// long-context rates, not the priority floor rates.
 			fastLong = longTier
@@ -567,15 +593,21 @@ func groupTokenIntervalsForDisplay(
 	return tiers
 }
 
-func groupDisplaySupportsFast(model string, pricing *LiteLLMModelPricing) bool {
+func groupDisplaySupportsFast(model string, pricing *LiteLLMModelPricing, runtimePricing *ModelPricing) bool {
+	if runtimePricing != nil && runtimePricing.FastMultiplier != nil {
+		return true
+	}
 	normalized := normalizeKnownOpenAICodexModel(model)
-	if isOpenAIGPT56Model(normalized) || isOpenAIGPT54Model(normalized) {
+	if openAIModelFastPricingRatio(normalized) > 0 {
 		return true
 	}
 	if pricing == nil {
 		return false
 	}
-	if pricing.SupportsServiceTier || pricing.InputCostPerTokenPriority > 0 ||
+	// LiteLLM's supports_service_tier also covers models that only support Flex;
+	// it is not sufficient evidence that priority/Fast is accepted. Advertise
+	// Fast only when the billing catalog has an explicit priority price/tier.
+	if pricing.InputCostPerTokenPriority > 0 ||
 		pricing.OutputCostPerTokenPriority > 0 || pricing.CacheCreationInputTokenCostPriority > 0 ||
 		pricing.CacheReadInputTokenCostPriority > 0 {
 		return true
@@ -588,6 +620,81 @@ func groupDisplaySupportsFast(model string, pricing *LiteLLMModelPricing) bool {
 	return false
 }
 
+// SupportsDirectAnthropicFastForDisplay reuses the forwarding gate so the
+// price page advertises Anthropic Fast only where runtime can actually select
+// it. In particular, Bedrock accounts remain excluded.
+func SupportsDirectAnthropicFastForDisplay(account *Account, model string) bool {
+	return anthropicSpeedServiceTier(account, "fast", model) != nil
+}
+
+// WithDirectAnthropicFastPricingForDisplay first removes every catalog/config
+// Fast signal from an Anthropic route, then rebuilds Fast only after every
+// schedulable candidate has been verified against its final upstream model.
+// Keeping the route signal separate from the capability decision handles opaque
+// channel aliases without sanitizing non-Anthropic cards. The input card is
+// never mutated.
+func WithDirectAnthropicFastPricingForDisplay(anthropicRoute, fastEnabled bool, pricing *ChannelModelPricing) *ChannelModelPricing {
+	if pricing == nil || !anthropicRoute {
+		return pricing
+	}
+
+	configuredFastMultiplier := pricing.FastMultiplier
+	projected := cloneChannelModelPricingForDisplay(pricing)
+	projected.FastMultiplier = nil
+	if len(projected.Intervals) > 0 {
+		standard := make([]PricingInterval, 0, len(projected.Intervals))
+		for _, interval := range projected.Intervals {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(interval.TierLabel)), "fast") {
+				continue
+			}
+			standard = append(standard, interval)
+		}
+		projected.Intervals = standard
+	}
+
+	if !fastEnabled || (projected.BillingMode != "" && projected.BillingMode != BillingModeToken) {
+		return projected
+	}
+
+	standard := projected.Intervals
+	if len(standard) == 0 {
+		standard = []PricingInterval{{
+			TierLabel:         "基础",
+			InputPrice:        cloneDisplayPrice(projected.InputPrice),
+			OutputPrice:       cloneDisplayPrice(projected.OutputPrice),
+			CacheWritePrice:   cloneDisplayPrice(projected.CacheWritePrice),
+			CacheWrite5mPrice: cloneDisplayPrice(projected.CacheWrite5mPrice),
+			CacheWrite1hPrice: cloneDisplayPrice(projected.CacheWrite1hPrice),
+			CacheReadPrice:    cloneDisplayPrice(projected.CacheReadPrice),
+		}}
+	}
+
+	fastMultiplier := serviceTierCostMultiplier("fast")
+	if configuredFastMultiplier != nil && *configuredFastMultiplier > 0 {
+		fastMultiplier = *configuredFastMultiplier
+	}
+	tiers := make([]PricingInterval, 0, len(standard)*2)
+	for _, interval := range standard {
+		interval.SortOrder = len(tiers)
+		tiers = append(tiers, interval)
+		fastLabel := "Fast"
+		if label := strings.TrimSpace(interval.TierLabel); label != "" && label != "基础" {
+			fastLabel = fastIntervalLabel(label)
+		}
+		fast := multipliedFastDisplayTier(
+			PricingInterval{TierLabel: fastLabel, SortOrder: len(tiers)},
+			interval,
+			fastMultiplier,
+		)
+		fast.MinTokens = interval.MinTokens
+		fast.MaxTokens = interval.MaxTokens
+		fast.RequiresAccountLongContext = interval.RequiresAccountLongContext
+		tiers = append(tiers, fast)
+	}
+	projected.Intervals = tiers
+	return projected
+}
+
 func groupRuntimeTokenPricingForDisplay(base, configured *ChannelModelPricing, pricing *LiteLLMModelPricing) *ModelPricing {
 	runtimePricing := &ModelPricing{
 		InputPricePerToken:         displayPriceValue(base.InputPrice),
@@ -596,48 +703,98 @@ func groupRuntimeTokenPricingForDisplay(base, configured *ChannelModelPricing, p
 		CacheReadPricePerToken:     displayPriceValue(base.CacheReadPrice),
 	}
 	if pricing != nil {
+		cacheWrite5m, cacheWrite1h := liteLLMCacheBreakdownForDisplay(pricing)
 		runtimePricing.InputPricePerTokenPriority = pricing.InputCostPerTokenPriority
 		runtimePricing.OutputPricePerTokenPriority = pricing.OutputCostPerTokenPriority
 		runtimePricing.CacheCreationPricePerTokenPriority = pricing.CacheCreationInputTokenCostPriority
 		runtimePricing.CacheReadPricePerTokenPriority = pricing.CacheReadInputTokenCostPriority
+		if cacheWrite5m != nil && cacheWrite1h != nil {
+			runtimePricing.CacheCreation5mPrice = *cacheWrite5m
+			runtimePricing.CacheCreation1hPrice = *cacheWrite1h
+			runtimePricing.SupportsCacheBreakdown = true
+		}
 		runtimePricing.LongContextInputThreshold = pricing.LongContextInputTokenThreshold
 		runtimePricing.LongContextInputMultiplier = pricing.LongContextInputCostMultiplier
 		runtimePricing.LongContextOutputMultiplier = pricing.LongContextOutputCostMultiplier
 		runtimePricing.LongContextCacheReadMultiplier = pricing.LongContextCacheReadCostMultiplier
 	}
-	// Runtime group overrides replace both standard and priority fields for each
-	// explicitly configured text/cache rate.
+	// Runtime group overrides replace the standard price while preserving an
+	// explicit catalog Fast/Priority ratio, matching GetModelPricingWithChannel.
 	if configured != nil {
+		runtimePricing.FastMultiplier = configured.FastMultiplier
+		runtimePricing.FlexMultiplier = configured.FlexMultiplier
 		if configured.InputPrice != nil {
-			runtimePricing.InputPricePerTokenPriority = *configured.InputPrice
+			runtimePricing.InputPricePerTokenPriority = groupPriorityOverridePrice(
+				pricing, func(p *LiteLLMModelPricing) (float64, float64) {
+					return p.InputCostPerToken, p.InputCostPerTokenPriority
+				}, *configured.InputPrice)
 		}
 		if configured.OutputPrice != nil {
-			runtimePricing.OutputPricePerTokenPriority = *configured.OutputPrice
+			runtimePricing.OutputPricePerTokenPriority = groupPriorityOverridePrice(
+				pricing, func(p *LiteLLMModelPricing) (float64, float64) {
+					return p.OutputCostPerToken, p.OutputCostPerTokenPriority
+				}, *configured.OutputPrice)
 		}
 		if configured.CacheWritePrice != nil {
-			runtimePricing.CacheCreationPricePerTokenPriority = *configured.CacheWritePrice
+			runtimePricing.CacheCreationPricePerTokenPriority = groupPriorityOverridePrice(
+				pricing, func(p *LiteLLMModelPricing) (float64, float64) {
+					return p.CacheCreationInputTokenCost, p.CacheCreationInputTokenCostPriority
+				}, *configured.CacheWritePrice)
 			runtimePricing.CacheCreationPriceExplicit = true
+			runtimePricing.CacheCreation5mPrice = *configured.CacheWritePrice
+			runtimePricing.CacheCreation1hPrice = *configured.CacheWritePrice
 		}
 		if configured.CacheReadPrice != nil {
-			runtimePricing.CacheReadPricePerTokenPriority = *configured.CacheReadPrice
+			runtimePricing.CacheReadPricePerTokenPriority = groupPriorityOverridePrice(
+				pricing, func(p *LiteLLMModelPricing) (float64, float64) {
+					return p.CacheReadInputTokenCost, p.CacheReadInputTokenCostPriority
+				}, *configured.CacheReadPrice)
 		}
 	}
 	return runtimePricing
 }
 
+func projectEffectiveCacheBreakdownForDisplay(effective *ChannelModelPricing, runtimePricing *ModelPricing) {
+	if effective == nil {
+		return
+	}
+	effective.CacheWrite5mPrice = nil
+	effective.CacheWrite1hPrice = nil
+	if runtimePricing == nil || !runtimePricing.SupportsCacheBreakdown ||
+		(runtimePricing.CacheCreation5mPrice <= 0 && runtimePricing.CacheCreation1hPrice <= 0) {
+		return
+	}
+	effective.CacheWrite5mPrice = floatPointerForDisplay(runtimePricing.CacheCreation5mPrice)
+	effective.CacheWrite1hPrice = floatPointerForDisplay(runtimePricing.CacheCreation1hPrice)
+}
+
+func groupPriorityOverridePrice(
+	pricing *LiteLLMModelPricing,
+	prices func(*LiteLLMModelPricing) (standard, priority float64),
+	configuredStandard float64,
+) float64 {
+	if pricing == nil {
+		return 0
+	}
+	standard, priority := prices(pricing)
+	return channelTierOverridePrice(standard, priority, configuredStandard)
+}
+
 func longContextDisplayTier(base PricingInterval, pricing *ModelPricing, displayThreshold int, label string, sortOrder int) PricingInterval {
+	inputMultiplier := longContextMultiplierOrOne(pricing.LongContextInputMultiplier)
+	outputMultiplier := longContextMultiplierOrOne(pricing.LongContextOutputMultiplier)
 	cacheReadMultiplier := pricing.LongContextCacheReadMultiplier
 	if cacheReadMultiplier <= 0 {
-		cacheReadMultiplier = pricing.LongContextInputMultiplier
+		cacheReadMultiplier = inputMultiplier
 	}
 	return PricingInterval{
 		MinTokens:         displayThreshold,
 		TierLabel:         label,
-		InputPrice:        multiplyDisplayPrice(base.InputPrice, pricing.LongContextInputMultiplier),
-		OutputPrice:       multiplyDisplayPrice(base.OutputPrice, pricing.LongContextOutputMultiplier),
-		CacheWritePrice:   multiplyDisplayPrice(base.CacheWritePrice, pricing.LongContextInputMultiplier),
-		CacheWrite5mPrice: multiplyDisplayPrice(base.CacheWrite5mPrice, pricing.LongContextInputMultiplier),
-		CacheWrite1hPrice: multiplyDisplayPrice(base.CacheWrite1hPrice, pricing.LongContextInputMultiplier),
+		InputPrice:        multiplyDisplayPrice(base.InputPrice, inputMultiplier),
+		OutputPrice:       multiplyDisplayPrice(base.OutputPrice, outputMultiplier),
+		CacheWritePrice:   multiplyDisplayPrice(base.CacheWritePrice, inputMultiplier),
+		CacheWrite5mPrice: multiplyDisplayPrice(base.CacheWrite5mPrice, inputMultiplier),
+		CacheWrite1hPrice: multiplyDisplayPrice(base.CacheWrite1hPrice, inputMultiplier),
 		CacheReadPrice:    multiplyDisplayPrice(base.CacheReadPrice, cacheReadMultiplier),
 		SortOrder:         sortOrder,
 	}
@@ -645,16 +802,12 @@ func longContextDisplayTier(base PricingInterval, pricing *ModelPricing, display
 
 func fastDisplayTier(model string, base PricingInterval, pricing *ModelPricing, label string, sortOrder int) PricingInterval {
 	tier := PricingInterval{TierLabel: label, SortOrder: sortOrder}
-	if isOpenAIGPT55Model(model) {
-		tier.InputPrice = multiplyDisplayPrice(base.InputPrice, openAIGPT55PriorityMultiplier)
-		tier.OutputPrice = multiplyDisplayPrice(base.OutputPrice, openAIGPT55PriorityMultiplier)
-		tier.CacheWritePrice = multiplyDisplayPrice(base.CacheWritePrice, openAIGPT55PriorityMultiplier)
-		tier.CacheWrite5mPrice = multiplyDisplayPrice(base.CacheWrite5mPrice, openAIGPT55PriorityMultiplier)
-		tier.CacheWrite1hPrice = multiplyDisplayPrice(base.CacheWrite1hPrice, openAIGPT55PriorityMultiplier)
-		tier.CacheReadPrice = multiplyDisplayPrice(base.CacheReadPrice, openAIGPT55PriorityMultiplier)
-		return tier
+	if pricing != nil && pricing.FastMultiplier != nil {
+		return multipliedFastDisplayTier(tier, base, configuredServiceTierMultiplier("priority", pricing))
 	}
-	if usePriorityServiceTierPricing("priority", pricing) {
+	builtInMultiplier := openAIModelFastPricingRatio(normalizeKnownOpenAICodexModel(model))
+	if usePriorityServiceTierPricing("priority", pricing) &&
+		(builtInMultiplier <= 0 || hasDistinctFastDisplayPricing(pricing)) {
 		tier.InputPrice = priorityOrStandardDisplayPrice(pricing.InputPricePerTokenPriority, base.InputPrice)
 		tier.OutputPrice = priorityOrStandardDisplayPrice(pricing.OutputPricePerTokenPriority, base.OutputPrice)
 		tier.CacheWritePrice = priorityOrStandardDisplayPrice(pricing.CacheCreationPricePerTokenPriority, base.CacheWritePrice)
@@ -665,7 +818,24 @@ func fastDisplayTier(model string, base PricingInterval, pricing *ModelPricing, 
 		tier.CacheReadPrice = priorityOrStandardDisplayPrice(pricing.CacheReadPricePerTokenPriority, base.CacheReadPrice)
 		return tier
 	}
-	multiplier := serviceTierCostMultiplier("priority")
+	multiplier := builtInMultiplier
+	if multiplier <= 0 {
+		multiplier = configuredServiceTierMultiplier("priority", pricing)
+	}
+	return multipliedFastDisplayTier(tier, base, multiplier)
+}
+
+func hasDistinctFastDisplayPricing(pricing *ModelPricing) bool {
+	if pricing == nil {
+		return false
+	}
+	return (pricing.InputPricePerTokenPriority > 0 && pricing.InputPricePerTokenPriority != pricing.InputPricePerToken) ||
+		(pricing.OutputPricePerTokenPriority > 0 && pricing.OutputPricePerTokenPriority != pricing.OutputPricePerToken) ||
+		(pricing.CacheCreationPricePerTokenPriority > 0 && pricing.CacheCreationPricePerTokenPriority != pricing.CacheCreationPricePerToken) ||
+		(pricing.CacheReadPricePerTokenPriority > 0 && pricing.CacheReadPricePerTokenPriority != pricing.CacheReadPricePerToken)
+}
+
+func multipliedFastDisplayTier(tier, base PricingInterval, multiplier float64) PricingInterval {
 	tier.InputPrice = multiplyDisplayPrice(base.InputPrice, multiplier)
 	tier.OutputPrice = multiplyDisplayPrice(base.OutputPrice, multiplier)
 	tier.CacheWritePrice = multiplyDisplayPrice(base.CacheWritePrice, multiplier)
@@ -725,6 +895,10 @@ func overlayConfiguredPrices(dst, configured *ChannelModelPricing) {
 	}
 	if configured.CacheWritePrice != nil {
 		dst.CacheWritePrice = configured.CacheWritePrice
+		if dst.CacheWrite5mPrice != nil || dst.CacheWrite1hPrice != nil {
+			dst.CacheWrite5mPrice = cloneDisplayPrice(configured.CacheWritePrice)
+			dst.CacheWrite1hPrice = cloneDisplayPrice(configured.CacheWritePrice)
+		}
 	}
 	if configured.CacheReadPrice != nil {
 		dst.CacheReadPrice = configured.CacheReadPrice
@@ -871,14 +1045,17 @@ func synthesizePricingFromLiteLLM(lp *LiteLLMModelPricing, existing *ChannelMode
 			OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
 		}
 	} else {
+		cacheWrite5m, cacheWrite1h := liteLLMCacheBreakdownForDisplay(lp)
 		synthesized = &ChannelModelPricing{
-			BillingMode:      mode,
-			InputPrice:       nonZeroPtr(lp.InputCostPerToken),
-			OutputPrice:      nonZeroPtr(lp.OutputCostPerToken),
-			CacheWritePrice:  nonZeroPtr(lp.CacheCreationInputTokenCost),
-			CacheReadPrice:   nonZeroPtr(lp.CacheReadInputTokenCost),
-			ImageInputPrice:  nonZeroPtr(lp.InputCostPerImageToken),
-			ImageOutputPrice: nonZeroPtr(lp.OutputCostPerImageToken),
+			BillingMode:       mode,
+			InputPrice:        nonZeroPtr(lp.InputCostPerToken),
+			OutputPrice:       nonZeroPtr(lp.OutputCostPerToken),
+			CacheWritePrice:   nonZeroPtr(lp.CacheCreationInputTokenCost),
+			CacheWrite5mPrice: cacheWrite5m,
+			CacheWrite1hPrice: cacheWrite1h,
+			CacheReadPrice:    nonZeroPtr(lp.CacheReadInputTokenCost),
+			ImageInputPrice:   nonZeroPtr(lp.InputCostPerImageToken),
+			ImageOutputPrice:  nonZeroPtr(lp.OutputCostPerImageToken),
 		}
 	}
 	if existing == nil {
@@ -913,4 +1090,16 @@ func nonZeroPtr(v float64) *float64 {
 		return nil
 	}
 	return &v
+}
+
+// liteLLMCacheBreakdownForDisplay mirrors BillingService.GetModelPricing's
+// enablement rule. A catalog 1h rate is only an effective billing component
+// when it is both positive and greater than the 5m rate.
+func liteLLMCacheBreakdownForDisplay(pricing *LiteLLMModelPricing) (price5m, price1h *float64) {
+	if pricing == nil || pricing.CacheCreationInputTokenCostAbove1hr <= 0 ||
+		pricing.CacheCreationInputTokenCostAbove1hr <= pricing.CacheCreationInputTokenCost {
+		return nil, nil
+	}
+	return floatPointerForDisplay(pricing.CacheCreationInputTokenCost),
+		floatPointerForDisplay(pricing.CacheCreationInputTokenCostAbove1hr)
 }

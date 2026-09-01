@@ -306,6 +306,222 @@ func TestModelsForGroupIncludesAccountModelMapping(t *testing.T) {
 	require.Equal(t, []string{"pro"}, models[0].ChannelNames)
 }
 
+func TestModelsForGroup_AnthropicFastRequiresDirectNonBedrockAccount(t *testing.T) {
+	h := &ModelPriceHandler{pricingService: stubModelPriceCatalog{prices: map[string]*service.LiteLLMModelPricing{
+		"claude-opus-4-8": {
+			LiteLLMProvider:                     "anthropic",
+			InputCostPerToken:                   5e-6,
+			OutputCostPerToken:                  25e-6,
+			CacheCreationInputTokenCost:         6.25e-6,
+			CacheCreationInputTokenCostAbove1hr: 10e-6,
+			CacheReadInputTokenCost:             0.5e-6,
+		},
+	}}}
+	group := modelPriceGroupDTO{ID: 46, Platform: service.PlatformAnthropic, EffectiveMultiplier: 1}
+	account := func(accountType string) service.Account {
+		return service.Account{
+			ID: 10, Name: accountType, Platform: service.PlatformAnthropic, Type: accountType,
+			Status: service.StatusActive, Schedulable: true,
+			Credentials: map[string]any{"model_mapping": map[string]any{
+				"claude-opus-4-8": "claude-opus-4-8",
+			}},
+		}
+	}
+
+	t.Run("direct Anthropic exposes effective cache breakdown and Fast", func(t *testing.T) {
+		models := h.modelsForGroup(nil, []service.Account{account(service.AccountTypeAPIKey)}, group, 1, false, nil)
+		require.Len(t, models, 1)
+		got := models[0]
+		require.NotNil(t, got.Official.CacheWrite5mUSDPerM)
+		require.NotNil(t, got.Official.CacheWrite1hUSDPerM)
+		require.InDelta(t, 6.25, *got.Official.CacheWrite5mUSDPerM, 1e-12)
+		require.InDelta(t, 10.0, *got.Official.CacheWrite1hUSDPerM, 1e-12)
+		require.Len(t, got.PriceTiers, 2)
+		require.Equal(t, "Fast", got.PriceTiers[1].Label)
+		require.InDelta(t, 10.0, *got.PriceTiers[1].Official.InputUSDPerM, 1e-12)
+		require.InDelta(t, 12.5, *got.PriceTiers[1].Official.CacheWrite5mUSDPerM, 1e-12)
+		require.InDelta(t, 20.0, *got.PriceTiers[1].Official.CacheWrite1hUSDPerM, 1e-12)
+	})
+
+	t.Run("Bedrock keeps cache breakdown but does not advertise Fast", func(t *testing.T) {
+		models := h.modelsForGroup(nil, []service.Account{account(service.AccountTypeBedrock)}, group, 1, false, nil)
+		require.Len(t, models, 1)
+		got := models[0]
+		require.NotNil(t, got.Official.CacheWrite5mUSDPerM)
+		require.NotNil(t, got.Official.CacheWrite1hUSDPerM)
+		require.Len(t, got.PriceTiers, 1)
+		require.Equal(t, "基础", got.PriceTiers[0].Label)
+	})
+
+	t.Run("mixed direct and Bedrock candidates fail closed", func(t *testing.T) {
+		models := h.modelsForGroup(nil, []service.Account{
+			account(service.AccountTypeAPIKey),
+			account(service.AccountTypeBedrock),
+		}, group, 1, false, nil)
+		require.Len(t, models, 1)
+		require.Len(t, models[0].PriceTiers, 1)
+		require.Equal(t, "基础", models[0].PriceTiers[0].Label)
+	})
+
+	t.Run("unschedulable direct candidate does not advertise Fast", func(t *testing.T) {
+		direct := account(service.AccountTypeAPIKey)
+		direct.Schedulable = false
+		models := h.modelsForGroup(nil, []service.Account{direct}, group, 1, false, nil)
+		require.Len(t, models, 1)
+		require.Len(t, models[0].PriceTiers, 1)
+		require.Equal(t, "基础", models[0].PriceTiers[0].Label)
+	})
+}
+
+func TestModelsForGroup_OpaqueAnthropicChannelAliasUsesFinalRuntimeFastCapability(t *testing.T) {
+	input, output := 5e-6, 25e-6
+	cacheWrite5m, cacheWrite1h, cacheRead := 6.25e-6, 10e-6, 0.5e-6
+	poisonedMultiplier := 3.0
+	fastInput, fastOutput := input*poisonedMultiplier, output*poisonedMultiplier
+	poisoned := service.ChannelModelPricing{
+		Platform:          service.PlatformAnthropic,
+		BillingMode:       service.BillingModeToken,
+		InputPrice:        &input,
+		OutputPrice:       &output,
+		CacheWrite5mPrice: &cacheWrite5m,
+		CacheWrite1hPrice: &cacheWrite1h,
+		CacheReadPrice:    &cacheRead,
+		FastMultiplier:    &poisonedMultiplier,
+		Intervals: []service.PricingInterval{
+			{TierLabel: "基础", InputPrice: &input, OutputPrice: &output, CacheWrite5mPrice: &cacheWrite5m, CacheWrite1hPrice: &cacheWrite1h, CacheReadPrice: &cacheRead},
+			{TierLabel: "Fast stale", InputPrice: &fastInput, OutputPrice: &fastOutput},
+		},
+	}
+	poisonedBefore := poisoned.Clone()
+	h := &ModelPriceHandler{channelService: service.NewChannelService(nil, nil, nil, nil, nil)}
+	group := modelPriceGroupDTO{ID: 46, Platform: service.PlatformAnthropic, EffectiveMultiplier: 1}
+
+	run := func(t *testing.T, billingModel string, accounts []service.Account) modelPriceModelDTO {
+		t.Helper()
+		accountsBefore := append([]service.Account(nil), accounts...)
+		models := h.modelsForGroup([]service.AvailableChannel{{
+			ID: 1, Name: "opaque-alias", Status: service.StatusActive,
+			Groups: []service.AvailableGroupRef{{ID: group.ID, Platform: service.PlatformAnthropic}},
+			SupportedModels: []service.SupportedModel{{
+				Name: "opaque-opus", Platform: service.PlatformAnthropic, BillingModel: billingModel,
+				Pricing: &poisoned, PricingSource: service.PricingSourceChannel,
+			}},
+		}}, accounts, group, 1, false, nil)
+		require.Equal(t, accountsBefore, accounts, "Fast capability probing must not write model-mapping caches into the input slice")
+		require.Equal(t, poisonedBefore, poisoned, "Fast display projection must not mutate the channel card")
+		for _, candidate := range models {
+			if candidate.Name == "opaque-opus" {
+				return candidate
+			}
+		}
+		t.Fatalf("opaque-opus row missing from model price output: %+v", models)
+		return modelPriceModelDTO{}
+	}
+	direct := func(mapping map[string]any) service.Account {
+		return service.Account{
+			ID: 1, Name: "direct", Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true,
+			Credentials: map[string]any{"model_mapping": mapping},
+		}
+	}
+
+	t.Run("opaque intermediate alias resolves to direct Opus 4.8", func(t *testing.T) {
+		got := run(t, "opaque-mid", []service.Account{direct(map[string]any{
+			"opaque-opus": "opaque-mid",
+			"opaque-mid":  "claude-opus-4-8",
+		})})
+		require.Len(t, got.PriceTiers, 2)
+		require.Equal(t, "Fast", got.PriceTiers[1].Label)
+		require.InDelta(t, input*poisonedMultiplier*1e6, *got.PriceTiers[1].Official.InputUSDPerM, 1e-12)
+	})
+
+	t.Run("canonical channel target remains direct Fast capable", func(t *testing.T) {
+		got := run(t, "claude-opus-4-8", []service.Account{direct(map[string]any{
+			"opaque-opus": "claude-opus-4-8",
+		})})
+		require.Len(t, got.PriceTiers, 2)
+		require.Equal(t, "Fast", got.PriceTiers[1].Label)
+	})
+
+	t.Run("unsupported final direct model sanitizes poisoned Fast", func(t *testing.T) {
+		got := run(t, "opaque-mid", []service.Account{direct(map[string]any{
+			"opaque-opus": "opaque-mid",
+			"opaque-mid":  "claude-opus-4-7",
+		})})
+		require.Len(t, got.PriceTiers, 1)
+		require.Equal(t, "基础", got.PriceTiers[0].Label)
+	})
+
+	t.Run("mixed direct and Bedrock canonical target sanitizes poisoned Fast", func(t *testing.T) {
+		bedrock := direct(map[string]any{"opaque-opus": "claude-opus-4-8"})
+		bedrock.ID = 2
+		bedrock.Name = "bedrock"
+		bedrock.Type = service.AccountTypeBedrock
+		got := run(t, "claude-opus-4-8", []service.Account{
+			direct(map[string]any{"opaque-opus": "claude-opus-4-8"}),
+			bedrock,
+		})
+		require.Len(t, got.PriceTiers, 1)
+		require.Equal(t, "基础", got.PriceTiers[0].Label)
+	})
+
+	t.Run("mixed Antigravity candidate vetoes opaque public alias", func(t *testing.T) {
+		ag := service.Account{
+			ID: 3, Name: "antigravity", Platform: service.PlatformAntigravity, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true,
+			Extra: map[string]any{"mixed_scheduling": true},
+			Credentials: map[string]any{"model_mapping": map[string]any{
+				"opaque-opus": "claude-opus-4-8",
+			}},
+		}
+		got := run(t, "claude-opus-4-8", []service.Account{
+			direct(map[string]any{"opaque-opus": "claude-opus-4-8"}),
+			ag,
+		})
+		require.Len(t, got.PriceTiers, 1)
+		require.Equal(t, "基础", got.PriceTiers[0].Label)
+	})
+}
+
+func TestModelPriceSupportsDirectAnthropicFastRequiresEveryRuntimeCandidate(t *testing.T) {
+	direct := func(mapping map[string]any) service.Account {
+		credentials := map[string]any{}
+		if mapping != nil {
+			credentials["model_mapping"] = mapping
+		}
+		return service.Account{
+			Platform: service.PlatformAnthropic, Type: service.AccountTypeAPIKey,
+			Status: service.StatusActive, Schedulable: true, Credentials: credentials,
+		}
+	}
+	mapped := direct(map[string]any{"public-opus": "claude-opus-4-8"})
+	accounts := []service.Account{mapped}
+	accountsBefore := append([]service.Account(nil), accounts...)
+	require.True(t, modelPriceDirectAnthropicFastEnabled(
+		accounts, service.PlatformAnthropic, "public-opus", "claude-opus-4-8", false,
+	))
+	require.Equal(t, accountsBefore, accounts, "capability checks must not populate caches on caller-owned accounts")
+
+	opus5 := direct(map[string]any{"public-opus": "claude-opus-5"})
+	require.True(t, modelPriceDirectAnthropicFastEnabled(
+		[]service.Account{mapped, opus5}, service.PlatformAnthropic, "public-opus", "public-opus", false,
+	), "different final models remain valid when every candidate supports Fast")
+
+	unmapped := direct(nil)
+	require.False(t, modelPriceDirectAnthropicFastEnabled(
+		[]service.Account{mapped, unmapped}, service.PlatformAnthropic, "public-opus", "claude-opus-4-8", false,
+	), "one account's mapping must not make another account look Fast-capable")
+
+	mixedAntigravity := service.Account{
+		Platform: service.PlatformAntigravity, Status: service.StatusActive, Schedulable: true,
+		Extra:       map[string]any{"mixed_scheduling": true},
+		Credentials: map[string]any{"model_mapping": map[string]any{"public-opus": "claude-opus-4-8"}},
+	}
+	require.False(t, modelPriceDirectAnthropicFastEnabled(
+		[]service.Account{mapped, mixedAntigravity}, service.PlatformAnthropic, "public-opus", "claude-opus-4-8", false,
+	))
+}
+
 func TestModelsForGroup_DirectAccountMappingUsesTargetForGroupAndGlobalPricing(t *testing.T) {
 	zero := 0.0
 	globalTargetPrice := 4e-6
@@ -984,13 +1200,17 @@ func TestModelPriceDTOCombinesGroupAndPackageMultiplier(t *testing.T) {
 
 func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
 	pricing := &service.LiteLLMModelPricing{
-		InputCostPerToken:               2e-6,
-		InputCostPerTokenPriority:       4e-6,
-		OutputCostPerToken:              10e-6,
-		OutputCostPerTokenPriority:      20e-6,
-		CacheCreationInputTokenCost:     2e-6,
-		CacheReadInputTokenCost:         0.2e-6,
-		CacheReadInputTokenCostPriority: 0.4e-6,
+		InputCostPerToken:                  2e-6,
+		InputCostPerTokenPriority:          4e-6,
+		OutputCostPerToken:                 10e-6,
+		OutputCostPerTokenPriority:         20e-6,
+		CacheCreationInputTokenCost:        2e-6,
+		CacheReadInputTokenCost:            0.2e-6,
+		CacheReadInputTokenCostPriority:    0.4e-6,
+		LongContextInputTokenThreshold:     256000,
+		LongContextInputCostMultiplier:     3,
+		LongContextOutputCostMultiplier:    3,
+		LongContextCacheReadCostMultiplier: 3,
 		ContextPriceTiers: []service.LiteLLMContextPriceTier{
 			{
 				ThresholdTokens:             256000,
@@ -1009,7 +1229,7 @@ func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
 		},
 	}
 
-	tiers := actualizePriceTiers(priceTiersFromLiteLLM(pricing), 0.2, 7)
+	tiers := actualizePriceTiers(priceTiersFromLiteLLM("test-model", pricing, false, false), 0.2, 7)
 	require.Len(t, tiers, 4)
 	require.Equal(t, "基础", tiers[0].Label)
 	require.Equal(t, "长上下文", tiers[1].Label)
@@ -1017,9 +1237,101 @@ func TestPriceTiersFromLiteLLMIncludesLongContextAndFastTiers(t *testing.T) {
 	require.Equal(t, "Fast 长上下文", tiers[3].Label)
 	require.Equal(t, 256000, *tiers[3].ThresholdTokens)
 	require.NotNil(t, tiers[3].Official.InputUSDPerM)
-	require.Equal(t, 9.0, *tiers[3].Official.InputUSDPerM)
+	require.Equal(t, 12.0, *tiers[3].Official.InputUSDPerM)
 	require.NotNil(t, tiers[3].Actual.InputUSDPerM)
-	require.Equal(t, 1.8, *tiers[3].Actual.InputUSDPerM)
+	require.Equal(t, 2.4, *tiers[3].Actual.InputUSDPerM)
 	require.NotNil(t, tiers[3].Actual.InputCNYPerM)
-	require.Equal(t, 12.6, *tiers[3].Actual.InputCNYPerM)
+	require.Equal(t, 16.8, *tiers[3].Actual.InputCNYPerM)
+}
+
+func TestPriceTiersFromLiteLLMUsesPriorityCacheWritePrice(t *testing.T) {
+	pricing := &service.LiteLLMModelPricing{
+		InputCostPerToken:                   2e-6,
+		InputCostPerTokenPriority:           3.6e-6,
+		OutputCostPerToken:                  12e-6,
+		OutputCostPerTokenPriority:          21.6e-6,
+		CacheCreationInputTokenCost:         2e-6,
+		CacheCreationInputTokenCostPriority: 3.6e-6,
+		CacheReadInputTokenCost:             0.2e-6,
+		CacheReadInputTokenCostPriority:     0.36e-6,
+	}
+
+	tiers := priceTiersFromLiteLLM("gemini-3-pro-preview", pricing, false, false)
+	require.Len(t, tiers, 2)
+	require.Equal(t, "Fast", tiers[1].Label)
+	require.NotNil(t, tiers[1].Official.CacheWriteUSDPerM)
+	require.InDelta(t, 3.6, *tiers[1].Official.CacheWriteUSDPerM, 1e-12)
+}
+
+func TestPriceTiersFromLiteLLMSynthesizesRuntimeFastLongContext(t *testing.T) {
+	base := &service.LiteLLMModelPricing{
+		InputCostPerToken:                   5e-6,
+		InputCostPerTokenPriority:           10e-6,
+		OutputCostPerToken:                  30e-6,
+		OutputCostPerTokenPriority:          60e-6,
+		CacheCreationInputTokenCost:         6.25e-6,
+		CacheCreationInputTokenCostPriority: 12.5e-6,
+		CacheReadInputTokenCost:             0.5e-6,
+		CacheReadInputTokenCostPriority:     1e-6,
+		LongContextInputTokenThreshold:      272000,
+		LongContextInputCostMultiplier:      2,
+		LongContextOutputCostMultiplier:     1.5,
+	}
+
+	t.Run("gpt-5.6 applies priority and long-context prices to cache too", func(t *testing.T) {
+		tiers := priceTiersFromLiteLLM("gpt-5.6-sol", base, false, false)
+		require.Len(t, tiers, 4)
+		require.Equal(t, "Fast 长上下文", tiers[3].Label)
+		require.InDelta(t, 20.0, *tiers[3].Official.InputUSDPerM, 1e-12)
+		require.InDelta(t, 90.0, *tiers[3].Official.OutputUSDPerM, 1e-12)
+		require.InDelta(t, 25.0, *tiers[3].Official.CacheWriteUSDPerM, 1e-12)
+		require.InDelta(t, 2.0, *tiers[3].Official.CacheReadUSDPerM, 1e-12)
+	})
+
+	t.Run("gpt-5.4 fast-long keeps standard long-context rates", func(t *testing.T) {
+		pricing := *base
+		pricing.InputCostPerToken = 2.5e-6
+		pricing.InputCostPerTokenPriority = 5e-6
+		pricing.OutputCostPerToken = 15e-6
+		pricing.OutputCostPerTokenPriority = 30e-6
+		pricing.CacheCreationInputTokenCost = 0
+		pricing.CacheCreationInputTokenCostPriority = 0
+		pricing.CacheReadInputTokenCost = 0.25e-6
+		pricing.CacheReadInputTokenCostPriority = 0.5e-6
+		tiers := priceTiersFromLiteLLM("gpt-5.4", &pricing, false, false)
+		require.Len(t, tiers, 4)
+		require.InDelta(t, *tiers[1].Official.InputUSDPerM, *tiers[3].Official.InputUSDPerM, 1e-12)
+		require.InDelta(t, *tiers[1].Official.OutputUSDPerM, *tiers[3].Official.OutputUSDPerM, 1e-12)
+		require.InDelta(t, *tiers[1].Official.CacheReadUSDPerM, *tiers[3].Official.CacheReadUSDPerM, 1e-12)
+	})
+}
+
+func TestPriceTiersFromLiteLLMUsesEffectiveModelPolicyAndCacheOnlyFastCapability(t *testing.T) {
+	t.Run("legacy gpt-5-nano alias exposes all runtime priority floors", func(t *testing.T) {
+		pricing := &service.LiteLLMModelPricing{
+			InputCostPerToken:         0.05e-6,
+			InputCostPerTokenPriority: 2.5e-6,
+			OutputCostPerToken:        0.4e-6,
+			CacheReadInputTokenCost:   0.005e-6,
+		}
+		tiers := priceTiersFromLiteLLM("openai/gpt-5-nano", pricing, false, false)
+		require.Len(t, tiers, 2)
+		require.Equal(t, "Fast", tiers[1].Label)
+		require.InDelta(t, 5.0, *tiers[1].Official.InputUSDPerM, 1e-12)
+		require.InDelta(t, 30.0, *tiers[1].Official.OutputUSDPerM, 1e-12)
+		require.InDelta(t, 0.5, *tiers[1].Official.CacheReadUSDPerM, 1e-12)
+	})
+
+	t.Run("cache-write-only priority price creates fast tier", func(t *testing.T) {
+		pricing := &service.LiteLLMModelPricing{
+			InputCostPerToken:                   1e-6,
+			OutputCostPerToken:                  2e-6,
+			CacheCreationInputTokenCost:         1.25e-6,
+			CacheCreationInputTokenCostPriority: 2e-6,
+		}
+		tiers := priceTiersFromLiteLLM("provider-cache-fast", pricing, false, false)
+		require.Len(t, tiers, 2)
+		require.Equal(t, "Fast", tiers[1].Label)
+		require.InDelta(t, 2.0, *tiers[1].Official.CacheWriteUSDPerM, 1e-12)
+	})
 }
