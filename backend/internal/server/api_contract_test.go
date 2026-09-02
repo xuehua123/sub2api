@@ -423,6 +423,7 @@ func TestAPIContracts(t *testing.T) {
 						"require_oauth_only": false,
 						"require_privacy_set": false,
 						"max_reasoning_effort": "",
+						"max_reasoning_effort_over_limit": "",
 						"reasoning_effort_mappings": null,
 						"rpm_limit": 0,
 						"sort_order": 0,

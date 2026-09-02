@@ -1003,7 +1003,7 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 	}
 	for _, iv := range p.Intervals {
 		if iv.InputPrice != nil || iv.OutputPrice != nil ||
-			iv.CacheWritePrice != nil || iv.CacheReadPrice != nil ||
+			iv.CacheWritePrice != nil || iv.CacheWrite1hPrice != nil || iv.CacheReadPrice != nil ||
 			iv.PerRequestPrice != nil {
 			return false
 		}
