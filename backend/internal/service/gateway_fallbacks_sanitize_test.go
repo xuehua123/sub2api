@@ -70,8 +70,7 @@ func TestSanitizeAnthropicBodyForBetaTokens_FallbacksStrippedWhenBetaMissing(t *
 		t.Run(name, func(t *testing.T) {
 			body := []byte(`{"model":"claude-haiku-4-5",` + fallbacks + `,"messages":[]}`)
 			// 模拟 OAuth mimic / 默认 API-key beta：只有 oauth/interleaved，无 fallback beta
-			out, changed := sanitizeAnthropicBodyForBetaTokens(body,
-				"oauth-2025-04-20,interleaved-thinking-2025-05-14")
+			out, changed := sanitizeAnthropicBodyForBetaTokens(body, claude.HaikuBetaHeader)
 			require.True(t, changed)
 			require.False(t, gjson.GetBytes(out, "fallbacks").Exists(),
 				"header 不含 server-side-fallback beta 时必须 strip fallbacks，否则上游 400")
@@ -89,7 +88,7 @@ func TestSanitizeAnthropicBodyForBetaTokens_FallbacksStrippedWhenHeaderEmpty(t *
 
 func TestSanitizeAnthropicBodyForBetaTokens_FallbackCreditTokenStrippedWhenCreditBetaMissing(t *testing.T) {
 	body := []byte(`{"model":"claude-haiku-4-5","fallback_credit_token":"tok_123","messages":[]}`)
-	out, changed := sanitizeAnthropicBodyForBetaTokens(body, "oauth-2025-04-20,interleaved-thinking-2025-05-14")
+	out, changed := sanitizeAnthropicBodyForBetaTokens(body, claude.HaikuBetaHeader)
 	require.True(t, changed)
 	require.False(t, gjson.GetBytes(out, "fallback_credit_token").Exists(),
 		"缺 credit/fallback beta 时必须 strip fallback_credit_token")
