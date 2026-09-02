@@ -16,6 +16,7 @@ export interface PricingInterval {
   input_price: number | null
   output_price: number | null
   cache_write_price: number | null
+  cache_write_5m_price?: number | null
   cache_write_1h_price?: number | null
   cache_read_price: number | null
   input_multiplier: number | null
@@ -46,6 +47,7 @@ export interface ChannelModelPricing {
   input_price: number | null
   output_price: number | null
   cache_write_price: number | null
+  cache_write_5m_price?: number | null
   cache_write_1h_price?: number | null
   cache_read_price: number | null
   fast_multiplier?: number | null
