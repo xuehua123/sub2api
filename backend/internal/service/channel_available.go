@@ -257,6 +257,16 @@ func overlayTokenPricingForDisplay(base *ModelPricing, configured *ChannelModelP
 		pricing.CacheCreationPriceExplicit = true
 		pricing.CacheCreation5mPrice = *configured.CacheWritePrice
 		pricing.CacheCreation1hPrice = *configured.CacheWritePrice
+		if configured.CacheWrite1hPrice != nil {
+			pricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
+			pricing.SupportsCacheBreakdown = true
+		}
+	} else if configured.CacheWrite1hPrice != nil {
+		// Preserve an explicitly configured 1h-only override in the fallback
+		// path as well. The normal resolver handles this case, so the display
+		// overlay must not silently drop it when catalog pricing is unavailable.
+		pricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
+		pricing.SupportsCacheBreakdown = true
 	}
 	if configured.CacheReadPrice != nil {
 		pricing.CacheReadPricePerToken = *configured.CacheReadPrice
@@ -743,6 +753,13 @@ func groupRuntimeTokenPricingForDisplay(base, configured *ChannelModelPricing, p
 			runtimePricing.CacheCreationPriceExplicit = true
 			runtimePricing.CacheCreation5mPrice = *configured.CacheWritePrice
 			runtimePricing.CacheCreation1hPrice = *configured.CacheWritePrice
+			if configured.CacheWrite1hPrice != nil {
+				runtimePricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
+				runtimePricing.SupportsCacheBreakdown = true
+			}
+		} else if configured.CacheWrite1hPrice != nil {
+			runtimePricing.CacheCreation1hPrice = *configured.CacheWrite1hPrice
+			runtimePricing.SupportsCacheBreakdown = true
 		}
 		if configured.CacheReadPrice != nil {
 			runtimePricing.CacheReadPricePerTokenPriority = groupPriorityOverridePrice(
@@ -898,7 +915,12 @@ func overlayConfiguredPrices(dst, configured *ChannelModelPricing) {
 		if dst.CacheWrite5mPrice != nil || dst.CacheWrite1hPrice != nil {
 			dst.CacheWrite5mPrice = cloneDisplayPrice(configured.CacheWritePrice)
 			dst.CacheWrite1hPrice = cloneDisplayPrice(configured.CacheWritePrice)
+			if configured.CacheWrite1hPrice != nil {
+				dst.CacheWrite1hPrice = cloneDisplayPrice(configured.CacheWrite1hPrice)
+			}
 		}
+	} else if configured.CacheWrite1hPrice != nil && dst.CacheWrite1hPrice != nil {
+		dst.CacheWrite1hPrice = cloneDisplayPrice(configured.CacheWrite1hPrice)
 	}
 	if configured.CacheReadPrice != nil {
 		dst.CacheReadPrice = configured.CacheReadPrice
@@ -997,7 +1019,7 @@ func pricingNeedsFallback(p *ChannelModelPricing) bool {
 		return true
 	}
 	if p.InputPrice != nil || p.OutputPrice != nil ||
-		p.CacheWritePrice != nil || p.CacheReadPrice != nil ||
+		p.CacheWritePrice != nil || p.CacheWrite1hPrice != nil || p.CacheReadPrice != nil ||
 		p.ImageInputPrice != nil || p.ImageOutputPrice != nil || p.PerRequestPrice != nil {
 		return false
 	}

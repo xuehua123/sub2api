@@ -726,6 +726,56 @@ func TestPricingForGroupDisplay_UnknownGroupExplicitPriceAndZeroImageInput(t *te
 	require.InDelta(t, input, *got.ImageInputPrice, 1e-12)
 }
 
+func TestPricingForGroupDisplay_FallbackPreservesExplicitCacheWrite1hPrice(t *testing.T) {
+	cache5m, cache1h := 3e-6, 7e-6
+	svc := &ChannelService{billingService: NewBillingService(&config.Config{}, nil)}
+	raw := &ChannelModelPricing{
+		BillingMode:       BillingModeToken,
+		CacheWritePrice:   &cache5m,
+		CacheWrite1hPrice: &cache1h,
+	}
+
+	got, matched := svc.PricingForGroupDisplay(&Group{Platform: PlatformOpenAI}, "unknown-local", raw)
+
+	require.False(t, matched)
+	require.NotNil(t, got)
+	require.NotNil(t, got.CacheWritePrice)
+	require.NotNil(t, got.CacheWrite5mPrice)
+	require.NotNil(t, got.CacheWrite1hPrice)
+	require.InDelta(t, cache5m, *got.CacheWritePrice, 1e-12)
+	require.InDelta(t, cache5m, *got.CacheWrite5mPrice, 1e-12)
+	require.InDelta(t, cache1h, *got.CacheWrite1hPrice, 1e-12)
+}
+
+func TestGroupModelPricingForDisplay_PreservesExplicitCacheWrite1hPrice(t *testing.T) {
+	cache5m, cache1h := 3e-6, 7e-6
+	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
+		"gpt-5.6-sol": {
+			InputCostPerToken:           1e-6,
+			CacheCreationInputTokenCost: 2e-6,
+		},
+	})
+	svc := &ChannelService{
+		pricingService: pricingSvc,
+		billingService: NewBillingService(&config.Config{}, pricingSvc),
+	}
+	group := &Group{Platform: PlatformOpenAI, ModelPricing: []ChannelModelPricing{{
+		Models:            []string{"gpt-5.6-sol"},
+		BillingMode:       BillingModeToken,
+		CacheWritePrice:   &cache5m,
+		CacheWrite1hPrice: &cache1h,
+	}}}
+
+	got, matched := svc.GroupModelPricingForDisplay(group, "gpt-5.6-sol")
+
+	require.True(t, matched)
+	require.NotNil(t, got)
+	require.NotNil(t, got.CacheWrite5mPrice)
+	require.NotNil(t, got.CacheWrite1hPrice)
+	require.InDelta(t, cache5m, *got.CacheWrite5mPrice, 1e-12)
+	require.InDelta(t, cache1h, *got.CacheWrite1hPrice, 1e-12)
+}
+
 func TestPricingForGroupDisplay_GPT56IntervalUsesGenericCachePolicy(t *testing.T) {
 	input := 4e-6
 	pricingSvc := newStubPricingServiceFromMap(map[string]*LiteLLMModelPricing{
