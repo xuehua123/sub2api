@@ -1881,24 +1881,6 @@
         </button>
       </div>
 
-      <div
-        v-if="account?.type === 'apikey'"
-        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div>
-          <label class="input-label mb-0">{{ t('admin.accounts.upstreamBilling.autoProbe') }}</label>
-          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.upstreamBilling.autoProbeHint') }}
-          </p>
-        </div>
-        <Toggle
-          :model-value="upstreamBillingAutoProbeEnabled"
-          data-testid="upstream-billing-auto-probe"
-          :aria-label="t('admin.accounts.upstreamBilling.autoProbe')"
-          @update:model-value="handleUpstreamBillingAutoProbeChange"
-        />
-      </div>
-
       <OllamaCloudUsageSettings
         v-if="account?.ollama_cloud_usage?.eligible"
         :account="account"
@@ -3317,10 +3299,13 @@ const autoPause7dDisabled = ref(false)
 const autoResetCreditEnabled = ref(false)
 const autoResetCredit5hThreshold = ref(100)
 const autoResetCredit7dThreshold = ref(100)
-const upstreamBillingAutoProbeEnabled = ref(false)
 const mixedScheduling = ref(false) // For antigravity accounts: enable mixed scheduling
 // 上游ID：直接上游声明请求标识的响应头名，留空不记录。
 const upstreamRequestIdHeader = ref('')
+const readUpstreamRequestIdHeader = (extra: unknown): string => {
+  const value = (extra as Record<string, unknown> | undefined)?.upstream_request_id_header
+  return typeof value === 'string' ? value : ''
+}
 const allowOverages = ref(false) // For antigravity accounts: enable AI Credits overages
 const antigravityProjectId = ref('')
 const antigravityModelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -3718,10 +3703,6 @@ const mixedChannelWarningMessageText = computed(() => {
   return mixedChannelWarningRawMessage.value
 })
 
-const handleUpstreamBillingAutoProbeChange = (enabled: boolean) => {
-  upstreamBillingAutoProbeEnabled.value = enabled
-}
-
 const form = reactive({
   name: '',
   notes: '',
@@ -3895,6 +3876,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   mixedScheduling.value = false
   allowOverages.value = false
   const extra = newAccount.extra as Record<string, unknown> | undefined
+  upstreamRequestIdHeader.value = readUpstreamRequestIdHeader(extra)
+  openAIImagesUrlToB64JsonEnabled.value = extra?.images_url_to_b64_json === true
   upstreamGzipExplicit.value = typeof extra?.upstream_gzip_enabled === 'boolean'
   upstreamGzipEnabled.value = getAccountUpstreamGzipEnabled(newAccount)
   openAIHTTPProtocol.value = normalizeOpenAIHTTPProtocol(extra?.openai_http_protocol)
@@ -5525,6 +5508,19 @@ const handleSubmit = async () => {
     }
 
     applyUpstreamGzipExtra(updatePayload, props.account)
+
+    const nextUpstreamRequestIdHeader = upstreamRequestIdHeader.value.trim()
+    if (nextUpstreamRequestIdHeader !== readUpstreamRequestIdHeader(props.account.extra)) {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
+        (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (nextUpstreamRequestIdHeader) {
+        newExtra.upstream_request_id_header = nextUpstreamRequestIdHeader
+      } else {
+        delete newExtra.upstream_request_id_header
+      }
+      updatePayload.extra = newExtra
+    }
 
     const canContinue = await ensureAntigravityMixedChannelConfirmed(async () => {
       await submitUpdateAccount(accountID, updatePayload)

@@ -664,7 +664,7 @@ import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { sanitizeUrl } from '@/utils/url'
 import { getFloatingPanelPosition } from '@/utils/floatingPanel'
-import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import type { Account, AccountListItem, AccountPlatform, AccountSchedulerGroupScore, AccountType, AccountUsageInfo, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 import type { RateMultiplierPrioritySettings } from '@/api/admin/settings'
 import type { UpstreamAccountBinding, UpstreamConnection } from '@/api/admin/upstreamConnections'
 
@@ -677,7 +677,7 @@ const router = useRouter()
 const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
 const groupsByID = computed(() => new Map(groups.value.map(group => [group.id, group])))
-const accountGroupsForRow = (account: Pick<Account, 'group_ids'>): AdminGroup[] => {
+const accountGroupsForRow = (account: Pick<AccountListItem, 'group_ids'>): AdminGroup[] => {
   const groupIDs = account.group_ids ?? []
   if (groupIDs.length === 0) return []
   return groupIDs.map(id => groupsByID.value.get(id)).filter((group): group is AdminGroup => Boolean(group))
@@ -1522,7 +1522,7 @@ const {
   debouncedReload: baseDebouncedReload,
   handlePageChange: baseHandlePageChange,
   handlePageSizeChange: baseHandlePageSizeChange
-} = useTableLoader<Account, any>({
+} = useTableLoader<AccountListItem, any>({
   fetchFn: adminAPI.accounts.list,
   initialParams: {
     platform: '',
@@ -1553,7 +1553,7 @@ const {
   toggleVisible,
   selectVisible: selectCurrentPage,
   batchUpdate
-} = useTableSelection<Account>({
+} = useTableSelection<AccountListItem>({
   rows: accounts,
   getId: (account) => account.id
 })
@@ -1595,30 +1595,30 @@ const resetAutoRefreshCache = () => {
   autoRefreshETag.value = null
 }
 
-const isFirstLoad = ref(true)
-
 const load = async (options: { forceUpstreamConnections?: boolean } = {}) => {
   const requestParams = params as any
   syncAccountListDerivedParams()
+  // The admin table always consumes the compact account projection.  Keeping
+  // lite=1 on every refresh also avoids accidentally reintroducing credential
+  // fields during ETag/auto-refresh requests.
+  requestParams.lite = '1'
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
   pendingAccountHealthRefresh.value = false
-  if (isFirstLoad.value) {
-    requestParams.lite = '1'
-  }
   await baseLoad()
   if (!isViewActive) return
-  if (isFirstLoad.value) {
-    isFirstLoad.value = false
-    delete requestParams.lite
-  }
-  await refreshTodayStatsBatch()
-  if (!isViewActive) return
-  // Account set just changed (initial load / filter / search); always force health refresh.
-  await refreshAccountHealthBatch(true)
-  if (!isViewActive) return
-  await refreshUpstreamConnections(options.forceUpstreamConnections === true)
+  // Ancillary panels must not hold the account table (or catalog loading)
+  // hostage to a slow/unavailable health endpoint.
+  void refreshTodayStatsBatch().catch((error) => {
+    console.error('Failed to load account today stats:', error)
+  })
+  void refreshAccountHealthBatch(true).catch((error) => {
+    console.error('Failed to load account health:', error)
+  })
+  void refreshUpstreamConnections(options.forceUpstreamConnections === true).catch((error) => {
+    console.error('Failed to load shared upstream balances:', error)
+  })
 }
 
 const reload = async () => {
@@ -2206,7 +2206,7 @@ const cols = computed(() =>
 )
 
 const accountDetailLoading = new Set<number>()
-const loadAccountDetails = async (account: Pick<Account, 'id'>): Promise<Account | null> => {
+const loadAccountDetails = async (account: Pick<AccountListItem, 'id'>): Promise<Account | null> => {
   if (accountDetailLoading.has(account.id)) return null
   accountDetailLoading.add(account.id)
   try {
@@ -2220,7 +2220,7 @@ const loadAccountDetails = async (account: Pick<Account, 'id'>): Promise<Account
   }
 }
 
-const handleEdit = async (a: Account) => {
+const handleEdit = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return
   edAcc.value = account
@@ -2885,13 +2885,13 @@ const accountExportStepUp = useStepUp()
 const closeTestModal = () => { showTest.value = false; testingAcc.value = null }
 const closeStatsModal = () => { showStats.value = false; statsAcc.value = null }
 const closeReAuthModal = () => { showReAuth.value = false; reAuthAcc.value = null }
-const handleTest = async (a: Account) => {
+const handleTest = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return
   testingAcc.value = account
   showTest.value = true
 }
-const handleViewStats = async (a: Account) => {
+const handleViewStats = async (a: AccountListItem) => {
   const account = await loadAccountDetails(a)
   if (!account) return
   statsAcc.value = account
@@ -3113,6 +3113,9 @@ onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
 
   applyRouteFocus()
+  // Load the small proxy/group catalogs concurrently with the account list.
+  // Ancillary health/usage refreshes may be slow or unavailable; they must
+  // not delay group-name rendering for the already-fetched compact rows.
   await load()
   if (!isViewActive) return
   const [proxyResult, groupResult] = await Promise.allSettled([

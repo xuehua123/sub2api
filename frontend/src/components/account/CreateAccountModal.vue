@@ -5479,7 +5479,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     delete extra.images_url_to_b64_json
   }
 
-  return buildUpstreamGzipExtra(extra, form.platform, form.type)
+  return buildUpstreamGzipExtra(withUpstreamRequestIdHeader(extra), form.platform, form.type)
 }
 
 const buildOpenAICodexImportExtra = (): Record<string, unknown> | undefined => {

@@ -934,6 +934,9 @@ func overlayConfiguredPrices(dst, configured *ChannelModelPricing) {
 	if configured.PerRequestPrice != nil {
 		dst.PerRequestPrice = configured.PerRequestPrice
 	}
+	if configured.MaxReasoningEffortMultiplier != nil {
+		dst.MaxReasoningEffortMultiplier = cloneDisplayPrice(configured.MaxReasoningEffortMultiplier)
+	}
 }
 
 func cloneChannelModelPricingForDisplay(pricing *ChannelModelPricing) *ChannelModelPricing {

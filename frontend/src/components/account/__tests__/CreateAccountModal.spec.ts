@@ -468,8 +468,8 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   it('sends the trimmed upstream request id header in extra when filled', async () => {
     const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
+    await clickButtonContaining(wrapper, 'OpenAI')
+    await clickButtonContaining(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
     await wrapper.get('[data-testid="upstream-request-id-header"]').setValue('  X-Oneapi-Request-Id  ')
@@ -489,8 +489,8 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
 
   it('sends images_url_to_b64_json in extra when the toggle is enabled', async () => {
     const wrapper = mountModal()
-    await selectButtonByText(wrapper, 'OpenAI')
-    await selectButtonByText(wrapper, 'API Key')
+    await clickButtonContaining(wrapper, 'OpenAI')
+    await clickButtonContaining(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('openai account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
     await wrapper.get('[data-testid="openai-images-url-to-b64-json-toggle"]').trigger('click')

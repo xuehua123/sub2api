@@ -40,6 +40,7 @@ vi.mock('@/api/admin', () => ({
     },
     proxies: { getAll: getAllProxies },
     groups: { getAll: getAllGroups }
+    , upstreamConnections: { listAll: vi.fn().mockResolvedValue([]) }
   }
 }))
 
@@ -55,6 +56,11 @@ vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
   return { ...actual, useI18n: () => ({ t: (key: string) => key }) }
 })
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {} }),
+  useRouter: () => ({ replace: vi.fn() })
+}))
 
 const DataTableStub = defineComponent({
   props: { data: { type: Array, default: () => [] } },

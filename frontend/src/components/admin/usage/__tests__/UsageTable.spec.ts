@@ -66,6 +66,7 @@ const messages: Record<string, string> = {
   'admin.usage.billingSource.entitlement_quota': 'Entitlement Quota',
   'admin.usage.billingSource.entitlement_balance_fallback': 'Entitlement Overage Balance Fallback',
   'admin.usage.requestIdCopied': 'Request ID copied',
+  'admin.usage.upstreamRequestIdCopied': 'Upstream ID copied',
   'keys.copied': 'Copied',
   'keys.copyToClipboard': 'Copy to clipboard',
   'common.copyFailed': 'Copy failed',
