@@ -269,7 +269,7 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 			Platform: m.Platform,
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
-			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
+			m.Pricing = withDefaultMaxReasoningEffortMultiplier(plazaPricingFromSchedule(m.Pricing, sched), m.Name)
 			if len(sched.Tiers) > 1 {
 				m.LongContextBasis = sched.Basis
 			}
@@ -290,6 +290,7 @@ func plazaPricingFromSchedule(raw *ChannelModelPricing, sched *ContextPricingSch
 		out.ImageInputPrice = raw.ImageInputPrice
 		out.ImageOutputPrice = raw.ImageOutputPrice
 		out.PerRequestPrice = raw.PerRequestPrice
+		out.MaxReasoningEffortMultiplier = raw.MaxReasoningEffortMultiplier
 	}
 	first := sched.Tiers[0]
 	out.InputPrice = first.Input
@@ -412,4 +413,16 @@ func (s *ModelPlazaService) lookupOfficialPricing(ctx context.Context, modelName
 	}
 	memo[modelName] = result
 	return result
+}
+
+func withDefaultMaxReasoningEffortMultiplier(pricing *ChannelModelPricing, model string) *ChannelModelPricing {
+	if pricing == nil || pricing.MaxReasoningEffortMultiplier != nil {
+		return pricing
+	}
+	if m := defaultMaxReasoningEffortMultiplier(model); m != nil {
+		cp := pricing.Clone()
+		cp.MaxReasoningEffortMultiplier = m
+		return &cp
+	}
+	return pricing
 }

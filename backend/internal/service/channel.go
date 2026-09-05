@@ -97,18 +97,19 @@ type ChannelModelPricing struct {
 	CacheWritePrice *float64    `json:"cache_write_price"`
 	// Display-only cache creation breakdown. These fields are projected from
 	// the effective billing card and are never persisted by repositories.
-	CacheWrite5mPrice *float64            `json:"-"`
-	CacheWrite1hPrice *float64            `json:"-"`
-	CacheReadPrice    *float64            `json:"cache_read_price"`
-	FastMultiplier    *float64            `json:"fast_multiplier"`
-	FlexMultiplier    *float64            `json:"flex_multiplier"`
-	ImageInputPrice   *float64            `json:"image_input_price"`
-	ImageOutputPrice  *float64            `json:"image_output_price"`
-	PerRequestPrice   *float64            `json:"per_request_price"`
-	Intervals         []PricingInterval   `json:"intervals"`
-	TimePricing       *ChannelTimePricing `json:"time_pricing,omitempty"`
-	CreatedAt         time.Time           `json:"created_at,omitempty"`
-	UpdatedAt         time.Time           `json:"updated_at,omitempty"`
+	CacheWrite5mPrice            *float64            `json:"-"`
+	CacheWrite1hPrice            *float64            `json:"-"`
+	CacheReadPrice               *float64            `json:"cache_read_price"`
+	FastMultiplier               *float64            `json:"fast_multiplier"`
+	FlexMultiplier               *float64            `json:"flex_multiplier"`
+	MaxReasoningEffortMultiplier *float64            `json:"max_reasoning_effort_multiplier"`
+	ImageInputPrice              *float64            `json:"image_input_price"`
+	ImageOutputPrice             *float64            `json:"image_output_price"`
+	PerRequestPrice              *float64            `json:"per_request_price"`
+	Intervals                    []PricingInterval   `json:"intervals"`
+	TimePricing                  *ChannelTimePricing `json:"time_pricing,omitempty"`
+	CreatedAt                    time.Time           `json:"created_at,omitempty"`
+	UpdatedAt                    time.Time           `json:"updated_at,omitempty"`
 }
 
 // ChannelTimePricing 渠道模型定价的分时倍率配置。
