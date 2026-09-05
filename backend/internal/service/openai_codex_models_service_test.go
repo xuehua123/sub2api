@@ -2032,13 +2032,21 @@ func TestConvertOpenAIModelListToCodexManifestAlignsPriorityTierWithBillingPolic
 		tiers, ok := model["service_tiers"].([]any)
 		require.True(t, ok)
 		if billingSupportsFast {
-			require.Equal(t, []any{
+			want := []any{
 				map[string]any{
 					"id":          "priority",
 					"name":        "Fast",
 					"description": "Priority processing for lower latency.",
 				},
-			}, tiers, "model %s should advertise the billable Fast tier", slug)
+			}
+			if normalized == "gpt-5.6-sol" {
+				want = append(want, map[string]any{
+					"id":          "ultrafast",
+					"name":        "Ultrafast",
+					"description": "Ultra-low latency processing.",
+				})
+			}
+			require.Equal(t, want, tiers, "model %s should advertise the billable service tiers", slug)
 			continue
 		}
 		require.Empty(t, tiers, "model %s must not advertise an unpriced Fast tier", slug)

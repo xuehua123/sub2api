@@ -166,7 +166,7 @@ func TestOpenAIHandleStreamingAwareError_ResponsesStreamingReusesRequestID(t *te
 	h.handleStreamingAwareError(c, http.StatusTooManyRequests, "rate_limit_error", "x", true)
 
 	resp, _ := parseResponsesFailedSSE(t, w.Body.String())
-	assert.Equal(t, "resp_fd277bc5ff7e45d18aa9f54e1df318f1", resp["id"])
+	assert.Equal(t, "resp_reqteststreamingerror", resp["id"])
 }
 
 // 与旧分支的 TestOpenAIHandleStreamingAwareError_JSONEscaping 对齐：

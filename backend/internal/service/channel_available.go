@@ -1107,13 +1107,6 @@ func availableGroupDisplayRate(g AvailableGroupRef) float64 {
 	return 1
 }
 
-func maxReasoningEffortMultiplierFromPricing(pricing *ChannelModelPricing) *float64 {
-	if pricing == nil {
-		return nil
-	}
-	return pricing.MaxReasoningEffortMultiplier
-}
-
 func nonZeroPtr(v float64) *float64 {
 	if v == 0 {
 		return nil
