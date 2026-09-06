@@ -12,6 +12,26 @@
 .error-table strong{font:700 18px var(--mono);color:var(--teal)}
 .error-table code{font:12px var(--mono);color:var(--teal)}
 .error-table b{color:var(--ink)}
+.error-playbook{margin-top:54px;padding-top:34px;border-top:2px solid var(--teal)}
+.error-playbook h3{font:32px/1.2 var(--display);margin:0 0 14px}
+.error-playbook>p:not(.eyebrow),.playbook-note{max-width:860px;color:var(--muted);font-size:14px}
+.error-playbook code{font:12px var(--mono);color:var(--teal)}
+.diagnostic-steps{padding-left:23px;margin:28px 0 34px;max-width:940px}
+.diagnostic-steps li{padding-left:7px;margin:14px 0;color:var(--muted);font-size:14px}
+.diagnostic-steps strong{color:var(--ink)}
+.combination-table{margin-top:26px;border-top:2px solid var(--ink)}
+.combination-table>[role=row]{display:grid;grid-template-columns:190px minmax(220px,1fr) minmax(220px,1fr);gap:20px;padding:17px 0;border-bottom:1px solid var(--line)}
+.combination-table .combination-head{font:11px var(--mono);color:var(--teal);padding:9px 0}
+.combination-table strong{font:600 14px var(--sans);color:var(--ink)}
+.combination-table p{margin:0;color:var(--muted);font-size:14px}
+.log-check{margin-top:40px;padding:24px;background:rgba(13,124,112,.08);border-left:3px solid var(--teal)}
+.log-check h4{margin:0 0 18px;font-size:18px}
+.log-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 28px}
+.log-grid div{border-top:1px solid rgba(19,34,29,.2);padding-top:10px}
+.log-grid strong{font-size:14px}
+.log-grid p{margin:5px 0 0;color:var(--muted);font-size:13px}
+.playbook-note{margin:24px 0 0}
+.playbook-note b{color:var(--ink)}
 .guide-card-featured{border-color:var(--teal);background:rgba(0,125,128,.08)}
 .guide-dialog h3{margin:30px 0 12px;font:24px var(--display)}
 .guide-dialog h3:first-child{margin-top:22px}
@@ -21,5 +41,5 @@
 .guide-figure figcaption{padding:11px 12px;color:var(--muted);font-size:13px;line-height:1.55}
 .guide-source{margin-top:20px;color:var(--muted);font-size:13px}
 .guide-source a{color:var(--teal)}
-@media(max-width:800px){.api-reference,.errors{padding:58px 20px}.reference-grid{grid-template-columns:1fr}.error-table>[role=row]{grid-template-columns:1fr;gap:7px}.error-table .error-head{display:none}}
+@media(max-width:800px){.api-reference,.errors{padding:58px 20px}.reference-grid{grid-template-columns:1fr}.error-table>[role=row],.combination-table>[role=row]{grid-template-columns:1fr;gap:7px}.error-table .error-head,.combination-table .combination-head{display:none}.error-playbook h3{font-size:28px}.log-grid{grid-template-columns:1fr}}
 @media(max-width:800px){.guide-figures{grid-template-columns:1fr}}

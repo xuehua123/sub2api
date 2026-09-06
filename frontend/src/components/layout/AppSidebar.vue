@@ -82,10 +82,9 @@
             <component
               :is="item.externalUrl ? 'a' : 'router-link'"
               v-else
-              :to="item.externalUrl ? undefined : item.path"
-              :href="item.externalUrl || undefined"
-              :target="item.externalUrl ? '_blank' : undefined"
-              :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
+              v-bind="item.externalUrl
+                ? { href: item.externalUrl, target: '_blank', rel: 'noopener noreferrer' }
+                : { to: item.path }"
               class="sidebar-link mb-1"
               :class="{ 'sidebar-link-active': !item.externalUrl && isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
               :title="sidebarCollapsed ? item.label : undefined"
@@ -122,10 +121,9 @@
             :is="item.externalUrl ? 'a' : 'router-link'"
             v-for="item in personalNavItems"
             :key="item.path"
-            :to="item.externalUrl ? undefined : item.path"
-            :href="item.externalUrl || undefined"
-            :target="item.externalUrl ? '_blank' : undefined"
-            :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
+            v-bind="item.externalUrl
+              ? { href: item.externalUrl, target: '_blank', rel: 'noopener noreferrer' }
+              : { to: item.path }"
             class="sidebar-link mb-1"
             :class="{
               'sidebar-link-active': !item.externalUrl && isActive(item.path),
@@ -154,10 +152,9 @@
             :is="item.externalUrl ? 'a' : 'router-link'"
             v-for="item in userNavItems"
             :key="item.path"
-            :to="item.externalUrl ? undefined : item.path"
-            :href="item.externalUrl || undefined"
-            :target="item.externalUrl ? '_blank' : undefined"
-            :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
+            v-bind="item.externalUrl
+              ? { href: item.externalUrl, target: '_blank', rel: 'noopener noreferrer' }
+              : { to: item.path }"
             class="sidebar-link mb-1"
             :class="{
               'sidebar-link-active': !item.externalUrl && isActive(item.path),
@@ -300,7 +297,7 @@ const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRela
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 const documentationUrl = computed(() => sanitizeUrl(resolvePublicDocumentationUrl(
-  appStore.cachedPublicSettings?.doc_url || appStore.docUrl || 'https://doc.psydo.top/',
+  appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '',
 )))
 
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)

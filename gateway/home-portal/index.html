@@ -11,14 +11,14 @@
   <body>
     <div class="page-shell">
       <header class="site-header">
-        <a class="brand" href="/home" target="_top" aria-label="皮皮虾 AI 首页">
+        <a class="brand" data-app-path="/home" href="/home" target="_top" aria-label="皮皮虾 AI 首页">
           <img src="./assets/logo.png" width="40" height="40" alt="" />
           <span>皮皮虾 AI</span>
         </a>
         <nav aria-label="主导航">
           <a data-doc-url href="https://doc.psydo.top/" target="_blank" rel="noreferrer">开发文档</a>
-          <a href="/model-plaza" target="_top">模型广场</a>
-          <a href="/login" target="_top" class="login-link">登录控制台</a>
+          <a data-app-path="/model-plaza" href="/model-plaza" target="_top">模型广场</a>
+          <a data-app-path="/login" href="/login" target="_top" class="login-link">登录控制台</a>
         </nav>
       </header>
 
@@ -29,8 +29,8 @@
             <h1 id="hero-title">一把 Key，<em>让 AI 真正干活。</em></h1>
             <p class="hero-lede">从 Codex、Claude、Grok、Kiro 到主流国模与图片生成，皮皮虾 AI 将模型接入、分组权限、套餐权益和用量计费统一在一个控制台里。</p>
             <div class="hero-actions">
-              <a class="button button-primary" href="/register" target="_top">创建账号 <span aria-hidden="true">→</span></a>
-              <a class="button button-secondary" href="/login" target="_top">进入控制台</a>
+              <a class="button button-primary" data-app-path="/register" href="/register" target="_top">创建账号 <span aria-hidden="true">→</span></a>
+              <a class="button button-secondary" data-app-path="/login" href="/login" target="_top">进入控制台</a>
             </div>
             <p class="hero-note">已有账号？登录后即可管理 API 密钥、套餐分组、余额、订阅和调用记录。</p>
           </div>
@@ -66,7 +66,7 @@
             <h2 id="paths-title">不是只有模型，更是一整套使用方式。</h2>
           </div>
           <div class="path-grid">
-            <a class="path-item" href="/keys" target="_top">
+            <a class="path-item" data-app-path="/keys" href="/keys" target="_top">
               <span class="path-index">01</span>
               <h3>开发与自动化</h3>
               <p>为项目创建 API Key，接入 SDK、工作流、Agent 和自有应用。</p>
@@ -78,7 +78,7 @@
               <p>为 CCSwitch、Claude Code、Codex、Kiro、Cursor 等工具查看图文配置。</p>
               <span class="path-action">打开接入教程 <b>↗</b></span>
             </a>
-            <a class="path-item" href="/purchase" target="_top">
+            <a class="path-item" data-app-path="/purchase" href="/purchase" target="_top">
               <span class="path-index">03</span>
               <h3>套餐、分组与生图</h3>
               <p>套餐权益和 API 分组独立管理；生图可用独立 Key 安全接入项目 Skill。</p>
@@ -93,7 +93,7 @@
             <h2 id="assist-title">配置不确定？在线客服与文档都在。</h2>
           </div>
           <p>从开发文档开始，或进入控制台后点击右上角用户名，在展开菜单中联系在线客服。端点、分组、模型权限、生图和常见错误都有明确说明。</p>
-          <a class="text-link" href="/login" target="_top">进入控制台联系在线客服 <span aria-hidden="true">→</span></a>
+          <a class="text-link" data-app-path="/login" href="/login" target="_top">进入控制台联系在线客服 <span aria-hidden="true">→</span></a>
         </section>
       </main>
 
@@ -105,8 +105,27 @@
     </div>
     <script>
       (() => {
-        const usePpxDocs = new Set(['cn2.ppxcode.com', 'cf.ppxcode.com']).has(window.location.hostname)
-        if (!usePpxDocs) return
+        const publicHosts = new Set([
+          'api.psydo.top',
+          'api.ppx-ai.com',
+          'us.psydo.top',
+          'cn2.ppxcode.com',
+          'cf.ppxcode.com',
+        ])
+
+        let entryUrl = new URL(window.location.origin)
+        try {
+          const referrerUrl = new URL(document.referrer)
+          if (publicHosts.has(referrerUrl.hostname)) entryUrl = referrerUrl
+        } catch {
+          // Direct visits use the static page's own origin.
+        }
+
+        document.querySelectorAll('[data-app-path]').forEach((link) => {
+          link.href = new URL(link.dataset.appPath, entryUrl.origin).toString()
+        })
+
+        if (!new Set(['cn2.ppxcode.com', 'cf.ppxcode.com']).has(entryUrl.hostname)) return
 
         document.querySelectorAll('[data-doc-url]').forEach((link) => {
           const url = new URL(link.href)
