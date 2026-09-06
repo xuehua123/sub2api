@@ -25,6 +25,7 @@
         <a href="#sdk">SDK</a>
         <a href="#api-reference">接口示例</a>
         <a href="#errors">502 排查</a>
+        <a href="#connectivity-guide">连通性排查</a>
         <a href="#faq">常见问题</a>
       </nav>
       <a class="console-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">打开控制台 <span aria-hidden="true">↗</span></a>
@@ -191,6 +192,30 @@
           </div>
 
           <p class="playbook-note"><b>提交排查信息：</b>发生时间（含时区）、API 端点、Clash 代理组/代理商/节点、Clash 是否能看到请求、返回状态码、模型名称和请求 ID。请遮住 API Key、Cookie 和完整请求内容。</p>
+        </div>
+
+        <div class="error-playbook" id="connectivity-guide" aria-labelledby="connectivity-guide-title">
+          <p class="eyebrow">CONNECTIVITY &amp; SPEED GUIDE</p>
+          <h3 id="connectivity-guide-title">连通性以及速度问题排查指南</h3>
+          <p>为便于快速定位问题，请按以下顺序确认；每次只调整一项配置，便于比较结果。</p>
+          <ol class="diagnostic-steps">
+            <li><strong>检测 URL：</strong>在 API 密钥页面确认当前使用的检测链接是否连通性良好。</li>
+            <li><strong>代理节点：</strong>在 Clash 客户端及日志页面确认检测 URL 经过正确的代理节点，可通过日志查询；默认节点建议使用美国或加拿大节点。</li>
+            <li><strong>分组选择：</strong>在分组设置或模型配置页面确认当前选择的分组与所使用的模型匹配。</li>
+            <li><strong>渠道状态：</strong>在渠道管理页面确认渠道状态显示为“可用”。首 Token 速度标准可参考渠道状态中的对话延迟；如出现速度异常，请参考本指南排查。</li>
+            <li><strong>额度卡选择：</strong>在额度卡页面确认额度卡类型和剩余额度适用于当前模型或渠道。</li>
+          </ol>
+          <div class="log-check">
+            <h4>提问时请尽量提供</h4>
+            <div class="log-grid">
+              <div><strong>正在使用的 URL</strong></div>
+              <div><strong>Clash 代理节点及日志截图</strong></div>
+              <div><strong>所选分组</strong></div>
+              <div><strong>渠道状态</strong></div>
+              <div><strong>额度卡类型和余额状态</strong></div>
+            </div>
+          </div>
+          <p class="playbook-note"><b>说明：</b>提供以上信息可以减少来回沟通，更快定位连通性和速度问题。</p>
         </div>
       </section>
 
