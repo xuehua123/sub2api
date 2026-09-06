@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   common: {
     loading: 'Loading...',
     submitting: 'Submitting...',
@@ -193,6 +193,7 @@ export default {
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
     docs: 'Docs',
+    docsCenter: 'Documentation Center',
     myOrders: 'My Orders',
     orderManagement: 'Orders',
     paymentDashboard: 'Payment Dashboard',

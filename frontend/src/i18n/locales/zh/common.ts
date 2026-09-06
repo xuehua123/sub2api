@@ -1,4 +1,4 @@
-export default {
+﻿export default {
   common: {
     loading: '加载中...',
     submitting: '提交中...',
@@ -193,6 +193,7 @@ export default {
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
     docs: '文档',
+    docsCenter: '文档中心',
     myOrders: '我的订单',
     orderManagement: '订单管理',
     paymentDashboard: '支付概览',

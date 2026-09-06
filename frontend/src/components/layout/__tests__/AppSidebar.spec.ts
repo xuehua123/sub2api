@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -96,16 +96,16 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(componentSource).toContain('featureFlag: flagChannelMonitor')
   })
 
-  it('includes the issue center in user and admin personal navigation', () => {
-    expect(componentSource).toContain("path: '/issues'")
-    expect(componentSource).toContain("label: t('nav.issueCenter')")
+  it('includes the documentation center in user and admin personal navigation', () => {
+    expect(componentSource).toContain("path: '/docs'")
+    expect(componentSource).toContain("label: t('nav.docsCenter')")
+    expect(componentSource).toContain('resolvePublicDocumentationUrl')
     expect(componentSource).toContain('const personalNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(false)))')
   })
 
-  it('includes issue management in the admin navigation', () => {
-    expect(componentSource).toContain("path: '/admin/issues'")
-    expect(componentSource).toContain("label: t('nav.issueManagement')")
-    expect(componentSource).toContain('badgeCount: adminUnresolvedIssueCount.value')
+  it('includes the documentation center in the admin navigation', () => {
+    expect(componentSource).toContain("path: '/docs'")
+    expect(componentSource).toContain("label: t('nav.docsCenter')")
     expect(componentSource).toContain("const adminUnresolvedStatuses = ['open', 'needs_info', 'in_progress'] as const")
   })
 
@@ -118,7 +118,7 @@ describe('AppSidebar channel monitor navigation', () => {
     expect(adminChannelMonitorItem?.[0]).not.toContain('featureFlag: flagChannelMonitor')
   })
 
-  it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement', 'issueCenter', 'issueManagement'])(
+  it.each(['availableChannels', 'channelStatus', 'channelMonitor', 'channelManagement', 'docsCenter', 'issueManagement'])(
     'has zh and en labels for nav.%s',
     key => {
       expect(resolveLocaleKey(zh, `nav.${key}`)).toEqual(expect.any(String))

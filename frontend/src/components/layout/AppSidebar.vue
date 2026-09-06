@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <aside
     class="sidebar"
     :class="[
@@ -79,11 +79,15 @@
               </div>
             </template>
             <!-- Normal item (no children) -->
-            <router-link
+            <component
+              :is="item.externalUrl ? 'a' : 'router-link'"
               v-else
-              :to="item.path"
+              :to="item.externalUrl ? undefined : item.path"
+              :href="item.externalUrl || undefined"
+              :target="item.externalUrl ? '_blank' : undefined"
+              :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
               class="sidebar-link mb-1"
-              :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+              :class="{ 'sidebar-link-active': !item.externalUrl && isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
               :title="sidebarCollapsed ? item.label : undefined"
               :id="
                 item.path === '/admin/accounts'
@@ -102,7 +106,7 @@
                 <span class="min-w-0 truncate">{{ item.label }}</span>
                 <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
               </span>
-            </router-link>
+            </component>
           </template>
         </div>
 
@@ -114,13 +118,17 @@
             </span>
           </div>
 
-          <router-link
+          <component
+            :is="item.externalUrl ? 'a' : 'router-link'"
             v-for="item in personalNavItems"
             :key="item.path"
-            :to="item.path"
+            :to="item.externalUrl ? undefined : item.path"
+            :href="item.externalUrl || undefined"
+            :target="item.externalUrl ? '_blank' : undefined"
+            :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
             class="sidebar-link mb-1"
             :class="{
-              'sidebar-link-active': isActive(item.path),
+              'sidebar-link-active': !item.externalUrl && isActive(item.path),
               'sidebar-link-collapsed': sidebarCollapsed,
               'sidebar-link-promo': item.promo
             }"
@@ -135,20 +143,24 @@
               <span v-if="item.promo && !sidebarCollapsed" class="sidebar-promo-pill">{{ t('nav.promoHot', '礼') }}</span>
               <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
             </span>
-          </router-link>
+          </component>
         </div>
       </template>
 
       <!-- Regular User View -->
       <template v-else-if="!appStore.backendModeEnabled">
         <div class="sidebar-section">
-          <router-link
+          <component
+            :is="item.externalUrl ? 'a' : 'router-link'"
             v-for="item in userNavItems"
             :key="item.path"
-            :to="item.path"
+            :to="item.externalUrl ? undefined : item.path"
+            :href="item.externalUrl || undefined"
+            :target="item.externalUrl ? '_blank' : undefined"
+            :rel="item.externalUrl ? 'noopener noreferrer' : undefined"
             class="sidebar-link mb-1"
             :class="{
-              'sidebar-link-active': isActive(item.path),
+              'sidebar-link-active': !item.externalUrl && isActive(item.path),
               'sidebar-link-collapsed': sidebarCollapsed,
               'sidebar-link-promo': item.promo
             }"
@@ -163,7 +175,7 @@
               <span v-if="item.promo && !sidebarCollapsed" class="sidebar-promo-pill">{{ t('nav.promoHot', '礼') }}</span>
               <span v-if="item.badgeCount" class="sidebar-badge">{{ formatNavBadge(item.badgeCount) }}</span>
             </span>
-          </router-link>
+          </component>
         </div>
       </template>
     </nav>
@@ -217,12 +229,14 @@ import VersionBadge from '@/components/common/VersionBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
+import { resolvePublicDocumentationUrl } from '@/utils/publicEndpoint'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { adminIssuesAPI } from '@/api/admin/issues'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 interface NavItem {
   path: string
+  externalUrl?: string
   label: string
   icon: unknown
   iconSvg?: string
@@ -285,6 +299,9 @@ const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const documentationUrl = computed(() => sanitizeUrl(resolvePublicDocumentationUrl(
+  appStore.cachedPublicSettings?.doc_url || appStore.docUrl || 'https://doc.psydo.top/',
+)))
 
 const flagChannelMonitor = makeSidebarFlag(FeatureFlags.channelMonitor)
 const flagPayment = () => authStore.user?.payment_disabled !== true && makeSidebarFlag(FeatureFlags.payment)()
@@ -766,7 +783,14 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       featureFlag: flagModelPrices,
     },
     { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
-    { path: '/issues', label: t('nav.issueCenter'), icon: TicketIcon, badgeCount: issueUnreadCount.value },
+    ...(documentationUrl.value
+      ? [{
+          path: '/docs',
+          externalUrl: documentationUrl.value,
+          label: t('nav.docsCenter'),
+          icon: FolderIcon,
+        }]
+      : []),
     { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
@@ -833,7 +857,14 @@ const adminNavItems = computed((): NavItem[] => {
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
     { path: '/admin/upstream-connections', label: t('nav.upstreamConnections'), icon: ServerIcon },
-    { path: '/admin/issues', label: t('nav.issueManagement'), icon: TicketIcon, badgeCount: adminUnresolvedIssueCount.value },
+    ...(documentationUrl.value
+      ? [{
+          path: '/docs',
+          externalUrl: documentationUrl.value,
+          label: t('nav.docsCenter'),
+          icon: FolderIcon,
+        }]
+      : []),
     { path: '/admin/plugins', label: t('nav.plugins'), icon: PluginIcon, featureFlag: flagPluginManagement },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
