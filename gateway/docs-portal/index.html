@@ -24,6 +24,7 @@
         <a href="#ccswitch">CCSwitch 生图</a>
         <a href="#sdk">SDK</a>
         <a href="#api-reference">接口示例</a>
+        <a href="#errors">502 排查</a>
         <a href="#faq">常见问题</a>
       </nav>
       <a class="console-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">打开控制台 <span aria-hidden="true">↗</span></a>
@@ -158,6 +159,39 @@
           <div role="row"><strong>429</strong><p>可能是请求频率/并发达到限制，<b>也可能是余额不足、套餐权益或模型配额已耗尽</b>。</p><p>先检查控制台余额、用量和套餐/分组权益；余额正常后再降低并发、稍后重试。不要只把 429 当成“限流”。</p></div>
           <div role="row"><strong>5xx</strong><p>可能来自上游模型服务、短暂网络波动或请求负载异常。</p><p>使用指数退避重试；若只在一个端点出现，可运行连接检测并切换推荐 URL。持续失败请提供时间、模型和请求 ID。</p></div>
         </div>
+
+        <div class="error-playbook" aria-labelledby="bad-gateway-title">
+          <p class="eyebrow">502 PLAYBOOK</p>
+          <h3 id="bad-gateway-title">502 Bad Gateway：按“端点 × Clash 线路”排查</h3>
+          <p>502 表示请求经过某一层网关后，没有拿到可用的上游响应。它不一定是 API Key 或余额问题，也可能是当前 API 端点、Clash 代理线路、代理商节点或上游连接暂时异常。请按下面顺序定位，不要一次修改所有配置。</p>
+
+          <ol class="diagnostic-steps">
+            <li><strong>先固定客户端配置。</strong>确认客户端实际使用的 Base URL 与本页选择的一致，路径通常为 <code>/v1</code>；保留同一个模型、同一个 API Key 和同一个请求，方便比较结果。</li>
+            <li><strong>先换 Clash 线路，再换 API 端点。</strong>在同一个 API 端点下，依次切换您购买或获取的 Clash 代理商线路；某条线路恢复后，再用这条线路测试其他 API 端点。这样可以判断问题来自线路还是入口。</li>
+            <li><strong>每次切换后都看 Clash 日志。</strong>按 API 端点域名过滤请求，确认日志里出现了本次请求，并核对命中的代理组、代理商和节点。只看到 Clash 已启动，不代表客户端请求真的走了 Clash。</li>
+            <li><strong>记录能稳定成功的组合。</strong>例如“<code>CN2 直连（推荐）</code> + Clash 关闭”或“<code>默认端点</code> + Clash 开启 + 某代理商某节点”。后续优先使用已验证成功的组合。</li>
+          </ol>
+
+          <div class="combination-table" role="table" aria-label="502 线路组合排查">
+            <div class="combination-head" role="row"><span>测试组合</span><span>操作</span><span>结果判断</span></div>
+            <div role="row"><strong>A：直连 + 当前端点</strong><p>关闭 Clash，保持当前 API 端点不变，重试同一个请求。</p><p>直连成功、Clash 失败：优先检查 Clash 规则、代理组或节点。</p></div>
+            <div role="row"><strong>B：Clash + 同一端点</strong><p>开启 Clash，保持 API 端点不变，只切换代理商提供的线路。</p><p>只有部分线路成功：使用成功线路，并在 Clash 中固定到该代理组/节点。</p></div>
+            <div role="row"><strong>C：Clash + 其他端点</strong><p>保持已验证的 Clash 线路不变，只切换本页提供的其他 API 端点。</p><p>只有某个端点成功：使用成功端点；其他端点可能受当前网络或入口路由影响。</p></div>
+            <div role="row"><strong>D：全组合复测</strong><p>至少用 2 条 Clash 线路和 2 个 API 端点交叉测试，每次只改变一个变量。</p><p>所有组合都失败：保留日志、时间、端点、线路和请求 ID，再联系支持。</p></div>
+          </div>
+
+          <div class="log-check" aria-labelledby="log-check-title">
+            <h4 id="log-check-title">如何判断请求是否真的走到了代理商</h4>
+            <div class="log-grid">
+              <div><strong>日志没有这条请求</strong><p>客户端没有使用 Clash。检查客户端是否支持系统代理，或开启 Clash 的 TUN 模式；同时确认应用没有单独配置直连代理。</p></div>
+              <div><strong>有请求，但命中 DIRECT</strong><p>请求进入了 Clash，但规则选择了直连，不是代理商线路。检查规则模式、代理组和域名匹配结果。</p></div>
+              <div><strong>有请求，命中指定代理组/节点</strong><p>说明请求已交给代理商线路。若仍返回 502，继续切换节点或 API 端点，并记录日志中的状态、错误和时间。</p></div>
+              <div><strong>Clash 显示成功，但客户端仍报 502</strong><p>检查客户端自身的超时、流式响应处理和 Base URL 路径；同时确认客户端没有发起第二个未经过 Clash 的请求。</p></div>
+            </div>
+          </div>
+
+          <p class="playbook-note"><b>提交排查信息：</b>发生时间（含时区）、API 端点、Clash 代理组/代理商/节点、Clash 是否能看到请求、返回状态码、模型名称和请求 ID。请遮住 API Key、Cookie 和完整请求内容。</p>
+        </div>
       </section>
 
       <section id="faq" class="faq" aria-labelledby="faq-title">
@@ -169,6 +203,8 @@
           <details><summary>为什么模型名称和官方示例不同？</summary><p>请以控制台模型列表为准。不同分组、套餐和权限可能看到不同模型；不要把文档中的示例模型名当作固定可用清单。</p></details>
           <details><summary>连接检测“不推荐”代表什么？</summary><p>只代表测试时您的当前设备和网络访问该 URL 的表现较差，不代表模型不可用或该端点对所有人都不好。可以切换其他 URL 后重新检测。</p></details>
           <details><summary>收到 429 是不是一定触发限流？</summary><p>不是。429 既可能是瞬时请求频率或并发过高，也可能表示余额不足、套餐权益不足，或者特定模型配额已用完。请先检查控制台余额、用量和套餐权益，再考虑降低并发或稍后重试。</p></details>
+          <details><summary>遇到 502，为什么要同时看 API 端点和 Clash 线路？</summary><p>API 端点决定请求进入哪个公开入口，Clash 线路决定您的设备通过哪条代理路径访问入口。两者任意一层不稳定，都可能表现为 502。建议先固定端点切换 Clash 线路，再固定成功线路切换其他端点，每次只改变一个变量。</p></details>
+          <details><summary>Clash 日志里没有看到请求，说明什么？</summary><p>通常说明当前客户端请求没有经过 Clash，可能使用了直连、应用自带代理或另一套网络代理。请检查客户端的代理设置，或在 Clash 中启用系统代理/TUN，并再次用同一个请求验证日志。</p></details>
         </div>
       </section>
     </main>
