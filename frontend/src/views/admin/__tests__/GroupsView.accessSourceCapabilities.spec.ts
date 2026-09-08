@@ -43,7 +43,7 @@ describe("admin groups access source capabilities", () => {
     expect(groupsViewSource).toContain("await adminAPI.groups.create(payload)");
     expect(groupsViewSource).toMatch(/const payload = \{\s+\.\.\.editForm,/);
     expect(groupsViewSource).toContain(
-      "await adminAPI.groups.update(editingGroup.value.id, payload)",
+      "await adminAPI.groups.update(editingGroup.value.id, requestData)",
     );
     expect(groupsViewSource).toContain("balance_enabled: true");
     expect(groupsViewSource).toContain("subscription_enabled: false");
