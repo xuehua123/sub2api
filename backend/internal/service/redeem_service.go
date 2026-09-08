@@ -461,6 +461,10 @@ func (s *RedeemService) RedeemForAdminFulfillment(ctx context.Context, userID in
 	return s.redeem(ctx, userID, code, RedeemSourceContext{}, bypassRedeemRateLimit)
 }
 
+func (s *RedeemService) RedeemForAdminFulfillmentWithOptions(ctx context.Context, input RedeemInput) (*RedeemCode, error) {
+	return s.redeem(ctx, input.UserID, input.Code, input.Source, bypassRedeemRateLimit)
+}
+
 func (s *RedeemService) redeem(ctx context.Context, userID int64, code string, source RedeemSourceContext, rateLimitPolicy redeemRateLimitPolicy) (*RedeemCode, error) {
 	code = strings.TrimSpace(code)
 	if rateLimitPolicy == enforceRedeemRateLimit {

@@ -790,7 +790,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 				bridgeAccountFailoverInputExists = true
 			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" && result.terminalDelivered {
+			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); !useHTTPBridge && bridgeTurnState != "" && result.terminalDelivered {
 				turnState = bridgeTurnState
 				s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
 			}
@@ -2014,7 +2014,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// The upstream handshake state becomes reusable only after the terminal
 		// event itself has reached the downstream client. A disconnected client
 		// can otherwise let us drain upstream successfully without receiving it.
-		if turnState != "" && result.terminalDelivered {
+		if !useHTTPBridge && turnState != "" && result.terminalDelivered {
 			s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, turnState)
 		}
 		responseID := strings.TrimSpace(result.RequestID)

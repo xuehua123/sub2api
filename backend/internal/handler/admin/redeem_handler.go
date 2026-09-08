@@ -243,7 +243,7 @@ func (h *RedeemHandler) CreateAndRedeem(c *gin.Context) {
 			return nil, createErr
 		}
 
-		redeemed, redeemErr := h.redeemService.RedeemWithOptions(ctx, service.RedeemInput{
+		redeemed, redeemErr := h.redeemService.RedeemForAdminFulfillmentWithOptions(ctx, service.RedeemInput{
 			UserID: req.UserID,
 			Code:   req.Code,
 			Source: sourceCtx,
@@ -271,7 +271,7 @@ func (h *RedeemHandler) resolveCreateAndRedeemExisting(ctx context.Context, exis
 		return nil, service.ErrRedeemCodeExpired
 	}
 	if existing.CanUse() {
-		redeemed, err := h.redeemService.RedeemWithOptions(ctx, service.RedeemInput{
+		redeemed, err := h.redeemService.RedeemForAdminFulfillmentWithOptions(ctx, service.RedeemInput{
 			UserID: req.UserID,
 			Code:   existing.Code,
 			Source: sourceCtx,

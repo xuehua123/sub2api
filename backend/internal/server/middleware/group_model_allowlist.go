@@ -68,6 +68,11 @@ func GroupModelAllowlist() gin.HandlerFunc {
 					models = []string{model}
 				}
 			}
+			if len(models) == 0 {
+				if model := groupModelAllowlistDefaultModel(c); model != "" {
+					models = []string{model}
+				}
+			}
 		}
 
 		blocked := ""
@@ -87,6 +92,14 @@ func GroupModelAllowlist() gin.HandlerFunc {
 		groupModelAllowlistErrorWriter(c)(c, http.StatusNotFound, fmt.Sprintf("Model %q is not available for this group", blocked))
 		c.Abort()
 	}
+}
+
+func groupModelAllowlistDefaultModel(c *gin.Context) string {
+	path := c.FullPath()
+	if strings.Contains(path, "/images/generations") || strings.Contains(path, "/images/edits") {
+		return "gpt-image-2"
+	}
+	return ""
 }
 
 // isResponsesWebSocketRoute 判断当前请求是否命中 OpenAI Responses WebSocket
