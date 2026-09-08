@@ -1,5 +1,15 @@
 ﻿export default {
   common: {
+    username: "User",
+    totalSuffix: "items",
+    totalPrefix: "Total",
+    prevPage: "Previous page",
+    operationFailed: "Operation failed",
+    nextPage: "Next page",
+    default: "Default",
+    createdAt: "Recorded at",
+    copySuccess: "Copied",
+    amount: "Amount",
     loading: 'Loading...',
     submitting: 'Submitting...',
     justNow: 'just now',

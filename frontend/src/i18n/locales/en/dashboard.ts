@@ -79,6 +79,7 @@ export default {
       speedTest: 'Check connection',
     },
     connectivity: {
+      failedLatency: "Failed sample took {ms} ms (not usable latency)",
       title: 'API URL Connection Check',
       start: 'Start check',
       retry: 'Check again',

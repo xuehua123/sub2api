@@ -1,5 +1,15 @@
 ﻿export default {
   common: {
+    username: "用户",
+    totalSuffix: "条",
+    totalPrefix: "共",
+    prevPage: "上一页",
+    operationFailed: "操作失败",
+    nextPage: "下一页",
+    default: "默认",
+    createdAt: "记账时间",
+    copySuccess: "复制成功",
+    amount: "金额",
     loading: '加载中...',
     submitting: '提交中...',
     justNow: '刚刚',
