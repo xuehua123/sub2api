@@ -783,9 +783,9 @@ func TestOpenAIResponsesLiteParallelToolCallsErrorTriggersAccountFailover(t *tes
 	body := []byte(`{"error":{"message":` + strconv.Quote(message) + `}}`)
 	svc := &OpenAIGatewayService{}
 
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, message, body))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, "", body))
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusUnprocessableEntity, message, body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, message, body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, "", body))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusUnprocessableEntity, message, body))
 }
 
 func TestOpenAIGatewayService_ModelMappedToAffectedAPIKeyModelPinsBeforeForward(t *testing.T) {

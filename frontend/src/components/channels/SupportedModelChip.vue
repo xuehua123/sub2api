@@ -188,7 +188,7 @@
                   <span class="text-gray-500 dark:text-gray-400">
                     {{ intervalLabel(iv) }}
                   </span>
-                  <span>{{ formatInterval(iv, priceEntry.pricing.billing_mode) }}</span>
+                  <span>{{ formatInterval(iv, priceEntry.pricing) }}</span>
                 </div>
               </div>
             </div>
@@ -204,7 +204,7 @@
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import PricingRow from './PricingRow.vue'
-import { formatScaled } from '@/utils/pricing'
+import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
 import {
   BILLING_MODE_TOKEN,
   BILLING_MODE_PER_REQUEST,
@@ -328,20 +328,22 @@ function trimTokenCount(value: number): string {
   return String(Math.round(value * 100) / 100)
 }
 
-function formatInterval(iv: UserPricingInterval, mode: BillingMode): string {
+function formatInterval(iv: UserPricingInterval, pricing: UserSupportedModelPricing): string {
+	const mode = pricing.billing_mode
   if (
     mode === BILLING_MODE_PER_REQUEST ||
     mode === BILLING_MODE_IMAGE ||
     mode === BILLING_MODE_VIDEO
   ) {
-    return formatScaled(iv.per_request_price, 1)
-  }
-  const values = [
-    [t(prefixKey('inputPrice')), iv.input_price],
-    [t(prefixKey('outputPrice')), iv.output_price],
-    [iv.cache_write_5m_price != null || iv.cache_write_1h_price != null ? t(prefixKey('cacheWrite5mPrice')) : t(prefixKey('cacheWritePrice')), iv.cache_write_5m_price ?? iv.cache_write_price],
-    [t(prefixKey('cacheWrite1hPrice')), iv.cache_write_1h_price],
-    [t(prefixKey('cacheReadPrice')), iv.cache_read_price],
+		return formatScaled(iv.per_request_price, 1)
+	}
+	const resolved = resolveIntervalPrices(iv, pricing)
+	const values = [
+		[t(prefixKey('inputPrice')), resolved.input_price],
+		[t(prefixKey('outputPrice')), resolved.output_price],
+		[iv.cache_write_5m_price != null || iv.cache_write_1h_price != null ? t(prefixKey('cacheWrite5mPrice')) : t(prefixKey('cacheWritePrice')), resolved.cache_write_5m_price ?? resolved.cache_write_price],
+		[t(prefixKey('cacheWrite1hPrice')), resolved.cache_write_1h_price],
+		[t(prefixKey('cacheReadPrice')), resolved.cache_read_price],
   ] as const
   return values
     .filter(([, value]) => value != null)
@@ -356,9 +358,9 @@ function intervalLabel(iv: UserPricingInterval): string {
   const label = iv.tier_label
     ? [iv.tier_label, range].filter(Boolean).join(' · ')
     : range
-  return iv.requires_account_long_context
-    ? `${label}${t(prefixKey('accountLongContextRequired'))}`
-    : label
+	return iv.requires_account_long_context
+		? `${label}${t(prefixKey('accountLongContextRequired'))}`
+		: label
 }
 
 // ── Popover positioning ─────────────────────────────────────────────

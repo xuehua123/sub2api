@@ -2097,6 +2097,10 @@ func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject
 }
 
 type openAIResponsesWSUsageLogCase struct {
+	group                     *service.Group
+	midPayload                string
+	firstFrameCloseExpected   bool
+	secondTurnCloseExpected   bool
 	firstPayload              string
 	interTurnPayloads         []string
 	subsequentPayloads        []string
@@ -3047,6 +3051,9 @@ func TestOpenAIResponsesWebSocket_FirstOutputTimeoutWithoutDownstreamReusesClien
 func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSUsageLogCase) openAIResponsesWSUsageLogResult {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
+	if tc.midPayload != "" {
+		tc.interTurnPayloads = append(tc.interTurnPayloads, tc.midPayload)
+	}
 
 	subsequentPayloads := append([]string(nil), tc.subsequentPayloads...)
 	if len(subsequentPayloads) == 0 && strings.TrimSpace(tc.secondPayload) != "" {
@@ -3282,6 +3289,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		GroupID: &groupID,
 		User:    &service.User{ID: 1701, Status: service.StatusActive},
 	}
+	apiKey.Group = tc.group
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
 		c.Set(string(middleware.ContextKeyAPIKey), apiKey)
@@ -3323,6 +3331,14 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
 		_, event, readErr := clientConn.Read(readCtx)
 		cancelRead()
+		if (turn == 1 && tc.firstFrameCloseExpected) || (turn == 2 && tc.secondTurnCloseExpected) {
+			require.Error(t, readErr)
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, readErr, &closeErr)
+			require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+			require.Contains(t, closeErr.Reason, "not available for this group")
+			return false
+		}
 		if turn == tc.rejectTurn {
 			clientTerminalErr = readErr
 			return false
@@ -3332,7 +3348,10 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		clientEvents = append(clientEvents, append([]byte(nil), event...))
 		return true
 	}
-	require.True(t, writeAndReadTurn(1, tc.firstPayload))
+	if !writeAndReadTurn(1, tc.firstPayload) {
+		require.True(t, tc.firstFrameCloseExpected)
+		return openAIResponsesWSUsageLogResult{}
+	}
 	for _, payload := range tc.interTurnPayloads {
 		writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
 		err = clientConn.Write(writeCtx, coderws.MessageText, []byte(payload))
@@ -3341,6 +3360,9 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	}
 	for i, payload := range subsequentPayloads {
 		if !writeAndReadTurn(i+2, payload) {
+			if tc.secondTurnCloseExpected {
+				return openAIResponsesWSUsageLogResult{}
+			}
 			break
 		}
 	}

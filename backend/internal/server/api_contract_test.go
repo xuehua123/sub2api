@@ -1930,6 +1930,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	entitlementHandler := handler.NewEntitlementHandler(entitlementService, settingService)
 
 	adminService := service.NewAdminService(
+		cfg,
 		userRepo,
 		groupRepo,
 		&accountRepo,
@@ -2288,6 +2289,10 @@ func (stubGroupRepo) Update(ctx context.Context, group *service.Group) error {
 
 func (stubGroupRepo) Delete(ctx context.Context, id int64) error {
 	return errors.New("not implemented")
+}
+
+func (stubGroupRepo) DeleteCascadeIfEmpty(ctx context.Context, id int64) ([]int64, error) {
+	return nil, errors.New("not implemented")
 }
 
 func (stubGroupRepo) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {

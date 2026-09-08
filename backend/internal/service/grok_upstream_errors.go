@@ -203,7 +203,7 @@ func (s *OpenAIGatewayService) shouldFailoverGrokUpstreamErrorForContext(ctx con
 		return true
 	}
 	upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(responseBody)))
-	return s.shouldFailoverOpenAIUpstreamResponseForContext(ctx, statusCode, upstreamMsg, responseBody)
+	return s.shouldFailoverOpenAIUpstreamResponseForContext(ctx, nil, statusCode, upstreamMsg, responseBody)
 }
 
 // shouldFailoverGrokUpstreamError is the body-aware counterpart of the
