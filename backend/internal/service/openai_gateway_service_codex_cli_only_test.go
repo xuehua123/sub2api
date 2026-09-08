@@ -356,9 +356,9 @@ func TestShouldFailoverOpenAIUpstreamResponseContextWindow502(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	body := []byte(`{"error":{"message":"Your input exceeds the context window of this model. Please adjust your input and try again.","type":"upstream_error","code":null}}`)
 
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "", body))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(), http.StatusBadGateway, "", body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(), http.StatusBadGateway, "temporary upstream outage", []byte(`{"error":{"message":"temporary upstream outage"}}`)))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponse(newOpenAIUpstreamErrorTestAccount(),
 		http.StatusBadGateway,
 		"temporary upstream outage",
 		[]byte(`{"error":{"message":"temporary upstream outage"},"echo":"context_length_exceeded"}`),
@@ -369,8 +369,8 @@ func TestShouldFailoverOpenAIUpstreamResponse_MonitorProbe400(t *testing.T) {
 	svc := &OpenAIGatewayService{}
 	body := []byte(`{"error":{"message":"Invalid type for 'input[4].arguments': expected an object, but got a string instead.","type":"invalid_request_error","code":"invalid_type"}}`)
 
-	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(http.StatusBadRequest, "", body))
-	require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForContext(WithChannelMonitorProbe(context.Background()), http.StatusBadRequest, "", body))
+	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(nil, http.StatusBadRequest, "", body))
+	require.True(t, svc.shouldFailoverOpenAIUpstreamResponseForContext(WithChannelMonitorProbe(context.Background()), nil, http.StatusBadRequest, "", body))
 }
 
 func TestOpenAIGatewayService_Forward_LogsInstructionsRequiredDetails(t *testing.T) {

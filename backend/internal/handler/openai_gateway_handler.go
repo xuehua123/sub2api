@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -2097,10 +2098,10 @@ const (
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
 // 连接内串行推进，互斥锁只为跨用量提交 goroutine 的读取安全。
 //
-// ws_v2 passthrough ingress 没有 BeforeTurn，因此本值会保持零；AfterTurn 必须
-// 以 TurnStarted 已记录的所属 turn 开始时刻为回退，而不是用建连或记录时刻。
-// 这样每个 passthrough turn 都按自己的开始时刻计价，但不改变其仅在建连时执行
-// 准入门、没有 turn 级利润复核的既有行为。
+// 零值语义（重要）：首轮准入由握手路径完成，不调用 BeforeTurn，因此首轮保持
+// 零值并回退到 TurnStarted 记录的首轮开始时刻。后续 turn 在 response.create
+// 写入上游前调用 BeforeTurn，按当时的利润门复核并冻结定价。绝不能用建连时刻
+// 初始化，否则会把长连接的所有 turn 钉死在建连时的峰谷因子。
 type openAIWSTurnPricing struct {
 	mu sync.Mutex
 	at time.Time
@@ -2418,6 +2419,16 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	reqModel := strings.TrimSpace(gjson.GetBytes(firstMessage, "model").String())
 	if reqModel == "" {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
+		return
+	}
+	// 分组级模型白名单：首帧校验客户端模型，不通过则关闭连接并标记运维原因。
+	// 必须在 ensureCompositeTargetPlatform（合成路由改写）之前执行。
+	// 与 HTTP 准入一致：帧内重复 model 键/大小写变体可能被上游按末值绑定，
+	// 全部候选值逐一校验，任一未命中即拒绝。
+	if blocked := blockedModelAllowlistCandidate(apiKey.Group, requestmodel.FromBodyCandidates("", "application/json", firstMessage)); blocked != "" {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+		middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked))
 		return
 	}
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
@@ -2884,8 +2895,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// turn-tagged slot preserves the exact mapping used for the in-flight request.
 		var turnChannelMapping atomic.Pointer[openAIWSTurnChannelMappingSnapshot]
 		turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: 1, mapping: channelMappingWS})
-		// turn 级定价：BeforeTurn 重新冻结 pricingAt 并按最新门复核当前账号；
-		// passthrough 没有 BeforeTurn 时，AfterTurn 回退到 TurnStarted 的所属 turn 时刻。
+		// turn 级定价：首轮回退到 TurnStarted 的所属 turn 时刻；后续 turn 由
+		// BeforeTurn 重新冻结 pricingAt 并按最新门复核当前账号。
 		var turnPricing openAIWSTurnPricing
 		hooks := &service.OpenAIWSIngressHooks{
 			ClientLifecycleContext:      clientLifecycleCtx,
@@ -2929,6 +2940,23 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", errors.New("invalid json"))
 				}
 				model := requestedModelForTurn(payload, originalModel)
+				if strings.TrimSpace(model) == "" {
+					model = strings.TrimSpace(gjson.GetBytes(payload, "model").String())
+				}
+				if strings.TrimSpace(model) == "" {
+					model = reqModel
+				}
+				// 分组级模型白名单：后续 turn 同样校验客户端模型（省略 model 时
+				// 沿用会话实际生效模型，含 session.update 轮换后的模型），不通过
+				// 则关闭整条连接，与推理强度 deny 一致。实际生效模型始终参与校验；
+				// 帧内重复 model 键/大小写变体/嵌套 session.model 额外逐一校验，
+				// 防止候选集非空时掩盖被轮换掉的禁用模型。
+				candidates := append([]string{model}, requestmodel.FromBodyCandidates("", "application/json", payload)...)
+				if blocked := blockedModelAllowlistCandidate(apiKey.Group, candidates); blocked != "" {
+					service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalModelConfiguration)
+					middleware2.MarkIngressRejected(c, middleware2.IngressRejectModelNotAllowed)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, fmt.Sprintf("Model %q is not available for this group", blocked), nil)
+				}
 				if decision := h.checkSecurityAuditStage(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload, "subsequent_turn"); decision != nil && !decision.AllowNextStage {
 					writeSecurityAuditWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(securityAuditWSCloseStatus(decision), securityAuditWSCloseReason(decision), nil)
@@ -3490,6 +3518,12 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 	}
 	statusCode := failoverErr.StatusCode
 	responseBody := failoverErr.ResponseBody
+	if statusCode == http.StatusBadRequest && service.IsOpenAICompatibleModelNotFound400(responseBody) && !streamStarted {
+		upstreamMsg := service.SanitizeUpstreamErrorMessage(service.ExtractUpstreamErrorMessage(responseBody))
+		service.SetOpsUpstreamError(c, statusCode, upstreamMsg, "")
+		service.WriteOpenAIUpstreamClientError(c, statusCode, responseBody, upstreamMsg)
+		return
+	}
 	if service.IsOpenAISilentRefusalErrorBody(responseBody) {
 		service.SetOpsUpstreamError(c, statusCode, service.OpenAISilentRefusalClientMessage(), "")
 		h.handleStreamingAwareError(c, http.StatusBadGateway, "upstream_error", service.OpenAISilentRefusalClientMessage(), streamStarted)
@@ -3847,6 +3881,21 @@ func isOpenAIWSUpgradeRequest(r *http.Request) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(strings.TrimSpace(r.Header.Get("Connection"))), "upgrade")
+}
+
+// blockedModelAllowlistCandidate 对全部候选模型逐一校验分组白名单，返回第一个
+// 未命中的值（全部命中或白名单未开启返回空串）。WS 帧与 HTTP 请求体共用该
+// 规则：重复 model 键/大小写变体可能被上游按末值绑定，任一未命中即拒绝。
+func blockedModelAllowlistCandidate(group *service.Group, candidates []string) string {
+	if group == nil || !group.ModelAllowlistEnabled() {
+		return ""
+	}
+	for _, candidate := range candidates {
+		if !group.ModelAllowlist.Allows(candidate) {
+			return candidate
+		}
+	}
+	return ""
 }
 
 func closeOpenAIClientWS(conn *coderws.Conn, status coderws.StatusCode, reason string) {

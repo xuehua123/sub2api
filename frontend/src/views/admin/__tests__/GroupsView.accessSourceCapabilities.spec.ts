@@ -40,7 +40,7 @@ describe("admin groups access source capabilities", () => {
 
   it("submits the capability fields through create and update payloads", () => {
     expect(groupsViewSource).toMatch(/const requestData = \{\s+\.\.\.createGroupForm,/);
-    expect(groupsViewSource).toContain("await adminAPI.groups.create(requestData)");
+    expect(groupsViewSource).toContain("await adminAPI.groups.create(payload)");
     expect(groupsViewSource).toMatch(/const payload = \{\s+\.\.\.editForm,/);
     expect(groupsViewSource).toContain(
       "await adminAPI.groups.update(editingGroup.value.id, payload)",

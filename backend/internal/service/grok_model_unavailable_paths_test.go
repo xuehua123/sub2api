@@ -71,7 +71,7 @@ func TestGrokModelProviderUnavailableClassifierIsExactAndGrokOnly(t *testing.T) 
 	require.Equal(t, http.StatusBadGateway, openAIWSErrorHTTPStatusFromRaw("model_not_found", ""),
 		"the shared OpenAI WS status mapper must not gain Grok-specific semantics")
 	require.False(t, svc.shouldFailoverOpenAIUpstreamResponse(
-		http.StatusBadRequest,
+		nil, http.StatusBadRequest,
 		"unknown provider for model gpt-5.5",
 		[]byte(`{"error":{"code":"model_not_found","message":"unknown provider for model gpt-5.5"}}`),
 	), "official OpenAI 400 model_not_found must retain its existing non-failover semantics")

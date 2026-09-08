@@ -68,6 +68,7 @@ export default {
       deleteError: '删除渠道失败',
       nameRequired: '请输入渠道名称',
       emptyModelsInPricing: '每条定价规则必须至少包含一个模型',
+      noGroupsSelected: '请为 {platform} 至少选择一个分组',
       duplicateModels: '模型「{0}」在多个定价条目中重复',
       modelConflict: "模型模式 '{model1}' 和 '{model2}' 冲突：匹配范围重叠。模型名称按大小写不敏感匹配，已有条目已覆盖其所有大小写变体，无需重复添加。",
       mappingConflict: "模型映射源 '{model1}' 和 '{model2}' 冲突：匹配范围重叠。源模式按大小写不敏感匹配，已有条目已覆盖其所有大小写变体。",

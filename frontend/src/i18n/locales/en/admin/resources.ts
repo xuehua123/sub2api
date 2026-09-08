@@ -622,6 +622,10 @@ export default {
 
     // Ops Monitoring,
   referral: {
+    creditedAt: "Credited at",
+    creditConversionTitle: "Balance conversion details",
+    creditAmount: "Balance credited",
+    commissionDeducted: "Commission deducted",
     title: 'Referral Overview',
     description: 'View global referral accounts, commission trends, and process withdrawals.',
     quickOpenAccountPlaceholder: 'Search account email to jump to workspace...',

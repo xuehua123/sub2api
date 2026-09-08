@@ -619,6 +619,10 @@ export default {
 
     // Ops Monitoring,
   referral: {
+    creditedAt: "到账时间",
+    creditConversionTitle: "转余额详情",
+    creditAmount: "到账余额",
+    commissionDeducted: "扣减佣金",
     title: '返佣管理总览',
     description: '查看全局分销账号、佣金趋势并处理提现。',
     quickOpenAccountPlaceholder: '搜索账号邮箱直达工作台...',

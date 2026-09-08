@@ -496,7 +496,7 @@ type OpenAIGatewayService struct {
 	openaiWSRetryMetrics                openAIWSRetryMetrics
 	responseHeaderFilter                *responseheaders.CompiledHeaderFilter
 	codexSnapshotThrottle               *accountWriteThrottle
-	codexModelsManifestCache            codexModelsManifestCache
+	openAIModelsCache                   openAIModelsCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
 	// openaiCodexTurnStateOrigins: API Key/session/blob 哈希 →
@@ -1401,11 +1401,11 @@ func (s *OpenAIGatewayService) logOpenAIUpstreamHTTPTrace(c *gin.Context, accoun
 	logger.L().Info("openai.upstream_http_trace", fields...)
 }
 
-func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForContext(ctx context.Context, statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponseForContext(ctx context.Context, account *Account, statusCode int, upstreamMsg string, upstreamBody []byte) bool {
 	if IsChannelMonitorProbe(ctx) && statusCode >= 400 {
 		return true
 	}
-	return s.shouldFailoverOpenAIUpstreamResponse(statusCode, upstreamMsg, upstreamBody)
+	return s.shouldFailoverOpenAIUpstreamResponse(account, statusCode, upstreamMsg, upstreamBody)
 }
 
 func ensureOpenAIClientRequestIDHeader(ctx context.Context, req *http.Request) {
