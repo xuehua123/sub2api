@@ -20,7 +20,11 @@ func TestMigration236RenamesLegacyModelsListConfigColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx, "ALTER TABLE groups RENAME COLUMN model_allowlist TO models_list_config")
+	_, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS group_model_columns_compat ON groups")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups RENAME COLUMN model_allowlist TO models_list_config")
 	require.NoError(t, err)
 
 	var groupID int64
@@ -50,7 +54,11 @@ func TestMigration236BackfillsWhenBothColumnsExist(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx,
+	_, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS group_model_columns_compat ON groups")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx,
 		"ALTER TABLE groups ADD COLUMN models_list_config JSONB NOT NULL DEFAULT '{}'::jsonb")
 	require.NoError(t, err)
 
@@ -85,7 +93,11 @@ func TestMigration236RecreatesMissingModelAllowlistColumn(t *testing.T) {
 	tx := testTx(t)
 	ctx := context.Background()
 
-	_, err := tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
+	_, err := tx.ExecContext(ctx, "DROP TRIGGER IF EXISTS group_model_columns_compat ON groups")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN model_allowlist")
+	require.NoError(t, err)
+	_, err = tx.ExecContext(ctx, "ALTER TABLE groups DROP COLUMN IF EXISTS models_list_config")
 	require.NoError(t, err)
 
 	var groupID int64

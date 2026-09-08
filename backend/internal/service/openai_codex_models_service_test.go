@@ -353,8 +353,7 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.Equal(t, "GPT-6 Astra", gpt6Astra.DisplayName)
 	require.NotNil(t, gpt6Astra.DefaultReasoningLevel)
 	require.Equal(t, "medium", *gpt6Astra.DefaultReasoningLevel)
-	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(gpt6Astra.SupportedReasoningLevels))
-	require.NotContains(t, gpt6Astra.SupportedReasoningLevels, configuredCodexReasoningLevel{Effort: "ultra"})
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max", "ultra"}, effortsFromConfiguredCodexLevels(gpt6Astra.SupportedReasoningLevels))
 	require.NotContains(t, gpt6Astra.SupportedReasoningLevels, configuredCodexReasoningLevel{Effort: "none"})
 	require.True(t, configuredCodexSupportsPriorityServiceTier("gpt-6-astra"))
 	require.Equal(t, []configuredCodexServiceTier{{
@@ -370,7 +369,7 @@ func TestNewConfiguredCodexModelDescriptorUsesProviderMetadataAndSafeFallback(t 
 	require.Equal(t, int64(1_050_000), gpt6Astra.MaxContextWindow)
 	gpt6 := newConfiguredCodexModelDescriptor("gpt-6")
 	require.Equal(t, "GPT-6 (Astra)", gpt6.DisplayName)
-	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(gpt6.SupportedReasoningLevels))
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max", "ultra"}, effortsFromConfiguredCodexLevels(gpt6.SupportedReasoningLevels))
 	require.Equal(t, int64(1_050_000), gpt6.ContextWindow)
 
 	gpt55 := newConfiguredCodexModelDescriptor("gpt-5.5")
@@ -1152,13 +1151,20 @@ func TestBuildGroupConfiguredCodexModelsManifestUsesAdministratorConfiguration(t
 	require.NoError(t, err)
 	require.True(t, configured)
 	models := decodeCodexManifestModels(t, manifest.Body)
-	require.Len(t, models, 1)
-	require.Equal(t, "glm-5.3", models[0]["slug"])
-	require.Equal(t, "GLM 5.3", models[0]["display_name"])
-	require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, models[0]))
-	require.Equal(t, "medium", models[0]["default_reasoning_level"])
-	require.Equal(t, []any{"text"}, models[0]["input_modalities"])
-	require.EqualValues(t, 1_000_000, models[0]["context_window"])
+	require.Len(t, models, 12)
+	var glm map[string]any
+	for _, model := range models {
+		if model["slug"] == "glm-5.3" {
+			glm = model
+			break
+		}
+	}
+	require.NotNil(t, glm)
+	require.Equal(t, "GLM 5.3", glm["display_name"])
+	require.Equal(t, []string{"low", "medium", "high"}, effortsFromManifestModel(t, glm))
+	require.Equal(t, "medium", glm["default_reasoning_level"])
+	require.Equal(t, []any{"text"}, glm["input_modalities"])
+	require.EqualValues(t, 1_000_000, glm["context_window"])
 	require.Equal(t, codexModelsManifestBodyETag(manifest.Body), manifest.ETag)
 
 	notModified, configured, err := svc.BuildGroupConfiguredCodexModelsManifest(

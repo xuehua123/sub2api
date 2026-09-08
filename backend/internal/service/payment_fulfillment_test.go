@@ -2679,6 +2679,7 @@ func TestExecuteBalanceFulfillmentRecoversAfterRedeemWithoutCreditingAgain(t *te
 		Save(ctx)
 	require.NoError(t, err)
 
+	usedBy := order.UserID
 	redeemRepo := &redeemCodeRepoStub{codesByCode: map[string]*RedeemCode{
 		order.RechargeCode: {
 			ID:     101,
@@ -2686,6 +2687,7 @@ func TestExecuteBalanceFulfillmentRecoversAfterRedeemWithoutCreditingAgain(t *te
 			Type:   RedeemTypeBalance,
 			Value:  order.Amount,
 			Status: StatusUsed,
+			UsedBy: &usedBy,
 		},
 	}}
 	svc := &PaymentService{

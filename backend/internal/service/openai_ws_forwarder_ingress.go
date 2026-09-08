@@ -790,9 +790,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				)
 				bridgeAccountFailoverInputExists = true
 			}
-			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); !useHTTPBridge && bridgeTurnState != "" && result.terminalDelivered {
+			if bridgeTurnState := strings.TrimSpace(result.ResponseHeaders.Get(openAIWSTurnStateHeader)); bridgeTurnState != "" && result.terminalDelivered {
 				turnState = bridgeTurnState
-				s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
+				if !useHTTPBridge {
+					s.commitOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash, bridgeTurnState)
+				} else {
+					// HTTP bridge state belongs to this client connection. Record only
+					// provenance so the outbound guard accepts the next turn; never bind
+					// it to the shared session-state cache.
+					s.commitOpenAIWSSessionTurnState(c, account, nil, groupID, "", bridgeTurnState)
+				}
 			}
 			responseID := strings.TrimSpace(result.RequestID)
 			if responseID != "" && stateStore != nil {
