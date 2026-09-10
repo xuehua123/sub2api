@@ -452,10 +452,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				}
 				return h
 			}(),
-			Duration:                      time.Since(startTime),
-			FirstTokenMs:                  firstTokenMs,
-			ClientDisconnect:              clientDisconnected,
-			terminalDelivered:             terminalDelivered,
+			Duration:          time.Since(startTime),
+			FirstTokenMs:      firstTokenMs,
+			ClientDisconnect:  clientDisconnected,
+			terminalDelivered: terminalDelivered,
 		}
 	}
 
