@@ -45,7 +45,7 @@ func TestHasIdentifiedResponseModelPricingRejectsNonTokenChannelPricing(t *testi
 			return map[int64]string{groupID: "anthropic"}, nil
 		},
 	}
-	cs := NewChannelService(repo, nil, nil, nil, nil)
+	cs := NewChannelService(repo, nil, nil, nil, nil, nil)
 	svc := &GatewayService{billingService: bs, resolver: NewModelPricingResolver(cs, bs)}
 	apiKey := &APIKey{Group: &Group{ID: groupID, Platform: "anthropic"}}
 
@@ -77,7 +77,7 @@ func TestHasIdentifiedOpenAIResponsePricingRejectsNonTokenChannelPricing(t *test
 					return map[int64]string{groupID: "openai"}, nil
 				},
 			}
-			cs := NewChannelService(repo, nil, nil, nil, nil)
+			cs := NewChannelService(repo, nil, nil, nil, nil, nil)
 			svc := &OpenAIGatewayService{billingService: bs, resolver: NewModelPricingResolver(cs, bs)}
 			apiKey := &APIKey{Group: &Group{ID: groupID, Platform: "openai"}}
 

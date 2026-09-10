@@ -550,7 +550,6 @@
             </template>
 
           </template>
-
           <!-- 2. Recharge Tab -->
           <template v-else-if="activeTab === 'recharge'">
             <div class="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 max-w-6xl mx-auto items-start">
@@ -694,7 +693,7 @@
               />
               <div v-if="checkout.help_text" class="space-y-1">
                 <h4 class="text-sm font-bold text-slate-950 dark:text-white">支付常见问题及解答</h4>
-                <p class="max-w-xl text-xs leading-relaxed text-slate-500 dark:text-slate-400">{{ checkout.help_text }}</p>
+                <div class="markdown-body max-w-xl overflow-x-auto break-words text-xs leading-relaxed text-slate-500 dark:text-slate-400" v-html="renderedHelpText"></div>
               </div>
             </div>
           </div>
@@ -839,6 +838,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { marked } from 'marked'
+import DOMPurify from 'dompurify'
+import '@/styles/announcement-markdown.css'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { usePaymentStore } from '@/stores/payment'
@@ -1158,6 +1160,10 @@ const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
   plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
+
+const renderedHelpText = computed(() => DOMPurify.sanitize(
+  marked.parse(checkout.value.help_text || '', { async: false, gfm: true, breaks: false }),
+))
 
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []

@@ -37,7 +37,7 @@ func TestBatchImageModelPricingResolver_GroupAndChannelPriority(t *testing.T) {
 			return map[int64]string{groupID: PlatformGemini}, nil
 		},
 	}
-	channelService := NewChannelService(repo, nil, nil, nil, nil)
+	channelService := NewChannelService(repo, nil, nil, nil, nil, nil)
 	billingService := &BillingService{fallbackPrices: map[string]*ModelPricing{}}
 	pricing := &BatchImageModelPricingResolver{
 		Resolver: NewModelPricingResolver(channelService, billingService),

@@ -2008,10 +2008,9 @@ func (s *APIKeyService) GetUserGroupAccessPolicy(ctx context.Context, userID int
 	return allowed, user.RestrictToAllowedGroups, nil
 }
 
-// GetUserGroupVisibility returns only the explicit user_allowed_groups set and
-// the independent public-group restriction. Entitlement/subscription grants
-// intentionally do not widen this set: restrict_public_groups specifically
-// requires public groups to be explicitly allowlisted.
+// GetUserGroupVisibility returns the explicit user_allowed_groups set plus
+// active subscriptions for exclusive subscription groups. Public-group
+// visibility remains explicit-only when restrict_public_groups is enabled.
 func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64) (map[int64]struct{}, bool, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -2020,6 +2019,31 @@ func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64
 	allowed := make(map[int64]struct{}, len(user.AllowedGroups))
 	for _, id := range user.AllowedGroups {
 		allowed[id] = struct{}{}
+	}
+	if s.userSubRepo != nil {
+		subscriptions, listErr := s.userSubRepo.ListActiveByUserID(ctx, userID)
+		if listErr != nil {
+			return nil, false, fmt.Errorf("list active subscriptions: %w", listErr)
+		}
+		// Subscription-backed exclusive groups are usable and must remain
+		// visible in the model plaza. Public groups are intentionally omitted
+		// here so restrict_public_groups cannot be bypassed by a subscription.
+		if s.groupRepo != nil {
+			groups, groupErr := s.groupRepo.ListActive(ctx)
+			if groupErr != nil {
+				return nil, false, fmt.Errorf("list active groups: %w", groupErr)
+			}
+			byID := make(map[int64]Group, len(groups))
+			for _, group := range groups {
+				byID[group.ID] = group
+			}
+			for _, subscription := range subscriptions {
+				group, ok := byID[subscription.GroupID]
+				if ok && group.IsExclusive && group.IsSubscriptionType() {
+					allowed[subscription.GroupID] = struct{}{}
+				}
+			}
+		}
 	}
 	return allowed, user.RestrictPublicGroups, nil
 }

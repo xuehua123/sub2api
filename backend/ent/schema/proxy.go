@@ -75,6 +75,10 @@ func (Proxy) Edges() []ent.Edge {
 			Ref("proxy"),
 		edge.From("upstream_connections", UpstreamConnection.Type).
 			Ref("proxy"),
+		// Directed many-to-one: a backup can serve multiple primary proxies.
+		// The inverse edge prevents Ent from treating this self-reference as symmetric.
+		edge.From("primary_proxies", Proxy.Type).
+			Ref("backup_proxy"),
 		edge.To("backup_proxy", Proxy.Type).
 			Field("backup_proxy_id").
 			Unique(),

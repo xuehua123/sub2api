@@ -393,7 +393,7 @@ func TestModelsForGroup_OpaqueAnthropicChannelAliasUsesFinalRuntimeFastCapabilit
 		},
 	}
 	poisonedBefore := poisoned.Clone()
-	h := &ModelPriceHandler{channelService: service.NewChannelService(nil, nil, nil, nil, nil)}
+	h := &ModelPriceHandler{channelService: service.NewChannelService(nil, nil, nil, nil, nil, nil)}
 	group := modelPriceGroupDTO{ID: 46, Platform: service.PlatformAnthropic, EffectiveMultiplier: 1}
 
 	run := func(t *testing.T, billingModel string, accounts []service.Account) modelPriceModelDTO {

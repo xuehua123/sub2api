@@ -274,6 +274,10 @@ const clickButtonContaining = async (wrapper: ReturnType<typeof mount>, text: st
   await button!.trigger('click')
 }
 
+// Keep the upstream helper name available for tests added during the v0.2.4
+// merge; the local suite uses the equivalent clickButtonContaining helper.
+const selectButtonByText = clickButtonContaining
+
 function mountModal(groups: any[] = []) {
   return mount(CreateAccountModal, {
     props: {
@@ -622,6 +626,28 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
         chat_completions: 'https://api.kimi.com/coding/v1',
         anthropic: 'https://api.kimi.com/coding',
         responses: 'https://api.kimi.com/coding/v1'
+      }
+    })
+  })
+
+  it('submits adaptive MiniMax protocol endpoints', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'MiniMax')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('MiniMax adaptive')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('sk-minimax')
+
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    expect(createAccountMock.mock.calls[0]?.[0]?.credentials).toMatchObject({
+      account_mode: 'payg',
+      api_protocol: 'adaptive',
+      base_url: 'https://api.minimaxi.com/v1',
+      api_base_urls: {
+        chat_completions: 'https://api.minimaxi.com/v1',
+        anthropic: 'https://api.minimaxi.com/anthropic',
+        responses: 'https://api.minimaxi.com/v1'
       }
     })
   })
