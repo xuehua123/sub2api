@@ -274,6 +274,10 @@ const clickButtonContaining = async (wrapper: ReturnType<typeof mount>, text: st
   await button!.trigger('click')
 }
 
+// Keep the upstream helper name available for tests added during the v0.2.4
+// merge; the local suite uses the equivalent clickButtonContaining helper.
+const selectButtonByText = clickButtonContaining
+
 function mountModal(groups: any[] = []) {
   return mount(CreateAccountModal, {
     props: {

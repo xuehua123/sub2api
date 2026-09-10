@@ -61,7 +61,8 @@ function mountModal(value = account()) {
     props: { show: true, account: value, proxies: [], groups: [] },
     global: { stubs: {
       BaseDialog: BaseDialogStub, Select: true, Icon: true, ProxySelector: true,
-      GroupSelector: true, ModelWhitelistSelector: true
+      GroupSelector: true, ModelWhitelistSelector: true,
+      RouterLink: { template: '<a><slot /></a>' }
     } }
   })
 }
