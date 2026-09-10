@@ -2021,6 +2021,13 @@ func (s *APIKeyService) GetUserGroupVisibility(ctx context.Context, userID int64
 	for _, id := range user.AllowedGroups {
 		allowed[id] = struct{}{}
 	}
+	subscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, userID)
+	if err != nil {
+		return nil, false, fmt.Errorf("list active subscriptions: %w", err)
+	}
+	for _, sub := range subscriptions {
+		allowed[sub.GroupID] = struct{}{}
+	}
 	return allowed, user.RestrictPublicGroups, nil
 }
 
