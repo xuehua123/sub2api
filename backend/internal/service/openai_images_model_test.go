@@ -37,7 +37,11 @@ func TestOpenAIImagesResponsesDriverAndImageModels(t *testing.T) {
 						require.Equal(t, model, gjson.GetBytes(body, "tools.0.model").String())
 						require.Equal(t, quality, gjson.GetBytes(body, "tools.0.quality").String())
 						require.Equal(t, "1536x864", gjson.GetBytes(body, "tools.0.size").String())
-						require.Equal(t, "transparent", gjson.GetBytes(body, "tools.0.background").String())
+						if model == "gpt-image-2" {
+							require.False(t, gjson.GetBytes(body, "tools.0.background").Exists(), "gpt-image-2 rejects transparent backgrounds")
+						} else {
+							require.Equal(t, "transparent", gjson.GetBytes(body, "tools.0.background").String())
+						}
 						if parsed.IsEdits() {
 							require.Equal(t, "edit", gjson.GetBytes(body, "tools.0.action").String())
 							require.Equal(t, parsed.InputImageURLs[0], gjson.GetBytes(body, "input.0.content.1.image_url").String())

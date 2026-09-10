@@ -305,9 +305,9 @@ func TestFilterPlazaVisibleGroups_SubscribedExclusiveGroup(t *testing.T) {
 		{ID: 43, IsExclusive: true, SubscriptionType: "subscription"},
 		{ID: 44, IsExclusive: true, SubscriptionType: "standard"},
 	}
-	require.Empty(t, filterPlazaVisibleGroups(groups, nil, false))
+	require.Empty(t, filterPlazaVisibleGroups(groups, nil, nil, false))
 	for _, restricted := range []bool{false, true} {
-		visible := filterPlazaVisibleGroups(groups, map[int64]struct{}{42: {}}, restricted)
+		visible := filterPlazaVisibleGroups(groups, map[int64]struct{}{42: {}}, nil, restricted)
 		require.Len(t, visible, 1)
 		require.Equal(t, int64(42), visible[0].ID)
 	}
