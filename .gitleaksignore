@@ -220,3 +220,4 @@ worktree/tools/subscription_entitlements_v2_staging_smoke.ps1:generic-api-key:35
 200b1406d7eb42115ea16ca4fc5363bee9d2155f:backend/internal/service/gateway_fallbacks_sanitize_test.go:generic-api-key:74
 200b1406d7eb42115ea16ca4fc5363bee9d2155f:backend/internal/service/gateway_fallbacks_sanitize_test.go:generic-api-key:92
 
+3d6c207723b40c2f727f0fec3e37dbee49217b71:frontend/src/api/__tests__/admin.subscriptions.bulk.spec.ts:generic-api-key:18
