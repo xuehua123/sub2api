@@ -354,6 +354,23 @@ func (s *SubscriptionService) bestEffortInvalidateSubscriptionCachesBefore(actio
 	}
 }
 
+func (s *SubscriptionService) invalidateSubscriptionCaches(userID, groupID int64) error {
+	s.InvalidateSubCacheSync(userID, groupID)
+	if s.billingCacheService == nil {
+		return nil
+	}
+
+	cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID); err != nil {
+		return fmt.Errorf("invalidate billing subscription cache: %w", err)
+	}
+	if err := s.billingCacheService.PublishSubscriptionCacheInvalidation(cacheCtx, subCacheKey(userID, groupID)); err != nil {
+		return fmt.Errorf("publish subscription cache invalidation: %w", err)
+	}
+	return nil
+}
+
 type AssignSubscriptionInput struct {
 	UserID       int64
 	GroupID      int64
@@ -381,8 +398,13 @@ func (o subscriptionAssignmentOutcome) reused() bool {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+	sub, _, err := s.assignSubscriptionWithOutcome(ctx, input)
+	return sub, err
+}
+
+func (s *SubscriptionService) assignSubscriptionWithOutcome(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, subscriptionAssignmentOutcome, error) {
 	if input == nil {
-		return nil, ErrInvalidInput
+		return nil, subscriptionAssignmentCreated, ErrInvalidInput
 	}
 	resolvedInput := *input
 	resolvedInput.ValidityDays = normalizeAssignValidityDays(input.ValidityDays)
@@ -396,7 +418,7 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 		)
 		entitlementSvc, err := s.adminEntitlementService()
 		if err != nil {
-			return nil, err
+			return nil, subscriptionAssignmentCreated, err
 		}
 		err = entitlementSvc.entitlementRepo.WithUserEntitlementMutationTx(ctx, input.UserID, func(txCtx context.Context) error {
 			var innerErr error
@@ -411,22 +433,22 @@ func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *Ass
 			if shouldFallbackToEntitlementOnlyAssign(err) {
 				return s.assignPlanEntitlementOnly(ctx, input)
 			}
-			return nil, err
+			return nil, subscriptionAssignmentCreated, err
 		}
 		if outcome.changed() || aliasMayChange {
 			s.maybeInvalidateAssignmentCaches(input.UserID, input.GroupID, false)
 		}
-		return sub, nil
+		return sub, outcome, nil
 	}
 
 	sub, outcome, err := s.assignSubscriptionWithReuse(ctx, input, false)
 	if err != nil {
-		return nil, err
+		return nil, subscriptionAssignmentCreated, err
 	}
 	if err := s.assignPlanEntitlementAlias(ctx, input, sub, outcome); err != nil {
-		return nil, err
+		return nil, subscriptionAssignmentCreated, err
 	}
-	return sub, nil
+	return sub, outcome, nil
 }
 
 func (s *SubscriptionService) shouldAssignPlanEntitlementAlias(ctx context.Context, input *AssignSubscriptionInput) bool {
@@ -549,11 +571,11 @@ func (s *SubscriptionService) assignPlanEntitlementAlias(ctx context.Context, in
 	return nil
 }
 
-func (s *SubscriptionService) assignPlanEntitlementOnly(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
+func (s *SubscriptionService) assignPlanEntitlementOnly(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, subscriptionAssignmentOutcome, error) {
 	if s == nil || input == nil || input.PlanID <= 0 || !s.ShouldUseSubscriptionEntitlementAliases(ctx) {
-		return nil, ErrSubscriptionEntitlementPlanRequired
+		return nil, subscriptionAssignmentCreated, ErrSubscriptionEntitlementPlanRequired
 	}
-	ent, _, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
+	ent, reused, err := s.entitlementSvc.AssignOrExtendFromPlan(ctx, AssignEntitlementFromPlanInput{
 		UserID:               input.UserID,
 		PlanID:               input.PlanID,
 		SourceType:           SubscriptionEntitlementSourceAdminAssign,
@@ -562,12 +584,16 @@ func (s *SubscriptionService) assignPlanEntitlementOnly(ctx context.Context, inp
 		Notes:                input.Notes,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("assign subscription entitlement only: %w", err)
+		return nil, subscriptionAssignmentCreated, fmt.Errorf("assign subscription entitlement only: %w", err)
 	}
 	if input.GroupID > 0 {
 		s.InvalidateSubCache(input.UserID, input.GroupID)
 	}
-	return adminSubscriptionFromEntitlement(ent), nil
+	outcome := subscriptionAssignmentCreated
+	if reused {
+		outcome = subscriptionAssignmentRenewed
+	}
+	return adminSubscriptionFromEntitlement(ent), outcome, nil
 }
 
 func adminAssignEntitlementSourceExternalID(legacySubscriptionID, planID int64) string {
@@ -786,6 +812,7 @@ func (s *SubscriptionService) createSubscription(ctx context.Context, input *Ass
 
 // BulkAssignSubscriptionInput 批量分配订阅输入
 type BulkAssignSubscriptionInput struct {
+	PlanID       int64
 	UserIDs      []int64
 	GroupID      int64
 	ValidityDays int
@@ -812,14 +839,22 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 		Statuses:      make(map[int64]string),
 	}
 
+	seen := make(map[int64]struct{}, len(input.UserIDs))
 	for _, userID := range input.UserIDs {
-		sub, outcome, err := s.assignSubscriptionWithReuse(ctx, &AssignSubscriptionInput{
+		if input.PlanID > 0 {
+			if _, exists := seen[userID]; exists {
+				continue
+			}
+			seen[userID] = struct{}{}
+		}
+		sub, outcome, err := s.assignSubscriptionWithOutcome(ctx, &AssignSubscriptionInput{
+			PlanID:       input.PlanID,
 			UserID:       userID,
 			GroupID:      input.GroupID,
 			ValidityDays: input.ValidityDays,
 			AssignedBy:   input.AssignedBy,
 			Notes:        input.Notes,
-		}, false)
+		})
 		if err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, fmt.Sprintf("user %d: %v", userID, err))
@@ -1170,50 +1205,72 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 		return s.adminAdjustEntitlement(ctx, sub.EntitlementLink.EntitlementID, days)
 	}
 
-	// 限制调整天数范围
-	if days > MaxValidityDays {
-		days = MaxValidityDays
-	}
-	if days < -MaxValidityDays {
-		days = -MaxValidityDays
-	}
+	err = s.withSubscriptionUpdateTx(ctx, func(txCtx context.Context) error {
+		// Lock the row before reading its expiry. Without this lock, concurrent
+		// adjustments can both calculate from the same stale expiry and lose one
+		// of the updates when they write the absolute timestamp.
+		sub, err := s.userSubRepo.GetByIDForUpdate(txCtx, subscriptionID)
+		if err != nil {
+			return ErrSubscriptionNotFound
+		}
 
-	now := time.Now()
-	isExpired := !sub.ExpiresAt.After(now)
+		// 限制调整天数范围
+		if days > MaxValidityDays {
+			days = MaxValidityDays
+		}
+		if days < -MaxValidityDays {
+			days = -MaxValidityDays
+		}
 
-	// 如果订阅已过期，不允许负向调整
-	if isExpired && days < 0 {
-		return nil, infraerrors.BadRequest("CANNOT_SHORTEN_EXPIRED", "cannot shorten an expired subscription")
-	}
+		now := time.Now()
+		if s.now != nil {
+			now = s.now()
+		}
+		isExpired := !sub.ExpiresAt.After(now)
 
-	// 计算新的过期时间
-	var newExpiresAt time.Time
-	if isExpired {
-		// 已过期：从当前时间开始增加天数
-		newExpiresAt = now.AddDate(0, 0, days)
-	} else {
-		// 未过期：从原过期时间增加/减少天数
-		newExpiresAt = sub.ExpiresAt.AddDate(0, 0, days)
-	}
+		// 如果订阅已过期，不允许负向调整
+		if isExpired && days < 0 {
+			return infraerrors.BadRequest("CANNOT_SHORTEN_EXPIRED", "cannot shorten an expired subscription")
+		}
 
-	if newExpiresAt.After(MaxExpiresAt) {
-		newExpiresAt = MaxExpiresAt
-	}
+		// 计算新的过期时间
+		var newExpiresAt time.Time
+		if isExpired {
+			// 已过期：从当前时间开始增加天数
+			newExpiresAt = now.AddDate(0, 0, days)
+		} else {
+			// 未过期：从原过期时间增加/减少天数
+			newExpiresAt = sub.ExpiresAt.AddDate(0, 0, days)
+		}
 
-	// 检查新的过期时间必须大于当前时间
-	if !newExpiresAt.After(now) {
-		return nil, ErrAdjustWouldExpire
-	}
+		if newExpiresAt.After(MaxExpiresAt) {
+			newExpiresAt = MaxExpiresAt
+		}
 
-	if err := s.userSubRepo.ExtendExpiry(ctx, subscriptionID, newExpiresAt); err != nil {
+		// 检查新的过期时间必须大于当前时间
+		if !newExpiresAt.After(now) {
+			return ErrAdjustWouldExpire
+		}
+
+		if err := s.userSubRepo.ExtendExpiry(txCtx, subscriptionID, newExpiresAt); err != nil {
+			return err
+		}
+
+		// 如果订阅已过期，恢复为active状态
+		if sub.Status == SubscriptionStatusExpired {
+			if err := s.userSubRepo.UpdateStatus(txCtx, subscriptionID, SubscriptionStatusActive); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	// 如果订阅已过期，恢复为active状态
-	if sub.Status == SubscriptionStatusExpired {
-		if err := s.userSubRepo.UpdateStatus(ctx, subscriptionID, SubscriptionStatusActive); err != nil {
-			return nil, err
-		}
+	sub, err = s.userSubRepo.GetByID(ctx, subscriptionID)
+	if err != nil {
+		return nil, err
 	}
 
 	// 失效订阅缓存
@@ -1227,7 +1284,7 @@ func (s *SubscriptionService) ExtendSubscription(ctx context.Context, subscripti
 		}()
 	}
 
-	return s.userSubRepo.GetByID(ctx, subscriptionID)
+	return sub, nil
 }
 
 // GetByID 根据ID获取订阅

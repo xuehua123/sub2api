@@ -25,6 +25,8 @@ vi.mock('@/api/payment', () => ({
   }
 }))
 
+vi.mock('@/utils/featureFlags', () => ({ FeatureFlags: { subscription: {} }, isFeatureFlagEnabled: () => true }))
+
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({
     t: (key: string, params?: Record<string, unknown>) => {

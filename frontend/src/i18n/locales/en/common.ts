@@ -208,6 +208,8 @@
     github: 'GitHub',
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
+    recharge: 'Recharge',
+    subscribe: 'Subscription',
     docs: 'Docs',
     docsCenter: 'Documentation Center',
     myOrders: 'My Orders',

@@ -215,6 +215,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyWeChatConnectFrontendRedirectURL,
 		SettingKeyBackendModeEnabled,
 		SettingPaymentEnabled,
+		SettingBalancePayDisabled,
 		SettingKeyOIDCConnectEnabled,
 		SettingKeyOIDCConnectProviderName,
 		// LobeHub public settings
@@ -256,6 +257,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorHideUserRanking,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPricesUserVisible,
+		SettingKeySubscriptionEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyPluginManagementEnabled,
@@ -393,6 +395,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		WeChatOAuthMobileEnabled:            weChatMobileEnabled,
 		BackendModeEnabled:                  settings[SettingKeyBackendModeEnabled] == "true",
 		PaymentEnabled:                      settings[SettingPaymentEnabled] == "true",
+		PaymentBalanceDisabled:              settings[SettingBalancePayDisabled] == "true",
 		OIDCOAuthEnabled:                    oidcEnabled,
 		OIDCOAuthProviderName:               oidcProviderName,
 		GitHubOAuthEnabled:                  gitHubEnabled,
@@ -442,6 +445,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		AllowUserViewErrorRequests:  settings[SettingKeyAllowUserViewErrorRequests] == "true",
 		ModelPriceUSDCNYRate:        modelPriceUSDCNYRate,
 		ModelPriceCNYPerQuotaUSD:    modelPriceCNYPerQuotaUSD,
+		SubscriptionEnabled:         !isFalseSettingValue(settings[SettingKeySubscriptionEnabled]),
 	}, nil
 }
 
@@ -703,6 +707,7 @@ type PublicSettingsInjectionPayload struct {
 	LobeHubRuntimeConfigVersion         string                      `json:"lobehub_runtime_config_version"`
 	HideLobeHubImportButton             bool                        `json:"hide_lobehub_import_button"`
 	Version                             string                      `json:"version"`
+	PaymentBalanceDisabled              bool                        `json:"payment_balance_disabled"`
 	// 服务器全局时区（IANA 名称与当前 UTC 偏移），高峰时段等服务端本地时间窗口的展示标注用
 	ServerTimezone              string  `json:"server_timezone"`
 	ServerUTCOffset             string  `json:"server_utc_offset"`
@@ -736,6 +741,7 @@ type PublicSettingsInjectionPayload struct {
 	AllowUserViewErrorRequests    bool    `json:"allow_user_view_error_requests"`
 	ModelPriceUSDCNYRate          float64 `json:"model_price_usd_cny_rate"`
 	ModelPriceCNYPerQuotaUSD      float64 `json:"model_price_cny_per_quota_usd"`
+	SubscriptionEnabled           bool    `json:"subscription_enabled"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -824,6 +830,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		LobeHubDefaultModel:                 settings.LobeHubDefaultModel,
 		LobeHubRuntimeConfigVersion:         settings.LobeHubRuntimeConfigVersion,
 		HideLobeHubImportButton:             settings.HideLobeHubImportButton,
+		PaymentBalanceDisabled:              settings.PaymentBalanceDisabled,
 		Version:                             s.version,
 		ServerTimezone:                      timezone.Name(),
 		ServerUTCOffset:                     timezone.UTCOffset(),
@@ -840,6 +847,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPricesUserVisible:               settings.ModelPricesUserVisible,
+		SubscriptionEnabled:                  settings.SubscriptionEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		PluginManagementEnabled:              settings.PluginManagementEnabled,

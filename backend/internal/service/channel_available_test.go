@@ -908,9 +908,9 @@ func TestDeepSeekDisplayPreservesCustomSourcesAndMatchesRuntimeCost(t *testing.T
 	t.Run("catalog-only remains official", func(t *testing.T) {
 		got, matched := ResolveCatalogModelPricingForDisplay(model, catalog.GetModelPricing(model))
 		require.True(t, matched)
-		require.InDelta(t, deepseekProOffPeakInputPrice, *got.InputPrice, 1e-15)
-		require.InDelta(t, deepseekProOffPeakOutputPrice, *got.OutputPrice, 1e-15)
-		require.InDelta(t, deepseekProOffPeakCacheRead, *got.CacheReadPrice, 1e-15)
+		require.InDelta(t, deepseekFlashOffPeakInputPrice, *got.InputPrice, 1e-15)
+		require.InDelta(t, deepseekFlashOffPeakOutputPrice, *got.OutputPrice, 1e-15)
+		require.InDelta(t, deepseekFlashOffPeakCacheRead, *got.CacheReadPrice, 1e-15)
 	})
 
 	t.Run("group override", func(t *testing.T) {
@@ -926,8 +926,8 @@ func TestDeepSeekDisplayPreservesCustomSourcesAndMatchesRuntimeCost(t *testing.T
 		display, matched := resolver.channelService.GroupModelPricingForDisplay(group, model)
 		require.True(t, matched)
 		require.InDelta(t, input, *display.InputPrice, 1e-15)
-		require.InDelta(t, deepseekProOffPeakOutputPrice, *display.OutputPrice, 1e-15)
-		require.InDelta(t, deepseekProOffPeakCacheRead, *display.CacheReadPrice, 1e-15)
+		require.InDelta(t, deepseekFlashOffPeakOutputPrice, *display.OutputPrice, 1e-15)
+		require.InDelta(t, deepseekFlashOffPeakCacheRead, *display.CacheReadPrice, 1e-15)
 
 		resolved := resolver.Resolve(context.Background(), PricingInput{Model: model, Group: group})
 		require.Equal(t, PricingSourceGroup, resolved.Source)

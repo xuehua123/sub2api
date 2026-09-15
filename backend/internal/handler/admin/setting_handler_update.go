@@ -360,6 +360,7 @@ type UpdateSettingsRequest struct {
 	ModelPriceUSDCNYRate     *float64 `json:"model_price_usd_cny_rate"`
 	ModelPriceCNYPerQuotaUSD *float64 `json:"model_price_cny_per_quota_usd"`
 	ModelPricesUserVisible   *bool    `json:"model_prices_user_visible"`
+	SubscriptionEnabled      *bool    `json:"subscription_enabled"`
 
 	// Model Plaza feature switches + description
 	ModelPlazaEnabled     *bool   `json:"model_plaza_enabled"`
@@ -2285,6 +2286,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AvailableChannelsEnabled
 		}(),
+		SubscriptionEnabled: func() bool {
+			if req.SubscriptionEnabled != nil {
+				return *req.SubscriptionEnabled
+			}
+			return previousSettings.SubscriptionEnabled
+		}(),
 		ModelPlazaEnabled: func() bool {
 			if req.ModelPlazaEnabled != nil {
 				return *req.ModelPlazaEnabled
@@ -2741,6 +2748,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ModelPriceUSDCNYRate:     updatedSettings.ModelPriceUSDCNYRate,
 		ModelPriceCNYPerQuotaUSD: updatedSettings.ModelPriceCNYPerQuotaUSD,
 		ModelPricesUserVisible:   updatedSettings.ModelPricesUserVisible,
+		SubscriptionEnabled:      updatedSettings.SubscriptionEnabled,
 
 		AffiliateEnabled:                     updatedSettings.AffiliateEnabled,
 		ReferralEnabled:                      updatedSettings.ReferralEnabled,

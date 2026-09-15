@@ -50,7 +50,8 @@ type AssignSubscriptionRequest struct {
 
 // BulkAssignSubscriptionRequest represents bulk assign subscription request
 type BulkAssignSubscriptionRequest struct {
-	UserIDs      []int64 `json:"user_ids" binding:"required,min=1"`
+	PlanID       int64   `json:"plan_id" binding:"omitempty,gt=0"`
+	UserIDs      []int64 `json:"user_ids" binding:"required,min=1,max=100,dive,gt=0"`
 	GroupID      int64   `json:"group_id" binding:"required"`
 	ValidityDays int     `json:"validity_days" binding:"omitempty,max=36500"` // max 100 years
 	Notes        string  `json:"notes"`
@@ -183,19 +184,61 @@ func (h *SubscriptionHandler) BulkAssign(c *gin.Context) {
 	// Get admin user ID from context
 	adminID := getAdminIDFromContext(c)
 
-	result, err := h.subscriptionService.BulkAssignSubscription(c.Request.Context(), &service.BulkAssignSubscriptionInput{
-		UserIDs:      req.UserIDs,
-		GroupID:      req.GroupID,
-		ValidityDays: req.ValidityDays,
-		AssignedBy:   adminID,
-		Notes:        req.Notes,
-	})
+	execute := func(ctx context.Context) (any, error) {
+		result, err := h.subscriptionService.BulkAssignSubscription(ctx, &service.BulkAssignSubscriptionInput{
+			UserIDs:      req.UserIDs,
+			PlanID:       req.PlanID,
+			GroupID:      req.GroupID,
+			ValidityDays: req.ValidityDays,
+			AssignedBy:   adminID,
+			Notes:        req.Notes,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return dto.BulkAssignResultFromService(result), nil
+	}
+	if req.PlanID > 0 {
+		key, err := service.NormalizeIdempotencyKey(c.GetHeader("Idempotency-Key"))
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		if key == "" {
+			response.ErrorFrom(c, service.ErrIdempotencyKeyRequired)
+			return
+		}
+		if service.DefaultIdempotencyCoordinator() == nil {
+			response.ErrorFrom(c, service.ErrIdempotencyStoreUnavail)
+			return
+		}
+		executeAdminIdempotentJSONWithTimeout(c, "admin.subscriptions.bulk-assign", req, service.DefaultWriteIdempotencyTTL(), 2*time.Minute, execute)
+		return
+	}
+	result, err := execute(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 
-	response.Success(c, dto.BulkAssignResultFromService(result))
+	response.Success(c, result)
+}
+
+// BulkAction applies one operation to selected subscriptions, returning each outcome.
+// POST /api/v1/admin/subscriptions/bulk-action
+func (h *SubscriptionHandler) BulkAction(c *gin.Context) {
+	var req service.BulkSubscriptionActionInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := req.Validate(); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	executeAdminIdempotentJSONWithTimeout(c, "admin.subscriptions.bulk-action", req, service.DefaultWriteIdempotencyTTL(), 2*time.Minute, func(ctx context.Context) (any, error) {
+		return h.subscriptionService.BulkSubscriptionAction(ctx, &req)
+	})
 }
 
 // Extend handles adjusting a subscription (extend or shorten)

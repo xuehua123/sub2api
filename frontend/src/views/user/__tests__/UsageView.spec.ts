@@ -1,12 +1,16 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 
 import UsageView from '../UsageView.vue'
+import Select, { type SelectOption } from '@/components/common/Select.vue'
+import DateRangePicker from '@/components/common/DateRangePicker.vue'
+import UsageTable from '@/components/common/DataTable.vue'
 
-const { query, getStats, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
+const { query, getStats, getDashboardModels, list, showError, showWarning, showSuccess, showInfo } = vi.hoisted(() => ({
   query: vi.fn(),
   getStats: vi.fn(),
+  getDashboardModels: vi.fn().mockResolvedValue({ models: [] }),
   list: vi.fn(),
   showError: vi.fn(),
   showWarning: vi.fn(),
@@ -81,6 +85,8 @@ const messages: Record<string, string> = {
   'usage.preparingExport': 'Preparing export',
   'usage.exportSuccess': 'Export success',
   'usage.exportFailed': 'Export failed',
+  'admin.usage.billingTypeSubscription': 'Subscription',
+  'admin.usage.billingType': 'Billing type',
   'common.refresh': 'Refresh',
   'common.reset': 'Reset',
 }
@@ -89,14 +95,25 @@ vi.mock('@/api', () => ({
   usageAPI: {
     query,
     getStats,
+    getDashboardModels,
   },
   keysAPI: {
     list,
   },
+  userGroupsAPI: { getAvailable: vi.fn().mockResolvedValue([]) },
+}))
+
+const appStoreState = vi.hoisted(() => ({
+  cachedPublicSettings: { allow_user_view_error_requests: true } as Record<string, unknown>,
 }))
 
 vi.mock('@/stores/app', () => ({
-  useAppStore: () => ({ showError, showWarning, showSuccess, showInfo }),
+  useAppStore: () => ({
+    showError, showWarning, showSuccess, showInfo,
+    get cachedPublicSettings() {
+      return appStoreState.cachedPublicSettings
+    },
+  }),
 }))
 
 vi.mock('@/composables/useCurrencyResolver', () => ({
@@ -122,6 +139,8 @@ const TablePageLayoutStub = {
   template: '<div><slot name="actions" /><slot name="filters" /><slot name="table" /><slot /></div>',
 }
 const DataTableStub = {
+  name: 'DataTable',
+  emits: ['sort'],
   props: ['data'],
   template: `
     <div>
@@ -134,10 +153,49 @@ const DataTableStub = {
   `,
 }
 
+const usageLog = {
+  id: 1,
+  request_id: 'req-user-export',
+  actual_cost: 0.092883,
+  total_cost: 0.092883,
+  rate_multiplier: 1,
+  service_tier: 'priority',
+  input_cost: 0.020285,
+  output_cost: 0.00303,
+  cache_creation_cost: 0.000001,
+  cache_read_cost: 0.069568,
+  input_tokens: 4057,
+  output_tokens: 101,
+  cache_creation_tokens: 4,
+  cache_read_tokens: 278272,
+  cache_creation_5m_tokens: 0,
+  cache_creation_1h_tokens: 0,
+  image_count: 0,
+  image_size: null,
+  first_token_ms: 12,
+  duration_ms: 345,
+  created_at: '2026-03-08T00:00:00Z',
+  model: 'gpt-5.4',
+  reasoning_effort: null,
+  ip_address: '203.0.113.10',
+  api_key: { name: 'demo-key' },
+  billing_mode: 'token',
+  request_type: 'sync',
+  stream: false,
+  native_compaction_v2: false,
+}
+
+function mountUsageView() {
+  list.mockResolvedValue({ items: [] })
+  getStats.mockResolvedValue({ total_requests: 1, total_actual_cost: 0 })
+  return mount(UsageView, { global: { stubs: { AppLayout: AppLayoutStub, TablePageLayout: TablePageLayoutStub, DataTable: DataTableStub, Pagination: true, Select: true, DateRangePicker: true, Icon: true, Teleport: true } } })
+}
+
 describe('user UsageView tooltip', () => {
   beforeEach(() => {
     query.mockReset()
     getStats.mockReset()
+    getDashboardModels.mockReset().mockResolvedValue({ models: [] })
     list.mockReset()
     showError.mockReset()
     showWarning.mockReset()
@@ -160,6 +218,21 @@ describe('user UsageView tooltip', () => {
       observe() {}
       disconnect() {}
     }
+  })
+
+  it('offers models outside the current log page and preserves the selection', async () => {
+    query.mockResolvedValue({ items: [], total: 0, pages: 0 })
+    getDashboardModels.mockResolvedValue({ models: [{ model: 'other-page-model' }] })
+    const wrapper = mountUsageView()
+    await flushPromises()
+    const setupState = (wrapper.vm as any).$?.setupState
+    expect(setupState.modelOptions).toContainEqual({ value: 'other-page-model', label: 'other-page-model' })
+    expect(getDashboardModels).toHaveBeenCalledWith(expect.objectContaining({ model_source: 'requested', model: undefined }))
+    setupState.filters.model = 'selected-model'
+    setupState.availableModels = []
+    await nextTick()
+    expect(setupState.modelOptions).toContainEqual({ value: 'selected-model', label: 'selected-model' })
+    wrapper.unmount()
   })
 
   it('shows cost breakdown without original cost in user cost tooltip', async () => {
@@ -427,6 +500,68 @@ describe('user UsageView tooltip', () => {
       expect.anything()
     )
     expect(getStats).toHaveBeenCalledWith(expect.objectContaining({ native_compaction_v2: null }))
+  })
+
+  it('keeps the initial filters, sort, and filename while exporting multiple pages', async () => {
+    const pageResponse = { items: [usageLog], total: 101, pages: 2 }
+    query.mockResolvedValue(pageResponse)
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    const datePicker = wrapper.findComponent(DateRangePicker)
+    datePicker.vm.$emit('change', { startDate: '2026-03-01', endDate: '2026-03-08', preset: null })
+    await flushPromises()
+
+    let resolveFirstPage!: (value: typeof pageResponse) => void
+    const firstPage = new Promise<typeof pageResponse>((resolve) => { resolveFirstPage = resolve })
+    query.mockClear()
+    query.mockImplementation((params, options) =>
+      !options && params.page === 1 ? firstPage : Promise.resolve(pageResponse)
+    )
+    const originalCreateObjectURL = window.URL.createObjectURL
+    const originalRevokeObjectURL = window.URL.revokeObjectURL
+    window.URL.createObjectURL = vi.fn(() => 'blob:usage-export')
+    window.URL.revokeObjectURL = vi.fn()
+    let filename = ''
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () {
+      filename = this.download
+    })
+
+    try {
+      await wrapper.findAll('button').find((button) => button.text() === 'Export CSV')!.trigger('click')
+      const initialParams = { ...query.mock.calls[0][0] }
+      expect(initialParams).toMatchObject({
+        page: 1, page_size: 100, start_date: '2026-03-01', end_date: '2026-03-08',
+        sort_by: 'created_at', sort_order: 'desc',
+      })
+
+      const keySelect = wrapper.findAllComponents(Select).find((select) =>
+        select.props('options').some((option: SelectOption) => option.label === 'All API Keys')
+      )!
+      keySelect.vm.$emit('update:modelValue', 1)
+      keySelect.vm.$emit('change', 1)
+      datePicker.vm.$emit('change', { startDate: '2026-04-01', endDate: '2026-04-08', preset: null })
+      wrapper.findComponent(UsageTable).vm.$emit('sort', 'actual_cost', 'asc')
+      await flushPromises()
+      expect(query).toHaveBeenCalledWith(expect.objectContaining({
+        api_key_id: 1, start_date: '2026-04-01', end_date: '2026-04-08',
+        sort_by: 'actual_cost', sort_order: 'asc',
+      }), expect.anything())
+
+      resolveFirstPage(pageResponse)
+      await flushPromises()
+
+      const exportCalls = query.mock.calls.filter((call) => call.length === 1)
+      expect.soft(exportCalls).toEqual([[initialParams], [{ ...initialParams, page: 2 }]])
+      expect.soft(filename).toBe('usage_2026-03-01_to_2026-03-08.csv')
+      expect(showSuccess).toHaveBeenCalledWith('Export success')
+      expect(showError).not.toHaveBeenCalled()
+    } finally {
+      window.URL.createObjectURL = originalCreateObjectURL
+      window.URL.revokeObjectURL = originalRevokeObjectURL
+      clickSpy.mockRestore()
+      wrapper.unmount()
+    }
   })
 
   it('exports historical image rows with image billing mode derived from image_count', async () => {
@@ -735,5 +870,37 @@ describe('user UsageView tooltip', () => {
     expect(text).toContain('Output size')
     expect(text).toContain('3840x2160')
     expect(text).toContain('4K x 2')
+  })
+})
+
+describe('UsageView subscription feature flag', () => {
+  afterEach(() => {
+    appStoreState.cachedPublicSettings = { allow_user_view_error_requests: true }
+  })
+
+  function billingTypeSelect(wrapper: ReturnType<typeof mountUsageView>) {
+    return wrapper.findAllComponents(Select).find((select) =>
+      select.props('options').some((option: SelectOption) => option.label === 'Subscription')
+    )
+  }
+
+  it('offers the balance / subscription billing-type filter by default', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(billingTypeSelect(wrapper)).toBeDefined()
+    expect(wrapper.text()).toContain('Billing type')
+    wrapper.unmount()
+  })
+
+  it('hides the billing-type filter entirely when subscriptions are disabled', async () => {
+    appStoreState.cachedPublicSettings = { allow_user_view_error_requests: true, subscription_enabled: false }
+
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    expect(billingTypeSelect(wrapper)).toBeUndefined()
+    expect(wrapper.text()).not.toContain('Billing type')
+    wrapper.unmount()
   })
 })

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, shallowMount } from '@vue/test-utils'
 import PaymentView from '../PaymentView.vue'
 import { PAYMENT_RECOVERY_STORAGE_KEY } from '@/components/payment/paymentFlow'
@@ -30,6 +30,11 @@ const subscriptionState = vi.hoisted(() => ({
   entitlements: [] as any[],
 }))
 const translate = vi.hoisted(() => vi.fn((key: string) => key))
+// Public settings live in a reactive holder so tests can flip feature flags after mount
+// and exercise the watchers that react to them.
+const appStoreState = vi.hoisted(() => ({
+  setPublicSettings: (_value: Record<string, unknown> | undefined) => {},
+}))
 
 vi.mock('vue-router', async () => {
   const actual = await vi.importActual<typeof import('vue-router')>('vue-router')
@@ -79,13 +84,23 @@ vi.mock('@/stores/subscriptions', () => ({
   }),
 }))
 
-vi.mock('@/stores', () => ({
-  useAppStore: () => ({
-    showError,
-    showInfo,
-    showWarning,
-  }),
-}))
+vi.mock('@/stores', async () => {
+  const { reactive } = await import('vue')
+  const state = reactive({ cachedPublicSettings: undefined as Record<string, unknown> | undefined })
+  appStoreState.setPublicSettings = (value) => {
+    state.cachedPublicSettings = value
+  }
+  return {
+    useAppStore: () => ({
+      showError,
+      showInfo,
+      showWarning,
+      get cachedPublicSettings() {
+        return state.cachedPublicSettings
+      },
+    }),
+  }
+})
 
 vi.mock('@/api/payment', () => ({
   paymentAPI: {
@@ -1014,5 +1029,73 @@ describe('PaymentView active subscription summary', () => {
 
     expect(wrapper.text()).toContain('多分组畅享月卡')
     expect(wrapper.text()).not.toContain('选择更稳的')
+  })
+})
+
+describe('PaymentView subscription feature flag', () => {
+  afterEach(() => {
+    appStoreState.setPublicSettings(undefined)
+  })
+
+  function tabLabels(wrapper: Awaited<ReturnType<typeof mountSubscriptionPlanList>>) {
+    return wrapper
+      .findAll('button')
+      .map((button) => button.text())
+      .filter((text) => text === 'payment.tabTopUp' || text === 'payment.tabSubscribe')
+  }
+
+  it('keeps the top-up / subscribe switcher when subscription_enabled is absent (opt-out default)', async () => {
+    const wrapper = await mountSubscriptionPlanList(2)
+
+    expect(tabLabels(wrapper)).toEqual(['payment.tabSubscribe', 'payment.tabTopUp'])
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]')).toHaveLength(2)
+  })
+
+  it('drops the subscribe tab, hides the switcher and ignores ?tab=subscription when subscriptions are disabled', async () => {
+    appStoreState.setPublicSettings({ subscription_enabled: false })
+    const wrapper = await mountSubscriptionPlanList(2)
+
+    expect(tabLabels(wrapper)).toEqual([])
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('当前充值账户')
+  })
+
+  it('shows an unavailable notice instead of a doomed top-up form when balance recharge is disabled too', async () => {
+    appStoreState.setPublicSettings({ subscription_enabled: false })
+    const wrapper = await mountSubscriptionConfirm({ checkout: { balance_disabled: true } })
+
+    expect(tabLabels(wrapper)).toEqual([])
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('payment.confirmSubscription')
+    expect(wrapper.text()).not.toContain('当前充值账户')
+    expect(wrapper.text()).toContain('payment.billingUnavailable')
+    wrapper.unmount()
+  })
+
+  it('falls back from the subscribe tab to top-up when the flag flips off after mount', async () => {
+    const wrapper = await mountSubscriptionPlanList(2)
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]')).toHaveLength(2)
+
+    appStoreState.setPublicSettings({ subscription_enabled: false })
+    await flushPromises()
+
+    expect(tabLabels(wrapper)).toEqual([])
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]')).toHaveLength(0)
+    expect(wrapper.text()).toContain('当前充值账户')
+    wrapper.unmount()
+  })
+
+  it('enters the subscribe tab when a subscription-only site turns subscriptions back on', async () => {
+    appStoreState.setPublicSettings({ subscription_enabled: false })
+    const wrapper = await mountSubscriptionConfirm({ checkout: { balance_disabled: true } })
+    expect(wrapper.text()).toContain('payment.billingUnavailable')
+
+    appStoreState.setPublicSettings({ subscription_enabled: true })
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('payment.billingUnavailable')
+    expect(wrapper.text()).not.toContain('当前充值账户')
+    expect(wrapper.findAll('[data-testid="subscription-plan-card"]').length).toBeGreaterThan(0)
+    wrapper.unmount()
   })
 })

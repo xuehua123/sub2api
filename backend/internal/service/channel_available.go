@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // AvailableGroupRef 渠道视图中关联分组的简要信息。
@@ -170,7 +171,7 @@ func (s *ChannelService) GroupModelPricingForDisplay(group *Group, model string)
 	var effective *ModelPricing
 	if configured != nil && s != nil && s.billingService != nil {
 		effective, _ = s.billingService.GetModelPricingWithChannel(model, configured)
-		effective = s.billingService.applyModelSpecificPricingPolicyEx(model, effective, false)
+		effective = s.billingService.applyModelSpecificPricingPolicyEx(model, effective, false, time.Time{})
 	}
 	pricing, matched := resolveGroupModelPricingForDisplay(group, model, official, effective, false)
 	markOpenAIAccountLongContextGate(pricing, displayRoutePlatform(group, configured))
@@ -227,7 +228,7 @@ func (s *ChannelService) PricingForGroupDisplay(group *Group, model string, rawC
 		}
 		runtimePricing = overlayTokenPricingForDisplay(&ModelPricing{}, selected)
 	}
-	runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, selected == nil)
+	runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, selected == nil, time.Time{})
 	projected := effectiveTokenPricingForDisplay(runtimePricing, selected != nil)
 	if selected != nil {
 		projected.Platform = selected.Platform
@@ -316,13 +317,13 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	}
 	fallbackRuntime.ImageOutputPriceExplicit = true
 	applyChannelImageInputPrice(raw, &fallbackRuntime)
-	fallbackRuntime = *s.billingService.applyModelSpecificPricingPolicyEx(model, &fallbackRuntime, false)
+	fallbackRuntime = *s.billingService.applyModelSpecificPricingPolicyEx(model, &fallbackRuntime, false, time.Time{})
 	if !longEnabled {
 		runtimePricing := &fallbackRuntime
 		if interval := FindMatchingInterval(valid, 1); interval != nil {
 			runtimePricing = intervalToModelPricingForModel(model, interval, &fallbackRuntime, raw)
 		}
-		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false)
+		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false, time.Time{})
 		projected := effectiveTokenPricingForDisplay(runtimePricing, true)
 		projected.Platform = raw.Platform
 		projected.Models = append([]string(nil), raw.Models...)
@@ -338,7 +339,7 @@ func (s *ChannelService) projectChannelIntervalsForGroup(model string, raw *Chan
 	for i := range valid {
 		iv := valid[i]
 		runtimePricing := intervalToModelPricingForModel(model, &iv, &fallbackRuntime, raw)
-		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false)
+		runtimePricing = s.billingService.applyModelSpecificPricingPolicyEx(model, runtimePricing, false, time.Time{})
 		card := effectiveTokenPricingForDisplay(runtimePricing, true)
 		tier := PricingInterval{
 			MinTokens:         iv.MinTokens,
@@ -430,7 +431,7 @@ func resolveGroupModelPricingForDisplay(
 			// group override. Mirror that order so partial DeepSeek overrides
 			// inherit official values only for fields the operator did not set.
 			catalogRuntime := groupRuntimeTokenPricingForDisplay(effective, nil, official)
-			catalogRuntime = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, catalogRuntime, true)
+			catalogRuntime = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, catalogRuntime, true, time.Time{})
 			catalogCard := effectiveTokenPricingForDisplay(catalogRuntime, false)
 			effective.InputPrice = catalogCard.InputPrice
 			effective.OutputPrice = catalogCard.OutputPrice
@@ -455,7 +456,7 @@ func resolveGroupModelPricingForDisplay(
 			effective.ImageOutputPrice = &zero
 		}
 		runtimePricing = groupRuntimeTokenPricingForDisplay(effective, configured, official)
-		runtimePricing = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, runtimePricing, forceDeepSeekRates)
+		runtimePricing = (&BillingService{}).applyModelSpecificPricingPolicyEx(model, runtimePricing, forceDeepSeekRates, time.Time{})
 		projectEffectiveCacheBreakdownForDisplay(effective, runtimePricing)
 	}
 	effective.BillingMode = BillingModeToken
@@ -519,7 +520,7 @@ func (s *ChannelService) TokenPricingForDisplay(model string, configured *Channe
 	if err != nil || pricing == nil {
 		return nil, false
 	}
-	pricing = s.billingService.applyModelSpecificPricingPolicyEx(model, pricing, configured == nil)
+	pricing = s.billingService.applyModelSpecificPricingPolicyEx(model, pricing, configured == nil, time.Time{})
 	projected := effectiveTokenPricingForDisplay(pricing, configured != nil)
 	if configured != nil {
 		projected.Platform = configured.Platform

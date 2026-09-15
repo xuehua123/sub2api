@@ -398,6 +398,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ModelPriceUSDCNYRate:     settings.ModelPriceUSDCNYRate,
 		ModelPriceCNYPerQuotaUSD: settings.ModelPriceCNYPerQuotaUSD,
 		ModelPricesUserVisible:   settings.ModelPricesUserVisible,
+		SubscriptionEnabled:      settings.SubscriptionEnabled,
 
 		AffiliateEnabled:                     settings.AffiliateEnabled,
 		ReferralEnabled:                      settings.ReferralEnabled,

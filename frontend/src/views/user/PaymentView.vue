@@ -33,8 +33,12 @@
 
         <!-- Selection Phase -->
         <template v-else>
+          <!-- Neither top-up nor subscriptions available (balance recharge disabled via API while subscriptions are off) -->
+          <div v-if="tabs.length === 0" class="card py-16 text-center">
+            <p class="text-gray-500 dark:text-gray-400">{{ t('payment.billingUnavailable') }}</p>
+          </div>
           <!-- Page Header & Tab Switcher (Show only in Selection Step) -->
-          <div v-if="!selectedPlan" class="text-center mb-10 space-y-4">
+          <div v-if="tabs.length > 0 && !selectedPlan" class="text-center mb-10 space-y-4">
             <template v-if="activeTab === 'subscription'">
               <h1 class="text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl md:text-5xl dark:text-white">
                 选择更稳的 <span class="text-transparent bg-clip-text bg-gradient-to-r from-primary-400 to-cyan-400">AI API</span> 额度
@@ -93,6 +97,7 @@
                   <div
                     v-for="plan in subscriptionPlans"
                     :key="plan.id"
+                    data-testid="subscription-plan-card"
                     :class="[
                       'group relative flex flex-col rounded-2xl border p-6 text-left transition-all duration-300',
                       isRecommendedPlan(plan)
@@ -551,7 +556,7 @@
 
           </template>
           <!-- 2. Recharge Tab -->
-          <template v-else-if="activeTab === 'recharge'">
+          <template v-else-if="tabs.length > 0 && activeTab === 'recharge'">
             <div class="grid grid-cols-1 lg:grid-cols-[1fr_420px] gap-8 max-w-6xl mx-auto items-start">
               
               <!-- Left: Recharge Amount Selection -->
@@ -742,7 +747,7 @@
     <Teleport to="body">
       <Transition name="modal">
         <div v-if="showRenewalModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm dark:bg-black/75" @click.self="closeRenewalModal">
-          <div class="relative w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/5 dark:bg-[#0b1222]">
+          <div class="relative flex max-h-full flex-col w-full max-w-lg rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xl dark:border-white/5 dark:bg-[#0b1222]">
             <!-- Close button -->
             <button class="absolute right-4 top-4 rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white" @click="closeRenewalModal">
               <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -751,7 +756,7 @@
               <span class="inline-block w-1 h-4 bg-primary-500 rounded-full"></span>
               {{ t('payment.selectPlan') }}
             </h3>
-            <div class="space-y-4">
+            <div class="min-h-0 space-y-4 overflow-y-auto">
               <SubscriptionPlanCard
                 v-for="plan in renewalPlans"
                 :key="plan.id"
@@ -846,6 +851,7 @@ import { useAuthStore } from '@/stores/auth'
 import { usePaymentStore } from '@/stores/payment'
 import { useSubscriptionStore } from '@/stores/subscriptions'
 import { useAppStore } from '@/stores'
+import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
@@ -1165,11 +1171,24 @@ const renderedHelpText = computed(() => DOMPurify.sanitize(
   marked.parse(checkout.value.help_text || '', { async: false, gfm: true, breaks: false }),
 ))
 
+// 订阅功能开关（public settings 的 subscription_enabled，opt-out）。关闭后购买页只保留充值：
+// 不再渲染「订阅」tab，只剩单个 tab 时顶部切换器也随之隐藏。
+const subscriptionEnabled = computed(() => resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.subscription))
+
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []
-  result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
+  if (subscriptionEnabled.value) result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
   if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
   return result
+})
+
+// tab 列表随 checkout（balance_disabled）与订阅开关变化。当前 tab 不在列表里时收敛到第一个可用 tab，
+// 两个方向都覆盖：关闭订阅 → 回到充值；仅订阅站点重新打开订阅 → 进入订阅。列表为空时模板展示不可用提示。
+watch(tabs, (available) => {
+  if (available.some((tab) => tab.key === activeTab.value)) return
+  const leavingSubscription = activeTab.value === 'subscription'
+  activeTab.value = available[0]?.key ?? 'recharge'
+  if (leavingSubscription) selectedPlan.value = null
 })
 
 const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
@@ -2166,11 +2185,9 @@ onMounted(async () => {
       }
     }
     await resumeWechatPaymentFromQuery()
-    if (checkout.value.balance_disabled) {
-      activeTab.value = 'subscription'
-    }
-    // Handle renewal navigation: ?tab=subscription&group=123
-    if (route.query.tab === 'subscription') {
+    // balance_disabled → the tabs watcher above moves activeTab to the subscription tab (when enabled).
+    // Handle renewal navigation: ?tab=subscription&group=123 (ignored when subscriptions are disabled)
+    if (route.query.tab === 'subscription' && subscriptionEnabled.value) {
       activeTab.value = 'subscription'
       if (route.query.group) {
         const groupId = Number(route.query.group)
@@ -2185,8 +2202,9 @@ onMounted(async () => {
     }
   } catch (err: unknown) { appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error'))) }
   finally { loading.value = false }
-  // Fetch active legacy subscriptions and pure V2 entitlements.
-  refreshSubscriptionDisplays()
+  if (subscriptionEnabled.value) {
+    refreshSubscriptionDisplays()
+  }
 })
 </script>
 

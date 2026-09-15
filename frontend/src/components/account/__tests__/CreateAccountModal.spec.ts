@@ -585,6 +585,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     )
   })
 
+
   it('submits adaptive Kimi protocol endpoints', async () => {
     const wrapper = mountModal()
     await clickButtonContaining(wrapper, 'Kimi')

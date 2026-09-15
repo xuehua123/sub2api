@@ -264,6 +264,6 @@ func TestGatewayCalculateTokenCost_GroupNilWithoutResolverKeepsLegacyFallback(t 
 	want, err := bs.CalculateCost(model, UsageTokens{InputTokens: 1_000_000, OutputTokens: 1_000_000}, 1)
 	require.NoError(t, err)
 	require.Equal(t, want, got)
-	require.InDelta(t, deepseekProOffPeakInputPrice*1_000_000, got.InputCost, 1e-12)
-	require.InDelta(t, deepseekProOffPeakOutputPrice*1_000_000, got.OutputCost, 1e-12)
+	require.InDelta(t, deepseekFlashOffPeakInputPrice*1_000_000, got.InputCost, 1e-12)
+	require.InDelta(t, deepseekFlashOffPeakOutputPrice*1_000_000, got.OutputCost, 1e-12)
 }

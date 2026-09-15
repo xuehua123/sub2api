@@ -153,6 +153,27 @@
               </div>
             </template>
 
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
+              <label class="input-label">{{ t('usage.model') }}</label>
+              <Select v-model="filters.model" :options="modelOptions" searchable creatable clearable @change="applyFilters" />
+            </div>
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
+              <label class="input-label">{{ t('admin.usage.group') }}</label>
+              <Select v-model="filters.group_id" :options="groupOptions" @change="applyFilters" />
+            </div>
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
+              <label class="input-label">{{ t('usage.type') }}</label>
+              <Select v-model="filters.request_type" :options="requestTypeOptions" @change="applyFilters" />
+            </div>
+            <div v-if="activeTab === 'usage' && subscriptionFeatureEnabled" class="min-w-[180px]">
+              <label class="input-label">{{ t('admin.usage.billingType') }}</label>
+              <Select v-model="filters.billing_type" :options="billingTypeOptions" @change="applyFilters" />
+            </div>
+            <div v-if="activeTab === 'usage'" class="min-w-[180px]">
+              <label class="input-label">{{ t('admin.usage.billingMode') }}</label>
+              <Select v-model="filters.billing_mode" :options="billingModeOptions" @change="applyFilters" />
+            </div>
+
             <!-- Date Range Filter -->
             <div>
               <label class="input-label">{{ t('usage.timeRange') }}</label>
@@ -723,7 +744,8 @@
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
-import { usageAPI, keysAPI } from '@/api'
+import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
+import { keysAPI, usageAPI, userGroupsAPI } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
@@ -821,6 +843,25 @@ const usageLogs = ref<UsageLog[]>([])
 const apiKeys = ref<ApiKey[]>([])
 const loading = ref(false)
 const exporting = ref(false)
+
+const availableGroups = ref<Array<{ id: number; name: string }>>([])
+const availableModels = ref<string[]>([])
+let modelOptionsRequest = 0
+const modelOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allModels') },
+  ...Array.from(new Set([...availableModels.value, ...usageLogs.value.map((entry) => entry.model), filters.value.model].filter((model): model is string => Boolean(model)))).sort().map((model) => ({ value: model, label: model }))
+])
+const groupOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allGroups') },
+  ...availableGroups.value.map((group) => ({ value: group.id, label: group.name }))
+])
+const requestTypeOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allTypes') },
+  { value: 'ws_v2', label: t('usage.ws') },
+  { value: 'live', label: t('usage.live') },
+  { value: 'stream', label: t('usage.stream') },
+  { value: 'sync', label: t('usage.sync') },
+])
 
 const apiKeyOptions = computed(() => {
   return [
@@ -922,7 +963,21 @@ const formatDuration = (ms: number | null | undefined): string => {
 
 const compactionOptions = computed<SelectOption[]>(() => [
   { value: null, label: t('usage.allCompactionTypes') },
-  { value: true, label: t('usage.compactionOnly') }
+  { value: true, label: t('usage.compactionOnly') },
+])
+// 订阅功能关闭后只剩余额计费，「计费类型」筛选（余额/订阅）失去意义，整块隐藏。
+const subscriptionFeatureEnabled = computed(() => resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.subscription))
+const billingTypeOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allBillingTypes') },
+  { value: 0, label: t('admin.usage.billingTypeBalance') },
+  { value: 1, label: t('admin.usage.billingTypeSubscription') },
+])
+const billingModeOptions = computed<SelectOption[]>(() => [
+  { value: null, label: t('admin.usage.allBillingModes') },
+  { value: 'token', label: t('admin.usage.billingModeToken') },
+  { value: 'per_request', label: t('admin.usage.billingModePerRequest') },
+  { value: 'image', label: t('admin.usage.billingModeImage') },
+  { value: 'video', label: t('admin.usage.billingModeVideo') },
 ])
 
 const firstResponseMs = (log: UsageLog): number | null => {
@@ -1060,6 +1115,7 @@ const loadApiKeys = async () => {
 }
 
 const loadUsageStats = async () => {
+  void loadModelOptions()
   try {
     const stats = await usageAPI.getStats({
       ...filters.value,
@@ -1069,6 +1125,22 @@ const loadUsageStats = async () => {
     usageStats.value = stats
   } catch (error) {
     console.error('Failed to load usage stats:', error)
+  }
+}
+
+const loadModelOptions = async () => {
+  const request = ++modelOptionsRequest
+  try {
+    const response = await usageAPI.getDashboardModels({
+      ...filters.value,
+      model: undefined,
+      model_source: 'requested',
+      start_date: filters.value.start_date || startDate.value,
+      end_date: filters.value.end_date || endDate.value,
+    })
+    if (request === modelOptionsRequest) availableModels.value = (response.models || []).map((entry) => entry.model)
+  } catch (error) {
+    console.error('Failed to load usage model options:', error)
   }
 }
 
@@ -1164,11 +1236,11 @@ const exportToCSV = async () => {
 
   try {
     const allLogs: UsageLog[] = []
-    const pageSize = 100 // Use a larger page size for export to reduce requests
-    const totalRequests = Math.ceil(pagination.total / pageSize)
-
-    for (let page = 1; page <= totalRequests; page++) {
-      const response = await usageAPI.query(buildUsageQueryParams(page, pageSize))
+    const pageSize = 100
+    const exportParams = buildUsageQueryParams(1, pageSize)
+    const totalPages = Math.ceil(pagination.total / pageSize)
+    for (let page = 1; page <= totalPages; page++) {
+      const response = await usageAPI.query({ ...exportParams, page })
       allLogs.push(...response.items)
     }
 
@@ -1226,7 +1298,7 @@ const exportToCSV = async () => {
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `usage_${filters.value.start_date}_to_${filters.value.end_date}.csv`
+    link.download = `usage_${exportParams.start_date}_to_${exportParams.end_date}.csv`
     link.click()
     window.URL.revokeObjectURL(url)
 
@@ -1335,6 +1407,7 @@ const switchToErrors = () => {
 }
 
 onMounted(() => {
+  userGroupsAPI.getAvailable().then((groups) => { availableGroups.value = groups }).catch((error) => { console.error('Failed to load usage groups:', error) })
   loadApiKeys()
   loadUsageLogs()
   loadUsageStats()

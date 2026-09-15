@@ -127,6 +127,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		LobeHubDefaultModel:                 settings.LobeHubDefaultModel,
 		LobeHubRuntimeConfigVersion:         settings.LobeHubRuntimeConfigVersion,
 		HideLobeHubImportButton:             settings.HideLobeHubImportButton,
+		PaymentBalanceDisabled:              settings.PaymentBalanceDisabled,
 		Version:                             h.version,
 		ServerTimezone:                      timezone.Name(),
 		ServerUTCOffset:                     timezone.UTCOffset(),
@@ -144,6 +145,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 		ModelPricesUserVisible:   settings.ModelPricesUserVisible,
+		SubscriptionEnabled:      settings.SubscriptionEnabled,
 
 		ModelPlazaEnabled:       settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:   settings.ModelPlazaRequireAuth,

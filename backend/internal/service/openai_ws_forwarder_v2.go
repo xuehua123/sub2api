@@ -23,6 +23,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	account *Account,
 	reqBody map[string]any,
 	clientPromptCacheKey string,
+	executionScope string,
 	token string,
 	decision OpenAIWSProtocolDecision,
 	isCodexCLI bool,
@@ -138,6 +139,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		// used the already-parsed prompt_cache_key below.  Preserve that exact
 		// v0.1.177 fallback as one scoped bridge when session-id now wins.
 		attachOpenAIPreCanonicalSessionHashBridgeFromWSFallback(c, sessionHash, promptCacheKey)
+	}
+	// 与 WS 接入路径共用执行作用域：codex 多智能体共用 session-id，turn state 与
+	// store=false 的连接绑定必须按线程隔离，同一线程在两条路径之间也才能共享状态。
+	// 作用域由 Forward 从改写前的原始请求算出后传入，reqBody 此时已带账号 namespace。
+	if executionScope = strings.TrimSpace(executionScope); executionScope != "" {
+		sessionHash = executionScope
 	}
 	if turnState == "" && stateStore != nil && sessionHash != "" {
 		turnState = s.loadOpenAIWSSessionTurnState(c, account, stateStore, groupID, sessionHash)
@@ -274,12 +281,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}()
 	connID := strings.TrimSpace(lease.ConnID())
 	logOpenAIWSModeDebug(
-		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
+		"connected account_id=%d account_type=%s transport=%s conn_id=%s conn_reused=%v conn_idle_ms=%d conn_age_ms=%d upstream_pings=%d conn_pick_ms=%d queue_wait_ms=%d has_previous_response_id=%v",
 		account.ID,
 		account.Type,
 		normalizeOpenAIWSLogValue(string(decision.Transport)),
 		connID,
 		lease.Reused(),
+		lease.IdleBefore().Milliseconds(),
+		lease.AgeBefore().Milliseconds(),
+		lease.UpstreamPingCount(),
 		lease.ConnPickDuration().Milliseconds(),
 		lease.QueueWaitDuration().Milliseconds(),
 		previousResponseID != "",

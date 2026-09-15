@@ -742,6 +742,48 @@ func TestAssignSubscriptionV2PlanCreatesEntitlementWithLegacySubscriptionID(t *t
 	require.Equal(t, adminAssignEntitlementSourceExternalID(sub.ID, 77), *ent.SourceExternalID)
 }
 
+func TestBulkAssignSubscriptionV2PreservesPlanAndReplay(t *testing.T) {
+	now := time.Date(2026, 6, 14, 9, 0, 0, 0, time.UTC)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		77: testEntitlementPlan(77, []int64{1, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+
+	result, err := svc.BulkAssignSubscription(context.Background(), &BulkAssignSubscriptionInput{
+		UserIDs:      []int64{3002},
+		GroupID:      1,
+		PlanID:       77,
+		ValidityDays: 30,
+		AssignedBy:   9,
+		Notes:        "admin-plan",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 1, result.SuccessCount)
+	require.Len(t, result.Subscriptions, 1)
+	sub := result.Subscriptions[0]
+	require.NotZero(t, sub.ID)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Equal(t, 1, entRepo.eventCount)
+	require.Len(t, entRepo.entitlements, 1)
+	var ent *SubscriptionEntitlement
+	for _, candidate := range entRepo.entitlements {
+		ent = candidate
+	}
+	require.NotNil(t, ent)
+	require.NotNil(t, ent.LegacySubscriptionID)
+	require.Equal(t, sub.ID, *ent.LegacySubscriptionID)
+	require.Equal(t, []int64{1, 2}, entitlementGroupIDs(ent))
+	require.NotNil(t, ent.SourceExternalID)
+	require.Equal(t, adminAssignEntitlementSourceExternalID(sub.ID, 77), *ent.SourceExternalID)
+	replay, err := svc.BulkAssignSubscription(context.Background(), &BulkAssignSubscriptionInput{UserIDs: []int64{3002}, GroupID: 1, PlanID: 77, ValidityDays: 30, AssignedBy: 9, Notes: "admin-plan"})
+	require.NoError(t, err)
+	require.Equal(t, 1, replay.ReusedCount)
+	require.Equal(t, 1, entRepo.createCount)
+	require.Equal(t, 1, entRepo.eventCount)
+}
+
 func TestAssignSubscriptionV2PlanUsesLegacyDefaultValidityForBothAliasRowsWhenOverrideOmitted(t *testing.T) {
 	now := time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
 	entRepo := newFakeSubscriptionEntitlementRepo(now)
@@ -984,6 +1026,68 @@ func TestAssignSubscriptionV2ExpiredLegacyDoesNotExtendActiveEntitlement(t *test
 	require.Equal(t, 1, entRepo.eventCount)
 }
 
+func TestBulkPlanAssignment_DeduplicatesAndReplaysWithoutRenewing(t *testing.T) {
+	now := time.Now()
+	existingPlanID := int64(10)
+	groupID := int64(1)
+	entRepo := newFakeSubscriptionEntitlementRepo(now)
+	planRepo := &fakeSubscriptionEntitlementPlanRepo{plans: map[int64]*SubscriptionEntitlementPlan{
+		9:  testEntitlementPlan(9, []int64{groupID, 2}, nil),
+		10: testEntitlementPlan(10, []int64{groupID, 2}, nil),
+	}}
+	svc := newAssignSubscriptionEntitlementTestService(true, entRepo, planRepo)
+	subRepo := requireSubscriptionUserSubRepoStub(t, svc)
+	subRepo.seed(&UserSubscription{
+		ID:        43,
+		UserID:    3005,
+		GroupID:   groupID,
+		StartsAt:  now,
+		ExpiresAt: now.AddDate(0, 0, 30),
+		Status:    SubscriptionStatusActive,
+		Notes:     "admin-plan",
+		EntitlementLink: &UserSubscriptionEntitlementLink{
+			EntitlementID:   91,
+			PlanID:          &existingPlanID,
+			Status:          SubscriptionStatusActive,
+			ExpiresAt:       now.AddDate(0, 0, 30),
+			PrimaryGroupID:  &groupID,
+			OveragePolicy:   SubscriptionEntitlementOverageBalanceFallback,
+			MonthlyUsageUSD: 0,
+		},
+	})
+
+	input := &BulkAssignSubscriptionInput{UserIDs: []int64{3005, 3005}, GroupID: groupID, PlanID: 9, ValidityDays: 30, AssignedBy: 9}
+	coordinator := NewIdempotencyCoordinator(newInMemoryIdempotencyRepo(), DefaultIdempotencyConfig())
+	opts := IdempotencyExecuteOptions{Scope: "admin.subscriptions.bulk-assign", Method: "POST", Route: "/bulk-assign", ActorScope: "admin:9", IdempotencyKey: "first-plan-operation", Payload: input, RequireKey: true, ExecutionTimeout: 2 * time.Minute}
+	var assigned *BulkAssignResult
+	execute := func(ctx context.Context) (any, error) {
+		var err error
+		assigned, err = svc.BulkAssignSubscription(ctx, input)
+		return assigned, err
+	}
+	first, err := coordinator.Execute(context.Background(), opts, execute)
+	require.NoError(t, err)
+	require.False(t, first.Replayed)
+	require.Equal(t, 1, assigned.SuccessCount)
+	require.Zero(t, assigned.FailedCount)
+	require.Len(t, assigned.Subscriptions, 1)
+	require.True(t, assigned.Subscriptions[0].EntitlementOnly)
+	originalExpiry := assigned.Subscriptions[0].ExpiresAt
+	require.Equal(t, 0, entRepo.updateTermCount)
+
+	replayed, err := coordinator.Execute(context.Background(), opts, execute)
+	require.NoError(t, err)
+	require.True(t, replayed.Replayed)
+	require.Equal(t, 0, entRepo.updateTermCount)
+	require.Equal(t, originalExpiry, assigned.Subscriptions[0].ExpiresAt)
+
+	opts.IdempotencyKey = "new-plan-operation"
+	_, err = coordinator.Execute(context.Background(), opts, execute)
+	require.NoError(t, err)
+	require.Equal(t, 1, assigned.SuccessCount)
+	require.Equal(t, 1, entRepo.updateTermCount)
+	require.WithinDuration(t, originalExpiry.AddDate(0, 0, 30), assigned.Subscriptions[0].ExpiresAt, time.Second)
+}
 func TestAssignSubscriptionV2PlanFallbacksToEntitlementOnlyWhenExistingLegacyBelongsToDifferentPlan(t *testing.T) {
 	now := time.Now()
 	existingPlanID := int64(10)

@@ -183,6 +183,10 @@ func (s *refundRollbackSubscriptionRepoStub) Create(_ context.Context, sub *User
 	return nil
 }
 
+func (s *refundRollbackSubscriptionRepoStub) GetByIDForUpdate(ctx context.Context, id int64) (*UserSubscription, error) {
+	return s.GetByID(ctx, id)
+}
+
 func (s *refundRollbackSubscriptionRepoStub) GetByID(_ context.Context, id int64) (*UserSubscription, error) {
 	sub := s.byID[id]
 	if sub == nil {
