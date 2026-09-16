@@ -31,28 +31,38 @@
       :description="t('channelStatus.empty.description')"
     />
 
-    <div
-      v-else
-      class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-    >
-      <MonitorCard
-        v-for="item in items"
-        :key="item.id"
-        :item="item"
-        :window="window"
-        :availability-value="resolveAvailability(item)"
-        :countdown-seconds="countdownSeconds"
-        @click="emit('cardClick', item)"
-      />
+    <div v-else class="space-y-8">
+      <section v-for="group in groups" :key="group.provider" :data-provider="group.provider" :aria-labelledby="'monitor-provider-' + group.provider">
+        <h2 :id="'monitor-provider-' + group.provider" class="mb-4 flex items-center gap-3 text-base font-semibold text-gray-900 dark:text-gray-100">
+          <ProviderIcon :provider="group.provider" />
+          <span>{{ groupLabel(group.provider) }}</span>
+          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs tabular-nums text-gray-500 dark:bg-dark-700 dark:text-gray-300">{{ group.items.length }}</span>
+        </h2>
+        <div class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <MonitorCard
+            v-for="item in group.items"
+            :key="item.id"
+            :item="item"
+            :window="window"
+            :availability-value="resolveAvailability(item)"
+            :countdown-seconds="countdownSeconds"
+            @click="emit('cardClick', item)"
+          />
+        </div>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { UserMonitorView, UserMonitorDetail } from '@/api/channelMonitor'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MonitorCard from './MonitorCard.vue'
+import ProviderIcon from './ProviderIcon.vue'
+import { groupMonitorCards } from './monitorGroups'
+import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 const props = defineProps<{
   items: UserMonitorView[]
@@ -67,6 +77,15 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { providerLabel } = useChannelMonitorFormat()
+const groups = computed(() => groupMonitorCards(props.items))
+
+function groupLabel(provider: string): string {
+  if (provider === 'openai') return 'Codex / OpenAI'
+  if (provider === 'anthropic') return 'CC / Claude'
+  if (provider === 'gemini') return 'Gemini'
+  return providerLabel(provider)
+}
 
 function resolveAvailability(item: UserMonitorView): number | null {
   if (props.window === '7d') {
