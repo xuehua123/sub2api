@@ -76,3 +76,20 @@ containers, image IDs, revisions, Nginx configuration, and rollback record;
 then perform reviewed forward recovery with the exact recorded capable digest.
 Do not delete state files, set them back to `absent`, enable the old writer, or
 use a gate-false image as a rollback shortcut.
+
+## Blue-green connection drain
+
+A new Nginx worker and a healthy public response do not prove that the old
+worker generation has exited. Before stopping a slot, the cutover helper waits
+for all pre-reload worker PIDs and established sockets on that slot's known port
+to disappear. Socket inspection requires `ss`; inspection failures fail closed.
+The same condition applies before removing a candidate during rollback.
+
+The drain window is ten minutes. If connections outlive that window, preserve
+both containers and request operator recovery; never force-close user streams
+to make a deployment appear complete. The deployment wrapper must not remove a
+still-running candidate merely because routing has returned to the old slot.
+
+Before installing a changed helper, run the isolated behavior tests and verify
+the pinned helper/deployer hashes. Follow the production automation approval
+boundaries in AGENTS.md. A failed canary blocks Canada promotion until a reviewed retry.

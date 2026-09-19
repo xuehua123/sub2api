@@ -8,8 +8,8 @@ readonly PACKAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 readonly DEPLOY_SCRIPT_NAME="sub2api-deploy-stable.sh"
 readonly CUTOVER_SCRIPT_NAME="sub2api-nginx-bluegreen-cutover.sh"
 readonly BOOTSTRAP_SCRIPT_NAME="sub2api-deploy-state-bootstrap.sh"
-readonly DEPLOY_SCRIPT_SHA256="ee76ee63b61c65dddbd56833e13d4a37391cfdc007044e55ca60cf2a6c4287d5"
-readonly CUTOVER_SCRIPT_SHA256="1d4f8b7b66d09e6c6968fc20173e58d46ed8967ddcc92eddf164b005e408b1e4"
+readonly DEPLOY_SCRIPT_SHA256="9aad9dbf9629d15e59cc5628a0f8d477867918ea6879402d2302b7ff830c031d"
+readonly CUTOVER_SCRIPT_SHA256="011e2de9f8e53824038c6cdeb4e2e4877b50b663e08654ff28449a46a805f547"
 readonly BOOTSTRAP_SCRIPT_SHA256="d411a72d7707d78997910c829246f940682efc7a9df5697c84642aa82687bf49"
 readonly DEPLOY_SCRIPT="/usr/local/sbin/sub2api-deploy-stable"
 readonly CUTOVER_SCRIPT="/usr/local/sbin/sub2api-nginx-bluegreen-cutover"
@@ -44,7 +44,7 @@ if [[ "$(id -u)" != 0 || "$(id -g)" != 0 ]]; then
   exit 1
 fi
 
-for command_name in awk cmp curl docker flock gh grep jq nginx pgrep readlink sha256sum stat sync; do
+for command_name in awk cmp curl docker flock gh grep jq nginx pgrep readlink sha256sum ss stat sync; do
   command -v "$command_name" >/dev/null 2>&1 || {
     echo "Required command is missing: $command_name" >&2
     exit 1

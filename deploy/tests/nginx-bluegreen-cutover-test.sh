@@ -47,7 +47,31 @@ reload_count=0
 if [[ "${MOCK_NGINX_NO_WORKER_TURNOVER:-false}" == true ]]; then
   printf '%s\n' 200
 else
+  poll_file="$MOCK_STATE_DIR/worker_polls_$reload_count"
+  polls=0
+  [[ ! -f "$poll_file" ]] || polls=$(cat "$poll_file")
+  polls=$((polls + 1))
+  printf '%s' "$polls" > "$poll_file"
+  linger=${MOCK_OLD_WORKER_POLLS:-0}
+  [[ "$reload_count" -ne 2 ]] || linger=${MOCK_ROLLBACK_WORKER_POLLS:-0}
+  if [[ "$reload_count" -gt 0 && "$polls" -le "$linger" ]]; then
+    printf '%s\n' "$((199 + reload_count))"
+  fi
   printf '%s\n' "$((200 + reload_count))"
+fi
+EOF
+
+cat > "$MOCK_BIN/ss" <<'EOF'
+#!/usr/bin/env bash
+[[ "${MOCK_SS_FAIL:-false}" != true ]] || exit 1
+reload_count=$(cat "$MOCK_STATE_DIR/nginx_reload_count")
+poll_file="$MOCK_STATE_DIR/socket_polls_$reload_count"
+polls=0
+[[ ! -f "$poll_file" ]] || polls=$(cat "$poll_file")
+polls=$((polls + 1))
+printf '%s' "$polls" > "$poll_file"
+if [[ "$reload_count" -eq 1 && "$polls" -le "${MOCK_SOCKET_POLLS:-0}" ]]; then
+  printf '%s\n' '0 0 127.0.0.1:45500 127.0.0.1:18080'
 fi
 EOF
 
@@ -179,11 +203,13 @@ sed \
   -e "s|readonly STATE_DIR=\"/var/lib/sub2api-deploy\"|readonly STATE_DIR=\"$DEPLOY_STATE\"|" \
   -e "s|readonly STATE_OWNER_UID=\"0\"|readonly STATE_OWNER_UID=\"$(id -u)\"|" \
   -e "s|readonly STATE_OWNER_GID=\"0\"|readonly STATE_OWNER_GID=\"$(id -g)\"|" \
+  -e "s|readonly DRAIN_ATTEMPTS=120|readonly DRAIN_ATTEMPTS=4|" \
   -e "s|readonly NGINX_PID_FILE=\"/run/nginx.pid\"|readonly NGINX_PID_FILE=\"$NGINX_PID_FILE\"|" \
   "$CUTOVER_SOURCE" > "$SUBJECT"
 chmod +x "$SUBJECT"
 
 reset_state() {
+  rm -f -- "$MOCK_STATE"/worker_polls_* "$MOCK_STATE"/socket_polls_*
   printf '%s' true > "$MOCK_STATE/blue_running"
   printf '%s' true > "$MOCK_STATE/green_running"
   printf '%s' true > "$MOCK_STATE/blue_exists"
@@ -260,7 +286,7 @@ run_cutover "$target_removal_failure_config" 200 true allow 0 false true
 grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$target_removal_failure_config"
 [[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
 [[ "$(cat "$MOCK_STATE/green_running")" == true ]]
-grep -Fq 'automatic rollback could not remove the target' "$RUN_LOG"
+grep -Fq 'automatic rollback could not drain or remove the target' "$RUN_LOG"
 
 # A successful reload command is not enough: without a new worker, health can
 # still be served by the old configuration and the old slot must stay alive.
@@ -310,5 +336,53 @@ grep -Fq 'proxy_pass http://127.0.0.1:28080;' "$irreversible_config"
 [[ "$(cat "$MOCK_STATE/blue_running")" == false ]]
 [[ "$(cat "$MOCK_STATE/green_running")" == true ]]
 grep -Fq 'automatic downgrade is forbidden' "$RUN_LOG"
+
+# A new worker may coexist with old HTTP/2/SSE workers. Neither worker
+# turnover nor a public 200 is sufficient to stop the previous application.
+linger_config="$TEST_ROOT/lingering-workers.conf"
+reset_state
+write_active_config "$linger_config"
+export MOCK_OLD_WORKER_POLLS=3
+run_cutover "$linger_config"
+unset MOCK_OLD_WORKER_POLLS
+[[ "$RUN_STATUS" -eq 0 ]]
+[[ "$(cat "$MOCK_STATE/worker_polls_1")" -ge 4 ]]
+[[ "$(cat "$MOCK_STATE/blue_running")" == false ]]
+
+# Even after workers exit, an established slot socket must finish first.
+sockets_config="$TEST_ROOT/lingering-sockets.conf"
+reset_state
+write_active_config "$sockets_config"
+export MOCK_SOCKET_POLLS=2
+run_cutover "$sockets_config"
+unset MOCK_SOCKET_POLLS
+[[ "$RUN_STATUS" -eq 0 ]]
+[[ "$(cat "$MOCK_STATE/socket_polls_1")" -eq 3 ]]
+
+# On timeout, restore the original route without dropping either generation's
+# connections. A failed reverse drain keeps the candidate running for recovery.
+timeout_config="$TEST_ROOT/drain-timeout.conf"
+reset_state
+write_active_config "$timeout_config"
+export MOCK_OLD_WORKER_POLLS=99 MOCK_ROLLBACK_WORKER_POLLS=99
+run_cutover "$timeout_config"
+unset MOCK_OLD_WORKER_POLLS MOCK_ROLLBACK_WORKER_POLLS
+[[ "$RUN_STATUS" -ne 0 ]]
+grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$timeout_config"
+[[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
+[[ "$(cat "$MOCK_STATE/green_running")" == true ]]
+grep -Fq 'Drain window exceeded' "$RUN_LOG"
+
+# A socket inspection error is not evidence that the slot is idle.
+ss_failure_config="$TEST_ROOT/ss-failure.conf"
+reset_state
+write_active_config "$ss_failure_config"
+export MOCK_SS_FAIL=true
+run_cutover "$ss_failure_config"
+unset MOCK_SS_FAIL
+[[ "$RUN_STATUS" -ne 0 ]]
+[[ "$(cat "$MOCK_STATE/blue_running")" == true ]]
+[[ "$(cat "$MOCK_STATE/green_running")" == true ]]
+grep -Fq 'Cannot inspect slot connections' "$RUN_LOG"
 
 echo "nginx blue-green cutover behavior tests passed"

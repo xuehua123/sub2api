@@ -510,6 +510,9 @@ if [[ "${1:-}" == --protocol ]]; then
   printf '%s\n' 'sub2api-nginx-bluegreen-cutover-v2'
   exit 0
 fi
+if [[ "${MOCK_HELPER_ROLLBACK_PENDING:-false}" == true ]]; then
+  exit 1
+fi
 active_color=${1#sub2api-}
 if [[ "${MOCK_LEAVE_OLD_RUNNING:-false}" != true ]]; then
   printf '%s' false > "${MOCK_STATE_DIR}/${active_color}_running"
@@ -1036,6 +1039,17 @@ assert_failure 'Deployment failed after cutover and the previous slot was restor
 grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$safe_rollback_root/platform.conf"
 rollback_record=$(find "$safe_rollback_root/deploy-state" -name 'rollback-state-disabled-*.txt.*' -print | head -n 1)
 grep -Fq 'rollback_restored_container=sub2api-blue' "$rollback_record"
+
+# The helper may reverse routing while its new-slot workers still drain.
+# The wrapper must not delete that running slot just because old-slot health is OK.
+pending_drain_root=$(new_scenario pending-drain false)
+export MOCK_HELPER_ROLLBACK_PENDING=true
+run_deploy "$pending_drain_root" "$RELEASE_IMAGE_ID" disabled "$RELEASE_IMAGE_ID" "$RELEASE_REVISION" 1
+unset MOCK_HELPER_ROLLBACK_PENDING
+assert_failure 'Rollback target is still running or cannot be inspected; preserve it until drain is verified'
+[[ "$(cat "$pending_drain_root/state/blue_running")" == true ]]
+[[ "$(cat "$pending_drain_root/state/green_running")" == true ]]
+grep -Fq 'proxy_pass http://127.0.0.1:18080;' "$pending_drain_root/platform.conf"
 
 # Losing an activated contract is not interpreted as a virgin host. The
 # independent monotonic state record makes the next deployment fail closed.
