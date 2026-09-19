@@ -64,6 +64,12 @@ EOF
 cat > "$MOCK_BIN/ss" <<'EOF'
 #!/usr/bin/env bash
 [[ "${MOCK_SS_FAIL:-false}" != true ]] || exit 1
+# An unrelated public client may happen to use 18080 as its source port.
+# A port-only filter sees it; a filter for the loopback upstream does not.
+if [[ "${MOCK_UNRELATED_PEER:-false}" == true && "$*" == *'dport = :18080'* ]]; then
+  printf '%s\n' '0 0 192.0.2.10:443 198.51.100.20:18080'
+  exit 0
+fi
 reload_count=$(cat "$MOCK_STATE_DIR/nginx_reload_count")
 poll_file="$MOCK_STATE_DIR/socket_polls_$reload_count"
 polls=0
@@ -358,6 +364,16 @@ run_cutover "$sockets_config"
 unset MOCK_SOCKET_POLLS
 [[ "$RUN_STATUS" -eq 0 ]]
 [[ "$(cat "$MOCK_STATE/socket_polls_1")" -eq 3 ]]
+
+# Remote clients using the same numeric port cannot pin the old app slot.
+unrelated_peer_config="$TEST_ROOT/unrelated-client-port.conf"
+reset_state
+write_active_config "$unrelated_peer_config"
+export MOCK_UNRELATED_PEER=true
+run_cutover "$unrelated_peer_config"
+unset MOCK_UNRELATED_PEER
+[[ "$RUN_STATUS" -eq 0 ]]
+[[ "$(cat "$MOCK_STATE/blue_running")" == false ]]
 
 # On timeout, restore the original route without dropping either generation's
 # connections. A failed reverse drain keeps the candidate running for recovery.

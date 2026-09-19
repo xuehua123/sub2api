@@ -81,7 +81,7 @@ use a gate-false image as a rollback shortcut.
 
 A new Nginx worker and a healthy public response do not prove that the old
 worker generation has exited. Before stopping a slot, the cutover helper waits
-for all pre-reload worker PIDs and established sockets on that slot's known port
+for all pre-reload worker PIDs and established sockets on that slot's exact loopback endpoint
 to disappear. Socket inspection requires `ss`; inspection failures fail closed.
 The same condition applies before removing a candidate during rollback.
 

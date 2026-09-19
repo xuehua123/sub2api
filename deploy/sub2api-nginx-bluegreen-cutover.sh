@@ -194,7 +194,6 @@ reload_nginx_verified() {
 # Never stop either slot until both its worker generation and sockets have drained.
 wait_for_slot_drain() {
   local upstream=$1
-  local port=${upstream##*:}
   local current_workers worker sockets attempt
   local workers_pending
   for ((attempt = 0; attempt < DRAIN_ATTEMPTS; attempt++)); do
@@ -213,7 +212,7 @@ wait_for_slot_drain() {
         workers_pending=true
       fi
     done <<< "$draining_worker_pids"
-    sockets="$(ss -Htn state established "( sport = :$port or dport = :$port )")" || {
+    sockets="$(ss -Htn state established "( src = $upstream or dst = $upstream )")" || {
       echo "Cannot inspect slot connections; keeping both slots alive" >&2
       return 1
     }
