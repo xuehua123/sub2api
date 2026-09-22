@@ -10,7 +10,7 @@
     <meta name="color-scheme" content="dark light" />
     <title>皮皮虾 AI｜模型 API 中转与 CCSwitch 接入指南</title>
     <link rel="canonical" href="https://api.psydo.top/home/index.html" />
-    <link rel="icon" href="./assets/logo.png" type="image/png" />
+    <link rel="icon" href="./assets/logo-small.webp" type="image/webp" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="皮皮虾 AI" />
     <meta property="og:locale" content="zh_CN" />
@@ -43,16 +43,25 @@
         "inLanguage": "zh-CN"
       }
     </script>
-    <script src="./theme-init.js?v=20260922-7"></script>
-    <link rel="stylesheet" href="./home.css?v=20260922-6" />
-    <script src="./home.js?v=20260922-6" defer></script>
+    <script>(() => {
+  let value;
+  try {
+    value = localStorage.getItem("ppx-theme");
+  } catch {}
+  document.documentElement.dataset.theme = ["light", "dark"].includes(value)
+    ? value
+    : "dark";
+})();
+</script>
+    <link rel="stylesheet" href="./home.css?v=20260922-8" />
+    <script src="./home.js?v=20260922-8" defer></script>
   </head>
   <body>
     <a class="skip" href="#main">跳到正文</a>
     <header class="header">
       <div class="wrap header-inner">
         <a class="brand" data-app-path="/home" href="/home" target="_top"
-          ><img src="./assets/logo.png" width="34" height="34" alt="" /><span
+          ><img src="./assets/logo-small.webp" width="34" height="34" alt="" /><span
             >皮皮虾 <b>AI</b></span
           ><span class="brand-divider"></span><small>MODEL GATEWAY</small></a
         >
@@ -445,7 +454,7 @@
     </main>
     <footer class="wrap">
       <a class="brand" data-app-path="/home" href="/home" target="_top"
-        ><img src="./assets/logo.png" width="29" height="29" alt="" />皮皮虾
+        ><img src="./assets/logo-small.webp" width="29" height="29" alt="" />皮皮虾
         AI</a
       >
       <div>

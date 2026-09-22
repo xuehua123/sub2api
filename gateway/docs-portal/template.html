@@ -9,7 +9,7 @@
     />
     <meta name="color-scheme" content="light dark" />
     <title>快速开始 · 皮皮虾 AI 文档</title>
-    <link rel="icon" href="./assets/logo.png" type="image/png" />
+    <link rel="icon" href="./assets/logo-small.webp" type="image/webp" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="皮皮虾 AI 开发文档" />
     <meta property="og:locale" content="zh_CN" />
@@ -22,15 +22,28 @@
       content="从 API 密钥页面一键导入 CCSwitch，查询 API 示例、余额套餐规则和连接排查步骤。"
     />
     <meta name="twitter:card" content="summary" />
-    <link rel="stylesheet" href="./styles.css?v=20260922-7" />
-    <script src="./theme-init.js?v=20260922-7"></script>
-    <script src="./routes.js?v=20260922-7" defer></script>
-    <script src="./app.js?v=20260922-7" defer></script>
-    <script src="./guides.js?v=20260922-7" defer></script>
-    <script src="./legacy-content.js?v=20260922-7" defer></script>
-    <script src="./articles.js?v=20260922-7" defer></script>
-    <script src="./troubleshooting.js?v=20260922-7" defer></script>
-    <script src="./docs-ui.js?v=20260922-7" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=20260922-8" />
+    <script>// Run before the stylesheet paints. Only a public appearance preference is read.
+(() => {
+  document.documentElement.dataset.enhanced = "true";
+  let stored;
+  try {
+    stored = localStorage.getItem("ppx-theme");
+  } catch {}
+  document.documentElement.dataset.theme = ["dark", "light"].includes(stored)
+    ? stored
+    : matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+})();
+</script>
+    <script src="./routes.js?v=20260922-8" defer></script>
+    <script src="./app.js?v=20260922-8" defer></script>
+    <script src="./guides.js?v=20260922-8" defer></script>
+    <script src="./legacy-content.js?v=20260922-8" defer></script>
+    <script src="./articles.js?v=20260922-8" defer></script>
+    <script src="./troubleshooting.js?v=20260922-8" defer></script>
+    <script src="./docs-ui.js?v=20260922-8" defer></script>
   </head>
   <body>
     <a class="skip" href="#article">跳到正文</a>
@@ -38,7 +51,7 @@
       <a class="brand" href="#quickstart"
         ><img
           class="brand-logo"
-          src="./assets/logo.png"
+          src="./assets/logo-small.webp"
           width="29"
           height="29"
           alt=""

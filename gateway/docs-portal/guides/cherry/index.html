@@ -5,27 +5,40 @@
     <meta name="description" content="选择适合当前网络的端点，按下面的步骤完成接入。">
     <meta name="color-scheme" content="light dark">
     <title>Cherry Studio · 皮皮虾 AI 文档</title>
-    <link rel="icon" href="../../assets/logo.png" type="image/png">
+    <link rel="icon" href="../../assets/logo-small.webp" type="image/webp">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="皮皮虾 AI 开发文档">
     <meta property="og:locale" content="zh_CN">
     <meta property="og:title" content="Cherry Studio · 皮皮虾 AI 文档">
     <meta property="og:description" content="选择适合当前网络的端点，按下面的步骤完成接入。">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="stylesheet" href="../../styles.css?v=20260922-7">
-    <script src="../../theme-init.js?v=20260922-7"></script>
-    <script src="../../routes.js?v=20260922-7" defer=""></script>
-    <script src="../../app.js?v=20260922-7" defer=""></script>
-    <script src="../../guides.js?v=20260922-7" defer=""></script>
-    <script src="../../legacy-content.js?v=20260922-7" defer=""></script>
-    <script src="../../articles.js?v=20260922-7" defer=""></script>
-    <script src="../../troubleshooting.js?v=20260922-7" defer=""></script>
-    <script src="../../docs-ui.js?v=20260922-7" defer=""></script>
+    <link rel="stylesheet" href="../../styles.css?v=20260922-8">
+    <script>// Run before the stylesheet paints. Only a public appearance preference is read.
+(() => {
+  document.documentElement.dataset.enhanced = "true";
+  let stored;
+  try {
+    stored = localStorage.getItem("ppx-theme");
+  } catch {}
+  document.documentElement.dataset.theme = ["dark", "light"].includes(stored)
+    ? stored
+    : matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+})();
+</script>
+    <script src="../../routes.js?v=20260922-8" defer=""></script>
+    <script src="../../app.js?v=20260922-8" defer=""></script>
+    <script src="../../guides.js?v=20260922-8" defer=""></script>
+    <script src="../../legacy-content.js?v=20260922-8" defer=""></script>
+    <script src="../../articles.js?v=20260922-8" defer=""></script>
+    <script src="../../troubleshooting.js?v=20260922-8" defer=""></script>
+    <script src="../../docs-ui.js?v=20260922-8" defer=""></script>
   <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/guides/cherry/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="Cherry Studio · 皮皮虾 AI 文档"><meta name="twitter:description" content="选择适合当前网络的端点，按下面的步骤完成接入。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/guides/cherry/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Cherry Studio","description":"选择适合当前网络的端点，按下面的步骤完成接入。","inLanguage":"zh-CN","url":"https://doc.psydo.top/guides/cherry/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
   <body>
     <a class="skip" href="#article">跳到正文</a>
     <header class="docs-header">
-      <a class="brand" href="../../"><img class="brand-logo" src="../../assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+      <a class="brand" href="../../"><img class="brand-logo" src="../../assets/logo-small.webp" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
         <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
       </button>
       <div class="header-actions">
