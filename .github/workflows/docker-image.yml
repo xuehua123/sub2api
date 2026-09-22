@@ -45,25 +45,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || inputs.ref }}
 
-      - name: Classify static-only update
-        id: scope
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --depth=2 origin "$(git rev-parse HEAD)"
-          changed_paths="$(git diff --name-only HEAD^ HEAD)"
-          app_changed=false
-          while IFS= read -r path; do
-            case "$path" in
-              gateway/docs-portal/*|gateway/home-portal/*|gateway/build-docs.cjs|gateway/preview-sites.cjs|gateway/site-portals.test.cjs|gateway/static-docs.test.cjs|tools/package_public_sites.py|.github/workflows/public-sites.yml|.github/workflows/backend-ci.yml|.github/workflows/docker-image.yml) ;;
-              *) app_changed=true ;;
-            esac
-          done <<< "$changed_paths"
-          echo "app_changed=$app_changed" >> "$GITHUB_OUTPUT"
-          if [ "$app_changed" = false ]; then echo "Static public-site update; application release tags remain unchanged." >> "$GITHUB_STEP_SUMMARY"; fi
-
       - name: Resolve image and release metadata
-        if: steps.scope.outputs.app_changed == 'true' || github.event_name == 'workflow_dispatch'
         id: source
         shell: bash
         run: |

@@ -1,4 +1,4 @@
-"""Package only tracked public portal files. Produces reproducible CI artifact and OCI context."""
+"""Package only tracked public portal files into a reproducible static release archive."""
 import hashlib,json,pathlib,subprocess,sys,tarfile,io
 root=pathlib.Path(__file__).resolve().parents[1]
 out=pathlib.Path(sys.argv[1] if len(sys.argv)>1 else root/'dist/public-sites')
@@ -23,5 +23,4 @@ with tarfile.open(out/'public-sites.tar','w') as tar:
   if not p.is_file():continue
   data=p.read_bytes();info=tarfile.TarInfo(p.relative_to(out/'payload').as_posix());info.size=len(data);info.mode=0o644;info.mtime=0;tar.addfile(info,io.BytesIO(data))
 (out/'public-sites.tar.sha256').write_text(hashlib.sha256((out/'public-sites.tar').read_bytes()).hexdigest()+'  public-sites.tar\n')
-(out/'Dockerfile').write_text('FROM scratch\nCOPY payload/ /public-sites/\n')
 print(json.dumps({'revision':sha,'application_version':version,'files':len(manifest),'output':str(out)}))
