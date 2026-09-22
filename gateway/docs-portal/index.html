@@ -1,247 +1,90 @@
 <!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="皮皮虾 AI API 使用文档：选择适合当前网络的 API 端点，快速配置客户端与 SDK。" />
-    <title>皮皮虾 AI 开发者文档</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css" />
-    <link rel="stylesheet" href="./docs-extra.css" />
-  </head>
+<html lang="zh-CN" data-page-id="quickstart"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="从你正在用的工具出发，完成第一次调用。">
+    <meta name="color-scheme" content="light dark">
+    <title>快速开始 · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="./assets/logo.png" type="image/png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="快速开始 · 皮皮虾 AI 文档">
+    <meta property="og:description" content="从你正在用的工具出发，完成第一次调用。">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="./styles.css?v=20260922-7">
+    <script src="./theme-init.js?v=20260922-7"></script>
+    <script src="./routes.js?v=20260922-7" defer=""></script>
+    <script src="./app.js?v=20260922-7" defer=""></script>
+    <script src="./guides.js?v=20260922-7" defer=""></script>
+    <script src="./legacy-content.js?v=20260922-7" defer=""></script>
+    <script src="./articles.js?v=20260922-7" defer=""></script>
+    <script src="./troubleshooting.js?v=20260922-7" defer=""></script>
+    <script src="./docs-ui.js?v=20260922-7" defer=""></script>
+  <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="快速开始 · 皮皮虾 AI 文档"><meta name="twitter:description" content="从你正在用的工具出发，完成第一次调用。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"快速开始","description":"从你正在用的工具出发，完成第一次调用。","inLanguage":"zh-CN","url":"https://doc.psydo.top/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
   <body>
-    <div class="page-grid" aria-hidden="true"></div>
-    <header class="site-header">
-      <a class="brand" href="#top" aria-label="皮皮虾 AI 文档首页">
-        <span class="brand-mark">P</span>
-        <span>皮皮虾 AI <small>DOCS</small></span>
-      </a>
-      <nav aria-label="主导航">
-        <a href="#quickstart">快速开始</a>
-        <a href="#clients">客户端</a>
-        <a href="#ccswitch">CCSwitch 生图</a>
-        <a href="#sdk">SDK</a>
-        <a href="#api-reference">接口示例</a>
-        <a href="#errors">502 排查</a>
-        <a href="#connectivity-guide">连通性排查</a>
-        <a href="#faq">常见问题</a>
-      </nav>
-      <a class="console-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">打开控制台 <span aria-hidden="true">↗</span></a>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="./"><img class="brand-logo" src="./assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button id="menu-toggle" class="icon-button mobile-menu" aria-label="打开目录" aria-expanded="false" aria-controls="sidebar" type="button">
+          ☰</button><button id="theme-toggle" class="icon-button" aria-label="切换深色主题" type="button">
+          ◐</button><a data-console-path="/login" href="https://api.psydo.top/login" target="_blank" rel="noopener noreferrer">控制台 ↗</a>
+      </div>
     </header>
-
-    <main id="top">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">DEVELOPER DOCUMENTATION / 01</p>
-          <h1>把模型接入，<br /><em>从一个地址开始。</em></h1>
-          <p class="hero-lede">皮皮虾 AI 同时提供多个公开 API 端点。先按您当前网络选择一个端点，再将它填入任意兼容 OpenAI API 的客户端或代码。</p>
-          <div class="hero-actions">
-            <a class="button button-primary" href="#quickstart">开始配置 <span aria-hidden="true">↓</span></a>
-            <a class="button button-quiet" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">获取 API 密钥 <span aria-hidden="true">↗</span></a>
-          </div>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
         </div>
-        <aside class="hero-note">
-          <span class="note-index">TIP 01</span>
-          <p>端点只决定您的设备如何进入皮皮虾 AI。它不改变 API 密钥、余额、套餐、分组或模型列表。</p>
-          <a href="#endpoint-selector">选择端点 <span aria-hidden="true">→</span></a>
-        </aside>
-      </section>
-
-      <section id="endpoint-selector" class="endpoint-section" aria-labelledby="endpoint-title">
-        <div class="section-heading">
-          <p class="eyebrow">CONNECTION / 02</p>
-          <h2 id="endpoint-title">选择当前 API 端点</h2>
-          <p>所有教程会自动使用您在这里选择的地址。建议先在控制台的 API 密钥页面运行“连接检测”，再选择推荐端点。</p>
+        <nav id="navigation"><div class="nav-group"><h2>开始使用</h2><a href="./" data-page="quickstart" aria-current="page">快速开始</a><a href="./endpoint-selector/" data-page="endpoint-selector">选择 API 端点</a><a href="./billing/" data-page="billing">余额、套餐与密钥</a></div><div class="nav-group"><h2>工具接入</h2><a href="./clients/" data-page="clients">选择你的工具</a><a href="./guides/ccswitch/" data-page="guide/ccswitch">CCSwitch · 推荐</a><a href="./guides/codex/" data-page="guide/codex">Codex</a><a href="./guides/claude/" data-page="guide/claude">Claude Code</a><a href="./guides/cursor/" data-page="guide/cursor">Cursor</a><a href="./guides/cherry/" data-page="guide/cherry">Cherry Studio</a><a href="./guides/cline/" data-page="guide/cline">Cline / Roo Code</a><a href="./guides/chatbox/" data-page="guide/chatbox">Chatbox</a><a href="./guides/openwebui/" data-page="guide/openwebui">OpenWebUI</a></div><div class="nav-group"><h2>API 与开发</h2><a href="./sdk/" data-page="sdk">SDK 与代码示例</a><a href="./guides/python/" data-page="guide/python">Python</a><a href="./guides/node/" data-page="guide/node">Node.js / TypeScript</a><a href="./guides/http-sdk/" data-page="guide/http-sdk">Java / HTTP</a><a href="./api-reference/" data-page="api-reference">接口概览</a><a href="./guides/models-api/" data-page="guide/models-api">查询模型</a><a href="./guides/chat-api/" data-page="guide/chat-api">聊天补全</a><a href="./guides/responses-api/" data-page="guide/responses-api">Responses</a><a href="./guides/stream-api/" data-page="guide/stream-api">流式输出</a><a href="./guides/image-api/" data-page="guide/image-api">图片生成</a></div><div class="nav-group"><h2>排查与支持</h2><a href="./errors/" data-page="errors">错误码与 502</a><a href="./codex-connection/" data-page="codex-connection">Codex 连接 / Reconnecting</a><a href="./context/" data-page="context">上下文与自动压缩</a><a href="./connectivity-guide/" data-page="connectivity-guide">连接与速度</a><a href="./support-checklist/" data-page="support-checklist">提交排查信息</a><a href="./faq/" data-page="faq">常见问题</a></div></nav>
+        <a class="sidebar-help" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer"><span>需要帮助？</span>打开问题中心 ↗</a>
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">开始使用 / 快速开始</span><button id="share-article" type="button">复制本页链接 ↗</button>
         </div>
-        <div class="endpoint-layout">
-          <div class="endpoint-list" role="radiogroup" aria-label="API 端点">
-            <button class="endpoint-card is-selected" type="button" data-endpoint="https://api.psydo.top" data-label="默认端点" role="radio" aria-checked="true">
-              <span class="endpoint-state"></span>
-              <span class="endpoint-content"><strong>默认端点</strong><small>适合大多数网络环境</small></span>
-              <code>api.psydo.top</code>
-            </button>
-            <button class="endpoint-card" type="button" data-endpoint="https://cn2.ppxcode.com" data-label="CN2 直连（推荐）" role="radio" aria-checked="false">
-              <span class="endpoint-state"></span>
-              <span class="endpoint-content"><strong>CN2 直连（推荐）</strong><small>推荐大陆网络与长流式调用</small></span>
-              <code>cn2.ppxcode.com</code>
-            </button>
-            <button class="endpoint-card" type="button" data-endpoint="https://cf.ppxcode.com" data-label="Cloudflare 入口" role="radio" aria-checked="false">
-              <span class="endpoint-state"></span>
-              <span class="endpoint-content"><strong>Cloudflare 入口</strong><small>适合需要 Cloudflare 的网络环境</small></span>
-              <code>cf.ppxcode.com</code>
-            </button>
-            <button class="endpoint-card" type="button" data-endpoint="https://api.ppx-ai.com" data-label="CF 优选端点" role="radio" aria-checked="false">
-              <span class="endpoint-state"></span>
-              <span class="endpoint-content"><strong>CF 优选端点</strong><small>适合部分国际网络环境</small></span>
-              <code>api.ppx-ai.com</code>
-            </button>
-            <button class="endpoint-card" type="button" data-endpoint="https://us.psydo.top" data-label="美国线路优化" role="radio" aria-checked="false">
-              <span class="endpoint-state"></span>
-              <span class="endpoint-content"><strong>美国线路优化</strong><small>适合部分大陆网络环境</small></span>
-              <code>us.psydo.top</code>
-            </button>
-          </div>
-          <div class="endpoint-preview">
-            <div class="preview-topline"><span>当前选择</span><strong id="selected-endpoint-label">默认端点</strong></div>
-            <div class="copy-line">
-              <code id="base-url-value">https://api.psydo.top/v1</code>
-              <button class="copy-button" type="button" data-copy-target="base-url-value" aria-label="复制 Base URL">复制</button>
-            </div>
-            <p>这是兼容 OpenAI API 的 Base URL。大多数工具需要填写到 <code>Base URL</code>、<code>API Host</code> 或 <code>Endpoint</code>。</p>
-            <a class="test-link" data-console-url href="https://api.psydo.top" target="_blank" rel="noreferrer">在控制台检测当前网络连接 <span aria-hidden="true">↗</span></a>
-          </div>
+        <article id="article" tabindex="-1"><p class="eyebrow">开始使用</p><h1>快速开始</h1><p class="article-description">从你正在用的工具出发，完成第一次调用。</p><div class="recommended-banner"><span>推荐路径 · CCSwitch</span><h2 id="section-0">先把工具接好，再开始工作。</h2><p>先在 <a data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">API 密钥页面 ↗</a>点击「导入到 CCS」，在 CCSwitch 确认并启用，<strong>完全退出 Codex / Claude Code，再重新打开</strong>。</p><a class="doc-primary" href="./guides/ccswitch/">开始 CCSwitch 图文配置 <span>→</span></a></div><aside class="callout"><strong>API 对接必查：请求 Header 带上 User-Agent（UA）</strong><p>自建 API 请求请显式设置 <code>User-Agent: pipixia-client/1.0</code>，也可以替换为您真实的应用名称与版本，例如 <code>my-app/1.0</code>。字段名是 <code>User-Agent</code>，不是 <code>UA</code>；它放在请求头里，不是 JSON 请求体。不要填密钥或个人信息。</p></aside><div class="welcome-strip"><span>PPX / GET STARTED</span><span>准备 → 配置 → 验证</span></div><h2 id="section-1">你想用 AI 做什么？</h2><div class="article-cards"><a href="./guides/codex/"><span class="card-arrow">↗</span><h3 id="section-2">用 Codex 写代码</h3><p>配置供应商，继续你的项目。</p></a><a href="./guides/claude/"><span class="card-arrow">↗</span><h3 id="section-3">接入 Claude Code</h3><p>按操作系统设置连接。</p></a><a href="./sdk/"><span class="card-arrow">↗</span><h3 id="section-4">开发自己的应用</h3><p>从 SDK 或 HTTP 请求开始。</p></a><a href="./guides/image-api/"><span class="card-arrow">↗</span><h3 id="section-5">生成图片</h3><p>配置图片分组与独立密钥。</p></a></div><h2 id="section-6">接入前，准备三样东西</h2><ol class="steps"><li><strong>一个可用的账户</strong><p>在控制台确认余额或有效套餐，以及套餐支持的分组。</p><a data-console-path="/purchase" href="https://api.psydo.top/purchase" target="_blank" rel="noopener noreferrer">查看套餐 →</a></li><li><strong>一把对应分组的 Key</strong><p>创建 Key 时确认分组、消费来源和独立限额。不要把不同工具的设置混在一起。</p><a data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">创建 API Key →</a></li><li><strong>一个当前可用的模型</strong><p>模型名从该 Key 的模型列表选择；公开模型广场不等于每把 Key 都能调用。</p><a href="./guides/models-api/">查询模型 →</a></li></ol><h2 id="section-7">先验证，再接入复杂任务</h2><div class="os-selector" role="group" aria-label="命令使用的系统"><button data-os="windows" aria-pressed="true">Windows · PowerShell</button><button data-os="unix" aria-pressed="false">macOS / Linux · Bash / Zsh</button></div><div class="code-panel"><div class="code-panel-head"><span>PowerShell · 查询模型</span><button class="copy-button" type="button" data-dialog-copy="%24env%3APIPIXIA_API_KEY%20%3D%20%5BSystem.Net.NetworkCredential%5D%3A%3Anew(%22%22%2C%20(Read-Host%20%22API%20Key%22%20-AsSecureString)).Password%0AInvoke-RestMethod%20-Uri%20%22https%3A%2F%2Fapi.psydo.top%2Fv1%2Fmodels%22%20%60%0A%20%20-Headers%20%40%7B%20Authorization%20%3D%20%22Bearer%20%24env%3APIPIXIA_API_KEY%22%3B%20%22User-Agent%22%20%3D%20%22pipixia-client%2F1.0%22%20%7D">复制</button></div><pre tabindex="0" aria-label="PowerShell · 查询模型 代码示例"><code>$env:PIPIXIA_API_KEY = [System.Net.NetworkCredential]::new("", (Read-Host "API Key" -AsSecureString)).Password
+Invoke-RestMethod -Uri "https://api.psydo.top/v1/models" `
+  -Headers @{ Authorization = "Bearer $env:PIPIXIA_API_KEY"; "User-Agent" = "pipixia-client/1.0" }</code></pre></div><p>预期结果是模型列表。确认连接与权限后，再打开上面的工具教程发送一条简单请求。</p><aside class="callout"><strong>地址不要重复拼接</strong><p>OpenAI 兼容 Base URL 通常以 /v1 结尾；Claude Code 的 ANTHROPIC_BASE_URL 使用根地址。每篇教程给出的字段值已经包含所需路径。</p></aside><aside class="console-resources"><strong>继续在皮皮虾控制台操作</strong><p>以下入口在新标签页打开，当前教程会保留。</p><div class="doc-actions"><a class="doc-secondary" data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">创建 / 管理 API 密钥 ↗</a><a class="doc-secondary" data-console-path="/model-plaza" href="https://api.psydo.top/model-plaza" target="_blank" rel="noopener noreferrer">查看模型与价格 ↗</a></div></aside><p class="article-maintenance">内容维护：2026-09-22 · 客户端界面可能随版本变化</p></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"><span></span><a href="./endpoint-selector/"><small>下一篇 →</small><strong>选择 API 端点</strong></a></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br>请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="./endpoint-selector/">如何选择端点 →</a>
         </div>
-      </section>
-
-      <section id="quickstart" class="quickstart" aria-labelledby="quickstart-title">
-        <div class="section-heading">
-          <p class="eyebrow">QUICKSTART / 03</p>
-          <h2 id="quickstart-title">三步完成调用</h2>
-        </div>
-        <ol class="steps">
-          <li><span>01</span><div><h3>创建 API 密钥</h3><p>登录控制台，在“API 密钥”页面创建一个新的密钥。密钥只展示一次，请妥善保存。</p></div></li>
-          <li><span>02</span><div><h3>选择一个 API 端点</h3><p>使用上方端点选择器，或在控制台运行连接检测后使用被推荐的 URL。</p></div></li>
-          <li><span>03</span><div><h3>发送第一个请求</h3><p>将 Base URL、API Key 和模型名称填入客户端或下方代码示例。</p></div></li>
-        </ol>
-        <div class="code-panel" id="sdk">
-          <div class="code-panel-head"><span>cURL</span><button class="copy-button" type="button" data-copy-target="curl-code" aria-label="复制 cURL 示例">复制</button></div>
-          <pre id="curl-code"><code>curl <span class="token-key">"<span data-base-url>https://api.psydo.top</span>/v1/chat/completions"</span> \
-  -H <span class="token-key">"Authorization: Bearer $PIPIXIA_API_KEY"</span> \
-  -H <span class="token-key">"Content-Type: application/json"</span> \
-  -d <span class="token-string">'{
-    "model": "gpt-5.4-mini",
-    "messages": [{"role": "user", "content": "你好"}]
-  }'</span></code></pre>
-        </div>
-      </section>
-
-      <section id="clients" class="clients" aria-labelledby="clients-title">
-        <div class="section-heading">
-          <p class="eyebrow">CLIENT GUIDES / 04</p>
-          <h2 id="clients-title">常用客户端配置</h2>
-          <p>每个教程都使用当前选择的 API 端点。切换端点后，示例会即时更新。</p>
-        </div>
-        <div class="guide-grid">
-          <article id="ccswitch" class="guide-card guide-card-featured"><span class="guide-number">01</span><h3>CCSwitch</h3><p>统一管理 Claude Code、Codex 等本地客户端的供应商、模型和 API 端点。</p><button type="button" class="guide-open" data-guide="ccswitch">图文配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">02</span><h3>Cherry Studio</h3><p>供应商选择 OpenAI，填写 Base URL 与 API Key，然后从模型列表添加可用模型。</p><button type="button" class="guide-open" data-guide="cherry">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">03</span><h3>Cursor</h3><p>在模型提供商设置中启用 OpenAI Compatible，自定义 Base URL 并添加 API Key。</p><button type="button" class="guide-open" data-guide="cursor">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">04</span><h3>Claude Code</h3><p>通过环境变量配置兼容端点与密钥，适合终端和自动化工作流。</p><button type="button" class="guide-open" data-guide="claude">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">05</span><h3>OpenWebUI</h3><p>在管理员连接配置中添加 OpenAI API 连接，保存后即可选择模型。</p><button type="button" class="guide-open" data-guide="openwebui">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">06</span><h3>Python SDK</h3><p>使用官方 OpenAI Python SDK，仅需设置 <code>base_url</code> 与 <code>api_key</code>。</p><button type="button" class="guide-open" data-guide="python">查看示例 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">07</span><h3>Chatbox</h3><p>在自定义 Provider 中使用 OpenAI API 兼容模式，填入 Base URL 与 API Key。</p><button type="button" class="guide-open" data-guide="chatbox">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">08</span><h3>Cline / Roo Code</h3><p>适合 VS Code 内的编码助手，选择 OpenAI Compatible 并填写端点与密钥。</p><button type="button" class="guide-open" data-guide="cline">查看配置 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">09</span><h3>Node.js / TypeScript</h3><p>使用官方 OpenAI SDK，支持聊天、流式输出和 Responses API。</p><button type="button" class="guide-open" data-guide="node">查看示例 <span>→</span></button></article>
-          <article class="guide-card"><span class="guide-number">10</span><h3>Java / Go</h3><p>任何 HTTP 客户端都能调用兼容接口；文档提供最小可运行请求。</p><button type="button" class="guide-open" data-guide="http-sdk">查看示例 <span>→</span></button></article>
-          <article class="guide-card guide-card-accent"><span class="guide-number">11</span><h3>其他客户端</h3><p>只要支持 OpenAI API 兼容格式，通常都能接入皮皮虾 AI。</p><a href="#faq">查看兼容原则 <span>→</span></a></article>
-        </div>
-      </section>
-
-      <section id="api-reference" class="api-reference" aria-labelledby="api-reference-title">
-        <div class="section-heading"><p class="eyebrow">API REFERENCE / 05</p><h2 id="api-reference-title">常用接口示例</h2><p>示例只展示请求格式。模型名称、可用能力和额度以控制台当前模型列表及您的权限为准。</p></div>
-        <div class="reference-grid">
-          <article class="reference-card"><h3>聊天补全</h3><p><code>POST /v1/chat/completions</code></p><button type="button" class="guide-open" data-guide="chat-api">查看请求 <span>→</span></button></article>
-          <article class="reference-card"><h3>流式输出</h3><p><code>stream: true</code></p><button type="button" class="guide-open" data-guide="stream-api">查看请求 <span>→</span></button></article>
-          <article class="reference-card"><h3>Responses</h3><p><code>POST /v1/responses</code></p><button type="button" class="guide-open" data-guide="responses-api">查看请求 <span>→</span></button></article>
-          <article class="reference-card"><h3>图片生成</h3><p><code>POST /v1/images/generations</code></p><button type="button" class="guide-open" data-guide="image-api">查看请求 <span>→</span></button></article>
-          <article class="reference-card"><h3>模型列表</h3><p><code>GET /v1/models</code></p><button type="button" class="guide-open" data-guide="models-api">查看请求 <span>→</span></button></article>
-          <article class="reference-card reference-card-accent"><h3>请求出错？</h3><p>先看状态码，再按原因排查。</p><a href="#errors">查看错误说明 <span>→</span></a></article>
-        </div>
-      </section>
-
-      <section id="errors" class="errors" aria-labelledby="errors-title">
-        <div class="section-heading"><p class="eyebrow">TROUBLESHOOTING / 06</p><h2 id="errors-title">错误排查</h2><p>先保留请求 ID 和状态码，再按下面顺序排查。不要在截图、工单或聊天中发送完整 API Key。</p></div>
-        <div class="error-table" role="table" aria-label="常见错误说明">
-          <div class="error-head" role="row"><span>状态</span><span>常见原因</span><span>先做什么</span></div>
-          <div role="row"><strong>401</strong><p>API Key 缺失、写错、已删除，或请求头格式不正确。</p><p>确认使用 <code>Authorization: Bearer API_KEY</code>，重新创建并替换密钥。</p></div>
-          <div role="row"><strong>403</strong><p>当前密钥、分组或账号没有该模型的访问权限；也可能是上游拒绝。</p><p>在控制台确认模型可见、分组已授权；持续出现时保留请求 ID 联系支持。</p></div>
-          <div role="row"><strong>404</strong><p>Base URL、路径或模型名称不正确。</p><p>Base URL 通常填 <code>/v1</code>；模型名以控制台模型列表为准，不要照抄其他平台名称。</p></div>
-          <div role="row"><strong>429</strong><p>可能是请求频率/并发达到限制，<b>也可能是余额不足、套餐权益或模型配额已耗尽</b>。</p><p>先检查控制台余额、用量和套餐/分组权益；余额正常后再降低并发、稍后重试。不要只把 429 当成“限流”。</p></div>
-          <div role="row"><strong>5xx</strong><p>可能来自上游模型服务、短暂网络波动或请求负载异常。</p><p>使用指数退避重试；若只在一个端点出现，可运行连接检测并切换推荐 URL。持续失败请提供时间、模型和请求 ID。</p></div>
-        </div>
-
-        <div class="error-playbook" aria-labelledby="bad-gateway-title">
-          <p class="eyebrow">502 PLAYBOOK</p>
-          <h3 id="bad-gateway-title">502 Bad Gateway：按“端点 × Clash 线路”排查</h3>
-          <p>502 表示请求经过某一层网关后，没有拿到可用的上游响应。它不一定是 API Key 或余额问题，也可能是当前 API 端点、Clash 代理线路、代理商节点或上游连接暂时异常。请按下面顺序定位，不要一次修改所有配置。</p>
-
-          <ol class="diagnostic-steps">
-            <li><strong>先固定客户端配置。</strong>确认客户端实际使用的 Base URL 与本页选择的一致，路径通常为 <code>/v1</code>；保留同一个模型、同一个 API Key 和同一个请求，方便比较结果。</li>
-            <li><strong>先换 Clash 线路，再换 API 端点。</strong>在同一个 API 端点下，依次切换您购买或获取的 Clash 代理商线路；某条线路恢复后，再用这条线路测试其他 API 端点。这样可以判断问题来自线路还是入口。</li>
-            <li><strong>每次切换后都看 Clash 日志。</strong>按 API 端点域名过滤请求，确认日志里出现了本次请求，并核对命中的代理组、代理商和节点。只看到 Clash 已启动，不代表客户端请求真的走了 Clash。</li>
-            <li><strong>记录能稳定成功的组合。</strong>例如“<code>CN2 直连（推荐）</code> + Clash 关闭”或“<code>默认端点</code> + Clash 开启 + 某代理商某节点”。后续优先使用已验证成功的组合。</li>
-          </ol>
-
-          <div class="combination-table" role="table" aria-label="502 线路组合排查">
-            <div class="combination-head" role="row"><span>测试组合</span><span>操作</span><span>结果判断</span></div>
-            <div role="row"><strong>A：直连 + 当前端点</strong><p>关闭 Clash，保持当前 API 端点不变，重试同一个请求。</p><p>直连成功、Clash 失败：优先检查 Clash 规则、代理组或节点。</p></div>
-            <div role="row"><strong>B：Clash + 同一端点</strong><p>开启 Clash，保持 API 端点不变，只切换代理商提供的线路。</p><p>只有部分线路成功：使用成功线路，并在 Clash 中固定到该代理组/节点。</p></div>
-            <div role="row"><strong>C：Clash + 其他端点</strong><p>保持已验证的 Clash 线路不变，只切换本页提供的其他 API 端点。</p><p>只有某个端点成功：使用成功端点；其他端点可能受当前网络或入口路由影响。</p></div>
-            <div role="row"><strong>D：全组合复测</strong><p>至少用 2 条 Clash 线路和 2 个 API 端点交叉测试，每次只改变一个变量。</p><p>所有组合都失败：保留日志、时间、端点、线路和请求 ID，再联系支持。</p></div>
-          </div>
-
-          <div class="log-check" aria-labelledby="log-check-title">
-            <h4 id="log-check-title">如何判断请求是否真的走到了代理商</h4>
-            <div class="log-grid">
-              <div><strong>日志没有这条请求</strong><p>客户端没有使用 Clash。检查客户端是否支持系统代理，或开启 Clash 的 TUN 模式；同时确认应用没有单独配置直连代理。</p></div>
-              <div><strong>有请求，但命中 DIRECT</strong><p>请求进入了 Clash，但规则选择了直连，不是代理商线路。检查规则模式、代理组和域名匹配结果。</p></div>
-              <div><strong>有请求，命中指定代理组/节点</strong><p>说明请求已交给代理商线路。若仍返回 502，继续切换节点或 API 端点，并记录日志中的状态、错误和时间。</p></div>
-              <div><strong>Clash 显示成功，但客户端仍报 502</strong><p>检查客户端自身的超时、流式响应处理和 Base URL 路径；同时确认客户端没有发起第二个未经过 Clash 的请求。</p></div>
-            </div>
-          </div>
-
-          <p class="playbook-note"><b>提交排查信息：</b>发生时间（含时区）、API 端点、Clash 代理组/代理商/节点、Clash 是否能看到请求、返回状态码、模型名称和请求 ID。请遮住 API Key、Cookie 和完整请求内容。</p>
-        </div>
-
-        <div class="error-playbook" id="connectivity-guide" aria-labelledby="connectivity-guide-title">
-          <p class="eyebrow">CONNECTIVITY &amp; SPEED GUIDE</p>
-          <h3 id="connectivity-guide-title">连通性以及速度问题排查指南</h3>
-          <p>为便于快速定位问题，请按以下顺序确认；每次只调整一项配置，便于比较结果。</p>
-          <ol class="diagnostic-steps">
-            <li><strong>检测 URL：</strong>在 API 密钥页面确认当前使用的检测链接是否连通性良好。</li>
-            <li><strong>代理节点：</strong>在 Clash 客户端及日志页面确认检测 URL 经过正确的代理节点，可通过日志查询；默认节点建议使用美国或加拿大节点。</li>
-            <li><strong>分组选择：</strong>在分组设置或模型配置页面确认当前选择的分组与所使用的模型匹配。</li>
-            <li><strong>渠道状态：</strong>在渠道管理页面确认渠道状态显示为“可用”。首 Token 速度标准可参考渠道状态中的对话延迟；如出现速度异常，请参考本指南排查。</li>
-            <li><strong>额度卡选择：</strong>在额度卡页面确认额度卡类型和剩余额度适用于当前模型或渠道。</li>
-          </ol>
-          <div class="log-check">
-            <h4>提问时请尽量提供</h4>
-            <div class="log-grid">
-              <div><strong>正在使用的 URL</strong></div>
-              <div><strong>Clash 代理节点及日志截图</strong></div>
-              <div><strong>所选分组</strong></div>
-              <div><strong>渠道状态</strong></div>
-              <div><strong>额度卡类型和余额状态</strong></div>
-            </div>
-          </div>
-          <p class="playbook-note"><b>说明：</b>提供以上信息可以减少来回沟通，更快定位连通性和速度问题。</p>
-        </div>
-      </section>
-
-      <section id="faq" class="faq" aria-labelledby="faq-title">
-        <div class="section-heading"><p class="eyebrow">REFERENCE / 07</p><h2 id="faq-title">接入说明</h2></div>
-        <div class="faq-list">
-          <details open><summary>多个 API 端点有什么区别？</summary><p>它们提供相同的 API 能力、账户体系和可用模型。区别仅在您当前网络到公开入口的连接表现。可在控制台运行连接检测，优先使用推荐 URL。</p></details>
-          <details><summary>更换端点会影响余额、套餐或 API Key 吗？</summary><p>不会。端点是访问地址，不是新账户或新线路套餐。更换后仍使用同一 API Key、同一余额和同一订阅权益。</p></details>
-          <details><summary>生图为什么要单独创建 API Key？</summary><p>API Key 会绑定一个 API 分组。请保留 Claude/Codex 当前使用的编程分组 Key，并额外创建一把绑定“生图 API 分组”的 Key 给图片生成客户端或脚本使用。两把 Key 属于同一账户，余额和套餐权益不需要重复购买；差别只在各自可访问的分组和模型。</p></details>
-          <details><summary>为什么模型名称和官方示例不同？</summary><p>请以控制台模型列表为准。不同分组、套餐和权限可能看到不同模型；不要把文档中的示例模型名当作固定可用清单。</p></details>
-          <details><summary>连接检测“不推荐”代表什么？</summary><p>只代表测试时您的当前设备和网络访问该 URL 的表现较差，不代表模型不可用或该端点对所有人都不好。可以切换其他 URL 后重新检测。</p></details>
-          <details><summary>收到 429 是不是一定触发限流？</summary><p>不是。429 既可能是瞬时请求频率或并发过高，也可能表示余额不足、套餐权益不足，或者特定模型配额已用完。请先检查控制台余额、用量和套餐权益，再考虑降低并发或稍后重试。</p></details>
-          <details><summary>遇到 502，为什么要同时看 API 端点和 Clash 线路？</summary><p>API 端点决定请求进入哪个公开入口，Clash 线路决定您的设备通过哪条代理路径访问入口。两者任意一层不稳定，都可能表现为 502。建议先固定端点切换 Clash 线路，再固定成功线路切换其他端点，每次只改变一个变量。</p></details>
-          <details><summary>Clash 日志里没有看到请求，说明什么？</summary><p>通常说明当前客户端请求没有经过 Clash，可能使用了直连、应用自带代理或另一套网络代理。请检查客户端的代理设置，或在 Clash 中启用系统代理/TUN，并再次用同一个请求验证日志。</p></details>
-        </div>
-      </section>
-    </main>
-
-    <dialog id="guide-dialog" class="guide-dialog">
-      <div class="dialog-head"><p class="eyebrow" id="dialog-kicker">CLIENT GUIDE</p><button class="dialog-close" type="button" aria-label="关闭教程">×</button></div>
-      <h2 id="dialog-title"></h2>
-      <div id="dialog-body"></div>
+        <nav id="toc" aria-label="本页目录"><p>本页内容</p><a href="./#section-0" data-scroll="section-0">先把工具接好，再开始工作。</a><a href="./#section-1" data-scroll="section-1">你想用 AI 做什么？</a><a href="./#section-6" data-scroll="section-6">接入前，准备三样东西</a><a href="./#section-7" data-scroll="section-7">先验证，再接入复杂任务</a></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label><input id="search-input" type="search" autocomplete="off" placeholder="试试 Codex、余额、自动压缩、429…">
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
     </dialog>
-
-    <footer><span>皮皮虾 AI / Developer Docs</span><span>端点和模型以控制台实时信息为准</span></footer>
     <div id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js"></script>
-  </body>
-</html>
+    <noscript><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript>
+
+
+</body></html>

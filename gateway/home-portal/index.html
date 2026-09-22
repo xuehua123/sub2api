@@ -1,138 +1,458 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="皮皮虾 AI - 面向开发者与团队的模型 API 服务。" />
-    <meta name="color-scheme" content="light" />
-    <title>皮皮虾 AI</title>
-    <link rel="stylesheet" href="./home.css" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="皮皮虾 AI：连接编码工具与模型 API。推荐使用 CCSwitch 接入，清晰管理分组、用量和团队密钥。"
+    />
+    <meta name="color-scheme" content="dark light" />
+    <title>皮皮虾 AI｜模型 API 中转与 CCSwitch 接入指南</title>
+    <link rel="canonical" href="https://api.psydo.top/home/index.html" />
+    <link rel="icon" href="./assets/logo.png" type="image/png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="皮皮虾 AI" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta
+      property="og:title"
+      content="皮皮虾 AI｜模型 API 中转与 CCSwitch 接入"
+    />
+    <meta
+      property="og:description"
+      content="通过 CCSwitch 接入编码工具，查看模型与价格，管理 API 密钥和调用用量。"
+    />
+    <meta property="og:url" content="https://api.psydo.top/home/index.html" />
+    <meta
+      property="og:image"
+      content="https://api.psydo.top/home/assets/social-card.png"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="皮皮虾 AI：模型 API、编码工具与团队用量管理"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "name": "皮皮虾 AI",
+        "url": "https://api.psydo.top/home/index.html",
+        "inLanguage": "zh-CN"
+      }
+    </script>
+    <script src="./theme-init.js?v=20260922-7"></script>
+    <link rel="stylesheet" href="./home.css?v=20260922-6" />
+    <script src="./home.js?v=20260922-6" defer></script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="site-header">
-        <a class="brand" data-app-path="/home" href="/home" target="_top" aria-label="皮皮虾 AI 首页">
-          <img src="./assets/logo.png" width="40" height="40" alt="" />
-          <span>皮皮虾 AI</span>
-        </a>
+    <a class="skip" href="#main">跳到正文</a>
+    <header class="header">
+      <div class="wrap header-inner">
+        <a class="brand" data-app-path="/home" href="/home" target="_top"
+          ><img src="./assets/logo.png" width="34" height="34" alt="" /><span
+            >皮皮虾 <b>AI</b></span
+          ><span class="brand-divider"></span><small>MODEL GATEWAY</small></a
+        >
         <nav aria-label="主导航">
-          <a data-doc-url href="https://doc.psydo.top/" target="_blank" rel="noreferrer">开发文档</a>
-          <a data-app-path="/model-plaza" href="/model-plaza" target="_top">模型广场</a>
-          <a data-app-path="/login" href="/login" target="_top" class="login-link">登录控制台</a>
+          <a data-app-path="/model-plaza" href="/model-plaza" target="_top"
+            >模型与价格</a
+          ><a data-doc href="https://doc.psydo.top/">开发文档</a
+          ><a data-app-path="/monitor" href="/monitor" target="_top"
+            >服务状态 ↗</a
+          >
         </nav>
-      </header>
-
-      <main>
-        <section class="hero" aria-labelledby="hero-title">
+        <div class="header-actions">
+          <button class="theme-button" aria-label="切换浅色主题" type="button">
+            ◐</button
+          ><a class="login" data-app-path="/login" href="/login" target="_top"
+            >控制台 <span>↗</span></a
+          >
+        </div>
+      </div>
+    </header>
+    <nav class="mobile-links wrap" aria-label="快捷导航">
+      <a data-app-path="/model-plaza" href="/model-plaza" target="_top"
+        >模型与价格</a
+      ><a data-doc href="https://doc.psydo.top/">开发文档</a
+      ><a data-app-path="/monitor" href="/monitor" target="_top">服务状态 ↗</a>
+    </nav>
+    <main id="main">
+      <section class="hero">
+        <div class="hero-grid" aria-hidden="true"></div>
+        <div class="wrap hero-inner">
           <div class="hero-copy">
-            <p class="eyebrow"><span></span> AI MODELS, ONE WORKSPACE</p>
-            <h1 id="hero-title">一把 Key，<em>让 AI 真正干活。</em></h1>
-            <p class="hero-lede">从 Codex、Claude、Grok、Kiro 到主流国模与图片生成，皮皮虾 AI 将模型接入、分组权限、套餐权益和用量计费统一在一个控制台里。</p>
-            <div class="hero-actions">
-              <a class="button button-primary" data-app-path="/register" href="/register" target="_top">创建账号 <span aria-hidden="true">→</span></a>
-              <a class="button button-secondary" data-app-path="/login" href="/login" target="_top">进入控制台</a>
+            <a
+              class="announcement"
+              data-doc="#guide/ccswitch"
+              href="https://doc.psydo.top/guides/ccswitch/"
+              ><span>推荐接入</span> CCSwitch 配置指南 <b>↗</b></a
+            >
+            <p class="eyebrow">ONE CONNECTION. KEEP BUILDING.</p>
+            <h1>连接顶尖模型。<br /><em>专注下一次突破。</em></h1>
+            <p class="lede">
+              从编码 Agent 到你的产品，把模型接入交给皮皮虾。<br />分组、密钥、用量和排障，每一步都有清晰的入口。
+            </p>
+            <div class="actions">
+              <a
+                class="button primary"
+                data-doc="#guide/ccswitch"
+                href="https://doc.psydo.top/guides/ccswitch/"
+                >通过 CCSwitch 接入 <span>↗</span></a
+              ><a
+                class="button secondary"
+                data-app-path="/model-plaza"
+                href="/model-plaza"
+                target="_top"
+                >探索模型 <span>→</span></a
+              >
             </div>
-            <p class="hero-note">已有账号？登录后即可管理 API 密钥、套餐分组、余额、订阅和调用记录。</p>
-          </div>
-
-          <aside class="signal-panel" aria-label="接入概览">
-            <div class="signal-topline"><span>WHAT YOU CAN BUILD</span><span class="live-dot">在线服务</span></div>
-            <div class="signal-route">
-              <div class="route-mark">01</div>
-              <div><strong>编码 Agent 一次接入</strong><small>Codex、Claude Code、Kiro 等常用工具</small></div>
+            <div class="hero-foot">
+              <span>多模型接入</span><i></i><span>独立 Key 管理</span><i></i
+              ><span>调用记录可查</span>
             </div>
-            <div class="signal-route">
-              <div class="route-mark">02</div>
-              <div><strong>国际模型与主流国模</strong><small>Claude、Grok、GPT、Gemini 与多类国模</small></div>
+          </div>
+          <div
+            class="network-art"
+            aria-label="工具通过皮皮虾连接模型的能力示意，不代表实时服务状态"
+          >
+            <div class="art-top">
+              <span>PPX / CONNECTION FABRIC</span
+              ><span class="art-label">能力示意</span>
             </div>
-            <div class="signal-route">
-              <div class="route-mark">03</div>
-              <div><strong>生图与 API 项目协作</strong><small>独立生图分组、项目内 Skill、完整调用记录</small></div>
+            <div class="network-plane">
+              <svg
+                class="network-lines"
+                viewBox="0 0 560 400"
+                fill="none"
+                aria-hidden="true"
+              >
+                <defs>
+                  <linearGradient id="line-glow">
+                    <stop stop-color="#46cfb6" stop-opacity=".15" />
+                    <stop offset=".5" stop-color="#8affde" />
+                    <stop offset="1" stop-color="#7dbaff" stop-opacity=".2" />
+                  </linearGradient>
+                </defs>
+                <path
+                  d="M90 65 H170 Q190 65 190 85 V180 Q190 200 210 200 H280 M90 200 H280 M90 335 H170 Q190 335 190 315 V220 Q190 200 210 200 H280 M280 200 H350 Q370 200 370 180 V65 H470 M280 200 H470 M280 200 H350 Q370 200 370 220 V335 H470"
+                  stroke="url(#line-glow)"
+                  stroke-width="1.3"
+                />
+                <circle
+                  cx="280"
+                  cy="200"
+                  r="102"
+                  stroke="#8ad4c7"
+                  stroke-opacity=".13"
+                  stroke-dasharray="3 8"
+                />
+                <circle
+                  cx="280"
+                  cy="200"
+                  r="145"
+                  stroke="#8ad4c7"
+                  stroke-opacity=".06"
+                />
+              </svg>
+              <div class="network-node input-node n1"><span>⌘</span>Codex</div>
+              <div class="network-node input-node n2">
+                <span>✳</span>Claude Code
+              </div>
+              <div class="network-node input-node n3">
+                <span>⟨/⟩</span>你的应用
+              </div>
+              <div class="network-core">
+                <div class="core-symbol">P<span>↗</span></div>
+                <strong>皮皮虾 AI</strong><small>MODEL GATEWAY</small>
+              </div>
+              <div class="network-node output-node n1"><i></i>语言与推理</div>
+              <div class="network-node output-node n2"><i></i>编码与工具</div>
+              <div class="network-node output-node n3"><i></i>图像生成</div>
             </div>
-            <a class="signal-link" data-doc-url href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">查看工具接入教程 <span aria-hidden="true">↗</span></a>
-          </aside>
-        </section>
-
-        <section class="capabilities" aria-label="支持的接入方式">
-          <p>覆盖的能力</p>
-          <div class="capability-list">
-            <span>Codex</span><span>Claude Code</span><span>Kiro</span><span>Grok</span><span>主流国模</span><span>图片生成</span><span>OpenAI Compatible</span>
+            <div class="art-bottom">
+              <span>工具 → 接入 → 模型</span
+              ><a data-app-path="/monitor" href="/monitor" target="_top"
+                >查看实际服务状态 ↗</a
+              >
+            </div>
           </div>
-        </section>
-
-        <section class="paths" aria-labelledby="paths-title">
-          <div class="section-intro">
-            <p class="eyebrow">START HERE</p>
-            <h2 id="paths-title">不是只有模型，更是一整套使用方式。</h2>
-          </div>
-          <div class="path-grid">
-            <a class="path-item" data-app-path="/keys" href="/keys" target="_top">
-              <span class="path-index">01</span>
-              <h3>开发与自动化</h3>
-              <p>为项目创建 API Key，接入 SDK、工作流、Agent 和自有应用。</p>
-              <span class="path-action">管理 API 密钥 <b>→</b></span>
-            </a>
-            <a class="path-item" data-doc-url href="https://doc.psydo.top/#clients" target="_blank" rel="noreferrer">
-              <span class="path-index">02</span>
-              <h3>Codex / Claude / Kiro</h3>
-              <p>为 CCSwitch、Claude Code、Codex、Kiro、Cursor 等工具查看图文配置。</p>
-              <span class="path-action">打开接入教程 <b>↗</b></span>
-            </a>
-            <a class="path-item" data-app-path="/purchase" href="/purchase" target="_top">
-              <span class="path-index">03</span>
-              <h3>套餐、分组与生图</h3>
-              <p>套餐权益和 API 分组独立管理；生图可用独立 Key 安全接入项目 Skill。</p>
-              <span class="path-action">查看套餐 <b>→</b></span>
-            </a>
-          </div>
-        </section>
-
-        <section class="assist" aria-labelledby="assist-title">
+        </div>
+        <div class="wrap assurance">
           <div>
-            <p class="eyebrow">SUPPORT WHEN IT MATTERS</p>
-            <h2 id="assist-title">配置不确定？在线客服与文档都在。</h2>
+            <span class="assurance-icon">↗</span>
+            <p><b>状态有入口</b><small>查看分组的服务表现</small></p>
+            <a
+              data-app-path="/monitor"
+              href="/monitor"
+              target="_top"
+              aria-label="查看服务状态"
+              >↗</a
+            >
           </div>
-          <p>从开发文档开始，或进入控制台后点击右上角用户名，在展开菜单中联系在线客服。端点、分组、模型权限、生图和常见错误都有明确说明。</p>
-          <a class="text-link" data-app-path="/login" href="/login" target="_top">进入控制台联系在线客服 <span aria-hidden="true">→</span></a>
-        </section>
-      </main>
-
-      <footer>
-        <span>皮皮虾 AI</span>
-        <span>模型、分组和价格以控制台实时信息为准</span>
-        <small>服务仅面向新加坡境内合规用户提供</small>
-      </footer>
-    </div>
-    <script>
-      (() => {
-        const publicHosts = new Set([
-          'api.psydo.top',
-          'api.ppx-ai.com',
-          'us.psydo.top',
-          'cn2.ppxcode.com',
-          'cf.ppxcode.com',
-        ])
-
-        let entryUrl = new URL(window.location.origin)
-        try {
-          const referrerUrl = new URL(document.referrer)
-          if (publicHosts.has(referrerUrl.hostname)) entryUrl = referrerUrl
-        } catch {
-          // Direct visits use the static page's own origin.
-        }
-
-        document.querySelectorAll('[data-app-path]').forEach((link) => {
-          link.href = new URL(link.dataset.appPath, entryUrl.origin).toString()
-        })
-
-        if (!new Set(['cn2.ppxcode.com', 'cf.ppxcode.com']).has(entryUrl.hostname)) return
-
-        document.querySelectorAll('[data-doc-url]').forEach((link) => {
-          const url = new URL(link.href)
-          url.hostname = 'doc.ppxcode.com'
-          link.href = url.toString()
-        })
-      })()
-    </script>
+          <div>
+            <span class="assurance-icon">⌁</span>
+            <p><b>用量有依据</b><small>按调用核对模型与费用</small></p>
+            <a
+              data-app-path="/usage"
+              href="/usage"
+              target="_top"
+              aria-label="查看调用记录"
+              >↗</a
+            >
+          </div>
+          <div>
+            <span class="assurance-icon">≡</span>
+            <p><b>问题有路径</b><small>从错误信息直达处理步骤</small></p>
+            <a
+              data-doc="#connectivity-guide"
+              href="https://doc.psydo.top/connectivity-guide/"
+              aria-label="查看排障指南"
+              >↗</a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="wrap section onboarding" id="start">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">01 / CONNECT YOUR WORKFLOW</p>
+            <h2>一个配置入口。<br /><span>接着用你熟悉的工具。</span></h2>
+          </div>
+          <p class="section-lede">
+            推荐使用 CCSwitch 管理 Codex、Claude Code
+            的供应商配置。设置完成，彻底退出工具，再重新启动。
+          </p>
+        </div>
+        <div class="onboarding-grid">
+          <div class="setup-steps">
+            <div>
+              <span>01</span>
+              <section>
+                <h3>准备对应分组的 Key</h3>
+                <p>确认模型权限和消费来源，再复制接入配置。</p>
+              </section>
+            </div>
+            <div>
+              <span>02</span>
+              <section>
+                <h3>从 API 密钥页面一键导入</h3>
+                <p>找到目标 Key，点击「导入到 CCS」，确认导入并启用。</p>
+              </section>
+            </div>
+            <div class="restart-step">
+              <span>03</span>
+              <section>
+                <h3>完全退出工具，再重新打开</h3>
+                <p>
+                  包括 Codex 桌面端、CLI、Claude Code 或承载扩展的 VS
+                  Code。只关对话或新建任务不算重启。
+                </p>
+              </section>
+            </div>
+            <a
+              class="text-link"
+              data-doc="#guide/ccswitch"
+              href="https://doc.psydo.top/guides/ccswitch/"
+              >查看完整图文教程 <span>→</span></a
+            >
+          </div>
+          <div class="demo">
+            <div class="demo-chrome">
+              <span class="window-dots">● ● ●</span><span>接入工作台</span
+              ><span class="demo-label">配置示例</span>
+            </div>
+            <div class="demo-tabs" role="tablist" aria-label="选择接入方式">
+              <button
+                role="tab"
+                aria-selected="true"
+                aria-controls="demo-panel"
+                id="tab-ccswitch"
+                data-demo="ccswitch"
+              >
+                CCSwitch <small>推荐</small></button
+              ><button
+                role="tab"
+                aria-selected="false"
+                aria-controls="demo-panel"
+                tabindex="-1"
+                id="tab-codex"
+                data-demo="codex"
+              >
+                Codex</button
+              ><button
+                role="tab"
+                aria-selected="false"
+                aria-controls="demo-panel"
+                tabindex="-1"
+                id="tab-api"
+                data-demo="api"
+              >
+                API 开发
+              </button>
+            </div>
+            <div id="demo-panel" role="tabpanel" aria-labelledby="tab-ccswitch">
+              <div class="demo-file">
+                <span id="demo-file">CCSwitch · 自定义供应商</span
+                ><span>CONFIG</span>
+              </div>
+              <pre
+                tabindex="0"
+                aria-label="接入配置示例"
+              ><code id="demo-code">供应商    皮皮虾 AI
+工具      Codex / Claude Code
+配置      一键导入 → 启用 → 完全退出 → 重开</code></pre>
+              <div class="demo-note">
+                <span>↳</span>
+                <p id="demo-note">先保存任务进度，再彻底退出工具。</p>
+              </div>
+              <a
+                id="demo-link"
+                data-doc="#guide/ccswitch"
+                href="https://doc.psydo.top/guides/ccswitch/"
+                >打开 CCSwitch 完整教程 →</a
+              >
+            </div>
+            <div class="demo-bottom">
+              <span>配置保存在你的设备中</span><span>PPX / CONNECT</span>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="workflow-section">
+        <div class="wrap section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">02 / BUILT FOR YOUR NEXT MOVE</p>
+              <h2>从代码，到产品。</h2>
+            </div>
+            <a
+              class="text-link"
+              data-app-path="/model-plaza"
+              href="/model-plaza"
+              target="_top"
+              >查看模型与能力 ↗</a
+            >
+          </div>
+          <div class="task-grid">
+            <a
+              class="task-card featured"
+              data-doc="#guide/ccswitch"
+              href="https://doc.psydo.top/guides/ccswitch/"
+              ><span class="task-icon">⌘</span
+              ><span class="card-arrow">↗</span>
+              <p class="card-kicker">CODING AGENTS</p>
+              <h3>让专注，留在项目里。</h3>
+              <p>
+                CCSwitch 管理配置，Codex 与 Claude Code
+                推进任务。遇到连接问题，有完整排查路径。
+              </p>
+              <span class="card-link">推荐接入指南 →</span></a
+            ><a
+              class="task-card"
+              data-doc="#sdk"
+              href="https://doc.psydo.top/sdk/"
+              ><span class="task-icon">⟨/⟩</span
+              ><span class="card-arrow">↗</span>
+              <p class="card-kicker">API & APPLICATIONS</p>
+              <h3>把模型变成产品能力。</h3>
+              <p>
+                从 SDK 与 HTTP
+                示例开始，在自己的应用里完成对话、工具调用和自动化。
+              </p>
+              <span class="card-link">打开开发文档 →</span></a
+            ><a
+              class="task-card"
+              data-doc="#guide/image-api"
+              href="https://doc.psydo.top/guides/image-api/"
+              ><span class="task-icon">✳</span
+              ><span class="card-arrow">↗</span>
+              <p class="card-kicker">IMAGE GENERATION</p>
+              <h3>让想象，有所呈现。</h3>
+              <p>选择图片模型与对应分组，把生成能力接进创作流程。</p>
+              <span class="card-link">查看图片生成 →</span></a
+            >
+          </div>
+        </div>
+      </section>
+      <section class="wrap section operations">
+        <div>
+          <p class="eyebrow">03 / CLARITY AT EVERY STEP</p>
+          <h2>看得清。<br />才用得踏实。</h2>
+          <p class="section-lede">
+            账户、分组、模型与每次调用各有依据。<br />不给一个模糊的“再试试”，给你可以执行的下一步。
+          </p>
+          <a
+            class="text-link"
+            data-doc="#billing"
+            href="https://doc.psydo.top/billing/"
+            >理解余额、套餐与 Key →</a
+          >
+        </div>
+        <div class="operation-links">
+          <a
+            data-doc="#connectivity-guide"
+            href="https://doc.psydo.top/connectivity-guide/"
+            ><span class="op-index">01</span>
+            <div>
+              <h3>连接与速度排查</h3>
+              <p>URL → 代理节点 → 分组 → 状态 → 额度卡</p>
+            </div>
+            <span>↗</span></a
+          ><a
+            data-doc="#codex-connection"
+            href="https://doc.psydo.top/codex-connection/"
+            ><span class="op-index">02</span>
+            <div>
+              <h3>Codex 一直 Reconnecting？</h3>
+              <p>检查 WebSocket、代理与进程重启</p>
+            </div>
+            <span>↗</span></a
+          ><a data-doc="#context" href="https://doc.psydo.top/context/"
+            ><span class="op-index">03</span>
+            <div>
+              <h3>长对话与自动压缩</h3>
+              <p>区分窗口超限与压缩结果异常</p>
+            </div>
+            <span>↗</span></a
+          ><a
+            data-doc="#support-checklist"
+            href="https://doc.psydo.top/support-checklist/"
+            ><span class="op-index">04</span>
+            <div>
+              <h3>一次提供完整排查信息</h3>
+              <p>复制反馈模板，减少来回沟通</p>
+            </div>
+            <span>↗</span></a
+          >
+        </div>
+      </section>
+      <section class="wrap closing">
+        <div>
+          <p class="eyebrow">LESS FRICTION. MORE BUILDING.</p>
+          <h2>下一次突破，从连接开始。</h2>
+          <p>配置一次，重新打开工具，继续你的工作。</p>
+        </div>
+        <a
+          class="button primary"
+          data-doc="#guide/ccswitch"
+          href="https://doc.psydo.top/guides/ccswitch/"
+          >开始 CCSwitch 接入 <span>↗</span></a
+        >
+      </section>
+    </main>
+    <footer class="wrap">
+      <a class="brand" data-app-path="/home" href="/home" target="_top"
+        ><img src="./assets/logo.png" width="29" height="29" alt="" />皮皮虾
+        AI</a
+      >
+      <div>
+        <span>模型、分组与价格以控制台实时信息为准</span
+        ><small>服务仅面向新加坡境内合规用户提供</small>
+      </div>
+      <a data-doc href="https://doc.psydo.top/">开发文档 ↗</a>
+    </footer>
   </body>
 </html>

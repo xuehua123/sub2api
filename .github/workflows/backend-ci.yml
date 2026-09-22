@@ -80,6 +80,11 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: pnpm install --frozen-lockfile
+      - name: Public site tests and generated document consistency
+        run: |
+          node gateway/build-docs.cjs
+          node --test gateway/site-portals.test.cjs gateway/static-docs.test.cjs
+          git diff --exit-code -- gateway/docs-portal
       - name: Frontend typecheck and critical vitest
         run: make test-frontend
 

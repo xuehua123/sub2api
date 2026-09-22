@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN" data-page-id="guide/ccswitch"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。">
+    <meta name="color-scheme" content="light dark">
+    <title>CCSwitch · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="../../assets/logo.png" type="image/png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="CCSwitch · 皮皮虾 AI 文档">
+    <meta property="og:description" content="安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="../../styles.css?v=20260922-7">
+    <script src="../../theme-init.js?v=20260922-7"></script>
+    <script src="../../routes.js?v=20260922-7" defer=""></script>
+    <script src="../../app.js?v=20260922-7" defer=""></script>
+    <script src="../../guides.js?v=20260922-7" defer=""></script>
+    <script src="../../legacy-content.js?v=20260922-7" defer=""></script>
+    <script src="../../articles.js?v=20260922-7" defer=""></script>
+    <script src="../../troubleshooting.js?v=20260922-7" defer=""></script>
+    <script src="../../docs-ui.js?v=20260922-7" defer=""></script>
+  <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/guides/ccswitch/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="CCSwitch · 皮皮虾 AI 文档"><meta name="twitter:description" content="安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/guides/ccswitch/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"CCSwitch","description":"安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。","inLanguage":"zh-CN","url":"https://doc.psydo.top/guides/ccswitch/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
+  <body>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="../../"><img class="brand-logo" src="../../assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button id="menu-toggle" class="icon-button mobile-menu" aria-label="打开目录" aria-expanded="false" aria-controls="sidebar" type="button">
+          ☰</button><button id="theme-toggle" class="icon-button" aria-label="切换深色主题" type="button">
+          ◐</button><a data-console-path="/login" href="https://api.psydo.top/login" target="_blank" rel="noopener noreferrer">控制台 ↗</a>
+      </div>
+    </header>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
+        </div>
+        <nav id="navigation"><div class="nav-group"><h2>开始使用</h2><a href="../../" data-page="quickstart">快速开始</a><a href="../../endpoint-selector/" data-page="endpoint-selector">选择 API 端点</a><a href="../../billing/" data-page="billing">余额、套餐与密钥</a></div><div class="nav-group"><h2>工具接入</h2><a href="../../clients/" data-page="clients">选择你的工具</a><a href="../../guides/ccswitch/" data-page="guide/ccswitch" aria-current="page">CCSwitch · 推荐</a><a href="../../guides/codex/" data-page="guide/codex">Codex</a><a href="../../guides/claude/" data-page="guide/claude">Claude Code</a><a href="../../guides/cursor/" data-page="guide/cursor">Cursor</a><a href="../../guides/cherry/" data-page="guide/cherry">Cherry Studio</a><a href="../../guides/cline/" data-page="guide/cline">Cline / Roo Code</a><a href="../../guides/chatbox/" data-page="guide/chatbox">Chatbox</a><a href="../../guides/openwebui/" data-page="guide/openwebui">OpenWebUI</a></div><div class="nav-group"><h2>API 与开发</h2><a href="../../sdk/" data-page="sdk">SDK 与代码示例</a><a href="../../guides/python/" data-page="guide/python">Python</a><a href="../../guides/node/" data-page="guide/node">Node.js / TypeScript</a><a href="../../guides/http-sdk/" data-page="guide/http-sdk">Java / HTTP</a><a href="../../api-reference/" data-page="api-reference">接口概览</a><a href="../../guides/models-api/" data-page="guide/models-api">查询模型</a><a href="../../guides/chat-api/" data-page="guide/chat-api">聊天补全</a><a href="../../guides/responses-api/" data-page="guide/responses-api">Responses</a><a href="../../guides/stream-api/" data-page="guide/stream-api">流式输出</a><a href="../../guides/image-api/" data-page="guide/image-api">图片生成</a></div><div class="nav-group"><h2>排查与支持</h2><a href="../../errors/" data-page="errors">错误码与 502</a><a href="../../codex-connection/" data-page="codex-connection">Codex 连接 / Reconnecting</a><a href="../../context/" data-page="context">上下文与自动压缩</a><a href="../../connectivity-guide/" data-page="connectivity-guide">连接与速度</a><a href="../../support-checklist/" data-page="support-checklist">提交排查信息</a><a href="../../faq/" data-page="faq">常见问题</a></div></nav>
+        <a class="sidebar-help" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer"><span>需要帮助？</span>打开问题中心 ↗</a>
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">工具接入 / CCSwitch</span><button id="share-article" type="button">复制本页链接 ↗</button>
+        </div>
+        <article id="article" tabindex="-1"><p class="eyebrow">工具接入</p><h1>CCSwitch</h1><p class="article-description">安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。</p><div class="recommended-banner"><span>推荐方式 · 从皮皮虾一键导入</span><strong>打开 API 密钥页面，点击「导入到 CCS」</strong><p>先安装 CCSwitch，再从目标 Key 的操作栏导入。无需优先手填整套供应商配置。</p><div class="doc-actions"><a class="doc-primary" data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">打开 API 密钥页面 ↗</a><a class="doc-secondary" href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">下载 CCSwitch ↗</a></div></div>
+  <h2 id="section-0">1. 下载并安装 CCSwitch</h2><p>前往 <a href="https://github.com/farion1231/cc-switch/releases" target="_blank" rel="noopener noreferrer">CCSwitch 官方下载页面（GitHub Releases）</a>，选择适合 Windows、macOS 或 Linux 的安装包。安装后先打开一次，让系统注册 CCSwitch 链接的打开方式。</p>
+  <h2 id="section-1">2. 在 API 密钥页面一键导入</h2><p>打开<a data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">皮皮虾 API 密钥页面 ↗</a>，找到准备使用的 Key；没有 Key 时先创建，确认分组、消费来源和模型权限。</p><p>在这行的<strong>操作栏点击「导入到 CCS」</strong>，不是旁边的「使用」按钮。浏览器询问是否打开 CCSwitch 时，允许打开本机应用。</p><figure class="guide-figure"><img src="../../assets/ccswitch/import-entry.svg" width="1100" height="450" alt="API 密钥操作栏示意：目标 Key 右侧的导入到 CCS 按钮" loading="lazy"><figcaption>图 1 · 根据当前项目操作栏绘制的位置示意，非生产账户截图。认准「导入到 CCS」。</figcaption></figure>
+  <p>导入会根据 Key 的平台配置选择目标工具：OpenAI 分组对应 Codex，Anthropic 类分组对应 Claude；部分平台会弹出工具选择。不要为了换工具随意更改原 Key 的分组。</p><aside class="callout"><strong>没有弹出 CCSwitch？</strong><p>先确认已安装并启动过 CCSwitch，检查浏览器是否阻止打开外部应用。按钮可能受站点设置影响；找不到按钮时联系支持，或使用文末手动配置。导入链接包含 Key，不要复制给他人或发到工单。</p></aside>
+  <h2 id="section-2">3. 在 CCSwitch 确认并启用</h2><p>核对导入的供应商名称、地址和目标工具，确认导入后启用皮皮虾供应商。模型名称以<a data-console-path="/model-plaza" href="https://api.psydo.top/model-plaza" target="_blank" rel="noopener noreferrer">模型广场 ↗</a>及当前 Key 的可用列表为准；导入默认模型不可用时先核对分组权限。</p><figure class="guide-figure"><img src="../../assets/ccswitch/pipixia-provider.webp" width="1966" height="610" alt="皮皮虾 AI 在 CCSwitch Codex 页签中显示为使用中的真实截图" loading="lazy"><figcaption>图 2 · 皮皮虾 AI 导入后的实际界面：选择 Codex 页签，确认皮皮虾 AI 显示「使用中」。余额为截图当时的数据，以您自己的账户为准。<a href="../../assets/ccswitch/pipixia-provider-original.png" target="_blank" rel="noopener noreferrer">查看完整原图 ↗</a></figcaption></figure>
+  <h2 id="section-3">4. 完全退出目标工具，再重新打开</h2><aside class="callout"><strong>必须完成：保存并启用 → 完全退出 → 重新打开</strong><p>在 CCSwitch 修改配置后，先保存手头任务，再<strong>完全退出 Codex、Claude Code 等目标工具</strong>。桌面端退出应用及托盘/菜单栏中的后台实例；CLI 结束正在运行的会话；VS Code 扩展需关闭承载它的 VS Code 后重新打开。只关对话、新建任务或只重启 CCSwitch，都不等于重启目标工具。</p></aside>
+  <h2 id="section-4">5. 发送简单任务，核对调用记录</h2><p>重新启动后发送一条简单请求，打开<a data-console-path="/usage" href="https://api.psydo.top/usage" target="_blank" rel="noopener noreferrer">调用记录 ↗</a>，确认请求、模型和消费来源。仍然 Reconnecting 时按<a href="../../codex-connection/">连接问题指南</a>检查；有余额却不能使用时查看<a href="../../billing/">余额与套餐说明</a>。</p><aside class="callout"><strong>第三方工具：确认 UA 被保留</strong><p>使用客户端或中间代理对接时，确认实际发出的请求带有 <code>User-Agent</code>。工具已正常发送自身 UA 时保留它；支持自定义 Headers 的工具可补充真实应用标识。不要假定 CCSwitch 本身的配置会替所有工具发出 UA，也不要用 UA 冒充其他工具。</p></aside>
+  <h2 id="section-5">备用：手动配置与项目生图</h2><p>一键导入不可用，或需要额外配置时再参考下面内容。</p><details class="guide-details"><summary>展开手动配置截图与生图配置</summary><div><aside class="callout"><strong>第三方工具：确认 UA 被保留</strong><p>使用客户端或中间代理对接时，确认实际发出的请求带有 <code>User-Agent</code>。工具已正常发送自身 UA 时保留它；支持自定义 Headers 的工具可补充真实应用标识。不要假定 CCSwitch 本身的配置会替所有工具发出 UA，也不要用 UA 冒充其他工具。</p></aside><p>CCSwitch 用于在本机统一管理 Claude Code、Codex 等客户端的供应商配置。请先升级到支持自定义 Provider 的版本，再添加皮皮虾 AI 供应商。</p>
+      <p>皮皮虾供应商启用后的实际截图见上方步骤 3。需要手动新增时，使用 CCSwitch 右上角「+」进入配置。</p>
+      <h3 id="section-6">Claude Code</h3>
+      <ol><li>在 CCSwitch 顶部选择 <b>Claude</b>，点击右上角“+”，选择<b>自定义配置</b>，供应商名称可填“皮皮虾 AI”。</li><li>Endpoint 填写 <code>https://api.psydo.top</code>，<b>不要添加 /v1</b>。</li><li>认证令牌填写您自己的皮皮虾 AI API Key；保存后获取模型列表，模型以控制台可见范围为准。</li><li>启用该供应商后，完全退出再重新打开 Claude Code。</li></ol>
+      <div class="code-panel"><div class="code-panel-head"><span>Claude Endpoint</span><button class="copy-button" type="button" data-dialog-copy="https%3A%2F%2Fapi.psydo.top">复制</button></div><pre tabindex="0" aria-label="Claude Endpoint 代码示例"><code>https://api.psydo.top</code></pre></div>
+      <h3 id="section-7">Codex</h3>
+      <ol><li>在 CCSwitch 顶部选择 <b>Codex</b>，点击右上角“+”，选择<b>自定义配置</b>。</li><li>Base URL / Endpoint 填写 <code>https://api.psydo.top/v1</code>。</li><li>API Key 填写您自己的皮皮虾 AI API Key，接口协议选择 <b>Responses</b>。</li><li>模型名称以控制台模型列表和您的当前权限为准；CCSwitch 的默认 Codex 示例模型为 <code>gpt-5.5</code>，不可用时请在控制台确认后替换。</li></ol>
+      <div class="code-panel"><div class="code-panel-head"><span>Codex Base URL</span><button class="copy-button" type="button" data-dialog-copy="https%3A%2F%2Fapi.psydo.top%2Fv1">复制</button></div><pre tabindex="0" aria-label="Codex Base URL 代码示例"><code>https://api.psydo.top/v1</code></pre></div>
+      <h3 id="section-8">让 Codex 在项目内调用生图</h3>
+      <p>这是推荐方式：CCSwitch 继续使用<b>普通编程分组 Key</b>驱动 Codex；生图分组 Key 只保存在目标项目的本地配置文件里。需要生图时，直接在项目中对 Codex 说“调用皮皮虾生图 Skill 生成一张……”。</p>
+      <ol><li>在控制台“API 密钥”额外创建一把 Key，分组选择<b>生图 API 分组</b>。不要改动 CCSwitch 正在使用的编程 Key。</li><li>在需要生图的项目根目录创建 <code>.pipixia-image/config.json</code>，写入下方配置；它只存在于本机项目中。</li><li>把 <code>.pipixia-image/config.json</code> 加入该项目的 <code>.gitignore</code>，随后让 Codex 创建并使用生图 Skill。</li><li>以后只需告诉 Codex 图片需求和保存位置；它通过 Skill 读取本地配置并调用图片生成接口。</li></ol>
+      <div class="code-panel"><div class="code-panel-head"><span>.pipixia-image/config.json</span><button class="copy-button" type="button" data-dialog-copy="%7B%0A%20%20%22base_url%22%3A%20%22https%3A%2F%2Fapi.psydo.top%2Fv1%22%2C%0A%20%20%22api_key%22%3A%20%22%E5%9C%A8%E8%BF%99%E9%87%8C%E7%B2%98%E8%B4%B4%E7%94%9F%E5%9B%BE%20API%20%E5%88%86%E7%BB%84%20Key%22%2C%0A%20%20%22model%22%3A%20%22%E5%9C%A8%E6%8E%A7%E5%88%B6%E5%8F%B0%E6%A8%A1%E5%9E%8B%E5%88%97%E8%A1%A8%E7%A1%AE%E8%AE%A4%E7%9A%84%E5%9B%BE%E7%89%87%E6%A8%A1%E5%9E%8B%E5%90%8D%E7%A7%B0%22%0A%7D">复制</button></div><pre tabindex="0" aria-label=".pipixia-image/config.json 代码示例"><code>{
+  "base_url": "https://api.psydo.top/v1",
+  "api_key": "在这里粘贴生图 API 分组 Key",
+  "model": "在控制台模型列表确认的图片模型名称"
+}</code></pre></div>
+      <div class="code-panel"><div class="code-panel-head"><span>.gitignore</span><button class="copy-button" type="button" data-dialog-copy=".pipixia-image%2Fconfig.json">复制</button></div><pre tabindex="0" aria-label=".gitignore 代码示例"><code>.pipixia-image/config.json</code></pre></div>
+      <p><b>把下面整段发给项目里的 Codex：</b></p>
+      <div class="code-panel"><div class="code-panel-head"><span>给 Codex 的 Skill 创建提示词</span><button class="copy-button" type="button" data-dialog-copy="%E8%AF%B7%E5%9C%A8%E5%BD%93%E5%89%8D%E9%A1%B9%E7%9B%AE%E5%88%9B%E5%BB%BA%E4%B8%80%E4%B8%AA%E6%9C%AC%E5%9C%B0%E7%94%9F%E5%9B%BE%20Skill%EF%BC%8C%E4%BE%9B%E5%90%8E%E7%BB%AD%E6%8C%89%E8%87%AA%E7%84%B6%E8%AF%AD%E8%A8%80%E8%B0%83%E7%94%A8%E7%9A%AE%E7%9A%AE%E8%99%BE%20AI%20%E5%9B%BE%E7%89%87%E7%94%9F%E6%88%90%E3%80%82%0A%0A%E8%A6%81%E6%B1%82%EF%BC%9A%0A1.%20%E5%88%9B%E5%BB%BA%20.codex%2Fskills%2Fpipixia-image%2FSKILL.md%EF%BC%8C%E8%AF%B4%E6%98%8E%E4%BD%95%E6%97%B6%E8%B0%83%E7%94%A8%E3%80%81%E5%8F%82%E6%95%B0%E3%80%81%E5%A4%B1%E8%B4%A5%E5%A4%84%E7%90%86%E4%B8%8E%E8%BE%93%E5%87%BA%E7%9B%AE%E5%BD%95%E3%80%82%0A2.%20%E5%8F%AA%E4%BB%8E%E9%A1%B9%E7%9B%AE%E6%A0%B9%E7%9B%AE%E5%BD%95%E7%9A%84%20.pipixia-image%2Fconfig.json%20%E8%AF%BB%E5%8F%96%20base_url%E3%80%81api_key%E3%80%81model%EF%BC%9B%E8%8B%A5%E6%96%87%E4%BB%B6%E6%88%96%E5%AD%97%E6%AE%B5%E7%BC%BA%E5%A4%B1%EF%BC%8C%E6%98%8E%E7%A1%AE%E6%8F%90%E7%A4%BA%E7%94%A8%E6%88%B7%E8%A1%A5%E5%85%85%EF%BC%8C%E7%BB%9D%E4%B8%8D%E7%8C%9C%E6%B5%8B%E6%88%96%E5%86%99%E5%85%A5%E7%9C%9F%E5%AE%9E%20Key%E3%80%82%0A3.%20%E4%BD%BF%E7%94%A8%20POST%20%7Bbase_url%7D%2Fimages%2Fgenerations%EF%BC%8CAuthorization%20%E4%B8%BA%20Bearer%20%7Bapi_key%7D%EF%BC%8C%E8%AF%B7%E6%B1%82%E5%A4%B4%E5%BF%85%E9%A1%BB%E5%8C%85%E5%90%AB%20User-Agent%3A%20pipixia-client%2F1.0%EF%BC%8C%E8%AF%B7%E6%B1%82%20JSON%20%E5%8C%85%E5%90%AB%20model%E3%80%81prompt%E3%80%81size%E3%80%82%0A4.%20%E5%90%8C%E6%97%B6%E5%85%BC%E5%AE%B9%E5%93%8D%E5%BA%94%E9%87%8C%E7%9A%84%20data%5B%5D.url%20%E4%B8%8E%20data%5B%5D.b64_json%EF%BC%9B%E5%B0%86%E5%9B%BE%E7%89%87%E4%BF%9D%E5%AD%98%E5%88%B0%20output%2Fimages%2F%EF%BC%8C%E6%96%87%E4%BB%B6%E5%90%8D%E4%BD%BF%E7%94%A8%E5%AE%89%E5%85%A8%E7%9A%84%E6%97%B6%E9%97%B4%E6%88%B3%E4%B8%8E%E5%BA%8F%E5%8F%B7%E3%80%82%0A5.%20%E5%88%9B%E5%BB%BA%E4%B8%80%E4%B8%AA%E5%8F%AF%E9%87%8D%E5%A4%8D%E8%B0%83%E7%94%A8%E7%9A%84%E6%9C%AC%E5%9C%B0%E8%84%9A%E6%9C%AC%EF%BC%8C%E4%B8%8D%E8%A6%81%E6%8A%8A%20Key%20%E5%86%99%E8%BF%9B%E4%BB%A3%E7%A0%81%E3%80%81%E6%97%A5%E5%BF%97%E3%80%81%E5%91%BD%E4%BB%A4%E5%8E%86%E5%8F%B2%E3%80%81Git%20%E6%88%96%E8%BE%93%E5%87%BA%E6%96%87%E4%BB%B6%E3%80%82%0A6.%20%E5%9C%A8%20.gitignore%20%E4%B8%AD%E7%A1%AE%E4%BF%9D%20.pipixia-image%2Fconfig.json%20%E8%A2%AB%E5%BF%BD%E7%95%A5%EF%BC%9B%E4%B8%8D%E8%A6%81%E4%BF%AE%E6%94%B9%E6%88%96%E8%A6%86%E7%9B%96%E7%8E%B0%E6%9C%89%20.gitignore%20%E8%A7%84%E5%88%99%E3%80%82%0A7.%20%E8%B0%83%E7%94%A8%E6%88%90%E5%8A%9F%E5%90%8E%E5%8F%AA%E6%B1%87%E6%8A%A5%E7%94%9F%E6%88%90%E6%96%87%E4%BB%B6%E8%B7%AF%E5%BE%84%E3%80%81%E6%A8%A1%E5%9E%8B%E5%92%8C%E5%BF%85%E8%A6%81%E7%9A%84%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF%EF%BC%9B%E4%B8%8D%E5%BE%97%E5%9B%9E%E6%98%BE%20API%20Key%E3%80%82%0A8.%20%E5%85%88%E6%A3%80%E6%9F%A5%E7%8E%B0%E6%9C%89%E9%A1%B9%E7%9B%AE%E6%8A%80%E6%9C%AF%E6%A0%88%EF%BC%8C%E6%B2%BF%E7%94%A8%E5%B7%B2%E6%9C%89%E8%AF%AD%E8%A8%80%E5%92%8C%E8%84%9A%E6%9C%AC%E7%BA%A6%E5%AE%9A%EF%BC%9B%E5%AE%8C%E6%88%90%E5%90%8E%E7%BB%99%E5%87%BA%E4%B8%80%E6%AC%A1%E4%B8%8D%E5%90%AB%E7%9C%9F%E5%AE%9E%20Key%20%E7%9A%84%E9%AA%8C%E8%AF%81%E8%AF%B4%E6%98%8E%E3%80%82">复制</button></div><pre tabindex="0" aria-label="给 Codex 的 Skill 创建提示词 代码示例"><code>请在当前项目创建一个本地生图 Skill，供后续按自然语言调用皮皮虾 AI 图片生成。
+
+要求：
+1. 创建 .codex/skills/pipixia-image/SKILL.md，说明何时调用、参数、失败处理与输出目录。
+2. 只从项目根目录的 .pipixia-image/config.json 读取 base_url、api_key、model；若文件或字段缺失，明确提示用户补充，绝不猜测或写入真实 Key。
+3. 使用 POST {base_url}/images/generations，Authorization 为 Bearer {api_key}，请求头必须包含 User-Agent: pipixia-client/1.0，请求 JSON 包含 model、prompt、size。
+4. 同时兼容响应里的 data[].url 与 data[].b64_json；将图片保存到 output/images/，文件名使用安全的时间戳与序号。
+5. 创建一个可重复调用的本地脚本，不要把 Key 写进代码、日志、命令历史、Git 或输出文件。
+6. 在 .gitignore 中确保 .pipixia-image/config.json 被忽略；不要修改或覆盖现有 .gitignore 规则。
+7. 调用成功后只汇报生成文件路径、模型和必要的错误信息；不得回显 API Key。
+8. 先检查现有项目技术栈，沿用已有语言和脚本约定；完成后给出一次不含真实 Key 的验证说明。</code></pre></div>
+      <p><b>生图 Key 说明：</b>生图 Key 与 CCSwitch 的编程 Key 都属于同一账户，可使用账户余额或各自绑定的套餐权益；实际扣费来源还取决于各 Key 选择的余额或套餐及套餐覆盖范围。切换本页顶部端点时，只需同步修改 <code>config.json</code> 的 <code>base_url</code>。</p><p><b>说明：</b>CCSwitch 中切换 API 端点时，只修改 Endpoint/Base URL。遇到 429 时，请先检查余额、模型配额以及套餐/分组权益，不要只当作限流。</p></div></details><p class="article-maintenance">内容维护：2026-09-22 · 客户端界面可能随版本变化</p></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"><a href="../../clients/"><small>← 上一篇</small><strong>选择你的工具</strong></a><a href="../../guides/codex/"><small>下一篇 →</small><strong>Codex</strong></a></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br>请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="../../endpoint-selector/">如何选择端点 →</a>
+        </div>
+        <nav id="toc" aria-label="本页目录"><p>本页内容</p><a href="../../guides/ccswitch/#section-0" data-scroll="section-0">1. 下载并安装 CCSwitch</a><a href="../../guides/ccswitch/#section-1" data-scroll="section-1">2. 在 API 密钥页面一键导入</a><a href="../../guides/ccswitch/#section-2" data-scroll="section-2">3. 在 CCSwitch 确认并启用</a><a href="../../guides/ccswitch/#section-3" data-scroll="section-3">4. 完全退出目标工具，再重新打开</a><a href="../../guides/ccswitch/#section-4" data-scroll="section-4">5. 发送简单任务，核对调用记录</a><a href="../../guides/ccswitch/#section-5" data-scroll="section-5">备用：手动配置与项目生图</a></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label><input id="search-input" type="search" autocomplete="off" placeholder="试试 Codex、余额、自动压缩、429…">
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript>
+
+
+</body></html>

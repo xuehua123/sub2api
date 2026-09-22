@@ -1,0 +1,226 @@
+[
+  {
+    "id": "quickstart",
+    "title": "快速开始",
+    "navTitle": "快速开始",
+    "group": "开始使用",
+    "path": "",
+    "description": "从你正在用的工具出发，完成第一次调用。"
+  },
+  {
+    "id": "endpoint-selector",
+    "title": "选择 API 端点",
+    "navTitle": "选择 API 端点",
+    "group": "开始使用",
+    "path": "endpoint-selector/",
+    "description": "端点决定连接路径，不改变账户与已购买权益。"
+  },
+  {
+    "id": "billing",
+    "title": "余额、套餐与密钥",
+    "navTitle": "余额、套餐与密钥",
+    "group": "开始使用",
+    "path": "billing/",
+    "description": "有额度只是第一步，Key 的消费来源和权限也需要对应。"
+  },
+  {
+    "id": "clients",
+    "title": "选择你的工具",
+    "navTitle": "选择你的工具",
+    "group": "工具接入",
+    "path": "clients/",
+    "description": "每个教程都有独立链接，可以保存或分享给团队。"
+  },
+  {
+    "id": "guide/ccswitch",
+    "title": "CCSwitch",
+    "navTitle": "CCSwitch · 推荐",
+    "group": "工具接入",
+    "path": "guides/ccswitch/",
+    "description": "安装 CCSwitch → API 密钥页面一键导入 → 启用 → 完全退出并重开 → 验证。"
+  },
+  {
+    "id": "guide/codex",
+    "title": "Codex 接入",
+    "navTitle": "Codex",
+    "group": "工具接入",
+    "path": "guides/codex/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/claude",
+    "title": "Claude Code",
+    "navTitle": "Claude Code",
+    "group": "工具接入",
+    "path": "guides/claude/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/cursor",
+    "title": "Cursor",
+    "navTitle": "Cursor",
+    "group": "工具接入",
+    "path": "guides/cursor/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/cherry",
+    "title": "Cherry Studio",
+    "navTitle": "Cherry Studio",
+    "group": "工具接入",
+    "path": "guides/cherry/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/cline",
+    "title": "Cline / Roo Code",
+    "navTitle": "Cline / Roo Code",
+    "group": "工具接入",
+    "path": "guides/cline/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/chatbox",
+    "title": "Chatbox",
+    "navTitle": "Chatbox",
+    "group": "工具接入",
+    "path": "guides/chatbox/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/openwebui",
+    "title": "OpenWebUI",
+    "navTitle": "OpenWebUI",
+    "group": "工具接入",
+    "path": "guides/openwebui/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "sdk",
+    "title": "SDK 与代码示例",
+    "navTitle": "SDK 与代码示例",
+    "group": "API 与开发",
+    "path": "sdk/",
+    "description": "选择熟悉的语言。真实密钥始终留在本机环境中。"
+  },
+  {
+    "id": "guide/python",
+    "title": "Python SDK",
+    "navTitle": "Python",
+    "group": "API 与开发",
+    "path": "guides/python/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/node",
+    "title": "Node.js / TypeScript",
+    "navTitle": "Node.js / TypeScript",
+    "group": "API 与开发",
+    "path": "guides/node/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/http-sdk",
+    "title": "Java / HTTP",
+    "navTitle": "Java / HTTP",
+    "group": "API 与开发",
+    "path": "guides/http-sdk/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "api-reference",
+    "title": "接口概览",
+    "navTitle": "接口概览",
+    "group": "API 与开发",
+    "path": "api-reference/",
+    "description": "选择接口前，先确认目标模型和分组支持对应能力。"
+  },
+  {
+    "id": "guide/models-api",
+    "title": "获取模型列表",
+    "navTitle": "查询模型",
+    "group": "API 与开发",
+    "path": "guides/models-api/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/chat-api",
+    "title": "聊天补全 API",
+    "navTitle": "聊天补全",
+    "group": "API 与开发",
+    "path": "guides/chat-api/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/responses-api",
+    "title": "Responses API",
+    "navTitle": "Responses",
+    "group": "API 与开发",
+    "path": "guides/responses-api/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/stream-api",
+    "title": "流式输出",
+    "navTitle": "流式输出",
+    "group": "API 与开发",
+    "path": "guides/stream-api/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "guide/image-api",
+    "title": "图片生成 API",
+    "navTitle": "图片生成",
+    "group": "API 与开发",
+    "path": "guides/image-api/",
+    "description": "选择适合当前网络的端点，按下面的步骤完成接入。"
+  },
+  {
+    "id": "errors",
+    "title": "错误码与 502 排查",
+    "navTitle": "错误码与 502",
+    "group": "排查与支持",
+    "path": "errors/",
+    "description": "保留错误信息，每次只调整一项设置。"
+  },
+  {
+    "id": "codex-connection",
+    "title": "Codex 连接问题",
+    "navTitle": "Codex 连接 / Reconnecting",
+    "group": "排查与支持",
+    "path": "codex-connection/",
+    "description": "一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。"
+  },
+  {
+    "id": "context",
+    "title": "上下文与自动压缩",
+    "navTitle": "上下文与自动压缩",
+    "group": "排查与支持",
+    "path": "context/",
+    "description": "先区分窗口超限、自动压缩失败和客户端显示值。"
+  },
+  {
+    "id": "connectivity-guide",
+    "title": "连通性与速度排查",
+    "navTitle": "连接与速度",
+    "group": "排查与支持",
+    "path": "connectivity-guide/",
+    "description": "按 URL、代理、分组、状态和额度卡的顺序检查，每次只改变一个变量。"
+  },
+  {
+    "id": "support-checklist",
+    "title": "提交排查信息",
+    "navTitle": "提交排查信息",
+    "group": "排查与支持",
+    "path": "support-checklist/",
+    "description": "一次给出关键线索，减少来回确认。"
+  },
+  {
+    "id": "faq",
+    "title": "常见问题",
+    "navTitle": "常见问题",
+    "group": "排查与支持",
+    "path": "faq/",
+    "description": "关于端点、模型、分组和连接的常用解答。"
+  }
+]

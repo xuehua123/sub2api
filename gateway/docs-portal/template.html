@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="皮皮虾 AI 开发文档。按工具快速接入，查找 API 示例，理解余额与套餐，排查调用问题。"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <title>快速开始 · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="./assets/logo.png" type="image/png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta
+      property="og:title"
+      content="皮皮虾 AI 开发文档｜CCSwitch 接入、API 与排障"
+    />
+    <meta
+      property="og:description"
+      content="从 API 密钥页面一键导入 CCSwitch，查询 API 示例、余额套餐规则和连接排查步骤。"
+    />
+    <meta name="twitter:card" content="summary" />
+    <link rel="stylesheet" href="./styles.css?v=20260922-7" />
+    <script src="./theme-init.js?v=20260922-7"></script>
+    <script src="./routes.js?v=20260922-7" defer></script>
+    <script src="./app.js?v=20260922-7" defer></script>
+    <script src="./guides.js?v=20260922-7" defer></script>
+    <script src="./legacy-content.js?v=20260922-7" defer></script>
+    <script src="./articles.js?v=20260922-7" defer></script>
+    <script src="./troubleshooting.js?v=20260922-7" defer></script>
+    <script src="./docs-ui.js?v=20260922-7" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="#quickstart"
+        ><img
+          class="brand-logo"
+          src="./assets/logo.png"
+          width="29"
+          height="29"
+          alt=""
+        /><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a
+      ><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button
+          id="menu-toggle"
+          class="icon-button mobile-menu"
+          aria-label="打开目录"
+          aria-expanded="false"
+          aria-controls="sidebar"
+          type="button"
+        >
+          ☰</button
+        ><button
+          id="theme-toggle"
+          class="icon-button"
+          aria-label="切换深色主题"
+          type="button"
+        >
+          ◐</button
+        ><a
+          data-console-path="/login"
+          href="https://api.psydo.top/login"
+          target="_blank"
+          rel="noopener noreferrer"
+          >控制台 ↗</a
+        >
+      </div>
+    </header>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
+        </div>
+        <nav id="navigation"></nav>
+        <a
+          class="sidebar-help"
+          data-console-path="/issues"
+          href="https://api.psydo.top/issues"
+          target="_blank"
+          rel="noopener noreferrer"
+          ><span>需要帮助？</span>打开问题中心 ↗</a
+        >
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">开始使用 / 快速开始</span
+          ><button id="share-article" type="button">复制本页链接 ↗</button>
+        </div>
+        <article id="article" tabindex="-1"></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br />请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label
+          ><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="#endpoint-selector">如何选择端点 →</a>
+        </div>
+        <nav id="toc" aria-label="本页目录"></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label
+      ><input
+        id="search-input"
+        type="search"
+        autocomplete="off"
+        placeholder="试试 Codex、余额、自动压缩、429…"
+      />
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript
+      ><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript
+    >
+  </body>
+</html>

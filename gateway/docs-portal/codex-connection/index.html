@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN" data-page-id="codex-connection"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。">
+    <meta name="color-scheme" content="light dark">
+    <title>Codex 连接问题 · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="../assets/logo.png" type="image/png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="Codex 连接问题 · 皮皮虾 AI 文档">
+    <meta property="og:description" content="一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="../styles.css?v=20260922-7">
+    <script src="../theme-init.js?v=20260922-7"></script>
+    <script src="../routes.js?v=20260922-7" defer=""></script>
+    <script src="../app.js?v=20260922-7" defer=""></script>
+    <script src="../guides.js?v=20260922-7" defer=""></script>
+    <script src="../legacy-content.js?v=20260922-7" defer=""></script>
+    <script src="../articles.js?v=20260922-7" defer=""></script>
+    <script src="../troubleshooting.js?v=20260922-7" defer=""></script>
+    <script src="../docs-ui.js?v=20260922-7" defer=""></script>
+  <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/codex-connection/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="Codex 连接问题 · 皮皮虾 AI 文档"><meta name="twitter:description" content="一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/codex-connection/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Codex 连接问题","description":"一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。","inLanguage":"zh-CN","url":"https://doc.psydo.top/codex-connection/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
+  <body>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="../"><img class="brand-logo" src="../assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button id="menu-toggle" class="icon-button mobile-menu" aria-label="打开目录" aria-expanded="false" aria-controls="sidebar" type="button">
+          ☰</button><button id="theme-toggle" class="icon-button" aria-label="切换深色主题" type="button">
+          ◐</button><a data-console-path="/login" href="https://api.psydo.top/login" target="_blank" rel="noopener noreferrer">控制台 ↗</a>
+      </div>
+    </header>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
+        </div>
+        <nav id="navigation"><div class="nav-group"><h2>开始使用</h2><a href="../" data-page="quickstart">快速开始</a><a href="../endpoint-selector/" data-page="endpoint-selector">选择 API 端点</a><a href="../billing/" data-page="billing">余额、套餐与密钥</a></div><div class="nav-group"><h2>工具接入</h2><a href="../clients/" data-page="clients">选择你的工具</a><a href="../guides/ccswitch/" data-page="guide/ccswitch">CCSwitch · 推荐</a><a href="../guides/codex/" data-page="guide/codex">Codex</a><a href="../guides/claude/" data-page="guide/claude">Claude Code</a><a href="../guides/cursor/" data-page="guide/cursor">Cursor</a><a href="../guides/cherry/" data-page="guide/cherry">Cherry Studio</a><a href="../guides/cline/" data-page="guide/cline">Cline / Roo Code</a><a href="../guides/chatbox/" data-page="guide/chatbox">Chatbox</a><a href="../guides/openwebui/" data-page="guide/openwebui">OpenWebUI</a></div><div class="nav-group"><h2>API 与开发</h2><a href="../sdk/" data-page="sdk">SDK 与代码示例</a><a href="../guides/python/" data-page="guide/python">Python</a><a href="../guides/node/" data-page="guide/node">Node.js / TypeScript</a><a href="../guides/http-sdk/" data-page="guide/http-sdk">Java / HTTP</a><a href="../api-reference/" data-page="api-reference">接口概览</a><a href="../guides/models-api/" data-page="guide/models-api">查询模型</a><a href="../guides/chat-api/" data-page="guide/chat-api">聊天补全</a><a href="../guides/responses-api/" data-page="guide/responses-api">Responses</a><a href="../guides/stream-api/" data-page="guide/stream-api">流式输出</a><a href="../guides/image-api/" data-page="guide/image-api">图片生成</a></div><div class="nav-group"><h2>排查与支持</h2><a href="../errors/" data-page="errors">错误码与 502</a><a href="../codex-connection/" data-page="codex-connection" aria-current="page">Codex 连接 / Reconnecting</a><a href="../context/" data-page="context">上下文与自动压缩</a><a href="../connectivity-guide/" data-page="connectivity-guide">连接与速度</a><a href="../support-checklist/" data-page="support-checklist">提交排查信息</a><a href="../faq/" data-page="faq">常见问题</a></div></nav>
+        <a class="sidebar-help" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer"><span>需要帮助？</span>打开问题中心 ↗</a>
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">排查与支持 / Codex 连接问题</span><button id="share-article" type="button">复制本页链接 ↗</button>
+        </div>
+        <article id="article" tabindex="-1"><p class="eyebrow">排查与支持</p><h1>Codex 连接问题</h1><p class="article-description">一直 Reconnecting 1/5？先确认连接层，再配置代理、完全退出并验证。</p><div class="diagnosis-strip"><span>诊断</span><i>→</i><span>确认代理</span><i>→</i><span>彻底重启</span><i>→</i><span>验证</span></div><aside class="callout"><strong>先确认 CCSwitch 配置已经加载</strong><p>在 CCSwitch 保存并启用供应商后，完全退出 Codex 等工具，再重新打开。先做这一步，避免用旧进程反复测试新配置。</p></aside><h2 id="section-0">1. 先确认问题</h2><div class="code-panel"><div class="code-panel-head"><span>终端 · 查询版本与诊断能力</span><button class="copy-button" type="button" data-dialog-copy="codex%20--version%0Acodex%20doctor%20--help%0Acodex%20doctor">复制</button></div><pre tabindex="0" aria-label="终端 · 查询版本与诊断能力 代码示例"><code>codex --version
+codex doctor --help
+codex doctor</code></pre></div><p>支持该诊断命令的版本可输出安装、配置、认证及运行环境报告。如果显示未知命令，请先按当前客户端的官方说明更新或使用内置诊断。</p><p>如果报告或日志包含 <code>Connectivity → websocket</code>，观察是否出现 <code>HTTP 101 Switching Protocols</code> 或 <code>websocket connected</code>。这说明握手/连接阶段成功，仍需发送简单任务验证模型响应；不同版本的输出字段可能不同。</p><p>持续 Reconnecting 可能与 WSS/代理路径有关，也可能是认证、供应商配置或上游异常，不能仅凭重连提示确定原因。</p><h2 id="section-1">2. 配置代理环境变量</h2><p>先在 Clash / v2rayN 中确认<strong>实际 HTTP 或 mixed 监听端口</strong>。图中的 7890、10808 只是常见示例；若该端口仅支持 SOCKS，就不能直接填写成 <code>http://</code>。</p><div class="os-selector" role="group" aria-label="命令使用的系统"><button data-os="windows" aria-pressed="true">Windows · PowerShell</button><button data-os="unix" aria-pressed="false">macOS / Linux · Bash / Zsh</button></div><div class="code-panel"><div class="code-panel-head"><span>PowerShell · 仅对当前会话及子进程生效</span><button class="copy-button" type="button" data-dialog-copy="%23%20%E6%94%B9%E6%88%90%E6%9C%AC%E6%9C%BA%E5%AE%9E%E9%99%85%20HTTP%20%2F%20mixed%20%E7%AB%AF%E5%8F%A3%EF%BC%9B%E4%B8%8D%E8%A6%81%E5%A1%AB%E5%86%99%20SOCKS%20%E7%AB%AF%E5%8F%A3%0A%24proxyPort%20%3D%20Read-Host%20%22HTTP%20%E4%BB%A3%E7%90%86%E7%AB%AF%E5%8F%A3%22%0Aif%20(%24proxyPort%20-notmatch%20'%5E%5Cd%2B%24'%20-or%20%5Bint%5D%24proxyPort%20-lt%201%20-or%20%5Bint%5D%24proxyPort%20-gt%2065535)%20%7B%20throw%20%22%E4%BB%A3%E7%90%86%E7%AB%AF%E5%8F%A3%E6%97%A0%E6%95%88%22%20%7D%0A%24env%3AHTTP_PROXY%20%3D%20%22http%3A%2F%2F127.0.0.1%3A%24proxyPort%22%0A%24env%3AHTTPS_PROXY%20%3D%20%24env%3AHTTP_PROXY%0A%23%20Windows%20%E7%8E%AF%E5%A2%83%E5%8F%98%E9%87%8F%E5%90%8D%E7%A7%B0%E4%B8%8D%E5%8C%BA%E5%88%86%E5%A4%A7%E5%B0%8F%E5%86%99%EF%BC%8C%E6%97%A0%E9%9C%80%E9%87%8D%E5%A4%8D%E8%AE%BE%E7%BD%AE%E5%B0%8F%E5%86%99%0A%24env%3ANO_PROXY%20%3D%20%22127.0.0.1%2Clocalhost%2C%3A%3A1%22%0A%23%20%E4%BB%8E%E8%BF%99%E4%B8%AA%E7%BB%88%E7%AB%AF%E5%90%AF%E5%8A%A8%20CLI%EF%BC%8C%E6%89%8D%E8%83%BD%E7%BB%A7%E6%89%BF%E4%BB%A5%E4%B8%8A%E5%8F%98%E9%87%8F%0Acodex">复制</button></div><pre tabindex="0" aria-label="PowerShell · 仅对当前会话及子进程生效 代码示例"><code># 改成本机实际 HTTP / mixed 端口；不要填写 SOCKS 端口
+$proxyPort = Read-Host "HTTP 代理端口"
+if ($proxyPort -notmatch '^\d+$' -or [int]$proxyPort -lt 1 -or [int]$proxyPort -gt 65535) { throw "代理端口无效" }
+$env:HTTP_PROXY = "http://127.0.0.1:$proxyPort"
+$env:HTTPS_PROXY = $env:HTTP_PROXY
+# Windows 环境变量名称不区分大小写，无需重复设置小写
+$env:NO_PROXY = "127.0.0.1,localhost,::1"
+# 从这个终端启动 CLI，才能继承以上变量
+codex</code></pre></div><h3 id="section-2">关于 ~/.codex/.env</h3><p>原图建议把下列变量写入 <code>~/.codex/.env</code>。仅在<strong>确认当前客户端/启动器支持读取该文件</strong>时使用：不能假定所有 Codex Desktop、CLI 和 VS Code 版本都自动加载它。不要覆盖已有文件；合并需要的变量并按当前客户端文档验证。</p><div class="code-panel"><div class="code-panel-head"><span>.env 变量示例 · 需确认当前客户端支持</span><button class="copy-button" type="button" data-dialog-copy="%23%20%E5%B0%86%207890%20%E6%94%B9%E6%88%90%E6%9C%AC%E6%9C%BA%E4%BB%A3%E7%90%86%E8%BD%AF%E4%BB%B6%E7%9A%84%20HTTP%20%2F%20mixed%20%E7%9B%91%E5%90%AC%E7%AB%AF%E5%8F%A3%0AHTTP_PROXY%3Dhttp%3A%2F%2F127.0.0.1%3A7890%0AHTTPS_PROXY%3Dhttp%3A%2F%2F127.0.0.1%3A7890%0Ahttp_proxy%3Dhttp%3A%2F%2F127.0.0.1%3A7890%0Ahttps_proxy%3Dhttp%3A%2F%2F127.0.0.1%3A7890%0ANO_PROXY%3D127.0.0.1%2Clocalhost%2C%3A%3A1%0Ano_proxy%3D127.0.0.1%2Clocalhost%2C%3A%3A1">复制</button></div><pre tabindex="0" aria-label=".env 变量示例 · 需确认当前客户端支持 代码示例"><code># 将 7890 改成本机代理软件的 HTTP / mixed 监听端口
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+http_proxy=http://127.0.0.1:7890
+https_proxy=http://127.0.0.1:7890
+NO_PROXY=127.0.0.1,localhost,::1
+no_proxy=127.0.0.1,localhost,::1</code></pre></div><p>以上本地终端方法不会自动修改已运行的桌面应用环境。桌面端或扩展须使用其支持的代理设置/启动方式，并在重开后检查日志是否命中代理。</p><h2 id="section-3">3. 完全退出后验证</h2><aside class="callout"><strong>必须完成：保存并启用 → 完全退出 → 重新打开</strong><p>在 CCSwitch 修改配置后，先保存手头任务，再<strong>完全退出 Codex、Claude Code 等目标工具</strong>。桌面端退出应用及托盘/菜单栏中的后台实例；CLI 结束正在运行的会话；VS Code 扩展需关闭承载它的 VS Code 后重新打开。只关对话、新建任务或只重启 CCSwitch，都不等于重启目标工具。</p></aside><ol><li>确认代理软件在运行，端口与规则没有写错。</li><li>重新启动目标工具，再运行可用的诊断或查看客户端日志。</li><li>若使用 WebSocket，检查升级/连接是否成功，再发送一条简单任务。</li><li>检查皮皮虾调用记录，确认请求实际到达且返回正常。</li></ol><h2 id="section-4">4. 避免这些误区</h2><ul><li><code>supports_websockets = false</code> 不是通用代理开关；它属于具体 <code>model_providers.&lt;id&gt;</code> 的传输能力配置。不要在不清楚供应商要求时盲目添加。</li><li>HTTP 101 不是“整条模型调用成功”，更不是速度保证。</li><li>TUN 影响范围较大，先排查应用配置与日志，再根据需要考虑；启用后仍需验证实际路径。</li><li>更改代理和端点时一次只改一项，避免失去对照。</li></ul><h2 id="section-5">带上这些信息再反馈</h2><div class="code-panel"><div class="code-panel-head"><span>可复制的排查模板</span><button class="copy-button" type="button" data-dialog-copy="%E3%80%90%E7%9A%AE%E7%9A%AE%E8%99%BE%20AI%20%E6%8E%92%E6%9F%A5%E4%BF%A1%E6%81%AF%E3%80%91%0A%E5%8F%91%E7%94%9F%E6%97%B6%E9%97%B4%EF%BC%88%E5%90%AB%E6%97%B6%E5%8C%BA%EF%BC%89%EF%BC%9A%0A%E5%B7%A5%E5%85%B7%E5%8F%8A%E7%89%88%E6%9C%AC%EF%BC%88Codex%20%2F%20Claude%20Code%20%2F%20%E5%85%B6%E4%BB%96%EF%BC%89%EF%BC%9A%0A%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%EF%BC%9A%0A%E6%AD%A3%E5%9C%A8%E4%BD%BF%E7%94%A8%E7%9A%84%20URL%EF%BC%9Ahttps%3A%2F%2Fapi.psydo.top%0A%E8%AF%B7%E6%B1%82%20User-Agent%EF%BC%88%E5%BA%94%E7%94%A8%E5%90%8D%E7%A7%B0%2F%E7%89%88%E6%9C%AC%EF%BC%8C%E4%B8%8D%E5%90%AB%E5%AF%86%E9%92%A5%EF%BC%89%EF%BC%9A%0A%E6%A8%A1%E5%9E%8B%E5%90%8D%E7%A7%B0%EF%BC%9A%0A%E6%89%80%E9%80%89%E5%88%86%E7%BB%84%EF%BC%9A%0AClash%20%E6%98%AF%E5%90%A6%E5%BC%80%E5%90%AF%E3%80%81%E4%BB%A3%E7%90%86%E8%8A%82%E7%82%B9%E4%B8%8E%E6%97%A5%E5%BF%97%E6%88%AA%E5%9B%BE%EF%BC%88%E8%84%B1%E6%95%8F%EF%BC%89%EF%BC%9A%0A%E6%B8%A0%E9%81%93%2F%E5%85%AC%E5%BC%80%E6%9C%8D%E5%8A%A1%E7%8A%B6%E6%80%81%E5%8F%8A%E6%A3%80%E6%B5%8B%E6%97%B6%E9%97%B4%EF%BC%9A%0A%E9%A2%9D%E5%BA%A6%E5%8D%A1%E7%B1%BB%E5%9E%8B%E3%80%81%E5%89%A9%E4%BD%99%E9%A2%9D%E5%BA%A6%E6%88%96%E4%BD%99%E9%A2%9D%E7%8A%B6%E6%80%81%EF%BC%9A%0AKey%20%E6%B6%88%E8%B4%B9%E6%9D%A5%E6%BA%90%E3%80%81%E7%8B%AC%E7%AB%8B%E9%99%90%E9%A2%9D%E6%98%AF%E5%90%A6%E8%80%97%E5%B0%BD%EF%BC%88%E4%B8%8D%E8%A6%81%E8%B4%B4%20Key%EF%BC%89%EF%BC%9A%0A%E9%94%99%E8%AF%AF%E4%BF%A1%E6%81%AF%20%2F%20%E7%8A%B6%E6%80%81%E7%A0%81%20%2F%20%E8%AF%B7%E6%B1%82%20ID%EF%BC%9A%0ACCSwitch%20%E5%B7%B2%E4%BF%9D%E5%AD%98%E5%B9%B6%E5%90%AF%E7%94%A8%EF%BC%9A%E6%98%AF%20%2F%20%E5%90%A6%0A%E7%9B%AE%E6%A0%87%E5%B7%A5%E5%85%B7%E5%B7%B2%E5%AE%8C%E5%85%A8%E9%80%80%E5%87%BA%E5%B9%B6%E9%87%8D%E5%BC%80%EF%BC%9A%E6%98%AF%20%2F%20%E5%90%A6%0A%E5%B7%B2%E5%81%9A%E8%BF%87%E7%9A%84%E6%B5%8B%E8%AF%95%E4%B8%8E%E7%BB%93%E6%9E%9C%EF%BC%9A%0A%0A%E8%AF%B7%E5%8B%BF%E6%8F%90%E4%BE%9B%20API%20Key%E3%80%81Cookie%E3%80%81%E4%BB%A3%E7%90%86%E8%AE%A2%E9%98%85%E5%9C%B0%E5%9D%80%E6%88%96%E5%AE%8C%E6%95%B4%E7%A7%81%E6%9C%89%E5%AF%B9%E8%AF%9D%E3%80%82">复制</button></div><pre tabindex="0" aria-label="可复制的排查模板 代码示例"><code>【皮皮虾 AI 排查信息】
+发生时间（含时区）：
+工具及版本（Codex / Claude Code / 其他）：
+操作系统：
+正在使用的 URL：https://api.psydo.top
+请求 User-Agent（应用名称/版本，不含密钥）：
+模型名称：
+所选分组：
+Clash 是否开启、代理节点与日志截图（脱敏）：
+渠道/公开服务状态及检测时间：
+额度卡类型、剩余额度或余额状态：
+Key 消费来源、独立限额是否耗尽（不要贴 Key）：
+错误信息 / 状态码 / 请求 ID：
+CCSwitch 已保存并启用：是 / 否
+目标工具已完全退出并重开：是 / 否
+已做过的测试与结果：
+
+请勿提供 API Key、Cookie、代理订阅地址或完整私有对话。</code></pre></div><p class="guide-source">诊断命令与配置字段参考：<a href="https://developers.openai.com/codex/cli/reference/" target="_blank" rel="noopener noreferrer">Codex CLI reference</a> · <a href="https://developers.openai.com/codex/config-reference/" target="_blank" rel="noopener noreferrer">Configuration reference</a>。本教程结合平台排障图整理，具体日志与代理加载行为以当前客户端为准。</p><aside class="console-resources"><strong>继续在皮皮虾控制台操作</strong><p>以下入口在新标签页打开，当前教程会保留。</p><div class="doc-actions"><a class="doc-secondary" data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">检测当前入口 ↗</a><a class="doc-secondary" data-console-path="/monitor" href="https://api.psydo.top/monitor" target="_blank" rel="noopener noreferrer">核对服务状态 ↗</a><a class="doc-secondary" data-console-path="/issues/new" href="https://api.psydo.top/issues/new" target="_blank" rel="noopener noreferrer">新建问题反馈 ↗</a></div></aside><p class="article-maintenance">内容维护：2026-09-22 · 客户端界面可能随版本变化</p></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"><a href="../errors/"><small>← 上一篇</small><strong>错误码与 502</strong></a><a href="../context/"><small>下一篇 →</small><strong>上下文与自动压缩</strong></a></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br>请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="../endpoint-selector/">如何选择端点 →</a>
+        </div>
+        <nav id="toc" aria-label="本页目录"><p>本页内容</p><a href="../codex-connection/#section-0" data-scroll="section-0">1. 先确认问题</a><a href="../codex-connection/#section-1" data-scroll="section-1">2. 配置代理环境变量</a><a href="../codex-connection/#section-3" data-scroll="section-3">3. 完全退出后验证</a><a href="../codex-connection/#section-4" data-scroll="section-4">4. 避免这些误区</a><a href="../codex-connection/#section-5" data-scroll="section-5">带上这些信息再反馈</a></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label><input id="search-input" type="search" autocomplete="off" placeholder="试试 Codex、余额、自动压缩、429…">
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript>
+
+
+</body></html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN" data-page-id="faq"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="关于端点、模型、分组和连接的常用解答。">
+    <meta name="color-scheme" content="light dark">
+    <title>常见问题 · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="../assets/logo.png" type="image/png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="常见问题 · 皮皮虾 AI 文档">
+    <meta property="og:description" content="关于端点、模型、分组和连接的常用解答。">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="../styles.css?v=20260922-7">
+    <script src="../theme-init.js?v=20260922-7"></script>
+    <script src="../routes.js?v=20260922-7" defer=""></script>
+    <script src="../app.js?v=20260922-7" defer=""></script>
+    <script src="../guides.js?v=20260922-7" defer=""></script>
+    <script src="../legacy-content.js?v=20260922-7" defer=""></script>
+    <script src="../articles.js?v=20260922-7" defer=""></script>
+    <script src="../troubleshooting.js?v=20260922-7" defer=""></script>
+    <script src="../docs-ui.js?v=20260922-7" defer=""></script>
+  <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/faq/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="常见问题 · 皮皮虾 AI 文档"><meta name="twitter:description" content="关于端点、模型、分组和连接的常用解答。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/faq/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"常见问题","description":"关于端点、模型、分组和连接的常用解答。","inLanguage":"zh-CN","url":"https://doc.psydo.top/faq/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
+  <body>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="../"><img class="brand-logo" src="../assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button id="menu-toggle" class="icon-button mobile-menu" aria-label="打开目录" aria-expanded="false" aria-controls="sidebar" type="button">
+          ☰</button><button id="theme-toggle" class="icon-button" aria-label="切换深色主题" type="button">
+          ◐</button><a data-console-path="/login" href="https://api.psydo.top/login" target="_blank" rel="noopener noreferrer">控制台 ↗</a>
+      </div>
+    </header>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
+        </div>
+        <nav id="navigation"><div class="nav-group"><h2>开始使用</h2><a href="../" data-page="quickstart">快速开始</a><a href="../endpoint-selector/" data-page="endpoint-selector">选择 API 端点</a><a href="../billing/" data-page="billing">余额、套餐与密钥</a></div><div class="nav-group"><h2>工具接入</h2><a href="../clients/" data-page="clients">选择你的工具</a><a href="../guides/ccswitch/" data-page="guide/ccswitch">CCSwitch · 推荐</a><a href="../guides/codex/" data-page="guide/codex">Codex</a><a href="../guides/claude/" data-page="guide/claude">Claude Code</a><a href="../guides/cursor/" data-page="guide/cursor">Cursor</a><a href="../guides/cherry/" data-page="guide/cherry">Cherry Studio</a><a href="../guides/cline/" data-page="guide/cline">Cline / Roo Code</a><a href="../guides/chatbox/" data-page="guide/chatbox">Chatbox</a><a href="../guides/openwebui/" data-page="guide/openwebui">OpenWebUI</a></div><div class="nav-group"><h2>API 与开发</h2><a href="../sdk/" data-page="sdk">SDK 与代码示例</a><a href="../guides/python/" data-page="guide/python">Python</a><a href="../guides/node/" data-page="guide/node">Node.js / TypeScript</a><a href="../guides/http-sdk/" data-page="guide/http-sdk">Java / HTTP</a><a href="../api-reference/" data-page="api-reference">接口概览</a><a href="../guides/models-api/" data-page="guide/models-api">查询模型</a><a href="../guides/chat-api/" data-page="guide/chat-api">聊天补全</a><a href="../guides/responses-api/" data-page="guide/responses-api">Responses</a><a href="../guides/stream-api/" data-page="guide/stream-api">流式输出</a><a href="../guides/image-api/" data-page="guide/image-api">图片生成</a></div><div class="nav-group"><h2>排查与支持</h2><a href="../errors/" data-page="errors">错误码与 502</a><a href="../codex-connection/" data-page="codex-connection">Codex 连接 / Reconnecting</a><a href="../context/" data-page="context">上下文与自动压缩</a><a href="../connectivity-guide/" data-page="connectivity-guide">连接与速度</a><a href="../support-checklist/" data-page="support-checklist">提交排查信息</a><a href="../faq/" data-page="faq" aria-current="page">常见问题</a></div></nav>
+        <a class="sidebar-help" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer"><span>需要帮助？</span>打开问题中心 ↗</a>
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">排查与支持 / 常见问题</span><button id="share-article" type="button">复制本页链接 ↗</button>
+        </div>
+        <article id="article" tabindex="-1"><p class="eyebrow">排查与支持</p><h1>常见问题</h1><p class="article-description">关于端点、模型、分组和连接的常用解答。</p>
+
+        <div class="faq-list">
+          <details open=""><summary>多个 API 端点有什么区别？</summary><p>它们提供相同的 API 能力、账户体系和可用模型。区别仅在您当前网络到公开入口的连接表现。可在控制台运行连接检测，优先使用推荐 URL。</p></details>
+          <details><summary>更换端点会影响余额、套餐或 API Key 吗？</summary><p>不会。端点是访问地址，不是新账户或新线路套餐。更换后仍使用同一 API Key、同一余额和同一订阅权益。</p></details>
+          <details><summary>生图为什么要单独创建 API Key？</summary><p>API Key 会绑定一个 API 分组。请保留 Claude/Codex 当前使用的编程分组 Key，并额外创建一把绑定“生图 API 分组”的 Key 给图片生成客户端或脚本使用。两把 Key 属于同一账户，但需要分别确认消费来源、绑定套餐和分组覆盖范围；并非任意套餐都支持生图。</p></details>
+          <details><summary>为什么模型名称和官方示例不同？</summary><p>请以控制台模型列表为准。不同分组、套餐和权限可能看到不同模型；不要把文档中的示例模型名当作固定可用清单。</p></details>
+          <details><summary>连接检测“不推荐”代表什么？</summary><p>只代表测试时您的当前设备和网络访问该 URL 的表现较差，不代表模型不可用或该端点对所有人都不好。可以切换其他 URL 后重新检测。</p></details>
+          <details><summary>收到 429 是不是一定触发限流？</summary><p>不是。429 既可能是瞬时请求频率或并发过高，也可能表示余额不足、套餐权益不足，或者特定模型配额已用完。请先检查控制台余额、用量和套餐权益，再考虑降低并发或稍后重试。</p></details>
+          <details><summary>遇到 502，为什么要同时看 API 端点和 Clash 线路？</summary><p>API 端点决定请求进入哪个公开入口，Clash 线路决定您的设备通过哪条代理路径访问入口。两者任意一层不稳定，都可能表现为 502。建议先固定端点切换 Clash 线路，再固定成功线路切换其他端点，每次只改变一个变量。</p></details>
+          <details><summary>Clash 日志里没有看到请求，说明什么？</summary><p>通常说明当前客户端请求没有经过 Clash，可能使用了直连、应用自带代理或另一套网络代理。请检查客户端的代理设置，或在 Clash 中启用系统代理/TUN，并再次用同一个请求验证日志。</p></details>
+        </div>
+      <aside class="console-resources"><strong>继续在皮皮虾控制台操作</strong><p>以下入口在新标签页打开，当前教程会保留。</p><div class="doc-actions"><a class="doc-secondary" data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">查看密钥配置 ↗</a><a class="doc-secondary" data-console-path="/subscriptions" href="https://api.psydo.top/subscriptions" target="_blank" rel="noopener noreferrer">查看我的套餐 ↗</a><a class="doc-secondary" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer">查找已有问题 ↗</a></div></aside><p class="article-maintenance">内容维护：2026-09-22 · 客户端界面可能随版本变化</p></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"><a href="../support-checklist/"><small>← 上一篇</small><strong>提交排查信息</strong></a><span></span></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br>请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="../endpoint-selector/">如何选择端点 →</a>
+        </div>
+        <nav id="toc" aria-label="本页目录"><p>本页内容</p></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label><input id="search-input" type="search" autocomplete="off" placeholder="试试 Codex、余额、自动压缩、429…">
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript>
+
+
+</body></html>

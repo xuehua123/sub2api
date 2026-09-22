@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+Disallow: /template.html
+Sitemap: https://doc.psydo.top/sitemap.xml

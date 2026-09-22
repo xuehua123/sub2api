@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN" data-page-id="guide/node"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="description" content="选择适合当前网络的端点，按下面的步骤完成接入。">
+    <meta name="color-scheme" content="light dark">
+    <title>Node.js / TypeScript · 皮皮虾 AI 文档</title>
+    <link rel="icon" href="../../assets/logo.png" type="image/png">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="皮皮虾 AI 开发文档">
+    <meta property="og:locale" content="zh_CN">
+    <meta property="og:title" content="Node.js / TypeScript · 皮皮虾 AI 文档">
+    <meta property="og:description" content="选择适合当前网络的端点，按下面的步骤完成接入。">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="stylesheet" href="../../styles.css?v=20260922-7">
+    <script src="../../theme-init.js?v=20260922-7"></script>
+    <script src="../../routes.js?v=20260922-7" defer=""></script>
+    <script src="../../app.js?v=20260922-7" defer=""></script>
+    <script src="../../guides.js?v=20260922-7" defer=""></script>
+    <script src="../../legacy-content.js?v=20260922-7" defer=""></script>
+    <script src="../../articles.js?v=20260922-7" defer=""></script>
+    <script src="../../troubleshooting.js?v=20260922-7" defer=""></script>
+    <script src="../../docs-ui.js?v=20260922-7" defer=""></script>
+  <meta name="robots" content="index,follow"><meta property="og:url" content="https://doc.psydo.top/guides/node/"><meta property="og:image" content="https://doc.psydo.top/assets/social-card.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="皮皮虾 AI 开发文档：CCSwitch 接入、API 开发与排障"><meta name="twitter:title" content="Node.js / TypeScript · 皮皮虾 AI 文档"><meta name="twitter:description" content="选择适合当前网络的端点，按下面的步骤完成接入。"><meta name="twitter:image" content="https://doc.psydo.top/assets/social-card.png"><link rel="canonical" href="https://doc.psydo.top/guides/node/"><script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Node.js / TypeScript","description":"选择适合当前网络的端点，按下面的步骤完成接入。","inLanguage":"zh-CN","url":"https://doc.psydo.top/guides/node/","publisher":{"@type":"Organization","name":"皮皮虾 AI"},"isPartOf":{"@type":"WebSite","name":"皮皮虾 AI 开发文档","url":"https://doc.psydo.top/"}}</script><style>html:not([data-enhanced]) #open-search,html:not([data-enhanced]) #share-article,html:not([data-enhanced]) .copy-button,html:not([data-enhanced]) .os-selector,html:not([data-enhanced]) #theme-toggle{display:none} @media(max-width:760px){html:not([data-enhanced]) .sidebar{display:block;position:static;width:auto;height:auto;max-height:none;box-shadow:none}html:not([data-enhanced]) .right-rail{order:0}}</style></head>
+  <body>
+    <a class="skip" href="#article">跳到正文</a>
+    <header class="docs-header">
+      <a class="brand" href="../../"><img class="brand-logo" src="../../assets/logo.png" width="29" height="29" alt=""><strong>皮皮虾 AI</strong><span class="docs-label">文档</span></a><button class="search-trigger" type="button" id="open-search">
+        <span>⌕　搜索教程、API、错误信息…</span><kbd>Ctrl K</kbd>
+      </button>
+      <div class="header-actions">
+        <button id="menu-toggle" class="icon-button mobile-menu" aria-label="打开目录" aria-expanded="false" aria-controls="sidebar" type="button">
+          ☰</button><button id="theme-toggle" class="icon-button" aria-label="切换深色主题" type="button">
+          ◐</button><a data-console-path="/login" href="https://api.psydo.top/login" target="_blank" rel="noopener noreferrer">控制台 ↗</a>
+      </div>
+    </header>
+    <div class="docs-layout">
+      <aside class="sidebar" id="sidebar" aria-label="文档目录">
+        <div class="sidebar-top">
+          <span class="eyebrow">DEVELOPER GUIDE</span>
+          <p>从接入，到用得顺手。</p>
+        </div>
+        <nav id="navigation"><div class="nav-group"><h2>开始使用</h2><a href="../../" data-page="quickstart">快速开始</a><a href="../../endpoint-selector/" data-page="endpoint-selector">选择 API 端点</a><a href="../../billing/" data-page="billing">余额、套餐与密钥</a></div><div class="nav-group"><h2>工具接入</h2><a href="../../clients/" data-page="clients">选择你的工具</a><a href="../../guides/ccswitch/" data-page="guide/ccswitch">CCSwitch · 推荐</a><a href="../../guides/codex/" data-page="guide/codex">Codex</a><a href="../../guides/claude/" data-page="guide/claude">Claude Code</a><a href="../../guides/cursor/" data-page="guide/cursor">Cursor</a><a href="../../guides/cherry/" data-page="guide/cherry">Cherry Studio</a><a href="../../guides/cline/" data-page="guide/cline">Cline / Roo Code</a><a href="../../guides/chatbox/" data-page="guide/chatbox">Chatbox</a><a href="../../guides/openwebui/" data-page="guide/openwebui">OpenWebUI</a></div><div class="nav-group"><h2>API 与开发</h2><a href="../../sdk/" data-page="sdk">SDK 与代码示例</a><a href="../../guides/python/" data-page="guide/python">Python</a><a href="../../guides/node/" data-page="guide/node" aria-current="page">Node.js / TypeScript</a><a href="../../guides/http-sdk/" data-page="guide/http-sdk">Java / HTTP</a><a href="../../api-reference/" data-page="api-reference">接口概览</a><a href="../../guides/models-api/" data-page="guide/models-api">查询模型</a><a href="../../guides/chat-api/" data-page="guide/chat-api">聊天补全</a><a href="../../guides/responses-api/" data-page="guide/responses-api">Responses</a><a href="../../guides/stream-api/" data-page="guide/stream-api">流式输出</a><a href="../../guides/image-api/" data-page="guide/image-api">图片生成</a></div><div class="nav-group"><h2>排查与支持</h2><a href="../../errors/" data-page="errors">错误码与 502</a><a href="../../codex-connection/" data-page="codex-connection">Codex 连接 / Reconnecting</a><a href="../../context/" data-page="context">上下文与自动压缩</a><a href="../../connectivity-guide/" data-page="connectivity-guide">连接与速度</a><a href="../../support-checklist/" data-page="support-checklist">提交排查信息</a><a href="../../faq/" data-page="faq">常见问题</a></div></nav>
+        <a class="sidebar-help" data-console-path="/issues" href="https://api.psydo.top/issues" target="_blank" rel="noopener noreferrer"><span>需要帮助？</span>打开问题中心 ↗</a>
+      </aside>
+      <main class="docs-main">
+        <div class="article-toolbar">
+          <span id="breadcrumb">API 与开发 / Node.js / TypeScript</span><button id="share-article" type="button">复制本页链接 ↗</button>
+        </div>
+        <article id="article" tabindex="-1"><p class="eyebrow">API 与开发</p><h1>Node.js / TypeScript</h1><p class="article-description">选择适合当前网络的端点，按下面的步骤完成接入。</p><aside class="callout"><strong>API 对接必查：请求 Header 带上 User-Agent（UA）</strong><p>自建 API 请求请显式设置 <code>User-Agent: pipixia-client/1.0</code>，也可以替换为您真实的应用名称与版本，例如 <code>my-app/1.0</code>。字段名是 <code>User-Agent</code>，不是 <code>UA</code>；它放在请求头里，不是 JSON 请求体。不要填密钥或个人信息。</p></aside><p>设置本机环境变量 <code>PIPIXIA_API_KEY</code> 和 <code>PIPIXIA_MODEL</code> 后，运行下面的示例。</p><h2 id="section-0">1. 安装 SDK</h2><div class="code-panel"><div class="code-panel-head"><span>终端</span><button class="copy-button" type="button" data-dialog-copy="pnpm%20add%20openai">复制</button></div><pre tabindex="0" aria-label="终端 代码示例"><code>pnpm add openai</code></pre></div><h2 id="section-1">2. 配置环境并发送请求</h2><div class="os-selector" role="group" aria-label="命令使用的系统"><button data-os="windows" aria-pressed="true">Windows · PowerShell</button><button data-os="unix" aria-pressed="false">macOS / Linux · Bash / Zsh</button></div><div class="code-panel"><div class="code-panel-head"><span>PowerShell · 设置当前会话</span><button class="copy-button" type="button" data-dialog-copy="%24env%3APIPIXIA_API_KEY%20%3D%20%5BSystem.Net.NetworkCredential%5D%3A%3Anew(%22%22%2C%20(Read-Host%20%22API%20Key%22%20-AsSecureString)).Password%0A%24env%3APIPIXIA_MODEL%20%3D%20Read-Host%20%22%E6%A8%A1%E5%9E%8B%E5%90%8D%E7%A7%B0%EF%BC%88%E4%BB%8E%E5%BD%93%E5%89%8D%20Key%20%E7%9A%84%E5%88%97%E8%A1%A8%E5%A4%8D%E5%88%B6%EF%BC%89%22">复制</button></div><pre tabindex="0" aria-label="PowerShell · 设置当前会话 代码示例"><code>$env:PIPIXIA_API_KEY = [System.Net.NetworkCredential]::new("", (Read-Host "API Key" -AsSecureString)).Password
+$env:PIPIXIA_MODEL = Read-Host "模型名称（从当前 Key 的列表复制）"</code></pre></div><div class="code-panel"><div class="code-panel-head"><span>JavaScript / TypeScript</span><button class="copy-button" type="button" data-dialog-copy="import%20OpenAI%20from%20%22openai%22%3B%0A%0Aconst%20client%20%3D%20new%20OpenAI(%7B%0A%20%20apiKey%3A%20process.env.PIPIXIA_API_KEY%2C%0A%20%20baseURL%3A%20%22https%3A%2F%2Fapi.psydo.top%2Fv1%22%2C%0A%20%20defaultHeaders%3A%20%7B%20%22User-Agent%22%3A%20%22pipixia-client%2F1.0%22%20%7D%2C%0A%7D)%3B%0Aif%20(!process.env.PIPIXIA_MODEL)%20throw%20new%20Error(%22%E8%AF%B7%E8%AE%BE%E7%BD%AE%20PIPIXIA_MODEL%22)%3B%0Aconst%20result%20%3D%20await%20client.chat.completions.create(%7B%0A%20%20model%3A%20process.env.PIPIXIA_MODEL%2C%0A%20%20messages%3A%20%5B%7B%20role%3A%20%22user%22%2C%20content%3A%20%22%E4%BD%A0%E5%A5%BD%22%20%7D%5D%2C%0A%7D)%3B%0Aconsole.log(result.choices%5B0%5D%3F.message.content)%3B">复制</button></div><pre tabindex="0" aria-label="JavaScript / TypeScript 代码示例"><code>import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: process.env.PIPIXIA_API_KEY,
+  baseURL: "https://api.psydo.top/v1",
+  defaultHeaders: { "User-Agent": "pipixia-client/1.0" },
+});
+if (!process.env.PIPIXIA_MODEL) throw new Error("请设置 PIPIXIA_MODEL");
+const result = await client.chat.completions.create({
+  model: process.env.PIPIXIA_MODEL,
+  messages: [{ role: "user", content: "你好" }],
+});
+console.log(result.choices[0]?.message.content);</code></pre></div><h2 id="section-2">3. 验证</h2><p>预期输出模型回复。在控制台调用记录中确认模型、用量和扣费来源。</p><aside class="console-resources"><strong>继续在皮皮虾控制台操作</strong><p>以下入口在新标签页打开，当前教程会保留。</p><div class="doc-actions"><a class="doc-secondary" data-console-path="/keys" href="https://api.psydo.top/keys" target="_blank" rel="noopener noreferrer">获取 Key 与配置 ↗</a><a class="doc-secondary" data-console-path="/usage" href="https://api.psydo.top/usage" target="_blank" rel="noopener noreferrer">核对本次调用 ↗</a></div></aside><p class="article-maintenance">内容维护：2026-09-22 · 客户端界面可能随版本变化</p></article>
+        <nav id="article-pagination" aria-label="上一篇和下一篇"><a href="../../guides/python/"><small>← 上一篇</small><strong>Python</strong></a><a href="../../guides/http-sdk/"><small>下一篇 →</small><strong>Java / HTTP</strong></a></nav>
+        <footer class="article-footer">
+          示例模型以当前 Key 的模型列表为准。<br>请勿在反馈中发送完整 API
+          Key。
+        </footer>
+      </main>
+      <aside class="right-rail">
+        <div class="endpoint-control">
+          <label for="endpoint">当前 API 端点</label><select id="endpoint">
+            <option value="https://api.psydo.top">默认端点</option>
+            <option value="https://cn2.ppxcode.com">CN2 入口</option>
+            <option value="https://cf.ppxcode.com">Cloudflare 入口</option>
+            <option value="https://api.ppx-ai.com">CF 优选入口</option>
+            <option value="https://us.psydo.top">美国线路入口</option>
+          </select>
+          <p>教程中的地址随选择更新。</p>
+          <a href="../../endpoint-selector/">如何选择端点 →</a>
+        </div>
+        <nav id="toc" aria-label="本页目录"><p>本页内容</p><a href="../../guides/node/#section-0" data-scroll="section-0">1. 安装 SDK</a><a href="../../guides/node/#section-1" data-scroll="section-1">2. 配置环境并发送请求</a><a href="../../guides/node/#section-2" data-scroll="section-2">3. 验证</a></nav>
+      </aside>
+    </div>
+    <dialog id="search-dialog" aria-labelledby="search-title">
+      <div class="search-head">
+        <h2 id="search-title">搜索文档</h2>
+        <button type="button" id="close-search" aria-label="关闭搜索">✕</button>
+      </div>
+      <label class="sr-only" for="search-input">搜索关键词</label><input id="search-input" type="search" autocomplete="off" placeholder="试试 Codex、余额、自动压缩、429…">
+      <p id="search-count" role="status"></p>
+      <div id="search-results"></div>
+      <p class="search-hint">搜索全文内容 · Tab 选择结果 · Esc 关闭</p>
+    </dialog>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <noscript><p class="noscript">
+        正文和页面导航无需 JavaScript。搜索、切换端点和复制按钮需要启用 JavaScript；默认示例使用标准 API 入口。
+      </p></noscript>
+
+
+</body></html>
