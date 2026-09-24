@@ -1396,6 +1396,9 @@ func (s *BillingCacheService) CheckBillingEligibilityWithEntitlement(ctx context
 
 	isSubscriptionMode := group != nil && group.IsSubscriptionType() && subscription != nil
 	isEntitlementMode := entitlement != nil
+	if isEntitlementMode && HasEntitlementGenerationAdmission(ctx) {
+		isSubscriptionMode = false
+	}
 
 	if isSubscriptionMode {
 		if err := s.checkSubscriptionEligibility(ctx, user.ID, group, subscription); err != nil {
@@ -1423,5 +1426,8 @@ func (s *BillingCacheService) CheckBillingEligibilityWithEntitlement(ctx context
 		return err
 	}
 
+	if entitlement != nil {
+		return PrepareEntitlementGenerationAdmission(ctx, entitlement)
+	}
 	return nil
 }

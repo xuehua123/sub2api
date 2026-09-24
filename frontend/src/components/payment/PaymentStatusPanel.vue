@@ -35,6 +35,13 @@
       </div>
     </template>
 
+    <template v-else-if="subscriptionFulfillmentFailed">
+      <div class="py-6 text-center" role="alert">
+        <p class="font-semibold text-amber-700">{{ t('userSubscriptions.lifecycle.fulfillmentFailed') }}</p>
+        <p class="mt-2 text-sm text-gray-500">{{ t('userSubscriptions.lifecycle.fulfillmentFailedHint') }}</p>
+        <button class="btn btn-secondary mt-4" @click="handleDone">{{ t('common.close') }}</button>
+      </div>
+    </template>
     <!-- Cancelled -->
     <template v-else-if="outcome === 'cancelled'">
       <div class="card p-6">
@@ -69,6 +76,13 @@
 
     <!-- ═══ Active States: QR or Popup waiting ═══ -->
 
+    <template v-else-if="subscriptionFulfillmentPending">
+      <div class="py-6 text-center" role="status">
+        <p class="font-semibold">{{ t('userSubscriptions.lifecycle.processingPayment') }}</p>
+        <p class="mt-2 text-sm text-gray-500">{{ t('userSubscriptions.lifecycle.processingPaymentHint') }}</p>
+        <button class="btn btn-secondary mt-4" @click="handleDone">{{ t('common.close') }}</button>
+      </div>
+    </template>
     <!-- Mobile Alipay app handoff. The QR fallback stays hidden until launch timeout. -->
     <template v-else-if="isMobileAlipayDeepLink">
       <template v-if="!deepLinkFallbackVisible">
@@ -281,6 +295,8 @@ const localeCode = computed(() => {
 
 // Terminal outcome: null = still active, 'success' | 'cancelled' | 'expired'
 const outcome = ref<PaymentOutcome | null>(null)
+const subscriptionFulfillmentPending = ref(false)
+const subscriptionFulfillmentFailed = ref(false)
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
@@ -342,6 +358,11 @@ function formatGatewayAmount(value: number, currency?: string | null): string {
 function isSuccessStatus(status: string | null | undefined): boolean {
   const normalized = String(status || '').trim().toUpperCase()
   return normalized === 'COMPLETED' || normalized === 'PAID' || normalized === 'RECHARGING'
+}
+
+function isOrderFulfilled(status: string | null | undefined): boolean {
+  const normalized = String(status || '').trim().toUpperCase()
+  return normalized === 'COMPLETED' || (props.orderType !== 'subscription' && isSuccessStatus(normalized))
 }
 
 function reopenPopup() {
@@ -428,15 +449,22 @@ async function pollStatus() {
     order = await tryRecoverPendingOrder(order)
     if (outcome.value) return
     const normalizedStatus = String(order.status || '').trim().toUpperCase()
-    if (isSuccessStatus(normalizedStatus)) {
+    if (isOrderFulfilled(normalizedStatus)) {
       cleanup()
       paidOrder.value = order
       setOutcome('success')
       emit('success')
+    } else if (props.orderType === 'subscription' && ['PAID', 'RECHARGING'].includes(normalizedStatus)) {
+      subscriptionFulfillmentPending.value = true
+      if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
     } else if (normalizedStatus === 'CANCELLED') {
+      subscriptionFulfillmentFailed.value = subscriptionFulfillmentPending.value
+      subscriptionFulfillmentPending.value = false
       cleanup()
       setOutcome('cancelled')
     } else if (normalizedStatus === 'EXPIRED' || normalizedStatus === 'FAILED') {
+      subscriptionFulfillmentFailed.value = subscriptionFulfillmentPending.value
+      subscriptionFulfillmentPending.value = false
       cleanup()
       setOutcome('expired')
     }

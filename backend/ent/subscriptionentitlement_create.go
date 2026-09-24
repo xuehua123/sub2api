@@ -315,6 +315,34 @@ func (_c *SubscriptionEntitlementCreate) SetNillableOveragePolicy(v *string) *Su
 	return _c
 }
 
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (_c *SubscriptionEntitlementCreate) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementCreate {
+	_c.mutation.SetAutoAdvanceMonthly(v)
+	return _c
+}
+
+// SetNillableAutoAdvanceMonthly sets the "auto_advance_monthly" field if the given value is not nil.
+func (_c *SubscriptionEntitlementCreate) SetNillableAutoAdvanceMonthly(v *bool) *SubscriptionEntitlementCreate {
+	if v != nil {
+		_c.SetAutoAdvanceMonthly(*v)
+	}
+	return _c
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (_c *SubscriptionEntitlementCreate) SetLastSeenEventID(v int64) *SubscriptionEntitlementCreate {
+	_c.mutation.SetLastSeenEventID(v)
+	return _c
+}
+
+// SetNillableLastSeenEventID sets the "last_seen_event_id" field if the given value is not nil.
+func (_c *SubscriptionEntitlementCreate) SetNillableLastSeenEventID(v *int64) *SubscriptionEntitlementCreate {
+	if v != nil {
+		_c.SetLastSeenEventID(*v)
+	}
+	return _c
+}
+
 // SetPlanSnapshot sets the "plan_snapshot" field.
 func (_c *SubscriptionEntitlementCreate) SetPlanSnapshot(v map[string]interface{}) *SubscriptionEntitlementCreate {
 	_c.mutation.SetPlanSnapshot(v)
@@ -618,6 +646,14 @@ func (_c *SubscriptionEntitlementCreate) defaults() error {
 		v := subscriptionentitlement.DefaultOveragePolicy
 		_c.mutation.SetOveragePolicy(v)
 	}
+	if _, ok := _c.mutation.AutoAdvanceMonthly(); !ok {
+		v := subscriptionentitlement.DefaultAutoAdvanceMonthly
+		_c.mutation.SetAutoAdvanceMonthly(v)
+	}
+	if _, ok := _c.mutation.LastSeenEventID(); !ok {
+		v := subscriptionentitlement.DefaultLastSeenEventID
+		_c.mutation.SetLastSeenEventID(v)
+	}
 	if _, ok := _c.mutation.AssignedAt(); !ok {
 		if subscriptionentitlement.DefaultAssignedAt == nil {
 			return fmt.Errorf("ent: uninitialized subscriptionentitlement.DefaultAssignedAt (forgotten import ent/runtime?)")
@@ -685,6 +721,12 @@ func (_c *SubscriptionEntitlementCreate) check() error {
 		if err := subscriptionentitlement.OveragePolicyValidator(v); err != nil {
 			return &ValidationError{Name: "overage_policy", err: fmt.Errorf(`ent: validator failed for field "SubscriptionEntitlement.overage_policy": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.AutoAdvanceMonthly(); !ok {
+		return &ValidationError{Name: "auto_advance_monthly", err: errors.New(`ent: missing required field "SubscriptionEntitlement.auto_advance_monthly"`)}
+	}
+	if _, ok := _c.mutation.LastSeenEventID(); !ok {
+		return &ValidationError{Name: "last_seen_event_id", err: errors.New(`ent: missing required field "SubscriptionEntitlement.last_seen_event_id"`)}
 	}
 	if v, ok := _c.mutation.SourceExternalID(); ok {
 		if err := subscriptionentitlement.SourceExternalIDValidator(v); err != nil {
@@ -795,6 +837,14 @@ func (_c *SubscriptionEntitlementCreate) createSpec() (*SubscriptionEntitlement,
 	if value, ok := _c.mutation.OveragePolicy(); ok {
 		_spec.SetField(subscriptionentitlement.FieldOveragePolicy, field.TypeString, value)
 		_node.OveragePolicy = value
+	}
+	if value, ok := _c.mutation.AutoAdvanceMonthly(); ok {
+		_spec.SetField(subscriptionentitlement.FieldAutoAdvanceMonthly, field.TypeBool, value)
+		_node.AutoAdvanceMonthly = value
+	}
+	if value, ok := _c.mutation.LastSeenEventID(); ok {
+		_spec.SetField(subscriptionentitlement.FieldLastSeenEventID, field.TypeInt64, value)
+		_node.LastSeenEventID = value
 	}
 	if value, ok := _c.mutation.PlanSnapshot(); ok {
 		_spec.SetField(subscriptionentitlement.FieldPlanSnapshot, field.TypeJSON, value)
@@ -1418,6 +1468,36 @@ func (u *SubscriptionEntitlementUpsert) UpdateOveragePolicy() *SubscriptionEntit
 	return u
 }
 
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (u *SubscriptionEntitlementUpsert) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementUpsert {
+	u.Set(subscriptionentitlement.FieldAutoAdvanceMonthly, v)
+	return u
+}
+
+// UpdateAutoAdvanceMonthly sets the "auto_advance_monthly" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsert) UpdateAutoAdvanceMonthly() *SubscriptionEntitlementUpsert {
+	u.SetExcluded(subscriptionentitlement.FieldAutoAdvanceMonthly)
+	return u
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsert) SetLastSeenEventID(v int64) *SubscriptionEntitlementUpsert {
+	u.Set(subscriptionentitlement.FieldLastSeenEventID, v)
+	return u
+}
+
+// UpdateLastSeenEventID sets the "last_seen_event_id" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsert) UpdateLastSeenEventID() *SubscriptionEntitlementUpsert {
+	u.SetExcluded(subscriptionentitlement.FieldLastSeenEventID)
+	return u
+}
+
+// AddLastSeenEventID adds v to the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsert) AddLastSeenEventID(v int64) *SubscriptionEntitlementUpsert {
+	u.Add(subscriptionentitlement.FieldLastSeenEventID, v)
+	return u
+}
+
 // SetPlanSnapshot sets the "plan_snapshot" field.
 func (u *SubscriptionEntitlementUpsert) SetPlanSnapshot(v map[string]interface{}) *SubscriptionEntitlementUpsert {
 	u.Set(subscriptionentitlement.FieldPlanSnapshot, v)
@@ -1992,6 +2072,41 @@ func (u *SubscriptionEntitlementUpsertOne) SetOveragePolicy(v string) *Subscript
 func (u *SubscriptionEntitlementUpsertOne) UpdateOveragePolicy() *SubscriptionEntitlementUpsertOne {
 	return u.Update(func(s *SubscriptionEntitlementUpsert) {
 		s.UpdateOveragePolicy()
+	})
+}
+
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (u *SubscriptionEntitlementUpsertOne) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementUpsertOne {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.SetAutoAdvanceMonthly(v)
+	})
+}
+
+// UpdateAutoAdvanceMonthly sets the "auto_advance_monthly" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsertOne) UpdateAutoAdvanceMonthly() *SubscriptionEntitlementUpsertOne {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.UpdateAutoAdvanceMonthly()
+	})
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsertOne) SetLastSeenEventID(v int64) *SubscriptionEntitlementUpsertOne {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.SetLastSeenEventID(v)
+	})
+}
+
+// AddLastSeenEventID adds v to the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsertOne) AddLastSeenEventID(v int64) *SubscriptionEntitlementUpsertOne {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.AddLastSeenEventID(v)
+	})
+}
+
+// UpdateLastSeenEventID sets the "last_seen_event_id" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsertOne) UpdateLastSeenEventID() *SubscriptionEntitlementUpsertOne {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.UpdateLastSeenEventID()
 	})
 }
 
@@ -2756,6 +2871,41 @@ func (u *SubscriptionEntitlementUpsertBulk) SetOveragePolicy(v string) *Subscrip
 func (u *SubscriptionEntitlementUpsertBulk) UpdateOveragePolicy() *SubscriptionEntitlementUpsertBulk {
 	return u.Update(func(s *SubscriptionEntitlementUpsert) {
 		s.UpdateOveragePolicy()
+	})
+}
+
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (u *SubscriptionEntitlementUpsertBulk) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementUpsertBulk {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.SetAutoAdvanceMonthly(v)
+	})
+}
+
+// UpdateAutoAdvanceMonthly sets the "auto_advance_monthly" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsertBulk) UpdateAutoAdvanceMonthly() *SubscriptionEntitlementUpsertBulk {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.UpdateAutoAdvanceMonthly()
+	})
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsertBulk) SetLastSeenEventID(v int64) *SubscriptionEntitlementUpsertBulk {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.SetLastSeenEventID(v)
+	})
+}
+
+// AddLastSeenEventID adds v to the "last_seen_event_id" field.
+func (u *SubscriptionEntitlementUpsertBulk) AddLastSeenEventID(v int64) *SubscriptionEntitlementUpsertBulk {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.AddLastSeenEventID(v)
+	})
+}
+
+// UpdateLastSeenEventID sets the "last_seen_event_id" field to the value that was provided on create.
+func (u *SubscriptionEntitlementUpsertBulk) UpdateLastSeenEventID() *SubscriptionEntitlementUpsertBulk {
+	return u.Update(func(s *SubscriptionEntitlementUpsert) {
+		s.UpdateLastSeenEventID()
 	})
 }
 

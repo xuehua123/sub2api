@@ -5,6 +5,8 @@ import (
 	"sort"
 	"time"
 
+	entsql "entgo.io/ent/dialect/sql"
+
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
@@ -404,16 +406,36 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 		field = usersubscription.FieldCreatedAt
 	}
 
-	// Determine sort order (default: desc)
-	if sortOrder == "asc" && sortBy != "" {
+	// Merge sorted prefixes rather than loading every historical subscription.
+	if sortOrder != "asc" || sortBy == "" {
+		sortOrder = "desc"
+	}
+	prefixLimit := params.Offset() + params.Limit()
+	entitlementFilter := entitlementOnlyAdminSubscriptionFilter{
+		UserID: userID, GroupID: groupID, Status: status, Platform: platform,
+		Now: now, Limit: prefixLimit, SortBy: field, SortOrder: sortOrder,
+	}
+	entitlementTotal, err := entitlementOnlyAdminSubscriptionQuery(client, entitlementFilter).Count(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	total += entitlementTotal
+	if params.Offset() >= total {
+		return []service.UserSubscription{}, paginationResultFromTotal(int64(total), params), nil
+	}
+	if field == usersubscription.FieldStatus && includeSoftDeleted {
+		q = q.Order(func(selector *entsql.Selector) {
+			selector.OrderExpr(entsql.Expr("CASE WHEN deleted_at IS NOT NULL THEN 'revoked' ELSE status END " + sortOrder))
+		})
+	} else if sortOrder == "asc" {
 		q = q.Order(dbent.Asc(field))
 	} else {
 		q = q.Order(dbent.Desc(field))
 	}
+	q = q.Order(dbent.Asc(usersubscription.FieldID))
 
 	subs, err := q.
-		Offset(params.Offset()).
-		Limit(params.Limit()).
+		Limit(prefixLimit).
 		All(queryCtx)
 	if err != nil {
 		return nil, nil, err
@@ -428,36 +450,39 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 	if err := attachUserSubscriptionEntitlementLinks(ctx, client, out); err != nil {
 		return nil, nil, err
 	}
-	if userID != nil || groupID != nil {
-		entitlementOnly, err := listEntitlementOnlyAdminSubscriptions(ctx, client, entitlementOnlyAdminSubscriptionFilter{
-			UserID:   userID,
-			GroupID:  groupID,
-			Status:   status,
-			Platform: platform,
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		out = append(out, entitlementOnly...)
-		sortUserSubscriptionsForAdmin(out, field, sortOrder)
-		total += len(entitlementOnly)
+	entitlementOnly, err := listEntitlementOnlyAdminSubscriptions(ctx, client, entitlementFilter)
+	if err != nil {
+		return nil, nil, err
 	}
+	out = append(out, entitlementOnly...)
+	sortUserSubscriptionsForAdmin(out, field, sortOrder)
+	start := min(params.Offset(), len(out))
+	end := min(start+params.Limit(), len(out))
+	out = out[start:end]
 	return out, paginationResultFromTotal(int64(total), params), nil
 }
 
 type entitlementOnlyAdminSubscriptionFilter struct {
-	UserIDs  []int64
-	UserID   *int64
-	GroupID  *int64
-	Status   string
-	Platform string
+	UserIDs   []int64
+	UserID    *int64
+	GroupID   *int64
+	Status    string
+	Platform  string
+	Now       time.Time
+	Limit     int
+	SortBy    string
+	SortOrder string
 }
 
-func listEntitlementOnlyAdminSubscriptions(ctx context.Context, client *dbent.Client, filter entitlementOnlyAdminSubscriptionFilter) ([]service.UserSubscription, error) {
+func entitlementOnlyAdminSubscriptionQuery(client *dbent.Client, filter entitlementOnlyAdminSubscriptionFilter) *dbent.SubscriptionEntitlementQuery {
 	q := client.SubscriptionEntitlement.Query().
 		Where(
 			subscriptionentitlement.DeletedAtIsNil(),
 			subscriptionentitlement.LegacySubscriptionIDIsNil(),
+			subscriptionentitlement.Or(
+				subscriptionentitlement.PrimaryGroupIDNotNil(),
+				subscriptionentitlement.HasSubscriptionEntitlementGroupsWith(subscriptionentitlementgroup.EnabledEQ(true)),
+			),
 		).
 		WithUser().
 		WithPlan().
@@ -486,7 +511,10 @@ func listEntitlementOnlyAdminSubscriptions(ctx context.Context, client *dbent.Cl
 			subscriptionentitlementgroup.HasGroupWith(group.PlatformEQ(filter.Platform)),
 		))
 	}
-	now := time.Now()
+	now := filter.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 	switch filter.Status {
 	case service.SubscriptionStatusActive:
 		q = q.Where(
@@ -508,6 +536,20 @@ func listEntitlementOnlyAdminSubscriptions(ctx context.Context, client *dbent.Cl
 		q = q.Where(subscriptionentitlement.StatusEQ(filter.Status))
 	}
 
+	return q
+}
+
+func listEntitlementOnlyAdminSubscriptions(ctx context.Context, client *dbent.Client, filter entitlementOnlyAdminSubscriptionFilter) ([]service.UserSubscription, error) {
+	q := entitlementOnlyAdminSubscriptionQuery(client, filter)
+	if filter.Limit > 0 {
+		if filter.SortOrder == "asc" {
+			q = q.Order(dbent.Asc(filter.SortBy))
+		} else {
+			q = q.Order(dbent.Desc(filter.SortBy))
+		}
+		// Native entitlement IDs are exposed as negative subscription IDs.
+		q = q.Order(dbent.Desc(subscriptionentitlement.FieldID)).Limit(filter.Limit)
+	}
 	entitlements, err := q.All(ctx)
 	if err != nil {
 		return nil, err
@@ -604,6 +646,8 @@ func sortUserSubscriptionsForAdmin(subs []service.UserSubscription, field, sortO
 		return
 	}
 	desc := sortOrder != "asc"
+	// Use the displayed ID as a deterministic tie-breaker across both sources.
+	sort.Slice(subs, func(i, j int) bool { return subs[i].ID < subs[j].ID })
 	switch field {
 	case usersubscription.FieldExpiresAt:
 		sort.SliceStable(subs, func(i, j int) bool {

@@ -2142,6 +2142,11 @@ export interface UserEntitlementGroup {
 }
 
 export interface UserEntitlement {
+	 auto_advance_monthly?: boolean
+	 last_seen_event_id?: number
+	 latest_renewal?: EntitlementEvent | null
+	 latest_cycle?: EntitlementEvent | null
+	 monthly_cycle_preview?: EntitlementMonthlyCyclePreview
   id: number
   plan_id: number | null
   plan_name: string
@@ -2222,6 +2227,30 @@ export interface AdvanceEntitlementMonthlyCycleResult {
   deducted_seconds: number
   previous_monthly_usage_usd: number
   new_monthly_window_start: string
+}
+
+export interface EntitlementEvent {
+  id: number
+  entitlement_id: number
+  kind: string
+  source_type: string
+  previous_expires_at: string | null
+  new_expires_at: string
+  validity_seconds: number
+  created_at: string
+}
+
+export interface EntitlementMonthlyCyclePreview {
+  can_advance: boolean
+  reason: string
+  has_future_cycle: boolean
+  monthly_window_start: string | null
+  current_expires_at: string
+  new_expires_at: string | null
+  next_reset_at: string | null
+  deducted_seconds: number
+  remaining_quota: number
+  monthly_limit: number
 }
 
 export type MonthlyCycleAdjustmentMode =

@@ -104,7 +104,10 @@ func (r *subscriptionEntitlementRepository) CreateWithFulfillment(ctx context.Co
 		if fulfillment.PlanID == nil {
 			fulfillment.PlanID = ent.PlanID
 		}
-		return createSubscriptionEntitlementFulfillmentWithClient(txCtx, txClient, fulfillment)
+		if err := createSubscriptionEntitlementFulfillmentWithClient(txCtx, txClient, fulfillment); err != nil {
+			return err
+		}
+		return recordEntitlementFulfillmentEvent(txCtx, txClient, fulfillment, nil, ent.StartsAt)
 	})
 }
 
@@ -373,6 +376,10 @@ func (r *subscriptionEntitlementRepository) CompareAndSwapTerm(
 
 func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Context, id int64, startsAt, expiresAt time.Time, status, notes string, source service.SubscriptionEntitlementSourceRef, fulfillment *service.SubscriptionEntitlementFulfillment, resetUsage bool, resetDailyStart, resetPeriodicStart time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		previous, err := txClient.SubscriptionEntitlement.Get(txCtx, id)
+		if err != nil {
+			return err
+		}
 		if err := updateSubscriptionEntitlementTermAndSourceWithClient(txCtx, txClient, id, startsAt, expiresAt, status, notes, source, resetUsage, resetDailyStart, resetPeriodicStart); err != nil {
 			return translatePersistenceError(err, service.ErrSubscriptionEntitlementNotFound, service.ErrSubscriptionEntitlementAlreadyExists)
 		}
@@ -380,7 +387,14 @@ func (r *subscriptionEntitlementRepository) ExtendWithFulfillment(ctx context.Co
 			return nil
 		}
 		fulfillment.EntitlementID = id
-		return createSubscriptionEntitlementFulfillmentWithClient(txCtx, txClient, fulfillment)
+		if err := createSubscriptionEntitlementFulfillmentWithClient(txCtx, txClient, fulfillment); err != nil {
+			return err
+		}
+		base := previous.ExpiresAt
+		if resetUsage {
+			base = startsAt
+		}
+		return recordEntitlementFulfillmentEvent(txCtx, txClient, fulfillment, &previous.ExpiresAt, base)
 	})
 }
 
@@ -593,7 +607,20 @@ func (r *subscriptionEntitlementRepository) InsertEntitlementCycleResetLog(ctx c
 			deducted_days, deducted_seconds, mode, reason, admin_id, reset_monthly_usage, created_at
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
 	`, log.UserID, log.EntitlementID, nullableInt64Arg(log.PlanID), log.PreviousExpiresAt, log.NewExpiresAt, log.PreviousMonthlyUsageUSD, nullableTimePtrArg(log.PreviousMonthlyWindowStart), log.NewMonthlyWindowStart, log.DeductedDays, log.DeductedSeconds, mode, reason, nullableInt64Arg(log.AdminID), log.ResetMonthlyUsage)
-	return err
+	if err != nil {
+		return err
+	}
+	kind := "manual_advance"
+	if log.Automatic {
+		kind = "automatic_advance"
+	}
+	if log.AdminID != nil || mode != string(service.MonthlyCycleAdjustmentAdvanceNextCycle) {
+		kind = "admin_adjustment"
+	}
+	return insertEntitlementEvent(ctx, client, log.UserID, service.SubscriptionEntitlementEvent{
+		EntitlementID: log.EntitlementID, Kind: kind, PreviousExpiresAt: &log.PreviousExpiresAt,
+		NewExpiresAt: log.NewExpiresAt, ValiditySeconds: -log.DeductedSeconds,
+	})
 }
 
 func (r *subscriptionEntitlementRepository) ApplyEntitlementUsage(ctx context.Context, id int64, costUSD float64, now time.Time) (*service.EntitlementUsageApplyResult, error) {
@@ -730,6 +757,7 @@ func (r *subscriptionEntitlementRepository) createWithClient(ctx context.Context
 		SetWeeklyUsageUsd(ent.WeeklyUsageUSD).
 		SetMonthlyUsageUsd(ent.MonthlyUsageUSD).
 		SetOveragePolicy(ent.OveragePolicy).
+		SetAutoAdvanceMonthly(ent.AutoAdvanceMonthly).
 		SetPlanSnapshot(ent.PlanSnapshot).
 		SetNillableSourceID(ent.SourceID).
 		SetNillableSourceExternalID(ent.SourceExternalID).
@@ -897,6 +925,8 @@ func subscriptionEntitlementEntityToService(m *dbent.SubscriptionEntitlement) *s
 		WeeklyUsageUSD:       m.WeeklyUsageUsd,
 		MonthlyUsageUSD:      m.MonthlyUsageUsd,
 		OveragePolicy:        m.OveragePolicy,
+		AutoAdvanceMonthly:   m.AutoAdvanceMonthly,
+		LastSeenEventID:      m.LastSeenEventID,
 		PlanSnapshot:         m.PlanSnapshot,
 		SourceID:             m.SourceID,
 		SourceExternalID:     m.SourceExternalID,

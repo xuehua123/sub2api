@@ -12,7 +12,12 @@ type subscriptionEntitlementMonthlyCycleStore interface {
 	InsertEntitlementCycleResetLog(ctx context.Context, log SubscriptionEntitlementCycleResetLog) error
 }
 
-func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context, userID, entitlementID int64) (*AdvanceEntitlementMonthlyCycleResult, error) {
+type EntitlementMonthlyCycleExpectedState struct {
+	MonthlyWindowStart *time.Time `json:"monthly_window_start"`
+	ExpiresAt          time.Time  `json:"expires_at"`
+}
+
+func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context, userID, entitlementID int64, expected ...*EntitlementMonthlyCycleExpectedState) (*AdvanceEntitlementMonthlyCycleResult, error) {
 	if s == nil || s.entitlementRepo == nil || userID <= 0 || entitlementID <= 0 {
 		return nil, ErrSubscriptionEntitlementNotFound
 	}
@@ -21,13 +26,21 @@ func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context
 		return nil, ErrSubscriptionEntitlementNotFound
 	}
 
-	now := s.inputNow(time.Time{}).Truncate(time.Second)
+	now := s.inputNow(time.Time{}).Truncate(time.Microsecond)
 	var result *AdvanceEntitlementMonthlyCycleResult
 	var invalidationTarget *SubscriptionEntitlement
 	if err := store.WithUserEntitlementMutationTx(ctx, userID, func(txCtx context.Context) error {
 		snapshot, err := store.LockEntitlementMonthlyCycle(txCtx, userID, entitlementID)
 		if err != nil {
 			return err
+		}
+		now = s.inputNow(time.Time{}).Truncate(time.Microsecond)
+		if len(expected) > 0 && expected[0] != nil {
+			state := expected[0]
+			sameWindow := state.MonthlyWindowStart == nil && snapshot.MonthlyWindowStart == nil || state.MonthlyWindowStart != nil && snapshot.MonthlyWindowStart != nil && state.MonthlyWindowStart.Equal(*snapshot.MonthlyWindowStart)
+			if !sameWindow || !state.ExpiresAt.Equal(snapshot.ExpiresAt) {
+				return ErrSubscriptionEntitlementTermConflict
+			}
 		}
 		advanced, err := advanceEntitlementMonthlyCycleLocked(txCtx, store, snapshot, now)
 		if err != nil {
@@ -48,7 +61,7 @@ func (s *SubscriptionEntitlementService) AdvanceMonthlyCycle(ctx context.Context
 	}
 	s.invalidateLinkedLegacyAlias(invalidationTarget)
 
-	entitlement, err := s.entitlementRepo.GetByID(ctx, entitlementID)
+	entitlement, err := s.GetUserEntitlementByID(ctx, userID, entitlementID)
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +78,7 @@ func advanceEntitlementMonthlyCycleLocked(
 	store subscriptionEntitlementMonthlyCycleStore,
 	snapshot *SubscriptionEntitlementMonthlyCycleSnapshot,
 	now time.Time,
+	automatic ...bool,
 ) (*AdvanceEntitlementMonthlyCycleResult, error) {
 	if snapshot == nil {
 		return nil, ErrSubscriptionEntitlementNotFound
@@ -109,6 +123,11 @@ func advanceEntitlementMonthlyCycleLocked(
 	}
 
 	newWindowStart := now
+	// PostgreSQL stores microseconds. Distinct cycles must have distinct markers,
+	// including multiple advances in one second, so stale requests cannot replay.
+	if snapshot.MonthlyWindowStart != nil && snapshot.MonthlyWindowStart.Truncate(time.Second).Equal(now.Truncate(time.Second)) && !newWindowStart.After(*snapshot.MonthlyWindowStart) {
+		newWindowStart = snapshot.MonthlyWindowStart.Add(time.Microsecond)
+	}
 	if err := store.UpdateEntitlementMonthlyCycle(ctx, SubscriptionEntitlementMonthlyCycleUpdate{
 		EntitlementID:         snapshot.ID,
 		UserID:                snapshot.UserID,
@@ -120,6 +139,7 @@ func advanceEntitlementMonthlyCycleLocked(
 		return nil, err
 	}
 	if err := store.InsertEntitlementCycleResetLog(ctx, SubscriptionEntitlementCycleResetLog{
+		Automatic:                  len(automatic) > 0 && automatic[0],
 		UserID:                     snapshot.UserID,
 		EntitlementID:              snapshot.ID,
 		PlanID:                     snapshot.PlanID,

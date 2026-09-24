@@ -234,6 +234,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			jsonKeepaliveStarted = true
 		}
 		forwardStart := time.Now()
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, accountReleaseFunc, streamStarted) {
+			return
+		}
 		writerSizeBeforeForward := service.OpenAIImagesJSONKeepaliveAdjustedWrittenSize(c)
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {

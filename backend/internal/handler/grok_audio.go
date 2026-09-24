@@ -145,6 +145,14 @@ func (h *OpenAIGatewayHandler) GrokRealtime(c *gin.Context) {
 		h.recordGrokVoiceUsage(c, apiKey, selection.Account, subscription, subscriptionEntitlement, entitlementBalanceFallback, "realtime", nil, billingResult)
 	}
 	if unexpectedProxyFailure {
+		if errors.Is(proxyErr, service.ErrBillingServiceUnavailable) || errors.Is(proxyErr, service.ErrSubscriptionMaintenance) {
+			_ = conn.Close(coderws.StatusTryAgainLater, "billing temporarily unavailable")
+			return
+		}
+		if isEntitlementAdmissionError(proxyErr) {
+			_ = conn.Close(coderws.StatusPolicyViolation, "subscription quota check failed")
+			return
+		}
 		_ = conn.Close(coderws.StatusInternalError, "upstream realtime websocket failed")
 		return
 	}
@@ -192,21 +200,21 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 	requestCtx := service.WithOpenAIProfitControlSuppressed(c.Request.Context())
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
-	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
-		status, code, message, retryAfter := billingErrorDetails(err)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
-		}
-		h.errorResponse(c, status, code, message)
-		return
-	}
 
 	body, err := readGrokVoiceGatewayBody(c)
 	if err != nil {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	if endpoint == "stt" && len(body) == 0 {
+		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "STT requires a non-empty audio request")
+		return
+	}
 	if endpoint == "tts" {
+		if !json.Valid(body) || extractGrokTTSInputText(body) == "" {
+			h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "TTS requires a non-empty input text")
+			return
+		}
 		subject, _ := middleware2.GetAuthSubjectFromContext(c)
 		reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 		// TTS bodies use {"input":"..."} (and variants). Normalize to chat messages so
@@ -230,6 +238,14 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 	}
 
 	failed := map[int64]struct{}{}
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.errorResponse(c, status, code, message)
+		return
+	}
 	sameAccountRetryCount := map[int64]int{}
 	var last *service.UpstreamFailoverError
 	reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
@@ -275,6 +291,9 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 			failed[account.ID] = struct{}{}
 			attempts++
 			continue
+		}
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, release, started) {
+			return
 		}
 		result, forwardErr := func() (*service.OpenAIForwardResult, error) {
 			defer release()

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
 type APIKeyEntitlementAuthResult struct {
@@ -23,7 +25,7 @@ func (s *APIKeyService) IsSubscriptionEntitlementsV2Enabled(ctx context.Context)
 	return s.subscriptionEntitlementsRuntime(ctx).Enabled
 }
 
-func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, apiKey *APIKey, req SubscriptionSwitchRequest, currentGroupUnavailable bool) (*APIKeyEntitlementAuthResult, error) {
+func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, apiKey *APIKey, req SubscriptionSwitchRequest, currentGroupUnavailable bool, autoAdvance ...bool) (*APIKeyEntitlementAuthResult, error) {
 	if s == nil || !s.subscriptionEntitlementsRuntime(ctx).Enabled {
 		return nil, nil
 	}
@@ -43,23 +45,27 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 		currentGroupUnavailable = true
 	}
 	currentErr := entitlementCurrentGroupError(fromGroup, req, currentGroupUnavailable)
-	resolution, err := s.resolveEntitlementAuthBinding(ctx, apiKey.User.ID, fromGroupID, apiKey.SubscriptionEntitlementID)
+	allowAuto := len(autoAdvance) > 0 && autoAdvance[0]
+	resolution, err := s.resolveEntitlementAuthBinding(ctx, apiKey.User.ID, fromGroupID, apiKey.SubscriptionEntitlementID, allowAuto)
 	if err != nil {
 		if !apiKey.AutoSwitchGroupEnabled || apiKey.SubscriptionEntitlementID == nil || !errors.Is(err, ErrGroupNotAllowed) {
 			return nil, err
 		}
-		entitlement, bindingErr := s.subscriptionEntitlementSvc.resolveExplicitBinding(ctx, apiKey.User.ID, *apiKey.SubscriptionEntitlementID, time.Time{})
+		entitlement, bindingErr := s.subscriptionEntitlementSvc.resolveExplicitBinding(ctx, apiKey.User.ID, *apiKey.SubscriptionEntitlementID, time.Time{}, allowAuto)
 		if bindingErr != nil {
 			return nil, bindingErr
+		}
+		if entitlement.UserID != apiKey.User.ID {
+			return nil, ErrGroupNotAllowed
 		}
 		switchGroup := selectEntitlementSwitchGroup(entitlement, fromGroup, fromGroupID, req, apiKey.User)
 		if switchGroup == nil {
 			return nil, err
 		}
-		return s.entitlementAuthResult(ctx, entitlement, switchGroup, true, fromGroupID, switchGroup.ID, entitlementSwitchReason(err), apiKey.User.ID), nil
+		return s.finishEntitlementAuth(ctx, entitlement, switchGroup, true, fromGroupID, entitlementSwitchReason(err), apiKey.User.ID, allowAuto)
 	}
 	if currentErr == nil {
-		return s.entitlementAuthResult(ctx, resolution.Entitlement, resolution.Group, false, fromGroupID, fromGroupID, "", apiKey.User.ID), nil
+		return s.finishEntitlementAuth(ctx, resolution.Entitlement, resolution.Group, false, fromGroupID, "", apiKey.User.ID, allowAuto)
 	}
 	if !apiKey.AutoSwitchGroupEnabled {
 		return nil, currentErr
@@ -69,7 +75,56 @@ func (s *APIKeyService) ResolveEntitlementForAPIKeyAuth(ctx context.Context, api
 	if switchGroup == nil {
 		return nil, currentErr
 	}
-	return s.entitlementAuthResult(ctx, resolution.Entitlement, switchGroup, true, fromGroupID, switchGroup.ID, entitlementSwitchReason(currentErr), apiKey.User.ID), nil
+	return s.finishEntitlementAuth(ctx, resolution.Entitlement, switchGroup, true, fromGroupID, entitlementSwitchReason(currentErr), apiKey.User.ID, allowAuto)
+}
+
+// Authentication may defer an exhausted monthly quota, but never consumes a cycle.
+func (s *APIKeyService) finishEntitlementAuth(ctx context.Context, ent *SubscriptionEntitlement, group *Group, switched bool, fromGroupID int64, reason string, userID int64, allowAuto bool) (*APIKeyEntitlementAuthResult, error) {
+	now := s.subscriptionEntitlementSvc.inputNow(time.Time{})
+	if err := validateEntitlementAvailabilityAt(ent, now); err != nil {
+		return nil, err
+	}
+	if err := s.subscriptionEntitlementSvc.CheckAndResetWindows(ctx, ent, now); err != nil {
+		return nil, err
+	}
+	if allowAuto && ent.AutoAdvanceMonthly && ent.MonthlyLimitUSD != nil && *ent.MonthlyLimitUSD > 0 && ent.MonthlyUsageUSD >= *ent.MonthlyLimitUSD && ent.CheckDailyLimit(0) && ent.CheckWeeklyLimit(0) && PreviewEntitlementMonthlyCycle(ent, now).CanAdvance {
+		result := s.entitlementAuthResult(ctx, ent, group, switched, fromGroupID, group.ID, reason, userID)
+		result.LegacySubscription = nil
+		return result, nil
+	}
+	if _, err := s.subscriptionEntitlementSvc.ValidateAndCheckLimits(ent, 0, now); err != nil {
+		return nil, err
+	}
+	return s.entitlementAuthResult(ctx, ent, group, switched, fromGroupID, group.ID, reason, userID), nil
+}
+
+// AdmitEntitlementGeneration runs after local generation checks, using current settings.
+func (s *APIKeyService) AdmitEntitlementGeneration(ctx context.Context, apiKey *APIKey, entitlementID int64, expectedCost ...float64) (result *APIKeyEntitlementAuthResult, admissionErr error) {
+	defer func() {
+		if admissionErr != nil && infraerrors.Code(admissionErr) >= 500 {
+			admissionErr = ErrBillingServiceUnavailable.WithCause(admissionErr)
+		}
+	}()
+	if s == nil || s.subscriptionEntitlementSvc == nil || apiKey == nil || apiKey.User == nil || apiKey.Group == nil {
+		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	now := s.subscriptionEntitlementSvc.inputNow(time.Time{})
+	resolution, err := s.subscriptionEntitlementSvc.ValidateBindingForGroup(ctx, apiKey.User.ID, apiKey.Group.ID, entitlementID, now)
+	if err != nil {
+		return nil, err
+	}
+	ent := resolution.Entitlement
+	if err := s.subscriptionEntitlementSvc.CheckAndResetWindows(ctx, ent, now); err != nil {
+		return nil, err
+	}
+	ent, err = s.subscriptionEntitlementSvc.TryAutoAdvanceMonthlyCycle(ctx, ent, expectedCost...)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.subscriptionEntitlementSvc.ValidateAndCheckLimits(ent, 0, s.subscriptionEntitlementSvc.inputNow(time.Time{})); err != nil {
+		return nil, err
+	}
+	return s.entitlementAuthResult(ctx, ent, apiKey.Group, false, apiKey.Group.ID, apiKey.Group.ID, "", apiKey.User.ID), nil
 }
 
 func (s *APIKeyService) CompareAndSwapGroupIDWithEntitlement(ctx context.Context, apiKey *APIKey, oldGroupID, newGroupID int64, resolvedEntitlementID int64) (bool, error) {
@@ -92,7 +147,7 @@ func (s *APIKeyService) CompareAndSwapGroupIDWithEntitlement(ctx context.Context
 	return swapped, nil
 }
 
-func (s *APIKeyService) resolveEntitlementAuthBinding(ctx context.Context, userID, groupID int64, explicitEntitlementID *int64) (*EntitlementResolution, error) {
+func (s *APIKeyService) resolveEntitlementAuthBinding(ctx context.Context, userID, groupID int64, explicitEntitlementID *int64, deferQuota ...bool) (*EntitlementResolution, error) {
 	now := s.subscriptionEntitlementSvc.inputNow(time.Time{})
 	var (
 		resolution *EntitlementResolution
@@ -108,6 +163,9 @@ func (s *APIKeyService) resolveEntitlementAuthBinding(ctx context.Context, userI
 	}
 	if resolution == nil || resolution.Entitlement == nil {
 		return nil, ErrSubscriptionEntitlementNotFound
+	}
+	if len(deferQuota) > 0 && deferQuota[0] {
+		return resolution, nil
 	}
 	if err := s.subscriptionEntitlementSvc.CheckAndResetWindows(ctx, resolution.Entitlement, now); err != nil {
 		return nil, err

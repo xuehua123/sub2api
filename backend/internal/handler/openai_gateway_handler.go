@@ -613,6 +613,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		defer userReleaseFunc()
 	}
 
+	// Generate session hash (header first; fallback to prompt_cache_key)
+	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
+	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
+		return
+	}
 	// 2. Re-check billing eligibility after wait
 	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
 		reqLog.Info("openai.billing_eligibility_check_failed", zap.Error(err))
@@ -621,12 +626,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			c.Header("Retry-After", strconv.Itoa(retryAfter))
 		}
 		h.handleStreamingAwareError(c, status, code, message, streamStarted)
-		return
-	}
-
-	// Generate session hash (header first; fallback to prompt_cache_key)
-	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
-	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
 		return
 	}
 	c.Request = c.Request.WithContext(service.WithOpenAIGuardianParentAffinity(
@@ -780,6 +779,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		forwardStart := time.Now()
 		// 用扣除非语义心跳字节的口径快照：心跳注释不构成语义响应，
 		// 不能因心跳字节变化而放弃 failover 换号（#3887）。
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, accountReleaseFunc, streamStarted) {
+			return
+		}
 		writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 		// 跨 passthrough 边界的 failover：从 Kiro 等透传账号切到 Bedrock 等非透传账号前，
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
@@ -1376,6 +1378,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		defaultMappedModel := strings.TrimSpace(effectiveMappedModel)
 		// 应用渠道模型映射到请求体
 		forwardBody := mappedBodyForMessages(channelMappingMsg.Mapped, channelMappingMsg.MappedModel)
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, accountReleaseFunc, streamStarted) {
+			return
+		}
 		writerSizeBeforeForward := c.Writer.Size()
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
@@ -2678,6 +2683,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
 		return
 	}
+	lastAdmittedTurn := 0
 
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(
 		c,
@@ -2947,6 +2953,26 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			MaxReasoningEffortOverLimit: maxReasoningEffortOverLimit,
 			ReasoningEffortMappings:     reasoningEffortMappings,
 			TurnStarted:                 recordTurnStart,
+			BeforeUpstreamRequest: func(turn int) error {
+				if subscriptionEntitlement == nil || turn <= lastAdmittedTurn {
+					return nil
+				}
+				if turn > 1 {
+					if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(ctx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(ctx, apiKey)); err != nil {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "billing check failed", err)
+					}
+				}
+				resolved, err := h.apiKeyService.AdmitEntitlementGeneration(ctx, apiKey, subscriptionEntitlement.ID)
+				if err != nil {
+					if errors.Is(err, service.ErrBillingServiceUnavailable) || errors.Is(err, service.ErrSubscriptionMaintenance) {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "billing temporarily unavailable", err)
+					}
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "subscription quota check failed", err)
+				}
+				subscriptionEntitlement, subscription = resolved.Entitlement, resolved.LegacySubscription
+				lastAdmittedTurn = turn
+				return nil
+			},
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
@@ -3150,14 +3176,15 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				sessionID := service.ExtractClientSessionID(c)
 				turnRecordPricingAt := turnPricing.currentOr(turnStart)
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+				turnEntitlement, turnSubscription := subscriptionEntitlement, subscription
 				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{
 						Result:                     result,
 						APIKey:                     apiKey,
 						User:                       apiKey.User,
 						Account:                    account,
-						Subscription:               subscription,
-						Entitlement:                subscriptionEntitlement,
+						Subscription:               turnSubscription,
+						Entitlement:                turnEntitlement,
 						EntitlementBalanceFallback: entitlementBalanceFallback,
 						AllowEntitlementOverage:    true,
 						InboundEndpoint:            inboundEndpoint,

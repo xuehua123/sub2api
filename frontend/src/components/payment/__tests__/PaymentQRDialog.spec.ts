@@ -73,6 +73,20 @@ describe('PaymentQRDialog currency display', () => {
     vi.useRealTimers()
   })
 
+  it('exits fulfillment pending after a failed delivery', async () => {
+    pollOrderStatus.mockResolvedValue({ ...paidOrder, status: 'PAID' })
+    const wrapper = mount(PaymentQRDialog, {
+      props: { show: false, orderId: 42, qrCode: '', expiresAt: '2099-01-01T10:30:00Z', paymentType: 'alipay' },
+      global: { stubs: { BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' }, Icon: true } }
+    })
+    try {
+      await wrapper.setProps({ show: true }); await vi.advanceTimersByTimeAsync(3000); await flushPromises()
+      expect(wrapper.text()).toContain('userSubscriptions.lifecycle.processingPayment')
+      pollOrderStatus.mockResolvedValue({ ...paidOrder, status: 'FAILED' })
+      await vi.advanceTimersByTimeAsync(3000); await flushPromises()
+      expect(wrapper.text()).not.toContain('userSubscriptions.lifecycle.processingPayment')
+    } finally { wrapper.unmount() }
+  })
   it('uses order currency for pay_amount and USD for credited amount', async () => {
     const wrapper = mount(PaymentQRDialog, {
       props: {

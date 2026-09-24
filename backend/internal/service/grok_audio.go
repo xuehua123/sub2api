@@ -245,6 +245,11 @@ func (s *OpenAIGatewayService) ProxyGrokRealtimeConn(ctx context.Context, c *gin
 				return
 			}
 			if writeErr := relayGrokRealtimeClientEvent(&audioObserved, hasAudio, func() error {
+				if grokRealtimeEventStartsGeneration(msg) {
+					if err := CompleteEntitlementGenerationAdmission(ctx, nil, 0); err != nil {
+						return err
+					}
+				}
 				return conn.WriteJSON(ctx, raw)
 			}); writeErr != nil {
 				errCh <- writeErr
@@ -334,6 +339,20 @@ func grokRealtimeEventHasAudio(msg []byte) bool {
 		}
 	}
 	return false
+}
+
+func grokRealtimeEventStartsGeneration(msg []byte) bool {
+	if !gjson.ValidBytes(msg) {
+		return false
+	}
+	switch strings.TrimSpace(gjson.GetBytes(msg, "type").String()) {
+	case "response.create":
+		return true
+	case "input_audio_buffer.append":
+		return grokRealtimeEventHasAudio(msg)
+	default:
+		return false
+	}
 }
 
 // estimateGrokVoiceAudioUsage derives billing units from the request/response.

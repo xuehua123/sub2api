@@ -51,6 +51,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementevent"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -172,6 +173,7 @@ func checkColumn(t, c string) error {
 			securitysecret.Table:                     securitysecret.ValidColumn,
 			setting.Table:                            setting.ValidColumn,
 			subscriptionentitlement.Table:            subscriptionentitlement.ValidColumn,
+			subscriptionentitlementevent.Table:       subscriptionentitlementevent.ValidColumn,
 			subscriptionentitlementfulfillment.Table: subscriptionentitlementfulfillment.ValidColumn,
 			subscriptionentitlementgroup.Table:       subscriptionentitlementgroup.ValidColumn,
 			subscriptionplan.Table:                   subscriptionplan.ValidColumn,

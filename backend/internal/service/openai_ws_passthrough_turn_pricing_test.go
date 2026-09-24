@@ -72,6 +72,12 @@ func TestPassthroughIngressFollowUpCallsBeforeTurnAfterBeforeRequest(t *testing.
 	var callbacks []string
 	afterTurnCalls := 0
 	hooks := &OpenAIWSIngressHooks{
+		BeforeUpstreamRequest: func(int) error {
+			hooksMu.Lock()
+			callbacks = append(callbacks, "before_upstream")
+			hooksMu.Unlock()
+			return nil
+		},
 		BeforeRequest: func(int, []byte, string) error {
 			hooksMu.Lock()
 			callbacks = append(callbacks, "before_request")
@@ -122,7 +128,7 @@ func TestPassthroughIngressFollowUpCallsBeforeTurnAfterBeforeRequest(t *testing.
 	gotAfter := afterTurnCalls
 	hooksMu.Unlock()
 
-	require.Equal(t, []string{"before_request", "before_turn"}, gotCallbacks)
+	require.Equal(t, []string{"before_upstream", "before_request", "before_turn", "before_upstream"}, gotCallbacks)
 	require.Equal(t, 2, gotAfter)
 }
 
@@ -138,7 +144,9 @@ func TestPassthroughIngressBeforeTurnRejectionDoesNotForwardFollowUp(t *testing.
 	afterTurnCalls := 0
 	var finalErr error
 	beforeTurnTurn := 0
+	upstreamAdmissions := 0
 	hooks := &OpenAIWSIngressHooks{
+		BeforeUpstreamRequest: func(int) error { hooksMu.Lock(); upstreamAdmissions++; hooksMu.Unlock(); return nil },
 		BeforeTurn: func(turn int) error {
 			hooksMu.Lock()
 			beforeTurnTurn = turn
@@ -181,7 +189,9 @@ func TestPassthroughIngressBeforeTurnRejectionDoesNotForwardFollowUp(t *testing.
 
 	hooksMu.Lock()
 	gotBeforeTurn, gotAfter, gotFinalErr := beforeTurnTurn, afterTurnCalls, finalErr
+	gotAdmissions := upstreamAdmissions
 	hooksMu.Unlock()
+	require.Equal(t, 1, gotAdmissions, "rejected follow-up must not consume a cycle")
 	require.Equal(t, 2, gotBeforeTurn)
 	require.Equal(t, 2, gotAfter, "each started turn must be finalized exactly once")
 	require.ErrorIs(t, gotFinalErr, rejection)

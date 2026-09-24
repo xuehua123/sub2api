@@ -113,6 +113,22 @@ export default {
 
   // User Subscriptions Page
   userSubscriptions: {
+    lifecycle: {
+      fulfillmentFailed: 'Payment received; order processing did not complete',
+      fulfillmentFailedHint: 'Do not pay again. Check your plan validity and order status, or contact an administrator to verify delivery.',
+      autoLabel: 'Automatically start the next cycle when monthly quota runs out',
+      autoHint: 'Uses existing future validity, without a payment. Starting early brings the expiration date forward.',
+      autoConfirm: 'When this monthly quota is exhausted and a full future cycle is available, the next generation request will start that 30-day cycle automatically. Validity is reduced just like a manual advance. Daily and weekly usage do not reset. Enable?',
+      autoWaiting: 'Enabled; renew to add enough validity for a future cycle.',
+      futureAvailable: 'A full next cycle is available for early use', futureUnavailable: 'Renew to cover a full next cycle', currentExpiry: 'Current plan expiration', history: 'Plan history', loadMore: 'Load earlier records', emptyHistory: 'No changes recorded yet', acknowledge: 'Got it',
+      addedDuration: 'Added {duration}', removedDuration: 'Brought forward by {duration}', recordedAt: 'Recorded', remaining: 'Remaining quota to forfeit', newQuota: 'New monthly quota', newReset: 'Next cycle reset',
+      advanceConfirm: 'The remaining quota will be forfeited and monthly quota reset to {limit}. About {duration} will be deducted; the new expiration is {expires}. Start the next cycle?',
+      confirmAdvance: 'Start next cycle', loadFailed: 'Failed to load plan history', saveFailed: 'Failed to save plan settings',
+      processingPayment: 'Payment received; delivering your plan', processingPaymentHint: 'Do not pay again. Your plan will update after delivery; check orders and plan history for the result.',
+      kind: { granted: 'Plan delivered', renewed: 'Renewal successful', reactivated: 'Plan reactivated', admin_extension: 'Validity extended by administrator', admin_adjustment: 'Adjusted by administrator', manual_advance: 'Next cycle started manually', automatic_advance: 'Next cycle started automatically' },
+      source: { payment_order: 'Order payment', redeem_code: 'Redemption code', admin_subscription_assign: 'Administrator assignment' },
+      reason: { inactive: 'Plan is inactive or expired', no_monthly_limit: 'This plan has no monthly quota', no_future_cycle: 'Validity does not cover a full next 30-day cycle', below_threshold: 'Manual advance is available after 90% monthly usage', available: 'The next cycle can be started now' }
+    },
     title: 'My Plans',
     description: 'View your plans and usage',
     noActiveSubscriptions: 'No Active Plans',
@@ -195,7 +211,7 @@ export default {
     advanceMonthlyConfirm: 'Use the next monthly cycle for "{group}" now? Current usage is ${used} / ${limit}; the remaining ${remaining} quota will be forfeited. Monthly usage will reset, the new cycle will start now, and about {duration} will be deducted from the subscription validity.',
     advanceMonthlySuccess: 'Monthly quota reset, the new cycle starts now, and {duration} deducted',
     advanceMonthlyFailed: 'Failed to advance monthly cycle',
-    advanceEntitlementMonthlyCycle: 'Use next month card now',
+    advanceEntitlementMonthlyCycle: 'Start next 30-day cycle now',
     advanceEntitlementMonthlyThresholdHint: 'Available when remaining monthly card quota is {percent}% or less',
     advanceEntitlementMonthlyAvailableHint: 'Available now. About {duration} will be deducted from this entitlement',
     advanceEntitlementMonthlyUnavailableInactive: 'Only active plan entitlements can use the next monthly card early',

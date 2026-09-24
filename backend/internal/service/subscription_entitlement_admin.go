@@ -78,6 +78,18 @@ func (s *SubscriptionService) adminAdjustEntitlement(ctx context.Context, entitl
 		if updateErr != nil {
 			return updateErr
 		}
+		if events, ok := entitlementSvc.entitlementRepo.(SubscriptionEntitlementLifecycleRepository); ok && !ent.ExpiresAt.Equal(expiresAt) {
+			kind := "admin_adjustment"
+			if days > 0 {
+				kind = "admin_extension"
+			}
+			if err := events.InsertEntitlementEvent(txCtx, ent.UserID, SubscriptionEntitlementEvent{
+				EntitlementID: ent.ID, Kind: kind, PreviousExpiresAt: &ent.ExpiresAt, NewExpiresAt: expiresAt,
+				ValiditySeconds: int64(expiresAt.Sub(base) / time.Second),
+			}); err != nil {
+				return err
+			}
+		}
 		var refreshErr error
 		refreshed, refreshErr = entitlementSvc.entitlementRepo.GetByID(txCtx, entitlementID)
 		if refreshErr != nil {

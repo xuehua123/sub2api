@@ -257,6 +257,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
 
 		// 5. Forward request
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, accountReleaseFunc, streamStarted) {
+			return
+		}
 		writerSizeBeforeForward := c.Writer.Size()
 		forwardBody := body
 		if channelMapping.Mapped {

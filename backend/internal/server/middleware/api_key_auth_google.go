@@ -179,6 +179,7 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 				apiKey,
 				subscriptionSwitchRequestForContext(c),
 				currentGroupUnavailable,
+				isMonthlyCycleBillableRequest(c),
 			)
 			if err != nil {
 				abortWithGoogleError(c, subscriptionErrorStatus(err), subscriptionErrorMessage(err))
@@ -258,6 +259,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 		if entitlement != nil {
 			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
+			if isMonthlyCycleBillableRequest(c) {
+				c.Request = c.Request.WithContext(apiKeyService.WithEntitlementGenerationAdmission(c.Request.Context(), apiKey, entitlement.ID))
+			}
 		}
 		if subscription != nil {
 			c.Set(string(ContextKeySubscription), subscription)

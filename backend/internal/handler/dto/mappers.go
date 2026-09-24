@@ -995,6 +995,11 @@ func UserEntitlementFromService(ent *service.SubscriptionEntitlement, now time.T
 	weeklyResetsAt, weeklyResetsInSeconds := entitlementWindowReset(weeklyWindowStart, ent.ExpiresAt, 7*24*time.Hour, now, false)
 	monthlyResetsAt, monthlyResetsInSeconds := entitlementWindowReset(monthlyWindowStart, ent.ExpiresAt, 30*24*time.Hour, now, false)
 	return &UserEntitlement{
+		AutoAdvanceMonthly:     ent.AutoAdvanceMonthly,
+		LastSeenEventID:        ent.LastSeenEventID,
+		LatestRenewal:          ent.LatestRenewal,
+		LatestCycle:            ent.LatestCycle,
+		MonthlyCyclePreview:    service.PreviewEntitlementMonthlyCycle(ent, now),
 		ID:                     ent.ID,
 		PlanID:                 cloneInt64(ent.PlanID),
 		PlanName:               ent.Name,

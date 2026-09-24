@@ -258,6 +258,7 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 					apiKey,
 					subscriptionSwitchRequestForContext(c),
 					currentGroupUnavailable,
+					isMonthlyCycleBillableRequest(c) || isMonthlyCycleWebSocketRequest(c),
 				)
 				if entErr != nil {
 					AbortWithError(c, subscriptionErrorStatus(entErr), subscriptionErrorCode(entErr), subscriptionErrorMessage(entErr))
@@ -330,9 +331,10 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 
 		// ── 6. 计费执行（skipBilling 时整块跳过） ────────────────────
 
+		deferredEntitlementAdmission := entitlement != nil && (isMonthlyCycleBillableRequest(c) || isMonthlyCycleWebSocketRequest(c))
 		if !skipBilling {
 			// 订阅模式：验证订阅限额
-			if subscription != nil {
+			if subscription != nil && !deferredEntitlementAdmission {
 				needsMaintenance, validateErr := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				if needsMaintenance {
 					refreshed, maintenanceErr := subscriptionService.EnsureWindowMaintenance(c.Request.Context(), subscription)
@@ -366,6 +368,9 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 		}
 		if entitlement != nil {
 			c.Set(string(ContextKeySubscriptionEntitlement), entitlement)
+			if !skipBilling && (isMonthlyCycleBillableRequest(c) || isMonthlyCycleWebSocketRequest(c)) {
+				c.Request = c.Request.WithContext(apiKeyService.WithEntitlementGenerationAdmission(c.Request.Context(), apiKey, entitlement.ID))
+			}
 		}
 		ctx = service.WithAPIKeyGroupAccessPolicy(c.Request.Context(), apiKey, entitlement, subscription)
 		c.Request = c.Request.WithContext(ctx)

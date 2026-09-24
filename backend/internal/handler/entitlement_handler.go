@@ -140,7 +140,15 @@ func (h *EntitlementHandler) AdvanceMonthlyCycle(c *gin.Context) {
 		response.BadRequest(c, "Invalid entitlement ID")
 		return
 	}
-	result, err := h.entitlementService.AdvanceMonthlyCycle(c.Request.Context(), subject.UserID, entitlementID)
+	var expected *service.EntitlementMonthlyCycleExpectedState
+	if c.Request.ContentLength != 0 {
+		expected = &service.EntitlementMonthlyCycleExpectedState{}
+		if err := c.ShouldBindJSON(expected); err != nil || expected.ExpiresAt.IsZero() {
+			response.BadRequest(c, "Invalid monthly cycle preview")
+			return
+		}
+	}
+	result, err := h.entitlementService.AdvanceMonthlyCycle(c.Request.Context(), subject.UserID, entitlementID, expected)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -86,7 +86,7 @@ func (s *SubscriptionEntitlementService) ValidateBindingForGroup(ctx context.Con
 
 // resolveExplicitBinding verifies an explicitly selected entitlement before an
 // API key is moved to another group that the same entitlement still covers.
-func (s *SubscriptionEntitlementService) resolveExplicitBinding(ctx context.Context, userID, entitlementID int64, now time.Time) (*SubscriptionEntitlement, error) {
+func (s *SubscriptionEntitlementService) resolveExplicitBinding(ctx context.Context, userID, entitlementID int64, now time.Time, deferQuota ...bool) (*SubscriptionEntitlement, error) {
 	if s == nil || s.entitlementRepo == nil || userID <= 0 || entitlementID <= 0 {
 		return nil, ErrGroupNotAllowed
 	}
@@ -100,6 +100,9 @@ func (s *SubscriptionEntitlementService) resolveExplicitBinding(ctx context.Cont
 	resolvedNow := s.inputNow(now)
 	if err := validateEntitlementAvailabilityAt(ent, resolvedNow); err != nil {
 		return nil, err
+	}
+	if len(deferQuota) > 0 && deferQuota[0] {
+		return ent, nil
 	}
 	if err := s.CheckAndResetWindows(ctx, ent, resolvedNow); err != nil {
 		return nil, err

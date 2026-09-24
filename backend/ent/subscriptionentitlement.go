@@ -67,6 +67,10 @@ type SubscriptionEntitlement struct {
 	MonthlyUsageUsd float64 `json:"monthly_usage_usd,omitempty"`
 	// OveragePolicy holds the value of the "overage_policy" field.
 	OveragePolicy string `json:"overage_policy,omitempty"`
+	// AutoAdvanceMonthly holds the value of the "auto_advance_monthly" field.
+	AutoAdvanceMonthly bool `json:"auto_advance_monthly,omitempty"`
+	// LastSeenEventID holds the value of the "last_seen_event_id" field.
+	LastSeenEventID int64 `json:"last_seen_event_id,omitempty"`
 	// PlanSnapshot holds the value of the "plan_snapshot" field.
 	PlanSnapshot map[string]interface{} `json:"plan_snapshot,omitempty"`
 	// SourceID holds the value of the "source_id" field.
@@ -256,9 +260,11 @@ func (*SubscriptionEntitlement) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case subscriptionentitlement.FieldPlanSnapshot:
 			values[i] = new([]byte)
+		case subscriptionentitlement.FieldAutoAdvanceMonthly:
+			values[i] = new(sql.NullBool)
 		case subscriptionentitlement.FieldDailyLimitUsd, subscriptionentitlement.FieldWeeklyLimitUsd, subscriptionentitlement.FieldMonthlyLimitUsd, subscriptionentitlement.FieldDailyUsageUsd, subscriptionentitlement.FieldWeeklyUsageUsd, subscriptionentitlement.FieldMonthlyUsageUsd:
 			values[i] = new(sql.NullFloat64)
-		case subscriptionentitlement.FieldID, subscriptionentitlement.FieldUserID, subscriptionentitlement.FieldPlanID, subscriptionentitlement.FieldLegacySubscriptionID, subscriptionentitlement.FieldPrimaryGroupID, subscriptionentitlement.FieldSourceID, subscriptionentitlement.FieldSourceRedeemCodeID, subscriptionentitlement.FieldAssignedBy:
+		case subscriptionentitlement.FieldID, subscriptionentitlement.FieldUserID, subscriptionentitlement.FieldPlanID, subscriptionentitlement.FieldLegacySubscriptionID, subscriptionentitlement.FieldPrimaryGroupID, subscriptionentitlement.FieldLastSeenEventID, subscriptionentitlement.FieldSourceID, subscriptionentitlement.FieldSourceRedeemCodeID, subscriptionentitlement.FieldAssignedBy:
 			values[i] = new(sql.NullInt64)
 		case subscriptionentitlement.FieldName, subscriptionentitlement.FieldSourceType, subscriptionentitlement.FieldStatus, subscriptionentitlement.FieldOveragePolicy, subscriptionentitlement.FieldSourceExternalID, subscriptionentitlement.FieldNotes:
 			values[i] = new(sql.NullString)
@@ -426,6 +432,18 @@ func (_m *SubscriptionEntitlement) assignValues(columns []string, values []any) 
 				return fmt.Errorf("unexpected type %T for field overage_policy", values[i])
 			} else if value.Valid {
 				_m.OveragePolicy = value.String
+			}
+		case subscriptionentitlement.FieldAutoAdvanceMonthly:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field auto_advance_monthly", values[i])
+			} else if value.Valid {
+				_m.AutoAdvanceMonthly = value.Bool
+			}
+		case subscriptionentitlement.FieldLastSeenEventID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field last_seen_event_id", values[i])
+			} else if value.Valid {
+				_m.LastSeenEventID = value.Int64
 			}
 		case subscriptionentitlement.FieldPlanSnapshot:
 			if value, ok := values[i].(*[]byte); !ok {
@@ -662,6 +680,12 @@ func (_m *SubscriptionEntitlement) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("overage_policy=")
 	builder.WriteString(_m.OveragePolicy)
+	builder.WriteString(", ")
+	builder.WriteString("auto_advance_monthly=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AutoAdvanceMonthly))
+	builder.WriteString(", ")
+	builder.WriteString("last_seen_event_id=")
+	builder.WriteString(fmt.Sprintf("%v", _m.LastSeenEventID))
 	builder.WriteString(", ")
 	builder.WriteString("plan_snapshot=")
 	builder.WriteString(fmt.Sprintf("%v", _m.PlanSnapshot))

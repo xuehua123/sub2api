@@ -21,6 +21,9 @@ func (s *SubscriptionEntitlementService) ListUserEntitlements(ctx context.Contex
 		s.attachEntitlementEconomics(ctx, &ents[i])
 		out = append(out, ents[i])
 	}
+	if err := s.attachEntitlementEvents(ctx, userID, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -50,6 +53,11 @@ func (s *SubscriptionEntitlementService) GetUserEntitlementByID(ctx context.Cont
 		return nil, ErrSubscriptionEntitlementNotFound
 	}
 	s.attachEntitlementEconomics(ctx, ent)
+	items := []SubscriptionEntitlement{*ent}
+	if err := s.attachEntitlementEvents(ctx, userID, items); err != nil {
+		return nil, err
+	}
+	*ent = items[0]
 	return ent, nil
 }
 

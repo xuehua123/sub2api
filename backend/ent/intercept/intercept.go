@@ -48,6 +48,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementevent"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -1181,6 +1182,33 @@ func (f TraverseSubscriptionEntitlement) Traverse(ctx context.Context, q ent.Que
 	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementQuery", q)
 }
 
+// The SubscriptionEntitlementEventFunc type is an adapter to allow the use of ordinary function as a Querier.
+type SubscriptionEntitlementEventFunc func(context.Context, *ent.SubscriptionEntitlementEventQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f SubscriptionEntitlementEventFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.SubscriptionEntitlementEventQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementEventQuery", q)
+}
+
+// The TraverseSubscriptionEntitlementEvent type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseSubscriptionEntitlementEvent func(context.Context, *ent.SubscriptionEntitlementEventQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseSubscriptionEntitlementEvent) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseSubscriptionEntitlementEvent) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.SubscriptionEntitlementEventQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.SubscriptionEntitlementEventQuery", q)
+}
+
 // The SubscriptionEntitlementFulfillmentFunc type is an adapter to allow the use of ordinary function as a Querier.
 type SubscriptionEntitlementFulfillmentFunc func(context.Context, *ent.SubscriptionEntitlementFulfillmentQuery) (ent.Value, error)
 
@@ -1856,6 +1884,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.SettingQuery, predicate.Setting, setting.OrderOption]{typ: ent.TypeSetting, tq: q}, nil
 	case *ent.SubscriptionEntitlementQuery:
 		return &query[*ent.SubscriptionEntitlementQuery, predicate.SubscriptionEntitlement, subscriptionentitlement.OrderOption]{typ: ent.TypeSubscriptionEntitlement, tq: q}, nil
+	case *ent.SubscriptionEntitlementEventQuery:
+		return &query[*ent.SubscriptionEntitlementEventQuery, predicate.SubscriptionEntitlementEvent, subscriptionentitlementevent.OrderOption]{typ: ent.TypeSubscriptionEntitlementEvent, tq: q}, nil
 	case *ent.SubscriptionEntitlementFulfillmentQuery:
 		return &query[*ent.SubscriptionEntitlementFulfillmentQuery, predicate.SubscriptionEntitlementFulfillment, subscriptionentitlementfulfillment.OrderOption]{typ: ent.TypeSubscriptionEntitlementFulfillment, tq: q}, nil
 	case *ent.SubscriptionEntitlementGroupQuery:

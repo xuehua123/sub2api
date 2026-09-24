@@ -735,6 +735,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return fmt.Errorf("resolve Grok websocket cache identity: %w", err)
 				}
 			}
+			if hooks != nil && hooks.BeforeUpstreamRequest != nil {
+				if err := hooks.BeforeUpstreamRequest(turn); err != nil {
+					return err
+				}
+			}
 			result, bridgeErr := s.proxyOpenAIWSHTTPBridgeTurn(
 				ctx,
 				c,
@@ -1061,6 +1066,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		terminalDelivered := false
 		pendingClientMessages := make([][]byte, 0, 2)
 		pendingClientMessageBytes := int64(0)
+		if hooks != nil && hooks.BeforeUpstreamRequest != nil {
+			if err := hooks.BeforeUpstreamRequest(turn); err != nil {
+				return nil, err
+			}
+		}
 		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",

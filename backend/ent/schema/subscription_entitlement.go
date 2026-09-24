@@ -95,6 +95,8 @@ func (SubscriptionEntitlement) Fields() []ent.Field {
 		field.String("overage_policy").
 			MaxLen(32).
 			Default("block"),
+		field.Bool("auto_advance_monthly").Default(false),
+		field.Int64("last_seen_event_id").Default(0),
 		field.JSON("plan_snapshot", map[string]any{}).
 			Optional().
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}),

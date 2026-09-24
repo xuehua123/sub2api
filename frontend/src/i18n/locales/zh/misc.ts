@@ -111,6 +111,24 @@ export default {
 
   // User Subscriptions Page
   userSubscriptions: {
+    lifecycle: {
+      fulfillmentFailed: '付款已收到，订单处理未完成',
+      fulfillmentFailedHint: '请勿重复付款。请先在月卡中核对有效期，再查看订单状态或联系管理员核对到账。',
+      autoLabel: '月额度用尽后，自动启用下一期',
+      autoHint: '使用已有后续有效期，不会自动付款。提前启用会相应提前到期时间。',
+      autoConfirm: '本期月额度用尽且仍有完整下一期时，下一次实际调用将自动启用下一期（30 天）。有效期扣减与手动提前启用相同，日、周额度不会清零。确定开启吗？',
+      autoWaiting: '已开启；后续周期不足，续费后满足条件即自动生效。',
+      futureAvailable: '已覆盖下一期，可按条件提前使用',
+      futureUnavailable: '没有完整下一期，需续费后才能提前使用',
+      currentExpiry: '当前套餐到期', history: '月卡记录', loadMore: '加载更早记录', emptyHistory: '暂无变更记录', acknowledge: '知道了',
+      addedDuration: '增加 {duration}', removedDuration: '提前 {duration}', recordedAt: '记录时间', remaining: '将作废的本期剩余额度', newQuota: '新一期月额度', newReset: '新一期重置时间',
+      advanceConfirm: '本期剩余额度将作废，月额度将重置为 {limit}。有效期扣减约 {duration}，新到期时间为 {expires}。确认启用下一期？',
+      confirmAdvance: '确认启用', loadFailed: '加载月卡记录失败', saveFailed: '保存月卡设置失败',
+      processingPayment: '付款成功，套餐到账处理中', processingPaymentHint: '请勿重复付款。到账后会更新月卡，可稍后在订单和月卡记录中查看。',
+      kind: { granted: '套餐已到账', renewed: '续费成功', reactivated: '套餐已重新开通', admin_extension: '管理员已延期', admin_adjustment: '管理员已调整', manual_advance: '已手动启用下一期', automatic_advance: '已自动启用下一期' },
+      source: { payment_order: '订单支付', redeem_code: '兑换码', admin_subscription_assign: '管理员分配' },
+      reason: { inactive: '套餐未生效或已到期', no_monthly_limit: '当前套餐未设置月额度', no_future_cycle: '有效期不足以覆盖下一完整 30 天周期', below_threshold: '月额度使用达到 90% 后可手动提前启用', available: '现在可以提前启用下一期额度' }
+    },
     title: '我的套餐',
     description: '查看您的套餐计划和用量',
     noActiveSubscriptions: '暂无有效套餐',
@@ -192,7 +210,7 @@ export default {
     advanceMonthlyConfirm: '确定提前使用「{group}」的下月额度吗？当前已用 ${used} / ${limit}，剩余额度 ${remaining} 会作废；本月用量会清零，新周期从现在开始，并从订阅有效期扣减约 {duration}。',
     advanceMonthlySuccess: '已重置本月额度，新周期已从现在开始，并扣减 {duration} 有效期',
     advanceMonthlyFailed: '提前使用下月额度失败',
-    advanceEntitlementMonthlyCycle: '提前使用下月套餐额度',
+    advanceEntitlementMonthlyCycle: '立即启用下一期（30 天）',
     advanceEntitlementMonthlyThresholdHint: '套餐月额度剩余低于或等于 {percent}% 后可提前使用下月额度',
     advanceEntitlementMonthlyAvailableHint: '当前可提前使用下月套餐额度，将扣减约 {duration} 有效期',
     advanceEntitlementMonthlyUnavailableInactive: '仅生效中的套餐权益可提前使用下月额度',

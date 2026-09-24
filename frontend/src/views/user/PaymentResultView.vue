@@ -182,6 +182,9 @@ const statusTitle = computed(() => {
     return t('payment.result.success')
   }
   if (isPending.value) {
+    if (isSubscriptionOrder() && ['PAID', 'RECHARGING'].includes(normalizeOrderStatus(order.value?.status))) {
+      return t('userSubscriptions.lifecycle.processingPayment')
+    }
     return t('payment.result.processing')
   }
   return t('payment.result.failed')
@@ -238,10 +241,12 @@ function displayOrderStatus(status: string): OrderStatus {
 }
 
 function isSuccessStatus(status: string | null | undefined): boolean {
+  if (isSubscriptionOrder()) return normalizeOrderStatus(status) === 'COMPLETED'
   return SUCCESS_STATUSES.has(normalizeOrderStatus(status))
 }
 
 function isPendingStatus(status: string | null | undefined): boolean {
+  if (isSubscriptionOrder() && ['PAID', 'RECHARGING'].includes(normalizeOrderStatus(status))) return true
   return PENDING_STATUSES.has(normalizeOrderStatus(status))
 }
 
@@ -251,6 +256,12 @@ function readRouteQueryString(key: string): string {
     return typeof value[0] === 'string' ? value[0] : ''
   }
   return typeof value === 'string' ? value : ''
+}
+
+function isSubscriptionOrder(): boolean {
+  return order.value && 'order_type' in order.value
+    ? order.value.order_type === 'subscription'
+    : readRouteQueryString('order_type') === 'subscription'
 }
 
 function restoreRecoverySnapshot(context: {

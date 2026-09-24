@@ -59,6 +59,10 @@ const (
 	FieldMonthlyUsageUsd = "monthly_usage_usd"
 	// FieldOveragePolicy holds the string denoting the overage_policy field in the database.
 	FieldOveragePolicy = "overage_policy"
+	// FieldAutoAdvanceMonthly holds the string denoting the auto_advance_monthly field in the database.
+	FieldAutoAdvanceMonthly = "auto_advance_monthly"
+	// FieldLastSeenEventID holds the string denoting the last_seen_event_id field in the database.
+	FieldLastSeenEventID = "last_seen_event_id"
 	// FieldPlanSnapshot holds the string denoting the plan_snapshot field in the database.
 	FieldPlanSnapshot = "plan_snapshot"
 	// FieldSourceID holds the string denoting the source_id field in the database.
@@ -217,6 +221,8 @@ var Columns = []string{
 	FieldWeeklyUsageUsd,
 	FieldMonthlyUsageUsd,
 	FieldOveragePolicy,
+	FieldAutoAdvanceMonthly,
+	FieldLastSeenEventID,
 	FieldPlanSnapshot,
 	FieldSourceID,
 	FieldSourceExternalID,
@@ -278,6 +284,10 @@ var (
 	DefaultOveragePolicy string
 	// OveragePolicyValidator is a validator for the "overage_policy" field. It is called by the builders before save.
 	OveragePolicyValidator func(string) error
+	// DefaultAutoAdvanceMonthly holds the default value on creation for the "auto_advance_monthly" field.
+	DefaultAutoAdvanceMonthly bool
+	// DefaultLastSeenEventID holds the default value on creation for the "last_seen_event_id" field.
+	DefaultLastSeenEventID int64
 	// SourceExternalIDValidator is a validator for the "source_external_id" field. It is called by the builders before save.
 	SourceExternalIDValidator func(string) error
 	// DefaultAssignedAt holds the default value on creation for the "assigned_at" field.
@@ -400,6 +410,16 @@ func ByMonthlyUsageUsd(opts ...sql.OrderTermOption) OrderOption {
 // ByOveragePolicy orders the results by the overage_policy field.
 func ByOveragePolicy(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldOveragePolicy, opts...).ToFunc()
+}
+
+// ByAutoAdvanceMonthly orders the results by the auto_advance_monthly field.
+func ByAutoAdvanceMonthly(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAutoAdvanceMonthly, opts...).ToFunc()
+}
+
+// ByLastSeenEventID orders the results by the last_seen_event_id field.
+func ByLastSeenEventID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastSeenEventID, opts...).ToFunc()
 }
 
 // BySourceID orders the results by the source_id field.

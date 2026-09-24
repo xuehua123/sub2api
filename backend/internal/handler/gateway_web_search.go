@@ -82,14 +82,6 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	// Billing eligibility (same as other requests)
 	subscription, _ := middleware2.GetSubscriptionFromContext(c)
 	subscriptionEntitlement, entitlementBalanceFallback := subscriptionEntitlementUsageContext(c)
-	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
-		status, code, message, retryAfter := billingErrorDetails(err)
-		if retryAfter > 0 {
-			c.Header("Retry-After", strconv.Itoa(retryAfter))
-		}
-		c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
-		return
-	}
 
 	subject, _ := middleware2.GetAuthSubjectFromContext(c)
 	reqLog := requestLogger(c, "handler.gateway.web_search")
@@ -117,6 +109,14 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 	}
 
 	// Use exactly the same scheduling as other requests (SelectAccountWithLoadAwareness handles load, rate limit, sticky, etc.)
+	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(requestCtx, apiKey.User, apiKey, apiKey.Group, subscription, subscriptionEntitlement, service.QuotaPlatform(requestCtx, apiKey)); err != nil {
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		c.JSON(status, gin.H{"error": gin.H{"type": code, "message": message}})
+		return
+	}
 	groupID := apiKey.GroupID
 	if groupID == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
@@ -180,6 +180,14 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 		}
 		account = selected.Account
 		accountReleaseFunc = release
+		if !h.admitEntitlementBeforeForward(c, subscriptionEntitlement, func() {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+				accountReleaseFunc = nil
+			}
+		}, false) {
+			return
+		}
 
 		for {
 			if isXSearch {

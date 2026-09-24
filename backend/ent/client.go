@@ -54,6 +54,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementevent"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -163,6 +164,8 @@ type Client struct {
 	Setting *SettingClient
 	// SubscriptionEntitlement is the client for interacting with the SubscriptionEntitlement builders.
 	SubscriptionEntitlement *SubscriptionEntitlementClient
+	// SubscriptionEntitlementEvent is the client for interacting with the SubscriptionEntitlementEvent builders.
+	SubscriptionEntitlementEvent *SubscriptionEntitlementEventClient
 	// SubscriptionEntitlementFulfillment is the client for interacting with the SubscriptionEntitlementFulfillment builders.
 	SubscriptionEntitlementFulfillment *SubscriptionEntitlementFulfillmentClient
 	// SubscriptionEntitlementGroup is the client for interacting with the SubscriptionEntitlementGroup builders.
@@ -257,6 +260,7 @@ func (c *Client) init() {
 	c.SecuritySecret = NewSecuritySecretClient(c.config)
 	c.Setting = NewSettingClient(c.config)
 	c.SubscriptionEntitlement = NewSubscriptionEntitlementClient(c.config)
+	c.SubscriptionEntitlementEvent = NewSubscriptionEntitlementEventClient(c.config)
 	c.SubscriptionEntitlementFulfillment = NewSubscriptionEntitlementFulfillmentClient(c.config)
 	c.SubscriptionEntitlementGroup = NewSubscriptionEntitlementGroupClient(c.config)
 	c.SubscriptionPlan = NewSubscriptionPlanClient(c.config)
@@ -410,6 +414,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		SecuritySecret:                     NewSecuritySecretClient(cfg),
 		Setting:                            NewSettingClient(cfg),
 		SubscriptionEntitlement:            NewSubscriptionEntitlementClient(cfg),
+		SubscriptionEntitlementEvent:       NewSubscriptionEntitlementEventClient(cfg),
 		SubscriptionEntitlementFulfillment: NewSubscriptionEntitlementFulfillmentClient(cfg),
 		SubscriptionEntitlementGroup:       NewSubscriptionEntitlementGroupClient(cfg),
 		SubscriptionPlan:                   NewSubscriptionPlanClient(cfg),
@@ -490,6 +495,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		SecuritySecret:                     NewSecuritySecretClient(cfg),
 		Setting:                            NewSettingClient(cfg),
 		SubscriptionEntitlement:            NewSubscriptionEntitlementClient(cfg),
+		SubscriptionEntitlementEvent:       NewSubscriptionEntitlementEventClient(cfg),
 		SubscriptionEntitlementFulfillment: NewSubscriptionEntitlementFulfillmentClient(cfg),
 		SubscriptionEntitlementGroup:       NewSubscriptionEntitlementGroupClient(cfg),
 		SubscriptionPlan:                   NewSubscriptionPlanClient(cfg),
@@ -551,14 +557,15 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode,
 		c.ReferralRelation, c.ReferralRelationHistory, c.SecuritySecret, c.Setting,
-		c.SubscriptionEntitlement, c.SubscriptionEntitlementFulfillment,
-		c.SubscriptionEntitlementGroup, c.SubscriptionPlan,
-		c.SubscriptionPlanExternalMapping, c.SubscriptionPlanGroup, c.SupportIssue,
-		c.SupportIssueAttachment, c.SupportIssueComment, c.SupportIssueEvent,
-		c.SupportIssueView, c.TLSFingerprintProfile, c.UpstreamAccountBinding,
-		c.UpstreamConnection, c.UpstreamGroup, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionEntitlement, c.SubscriptionEntitlementEvent,
+		c.SubscriptionEntitlementFulfillment, c.SubscriptionEntitlementGroup,
+		c.SubscriptionPlan, c.SubscriptionPlanExternalMapping, c.SubscriptionPlanGroup,
+		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
+		c.SupportIssueEvent, c.SupportIssueView, c.TLSFingerprintProfile,
+		c.UpstreamAccountBinding, c.UpstreamConnection, c.UpstreamGroup,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -578,14 +585,15 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RechargeOrder, c.RedeemCode, c.ReferralCode,
 		c.ReferralRelation, c.ReferralRelationHistory, c.SecuritySecret, c.Setting,
-		c.SubscriptionEntitlement, c.SubscriptionEntitlementFulfillment,
-		c.SubscriptionEntitlementGroup, c.SubscriptionPlan,
-		c.SubscriptionPlanExternalMapping, c.SubscriptionPlanGroup, c.SupportIssue,
-		c.SupportIssueAttachment, c.SupportIssueComment, c.SupportIssueEvent,
-		c.SupportIssueView, c.TLSFingerprintProfile, c.UpstreamAccountBinding,
-		c.UpstreamConnection, c.UpstreamGroup, c.UsageCleanupTask, c.UsageLog, c.User,
-		c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.SubscriptionEntitlement, c.SubscriptionEntitlementEvent,
+		c.SubscriptionEntitlementFulfillment, c.SubscriptionEntitlementGroup,
+		c.SubscriptionPlan, c.SubscriptionPlanExternalMapping, c.SubscriptionPlanGroup,
+		c.SupportIssue, c.SupportIssueAttachment, c.SupportIssueComment,
+		c.SupportIssueEvent, c.SupportIssueView, c.TLSFingerprintProfile,
+		c.UpstreamAccountBinding, c.UpstreamConnection, c.UpstreamGroup,
+		c.UsageCleanupTask, c.UsageLog, c.User, c.UserAllowedGroup,
+		c.UserAttributeDefinition, c.UserAttributeValue, c.UserPlatformQuota,
+		c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -672,6 +680,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Setting.mutate(ctx, m)
 	case *SubscriptionEntitlementMutation:
 		return c.SubscriptionEntitlement.mutate(ctx, m)
+	case *SubscriptionEntitlementEventMutation:
+		return c.SubscriptionEntitlementEvent.mutate(ctx, m)
 	case *SubscriptionEntitlementFulfillmentMutation:
 		return c.SubscriptionEntitlementFulfillment.mutate(ctx, m)
 	case *SubscriptionEntitlementGroupMutation:
@@ -7455,6 +7465,139 @@ func (c *SubscriptionEntitlementClient) mutate(ctx context.Context, m *Subscript
 	}
 }
 
+// SubscriptionEntitlementEventClient is a client for the SubscriptionEntitlementEvent schema.
+type SubscriptionEntitlementEventClient struct {
+	config
+}
+
+// NewSubscriptionEntitlementEventClient returns a client for the SubscriptionEntitlementEvent from the given config.
+func NewSubscriptionEntitlementEventClient(c config) *SubscriptionEntitlementEventClient {
+	return &SubscriptionEntitlementEventClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `subscriptionentitlementevent.Hooks(f(g(h())))`.
+func (c *SubscriptionEntitlementEventClient) Use(hooks ...Hook) {
+	c.hooks.SubscriptionEntitlementEvent = append(c.hooks.SubscriptionEntitlementEvent, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `subscriptionentitlementevent.Intercept(f(g(h())))`.
+func (c *SubscriptionEntitlementEventClient) Intercept(interceptors ...Interceptor) {
+	c.inters.SubscriptionEntitlementEvent = append(c.inters.SubscriptionEntitlementEvent, interceptors...)
+}
+
+// Create returns a builder for creating a SubscriptionEntitlementEvent entity.
+func (c *SubscriptionEntitlementEventClient) Create() *SubscriptionEntitlementEventCreate {
+	mutation := newSubscriptionEntitlementEventMutation(c.config, OpCreate)
+	return &SubscriptionEntitlementEventCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of SubscriptionEntitlementEvent entities.
+func (c *SubscriptionEntitlementEventClient) CreateBulk(builders ...*SubscriptionEntitlementEventCreate) *SubscriptionEntitlementEventCreateBulk {
+	return &SubscriptionEntitlementEventCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *SubscriptionEntitlementEventClient) MapCreateBulk(slice any, setFunc func(*SubscriptionEntitlementEventCreate, int)) *SubscriptionEntitlementEventCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &SubscriptionEntitlementEventCreateBulk{err: fmt.Errorf("calling to SubscriptionEntitlementEventClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*SubscriptionEntitlementEventCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &SubscriptionEntitlementEventCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for SubscriptionEntitlementEvent.
+func (c *SubscriptionEntitlementEventClient) Update() *SubscriptionEntitlementEventUpdate {
+	mutation := newSubscriptionEntitlementEventMutation(c.config, OpUpdate)
+	return &SubscriptionEntitlementEventUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *SubscriptionEntitlementEventClient) UpdateOne(_m *SubscriptionEntitlementEvent) *SubscriptionEntitlementEventUpdateOne {
+	mutation := newSubscriptionEntitlementEventMutation(c.config, OpUpdateOne, withSubscriptionEntitlementEvent(_m))
+	return &SubscriptionEntitlementEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *SubscriptionEntitlementEventClient) UpdateOneID(id int64) *SubscriptionEntitlementEventUpdateOne {
+	mutation := newSubscriptionEntitlementEventMutation(c.config, OpUpdateOne, withSubscriptionEntitlementEventID(id))
+	return &SubscriptionEntitlementEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for SubscriptionEntitlementEvent.
+func (c *SubscriptionEntitlementEventClient) Delete() *SubscriptionEntitlementEventDelete {
+	mutation := newSubscriptionEntitlementEventMutation(c.config, OpDelete)
+	return &SubscriptionEntitlementEventDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *SubscriptionEntitlementEventClient) DeleteOne(_m *SubscriptionEntitlementEvent) *SubscriptionEntitlementEventDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *SubscriptionEntitlementEventClient) DeleteOneID(id int64) *SubscriptionEntitlementEventDeleteOne {
+	builder := c.Delete().Where(subscriptionentitlementevent.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &SubscriptionEntitlementEventDeleteOne{builder}
+}
+
+// Query returns a query builder for SubscriptionEntitlementEvent.
+func (c *SubscriptionEntitlementEventClient) Query() *SubscriptionEntitlementEventQuery {
+	return &SubscriptionEntitlementEventQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeSubscriptionEntitlementEvent},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a SubscriptionEntitlementEvent entity by its id.
+func (c *SubscriptionEntitlementEventClient) Get(ctx context.Context, id int64) (*SubscriptionEntitlementEvent, error) {
+	return c.Query().Where(subscriptionentitlementevent.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *SubscriptionEntitlementEventClient) GetX(ctx context.Context, id int64) *SubscriptionEntitlementEvent {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *SubscriptionEntitlementEventClient) Hooks() []Hook {
+	return c.hooks.SubscriptionEntitlementEvent
+}
+
+// Interceptors returns the client interceptors.
+func (c *SubscriptionEntitlementEventClient) Interceptors() []Interceptor {
+	return c.inters.SubscriptionEntitlementEvent
+}
+
+func (c *SubscriptionEntitlementEventClient) mutate(ctx context.Context, m *SubscriptionEntitlementEventMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&SubscriptionEntitlementEventCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&SubscriptionEntitlementEventUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&SubscriptionEntitlementEventUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&SubscriptionEntitlementEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown SubscriptionEntitlementEvent mutation op: %q", m.Op())
+	}
+}
+
 // SubscriptionEntitlementFulfillmentClient is a client for the SubscriptionEntitlementFulfillment schema.
 type SubscriptionEntitlementFulfillmentClient struct {
 	config
@@ -11375,9 +11518,10 @@ type (
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionEntitlement,
-		SubscriptionEntitlementFulfillment, SubscriptionEntitlementGroup,
-		SubscriptionPlan, SubscriptionPlanExternalMapping, SubscriptionPlanGroup,
-		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
+		SubscriptionEntitlementEvent, SubscriptionEntitlementFulfillment,
+		SubscriptionEntitlementGroup, SubscriptionPlan,
+		SubscriptionPlanExternalMapping, SubscriptionPlanGroup, SupportIssue,
+		SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
 		SupportIssueView, TLSFingerprintProfile, UpstreamAccountBinding,
 		UpstreamConnection, UpstreamGroup, UsageCleanupTask, UsageLog, User,
 		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
@@ -11394,9 +11538,10 @@ type (
 		PaymentProviderInstance, PendingAuthSession, PromoCode, PromoCodeUsage, Proxy,
 		RechargeOrder, RedeemCode, ReferralCode, ReferralRelation,
 		ReferralRelationHistory, SecuritySecret, Setting, SubscriptionEntitlement,
-		SubscriptionEntitlementFulfillment, SubscriptionEntitlementGroup,
-		SubscriptionPlan, SubscriptionPlanExternalMapping, SubscriptionPlanGroup,
-		SupportIssue, SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
+		SubscriptionEntitlementEvent, SubscriptionEntitlementFulfillment,
+		SubscriptionEntitlementGroup, SubscriptionPlan,
+		SubscriptionPlanExternalMapping, SubscriptionPlanGroup, SupportIssue,
+		SupportIssueAttachment, SupportIssueComment, SupportIssueEvent,
 		SupportIssueView, TLSFingerprintProfile, UpstreamAccountBinding,
 		UpstreamConnection, UpstreamGroup, UsageCleanupTask, UsageLog, User,
 		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,

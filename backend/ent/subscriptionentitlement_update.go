@@ -425,6 +425,41 @@ func (_u *SubscriptionEntitlementUpdate) SetNillableOveragePolicy(v *string) *Su
 	return _u
 }
 
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (_u *SubscriptionEntitlementUpdate) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementUpdate {
+	_u.mutation.SetAutoAdvanceMonthly(v)
+	return _u
+}
+
+// SetNillableAutoAdvanceMonthly sets the "auto_advance_monthly" field if the given value is not nil.
+func (_u *SubscriptionEntitlementUpdate) SetNillableAutoAdvanceMonthly(v *bool) *SubscriptionEntitlementUpdate {
+	if v != nil {
+		_u.SetAutoAdvanceMonthly(*v)
+	}
+	return _u
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (_u *SubscriptionEntitlementUpdate) SetLastSeenEventID(v int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.ResetLastSeenEventID()
+	_u.mutation.SetLastSeenEventID(v)
+	return _u
+}
+
+// SetNillableLastSeenEventID sets the "last_seen_event_id" field if the given value is not nil.
+func (_u *SubscriptionEntitlementUpdate) SetNillableLastSeenEventID(v *int64) *SubscriptionEntitlementUpdate {
+	if v != nil {
+		_u.SetLastSeenEventID(*v)
+	}
+	return _u
+}
+
+// AddLastSeenEventID adds value to the "last_seen_event_id" field.
+func (_u *SubscriptionEntitlementUpdate) AddLastSeenEventID(v int64) *SubscriptionEntitlementUpdate {
+	_u.mutation.AddLastSeenEventID(v)
+	return _u
+}
+
 // SetPlanSnapshot sets the "plan_snapshot" field.
 func (_u *SubscriptionEntitlementUpdate) SetPlanSnapshot(v map[string]interface{}) *SubscriptionEntitlementUpdate {
 	_u.mutation.SetPlanSnapshot(v)
@@ -1035,6 +1070,15 @@ func (_u *SubscriptionEntitlementUpdate) sqlSave(ctx context.Context) (_node int
 	}
 	if value, ok := _u.mutation.OveragePolicy(); ok {
 		_spec.SetField(subscriptionentitlement.FieldOveragePolicy, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AutoAdvanceMonthly(); ok {
+		_spec.SetField(subscriptionentitlement.FieldAutoAdvanceMonthly, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.LastSeenEventID(); ok {
+		_spec.SetField(subscriptionentitlement.FieldLastSeenEventID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLastSeenEventID(); ok {
+		_spec.AddField(subscriptionentitlement.FieldLastSeenEventID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.PlanSnapshot(); ok {
 		_spec.SetField(subscriptionentitlement.FieldPlanSnapshot, field.TypeJSON, value)
@@ -1930,6 +1974,41 @@ func (_u *SubscriptionEntitlementUpdateOne) SetNillableOveragePolicy(v *string) 
 	return _u
 }
 
+// SetAutoAdvanceMonthly sets the "auto_advance_monthly" field.
+func (_u *SubscriptionEntitlementUpdateOne) SetAutoAdvanceMonthly(v bool) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.SetAutoAdvanceMonthly(v)
+	return _u
+}
+
+// SetNillableAutoAdvanceMonthly sets the "auto_advance_monthly" field if the given value is not nil.
+func (_u *SubscriptionEntitlementUpdateOne) SetNillableAutoAdvanceMonthly(v *bool) *SubscriptionEntitlementUpdateOne {
+	if v != nil {
+		_u.SetAutoAdvanceMonthly(*v)
+	}
+	return _u
+}
+
+// SetLastSeenEventID sets the "last_seen_event_id" field.
+func (_u *SubscriptionEntitlementUpdateOne) SetLastSeenEventID(v int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.ResetLastSeenEventID()
+	_u.mutation.SetLastSeenEventID(v)
+	return _u
+}
+
+// SetNillableLastSeenEventID sets the "last_seen_event_id" field if the given value is not nil.
+func (_u *SubscriptionEntitlementUpdateOne) SetNillableLastSeenEventID(v *int64) *SubscriptionEntitlementUpdateOne {
+	if v != nil {
+		_u.SetLastSeenEventID(*v)
+	}
+	return _u
+}
+
+// AddLastSeenEventID adds value to the "last_seen_event_id" field.
+func (_u *SubscriptionEntitlementUpdateOne) AddLastSeenEventID(v int64) *SubscriptionEntitlementUpdateOne {
+	_u.mutation.AddLastSeenEventID(v)
+	return _u
+}
+
 // SetPlanSnapshot sets the "plan_snapshot" field.
 func (_u *SubscriptionEntitlementUpdateOne) SetPlanSnapshot(v map[string]interface{}) *SubscriptionEntitlementUpdateOne {
 	_u.mutation.SetPlanSnapshot(v)
@@ -2570,6 +2649,15 @@ func (_u *SubscriptionEntitlementUpdateOne) sqlSave(ctx context.Context) (_node 
 	}
 	if value, ok := _u.mutation.OveragePolicy(); ok {
 		_spec.SetField(subscriptionentitlement.FieldOveragePolicy, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.AutoAdvanceMonthly(); ok {
+		_spec.SetField(subscriptionentitlement.FieldAutoAdvanceMonthly, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.LastSeenEventID(); ok {
+		_spec.SetField(subscriptionentitlement.FieldLastSeenEventID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedLastSeenEventID(); ok {
+		_spec.AddField(subscriptionentitlement.FieldLastSeenEventID, field.TypeInt64, value)
 	}
 	if value, ok := _u.mutation.PlanSnapshot(); ok {
 		_spec.SetField(subscriptionentitlement.FieldPlanSnapshot, field.TypeJSON, value)

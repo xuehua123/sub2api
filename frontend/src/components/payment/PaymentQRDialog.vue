@@ -1,7 +1,15 @@
 <template>
   <BaseDialog :show="show" :title="dialogTitle" width="narrow" @close="handleClose">
     <!-- QR Code + Polling State -->
-    <div v-if="!success" class="flex flex-col items-center space-y-4">
+    <div v-if="fulfillmentFailed" class="space-y-3 py-4 text-center" role="alert">
+      <p class="font-semibold text-amber-700">{{ t('userSubscriptions.lifecycle.fulfillmentFailed') }}</p>
+      <p class="text-sm text-gray-500">{{ t('userSubscriptions.lifecycle.fulfillmentFailedHint') }}</p>
+    </div>
+    <div v-else-if="fulfillmentPending && !success" class="space-y-3 py-4 text-center" role="status">
+      <p class="font-semibold">{{ t('userSubscriptions.lifecycle.processingPayment') }}</p>
+      <p class="text-sm text-gray-500">{{ t('userSubscriptions.lifecycle.processingPaymentHint') }}</p>
+    </div>
+    <div v-else-if="!success" class="flex flex-col items-center space-y-4">
       <!-- QR Code mode -->
       <template v-if="qrUrl">
         <div class="rounded-2xl bg-white p-4 shadow-sm dark:bg-dark-800">
@@ -56,7 +64,7 @@
     </div>
     <template #footer>
       <div class="flex justify-end gap-3">
-        <button v-if="!success && !expired" class="btn btn-secondary" :disabled="cancelling" @click="handleCancel">
+        <button v-if="!success && !expired && !fulfillmentPending" class="btn btn-secondary" :disabled="cancelling" @click="handleCancel">
           {{ cancelling ? t('common.processing') : t('payment.qr.cancelOrder') }}
         </button>
         <button v-if="success" class="btn btn-primary" @click="handleDone">
@@ -111,6 +119,8 @@ const remainingSeconds = ref(0)
 const expired = ref(false)
 const cancelling = ref(false)
 const success = ref(false)
+const fulfillmentPending = ref(false)
+const fulfillmentFailed = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
 const creditedAmountSymbol = currencySymbol('USD')
 
@@ -200,12 +210,18 @@ async function pollStatus() {
   let order = await paymentStore.pollOrderStatus(props.orderId)
   if (!order) return
   order = await tryRecoverPendingOrder(order)
-  if (order.status === 'COMPLETED' || order.status === 'PAID') {
+  if (order.order_type === 'subscription' && ['PAID', 'RECHARGING'].includes(order.status)) {
+    fulfillmentPending.value = true
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
+  } else if (order.status === 'COMPLETED' || (order.order_type !== 'subscription' && order.status === 'PAID')) {
+    fulfillmentPending.value = false
     cleanup()
     paidOrder.value = order
     success.value = true
     emit('success')
   } else if (order.status === 'EXPIRED' || order.status === 'CANCELLED' || order.status === 'FAILED') {
+    fulfillmentFailed.value = fulfillmentPending.value
+    fulfillmentPending.value = false
     cleanup()
     expired.value = true
   }
@@ -279,7 +295,9 @@ function cleanup() {
 function init() {
   // Reset state
   success.value = false
+  fulfillmentPending.value = false
   paidOrder.value = null
+  fulfillmentFailed.value = false
   expired.value = false
   cancelling.value = false
   qrUrl.value = props.qrCode

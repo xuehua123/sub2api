@@ -195,6 +195,11 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			return nil, ErrLiveConcurrencyFull
 		}
 
+		if err := CompleteEntitlementGenerationAdmission(ctx, nil, 0); err != nil {
+			selection.ReleaseFunc()
+			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
+			return nil, err
+		}
 		created, createErr := s.createUpstreamLiveCall(ctx, account, request, attestation)
 		selection.ReleaseFunc()
 		if createErr != nil {

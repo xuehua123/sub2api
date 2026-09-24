@@ -8,9 +8,13 @@ const showSuccess = vi.hoisted(() => vi.fn())
 const getMySubscriptions = vi.hoisted(() => vi.fn())
 const getGroupPreferences = vi.hoisted(() => vi.fn())
 const getEntitlements = vi.hoisted(() => vi.fn())
+const getEntitlementProgress = vi.hoisted(() => vi.fn())
 const saveGroupPreferences = vi.hoisted(() => vi.fn())
 const advanceMonthlyCycle = vi.hoisted(() => vi.fn())
 const advanceEntitlementMonthlyCycle = vi.hoisted(() => vi.fn())
+const setAutoAdvanceMonthly = vi.hoisted(() => vi.fn())
+const getEntitlementEvents = vi.hoisted(() => vi.fn())
+const acknowledgeEntitlementEvent = vi.hoisted(() => vi.fn())
 
 const messages: Record<string, string> = {
   'userSubscriptions.entitlements.title': 'Plan Entitlements',
@@ -104,14 +108,22 @@ vi.mock('@/stores/app', () => ({
   }),
 }))
 
+vi.mock('@/stores/subscriptions', () => ({
+  useSubscriptionStore: () => ({ invalidateCache: vi.fn() }),
+}))
+
 vi.mock('@/api/subscriptions', () => ({
   default: {
     getMySubscriptions,
     getGroupPreferences,
     getEntitlements,
+    getEntitlementProgress,
     saveGroupPreferences,
     advanceMonthlyCycle,
     advanceEntitlementMonthlyCycle,
+    setAutoAdvanceMonthly,
+    getEntitlementEvents,
+    acknowledgeEntitlementEvent,
   },
 }))
 
@@ -221,6 +233,9 @@ describe('SubscriptionsView entitlement v2 section', () => {
     saveGroupPreferences.mockReset().mockResolvedValue([])
     advanceMonthlyCycle.mockReset()
     advanceEntitlementMonthlyCycle.mockReset().mockResolvedValue({ deducted_seconds: 3600 })
+    setAutoAdvanceMonthly.mockReset()
+    getEntitlementEvents.mockReset().mockResolvedValue([])
+    acknowledgeEntitlementEvent.mockReset().mockResolvedValue(undefined)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
@@ -356,13 +371,105 @@ describe('SubscriptionsView entitlement v2 section', () => {
     await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
     await flushPromises()
 
-    expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22)
+    expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22, {
+      monthly_window_start: entitlement.monthly_window_start,
+      expires_at: entitlement.expires_at
+    })
     expect(advanceMonthlyCycle).not.toHaveBeenCalled()
     expect(getMySubscriptions).toHaveBeenCalledTimes(2)
     expect(getEntitlements).toHaveBeenCalledTimes(2)
     expect(showSuccess).toHaveBeenCalled()
   })
 
+  it('requires consent and persists automatic advance without starting a cycle', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, auto_advance_monthly: false }])
+    setAutoAdvanceMonthly.mockResolvedValue({ ...entitlement, auto_advance_monthly: true })
+    const wrapper = await mountView()
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    await wrapper.get('input[role="switch"]').setValue(true)
+    expect(setAutoAdvanceMonthly).not.toHaveBeenCalled()
+    await wrapper.get('input[role="switch"]').setValue(true)
+    await flushPromises()
+    expect(setAutoAdvanceMonthly).toHaveBeenCalledWith(22, true)
+    expect((wrapper.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(true)
+    expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('uses server eligibility and acknowledges a persistent renewal receipt', async () => {
+    const event = { id: 9, entitlement_id: 22, kind: 'renewed', source_type: 'payment_order', previous_expires_at: '2026-07-01T00:00:00Z', new_expires_at: '2026-07-31T00:00:00Z', validity_seconds: 2592000, created_at: '2026-06-14T10:00:00Z' }
+    getEntitlements.mockResolvedValue([{
+      ...entitlement, monthly_usage_usd: 100, latest_renewal: event, last_seen_event_id: 0,
+      monthly_cycle_preview: { can_advance: false, reason: 'below_threshold', has_future_cycle: true }
+    }])
+    const wrapper = await mountView()
+    expect(wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('userSubscriptions.lifecycle.kind.renewed')
+    const acknowledge = wrapper.findAll('button').find(button => button.text() === 'userSubscriptions.lifecycle.acknowledge')!
+    await acknowledge.trigger('click')
+    await flushPromises()
+    expect(acknowledgeEntitlementEvent).toHaveBeenCalledWith(22, 9)
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('paginates history beyond the second page without changing the month card', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement }])
+    const page = (start: number) => Array.from({ length: 20 }, (_, index) => ({
+      id: start - index, entitlement_id: 22, kind: 'renewed', source_type: 'payment_order',
+      previous_expires_at: null, new_expires_at: entitlement.expires_at, validity_seconds: 2592000,
+      created_at: '2026-06-14T10:00:00Z'
+    }))
+    getEntitlementEvents.mockResolvedValueOnce(page(60)).mockResolvedValueOnce(page(40)).mockResolvedValueOnce([])
+    const wrapper = await mountView()
+    await wrapper.findAll('button').find(button => button.text() === 'userSubscriptions.lifecycle.history')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'userSubscriptions.lifecycle.loadMore')!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('button').find(button => button.text() === 'userSubscriptions.lifecycle.loadMore')!.trigger('click')
+    await flushPromises()
+    expect(getEntitlementEvents.mock.calls).toEqual([[22, undefined], [22, 41], [22, 21]])
+    expect(wrapper.text()).not.toContain('userSubscriptions.lifecycle.loadMore')
+    wrapper.unmount()
+  })
+
+  it('preserves null server window in manual confirmation', async () => {
+    const snapshot = { ...entitlement, monthly_usage_usd: 95,
+      monthly_cycle_preview: { can_advance: true, reason: 'available', has_future_cycle: true,
+        monthly_window_start: null, current_expires_at: entitlement.expires_at,
+        new_expires_at: '2026-12-01T00:00:00Z', next_reset_at: '2026-07-14T12:00:00Z',
+        deducted_seconds: 3600, remaining_quota: 5, monthly_limit: 100 }
+    }
+    getEntitlements.mockResolvedValue([snapshot])
+    getEntitlementProgress.mockResolvedValue(snapshot)
+    const wrapper = await mountView()
+    try {
+      await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
+      await flushPromises()
+      expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22, {
+        monthly_window_start: null, expires_at: entitlement.expires_at
+      })
+    } finally { wrapper.unmount() }
+  })
+
+  it('refreshes opened history after automatic advance', async () => {
+    const receipt = { id: 1, entitlement_id: 22, kind: 'renewed', source_type: 'payment_order',
+      previous_expires_at: null, new_expires_at: entitlement.expires_at, validity_seconds: 2592000,
+      created_at: '2026-06-14T10:00:00Z' }
+    getEntitlements.mockResolvedValue([{ ...entitlement }])
+    getEntitlementEvents.mockResolvedValue([receipt])
+    const wrapper = await mountView()
+    try {
+      const button = () => wrapper.findAll('button').find(b => b.text() === 'userSubscriptions.lifecycle.history')!
+      await button().trigger('click'); await flushPromises()
+      const advanced = { ...receipt, id: 2, kind: 'automatic_advance', validity_seconds: -3600 }
+      getEntitlementEvents.mockResolvedValue([advanced, receipt])
+      getEntitlements.mockResolvedValue([{ ...entitlement, latest_cycle: advanced }])
+      await vi.advanceTimersByTimeAsync(30_000); await flushPromises()
+      await button().trigger('click'); await button().trigger('click'); await flushPromises()
+      expect(getEntitlementEvents).toHaveBeenCalledTimes(2)
+    } finally { wrapper.unmount() }
+  })
   it('keeps the legacy subscription monthly advance button working', async () => {
     getMySubscriptions.mockResolvedValue([{
       ...legacySubscription,

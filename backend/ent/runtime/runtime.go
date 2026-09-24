@@ -45,6 +45,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
 	"github.com/Wei-Shaw/sub2api/ent/setting"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlement"
+	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementevent"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementfulfillment"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionentitlementgroup"
 	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
@@ -2312,14 +2313,42 @@ func init() {
 	subscriptionentitlement.DefaultOveragePolicy = subscriptionentitlementDescOveragePolicy.Default.(string)
 	// subscriptionentitlement.OveragePolicyValidator is a validator for the "overage_policy" field. It is called by the builders before save.
 	subscriptionentitlement.OveragePolicyValidator = subscriptionentitlementDescOveragePolicy.Validators[0].(func(string) error)
+	// subscriptionentitlementDescAutoAdvanceMonthly is the schema descriptor for auto_advance_monthly field.
+	subscriptionentitlementDescAutoAdvanceMonthly := subscriptionentitlementFields[19].Descriptor()
+	// subscriptionentitlement.DefaultAutoAdvanceMonthly holds the default value on creation for the auto_advance_monthly field.
+	subscriptionentitlement.DefaultAutoAdvanceMonthly = subscriptionentitlementDescAutoAdvanceMonthly.Default.(bool)
+	// subscriptionentitlementDescLastSeenEventID is the schema descriptor for last_seen_event_id field.
+	subscriptionentitlementDescLastSeenEventID := subscriptionentitlementFields[20].Descriptor()
+	// subscriptionentitlement.DefaultLastSeenEventID holds the default value on creation for the last_seen_event_id field.
+	subscriptionentitlement.DefaultLastSeenEventID = subscriptionentitlementDescLastSeenEventID.Default.(int64)
 	// subscriptionentitlementDescSourceExternalID is the schema descriptor for source_external_id field.
-	subscriptionentitlementDescSourceExternalID := subscriptionentitlementFields[21].Descriptor()
+	subscriptionentitlementDescSourceExternalID := subscriptionentitlementFields[23].Descriptor()
 	// subscriptionentitlement.SourceExternalIDValidator is a validator for the "source_external_id" field. It is called by the builders before save.
 	subscriptionentitlement.SourceExternalIDValidator = subscriptionentitlementDescSourceExternalID.Validators[0].(func(string) error)
 	// subscriptionentitlementDescAssignedAt is the schema descriptor for assigned_at field.
-	subscriptionentitlementDescAssignedAt := subscriptionentitlementFields[24].Descriptor()
+	subscriptionentitlementDescAssignedAt := subscriptionentitlementFields[26].Descriptor()
 	// subscriptionentitlement.DefaultAssignedAt holds the default value on creation for the assigned_at field.
 	subscriptionentitlement.DefaultAssignedAt = subscriptionentitlementDescAssignedAt.Default.(func() time.Time)
+	subscriptionentitlementeventFields := schema.SubscriptionEntitlementEvent{}.Fields()
+	_ = subscriptionentitlementeventFields
+	// subscriptionentitlementeventDescKind is the schema descriptor for kind field.
+	subscriptionentitlementeventDescKind := subscriptionentitlementeventFields[2].Descriptor()
+	// subscriptionentitlementevent.KindValidator is a validator for the "kind" field. It is called by the builders before save.
+	subscriptionentitlementevent.KindValidator = subscriptionentitlementeventDescKind.Validators[0].(func(string) error)
+	// subscriptionentitlementeventDescSourceType is the schema descriptor for source_type field.
+	subscriptionentitlementeventDescSourceType := subscriptionentitlementeventFields[3].Descriptor()
+	// subscriptionentitlementevent.DefaultSourceType holds the default value on creation for the source_type field.
+	subscriptionentitlementevent.DefaultSourceType = subscriptionentitlementeventDescSourceType.Default.(string)
+	// subscriptionentitlementevent.SourceTypeValidator is a validator for the "source_type" field. It is called by the builders before save.
+	subscriptionentitlementevent.SourceTypeValidator = subscriptionentitlementeventDescSourceType.Validators[0].(func(string) error)
+	// subscriptionentitlementeventDescValiditySeconds is the schema descriptor for validity_seconds field.
+	subscriptionentitlementeventDescValiditySeconds := subscriptionentitlementeventFields[6].Descriptor()
+	// subscriptionentitlementevent.DefaultValiditySeconds holds the default value on creation for the validity_seconds field.
+	subscriptionentitlementevent.DefaultValiditySeconds = subscriptionentitlementeventDescValiditySeconds.Default.(int64)
+	// subscriptionentitlementeventDescCreatedAt is the schema descriptor for created_at field.
+	subscriptionentitlementeventDescCreatedAt := subscriptionentitlementeventFields[7].Descriptor()
+	// subscriptionentitlementevent.DefaultCreatedAt holds the default value on creation for the created_at field.
+	subscriptionentitlementevent.DefaultCreatedAt = subscriptionentitlementeventDescCreatedAt.Default.(func() time.Time)
 	subscriptionentitlementfulfillmentFields := schema.SubscriptionEntitlementFulfillment{}.Fields()
 	_ = subscriptionentitlementfulfillmentFields
 	// subscriptionentitlementfulfillmentDescSourceType is the schema descriptor for source_type field.

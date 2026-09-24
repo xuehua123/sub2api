@@ -62,8 +62,12 @@ type SubscriptionEntitlement struct {
 	WeeklyUsageUSD  float64
 	MonthlyUsageUSD float64
 
-	OveragePolicy string
-	PlanSnapshot  map[string]any
+	OveragePolicy      string
+	AutoAdvanceMonthly bool
+	LastSeenEventID    int64
+	LatestRenewal      *SubscriptionEntitlementEvent
+	LatestCycle        *SubscriptionEntitlementEvent
+	PlanSnapshot       map[string]any
 
 	PurchasePrice    *float64
 	PurchaseCurrency string
@@ -225,6 +229,7 @@ type SubscriptionEntitlementMonthlyCycleUpdate struct {
 }
 
 type SubscriptionEntitlementCycleResetLog struct {
+	Automatic     bool
 	UserID        int64
 	EntitlementID int64
 	PlanID        *int64

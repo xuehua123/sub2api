@@ -1225,6 +1225,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 						}
 					}
 				}
+				if hooks != nil && hooks.BeforeUpstreamRequest != nil {
+					if err := hooks.BeforeUpstreamRequest(turnNo); err != nil {
+						return out, nil, err
+					}
+				}
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
 				_, actualModel := usageMeta.turnModels(requestModelForThisFrame)
 				SetOpsUpstreamModel(c, actualModel)
@@ -1263,6 +1268,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				"native remote compaction requires a v2-enabled upstream websocket, please reconnect",
 				nil,
 			)
+		}
+	}
+	if hooks != nil && hooks.BeforeUpstreamRequest != nil {
+		if err := hooks.BeforeUpstreamRequest(1); err != nil {
+			return err
 		}
 	}
 	firstWriteCtx, cancelFirstWrite := context.WithTimeout(ctx, s.openAIWSWriteTimeout())

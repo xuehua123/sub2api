@@ -65,6 +65,17 @@
                         end: formatDateTime(entitlement.expires_at)
                       }) }}
                     </p>
+                    <div v-if="entitlement.latest_renewal && entitlement.latest_renewal.id > (entitlement.last_seen_event_id || 0)" class="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200" role="status">
+                      <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                          <div class="font-semibold">{{ t('userSubscriptions.lifecycle.kind.' + entitlement.latest_renewal.kind) }}</div>
+                          <div v-if="entitlement.latest_renewal.validity_seconds">{{ eventDuration(entitlement.latest_renewal) }}</div>
+                          <div v-if="entitlement.latest_renewal.previous_expires_at" class="mt-1 break-words">{{ formatDateTime(entitlement.latest_renewal.previous_expires_at) }} → {{ formatDateTime(entitlement.latest_renewal.new_expires_at) }}</div>
+                          <div>{{ t('userSubscriptions.lifecycle.currentExpiry') }}: {{ formatDateTime(entitlement.expires_at) }}</div>
+                        </div>
+                        <button type="button" class="shrink-0 rounded px-2 py-1 font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50" @click="acknowledgeLatestRenewal(entitlement)">{{ t('userSubscriptions.lifecycle.acknowledge') }}</button>
+                      </div>
+                    </div>
                     <p
                       v-if="entitlement.legacy_subscription_id"
                       class="mt-1 text-xs text-gray-500 dark:text-dark-400"
@@ -170,11 +181,20 @@
                 </div>
 
                 <div class="rounded-lg border border-gray-100 bg-gray-50/70 p-2.5 dark:border-dark-700 dark:bg-dark-900/70">
+                  <div v-if="entitlement.monthly_limit_usd || entitlement.auto_advance_monthly" class="mb-2 flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <div class="text-xs font-semibold text-gray-800 dark:text-gray-200">{{ t('userSubscriptions.lifecycle.autoLabel') }}</div>
+                      <p class="mt-1 text-[10px] leading-snug text-gray-500 dark:text-dark-400">{{ t('userSubscriptions.lifecycle.autoHint') }}</p>
+                    </div>
+                    <input :aria-label="t('userSubscriptions.lifecycle.autoLabel')" type="checkbox" role="switch" class="mt-0.5 h-4 w-4 shrink-0 accent-primary-600" :checked="entitlement.auto_advance_monthly === true" :disabled="pendingLifecycleActions > 0 || (!entitlement.auto_advance_monthly && entitlementStatusKey(entitlement) !== 'active')" @change="handleAutoAdvanceChange(entitlement, $event)" />
+                  </div>
+                  <div v-if="entitlement.monthly_cycle_preview?.has_future_cycle" class="mb-2 text-[10px] text-emerald-700 dark:text-emerald-300">{{ t('userSubscriptions.lifecycle.futureAvailable') }}</div>
+                  <div v-else-if="entitlement.monthly_limit_usd" class="mb-2 text-[10px] text-amber-700 dark:text-amber-300">{{ t('userSubscriptions.lifecycle.futureUnavailable') }}</div>
                   <button
                     type="button"
                     data-testid="entitlement-advance-monthly-cycle"
                     class="flex w-full items-center justify-center rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-400 dark:border-primary-900/60 dark:bg-primary-900/20 dark:text-primary-200 dark:hover:bg-primary-900/30 dark:disabled:border-dark-700 dark:disabled:bg-dark-800 dark:disabled:text-dark-500"
-                    :disabled="advancingEntitlementId === entitlement.id || !canAdvanceEntitlementMonthlyCycle(entitlement)"
+                    :disabled="pendingLifecycleActions > 0 || !(entitlement.monthly_cycle_preview?.can_advance ?? canAdvanceEntitlementMonthlyCycle(entitlement))"
                     :title="advanceEntitlementMonthlyCycleHint(entitlement)"
                     @click="advanceEntitlementMonthlyCycle(entitlement)"
                   >
@@ -190,6 +210,24 @@
                   >
                     {{ advanceEntitlementMonthlyCycleHint(entitlement) }}
                   </p>
+                  <p v-if="entitlement.latest_cycle" class="mt-2 border-l-2 border-sky-500 pl-2 text-xs text-sky-700 dark:text-sky-300" role="status">
+                    {{ t('userSubscriptions.lifecycle.kind.' + entitlement.latest_cycle.kind) }} · {{ formatDateTimeToMinute(entitlement.latest_cycle.created_at) }}
+                    <span class="mt-1 block">{{ t('userSubscriptions.lifecycle.currentExpiry') }}: {{ formatDateTime(entitlement.expires_at) }}</span>
+                  </p>
+                  <button type="button" class="mt-2 w-full text-left text-[11px] font-medium text-primary-700 hover:underline dark:text-primary-300" @click="toggleEntitlementHistory(entitlement.id)">{{ t('userSubscriptions.lifecycle.history') }}</button>
+                  <div v-if="openHistoryId === entitlement.id" class="mt-2 border-t border-gray-200 pt-2 dark:border-dark-700">
+                    <p v-if="!entitlementEvents[String(entitlement.id)]?.length && !entitlementEventsLoading[String(entitlement.id)]" class="text-[10px] text-gray-500 dark:text-dark-400">{{ t('userSubscriptions.lifecycle.emptyHistory') }}</p>
+                    <p v-if="entitlementEventsLoading[String(entitlement.id)]" class="text-[10px] text-gray-500 dark:text-dark-400">{{ t('common.loading') }}</p>
+                    <div v-for="event in entitlementEvents[String(entitlement.id)] || []" :key="event.id" class="space-y-1 border-b border-gray-100 py-2 text-xs text-gray-600 dark:border-dark-700 dark:text-gray-300">
+                      <div class="flex flex-wrap justify-between gap-2">
+                        <span class="font-medium">{{ t('userSubscriptions.lifecycle.kind.' + event.kind) }}<span v-if="['payment_order', 'redeem_code', 'admin_subscription_assign'].includes(event.source_type)" class="ml-1 text-gray-400">· {{ t('userSubscriptions.lifecycle.source.' + event.source_type) }}</span></span>
+                        <span>{{ formatDateTimeToMinute(event.created_at) }}</span>
+                      </div>
+                      <p v-if="event.validity_seconds">{{ eventDuration(event) }}</p>
+                      <p class="break-words"><span v-if="event.previous_expires_at">{{ formatDateTime(event.previous_expires_at) }} → </span>{{ formatDateTime(event.new_expires_at) }}</p>
+                    </div>
+                    <button v-if="entitlementEventsHasMore[String(entitlement.id)]" type="button" :disabled="entitlementEventsLoading[String(entitlement.id)]" class="mt-1 text-xs text-primary-700 hover:underline dark:text-primary-300" @click="loadMoreEntitlementEvents(entitlement)">{{ t('userSubscriptions.lifecycle.loadMore') }}</button>
+                  </div>
                 </div>
               </div>
             </article>
@@ -595,13 +633,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { useSubscriptionStore } from '@/stores/subscriptions'
 import subscriptionsAPI from '@/api/subscriptions'
 import { paymentAPI } from '@/api/payment'
-import type { SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
+import type { EntitlementEvent, SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
 import type { SubscriptionPlan } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -632,6 +671,7 @@ function platformAccentDotClass(p: string): string {
 const { t, locale } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
+const subscriptionStore = useSubscriptionStore()
 
 const subscriptions = ref<UserSubscription[]>([])
 const entitlements = ref<UserEntitlement[]>([])
@@ -641,6 +681,17 @@ const switchPreferences = ref<SubscriptionGroupPreference[]>([])
 const savingPreferences = ref(false)
 const advancingSubscriptionId = ref<number | null>(null)
 const advancingEntitlementId = ref<number | null>(null)
+const autoAdvanceSavingId = ref<number | null>(null)
+const pendingLifecycleActions = ref(0)
+const openHistoryId = ref<number | null>(null)
+const entitlementEvents = ref<Record<string, EntitlementEvent[]>>({})
+const entitlementEventsLoading = ref<Record<string, boolean>>({})
+const entitlementEventsHasMore = ref<Record<string, boolean>>({})
+const entitlementEventsVersion: Record<string, number> = {}
+let entitlementRefreshVersion = 0
+let entitlementRefreshTimer: ReturnType<typeof setInterval> | null = null
+let entitlementRefreshInFlight = false
+let viewActive = false
 const draggedPreferenceGroupID = ref<number | null>(null)
 const deletingSubscription = ref(false)
 const monthlyCycleAdvanceThreshold = 0.9
@@ -1205,6 +1256,7 @@ function advanceMonthlyCycleHint(subscription: UserSubscription): string {
 }
 
 function canAdvanceEntitlementMonthlyCycle(entitlement: UserEntitlement): boolean {
+  if (entitlement.monthly_cycle_preview) return entitlement.monthly_cycle_preview.can_advance
   const limit = entitlement.monthly_limit_usd
   if (
     entitlementStatusKey(entitlement) !== 'active' ||
@@ -1239,6 +1291,9 @@ function hasReachedEntitlementMonthlyCycleAdvanceThreshold(entitlement: UserEnti
 }
 
 function advanceEntitlementMonthlyCycleHint(entitlement: UserEntitlement): string {
+  if (entitlement.monthly_cycle_preview) {
+    return t('userSubscriptions.lifecycle.reason.' + entitlement.monthly_cycle_preview.reason)
+  }
   const limit = entitlement.monthly_limit_usd
   if (entitlementStatusKey(entitlement) !== 'active') {
     return t('userSubscriptions.advanceEntitlementMonthlyUnavailableInactive')
@@ -1376,27 +1431,53 @@ async function advanceMonthlyCycle(subscription: UserSubscription) {
 }
 
 async function advanceEntitlementMonthlyCycle(entitlement: UserEntitlement) {
+  if (pendingLifecycleActions.value) return
+  pendingLifecycleActions.value++
+  try { await performEntitlementMonthlyAdvance(entitlement) }
+  finally { pendingLifecycleActions.value-- }
+}
+
+async function performEntitlementMonthlyAdvance(entitlement: UserEntitlement) {
   if (!canAdvanceEntitlementMonthlyCycle(entitlement)) return
-  const entitlementName = entitlementDisplayName(entitlement)
-  const deductedSeconds = estimateEntitlementDeductedSeconds(entitlement)
-  const limit = entitlement.monthly_limit_usd || 0
-  const used = entitlement.monthly_usage_usd || 0
-  const remaining = Math.max(limit - used, 0)
-  if (!window.confirm(t('userSubscriptions.advanceEntitlementMonthlyConfirm', {
-    entitlement: entitlementName,
+  entitlementRefreshVersion++
+  if (entitlement.monthly_cycle_preview) {
+    try {
+      entitlement = await subscriptionsAPI.getEntitlementProgress(entitlement.id)
+      const index = entitlements.value.findIndex(item => item.id === entitlement.id)
+      if (index >= 0) entitlements.value[index] = entitlement
+      if (!canAdvanceEntitlementMonthlyCycle(entitlement)) return
+    } catch {
+      appStore.showError(t('userSubscriptions.advanceEntitlementMonthlyFailed'))
+      return
+    }
+  }
+  const preview = entitlement.monthly_cycle_preview
+  const deductedSeconds = preview?.deducted_seconds ?? estimateEntitlementDeductedSeconds(entitlement)
+  const limit = preview?.monthly_limit ?? entitlement.monthly_limit_usd ?? 0
+  const remaining = preview?.remaining_quota ?? Math.max(limit - (entitlement.monthly_usage_usd || 0), 0)
+  const currentExpiry = preview?.current_expires_at ?? entitlement.expires_at
+  const newExpiresAt = preview?.new_expires_at ?? new Date(new Date(currentExpiry).getTime() - deductedSeconds * 1000).toISOString()
+  let confirmation = t('userSubscriptions.lifecycle.advanceConfirm', {
+    limit: formatCurrency(limit),
     duration: formatPreciseDuration(deductedSeconds),
-    used: used.toFixed(2),
-    limit: limit.toFixed(2),
-    remaining: remaining.toFixed(2)
-  }))) {
+    expires: formatDateTime(newExpiresAt)
+  }) + '\n' + t('userSubscriptions.lifecycle.remaining') + ': ' + formatCurrency(remaining)
+  confirmation += '\n' + t('userSubscriptions.lifecycle.currentExpiry') + ': ' + formatDateTime(currentExpiry) + ' → ' + formatDateTime(newExpiresAt)
+  if (preview?.next_reset_at) confirmation += '\n' + t('userSubscriptions.lifecycle.newReset') + ': ' + formatDateTime(preview.next_reset_at)
+  if (!window.confirm(confirmation)) {
     return
   }
   try {
     advancingEntitlementId.value = entitlement.id
-    const result = await subscriptionsAPI.advanceEntitlementMonthlyCycle(entitlement.id)
+    const result = await subscriptionsAPI.advanceEntitlementMonthlyCycle(entitlement.id, {
+      monthly_window_start: preview ? preview.monthly_window_start : entitlement.monthly_window_start,
+      expires_at: currentExpiry
+    })
     appStore.showSuccess(
       t('userSubscriptions.advanceEntitlementMonthlySuccess', { duration: formatPreciseDuration(result.deducted_seconds) })
     )
+    subscriptionStore.invalidateCache()
+    invalidateEntitlementHistory(entitlement.id)
     await loadSubscriptions()
   } catch (error: any) {
     appStore.showError(error.response?.data?.detail || t('userSubscriptions.advanceEntitlementMonthlyFailed'))
@@ -1405,7 +1486,136 @@ async function advanceEntitlementMonthlyCycle(entitlement: UserEntitlement) {
   }
 }
 
+async function handleAutoAdvanceChange(entitlement: UserEntitlement, event: Event) {
+  const input = event.target as HTMLInputElement
+  if (pendingLifecycleActions.value) { input.checked = entitlement.auto_advance_monthly === true; return }
+  const enabled = input.checked
+  if (enabled && !window.confirm(t('userSubscriptions.lifecycle.autoConfirm'))) {
+    input.checked = false
+    return
+  }
+  try {
+    entitlementRefreshVersion++
+    pendingLifecycleActions.value++
+    autoAdvanceSavingId.value = entitlement.id
+    const updated = await subscriptionsAPI.setAutoAdvanceMonthly(entitlement.id, enabled)
+    const index = entitlements.value.findIndex((item) => item.id === entitlement.id)
+    if (index >= 0) entitlements.value[index] = updated
+    subscriptionStore.invalidateCache()
+    appStore.showSuccess(t('common.saved'))
+  } catch (error: any) {
+    input.checked = !enabled
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.lifecycle.saveFailed'))
+  } finally {
+    autoAdvanceSavingId.value = null
+    pendingLifecycleActions.value--
+  }
+}
+
+async function toggleEntitlementHistory(entitlementID: number) {
+  if (openHistoryId.value === entitlementID) {
+    openHistoryId.value = null
+    return
+  }
+  openHistoryId.value = entitlementID
+  const key = String(entitlementID)
+  if (entitlementEvents.value[key]) return
+  await loadEntitlementEvents(entitlementID)
+}
+
+async function loadEntitlementEvents(entitlementID: number, before?: number) {
+  const key = String(entitlementID)
+  if (entitlementEventsLoading.value[key]) return
+  const version = entitlementEventsVersion[key] || 0
+  entitlementEventsLoading.value = { ...entitlementEventsLoading.value, [key]: true }
+  try {
+    const events = await subscriptionsAPI.getEntitlementEvents(entitlementID, before)
+    if (version !== (entitlementEventsVersion[key] || 0)) return
+    entitlementEventsHasMore.value[key] = events.length === 20
+    entitlementEvents.value = {
+      ...entitlementEvents.value,
+      [key]: before ? [...(entitlementEvents.value[key] || []), ...events] : events
+    }
+  } catch (error) {
+    console.error('Failed to load entitlement events:', error)
+    appStore.showError(t('userSubscriptions.lifecycle.loadFailed'))
+  } finally {
+    if (version === (entitlementEventsVersion[key] || 0)) {
+      entitlementEventsLoading.value = { ...entitlementEventsLoading.value, [key]: false }
+    }
+  }
+}
+
+function loadMoreEntitlementEvents(entitlement: UserEntitlement) {
+  const events = entitlementEvents.value[String(entitlement.id)] || []
+  const before = events.at(-1)?.id
+  if (before) void loadEntitlementEvents(entitlement.id, before)
+}
+
+function eventDuration(event: EntitlementEvent): string {
+  return t(event.validity_seconds < 0 ? 'userSubscriptions.lifecycle.removedDuration' : 'userSubscriptions.lifecycle.addedDuration', {
+    duration: formatPreciseDuration(Math.abs(event.validity_seconds))
+  })
+}
+
+async function acknowledgeLatestRenewal(entitlement: UserEntitlement) {
+  if (pendingLifecycleActions.value) return
+  const event = entitlement.latest_renewal
+  if (!event) return
+  try {
+    pendingLifecycleActions.value++
+    entitlementRefreshVersion++
+    await subscriptionsAPI.acknowledgeEntitlementEvent(entitlement.id, event.id)
+    entitlement.last_seen_event_id = Math.max(entitlement.last_seen_event_id || 0, event.id)
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('userSubscriptions.lifecycle.loadFailed'))
+  } finally {
+    pendingLifecycleActions.value--
+  }
+}
+
+function invalidateEntitlementHistory(id: number) {
+  const key = String(id)
+  entitlementEventsVersion[key] = (entitlementEventsVersion[key] || 0) + 1
+  delete entitlementEvents.value[key]
+  delete entitlementEventsHasMore.value[key]
+  entitlementEventsLoading.value[key] = false
+  if (openHistoryId.value === id) void loadEntitlementEvents(id)
+}
+
+async function refreshVisibleEntitlements() {
+  if (!viewActive || document.hidden || loading.value || pendingLifecycleActions.value || entitlementRefreshInFlight) return
+  const version = entitlementRefreshVersion
+  entitlementRefreshInFlight = true
+  try {
+    const records = await subscriptionsAPI.getEntitlements()
+    if (viewActive && version === entitlementRefreshVersion) {
+      const previous = new Map(entitlements.value.map(item => [item.id, item]))
+      for (const item of records) {
+        const old = previous.get(item.id)
+        if (old?.latest_renewal?.id !== item.latest_renewal?.id || old?.latest_cycle?.id !== item.latest_cycle?.id) {
+          invalidateEntitlementHistory(item.id)
+        }
+      }
+      entitlements.value = records
+    }
+  } catch {
+    // Keep the last successful snapshot during a background refresh failure.
+  } finally {
+    entitlementRefreshInFlight = false
+  }
+}
+
 onMounted(() => {
+  viewActive = true
   loadSubscriptions()
+  entitlementRefreshTimer = setInterval(refreshVisibleEntitlements, 30_000)
+  document.addEventListener('visibilitychange', refreshVisibleEntitlements)
+})
+
+onUnmounted(() => {
+  viewActive = false
+  if (entitlementRefreshTimer) clearInterval(entitlementRefreshTimer)
+  document.removeEventListener('visibilitychange', refreshVisibleEntitlements)
 })
 </script>

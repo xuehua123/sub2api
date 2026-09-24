@@ -477,6 +477,18 @@ func (f SubscriptionEntitlementFunc) Mutate(ctx context.Context, m ent.Mutation)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionEntitlementMutation", m)
 }
 
+// The SubscriptionEntitlementEventFunc type is an adapter to allow the use of ordinary
+// function as SubscriptionEntitlementEvent mutator.
+type SubscriptionEntitlementEventFunc func(context.Context, *ent.SubscriptionEntitlementEventMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f SubscriptionEntitlementEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.SubscriptionEntitlementEventMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.SubscriptionEntitlementEventMutation", m)
+}
+
 // The SubscriptionEntitlementFulfillmentFunc type is an adapter to allow the use of ordinary
 // function as SubscriptionEntitlementFulfillment mutator.
 type SubscriptionEntitlementFulfillmentFunc func(context.Context, *ent.SubscriptionEntitlementFulfillmentMutation) (ent.Value, error)

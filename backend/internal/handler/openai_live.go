@@ -83,6 +83,21 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Billing service unavailable")
 		return
 	}
+
+	userRelease, acquired, err := h.concurrencyHelper.TryAcquireUserSlot(
+		c.Request.Context(),
+		subject.UserID,
+		subject.Concurrency,
+	)
+	if err != nil {
+		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live concurrency unavailable")
+		return
+	}
+	if !acquired {
+		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Live concurrency limit reached")
+		return
+	}
+	defer userRelease()
 	if err := h.billingCacheService.CheckBillingEligibilityWithEntitlement(
 		c.Request.Context(),
 		apiKey.User,
@@ -99,21 +114,6 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 		h.errorResponse(c, status, code, message)
 		return
 	}
-
-	userRelease, acquired, err := h.concurrencyHelper.TryAcquireUserSlot(
-		c.Request.Context(),
-		subject.UserID,
-		subject.Concurrency,
-	)
-	if err != nil {
-		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Live concurrency unavailable")
-		return
-	}
-	if !acquired {
-		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Live concurrency limit reached")
-		return
-	}
-	defer userRelease()
 
 	identity := liveCallIdentity(c, apiKey, subject.UserID, subscription, entitlement, entitlementBalanceFallback)
 	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, subject.Concurrency)
@@ -190,6 +190,11 @@ func liveCallIdentity(
 }
 
 func (h *OpenAIGatewayHandler) writeLiveCreateError(c *gin.Context, err error) {
+	if isEntitlementAdmissionError(err) {
+		status, code, message, _ := billingErrorDetails(err)
+		h.errorResponse(c, status, code, message)
+		return
+	}
 	switch {
 	case errors.Is(err, service.ErrLiveConcurrencyFull):
 		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Live concurrency limit reached")

@@ -165,6 +165,16 @@ func OveragePolicy(v string) predicate.SubscriptionEntitlement {
 	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldOveragePolicy, v))
 }
 
+// AutoAdvanceMonthly applies equality check predicate on the "auto_advance_monthly" field. It's identical to AutoAdvanceMonthlyEQ.
+func AutoAdvanceMonthly(v bool) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldAutoAdvanceMonthly, v))
+}
+
+// LastSeenEventID applies equality check predicate on the "last_seen_event_id" field. It's identical to LastSeenEventIDEQ.
+func LastSeenEventID(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldLastSeenEventID, v))
+}
+
 // SourceID applies equality check predicate on the "source_id" field. It's identical to SourceIDEQ.
 func SourceID(v int64) predicate.SubscriptionEntitlement {
 	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldSourceID, v))
@@ -1193,6 +1203,56 @@ func OveragePolicyEqualFold(v string) predicate.SubscriptionEntitlement {
 // OveragePolicyContainsFold applies the ContainsFold predicate on the "overage_policy" field.
 func OveragePolicyContainsFold(v string) predicate.SubscriptionEntitlement {
 	return predicate.SubscriptionEntitlement(sql.FieldContainsFold(FieldOveragePolicy, v))
+}
+
+// AutoAdvanceMonthlyEQ applies the EQ predicate on the "auto_advance_monthly" field.
+func AutoAdvanceMonthlyEQ(v bool) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldAutoAdvanceMonthly, v))
+}
+
+// AutoAdvanceMonthlyNEQ applies the NEQ predicate on the "auto_advance_monthly" field.
+func AutoAdvanceMonthlyNEQ(v bool) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldNEQ(FieldAutoAdvanceMonthly, v))
+}
+
+// LastSeenEventIDEQ applies the EQ predicate on the "last_seen_event_id" field.
+func LastSeenEventIDEQ(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldEQ(FieldLastSeenEventID, v))
+}
+
+// LastSeenEventIDNEQ applies the NEQ predicate on the "last_seen_event_id" field.
+func LastSeenEventIDNEQ(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldNEQ(FieldLastSeenEventID, v))
+}
+
+// LastSeenEventIDIn applies the In predicate on the "last_seen_event_id" field.
+func LastSeenEventIDIn(vs ...int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldIn(FieldLastSeenEventID, vs...))
+}
+
+// LastSeenEventIDNotIn applies the NotIn predicate on the "last_seen_event_id" field.
+func LastSeenEventIDNotIn(vs ...int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldNotIn(FieldLastSeenEventID, vs...))
+}
+
+// LastSeenEventIDGT applies the GT predicate on the "last_seen_event_id" field.
+func LastSeenEventIDGT(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldGT(FieldLastSeenEventID, v))
+}
+
+// LastSeenEventIDGTE applies the GTE predicate on the "last_seen_event_id" field.
+func LastSeenEventIDGTE(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldGTE(FieldLastSeenEventID, v))
+}
+
+// LastSeenEventIDLT applies the LT predicate on the "last_seen_event_id" field.
+func LastSeenEventIDLT(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldLT(FieldLastSeenEventID, v))
+}
+
+// LastSeenEventIDLTE applies the LTE predicate on the "last_seen_event_id" field.
+func LastSeenEventIDLTE(v int64) predicate.SubscriptionEntitlement {
+	return predicate.SubscriptionEntitlement(sql.FieldLTE(FieldLastSeenEventID, v))
 }
 
 // PlanSnapshotIsNil applies the IsNil predicate on the "plan_snapshot" field.

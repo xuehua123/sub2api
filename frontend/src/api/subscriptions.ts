@@ -6,6 +6,7 @@
 import { apiClient } from './client'
 import type {
   AdvanceEntitlementMonthlyCycleResult,
+  EntitlementEvent,
   AdvanceMonthlyCycleResult,
   SubscriptionGroupPreference,
   UserEntitlement,
@@ -130,15 +131,32 @@ export async function advanceMonthlyCycle(
 }
 
 export async function advanceEntitlementMonthlyCycle(
-  entitlementId: number
+  entitlementId: number,
+  expected?: { monthly_window_start: string | null; expires_at: string }
 ): Promise<AdvanceEntitlementMonthlyCycleResult> {
-  const response = await apiClient.post<AdvanceEntitlementMonthlyCycleResult>(
-    `/entitlements/${entitlementId}/advance-monthly-cycle`
-  )
+  const url = `/entitlements/${entitlementId}/advance-monthly-cycle`
+  const response = expected
+    ? await apiClient.post<AdvanceEntitlementMonthlyCycleResult>(url, expected)
+    : await apiClient.post<AdvanceEntitlementMonthlyCycleResult>(url)
   return response.data
 }
 
+export async function setAutoAdvanceMonthly(id: number, enabled: boolean): Promise<UserEntitlement> {
+  return (await apiClient.put<UserEntitlement>(`/entitlements/${id}/auto-advance-monthly`, { enabled })).data
+}
+
+export async function getEntitlementEvents(id: number, before?: number): Promise<EntitlementEvent[]> {
+  return (await apiClient.get<EntitlementEvent[]>(`/entitlements/${id}/events`, { params: { before_id: before } })).data
+}
+
+export async function acknowledgeEntitlementEvent(id: number, eventId: number): Promise<void> {
+  await apiClient.post(`/entitlements/${id}/events/acknowledge`, { event_id: eventId })
+}
+
 export default {
+  setAutoAdvanceMonthly,
+  getEntitlementEvents,
+  acknowledgeEntitlementEvent,
   getMySubscriptions,
   getActiveSubscriptions,
   getEntitlements,

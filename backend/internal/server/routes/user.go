@@ -149,6 +149,9 @@ func RegisterUserRoutes(
 			entitlements.GET("/active", h.Entitlement.GetActive)
 			entitlements.GET("/:id/progress", h.Entitlement.GetProgress)
 			entitlements.POST("/:id/advance-monthly-cycle", h.Entitlement.AdvanceMonthlyCycle)
+			entitlements.PUT("/:id/auto-advance-monthly", h.Entitlement.SetAutoAdvanceMonthly)
+			entitlements.GET("/:id/events", h.Entitlement.Events)
+			entitlements.POST("/:id/events/acknowledge", h.Entitlement.AcknowledgeEvent)
 			entitlements.DELETE("/:id", h.Entitlement.Delete)
 		}
 

@@ -710,6 +710,160 @@ func (s *UserSubscriptionRepoSuite) TestList_FilterByRevokedStatus() {
 
 // --- Usage tracking ---
 
+func (s *UserSubscriptionRepoSuite) TestList_MixedEntitlementsPagination() {
+	user := s.mustCreateUser("mixed-pages@test.com", service.RoleUser)
+	group := s.mustCreateGroup("mixed-pages")
+	now := time.Now().UTC().Truncate(time.Second)
+	legacy := s.mustCreateSubscription(user.ID, group.ID, func(c *dbent.UserSubscriptionCreate) {
+		c.SetCreatedAt(now).SetExpiresAt(now.Add(24 * time.Hour))
+	})
+	createEntitlement := func(created time.Time, legacyID *int64) *dbent.SubscriptionEntitlement {
+		e, err := s.client.SubscriptionEntitlement.Create().
+			SetUserID(user.ID).SetPrimaryGroupID(group.ID).
+			SetNillableLegacySubscriptionID(legacyID).
+			SetStartsAt(now.Add(-time.Hour)).SetExpiresAt(now.Add(24 * time.Hour)).
+			SetCreatedAt(created).Save(s.ctx)
+		s.Require().NoError(err)
+		_, err = s.client.SubscriptionEntitlementGroup.Create().
+			SetEntitlementID(e.ID).SetGroupID(group.ID).SetEnabled(true).Save(s.ctx)
+		s.Require().NoError(err)
+		return e
+	}
+	first := createEntitlement(now.Add(time.Minute), nil)
+	second := createEntitlement(now, nil)
+	third := createEntitlement(now, nil)
+	createEntitlement(now, &legacy.ID) // The linked entitlement must not become another row.
+
+	for _, scope := range []struct {
+		name            string
+		userID, groupID *int64
+	}{
+		{name: "global"},
+		{name: "user", userID: &user.ID},
+		{name: "group", groupID: &group.ID},
+	} {
+		for _, order := range []string{"asc", "desc"} {
+			s.Run(scope.name+"/"+order, func() {
+				want := []int64{-first.ID, -third.ID, -second.ID, legacy.ID}
+				if order == "asc" {
+					want = []int64{-third.ID, -second.ID, legacy.ID, -first.ID}
+				}
+				var got []int64
+				for page := 1; page <= 3; page++ {
+					rows, pagination, err := s.repo.List(s.ctx,
+						pagination.PaginationParams{Page: page, PageSize: 2},
+						scope.userID, scope.groupID, service.SubscriptionStatusActive, "", "created_at", order)
+					s.Require().NoError(err)
+					s.Equal(int64(4), pagination.Total)
+					s.Equal(2, pagination.Pages)
+					if page <= 2 {
+						s.Len(rows, 2)
+					} else {
+						s.Empty(rows)
+					}
+					for _, row := range rows {
+						s.NotNil(row.User)
+						s.NotNil(row.Group)
+						s.NotNil(row.EntitlementLink)
+						got = append(got, row.ID)
+					}
+				}
+				s.Equal(want, got)
+			})
+		}
+	}
+}
+
+func (s *UserSubscriptionRepoSuite) TestList_MixedStatusSortIncludesRevoked() {
+	user := s.mustCreateUser("mixed-status@test.com", service.RoleUser)
+	group := s.mustCreateGroup("mixed-status")
+	active := s.mustCreateSubscription(user.ID, group.ID, nil)
+	revokedUser := s.mustCreateUser("mixed-revoked@test.com", service.RoleUser)
+	revoked := s.mustCreateSubscription(revokedUser.ID, group.ID, nil)
+	s.Require().NoError(s.repo.Delete(s.ctx, revoked.ID))
+	now := time.Now()
+	expired, err := s.client.SubscriptionEntitlement.Create().SetUserID(user.ID).
+		SetPrimaryGroupID(group.ID).SetStatus(service.SubscriptionStatusExpired).
+		SetStartsAt(now.Add(-2 * time.Hour)).SetExpiresAt(now.Add(-time.Hour)).Save(s.ctx)
+	s.Require().NoError(err)
+	for _, order := range []string{"asc", "desc"} {
+		want := []int64{active.ID, -expired.ID, revoked.ID}
+		if order == "desc" {
+			want = []int64{revoked.ID, -expired.ID, active.ID}
+		}
+		var got []int64
+		for page := 1; page <= 3; page++ {
+			rows, result, err := s.repo.List(s.ctx, pagination.PaginationParams{Page: page, PageSize: 1},
+				nil, nil, "", "", "status", order)
+			s.Require().NoError(err)
+			s.Require().Len(rows, 1)
+			s.Equal(int64(3), result.Total)
+			got = append(got, rows[0].ID)
+		}
+		s.Equal(want, got)
+	}
+}
+
+func (s *UserSubscriptionRepoSuite) TestList_NativeEntitlementFilters() {
+	user := s.mustCreateUser("native-filters@test.com", service.RoleUser)
+	group := s.mustCreateGroup("native-filters")
+	_, err := s.client.Group.UpdateOneID(group.ID).SetPlatform(service.PlatformOpenAI).Save(s.ctx)
+	s.Require().NoError(err)
+	now := time.Now().UTC().Truncate(time.Second)
+	ids := make(map[string]int64)
+	for index, status := range []string{"active", "expired", "suspended", "revoked", "elapsed", "deleted"} {
+		persistedStatus := status
+		if status == "elapsed" || status == "deleted" {
+			persistedStatus = "active"
+		}
+		create := s.client.SubscriptionEntitlement.Create().SetUserID(user.ID).
+			SetStatus(persistedStatus).SetStartsAt(now.Add(-time.Hour)).
+			SetExpiresAt(now.Add(time.Duration(index+1) * time.Hour))
+		if status == "elapsed" {
+			create.SetExpiresAt(now.Add(-time.Hour))
+		}
+		if status == "deleted" {
+			create.SetDeletedAt(now)
+		}
+		e, err := create.Save(s.ctx)
+		s.Require().NoError(err)
+		ids[status] = -e.ID
+		// Exercise the enabled-group fallback when no primary group is present.
+		_, err = s.client.SubscriptionEntitlementGroup.Create().SetEntitlementID(e.ID).
+			SetGroupID(group.ID).SetEnabled(true).Save(s.ctx)
+		s.Require().NoError(err)
+	}
+	// An entitlement without a display group must not inflate pagination totals.
+	_, err = s.client.SubscriptionEntitlement.Create().SetUserID(user.ID).
+		SetStartsAt(now.Add(-time.Hour)).SetExpiresAt(now.Add(time.Hour)).Save(s.ctx)
+	s.Require().NoError(err)
+	for _, tc := range []struct {
+		status string
+		want   []int64
+	}{
+		{"active", []int64{ids["active"]}},
+		{"expired", []int64{ids["elapsed"], ids["expired"]}},
+		{"suspended", []int64{ids["suspended"]}},
+		{"revoked", []int64{ids["revoked"]}},
+		{"", []int64{ids["elapsed"], ids["active"], ids["expired"], ids["suspended"], ids["revoked"]}},
+	} {
+		rows, page, err := s.repo.List(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10},
+			nil, nil, tc.status, service.PlatformOpenAI, "expires_at", "asc")
+		s.Require().NoError(err)
+		got := make([]int64, 0, len(rows))
+		for _, row := range rows {
+			got = append(got, row.ID)
+		}
+		s.Equal(tc.want, got, "status=%s", tc.status)
+		s.Equal(int64(len(tc.want)), page.Total)
+	}
+	rows, page, err := s.repo.List(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10},
+		nil, nil, "active", service.PlatformAnthropic, "", "")
+	s.Require().NoError(err)
+	s.Empty(rows)
+	s.Zero(page.Total)
+}
+
 func (s *UserSubscriptionRepoSuite) TestIncrementUsage() {
 	user := s.mustCreateUser("usage@test.com", service.RoleUser)
 	group := s.mustCreateGroup("g-usage")

@@ -92,6 +92,8 @@ type Tx struct {
 	Setting *SettingClient
 	// SubscriptionEntitlement is the client for interacting with the SubscriptionEntitlement builders.
 	SubscriptionEntitlement *SubscriptionEntitlementClient
+	// SubscriptionEntitlementEvent is the client for interacting with the SubscriptionEntitlementEvent builders.
+	SubscriptionEntitlementEvent *SubscriptionEntitlementEventClient
 	// SubscriptionEntitlementFulfillment is the client for interacting with the SubscriptionEntitlementFulfillment builders.
 	SubscriptionEntitlementFulfillment *SubscriptionEntitlementFulfillmentClient
 	// SubscriptionEntitlementGroup is the client for interacting with the SubscriptionEntitlementGroup builders.
@@ -306,6 +308,7 @@ func (tx *Tx) init() {
 	tx.SecuritySecret = NewSecuritySecretClient(tx.config)
 	tx.Setting = NewSettingClient(tx.config)
 	tx.SubscriptionEntitlement = NewSubscriptionEntitlementClient(tx.config)
+	tx.SubscriptionEntitlementEvent = NewSubscriptionEntitlementEventClient(tx.config)
 	tx.SubscriptionEntitlementFulfillment = NewSubscriptionEntitlementFulfillmentClient(tx.config)
 	tx.SubscriptionEntitlementGroup = NewSubscriptionEntitlementGroupClient(tx.config)
 	tx.SubscriptionPlan = NewSubscriptionPlanClient(tx.config)
