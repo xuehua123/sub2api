@@ -1107,6 +1107,12 @@ func applyAdminEntitlementQuota(out *UserSubscription, link *service.UserSubscri
 	out.DailyUsageUSD = link.DailyUsageUSD
 	out.WeeklyUsageUSD = link.WeeklyUsageUSD
 	out.MonthlyUsageUSD = link.MonthlyUsageUSD
+	// Linked quota overrides the legacy row; normalize its current month too.
+	now := time.Now()
+	ent := service.SubscriptionEntitlement{StartsAt: out.StartsAt, ExpiresAt: out.ExpiresAt, Status: out.Status, MonthlyWindowStart: out.MonthlyWindowStart}
+	if ent.IsActiveAt(now) && ent.NeedsMonthlyResetAt(now) {
+		out.MonthlyUsageUSD = 0
+	}
 }
 
 func adminSubscriptionEntitlementID(link *service.UserSubscriptionEntitlementLink) *int64 {

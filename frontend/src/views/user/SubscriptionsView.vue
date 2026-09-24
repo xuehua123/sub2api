@@ -1,6 +1,10 @@
 <template>
-  <AppLayout>
-    <div class="mx-auto w-full max-w-[1760px] space-y-5">
+  <PricePortalLayout :section-label="t('accountPages.subscriptions')">
+    <main id="price-main" class="account-workspace account-subscriptions">
+      <AccountPageHeader section="subscriptions"><button class="account-icon" :title="t('common.refresh')" :aria-label="t('common.refresh')" :disabled="loading || pendingLifecycleActions>0" @click="loadSubscriptions"><Icon name="refresh" size="md" :class="{'animate-spin':loading}" /></button></AccountPageHeader>
+      <div v-if="!loading" class="account-subscription-summary"><div><span>{{t('accountPages.active')}}</span><strong>{{activeSubscriptionCount}}</strong></div><div><span>{{t('accountPages.expiring')}}</span><strong>{{expiringSubscriptionCount}}</strong></div><p>{{t('accountPages.renewalHint')}}</p></div>
+      <div v-if="hasAnySubscriptionDisplay" class="account-subscription-filters"><label class="sr-only" for="subscription-search">{{t('accountPages.searchSubscriptions')}}</label><input id="subscription-search" v-model="subscriptionSearch" class="input" :placeholder="t('accountPages.searchSubscriptions')"/><div class="account-filter-tabs"><button v-for="status in subscriptionStatusOptions" :key="status.value" :aria-pressed="subscriptionStatus===status.value" @click="subscriptionStatus=status.value">{{status.label}}</button></div></div>
+      <div v-if="loadWarning" class="account-warning" role="alert">{{t('accountPages.partialLoad')}}<button class="btn btn-secondary btn-sm" :disabled="loading" @click="loadSubscriptions">{{t('accountPages.retry')}}</button></div>
       <!-- Loading State -->
       <div v-if="loading" class="flex justify-center py-12">
         <div
@@ -9,7 +13,7 @@
       </div>
 
       <!-- Empty State -->
-      <div v-else-if="!hasAnySubscriptionDisplay" class="card p-12 text-center">
+      <div v-else-if="!hasAnySubscriptionDisplay && !loadWarning" class="card p-12 text-center">
         <div
           class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-100 dark:bg-dark-700"
         >
@@ -24,6 +28,7 @@
       </div>
 
       <template v-else>
+        <div v-if="hasAnySubscriptionDisplay && !displayEntitlements.length && !displayLegacySubscriptions.length" class="account-empty"><p>{{t('accountPages.noMatch')}}</p><button class="btn btn-secondary" @click="subscriptionSearch='';subscriptionStatus='all'">{{t('accountPages.reset')}}</button></div>
         <section v-if="displayEntitlements.length > 0" class="space-y-3" data-testid="entitlement-section">
           <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -36,11 +41,11 @@
             </div>
           </div>
 
-          <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+          <div class="account-plan-grid">
             <article
               v-for="entitlement in displayEntitlements"
               :key="entitlement.id"
-              class="overflow-hidden rounded-xl border border-indigo-100 bg-white shadow-sm dark:border-indigo-900/50 dark:bg-dark-800"
+              class="account-plan"
               data-testid="entitlement-card"
             >
               <div class="border-b border-gray-100 p-3.5 dark:border-dark-700">
@@ -60,10 +65,7 @@
                       </span>
                     </div>
                     <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-                      {{ t('userSubscriptions.entitlements.validity', {
-                        start: formatDateTime(entitlement.starts_at),
-                        end: formatDateTime(entitlement.expires_at)
-                      }) }}
+                      {{ t('userSubscriptions.expires') }}: {{ formatDateTime(entitlement.expires_at) }}
                     </p>
                     <div v-if="entitlement.latest_renewal && entitlement.latest_renewal.id > (entitlement.last_seen_event_id || 0)" class="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-200" role="status">
                       <div class="flex items-start justify-between gap-3">
@@ -76,17 +78,8 @@
                         <button type="button" class="shrink-0 rounded px-2 py-1 font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50" @click="acknowledgeLatestRenewal(entitlement)">{{ t('userSubscriptions.lifecycle.acknowledge') }}</button>
                       </div>
                     </div>
-                    <p
-                      v-if="entitlement.legacy_subscription_id"
-                      class="mt-1 text-xs text-gray-500 dark:text-dark-400"
-                    >
-                      {{ t('userSubscriptions.entitlements.legacyCompatible', {
-                        id: entitlement.legacy_subscription_id
-                      }) }}
-                    </p>
                   </div>
                   <div class="flex flex-col items-end gap-1.5 text-right text-xs text-gray-500 dark:text-dark-400">
-                    <span>{{ t('userSubscriptions.entitlements.id', { id: entitlement.id }) }}</span>
                     <button
                       type="button"
                       class="rounded-md px-2 py-1 font-medium text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20"
@@ -97,10 +90,18 @@
                   </div>
                 </div>
 
-                <div class="mt-3">
-                  <div class="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-dark-400">
-                    {{ t('userSubscriptions.entitlements.authorizedGroups') }}
-                  </div>
+                <details class="account-plan-details">
+                  <summary>{{t('accountPages.details')}}</summary>
+                    <p
+                      v-if="entitlement.legacy_subscription_id"
+                      class="mt-1 text-xs text-gray-500 dark:text-dark-400"
+                    >
+                      {{ t('userSubscriptions.entitlements.legacyCompatible', {
+                        id: entitlement.legacy_subscription_id
+                      }) }}
+                    </p>
+
+                  <p class="mb-2 text-xs">{{ t('userSubscriptions.entitlements.id', { id: entitlement.id }) }}</p>
                   <div class="space-y-1.5">
                     <div
                       v-for="group in visibleEntitlementGroups(entitlement)"
@@ -133,7 +134,7 @@
                       <span class="text-[10px] font-semibold opacity-80">查看全部</span>
                     </button>
                   </div>
-                </div>
+                </details>
               </div>
 
               <div class="space-y-2.5 p-3.5">
@@ -149,7 +150,7 @@
                     class="rounded-lg border border-gray-100 p-2.5 dark:border-dark-700"
                     :data-testid="`entitlement-${window.key}-quota`"
                   >
-                    <div class="mb-1.5 flex items-center justify-between gap-2">
+                    <div class="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span class="text-xs font-medium text-gray-700 dark:text-gray-300">
                         {{ window.label }}
                       </span>
@@ -157,6 +158,7 @@
                         {{ formatEntitlementUsage(window.used, window.limit) }}
                       </span>
                     </div>
+                    <p class="account-quota-remaining" data-testid="quota-remaining"><span>{{t(entitlementStatusKey(entitlement)==='active'?'accountPages.remaining':'accountPages.inactiveQuota')}}</span><strong>{{window.limit != null && window.limit>0 ? formatCurrency(Math.max(window.limit-window.used,0)) : t('accountPages.remainingUnavailable')}}</strong></p>
                     <div class="relative h-1.5 overflow-hidden rounded-full bg-gray-200 dark:bg-dark-600">
                       <div
                         class="absolute inset-y-0 left-0 rounded-full transition-all duration-300"
@@ -165,8 +167,8 @@
                       ></div>
                     </div>
                     <p class="mt-1.5 truncate text-[10px] text-gray-500 dark:text-dark-400">
-                      {{ t('userSubscriptions.entitlements.nextReset') }}:
-                      {{ formatEntitlementReset(window, entitlement) }}
+                      <template v-if="entitlementStatusKey(entitlement)==='active'">{{ t('userSubscriptions.entitlements.nextReset') }}: {{ formatEntitlementReset(window, entitlement) }}</template>
+                      <template v-else>{{t('accountPages.inactiveReset')}}</template>
                     </p>
                   </div>
                 </div>
@@ -180,16 +182,37 @@
                   </span>
                 </div>
 
-                <div class="rounded-lg border border-gray-100 bg-gray-50/70 p-2.5 dark:border-dark-700 dark:bg-dark-900/70">
-                  <div v-if="entitlement.monthly_limit_usd || entitlement.auto_advance_monthly" class="mb-2 flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <div class="text-xs font-semibold text-gray-800 dark:text-gray-200">{{ t('userSubscriptions.lifecycle.autoLabel') }}</div>
-                      <p class="mt-1 text-[10px] leading-snug text-gray-500 dark:text-dark-400">{{ t('userSubscriptions.lifecycle.autoHint') }}</p>
+                <div class="border-t border-gray-100 pt-3 dark:border-dark-700">
+                  <div v-if="entitlement.monthly_limit_usd || entitlement.auto_advance_monthly" class="mb-3">
+                    <div class="flex items-start justify-between gap-3">
+                      <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <div class="text-sm font-medium text-gray-900 dark:text-gray-100">{{ t('userSubscriptions.lifecycle.autoLabel') }}</div>
+                          <span :class="entitlement.auto_advance_monthly ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-600 dark:bg-dark-700 dark:text-gray-300'" class="rounded-full px-2 py-0.5 text-[10px] font-medium">
+                            {{ autoAdvanceSavingId === entitlement.id ? t('common.saving') : entitlement.auto_advance_monthly ? t('userSubscriptions.lifecycle.autoEnabled') : t('userSubscriptions.lifecycle.autoDisabled') }}
+                          </span>
+                        </div>
+                        <p class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-dark-400">{{ t('userSubscriptions.lifecycle.autoHint') }}</p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        :aria-checked="entitlement.auto_advance_monthly === true"
+                        :aria-label="t('userSubscriptions.lifecycle.autoLabel')"
+                        :disabled="pendingLifecycleActions > 0 || (!entitlement.auto_advance_monthly && entitlementStatusKey(entitlement) !== 'active')"
+                        class="relative mt-0.5 inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
+                        :class="entitlement.auto_advance_monthly ? 'bg-primary-600' : 'bg-gray-300 dark:bg-dark-600'"
+                        @click="handleAutoAdvanceChange(entitlement)"
+                      >
+                        <span :class="entitlement.auto_advance_monthly ? 'translate-x-4' : 'translate-x-0'" class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200" />
+                      </button>
                     </div>
-                    <input :aria-label="t('userSubscriptions.lifecycle.autoLabel')" type="checkbox" role="switch" class="mt-0.5 h-4 w-4 shrink-0 accent-primary-600" :checked="entitlement.auto_advance_monthly === true" :disabled="pendingLifecycleActions > 0 || (!entitlement.auto_advance_monthly && entitlementStatusKey(entitlement) !== 'active')" @change="handleAutoAdvanceChange(entitlement, $event)" />
+                    <p class="mt-1 text-xs leading-relaxed text-gray-600 dark:text-dark-300">
+                      {{ t('userSubscriptions.lifecycle.autoValidityHint') }}
+                    </p>
                   </div>
-                  <div v-if="entitlement.monthly_cycle_preview?.has_future_cycle" class="mb-2 text-[10px] text-emerald-700 dark:text-emerald-300">{{ t('userSubscriptions.lifecycle.futureAvailable') }}</div>
-                  <div v-else-if="entitlement.monthly_limit_usd" class="mb-2 text-[10px] text-amber-700 dark:text-amber-300">{{ t('userSubscriptions.lifecycle.futureUnavailable') }}</div>
+                  <div v-if="entitlement.monthly_cycle_preview?.has_future_cycle" class="mb-2 text-xs text-emerald-700 dark:text-emerald-300">{{ t('userSubscriptions.lifecycle.futureAvailable') }}</div>
+                  <div v-else-if="entitlement.monthly_limit_usd" class="mb-2 text-xs text-gray-500 dark:text-gray-400">{{ t('userSubscriptions.lifecycle.futureUnavailable') }}</div>
                   <button
                     type="button"
                     data-testid="entitlement-advance-monthly-cycle"
@@ -320,11 +343,11 @@
         </div>
 
         <!-- Subscriptions Grid -->
-        <div class="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+        <div class="account-plan-grid">
           <div
             v-for="subscription in displayLegacySubscriptions"
             :key="subscription.id"
-            class="overflow-hidden rounded-xl border bg-white shadow-sm dark:bg-dark-800"
+            class="account-plan"
             :class="platformBorderClass(subscription.group?.platform || '')"
           >
           <!-- Header -->
@@ -563,7 +586,8 @@
         </div>
         </div>
       </template>
-    </div>
+    </main>
+    <BaseDialog :show="advanceConfirmation!==null" :title="t('userSubscriptions.advanceEntitlementMonthlyCycle')" width="normal" @close="resolveAdvanceConfirmation(false)"><p class="whitespace-pre-line text-sm leading-7">{{advanceConfirmation}}</p><template #footer><div class="flex justify-end gap-2"><button class="btn btn-secondary" data-testid="advance-cancel" @click="resolveAdvanceConfirmation(false)">{{t('common.cancel')}}</button><button class="btn btn-primary" data-testid="advance-confirm" @click="resolveAdvanceConfirmation(true)">{{t('userSubscriptions.lifecycle.confirmAdvance')}}</button></div></template></BaseDialog>
     <ConfirmDialog
       :show="deleteTarget !== null"
       :title="t('userSubscriptions.deleteTitle')"
@@ -581,7 +605,7 @@
           class="fixed inset-0 z-[65] flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"
           @click.self="closeEntitlementGroupsModal"
         >
-          <div class="relative flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900">
+          <div class="account-groups-panel relative flex max-h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-dark-700 dark:bg-dark-900">
             <div class="flex items-start justify-between gap-4 border-b border-gray-100 p-5 dark:border-dark-700">
               <div class="min-w-0">
                 <p class="text-xs font-bold uppercase tracking-wide text-primary-600 dark:text-primary-300">授权分组</p>
@@ -629,7 +653,7 @@
         </div>
       </Transition>
     </Teleport>
-  </AppLayout>
+  </PricePortalLayout>
 </template>
 
 <script setup lang="ts">
@@ -642,7 +666,10 @@ import subscriptionsAPI from '@/api/subscriptions'
 import { paymentAPI } from '@/api/payment'
 import type { EntitlementEvent, SubscriptionGroupPreference, UserEntitlement, UserSubscription } from '@/types'
 import type { SubscriptionPlan } from '@/types/payment'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import PricePortalLayout from '@/components/model-price/PricePortalLayout.vue'
+import AccountPageHeader from '@/components/account-center/AccountPageHeader.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
+import '@/components/account-center/account-center.css'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatCurrency, formatDateTime, formatDateTimeToMinute } from '@/utils/format'
@@ -708,7 +735,7 @@ type DeleteSubscriptionTarget = {
 const deleteTarget = ref<DeleteSubscriptionTarget | null>(null)
 const groupsModalEntitlement = ref<UserEntitlement | null>(null)
 
-const displayEntitlements = computed(() => {
+const allEntitlements = computed(() => {
   return [...entitlements.value].sort((a, b) => {
     const statusDiff = entitlementStatusRank(a) - entitlementStatusRank(b)
     if (statusDiff !== 0) return statusDiff
@@ -716,7 +743,7 @@ const displayEntitlements = computed(() => {
   })
 })
 
-const displayLegacySubscriptions = computed(() => {
+const allLegacySubscriptions = computed(() => {
   const visibleEntitlementIDs = new Set(entitlements.value.map((entitlement) => entitlement.id))
   const legacySubscriptionIDsCoveredByEntitlements = new Set(
     entitlements.value
@@ -730,8 +757,23 @@ const displayLegacySubscriptions = computed(() => {
 })
 
 const hasAnySubscriptionDisplay = computed(() => (
-  displayLegacySubscriptions.value.length > 0 || displayEntitlements.value.length > 0
+  allLegacySubscriptions.value.length > 0 || allEntitlements.value.length > 0
 ))
+const subscriptionSearch=ref('')
+const subscriptionStatus=ref('all')
+const loadWarning=ref(false)
+const subscriptionStatusOptions=computed(()=>[{value:'all',label:t('accountPages.all')},{value:'active',label:t('accountPages.active')},{value:'inactive',label:t('accountPages.inactive')}])
+function legacyStatus(sub:UserSubscription){return sub.status==='active' && sub.expires_at && Date.parse(sub.expires_at)<=Date.now()?'expired':sub.status}
+function matchesSubscription(status:string,name:string){const q=subscriptionSearch.value.trim().toLowerCase();return (!q||name.toLowerCase().includes(q))&&(subscriptionStatus.value==='all'||(subscriptionStatus.value==='active'?status==='active':['expired','revoked','suspended'].includes(status)))}
+const displayEntitlements=computed(()=>allEntitlements.value.filter(ent=>matchesSubscription(entitlementStatusKey(ent),[ent.name,ent.plan_name,...ent.groups.map(g=>g.name)].join(' '))))
+const displayLegacySubscriptions=computed(()=>allLegacySubscriptions.value.filter(sub=>matchesSubscription(legacyStatus(sub),subscriptionDisplayName(sub,subscriptionPlans.value)+' '+(sub.group?.name||''))))
+const activeSubscriptionCount=computed(()=>allEntitlements.value.filter(ent=>entitlementStatusKey(ent)==='active').length+allLegacySubscriptions.value.filter(sub=>legacyStatus(sub)==='active').length)
+const expiringSubscriptionCount=computed(()=>[...allEntitlements.value.filter(ent=>entitlementStatusKey(ent)==='active'),...allLegacySubscriptions.value.filter(sub=>legacyStatus(sub)==='active')].filter(item=>item.expires_at&&Date.parse(item.expires_at)>Date.now()&&Date.parse(item.expires_at)<=Date.now()+7*86400000).length)
+const advanceConfirmation=ref<string|null>(null)
+let advanceResolver:((confirmed:boolean)=>void)|null=null
+function confirmAdvance(message:string){if(advanceResolver)return Promise.resolve(false);return new Promise<boolean>(resolve=>{advanceConfirmation.value=message;advanceResolver=resolve})}
+function resolveAdvanceConfirmation(confirmed:boolean){const resolve=advanceResolver;advanceResolver=null;advanceConfirmation.value=null;resolve?.(confirmed)}
+
 
 function subscriptionHasPeakRate(subscription: UserSubscription): boolean {
   return hasPeakRate(subscription.group)
@@ -744,7 +786,9 @@ function subscriptionPeakRateLabel(subscription: UserSubscription): string {
 async function loadSubscriptions() {
   try {
     loading.value = true
+    loadWarning.value = false
     const entitlementRecordsPromise = subscriptionsAPI.getEntitlements().catch((error) => {
+      loadWarning.value = true
       console.warn('Failed to load entitlements:', error)
       return [] as UserEntitlement[]
     })
@@ -762,6 +806,7 @@ async function loadSubscriptions() {
       switchPreferences.value = buildSwitchPreferences(subs, prefs)
     }
   } catch (error) {
+    loadWarning.value = true
     console.error('Failed to load subscriptions:', error)
     appStore.showError(t('userSubscriptions.failedToLoad'))
   } finally {
@@ -1401,13 +1446,13 @@ function formatPreciseDuration(totalSeconds: number): string {
 }
 
 async function advanceMonthlyCycle(subscription: UserSubscription) {
-  if (!canAdvanceMonthlyCycle(subscription)) return
+  if (advancingSubscriptionId.value !== null || pendingLifecycleActions.value || advanceConfirmation.value !== null || !canAdvanceMonthlyCycle(subscription)) return
   const groupName = subscriptionDisplayName(subscription, subscriptionPlans.value)
   const deductedSeconds = estimateDeductedSeconds(subscription)
   const limit = subscription.group?.monthly_limit_usd || 0
   const used = subscription.monthly_usage_usd || 0
   const remaining = Math.max(limit - used, 0)
-  if (!window.confirm(t('userSubscriptions.advanceMonthlyConfirm', {
+  if (!await confirmAdvance(t('userSubscriptions.advanceMonthlyConfirm', {
     group: groupName,
     duration: formatPreciseDuration(deductedSeconds),
     used: used.toFixed(2),
@@ -1464,7 +1509,7 @@ async function performEntitlementMonthlyAdvance(entitlement: UserEntitlement) {
   }) + '\n' + t('userSubscriptions.lifecycle.remaining') + ': ' + formatCurrency(remaining)
   confirmation += '\n' + t('userSubscriptions.lifecycle.currentExpiry') + ': ' + formatDateTime(currentExpiry) + ' → ' + formatDateTime(newExpiresAt)
   if (preview?.next_reset_at) confirmation += '\n' + t('userSubscriptions.lifecycle.newReset') + ': ' + formatDateTime(preview.next_reset_at)
-  if (!window.confirm(confirmation)) {
+  if (!await confirmAdvance(confirmation)) {
     return
   }
   try {
@@ -1486,14 +1531,9 @@ async function performEntitlementMonthlyAdvance(entitlement: UserEntitlement) {
   }
 }
 
-async function handleAutoAdvanceChange(entitlement: UserEntitlement, event: Event) {
-  const input = event.target as HTMLInputElement
-  if (pendingLifecycleActions.value) { input.checked = entitlement.auto_advance_monthly === true; return }
-  const enabled = input.checked
-  if (enabled && !window.confirm(t('userSubscriptions.lifecycle.autoConfirm'))) {
-    input.checked = false
-    return
-  }
+async function handleAutoAdvanceChange(entitlement: UserEntitlement) {
+  if (pendingLifecycleActions.value) return
+  const enabled = entitlement.auto_advance_monthly !== true
   try {
     entitlementRefreshVersion++
     pendingLifecycleActions.value++
@@ -1504,7 +1544,6 @@ async function handleAutoAdvanceChange(entitlement: UserEntitlement, event: Even
     subscriptionStore.invalidateCache()
     appStore.showSuccess(t('common.saved'))
   } catch (error: any) {
-    input.checked = !enabled
     appStore.showError(error.response?.data?.detail || t('userSubscriptions.lifecycle.saveFailed'))
   } finally {
     autoAdvanceSavingId.value = null
@@ -1614,6 +1653,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  resolveAdvanceConfirmation(false)
   viewActive = false
   if (entitlementRefreshTimer) clearInterval(entitlementRefreshTimer)
   document.removeEventListener('visibilitychange', refreshVisibleEntitlements)

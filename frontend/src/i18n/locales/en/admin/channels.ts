@@ -705,6 +705,25 @@ export default {
       allStatus: 'All Status',
       allGroups: 'All Groups',
       allPlatforms: 'All Platforms',
+      allSources: 'All Subscription Types',
+      allQuotaStates: 'All monthly quota states',
+      allExpiryRanges: 'All Expiry Ranges',
+      clearFilters: 'Clear Filters',
+      activeFilters: 'Active filters:',
+      sources: {
+        entitlement: 'Plan entitlement',
+        legacy: 'Legacy subscription'
+      },
+      quotaStates: {
+        available: 'Monthly quota >10% left',
+        nearExhausted: 'Monthly quota ≤10% left',
+        exhausted: 'Monthly quota exhausted'
+      },
+      expiryRanges: {
+        sevenDays: 'Expires within 7 days',
+        thirtyDays: 'Expires within 30 days',
+        expired: 'Expired'
+      },
       daily: 'Daily',
       weekly: 'Weekly',
       monthly: 'Monthly',

@@ -1,395 +1,265 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 import ModelPricesView from '../ModelPricesView.vue'
-import type { ModelPriceModel, ModelPriceResponse } from '@/api/modelPrices'
-
-const { apiMock, appStoreMock, authStoreMock } = vi.hoisted(() => ({
-  apiMock: {
+import ModelPriceEditor from '@/components/model-price/ModelPriceEditor.vue'
+import { model, response } from '@/components/model-price/__tests__/fixtures'
+const { api, app, auth, settings } = vi.hoisted(() => ({
+  api: {
     getModelPrices: vi.fn(),
-    syncCatalog: vi.fn(),
-    updateCustomPrice: vi.fn(),
-    updateHiddenGroup: vi.fn(),
     updateHiddenGroups: vi.fn(),
-    updateHiddenModel: vi.fn(),
     updateHiddenModels: vi.fn(),
+    updateCustomPrice: vi.fn(),
+    syncCatalog: vi.fn(),
   },
-  appStoreMock: {
-    showError: vi.fn(),
-    showSuccess: vi.fn(),
-  },
-  authStoreMock: {
-    isAdmin: true,
-  },
+  app: { showError: vi.fn(), showSuccess: vi.fn() },
+  auth: { isAdmin: true },
+  settings: vi.fn(),
 }))
-
-vi.mock('@/api/modelPrices', () => ({
-  default: apiMock,
-  modelPricesAPI: apiMock,
+vi.mock('@/api/modelPrices', () => ({ default: api }))
+vi.mock('@/api/admin', () => ({
+  adminAPI: { settings: { updateSettings: settings } },
 }))
-
 vi.mock('@/stores', () => ({
-  useAppStore: () => appStoreMock,
-  useAuthStore: () => authStoreMock,
+  useAppStore: () => app,
+  useAuthStore: () => auth,
 }))
-
-function model(overrides: Partial<ModelPriceModel> = {}): ModelPriceModel {
-  return {
-    name: 'gpt-5.5',
-    platform: 'openai',
-    provider: 'openai',
-    billing_mode: 'token',
-    pricing_source: 'official',
-    official: {
-      input_usd_per_m: 3,
-      output_usd_per_m: 12,
-      cache_write_usd_per_m: null,
-      cache_read_usd_per_m: null,
-      image_output_usd_per_m: null,
-      per_request_usd: null,
-    },
-    actual: {
-      input_usd_per_m: 0.6,
-      input_cny_per_m: 4.2,
-      output_usd_per_m: 2.4,
-      output_cny_per_m: 16.8,
-      cache_write_usd_per_m: null,
-      cache_write_cny_per_m: null,
-      cache_read_usd_per_m: null,
-      cache_read_cny_per_m: null,
-      image_output_usd_per_m: null,
-      image_output_cny_per_m: null,
-      per_request_usd: null,
-      per_request_cny: null,
-    },
-    price_tiers: [],
-    multiplier: 0.2,
-    cheaper_factor: 5,
-    channel_names: ['openai-main'],
-    official_missing: false,
-    custom_price: null,
-    hidden: false,
-    ...overrides,
-  }
-}
-
-function response(overrides: Partial<ModelPriceResponse> = {}): ModelPriceResponse {
-  return {
-    usd_cny_rate: 7,
-    cny_per_quota_usd: 0.068,
-    groups: [
-      {
-        id: 46,
-        name: 'OpenAI 256',
-        platform: 'openai',
-        subscription_type: 'subscription',
-        rate_multiplier: 1,
-        effective_multiplier: 0.2,
-        image_rate_independent: false,
-        image_rate_multiplier: 1,
-        is_exclusive: false,
-        hidden: false,
-        model_count: 2,
-        channel_count: 1,
-        best_plan: {
-          id: 1,
-          name: '旗舰套餐',
-          price_cny: 700,
-          quota_usd: 500,
-          cny_per_quota_usd: 1.4,
-          usd_multiplier: 0.2,
-        },
-      },
-      {
-        id: 47,
-        name: 'Claude 200',
-        platform: 'anthropic',
-        subscription_type: 'subscription',
-        rate_multiplier: 1,
-        effective_multiplier: 0.25,
-        image_rate_independent: false,
-        image_rate_multiplier: 1,
-        is_exclusive: false,
-        hidden: false,
-        model_count: 1,
-        channel_count: 1,
-      },
-    ],
-    group_overview: [
-      { category: 'openai', group_count: 1, model_count: 2, channel_count: 1 },
-      { category: 'claude', group_count: 1, model_count: 1, channel_count: 1 },
-    ],
-    selected_group_id: null,
-    models: [],
-    summary: {
-      model_count: 0,
-      priced_count: 0,
-      average_cheaper_factor: null,
-    },
-    catalog_status: {
-      model_count: 2,
-      last_updated: '2026-06-28T00:00:00Z',
-      local_hash: 'test',
-    },
-    include_catalog: false,
-    show_hidden_groups: false,
-    show_hidden_models: false,
-    hidden_group_ids: [],
-    hidden_model_keys: [],
-    selected_group_hidden: false,
-    ...overrides,
-  }
-}
-
+const mounts: ReturnType<typeof mount>[] = []
 function mountView() {
-  return mount(ModelPricesView, {
+  const w = mount(ModelPricesView, {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
         Icon: true,
+        ConfirmDialog: true,
         RouterLink: { template: '<a><slot /></a>' },
+        BaseDialog: {
+          props: ['show'],
+          template: '<div v-if="show"><slot/><slot name="footer"/></div>',
+        },
       },
     },
   })
+  mounts.push(w)
+  return w
 }
-
-describe('ModelPricesView', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    authStoreMock.isAdmin = true
-    apiMock.updateHiddenGroups.mockResolvedValue({ hidden_group_ids: [46] })
-    apiMock.updateHiddenModels.mockResolvedValue({ hidden_model_keys: ['46:gpt-5.5'] })
-    apiMock.syncCatalog.mockResolvedValue({ model_count: 2 })
+async function enter(w: ReturnType<typeof mount>, manage = false) {
+  await flushPromises()
+  await w.get('[data-testid="quick-group-46"]').trigger('click')
+  await flushPromises()
+  if (manage) await w.get('[data-testid="price-manage-tab"]').trigger('click')
+  await flushPromises()
+}
+beforeEach(() => {
+  vi.clearAllMocks()
+  auth.isAdmin = true
+  api.getModelPrices.mockImplementation(async (p) =>
+    response({
+      selected_group_id: p.group_id || null,
+      models: p.group_id
+        ? [model(), model({ name: 'second', pricing_source: 'fallback', catalog_price: null })]
+        : [],
+    }),
+  )
+  api.updateHiddenModels.mockResolvedValue({})
+  api.updateHiddenGroups.mockResolvedValue({})
+  api.updateCustomPrice.mockResolvedValue({})
+})
+afterEach(() => {
+  mounts.splice(0).forEach((w) => w.unmount())
+})
+describe('model price workspaces', () => {
+  it('shows official USD values rather than discounted CNY values', async () => {
+    const w=mountView();await enter(w)
+    const row=w.get('[data-model-name="test-model"] .price-main-values')
+    expect(row.text()).toContain('US$3')
+    expect(row.text()).toContain('US$12')
+    expect(row.text()).not.toContain('4.2')
+    expect(row.text()).not.toContain('16.8')
   })
-
-  it('supports polished model batch selection and hide action', async () => {
-    apiMock.getModelPrices
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [model(), model({ name: 'gpt-5' })],
-        summary: { model_count: 2, priced_count: 2, average_cheaper_factor: 5 },
-      }))
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [model({ name: 'gpt-5' })],
-        hidden_model_keys: ['46:gpt-5.5'],
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-      }))
-
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('[data-testid="group-pill-46"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.get('[data-testid="model-bulk-panel"]').text()).toContain('勾选模型后批量隐藏或恢复')
-
-    await wrapper.get('[data-testid="model-select-gpt-5.5"]').setValue(true)
-
-    expect(wrapper.get('[data-testid="model-bulk-panel"]').text()).toContain('已选 1 个模型')
-
-    await wrapper.get('[data-testid="model-bulk-hide"]').trigger('click')
-    await flushPromises()
-
-    expect(apiMock.updateHiddenModels).toHaveBeenCalledWith(46, ['gpt-5.5'], true)
-    expect(appStoreMock.showSuccess).toHaveBeenCalled()
+  it('defaults to browsing and keeps admin controls in management', async () => {
+    const w = mountView()
+    await enter(w)
+    expect(w.find('[data-testid="price-operations"]').exists()).toBe(false)
+    expect(w.find('[data-testid="model-bulk-panel"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(2)
   })
-
-  it('can show hidden models and batch restore them', async () => {
-    apiMock.getModelPrices
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [model({ hidden: true })],
-        hidden_model_keys: ['46:gpt-5.5'],
-        show_hidden_models: true,
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-      }))
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [model({ hidden: true })],
-        hidden_model_keys: ['46:gpt-5.5'],
-        show_hidden_models: true,
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-      }))
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [model()],
-        hidden_model_keys: [],
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-      }))
-
-    const wrapper = mountView()
+  it('requires target confirmation before hiding models', async () => {
+    const w = mountView()
+    await enter(w, true)
+    await w.get('[data-testid="model-select-test-model"]').setValue(true)
+    await w.get('[data-testid="model-bulk-hide"]').trigger('click')
+    expect(api.updateHiddenModels).not.toHaveBeenCalled()
+    await w.get('[data-testid="confirm-visibility"]').trigger('click')
     await flushPromises()
-
-    await wrapper.get('[data-testid="group-pill-46"]').trigger('click')
-    await flushPromises()
-
-    await wrapper.get('[data-testid="model-hidden-only-filter"]').trigger('click')
-    await flushPromises()
-
-    expect(apiMock.getModelPrices).toHaveBeenLastCalledWith(expect.objectContaining({
-      group_id: 46,
-      show_hidden_models: true,
-    }))
-    expect(wrapper.find('[data-model-name="gpt-5.5"]').exists()).toBe(true)
-
-    await wrapper.get('[data-testid="model-select-gpt-5.5"]').setValue(true)
-    await wrapper.get('[data-testid="model-bulk-restore"]').trigger('click')
-    await flushPromises()
-
-    expect(apiMock.updateHiddenModels).toHaveBeenCalledWith(46, ['gpt-5.5'], false)
+    expect(api.updateHiddenModels).toHaveBeenCalledWith(
+      46,
+      ['test-model'],
+      true,
+    )
   })
-
-  it('supports group batch selection and hide action', async () => {
-    apiMock.getModelPrices
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response({
-        groups: [
-          { ...response().groups[0], hidden: true },
-          response().groups[1],
-        ],
-        hidden_group_ids: [46],
-      }))
-
-    const wrapper = mountView()
+  it('keeps group hiding and restoring available', async () => {
+    const w = mountView()
     await flushPromises()
-
-    await wrapper.get('[data-testid="group-select-46"]').setValue(true)
-
-    expect(wrapper.get('[data-testid="group-bulk-panel"]').text()).toContain('已选 1 个')
-
-    await wrapper.get('[data-testid="group-bulk-hide"]').trigger('click')
+    await w.get('[data-testid="price-manage-tab"]').trigger('click')
+    await w.get('[data-testid="group-select-46"]').setValue(true)
+    await w.get('[data-testid="group-bulk-hide"]').trigger('click')
+    await w.get('[data-testid="confirm-visibility"]').trigger('click')
     await flushPromises()
-
-    expect(apiMock.updateHiddenGroups).toHaveBeenCalledWith([46])
+    expect(api.updateHiddenGroups).toHaveBeenCalledWith([46])
   })
-
-  it('shows group video pricing as per-second and accepts explicit zero', async () => {
-    const video = model({
-      name: 'video-model',
-      billing_mode: 'video',
-      pricing_source: 'group',
-      official: {
-        input_usd_per_m: null,
-        output_usd_per_m: null,
-        cache_write_usd_per_m: null,
-        cache_read_usd_per_m: null,
-        image_output_usd_per_m: null,
+  it('restores hidden models without changing calling permissions', async () => {
+    api.getModelPrices.mockImplementation(async (p) =>
+      response({
+        selected_group_id: p.group_id || null,
+        models: p.group_id ? [model({ hidden: true })] : [],
+      }),
+    )
+    const w = mountView()
+    await enter(w, true)
+    await w.get('[data-testid="model-hidden-only-filter"]').setValue(true)
+    await flushPromises()
+    expect(api.getModelPrices).toHaveBeenLastCalledWith(
+      expect.objectContaining({ show_hidden_models: true }),
+    )
+    await w.get('[data-testid="model-select-test-model"]').setValue(true)
+    await w.get('[data-testid="model-bulk-restore"]').trigger('click')
+    await w.get('[data-testid="confirm-visibility"]').trigger('click')
+    await flushPromises()
+    expect(api.updateHiddenModels).toHaveBeenCalledWith(
+      46,
+      ['test-model'],
+      false,
+    )
+  })
+  it('filters source, search and unit without duplicate mobile rows', async () => {
+    const w = mountView()
+    await enter(w)
+    await w.get('[data-testid="price-source-filter"]').setValue('unknown')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
+    expect(w.text()).toContain('官方原价缺失')
+    await w.get('[data-testid="model-search"]').setValue('absent')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(0)
+  })
+  it('preserves explicit zero in the editor and previews before saving', async () => {
+    const zero = model({ billing_mode: 'video' })
+    zero.actual.per_request_usd = 0
+    zero.actual.per_request_cny = 0
+    api.getModelPrices.mockImplementation(async (p) =>
+      response({
+        selected_group_id: p.group_id || null,
+        models: p.group_id ? [zero] : [],
+      }),
+    )
+    const w = mountView()
+    await enter(w, true)
+    expect(w.text()).toContain('每秒')
+    await w.get('[aria-label="编辑展示价"]').trigger('click')
+    expect(
+      w
+        .getComponent(ModelPriceEditor)
+        .get('[data-testid="price-editor-per_request_usd"]').element,
+    ).toHaveProperty('value', '0')
+    await w.get('#model-price-edit').trigger('submit')
+    expect(api.updateCustomPrice).not.toHaveBeenCalled()
+    await w
+      .findAll('button')
+      .find((b) => b.text() === '确认保存展示价')!
+      .trigger('click')
+    await flushPromises()
+    expect(api.updateCustomPrice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        group_id: 46,
+        billing_mode: 'video',
         per_request_usd: 0,
-      },
-      actual: {
-        input_usd_per_m: null,
-        input_cny_per_m: null,
-        output_usd_per_m: null,
-        output_cny_per_m: null,
-        cache_write_usd_per_m: null,
-        cache_write_cny_per_m: null,
-        cache_read_usd_per_m: null,
-        cache_read_cny_per_m: null,
-        image_output_usd_per_m: null,
-        image_output_cny_per_m: null,
-        per_request_usd: 0,
-        per_request_cny: 0,
-      },
-      official_missing: false,
-    })
-    apiMock.getModelPrices
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [video],
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: null },
-      }))
-
-    const wrapper = mountView()
-    await flushPromises()
-    await wrapper.get('[data-testid="group-pill-46"]').trigger('click')
-    await flushPromises()
-
-    const text = wrapper.text()
-    expect(text).toContain('视频按秒计费')
-    expect(text).toContain('每秒')
-    expect(text).toContain('分组配置')
-    expect(text).not.toContain('缺渠道价或实际展示价')
-
-    apiMock.updateCustomPrice.mockResolvedValue({ custom_prices: {} })
-    const vm = wrapper.vm as any
-    vm.openPriceEditor(video)
-    expect(vm.priceEditor.perRequestUSD).toBe('0')
-    await vm.saveCustomPrice()
-    await flushPromises()
-    expect(apiMock.updateCustomPrice).toHaveBeenCalledWith(expect.objectContaining({
-      group_id: 46,
-      model: 'video-model',
-      billing_mode: 'video',
-      per_request_usd: 0,
-    }))
-    expect(appStoreMock.showError).not.toHaveBeenCalledWith('至少填写一个价格')
+      }),
+    )
   })
-
-  it('labels fallback pricing and uses neutral billing-baseline wording', async () => {
-	apiMock.getModelPrices
-	  .mockResolvedValueOnce(response())
-	  .mockResolvedValueOnce(response({
-		selected_group_id: 46,
-		models: [model({ pricing_source: 'fallback' })],
-		summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-	  }))
-
-	const wrapper = mountView()
-	await flushPromises()
-	await wrapper.get('[data-testid="group-pill-46"]').trigger('click')
-	await flushPromises()
-
-	expect(wrapper.text()).toContain('内置回退价')
-	expect(wrapper.text()).toContain('计费基准价')
-  })
-
-  it('shows tier cache write/read including explicit zero in badges', async () => {
-    const tiered = model({
-      price_tiers: [{
-        key: 'priority',
+  it('renders cache and tier prices including zero in expanded details', async () => {
+    const m = model()
+    m.price_tiers = [
+      {
+        key: 'fast',
         label: 'Fast',
-        official: {
-          input_usd_per_m: 4,
-          output_usd_per_m: 20,
-          cache_write_usd_per_m: 0,
-          cache_read_usd_per_m: 0.4,
-          image_output_usd_per_m: null,
-          per_request_usd: null,
-        },
-        actual: {
-          input_usd_per_m: 2,
-          input_cny_per_m: 14,
-          output_usd_per_m: 10,
-          output_cny_per_m: 70,
-          cache_write_usd_per_m: 0,
-          cache_write_cny_per_m: 0,
-          cache_read_usd_per_m: 0.2,
-          cache_read_cny_per_m: 1.4,
-          image_output_usd_per_m: null,
-          image_output_cny_per_m: null,
-          per_request_usd: null,
-          per_request_cny: null,
-        },
-      }],
-    })
-    apiMock.getModelPrices
-      .mockResolvedValueOnce(response())
-      .mockResolvedValueOnce(response({
-        selected_group_id: 46,
-        models: [tiered],
-        summary: { model_count: 1, priced_count: 1, average_cheaper_factor: 5 },
-      }))
+        official: m.official,
+        actual: { ...m.actual, cache_write_cny_per_m: 0 },
+      },
+    ]
+    m.catalog_price!.tiers = m.price_tiers
+    m.catalog_price!.tiers[0].official = {...m.official, cache_write_usd_per_m: 0}
+    api.getModelPrices.mockImplementation(async (p) =>
+      response({
+        selected_group_id: p.group_id || null,
+        models: p.group_id ? [m] : [],
+      }),
+    )
+    const w = mountView()
+    await enter(w)
+    await w.findAll('input[type="checkbox"]')[0].setValue(true)
+    expect(w.text()).toContain('Fast')
+    expect(w.text()).toContain('缓存写入')
+    expect(w.text()).toContain('US$0')
+    expect(w.text()).toContain('官方原价')
+  })
+  it('clears stale platform and source criteria on group change', async () => {
+    api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[model({name:p.group_id===47?'claude':'gpt',platform:p.group_id===47?'anthropic':'openai'})]:[]}))
+    const w=mountView();await enter(w)
+    await w.get('[data-testid="platform-filter"]').setValue('openai')
+    await w.get('[data-testid="quick-group-47"]').trigger('click');await flushPromises()
+    expect(w.get('[data-model-name="claude"]').exists()).toBe(true)
+    expect((w.get('[data-testid="platform-filter"]').element as HTMLSelectElement).value).toBe('')
+  })
+  it('keeps management prices and sources separate from official browsing', async () => {
+    const custom=model({pricing_source:'custom',custom_price:{input_usd_per_m:99}})
+    custom.actual={...custom.actual,input_usd_per_m:99,input_cny_per_m:693}
+    api.getModelPrices.mockImplementation(async p=>response({selected_group_id:p.group_id||null,models:p.group_id?[custom]:[]}))
+    const w=mountView();await enter(w)
+    expect(w.get('.price-main-values').text()).toContain('US$3')
+    await w.get('[data-testid="price-manage-tab"]').trigger('click');await flushPromises()
+    expect(w.get('.price-main-values').text()).toContain('693')
+    await w.get('[data-testid="price-source-filter"]').setValue('custom')
+    expect(w.findAll('[data-testid="model-price-row"]')).toHaveLength(1)
+    await w.findAll('[role="tab"]').find(tab=>tab.text()==='价格查询')!.trigger('click');await flushPromises()
+    expect(w.get('.price-main-values').text()).toContain('US$3')
+  })
 
-    const wrapper = mountView()
+  it('ignores stale group responses', async () => {
+    const w = mountView()
     await flushPromises()
-    await wrapper.get('[data-testid="group-pill-46"]').trigger('click')
+    let resolve!: (v: unknown) => void
+    api.getModelPrices
+      .mockImplementationOnce(
+        () =>
+          new Promise((r) => {
+            resolve = r
+          }),
+      )
+      .mockResolvedValueOnce(
+        response({ selected_group_id: 47, models: [model({ name: 'new' })] }),
+      )
+    await w.get('[data-testid="quick-group-46"]').trigger('click')
+    await w.get('[data-testid="quick-group-47"]').trigger('click')
     await flushPromises()
-
-    const fastBadge = wrapper.findAll('.tier-chip').find((badge) => badge.text().includes('Fast'))
-    expect(fastBadge?.attributes('title')).toContain('缓存写 $0')
-    expect(fastBadge?.attributes('title')).toContain('缓存读 $0.2')
+    resolve(
+      response({ selected_group_id: 46, models: [model({ name: 'stale' })] }),
+    )
+    await flushPromises()
+    expect(w.text()).toContain('new')
+    expect(w.find('[data-model-name="stale"]').exists()).toBe(false)
+  })
+  it('never exposes management actions to regular users', async () => {
+    auth.isAdmin = false
+    const w = mountView()
+    await enter(w)
+    expect(w.find('[data-testid="price-manage-tab"]').exists()).toBe(false)
+    expect(w.find('[aria-label="编辑展示价"]').exists()).toBe(false)
+  })
+  it('shows retry after load failure and clears stale rows while loading', async () => {
+    const w = mountView()
+    await enter(w)
+    api.getModelPrices.mockRejectedValueOnce(new Error('offline'))
+    await w.get('[aria-label="刷新价格"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[role="alert"]').exists()).toBe(true)
+    expect(w.find('[data-testid="model-price-row"]').exists()).toBe(false)
   })
 })

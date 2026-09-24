@@ -73,6 +73,7 @@ vi.mock('@/api/referral', () => ({
 }))
 
 vi.mock('@/stores', () => ({
+  useAuthStore: () => ({ isAuthenticated: true, isAdmin: false }),
   useAppStore: () => ({
     showError,
     showSuccess,
@@ -158,7 +159,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -183,7 +184,7 @@ describe('user ReferralView', () => {
     mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -203,7 +204,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -219,7 +220,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -235,7 +236,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -250,7 +251,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -286,7 +287,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -330,7 +331,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -388,7 +389,7 @@ describe('user ReferralView', () => {
 
     const wrapper = mount(ReferralView, {
       global: {
-        stubs: { AppLayout: { template: '<div><slot /></div>' } }
+        stubs: { PricePortalLayout: { template: '<div><slot /></div>' } }
       }
     })
     await flushPromises()
@@ -429,7 +430,7 @@ describe('user ReferralView', () => {
 
     const wrapper = mount(ReferralView, {
       global: {
-        stubs: { AppLayout: { template: '<div><slot /></div>' } }
+        stubs: { PricePortalLayout: { template: '<div><slot /></div>' } }
       }
     })
     await flushPromises()
@@ -471,7 +472,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -512,7 +513,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -541,7 +542,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })
@@ -586,7 +587,7 @@ describe('user ReferralView', () => {
     const wrapper = mount(ReferralView, {
       global: {
         stubs: {
-          AppLayout: { template: '<div><slot /></div>' }
+          PricePortalLayout: { template: '<div><slot /></div>' }
         }
       }
     })

@@ -128,7 +128,16 @@ type modelPriceTierDTO struct {
 	Actual                     modelPriceActualDTO `json:"actual"`
 }
 
+// Catalog pricing is independent of routing overrides and sales multipliers.
+type modelPriceCatalogPriceDTO struct {
+	Model       string              `json:"model"`
+	BillingMode string              `json:"billing_mode"`
+	Price       modelPriceValueDTO  `json:"price"`
+	Tiers       []modelPriceTierDTO `json:"tiers"`
+}
+
 type modelPriceModelDTO struct {
+	CatalogPrice    *modelPriceCatalogPriceDTO     `json:"catalog_price"`
 	Name            string                         `json:"name"`
 	Platform        string                         `json:"platform"`
 	Provider        string                         `json:"provider"`
@@ -306,13 +315,14 @@ func sanitizeModelPriceModelsForUser(models []modelPriceModelDTO) []modelPriceMo
 	for i := range models {
 		models[i].CustomPrice = nil
 		if models[i].PricingSource == "custom" {
-			models[i].PricingSource = "official"
+			models[i].PricingSource = "display_override"
 		}
 	}
 	return models
 }
 
 func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
+	middleware.SetAuditAction(c, "admin.model_prices.visibility.groups")
 	var req updateModelPriceHiddenGroupsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -327,6 +337,7 @@ func (h *ModelPriceHandler) UpdateHiddenGroups(c *gin.Context) {
 }
 
 func (h *ModelPriceHandler) UpdateHiddenModel(c *gin.Context) {
+	middleware.SetAuditAction(c, "admin.model_prices.visibility.models")
 	var req updateModelPriceHiddenModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -345,6 +356,7 @@ func (h *ModelPriceHandler) UpdateHiddenModel(c *gin.Context) {
 }
 
 func (h *ModelPriceHandler) UpdateCustomPrice(c *gin.Context) {
+	middleware.SetAuditAction(c, "admin.model_prices.display_price")
 	var req updateModelPriceCustomPriceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
@@ -371,6 +383,7 @@ func (h *ModelPriceHandler) UpdateCustomPrice(c *gin.Context) {
 }
 
 func (h *ModelPriceHandler) SyncCatalog(c *gin.Context) {
+	middleware.SetAuditAction(c, "admin.model_prices.sync_catalog")
 	manager, ok := h.pricingService.(modelPriceCatalogManager)
 	if !ok || manager == nil {
 		response.BadRequest(c, "Pricing catalog sync is unavailable")
@@ -1116,6 +1129,7 @@ func (h *ModelPriceHandler) toModelPriceDTO(agg *modelAggregate, group modelPric
 	priceTiers = actualizePriceTiers(priceTiers, multiplier, usdCNYRate)
 
 	return modelPriceModelDTO{
+		CatalogPrice:    h.catalogPriceForModel(agg),
 		Name:            agg.name,
 		Platform:        agg.platform,
 		Provider:        provider,

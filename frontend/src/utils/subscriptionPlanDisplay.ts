@@ -145,6 +145,7 @@ export function subscriptionMatchesPlan(
 ): boolean {
   if (!plan) return false
   if (subscription.plan_id) return subscription.plan_id === plan.id
+  if (subscription.entitlement_id != null || subscription.entitlement_only) return false
   return subscriptionPlanGroupIDs(plan).includes(subscription.group_id)
 }
 
@@ -154,8 +155,9 @@ export function planForSubscription(
 ): SubscriptionPlan | null {
   if (subscription.plan_id) {
     const exactPlan = plans.find((plan) => plan.id === subscription.plan_id)
-    if (exactPlan) return exactPlan
+    return exactPlan || null
   }
+  if (subscription.entitlement_id != null || subscription.entitlement_only) return null
 
   const fallbackPlans = plans.filter((plan) => subscriptionPlanGroupIDs(plan).includes(subscription.group_id))
   return fallbackPlans.length === 1 ? fallbackPlans[0] : null

@@ -1,18 +1,18 @@
 <template>
   <section
     data-test="referral-wallet-card"
-    class="flex h-full flex-col rounded-[28px] border border-black/[0.06] bg-white p-7 dark:border-white/10 dark:bg-[#1c1c1e]"
+    class="flex h-full flex-col rounded-lg border border-[var(--ppx-line)] bg-[var(--ppx-panel)] p-7  "
   >
     <div class="flex gap-3">
-      <span class="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#0071e3]/10 text-[#0071e3]">
+      <span class="flex h-11 w-11 items-center justify-center rounded-md bg-[var(--ppx-tint)] text-[var(--ppx-accent)]">
         <ReferralIcon name="wallet" :size="22" />
       </span>
       <div>
-        <p class="text-[13px] font-medium text-[#86868b]">{{ t('referral.walletCardEyebrow') }}</p>
-        <h2 class="mt-0.5 text-[22px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+        <p class="text-[13px] font-medium text-[var(--ppx-muted)]">{{ t('referral.walletCardEyebrow') }}</p>
+        <h2 class="mt-0.5 text-[20px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
           {{ walletTitle }}
         </h2>
-        <p class="mt-1 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
+        <p class="mt-1 text-[14px] leading-relaxed text-[var(--ppx-muted)] ">
           {{ walletDesc }}
         </p>
       </div>
@@ -20,14 +20,14 @@
 
     <button
       type="button"
-      class="mt-6 w-full rounded-[20px] bg-[#f5f5f7] px-5 py-5 text-left transition hover:bg-[#ebebed] dark:bg-[#2c2c2e] dark:hover:bg-[#3a3a3c]"
+      class="mt-6 w-full rounded-md bg-[var(--ppx-soft)] px-5 py-5 text-left transition hover:bg-[var(--ppx-tint)]  "
       @click="$emit('openBucket', 'available', t('referral.availableCommission'))"
     >
-      <p class="text-[13px] font-medium text-[#86868b]">{{ t('referral.availableCommission') }}</p>
-      <p class="mt-1 text-[44px] font-semibold leading-none tracking-tight tabular-nums text-[#1d1d1f] dark:text-white">
-        <span class="text-[22px] font-medium text-[#86868b]">¥</span>{{ formatMoney(available) }}
+      <p class="text-[13px] font-medium text-[var(--ppx-muted)]">{{ t('referral.availableCommission') }}</p>
+      <p class="mt-1 text-[36px] font-semibold leading-none tracking-normal tabular-nums text-[var(--ppx-ink)] ">
+        <span class="text-[20px] font-medium text-[var(--ppx-muted)]">¥</span>{{ formatMoney(available) }}
       </p>
-      <p class="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[#0071e3]">
+      <p class="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[var(--ppx-accent)]">
         {{ t('referral.clickToViewDetail') }}
         <ReferralIcon name="arrow" :size="12" />
       </p>
@@ -36,31 +36,31 @@
     <div class="mt-3 grid grid-cols-3 gap-2">
       <button
         type="button"
-        class="rounded-[16px] bg-[#f5f5f7] px-3 py-3 text-left transition hover:bg-[#ebebed] dark:bg-[#2c2c2e] dark:hover:bg-[#3a3a3c]"
+        class="rounded-md bg-[var(--ppx-soft)] px-3 py-3 text-left transition hover:bg-[var(--ppx-tint)]  "
         @click="$emit('openBucket', 'processing', t('referral.processingCommission'))"
       >
-        <p class="text-[11px] font-medium text-[#86868b]">{{ t('referral.processingCommission') }}</p>
-        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[#1d1d1f] dark:text-white">
+        <p class="text-[11px] font-medium text-[var(--ppx-muted)]">{{ t('referral.processingCommission') }}</p>
+        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[var(--ppx-ink)] ">
           ¥{{ formatMoney(processing) }}
         </p>
       </button>
       <button
         type="button"
-        class="rounded-[16px] bg-[#f5f5f7] px-3 py-3 text-left transition hover:bg-[#ebebed] dark:bg-[#2c2c2e] dark:hover:bg-[#3a3a3c]"
+        class="rounded-md bg-[var(--ppx-soft)] px-3 py-3 text-left transition hover:bg-[var(--ppx-tint)]  "
         @click="$emit('openBucket', 'settled', t('referral.withdrawnCommission'))"
       >
-        <p class="text-[11px] font-medium text-[#86868b]">{{ t('referral.withdrawnCommission') }}</p>
-        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[#1d1d1f] dark:text-white">
+        <p class="text-[11px] font-medium text-[var(--ppx-muted)]">{{ t('referral.withdrawnCommission') }}</p>
+        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[var(--ppx-ink)] ">
           ¥{{ formatMoney(withdrawn) }}
         </p>
       </button>
       <button
         type="button"
-        class="rounded-[16px] bg-[#f5f5f7] px-3 py-3 text-left transition hover:bg-[#ebebed] dark:bg-[#2c2c2e] dark:hover:bg-[#3a3a3c]"
+        class="rounded-md bg-[var(--ppx-soft)] px-3 py-3 text-left transition hover:bg-[var(--ppx-tint)]  "
         @click="$emit('openBucket', 'all', t('referral.totalCommission'))"
       >
-        <p class="text-[11px] font-medium text-[#86868b]">{{ t('referral.totalCommission') }}</p>
-        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[#1d1d1f] dark:text-white">
+        <p class="text-[11px] font-medium text-[var(--ppx-muted)]">{{ t('referral.totalCommission') }}</p>
+        <p class="mt-1 text-[15px] font-semibold tabular-nums text-[var(--ppx-ink)] ">
           ¥{{ formatMoney(total) }}
         </p>
       </button>
@@ -71,18 +71,18 @@
         v-if="creditConversionEnabled"
         data-test="credit-conversion-rate-hint"
         :data-conversion-rate="conversionMultiplierText"
-        class="rounded-[16px] bg-[#0071e3]/[0.08] px-4 py-3.5"
+        class="rounded-md bg-[var(--ppx-tint)] px-4 py-3.5"
       >
         <div class="flex items-start gap-2.5">
-          <span class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-[#0071e3]/15 text-[#0071e3]">
+          <span class="mt-0.5 flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ppx-tint)] text-[var(--ppx-accent)]">
             <ReferralIcon name="convert" :size="16" />
           </span>
           <div class="min-w-0 flex-1">
-            <p class="text-[12px] font-medium text-[#0071e3]">{{ t('referral.creditConversionRateLabel') }}</p>
-            <p class="mt-0.5 text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
+            <p class="text-[12px] font-medium text-[var(--ppx-accent)]">{{ t('referral.creditConversionRateLabel') }}</p>
+            <p class="mt-0.5 text-[15px] font-semibold text-[var(--ppx-ink)] ">
               {{ conversionRateLabel }}
             </p>
-            <p class="mt-0.5 text-[12px] text-[#6e6e73] dark:text-[#a1a1a6]">
+            <p class="mt-0.5 text-[12px] text-[var(--ppx-muted)] ">
               {{ conversionExample }}
             </p>
           </div>
@@ -94,7 +94,7 @@
           v-if="withdrawEnabled"
           type="button"
           data-test="scroll-to-withdraw"
-          class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[#1d1d1f] text-[15px] font-medium text-white transition hover:bg-black active:scale-[0.98] dark:bg-white dark:text-black"
+          class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--ppx-accent)] text-[var(--ppx-accent-ink)] text-[15px] font-medium transition hover:bg-black active:scale-[0.98]  "
           @click="$emit('scrollWithdraw')"
         >
           <ReferralIcon name="wallet" :size="16" />
@@ -104,7 +104,7 @@
           v-if="creditConversionEnabled"
           type="button"
           data-test="open-convert-credit"
-          class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[#0071e3] text-[15px] font-medium text-white transition hover:bg-[#0077ed] active:scale-[0.98] disabled:opacity-40"
+          class="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--ppx-accent)] text-[var(--ppx-accent-ink)] text-[15px] font-medium transition hover:opacity-90 active:scale-[0.98] disabled:opacity-40"
           :disabled="!available"
           @click="$emit('openConvert')"
         >

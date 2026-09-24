@@ -333,7 +333,7 @@ func (r *userSubscriptionRepository) ListByGroupID(ctx context.Context, groupID 
 	return out, paginationResultFromTotal(int64(total), params), nil
 }
 
-func (r *userSubscriptionRepository) List(ctx context.Context, params pagination.PaginationParams, userID, groupID *int64, status, platform, sortBy, sortOrder string) ([]service.UserSubscription, *pagination.PaginationResult, error) {
+func (r *userSubscriptionRepository) List(ctx context.Context, params pagination.PaginationParams, userID, groupID *int64, status, platform, sortBy, sortOrder string, extra ...service.SubscriptionAdminFilters) ([]service.UserSubscription, *pagination.PaginationResult, error) {
 	client := clientFromContext(ctx, r.client)
 	q := client.UserSubscription.Query()
 	includeSoftDeleted := status == "" || status == service.SubscriptionStatusRevoked
@@ -353,6 +353,11 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 
 	// Status filtering with real-time expiration check
 	now := time.Now()
+	var filters service.SubscriptionAdminFilters
+	if len(extra) > 0 {
+		filters = extra[0]
+	}
+	q = q.Where(func(selector *entsql.Selector) { applySubscriptionAdminFilters(selector, filters, now, false) })
 	switch status {
 	case service.SubscriptionStatusActive:
 		// Active: status is active AND not yet expired
@@ -413,7 +418,7 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 	prefixLimit := params.Offset() + params.Limit()
 	entitlementFilter := entitlementOnlyAdminSubscriptionFilter{
 		UserID: userID, GroupID: groupID, Status: status, Platform: platform,
-		Now: now, Limit: prefixLimit, SortBy: field, SortOrder: sortOrder,
+		Now: now, Limit: prefixLimit, SortBy: field, SortOrder: sortOrder, Extra: filters,
 	}
 	entitlementTotal, err := entitlementOnlyAdminSubscriptionQuery(client, entitlementFilter).Count(ctx)
 	if err != nil {
@@ -463,6 +468,7 @@ func (r *userSubscriptionRepository) List(ctx context.Context, params pagination
 }
 
 type entitlementOnlyAdminSubscriptionFilter struct {
+	Extra     service.SubscriptionAdminFilters
 	UserIDs   []int64
 	UserID    *int64
 	GroupID   *int64
@@ -515,6 +521,7 @@ func entitlementOnlyAdminSubscriptionQuery(client *dbent.Client, filter entitlem
 	if now.IsZero() {
 		now = time.Now()
 	}
+	q = q.Where(func(selector *entsql.Selector) { applySubscriptionAdminFilters(selector, filter.Extra, now, true) })
 	switch filter.Status {
 	case service.SubscriptionStatusActive:
 		q = q.Where(

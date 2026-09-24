@@ -1,8 +1,8 @@
 <template>
-  <div class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
+  <div class="rounded-lg border border-gray-200 bg-[var(--ppx-panel)] p-5 shadow-sm dark:border-dark-700 dark:bg-dark-900">
     <div class="mb-4 flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
       <div>
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('referral.payoutAccounts', '收款账户') }}</h2>
+        <h2 class="text-lg font-semibold text-gray-900 ">{{ t('referral.payoutAccounts', '收款账户') }}</h2>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('referral.payoutAccountsHint', '新增提现账户，修改需要 7 天冷却期。') }}</p>
       </div>
     </div>
@@ -12,11 +12,11 @@
       <div
         v-for="account in accounts"
         :key="account.id"
-        class="group relative overflow-hidden rounded-2xl border border-gray-200 p-4 transition hover:border-gray-300 dark:border-dark-700 dark:hover:border-dark-600"
+        class="group relative overflow-hidden rounded-lg border border-gray-200 p-4 transition hover:border-gray-300 dark:border-dark-700 dark:hover:border-dark-600"
       >
         <div class="flex items-start justify-between gap-3">
           <div>
-            <div class="flex items-center gap-2 font-medium text-gray-900 dark:text-white">
+            <div class="flex items-center gap-2 font-medium text-gray-900 ">
               {{ account.account_name }}
               <span class="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-dark-800 dark:text-gray-300">
                 {{ account.method }}
@@ -31,7 +31,7 @@
           </div>
           <button
             type="button"
-            class="btn btn-secondary btn-sm opacity-0 transition group-hover:opacity-100"
+            class="btn btn-secondary btn-sm"
             :disabled="!canEditAccount(account)"
             @click="startEdit(account)"
           >
@@ -63,7 +63,7 @@
       <!-- Add New Account Button -->
       <button
         type="button"
-        class="flex w-full items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 py-4 text-sm text-gray-500 transition hover:border-primary-500 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-400 dark:hover:text-primary-400"
+        class="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-gray-300 py-4 text-sm text-gray-500 transition hover:border-primary-500 hover:text-primary-600 dark:border-dark-600 dark:text-gray-400 dark:hover:border-primary-400 dark:hover:text-primary-400"
         @click="startCreate"
       >
         <svg viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
@@ -80,7 +80,7 @@
       size="md"
       @close="closeDrawer"
     >
-      <div v-if="!canEditAccountWrapper" class="mb-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+      <div v-if="!canEditAccountWrapper" class="mb-4 rounded-md bg-amber-50 p-4 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
         {{ t('referral.accountCoolingDown', '账户冷却中，必须等待冷却时间过后方可修改。') }}
         {{ t('referral.accountNextEditableAt', { time: formatDate(nextEditableAt(editingAccount!)) }) }}
       </div>
@@ -96,8 +96,8 @@
               v-for="method in enabledMethods"
               :key="method"
               type="button"
-              class="rounded-xl border py-2 text-center text-sm transition"
-              :class="form.method === method ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800'"
+              class="rounded-md border py-2 text-center text-sm transition"
+              :class="form.method === method ? 'border-primary-500 bg-primary-50 text-primary-700 dark:border-primary-400 dark:bg-primary-900/20 dark:text-primary-300' : 'border-gray-200 bg-[var(--ppx-panel)] text-gray-700 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-gray-300 dark:hover:bg-dark-800'"
               @click="form.method = method"
               :disabled="!canEditAccountWrapper && editingAccount !== null"
             >
@@ -106,25 +106,25 @@
           </div>
         </div>
 
-        <div class="space-y-4 rounded-2xl border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
+        <div class="space-y-4 rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-dark-700 dark:bg-dark-800">
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.accountName', '收款人名称') }}</label>
-            <input v-model="form.account_name" class="input bg-white dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
+            <input v-model="form.account_name" class="input bg-[var(--ppx-panel)] dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
           </div>
 
           <!-- Alipay -->
           <template v-if="form.method === 'alipay'">
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.alipayAccount', '支付宝账号') }}</label>
-              <input v-model="form.account_no" class="input bg-white dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
+              <input v-model="form.account_no" class="input bg-[var(--ppx-panel)] dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
             </div>
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.qrCode', '收款二维码 (可选)') }}</label>
               <!-- QR Image Upload Drop Zone -->
               <div
-                class="relative mt-1 rounded-xl border-2 border-dashed p-4 text-center transition"
+                class="relative mt-1 rounded-md border-2 border-dashed p-4 text-center transition"
                 :class="[
-                  qrDragOver ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20' : 'border-gray-300 bg-white hover:border-gray-400 dark:border-dark-600 dark:bg-dark-900 dark:hover:border-dark-500',
+                  qrDragOver ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20' : 'border-gray-300 bg-[var(--ppx-panel)] hover:border-gray-400 dark:border-dark-600 dark:bg-dark-900 dark:hover:border-dark-500',
                   (!canEditAccountWrapper && editingAccount !== null) ? 'pointer-events-none opacity-50' : 'cursor-pointer'
                 ]"
                 @dragover.prevent="qrDragOver = true"
@@ -160,7 +160,7 @@
                 <img :src="form.qr_image_url" alt="QR Code" class="h-16 w-16 rounded-lg border border-gray-200 object-contain dark:border-dark-700" />
               </div>
               <!-- Manual URL input -->
-              <input v-model="form.qr_image_url" class="input mt-2 bg-white dark:bg-dark-900" :placeholder="t('referral.qrUrlPlaceholder', '或粘贴图片链接 https://')" :disabled="!canEditAccountWrapper && editingAccount !== null" />
+              <input v-model="form.qr_image_url" class="input mt-2 bg-[var(--ppx-panel)] dark:bg-dark-900" :placeholder="t('referral.qrUrlPlaceholder', '或粘贴图片链接 https://')" :disabled="!canEditAccountWrapper && editingAccount !== null" />
             </div>
           </template>
 
@@ -168,15 +168,15 @@
           <template v-else-if="form.method === 'wechat'">
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.wechatAccount', '微信号 / 手机号') }}</label>
-              <input v-model="form.account_no" class="input bg-white dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
+              <input v-model="form.account_no" class="input bg-[var(--ppx-panel)] dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
             </div>
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.wechatQrUrl', '微信收款码 (可选)') }}</label>
               <!-- QR Image Upload Drop Zone -->
               <div
-                class="relative mt-1 rounded-xl border-2 border-dashed p-4 text-center transition"
+                class="relative mt-1 rounded-md border-2 border-dashed p-4 text-center transition"
                 :class="[
-                  qrDragOver ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20' : 'border-gray-300 bg-white hover:border-gray-400 dark:border-dark-600 dark:bg-dark-900 dark:hover:border-dark-500',
+                  qrDragOver ? 'border-primary-500 bg-primary-50 dark:border-primary-400 dark:bg-primary-900/20' : 'border-gray-300 bg-[var(--ppx-panel)] hover:border-gray-400 dark:border-dark-600 dark:bg-dark-900 dark:hover:border-dark-500',
                   (!canEditAccountWrapper && editingAccount !== null) ? 'pointer-events-none opacity-50' : 'cursor-pointer'
                 ]"
                 @dragover.prevent="qrDragOver = true"
@@ -212,7 +212,7 @@
                 <img :src="form.qr_image_url" alt="QR Code" class="h-16 w-16 rounded-lg border border-gray-200 object-contain dark:border-dark-700" />
               </div>
               <!-- Manual URL input -->
-              <input v-model="form.qr_image_url" class="input mt-2 bg-white dark:bg-dark-900" :placeholder="t('referral.qrUrlPlaceholder', '或粘贴图片链接 https://')" :disabled="!canEditAccountWrapper && editingAccount !== null" />
+              <input v-model="form.qr_image_url" class="input mt-2 bg-[var(--ppx-panel)] dark:bg-dark-900" :placeholder="t('referral.qrUrlPlaceholder', '或粘贴图片链接 https://')" :disabled="!canEditAccountWrapper && editingAccount !== null" />
             </div>
           </template>
 
@@ -220,11 +220,11 @@
           <template v-else>
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.bankName', '开户银行') }}</label>
-              <input v-model="form.bank_name" class="input bg-white dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
+              <input v-model="form.bank_name" class="input bg-[var(--ppx-panel)] dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
             </div>
             <div>
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ t('referral.bankCardNo', '银行卡号') }}</label>
-              <input v-model="form.account_no" class="input bg-white dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
+              <input v-model="form.account_no" class="input bg-[var(--ppx-panel)] dark:bg-dark-900" :disabled="!canEditAccountWrapper && editingAccount !== null" required />
             </div>
           </template>
         </div>

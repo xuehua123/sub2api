@@ -210,7 +210,9 @@ async function mountView() {
   const wrapper = mount(SubscriptionsView, {
     global: {
       stubs: {
-        AppLayout: { template: '<div><slot /></div>' },
+        PricePortalLayout: { template: '<div><slot /></div>' },
+        RouterLink: { template: '<a><slot /></a>' },
+        BaseDialog: { props: ['show'], template: '<div v-if="show"><slot /><slot name="footer" /></div>' },
         Icon: true,
       },
     },
@@ -242,6 +244,30 @@ describe('SubscriptionsView entitlement v2 section', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.useRealTimers()
+  })
+
+  it('cancels early activation without sending a reset request', async () => {
+    getEntitlements.mockResolvedValue([{...entitlement,monthly_usage_usd:95}])
+    const wrapper=await mountView()
+    await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
+    await flushPromises()
+    expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="advance-cancel"]').trigger('click')
+    await flushPromises()
+    expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
+    expect(window.confirm).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('filters the complete loaded plan list without extra API calls', async () => {
+    getEntitlements.mockResolvedValue([{...entitlement},{...entitlement,id:33,name:'Other',plan_name:'Other'}])
+    const wrapper=await mountView()
+    await wrapper.get('#subscription-search').setValue('Shared Pro')
+    expect(wrapper.findAll('[data-testid="entitlement-card"]')).toHaveLength(1)
+    expect(getEntitlements).toHaveBeenCalledTimes(1)
+    await wrapper.get('#subscription-search').setValue('missing')
+    expect(wrapper.text()).toContain('accountPages.noMatch')
+    wrapper.unmount()
   })
 
   it('keeps legacy subscription display when no entitlements are returned', async () => {
@@ -370,6 +396,8 @@ describe('SubscriptionsView entitlement v2 section', () => {
     const wrapper = await mountView()
     await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
     await flushPromises()
+    await wrapper.get('[data-testid="advance-confirm"]').trigger('click')
+    await flushPromises()
 
     expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22, {
       monthly_window_start: entitlement.monthly_window_start,
@@ -381,18 +409,45 @@ describe('SubscriptionsView entitlement v2 section', () => {
     expect(showSuccess).toHaveBeenCalled()
   })
 
-  it('requires consent and persists automatic advance without starting a cycle', async () => {
+  it('persists the explicit switch without a browser dialog or starting a cycle', async () => {
     getEntitlements.mockResolvedValue([{ ...entitlement, auto_advance_monthly: false }])
     setAutoAdvanceMonthly.mockResolvedValue({ ...entitlement, auto_advance_monthly: true })
     const wrapper = await mountView()
-    vi.mocked(window.confirm).mockReturnValueOnce(false)
-    await wrapper.get('input[role="switch"]').setValue(true)
-    expect(setAutoAdvanceMonthly).not.toHaveBeenCalled()
-    await wrapper.get('input[role="switch"]').setValue(true)
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    await wrapper.get('[role="switch"]').trigger('click')
     await flushPromises()
     expect(setAutoAdvanceMonthly).toHaveBeenCalledWith(22, true)
-    expect((wrapper.get('input[role="switch"]').element as HTMLInputElement).checked).toBe(true)
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
     expect(advanceEntitlementMonthlyCycle).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps the saved switch value after a failed save', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, auto_advance_monthly: true }])
+    setAutoAdvanceMonthly.mockRejectedValueOnce(new Error('network'))
+    const wrapper = await mountView()
+    await wrapper.get('[role="switch"]').trigger('click')
+    await flushPromises()
+    expect(setAutoAdvanceMonthly).toHaveBeenCalledWith(22, false)
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('true')
+    expect(showError).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('locks the switch until saving finishes and allows turning it off', async () => {
+    getEntitlements.mockResolvedValue([{ ...entitlement, auto_advance_monthly: true }])
+    let finish!: (value: unknown) => void
+    setAutoAdvanceMonthly.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    const wrapper = await mountView()
+    await wrapper.get('[role="switch"]').trigger('click')
+    expect(wrapper.get('[role="switch"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[role="switch"]').trigger('click')
+    expect(setAutoAdvanceMonthly).toHaveBeenCalledTimes(1)
+    finish({ ...entitlement, auto_advance_monthly: false })
+    await flushPromises()
+    expect(wrapper.get('[role="switch"]').attributes('aria-checked')).toBe('false')
+    expect(wrapper.get('[role="switch"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -446,6 +501,8 @@ describe('SubscriptionsView entitlement v2 section', () => {
     try {
       await wrapper.get('[data-testid="entitlement-advance-monthly-cycle"]').trigger('click')
       await flushPromises()
+      await wrapper.get('[data-testid="advance-confirm"]').trigger('click')
+      await flushPromises()
       expect(advanceEntitlementMonthlyCycle).toHaveBeenCalledWith(22, {
         monthly_window_start: null, expires_at: entitlement.expires_at
       })
@@ -487,6 +544,8 @@ describe('SubscriptionsView entitlement v2 section', () => {
     const legacyButton = wrapper.findAll('button').find((button) => button.text().includes('Use next cycle now'))
     expect(legacyButton).toBeTruthy()
     await legacyButton!.trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-testid="advance-confirm"]').trigger('click')
     await flushPromises()
 
     expect(advanceMonthlyCycle).toHaveBeenCalledWith(1)

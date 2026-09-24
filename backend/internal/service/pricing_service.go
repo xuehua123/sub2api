@@ -137,7 +137,15 @@ var (
 
 // LiteLLMModelPricing LiteLLM价格数据结构
 // 只保留我们需要的字段，使用指针来处理可能缺失的值
+// CatalogPricingFields retains source presence, including explicit zero prices.
+// It is display metadata only; runtime billing continues to use the float fields.
+type CatalogPricingFields struct {
+	Input, Output, ImageInput, ImageOutput        *float64
+	CacheWrite, CacheWrite1h, CacheRead, PerImage *float64
+}
+
 type LiteLLMModelPricing struct {
+	CatalogPrices                            *CatalogPricingFields     `json:"-"`
 	InputCostPerToken                        float64                   `json:"input_cost_per_token"`
 	InputCostPerTokenPriority                float64                   `json:"input_cost_per_token_priority"`
 	InputCostPerTokenAbove200K               float64                   `json:"input_cost_per_token_above_200k_tokens,omitempty"`
@@ -642,6 +650,12 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 		}
 
 		pricing := &LiteLLMModelPricing{
+			CatalogPrices: &CatalogPricingFields{
+				Input: entry.InputCostPerToken, Output: entry.OutputCostPerToken,
+				ImageInput: entry.InputCostPerImageToken, ImageOutput: entry.OutputCostPerImageToken,
+				CacheWrite: entry.CacheCreationInputTokenCost, CacheWrite1h: entry.CacheCreationInputTokenCostAbove1hr,
+				CacheRead: entry.CacheReadInputTokenCost, PerImage: entry.OutputCostPerImage,
+			},
 			LiteLLMProvider:       entry.LiteLLMProvider,
 			Mode:                  entry.Mode,
 			SupportsPromptCaching: entry.SupportsPromptCaching,

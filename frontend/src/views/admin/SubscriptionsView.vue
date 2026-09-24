@@ -68,6 +68,7 @@
             <div class="w-full sm:w-40">
               <Select
                 v-model="filters.status"
+                data-testid="filter-status"
                 :options="statusOptions"
                 :placeholder="t('admin.subscriptions.allStatus')"
                 @change="applyFilters"
@@ -76,6 +77,7 @@
             <div class="w-full sm:w-48">
               <Select
                 v-model="filters.plan_id"
+                data-testid="filter-plan_id"
                 :options="planFilterOptions"
                 :placeholder="t('admin.subscriptions.allPlans')"
                 @change="applyFilters"
@@ -84,11 +86,49 @@
             <div class="w-full sm:w-40">
               <Select
                 v-model="filters.platform"
+                data-testid="filter-platform"
                 :options="platformFilterOptions"
                 :placeholder="t('admin.subscriptions.allPlatforms')"
                 @change="applyFilters"
               />
             </div>
+            <div class="w-full sm:w-40">
+              <Select
+                v-model="filters.source"
+                data-testid="filter-source"
+                :options="sourceFilterOptions"
+                :placeholder="t('admin.subscriptions.allSources')"
+                @change="applyFilters"
+              />
+            </div>
+            <div class="w-full sm:w-44">
+              <Select
+                v-model="filters.quota"
+                data-testid="filter-quota"
+                :options="quotaFilterOptions"
+                :placeholder="t('admin.subscriptions.allQuotaStates')"
+                @change="applyFilters"
+              />
+            </div>
+            <div class="w-full sm:w-40">
+              <Select
+                v-model="filters.expiry"
+                data-testid="filter-expiry"
+                :options="expiryFilterOptions"
+                :placeholder="t('admin.subscriptions.allExpiryRanges')"
+                @change="applyFilters"
+              />
+            </div>
+            <button
+              v-if="hasAdvancedFilters"
+              type="button"
+              class="btn btn-secondary btn-sm"
+              data-testid="clear-filters"
+              @click="clearAdvancedFilters"
+            >
+              <Icon name="x" size="sm" class="mr-1" />
+              {{ t('admin.subscriptions.clearFilters') }}
+            </button>
           </div>
 
           <!-- Right: Actions -->
@@ -164,6 +204,16 @@
               {{ t('admin.subscriptions.assignSubscription') }}
             </button>
           </div>
+        </div>
+        <div v-if="hasAdvancedFilters" class="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500 dark:text-dark-400">
+          <span>{{ t('admin.subscriptions.activeFilters') }}</span>
+          <span v-if="filters.status">{{ statusOptions.find(option => option.value === filters.status)?.label }}</span>
+          <span v-if="filters.plan_id">{{ planFilterOptions.find(option => option.value === filters.plan_id)?.label }}</span>
+          <span v-if="filters.platform">{{ platformFilterOptions.find(option => option.value === filters.platform)?.label }}</span>
+          <span v-if="selectedFilterUser">{{ selectedFilterUser.email }}</span>
+          <span v-if="filters.source" class="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-dark-700">{{ sourceFilterLabel }}</span>
+          <span v-if="filters.quota" class="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-dark-700">{{ quotaFilterLabel }}</span>
+          <span v-if="filters.expiry" class="rounded-full bg-gray-100 px-2.5 py-1 dark:bg-dark-700">{{ expiryFilterLabel }}</span>
         </div>
         <div
           v-if="selectedCount > 0"
@@ -1156,7 +1206,6 @@ import { formatRemainingDurationCompact, getCycleResetAt, getPlanValidityDays, g
 import {
   normalizeSubscriptionPlans,
   subscriptionDisplayName,
-  subscriptionMatchesPlan,
   subscriptionPlanDisplayName,
   subscriptionPlanGroupIDs,
   type RawSubscriptionPlan
@@ -1175,7 +1224,6 @@ interface PlanOption extends Record<string, unknown> {
   disabled?: boolean
 }
 
-const PLAN_FILTER_FETCH_PAGE_SIZE = 200
 type SubscriptionListFilters = NonNullable<Parameters<typeof adminAPI.subscriptions.list>[2]>
 type SubscriptionStatusFilter = NonNullable<SubscriptionListFilters['status']>
 
@@ -1364,7 +1412,10 @@ const filters = reactive({
   status: 'active',
   plan_id: '',
   platform: '',
-  user_id: null as number | null
+  user_id: null as number | null,
+  source: '' as '' | 'entitlement' | 'legacy',
+  quota: '' as '' | 'available' | 'near_exhausted' | 'exhausted',
+  expiry: '' as '' | '7d' | '30d'
 })
 
 // Sorting state
@@ -1421,7 +1472,7 @@ const cycleAdjustmentForm = reactive({
 
 const planFilterOptions = computed(() => [
   { value: '', label: t('admin.subscriptions.allPlans') },
-  ...saleSubscriptionPlans.value.map((plan) => ({
+  ...subscriptionPlans.value.map((plan) => ({
     value: plan.id.toString(),
     label: getPlanDisplayName(plan)
   }))
@@ -1431,6 +1482,30 @@ const platformFilterOptions = computed(() => [
   { value: '', label: t('admin.subscriptions.allPlatforms') },
   ...GROUP_PLATFORM_OPTIONS
 ])
+
+const sourceFilterOptions = computed(() => [
+  { value: '', label: t('admin.subscriptions.allSources') },
+  { value: 'entitlement', label: t('admin.subscriptions.sources.entitlement') },
+  { value: 'legacy', label: t('admin.subscriptions.sources.legacy') }
+])
+
+const quotaFilterOptions = computed(() => [
+  { value: '', label: t('admin.subscriptions.allQuotaStates') },
+  { value: 'available', label: t('admin.subscriptions.quotaStates.available') },
+  { value: 'near_exhausted', label: t('admin.subscriptions.quotaStates.nearExhausted') },
+  { value: 'exhausted', label: t('admin.subscriptions.quotaStates.exhausted') }
+])
+
+const expiryFilterOptions = computed(() => [
+  { value: '', label: t('admin.subscriptions.allExpiryRanges') },
+  { value: '7d', label: t('admin.subscriptions.expiryRanges.sevenDays') },
+  { value: '30d', label: t('admin.subscriptions.expiryRanges.thirtyDays') }
+])
+
+const hasAdvancedFilters = computed(() => Boolean(filters.source || filters.quota || filters.expiry || filters.plan_id || filters.platform || filters.user_id || filters.status))
+const sourceFilterLabel = computed(() => sourceFilterOptions.value.find(option => option.value === filters.source)?.label || '')
+const quotaFilterLabel = computed(() => quotaFilterOptions.value.find(option => option.value === filters.quota)?.label || '')
+const expiryFilterLabel = computed(() => expiryFilterOptions.value.find(option => option.value === filters.expiry)?.label || '')
 
 const cycleAdjustmentModeOptions = computed<Array<{ value: MonthlyCycleAdjustmentMode; label: string }>>(() => [
   { value: 'advance_next_cycle', label: t('admin.subscriptions.cycleAdjustmentModes.advanceNextCycle') },
@@ -1507,6 +1582,7 @@ const listMatchingPlansForSubscription = (subscription: UserSubscription): Subsc
     return exactPlan ? [exactPlan] : []
   }
 
+  if (subscription.entitlement_id != null || subscription.entitlement_only) return []
   return plansByGroupID.value.get(subscription.group_id) || []
 }
 
@@ -1515,74 +1591,8 @@ const resolveSubscriptionPlan = (subscription: UserSubscription): SubscriptionPl
   return matchingPlans.length === 1 ? matchingPlans[0] : null
 }
 
-const pickPreferredPlanRow = (
-  rows: UserSubscription[],
-  plan: SubscriptionPlan
-): UserSubscription => {
-  const primaryGroupID = getPlanPrimaryGroupID(plan)
-  return [...rows].sort((left, right) => {
-    const leftPrimary = left.group_id === primaryGroupID ? 1 : 0
-    const rightPrimary = right.group_id === primaryGroupID ? 1 : 0
-    if (leftPrimary !== rightPrimary) return rightPrimary - leftPrimary
-
-    const leftExpires = Date.parse(left.expires_at || '') || 0
-    const rightExpires = Date.parse(right.expires_at || '') || 0
-    if (leftExpires !== rightExpires) return rightExpires - leftExpires
-
-    return right.id - left.id
-  })[0]
-}
-
-const displaySubscriptions = computed(() => {
-  if (subscriptions.value.length <= 1) return subscriptions.value
-
-  const rowsByUser = new Map<number, UserSubscription[]>()
-  subscriptions.value.forEach((subscription) => {
-    const existing = rowsByUser.get(subscription.user_id) || []
-    existing.push(subscription)
-    rowsByUser.set(subscription.user_id, existing)
-  })
-
-  const visibleIDs = new Set<number>()
-
-  rowsByUser.forEach((userRows) => {
-    const planBuckets = new Map<number, { plan: SubscriptionPlan; rows: UserSubscription[] }>()
-    const unresolvedRows: UserSubscription[] = []
-
-    userRows.forEach((subscription) => {
-      const plan = resolveSubscriptionPlan(subscription)
-      if (!plan) {
-        unresolvedRows.push(subscription)
-        return
-      }
-
-      const bucket = planBuckets.get(plan.id)
-      if (bucket) {
-        bucket.rows.push(subscription)
-        return
-      }
-
-      planBuckets.set(plan.id, { plan, rows: [subscription] })
-    })
-
-    const keptPlanRows = [...planBuckets.values()].map(({ plan, rows }) => {
-      const preferred = pickPreferredPlanRow(rows, plan)
-      visibleIDs.add(preferred.id)
-      return { plan, subscription: preferred }
-    })
-
-    unresolvedRows.forEach((subscription) => {
-      const coveredByPlanRow = keptPlanRows.some(({ plan }) =>
-        getPlanGroupIDs(plan).includes(subscription.group_id)
-      )
-      if (!coveredByPlanRow) {
-        visibleIDs.add(subscription.id)
-      }
-    })
-  })
-
-  return subscriptions.value.filter((subscription) => visibleIDs.has(subscription.id))
-})
+// The server owns filtering, ordering and pagination. Do not hide distinct cards.
+const displaySubscriptions = computed(() => subscriptions.value)
 
 const getSubscriptionLimit = (
   subscription: UserSubscription,
@@ -1595,6 +1605,8 @@ const getSubscriptionLimit = (
       : subscription.monthly_limit_usd
   if (typeof entitlementLimit === 'number' && entitlementLimit > 0) return entitlementLimit
 
+  if (subscription.entitlement_id != null || subscription.entitlement_only === true || subscription.plan_id != null) return null
+
   const plan = resolveSubscriptionPlan(subscription)
   const planLimit = period === 'daily'
     ? plan?.daily_limit_usd
@@ -1602,7 +1614,6 @@ const getSubscriptionLimit = (
       ? plan?.weekly_limit_usd
       : plan?.monthly_limit_usd
   if (typeof planLimit === 'number' && planLimit > 0) return planLimit
-  if (subscription.entitlement_id != null || subscription.entitlement_only === true || subscription.plan_id != null) return null
 
   const groupLimit = period === 'daily'
     ? subscription.group?.daily_limit_usd
@@ -1636,6 +1647,22 @@ const applyFilters = () => {
   loadSubscriptions()
 }
 
+const clearAdvancedFilters = () => {
+  if (filterUserSearchTimeout) clearTimeout(filterUserSearchTimeout)
+  filters.status = ''
+  filters.plan_id = ''
+  filters.platform = ''
+  filters.user_id = null
+  selectedFilterUser.value = null
+  filterUserKeyword.value = ''
+  filterUserResults.value = []
+  showFilterUserDropdown.value = false
+  filters.source = ''
+  filters.quota = ''
+  filters.expiry = ''
+  applyFilters()
+}
+
 const loadSubscriptions = async () => {
   if (abortController) {
     abortController.abort()
@@ -1646,14 +1673,12 @@ const loadSubscriptions = async () => {
 
   loading.value = true
   try {
-    const filterPlan = filters.plan_id ? planByID.value.get(parseInt(filters.plan_id)) : null
-    if (filterPlan) {
-      await loadSubscriptionsByPlan(filterPlan, signal)
-      return
-    }
-
     const listFilters: Parameters<typeof adminAPI.subscriptions.list>[2] = {
       status: getStatusFilter(),
+      plan_id: filters.plan_id ? Number(filters.plan_id) : undefined,
+      source: filters.source || undefined,
+      monthly_quota: filters.quota || undefined,
+      expires_within_days: filters.expiry ? Number(filters.expiry.replace('d', '')) : undefined,
       platform: filters.platform || undefined,
       user_id: filters.user_id || undefined,
       sort_by: sortState.sort_by,
@@ -1686,95 +1711,6 @@ const loadSubscriptions = async () => {
       abortController = null
     }
   }
-}
-
-const loadSubscriptionsByPlan = async (plan: SubscriptionPlan, signal: AbortSignal) => {
-  const groupIDs = getPlanGroupIDs(plan)
-  if (groupIDs.length === 0) {
-    subscriptions.value = []
-    pagination.total = 0
-    pagination.pages = 0
-    return
-  }
-
-  const baseFilters: Omit<NonNullable<Parameters<typeof adminAPI.subscriptions.list>[2]>, 'group_id'> = {
-    status: getStatusFilter(),
-    platform: filters.platform || undefined,
-    user_id: filters.user_id || undefined,
-    sort_by: sortState.sort_by,
-    sort_order: sortState.sort_order
-  }
-
-  const batches = await Promise.all(
-    groupIDs.map((groupID) => loadAllSubscriptionsForGroup(groupID, baseFilters, signal))
-  )
-  if (signal.aborted) return
-
-  const byID = new Map<number, UserSubscription>()
-  batches.flat().forEach((subscription) => {
-    if (subscriptionMatchesPlan(subscription, plan)) {
-      byID.set(subscription.id, subscription)
-    }
-  })
-
-  const sortedItems = sortSubscriptionsClientSide([...byID.values()])
-  const start = (pagination.page - 1) * pagination.page_size
-
-  subscriptions.value = sortedItems.slice(start, start + pagination.page_size)
-  pagination.total = sortedItems.length
-  pagination.pages = Math.ceil(sortedItems.length / pagination.page_size)
-}
-
-const loadAllSubscriptionsForGroup = async (
-  groupID: number,
-  baseFilters: Omit<NonNullable<Parameters<typeof adminAPI.subscriptions.list>[2]>, 'group_id'>,
-  signal: AbortSignal
-): Promise<UserSubscription[]> => {
-  const firstPage = await adminAPI.subscriptions.list(
-    1,
-    PLAN_FILTER_FETCH_PAGE_SIZE,
-    { ...baseFilters, group_id: groupID },
-    { signal }
-  )
-  if (signal.aborted || firstPage.pages <= 1) return firstPage.items
-
-  const rest = await Promise.all(
-    Array.from({ length: firstPage.pages - 1 }, (_, index) =>
-      adminAPI.subscriptions.list(
-        index + 2,
-        PLAN_FILTER_FETCH_PAGE_SIZE,
-        { ...baseFilters, group_id: groupID },
-        { signal }
-      )
-    )
-  )
-
-  return [firstPage, ...rest].flatMap((page) => page.items)
-}
-
-const sortSubscriptionsClientSide = (items: UserSubscription[]): UserSubscription[] => {
-  const sortKey = sortState.sort_by as keyof UserSubscription
-  const direction = sortState.sort_order === 'asc' ? 1 : -1
-
-  return [...items].sort((a, b) => compareValues(a[sortKey], b[sortKey]) * direction)
-}
-
-const compareValues = (left: unknown, right: unknown): number => {
-  if (left === right) return 0
-  if (left === null || left === undefined) return 1
-  if (right === null || right === undefined) return -1
-
-  if (typeof left === 'number' && typeof right === 'number') {
-    return left - right
-  }
-
-  const leftTime = typeof left === 'string' ? Date.parse(left) : Number.NaN
-  const rightTime = typeof right === 'string' ? Date.parse(right) : Number.NaN
-  if (!Number.isNaN(leftTime) && !Number.isNaN(rightTime)) {
-    return leftTime - rightTime
-  }
-
-  return String(left).localeCompare(String(right))
 }
 
 const loadSubscriptionPlans = async () => {

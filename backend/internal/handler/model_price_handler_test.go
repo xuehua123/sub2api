@@ -1062,7 +1062,7 @@ func TestSanitizeModelPriceModelsForUserHidesCustomPriceMetadata(t *testing.T) {
 
 	require.Len(t, models, 1)
 	require.Nil(t, models[0].CustomPrice)
-	require.Equal(t, "official", models[0].PricingSource)
+	require.Equal(t, "display_override", models[0].PricingSource)
 	require.NotNil(t, models[0].Actual.InputUSDPerM)
 	require.Equal(t, 0.8, *models[0].Actual.InputUSDPerM)
 }

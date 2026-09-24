@@ -23,7 +23,8 @@ beforeEach(() => {
 async function openOrders() {
   const wrapper = mount(UserOrdersView, {
     global: { stubs: {
-      AppLayout: { template: '<div><slot /></div>' },
+      PricePortalLayout: { template: '<div><slot /></div>' },
+      RouterLink: { template: '<a><slot /></a>' },
       OrderTable: true, BaseDialog: true, Icon: true, Pagination: true, teleport: true
     } }
   })
@@ -43,6 +44,13 @@ describe('order status filtering', () => {
     expect(api.getMyOrders).toHaveBeenLastCalledWith({ page: 1, page_size: 20, status: 'PENDING' })
     expect(wrapper.getComponent(Pagination).props('page')).toBe(1)
     expect(api.getMyOrders).toHaveBeenCalledTimes(3)
+  })
+
+  it('filters order type on the server and returns to the first page', async () => {
+    const wrapper = await openOrders()
+    await wrapper.get('[data-testid="order-type-filter"]').setValue('subscription')
+    await flushPromises()
+    expect(api.getMyOrders).toHaveBeenLastCalledWith({page:1,page_size:20,status:undefined,order_type:'subscription'})
   })
 
   it('keeps the current page on manual refresh', async () => {

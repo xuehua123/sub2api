@@ -63,6 +63,31 @@ async function select(ids: number[]) {
 }
 
 describe('subscription bulk operations', () => {
+  it('sends combined filters before server pagination and clears them together', async () => {
+    await select([1])
+    const fields = { plan_id: '7', source: 'entitlement', quota: 'exhausted', expiry: '7d' }
+    for (const [name, value] of Object.entries(fields)) {
+      const control = wrapper.findAllComponents({ name: 'Select' }).find(item => item.attributes('data-testid') === 'filter-' + name)!
+      control.vm.$emit('update:modelValue', value)
+      control.vm.$emit('change', value)
+      await flushPromises()
+    }
+    expect(list).toHaveBeenLastCalledWith(1, expect.any(Number), expect.objectContaining({ plan_id: 7, source: 'entitlement', monthly_quota: 'exhausted', expires_within_days: 7 }), expect.any(Object))
+    expect(wrapper.getComponent({ name: 'DataTable' }).props('selectedKeys')).toEqual([])
+    // Results and totals belong to the server, not a filter of the current page.
+    expect(wrapper.getComponent({ name: 'DataTable' }).props('data')).toHaveLength(3)
+    await wrapper.get('[data-testid="clear-filters"]').trigger('click')
+    await flushPromises()
+    expect(list).toHaveBeenLastCalledWith(1, expect.any(Number), expect.objectContaining({ status: undefined, plan_id: undefined, source: undefined, monthly_quota: undefined, expires_within_days: undefined }), expect.any(Object))
+  })
+
+  it('does not collapse distinct subscriptions belonging to the same user and plan', async () => {
+    list.mockResolvedValueOnce({ items: [ { ...rows[0], plan_id: 7 }, { ...rows[0], id: -42, entitlement_id: 42, plan_id: 7 } ], total: 2, pages: 1 })
+    await wrapper.findAll('button').find(button => button.attributes('title') === 'common.refresh')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.getComponent({ name: 'DataTable' }).props('data')).toHaveLength(2)
+  })
+
   it('uses eligible selected rows and retains failures and untouched selections after a partial result', async () => {
     bulkAction.mockResolvedValue({ success_count: 1, failed_count: 1, results: [
       { subscription_id: 1, success: true },

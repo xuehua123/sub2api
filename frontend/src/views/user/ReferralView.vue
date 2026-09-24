@@ -1,27 +1,26 @@
 <template>
-  <AppLayout>
-    <div class="mx-auto w-full max-w-[1080px] space-y-5 px-1 sm:px-0">
-      <div class="flex items-center justify-between">
+  <PricePortalLayout :section-label="t('referral.title', '邀请有礼')">
+    <main id="price-main" class="referral-workspace">
+      <div class="referral-breadcrumb"><a href="/home">{{ t('referral.home', '首页') }}</a><span>/</span><span>{{ t('referral.title', '邀请有礼') }}</span></div>
+      <header class="referral-page-heading">
         <div>
-          <h1 class="text-[28px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+          <h1 class="text-[28px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
             {{ t('referral.title', '邀请有礼') }}
           </h1>
-          <p class="mt-0.5 text-[14px] text-[#86868b]">
+          <p class="mt-0.5 text-[14px] text-[var(--ppx-muted)]">
             {{ t('referral.description', '分享链接邀好友，充值成功享礼金') }}
           </p>
         </div>
         <button
           type="button"
-          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[#f5f5f7] px-4 text-[13px] font-medium text-[#1d1d1f] transition hover:bg-[#e8e8ed] disabled:opacity-50 dark:bg-white/10 dark:text-white dark:hover:bg-white/15"
+          class="inline-flex h-9 items-center justify-center gap-1.5 rounded-full bg-[var(--ppx-soft)] px-4 text-[13px] font-medium text-[var(--ppx-ink)] transition hover:bg-[var(--ppx-tint)] disabled:opacity-50   "
           :disabled="loading"
           @click="loadAll"
         >
-          <svg class="h-3.5 w-3.5" :class="loading ? 'animate-spin' : ''" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
+          <Icon name="refresh" size="sm" :class="loading ? 'animate-spin' : ''" />
           {{ t('common.refresh', '刷新') }}
         </button>
-      </div>
+      </header>
 
       <div v-if="loading && !overview" class="flex items-center justify-center py-20 text-sm text-slate-500">
         <LoadingSpinner />
@@ -29,8 +28,8 @@
       </div>
 
       <template v-else-if="overview && !overview.referral_enabled">
-        <section class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-10 text-center dark:border-dark-700 dark:bg-dark-900">
-          <h2 class="text-xl font-semibold text-slate-900 dark:text-white">
+        <section class="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-10 text-center dark:border-dark-700 dark:bg-dark-900">
+          <h2 class="text-xl font-semibold text-slate-900 ">
             {{ t('referral.disabledTitle', '邀请功能未开启') }}
           </h2>
           <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
@@ -52,7 +51,7 @@
         />
 
         <!-- Dual primary cards -->
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div class="referral-primary-grid">
           <ReferralShareCard
             :code="overview.default_code?.code || ''"
             :invite-link="inviteLink"
@@ -95,20 +94,20 @@
             @refresh="loadPayoutAccountsAndOverview"
           />
 
-          <section class="rounded-[28px] border border-black/[0.06] bg-white p-7 dark:border-white/10 dark:bg-[#1c1c1e]">
-            <h2 class="text-[17px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+          <section class="rounded-lg border border-[var(--ppx-line)] bg-[var(--ppx-panel)] p-7  ">
+            <h2 class="text-[17px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
               {{ t('referral.withdrawal', '申请提现') }}
             </h2>
-            <p class="mt-1 text-[14px] text-[#6e6e73] dark:text-[#a1a1a6]">
+            <p class="mt-1 text-[14px] text-[var(--ppx-muted)] ">
               {{ t('referral.withdrawalHint', '发起后锁定金额，审核通过后打款。') }}
             </p>
 
-            <div class="mt-5 rounded-[16px] bg-[#f5f5f7] px-4 py-3.5 dark:bg-[#2c2c2e]">
+            <div class="mt-5 rounded-md bg-[var(--ppx-soft)] px-4 py-3.5 ">
               <div class="flex items-center justify-between">
-                <span class="text-[13px] font-medium text-[#86868b]">
+                <span class="text-[13px] font-medium text-[var(--ppx-muted)]">
                   {{ t('referral.availableToWithdraw', '可提现额度') }}
                 </span>
-                <span class="text-[20px] font-semibold tabular-nums tracking-tight text-[#1d1d1f] dark:text-white">
+                <span class="text-[20px] font-semibold tabular-nums tracking-normal text-[var(--ppx-ink)] ">
                   ¥{{ formatMoney(maxWithdrawable) }}
                 </span>
               </div>
@@ -136,7 +135,7 @@
                   <div class="absolute inset-y-0 right-1 flex items-center">
                     <button
                       type="button"
-                      class="rounded bg-white px-2 py-1 text-xs font-medium text-primary-600 outline-none hover:bg-primary-50 dark:bg-dark-900 dark:text-primary-400 dark:hover:bg-primary-900/20"
+                      class="rounded bg-[var(--ppx-panel)] px-2 py-1 text-xs font-medium text-primary-600 outline-none hover:bg-primary-50 dark:bg-dark-900 dark:text-primary-400 dark:hover:bg-primary-900/20"
                       @click="withdrawForm.amount = maxWithdrawable"
                     >
                       {{ t('referral.withdrawAll', '全部提现') }}
@@ -168,7 +167,7 @@
               </div>
 
               <button
-                class="h-12 w-full rounded-full bg-[#0071e3] text-[15px] font-medium text-white transition hover:bg-[#0077ed] disabled:opacity-40"
+                class="h-12 w-full rounded-full bg-[var(--ppx-accent)] text-[var(--ppx-accent-ink)] text-[15px] font-medium transition hover:opacity-90 disabled:opacity-40"
                 :disabled="creatingWithdrawal || !withdrawForm.amount || !withdrawForm.payout_account_id || withdrawForm.amount > maxWithdrawable"
               >
                 {{ creatingWithdrawal ? t('common.saving', '处理中...') : t('referral.submitWithdrawal', '确认提现') }}
@@ -179,29 +178,29 @@
 
         <section
           v-if="!withdrawEnabled && !creditConversionEnabled"
-          class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
+          class="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
         >
           {{ t('referral.monetizationDisabledMessage', '推广佣金转余额和提现当前均未开启。') }}
         </section>
         <section
           v-else-if="!withdrawEnabled"
-          class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
+          class="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-dark-700 dark:bg-dark-900 dark:text-slate-400"
         >
           {{ t('referral.withdrawDisabledMessage', '推广佣金提现当前未开启。') }}
         </section>
 
         <!-- Records tabs -->
-        <section class="rounded-[28px] border border-black/[0.06] bg-white p-6 dark:border-white/10 dark:bg-[#1c1c1e] sm:p-7">
+        <section class="referral-records rounded-lg border border-[var(--ppx-line)] bg-[var(--ppx-panel)] p-6   sm:p-7">
           <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h2 class="text-[17px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+              <h2 class="text-[17px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
                 {{ t('referral.recordsTitle', '明细') }}
               </h2>
-              <p class="mt-0.5 text-[13px] text-[#86868b]">
+              <p class="mt-0.5 text-[13px] text-[var(--ppx-muted)]">
                 {{ t('referral.recordsSubtitle', '邀请、返佣、流水与提现') }}
               </p>
             </div>
-            <nav class="flex gap-1 overflow-x-auto rounded-full bg-[#f5f5f7] p-1 dark:bg-[#2c2c2e]">
+            <nav aria-label="邀请明细" class="referral-record-tabs flex gap-1 overflow-x-auto rounded-full bg-[var(--ppx-soft)] p-1 ">
               <button
                 v-for="tab in recordTabs"
                 :key="tab.key"
@@ -209,13 +208,14 @@
                 class="whitespace-nowrap rounded-full px-3.5 py-1.5 text-[13px] font-medium transition"
                 :class="
                   activeRecordTab === tab.key
-                    ? 'bg-white text-[#1d1d1f] shadow-sm dark:bg-[#3a3a3c] dark:text-white'
-                    : 'text-[#6e6e73] hover:text-[#1d1d1f] dark:text-[#a1a1a6] dark:hover:text-white'
+                    ? 'bg-[var(--ppx-panel)] text-[var(--ppx-ink)] shadow-sm  '
+                    : 'text-[var(--ppx-muted)] hover:text-[var(--ppx-ink)]  dark:hover:text-white'
                 "
+                :aria-pressed="activeRecordTab === tab.key"
                 @click="activeRecordTab = tab.key"
               >
                 {{ tab.label }}
-                <span v-if="tab.count != null" class="ml-0.5 tabular-nums text-[#86868b]">{{ tab.count }}</span>
+                <span v-if="tab.count != null" class="ml-0.5 tabular-nums text-[var(--ppx-muted)]">{{ tab.count }}</span>
               </button>
             </nav>
           </div>
@@ -223,7 +223,7 @@
           <!-- Invitees -->
           <div v-show="activeRecordTab === 'invitees'" id="invitees-section">
             <!-- Desktop table -->
-            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+            <div class="hidden overflow-x-auto rounded-md border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-dark-800/50">
                   <tr class="text-left text-slate-500 dark:text-slate-400">
@@ -255,7 +255,7 @@
                         </svg>
                       </td>
                       <td class="px-4 py-3">
-                        <div class="font-medium text-slate-900 dark:text-white">{{ invitee.username || '-' }}</div>
+                        <div class="font-medium text-slate-900 ">{{ invitee.username || '-' }}</div>
                         <div class="text-xs text-slate-500">{{ invitee.email }}</div>
                       </td>
                       <td
@@ -269,7 +269,7 @@
                           {{ invitee.order_count || 0 }}
                         </span>
                       </td>
-                      <td class="px-4 py-3 font-medium text-slate-900 dark:text-white">
+                      <td class="px-4 py-3 font-medium text-slate-900 ">
                         {{ formatMoney(invitee.total_commission) }}
                       </td>
                       <td class="px-4 py-3 text-slate-500">
@@ -329,12 +329,12 @@
                 v-for="invitee in invitees.items"
                 :key="invitee.user_id"
                 type="button"
-                class="w-full rounded-xl border border-slate-100 bg-slate-50/50 p-4 text-left dark:border-dark-800 dark:bg-dark-800/40"
+                class="w-full rounded-md border border-slate-100 bg-slate-50/50 p-4 text-left dark:border-dark-800 dark:bg-dark-800/40"
                 @click="toggleInviteeExpand(invitee.user_id)"
               >
                 <div class="flex items-start justify-between gap-2">
                   <div>
-                    <p class="font-semibold text-slate-900 dark:text-white">{{ invitee.username || invitee.email }}</p>
+                    <p class="font-semibold text-slate-900 ">{{ invitee.username || invitee.email }}</p>
                     <p class="text-xs text-slate-500">{{ invitee.email }}</p>
                   </div>
                   <span class="text-sm font-bold text-emerald-600">￥{{ formatMoney(invitee.total_commission) }}</span>
@@ -362,7 +362,7 @@
           <!-- Rewards -->
           <div v-show="activeRecordTab === 'rewards'" id="rewards-section">
             <p class="mb-3 text-xs text-slate-500 dark:text-slate-400">{{ t('referral.rewardsDescription') }}</p>
-            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+            <div class="hidden overflow-x-auto rounded-md border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-dark-800/50">
                   <tr class="text-left text-slate-500 dark:text-slate-400">
@@ -380,7 +380,7 @@
                   <tr v-for="reward in rewards.items" :key="reward.id" class="text-slate-700 dark:text-slate-300">
                     <td class="px-4 py-3 text-slate-500">{{ formatDate(reward.created_at) }}</td>
                     <td class="px-4 py-3">
-                      <div class="font-medium text-slate-900 dark:text-white">
+                      <div class="font-medium text-slate-900 ">
                         {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
                       </div>
                       <div v-if="reward.source_user_email || reward.invitee_email" class="text-xs text-slate-500">
@@ -417,11 +417,11 @@
               <div
                 v-for="reward in rewards.items"
                 :key="reward.id"
-                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+                class="rounded-md border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
               >
                 <div class="flex items-start justify-between">
                   <div>
-                    <p class="font-medium text-slate-900 dark:text-white">
+                    <p class="font-medium text-slate-900 ">
                       {{ reward.source_user_username || reward.invitee_email || reward.source_user_email || '-' }}
                     </p>
                     <p class="text-xs text-slate-500">{{ formatDate(reward.created_at) }}</p>
@@ -447,7 +447,7 @@
 
           <!-- Ledger -->
           <div v-show="activeRecordTab === 'ledger'" id="ledger-section">
-            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+            <div class="hidden overflow-x-auto rounded-md border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-dark-800/50">
                   <tr class="text-left text-slate-500 dark:text-slate-400">
@@ -462,7 +462,7 @@
                 <tbody class="divide-y divide-slate-100 dark:divide-dark-800">
                   <tr v-for="entry in ledger.items" :key="entry.id">
                     <td class="px-4 py-3">
-                      <div class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
+                      <div class="font-medium text-slate-900 ">{{ formatEntryType(entry.entry_type) }}</div>
                       <div class="text-xs text-slate-500">{{ formatStatus(entry.bucket) }}</div>
                       <div v-if="entry.external_order_id" class="mt-0.5 font-mono text-xs text-slate-400">{{ entry.external_order_id }}</div>
                     </td>
@@ -483,7 +483,7 @@
                     </td>
                     <td
                       class="px-4 py-3 font-medium"
-                      :class="entry.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : entry.amount < 0 ? 'text-red-600' : 'text-slate-900 dark:text-white'"
+                      :class="entry.amount > 0 ? 'text-emerald-600 dark:text-emerald-400' : entry.amount < 0 ? 'text-red-600' : 'text-slate-900 '"
                     >
                       {{ entry.amount > 0 ? '+' : '' }}{{ formatMoney(entry.amount) }}
                     </td>
@@ -499,11 +499,11 @@
               <div
                 v-for="entry in ledger.items"
                 :key="entry.id"
-                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+                class="rounded-md border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
               >
                 <div class="flex justify-between gap-2">
                   <div>
-                    <p class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</p>
+                    <p class="font-medium text-slate-900 ">{{ formatEntryType(entry.entry_type) }}</p>
                     <p class="text-xs text-slate-500">{{ formatDate(entry.created_at) }}</p>
                   </div>
                   <span
@@ -531,7 +531,7 @@
             <p class="mb-3 text-xs text-slate-500">
               {{ t('referral.withdrawalRecordsHint', '含现金提现与「转平台余额」；转余额显示为已转余额，不是银行卡打款。') }}
             </p>
-            <div class="hidden overflow-x-auto rounded-xl border border-slate-100 dark:border-dark-800 md:block">
+            <div class="hidden overflow-x-auto rounded-md border border-slate-100 dark:border-dark-800 md:block">
               <table class="min-w-full text-sm">
                 <thead class="bg-slate-50 dark:bg-dark-800/50">
                   <tr class="text-left text-slate-500 dark:text-slate-400">
@@ -546,7 +546,7 @@
                   <tr v-for="record in withdrawals.items" :key="record.id" class="text-slate-700 dark:text-slate-300">
                     <td class="px-4 py-4 font-mono text-xs">{{ record.withdrawal_no }}</td>
                     <td class="px-4 py-4">{{ formatPayoutMethod(record.payout_method || record.method) }}</td>
-                    <td class="px-4 py-4 font-medium text-slate-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</td>
+                    <td class="px-4 py-4 font-medium text-slate-900 ">￥{{ formatMoney(record.net_amount) }}</td>
                     <td class="px-4 py-4">
                       <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 dark:bg-dark-800 dark:text-slate-300">
                         {{ formatWithdrawalStatus(record.status, record.payout_method || record.method) }}
@@ -564,11 +564,11 @@
               <div
                 v-for="record in withdrawals.items"
                 :key="record.id"
-                class="rounded-xl border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
+                class="rounded-md border border-slate-100 bg-slate-50/50 p-4 dark:border-dark-800 dark:bg-dark-800/40"
               >
                 <div class="flex justify-between">
                   <span class="font-mono text-xs text-slate-500">{{ record.withdrawal_no }}</span>
-                  <span class="font-bold text-slate-900 dark:text-white">￥{{ formatMoney(record.net_amount) }}</span>
+                  <span class="font-bold text-slate-900 ">￥{{ formatMoney(record.net_amount) }}</span>
                 </div>
                 <div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
                   <span>{{ formatPayoutMethod(record.payout_method || record.method) }}</span>
@@ -588,39 +588,42 @@
           </div>
         </section>
       </template>
-    </div>
+    </main>
 
     <!-- Convert Modal -->
     <div
       v-if="showConvertModal"
       ref="convertModalBackdrop"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      :aria-label="t('referral.convertToCredit', '转入平台余额')"
+      class="referral-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
       tabindex="0"
       @click.self="showConvertModal = false"
       @keydown.esc="showConvertModal = false"
     >
-      <div class="w-full max-w-sm rounded-[24px] border border-black/[0.06] bg-white p-7 shadow-2xl dark:border-white/10 dark:bg-[#1c1c1e]">
-        <h3 class="text-[20px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+      <div class="w-full max-w-sm rounded-lg border border-[var(--ppx-line)] bg-[var(--ppx-panel)] p-7 shadow-2xl  ">
+        <h3 class="text-[20px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
           {{ t('referral.convertToCredit', '转入平台余额') }}
         </h3>
-        <p class="mt-2 text-[14px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
+        <p class="mt-2 text-[14px] leading-relaxed text-[var(--ppx-muted)] ">
           {{ convertModalRateHint }}
         </p>
 
-        <div class="mt-5 rounded-[14px] bg-[#f5f5f7] px-4 py-3 dark:bg-[#2c2c2e]">
-          <p class="text-[12px] font-medium text-[#86868b]">{{ t('referral.convertModalRateTitle') }}</p>
-          <p class="mt-0.5 text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
+        <div class="mt-5 rounded-md bg-[var(--ppx-soft)] px-4 py-3 ">
+          <p class="text-[12px] font-medium text-[var(--ppx-muted)]">{{ t('referral.convertModalRateTitle') }}</p>
+          <p class="mt-0.5 text-[15px] font-semibold text-[var(--ppx-ink)] ">
             {{ convertModalRateLine }}
           </p>
         </div>
 
         <div class="mt-4">
-          <label class="mb-1.5 block text-[13px] font-medium text-[#86868b]">
+          <label class="mb-1.5 block text-[13px] font-medium text-[var(--ppx-muted)]">
             {{ t('referral.convertAmount') }}
           </label>
           <div class="relative">
             <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
-              <span class="text-[15px] text-[#86868b]">¥</span>
+              <span class="text-[15px] text-[var(--ppx-muted)]">¥</span>
             </div>
             <input
               v-model="convertAmount"
@@ -628,35 +631,35 @@
               min="0"
               :max="maxWithdrawable"
               step="0.01"
-              class="input w-full rounded-[14px] pl-8"
+              class="input w-full rounded-md pl-8"
               placeholder="0.00"
               data-test="convert-amount-input"
             />
             <div class="absolute inset-y-0 right-1.5 flex items-center">
               <button
                 type="button"
-                class="rounded-full bg-white px-2.5 py-1 text-[12px] font-medium text-[#0071e3] outline-none dark:bg-[#3a3a3c]"
+                class="rounded-full bg-[var(--ppx-panel)] px-2.5 py-1 text-[12px] font-medium text-[var(--ppx-accent)] outline-none "
                 @click="convertAmount = String(maxWithdrawable)"
               >
                 {{ t('referral.convertModalAll') }}
               </button>
             </div>
           </div>
-          <p class="mt-2 text-[13px] text-[#6e6e73] dark:text-[#a1a1a6]" data-test="convert-expected-credit">
+          <p class="mt-2 text-[13px] text-[var(--ppx-muted)] " data-test="convert-expected-credit">
             {{ t('referral.convertModalExpected') }}
-            <span class="font-semibold tabular-nums text-[#1d1d1f] dark:text-white">¥{{ formatMoneyPrecise(convertCreditAmount) }}</span>
+            <span class="font-semibold tabular-nums text-[var(--ppx-ink)] ">¥{{ formatMoneyPrecise(convertCreditAmount) }}</span>
           </p>
         </div>
 
         <div class="mt-6 flex gap-2.5">
           <button
-            class="h-11 flex-1 rounded-full bg-[#f5f5f7] text-[15px] font-medium text-[#1d1d1f] dark:bg-white/10 dark:text-white"
+            class="h-11 flex-1 rounded-full bg-[var(--ppx-soft)] text-[15px] font-medium text-[var(--ppx-ink)]  "
             @click="showConvertModal = false"
           >
             {{ t('common.cancel', '取消') }}
           </button>
           <button
-            class="h-11 flex-1 rounded-full bg-[#0071e3] text-[15px] font-medium text-white transition hover:bg-[#0077ed] disabled:opacity-40"
+            class="h-11 flex-1 rounded-full bg-[var(--ppx-accent)] text-[var(--ppx-accent-ink)] text-[15px] font-medium transition hover:opacity-90 disabled:opacity-40"
             :disabled="converting || !Number(convertAmount) || Number(convertAmount) <= 0 || Number(convertAmount) > maxWithdrawable"
             @click="handleConvertToCredit"
           >
@@ -669,14 +672,14 @@
     <!-- Bucket Detail Modal -->
     <div
       v-if="bucketDetailVisible"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
+      class="referral-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm"
       tabindex="0"
       @click.self="bucketDetailVisible = false"
       @keydown.esc="bucketDetailVisible = false"
     >
-      <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-dark-700 dark:bg-dark-900">
+      <div class="flex max-h-[80vh] w-full max-w-2xl flex-col rounded-lg border border-slate-200 bg-[var(--ppx-panel)] shadow-xl dark:border-dark-700 dark:bg-dark-900">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-dark-800">
-          <h3 class="text-lg font-semibold text-slate-900 dark:text-white">{{ bucketDetailTitle }}</h3>
+          <h3 class="text-lg font-semibold text-slate-900 ">{{ bucketDetailTitle }}</h3>
           <button class="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-800" @click="bucketDetailVisible = false">
             <svg viewBox="0 0 20 20" fill="currentColor" class="h-5 w-5">
               <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
@@ -691,10 +694,10 @@
             {{ t('common.noData', '暂无数据') }}
           </div>
           <div v-else class="space-y-3">
-            <div v-for="entry in bucketDetailItems" :key="entry.id" class="rounded-2xl border border-slate-100 p-4 dark:border-dark-800">
+            <div v-for="entry in bucketDetailItems" :key="entry.id" class="rounded-lg border border-slate-100 p-4 dark:border-dark-800">
               <div class="flex items-start justify-between">
                 <div>
-                  <div class="font-medium text-slate-900 dark:text-white">{{ formatEntryType(entry.entry_type) }}</div>
+                  <div class="font-medium text-slate-900 ">{{ formatEntryType(entry.entry_type) }}</div>
                   <div class="mt-0.5 text-xs text-slate-500">{{ formatStatus(entry.bucket) }}</div>
                   <div v-if="entry.external_order_id" class="mt-0.5 font-mono text-xs text-slate-400">{{ entry.external_order_id }}</div>
                 </div>
@@ -716,13 +719,15 @@
         </div>
       </div>
     </div>
-  </AppLayout>
+  </PricePortalLayout>
 </template>
 
 <script setup lang="ts">
 import { computed, defineComponent, h, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppLayout from '@/components/layout/AppLayout.vue'
+import PricePortalLayout from '@/components/model-price/PricePortalLayout.vue'
+import Icon from '@/components/icons/Icon.vue'
+import './referral-components/referral-portal.css'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import PayoutAccountBinder from './referral-components/PayoutAccountBinder.vue'
 import ReferralShareCard from './referral-components/ReferralShareCard.vue'

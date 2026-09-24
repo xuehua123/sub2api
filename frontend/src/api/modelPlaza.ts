@@ -5,6 +5,7 @@
  */
 
 import { apiClient } from './client'
+import type {ModelPriceCatalogPrice} from './modelPrices'
 import type { UserPricingInterval, UserSupportedModelPricing } from './channels'
 
 /** 官方参考价（USD per token，与计费目录同源；字段缺失 = 目录未覆盖）。 */
@@ -45,6 +46,7 @@ export interface PlazaTimePricing {
 }
 
 export interface PlazaModel {
+  catalog_price?: ModelPriceCatalogPrice | null
   name: string
   platform: string
   /** 实收口径的展示定价：档位可提供绝对单价或相对基础价倍率；均为标准时段价。 */

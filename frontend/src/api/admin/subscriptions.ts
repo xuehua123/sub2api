@@ -70,6 +70,10 @@ export async function list(
     user_id?: number
     group_id?: number
     platform?: string
+    plan_id?: number
+    source?: 'entitlement' | 'legacy'
+    monthly_quota?: 'available' | 'near_exhausted' | 'exhausted'
+    expires_within_days?: number
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   },

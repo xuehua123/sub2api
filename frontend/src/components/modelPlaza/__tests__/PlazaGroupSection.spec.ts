@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PlazaGroupSection from '../PlazaGroupSection.vue'
-import PlazaModelPricingTable from '../PlazaModelPricingTable.vue'
+import PlazaCatalogPricingTable from '../PlazaCatalogPricingTable.vue'
 import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
 
 vi.mock('vue-i18n', async () => {
@@ -81,7 +81,7 @@ function mountSection(g: ModelPlazaGroup) {
       stubs: {
         GroupBadge: true,
         Icon: true,
-        PlazaModelPricingTable: true
+        PlazaCatalogPricingTable: true
       }
     }
   })
@@ -115,25 +115,13 @@ describe('PlazaGroupSection 长上下文说明', () => {
   })
 })
 
-describe('PlazaGroupSection 高峰配置传递', () => {
-  it('分组启用高峰时把窗口描述与倍率传给价格表', () => {
-    const wrapper = mountSection(
-      group({
-        subscription_type: 'subscription',
-        peak_rate_enabled: true,
-        peak_start: '14:00',
-        peak_end: '18:00',
-        peak_rate_multiplier: 1.5
-      })
-    )
-    const table = wrapper.findComponent(PlazaModelPricingTable)
-    // appStore mock 无 server_utc_offset,窗口描述不带时区标注
-    expect(table.props('peakWindow')).toBe('14:00-18:00 ×1.5')
-    expect(table.props('peakRateMultiplier')).toBe(1.5)
-  })
-
-  it('分组未启用高峰时窗口描述为空串', () => {
-    const wrapper = mountSection(group())
-    expect(wrapper.findComponent(PlazaModelPricingTable).props('peakWindow')).toBe('')
+describe('PlazaGroupSection 原价表', () => {
+  it('routes the group models to the original-price table without sales multipliers', () => {
+    const g=group({rate_multiplier:0.2,peak_rate_enabled:true,peak_start:'14:00',peak_end:'18:00',peak_rate_multiplier:1.5})
+    const wrapper=mountSection(g)
+    const table=wrapper.findComponent(PlazaCatalogPricingTable)
+    expect(table.props('models')).toEqual(g.models)
+    expect(table.attributes('rate-multiplier')).toBeUndefined()
+    expect(table.attributes('peak-rate-multiplier')).toBeUndefined()
   })
 })

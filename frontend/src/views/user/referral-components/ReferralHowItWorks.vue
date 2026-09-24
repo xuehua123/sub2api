@@ -1,20 +1,20 @@
 <template>
   <section
     data-test="referral-how-it-works"
-    class="rounded-[28px] border border-black/[0.06] bg-white p-7 dark:border-white/10 dark:bg-[#1c1c1e]"
+    class="rounded-lg border border-[var(--ppx-line)] bg-[var(--ppx-panel)] p-7  "
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex items-center gap-2.5">
-        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-[#0071e3]/10 text-[#0071e3]">
+        <span class="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--ppx-tint)] text-[var(--ppx-accent)]">
           <ReferralIcon name="spark" :size="18" />
         </span>
-        <h3 class="text-[17px] font-semibold tracking-tight text-[#1d1d1f] dark:text-white">
+        <h3 class="text-[17px] font-semibold tracking-normal text-[var(--ppx-ink)] ">
           {{ t('referral.howItWorksTitle') }}
         </h3>
       </div>
       <span
         v-if="rateLabel"
-        class="inline-flex items-center gap-1 rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-semibold text-[#0071e3]"
+        class="inline-flex items-center gap-1 rounded-full bg-[var(--ppx-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--ppx-accent)]"
       >
         <ReferralIcon name="percent" :size="13" />
         {{ rateLabel }}
@@ -25,16 +25,16 @@
       <li
         v-for="(step, index) in steps"
         :key="step.key"
-        class="relative rounded-[20px] bg-[#f5f5f7] px-5 py-5 dark:bg-[#2c2c2e]"
+        class="relative rounded-md bg-[var(--ppx-soft)] px-5 py-5 "
       >
         <div class="flex items-center gap-2.5">
-          <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[#1d1d1f] text-white dark:bg-white dark:text-black">
+          <span class="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--ppx-accent)] text-[var(--ppx-accent-ink)]  ">
             <ReferralIcon :name="step.icon" :size="16" />
           </span>
-          <span class="text-[12px] font-medium text-[#86868b]">0{{ index + 1 }}</span>
+          <span class="text-[12px] font-medium text-[var(--ppx-muted)]">0{{ index + 1 }}</span>
         </div>
-        <p class="mt-3 text-[15px] font-semibold text-[#1d1d1f] dark:text-white">{{ step.title }}</p>
-        <p class="mt-1 text-[13px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">{{ step.desc }}</p>
+        <p class="mt-3 text-[15px] font-semibold text-[var(--ppx-ink)] ">{{ step.title }}</p>
+        <p class="mt-1 text-[13px] leading-relaxed text-[var(--ppx-muted)] ">{{ step.desc }}</p>
       </li>
     </ol>
   </section>

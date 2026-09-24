@@ -88,6 +88,35 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 			groupID = &id
 		}
 	}
+	filters := service.SubscriptionAdminFilters{Source: c.Query("source"), MonthlyQuota: c.Query("monthly_quota")}
+	if raw := c.Query("plan_id"); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			response.BadRequest(c, "Invalid plan_id")
+			return
+		}
+		filters.PlanID = &id
+	}
+	switch filters.Source {
+	case "", "entitlement", "legacy":
+	default:
+		response.BadRequest(c, "Invalid source")
+		return
+	}
+	switch filters.MonthlyQuota {
+	case "", "available", "near_exhausted", "exhausted":
+	default:
+		response.BadRequest(c, "Invalid monthly_quota")
+		return
+	}
+	if raw := c.Query("expires_within_days"); raw != "" {
+		days, err := strconv.Atoi(raw)
+		if err != nil || (days != 7 && days != 30) {
+			response.BadRequest(c, "Invalid expires_within_days")
+			return
+		}
+		filters.ExpiresWithinDays = days
+	}
 	status := c.Query("status")
 	platform := c.Query("platform")
 
@@ -95,7 +124,7 @@ func (h *SubscriptionHandler) List(c *gin.Context) {
 	sortBy := c.DefaultQuery("sort_by", "created_at")
 	sortOrder := c.DefaultQuery("sort_order", "desc")
 
-	subscriptions, pagination, err := h.subscriptionService.List(c.Request.Context(), page, pageSize, userID, groupID, status, platform, sortBy, sortOrder)
+	subscriptions, pagination, err := h.subscriptionService.List(c.Request.Context(), page, pageSize, userID, groupID, status, platform, sortBy, sortOrder, filters)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

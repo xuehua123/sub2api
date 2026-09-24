@@ -705,6 +705,25 @@ export default {
       allStatus: '全部状态',
       allGroups: '全部分组',
       allPlatforms: '全部平台',
+      allSources: '全部订阅类型',
+      allQuotaStates: '全部月额度状态',
+      allExpiryRanges: '全部到期范围',
+      clearFilters: '清除筛选',
+      activeFilters: '当前筛选：',
+      sources: {
+        entitlement: '套餐权益',
+        legacy: '旧版订阅'
+      },
+      quotaStates: {
+        available: '月额度剩余 >10%',
+        nearExhausted: '月额度剩余 ≤10%',
+        exhausted: '月额度已用尽'
+      },
+      expiryRanges: {
+        sevenDays: '7 天内到期',
+        thirtyDays: '30 天内到期',
+        expired: '已到期'
+      },
       daily: '每日',
       weekly: '每周',
       monthly: '每月',

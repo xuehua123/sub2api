@@ -81,7 +81,15 @@ export interface ModelPriceTier {
   actual: ModelPriceActual
 }
 
+export interface ModelPriceCatalogPrice {
+  model: string
+  billing_mode: string
+  price: ModelPriceValue
+  tiers: ModelPriceTier[]
+}
+
 export interface ModelPriceModel {
+  catalog_price?: ModelPriceCatalogPrice | null
   name: string
   platform: string
   provider: string

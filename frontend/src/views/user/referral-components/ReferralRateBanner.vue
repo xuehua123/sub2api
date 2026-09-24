@@ -1,23 +1,21 @@
 <template>
   <section
     data-test="referral-rate-banner"
-    class="overflow-hidden rounded-[28px] border border-black/[0.06] bg-white dark:border-white/10 dark:bg-[#1c1c1e]"
+    class="referral-rate-band"
   >
     <div class="grid lg:grid-cols-[1.4fr_1fr]">
       <div class="relative px-7 py-9 sm:px-10 sm:py-11">
-        <div class="pointer-events-none absolute -right-8 top-4 text-[#0071e3]/[0.07] dark:text-[#0a84ff]/10">
-          <ReferralIcon name="spark" :size="140" />
-        </div>
 
-        <div class="inline-flex items-center gap-1.5 rounded-full bg-[#0071e3]/10 px-3 py-1 text-[12px] font-semibold text-[#0071e3]">
+
+        <div class="inline-flex items-center gap-1.5 rounded-full bg-[var(--ppx-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--ppx-accent)]">
           <ReferralIcon name="gift" :size="14" />
           {{ t('referral.rateBanner.live', '邀请有礼进行中') }}
         </div>
 
-        <h1 class="relative mt-4 max-w-xl text-[32px] font-semibold leading-[1.15] tracking-tight text-[#1d1d1f] sm:text-[40px] dark:text-white">
+        <h2 class="relative mt-4 max-w-xl text-[24px] font-semibold leading-[1.15] tracking-normal text-[var(--ppx-ink)] sm:text-[26px] ">
           <template v-if="hasRate">
             {{ t('referral.rateBanner.headlineBefore') }}
-            <span class="text-[#0071e3]">{{ ratePct }}%</span>
+            <span class="text-[var(--ppx-accent)]">{{ ratePct }}%</span>
             {{ t('referral.rateBanner.headlineAfter') }}
           </template>
           <template v-else-if="!level1On">
@@ -26,40 +24,40 @@
           <template v-else>
             {{ t('referral.rateBanner.titleNoRate') }}
           </template>
-        </h1>
+        </h2>
 
-        <p class="relative mt-3 max-w-lg text-[15px] leading-relaxed text-[#6e6e73] dark:text-[#a1a1a6]">
+        <p class="relative mt-3 max-w-lg text-[15px] leading-relaxed text-[var(--ppx-muted)] ">
           {{ subtitle }}
         </p>
 
-        <div class="relative mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[13px] font-medium text-[#1d1d1f] dark:text-white">
+        <div class="relative mt-6 flex flex-wrap gap-x-5 gap-y-2 text-[13px] font-medium text-[var(--ppx-ink)] ">
           <span class="inline-flex items-center gap-1.5">
-            <ReferralIcon name="check" :size="16" class="text-[#0071e3]" />
+            <ReferralIcon name="check" :size="16" class="text-[var(--ppx-accent)]" />
             {{ t('referral.rateBanner.bulletPermanent') }}
           </span>
           <span class="inline-flex items-center gap-1.5">
-            <ReferralIcon name="check" :size="16" class="text-[#0071e3]" />
+            <ReferralIcon name="check" :size="16" class="text-[var(--ppx-accent)]" />
             {{ rechargeBullet }}
           </span>
           <span v-if="cashoutChip" class="inline-flex items-center gap-1.5">
-            <ReferralIcon name="check" :size="16" class="text-[#0071e3]" />
+            <ReferralIcon name="check" :size="16" class="text-[var(--ppx-accent)]" />
             {{ cashoutChip }}
           </span>
         </div>
       </div>
 
-      <div class="border-t border-black/[0.06] bg-[#f5f5f7] px-7 py-9 dark:border-white/10 dark:bg-[#2c2c2e] sm:px-10 sm:py-11 lg:border-l lg:border-t-0">
-        <div class="flex items-center gap-2 text-[13px] font-medium text-[#86868b]">
+      <div class="border-t border-[var(--ppx-line)] bg-[var(--ppx-soft)] px-7 py-9   sm:px-10 sm:py-11 lg:border-l lg:border-t-0">
+        <div class="flex items-center gap-2 text-[13px] font-medium text-[var(--ppx-muted)]">
           <ReferralIcon name="percent" :size="16" />
           {{ t('referral.rateBanner.rateLabel') }}
         </div>
         <p
           data-test="referral-rate-pct"
-          class="mt-1 text-[64px] font-semibold leading-none tracking-tight text-[#1d1d1f] dark:text-white"
+          class="mt-1 text-[48px] font-semibold leading-none tracking-normal text-[var(--ppx-ink)] "
         >
-          {{ ratePct }}<span class="text-[28px] font-medium text-[#86868b]">%</span>
+          {{ ratePct }}<span class="text-[28px] font-medium text-[var(--ppx-muted)]">%</span>
         </p>
-        <p class="mt-2 text-[13px] text-[#86868b]" data-test="referral-rate-scope">
+        <p class="mt-2 text-[13px] text-[var(--ppx-muted)]" data-test="referral-rate-scope">
           {{ rechargeScopeLabel }}
         </p>
 
@@ -67,23 +65,23 @@
           <div
             v-for="ex in examples"
             :key="ex.pay"
-            class="flex items-center justify-between border-t border-black/[0.06] py-3 first:border-t-0 first:pt-0 dark:border-white/10"
+            class="flex items-center justify-between border-t border-[var(--ppx-line)] py-3 first:border-t-0 first:pt-0 "
           >
-            <span class="inline-flex items-center gap-2 text-[14px] text-[#6e6e73] dark:text-[#a1a1a6]">
+            <span class="inline-flex items-center gap-2 text-[14px] text-[var(--ppx-muted)] ">
               <ReferralIcon name="users" :size="15" class="opacity-60" />
               {{ rechargePayLabel }} ¥{{ ex.pay }}
             </span>
-            <span class="inline-flex items-center gap-1 text-[15px] font-semibold tabular-nums text-[#0071e3]">
+            <span class="inline-flex items-center gap-1 text-[15px] font-semibold tabular-nums text-[var(--ppx-accent)]">
               <ReferralIcon name="arrow" :size="14" />
               {{ t('referral.rateBanner.youEarn') }} +¥{{ ex.earn }}
             </span>
           </div>
         </div>
-        <p v-else class="mt-7 text-[13px] text-[#86868b]" data-test="referral-rate-pending">
+        <p v-else class="mt-7 text-[13px] text-[var(--ppx-muted)]" data-test="referral-rate-pending">
           {{ ratePendingLabel }}
         </p>
 
-        <p class="mt-5 text-[12px] leading-relaxed text-[#86868b]">
+        <p class="mt-5 text-[12px] leading-relaxed text-[var(--ppx-muted)]">
           {{ footnote }}
         </p>
       </div>

@@ -22,10 +22,13 @@ type PlazaOfficialPricing struct {
 
 // PlazaModel 模型广场中单个模型条目：按实收口径合成的展示定价 + 官方参考价。
 type PlazaModel struct {
-	Name            string
-	Platform        string
-	Pricing         *ChannelModelPricing
-	OfficialPricing *PlazaOfficialPricing
+	CatalogModel     string
+	CatalogPricing   *LiteLLMModelPricing
+	catalogAmbiguous bool
+	Name             string
+	Platform         string
+	Pricing          *ChannelModelPricing
+	OfficialPricing  *PlazaOfficialPricing
 	// LongContextBasis 多档时的计价基准（整单 / 仅超出部分），单档为空。
 	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
@@ -200,6 +203,9 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 				}
 				key := modelKey{platform: m.Platform, name: m.Name}
 				if at, seen := idx[key]; seen {
+					if pg.Models[at].billingModel != billingModel {
+						pg.Models[at].catalogAmbiguous = true
+					}
 					// 先见者胜；仅当已存条目无定价而新条目有定价时升级。
 					if pg.Models[at].Pricing == nil && pricing != nil {
 						pg.Models[at].Pricing = pricing
@@ -241,6 +247,10 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 				billingModel = pg.Models[j].Name
 			}
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, billingModel, officialMemo)
+			if s.pricingService != nil && !pg.Models[j].catalogAmbiguous {
+				pg.Models[j].CatalogModel = billingModel
+				pg.Models[j].CatalogPricing = s.pricingService.GetIdentifiedModelPricing(billingModel)
+			}
 		}
 		out = append(out, *pg)
 	}
