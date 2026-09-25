@@ -111,7 +111,7 @@ func TestUpstreamCatalogHistoricalCostBoundaries(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, profit, 1)
 	require.Equal(t, 10.0, profit[0].AccountCost)
-	require.Equal(t, 40.0, profit[0].Revenue)
+	require.Zero(t, profit[0].Revenue, "usage actual_cost is not a paid order")
 	// Payment overview is global; it must retain usage after management unbinding.
 	_, err = client.ExecContext(ctx, "DELETE FROM upstream_account_bindings WHERE account_id=$1", account.ID)
 	require.NoError(t, err)

@@ -29,6 +29,8 @@ const {
 }))
 
 const routerPushMock = vi.hoisted(() => vi.fn())
+const getPaymentProfitMock=vi.hoisted(()=>vi.fn())
+vi.mock('@/api/admin/paymentProfit',()=>({getPaymentProfit:getPaymentProfitMock}))
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerPushMock })
@@ -174,6 +176,8 @@ describe('UpstreamConnectionsView', () => {
     localStorage.clear()
     listAllConnectionsMock.mockResolvedValue([])
     getBatchTodayStatsMock.mockResolvedValue({ stats: {} })
+    getPaymentProfitMock.mockReset()
+    getPaymentProfitMock.mockResolvedValue({total_revenue:100,total_cost:7.5,total_refund:2,gross_profit:90.5,uncertain_count:0,daily:[],currency:'CNY',timezone:'Asia/Shanghai'})
     getProxiesMock.mockResolvedValue([])
     createConnectionMock.mockResolvedValue({ id: 12 })
     updateConnectionMock.mockResolvedValue({ id: 12 })
@@ -189,17 +193,25 @@ describe('UpstreamConnectionsView', () => {
     getRuntimeOverviewMock.mockResolvedValue({ accounts: [] })
   })
 
-  it('compares actual usage revenue with cost without another statistics request',async()=>{
+  it('uses site-wide order receipts, not account quota consumption or upstream filters',async()=>{
     listAllConnectionsMock.mockResolvedValue([{id:1,name:'Revenue',provider:'sub2api',auth_mode:'access_token',status:'ready',wallet_amount:null,wallet_currency:'USD',wallet_usd:20,wallet_unlimited:false,binding_count:1,group_count:0,bound_account_ids:[10],management_base_url:'https://example.invalid'}])
     getBatchTodayStatsMock.mockResolvedValue({stats:{10:{cost:5,user_cost:3,requests:1}}})
     const wrapper=mountView();await flushPromises()
-    expect(wrapper.get('[data-testid="today-revenue-summary"]').text()).toBe('$3.00')
-    expect(wrapper.get('[data-testid="today-profit-summary"]').text()).toBe('$-2.00')
+    expect(wrapper.get('[data-testid="today-revenue-summary"]').text()).toBe('¥100.00')
+    expect(wrapper.get('[data-testid="today-profit-summary"]').text()).toBe('¥90.50')
     expect(wrapper.get('[data-testid="wallet-total"]').text()).toBe('$20.00')
+    expect(getPaymentProfitMock).toHaveBeenCalledTimes(1)
+    await wrapper.findAll('button').find(b=>b.text().startsWith('upstreamWorkspace.unbound'))!.trigger('click')
+    expect(wrapper.findAll('.data-row')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="today-revenue-summary"]').text()).toBe('¥100.00')
+    expect(wrapper.get('[data-testid="today-profit-summary"]').text()).toBe('¥90.50')
+    expect(wrapper.get('[data-testid="today-cost-summary"]').text()).toBe('¥7.50')
+    expect(getPaymentProfitMock).toHaveBeenCalledTimes(1)
     expect(getBatchTodayStatsMock).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
-  it('does not turn missing revenue into zero income',async()=>{
+  it('does not turn failed order statistics into zero income or fall back to quota usage',async()=>{
+    getPaymentProfitMock.mockRejectedValueOnce(new Error('payment aggregation unavailable'))
     listAllConnectionsMock.mockResolvedValue([{id:1,name:'Missing',provider:'sub2api',auth_mode:'access_token',status:'ready',wallet_amount:null,wallet_currency:'USD',wallet_usd:null,binding_count:1,group_count:0,bound_account_ids:[10],management_base_url:'https://example.invalid'}])
     getBatchTodayStatsMock.mockResolvedValue({stats:{10:{cost:5,requests:1}}})
     const wrapper=mountView();await flushPromises()

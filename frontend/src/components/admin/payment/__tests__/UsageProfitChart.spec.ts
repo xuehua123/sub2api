@@ -11,13 +11,22 @@ it('plots revenue, cost and negative profit with monetary tooltip values', async
   get.mockResolvedValue({
     data: {
       daily: [
-        { date: '2026-09-25', account_cost: 5, revenue: 3, gross_profit: -2 },
+        {
+          date: '2026-09-25',
+          account_cost: 5,
+          revenue: 3,
+          refund: 1,
+          gross_profit: -3,
+          uncertain_count: 0,
+        },
       ],
+      total_refund: 1,
+      uncertain_count: 0,
       total_cost: 5,
       total_revenue: 3,
-      gross_profit: -2,
+      gross_profit: -3,
       timezone: 'UTC',
-      currency: 'USD',
+      currency: 'CNY',
     },
   })
   const w = mount(Profit, { props: { days: 7 } })
@@ -25,15 +34,13 @@ it('plots revenue, cost and negative profit with monetary tooltip values', async
   const chart = w.findComponent({ name: 'Line' })
   expect(
     chart.props('data').datasets.map((x: { data: number[] }) => x.data),
-  ).toEqual([[3], [5], [-2]])
+  ).toEqual([[3], [5], [-3]])
   expect(
-    chart
-      .props('options')
-      .plugins.tooltip.callbacks.label({
-        dataset: { label: 'Profit' },
-        raw: -2,
-      }),
-  ).toMatch(/-.*\$2\.00/)
+    chart.props('options').plugins.tooltip.callbacks.label({
+      dataset: { label: 'Profit' },
+      raw: -3,
+    }),
+  ).toMatch(/-.*[¥￥]3\.00/)
   expect(chart.props('options').interaction).toEqual({
     mode: 'index',
     intersect: false,
@@ -56,7 +63,7 @@ describe('range request ordering', () => {
         total_revenue: 3,
         gross_profit: 1,
         timezone: 'UTC',
-        currency: 'USD',
+        currency: 'CNY',
       },
     })
     const w = mount(Profit, { props: { days: 7 } })
@@ -70,7 +77,7 @@ describe('range request ordering', () => {
         total_revenue: 999,
         gross_profit: 0,
         timezone: 'UTC',
-        currency: 'USD',
+        currency: 'CNY',
       },
     })
     await flushPromises()

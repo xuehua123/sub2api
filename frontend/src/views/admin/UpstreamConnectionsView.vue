@@ -40,7 +40,7 @@
             <span class="text-xs text-gray-400">USD</span>
           </label>
           <div class="flex flex-1 items-center justify-end gap-2">
-            <button class="btn btn-secondary" :title="t('common.refresh')" :disabled="loading" @click="loadConnections()">
+            <button class="btn btn-secondary" :title="t('common.refresh')" :disabled="loading" @click="refreshPage">
               <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
             </button>
             <button
@@ -81,23 +81,26 @@
             <p class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.lowBalance > 0 ? 'text-amber-600 dark:text-amber-300' : 'text-gray-900 dark:text-white'">{{ connectionSummary.lowBalance }}</p>
           </div>
           <div class="px-4 py-3">
-            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayAccountCost') }}</p>
-            <p data-testid="today-cost-summary" class="mt-1 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{{ todayStatsAvailable ? `$${formatCost(connectionSummary.todayCost)}` : '-' }}</p>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.todaySiteCost') }}</p>
+            <p data-testid="today-cost-summary" class="mt-1 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{{ financeMoney(todayFinance?.total_cost) }}</p>
           </div>
           <div class="px-4 py-3" :title="t('upstreamWorkspace.profitBasis')">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.todayRevenue') }}</p>
-            <p data-testid="today-revenue-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ connectionSummary.revenue===null ? '—' : '$'+formatCost(connectionSummary.revenue) }}</p>
+            <p data-testid="today-revenue-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ financeMoney(todayRevenue) }}</p>
+            <span v-if="todayFinance?.uncertain_count" class="text-xs text-amber-600">{{ t('userBusiness.review') }}</span>
           </div>
           <div class="px-4 py-3" :title="t('upstreamWorkspace.profitBasis')">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.todayProfit') }}</p>
-            <p data-testid="today-profit-summary" class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.revenue!==null && connectionSummary.revenue<connectionSummary.todayCost ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-300'">{{ connectionSummary.revenue===null ? '—' : '$'+formatCost(connectionSummary.revenue-connectionSummary.todayCost) }}</p>
-            <p class="text-xs text-gray-500">{{ t('upstreamWorkspace.margin') }} {{ connectionSummary.revenue!==null && connectionSummary.revenue>0 ? ((connectionSummary.revenue-connectionSummary.todayCost)/connectionSummary.revenue*100).toFixed(1)+'%' : '—' }}</p>
+            <p data-testid="today-profit-summary" class="mt-1 text-lg font-semibold tabular-nums" :class="todayFinance?.gross_profit!=null && todayFinance.gross_profit<0 ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-300'">{{ financeMoney(todayFinance?.gross_profit) }}</p>
+            <p class="text-xs text-gray-500">{{ t('upstreamWorkspace.margin') }} {{ todayMargin }}</p>
           </div>
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayRequests') }}</p>
             <p data-testid="today-requests-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ todayStatsAvailable ? connectionSummary.todayRequests.toLocaleString() : '-' }}</p>
           </div>
         </div>
+        <p v-if="financeError" role="alert" class="px-4 py-2 text-xs text-red-600">{{ t('upstreamWorkspace.profitLoadError') }} <button class="underline" @click="loadTodayFinance">{{ t('upstreamWorkspace.retry') }}</button></p>
+        <p class="px-4 pb-2 text-xs text-gray-500">{{ t('upstreamWorkspace.globalFinance') }}</p>
         <DataTable
           :key="filters.sort"
           :columns="columns"
@@ -581,12 +584,23 @@ import Icon from '@/components/icons/Icon.vue'
 import UpstreamConnectionUsagePanel from '@/components/admin/UpstreamConnectionUsagePanel.vue'
 import UpstreamGroupCatalog from '@/components/admin/UpstreamGroupCatalog.vue'
 import UpstreamCostHistory from '@/components/admin/UpstreamCostHistory.vue'
+import { getPaymentProfit, type PaymentProfitTrend } from '@/api/admin/paymentProfit'
 import { connectionIsStale, groupObservedRates, upstreamWalletTotal } from '@/utils/upstreamConnectionWorkspace'
 
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
 const loading = ref(false)
+const todayFinance=ref<PaymentProfitTrend|null>(null)
+const financeError=ref(false)
+let financeController:AbortController|undefined
+let financeGeneration=0
+async function loadTodayFinance(){const current=++financeGeneration;financeController?.abort();financeController=new AbortController();todayFinance.value=null;financeError.value=false
+ try{const data=await getPaymentProfit(1,financeController.signal);if(current===financeGeneration)todayFinance.value=data}catch{if(current===financeGeneration)financeError.value=true}}
+function refreshPage(){void loadConnections();void loadTodayFinance()}
+const financeMoney=(value:number|null|undefined)=>value==null?'—':'¥'+formatCost(value)
+const todayRevenue=computed(()=>todayFinance.value && todayFinance.value.uncertain_count===0 ? todayFinance.value.total_revenue : null)
+const todayMargin=computed(()=>todayRevenue.value!=null && todayRevenue.value>0 && todayFinance.value?.gross_profit!=null ? (todayFinance.value.gross_profit/todayRevenue.value*100).toFixed(1)+'%' : '—')
 function savedTab(): 'connections'|'catalog' { try { return localStorage.getItem('upstream-workspace-tab')==='catalog' ? 'catalog' : 'connections' } catch { return 'connections' } }
 const activeTab = ref<'connections'|'catalog'>(savedTab())
 watch(activeTab, value => { try { localStorage.setItem('upstream-workspace-tab',value) } catch { /* Storage is optional. */ } })
@@ -599,7 +613,7 @@ const saving = ref(false)
 type UpstreamConnectionRow = UpstreamConnection & {
   today_requests: number | null
   today_cost: number | null
-  today_revenue: number | null
+
   runtime_available: boolean
   runtime_error: string
   runtime_fetched_at: string | null
@@ -687,7 +701,7 @@ const requiresRemoteUserId = computed(() => form.auth_mode === 'access_token' &&
 const connectionSummary = computed(() => ({
   total: filteredConnections.value.length,
   wallet: upstreamWalletTotal(filteredConnections.value),
-  revenue: filteredConnections.value.every(row=>row.today_revenue!==null) ? filteredConnections.value.reduce((sum,row)=>sum+(row.today_revenue ?? 0),0) : null,
+
   lowBalance: filteredConnections.value.filter(isLowWallet).length,
   todayCost: filteredConnections.value.reduce((total, row) => total + (row.today_cost ?? 0), 0),
   todayRequests: filteredConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
@@ -709,7 +723,7 @@ async function openCatalogDetails(id: number) {
   if (row) { await openDetails(row); return }
   try {
     const loaded=await adminAPI.upstreamConnections.get(id)
-    const hydrated: UpstreamConnectionRow={...loaded,today_requests:null,today_cost:null,today_revenue:null,runtime_available:false,runtime_error:'',runtime_fetched_at:null,runtime_accounts:[]}
+    const hydrated: UpstreamConnectionRow={...loaded,today_requests:null,today_cost:null,runtime_available:false,runtime_error:'',runtime_fetched_at:null,runtime_accounts:[]}
     await openDetails(hydrated)
     if (details.value?.id===id) await refreshRuntimeOverview({ connectionId: id })
   } catch (error) { appStore.showError(errorMessage(error,t('admin.upstreamConnections.loadFailed'))) }
@@ -985,7 +999,7 @@ function patchConnectionRow(updated: UpstreamConnection): void {
       ...updated,
       today_requests: row.today_requests,
       today_cost: row.today_cost,
-      today_revenue: row.today_revenue,
+
       runtime_available: row.runtime_available,
       runtime_error: row.runtime_error,
       runtime_fetched_at: row.runtime_fetched_at,
@@ -1010,7 +1024,7 @@ function withRuntimeSnapshot(connection: UpstreamConnection, snapshot: UpstreamC
     bindings: connection.bindings ?? snapshot.bindings ?? [],
     today_requests: snapshot.today_requests,
     today_cost: snapshot.today_cost,
-    today_revenue: snapshot.today_revenue,
+
     runtime_available: snapshot.runtime_available,
     runtime_error: snapshot.runtime_error,
     runtime_fetched_at: snapshot.runtime_fetched_at,
@@ -1042,7 +1056,7 @@ function mergeListRowsWithLocal(remoteRows: UpstreamConnectionRow[]): UpstreamCo
       ...local,
       today_requests: remote.today_requests,
       today_cost: remote.today_cost,
-      today_revenue: remote.today_revenue,
+
       runtime_available: remote.runtime_available,
       runtime_error: remote.runtime_error,
       runtime_fetched_at: remote.runtime_fetched_at,
@@ -1088,8 +1102,7 @@ async function loadConnections(page = pagination.page): Promise<void> {
       today_requests: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.requests ?? 0), 0)
         : null,
-      today_revenue: statsAvailable && (item.bound_account_ids ?? []).every(id => Number.isFinite(stats[String(id)]?.user_cost))
-        ? (item.bound_account_ids ?? []).reduce((total,id)=>total+Number(stats[String(id)].user_cost),0) : null,
+
       today_cost: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.cost ?? 0), 0)
         : null,
@@ -1431,9 +1444,10 @@ async function confirmDelete(): Promise<void> {
 }
 
 onMounted(async () => {
-  await Promise.all([loadConnections(1), adminAPI.proxies.getAll().then(items => { proxies.value = items }).catch(() => undefined)])
+  await Promise.all([loadConnections(1), loadTodayFinance(), adminAPI.proxies.getAll().then(items => { proxies.value = items }).catch(() => undefined)])
 })
 onBeforeUnmount(() => {
+  financeGeneration++;financeController?.abort()
   loadGeneration++
   detailsGeneration++
   if (searchTimer) clearTimeout(searchTimer)

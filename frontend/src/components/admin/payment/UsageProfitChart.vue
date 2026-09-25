@@ -27,6 +27,12 @@
       {{ t('upstreamWorkspace.profitLoadError') }}
     </p>
     <template v-else-if="result">
+      <p
+        v-if="result.uncertain_count"
+        class="my-3 text-sm text-amber-700 dark:text-amber-300"
+      >
+        {{ t('userBusiness.unknownNote') }}
+      </p>
       <div class="my-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div v-for="item in summaries" :key="item.label">
           <p class="text-xs text-gray-500">{{ item.label }}</p>
@@ -38,6 +44,9 @@
           </p>
         </div>
       </div>
+      <p class="mb-3 text-xs text-gray-500">
+        {{ t('upstreamWorkspace.refunds') }} {{ money(result.total_refund) }}
+      </p>
       <div class="relative h-64 w-full sm:h-80">
         <Line
           :data="chartData"
@@ -63,7 +72,10 @@ import {
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
 import Icon from '@/components/icons/Icon.vue'
-import { apiClient } from '@/api/client'
+import {
+  getPaymentProfit,
+  type PaymentProfitTrend,
+} from '@/api/admin/paymentProfit'
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -72,22 +84,9 @@ ChartJS.register(
   Tooltip,
   Legend,
 )
-interface ProfitTrend {
-  daily: {
-    date: string
-    account_cost: number
-    revenue: number
-    gross_profit: number
-  }[]
-  total_cost: number
-  total_revenue: number
-  gross_profit: number
-  timezone: string
-  currency: string
-}
 const props = defineProps<{ days: number }>()
 const { t } = useI18n()
-const result = ref<ProfitTrend | null>(null),
+const result = ref<PaymentProfitTrend | null>(null),
   loading = ref(false),
   error = ref(false)
 const dark = ref(document.documentElement.classList.contains('dark'))
@@ -110,10 +109,7 @@ async function load() {
   error.value = false
   result.value = null
   try {
-    const { data } = await apiClient.get<ProfitTrend>(
-      '/admin/payment/usage-profit',
-      { params: { days: props.days }, signal: controller.signal },
-    )
+    const data = await getPaymentProfit(props.days, controller.signal)
     if (current === generation) result.value = data
   } catch {
     if (current === generation) error.value = true
@@ -127,13 +123,15 @@ onBeforeUnmount(() => {
   controller?.abort()
   observer.disconnect()
 })
-const money = (v: number) =>
-  new Intl.NumberFormat(undefined, {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  }).format(v)
+const money = (v: number | null) =>
+  v === null
+    ? t('userBusiness.review')
+    : new Intl.NumberFormat(undefined, {
+        style: 'currency',
+        currency: 'CNY',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }).format(v)
 const metrics = computed(() => [
   {
     key: 'revenue' as const,
@@ -156,23 +154,29 @@ const summaries = computed(() =>
     ...m,
     value:
       m.key === 'revenue'
-        ? (result.value?.total_revenue ?? 0)
+        ? result.value?.uncertain_count
+          ? null
+          : (result.value?.total_revenue ?? 0)
         : m.key === 'account_cost'
           ? (result.value?.total_cost ?? 0)
-          : (result.value?.gross_profit ?? 0),
+          : (result.value?.gross_profit ?? null),
   })),
 )
 const chartData = computed(() => ({
   labels: result.value?.daily.map((d) => d.date) ?? [],
   datasets: metrics.value.map((m) => ({
     label: m.label,
-    data: result.value?.daily.map((d) => d[m.key]) ?? [],
+    data:
+      result.value?.daily.map((d) =>
+        m.key === 'revenue' && d.uncertain_count > 0 ? null : d[m.key],
+      ) ?? [],
     borderColor: m.color,
     backgroundColor: m.color,
     borderWidth: 2,
     pointRadius: props.days <= 30 ? 2 : 0,
     pointHitRadius: 10,
     tension: 0,
+    spanGaps: false,
   })),
 }))
 const chartOptions = computed<ChartOptions<'line'>>(() => ({
@@ -190,7 +194,10 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
     },
     tooltip: {
       callbacks: {
-        label: (ctx) => ctx.dataset.label + ': ' + money(Number(ctx.raw)),
+        label: (ctx) =>
+          ctx.dataset.label +
+          ': ' +
+          money(ctx.raw === null ? null : Number(ctx.raw)),
       },
     },
   },
@@ -207,7 +214,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => ({
       beginAtZero: true,
       ticks: {
         color: dark.value ? '#9ca3af' : '#6b7280',
-        callback: (v) => '$' + v,
+        callback: (v) => '¥' + v,
       },
       grid: { color: dark.value ? '#374151' : '#e5e7eb' },
     },

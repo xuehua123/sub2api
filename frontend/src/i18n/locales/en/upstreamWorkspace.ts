@@ -1,19 +1,23 @@
 export default {
   upstreamWorkspace: {
+    refunds: 'Settled refunds',
+    globalFinance:
+      'Receipts, cost and profit are site-wide daily totals, independent of upstream filters.',
+    todaySiteCost: 'Today’s account cost (site)',
     totalBalance: 'Total balance (USD)',
     walletCoverage: 'Known {known} · Unknown {unknown} · Unlimited {unlimited}',
-    todayRevenue: 'Today’s revenue (charged)',
-    todayProfit: 'Today’s gross profit',
+    todayRevenue: 'Today’s receipts (site)',
+    todayProfit: 'Today’s gross profit (site)',
     margin: 'Gross margin',
     profitBasis:
-      'Usage revenue is actual charges. Gross profit = charges minus account cost; not cash receipts or recognized accounting profit.',
-    usageProfit: 'Daily usage revenue, cost and gross profit',
-    revenue: 'Usage revenue',
+      'Today’s receipts are paid balance and subscription purchases/renewals. Profit = receipts minus settled refunds minus site account cost, in CNY. Quota consumption is not revenue.',
+    usageProfit: 'Daily order receipts, cost and gross profit',
+    revenue: 'Order receipts',
     grossProfit: 'Gross profit',
     accountCost: 'Account cost',
     usageProfitScope:
-      'USD usage basis across all accounts. Revenue means actual charges, not payment receipts above. Excludes payment fees, commissions and operating expenses.',
-    profitLoadError: 'Could not load usage profit. Retry.',
+      'Site-wide CNY cash flow. Receipts use order payment times. Costs use recorded account costs without additional conversion. Excludes payment fees, commissions and operating expenses.',
+    profitLoadError: 'Could not load cash-flow statistics. Retry.',
     costTrend: 'Cost trend',
     daily: 'Daily cost',
     cumulative: 'Cumulative cost',
