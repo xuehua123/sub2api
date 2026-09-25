@@ -45,7 +45,7 @@ func newBusinessFixFixture(t *testing.T) *businessFixFixture {
 	k := mustCreateApiKey(t, c, &service.APIKey{UserID: u.ID, Key: "sk-business-fix", Name: "fix"})
 	a := mustCreateAccount(t, c, &service.Account{Name: "fix"})
 	start := time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC)
-	return &businessFixFixture{ctx: context.Background(), client: c, repo: &userBusinessRepository{db: tx}, user: u, key: k, account: a, usage: newUsageLogRepositoryWithSQL(c, tx), q: service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "fix@test.invalid", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc", USDCNY: 7, CostMode: "estimate"}, Start: start, End: start.AddDate(0, 0, 1), Now: start.AddDate(0, 0, 2)}}
+	return &businessFixFixture{ctx: context.Background(), client: c, repo: &userBusinessRepository{db: tx}, user: u, key: k, account: a, usage: newUsageLogRepositoryWithSQL(c, tx), q: service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "fix@test.invalid", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc"}, Start: start, End: start.AddDate(0, 0, 1), Now: start.AddDate(0, 0, 2)}}
 }
 func (f *businessFixFixture) use(t *testing.T, at time.Time, source string, kind int8, amount float64) {
 	f.sequence++
@@ -135,7 +135,7 @@ func TestUserBusinessFixRefundEvidenceAndTimestamp(t *testing.T) {
 	r := f.report(t)
 	require.NotNil(t, r.Items[0].Profit)
 	require.Equal(t, 20.0, r.Items[0].Refund)
-	require.Equal(t, 73.0, *r.Items[0].Profit)
+	require.Equal(t, 79.0, *r.Items[0].Profit)
 	_, e = f.client.PaymentAuditLog.Create().SetOrderID(strconv.FormatInt(p.ID, 10)).SetAction("REFUND_EVENT_missing").SetDetail("{}").SetCreatedAt(at.Add(time.Hour)).Save(f.ctx)
 	require.NoError(t, e)
 	require.Nil(t, f.report(t).Items[0].Profit)
@@ -149,52 +149,8 @@ func TestUserBusinessFixStandaloneCNYRefund(t *testing.T) {
 	require.Equal(t, 20.0, r.Items[0].Refund)
 	require.Zero(t, r.Items[0].Uncertain)
 	require.NotNil(t, r.Items[0].Profit)
-	require.Equal(t, 73.0, *r.Items[0].Profit)
+	require.Equal(t, 79.0, *r.Items[0].Profit)
 }
-func TestUserBusinessFixHistoricalFX(t *testing.T) {
-	f := newBusinessFixFixture(t)
-	f.use(t, f.q.Start, "balance", 0, 1)
-	f.use(t, f.q.Start.AddDate(0, 0, 1), "balance", 0, 1)
-	f.q.End = f.q.End.AddDate(0, 0, 1)
-	f.q.CostMode = "historical"
-	r := f.report(t)
-	require.Nil(t, r.Items[0].Cost)
-	require.Nil(t, r.Summary.Cost)
-	require.Nil(t, r.Items[0].Profit)
-	f.q.UserID = f.user.ID
-	raw, err := f.repo.Detail(f.ctx, f.q)
-	require.NoError(t, err)
-	var detail struct {
-		Daily []struct{ Cost, Profit *float64 }
-	}
-	require.NoError(t, json.Unmarshal(raw, &detail))
-	require.Nil(t, detail.Daily[0].Cost)
-	require.Nil(t, detail.Daily[0].Profit)
-	f.q.UserID = 0
-	entries, err := f.repo.ListFX(f.ctx, f.q.Start, f.q.End.AddDate(0, 0, -1))
-	require.NoError(t, err)
-	var days []struct {
-		Date string
-		Rate *float64 `json:"usd_cny"`
-	}
-	require.NoError(t, json.Unmarshal(entries, &days))
-	require.Len(t, days, 2)
-	require.Nil(t, days[0].Rate)
-	entry := service.UserBusinessFX{Date: "2026-09-24", Rate: 6, Source: "settlement proof"}
-	require.NoError(t, f.repo.InsertFX(f.ctx, entry))
-	require.NoError(t, f.repo.InsertFX(f.ctx, entry))
-	require.Nil(t, f.report(t).Items[0].Cost)
-	require.NoError(t, f.repo.InsertFX(f.ctx, service.UserBusinessFX{Date: "2026-09-25", Rate: 7, Source: "settlement proof"}))
-	r = f.report(t)
-	require.Equal(t, 13.0, *r.Items[0].Cost)
-	require.Equal(t, -13.0, *r.Items[0].Profit)
-	entry.Rate = 8
-	require.Error(t, f.repo.InsertFX(f.ctx, entry))
-	f.q.CostMode = "estimate"
-	f.q.USDCNY = 8
-	require.Equal(t, 16.0, *f.report(t).Items[0].Cost)
-}
-
 func TestUserBusinessFixStandaloneRefundSnapshotCannotInventDailyHistory(t *testing.T) {
 	f := newBusinessFixFixture(t)
 	f.use(t, f.q.Start, "balance", 0, 1)
@@ -203,4 +159,31 @@ func TestUserBusinessFixStandaloneRefundSnapshotCannotInventDailyHistory(t *test
 	r := f.report(t)
 	require.Nil(t, r.Items[0].Profit)
 	require.Greater(t, r.Items[0].Uncertain, 0)
+}
+
+func TestUserBusinessUsesRecordedCostWithoutCurrencyConversion(t *testing.T) {
+	f := newBusinessFixFixture(t)
+	f.use(t, f.q.Start, "balance", 0, 5)
+	f.use(t, f.q.Start.Add(time.Hour), "entitlement_quota", 1, 7)
+	f.use(t, f.q.Start.AddDate(0, 0, 1), "balance", 0, 3)
+	_, err := f.client.ExecContext(f.ctx, "UPDATE usage_logs SET account_stats_cost=CASE WHEN request_id='fix-1' THEN 20 WHEN request_id='fix-2' THEN 0 ELSE NULL END, account_rate_multiplier=0.5 WHERE user_id=$1", f.user.ID)
+	require.NoError(t, err)
+	f.q.End = f.q.End.AddDate(0, 0, 1)
+	r := f.report(t)
+	require.Len(t, r.Items, 1)
+	require.Equal(t, 15.0, r.Items[0].Consumption)
+	require.NotNil(t, r.Items[0].Cost)
+	require.Equal(t, 10.5, *r.Items[0].Cost)
+	require.Equal(t, -10.5, *r.Items[0].Profit)
+	f.q.UserID = f.user.ID
+	raw, err := f.repo.Detail(f.ctx, f.q)
+	require.NoError(t, err)
+	var d struct {
+		Daily []struct{ Cost, Consumption, Profit float64 }
+	}
+	require.NoError(t, json.Unmarshal(raw, &d))
+	require.Len(t, d.Daily, 2)
+	require.Equal(t, 10.0, d.Daily[0].Cost)
+	require.Equal(t, 0.5, d.Daily[1].Cost)
+	require.Equal(t, 12.0, d.Daily[0].Consumption)
 }

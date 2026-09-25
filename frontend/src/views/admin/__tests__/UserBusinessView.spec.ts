@@ -42,8 +42,6 @@ const base = {
   end_at: '2026-09-25T12:00:00+08:00',
   as_of: '2026-09-25T12:00:00+08:00',
   timezone: 'Asia/Shanghai',
-  cost_mode: 'estimate',
-  usd_cny: 7,
 }
 function view() {
   return mount(View, {
@@ -51,7 +49,6 @@ function view() {
       stubs: {
         AppLayout: { template: '<div data-testid="console"><slot/></div>' },
         Pagination: true,
-        UserBusinessFX: true,
         UserBusinessDetail: {
           props: ['user', 'filters'],
           template: '<div data-testid="user-detail">{{user?.username}}</div>',
@@ -71,8 +68,11 @@ describe('user business report', () => {
     const cells = w.get('[data-testid="business-row"]').findAll('td')
     expect(getBusinessReport.mock.calls[0][0]).toMatchObject({
       filter: 'used',
-      cost_mode: 'historical',
     })
+    expect(w.find('input[type=number]').exists()).toBe(false)
+    expect(w.text()).not.toContain('userBusiness.historicalNotice')
+    expect(getBusinessReport.mock.calls[0][0]).not.toHaveProperty('usd_cny')
+    expect(getBusinessReport.mock.calls[0][0]).not.toHaveProperty('cost_mode')
     expect(cells[2].text()).not.toContain('¥')
     expect(cells[3].text()).toContain('70.00')
     expect(cells[3].text()).not.toContain('490')
@@ -84,7 +84,6 @@ describe('user business report', () => {
   it('shows unknown profits as pending review, not zero', async () => {
     getBusinessReport.mockResolvedValue({
       ...base,
-      cost_mode: 'historical',
       items: [
         { ...base.items[0], cost: null, profit: null, uncertain_count: 1 },
       ],
@@ -104,7 +103,6 @@ describe('user business report', () => {
       'userBusiness.review',
     )
     expect(w.text()).toContain('userBusiness.unknownNote')
-    expect(w.text()).toContain('userBusiness.historicalNotice')
     w.unmount()
   })
   it('ignores stale results after switching dates', async () => {

@@ -48,36 +48,6 @@
           :placeholder="t('userBusiness.search')"
           :aria-label="t('userBusiness.search')"
         />
-        <select
-          v-model="filters.cost_mode"
-          class="input w-44"
-          :aria-label="t('userBusiness.costMode')"
-          @change="applyFilters"
-        >
-          <option value="historical">{{ t('userBusiness.historical') }}</option>
-          <option value="estimate">{{ t('userBusiness.estimate') }}</option>
-        </select>
-        <button
-          type="button"
-          class="btn btn-secondary"
-          :disabled="!loaded.start_date"
-          @click="fxOpen = true"
-        >
-          {{ t('userBusiness.fxTitle') }}
-        </button>
-        <label
-          v-if="filters.cost_mode === 'estimate'"
-          class="text-xs text-gray-500"
-          >{{ t('userBusiness.rate')
-          }}<input
-            v-model.number="filters.usd_cny"
-            type="number"
-            min="0.01"
-            max="100"
-            step="0.0001"
-            class="input mt-1 w-32"
-            required
-        /></label>
         <button class="btn btn-primary" :disabled="loading">
           {{ t('userBusiness.query') }}
         </button>
@@ -134,24 +104,10 @@
         </button>
       </p>
       <template v-else-if="report">
-        <p class="text-xs text-amber-700 dark:text-amber-300">
-          {{
-            t(
-              report.cost_mode === 'estimate'
-                ? 'userBusiness.estimateNotice'
-                : 'userBusiness.historicalNotice',
-            )
-          }}
-        </p>
         <div class="flex flex-wrap justify-between gap-2 text-xs text-gray-500">
           <span
             >{{ loaded.start_date }} → {{ loaded.end_date }} ·
-            {{ report.timezone }} ·
-            {{
-              report.cost_mode === 'estimate'
-                ? t('userBusiness.estimate') + ' ' + report.usd_cny
-                : t('userBusiness.historical')
-            }}</span
+            {{ report.timezone }}</span
           ><span
             >{{ t('userBusiness.asOf') }} {{ formatDate(report.as_of) }}</span
           >
@@ -311,13 +267,6 @@
           @update:page-size="changeSize"
         />
       </template>
-      <UserBusinessFX
-        :show="fxOpen"
-        :start="loaded.start_date"
-        :end="loaded.end_date"
-        @close="fxOpen = false"
-        @saved="load"
-      />
       <UserBusinessDetail
         :user="selected"
         :filters="loaded"
@@ -337,7 +286,6 @@ import {
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import UserBusinessDetail from '@/components/admin/UserBusinessDetail.vue'
-import UserBusinessFX from '@/components/admin/UserBusinessFX.vue'
 const { t } = useI18n()
 const zone = ref('Asia/Shanghai')
 const today = () =>
@@ -358,7 +306,6 @@ const filters = ref<BusinessFilters>({
   end_date: '',
   search: '',
   filter: 'used',
-  cost_mode: 'historical',
   sort: 'consumption',
   order: 'desc',
   page: 1,
@@ -367,7 +314,6 @@ const filters = ref<BusinessFilters>({
 const loaded = ref<BusinessFilters>({ ...filters.value })
 const report = ref<BusinessReport | null>(null)
 const selected = ref<BusinessRow | null>(null)
-const fxOpen = ref(false)
 const loading = ref(false)
 const error = ref(false)
 let controller: AbortController | undefined
@@ -422,8 +368,6 @@ async function load() {
       params.start_date = today()
       params.end_date = today()
     }
-    params.usd_cny = data.usd_cny
-    params.cost_mode = data.cost_mode ?? params.cost_mode
     loaded.value = params
     filters.value = { ...params }
   } catch {

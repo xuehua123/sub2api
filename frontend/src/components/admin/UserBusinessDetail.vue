@@ -15,15 +15,6 @@
       </button>
     </p>
     <div v-else-if="detail" class="space-y-5">
-      <p class="text-xs text-amber-700 dark:text-amber-300">
-        {{
-          t(
-            detail.cost_mode === 'estimate'
-              ? 'userBusiness.estimateNotice'
-              : 'userBusiness.historicalNotice',
-          )
-        }}
-      </p>
       <p class="text-xs text-gray-500">
         {{ t('userBusiness.assetNote') }} · {{ formatDate(detail.as_of) }}
       </p>
@@ -188,7 +179,9 @@
                     t(
                       event.order_type === 'subscription'
                         ? 'userBusiness.subscription'
-                        : 'userBusiness.cash',
+                        : event.order_type === 'balance'
+                          ? 'userBusiness.cash'
+                          : 'userBusiness.review',
                     )
                   }}<span
                     v-if="event.uncertain"

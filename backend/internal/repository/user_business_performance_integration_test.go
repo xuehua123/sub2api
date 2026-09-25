@@ -44,7 +44,7 @@ func TestUserBusinessBoundedAggregatePlan(t *testing.T) {
 	require.NoError(t, err)
 	recorder := &recordedBusinessSQL{sqlExecutor: tx}
 	repo := &userBusinessRepository{db: recorder}
-	q := service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "business-scale-", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc", USDCNY: 7, CostMode: "estimate"}, Start: start, End: start.AddDate(0, 0, 1), Now: start.AddDate(0, 0, 2)}
+	q := service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "business-scale-", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc"}, Start: start, End: start.AddDate(0, 0, 1), Now: start.AddDate(0, 0, 2)}
 	raw, err := repo.Report(ctx, q)
 	require.NoError(t, err)
 	require.Equal(t, 1, recorder.calls)

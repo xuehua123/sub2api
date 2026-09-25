@@ -36,7 +36,7 @@ func TestUserBusinessMoneyAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	_, err = client.PaymentOrder.UpdateOneID(p.ID).SetRefundAmount(40).SetProviderRefundAmount(40).SetRefundAt(start.Add(2 * time.Hour)).Save(ctx)
 	require.NoError(t, err)
-	q := service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "business@test.invalid", StartDate: "2026-09-24", EndDate: "2026-09-24", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc", USDCNY: 7, CostMode: "estimate"}, Start: start, End: end, Now: end.Add(12 * time.Hour)}
+	q := service.UserBusinessQuery{UserBusinessParams: service.UserBusinessParams{Search: "business@test.invalid", StartDate: "2026-09-24", EndDate: "2026-09-24", Page: 1, PageSize: 20, Sort: "consumption", Order: "desc"}, Start: start, End: end, Now: end.Add(12 * time.Hour)}
 	raw, err := repo.Report(ctx, q)
 	require.NoError(t, err)
 	var report struct {
@@ -54,10 +54,10 @@ func TestUserBusinessMoneyAndPagination(t *testing.T) {
 	row := report.Items[0]
 	require.Equal(t, 100.0, row.Paid)
 	require.Equal(t, 20.0, row.Refund)
-	require.Equal(t, 70.0, row.Cost)
+	require.Equal(t, 10.0, row.Cost)
 	require.Equal(t, 6.0, row.Consumption)
 	require.NotNil(t, row.Profit)
-	require.Equal(t, 10.0, *row.Profit)
+	require.Equal(t, 70.0, *row.Profit)
 	q.Page = 2
 	raw, err = repo.Report(ctx, q)
 	require.NoError(t, err)
@@ -79,7 +79,7 @@ func TestUserBusinessMoneyAndPagination(t *testing.T) {
 	require.NoError(t, json.Unmarshal(raw, &detail))
 	require.Len(t, detail.Daily, 1)
 	require.Equal(t, 100.0, detail.Daily[0].Paid)
-	require.Equal(t, 10.0, *detail.Daily[0].Profit)
+	require.Equal(t, 70.0, *detail.Daily[0].Profit)
 
 	// Current assets must include cards purchased after the queried period and deduplicate legacy aliases.
 	group := mustCreateGroup(t, client, &service.Group{Name: "Card group"})
@@ -111,7 +111,7 @@ func TestUserBusinessMoneyAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &report))
 	require.Equal(t, 10.0, report.Items[0].Refund)
-	require.Equal(t, 20.0, *report.Items[0].Profit)
+	require.Equal(t, 80.0, *report.Items[0].Profit)
 
 	// Refund pending still represents a paid order; only settled checkpoints count as refund.
 	_, err = client.PaymentOrder.UpdateOneID(p.ID).SetStatus("REFUND_PENDING").Save(ctx)
@@ -163,6 +163,6 @@ func TestUserBusinessMoneyAndPagination(t *testing.T) {
 	require.Equal(t, 450.0, report.Items[0].Paid)
 	require.Equal(t, 20.0, report.Items[0].Refund)
 	require.NotNil(t, report.Items[0].Profit)
-	require.Equal(t, 360.0, *report.Items[0].Profit)
+	require.Equal(t, 420.0, *report.Items[0].Profit)
 
 }

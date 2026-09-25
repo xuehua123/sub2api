@@ -23,11 +23,10 @@ func TestUserBusinessRequiresAdmin(t *testing.T) {
 	router := gin.New()
 	admin := router.Group("/api/v1/admin", gin.HandlerFunc(NewAdminAuthMiddleware(auth, users, nil, nil)))
 	called := false
-	for _, path := range []string{"/user-business", "/user-business/fx-rates", "/user-business/:id"} {
+	for _, path := range []string{"/user-business", "/user-business/:id"} {
 		admin.GET(path, func(c *gin.Context) { called = true; c.Status(200) })
 	}
-	admin.PUT("/user-business/fx-rates", func(c *gin.Context) { called = true; c.Status(200) })
-	for _, path := range []string{"/api/v1/admin/user-business", "/api/v1/admin/user-business/fx-rates", "/api/v1/admin/user-business/123"} {
+	for _, path := range []string{"/api/v1/admin/user-business", "/api/v1/admin/user-business/123"} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		require.Equal(t, 401, w.Code)
@@ -39,13 +38,6 @@ func TestUserBusinessRequiresAdmin(t *testing.T) {
 		router.ServeHTTP(w, req)
 		require.Equal(t, 403, w.Code)
 	}
-	tokenUser, err := auth.GenerateToken(context.Background(), user)
-	require.NoError(t, err)
-	reqWrite := httptest.NewRequest(http.MethodPut, "/api/v1/admin/user-business/fx-rates", nil)
-	reqWrite.Header.Set("Authorization", "Bearer "+tokenUser)
-	writeResult := httptest.NewRecorder()
-	router.ServeHTTP(writeResult, reqWrite)
-	require.Equal(t, 403, writeResult.Code)
 	require.False(t, called)
 	user.Role = service.RoleAdmin
 	token, err := auth.GenerateToken(context.Background(), user)

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -13,16 +12,14 @@ import (
 )
 
 type UserBusinessParams struct {
-	StartDate string  `json:"start_date"`
-	EndDate   string  `json:"end_date"`
-	Search    string  `json:"search"`
-	Filter    string  `json:"filter"`
-	Sort      string  `json:"sort"`
-	Order     string  `json:"order"`
-	Page      int     `json:"page"`
-	PageSize  int     `json:"page_size"`
-	USDCNY    float64 `json:"usd_cny"`
-	CostMode  string  `json:"cost_mode"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Search    string `json:"search"`
+	Filter    string `json:"filter"`
+	Sort      string `json:"sort"`
+	Order     string `json:"order"`
+	Page      int    `json:"page"`
+	PageSize  int    `json:"page_size"`
 }
 type UserBusinessQuery struct {
 	UserBusinessParams
@@ -34,13 +31,12 @@ type UserBusinessRepository interface {
 	Detail(context.Context, UserBusinessQuery) (json.RawMessage, error)
 }
 type UserBusinessService struct {
-	repo     UserBusinessRepository
-	settings *SettingService
-	now      func() time.Time
+	repo UserBusinessRepository
+	now  func() time.Time
 }
 
-func NewUserBusinessService(repo UserBusinessRepository, settings *SettingService) *UserBusinessService {
-	return &UserBusinessService{repo: repo, settings: settings, now: time.Now}
+func NewUserBusinessService(repo UserBusinessRepository) *UserBusinessService {
+	return &UserBusinessService{repo: repo, now: time.Now}
 }
 func (s *UserBusinessService) Normalize(ctx context.Context, p UserBusinessParams) (UserBusinessQuery, error) {
 	now := s.now().In(timezone.Location())
@@ -90,22 +86,6 @@ func (s *UserBusinessService) Normalize(ctx context.Context, p UserBusinessParam
 	}
 	if p.Order != "asc" && p.Order != "desc" {
 		return UserBusinessQuery{}, infraerrors.BadRequest("INVALID_SORT", "Unknown direction")
-	}
-	if p.CostMode == "" {
-		p.CostMode = "historical"
-	}
-	if p.CostMode != "historical" && p.CostMode != "estimate" {
-		return UserBusinessQuery{}, infraerrors.BadRequest("INVALID_COST_MODE", "Unknown cost mode")
-	}
-	if p.USDCNY == 0 {
-		if s.settings != nil {
-			p.USDCNY = s.settings.GetModelPriceUSDCNYRate(ctx)
-		} else {
-			p.USDCNY = defaultModelPriceUSDCNYRate
-		}
-	}
-	if math.IsNaN(p.USDCNY) || math.IsInf(p.USDCNY, 0) || p.USDCNY <= 0 || p.USDCNY > 100 {
-		return UserBusinessQuery{}, infraerrors.BadRequest("INVALID_RATE", "CNY/USD rate must be between 0 and 100")
 	}
 	end := last.AddDate(0, 0, 1)
 	if end.After(now) {

@@ -196,7 +196,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	channelMonitorV2Service := service.ProvideChannelMonitorV2Service(channelMonitorV2Repository, settingService)
 	channelMonitorV2Handler := handler.NewChannelMonitorV2Handler(channelMonitorV2Service, apiKeyService)
 	userBusinessRepository := repository.NewUserBusinessRepository(db)
-	userBusinessService := service.NewUserBusinessService(userBusinessRepository, settingService)
+	userBusinessService := service.NewUserBusinessService(userBusinessRepository)
 	userBusinessHandler := admin.NewUserBusinessHandler(userBusinessService)
 	dashboardAggregationRepository := repository.NewDashboardAggregationRepository(db)
 	dashboardStatsCache := repository.NewDashboardCache(redisClient, configConfig)

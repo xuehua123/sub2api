@@ -1,22 +1,5 @@
 export default {
   userBusiness: {
-    fxSaved: 'Recorded',
-    fxImmutable:
-      'Record only supported historical rates. Current rates are never auto-backfilled; recorded dates cannot be overwritten.',
-    fxSaveError:
-      'Save failed. Check input; existing dates cannot be silently overwritten.',
-    fxMissing: 'Not recorded',
-    fxRecord: 'Record rate',
-    fxRate: 'CNY per USD',
-    fxSource: 'Rate evidence / source',
-    fxTitle: 'Historical rates',
-    historicalNotice:
-      'Uses recorded daily rates. Missing rates leave costs and profits unknown; add verified entries in Historical rates.',
-    estimateNotice:
-      'Estimate mode: costs and profits use the chosen fixed rate, not historical settlement rates.',
-    estimate: 'Fixed-rate estimate',
-    historical: 'Daily historical rates',
-    costMode: 'Cost conversion',
     quotaPairs: 'Card quotas show remaining / limit in platform quota units.',
     title: 'User cash-flow ranking',
     description:
@@ -56,11 +39,10 @@ export default {
     failed: 'Could not load. Retry.',
     retry: 'Retry',
     review: 'Needs review',
-    rate: 'Cost conversion (CNY/USD)',
     basis:
-      'Profit = period receipts minus settled refunds minus account cost. Consumption and balance remain platform quota; CNY costs use the selected FX mode.',
+      'Profit = period receipts minus settled refunds minus recorded account cost. Usage and balance remain platform quota; account costs use the existing statistics without additional conversion.',
     unknownNote:
-      'Some records lack historical FX, CNY settlement or refund evidence. Unknown costs and profits require review.',
+      'Some payment or refund records lack reliable evidence; related profits are withheld.',
     assetNote: 'Current balances and subscriptions are not period-end assets.',
     coverage:
       'Only retained usage records are included. Gifts and unpaid credits are excluded from receipts.',

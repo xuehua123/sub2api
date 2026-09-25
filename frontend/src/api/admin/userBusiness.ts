@@ -8,8 +8,6 @@ export interface BusinessFilters {
   order: 'asc' | 'desc'
   page: number
   page_size: number
-  cost_mode?: 'historical' | 'estimate'
-  usd_cny?: number
 }
 export interface BusinessRow {
   id: number
@@ -46,8 +44,6 @@ export interface BusinessReport {
   end_at: string
   as_of: string
   timezone: string
-  cost_mode?: 'historical' | 'estimate'
-  usd_cny: number
 }
 export interface BusinessCard {
   id: number
@@ -78,8 +74,6 @@ export interface BusinessDetail {
   start_at: string
   end_at: string
   timezone: string
-  cost_mode?: 'historical' | 'estimate'
-  usd_cny: number
   payments: {
     order_id: number | null
     at: string
@@ -114,29 +108,4 @@ export async function getBusinessDetail(
       timeout: 25000,
     })
   ).data
-}
-
-export interface BusinessFX {
-  date: string
-  usd_cny: number | null
-  source: string | null
-}
-export async function getBusinessFX(
-  start: string,
-  end: string,
-  signal?: AbortSignal,
-) {
-  return (
-    await apiClient.get<BusinessFX[]>('/admin/user-business/fx-rates', {
-      params: { start_date: start, end_date: end },
-      signal,
-    })
-  ).data
-}
-export async function saveBusinessFX(data: {
-  date: string
-  usd_cny: number
-  source: string
-}) {
-  await apiClient.put('/admin/user-business/fx-rates', data)
 }

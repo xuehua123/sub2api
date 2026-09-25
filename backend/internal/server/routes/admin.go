@@ -130,8 +130,6 @@ func RegisterAdminRoutes(
 		// Shared upstream management connections.
 		registerUpstreamConnectionRoutes(admin, h)
 		admin.GET("/user-business", h.Admin.UserBusiness.List)
-		admin.GET("/user-business/fx-rates", h.Admin.UserBusiness.ListFX)
-		admin.PUT("/user-business/fx-rates", h.Admin.UserBusiness.InsertFX)
 		admin.GET("/user-business/:id", h.Admin.UserBusiness.Detail)
 
 		// 推荐系统管理

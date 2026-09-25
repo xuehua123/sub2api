@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -14,11 +13,10 @@ import (
 )
 
 type UserBusinessHandler struct {
-	service    *service.UserBusinessService
-	cache      *snapshotCache
-	gate       chan struct{}
-	mu         sync.Mutex
-	fxRevision atomic.Uint64
+	service *service.UserBusinessService
+	cache   *snapshotCache
+	gate    chan struct{}
+	mu      sync.Mutex
 }
 
 func NewUserBusinessHandler(s *service.UserBusinessService) *UserBusinessHandler {
@@ -35,15 +33,7 @@ func (h *UserBusinessHandler) query(c *gin.Context) (service.UserBusinessQuery, 
 		response.BadRequest(c, "Invalid page size")
 		return service.UserBusinessQuery{}, false
 	}
-	rate := 0.0
-	if raw := c.Query("usd_cny"); raw != "" {
-		rate, err = strconv.ParseFloat(raw, 64)
-		if err != nil || rate <= 0 {
-			response.BadRequest(c, "Invalid rate")
-			return service.UserBusinessQuery{}, false
-		}
-	}
-	q, err := h.service.Normalize(c.Request.Context(), service.UserBusinessParams{StartDate: c.Query("start_date"), EndDate: c.Query("end_date"), Search: c.Query("search"), Filter: c.DefaultQuery("filter", "used"), Sort: c.Query("sort"), Order: c.Query("order"), Page: page, PageSize: size, USDCNY: rate, CostMode: c.Query("cost_mode")})
+	q, err := h.service.Normalize(c.Request.Context(), service.UserBusinessParams{StartDate: c.Query("start_date"), EndDate: c.Query("end_date"), Search: c.Query("search"), Filter: c.DefaultQuery("filter", "used"), Sort: c.Query("sort"), Order: c.Query("order"), Page: page, PageSize: size})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return q, false
@@ -59,7 +49,7 @@ func (h *UserBusinessHandler) respond(c *gin.Context, q service.UserBusinessQuer
 	}
 	h.cache.mu.Unlock()
 	h.mu.Unlock()
-	entry, hit, err := h.cache.GetOrLoad(q.CacheKey()+"|fx:"+strconv.FormatUint(h.fxRevision.Load(), 10), func() (any, error) {
+	entry, hit, err := h.cache.GetOrLoad(q.CacheKey(), func() (any, error) {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
 		defer cancel()
 		select {
@@ -102,26 +92,4 @@ func (h *UserBusinessHandler) Detail(c *gin.Context) {
 	}
 	q.UserID = id
 	h.respond(c, q)
-}
-
-func (h *UserBusinessHandler) ListFX(c *gin.Context) {
-	data, err := h.service.ListFX(c.Request.Context(), service.UserBusinessParams{StartDate: c.Query("start_date"), EndDate: c.Query("end_date")})
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	response.Success(c, data)
-}
-func (h *UserBusinessHandler) InsertFX(c *gin.Context) {
-	var input service.UserBusinessFX
-	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "Invalid FX input")
-		return
-	}
-	if err := h.service.InsertFX(c.Request.Context(), input); err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	h.fxRevision.Add(1)
-	response.Success(c, gin.H{"saved": true})
 }
