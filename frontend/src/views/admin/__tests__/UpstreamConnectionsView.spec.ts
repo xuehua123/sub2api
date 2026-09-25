@@ -189,6 +189,24 @@ describe('UpstreamConnectionsView', () => {
     getRuntimeOverviewMock.mockResolvedValue({ accounts: [] })
   })
 
+  it('compares actual usage revenue with cost without another statistics request',async()=>{
+    listAllConnectionsMock.mockResolvedValue([{id:1,name:'Revenue',provider:'sub2api',auth_mode:'access_token',status:'ready',wallet_amount:null,wallet_currency:'USD',wallet_usd:20,wallet_unlimited:false,binding_count:1,group_count:0,bound_account_ids:[10],management_base_url:'https://example.invalid'}])
+    getBatchTodayStatsMock.mockResolvedValue({stats:{10:{cost:5,user_cost:3,requests:1}}})
+    const wrapper=mountView();await flushPromises()
+    expect(wrapper.get('[data-testid="today-revenue-summary"]').text()).toBe('$3.00')
+    expect(wrapper.get('[data-testid="today-profit-summary"]').text()).toBe('$-2.00')
+    expect(wrapper.get('[data-testid="wallet-total"]').text()).toBe('$20.00')
+    expect(getBatchTodayStatsMock).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+  it('does not turn missing revenue into zero income',async()=>{
+    listAllConnectionsMock.mockResolvedValue([{id:1,name:'Missing',provider:'sub2api',auth_mode:'access_token',status:'ready',wallet_amount:null,wallet_currency:'USD',wallet_usd:null,binding_count:1,group_count:0,bound_account_ids:[10],management_base_url:'https://example.invalid'}])
+    getBatchTodayStatsMock.mockResolvedValue({stats:{10:{cost:5,requests:1}}})
+    const wrapper=mountView();await flushPromises()
+    expect(wrapper.get('[data-testid="today-revenue-summary"]').text()).toBe('—')
+    expect(wrapper.get('[data-testid="today-profit-summary"]').text()).toBe('—')
+    wrapper.unmount()
+  })
   it('accepts an optional remote user ID and refresh token in auto access-token mode', async () => {
     const wrapper = mountView()
     await flushPromises()

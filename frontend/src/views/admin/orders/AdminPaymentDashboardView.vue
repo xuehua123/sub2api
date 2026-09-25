@@ -66,12 +66,13 @@
           </div>
         </div>
       </template>
+      <UsageProfitChart :days="days" />
     </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { adminPaymentAPI } from '@/api/admin/payment'
@@ -82,6 +83,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
 import OrderStatsCards from '@/components/admin/payment/OrderStatsCards.vue'
 import DailyRevenueChart from '@/components/admin/payment/DailyRevenueChart.vue'
+import UsageProfitChart from '@/components/admin/payment/UsageProfitChart.vue'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -90,6 +92,8 @@ const DAYS_OPTIONS = [7, 30, 90] as const
 const days = ref<number>(30)
 const loading = ref(false)
 const stats = ref<DashboardStats | null>(null)
+let generation = 0
+onBeforeUnmount(() => { generation++ })
 
 function methodColor(type: string): string {
   const c: Record<string, string> = {
@@ -124,14 +128,15 @@ function formatMoney(currency: string, amount: number): string {
 }
 
 async function loadDashboard() {
+  const current = ++generation
   loading.value = true
   try {
     const res = await adminPaymentAPI.getDashboard(days.value)
-    stats.value = res.data
+    if (current === generation) stats.value = res.data
   } catch (err: unknown) {
-    appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
+    if (current === generation) appStore.showError(extractI18nErrorMessage(err, t, 'payment.errors', t('common.error')))
   } finally {
-    loading.value = false
+    if (current === generation) loading.value = false
   }
 }
 

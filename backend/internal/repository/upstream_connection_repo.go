@@ -228,6 +228,9 @@ func updateUpstreamConnectionWithClient(
 			Exec(ctx); err != nil {
 			return false, fmt.Errorf("clear stale upstream group snapshot: %w", err)
 		}
+		if _, err := client.ExecContext(ctx, "DELETE FROM upstream_group_annotations WHERE connection_id=$1", connection.ID); err != nil {
+			return false, fmt.Errorf("clear old upstream group annotations: %w", err)
+		}
 		bindingUpdater := client.UpstreamAccountBinding.Update().
 			Where(upstreamaccountbinding.ConnectionIDEQ(connection.ID)).
 			SetRemoteTokenID("").

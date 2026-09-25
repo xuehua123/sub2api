@@ -1,6 +1,10 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
+    <div class="mb-4 flex gap-6 border-b border-gray-200 dark:border-dark-700" role="tablist">
+      <button v-for="tab in ['connections','catalog'] as const" :key="tab" role="tab" :aria-selected="activeTab===tab" class="border-b-2 px-1 py-3 text-sm font-medium" :class="activeTab===tab ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500'" @click="activeTab=tab">{{ t('upstreamWorkspace.'+tab) }}</button>
+    </div>
+    <KeepAlive><UpstreamGroupCatalog v-if="activeTab==='catalog'" :connections="catalogConnections" :connection-id="catalogConnectionID" @details="openCatalogDetails" /></KeepAlive>
+    <TablePageLayout v-show="activeTab==='connections'">
       <template #filters>
         <div class="flex flex-wrap items-center gap-3">
           <div class="relative w-full sm:w-64">
@@ -57,10 +61,20 @@
       </template>
 
       <template #table>
-        <div class="mb-3 grid grid-cols-2 divide-x divide-gray-200 border-y border-gray-200 bg-white lg:grid-cols-4 dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <button v-for="kind in ['all','low','abnormal','stale','unbound']" :key="kind" class="rounded-md border px-3 py-1.5 text-xs" :class="quickFilter===kind ? 'border-primary-500 bg-primary-50 text-primary-700 dark:bg-primary-900/20 dark:text-primary-300' : 'border-gray-200 text-gray-600 dark:border-dark-600 dark:text-gray-300'" :aria-pressed="quickFilter===kind" @click="quickFilter=kind">{{ t('upstreamWorkspace.'+kind) }} <span class="ml-1 tabular-nums">{{ quickCount(kind) }}</span></button>
+          <select v-model="syncFilter" class="input ml-auto w-40" :aria-label="t('upstreamWorkspace.sync')"><option value="">{{ t('upstreamWorkspace.sync') }}</option><option value="on">{{ t('upstreamWorkspace.enabled') }}</option><option value="off">{{ t('upstreamWorkspace.disabled') }}</option></select>
+          <button class="btn btn-secondary" data-testid="cost-history-open" @click="showCostHistory=true"><Icon name="clock" size="sm" class="mr-2"/>{{ t('upstreamWorkspace.history') }}</button>
+        </div>
+        <div class="mb-3 grid grid-cols-2 divide-x divide-gray-200 border-y border-gray-200 bg-white xl:grid-cols-7 dark:divide-dark-700 dark:border-dark-700 dark:bg-dark-800">
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.connections') }}</p>
             <p class="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-white">{{ connectionSummary.total }}</p>
+          </div>
+          <div class="px-4 py-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.totalBalance') }}</p>
+            <p data-testid="wallet-total" class="mt-1 text-lg font-semibold tabular-nums">{{ connectionSummary.wallet.known ? '$'+formatCost(connectionSummary.wallet.amount) : '—' }}</p>
+            <p class="text-xs text-gray-500">{{ t('upstreamWorkspace.walletCoverage', connectionSummary.wallet) }}</p>
           </div>
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.lowBalanceSummary', { threshold: walletHighlightThresholdValue }) }}</p>
@@ -69,6 +83,15 @@
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayAccountCost') }}</p>
             <p data-testid="today-cost-summary" class="mt-1 text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-300">{{ todayStatsAvailable ? `$${formatCost(connectionSummary.todayCost)}` : '-' }}</p>
+          </div>
+          <div class="px-4 py-3" :title="t('upstreamWorkspace.profitBasis')">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.todayRevenue') }}</p>
+            <p data-testid="today-revenue-summary" class="mt-1 text-lg font-semibold tabular-nums text-sky-600 dark:text-sky-300">{{ connectionSummary.revenue===null ? '—' : '$'+formatCost(connectionSummary.revenue) }}</p>
+          </div>
+          <div class="px-4 py-3" :title="t('upstreamWorkspace.profitBasis')">
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('upstreamWorkspace.todayProfit') }}</p>
+            <p data-testid="today-profit-summary" class="mt-1 text-lg font-semibold tabular-nums" :class="connectionSummary.revenue!==null && connectionSummary.revenue<connectionSummary.todayCost ? 'text-red-600' : 'text-emerald-600 dark:text-emerald-300'">{{ connectionSummary.revenue===null ? '—' : '$'+formatCost(connectionSummary.revenue-connectionSummary.todayCost) }}</p>
+            <p class="text-xs text-gray-500">{{ t('upstreamWorkspace.margin') }} {{ connectionSummary.revenue!==null && connectionSummary.revenue>0 ? ((connectionSummary.revenue-connectionSummary.todayCost)/connectionSummary.revenue*100).toFixed(1)+'%' : '—' }}</p>
           </div>
           <div class="px-4 py-3">
             <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('admin.upstreamConnections.summary.todayRequests') }}</p>
@@ -206,7 +229,7 @@
           </template>
           <template #cell-observations="{ row }">
             <div class="flex flex-col gap-1 text-xs text-gray-600 dark:text-gray-300">
-              <span>{{ t('admin.upstreamConnections.groupsCount', { count: row.group_count }) }}</span>
+              <button class="text-left text-primary-600 hover:underline" :title="t('upstreamWorkspace.viewGroups')" @click="catalogConnectionID=row.id;activeTab='catalog'">{{ t('admin.upstreamConnections.groupsCount', { count: row.group_count }) }}</button>
               <span>{{ t('admin.upstreamConnections.bindingsCount', { count: row.binding_count }) }}</span>
             </div>
           </template>
@@ -427,6 +450,7 @@
                 <thead class="bg-white text-left text-[11px] uppercase tracking-wide text-gray-400 dark:bg-dark-900 dark:text-gray-500">
                   <tr>
                     <th class="px-3 py-2 font-medium">{{ t('admin.upstreamConnections.detail.groupName') }}</th>
+                    <th class="px-3 py-2 text-right font-medium" :title="t('upstreamWorkspace.rateSource')">{{ t('upstreamWorkspace.observedRates') }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.fiveMinuteRequests') }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.successFailure') }}</th>
                     <th class="px-3 py-2 text-right font-medium">{{ t('admin.upstreamConnections.runtime.successRate') }}</th>
@@ -442,6 +466,7 @@
                         {{ runtimeGroupDisplayName(group) }}
                       </button>
                     </td>
+                    <td class="px-3 py-2.5 text-right text-xs tabular-nums" data-testid="runtime-observed-rate" :title="t('upstreamWorkspace.rateSource')">{{ observedRateLabel(details,group.group_id) }}</td>
                     <td class="px-3 py-2.5 text-right tabular-nums">{{ group.five_minute_requests.toLocaleString() }}</td>
                     <td class="px-3 py-2.5 text-right tabular-nums">{{ group.five_minute_success_count.toLocaleString() }} / {{ group.five_minute_error_count.toLocaleString() }}</td>
                     <td class="px-3 py-2.5 text-right">
@@ -451,7 +476,7 @@
                     <td class="px-3 py-2.5 text-right tabular-nums">{{ group.today.requests.toLocaleString() }}</td>
                   </tr>
                   <tr v-if="runtimeGroups(details).length === 0">
-                    <td colspan="6" class="px-3 py-8 text-center text-gray-500">{{ t('admin.upstreamConnections.runtime.noTraffic') }}</td>
+                    <td colspan="7" class="px-3 py-8 text-center text-gray-500">{{ t('admin.upstreamConnections.runtime.noTraffic') }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -513,6 +538,7 @@
       <template #footer><div class="flex justify-end"><button class="btn btn-secondary" @click="closeDetails">{{ t('common.close') }}</button></div></template>
     </BaseDialog>
 
+    <UpstreamCostHistory :show="showCostHistory" :connections="catalogConnections" @close="showCostHistory=false" />
     <ConfirmDialog
       :show="Boolean(deleting)"
       :title="t('admin.upstreamConnections.delete')"
@@ -553,15 +579,27 @@ import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import UpstreamConnectionUsagePanel from '@/components/admin/UpstreamConnectionUsagePanel.vue'
+import UpstreamGroupCatalog from '@/components/admin/UpstreamGroupCatalog.vue'
+import UpstreamCostHistory from '@/components/admin/UpstreamCostHistory.vue'
+import { connectionIsStale, groupObservedRates, upstreamWalletTotal } from '@/utils/upstreamConnectionWorkspace'
 
 const { t } = useI18n()
 const router = useRouter()
 const appStore = useAppStore()
 const loading = ref(false)
+function savedTab(): 'connections'|'catalog' { try { return localStorage.getItem('upstream-workspace-tab')==='catalog' ? 'catalog' : 'connections' } catch { return 'connections' } }
+const activeTab = ref<'connections'|'catalog'>(savedTab())
+watch(activeTab, value => { try { localStorage.setItem('upstream-workspace-tab',value) } catch { /* Storage is optional. */ } })
+const catalogConnectionID = ref<number>()
+const catalogConnections = ref<UpstreamConnection[]>([])
+const showCostHistory = ref(false)
+const quickFilter = ref('all')
+const syncFilter = ref('')
 const saving = ref(false)
 type UpstreamConnectionRow = UpstreamConnection & {
   today_requests: number | null
   today_cost: number | null
+  today_revenue: number | null
   runtime_available: boolean
   runtime_error: string
   runtime_fetched_at: string | null
@@ -647,13 +685,39 @@ const authModeOptions = computed(() => [
 const showsRemoteUserId = computed(() => form.auth_mode === 'access_token' && form.provider !== 'sub2api')
 const requiresRemoteUserId = computed(() => form.auth_mode === 'access_token' && ['newapi', 'rixapi', 'shellapi', 'veloera'].includes(form.provider))
 const connectionSummary = computed(() => ({
-  total: allConnections.value.length,
-  lowBalance: allConnections.value.filter(isLowWallet).length,
-  todayCost: allConnections.value.reduce((total, row) => total + (row.today_cost ?? 0), 0),
-  todayRequests: allConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
+  total: filteredConnections.value.length,
+  wallet: upstreamWalletTotal(filteredConnections.value),
+  revenue: filteredConnections.value.every(row=>row.today_revenue!==null) ? filteredConnections.value.reduce((sum,row)=>sum+(row.today_revenue ?? 0),0) : null,
+  lowBalance: filteredConnections.value.filter(isLowWallet).length,
+  todayCost: filteredConnections.value.reduce((total, row) => total + (row.today_cost ?? 0), 0),
+  todayRequests: filteredConnections.value.reduce((total, row) => total + (row.today_requests ?? 0), 0)
 }))
 const walletHighlightThresholdValue = computed(() => normalizeWalletHighlightThreshold(walletHighlightThreshold.value))
 const tableSort = computed(() => tableSortFor(filters.sort))
+function matchesQuick(row: UpstreamConnection, kind: string): boolean {
+  if (kind==='low') return isLowWallet(row)
+  if (kind==='abnormal') return ['auth_error','degraded','needs_input'].includes(row.status)
+  if (kind==='stale') return connectionIsStale(row)
+  if (kind==='unbound') return row.binding_count===0
+  return true
+}
+const filteredConnections = computed(() => allConnections.value.filter(row => matchesQuick(row,quickFilter.value) && (!syncFilter.value || row.sync_enabled===(syncFilter.value==='on'))))
+function quickCount(kind: string) { return allConnections.value.filter(row=>matchesQuick(row,kind)).length }
+watch([quickFilter,syncFilter,walletHighlightThreshold],()=>applySortAndPage(1))
+async function openCatalogDetails(id: number) {
+  const row=allConnections.value.find(x=>x.id===id)
+  if (row) { await openDetails(row); return }
+  try {
+    const loaded=await adminAPI.upstreamConnections.get(id)
+    const hydrated: UpstreamConnectionRow={...loaded,today_requests:null,today_cost:null,today_revenue:null,runtime_available:false,runtime_error:'',runtime_fetched_at:null,runtime_accounts:[]}
+    await openDetails(hydrated)
+    if (details.value?.id===id) await refreshRuntimeOverview({ connectionId: id })
+  } catch (error) { appStore.showError(errorMessage(error,t('admin.upstreamConnections.loadFailed'))) }
+}
+function observedRateLabel(row: UpstreamConnectionRow, groupID: number): string {
+  const rates=groupObservedRates(row,groupID)
+  return [...rates.values.map(v=>v+'×'),...(rates.unknown?[t('upstreamWorkspace.rateUnavailable')]:[])].join(' / ') + (rates.stale ? ' · '+t('upstreamWorkspace.stale') : '')
+}
 
 function providerLabel(provider: string): string { return provider ? t(`admin.upstreamConnections.providers.${provider}`, provider) : '-' }
 function statusLabel(status: string): string { return t(`admin.upstreamConnections.statuses.${status}`, status) }
@@ -921,6 +985,7 @@ function patchConnectionRow(updated: UpstreamConnection): void {
       ...updated,
       today_requests: row.today_requests,
       today_cost: row.today_cost,
+      today_revenue: row.today_revenue,
       runtime_available: row.runtime_available,
       runtime_error: row.runtime_error,
       runtime_fetched_at: row.runtime_fetched_at,
@@ -945,6 +1010,7 @@ function withRuntimeSnapshot(connection: UpstreamConnection, snapshot: UpstreamC
     bindings: connection.bindings ?? snapshot.bindings ?? [],
     today_requests: snapshot.today_requests,
     today_cost: snapshot.today_cost,
+    today_revenue: snapshot.today_revenue,
     runtime_available: snapshot.runtime_available,
     runtime_error: snapshot.runtime_error,
     runtime_fetched_at: snapshot.runtime_fetched_at,
@@ -976,6 +1042,7 @@ function mergeListRowsWithLocal(remoteRows: UpstreamConnectionRow[]): UpstreamCo
       ...local,
       today_requests: remote.today_requests,
       today_cost: remote.today_cost,
+      today_revenue: remote.today_revenue,
       runtime_available: remote.runtime_available,
       runtime_error: remote.runtime_error,
       runtime_fetched_at: remote.runtime_fetched_at,
@@ -1021,6 +1088,8 @@ async function loadConnections(page = pagination.page): Promise<void> {
       today_requests: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.requests ?? 0), 0)
         : null,
+      today_revenue: statsAvailable && (item.bound_account_ids ?? []).every(id => Number.isFinite(stats[String(id)]?.user_cost))
+        ? (item.bound_account_ids ?? []).reduce((total,id)=>total+Number(stats[String(id)].user_cost),0) : null,
       today_cost: statsAvailable
         ? (item.bound_account_ids ?? []).reduce((total, accountId) => total + Number(stats[String(accountId)]?.cost ?? 0), 0)
         : null,
@@ -1032,6 +1101,7 @@ async function loadConnections(page = pagination.page): Promise<void> {
         .filter((account): account is UpstreamConnectionRuntimeAccount => account !== undefined)
     }))
     if (generation === loadGeneration) {
+      if (!filters.search && !filters.provider && !filters.status) catalogConnections.value=items
       todayStatsAvailable.value = statsAvailable
       allConnections.value = mergeListRowsWithLocal(rows)
       pagination.total = rows.length
@@ -1097,6 +1167,7 @@ async function refreshRuntimeOverview(options?: { connectionId?: number }): Prom
     connectionId != null
       ? allConnections.value.filter(row => row.id === connectionId)
       : allConnections.value
+  if (connectionId != null && targetRows.length===0 && details.value?.id===connectionId) targetRows.push(details.value)
   const accountIDs = boundRuntimeAccountIDs(targetRows)
   if (accountIDs.length === 0) return
 
@@ -1106,6 +1177,9 @@ async function refreshRuntimeOverview(options?: { connectionId?: number }): Prom
     const overview = await adminAPI.upstreamConnections.getRuntimeOverview(accountIDs)
     const accountsByID = new Map(overview.accounts.map(account => [account.account_id, account]))
     const fetchedAt = new Date().toISOString()
+    if (details.value && targetIds.has(details.value.id)) {
+      details.value = mergeRuntimeSnapshot(details.value, {runtime_available:true,runtime_error:'',runtime_fetched_at:fetchedAt,runtime_accounts:(details.value.bound_account_ids ?? []).map(id=>accountsByID.get(id)).filter((account): account is UpstreamConnectionRuntimeAccount=>account!==undefined)})
+    }
     allConnections.value = allConnections.value.map(row => {
       if (!targetIds.has(row.id)) return row
       return mergeRuntimeSnapshot(row, {
@@ -1121,6 +1195,7 @@ async function refreshRuntimeOverview(options?: { connectionId?: number }): Prom
     syncOpenDetailsRuntime()
   } catch (error: unknown) {
     const message = errorMessage(error, t('admin.upstreamConnections.runtime.unavailable'))
+    if(details.value && targetIds.has(details.value.id)) details.value=mergeRuntimeSnapshot(details.value,{runtime_available:false,runtime_error:message,runtime_fetched_at:null,runtime_accounts:[]})
     allConnections.value = allConnections.value.map(row => {
       if (!targetIds.has(row.id)) return row
       return mergeRuntimeSnapshot(row, {
@@ -1143,7 +1218,8 @@ function scheduleSearch(): void {
 }
 function changePageSize(size: number): void { pagination.page_size = size; applySortAndPage(1) }
 function applySortAndPage(page = pagination.page): void {
-  const rows = [...allConnections.value]
+  const rows = [...filteredConnections.value]
+  pagination.total = rows.length
   rows.sort((a, b) => {
     const [field, sortOrder] = filters.sort.split(/_(?=[^_]+$)/)
     const order = sortOrder === 'asc' ? 'asc' : 'desc'

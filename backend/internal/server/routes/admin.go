@@ -129,6 +129,10 @@ func RegisterAdminRoutes(
 
 		// Shared upstream management connections.
 		registerUpstreamConnectionRoutes(admin, h)
+		admin.GET("/user-business", h.Admin.UserBusiness.List)
+		admin.GET("/user-business/fx-rates", h.Admin.UserBusiness.ListFX)
+		admin.PUT("/user-business/fx-rates", h.Admin.UserBusiness.InsertFX)
+		admin.GET("/user-business/:id", h.Admin.UserBusiness.Detail)
 
 		// 推荐系统管理
 		registerReferralAdminRoutes(admin, h)
@@ -838,12 +842,16 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 }
 
 func registerUpstreamConnectionRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	admin.GET("/payment/usage-profit", h.Admin.UpstreamConnection.GetPaymentUsageProfit)
 	connections := admin.Group("/upstream-connections")
 	{
 		connections.GET("", h.Admin.UpstreamConnection.List)
 		connections.POST("", h.Admin.UpstreamConnection.Create)
 		connections.POST("/runtime-overview", h.Admin.UpstreamConnection.GetRuntimeOverview)
 		connections.GET("/bindings/by-account/:account_id", h.Admin.UpstreamConnection.GetAccountBinding)
+		connections.GET("/group-catalog", h.Admin.UpstreamConnection.ListGroupCatalog)
+		connections.PATCH("/group-annotations", h.Admin.UpstreamConnection.UpdateGroupAnnotations)
+		connections.GET("/cost-history", h.Admin.UpstreamConnection.GetCostHistory)
 		connections.GET("/:id/usage/today", h.Admin.UpstreamConnection.GetTodayUsage)
 		connections.GET("/:id", h.Admin.UpstreamConnection.Get)
 		connections.PUT("/:id", h.Admin.UpstreamConnection.Update)

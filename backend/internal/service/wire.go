@@ -1003,6 +1003,7 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	ProvideUpstreamConnectionService,
+	NewUserBusinessService,
 	ProvideUpstreamConnectionSyncService,
 	NewModelPricingResolver,
 	NewModelPlazaService,

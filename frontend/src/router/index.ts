@@ -819,6 +819,12 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Payment Admin Routes ====================
   {
+    path: '/admin/user-business',
+    name: 'AdminUserBusiness',
+    component: () => import('@/views/admin/UserBusinessView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true, title: 'User business ranking', titleKey: 'userBusiness.title' }
+  },
+  {
     path: '/admin/orders/dashboard',
     name: 'AdminPaymentDashboard',
     component: () => import('@/views/admin/orders/AdminPaymentDashboardView.vue'),

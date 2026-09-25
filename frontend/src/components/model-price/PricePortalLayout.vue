@@ -1,5 +1,10 @@
 <template>
-  <div class="ppx-price-portal" :data-theme="theme">
+  <AppLayout v-if="!publicPage">
+    <div class="ppx-price-page ppx-price-portal ppx-price-console">
+      <div class="ppx-price-body"><slot /></div>
+    </div>
+  </AppLayout>
+  <div v-else class="ppx-price-portal" :data-theme="theme">
     <a class="ppx-price-skip" href="#price-main">跳到主要内容</a>
     <header class="ppx-price-header">
       <a href="/home" class="ppx-price-brand"
@@ -58,10 +63,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
+import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore, useAuthStore } from '@/stores'
 import { sanitizeUrl } from '@/utils/url'
 import './price-portal.css'
-withDefaults(defineProps<{ publicPage?: boolean; sectionLabel?: string }>(), {sectionLabel:'模型价格'})
+const props = withDefaults(defineProps<{ publicPage?: boolean; sectionLabel?: string }>(), {sectionLabel:'模型价格'})
 const app = useAppStore(),
   auth = useAuthStore()
 const name = computed(() => app.siteName || '皮皮虾 AI')
@@ -113,6 +119,7 @@ function fallbackLogo(event: Event) {
     image.src = '/brand/ppx-logo.webp'
 }
 onMounted(() => {
+  if (!props.publicPage) return
   previousDark = document.documentElement.classList.contains('dark')
   previousPortal = document.documentElement.classList.contains('ppx-price-page')
   document.documentElement.classList.add('ppx-price-page')
@@ -120,6 +127,7 @@ onMounted(() => {
   window.addEventListener('storage', syncTheme)
 })
 onBeforeUnmount(() => {
+  if (!props.publicPage) return
   window.removeEventListener('storage', syncTheme)
   document.documentElement.classList.toggle('dark', previousDark)
   document.documentElement.classList.toggle('ppx-price-page', previousPortal)

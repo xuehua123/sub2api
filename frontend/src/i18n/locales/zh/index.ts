@@ -6,6 +6,8 @@ import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
 import accountPages from './accountPages'
+import userBusiness from './userBusiness'
+import upstreamWorkspace from './upstreamWorkspace'
 
 export default {
   ...landing,
@@ -16,4 +18,6 @@ export default {
   admin,
   ...misc,
   ...accountPages,
+  ...userBusiness,
+  ...upstreamWorkspace,
 }

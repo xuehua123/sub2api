@@ -9,10 +9,15 @@ vi.mock('@/stores', () => ({
   }),
   useAuthStore: () => ({ isAuthenticated: true, isAdmin: false }),
 }))
-function view() {
+function view(publicPage = true) {
   return mount(Layout, {
+    props: { publicPage },
+    slots: { default: '<div data-test="page-content">Page content</div>' },
     global: {
-      stubs: { Icon: true, RouterLink: { template: '<a><slot/></a>' } },
+      stubs: {
+        AppLayout: { template: '<div data-test="console-layout"><aside data-test="sidebar"/><header data-test="mobile-menu"/><slot/></div>' },
+        Icon: true, RouterLink: { template: '<a><slot/></a>' }
+      },
     },
   })
 }
@@ -21,6 +26,26 @@ beforeEach(() => {
   document.documentElement.classList.remove('dark', 'ppx-price-page')
 })
 describe('PPX pricing layout', () => {
+  it('keeps console navigation for account pages without changing the console theme', () => {
+    localStorage.setItem('ppx-theme', 'dark')
+    const w = view(false)
+    expect(w.find('[data-test="console-layout"]').exists()).toBe(true)
+    expect(w.find('[data-test="sidebar"]').exists()).toBe(true)
+    expect(w.find('[data-test="mobile-menu"]').exists()).toBe(true)
+    expect(w.find('[data-test="page-content"]').exists()).toBe(true)
+    expect(w.find('.ppx-price-header').exists()).toBe(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(document.documentElement.classList.contains('ppx-price-page')).toBe(false)
+    document.documentElement.classList.add('dark')
+    w.unmount()
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+  it('keeps public pages independent of the console navigation', () => {
+    const w = view(true)
+    expect(w.find('[data-test="console-layout"]').exists()).toBe(false)
+    expect(w.find('.ppx-price-header').exists()).toBe(true)
+    w.unmount()
+  })
   it('uses the homepage theme preference and restores console appearance after leaving', () => {
     localStorage.setItem('ppx-theme', 'dark')
     const w = view()

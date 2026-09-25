@@ -12,7 +12,8 @@
   background: var(--ppx-bg);
   color: var(--ppx-ink);
 }
-.ppx-price-page.dark {
+.ppx-price-page.dark,
+.dark .ppx-price-page {
   --ppx-bg: #080e13;
   --ppx-panel: #101a22;
   --ppx-ink: #eff5f7;
@@ -37,6 +38,9 @@
 .ppx-price-portal a {
   text-decoration: none;
   color: inherit;
+}
+.ppx-price-console {
+  min-height: 0;
 }
 .ppx-price-portal button,
 .ppx-price-portal input,
@@ -195,7 +199,7 @@
   border-color: var(--ppx-accent);
   color: var(--ppx-bg);
 }
-.ppx-price-page:not(.dark) .btn-primary {
+.ppx-price-page:not(.dark):not(.dark *) .btn-primary {
   color: white;
 }
 .ppx-price-page .btn-danger {
@@ -338,6 +342,7 @@
 .ppx-price-page {
   color-scheme: light;
 }
-.ppx-price-page.dark {
+.ppx-price-page.dark,
+.dark .ppx-price-page {
   color-scheme: dark;
 }

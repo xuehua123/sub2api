@@ -849,6 +849,7 @@ const adminNavItems = computed((): NavItem[] => {
     // Account health is merged into Accounts → 健康 column; keep route for deep-links only.
     { path: '/admin/notification-robots', label: t('nav.notificationRobots'), icon: BellIcon, featureFlag: flagOpsMonitoring },
     { path: '/admin/users', label: t('nav.users'), icon: UsersIcon, hideInSimpleMode: true },
+    { path: '/admin/user-business', label: t('userBusiness.title'), icon: ChartIcon, hideInSimpleMode: true },
     { path: '/admin/groups', label: t('nav.groups'), icon: FolderIcon },
     {
       path: '/admin/channels',
